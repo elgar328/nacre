@@ -1085,7 +1085,7 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
                     None => hist.push((*t, 1)),
                 }
             }
-            eprintln!("P2 digon abstained {abstained} on_chord {on_chord} kinds {hist:?}");
+            eprintln!("tie digon abstained {abstained} on_chord {on_chord} kinds {hist:?}");
         }
         assert!(
             on_chord > 0,

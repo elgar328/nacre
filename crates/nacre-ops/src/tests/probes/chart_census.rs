@@ -5,9 +5,8 @@
 use super::*;
 /// **What the chart's line set looks like, beside what the hand-written roads answer today.**
 ///
-/// The first rung of capability D ships no capability: it builds the two axes and *measures* them.
-/// The numbers decide the next rung's design — above all whether the cells are worth walking or
-/// worth overlaying — and until they are in, that design would rest on an unmeasured premise.
+/// It ships no capability: it builds the chart's two axes and *measures* them against the roads
+/// that answer today.
 ///
 /// ★ Called from the one place the plane arrangement's faces and [`Curved`] are both in hand. It
 /// reads; nothing downstream reads it.
@@ -61,7 +60,7 @@ pub(crate) fn census(
             "one cylinder class carries rows of both solids: cyl {k}"
         );
 
-        // ★★★★★ **Every vertical line carries an answer** (capability D). A ruling without
+        // ★★★★★ **Every vertical line carries an answer.** A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
         // the census below would then be comparing a partial chart. ☑ Measured 862/862 across the
         // suite; `world_rat_sense` declines none of them. ★ Except a **tangent** station:
@@ -122,19 +121,19 @@ pub(crate) fn census(
         {
             Ok(v) => v,
             Err(_) => {
-                probe::d2b::push(probe::d2b::Row {
+                probe::cell_ends::push(probe::cell_ends::Row {
                     cells: cells.len(),
                     read_refused: 1,
-                    ..probe::d2b::Row::default()
+                    ..probe::cell_ends::Row::default()
                 });
                 continue;
             }
         };
-        let mut d2b = probe::d2b::Row {
+        let mut ends = probe::cell_ends::Row {
             cells: cells.len(),
             emitter_refused: emission.is_err(),
             end_swapped: chart.end_swapped,
-            ..probe::d2b::Row::default()
+            ..probe::cell_ends::Row::default()
         };
         // The premise of naming a station on a line — every (z-line, station)
         // pair of this chart asked for the station's canonical name there.
@@ -149,11 +148,11 @@ pub(crate) fn census(
             }
             for l in &chart.z_lines {
                 for &(wall, sd) in &names {
-                    d2b.station_pairs += 1;
+                    ends.station_pairs += 1;
                     if crate::arrangement::crossing_on_ruling(jd, def, l.class, wall, k, sd)
                         .is_err()
                     {
-                        d2b.station_name_failures += 1;
+                        ends.station_name_failures += 1;
                     }
                 }
             }
@@ -195,7 +194,7 @@ pub(crate) fn census(
                             }
                         }
                     }
-                    d2b.emitted_faces = w.faces.len();
+                    ends.emitted_faces = w.faces.len();
                 }
                 Err(_) => {
                     assert!(
@@ -208,23 +207,23 @@ pub(crate) fn census(
         for (r, cell) in reads.iter().zip(&cells) {
             for e in &r.ends {
                 match e {
-                    End::Disk(_) => d2b.end_disk += 1,
+                    End::Disk(_) => ends.end_disk += 1,
                     End::Exact(a) => {
-                        d2b.end_exact += 1;
-                        d2b.exact_run_arcs += a.len() - 1;
+                        ends.end_exact += 1;
+                        ends.exact_run_arcs += a.len() - 1;
                     }
                     End::Other => {
-                        d2b.end_other += 1;
+                        ends.end_other += 1;
                         // With stations placed by name the only `Other` left should be
                         // the single-cut sector (both walls one ruling — `arc_around`'s first
                         // return); anything else is counted apart so it can be named.
                         if cell.walls.is_some_and(|[x, y]| x == y) {
-                            d2b.end_other_single_cut += 1;
+                            ends.end_other_single_cut += 1;
                         }
                     }
                     // An uncovered piece is an absence, not a read of a chamber.
-                    End::Uncovered => d2b.end_uncovered += 1,
-                    End::NoCircle => d2b.end_nocircle += 1,
+                    End::Uncovered => ends.end_uncovered += 1,
+                    End::NoCircle => ends.end_nocircle += 1,
                 }
             }
             let sources = r
@@ -233,15 +232,15 @@ pub(crate) fn census(
                 .filter(|e| matches!(e, End::Disk(_) | End::Exact(_)))
                 .count();
             if sources == 0 && r.present {
-                d2b.src0_present += 1;
+                ends.src0_present += 1;
             }
             if r.present && r.ends.iter().any(|e| matches!(e, End::Other)) {
-                d2b.other_present += 1;
+                ends.other_present += 1;
             }
             // A present cell with a line that carries no circle of this cylinder: the
             // `circle_on_class` premise at one end instead of both (`src0_present`).
             if r.present && r.ends.iter().any(|e| matches!(e, End::NoCircle)) {
-                d2b.nocircle_present += 1;
+                ends.nocircle_present += 1;
             }
             // ★ The one-mark contract the band road's `panel_probe` used to hold on its rim reads:
             // every cut end read carries exactly one lateral mark of its own solid (`Seated` is a
@@ -259,11 +258,11 @@ pub(crate) fn census(
                             *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
                         })
                         .count();
-                    d2b.arcs_read += 1;
+                    ends.arcs_read += 1;
                     match lateral {
-                        0 => d2b.arcs_no_mark += 1,
+                        0 => ends.arcs_no_mark += 1,
                         1 => {}
-                        _ => d2b.arcs_multi_mark += 1,
+                        _ => ends.arcs_multi_mark += 1,
                     }
                     // ★ **Not «exactly one»:** a ⊥ cap through
                     // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
@@ -280,21 +279,25 @@ pub(crate) fn census(
                     );
                 }
             }
-            d2b.src2_disagree += usize::from(r.src2_disagree);
-            d2b.exist_disagree += usize::from(r.exist_disagree);
+            ends.src2_disagree += usize::from(r.src2_disagree);
+            ends.exist_disagree += usize::from(r.exist_disagree);
             // Both ends cut is exactly the panel road's population, where today `face_spans`
             // drops a sector for existence — the one count with a twin on the other side.
             if r.ends.iter().all(|e| matches!(e, End::Exact(_))) && !r.present {
-                d2b.exist_marks_false += 1;
+                ends.exist_marks_false += 1;
             }
             match r.emit {
-                Some(true) => d2b.emit += 1,
-                None => d2b.emit_unknown += 1,
+                Some(true) => ends.emit += 1,
+                None => ends.emit_unknown += 1,
                 Some(false) => {}
             }
         }
         assert_eq!(
-            d2b.end_disk + d2b.end_exact + d2b.end_other + d2b.end_uncovered + d2b.end_nocircle,
+            ends.end_disk
+                + ends.end_exact
+                + ends.end_other
+                + ends.end_uncovered
+                + ends.end_nocircle,
             2 * cells.len(),
             "every cell has two ends: cyl {k}"
         );
@@ -308,7 +311,7 @@ pub(crate) fn census(
         // row's span — which cannot see the hole. The true proposition is the `src2_disagree`
         // guard's: over such a cell the emitter builds nothing, it refuses the class by name.
         assert!(
-            d2b.src0_present == 0 || emission.is_err(),
+            ends.src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
         );
         // ★★★★★ **A cell with a face never has an end that says nothing** — promoted
@@ -318,14 +321,14 @@ pub(crate) fn census(
         // there), and such a cell is absent. A present cell reading `Other` would be a chart with
         // a θ boundary it has no line for — named here, at the fact, not read from the other end.
         assert_eq!(
-            d2b.other_present, 0,
+            ends.other_present, 0,
             "a cell with a face has an end that says nothing: cyl {k}"
         );
         // ★ Record-site assertions rather than counts (the suite measures them 0): a
         // reporting test sees only the rows recorded before
         // it, an assertion here sees every chart and names the offending test.
         assert_eq!(
-            d2b.end_swapped, 0,
+            ends.end_swapped, 0,
             "a ruling arrived with z descending: cyl {k}"
         );
         // ★★★★★ **Over a present cell whose chamber could not be read, the emitter emits
@@ -338,13 +341,13 @@ pub(crate) fn census(
         // (present cells only), not on `src2_disagree`, which also counts absent cells the
         // emitter rightly ignores — that stays a ledger column.
         assert!(
-            d2b.emit_unknown == 0 || emission.is_err(),
+            ends.emit_unknown == 0 || emission.is_err(),
             "a present cell's chamber could not be read, yet the emitter emitted: cyl {k}"
         );
         // ★ The premise at one end: a present cell never meets a line with no circle of its own
         // cylinder (`circle_on_class` marks every ⊥ class within a face's span).
         assert_eq!(
-            d2b.nocircle_present, 0,
+            ends.nocircle_present, 0,
             "a cell with a face meets a line with no circle of its cylinder: cyl {k}"
         );
 
@@ -476,7 +479,7 @@ pub(crate) fn census(
             whole_circle,
             odd_k,
         });
-        probe::d2::push(probe::d2::Row {
+        probe::rulings::push(probe::rulings::Row {
             rulings,
             wall_flips,
             intervals_with_flip,
@@ -490,6 +493,6 @@ pub(crate) fn census(
         // face, adjacent emitted cells in one face, no unkept cell in any). The terms
         // `whole_emitted`, `full_runs`, `z_merge_bandlike` and `partial_runs` are
         // ledger columns of the chart, not of the emitter.
-        probe::d2b::push(d2b);
+        probe::cell_ends::push(ends);
     }
 }

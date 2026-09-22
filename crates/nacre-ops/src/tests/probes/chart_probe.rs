@@ -31,11 +31,11 @@ impl Row {
 
 pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
 
-/// **Capability D's third rung has its own ledger**, deliberately not more fields on [`Row`].
-/// That one is already fourteen wide, and every field of it needs a reader or `dead_code`
-/// stops the build — which is how a table nobody can read grows contrived invariants to feed
-/// it. One instrument per rung.
-pub(crate) mod d2 {
+/// **The chart's vertical answers have their own ledger**, deliberately not more fields on
+/// [`Row`]. That one is already fourteen wide, and every field of it needs a reader or
+/// `dead_code` stops the build — which is how a table nobody can read grows contrived invariants
+/// to feed it. One instrument per question.
+pub(crate) mod rulings {
     use std::sync::Mutex;
 
     /// One chart's vertical answers.
@@ -77,14 +77,8 @@ pub(crate) fn push(r: Row) {
         .push(r);
 }
 
-/// **The fourth rung's ledger**: what the cell reader read, what the
-/// census's own walk of the chart predicts, and how many faces the emitter put on the class.
-/// One row per chart with cells, whether or not the emitter produced a face there.
-///
-/// ★ Compared **within a row** (`cells` is copied in), never row-by-row against another
-/// ledger: tests run in parallel and the ledgers interleave independently.
 /// **The vertical answer beside the horizontal one** — the shadow the cutover is measured
-/// against (capability D's own pattern: a rung that ships no capability and *measures*).
+/// against (an instrument that ships no capability and *measures*).
 ///
 /// The chart's two axes are symmetric in principle, but only the horizontal ones have ever
 /// decided a face, so the sign bridge on the vertical side ([`crate::arrangement::
@@ -125,7 +119,13 @@ pub(crate) mod shadow {
     }
 }
 
-pub(crate) mod d2b {
+/// **The cells' two ends**: what the cell reader read, what the census's own walk of the chart
+/// predicts, and how many faces the emitter put on the class. One row per chart with cells,
+/// whether or not the emitter produced a face there.
+///
+/// ★ Compared **within a row** (`cells` is copied in), never row-by-row against another
+/// ledger: tests run in parallel and the ledgers interleave independently.
+pub(crate) mod cell_ends {
     use std::sync::Mutex;
 
     #[derive(Clone, Debug, Default)]

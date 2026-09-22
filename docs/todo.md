@@ -283,6 +283,16 @@ assert!(hits.len() >= 4, …);   // ← 부등호인 이유가 그것이다
 아니라 존재·전칭만 단언한다. 읽는 자리가 여럿이라 한 번에 고칠 일은 아니고, 어느 프로브부터
 세션을 줄지 정해야 한다.
 
+### nesting 재시도가 기권이 아닌 실패를 삼킨다
+
+`nesting::ask` 는 `point_in_ring` 의 **모든** 오류를 «이 증인이 기권한다 — 다음 증인이 답한다»로 받는다.
+`design.md` 「증인과 중점」의 규칙은 둘을 가른다: «이 점이 링 위»는 다음 증인이 해결하지만 «값을 못 만들었다»는
+아니다. 스위트 전체(lib, 421개)에서 `NoClearRay` 가 아닌 오류가 **21,206** 번 삼켜진다 — `DegenerateRing` 13,184 ·
+`PierceVertexUnnamed` 7,414 · `PointOnRing` 608(`combinatorics::swallowed_probe`, ledger 의 `swallowed` 줄). 기권은
+`PointOnRing` 하나뿐이다. `DegenerateRing` 은 증인이 아니라 **대상 링**의 성질이라 다음 증인도 같은 오류를 낼
+공산이 크다. 스위트는 초록이라 틀린 답의 증거는 없다. 먼저 잴 것: 삼킨 뒤 그 질문이 결국 무엇으로 끝나는가(다른
+증인이 답했나, 전부 기권해 다른 이름으로 거절됐나), 그리고 `DegenerateRing` 이 한 링에 대해 증인마다 반복되는가.
+
 ### 발행 설정이 문서의 규칙을 집행하지 않는다
 
 `design.md` 는 `nacre-oracle` 을 「발행하지 않는 dev 전용 크레이트」라고 적지만, 워크스페이스 14개 크레이트 어느 `Cargo.toml` 에도 `publish` 키가 없다 — 전부 기본값 `true` 다. 지금 릴리스를 돌리면 오라클 하네스까지 나간다. 발행 전에 `publish = false` 를 단다.
@@ -505,17 +515,8 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `arrangement`(53)·`frame3`(28) 가 가장 많다. **계측 이사는 이것을 안 건드렸다** — `#[path]` 로 파일만 옮겨 모듈이 제자리에 남았으므로 가시성이 하나도 안 움직였다. 테스트만 부르는 `pub(super)` 가 몇인지는 따로 세야 한다.
-- **소스 주석의 경위 서사가 506줄·167파일 남아 있다**(`used to`·`today`·`no longer`·`before the fix` 가 든 주석 줄,
+- **소스 주석의 경위 서사가 496줄·166파일 남아 있다**(`used to`·`today`·`no longer`·`before the fix` 가 든 주석 줄,
   수동태 `is used to` 제외). 문서 규칙 1(현재형만)의 위반이지만 자연어라 기계로 가를 수 없고, 한 줄씩 읽어
   «지금 참인 문장»으로 고쳐 써야 한다 — 그러다 보면 거짓이 드러난다(`curved_nesting.rs`·`frames.rs` 를 정리할 때
   숫자 다섯과 «f64 경로» 하나가 그랬다). 서사가 가장 짙은 곳: `curved_nesting.rs` 의 나머지 doc(원판 근사식,
   «plainest arm», 구멍 뚫린 입방체의 경계), `tolerant.rs` 의 두 캡 절, `frames.rs` 의 두 보스 doc.
-- **실험·계측 라벨이 작업 번호로 남아 있다.** 주석의 문자-숫자 작업 번호는 정리됐고(남은 `[A-Z][0-9]` 토큰은
-  입방체 꼭짓점 `V0–V7`·오일러 수·*The NURBS Book* 알고리즘 번호·수식 기호 같은 지역 라벨이다), 남은 것은 이름으로
-  쓰이는 셋이다: 실험 라벨 `H-a…H-i`(26곳·7파일 — judge 테스트 doc 머리와 출력, 그리고 제품 코드의 «Validated H-b»
-  식 인용; 출처 `exact3d` 는 트리에 없다), `zzz_ledger` 의 출력 라벨 13종(`D1b`·`D5-P4`·`C2-P1` 식)과 그것을 가리키는
-  진단 `eprintln` 의 `P1`/`P2`/`P4`, 그리고 계측 **모듈 이름** `probe::d2`/`probe::d2b` 와 `measure_d_ladder_ledgers`
-  («한 rung 에 계측 하나»). 고치려면 각 ledger 가 지금 무엇을 재는지 읽고 그 이름을 지어야 한다 — 개명 단위다.
-- **은퇴한 `Inexact` 가 주석 여섯 자리에 살아 있다**(`nacre-topo/src/lib.rs:476,494,663,735` ·
-  `nacre-ops/src/transform.rs:450` · `tests/suite/frames.rs:995`). `SurfaceDef` 와 함께 은퇴한 상태인데 `lib.rs:735`
-  «`Inexact` has no coefficients and never interns» 는 현재형 문장이다.

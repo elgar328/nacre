@@ -1,34 +1,34 @@
-/// The chart ledgers' column sums (`cyl_chart::probe`), printed.
+/// Every probe ledger's column sums, printed — one line per probe, labelled by the probe's name.
 #[test]
-#[ignore = "measurement — prints the D-ladder ledger sums; run last, single-threaded"]
-fn measure_d_ladder_ledgers() {
-    let d1 = crate::arrangement::cyl_chart::probe::ROWS
+#[ignore = "measurement — prints the probe ledger sums; run last, single-threaded"]
+fn measure_probe_ledgers() {
+    let chart = crate::arrangement::cyl_chart::probe::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
-    let d2b = crate::arrangement::cyl_chart::probe::d2b::ROWS
+    let ends = crate::arrangement::cyl_chart::probe::cell_ends::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
     let s1 = |f: fn(&crate::arrangement::cyl_chart::probe::Row) -> usize| {
-        d1.iter().map(f).sum::<usize>()
+        chart.iter().map(f).sum::<usize>()
     };
-    let s = |f: fn(&crate::arrangement::cyl_chart::probe::d2b::Row) -> usize| {
-        d2b.iter().map(f).sum::<usize>()
+    let s = |f: fn(&crate::arrangement::cyl_chart::probe::cell_ends::Row) -> usize| {
+        ends.iter().map(f).sum::<usize>()
     };
     eprintln!(
-        "ledger D1b: charts {} refused {} cells {}",
-        d1.len(),
-        d1.iter().filter(|r| r.refused).count(),
+        "ledger chart: charts {} refused {} cells {}",
+        chart.len(),
+        chart.iter().filter(|r| r.refused).count(),
         s1(|r| r.cells),
     );
     eprintln!(
-        "ledger D2b: rows {} refused_booleans {} cells {} end_swapped {} end_disk {} end_exact {} \
+        "ledger cell_ends: rows {} refused_booleans {} cells {} end_swapped {} end_disk {} end_exact {} \
              end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
              read_refused {} exist_marks_false {} emit {} emit_unknown {} nocircle_present {} \
              arcs_read {} exact_run_arcs {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
-        d2b.len(),
-        d2b.iter().filter(|r| r.emitter_refused).count(),
+        ends.len(),
+        ends.iter().filter(|r| r.emitter_refused).count(),
         s(|r| r.cells),
         s(|r| r.end_swapped),
         s(|r| r.end_disk),
@@ -55,19 +55,19 @@ fn measure_d_ladder_ledgers() {
         .expect("the probe's lock is never held across a panic")
         .clone();
     eprintln!(
-        "ledger E3: ruling_crossings {} off_max {:e} side_disagree {}",
+        "ledger crossing: ruling_crossings {} off_max {:e} side_disagree {}",
         hits.len(),
         hits.iter().flat_map(|h| h.off).fold(0.0_f64, f64::max),
         hits.iter().filter(|h| h.side_f64 != h.side).count(),
     );
     // The populations the region emitter moves, attributed to fixtures.
     eprintln!(
-        "ledger D5-P4: station_pairs {} station_name_failures {}",
+        "ledger cell_ends stations: station_pairs {} station_name_failures {}",
         s(|r| r.station_pairs),
         s(|r| r.station_name_failures),
     );
     eprintln!(
-        "ledger D5-1a: end_other {} of which single_cut {}",
+        "ledger cell_ends: end_other {} of which single_cut {}",
         s(|r| r.end_other),
         s(|r| r.end_other_single_cut),
     );
@@ -85,7 +85,7 @@ fn measure_d_ladder_ledgers() {
             }
         }
         eprintln!(
-            "ledger C2-P1: mixed abstentions {} by kind {hist:?}",
+            "ledger tie: mixed abstentions {} by kind {hist:?}",
             ties.len()
         );
         let dec = crate::assembly::probe::deciding::ROWS
@@ -109,19 +109,19 @@ fn measure_d_ladder_ledgers() {
         }
         offered.sort_unstable();
         eprintln!(
-            "ledger C2-P4: deciding calls {} exhausted {} probes_tried histogram {tried:?} \
+            "ledger deciding: calls {} exhausted {} probes_tried histogram {tried:?} \
                  offered histogram {offered:?}",
             dec.iter().filter(|r| r.3).count(),
             dec.iter().filter(|r| !r.3).count()
         );
         for r in dec.iter().filter(|r| !r.3) {
             eprintln!(
-                "ledger C2-P4 exhausted: {} offered {} ties {:?}",
+                "ledger deciding exhausted: {} offered {} ties {:?}",
                 r.0, r.2, r.4
             );
         }
         eprintln!(
-            "ledger C2-P5: the nesting retry swallowed non-abstention errors {}",
+            "ledger swallowed: the nesting retry swallowed non-abstention errors {}",
             *crate::combinatorics::swallowed_probe::COUNT
                 .lock()
                 .expect("the probe's lock is never held across a panic")

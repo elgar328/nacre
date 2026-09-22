@@ -846,7 +846,7 @@ fn the_mesh_census_is_running() {
     );
 }
 
-/// **A ruling carries the label of the cell inside the cylinder** — capability D's vertical answer.
+/// **A ruling carries the label of the cell inside the cylinder** — the chart's vertical answer.
 ///
 /// The chart's horizontal lines have had their answer since the band pass: a ⊥ class's
 /// [`crate::arrangement::Label`] holds the material on **both** sides of its plane, which is why

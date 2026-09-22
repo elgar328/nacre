@@ -1,6 +1,4 @@
-//! The census's ledger — the same shape as `ruling_probe`: filled where the fact is made, read by
-//! one test that reports it.
-//! **A lateral's result faces are the regions of its chart** (capability D, eighth rung).
+//! **A lateral's result faces are the regions of its chart.**
 //!
 //! The plane side's stages, on the chart: cells → labels (read off the neighbouring classes)
 //! → emitted cells → **connected components** → the boundary of each component → the boundary's

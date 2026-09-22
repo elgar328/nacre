@@ -1,4 +1,4 @@
-//! **The arrangement's second arm: a cylinder's own chart** (capability D).
+//! **The arrangement's second arm: a cylinder's own chart.**
 //!
 //! The plane side long ago stopped walking faces by hand: each plane class gets a **cell complex**
 //! (`super`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went

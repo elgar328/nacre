@@ -107,7 +107,7 @@ pub(crate) struct RulingExtent {
     pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
     pub(crate) z: [nacre_exact::Rat; 2],
-    /// **The chart's vertical answer** (capability D, third rung): the label of the cell this
+    /// **The chart's vertical answer**: the label of the cell this
     /// ruling borders **inside** the cylinder, on the wall class this ruling lies on.
     ///
     /// ★★★★★ **This is the half `disk_labels`/`arc_labels` do not carry.** A [`Label`] holds the

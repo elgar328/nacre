@@ -67,7 +67,7 @@ pub(crate) mod crossing_probe;
 #[cfg(test)]
 #[path = "../tests/probes/cycle_probe.rs"]
 pub(crate) mod cycle_probe;
-/// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D) --
+/// The cylinder chart: the lateral faces' arrangement, emitted from cells —
 /// this engine's second arm, run on the cylinder's own chart rather than a plane class.
 pub(crate) mod cyl_chart;
 mod cyl_trace;

@@ -666,19 +666,19 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 };
                 if got == Rejected(NoClearRay) {
                     let hist = crate::combinatorics::tie_probe::since(tie0);
-                    eprintln!("P1 {name} {kind:?} x {tool_name}: {hist:?}");
+                    eprintln!("tie {name} {kind:?} x {tool_name}: {hist:?}");
                     let dec = crate::assembly::probe::deciding::ROWS
                         .lock()
                         .expect("the probe's lock is never held across a panic");
                     for r in dec[dec0..].iter().filter(|r| !r.3) {
                         eprintln!(
-                            "P4 {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
+                            "deciding {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
                             r.2, r.4
                         );
                     }
                     let decided: Vec<usize> =
                         dec[dec0..].iter().filter(|r| r.3).map(|r| r.1).collect();
-                    eprintln!("P4 {name} {kind:?} x {tool_name}: decided tried {decided:?}");
+                    eprintln!("deciding {name} {kind:?} x {tool_name}: decided tried {decided:?}");
                 }
                 match tally.iter_mut().find(|(c, _)| *c == got) {
                     Some((_, n)) => *n += 1,

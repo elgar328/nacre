@@ -85,7 +85,7 @@ fn the_chart_census_is_running() {
     }
 }
 
-/// **The chart's vertical answers are read, and they close** (capability D).
+/// **The chart's vertical answers are read, and they close.**
 ///
 /// The real claims are asserted in `census`, where the facts are made — every ruling reaches
 /// the chart with a label, and the walk around each interval returns to where it started.
@@ -112,7 +112,7 @@ fn the_chart_census_is_running() {
 /// the **kind** (`Graze` = the face stops here), and that has 12.
 #[test]
 fn the_charts_vertical_answers_close() {
-    let before = super::probe::d2::ROWS
+    let before = super::probe::rulings::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .len();
@@ -129,7 +129,7 @@ fn the_charts_vertical_answers_close() {
     );
     m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-    let rows = super::probe::d2::ROWS
+    let rows = super::probe::rulings::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
@@ -152,8 +152,8 @@ fn the_charts_vertical_answers_close() {
         );
     }
     // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
-    // empty here", never "nothing was looked at". That is the mistake this rung made once.
-    let sum = |f: fn(&super::probe::d2::Row) -> usize| rows.iter().map(f).sum::<usize>();
+    // empty here", never "nothing was looked at".
+    let sum = |f: fn(&super::probe::rulings::Row) -> usize| rows.iter().map(f).sum::<usize>();
     assert!(sum(|r| r.closes) > 0, "no interval was ever walked");
     assert!(
         sum(|r| r.wall_flips) > 0,
@@ -162,7 +162,7 @@ fn the_charts_vertical_answers_close() {
 }
 
 /// **The cells read their chamber off the lines at their ends, and the ledger's bookkeeping
-/// is total** (capability D).
+/// is total**.
 ///
 /// The absolute claims are asserted in `census`, where the facts are made: a present cell
 /// always has a speaking end (`src0_present == 0`, `other_present == 0` — the reason no
@@ -190,13 +190,15 @@ fn the_charts_vertical_answers_close() {
 /// still without a population.
 #[test]
 fn the_cells_read_their_chamber_from_the_horizontal_lines() {
-    use super::probe::d2b::ROWS as D2B;
-    let snapshot = || -> Vec<super::probe::d2b::Row> {
-        D2B.lock()
+    use super::probe::cell_ends::ROWS as CELL_ENDS;
+    let snapshot = || -> Vec<super::probe::cell_ends::Row> {
+        CELL_ENDS
+            .lock()
             .expect("the probe's lock is never held across a panic")
             .clone()
     };
-    let sum = |rows: &[super::probe::d2b::Row], f: fn(&super::probe::d2b::Row) -> usize| {
+    let sum = |rows: &[super::probe::cell_ends::Row],
+               f: fn(&super::probe::cell_ends::Row) -> usize| {
         rows.iter().map(f).sum::<usize>()
     };
     let before = snapshot();
