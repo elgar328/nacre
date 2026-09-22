@@ -53,7 +53,7 @@ pub(super) struct Twins {
 }
 
 impl Twins {
-    pub(super) fn is_twin(&self, i: usize) -> bool {
+    fn is_twin(&self, i: usize) -> bool {
         i == self.o || i == self.h
     }
 

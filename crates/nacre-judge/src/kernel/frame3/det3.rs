@@ -1,6 +1,6 @@
 use super::*;
 /// The three edge rows of `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`.
-pub(super) fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
+fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
     [
         [a[0] - d[0], a[1] - d[1], a[2] - d[2]],
         [b[0] - d[0], b[1] - d[1], b[2] - d[2]],
