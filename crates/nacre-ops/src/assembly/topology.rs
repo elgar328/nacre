@@ -56,8 +56,8 @@ pub(crate) fn check_result_topology(
         // ★ **No edge may say it separates one plane from itself.** An edge whose *stated*
         // surface pair is one plane twice is an interior boundary the coplanar cleaning was
         // obliged to erase. When the merge abstains instead — a 2-node cap's chord and its
-        // arcs collide in the node-pair key, so the group ships as-is — the pair used to sail
-        // through here, and `validate` names the spelling a producer bug
+        // arcs collide in the node-pair key, so the group ships as-is — the pair would sail
+        // through without this, and `validate` names the spelling a producer bug
         // (`EdgeCarrierMismatch`: a self-adjacent pair is reserved for cylinder seams).
         // Measured on the straddling flush boss (`rul flush` Fuse). The proposition is
         // exactly validate's, no wider: an *arc*-carried boundary between two coplanar faces
@@ -101,10 +101,9 @@ pub(crate) fn check_result_topology(
 /// ring edge that exactly two of them use. Returns a component label per face (dense `0..n` in
 /// order of first appearance, for replay determinism) and the component count.
 ///
-/// ★★ **Touching is not joining.** Two bodies that meet along a line share that line's nodes, and
-/// used to come back as one component and so one pinched pseudo-solid, which the edge-use guard
-/// then had to reject. They share no *manifold* edge — four faces use the contact line, not two —
-/// so they land in two components and come back as the two bodies they are. Where a body touches
+/// ★★ **Touching is not joining.** Two bodies that meet along a line share that line's nodes but
+/// no *manifold* edge — four faces use the contact line, not two — so they land in two components
+/// and come back as the two bodies they are, not as one pinched pseudo-solid. Where a body touches
 /// **itself** the material still runs around the contact, every edge of that path is used twice,
 /// and the component stays one: the guard fires exactly where no pair of solids exists.
 ///

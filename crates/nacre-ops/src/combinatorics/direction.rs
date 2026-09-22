@@ -21,16 +21,15 @@ impl EdgeDir {
 /// runs along `d = n_p × n_wall`, `-1` against it. The one place a direction is made.
 ///
 /// ★ It returns the sense **paired with the carrier it belongs to** ([`EdgeDir`]) rather than a
-/// bare `i8`, so the callers that used to do that pairing by hand no longer can. (`EdgeDir::new`
+/// bare `i8`, so no caller pairs them by hand. (`EdgeDir::new`
 /// still states a pair directly — that is for fixtures, and it is the one place a wrong pairing is
 /// still spellable.)
 ///
-/// ★★ **It used to be made twice, two different ways.** `order_along` is `sign((V_i − V_j)·d)`, so
-/// the direction of travel is either `−order_along(from, to)` (invert the result) or
-/// `order_along(to, from)` (swap the arguments) — the same value by the antisymmetry of a
-/// difference, and this file spelled it the first way while `arrangement`'s `angular_order`
-/// spelled it the second, inline. They agreed only because two independent inversions happened to
-/// cancel; a change to `order_along`'s convention would have moved one and not the other.
+/// ★★ **Made once.** `order_along` is `sign((V_i − V_j)·d)`, so the direction of travel is either
+/// `−order_along(from, to)` (invert the result) or `order_along(to, from)` (swap the arguments) —
+/// the same value by the antisymmetry of a difference. Two spellings would agree only because two
+/// independent inversions cancel, and a change to `order_along`'s convention would move one and
+/// not the other.
 ///
 /// ★ **The zero policy lives here, and that is not a matter of taste**: both callers answered a
 /// coincidence the same way (`CoincidentNodes`). Where two consumers want *different* answers —
@@ -39,7 +38,7 @@ impl EdgeDir {
 ///
 /// ★★ **Both ends arrive as a name *and* a pin, because a cylinder-pinned one needs both.** The
 /// pin says which kind of thing holds the point on `L`; the name says which point. A plane pin
-/// carries its own name in its payload, so the two used to be one argument — but
+/// carries its own name in its payload, so for it one argument would do — but
 /// [`EndPin::Cylinder`] has no payload by design ("the name is read from beside it"), and beside it
 /// is here. [`order_pinned`] then picks the road.
 pub(crate) fn edge_dir(
@@ -50,12 +49,10 @@ pub(crate) fn edge_dir(
     from: (NodeId, EndPin),
     to: (NodeId, EndPin),
 ) -> Result<EdgeDir, BoolError> {
-    // ★★ **`None` is `WitnessNotRational`, and the change of name is the change of proposition.**
-    // This arm used to be `RingNaming` because the one thing it caught was a cylinder-pinned end —
-    // a node with no third plane, which is genuinely a naming fact. That case is answered now, and
-    // what is left is [`order_pinned`]'s own `None`: a class with no narrow rational description,
-    // a coordinate past `Rat`. The names chain perfectly; the *value* could not be formed. That is
-    // the sentence `arc_at` next door already uses for the same cause.
+    // ★★ **`None` is `WitnessNotRational`, not `RingNaming`.** A cylinder-pinned end is answered,
+    // so what reaches here is [`order_pinned`]'s own `None`: a class with no narrow rational
+    // description, a coordinate past `Rat`. The names chain perfectly; the *value* could not be
+    // formed. That is the sentence `arc_at` next door uses for the same cause.
     let sense = match order_pinned(jd, cyls, p, wall, from, to) {
         Some(-1) => 1,
         Some(1) => -1,
@@ -83,8 +80,8 @@ pub(crate) fn edge_dir(
 ///
 /// ★ **The hoist survives.** `angular_order` builds one direction per outgoing half-edge and sorts
 /// on those values; building them inside the comparison instead would re-run `order_along` per
-/// comparison — the very mistake this file measured and fixed once before (`split_at_crossings`'
-/// `end_ds`: "1.5M `dir_sign` calls where 113k are distinct").
+/// comparison (measured on `split_at_crossings`, which asks the same kind of question: 1.5M
+/// `dir_sign` calls where 113k are distinct).
 pub(crate) fn dir_at(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -486,17 +483,15 @@ pub(super) fn turn_between(
 /// assertion is sensitive to that factor**, which is not the same as "no unit fixture reaches a
 /// reversed face".)
 ///
-/// ★★★ **Three more places read the direction's representation, and they are not this atom.** They
-/// used to be inline — this paragraph was the only thing that found them, and it **undercounted**:
-/// it listed two, and a sweep of `plane_pair_dir_sign`'s consumers turned up a third in another
-/// file. Each is a named function beside this one now, so the next widening is a `match` the
-/// compiler points at rather than a list a reader has to trust:
+/// ★★★ **Three more places read the direction's representation, and they are not this atom.** Each
+/// is a named function beside this one, so the next widening is a `match` the compiler points at
+/// rather than a list a reader has to trust:
 /// - [`antiparallel`] — the π pole in `angular_order` ("same wall, opposite sign"), which for arcs
 ///   becomes "same circle, opposite tangent";
 /// - [`parallel_carriers`] — [`loop_winding`]'s walk-back, which becomes "are the tangents
 ///   parallel";
 /// - [`parallel_carriers`] again — `arrangement::split_at_crossings`' **wall direction families**
-///   (`Wall.dir`), the one the old list missed. It sits in a different file and asks the same
+///   (`Wall.dir`). It sits in a different file and asks the same
 ///   question with a weaker premise (its two walls share no point), which is why one predicate
 ///   serves both and the premise stays with the caller.
 ///
@@ -525,9 +520,8 @@ pub(crate) fn turn(
         ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
         // ★★★ **A segment against an arc needs no new primitive, and the algebra says why.**
         // A circle bound's plane is ⊥ to the axis, so `n_P ∥ m` — see
-        // [`class_carries_circle`] for what actually holds that (the gate, not this module; the
-        // sentence that used to stand here named `circle_on_class`, which neither owns the rule
-        // nor answers `None` — it answers `Ok(Vec::new())`). The arc's tangent is
+        // [`class_carries_circle`] for what actually holds that (the gate, not this module). The
+        // arc's tangent is
         // `T = ±(m × r)` with `r = x − c`, the segment's direction
         // `d = n_P × n_carrier` is ⊥ to `m`, and BAC-CAB collapses the cross product:
         //
@@ -633,7 +627,7 @@ fn ruling_line_turn(
 /// |---|---|---|
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
-/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ It used to be *accepted* there: the contour count passes it, and `arrangement::walk_cells`' Euler condition — added because of this probe — is what refuses it |
+/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ The contour count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
 /// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
 /// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
 ///

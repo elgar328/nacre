@@ -63,8 +63,8 @@ pub(crate) fn classify_cycles(
     //    over its arc steps, read off the split's order table and no coordinate. `+1` is a lower
     //    boundary walked forward, `−1` an upper one walked backward, `0` a hole; a simple cycle
     //    on the lateral cannot wind twice. So the region's two rims are the `+1` cycle and the
-    //    `−1` cycle, each a whole circle or a **chain** — and the "one rim of each sense" rule
-    //    the whole-circle pass used to abstain on is this rule with the chains left out.
+    //    `−1` cycle, each a whole circle or a **chain** — the whole-circle case is this rule
+    //    with the chains left out.
     struct Cycle {
         ring: Ring,
         w: i32,

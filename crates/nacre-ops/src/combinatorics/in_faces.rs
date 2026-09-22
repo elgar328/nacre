@@ -130,12 +130,11 @@ pub(crate) fn point_in_faces_rat(
                     // loud. A **polygon** face of a valid solid has no such ring, so saying so is
                     // free.
                     //
-                    // ★★★★★ **It used to stand before the fork, and that read a curved face as
-                    // degenerate.** A half-disc cap's ring is two edges — an arc and its chord —
-                    // which is a perfectly good boundary and not a polygon at all; the sentence
-                    // "a face of a valid solid has no such ring" was only ever true of the road
-                    // *below*. Measured: the moment a wall boss's caps were given a witness, six
-                    // census cells came here and were refused by name for being what they are.
+                    // ★★★★★ **After the fork, not before it.** A half-disc cap's ring is two edges
+                    // — an arc and its chord — which is a perfectly good boundary and not a polygon
+                    // at all; "a face of a valid solid has no such ring" is true only of the road
+                    // *below*. Measured with the check before the fork: six census cells with a
+                    // wall boss's caps come here and are refused by name for being what they are.
                     if r.len() < 3 {
                         return Err(reject(RejectReason::DegenerateRing));
                     }
@@ -426,11 +425,11 @@ pub(crate) fn loop_parity(
 ///
 /// Each root asks the face by [`loop_parity`] **before** the half — a root off the face is not
 /// a crossing whichever side it is on, and a root on the face at the ray's own origin is the
-/// query on the other component's surface (`Graze`). ★ This used to be a banded arm reading a
-/// band's two rims as an axial span (the crossing between them iff on opposite sides of the two
-/// rim planes) and abstaining on every other lateral by name (`MissOnly`); the two whole-circle
-/// loops say the same thing — measured identical on 2,180 lattice rays, every root and every
-/// graze — and a panel, a chain rim or a hole is now read rather than passed over.
+/// query on the other component's surface (`Graze`). ★ Read as loops, not as a band's two rims
+/// taken for an axial span (the crossing between them iff on opposite sides of the two rim
+/// planes): the two say the same thing on a band — measured identical on 2,180 lattice rays,
+/// every root and every graze — and the loops also read a panel, a chain rim or a hole, where the
+/// span has nothing to say.
 ///
 /// `None` is checked-`Rat` arithmetic that could not answer — an honest decline, never a guess.
 pub(crate) fn lateral_face_crossings(
@@ -555,11 +554,11 @@ pub(crate) fn point_in_component(
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 // `L` is parallel to `q` — and possibly **in** it, which is not the same thing.
                 // A coplanar ray never passes from one side of this face to the other, so zero
-                // crossings is the right count and always was. What the old `continue` also
-                // swallowed is the *query*: if it lies on this face, "is the query inside the
-                // component" has no answer at all, and skipping the face answers it anyway. That
-                // is the same proposition the `fwd == 0` arm below abandons for a transversal
-                // plane — one rule that had only one of its two spellings.
+                // crossings is the right count. What a bare `continue` would also swallow is the
+                // *query*: if it lies on this face, "is the query inside the component" has no
+                // answer at all, and skipping the face would answer it anyway. That is the same
+                // proposition the `fwd == 0` arm below abandons for a transversal plane — one rule,
+                // both spellings.
                 //
                 // ★ **Unfired, and measured to be.** 26 rays in the suite lie in a face's plane
                 // and **none** of them is on that face's material. (An earlier count said two;

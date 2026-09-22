@@ -233,7 +233,7 @@ pub(crate) struct FaceLoops {
 /// reduction comes along for free.
 pub(crate) struct TraceInput {
     /// Each operand's faces: the `planes`-table slot and that face's loops, in the order the
-    /// shells list them — the walk `trace_one` used to do over `Model`.
+    /// shells list them.
     ///
     /// **Compact on purpose.** This was a full-length `Vec<FaceLoops>` beside a list of slots — one
     /// row per table slot whether or not that slot's face was in the input. Pairing the slot with
@@ -339,8 +339,8 @@ pub(crate) fn hole_rings(
 /// ★ **A plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
 /// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
 /// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
-/// corner and its name is the face's own plane with the two neighbours' (what the loop used to
-/// build, bit for bit, and no judgement asked). Four or more is a concurrency: one name, and the
+/// corner and its name is the face's own plane with the two neighbours' (no judgement asked).
+/// Four or more is a concurrency: one name, and the
 /// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table.
 ///
 /// Naming from the loop instead — the face's own plane and the two neighbours the
@@ -408,19 +408,17 @@ fn loop_triples(
         // vertex already carries its own name) and somewhere to write a curved carrier
         // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the circle.
         //
-        // ★★★★★ **And the face itself may be the cylinder now.** A lateral face's *hole* is a loop
+        // ★★★★★ **And the face itself may be the cylinder.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
         // are `plane ∩ plane ∩ cylinder`, the very shape [`pierce_name_from_def`] restates. The
         // only loop of a lateral face this road cannot walk *whole* is its **outer** one, whose
         // slit edges are self-adjacent (`other` gives back `p`) and whose corners are therefore
         // not three-surface points; `lateral_cycles` cuts it at the slits first.
-        // ★★ **The corner is where half-edge `i` starts.** It used to be "the one vertex the two
-        // edges share", which is the same vertex wherever that is unique — a loop's edge `i`
-        // starts where edge `i − 1` ends (validate's `OpenLoop`) — and no vertex at all for a
-        // two-gon (an arc and its chord share both ends). The half-edge already knows; asking the
-        // two edges' bounds instead was a second spelling that failed on the one shape where the
-        // first does not. `boolean` does not validate its inputs, so the invariant this leans on
-        // is restated here, where it is leaned on.
+        // ★★ **The corner is where half-edge `i` starts** — not "the one vertex the two edges
+        // share", which is the same vertex wherever that is unique (a loop's edge `i` starts where
+        // edge `i − 1` ends, validate's `OpenLoop`) and no vertex at all for a two-gon (an arc and
+        // its chord share both ends). The half-edge already knows. `boolean` does not validate its
+        // inputs, so the invariant this leans on is restated here, where it is leaned on.
         let corner = crate::he_start(model, hes[i]);
         debug_assert_eq!(
             if hes[(i + n - 1) % n].forward {
@@ -506,16 +504,15 @@ fn loop_triples(
         // ★ **The vertex names itself, not the face loop.** The classes through this
         // corner are the classes of its incident faces, which the incidence table knows, and the
         // name is [`canonical_triple`] of that set. Three classes is the ordinary corner, and its
-        // name is exactly the `[near, far, wall]` this arm used to build (the face's own plane and
-        // both neighbours' are the three) — no judgement is asked, and the name moves by no bit.
+        // name is the face's own plane and both neighbours' — no judgement is asked.
         // Four or more is a concurrency: **one** name for every loop that visits the vertex, and
         // the set is handed on (`concurrencies`) so the arrangement's alias table starts from it.
         //
-        // It used to build `[near, far, wall]` and fall back to the incident set only when the two
-        // neighbours were one plane; a four-plane vertex whose neighbours differ therefore got a
-        // name per face — four names, and from the face whose two edges ride the planes sharing a
-        // line with its own, a triple that names no point. The judge read that «point» as lying
-        // on every class, and the alias table folded everything onto a corner elsewhere.
+        // Building `[near, far, wall]` per face — falling back to the incident set only when the
+        // two neighbours are one plane — gives a four-plane vertex whose neighbours differ a name
+        // per face: four names, and from the face whose two edges ride the planes sharing a line
+        // with its own, a triple that names no point. The judge reads that «point» as lying on
+        // every class, and the alias table folds everything onto a corner elsewhere.
         let mut classes: Vec<usize> = vertex_face_indices(corner, inc)
             .into_iter()
             .filter_map(|k| match plane_ix[k] {

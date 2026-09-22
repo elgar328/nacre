@@ -128,8 +128,8 @@ impl NodeId {
 /// eight more the last time — which is the measure of a check nobody runs.
 ///
 /// ★★★ **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
-/// the sites in `arrangement` that need the `Pierce` half — `arc_split_witness`' `separates`
-/// closure, two inside `split_circles`, and the seam table — go through the twin rather than
+/// the sites in `arrangement` that need the `Pierce` half — two inside `split_circles`, and the
+/// seam table — go through the twin rather than
 /// asking for the whole [`NodeKind`].
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n.kind() {
@@ -330,13 +330,11 @@ pub(crate) fn ruling_side(
 /// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
 ///
 /// ★★★★★ **A side is a fact about the point and the wall, not about the point's own
-/// name.** Two sites used to read it off the name's root instead (`QuadRoot::Double ⇒ 0`:
-/// [`crate::arrangement::node_ruling_side`] and `curved_wall`), which is
-/// the same statement *only*
+/// name.** Reading it off the name's root (`QuadRoot::Double ⇒ 0`) is the same statement *only*
 /// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
-/// minted on. It is not the same statement once the alias table can hand back a representative
-/// with another pair (a tangent corner a class through the axis also passes through, this cell's
-/// whole subject) or once a Double-rooted corner is asked about a *different* wall: then the
+/// minted on. It is not the same statement once the alias table hands back a representative with
+/// another pair (a tangent corner a class through the axis also passes through) or once a
+/// Double-rooted corner is asked about a *different* wall: then the
 /// root says `0` for a point that sits squarely on one of that wall's two rulings — silently, and
 /// with the sign the caller needs. Asked here, of the point, both cases answer correctly and the
 /// tangent wall still answers `0`.
@@ -402,8 +400,9 @@ pub(crate) struct RingEdge {
     /// taken at the *wrong* node was unspellable-looking but perfectly legal. With both names here,
     /// [`dir_at`] can check that the node it is asked about is actually on this edge.
     ///
-    /// ★ Measured before it was asserted: 153,798 rings in the suite, **0** where an edge's far end
-    /// is not the next edge's start. "A ring is a chain" was a producer's promise until now.
+    /// ★ Measured: 153,798 rings in the suite, **0** where an edge's far end is not the next
+    /// edge's start — so "a ring is a chain" is asserted here rather than left a producer's
+    /// promise.
     pub to: NodeId,
     /// What carries the edge — a plane's meet with `P`, or a circle ([`Carrier`]).
     pub carrier: Carrier,
@@ -472,8 +471,8 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// ★★★★★ **Which half of this rule decides an answer, measured by breaking each.** Candidates
 /// number `2` on 9,348 calls across the suite, so "smallest" is not vacuous *as a choice* — yet
 /// taking the **largest** instead leaves the bit census **identical**. That is not a limp
-/// instrument: it is the first measurement of the invariant this rule rests on, *"under a
-/// concurrency several qualify and any will do"*, which until now was only asserted. What does
+/// instrument: it measures the invariant this rule rests on, *"under a concurrency several
+/// qualify and any will do"*. What does
 /// decide is the **cut test**: invert it and the census collapses from 269 rows to 5. So the
 /// smallest rule buys replay stability, and the cut test buys correctness.
 pub(crate) fn pin_on_line(

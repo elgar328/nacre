@@ -84,8 +84,7 @@ pub(super) fn split_circles(
         for (si, sg) in segs.iter().enumerate() {
             // A segment whose two ends are one point cuts nothing. Asked by **name**, which is the
             // identity: two spellings of one point are refused upstream, not tolerated here.
-            // ☑ Measured unexercised, as its coordinate-comparing predecessor presumably was — the
-            // census is bit-identical across the change, which is what says the two agree here.
+            // ☑ Measured unexercised.
             if sg.end[0] == sg.end[1] {
                 continue;
             }

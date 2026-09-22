@@ -18,12 +18,11 @@
 //! answer was wrong *silently* — four times on this branch, most recently as 117748 predicate calls
 //! that read "different plane" for two faces of one plane and answered from rounding noise.
 //!
-//! That used to be held by a naming convention (`fp` / `fc`) and a debug-time net. It is now the
-//! type: the predicates here take [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
+//! That is held by the type, not by a naming convention (`fp` / `fc`): the predicates here take [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
-//! **Exception:** the code that *defines* the classes (`crate::fill_classes` →
-//! `crate::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
+//! **Exception:** the code that *defines* the classes (`planes::plane_classes` →
+//! `planes::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
 use crate::planes::{ClassIx, WorkingPlane, edge_incidence};
@@ -126,12 +125,10 @@ pub(crate) struct ArcDir {
     axis: [nacre_exact::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
-    /// ★★ **It used to say "measured unexercised, `true` on every class the corpus reaches", and
-    /// that went stale the moment a new population arrived.** ☑ Re-measured with the hole trace in:
-    /// [`smooth_extremum_winding`] reads it `false` on half its firings, and dropping it there moves
-    /// the chained fixtures' wall. What the old note still gets right is that no *fixture* forced
-    /// the factor into being — the algebra did — and [`arc_side`] records which factors its own
-    /// population locks.
+    /// ★★ ☑ Measured: [`smooth_extremum_winding`] reads it `false` on half its firings, and
+    /// dropping it there moves the chained fixtures' wall. No *fixture* forced the factor into
+    /// being — the algebra did — and [`arc_side`] records which factors its own population
+    /// locks.
     axis_up: bool,
     /// Travel runs counter-clockwise about the circle's own normal (the axis).
     ///

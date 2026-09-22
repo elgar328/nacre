@@ -28,7 +28,7 @@ pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) 
 /// ★★★★★ **The second half of a correspondence the forward direction gets for free.** When a
 /// boolean *mints* a [`nacre_topo::Vertex::Pierce`] it writes the two planes as **its own
 /// classes' representative surfaces**, so restating class order as handle order is the only
-/// correction it needs ([`nacre_topo::QuadRoot::canonical`], which `assemble` calls). Coming back
+/// correction it needs ([`nacre_topo::QuadRoot::canonical`], which the assembly calls). Coming back
 /// the other way the handles are **given**, and they may be a surface that merged into a class
 /// under a different representative — and, because a class holds faces whose normals oppose, under
 /// the **opposite sign**. `Vertex::Pierce`'s own doc says this correspondence "has to be
@@ -167,14 +167,10 @@ pub(crate) fn class_coeffs_rat(
 /// tangency because *its* coordinate happens to be rational: a function right for one root and not
 /// the other is the "sometimes right" trap.
 ///
-/// ★★★ **And the live caller names that `None` wrongly for this cause — reachably, now.**
-/// `arrangement::split_circles` asks it of both ends of every segment and turns `None` into
-/// `WitnessNotRational`, whose sentence is "a wider rational would lift this" — **false** for a
-/// pierce point, which has no rational coordinate at any width. This is where every chained-cylinder
-/// operand stops today, so the wrong sentence is the one a user meets. The fix is structural rather
-/// than a rename: that caller is being taught to ask for an **order** instead of a coordinate, and
-/// then it will not ask this at all. (The predecessor this paragraph used to name,
-/// `circles_meet_no_segment`, no longer exists.)
+/// ★★★ **So a caller must not read that `None` as a width decline** (`WitnessNotRational`, "a
+/// wider rational would lift this", is **false** for a pierce point).
+/// `arrangement::split_circles` asks it of both ends of every segment and uses the answer only as
+/// a filter; the order along the segment is asked without it.
 pub(crate) fn node_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     n: NodeId,
@@ -262,8 +258,8 @@ pub(crate) fn pierce_point(
 /// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
 /// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
 /// This answers a different question — "is there a rational point *here* to cast from?" — and is
-/// total over its input: the corners it cannot state simply do not join the probe list, the way a
-/// chord's midpoint ([`crate::arrangement`]'s `chord_midpoint_rat`) abstains per edge. A
+/// total over its input: the corners it cannot state simply do not join the probe list, the way
+/// [`edge_interior_points`] abstains per edge. A
 /// half-cylinder prism's cap has two corners, both pierce, both rational, and no other point.
 pub(crate) fn pierce_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
@@ -283,13 +279,12 @@ pub(crate) fn pierce_coords_rat(
 /// **Every rational point that names the interior of this *straight* ring edge** — the one rule,
 /// with one arm per way the two ends can be described.
 ///
-/// ★★★★★ **One sentence, which must not be four spellings.** With `nesting`'s witness supply and
-/// its diagnostic twin each chaining `chord_midpoint_rat` after `edge_interior_rat` **verbatim**,
-/// its instrument counting the same producers a third time, and the component road one dimension
-/// up having no edge witness at all, a planar component whose every corner grazes has nothing left
-/// to say and refuses `NoClearRay` where the shape's truth is `SelfTouchingResult`. The two names
-/// were never two rules: the "chord" one **refuses `Carrier::Arc`** in as many words, so both were
-/// always *a point inside a straight edge*, differing only in how the ends were named.
+/// ★★★★★ **One sentence, which must not be four spellings.** "A chord's midpoint" and "an edge's
+/// interior point" are one rule — a chord rule refuses `Carrier::Arc` in as many words, so both
+/// are *a point inside a straight edge*, differing only in how the ends are named. Spelled per
+/// supply, it leaves a road with no edge witness at all, and a planar component whose every
+/// corner grazes then has nothing left to say and refuses `NoClearRay` where the shape's truth is
+/// `SelfTouchingResult`.
 ///
 /// | arm | the ends | why it is inside |
 /// |---|---|---|
@@ -311,7 +306,7 @@ pub(crate) fn pierce_coords_rat(
 /// answers, and **~10⁴** where only the third — by a wide margin the
 /// largest supply. (Three runs of the same tree: 10,963 / 13,027 / 11,075 for the third.)
 ///
-/// ★ **Order is today's**: conjugate, then between, then the rational midpoint (which is disjoint
+/// ★ **The order**: conjugate, then between, then the rational midpoint (which is disjoint
 /// from both — a pierce end is not rational).
 ///
 /// **Every arm lands *on* the edge**, which is what lets the component road wrap these in

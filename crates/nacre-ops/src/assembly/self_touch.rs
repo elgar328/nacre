@@ -127,11 +127,10 @@ pub(super) fn tangency_reject(
 
 /// Push the reconstructed result and supersede the inputs.
 ///
-/// ★ **The operands retire in exactly one place, and it is after the result is accepted.** The
-/// retire used to be copied into each arm that produced solids, which meant every future reject had
-/// to know whether it stood before or after its arm's copy. Hoisting it here makes "a reject leaves
-/// the model alone" true of the *shape* of this function rather than of a fact about where the
-/// rejects happen to sit today. [`reconstruct`] does the work and never touches the live set.
+/// ★ **The operands retire in exactly one place, and it is after the result is accepted.** Copied
+/// into each arm that produces solids, every reject would have to know whether it stands before or
+/// after its arm's copy; in one place, "a reject leaves the model alone" is true of the *shape* of
+/// this function rather than of where the rejects happen to sit. [`reconstruct`] does the work and never touches the live set.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_fuse_cut(
     model: &mut Model,

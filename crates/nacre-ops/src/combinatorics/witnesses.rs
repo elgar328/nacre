@@ -229,8 +229,8 @@ pub(crate) fn coord_probes(
             continue;
         };
         // ★★★★★ **A cut cap is a disk too, and it names its own interior the same way.** The
-        // witness has always been the circle's centre; what was missing is that a face whose
-        // boundary a wall has cut still *has* a circle ([`face_circle`]), and its centre may then
+        // witness is the circle's centre, and a face whose boundary a wall has cut still *has* a
+        // circle ([`face_circle`]); its centre may then
         // lie **on** the chord rather than inside the face — exactly what happens when the axis
         // rides the wall, which makes the chord a diameter. So the centre is offered as one
         // candidate among several and the **ring itself** says which one is inside.

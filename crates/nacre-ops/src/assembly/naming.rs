@@ -25,7 +25,7 @@ pub(crate) enum Def {
 }
 
 pub(crate) struct Named {
-    /// The grouping, **held** — raised where the old code raised it, deep in the minting.
+    /// The grouping, **held** — raised deep in the minting.
     /// (`pub(crate)`: the grouping fence reads the held result directly.)
     pub(crate) grouping: Result<Grouping, BoolError>,
     pub(crate) group_of: Vec<usize>,
@@ -115,10 +115,9 @@ pub(crate) fn name_result_vertices(
     // themselves) is scoped to one group, so no result solid can be named by — or share a handle
     // with — a solid it merely touches.
     //
-    // ★★ **Held, not raised.** A failed grouping is reported further down, where the old code
-    // reported it, and until then every face is one group — which is exactly the keying this
-    // function used before groups existed. So a boolean that declines pushes the arena cells it
-    // always did (`replay::a_late_reject_is_not_index_neutral` measures that).
+    // ★★ **Held, not raised.** A failed grouping is reported further down, and until then every
+    // face is one group (`replay::a_late_reject_is_not_index_neutral` measures the arena a
+    // declining boolean leaves).
     let grouping = group_faces(jd, faces, cyls, cut_rims);
     let group_of: Vec<usize> = match &grouping {
         Ok(g) => g.group_of.clone(),
@@ -130,9 +129,8 @@ pub(crate) fn name_result_vertices(
     // body. The moment it is two, the tip of one body's knife edge can land in the middle of
     // another body's wall: a corner of the first, a straight run of the second. Left in the
     // second's ring it is a vertex with no name there — only two of the three planes through it
-    // bound that solid — and the whole-result derivation used to fill the gap by borrowing the
-    // *other* body's plane, which is exactly the defect scoping the derivation closes. So each
-    // solid now drops the nodes that are straight runs **for it**.
+    // bound that solid — and a whole-result derivation fills the gap by borrowing the *other*
+    // body's plane. So each solid drops the nodes that are straight runs **for it**.
     let per_solid: Option<Vec<LocalFace>> = match &grouping {
         Ok(g) if g.n > 1 => {
             let mut v = faces.to_vec();
@@ -151,8 +149,7 @@ pub(crate) fn name_result_vertices(
     // whichever local derivation happens to fail first on its unnameable corners: a
     // self-touching body's pinch line cannot be honestly named by any face-local rule (its
     // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
-    // A held grouping error stays held (raised further
-    // down, where the old code raised it); the self-touch question is only askable of a
+    // A held grouping error stays held (raised further down); the self-touch question is only askable of a
     // grouping that answered.
     if let Ok(g) = &grouping {
         let body_comps: Vec<Vec<usize>> =
@@ -172,12 +169,6 @@ pub(crate) fn name_result_vertices(
     // itself, and `transform`'s remap (which walks this solid's own face surfaces) refuses it two
     // operations later — a reject whose cause is here.
     //
-    // So the triple is derived the way this function already derives an edge's carriers
-    // (`pair_surfs` below: "read off the whole result, not guessed from one side") and the way
-    // `component_is_outward_tol` derives a corner's: **one incident face, plus the far planes of
-    // its two edges at that corner.** Those three are result faces by construction, so
-    // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
-    // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
     // ★ **A result vertex is defined by the canonical triple of its incident faces'
     // planes.** Every face whose ring visits the node passes through the point, so the planes of
     // those faces are the result planes through it, and `canonical_triple` picks the name — the

@@ -13,18 +13,16 @@ use super::*;
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-/// ★★ **`None` where the node is not three planes.** A [`NodeKind::Pierce`] *is* a point, but its
-/// coordinates are quadratic-irrational and `orient3d` is the plane-triple judge — so this says
-/// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
-/// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
+/// ★★ **Both kinds of node answer.** A three-plane node reads `orient3d`; a [`NodeKind::Pierce`]
+/// reads one `a + b√c` sign (its arm below). `None` is a missing description, which callers turn
+/// into their own vocabulary (the tracer a [`crate::DeclineKind`], the ray caster a reject) —
+/// which is why it is not a reject here.
 ///
-/// ★★★★★ **That arm used to be unexercised, and the rung that took `plane_ring`'s checks away
-/// fired it — with a wrong sign.** The scan road now walks rings whose corners a cylinder made,
-/// and the first thing that came back was a pierce corner on the *opposite* side of its own face's
-/// plane from its four plane-named neighbours (measured: `sides = [1, -1, -1, -1, -1, 1]`, the two
-/// `1`s being the pierce nodes). The scan read those as crossings that are not there and named one
-/// with a plane triple that never met, and `orient3d` answered `D = 0`. ★ I reported that panic as
-/// a hole upstream in the naming; every ring name measured correct and the fault was here.
+/// ★★★★★ **The pierce arm is exercised, and its sign is not its neighbours'.** The scan road walks
+/// rings whose corners a cylinder made, and a pierce corner can sit on the *opposite* side of its
+/// own face's plane from its plane-named neighbours (measured: `sides = [1, -1, -1, -1, -1, 1]`,
+/// the two `1`s being the pierce nodes). Read wrongly, those are crossings that are not there,
+/// named with a plane triple that never meets, and `orient3d` answers `D = 0`.
 pub(crate) fn side_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -56,13 +54,13 @@ pub(crate) fn side_of(
 /// **What [`ring_against_plane`] found** — three outcomes, and they are three because collapsing
 /// any two would put one name on unlike facts.
 ///
-/// ★ `AllOn` used to be the walk's `None`, and a node it cannot read would have had to share it.
+/// ★ `AllOn` is not the walk's `None`, which a node it cannot read would then have to share.
 /// One says *the ring lies in the plane* (a shape), the other *this walk has no vocabulary for a
 /// node* (a road) — and the four callers do different things with each.
 ///
-/// ★ There used to be a fourth outcome, `CurvedDeparture`: a ring leaving the meet along a curved
-/// edge between two on-meet nodes, whose side the walk could not name. The caller names it now
-/// ([`EdgeMeet::Departs`]), and the walk reads the departure as one more off-line entry.
+/// ★ A ring leaving the meet along a curved edge between two on-meet nodes is not an outcome of
+/// its own: the caller names its side ([`EdgeMeet::Departs`]), and the walk reads the departure as
+/// one more off-line entry.
 pub(crate) enum RingWalk {
     /// Where the ring meets the line, in ring order from the first off-`q` node.
     Met(Vec<Feature>),
@@ -77,10 +75,10 @@ pub(crate) enum RingWalk {
     AllOn,
     /// A node whose side this walk cannot answer.
     ///
-    /// ★★ **It used to mean "a [`NodeKind::Pierce`]", and it does not any more.** [`side_of`]'s
-    /// pierce arm answers, so a cylinder's corner is read like any other; what is left here is
-    /// that arm's own `None` — a class with no narrow rational description, a cylinder missing
-    /// from the table. ☑ Still never produced: measured **0** across the workspace suite.
+    /// ★★ **Not "a [`NodeKind::Pierce`]".** [`side_of`]'s pierce arm answers, so a cylinder's
+    /// corner is read like any other; this is that arm's own `None` — a class with no narrow
+    /// rational description, a cylinder missing from the table. ☑ Never produced: measured **0**
+    /// across the workspace suite.
     Unnameable,
 }
 
@@ -97,14 +95,12 @@ pub(crate) enum Feature {
     /// `len` consecutive nodes from `first` lie *on* `q`, **and so do the edges between them** —
     /// an on-line interval rather than a point.
     ///
-    /// ★★★★★ **That second half is a fact the walk now establishes, not one it used to assume.**
-    /// It read "`len >= 2` means the edges between them lie on the line too", which is a claim about
-    /// *nodes* being enough: two points fix a straight line, so a straight edge between two on-`q`
-    /// nodes is on it — and a **curved** one departs and comes back, touching `q` only at its ends.
-    /// A face's boundary that runs `… → node → arc → node → …` was read as one interval and stated
-    /// a graze over ground it does not bound. The run is cut at each departure now, and the
-    /// departure's own side flanks the pieces ([`EdgeMeet::Departs`]), so the sentence above is
-    /// true again.
+    /// ★★★★★ **That second half is a fact the walk establishes, not one it assumes.** Two points
+    /// fix a straight line, so a straight edge between two on-`q` nodes is on it — and a **curved**
+    /// one departs and comes back, touching `q` only at its ends: read as one interval, a boundary
+    /// running `… → node → arc → node → …` would state a graze over ground it does not bound. The
+    /// run is cut at each departure, and the departure's own side flanks the pieces
+    /// ([`EdgeMeet::Departs`]).
     ///
     /// `flanks_differ` is the whole decision: the two off-line neighbours bracketing the run sit on
     /// **opposite** sides, so the ring genuinely crosses the line here; equal sides mean it touched
@@ -283,7 +279,7 @@ pub(crate) fn ring_against_plane(
 ///
 /// `v` must not lie *on* `ring` — a hole ring never touches the outer ring it sits in, and a seam
 /// loop never touches `∂f` — and this is where it is finally checked: an intersection at
-/// `X == v` strictly inside an edge is the `POINT_ON_RING` reject.
+/// `X == v` strictly inside an edge is the `PointOnRing` reject.
 pub(crate) fn point_in_ring(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,

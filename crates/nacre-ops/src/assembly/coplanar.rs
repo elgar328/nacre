@@ -7,9 +7,9 @@ use super::*;
 /// drop the ones that appear as an opposed pair (`a→b` together with `b→a`), and re-thread what is
 /// left. Nothing has to be spliced, which is what lets one rule cover every way the pieces can meet
 /// — sharing an edge, a hole filled exactly by a neighbour, a hole filled by *several* neighbours,
-/// and any chain of those (one erase settles them all at once). The earlier version stitched loops
-/// with `splice_along` and so had to special-case "exactly two hole-free faces across one edge",
-/// leaving `// holed — deferred` for the rest; a flush tool cap then stayed two faces forever.
+/// and any chain of those (one erase settles them all at once). Stitching loops instead has to
+/// special-case "exactly two hole-free faces across one edge" and leaves the rest unmerged — a
+/// flush tool cap would stay two faces forever.
 ///
 /// A group is one plane class, one outward direction, one `flip` — mixing any of those would fold
 /// material the wrong way — split further into **edge-connected components**, because faces that
@@ -32,11 +32,11 @@ pub(crate) fn unify_coplanar_faces(
     let n = faces.len();
     // One plane class, one flip.
     //
-    // There used to be an outward-direction component here, and a `canon` lookup beside it. Neither
-    // separated anything: `plane_idx` names a plane, so its class is itself, and the component's dot
-    // product was `|n|² > 0` — identically true. It was redundant with `flip` besides, which is
-    // already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
-    // `(the plane's frame, flip)`, so two faces in one group orient the same way by construction.
+    // No outward-direction component and no `canon` lookup in the key: `plane_idx` names a plane,
+    // so its class is itself, and an outward component's dot product is `|n|² > 0` — identically
+    // true. `flip` is in the key, and `assemble_fuse_cut` derives a result face's `Orientation`
+    // from exactly `(the plane's frame, flip)`, so two faces in one group orient the same way by
+    // construction.
     let group_key = |lf: &LocalFace| -> (usize, bool) { (lf.surf.plane(), lf.flip) };
 
     // Edge-connected components within a group.
@@ -188,11 +188,11 @@ type RegionRings = (Bound, Vec<Bound>);
 /// claim the same directed edge (they overlap rather than tile). Either way the caller emits the
 /// group as-is.
 ///
-/// ★ **Why abstaining is safe is not "merging is only tidiness"** — that was this pass's old
-/// charter and the contact fuse refuted it: unmerged coplanar faces leave the corners on a
+/// ★ **Why abstaining is safe is not "merging is only tidiness"** — the contact fuse refutes
+/// that: unmerged coplanar faces leave the corners on a
 /// dropped wall naming a plane the result has no face on, and the assembly refuses the whole
-/// boolean. What makes abstention safe is narrower: emitting the group as-is puts the pipeline
-/// exactly where it stood *before this pass ran*, so nothing can come out of it that would not
+/// boolean. What makes abstention safe is narrower: emitting the group as-is leaves the pipeline
+/// exactly where it would stand *without this pass*, so nothing can come out of it that would not
 /// have come out without the pass at all. The whole-result judgements ([`self_touch_reject`],
 /// the closed-shell guard, the every-vertex-re-solves check) then name the shape with their own
 /// sentences — and with a witness, which a capability name raised from here has none of.
@@ -247,12 +247,11 @@ fn merge_component(
     }
     // ★★ **Two faces claiming one side is an abstention, not a refusal** — the same shape the
     // figure-8 case takes, and for the same reason: this guard protects *the merge*, not the
-    // result. Emitting the group as-is puts the pipeline back exactly where it stood before this
-    // cleaning pass ran, and the whole-result judgements (`self_touch_reject`, the closed-shell
+    // result. Emitting the group as-is leaves the pipeline exactly where it would stand without
+    // this cleaning pass, and the whole-result judgements (`self_touch_reject`, the closed-shell
     // guard, `check_result_topology`'s plane-self edge guard) name the shape with their own
     // sentences — and with a witness. Asked **carrier-aware and after the exact erase**, so a
-    // chord and an arc sharing a direction (the flush pair — the population that used to abstain
-    // here into an invalid ship) are no longer a collision.
+    // chord and an arc sharing a direction (the flush pair) are not a collision.
     if cnt.values().any(|&c| c > 1) {
         return Ok(None);
     }
@@ -340,15 +339,15 @@ fn merge_component(
         }
         cycles.push(Ring::new(nodes, walls));
     }
-    // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
-    // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
+    // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in.
+    // (`plane_idx` names a plane, so there is nothing to fold first.)
     let wc = group[0].surf.plane();
     let mut outers: Vec<Ring> = Vec::new();
     let mut holes: Vec<Ring> = Vec::new();
     for cyc in cycles {
-        // ★ Built from the walls the cycle carries, not from the node names. This is where a
-        // four-plane concurrency used to break the merge: a canonical name need not mention the
-        // plane its edge rides, and two names can share nothing but `wc`.
+        // ★ Built from the walls the cycle carries, not from the node names, which break the
+        // merge at a four-plane concurrency: a canonical name need not mention the plane its edge
+        // rides, and two names can share nothing but `wc`.
         let ring = cyc.edges(jd, cyls, Some(wc))?;
         match combinatorics::loop_winding(jd, cyls, wc, &ring)? {
             1 => outers.push(cyc),
@@ -451,7 +450,7 @@ fn merge_component(
             // (a slot's stadium, four tangent corners and nothing else): its witnesses
             // are the hole's rational corners, pierce ones included
             // (`combinatorics::pierce_coords_rat`). Handing an empty probe list to the ray road
-            // said `NoClearRay` for a ray never cast; the engine names an empty offer
+            // would say `NoClearRay` for a ray never cast; the engine names an empty offer
             // `RingHasNoWitness` and an exhausted one `NoClearRay`, which are different facts.
             // ★ The same engine the arrangement's nesting asks — one rule, one set of
             // witnesses.
@@ -479,8 +478,7 @@ fn merge_component(
             .push(Bound::Ring(hole));
     }
     // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
-    // above cannot see it — which is why this pass used to skip such a component altogether, and
-    // why lifting that skip without this loop drops the hole and opens the shell (measured).
+    // above cannot see it, and without this loop the hole drops and the shell opens (measured).
     // ★ **True of nodes, with a consequence that does not follow**: "no node" is
     // not "no boundary point that can be named" — a circle
     // has four exact ones — its rim over the cylinder's own unit frame. The kernel already mints
@@ -565,20 +563,18 @@ fn merge_component(
 /// Drop straight-angle vertices: a node whose only two neighbours across **all** rings continue
 /// along the same line.
 ///
-/// ★ **The test is the two incident edges' walls**, which the rings carry. It used to be
-/// combinatorial on the names — "the node is on a line iff some pair of its planes is shared by
-/// both neighbours" — which is sound only while every vertex lies on exactly three planes, the same
-/// assumption that broke the merge under a four-plane concurrency. The walls say it outright.
+/// ★ **The test is the two incident edges' walls**, which the rings carry — not combinatorial on
+/// the names ("the node is on a line iff some pair of its planes is shared by both neighbours"),
+/// which is sound only while every vertex lies on exactly three planes. The walls say it
+/// outright.
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
 ///
 /// ★★ **Arc-bearing rings flow through here, and the carrier keeps equality honest**.
-/// While the wall was the `usize::MAX` sentinel, two *consecutive arcs* compared as "same wall"
-/// and the pierce vertex between them would have dissolved — a recorded hazard, unfired only
-/// because in both arc fixtures a chord or a segment sits between any two arcs. `Wall`'s derived
-/// equality killed it structurally: arcs of different circles, or of one circle in different
-/// directions, now compare unequal. The one pair still equal — two *same-direction* arcs of one
+/// With one sentinel wall for every arc, two *consecutive arcs* would compare as "same wall" and
+/// the pierce vertex between them would dissolve. `Wall`'s derived equality rules that out: arcs
+/// of different circles, or of one circle in different directions, compare unequal. The one pair still equal — two *same-direction* arcs of one
 /// circle — is the pair for which "no turn" is geometrically true on this face, so equality
 /// answers right there too; a crossing at such a vertex is kept by the other faces' rings
 /// (degree > 2), the function's own rule. No population produces that consecutive pair today.

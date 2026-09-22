@@ -40,7 +40,7 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// lands on, a seam-incident root, checked-`Rat` overflow — and the caller keeps its
 /// `WitnessNotRational`. The kinds are counted under `tie_probe` in tests.
 ///
-/// ★ **A radical mismatch is not among them, whatever the line above used to say.**
+/// ★ **A radical mismatch is not among them.**
 /// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
 /// a test or debug build it **panics** rather than abstaining. The contract it states is
 /// same-radical arithmetic, and a caller that could mix two must not reach it.
@@ -340,11 +340,10 @@ fn point_in_mixed_ring_inner(
                         tie_probe::arc_end_decided();
                         Some(ray_step_crossing(Orient::Zero, ty, ty) == Some(true))
                     };
-                    // ★★★★★ **`Equal` used to be read as "outside the span"** — a root on the
-                    // arc's own end counted nothing, silently: a confident wrong answer, not an
-                    // abstention. Then the three arms abstained on it alike; now they decide it
-                    // alike (`departs_across`), and the span itself is one spelling
-                    // (`arc_span`) the lateral road reads too.
+                    // ★★★★★ **`Equal` is not "outside the span"** — read so, a root on the arc's
+                    // own end counts nothing, silently: a confident wrong answer, not an
+                    // abstention. The three arms decide it alike (`departs_across`), and the span
+                    // itself is one spelling (`arc_span`) the lateral road reads too.
                     let contained = match arc_span(&arc.def, &e_lo, &e_hi, &rootp)? {
                         ArcSpan::Inside => true,
                         ArcSpan::Outside => false,

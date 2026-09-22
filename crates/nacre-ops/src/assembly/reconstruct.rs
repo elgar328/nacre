@@ -117,14 +117,10 @@ pub(crate) fn reconstruct(
                 ]);
                 // ★★ **The arrangement's figure is a fallback coordinate now, and nothing more.**
                 //
-                // This site used to measure a residual here — the distance from `sv.point` to the
-                // planes the vertex is *re-named* in, `max`ed with `sv.tol` — and store it in the
-                // cache. It measured the right thing (the re-naming swaps the triple wherever four
-                // planes concur, and the old code's carried tolerance was short on 454 of 91,394
-                // corpus vertices), but a cache that stores a residual is storing the wrong *kind*
-                // of knowledge: a residual is one distance to the carriers and says nothing about
-                // how far the coordinate is from the truth. The realization answers that, and it
-                // runs first (`push_vertex_realized`). What the arrangement still owes the kernel
+                // No residual is measured here for the cache. A residual — the distance from
+                // `sv.point` to the planes the vertex is *re-named* in — is one distance to the
+                // carriers and says nothing about how far the coordinate is from the truth; the
+                // realization answers that, and it runs first (`push_vertex_realized`). What the arrangement still owes the kernel
                 // is the seam table's `tol`, which the self-touch sieve reads directly.
                 crate::realize::push_vertex_realized(
                     model,
@@ -178,15 +174,14 @@ pub(crate) fn reconstruct(
                 })
                 .collect();
             // ★★ **And every rim some ring's *wrap arc* rides.** The loop builder splits such an
-            // arc at that rim's seam vertex, so the vertex has to exist — and until now it existed
-            // only because a **band** happened to claim the same rim. That is a coupling, not a
-            // rule: a cap's arc is split for the cap's own reason, and the merged lateral face
-            // this ladder is heading for keeps only its outermost rims, so nothing would register
-            // the cut ones at all (measured: the notch's wrap arc dies `MissingSeam`).
+            // arc at that rim's seam vertex, so the vertex has to exist — and a **band** claiming
+            // the same rim is a coupling, not a rule: a cap's arc is split for the cap's own
+            // reason, and a lateral face that keeps only its outermost rims registers no cut ones
+            // (measured: without this, the notch's wrap arc dies `MissingSeam`).
             //
             // ★ **Only a wrap arc**, never every arc: a rim nothing splits would gain an orphan
-            // seam vertex. And **appended**, never prepended, so a key a band also names is still
-            // minted in the old order — the values are identical either way, but the vertex
+            // seam vertex. And **appended**, never prepended, so a key a band also names is minted
+            // in the band's order — the values are identical either way, but the vertex
             // handles are not, and a renumbering is exactly what the census cannot see.
             //
             // The ambiguous-naming decline is swallowed here on purpose: this table *offers*
@@ -339,9 +334,9 @@ pub(crate) fn reconstruct(
     let mut edge_of: HashMap<EdgeKey, Handle<Edge>> = HashMap::new();
     // A ring's two consecutive nodes are distinct arrangement vertices, so their points differ and
     // the line through them exists. Reject rather than panic if it does not: an aborting kernel is
-    // below the floor (`overview.md`: out-of-coverage input declines honestly). `SEAM_ALIAS`
+    // below the floor (`overview.md`: out-of-coverage input declines honestly). `SeamAlias`
     // catches the known way this happens — two triples on one point — at the seam table, where the
-    // names are still in hand, so this is a backstop with no firing test (cf. `NON_MANIFOLD_EDGE`).
+    // names are still in hand, so this is a backstop with no firing test (cf. `NonManifoldEdge`).
     let mut edge_for = |model: &mut Model,
                         va: Handle<Vertex>,
                         vb: Handle<Vertex>,
@@ -808,7 +803,7 @@ pub(crate) fn reconstruct(
         // ★★★★★ **The inner loops are built first, and `flip` is applied to none of them yet.**
         // A band whose hole meets the seam splices that hole's *own half-edges* into its outer
         // walk, so it has to be handed them in the sense every bound is written in — the
-        // unflipped one. Reversing per bound as they were built (the old shape) would splice a
+        // unflipped one. Reversing per bound as they were built would splice a
         // reversed run into an unreversed walk, and the result is a closed loop that is quietly
         // wound wrong: watertight, right triangle count, wrong solid.
         let mut build = |model: &mut Model,
@@ -939,9 +934,9 @@ pub(crate) fn reconstruct(
             "only the outer bound bridges, and only a band does"
         );
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
-        // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
-        // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
-        // the shape of every bug this split exists to prevent.
+        // `Forward`/`Reversed` as a sign (read off the stored flag) — not a face field indexed by
+        // a plane (`planes[plane_idx].orient`), the shape of every bug this split exists to
+        // prevent.
         // A cylinder's stored normal points away from its axis, and that *is* the face's outward
         // normal for a boss — so its "framed" sense is `Forward`, and `flip` (material outside
         // the wall: a hole) is what reverses it. Planes read their class's frame instead.
@@ -1008,14 +1003,13 @@ pub(crate) fn reconstruct(
             return Err(deferred.unwrap_or(reject(RejectReason::OpenResultShell)));
         }
     }
-    // ★ **The grouping decided at the top of this function, raised here** — where the old code
-    // decided it, so a boolean that declines leaves the arena cells it always left. What it says:
+    // ★ **The grouping decided at the top of this function, raised here.** What it says:
     // one component is the whole result; several mean either an enclosed void (a cavity, an
     // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
     // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
     // for why the *group*, not the component, is the unit the handles above were minted per.
     // The grouping's failure yields to the deferred stopper like every stage before it; the
-    // raise itself now stands at the very end, past the solid assembly below.
+    // raise itself stands at the very end, past the solid assembly below.
     let Grouping {
         labels,
         n,

@@ -2,10 +2,9 @@ use super::*;
 /// **A result face as the ray reads it** — its surface's truth and every boundary in the
 /// engine's own vocabulary.
 ///
-/// ★ **Every boundary travels.** This used to keep `poly_rings()` only, which silently dropped a
-/// face's circular and banded bounds — and a ray that counts an incomplete component answers
-/// confidently and wrongly. That drop is what the old `curved_component_depth` refusal stood in
-/// for; carrying the bounds is the first half of what retired it, name and all.
+/// ★ **Every boundary travels** — not `poly_rings()` only, which would silently drop a face's
+/// circular and banded bounds, and a ray that counts an incomplete component answers confidently
+/// and wrongly.
 ///
 /// A **lateral** face's bounds become one list of loops on its cylinder's chart
 /// ([`combinatorics::LateralLoop`]): a band's rims (a whole circle by its class, a chain by its
@@ -87,8 +86,8 @@ pub(crate) fn comp_face(
 /// severed operand (two or more material-enclosing shells).
 ///
 /// ★ **Deciding early is not the same as *rejecting* early.** [`reconstruct`] holds this `Result`
-/// and raises it exactly where the old code did, so a boolean that declines here leaves the arena
-/// it left before — the quantity `replay::a_late_reject_is_not_index_neutral` measures.
+/// and raises it late, past the minting; the arena a declining boolean leaves is the quantity
+/// `replay::a_late_reject_is_not_index_neutral` measures.
 pub(super) fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],
@@ -121,9 +120,9 @@ pub(super) fn group_faces(
     //
     // ★★★ **Coordinates only when there is no vertex to name.** A named probe is exact without
     // coordinates at all, so it keeps working where no rational one exists (a rotated class), and
-    // it is the answer for every component that has a polygon anywhere on it. What has none is the
-    // shape the retired `curved_component_depth` refused outright: a lone cylinder, whose boundary
-    // is two disks and a band and whose vertex count is therefore **zero**. `coord_probes` names a
+    // it is the answer for every component that has a polygon anywhere on it. What has none is a
+    // lone cylinder, whose boundary is two disks and a band and whose vertex count is therefore
+    // **zero**. `coord_probes` names a
     // point on that boundary instead of a vertex of it.
     let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
         // ★ Each name once, in first-seen order: a vertex sits on three faces' rings and used
@@ -211,15 +210,14 @@ pub(super) fn group_faces(
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
     // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
-    // other nodes as its remedy, a failed judgement does not — the old `Err(_) => try the next
-    // node` arms retried both, so a real cause could masquerade as `NoClearRay` once every node
-    // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
+    // other nodes as its remedy, a failed judgement does not — retrying on `Err(_)` too would let
+    // a real cause masquerade as `NoClearRay` once every node hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
     /// ★★ **Two stages, the second built only on exhaustion**: `more` is the supply that
     /// costs something to derive, and a component whose first corner decides never pays for it.
-    /// Trying it **after** the primary list is what keeps this change a proof rather than a
-    /// measurement — every question that decides today decides on the same probe, in the same
-    /// order, so only a question that used to run out answer differently.
+    /// Trying it **after** the primary list means every question the primary list decides is
+    /// decided on the same probe, in the same order; the second stage answers only questions the
+    /// first ran out on.
     ///
     /// The ledger's `offered` is now **what was actually built**: the primary list when it decided,
     /// the sum when it did not. One row per question either way.
@@ -278,13 +276,12 @@ pub(super) fn group_faces(
     }
     // ★★ **Material or void is a question about nesting, not about normals.**
     //
-    // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
-    // *some* face there has an outward normal with `n_x < 0`. That existential is a shortcut for
-    // "the face with the largest `|n_x|` faces −x", and the shortcut is only equivalent while the
-    // normals are **axis-aligned** — the old `is_shell_outward`'s own doc said so. A slanted sketch
-    // breaks it with no rotation in sight: a wedge void cut inside a box came back as its own
-    // *material* solid of **negative volume**, with the box unchanged beside it. A wrong model,
-    // and `validate` had nothing to say about it (measured).
+    // Not at the component's lexicographically-minimal vertex `v*` ("outward iff *some* face there
+    // has an outward normal with `n_x < 0`"): that existential is a shortcut for "the face with the
+    // largest `|n_x|` faces −x", equivalent only while the normals are **axis-aligned**. A slanted
+    // sketch breaks it with no rotation in sight: a wedge void cut inside a box comes back as its
+    // own *material* solid of **negative volume**, with the box unchanged beside it — a wrong
+    // model `validate` has nothing to say about (measured).
     //
     // So ask the question the kernel already answers one dimension down. `sketch::from_rings`
     // decides a ring by **containment depth — even is material, odd is a hole** (design.md: there
@@ -294,7 +291,7 @@ pub(super) fn group_faces(
     // 3D reading of it, with `point_in_component` where the 2D one uses `point_in_ring`.
     //
     // Nothing here reads an orientation, so a shell that winds either way is labelled the same —
-    // which is the point: the winding is what the old test was trying, and failing, to recover.
+    // which is the point: the label does not try to recover the winding from orientations.
     // `positives` stays in ascending `c` order (a downstream contract).
     let mut positives: Vec<usize> = Vec::new();
     for c in 0..n {
@@ -383,8 +380,7 @@ pub(super) fn group_faces(
                         // decided **before** the search, because the search closures speak
                         // bool and a failed judgement must propagate, not vanish into "not
                         // inside". A pair where every node abstains stays `false` — no
-                        // evidence places `c` inside `o`, the same answer the old `.ok()`
-                        // retry produced. (Nested containers are a rare population; deciding
+                        // evidence places `c` inside `o`. (Nested containers are a rare population; deciding
                         // the few pairs up front costs nothing measurable.)
                         let mut inside = HashMap::new();
                         for &c in &containers {

@@ -100,10 +100,9 @@ fn cmp_key(
 /// is exact here.
 ///
 /// `None` when an order cannot be formed (a coordinate outside the rational vessel, an
-/// escalation, a class with no coefficients). The caller leaves such an edge **unsplit**, which
-/// is today's behaviour exactly — the far-plane road starves there and the walls-fallback net
-/// answers — so the conservative arm degrades to the state this pass was built to improve, never
-/// to something new.
+/// escalation, a class with no coefficients). The caller leaves such an edge **unsplit** — the
+/// far-plane road starves there and the walls-fallback net answers — so the conservative arm
+/// degrades to the unsplit state, never to something new.
 pub(crate) fn pierce_between(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -386,10 +385,10 @@ fn arc_extremum_winding(
 /// unbounded contour of two cells that meet at a single point pinches through that point, tracing
 /// a figure-8. The winding is read from the turn at the lexicographically smallest node, and a
 /// coincidence elsewhere in the ring does not affect that turn, so a repeated node is not by itself
-/// an error. (The old check rejected on the first coincidence with the running minimum, which made
-/// the verdict depend on the ring's arbitrary start index — one operand order rejected a pinch the
-/// other accepted.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that stays
-/// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
+/// an error. (Rejecting on the first coincidence with the running minimum would make the verdict
+/// depend on the ring's arbitrary start index — one operand order rejecting a pinch the other
+/// accepts.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that is
+/// `CoincidentNodes`, decided by exact equality rather than by a tolerance.
 pub(crate) fn loop_winding(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -465,9 +464,8 @@ pub(crate) fn loop_winding(
     );
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
-    // ★ Stops at the first pinch, as the `any` it replaced did. Running on would ask comparisons
-    // the old spelling never made, and one of those could *decline* — turning a `CoincidentNodes`
-    // that was already decided into a width reject.
+    // ★ Stops at the first pinch. Running on would ask more comparisons, and one of those could
+    // *decline* — turning a `CoincidentNodes` that is already decided into a width reject.
     for i in 0..ring.len() {
         let mut same = i != lo;
         for axis in 0..3 {
@@ -502,12 +500,12 @@ pub(crate) fn loop_winding(
     // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
     // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
     //
-    // ★★★ **The comparison is between neighbours, at the node they share** — it used to be between
-    // the candidate and `ring[lo]`, which is the same answer for straight edges (parallel and
-    // same-sense are both transitive along a chain of shared points) and **meaningless** the moment
-    // an edge is curved: a far arc's tangent is not `lo`'s tangent, so comparing them asks about
-    // two different places. An earlier note here worried that neighbour-only would *weaken* "the
-    // whole stretch runs one way"; transitivity is why it does not.
+    // ★★★ **The comparison is between neighbours, at the node they share** — not between the
+    // candidate and `ring[lo]`, which is the same answer for straight edges (parallel and
+    // same-sense are both transitive along a chain of shared points) and **meaningless** once an
+    // edge is curved: a far arc's tangent is not `lo`'s tangent, so comparing them asks about two
+    // different places. Transitivity is also why neighbour-only does not weaken "the whole
+    // stretch runs one way".
     //
     // ★★★★ **And the value carried out is the one already read at a shared node** — never an
     // edge's direction at its own far start. For a straight edge the two are the same value, which

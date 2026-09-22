@@ -2,8 +2,8 @@ use super::*;
 /// A solid's edges, each with its endpoints and **the indices of its two faces**.
 ///
 /// Named for what it holds: the pair is `planes`-table slots, i.e. *faces*, not plane classes —
-/// `edge_faces` builds it from `surf_ix: HashMap<Handle<Face>, usize>`. It was `EdgePlanes`, and
-/// that name is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
+/// `edge_faces` builds it from `surf_ix: HashMap<Handle<Face>, usize>`. A name like `EdgePlanes`
+/// is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
 /// it happens in `loop_triples`, nowhere else.
 ///
 /// ★ It also holds **every vertex's incident faces**, read off the same walk. That table
@@ -286,7 +286,7 @@ pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
 /// included.
 ///
 /// On an endpoint it is contained, checked by **identity**, because `order_along(x, x)` is not
-/// defined to return 0 (the old `strictly_inside` never compared a class with itself). Otherwise it
+/// defined to return 0. Otherwise it
 /// is contained iff it lies between the two — opposite order signs — or a `0` says it *is* one of
 /// them by a second name.
 ///

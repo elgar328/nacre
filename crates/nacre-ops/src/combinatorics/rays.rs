@@ -15,12 +15,11 @@ pub(crate) fn every_ray(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
-    // ★★ **The unnameable check is the walk's now, so it is asked per `qa` rather than once up
-    // front.** That is a real shift and it is spelled rather than glossed: a ring carrying a node
-    // the walk cannot read used to be refused here even when no ray was cast, and is now refused
-    // by the first ray that actually asks. The two differ only when *every* `qa` answers `AllOn`
-    // — a ring lying in both cut planes — and that pairs with a pierce node nothing produces here
-    // yet, so the difference is unreachable twice over. Recorded because it will stop being.
+    // ★★ **The unnameable check is the walk's, so it is asked per `qa` rather than once up
+    // front**: a ring carrying a node the walk cannot read is refused by the first ray that
+    // actually asks, not before any ray is cast. The two readings differ only when *every* `qa`
+    // answers `AllOn` — a ring lying in both cut planes — and that pairs with a pierce node nothing
+    // produces here, so the difference is unreachable twice over.
     //
     // ★ A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
     // a dropped member would be a different polygon answered about confidently — which is why the
@@ -31,14 +30,14 @@ pub(crate) fn every_ray(
     for &qa in v.iter().filter(|&&x| x != p) {
         // Where the ring meets the line — the walk `trace_transversal_face` reads too.
         //
-        // ★ **A `Crossing` is exactly what this loop used to derive per edge.** It said "is
-        // `X = {P, Q_a, R}` strictly inside the edge" with two `order_along`s: `a` is the sign of
-        // `X − From` along `P ∩ R` and `b` that of `X − To`, both normalized to the same direction
-        // on the same line, so `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a` — which
-        // is what the walk already knows from their sides. The parallel guard goes with it: an edge
+        // ★ **A `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
+        // the edge", asked with two `order_along`s — `a` the sign of `X − From` along `P ∩ R` and
+        // `b` that of `X − To`, both normalized to the same direction on the same line — holds iff
+        // `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a`, which the walk already
+        // knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
         // ★ No cylinder table on this road: a pierce node in a **result** cell's ring
-        // declines here exactly as it did before, and threading one is the arc road's business.
+        // declines here, and threading one is the arc road's business.
         // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
@@ -245,9 +244,8 @@ pub(crate) fn segment_meets_face(
     Ok(false)
 }
 
-/// Every **face** incident to `vh`, as `planes`-table slots. (Was `vertex_plane_indices`; it
-/// returns `inc`'s pairs verbatim, and those are faces. Its one caller maps them through
-/// `plane_ix`.)
+/// Every **face** incident to `vh`, as `planes`-table slots. (It returns `inc`'s pairs verbatim,
+/// and those are faces. Its one caller maps them through `plane_ix`.)
 pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<usize> {
     // ★ A lookup — the incidence table carries the vertex → faces map (built once per
     // operand), rather than a scan of every edge for every vertex asked.
