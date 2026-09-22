@@ -147,7 +147,6 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 #[test]
 fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     use crate::arrangement::extent_probe::ASKS;
-    let before = ASKS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -156,13 +155,19 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
-    boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-    let asks = ASKS.all();
-    assert!(
-        asks.len() > before,
-        "the probe never ran, so it measured nothing: asked {before} -> {}",
-        asks.len()
+    crate::ledger::owned(|| {
+        boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
+    });
+    // ★ This boolean's own asks, counted: **four** crossings of the boss's rulings have both
+    // endpoints rational, which is where the fence road can be asked at all — and each is asked
+    // twice, because a `debug_assertions` build re-traces the whole arrangement with reuse off as
+    // a reference (`arrangement`'s plain run). The disagreement claim below is the binary's.
+    assert_eq!(
+        ASKS.mine().len(),
+        8,
+        "the probe never ran on this fixture's crossings"
     );
+    let asks = ASKS.all();
     let disagreed = asks.iter().filter(|d| **d).count();
     assert_eq!(
         disagreed,
@@ -198,10 +203,27 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
-    boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    crate::ledger::owned(|| {
+        boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
+    });
+    // ★ This boolean's own segments: **four**, each ordered twice because a `debug_assertions`
+    // build re-traces the arrangement with reuse off as a reference. Every one is compared end to
+    // end, and half of them are reached with `wc > wall` — where the sorted pair and the
+    // call-order pair are opposite calls, so the fixture reaches both sides of that relation.
+    let mine = ROWS.mine();
+    assert_eq!(mine.len(), 8, "the probe never ran on this fixture");
+    assert_eq!(
+        mine.iter().filter(|r| r.compared).count(),
+        8,
+        "every one of this fixture's segments is compared"
+    );
+    assert_eq!(
+        mine.iter().filter(|r| r.wc_above_wall).count(),
+        4,
+        "half of them are reached with wc > wall"
+    );
     let rows = ROWS.all();
     let compared = rows.iter().filter(|r| r.compared).count();
-    assert!(compared > 0, "the probe never ran, so it measured nothing");
     let scrambled = rows.iter().filter(|r| r.scrambled).count();
     assert_eq!(
         scrambled,
@@ -240,8 +262,8 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
 /// ghost wall face gone cannot be read. The trace's own answer is what survives, the way
 /// `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free case.
 ///
-/// ★ The claim is over **every** carved ruling this binary produces, in whatever order the tests
-/// ran — all of them come from the wall-boss family.
+/// ★ The claim is over every ruling **this fixture** carves on its boss, counted on the rows its
+/// own operation recorded.
 #[test]
 fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     let mut m = Model::new();
@@ -256,12 +278,14 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     m.rebuild_adjacency();
     let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
-    let _ = boolean(&mut m, BoolKind::Cut, first, b);
-    // ★ The ledger is the binary's: a panel's ruling (one graze) and a chain's (a
-    // transversal then a graze) are recorded too. Read this fixture's boss — origin `(2, 0, −1)`,
-    // rulings spanning `t ∈ [0, 4]` — and nothing else.
+    crate::ledger::owned(|| {
+        let _ = boolean(&mut m, BoolKind::Cut, first, b);
+    });
+    // ★ This operation's own carvings — but it carves other classes of the same model too (a
+    // panel's ruling is one graze, a chain's a transversal then a graze), so the boss is still
+    // named: origin `(2, 0, −1)`, rulings spanning `t ∈ [0, 4]`.
     let carved: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
-        .all()
+        .mine()
         .iter()
         .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 4.0])
         .map(|c| c.kinds.clone())
@@ -283,18 +307,20 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
             "a carved ruling came out as {kinds:?}"
         );
     }
-    // ★ Both rulings are carved, not just one: the hole has a vertical edge on each.
+    // ★ Both rulings are carved, not just one: the hole has a vertical edge on each. A floor,
+    // not a count: this operation is **refused** further down, and the parallel build evaluates
+    // the classes after the first error while the serial one stops there.
     assert!(carved.len() >= 2, "only {} ruling carved", carved.len());
     // ★★★★★ **And which side the face occupies, against the fixture's own geometry.** The buried
     // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
     // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
     // factor of the derivation turns this red; nothing downstream does, yet.
     let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
-        .all()
+        .mine()
         .iter()
-        // ★ Only the **hole's** runs: the same boss's Cut result (the census's) puts a *panel* on
-        // the same wall and span, and its face lies on the other side — measured (`body_above`
-        // false against the hole's true), which is exactly what a filter by origin alone let in.
+        // ★ Only the **hole's** runs: this same operation puts a *panel* on the same wall and
+        // span, and its face lies on the other side — measured (`body_above` false against the
+        // hole's true), which is what a filter by origin alone let in.
         .filter(|g| {
             g.kind == combinatorics::CycleKind::Hole
                 && g.origin == [2.0, 0.0, -1.0]
@@ -363,13 +389,15 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
         m.rebuild_adjacency();
         let b = m.add_cylinder(Point3::from_array([6.0, 2.0, base]), up, 0.5, 4.0);
         m.rebuild_adjacency();
-        let _ = boolean(&mut m, BoolKind::Cut, first, b);
+        crate::ledger::owned(|| {
+            let _ = boolean(&mut m, BoolKind::Cut, first, b);
+        });
     }
-    // ★ The ledger is the binary's, not this test's: every fixture that carves a cycle writes to
-    // it, and a panel's and a chain's arcs (which face any way) are carved too. Read
-    // only this fixture's boss (`(2, 0, −1)`) and only its **hole** — the sentence is about holes.
+    // ★ This test's own carvings, and among them only this boss (`(2, 0, −1)`) and only its
+    // **hole** — the same models carve panels' and chains' arcs, which face any way, and the
+    // sentence is about holes.
     let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
-        .all()
+        .mine()
         .iter()
         .filter(|m| m.kind == combinatorics::CycleKind::Hole && m.origin == [2.0, 0.0, -1.0])
         .map(|m| m.dir)

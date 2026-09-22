@@ -834,12 +834,23 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// [`mesh_covers_faces`].
 #[test]
 fn the_mesh_census_is_running() {
-    let seen = crate::assembly::tess_census::MESHED.all();
-    assert!(!seen.is_empty(), "the census never ran");
-    assert!(
-        seen.iter().any(|r| r.is_ok()),
-        "the census recorded no mesh at all"
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0, 4.0, 2.0]),
     );
+    let drill = m.add_cylinder(
+        Point3::from_array([2.0, 2.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore"));
+    // One boolean, one solid, one census entry — and it meshed.
+    let seen = crate::assembly::tess_census::MESHED.mine();
+    assert_eq!(seen.len(), 1, "the census never ran: {seen:?}");
+    assert!(seen[0].is_ok(), "the census recorded no mesh: {seen:?}");
 }
 
 /// **A ruling carries the label of the cell inside the cylinder** — the chart's vertical answer.
@@ -877,9 +888,24 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
-    boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds");
+    crate::ledger::owned(|| {
+        boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")
+    });
     let lab = crate::arrangement::ruling_probe::LABELLED.all();
     let chk = crate::arrangement::ruling_probe::SIDE_CHECK.all();
+    // ★ This boolean's own pieces: the wall boss's chart carries **six** ruling pieces, each
+    // recorded twice because a `debug_assertions` build re-traces the arrangement with reuse off
+    // as a reference. Every one of them is labelled, and the content check decides every one —
+    // this fixture has no blind piece, so the agreement below is not a formality here.
+    let lab_mine = crate::arrangement::ruling_probe::LABELLED.mine();
+    let chk_mine = crate::arrangement::ruling_probe::SIDE_CHECK.mine();
+    assert_eq!(lab_mine.len(), 12, "the probe never ran on this fixture");
+    assert_eq!(chk_mine.len(), 12, "the side check ran beside every label");
+    assert_eq!(
+        chk_mine.iter().filter(|c| **c == Some(true)).count(),
+        12,
+        "the content check decided every one of this fixture's pieces"
+    );
     assert!(
         !lab.is_empty(),
         "the probe never ran, so it measured nothing"
@@ -1291,8 +1317,10 @@ fn a_spliced_band_is_cut_across_its_notch() {
             Point3::from_array([6.0, 5.0, 1.5]),
         );
         m.rebuild_adjacency();
-        let r = boolean(&mut m, BoolKind::Cut, r0, tool)
-            .unwrap_or_else(|e| panic!("the notch is cut across its rulings: {e:?}"));
+        let r = crate::ledger::owned(|| {
+            boolean(&mut m, BoolKind::Cut, r0, tool)
+                .unwrap_or_else(|e| panic!("the notch is cut across its rulings: {e:?}"))
+        });
         assert_eq!(r.len(), 1, "one solid");
         m.rebuild_adjacency();
         let issues = nacre_validate::validate(&m);
@@ -1303,9 +1331,19 @@ fn a_spliced_band_is_cut_across_its_notch() {
             "{v} vs {}",
             v0 - (4.0 + pi / 8.0)
         );
-        let hits = crate::arrangement::crossing_probe::HITS.all();
-        // Two cap classes × the wall face's two halves, one ruling each.
-        assert!(hits.len() >= 4, "the probe saw {} crossings", hits.len());
+        let hits = crate::arrangement::crossing_probe::HITS.mine();
+        // ★ **Four** crossings: two cap classes × the wall face's two halves, one ruling each.
+        // The rows are eight, because a `debug_assertions` build re-traces the arrangement with
+        // reuse off as a reference and names each crossing again — so the geometry is counted as
+        // distinct points, which says the same thing in either build.
+        let mut points: Vec<[u64; 3]> = hits
+            .iter()
+            .map(|h| h.point.map(f64::to_bits))
+            .collect::<Vec<_>>();
+        points.sort_unstable();
+        points.dedup();
+        assert_eq!(points.len(), 4, "the probe saw {} crossings", hits.len());
+        assert!(hits.iter().all(|h| !h.arc), "all of them on rulings");
         for h in &hits {
             assert!(
                 h.off.iter().all(|&d| d <= 1e-9),

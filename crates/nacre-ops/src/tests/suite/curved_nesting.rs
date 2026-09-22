@@ -1455,9 +1455,9 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         .iter()
         .filter(|r| r.route == nesting::Route::Engine && !r.a_disk && r.named == 0 && r.b_disk)
         .collect();
-    // ★ Counted on this boolean's own questions (224 of them): the plate's four bores each ask
-    // the cap ring — which has no three-plane corner — against a disk, from both caps and both
-    // sides of the comparison.
+    // ★ Counted on this boolean's own questions (224 of them): 24 ask the cap ring — which has
+    // no three-plane corner — against a disk. That the shape is reached at all is the negative
+    // control; how the 24 divide among the plate's four bores is not a claim this makes.
     assert_eq!(
         nameless_vs_disk.len(),
         24,
