@@ -15,15 +15,15 @@ impl Model {
     /// ★ **Stated in the frame `motion` names** — the world for `None`, the pre-motion frame
     /// otherwise. An interned plane keeps the first pusher's triple.
     ///
-    /// ★ **The `bool` says the returned surface's cache normal points the *other* way** from the
-    /// one handed in, and a caller that meets it must record its face `Orientation::flipped()`.
-    /// It exists because a plane's canonical form has no direction — `[0,0,1,−3]` and
-    /// `[0,0,−1,3]` are one plane — so once identical planes share a handle the direction has to
-    /// be reconciled somewhere, and the honest place is where the caller still knows what it
-    /// asked for.
+    /// ★ **The `bool` says the returned surface faces the *other* way** from the statement handed
+    /// in (its points and `sense`), and a caller that meets it must record its face
+    /// `Orientation::flipped()`. It exists because a plane's canonical form has no direction —
+    /// `[0,0,1,−3]` and `[0,0,−1,3]` are one plane — so once identical planes share a handle the
+    /// direction has to be reconciled somewhere, and the honest place is where the caller still
+    /// knows what it asked for. It is read off the two truths, never the caches.
     ///
-    /// ★★ **It is not a dormant path.** Measured across the suite, interning hits 7,095 times
-    /// and **1,916 of those report `flipped`** — a boss meeting the plate it sits on is one
+    /// ★★ **It is not a dormant path.** Measured over the census corpus, interning hits 3,125
+    /// times and **246 of those report `flipped`** — a boss meeting the plate it sits on is one
     /// plane approached from both sides, which is as ordinary as it sounds.
     pub fn push_plane(
         &mut self,
@@ -78,11 +78,9 @@ impl Model {
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
-                let flipped = self.flipped_against(h, &cache);
-                debug_assert!(
-                    self.flipped_by_truth(h, &points, sense) != Some(!flipped),
-                    "the truths' senses disagree with the caches' about `flipped`"
-                );
+                let flipped = self
+                    .flipped_by_truth(h, &points, sense)
+                    .expect("a named plane's points span a direction");
                 return (h, flipped);
             }
         }
@@ -94,21 +92,12 @@ impl Model {
         (h, false)
     }
 
-    /// Whether the already-issued surface's cache normal points the other way from the one the
-    /// caller just built — the `flipped` report both interning roads share. The f64 cache dot is
-    /// exact here: two caches of one plane have parallel normals, so the sign cannot be lost to
-    /// rounding.
-    fn flipped_against(&self, h: Handle<Surface>, cache: &nacre_geom::Plane) -> bool {
-        match self.surface_cache(h) {
-            nacre_geom::Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
-            nacre_geom::Surface::Cylinder(_) => false,
-        }
-    }
-
-    /// `flipped` read off the two **truths** instead of the two caches: an incoming `Known`
-    /// statement against a `Known` survivor of the same key. The key is `(name, motion)`, so both
-    /// triples ride one chain and their frame directions compare as their world ones do.
-    /// `None` where either statement is `Through`.
+    /// **`flipped`, from the two truths** — whether the survivor of an interning hit faces the
+    /// other way from the statement that just arrived. The key is `(name, motion)`, so both
+    /// statements ride one chain and their frame directions compare as their world ones do:
+    /// flipped ⇔ the two points' directions agree exactly when the two senses differ.
+    ///
+    /// `None` only where a statement's points span no direction, which a named plane's cannot.
     fn flipped_by_truth(
         &self,
         survivor: Handle<Surface>,
@@ -116,25 +105,27 @@ impl Model {
         sense: Orientation,
     ) -> Option<bool> {
         let Surface::Plane {
-            points: PlanePoints::Known(theirs),
+            points: theirs,
             sense: their_sense,
             ..
         } = self.surface(survivor)
         else {
             return None;
         };
-        let PlanePoints::Known(ours) = points else {
-            return None;
-        };
-        let normal = |p: &[[nacre_exact::Rat; 3]; 3]| {
-            let m = p.map(nacre_exact::MeetPoint::Narrow);
-            nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
+        let normal = |p: &PlanePoints| match p {
+            PlanePoints::Known(k) => {
+                let m = k.map(nacre_exact::MeetPoint::Narrow);
+                nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
+            }
+            PlanePoints::Through(vs) => {
+                let m = self.through_meets(*vs)?;
+                nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
+            }
         };
         let agree =
-            nacre_exact::same_sense(&normal(ours)?, &normal(theirs)?) == (sense == *their_sense);
+            nacre_exact::same_sense(&normal(points)?, &normal(theirs)?) == (sense == *their_sense);
         Some(!agree)
     }
-
     /// Whether a producer's `cache` faces the way its stated `sense` says — the migration's
     /// cross-check between the old carrier of the sense and the new one. An `f64` read, and only
     /// a read: nothing here decides a truth.
@@ -214,7 +205,11 @@ impl Model {
             return self.intern_plane(cache, name, PlanePoints::Through(vertices), motion, sense);
         }
         if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
-            return (h, self.flipped_against(h, &cache));
+            // One statement, one handle: the same sorted vertices span one direction, so the
+            // senses alone say whether the survivor faces the other way.
+            let flipped =
+                matches!(self.surface(h), Surface::Plane { sense: theirs, .. } if *theirs != sense);
+            return (h, flipped);
         }
         let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, sense, None, cache);
         self.surface_through_ids.insert((vertices, motion), h);

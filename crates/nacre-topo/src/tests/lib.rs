@@ -1173,7 +1173,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     );
     assert_eq!(m.surface_count(), before + 1, "stored once");
 
-    // The same statement again — one handle; and a cache built facing the other way is the
+    // The same statement again — one handle; and a statement facing the other way is the
     // same plane with `flipped` reported, exactly as the name road reports it.
     let (again, flipped_same) = m.push_plane_through(cache, triple, None, Orientation::Forward);
     assert_eq!(h, again, "one statement, one handle");
@@ -1183,11 +1183,11 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .unwrap();
-    let (still, flipped_now) = m.push_plane_through(reversed, triple, None, Orientation::Forward);
+    let (still, flipped_now) = m.push_plane_through(reversed, triple, None, Orientation::Reversed);
     assert_eq!(h, still, "direction is not part of the statement");
     assert!(
         flipped_now,
-        "but the survivor's other-way cache is reported"
+        "but a statement facing the other way is reported"
     );
     assert_eq!(m.surface_count(), before + 1, "and nothing new was stored");
 
