@@ -84,9 +84,11 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
 
 숫자 규칙 「실현 통로는 하나다」를 코드가 아직 다 지키지 않는 자리들.
 
-### 실현 함수가 세 갈래다
+### 실현 문의 발행 범위와 잠금
 
-규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `construct.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
+실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 `&mut Option<PrefixWrite>` 를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
+
+남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_vertex_cache`) 중 제품 소비자가 있는 것은 kit 의 `realize_vertex_decimal` 한 곳이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
 
 ### 픽스처는 제품 도로로
 
@@ -131,6 +133,22 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
 - **행(`raw`)은 아직 생산자의 것이다.** 저장된 `raw` 가 «실현된 진실 점들의 외적»과 같은 것은 **2,747**,
   다른 것이 **2,010** 이다(회전 사슬 456 은 답할 수 없음). 행을 진실에서 가져오는 일은 앵커(캐시 비트가
   바뀐 것 61)와 달리 **약 2,010개를 움직이는 큰 변경**이다.
+- **어긋나는 기제는 둘이다**(코드에서 읽은 것 — 2,010 을 둘로 나눈 수는 안 쟀다). 벽 평면은
+  `wall_surfaces` 가 `Plane::through_points(ring.base[i], …)` 로 **반올림한 f64 점의 외적**을 캐시로 넘기고
+  (진실 `wall_points(i)` 는 같은 삼중이다), 캡 평면은 `from_point_normal(base[0], ±normal)` 로 행을 점이
+  아니라 **프레임 법선**에서 가져온다.
+- **문의 도착점은 `push_plane(points, motion, outward)` 다.** `cache` 인자가 하는 두 일(`design.md` 「캐시」)
+  을 가른다: 평면의 기준 방향은 **진실의 삼중 순서**(`(p₁−p₀)×(p₂−p₀)`, 모션의 거울이 향을 뒤집는다;
+  `Through` 는 정렬된 정점 삼중의 향 — 부호 판정이 필요하다)로 정하고, 생산자가 말하는 `outward` 는 그 기준과
+  비교해 `Face.orientation`(진실)이 된다. 캐시는 앵커·행·향 모두 진실에서 유도한다 — 생산자 쪽에서 f64
+  평면을 짓는 자리 여덟(`prism.rs` 셋 · `datum.rs` 넷 · `transform.rs` 하나)이 사라지고, `flipped_against`
+  의 f64 법선 비교가 진실 기준 비교가 된다. 이것은 「가지 말 것」 «평면의 방향을 점 순서에서 뽑기»와 다르다:
+  그 행은 **면 딱지를 그대로 둔 채** 향만 점 순서로 바꾸는 길이고(342 평면의 면이 뒤집힌다), 여기서는 그 342
+  평면에서 캐시 향과 면 딱지가 **함께** 뒤집혀 모든 면의 바깥이 그대로다. 잠금: 모든 면의 바깥 법선이 부호까지
+  비트 동일. 움직이는 것: 그 342 평면의 캐시 향·면 딱지·STEP 의 `same_sense`. 막는 것: 유도 게이트(`world_plane_name(h)?.narrow()?`)가 모션에서 거절하는 532 —
+  「모션 사슬을 읽을 때 접는다」가 그중 159 를 열고, `Frame`·임의 각의 남는 인구에는 정점처럼 폴백이 남는다.
+  첫 걸음은 **모션 없는 벽 평면**이다: 문 안에서 같은 계산(진실 점 → `to_f64` → `through_points`)을 하므로
+  census 이동 0 이 예측이다(미측정 — 편집 전에 이 예측을 적고 A/B 로 확인한다).
 - **넘치는 자리는 수선의 발이다.** 이름 유도는 `plane_name_exact` → `plane_name_big` 으로 폭을 넘는다.
   넘치는 것은 `plane_origin_projection` 이 `n·n` 을 만들어 계수를 제곱하는 길이고(코퍼스 8건), 앵커는
   그 길을 쓰지 않는다. 남은 것은 **방향의 정확 반올림**이다.
@@ -151,6 +169,30 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
 - 이름: 실현 문은 `realize_*` 이고 정밀도를 항상 명시한다(기본값 없음). `_at` 은 이 커널에서 위치의
   낱말(`point_at`·`normal_at`·`surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘
   (`hp_coord`·`judge_precision`·`trial_bound`)를 쓴다.
+
+### 곡면 유도 계측이 제품 빌드에 있다
+
+`SURFACE_*` 원자 카운터 아홉과 `pub SurfaceDeriveCounts`·`pub surface_derive_counts()`, 그리고
+`measure_derivation`·`count_discarded_cache`·`decline_reason`·`surface_bits` 에 `cfg` 게이트가 없어 릴리스·wasm
+에서도 곡면 push 마다 돈다. 평면 push 는 유도를 **두 번** 계산하고(`apply_derivation` 이 `measure_derivation`
+안에서 한 번, 적용하려고 한 번), 원통 push 는 유도를 계산해서 버린다. 읽는 곳은 census 의 `stat` 9줄뿐이다
+(단언 0).
+
+이것은 「곡면의 실현과 내보내기의 수치 정밀도」의 이주 계기다 — `declined` 가 0(또는 정당화)이 되어야 `cache`
+가 문 서명을 떠난다. 그래서 할 일은 삭제가 아니라 **이주가 끝나면 은퇴, 그 전에는 `test-util` 뒤로**다.
+`WIDE_PLANES`·`climb_census`·`reject_census` 를 무조건으로 둔 이유(«`cfg(test)` 로는 다른 크레이트의 계측이
+못 읽는다», «이미 실패·상승을 정한 길이라 원자 덧셈은 잡음이다»)는 여기에 그대로 옮겨오지 않는다:
+`nacre-ops` 는 `nacre-topo` 의 `test-util` 을 dev-의존으로 켜므로 census 는 가린 뒤에도 읽고, 이 카운터는
+평범한 push 길에 있다(그 비용은 안 쟀다). 가시성을 바꾸므로 관문의 `cargo build --workspace`·`--release`·
+`cargo doc` 셋을 돈다.
+
+### `refine_vertex_cache` 를 부르는 제품이 없다
+
+아래 항목이 «내보내기 직전에 부르는 비싼 문»이라 적는 이 문의 호출처는 테스트뿐이다
+(`invariants/realize_vertex.rs`·`invariants/replay.rs`). kit·playground 는 부르지 않고, `nacre-step` 은
+`vertex_point` 를 그대로 읽는다. 갈림은 둘이고 결정이 필요하다: 내보내기(STEP·kit)가 불러야 하는 **빠진
+호출**인가, 소비자 없는 문인가. `Ceiling` 인구는 비용 한계(192)를 넘는 깊은 사슬 테스트에 있다 — census
+코퍼스의 수는 이 결정을 할 때 잰다.
 
 ### 정점 캐시의 «버리고 재생» 보증
 
@@ -299,8 +341,10 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 세계) 유리수 pullback 이 없다. 인구는 `the_def_road_answers_for_the_populations_it_can_name` 의 ④ 가
 핀한다.
 
-같은 부류의 실현 거절 인구: 불리언 결과 정점 4,924 중 `RealizeError::NoMeet` **346**(회전 피연산자가 섞인
-결과 — 두 모션 이력·Wide 이름), 피연산자 6,988 중 `NoMeet` **192** · `NoCurvedPoint` **12**(회전된
+같은 부류의 실현 거절 인구: 불리언 결과 정점 4,924 중 `RealizeError::NoMeet` **346** — 전부 `ThreePlane`
+이고 전부 **담체의 모션 이력이 갈린다**(세계 둘 + 모션 하나 216 · 세계 하나 + 같은 모션 둘 115 · 서로 다른 모션
+15; Wide 0 · 이름 없음 0). 회전한 상자와 안 돌린 상자의 불리언에서 두 몸의 면이 만나는 코너다(회전각
+7°·30°·45°·123° 가 대부분, 사분각 90° 는 `rot` 24), 피연산자 6,988 중 `NoMeet` **192** · `NoCurvedPoint` **12**(회전된
 원통의 seam: 세계에 진술 못 하는 담체) · 반사된 원통(`world_cylinder_def` 는 순수 이동만 안다). 전부 구성
 폴백으로 서고 census `r` 행이 센다. 실현 문이 넓어지면 이 수가 준다 — 「모션 사슬을 읽을 때 접는다」가 그
 첫 걸음이다.

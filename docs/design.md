@@ -982,6 +982,11 @@ pub struct SurfaceCache { realized: nacre_geom::Surface }         // Plane(..) |
 //   것이 되게 하려는 것이다.
 //   곡면의 f64 실현은 생산자가 계산해 push 문에 넘겨주고(`push_plane(cache, …)`), 사설
 //   `push_plane_raw`·`push_cylinder_raw` 가 진실과 캐시를 같은 자리에서 채운다.
+//   **그 `cache` 인자는 두 일을 한다.** 실현값(앵커·행)은 진실과 중복이다 — 앵커는 이미 문 안에서
+//   유도한다(`derive_surface_cache`). 다른 하나는 곡면의 **기준 방향**이다: 면의 바깥은
+//   «저장된 곡면 법선 × `Orientation::sign()`»이고(`Face.orientation` 은 진실), 그 기준 법선이 첫
+//   생산자가 넘긴 캐시의 향이다. ⇒ **진실(면의 방향 딱지)이 캐시에 기대고 있다** — 평면 캐시를 반대 향으로
+//   재생하면 그 평면의 모든 면이 뒤집힌다. 원통은 기준이 진실 안에 있다(축에서 바깥으로).
 //   평면의 이름(`PlaneName`)은 `plane_name_exact(세 점)` / `plane_name_through(세 정점)` 로 언제든 다시
 //   나오므로 캐시다 — 그런데 곁표 `surface_name` 에 따로 살아, 한 곡면의 캐시가 두 벌이고
 //   그릇(`Vec`↔`HashMap`)·이름 규칙(`_cache`↔`_name`)·가시성(비공개↔`pub`)이 셋 다 어긋나 있다.
