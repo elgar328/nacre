@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4b8b63d20466196c926044b605e3ad4296e6c6074b5f4cb3408f960ee7f74bff # shrinks to chain = [Mirror(Z, Rat(Ratio { numer: 0, denom: 1 })), Rotate(Rotation { axis: X, pivot: [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })], angle: Angle(Rat(Ratio { numer: 90, denom: 1 })) })], p = [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })], c = [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: -1, denom: 1 }), Rat(Ratio { numer: 1, denom: 1 })]

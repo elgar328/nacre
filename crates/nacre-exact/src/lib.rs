@@ -50,6 +50,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 mod angle;
+mod axis_affine;
 mod bigkernel;
 mod cylinder;
 mod frame;
@@ -62,6 +63,7 @@ mod realize;
 mod sqrt;
 mod winding;
 
+pub use axis_affine::*;
 pub(crate) use bigkernel::*;
 pub use cylinder::*;
 pub use frame::*;
