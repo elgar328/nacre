@@ -142,16 +142,10 @@ pub(super) fn lateral_t_range(
             continue; // a slit edge is self-adjacent — not a carrier
         }
         // ★ **The cap's world coefficients** — a plane's name is stated in the frame its own
-        // motion names, and this parameter is read against a *world* axis. A cap the same
-        // translation carried is restated here by that translation; one whose chain does not
-        // fold has no world description and the face declines (`None`), which is the same
+        // motion names, and this parameter is read against a *world* axis. One whose chain does
+        // not fold has no world description and the face declines (`None`), which is the same
         // answer the whole row already gives for a rim with no narrow name.
-        let coeffs = *model.surface_name.get(&cap)?.narrow()?;
-        let coeffs = match model.plane_motion(cap) {
-            None => coeffs,
-            Some(leaf) => nacre_exact::Isometry::translation(model.chain_translation(leaf)?)
-                .plane_coeffs(coeffs)?,
-        };
+        let coeffs = *model.world_plane_name(cap)?.narrow()?;
         // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
         // Only a ⊥ carrier — an arc's cap plane — speaks here; `None` past that is overflow.
         if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
@@ -192,12 +186,7 @@ pub(super) fn lateral_theta_extent(
     use nacre_topo::{QuadRoot, Vertex};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
-        let coeffs = *model.surface_name.get(&plane)?.narrow()?;
-        match model.plane_motion(plane) {
-            None => Some(coeffs),
-            Some(leaf) => nacre_exact::Isometry::translation(model.chain_translation(leaf)?)
-                .plane_coeffs(coeffs),
-        }
+        model.world_plane_name(plane)?.narrow().copied()
     };
     let sub = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<[Rat; 3]> {
         Some([

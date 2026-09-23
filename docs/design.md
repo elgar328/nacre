@@ -920,6 +920,7 @@ pub struct Model {
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
     adj: Adjacency,                           // 요청 시 재구축(`rebuild_adjacency`)
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
+    motion_folds: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
 
     // 평면의 정준 이름 — 유도되는 값(캐시)인데 `SurfaceCache` 안이 아니라 곁표로 산다.
     // `Model` 의 유일한 공개 필드다.
@@ -952,11 +953,11 @@ pub enum PointCache {
     Unrealized { coord: Point3 },                                 //   실현이 뒤에 없다 — 도로가 없거나, 안 물었거나
 }
 // 연산이 만든 정점은 push 시점에 실현되므로(`push_vertex_realized`) 거의 전부 `Bounded` 다
-//   (코퍼스 4,578/4,924).
+//   (코퍼스 4,602/4,924).
 // **`Ceiling` 의 천장에는 벽이 둘이고, 둘은 같은 말을 한다** — (a) 사다리 첫 단(128비트)이 못 정했다,
 //   (b) 이력이 비용 한계(`CACHE_REPLAY_COST_CAP` = 192)보다 깊어 싼 도로가 아예 안 걸었다. 읽는 쪽에도
 //   되찾는 문(`refine_vertex_cache`)에도 뜻이 같다: «더 물으면 답이 있다» ⇒ 한 변종이 맞다.
-//   `Unrealized` 는 그 반대 — 도로가 없다(`RealizeError::NoMeet` 346 등). 그 갈림은 사람이 읽을 것을
+//   `Unrealized` 는 그 반대 — 도로가 없다(`RealizeError::NoMeet` 322 등). 그 갈림은 사람이 읽을 것을
 //   위해 있다: «이 모델이 비싸다»와 «커널에 구멍이 있다»는 다른 보고다. 변종을 고르는 것은 호출자가
 //   아니라 깔때기(`push_vertex_realized`)이고, 철저한 `match` 라 새 이유가 옛 이름에 조용히 접히지 않는다.
 // **캐시는 잔차를 저장하지 않는다.** 배열은 잔차를 재고 셀프터치 체가 읽지만(`SeamVertex.tol`) 그것은
@@ -1037,8 +1038,9 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | 모델 캐시 (f64) | 핸들 인덱스 (밀집) | **모델과 같이** | push 시점에 채운다. **판정 경로 밖** |
 | 고정밀 메모 | (정의, 정밀도) (희소) | **연산 하나** | 판정이 실제로 만든 점에만 — 위 «실현». `trial_bound` 는 일부러 이 메모를 우회한다 |
 | 각도·√ 표 | `(Angle, prec)` / `(Rat, prec)` | 프로세스(스레드) | 값이 키의 순수 함수 — `cos 37°`·`1/√(n·n)` 은 어디서나 같다. 정확 반올림이라 실현이 유일하고 tol 도 유일 |
+| 사슬 접기 | 모션 핸들 (밀집) | **모델과 같이** | 노드가 태어날 때(`push_motion`) 부모의 접기에 자기 하나를 합성 — 이동·사분각 회전·축 거울은 «부호 있는 축 치환 + 유리수 이동»(`AxisAffine`)으로 닫힌다. `Frame`·사분각 밖 회전이 끼면 `None`. 질의마다 사슬을 걸으면 깊이의 제곱이다 |
 
-셋은 인덱스 공간이 달라 합치지 않는다.
+넷은 인덱스 공간이 달라 합치지 않는다.
 
 ---
 
@@ -1070,6 +1072,10 @@ m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Bounded 만 — �
 m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
 m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
 m.surface_name                                             // pub 곁표 — 평면의 이름(캐시)
+
+// ── 세계 진술 — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히 ────────
+m.world_plane_name(h) -> Option<PlaneName>                 // 평면의 세계 이름(사슬이 안 접히면 None)
+m.chain_plane_coeffs(leaf, c) · m.chain_point_rat(leaf, p) · m.chain_dir_rat(leaf, d)   // 접은 사슬의 세 얼굴
 
 // ── 쓰기 문 ──────────────────────────────────────────────────────────
 m.push_plane(..) · m.push_plane_through(..) · m.push_cylinder(..)   // 곡면은 진실을 진술하며 들어온다

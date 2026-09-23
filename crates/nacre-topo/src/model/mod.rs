@@ -37,6 +37,7 @@ impl Model {
             vertex_cache: Vec::new(),
             motions: Store::default(),
             motion_ids: HashMap::new(),
+            motion_folds: Vec::new(),
             surface_name: HashMap::new(),
             surface_ids: HashMap::new(),
             surface_through_ids: HashMap::new(),
@@ -231,6 +232,26 @@ impl Model {
         }
         let h = self.motions.push(node);
         self.motion_ids.insert(node, h);
+        let own = match motion {
+            Motion::Translate { offset } => Some(nacre_exact::AxisAffine::translation(offset)),
+            Motion::Rotate { axis, pivot, angle } => {
+                nacre_exact::AxisAffine::rotation(nacre_exact::Rotation { axis, pivot, angle })
+            }
+            Motion::Mirror { axis, offset } => Some(nacre_exact::AxisAffine::mirror(axis, offset)),
+            // A frame's basis is `1/√rational` — never a rational map.
+            Motion::Frame { .. } => None,
+        };
+        // Root first: the parent's chain is applied, then this node.
+        let fold = match parent {
+            None => own,
+            Some(p) => own.and_then(|o| Some(self.motion_folds[p.index() as usize]?.then(&o))),
+        };
+        self.motion_folds.push(fold);
+        debug_assert_eq!(
+            self.motion_folds.len(),
+            self.motions.len(),
+            "one fold per node"
+        );
         h
     }
 }

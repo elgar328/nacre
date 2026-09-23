@@ -94,10 +94,10 @@ fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
 /// neither holds here; the world road transports each carrier's *name* and meets the three in
 /// the world, so the answer carries no leaf and the caller replays nothing.
 ///
-/// Negative controls, both load-bearing: a **rotated** carrier has no rational world name and
-/// still declines, and a corner the shared-chain door can answer keeps answering **through
-/// that door** (`leaf = Some`) — which is what says the new road is a fallback and not a
-/// re-spelling of what already worked.
+/// Controls, both load-bearing: a carrier turned a **quarter** folds and meets in the world while
+/// one turned **37°** has no rational world name and still declines, and a corner the
+/// shared-chain door can answer keeps answering **through that door** (`leaf = Some`) — which
+/// is what says the new road is a fallback and not a re-spelling of what already worked.
 #[test]
 fn a_corner_of_two_translation_chains_solves_in_the_world() {
     use nacre_exact::{Angle, Axis, Rat};
@@ -186,11 +186,10 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
         "the corner is where the two moved planes and the world plane meet"
     );
 
-    // ① A rotated carrier has no rational world name — the road declines, honestly. A quarter
-    // turn carries x = 0 to y = 0, so the cache is exact, and pairing it with the *translated*
-    // x = 2 wall and z = 0 keeps the triple a proper three-plane point: what declines here is
-    // the rotation, not a degeneracy.
-    let spin = m.push_motion(
+    // ① A quarter turn folds, so a turned carrier has a world name and the road meets it: x = 0
+    // turned a quarter about z is y = 0, which meets the translated x = 2 wall and z = 0 at
+    // (2, 0, 0).
+    let quarter = m.push_motion(
         Motion::Rotate {
             axis: Axis::Z,
             pivot: [r(0); 3],
@@ -198,16 +197,44 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
         },
         None,
     );
-    let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], fwd);
+    let turned = moved(&mut m, px, quarter, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], fwd);
     let v_turned = m.push_vertex(
         Vertex::ThreePlane([turned, mx, pz]),
         PointCache::Unrealized {
             coord: Point3::from_array([2.0, 0.0, 0.0]),
         },
     );
+    let (p, frame) = m
+        .vertex_meet(v_turned)
+        .expect("a quarter turn folds into the world");
+    assert_eq!(frame, None, "a folded carrier answers in the world");
+    assert_eq!(
+        p.narrow().map(|c| c.map(|x| x.to_f64())),
+        Some([2.0, 0.0, 0.0]),
+        "the turned wall meets the moved wall and the floor where the turn put it"
+    );
+
+    // ①′ The control: a turn off the quarters has irrational cos and sin, does not fold, and the
+    // same corner under it still declines — what says the answer above is the fold's.
+    let spin = m.push_motion(
+        Motion::Rotate {
+            axis: Axis::Z,
+            pivot: [r(0); 3],
+            angle: Angle::from_deg(r(37)).expect("angle"),
+        },
+        None,
+    );
+    let (c37, s37) = (37f64.to_radians().cos(), 37f64.to_radians().sin());
+    let spun = moved(&mut m, px, spin, [c37, s37, 0.0], [0.0, 0.0, 0.0], fwd);
+    let v_spun = m.push_vertex(
+        Vertex::ThreePlane([spun, mx, pz]),
+        PointCache::Unrealized {
+            coord: Point3::from_array([2.0, -2.0 * c37 / s37, 0.0]),
+        },
+    );
     assert!(
-        m.vertex_meet(v_turned).is_none(),
-        "a rotated carrier has no world name to meet with"
+        m.vertex_meet(v_spun).is_none(),
+        "a turn the rationals cannot state has no world name to meet with"
     );
 
     // ② The shared-chain door still answers through itself: same leaf on both moved carriers.
@@ -1927,4 +1954,92 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
     assert_eq!(turned, up.reversed(), "the cache follows the truth's sense");
     assert_eq!(turned.origin(), up.origin(), "only the sense moved");
     assert!(!m.align_cache_sense(h), "and asking again turns nothing");
+}
+
+/// **A chain pushed node by node folds to its nodes applied root first** — the one lock on the
+/// order `push_motion` composes in (the census has no chain with two non-identity linear parts).
+/// The oracle is the existing per-motion arithmetic, stepped; a turn off the quarters is in the
+/// mix, and both sides must then answer `None`.
+mod chain_folds {
+    use super::*;
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
+
+    fn r(n: i128, d: i128) -> Rat {
+        Rat::new(n, d).expect("a rational")
+    }
+
+    fn small() -> impl Strategy<Value = Rat> {
+        (-12i128..=12, 1i128..=6).prop_map(|(n, d)| r(n, d))
+    }
+
+    fn point() -> impl Strategy<Value = [Rat; 3]> {
+        proptest::array::uniform3(small())
+    }
+
+    fn axis_of(k: u8) -> Axis {
+        [Axis::X, Axis::Y, Axis::Z][k as usize % 3]
+    }
+
+    fn motion() -> impl Strategy<Value = Motion> {
+        prop_oneof![
+            4 => point().prop_map(|offset| Motion::Translate { offset }),
+            4 => (0u8..3, point(), 0i128..4).prop_map(|(a, pivot, q)| Motion::Rotate {
+                axis: axis_of(a),
+                pivot,
+                angle: Angle::from_deg(Rat::from_int(90 * q)).expect("a quarter"),
+            }),
+            3 => (0u8..3, small()).prop_map(|(a, offset)| Motion::Mirror { axis: axis_of(a), offset }),
+            1 => (0u8..3, point()).prop_map(|(a, pivot)| Motion::Rotate {
+                axis: axis_of(a),
+                pivot,
+                angle: Angle::from_deg(Rat::from_int(37)).expect("an angle"),
+            }),
+        ]
+    }
+
+    fn step_point(m: Motion, p: [Rat; 3]) -> Option<[Rat; 3]> {
+        match m {
+            Motion::Translate { offset } => Isometry::translation(offset).point_rat(p),
+            Motion::Rotate { axis, pivot, angle } => {
+                Isometry::rotation(Rotation { axis, pivot, angle }).point_rat(p)
+            }
+            Motion::Mirror { axis, offset } => nacre_exact::mirror_point_rat(p, axis, offset),
+            Motion::Frame { .. } => None,
+        }
+    }
+
+    fn step_plane(m: Motion, c: [Rat; 4]) -> Option<[Rat; 4]> {
+        match m {
+            Motion::Translate { offset } => Isometry::translation(offset).plane_coeffs(c),
+            Motion::Rotate { axis, pivot, angle } => {
+                Isometry::rotation(Rotation { axis, pivot, angle }).plane_coeffs(c)
+            }
+            Motion::Mirror { axis, offset } => nacre_exact::mirror_plane_coeffs(c, axis, offset),
+            Motion::Frame { .. } => None,
+        }
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+            proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+        ))]
+        #[test]
+        fn a_pushed_chain_folds_to_its_nodes_root_first(
+            chain in proptest::collection::vec(motion(), 1..6),
+            p in point(),
+            c in proptest::array::uniform4(small()),
+        ) {
+            let mut m = Model::new();
+            let mut leaf = None;
+            for &node in &chain {
+                leaf = Some(m.push_motion(node, leaf));
+            }
+            let leaf = leaf.expect("a nonempty chain");
+            let stepped = chain.iter().try_fold(p, |q, &n| step_point(n, q));
+            prop_assert_eq!(m.chain_point_rat(leaf, p), stepped);
+            prop_assume!(c[..3].iter().any(|x| *x != Rat::from_int(0)));
+            let stepped_plane = chain.iter().try_fold(c, |q, &n| step_plane(n, q));
+            prop_assert_eq!(m.chain_plane_coeffs(leaf, c), stepped_plane);
+        }
+    }
 }

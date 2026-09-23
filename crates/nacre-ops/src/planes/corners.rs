@@ -262,20 +262,16 @@ pub(super) fn corner_of(
     let vh = he_start(model, *he);
     match model.vertex_meet(vh) {
         // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A
-        // chain that folds to a rational translation carries it out exactly — the same move
-        // the class descriptions and the cylinder statements make, so this test sees a
-        // translated body the way every other reader does. A `Wide` meet has no narrow vessel
-        // to shift and declines, as does any other chain: honest, never a comparison across
-        // two frames.
+        // chain that folds carries it out exactly — the same move the class descriptions and
+        // the cylinder statements make, so this test sees a moved body the way every other
+        // reader does. A `Wide` meet has no narrow vessel to move and declines, as does a chain
+        // that does not fold: honest, never a comparison across two frames.
         Some((p, None)) => Ok(Corner::Rational(p)),
         Some((p, Some(leaf))) => {
-            let (Some(t), Some(q)) = (model.chain_translation(leaf), p.narrow()) else {
-                return Err(CornerFail::Arithmetic);
-            };
-            let mut w = *q;
-            for (c, d) in w.iter_mut().zip(t) {
-                *c = c.checked_add(d).ok_or(CornerFail::Arithmetic)?;
-            }
+            let w = p
+                .narrow()
+                .and_then(|q| model.chain_point_rat(leaf, *q))
+                .ok_or(CornerFail::Arithmetic)?;
             Ok(Corner::Rational(nacre_exact::MeetPoint::Narrow(w)))
         }
         // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
@@ -342,14 +338,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
 fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_exact::Rat; 3]> {
     match model.vertex_meet(vh) {
         Some((p, None)) => p.narrow().copied(),
-        Some((p, Some(leaf))) => {
-            let (t, q) = (model.chain_translation(leaf)?, p.narrow()?);
-            let mut w = *q;
-            for (c, d) in w.iter_mut().zip(t) {
-                *c = c.checked_add(d)?;
-            }
-            Some(w)
-        }
+        Some((p, Some(leaf))) => model.chain_point_rat(leaf, *p.narrow()?),
         None => {
             let nacre_topo::Vertex::Pierce {
                 planes,

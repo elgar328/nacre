@@ -90,12 +90,11 @@ impl Model {
     /// **A plane's canonical name in the world**, whatever frame its truth is written in — the
     /// door between "how this surface got here" and "where it is".
     ///
-    /// Unmoved: the name itself, which is already world. Moved by a chain that folds to a
-    /// rational translation ([`Model::chain_translation`]): that name carried out exactly
-    /// (`d' = d − n·t`, [`nacre_exact::Isometry::plane_coeffs`], canonicalized). `None` for
-    /// anything else — a rotation, a frame node, a **moved** [`nacre_exact::PlaneName::Wide`]
-    /// (no narrow vessel for the transport to take), or an overflow — and the caller declines
-    /// rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
+    /// Unmoved: the name itself, which is already world. Moved by a chain that folds — translations,
+    /// quarter turns and axis reflections, [`Model::chain_plane_coeffs`]: that name carried out
+    /// exactly and canonicalized. `None` for anything else — a frame node, a turn off the
+    /// quarters, a **moved** [`nacre_exact::PlaneName::Wide`] (no narrow vessel for the transport
+    /// to take), or an overflow — and the caller declines rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
     /// and refusing it would switch off a capability that is locked elsewhere.
     ///
     /// **Planes only.** A cylinder surface has no entry in `surface_name`, so it answers `None`;
@@ -104,14 +103,48 @@ impl Model {
         let name = self.surface_name.get(&surf)?;
         match self.plane_motion(surf) {
             None => Some(name.clone()),
-            Some(leaf) => {
-                let t = self.chain_translation(leaf)?;
-                let c = name.narrow()?;
-                Some(nacre_exact::PlaneName::Narrow(
-                    nacre_exact::Isometry::translation(t).plane_coeffs(*c)?,
-                ))
-            }
+            Some(leaf) => Some(nacre_exact::PlaneName::Narrow(
+                self.chain_plane_coeffs(leaf, *name.narrow()?)?,
+            )),
         }
+    }
+
+    /// `leaf`'s whole chain, folded ([`Model::motion_folds`]) — read through the store first, so
+    /// a handle from another model dies here as it does at [`Model::motion`].
+    pub(super) fn chain_fold(&self, leaf: Handle<MotionNode>) -> Option<&nacre_exact::AxisAffine> {
+        let _ = self.motion(leaf);
+        self.motion_folds[leaf.index() as usize].as_ref()
+    }
+
+    /// **The plane `c`, stated before `leaf`'s chain, restated in the world** — canonicalized, so
+    /// a plane reached by two routes lands on one array. `None` where the chain does not fold (a
+    /// frame, a turn off the quarters) or the arithmetic overflows `i128`.
+    pub fn chain_plane_coeffs(
+        &self,
+        leaf: Handle<MotionNode>,
+        c: [nacre_exact::Rat; 4],
+    ) -> Option<[nacre_exact::Rat; 4]> {
+        self.chain_fold(leaf)?.plane_coeffs(c)
+    }
+
+    /// **The point `p`, stated before `leaf`'s chain, carried to the world** — exactly. `None` as
+    /// [`Model::chain_plane_coeffs`].
+    pub fn chain_point_rat(
+        &self,
+        leaf: Handle<MotionNode>,
+        p: [nacre_exact::Rat; 3],
+    ) -> Option<[nacre_exact::Rat; 3]> {
+        self.chain_fold(leaf)?.point_rat(p)
+    }
+
+    /// **The direction `d`, stated before `leaf`'s chain, carried to the world** — the linear
+    /// part only, so a chain whose offset overflowed still answers.
+    pub fn chain_dir_rat(
+        &self,
+        leaf: Handle<MotionNode>,
+        d: [nacre_exact::Rat; 3],
+    ) -> Option<[nacre_exact::Rat; 3]> {
+        self.chain_fold(leaf)?.dir_rat(d)
     }
 
     /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely

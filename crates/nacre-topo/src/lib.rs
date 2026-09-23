@@ -340,15 +340,15 @@ pub struct SurfaceDeriveCounts {
     /// Pushes whose cache the truth could derive (`Model::derive_surface_cache`, private — so
     /// this is deliberately not a link: a public field's doc cannot point inside the crate).
     pub derived: u64,
-    /// Pushes where it declined — no name, a `Wide` name, a motion that is not a rational
-    /// translation chain, a moved cylinder, or an overflow. **This is the population that must
+    /// Pushes where it declined — no name, a `Wide` name, a motion chain that does not fold (a
+    /// frame, a turn off the quarters), a moved cylinder, or an overflow. **This is the population that must
     /// reach zero (or be justified) before `cache` can leave the push doors' signatures.**
     pub declined: u64,
     /// `declined`, split by cause. The split is what says *which* work removing the parameter
     /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a
-    /// `Wide` name wants an arbitrary-precision arm, a motion wants a chain folded to an
-    /// `Isometry` (rotations included — `nacre_exact::Isometry::plane_coeffs` already carries
-    /// a plane through the 90° family), and arithmetic is an `i128` ceiling.
+    /// `Wide` name wants an arbitrary-precision arm, a motion that still declines holds a frame or
+    /// a turn off the quarters (no rational map exists — the rest fold, `Model::chain_plane_coeffs`),
+    /// and arithmetic is an `i128` ceiling.
     pub declined_unnamed: u64,
     /// See [`SurfaceDeriveCounts::declined_unnamed`].
     pub declined_wide: u64,
@@ -716,6 +716,20 @@ pub struct Model {
     /// Interning table for [`Model::push_motion`]: the handle already issued for a given
     /// `(motion, parent)`. Not iterated (a `HashMap`'s order must never reach a result).
     motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
+    /// **Each motion node's whole chain, folded** — index-parallel to `motions`, filled by
+    /// [`Model::push_motion`] as the node is born (its parent's fold, then its own), so asking a
+    /// chain what it amounts to costs one read at any depth. `None` where the chain holds a node
+    /// the rationals cannot state (a frame, a turn off the quarters), and for every child after.
+    ///
+    /// A cache: derived from the nodes, never an interning key, and no node is made or merged for
+    /// it. Read through [`Model::chain_plane_coeffs`], [`Model::chain_point_rat`] and
+    /// [`Model::chain_dir_rat`].
+    ///
+    /// ★ **Folded once, not walked per question** (measured): walking the chain at every question
+    /// made 2,000 recorded quarter turns cost 6.7 s against 0.20 s, and a 4,200-turn irrational
+    /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
+    /// is quadratic in the history.
+    motion_folds: Vec<Option<nacre_exact::AxisAffine>>,
     /// Each surface's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points —
     /// present for every surface whose producer had a rational description to record.
     ///

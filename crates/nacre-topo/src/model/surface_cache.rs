@@ -171,8 +171,8 @@ impl Model {
     /// two could still differ.
     ///
     /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
-    /// motion that is not a rational translation chain, a `Through` truth, a moved cylinder, or
-    /// an overflow. ⚠ The name is still required even though the anchor does not read it: every
+    /// motion chain that does not fold ([`Model::chain_point_rat`]), a `Through` truth, a moved
+    /// cylinder, or an overflow. ⚠ The name is still required even though the anchor does not read it: every
     /// number above was measured with that gate on, and widening it is its own measurement.
     ///
     /// ⚠★★★ **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
@@ -194,14 +194,11 @@ impl Model {
                     // A `Through` truth names vertices, whose meet may not fit `Rat` at all.
                     return None;
                 };
-                let t = match motion {
-                    None => [Rat::from_int(0); 3],
-                    Some(leaf) => self.chain_translation(*leaf)?,
-                };
-                let mut anchor = [0.0f64; 3];
-                for (k, a) in anchor.iter_mut().enumerate() {
-                    *a = pts[0][k].checked_add(t[k])?.to_f64();
+                let anchor = match motion {
+                    None => pts[0],
+                    Some(leaf) => self.chain_point_rat(*leaf, pts[0])?,
                 }
+                .map(|x| x.to_f64());
                 // The row verbatim — `coefficients()` is `[raw, −raw·origin]`, so its first three
                 // are the `raw` the producer built, and copying them keeps the sense with it.
                 let c = stated.coefficients();
@@ -251,7 +248,7 @@ impl Model {
                 None => &SURFACE_DECLINED_UNNAMED,
                 Some(n) => match (self.plane_motion(h), n.narrow()) {
                     (_, None) => &SURFACE_DECLINED_WIDE,
-                    (Some(leaf), Some(_)) if self.chain_translation(leaf).is_none() => {
+                    (Some(leaf), Some(_)) if self.chain_fold(leaf).is_none() => {
                         &SURFACE_DECLINED_MOTION
                     }
                     _ => &SURFACE_DECLINED_ARITH,
