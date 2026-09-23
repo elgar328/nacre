@@ -28,6 +28,9 @@ impl Model {
     /// *one geometric plane as two handles* (interning would collapse them), and dummy planes
     /// whose handles are never dereferenced. The truth is still stated, so nothing point-less
     /// enters the arena even from tests.
+    ///
+    /// ⚠ The cache still follows the stated sense ([`Model::align_cache_sense`] runs at every raw
+    /// push), so a model whose plane cache opposes its truth cannot be planted through here.
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_plane_unregistered(
         &mut self,
