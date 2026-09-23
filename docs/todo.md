@@ -473,29 +473,3 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 
 로그 중간 편집을 위한 계보 참조(`OpRef { op, output_slot }`)와 op 로그의 소유자(`Document`), `Store` 스냅샷·직렬화 포맷, 세션 메모리 관리(compact 보다 재구축 우선), 경량 STEP 라이터와 export 시 unseam 옵션, M7 SSI 의 방법 선택.
 
-## 정리 로드맵
-
-거대 파일 분할도, 불리언 파이프라인의 모양도(`boolean.rs → arrangement/ → assembly/`, 모두
-`draft` 를 읽는다) 끝났다. 모듈 그래프는 「지금」의 항목이 든다. **남아 있던 두 물음은 재 보고
-닫혔다** — 아래는 그 측정이지 할 일이 아니다. 다시 열려면 새 인구를 재서 열어야 한다.
-
-- **긴 함수는 결함이 아니다 — 재 보고 닫았다.** 300줄을 넘는 함수는 **열셋**이다(`measure_census` 2,120은
-  통합 테스트의 계측 · `reconstruct` 1,106 · `trace_transversal_face` 511 · `regions.rs` 의 `walk` 485 ·
-  `chart_census` 의 `census` 482(테스트) · `collect_planes` 395 · `transform_solid` 378 · `merge_component` 361 ·
-  `split_circles` 350 · `split_at_crossings` 350 · `group_faces` 343 · `datum_plane` 318 · `cylinder_gate` 312).
-  **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가
-  이름으로 부를 만한가»이고, **저장소에서 그 호출자를 든 단계는 하나였다**: `split_at_crossings` 의 방향 분할을
-  감사 테스트가 손으로 다시 짓고 있었다. 그것은 `direction_partition` 이 되었고 감사가 그것을 부른다.
-  나머지 열둘에는 그런 호출자가 없다. 쪼개는 비용(그 블록이 바깥에서 받아야 하는 지역변수 수)도 함께 재 뒀다 —
-  `coplanar` §1 **1** · `collect_planes` 의 셸 루프 **3** · `datum_plane` 의 `match` **4** ·
-  `transform_solid` 의 표면 단계 10 · `cylinder_gate` 의 원통 루프 11 · `split_circles` 의 원 루프 12 ·
-  `trace_transversal_face` 의 `'rings` 15 · `reconstruct` 의 `'faces:` **32**(가변 7). 앞의 셋은 서명이 짧지만
-  부를 사람이 없고, 뒤의 넷은 공유 가변 상태를 문맥 타입으로 묶어야 한다. `split_at_crossings` 의 나머지 구간은
-  `watch!` 로 이미 이름이 있다(`phase.rs` 의 `COLLECT`·`SORT`·`COVER`).
-- **주석 비율은 결함이 아니다 — 재 보고 닫았다.** 주석은 줄의 36~45%이고(코드/doc/본문: `arrangement`
-  5,640/1,654/1,474 · `combinatorics` 3,536/1,973/661 · `nacre-ops/src` 최상위 3,815/2,582/530 ·
-  `nacre-exact` 제품 3,151/1,832/317), 그 가운데 **doc 이 15,182줄로 대부분**이며 사용자에게 가는 문서다.
-  함수 본문 주석은 제품 코드에서 5,615줄이고 긴 덩어리(14줄 이상) 62개·1,181줄에 몰려 있다. **가장 긴 열 개
-  (294줄)에서 되풀이는 14줄(5%)** 이고 나머지는 불변식·측정치·거절한 대안·위험이었다 — 줄일 인구가 없다.
-  판단 규칙은 `overview.md` 문서 규칙 7 이 든다. 범위 밖: 6~13줄 덩어리(344개, 표본 10 중 아홉이 주장)와
-  테스트의 본문 주석.
