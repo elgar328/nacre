@@ -101,9 +101,9 @@ impl Model {
     /// ★ Counting happens **first**, against the value the producer stated, so the census `stat`
     /// rows keep meaning "how far the producer's value was from the truth's".
     ///
-    /// ⚠ Planes only. [`Model::push_cylinder_raw`] still calls [`Model::measure_derivation`]:
-    /// the cylinder arm is derived and **thrown away**, deliberately, because a moved cylinder's
-    /// world statement lives in `nacre-ops` and this door cannot reach it.
+    /// ⚠ Planes only. [`Model::push_cylinder_raw`] calls [`Model::measure_derivation`]: the
+    /// cylinder arm is derived and **thrown away** — whether applying it moves any cache bit is
+    /// measured for the moved cylinders only (bit-identical), not for the unmoved ones.
     fn apply_derivation(&mut self, h: Handle<Surface>) {
         self.measure_derivation(h);
         if let Some(realized) = self.derive_surface_cache(h) {
@@ -147,9 +147,11 @@ impl Model {
     /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
     ///   world and realized. The row (`raw`) and with it the sense are copied from the value the
     ///   producer stated.
-    /// * **Cylinder** — `origin` and `radius` descend exactly from [`CylinderDef`]; the axis
-    ///   direction and `ref_dir` do not (`Cylinder::from_axis` normalizes both). ⚠ Nothing
-    ///   **applies** this arm today — [`Model::push_cylinder_raw`] only measures it.
+    /// * **Cylinder** — the world statement ([`Model::world_cylinder_def`]'s, without its
+    ///   postcondition — this reader measures the disagreement it would assert away) realized: `origin` and
+    ///   `radius` descend exactly; the axis direction and `ref_dir` do not
+    ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today —
+    ///   [`Model::push_cylinder_raw`] only measures it.
     ///
     /// ★★★★★ **Why the anchor and not the row** (measured). A canonical row is the
     /// tidier answer, but it moves 32 census result rows, costs an exact-coefficient
@@ -171,8 +173,8 @@ impl Model {
     /// two could still differ.
     ///
     /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
-    /// motion chain that does not fold ([`Model::chain_point_rat`]), a `Through` truth, a moved
-    /// cylinder, or an overflow. ⚠ The name is still required even though the anchor does not read it: every
+    /// motion chain that does not fold ([`Model::chain_point_rat`]), a `Through` truth, or an
+    /// overflow. ⚠ The name is still required even though the anchor does not read it: every
     /// number above was measured with that gate on, and widening it is its own measurement.
     ///
     /// ⚠★★★ **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
@@ -206,8 +208,8 @@ impl Model {
                 Plane::from_point_normal(Point3::from_array(anchor), raw)
                     .map(nacre_geom::Surface::Plane)
             }
-            Surface::Cylinder { def, motion } => {
-                motion.is_none().then_some(())?;
+            Surface::Cylinder { .. } => {
+                let def = self.world_cylinder_statement(h)?;
                 Cylinder::from_axis(
                     Point3::from_array(rat3(def.origin())),
                     Vector3::from_array(rat3(def.dir())),

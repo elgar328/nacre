@@ -330,45 +330,15 @@ const DIVERGES: &str = "<diverges silently>";
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ **What it holds today: every cylinder family under a recorded quarter turn.** A history
-/// makes the turn a chain node, and a chain that is not a pure translation has no world
-/// statement for its cylinder, so the cylinder gate refuses by name (measured: all 21 families
-/// with a cylinder, all three kinds, all six turns; the planar family and the prefix alone
-/// commute).
-const KNOWN: &[(&str, &[&str], &[&str])] = &[
-    ("bore axis", HISTORY_TURNS, GATE),
-    ("bore offset", HISTORY_TURNS, GATE),
-    ("corner", HISTORY_TURNS, GATE),
-    ("corner-lo", HISTORY_TURNS, GATE),
-    ("enclosed", HISTORY_TURNS, GATE),
-    ("flush", HISTORY_TURNS, GATE),
-    ("half +x", HISTORY_TURNS, GATE),
-    ("half +x, cap below", HISTORY_TURNS, GATE),
-    ("half wall", HISTORY_TURNS, GATE),
-    ("half wall, cap below", HISTORY_TURNS, GATE),
-    ("offmid", HISTORY_TURNS, GATE),
-    ("offset-in", HISTORY_TURNS, GATE),
-    ("offset-irr", HISTORY_TURNS, GATE),
-    ("offset-out", HISTORY_TURNS, GATE),
-    ("on top", HISTORY_TURNS, GATE),
-    ("through", HISTORY_TURNS, GATE),
-    ("through mid", HISTORY_TURNS, GATE),
-    ("wall +x", HISTORY_TURNS, GATE),
-    ("wall +y", HISTORY_TURNS, GATE),
-    ("wall -x", HISTORY_TURNS, GATE),
-    ("wall -y", HISTORY_TURNS, GATE),
-];
+/// ★ The ledger is empty: every cell of the whole group commutes, the recorded quarter turns
+/// included (the cylinder families refused them by name until a cylinder's chain folded to a
+/// world statement). It stays here as the shape the next divergence is written in — a reject
+/// under the reason's name, a silent divergence under [`DIVERGES`].
+const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 
-/// The six recorded quarter turns [`KNOWN`] names.
-const HISTORY_TURNS: &[&str] = &[
-    "h+rx90", "h+rx180", "h+ry90", "h+ry180", "h+rz90", "h+rz180",
-];
-
-/// The reason those cells are refused under — a named reject, read by the ledger's reject arm.
-const GATE: &[&str] = &["CylinderGateUndecided"];
-
-/// The count lock: how many cells `KNOWN` names (three kinds per motion).
-const KNOWN_CELLS: usize = 378;
+/// The count lock: how many cells `KNOWN` names (three kinds per motion) — zero, since every
+/// cell commutes.
+const KNOWN_CELLS: usize = 0;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
@@ -596,7 +566,8 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .map(|&fh| m.face(fh).surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the boss has a lateral");
-        crate::planes::world_cylinder_def(m, surf).expect("the chain folds to a world cylinder")
+        m.world_cylinder_def(surf)
+            .expect("the chain folds to a world cylinder")
     };
     let (da, db) = (lateral(&a, ba), lateral(&b, bb));
     assert_eq!(da.origin(), db.origin());
@@ -639,7 +610,7 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
         .map(|&fh| m.face(fh).surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the boss has a lateral");
-    let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
     assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);
     let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the moved boss cuts");
     m.rebuild_adjacency();

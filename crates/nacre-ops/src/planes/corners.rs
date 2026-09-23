@@ -202,7 +202,7 @@ fn pierce_corner(
     use nacre_topo::QuadRoot;
     let p1 = *model.world_plane_name(planes[0])?.narrow()?;
     let p2 = *model.world_plane_name(planes[1])?.narrow()?;
-    let def = world_cylinder_def(model, cylinder)?;
+    let def = model.world_cylinder_def(cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
         nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
@@ -494,7 +494,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         .surfaces
         .iter()
         .find(|&&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
-        .and_then(|&s| world_cylinder_def(model, s))?;
+        .and_then(|&s| model.world_cylinder_def(s))?;
     let (o, m) = (def.origin(), def.dir());
     if !nacre_exact::parallel_rat(&n, &m) {
         return None;

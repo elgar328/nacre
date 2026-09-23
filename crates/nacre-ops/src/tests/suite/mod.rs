@@ -457,7 +457,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
     let cyls: Vec<crate::planes::WorkingCyl> = cyl_surfs
         .iter()
         .map(|&surf| {
-            let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+            let def = m.world_cylinder_def(surf).expect("a world cylinder");
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!()
             };

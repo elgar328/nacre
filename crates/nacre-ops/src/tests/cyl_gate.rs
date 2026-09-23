@@ -228,7 +228,7 @@ fn the_tangent_wall_states_itself_exactly() {
     let (setup, cyl_surfs) =
         crate::arrangement::plane_index_setup_inner(&m, cube, cyl).expect("setup");
     let surf = cyl_surfs[0];
-    let def = world_cylinder_def(&m, surf).expect("a world cylinder");
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
     let (o, r2) = (def.origin(), def.r2());
     // The tangent class, found the gate's own way: one clearance call per class.
     let c = (0..setup.geom.len())

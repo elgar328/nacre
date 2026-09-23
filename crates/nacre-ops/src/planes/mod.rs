@@ -104,9 +104,10 @@ pub(crate) struct CylFaceInfo {
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
     /// The cylinder's exact statement **in the world** — cloned here so the tracer (which works
     /// off the face table, never the `Model`) can ask ⊥-ness and axis parameters. `None` when the
-    /// truth is written in a frame this table cannot carry out exactly (a rotation, a frame node,
-    /// or overflow); consumers decline by their own names, and the population gate refuses such a
-    /// boolean before the arrangement runs. See [`world_cylinder_def`].
+    /// truth is written in a frame no fold carries out exactly (a frame node, a turn off the
+    /// quarters, or overflow); consumers decline by their own names, and the population gate
+    /// refuses such a boolean before the arrangement runs. See
+    /// [`nacre_topo::Model::world_cylinder_def`].
     pub(crate) def: Option<nacre_topo::CylinderDef>,
     /// This lateral **face**'s extent in the axis parameter `t` (of the raw `def.dir()`): the
     /// least and greatest `t` of the ⊥ carriers on its outer loop — `t = −(n·o + d)/(n·m)` per cap

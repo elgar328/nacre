@@ -531,7 +531,7 @@ fn seam_point(
     cap: Handle<Surface>,
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
-    let def = crate::planes::world_cylinder_def(model, cyl)?;
+    let def = model.world_cylinder_def(cyl)?;
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let t = crate::planes::axis_param_of_plane(&coeffs, &def)?;
@@ -551,7 +551,7 @@ fn pierce_point(
     root: nacre_topo::QuadRoot,
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
-    let def = crate::planes::world_cylinder_def(model, cylinder)?;
+    let def = model.world_cylinder_def(cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
     let c1 = crate::planes::world_plane_coeffs(model, planes[1])?;

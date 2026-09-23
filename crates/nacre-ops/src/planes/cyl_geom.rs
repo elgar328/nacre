@@ -16,66 +16,6 @@ pub(crate) fn world_plane_coeffs(
     model.world_plane_name(surf)?.narrow().copied()
 }
 
-/// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
-/// (written in the frame its motion names) and every consumer that compares it against world
-/// planes: the population gate's clearance arithmetic, the arrangement's circles and rulings,
-/// the band pass.
-///
-/// Unmoved: the statement itself. Moved by a chain that is a pure rational translation
-/// ([`nacre_topo::Model::chain_translation`]): the same statement with its origin shifted —
-/// exact, because a rational translation maps a rational statement to a rational one, and the
-/// axis direction, the seam reference and the radius are all invariant under it. Anything else
-/// (a rotation, a frame, overflow): `None`, and the caller refuses rather than measuring across
-/// two frames.
-///
-/// ★ **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
-/// *realized* world cylinder, so it is an independent second description of the very thing this
-/// function claims to produce — a fold with the wrong sign, or one that walked the chain the
-/// wrong way, disagrees with it by twice the offset. Consumer-side net, in the shape this kernel
-/// keeps arriving at: check the postcondition rather than trusting the derivation.
-pub(crate) fn world_cylinder_def(
-    model: &Model,
-    surf: Handle<Surface>,
-) -> Option<nacre_topo::CylinderDef> {
-    let nacre_topo::Surface::Cylinder { def, motion } = model.surface(surf) else {
-        unreachable!("a cylinder surface carries a cylinder truth")
-    };
-    let out = match motion {
-        None => def.clone(),
-        Some(leaf) => {
-            let t = model.chain_translation(*leaf)?;
-            let mut o = def.origin();
-            for (c, d) in o.iter_mut().zip(t) {
-                *c = c.checked_add(d)?;
-            }
-            // The three invariants of a translation, so `new`'s checks cannot newly fail here —
-            // it is called rather than bypassed because the type's constructor is the only way in.
-            nacre_topo::CylinderDef::new(o, def.dir(), def.ref_dir(), def.r2().clone())?
-        }
-    };
-    debug_assert!(
-        {
-            let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
-                unreachable!(
-                    "push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache"
-                )
-            };
-            let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
-            let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
-            cache.axis().distance(o) <= 1e-9 * scale
-                && (cache.radius() - out.radius_f64()).abs() <= 1e-9 * scale
-        },
-        "{}",
-        ONE_CYLINDER
-    );
-    Some(out)
-}
-
-/// The sentence [`world_cylinder_def`]'s postcondition panics with — one spelling, shared with
-/// the commuting oracle's `KNOWN` list, which names a panic site by its sentence.
-pub(crate) const ONE_CYLINDER: &str =
-    "the world statement and the realized cache describe one cylinder";
-
 /// A lateral face's axis-parameter span, read off its rim carrier planes.
 ///
 /// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis

@@ -190,7 +190,11 @@ fn arc_at(
 ///
 /// ★ **And it is cross-checked against that integer fold.** `nacre_judge::predicate::name_stored_ints`
 /// does the same turn exactly, in integers, on the classes it can (`None` for a wide name or a
-/// witness that speaks another frame) — so where it answers, the two must agree.
+/// witness that speaks another frame) — so where it answers **and the class's own name has the
+/// world's normal**, the two must agree. The name speaks the frame the truth is written in; under a
+/// turn or a reflection its normal is not the world's, and comparing the two component by
+/// component compares two frames (measured: 330 cells of the commuting oracle's recorded quarter
+/// turns fired that way while every one of them commuted in release).
 pub(crate) fn stored_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
@@ -203,13 +207,14 @@ pub(crate) fn stored_coeffs_rat(
     ]);
     let agrees = jd.planes[c].plane.normal().dot(n) > 0.0;
     debug_assert!(
-        jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
-            let k = (0..4).find(|&k| coeffs[k] != nacre_exact::Rat::from_int(0));
-            // ★ Through `NameInts`' own accessor, not by touching the integers: production code
-            // in this crate reaches `BigInt` only through `nacre-judge`'s types (the `num-bigint`
-            // dependency is dev-only, and an assertion is not a reason to promote it).
-            k.is_none_or(|k| ((ni.coeff_sign(k) > 0) == (coeffs[k].numer() > 0)) == agrees)
-        }),
+        jd.planes[c].base_rat.is_none_or(|b| b[..3] != coeffs[..3])
+            || jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
+                let k = (0..4).find(|&k| coeffs[k] != nacre_exact::Rat::from_int(0));
+                // ★ Through `NameInts`' own accessor, not by touching the integers: production code
+                // in this crate reaches `BigInt` only through `nacre-judge`'s types (the `num-bigint`
+                // dependency is dev-only, and an assertion is not a reason to promote it).
+                k.is_none_or(|k| ((ni.coeff_sign(k) > 0) == (coeffs[k].numer() > 0)) == agrees)
+            }),
         "the canonical-to-stored turn disagrees with the class's integer fold"
     );
     if agrees {

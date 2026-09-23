@@ -53,40 +53,6 @@ impl Model {
         self.chain_fixes(leaf, coeffs, false)
     }
 
-    /// **The single rational translation `leaf`'s whole chain amounts to**, or `None` when the
-    /// chain is anything else — the third question of this family, and the one that lets a
-    /// *moved* statement be restated in the world exactly.
-    ///
-    /// A rational translation maps a rational statement to a rational statement, so a chain made
-    /// only of [`Motion::Translate`] nodes loses nothing: a plane's `d` shifts by `−n·t`
-    /// ([`nacre_exact::Isometry::plane_coeffs`]), a cylinder's origin by `+t`. What such a move
-    /// *does* lose is the exactness of the `f64` **cache** — which is why the producer still
-    /// records the node (`transform`'s `carry_of`, and `nacre-ops`' reuse road reads a
-    /// world-stated carrier's coordinate as the statement itself). So this answers a question
-    /// about *descriptions*, for the per-operation mirrors that carry them; it does not license
-    /// dropping the history.
-    ///
-    /// ★ **The parent chain is walked raw, so a [`Motion::Frame`] node refuses outright.** A
-    /// frame's expansion can come back as translations, and a statement written *under* a frame
-    /// is in that frame's coordinates — folding those as world translations is a different
-    /// question. Translations commute and compose by addition, so no order is implied here.
-    /// `None` on overflow too (checked throughout).
-    pub fn chain_translation(&self, leaf: Handle<MotionNode>) -> Option<[nacre_exact::Rat; 3]> {
-        let mut total = [nacre_exact::Rat::from_int(0); 3];
-        let mut cur = Some(leaf);
-        while let Some(h) = cur {
-            let node = self.motion(h);
-            let Motion::Translate { offset } = node.motion else {
-                return None;
-            };
-            for (o, t) in total.iter_mut().zip(offset) {
-                *o = o.checked_add(t)?;
-            }
-            cur = node.parent;
-        }
-        Some(total)
-    }
-
     /// **A plane's canonical name in the world**, whatever frame its truth is written in — the
     /// door between "how this surface got here" and "where it is".
     ///
@@ -106,6 +72,61 @@ impl Model {
             Some(leaf) => Some(nacre_exact::PlaneName::Narrow(
                 self.chain_plane_coeffs(leaf, *name.narrow()?)?,
             )),
+        }
+    }
+
+    /// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
+    /// (written in the frame its motion names) and every consumer that compares it against world
+    /// planes: the population gate's clearance arithmetic, the arrangement's circles and rulings,
+    /// the band pass, the derived cache. [`Model::world_plane_name`]'s twin, one door per surface
+    /// kind.
+    ///
+    /// Unmoved: the statement itself. Moved by a chain that folds: origin through
+    /// [`Model::chain_point_rat`], axis and seam reference through [`Model::chain_dir_rat`], the
+    /// squared radius unchanged — a folded chain is a signed permutation plus a rational offset,
+    /// so every invariant [`CylinderDef::new`] checks survives it. Anything else (a frame, a turn
+    /// off the quarters, overflow): `None`, and the caller refuses rather than measuring across
+    /// two frames.
+    ///
+    /// ★ **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
+    /// *realized* world cylinder, so it is an independent second description of the very thing
+    /// this door claims to produce: the origin must lie on the cache's axis, the axis must run
+    /// along it, and the radius must match. A fold in the wrong order disagrees on the origin or
+    /// the direction.
+    pub fn world_cylinder_def(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
+        let out = self.world_cylinder_statement(surf)?;
+        debug_assert!(
+            {
+                let nacre_geom::Surface::Cylinder(cache) = self.surface_cache(surf) else {
+                    unreachable!("a cylinder truth is pushed beside a cylinder cache")
+                };
+                let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
+                let d = nacre_math::Vector3::from_array(out.dir().map(|r| r.to_f64()));
+                let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
+                cache.axis().distance(o) <= 1e-9 * scale
+                    && cache.axis().direction().cross(d).norm() <= 1e-9 * d.norm()
+                    && (cache.radius() - out.radius_f64()).abs() <= 1e-9 * scale
+            },
+            "the world statement and the realized cache describe one cylinder"
+        );
+        Some(out)
+    }
+
+    /// [`Model::world_cylinder_def`] without its postcondition — for the one reader whose job is
+    /// to **measure** how far the cache stands from the truth (the derived cache), where a
+    /// disagreement is the measurement, not a defect: a planted lie must reach `validate`.
+    pub(super) fn world_cylinder_statement(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
+        let Surface::Cylinder { def, motion } = self.surface(surf) else {
+            unreachable!("a cylinder surface carries a cylinder truth")
+        };
+        match motion {
+            None => Some(def.clone()),
+            Some(leaf) => CylinderDef::new(
+                self.chain_point_rat(*leaf, def.origin())?,
+                self.chain_dir_rat(*leaf, def.dir())?,
+                self.chain_dir_rat(*leaf, def.ref_dir())?,
+                def.r2().clone(),
+            ),
         }
     }
 

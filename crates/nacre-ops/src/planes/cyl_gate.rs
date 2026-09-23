@@ -76,11 +76,11 @@ pub(crate) fn cylinder_gate(
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // ★ **The world statement or nothing.** A moved cylinder's def is written before its
-        // motion, and every test below compares it against world planes. A chain that is a pure
-        // rational translation carries it out exactly ([`world_cylinder_def`] — the same door the
-        // face rows take); anything else (a rotation, a frame node, overflow) has no world
+        // motion, and every test below compares it against world planes. A chain that folds
+        // carries it out exactly (`Model::world_cylinder_def` — the same door the face rows
+        // take); anything else (a frame node, a turn off the quarters, overflow) has no world
         // description here and is refused rather than measured across two frames.
-        let Some(def) = world_cylinder_def(model, surf) else {
+        let Some(def) = model.world_cylinder_def(surf) else {
             return Err(undecided());
         };
         let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {

@@ -558,7 +558,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     let cyls: Vec<crate::planes::WorkingCyl> = cyl_surfs
         .iter()
         .map(|&surf| {
-            let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+            let def = m.world_cylinder_def(surf).expect("a world cylinder");
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!("a cylinder class names a cylinder")
             };
