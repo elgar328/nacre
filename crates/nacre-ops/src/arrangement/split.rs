@@ -80,6 +80,62 @@ impl Split {
     }
 }
 
+/// **The walls of one class, in first-appearance order, each with its direction family** and the
+/// segments riding it — what [`split_at_crossings`] partitions before it asks anything. See
+/// [`Wall`].
+///
+/// ★ **The family replaces a predicate per wall pair, and that is `|W|²` of them.** Two walls'
+/// lines on `wc` meet in a point iff `plane_pair_dir_sign(wc, w, r) != 0`, which is the sign of
+/// `det(n_wc, n_w, n_r)` — zero exactly when `n_wc × n_w` lies in `r`, i.e. when `wc ∩ w` is
+/// **parallel** to `wc ∩ r`. Parallelism of two lines in one plane is an **equivalence relation**,
+/// so the walls partition, and each wall needs only to find its family: ask the representatives
+/// until one matches. `|W| × families` questions instead of `|W|²`, and the collector then asks
+/// none at all.
+///
+/// ★ The relation needs `wc ∩ w` to *be* a line. It is: a wall comes from a segment that rides it,
+/// so the meet carries a segment by construction. (Were `n_w ∥ n_wc` the determinant would vanish
+/// against every `r` and the partition would collapse to one family.)
+///
+/// ★ **Not union-find**, though `Aliases` next door is one. That structure merges *given* pairs;
+/// the whole point here is to **not ask** the pairs — transitivity is what lets one question per
+/// family stand in for all of them.
+///
+/// ★ It takes the walls the segments ride rather than the segments: the family is a fact about
+/// `s.wall` alone, and the two callers hold different segment types (`MergedSeg` here, `Seg` in
+/// the audit that checks this partition against the predicate pair by pair).
+pub(super) fn direction_partition(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    seg_walls: impl IntoIterator<Item = usize>,
+) -> Vec<Wall> {
+    watch!(S_PART);
+    let mut walls: Vec<Wall> = Vec::new();
+    // Class → its slot in `walls`, for construction only. Nothing downstream reads it: a wall's
+    // segments and family travel with the wall, so the loops have one index space.
+    let mut slot: HashMap<usize, usize> = HashMap::new();
+    // One representative class per direction family, in first-appearance order.
+    let mut reps: Vec<usize> = Vec::new();
+    for (i, wall) in seg_walls.into_iter().enumerate() {
+        let at = *slot.entry(wall).or_insert_with(|| {
+            let dir = reps
+                .iter()
+                .position(|&rep| combinatorics::parallel_carriers(jd, wc, rep, wall))
+                .unwrap_or_else(|| {
+                    reps.push(wall);
+                    reps.len() - 1
+                });
+            walls.push(Wall {
+                class: wall,
+                dir,
+                segs: Vec::new(),
+            });
+            walls.len() - 1
+        });
+        walls[at].segs.push(i);
+    }
+    walls
+}
+
 pub(super) fn split_at_crossings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -130,52 +186,7 @@ pub(super) fn split_at_crossings(
         combinatorics::closed_contains(jd, wc, q, at, &end_l[si])
     };
 
-    // The walls, in first-appearance order for deterministic output — each with its **direction
-    // family** and the segments riding it. See [`Wall`].
-    //
-    // ★ **The family replaces a predicate per wall pair, and that is `|W|²` of them.** Two walls'
-    // lines on `wc` meet in a point iff `plane_pair_dir_sign(wc, w, r) != 0`, which is the sign of
-    // `det(n_wc, n_w, n_r)` — zero exactly when `n_wc × n_w` lies in `r`, i.e. when `wc ∩ w` is
-    // **parallel** to `wc ∩ r`. Parallelism of two lines in one plane is an **equivalence relation**,
-    // so the walls partition, and each wall needs only to find its family: ask the representatives
-    // until one matches. `|W| × families` questions instead of `|W|²`, and the collector then asks
-    // none at all.
-    //
-    // ★ The relation needs `wc ∩ w` to *be* a line. It is: a wall comes from a `MergedSeg` that
-    // rides it, so the meet carries a segment by construction. (Were `n_w ∥ n_wc` the determinant
-    // would vanish against every `r` and the partition would collapse to one family.)
-    //
-    // ★ **Not union-find**, though `Aliases` next door is one. That structure merges *given* pairs;
-    // the whole point here is to **not ask** the pairs — transitivity is what lets one question per
-    // family stand in for all of them.
-    let walls: Vec<Wall> = {
-        watch!(S_PART);
-        let mut walls: Vec<Wall> = Vec::new();
-        // Class → its slot in `walls`, for construction only. Nothing below reads it: a wall's
-        // segments and family travel with the wall, so the loops have one index space.
-        let mut slot: HashMap<usize, usize> = HashMap::new();
-        // One representative class per direction family, in first-appearance order.
-        let mut reps: Vec<usize> = Vec::new();
-        for (i, s) in segs.iter().enumerate() {
-            let at = *slot.entry(s.wall).or_insert_with(|| {
-                let dir = reps
-                    .iter()
-                    .position(|&rep| combinatorics::parallel_carriers(jd, wc, rep, s.wall))
-                    .unwrap_or_else(|| {
-                        reps.push(s.wall);
-                        reps.len() - 1
-                    });
-                walls.push(Wall {
-                    class: s.wall,
-                    dir,
-                    segs: Vec::new(),
-                });
-                walls.len() - 1
-            });
-            walls[at].segs.push(i);
-        }
-        walls
-    };
+    let walls: Vec<Wall> = direction_partition(jd, wc, segs.iter().map(|s| s.wall));
 
     #[cfg(test)]
     {

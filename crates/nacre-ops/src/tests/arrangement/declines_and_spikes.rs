@@ -67,9 +67,11 @@ fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Sol
 /// **The crossing collector's direction families really are equivalence classes.**
 ///
 /// ★ `split_at_crossings` replaced a predicate per wall pair with "same family?", which is sound
-/// only because `wc ∩ w ∥ wc ∩ r` is transitive. The argument is in that function; this is the
-/// **check**, over every wall pair of every class of a rotated and an axis-aligned fold: the
-/// predicate's own answer must agree with the partition, everywhere.
+/// only because `wc ∩ w ∥ wc ∩ r` is transitive. The argument is in [`direction_partition`]; this
+/// is the **check**, over every wall pair of every class of a rotated and an axis-aligned fold:
+/// the partition **that function builds** must agree with the predicate's own answer, everywhere.
+/// It calls the producer rather than rebuilding it, so a partition that drifted from the
+/// predicate — the way one family's representative is chosen, say — shows up here.
 ///
 /// It matters that this is a test and not a spike. A violation would not reject or panic — it
 /// would invent a crossing point where the lines never meet, or lose one where they do, and the
@@ -140,32 +142,23 @@ fn direction_families_partition_the_walls() {
                     &setup.plane_ix,
                     &Aliases::default(),
                 );
-                let mut walls: Vec<usize> = Vec::new();
-                for s in &tr.segs {
-                    if !walls.contains(&s.wall) {
-                        walls.push(s.wall);
-                    }
-                }
                 let par = |a: usize, b: usize| jd.plane_pair_dir_sign(wc, a, b) == 0;
-                // The partition, exactly as `split_at_crossings` builds it.
-                let mut reps: Vec<usize> = Vec::new();
-                let dir: Vec<usize> = walls
-                    .iter()
-                    .map(|&w| {
-                        reps.iter().position(|&rep| par(rep, w)).unwrap_or_else(|| {
-                            reps.push(w);
-                            reps.len() - 1
-                        })
-                    })
-                    .collect();
-                for (i, &a) in walls.iter().enumerate() {
-                    for (j, &b) in walls.iter().enumerate().skip(i + 1) {
+                // ★ The collector's **own** partition, not a copy of it — the thing under test.
+                let walls = super::super::split::direction_partition(
+                    &jd,
+                    wc,
+                    tr.segs.iter().map(|s| s.wall),
+                );
+                for (i, a) in walls.iter().enumerate() {
+                    for b in walls.iter().skip(i + 1) {
                         pairs += 1;
                         assert_eq!(
-                            par(a, b),
-                            dir[i] == dir[j],
-                            "class {wc}: walls {a} and {b} — the predicate and the partition \
-                                 disagree, so parallelism is not transitive here"
+                            par(a.class, b.class),
+                            a.dir == b.dir,
+                            "class {wc}: walls {} and {} — the predicate and the partition it \
+                                 builds disagree",
+                            a.class,
+                            b.class
                         );
                     }
                 }
