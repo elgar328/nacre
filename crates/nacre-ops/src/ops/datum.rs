@@ -389,11 +389,25 @@ pub(super) fn datum_plane(
             let (points, motion) = match realized.exact() {
                 // ★ An overflowing pullback is a **named reject**, not a quiet switch to the frame
                 // road — that switch is exactly where the duplicate handle would appear.
-                Some(rf) => (
-                    rf.offset_plane_points(d)
-                        .ok_or(OpError::PlaneWithoutExactForm)?,
-                    None,
-                ),
+                // ★ `rf` holds the two in-plane axes carried separately, so its normal `x × y` is
+                // `ŵ` times the chain's handedness: a recorded reflection makes it `−ŵ`, and
+                // offsetting along it would put the plane on the side the caller did not ask for.
+                // The frame-node road below carries `(0, 0, d)` itself and needs no such turn.
+                Some(rf) => {
+                    let chain = crate::rotated_vertex::frame_chain(model, base, &canonical, false)
+                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    let along = match nacre_judge::chain_parity(&chain) {
+                        1 => d,
+                        _ => nacre_exact::Rat::from_int(0)
+                            .checked_sub(d)
+                            .ok_or(OpError::DistOutsideDecimalWindow)?,
+                    };
+                    (
+                        rf.offset_plane_points(along)
+                            .ok_or(OpError::PlaneWithoutExactForm)?,
+                        None,
+                    )
+                }
                 None => {
                     let zero = nacre_exact::Rat::from_int(0);
                     let one = nacre_exact::Rat::from_int(1);

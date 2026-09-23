@@ -2513,3 +2513,88 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     };
     m.rebuild_adjacency();
 }
+
+/// ★★ **An offset of a mirrored face lands on the side the caller asked for.**
+///
+/// A reflection recorded as a chain node reverses handedness, so the frame's two in-plane axes
+/// carried separately span `x × y = −ŵ`. The world road offsets along the frame's normal; if that
+/// normal were read off the carried axes, `+d` would land on the *inside* of the face.
+///
+/// The fixture reaches the world road through a recorded mirror: a `0.1` translation rounds, so
+/// it is recorded as a node, and once a history exists the mirror is recorded behind it — while
+/// the top cap stays axis-aligned, so its frame still lifts to exact rationals.
+#[test]
+fn an_offset_of_a_mirrored_face_lands_outward() {
+    let mut m = Model::new();
+    let world = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame: world,
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+    )
+    .expect("a box") else {
+        unreachable!()
+    };
+    let OpOutput::Transform { solid } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid,
+            isometry: nacre_exact::Isometry::translation([
+                nacre_exact::Rat::from_int(0),
+                nacre_exact::Rat::from_int(0),
+                nacre_exact::Rat::from_decimal(0.1).expect("0.1"),
+            ]),
+        },
+    )
+    .expect("a translation") else {
+        unreachable!()
+    };
+    let OpOutput::Mirror { solid } = apply(
+        &mut m,
+        &Operation::Mirror {
+            solid,
+            axis: Axis::X,
+            offset: nacre_exact::Rat::from_int(0),
+        },
+    )
+    .expect("a mirror") else {
+        unreachable!()
+    };
+
+    // The top cap: the face on z = 1.1 whose outward is +z.
+    let shell = m.solid(solid).outer;
+    let top = m
+        .shell(shell)
+        .faces
+        .iter()
+        .copied()
+        .find(|&f| {
+            let face = m.face(f);
+            let nacre_geom::Surface::Plane(p) = m.surface_cache(face.surface) else {
+                return false;
+            };
+            let n = p.normal().as_array();
+            let s = f64::from(face.orientation.sign());
+            (n[2] * s - 1.0).abs() < 1e-12 && (p.origin().as_array()[2] - 1.1).abs() < 1e-12
+        })
+        .expect("the mirrored box keeps a top cap on z = 1.1");
+    // The face's own frame refuses a recorded mirror chain (`FrameNotRepresentable`), but the
+    // canonical frame of its plane is a public statement any caller can make.
+    let frame = SketchFrame::canonical(m.face(top).surface);
+
+    let OpOutput::DatumPlane { plane, .. } = apply(&mut m, &offset(frame, 1.0)).expect("offset")
+    else {
+        unreachable!()
+    };
+    let nacre_geom::Surface::Plane(p) = m.surface_cache(plane) else {
+        unreachable!()
+    };
+    let z = p.origin().as_array()[2];
+    assert!(
+        (z - 2.1).abs() < 1e-12,
+        "one outward from the top cap is z = 2.1, got z = {z}"
+    );
+}
