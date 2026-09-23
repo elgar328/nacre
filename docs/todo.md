@@ -236,6 +236,14 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 
 ## 알려진 결함과 절벽
 
+### 향 잠금 계기는 `Through` meet 의 프레임을 버린다
+
+census 의 향 잠금(`nacre_ops::audit_plane_senses`, test-util)은 `Through` 평면의 meet 을 `vertex_meet` 가
+돌려준 프레임을 버리고 평면 자신의 사슬로 옮긴다. 사슬 접기 뒤로 `vertex_meet_of` 의 세계 도로는 사분각 회전
+담체에도 답하므로, 모션이 있는 `Through` 평면의 meet 이 이미 세계로 돌아오면 한 번 더 옮겨질 수 있다. census 는
+초록이다(불일치 0 · 못 잰 것 0) — 그 인구가 있는지는 안 쟀다. 잴 것: census 의 모션 있는 `Through` 평면 수;
+있으면 meet 의 프레임 태그를 읽게 고친다(제품 동작이 아니라 계기의 결함이다).
+
 ### f64 로 향을 정하는 나머지 자리
 
 평면의 향은 진실이지만(`Surface::Plane.sense`), 향을 **f64 내적으로 정하는** 자리가 아직 남아 있다 —
