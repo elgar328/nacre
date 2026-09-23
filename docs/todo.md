@@ -12,7 +12,9 @@
 (`Model::derive_surface_cache`) · `Model::vertex_meet_of` 안의 `world_road` 클로저 ·
 `planes::world_plane_coeffs` · `planes::pierce_corner` · `planes::disk_of` ·
 `transform::pierce_line_reversed` · `combinatorics::curved_wall` · `combinatorics::pierce_name_from_def`.
-구현은 아직 없다.
+`chain_translation` 을 **직접** 부르는 자리가 여섯 더 있다: 캐시 유도의 앵커와 `decline_reason`
+(`surface_cache.rs`) · `world_cylinder_def` · `cyl_geom` 의 둘(`world_plane_name` 을 인라인으로 다시 적은
+사본) · `corners` 의 둘(점을 이동 사슬로 옮기는 사본). 구현은 아직 없다.
 
 **거절 532 의 원인별 분해.** 곡면 캐시 유도는 5,317 에서 성립하고 532 에서 거절한다(거절 = 모션 456 ·
 이동된 원통 76; 넘침 0 · 이름 없음 0 · wide 0). 그 532 를 사슬의 구성으로 쪼갠 값(거절이 나는
@@ -38,6 +40,24 @@
 규칙이다 — *"it does not license dropping the history."* 그러므로 이 일은 **노드를 하나도 만들지 않고
 하나도 지우지 않는다.**
 
+**잰 것**(임시 실험 — 접기를 켜고 census·스위트·perf 를 돌린 뒤 되돌렸다).
+
+- **census 18줄이 움직이고 결과 기하는 전부 그대로다**(부피·면적·무게중심·조각 수, 두 프로파일 동일):
+  `rot Y 90` 셋은 피연산자 평면 캐시와 결과 정점이 바뀌고 `r` 행의 실현 못 한 정점 8개씩(24)이 실현된다 ·
+  `rot Z 90` 셋과 `mir 1/3·7/22·5/7` 아홉은 피연산자 평면 캐시만 바뀐다. 캐시 유도 5,317 → 5,407(+90),
+  원통 캐시 유도를 접기에 태우면 원통 거절 76 → 7(유도된 69는 생산자 캐시와 비트 동일).
+- **스위트에서 빨개지는 것은 음성 대조군 하나뿐이다**(아래 90° 단언). 무시 스윕 126 전부 초록.
+- **원통은 census 에 인구가 없다** — 결과 행에 살아 있는 원통 중 사분각 회전을 **기록된 노드로** 든 것이 0이다
+  (census 의 `mot … rz90` 은 새 원통을 돌려 점으로 옮긴다). 겨냥한 실험(판·원통 보스에 0.1 이동으로 이력을
+  만든 뒤 90° 회전, 세 불리언 × 축 둘)은 오늘 여섯 모두 `CylinderGateUndecided` 이고, 접기를 켜면 여섯 모두
+  해석값 부피·validate 깨끗으로 답한다. 평면 접기만으로는 여전히 거절이다 — 원통 쪽(`world_cylinder_def`)이
+  함께 접혀야 열린다.
+- **매 질의마다 사슬을 걷는 접기는 깊이의 제곱이다.** 기록된 90° 회전 2,000번: 0.20초 → 6.7초. 37° 4,200번
+  (`a_rotation_history_past_the_budget_is_rejected_by_name`, 옛 걷기는 잎의 첫 노드에서 멈췄다): 1.44초 →
+  2.14초. 노드가 태어날 때(`push_motion`) 부모의 접은 결과에 자기 하나를 합성해 곁표에 두면 둘 다 기준선
+  (0.207초 · 1.45초)으로 돌아온다 — 사분각 회전·거울·이동의 합성은 늘 «원소 {0, ±1} 의 행렬 + 유리수
+  이동»이다.
+
 **산술은 다 있다 — 없는 것은 «노드를 차례로 적용하는 걷기»뿐이다.** `Isometry::plane_coeffs`(회전은
 `try_exact_cos_sin` 경유, 피벗·이동 포함) · `point_rat` · `dir_rat` · `mirror_plane_coeffs` ·
 `mirror_point_rat`. 모양은 기존 가족을 따른다(`chain_fixes` 라는 private 걷기 → 공개 얼굴 둘).
@@ -62,12 +82,12 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
   스스로를 반박한다(*"A quarter turn carries x = 0 to y = 0, so the cache is exact … what declines here
   is the rotation"*). **그 줄이 빨개지는 것이 «접기가 작동한다»의 증거다.** 다시 겨눌 때 **37° 짝을 같은
   파일에 남긴다** — 무엇이 여전히 사퇴하는지 보여 주는 대조가 없으면 운 좋은 통과와 구분되지 않는다.
-- **«이름이 생긴다» ≠ «길이 열린다» — 둘째 관문.** `combinatorics::curved_count` 의 원통 관문은
-  *"refuses any class that is rotated or has no narrow rational name"* 이라, 회전된 클래스는 이름을 얻고도
-  계속 거절된다. `FaceInfo::rotated` 는 «세계 진술이 없다»와 «행의 `tri` 가 진실이 아니라 실현본이다»를
-  **겸하므로 건드리지 않는다**(`planes::world_plane_coeffs` 의 doc: 그 플래그를 뒤집으면 공유 벽이 두 몸으로
-  갈린다). 그래서 인구를 `declined_motion` 의 감소로만 세면 **과대평가**다: «이름을 얻은 곡면»과 «실제로
-  답이 달라진 census 행»을 **따로** 센다.
+- **원통 관문은 `rotated` 가 아니라 `world_rat` 를 읽는다**(`planes::cyl_gate` 의 주석: *"`rotated` is
+  not that question"*). 그래서 이름을 얻은 회전 클래스는 관문을 지난다 — 위 실험이 그 증거다.
+  `combinatorics::curved_count` 의 주석(*"refuses any class that is rotated or has no narrow rational
+  name"*)은 낡았다. `FaceInfo::rotated` 는 «세계 진술이 없다»와 «행의 `tri` 가 진실이 아니라 실현본이다»를
+  **겸하므로 건드리지 않는다**(`planes::world_plane_coeffs` 의 doc). «이름을 얻은 곡면»과 «답이 달라진
+  census 행»은 여전히 **따로** 센다.
 - **폴백 순서는 계약이다.** `world_road` 는 **넓히되 승격하지 않는다** — 먼저 태우면 답이 이미 있는
   코너의 점 철자가 바뀐다.
 
