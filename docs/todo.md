@@ -5,100 +5,7 @@
 
 ## 지금
 
-### 모션 사슬을 읽을 때 접는다
-
-**무엇이 문제인가.** `Model::chain_translation` 은 사슬의 **첫 비이동 노드에서 사퇴**하고, 그 사퇴가
-`Model::world_plane_name` 을 통해 읽는 곳 여덟 자리(호출 11회)로 퍼진다: 캐시 유도의 게이트
-(`Model::derive_surface_cache`) · `Model::vertex_meet_of` 안의 `world_road` 클로저 ·
-`planes::world_plane_coeffs` · `planes::pierce_corner` · `planes::disk_of` ·
-`transform::pierce_line_reversed` · `combinatorics::curved_wall` · `combinatorics::pierce_name_from_def`.
-`chain_translation` 을 **직접** 부르는 자리가 여섯 더 있다: 캐시 유도의 앵커와 `decline_reason`
-(`surface_cache.rs`) · `world_cylinder_def` · `cyl_geom` 의 둘(`world_plane_name` 을 인라인으로 다시 적은
-사본) · `corners` 의 둘(점을 이동 사슬로 옮기는 사본). 구현은 아직 없다.
-
-**거절 532 의 원인별 분해.** 곡면 캐시 유도는 5,317 에서 성립하고 532 에서 거절한다(거절 = 모션 456 ·
-이동된 원통 76; 넘침 0 · 이름 없음 0 · wide 0). 그 532 를 사슬의 구성으로 쪼갠 값(거절이 나는
-`Model::decline_reason` 바로 그 자리에서 분류한다 — 모델을 도는 탐침은 push 인구가 아니라 «살아남은
-곡면»을 세어 명제 옆을 잰다):
-
-| 부류 | 평면 456 | 원통 76 |
-|---|---|---|
-| `Frame` 노드를 든다 | **169** | 0 |
-| 임의 각 회전을 든다 | **197** | **7** |
-| 이동 + **사분각** 회전뿐 | **24** | **69** |
-| 위 + **거울**까지 | **66** | 0 |
-
-169+197+24+66 = 456(정확히 분할된다). 있는 기계로 열리는 인구는 **90 평면 + 69 원통 = 532 중
-159(30%)** 다.
-
-- **영구히 밖**: `Frame` 169 — 기저가 `1/√유리수` 다(`chain_fixes` 의 doc 이 못 박은 경계).
-- **임의 각 197(+원통 7)**: Niven — 「무리수 모션이 낀 datum 은 이름이 없다」 항목의 인구다.
-
-**접는 것은 아레나가 아니라 «읽기»다.** `self.motions` 를 만지는 자리는 저장소 전체에 `push` 와 `get`
-둘뿐이고(수정·삭제 없음), 노드 핸들은 `SurfaceKey`·`ThroughKey`·`CylinderKey` 의 interning 열쇠라
-노드를 합치면 사라지는 것이 자식이 아니라 **동일성 판정 전체**다. `chain_translation` 의 doc 이 그
-규칙이다 — *"it does not license dropping the history."* 그러므로 이 일은 **노드를 하나도 만들지 않고
-하나도 지우지 않는다.**
-
-**잰 것**(임시 실험 — 접기를 켜고 census·스위트·perf 를 돌린 뒤 되돌렸다).
-
-- **census 18줄이 움직이고 결과 기하는 전부 그대로다**(부피·면적·무게중심·조각 수, 두 프로파일 동일):
-  `rot Y 90` 셋은 피연산자 평면 캐시와 결과 정점이 바뀌고 `r` 행의 실현 못 한 정점 8개씩(24)이 실현된다 ·
-  `rot Z 90` 셋과 `mir 1/3·7/22·5/7` 아홉은 피연산자 평면 캐시만 바뀐다. 캐시 유도 5,317 → 5,407(+90),
-  원통 캐시 유도를 접기에 태우면 원통 거절 76 → 7(유도된 69는 생산자 캐시와 비트 동일).
-- **스위트에서 빨개지는 것은 음성 대조군 하나뿐이다**(아래 90° 단언). 무시 스윕 126 전부 초록.
-- **원통은 census 에 인구가 없다** — 결과 행에 살아 있는 원통 중 사분각 회전을 **기록된 노드로** 든 것이 0이다
-  (census 의 `mot … rz90` 은 새 원통을 돌려 점으로 옮긴다). 겨냥한 실험(판·원통 보스에 0.1 이동으로 이력을
-  만든 뒤 90° 회전, 세 불리언 × 축 둘)은 오늘 여섯 모두 `CylinderGateUndecided` 이고, 접기를 켜면 여섯 모두
-  해석값 부피·validate 깨끗으로 답한다. 평면 접기만으로는 여전히 거절이다 — 원통 쪽(`world_cylinder_def`)이
-  함께 접혀야 열린다.
-- **매 질의마다 사슬을 걷는 접기는 깊이의 제곱이다.** 기록된 90° 회전 2,000번: 0.20초 → 6.7초. 37° 4,200번
-  (`a_rotation_history_past_the_budget_is_rejected_by_name`, 옛 걷기는 잎의 첫 노드에서 멈췄다): 1.44초 →
-  2.14초. 노드가 태어날 때(`push_motion`) 부모의 접은 결과에 자기 하나를 합성해 곁표에 두면 둘 다 기준선
-  (0.207초 · 1.45초)으로 돌아온다 — 사분각 회전·거울·이동의 합성은 늘 «원소 {0, ±1} 의 행렬 + 유리수
-  이동»이다.
-
-**산술은 다 있다 — 없는 것은 «노드를 차례로 적용하는 걷기»뿐이다.** `Isometry::plane_coeffs`(회전은
-`try_exact_cos_sin` 경유, 피벗·이동 포함) · `point_rat` · `dir_rat` · `mirror_plane_coeffs` ·
-`mirror_point_rat`. 모양은 기존 가족을 따른다(`chain_fixes` 라는 private 걷기 → 공개 얼굴 둘).
-계획: **`chain_plane_coeffs` / `chain_point` / `chain_dir`** 셋이 한 걷기를 공유한다 — `Isometry`
-자신의 삼총사와 같은 절단면이다. 새 스칼라 함수는 필요 없다.
-
-- **반환형은 `Isometry` 일 수 없다.** 거울은 `det = −1` 이라 `Isometry` 에 자리가 없는데 그 인구가
-  **66** 이다. `SurfaceDeriveCounts` 의 doc 이 적은 처방 *"a motion wants a chain folded to an
-  `Isometry`"* 는 그 66 에 대해 틀렸다 — 이 일과 함께 고친다.
-- 거울의 패리티는 **이름이 흡수한다**: `canonical_plane_coeffs` 가 첫 비영 성분을 양으로 강제하므로
-  정준 이름은 방향을 말하지 않는다 — 평행이동에서 그러는 것과 같다.
-- `chain_dir` 은 **거울을 만날 수 없다**: 방향을 옮기는 것은 원통뿐인데(평면은 계수로 움직인다)
-  `OpError::MirrorNotPlanar` 가 미러링을 먼저 거절한다(`nacre-ops/tests/invariants/edge_carriers.rs` 가
-  *"A mirrored cylinder has no population"* 으로 적어 뒀다).
-
-**이 일은 결과를 움직일 수 있다.** `derive_surface_cache` 가 `world_plane_name` 으로 게이트하므로
-**캐시 확장과 이름 확장은 쪼갤 수 없고**, `vertex_meet_of` 의 `world_road` 가 자동으로 넓어져 코너가 새
-datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일 수는 없다"* 계약이 이 자리다).
-
-- **음성 대조군은 트리에 있다.** topo 의 테스트 `a_corner_of_two_translation_chains_solves_in_the_world`
-  가 **90°** 사슬에 대해 *"a rotated carrier has no world name to meet with"* 를 단언하고, 바로 위 주석이
-  스스로를 반박한다(*"A quarter turn carries x = 0 to y = 0, so the cache is exact … what declines here
-  is the rotation"*). **그 줄이 빨개지는 것이 «접기가 작동한다»의 증거다.** 다시 겨눌 때 **37° 짝을 같은
-  파일에 남긴다** — 무엇이 여전히 사퇴하는지 보여 주는 대조가 없으면 운 좋은 통과와 구분되지 않는다.
-- **원통 관문은 `rotated` 가 아니라 `world_rat` 를 읽는다**(`planes::cyl_gate` 의 주석: *"`rotated` is
-  not that question"*). 그래서 이름을 얻은 회전 클래스는 관문을 지난다 — 위 실험이 그 증거다.
-  `combinatorics::curved_count` 의 주석(*"refuses any class that is rotated or has no narrow rational
-  name"*)은 낡았다. `FaceInfo::rotated` 는 «세계 진술이 없다»와 «행의 `tri` 가 진실이 아니라 실현본이다»를
-  **겸하므로 건드리지 않는다**(`planes::world_plane_coeffs` 의 doc). «이름을 얻은 곡면»과 «답이 달라진
-  census 행»은 여전히 **따로** 센다.
-- **폴백 순서는 계약이다.** `world_road` 는 **넓히되 승격하지 않는다** — 먼저 태우면 답이 이미 있는
-  코너의 점 철자가 바뀐다.
-
-**같은 축 회전의 각도 합성은 역량으로만 적는다.** 사슬은 앞부분만이 아니라 전체를 봐야 하고, 같은
-축·같은 피벗의 회전은 각도를 더해 접을 수 있으며, 30°+60°=90° 면 유리수 표현이 되살아나 주변 이동까지
-함께 접힌다 — `Angle(Rat)` 이 도 단위 유리수이고 `checked_add` 가 정확히 mod 360 축약하므로 타입
-수준에서 성립한다. 그러나 코퍼스에 **같은 축·같은 피벗의 인접 회전쌍이 0** 이고 **사슬 깊이 최대 2** 다
-(`chain_motion` 이 한 호출당 최대 둘(회전→이동)을 남기고, 픽스처가 한 솔리드를 두 번 회전시키지 않는다).
-이것은 «픽스처가 안 한다»이지 «사용자가 못 한다»가 아니다 — 같은 축으로 두 번 돌리면 즉시 생긴다.
-위 설계는 이것을 막지 않는다(노드별 적용 위에 «인접 정규화» 한 겹을 얹는 모양이라 되돌릴 것이 없다).
-같은 축이라도 **피벗이 다르면** 각도만 더해지지 않는다 — 합성 피벗에 cos/sin 이 든다.
+지금 진행 중인 항목은 없다 — 아래 「다음」에서 고른다.
 
 ## 다음 — f64 는 실현 통로 하나로
 
@@ -109,6 +16,18 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 `&mut Option<PrefixWrite>` 를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
 남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_vertex_cache`) 중 제품 소비자가 있는 것은 kit 의 `realize_vertex_decimal` 한 곳이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
+
+### 접히는 사슬 아래 정점의 실현
+
+사분각 회전·거울·이동의 사슬 아래 정점은 지금 고정밀 재생(`replay`, `realize.rs`)으로 실현되는데, 그 사슬은
+노드마다 유리수 사상으로 접혀 있다(`Model::chain_point_rat`) — 정점의 meet 를 접기로 옮기면 세계 좌표가
+정확한 유리수로 나오고 사다리가 필요 없다. 그 인구에서는 `CACHE_REPLAY_COST_CAP`(깊은 이력의 비용 한계)도
+필요 없을 수 있다. 잴 것부터: 그 인구의 수와, 실현 비트가 지금과 같은지.
+
+### 원통 캐시 유도의 적용
+
+캐시 유도의 원통 팔(`derive_surface_cache`)은 측정만 하고 버린다. 이동된 원통 69 는 유도값이 생산자 캐시와
+비트 동일로 재졌지만, 모션 없는 원통까지 같은지는 안 쟀다 — 적용하기 전에 원통만의 `differs` 를 센다.
 
 ### 픽스처는 제품 도로로
 
@@ -160,8 +79,8 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
 - **문의 도착점은 `push_plane(points, motion, sense)` 다.** 향은 이미 진실이고(`Surface::Plane.sense`),
   남는 실현값(앵커·행)을 문 안에서 진실로 유도한다 — 생산자 쪽에서 f64 평면을 짓는 자리
   여덟(`prism.rs` 셋 · `datum.rs` 넷 · `transform.rs` 하나)이 사라진다. 막는 것: 유도 게이트
-  (`world_plane_name(h)?.narrow()?`)가 모션에서 거절하는 532 — 「모션 사슬을 읽을 때 접는다」가 그중 159 를
-  열고, `Frame`·임의 각의 남는 인구에는 정점처럼 폴백이 남는다. 첫 걸음은 **모션 없는 벽 평면**이다: 문
+  (`world_plane_name(h)?.narrow()?`)가 거절하는 373(사슬이 안 접히는 평면 366 — `Frame` 169 · 사분각 밖 회전
+  197 — 과 원통 7)에는 정점처럼 폴백이 남는다. 첫 걸음은 **모션 없는 벽 평면**이다: 문
   안에서 같은 계산(진실 점 → `to_f64` → `through_points`)을 하므로 census 이동 0 이 예측이다(미측정 — 편집
   전에 이 예측을 적고 A/B 로 확인한다).
 - **넘치는 자리는 수선의 발이다.** 이름 유도는 `plane_name_exact` → `plane_name_big` 으로 폭을 넘는다.
@@ -369,20 +288,19 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 세계) 유리수 pullback 이 없다. 인구는 `the_def_road_answers_for_the_populations_it_can_name` 의 ④ 가
 핀한다.
 
-같은 부류의 실현 거절 인구: 불리언 결과 정점 4,924 중 `RealizeError::NoMeet` **346** — 전부 `ThreePlane`
-이고 전부 **담체의 모션 이력이 갈린다**(세계 둘 + 모션 하나 216 · 세계 하나 + 같은 모션 둘 115 · 서로 다른 모션
-15; Wide 0 · 이름 없음 0). 회전한 상자와 안 돌린 상자의 불리언에서 두 몸의 면이 만나는 코너다(회전각
-7°·30°·45°·123° 가 대부분, 사분각 90° 는 `rot` 24), 피연산자 6,988 중 `NoMeet` **192** · `NoCurvedPoint` **12**(회전된
-원통의 seam: 세계에 진술 못 하는 담체) · 반사된 원통(`world_cylinder_def` 는 순수 이동만 안다). 전부 구성
-폴백으로 서고 census `r` 행이 센다. 실현 문이 넓어지면 이 수가 준다 — 「모션 사슬을 읽을 때 접는다」가 그
-첫 걸음이다.
+같은 부류의 실현 거절 인구: 불리언 결과 정점 4,924 중 `RealizeError::NoMeet` **322** — 전부 `ThreePlane`
+이고 전부 **담체의 모션 이력이 갈리며 사슬이 안 접힌다**(Wide 0 · 이름 없음 0). 회전한 상자와 안 돌린 상자의
+불리언에서 두 몸의 면이 만나는 코너다(회전각 7°·30°·45°·123° 등 사분각 밖 — 사분각 회전의 코너는 담체가
+세계 이름을 얻어 `vertex_meet_of` 의 세계 도로가 푼다), 그리고 피연산자 6,988 중 `NoMeet` **192** ·
+`NoCurvedPoint` **12**(회전된 원통의 seam: 세계에 진술 못 하는 담체). 전부 구성 폴백으로 서고 census `r` 행이
+센다. 실현 문이 넓어지면 이 수가 준다.
 
 ### 무리수 모션이 낀 datum 은 이름이 없다
 
 interning 이 불가하고(열쇠는 `ThroughKey` — 정점 삼중 + 모션), 동일성은 술어가 매번 판정한다.
 **«느릴 뿐 틀리지 않는다»는 미측정 주장이다.** 불리언은 평면 클래스별로 셀 복합체를 만들므로, 같은 평면이
 두 핸들이면 «두 클래스»가 된다 — 그것이 정말 비용뿐인지(결과 동일)는 **같은 평면을 두 진술로 넣은
-불리언을 하나 만들어 census 로** 재야 안다. 인구: 임의 각 회전 사슬(「모션 사슬을 읽을 때 접는다」의 197).
+불리언을 하나 만들어 census 로** 재야 안다. 인구: 사분각 밖 회전 사슬(곡면 캐시 유도의 모션 거절 197).
 
 ### 가라앉은 좌표의 경계 0
 
@@ -459,7 +377,12 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 ### 같은 축 회전의 각도 합성
 
-「모션 사슬을 읽을 때 접는다」에 적힌 대로, 인접쌍 인구가 생기면.
+같은 축·같은 피벗의 인접 회전은 각도를 더해 한 노드로 읽을 수 있다 — `Angle` 이 도 단위 유리수이고
+`checked_add` 가 정확히 mod 360 축약하므로, 30°+60° 처럼 합이 사분각이 되면 유리수 표현이 되살아나 사슬 접기
+(`motion_folds`)에 들어간다. 코퍼스에는 그런 인접쌍이 0 이고 사슬 깊이 최대 2 다 — «픽스처가 안 한다»이지
+«사용자가 못 한다»가 아니다(같은 축으로 두 번 돌리면 생긴다). 모양은 노드별 합성 앞의 «인접 정규화» 한
+겹이라 지금 설계가 막지 않는다. 피벗이 다르면 각도만 더해지지 않는다 — 합성 피벗에 cos/sin 이 든다. 인접쌍
+인구가 생기면.
 
 ### 거울의 불변 평면 재진술
 
