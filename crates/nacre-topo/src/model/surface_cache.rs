@@ -55,7 +55,44 @@ impl Model {
             "the truth and its cache enter together or not at all"
         );
         self.apply_derivation(h);
+        self.align_cache_sense(h);
         h
+    }
+
+    /// **Turn a plane's cache to face the way its truth says** — the sense is truth, so where this
+    /// crate can carry the points to the world the cache follows it (truth → cache, the allowed
+    /// direction). Returns whether it turned anything.
+    ///
+    /// For a `Known` statement the push door has already asserted the two agree, so this is the
+    /// lock that the cache is a function of the truth rather than a correction; for a `Through`
+    /// datum it is where a caller's nearly collinear `f64` cross is overruled by the exact order.
+    /// Chains with a turn or a frame are out of reach here — the census lock
+    /// (`nacre_ops::audit_plane_senses`) holds them.
+    pub(crate) fn align_cache_sense(&mut self, h: Handle<Surface>) -> bool {
+        let Surface::Plane {
+            points,
+            motion,
+            sense,
+        } = self.surface(h)
+        else {
+            return false;
+        };
+        let (points, motion, sense) = (points.clone(), *motion, *sense);
+        let Some(w) = self.points_world_direction(&points, motion) else {
+            return false;
+        };
+        let nacre_geom::Surface::Plane(cache) = *self.surface_cache(h) else {
+            return false;
+        };
+        let n = cache.normal().as_array();
+        let d = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign());
+        if d < 0.0 {
+            self.surface_cache[h.index() as usize] = SurfaceCache {
+                realized: nacre_geom::Surface::Plane(cache.reversed()),
+            };
+            return true;
+        }
+        false
     }
 
     /// **Realize this surface's cache from its truth**, keeping the producer's value where the

@@ -1886,3 +1886,45 @@ fn restore_live_puts_the_snapshot_back() {
     m.restore_live(snapshot);
     assert_eq!(m.live_solids(), [a, b].as_slice(), "order comes back too");
 }
+
+/// ★ **A plane's cache faces the way its truth says** — the push turns a cache stated the other
+/// way, exactly (both normals negated, the anchor kept), and leaves an agreeing one bit for bit.
+///
+/// Through the planting door, because the named door asserts the two agree before anything is
+/// stored — so a disagreeing cache can only arrive where nothing asserts, which is exactly where
+/// the turn has to hold on its own.
+#[test]
+fn a_plane_cache_follows_the_sense_its_truth_states() {
+    let r = nacre_exact::Rat::from_int;
+    let pts = [[r(0), r(0), r(2)], [r(1), r(0), r(2)], [r(0), r(1), r(2)]]; // spans +z
+    let up = nacre_geom::Plane::from_point_normal(
+        Point3::from_array([0.0, 0.0, 2.0]),
+        nacre_math::Vector3::from_array([0.0, 0.0, 3.0]),
+    )
+    .expect("a plane");
+    let bits = |p: &nacre_geom::Plane| {
+        let c = p.coefficients();
+        (c.map(f64::to_bits), p.origin().as_array().map(f64::to_bits))
+    };
+
+    let mut m = Model::new();
+    // Agreeing: `Forward` against a `+z` cache — nothing moves.
+    let h = m.push_plane_unregistered(up, pts, Orientation::Forward);
+    let nacre_geom::Surface::Plane(kept) = *m.surface_cache(h) else {
+        unreachable!()
+    };
+    assert_eq!(
+        bits(&kept),
+        bits(&up),
+        "an agreeing cache is kept bit for bit"
+    );
+
+    // Disagreeing: `Reversed` against the same `+z` cache — the cache turns to `−z`.
+    let h = m.push_plane_unregistered(up, pts, Orientation::Reversed);
+    let nacre_geom::Surface::Plane(turned) = *m.surface_cache(h) else {
+        unreachable!()
+    };
+    assert_eq!(turned, up.reversed(), "the cache follows the truth's sense");
+    assert_eq!(turned.origin(), up.origin(), "only the sense moved");
+    assert!(!m.align_cache_sense(h), "and asking again turns nothing");
+}

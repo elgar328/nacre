@@ -126,25 +126,31 @@ impl Model {
             nacre_exact::same_sense(&normal(points)?, &normal(theirs)?) == (sense == *their_sense);
         Some(!agree)
     }
-    /// Whether a producer's `cache` faces the way its stated `sense` says — the migration's
-    /// cross-check between the old carrier of the sense and the new one. An `f64` read, and only
-    /// a read: nothing here decides a truth.
+    /// **The world direction a plane's points span**, before its sense — in `f64`, for the reads
+    /// below that compare it with a cache (two normals of one plane, so the sign of their dot is
+    /// not a rounding question).
     ///
-    /// `None` where this crate cannot carry the points to the world: a `Through` statement, or a
-    /// chain with a turn or a frame (their realization lives in `nacre-ops`). Translations move
-    /// no direction; a reflection negates its axis and, carrying points, reverses the cross.
-    fn cache_agrees_with_sense(
+    /// `None` where this crate cannot carry the points to the world: a chain with a turn or a
+    /// frame (their realization lives in `nacre-ops`), or a `Through` statement under any motion
+    /// (its vertices' caches are world points only when nothing moved the plane after them).
+    /// Translations move no direction; a reflection negates its axis and, carrying points,
+    /// reverses the cross.
+    pub(super) fn points_world_direction(
         &self,
-        cache: &nacre_geom::Plane,
         points: &PlanePoints,
         motion: Option<Handle<MotionNode>>,
-        sense: Orientation,
-    ) -> Option<bool> {
-        let PlanePoints::Known(p) = points else {
-            return None;
+    ) -> Option<[f64; 3]> {
+        let mut w = match points {
+            PlanePoints::Known(p) => {
+                let f = |q: [nacre_exact::Rat; 3]| Point3::from_array(q.map(|x| x.to_f64()));
+                (f(p[1]) - f(p[0])).cross(f(p[2]) - f(p[0])).as_array()
+            }
+            PlanePoints::Through(vs) => {
+                motion.is_none().then_some(())?;
+                let q = vs.map(|v| self.vertex_point(v));
+                return Some((q[1] - q[0]).cross(q[2] - q[0]).as_array());
+            }
         };
-        let f = |q: [nacre_exact::Rat; 3]| Point3::from_array(q.map(|x| x.to_f64()));
-        let mut w = (f(p[1]) - f(p[0])).cross(f(p[2]) - f(p[0])).as_array();
         let mut cur = motion;
         while let Some(h) = cur {
             let node = self.motion(h);
@@ -158,11 +164,30 @@ impl Model {
             }
             cur = node.parent;
         }
+        Some(w)
+    }
+
+    /// Whether a producer's `cache` faces the way its stated `sense` says — the push door's
+    /// cross-check between the cache a producer built and the sense it stated. A read only.
+    ///
+    /// `Known` statements only: a `Through` datum's cache comes from its caller's `f64` cross,
+    /// which a nearly collinear triple can turn, so a disagreement there is reachable from input
+    /// and is not an assertion's business ([`Model::align_cache_sense`] answers it instead).
+    fn cache_agrees_with_sense(
+        &self,
+        cache: &nacre_geom::Plane,
+        points: &PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
+    ) -> Option<bool> {
+        if matches!(points, PlanePoints::Through(_)) {
+            return None;
+        }
+        let w = self.points_world_direction(points, motion)?;
         let n = cache.normal().as_array();
         let d = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign());
         d.is_finite().then_some(d > 0.0)
     }
-
     /// **Push a plane stated as the three vertices it passes through** — [`push_plane`]'s twin
     /// for the datum vocabulary, with the same interning contract and the same `flipped` report.
     ///

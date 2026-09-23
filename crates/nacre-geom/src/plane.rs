@@ -95,6 +95,17 @@ impl Plane {
         }
     }
 
+    /// The same plane facing the other way: both normals negated, which is exact, and the origin
+    /// kept.
+    #[inline]
+    pub fn reversed(self) -> Plane {
+        Plane {
+            origin: self.origin,
+            normal: -self.normal,
+            raw: -self.raw,
+        }
+    }
+
     /// The unit normal.
     #[inline]
     pub fn normal(&self) -> Vector3 {
