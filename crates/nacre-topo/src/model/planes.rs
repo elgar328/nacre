@@ -130,17 +130,18 @@ impl Model {
     /// below that compare it with a cache (two normals of one plane, so the sign of their dot is
     /// not a rounding question).
     ///
-    /// `None` where this crate cannot carry the points to the world: a chain with a turn or a
-    /// frame (their realization lives in `nacre-ops`), or a `Through` statement under any motion
-    /// (its vertices' caches are world points only when nothing moved the plane after them).
-    /// Translations move no direction; a reflection negates its axis and, carrying points,
-    /// reverses the cross.
+    /// `None` where this crate cannot carry the points to the world: a chain that does not fold
+    /// (a frame, a turn off the quarters — their realization lives in `nacre-ops`), or a
+    /// `Through` statement under any motion (its vertices' caches are world points only when
+    /// nothing moved the plane after them). Through a folded chain the points' cross travels as
+    /// `det M · M·n` — the linear part carries it, and a reflection, carrying points, reverses
+    /// it; the offset plays no part, so a chain whose offset overflowed still answers.
     pub(super) fn points_world_direction(
         &self,
         points: &PlanePoints,
         motion: Option<Handle<MotionNode>>,
     ) -> Option<[f64; 3]> {
-        let mut w = match points {
+        let w = match points {
             PlanePoints::Known(p) => {
                 let f = |q: [nacre_exact::Rat; 3]| Point3::from_array(q.map(|x| x.to_f64()));
                 (f(p[1]) - f(p[0])).cross(f(p[2]) - f(p[0])).as_array()
@@ -151,20 +152,14 @@ impl Model {
                 return Some((q[1] - q[0]).cross(q[2] - q[0]).as_array());
             }
         };
-        let mut cur = motion;
-        while let Some(h) = cur {
-            let node = self.motion(h);
-            match node.motion {
-                Motion::Translate { .. } => {}
-                Motion::Mirror { axis, .. } => {
-                    w[axis.index()] = -w[axis.index()];
-                    w = w.map(|c| -c);
-                }
-                Motion::Rotate { .. } | Motion::Frame { .. } => return None,
+        match motion {
+            None => Some(w),
+            Some(leaf) => {
+                let fold = self.chain_fold(leaf)?;
+                let det = f64::from(fold.det());
+                Some(fold.dir_f64(w).map(|c| c * det))
             }
-            cur = node.parent;
         }
-        Some(w)
     }
 
     /// Whether a producer's `cache` faces the way its stated `sense` says — the push door's
