@@ -476,11 +476,22 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 ## 정리 로드맵
 
 거대 파일 분할도, 불리언 파이프라인의 모양도(`boolean.rs → arrangement/ → assembly/`, 모두
-`draft` 를 읽는다) 끝났다. 모듈 그래프는 「지금」의 항목이 든다. 여기 남은 것은 **구현
-단순화**이고 **방향은 미결이다** — 아래는 잰 것이지 계획이 아니다. 무엇을 어떻게 합칠지는
-의논해서 정한다.
+`draft` 를 읽는다) 끝났다. 모듈 그래프는 「지금」의 항목이 든다. **남아 있던 두 물음은 재 보고
+닫혔다** — 아래는 그 측정이지 할 일이 아니다. 다시 열려면 새 인구를 재서 열어야 한다.
 
-- **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
+- **긴 함수는 결함이 아니다 — 재 보고 닫았다.** 300줄을 넘는 함수는 **열셋**이다(`measure_census` 2,120은
+  통합 테스트의 계측 · `reconstruct` 1,106 · `trace_transversal_face` 511 · `regions.rs` 의 `walk` 485 ·
+  `chart_census` 의 `census` 482(테스트) · `collect_planes` 395 · `transform_solid` 378 · `merge_component` 361 ·
+  `split_circles` 350 · `split_at_crossings` 350 · `group_faces` 343 · `datum_plane` 318 · `cylinder_gate` 312).
+  **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가
+  이름으로 부를 만한가»이고, **저장소에서 그 호출자를 든 단계는 하나였다**: `split_at_crossings` 의 방향 분할을
+  감사 테스트가 손으로 다시 짓고 있었다. 그것은 `direction_partition` 이 되었고 감사가 그것을 부른다.
+  나머지 열둘에는 그런 호출자가 없다. 쪼개는 비용(그 블록이 바깥에서 받아야 하는 지역변수 수)도 함께 재 뒀다 —
+  `coplanar` §1 **1** · `collect_planes` 의 셸 루프 **3** · `datum_plane` 의 `match` **4** ·
+  `transform_solid` 의 표면 단계 10 · `cylinder_gate` 의 원통 루프 11 · `split_circles` 의 원 루프 12 ·
+  `trace_transversal_face` 의 `'rings` 15 · `reconstruct` 의 `'faces:` **32**(가변 7). 앞의 셋은 서명이 짧지만
+  부를 사람이 없고, 뒤의 넷은 공유 가변 상태를 문맥 타입으로 묶어야 한다. `split_at_crossings` 의 나머지 구간은
+  `watch!` 로 이미 이름이 있다(`phase.rs` 의 `COLLECT`·`SORT`·`COVER`).
 - **주석 비율은 결함이 아니다 — 재 보고 닫았다.** 주석은 줄의 36~45%이고(코드/doc/본문: `arrangement`
   5,640/1,654/1,474 · `combinatorics` 3,536/1,973/661 · `nacre-ops/src` 최상위 3,815/2,582/530 ·
   `nacre-exact` 제품 3,151/1,832/317), 그 가운데 **doc 이 15,182줄로 대부분**이며 사용자에게 가는 문서다.
