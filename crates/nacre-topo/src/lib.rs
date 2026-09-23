@@ -436,8 +436,8 @@ fn surface_bits(s: &nacre_geom::Surface) -> [u64; 10] {
     }
 }
 
-/// Whether a face uses its surface normal as-is (`Forward`) or flipped
-/// (`Reversed`). A pure tag — full derives.
+/// A sign against a reference direction: a face's against its surface's normal, and a plane's
+/// ([`Surface::Plane::sense`]) against its points' direction. A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Orientation {
     Forward,
@@ -487,6 +487,22 @@ pub enum Surface {
         points: PlanePoints,
         /// The motion history carrying the points out to the world; `None` = the world itself.
         motion: Option<Handle<MotionNode>>,
+        /// **Which way the plane faces, against its points.** The points' own direction is the
+        /// world image of `n = (p₁ − p₀) × (p₂ − p₀)` — `chain_parity · L(n)`, where `L` is the
+        /// linear part of the unfolded motion chain and the parity is `−1` per reflection
+        /// (a reflection carries points, so it reverses the cross product it does not reverse
+        /// as a direction). `Forward` says the plane's normal is that direction, `Reversed` its
+        /// negation; a face's outward is the plane's normal times the face's own
+        /// [`Orientation`].
+        ///
+        /// ★ **The sense is truth, not cache.** It used to live only in the f64 cache's normal,
+        /// so the faces' flags leaned on a cache. The producer states it exactly — it cannot be
+        /// read back off the cache without an `f64 → truth` arrow.
+        ///
+        /// ★ **Not part of any interning key.** One plane is one handle whichever way it was
+        /// asked for; the first statement's sense stands and later askers learn how theirs
+        /// relates through the `flipped` a push door returns.
+        sense: Orientation,
     },
     /// A cylinder's exact truth: the rational statement of its lateral surface, beside
     /// the same motion slot a plane carries — a *moved* cylinder records its history.

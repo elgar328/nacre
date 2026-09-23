@@ -251,11 +251,28 @@ pub(crate) fn build_prism(
                     )
                 }
             };
+            // The base cap faces against the sweep. A caller's world triple is read against a
+            // world sweep, which is every ring such a caller builds.
+            debug_assert!(
+                base_cap_points.is_none() || outer_pts.exact.motion.is_none(),
+                "a world base-cap statement beside a ring stated in a frame"
+            );
+            let sense = crate::rotated_vertex::sense_toward(
+                model,
+                cap_pts,
+                outer_pts
+                    .exact
+                    .sweep_back()
+                    .ok_or(OpError::DegenerateGeometry)?,
+                base_motion,
+            )
+            .ok_or(OpError::DegenerateGeometry)?;
             let (s, flipped) = model.push_plane(
                 Plane::from_point_normal(outer_pts.base[0], -normal)
                     .ok_or(OpError::DegenerateGeometry)?,
                 cap_pts,
                 base_motion,
+                sense,
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.
@@ -273,10 +290,19 @@ pub(crate) fn build_prism(
         .exact
         .cap_points(true)
         .ok_or(OpError::DegenerateGeometry)?;
+    // The top cap faces along the sweep; `cap_points` fixes no sense of its own.
+    let top_sense = crate::rotated_vertex::sense_toward(
+        model,
+        top_points,
+        outer_pts.exact.sweep().ok_or(OpError::DegenerateGeometry)?,
+        top_motion,
+    )
+    .ok_or(OpError::DegenerateGeometry)?;
     let (top_surface, top_flipped) = model.push_plane(
         Plane::from_point_normal(outer_pts.top[0], normal).ok_or(OpError::DegenerateGeometry)?,
         top_points,
         top_motion,
+        top_sense,
     );
     let top_orient = if top_flipped {
         Orientation::Forward.flipped()
@@ -457,11 +483,14 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
         .map(|i| {
             let j = (i + 1) % n;
             match &ring.exact.segs[i] {
+                // The cache is the carried ring's own three points in `wall_points`' order, so it
+                // faces the way those points do — through any chain, reflections included.
                 Seg3::Line => Ok(model.push_plane(
                     Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
                         .ok_or(OpError::DegenerateGeometry)?,
                     ring.exact.wall_points(i),
                     ring.exact.motion,
+                    Orientation::Forward,
                 )),
                 // The wall is the cylinder about the arc's centre along the frame normal, stated
                 // exactly and interned by that statement: every arc of one circle in one sketch

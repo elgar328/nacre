@@ -134,6 +134,7 @@ mod tests {
             )
             .unwrap(),
             [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+            Orientation::Forward,
         );
         let sb = m.push_plane_unregistered(
             nacre_geom::Plane::from_point_normal(
@@ -141,7 +142,9 @@ mod tests {
                 nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
             )
             .unwrap(),
+            // `x̂ × ẑ = −ŷ`, against the `+y` cache.
             [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(0), r(1)]],
+            Orientation::Reversed,
         );
         let e = m.push_edge([sb, sa], [v0, v1]).expect("distinct endpoints");
 

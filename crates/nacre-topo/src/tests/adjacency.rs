@@ -20,6 +20,7 @@ fn nonmanifold_vertices_flags_each_pinch_even_count() {
         )
         .unwrap(),
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+        Orientation::Forward,
     );
     // Hand-built cells: the def names the three world seeds — real, distinct planes the
     // detector never dereferences (it reads only the maps).
@@ -121,6 +122,7 @@ fn rebuild_indexes_a_shared_edge() {
         )
         .unwrap(),
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+        Orientation::Forward,
     );
     let mk_e = |m: &mut Model, a, b| {
         m.edges.push(Edge {

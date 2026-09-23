@@ -144,6 +144,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0])).unwrap(),
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         None,
+        nacre_topo::Orientation::Forward,
     );
     let base_pts = [
         Point3::from_array([0.0, 0.0, 0.0]),
@@ -222,6 +223,8 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
         &nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(far_pts),
             motion: None,
+            // The triple spans `+z`; a base cap faces against the sweep.
+            sense: nacre_topo::Orientation::Reversed,
         },
         "the caller's triple was not the one recorded (or gained a motion)"
     );
@@ -259,6 +262,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
     let shared = m.push_plane_unregistered(
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0])).unwrap(),
         [[r(0); 3], [r(0), r(1), r(0)], [r(0), r(0), r(1)]],
+        nacre_topo::Orientation::Forward,
     );
     let fh = m.push_face_unchecked(Face {
         surface: shared,

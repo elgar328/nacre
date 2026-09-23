@@ -735,6 +735,7 @@ fn transform_solid(
             nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(_),
                 motion: None,
+                ..
             }
         ) && motion.rigid().is_some_and(|iso| {
             model
@@ -747,6 +748,13 @@ fn transform_solid(
             None
         } else {
             moved_surface_motion(model, s, motion, carry, &mut surf_rot)
+        };
+        // The image's sense is the source's, reversed by a reflection: carried into the points or
+        // recorded as a node, a reflection reverses the points' direction while the cache's normal
+        // travels as a direction (`Plane::mirrored` is `M·n`). A rigid motion keeps both.
+        let image_sense = |sense: nacre_topo::Orientation| match motion {
+            Xform::Rigid(_) => sense,
+            Xform::Mirror { .. } => sense.flipped(),
         };
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
         // `Model::push_plane`, so there is no second description to keep in step.
@@ -767,6 +775,7 @@ fn transform_solid(
                 nacre_geom::Surface::Plane(pl),
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(p),
+                    sense,
                     ..
                 },
             ) => {
@@ -787,12 +796,13 @@ fn transform_solid(
                         None => *p,
                     }
                 };
-                model.push_plane(pl, carried, new_motion)
+                model.push_plane(pl, carried, new_motion, image_sense(*sense))
             }
             (
                 nacre_geom::Surface::Plane(pl),
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
+                    sense,
                     ..
                 },
             ) => {
@@ -820,7 +830,7 @@ fn transform_solid(
                 // Shapes that ought to reach it: a stepped solid with three co-planar vertices off
                 // any face, or a translation along a datum's own plane. Nobody has built one, so
                 // "unreachable" is **not** what this says.
-                let out = model.push_plane_through(pl, *vs, new_motion);
+                let out = model.push_plane_through(pl, *vs, new_motion, image_sense(*sense));
                 debug_assert!(
                     new_motion.is_some() || out.0 == s,
                     "a Through plane gained no node yet changed handle — its truth would be \

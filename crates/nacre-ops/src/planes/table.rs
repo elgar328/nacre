@@ -74,6 +74,7 @@ pub(crate) fn collect_planes(
                     let nacre_topo::Surface::Plane {
                         points: nacre_topo::PlanePoints::Known(pts),
                         motion: disk_motion,
+                        ..
                     } = model.surface(face.surface)
                     else {
                         return Err(reject(RejectReason::DegenerateFace));
@@ -142,6 +143,7 @@ pub(crate) fn collect_planes(
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: None,
+                    ..
                 } => {
                     // ★★★ **The bound is free; measuring it is not** — `at_nearest` states the
                     // rounding from `Rat::to_f64`'s contract (measured here once: 38.3% of these
@@ -152,6 +154,7 @@ pub(crate) fn collect_planes(
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: Some(motion),
+                    ..
                 } => {
                     let motion = *motion;
                     let _t = Watch::new(); // charged at the arm's end
@@ -200,6 +203,7 @@ pub(crate) fn collect_planes(
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,
+                    ..
                 } => {
                     let motion = *motion;
                     let _t = Watch::new();
@@ -365,6 +369,7 @@ pub(crate) fn collect_planes(
             let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 motion: None,
+                ..
             } = model.surface(f.surf)
             else {
                 continue;

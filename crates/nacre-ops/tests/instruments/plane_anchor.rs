@@ -394,6 +394,8 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
             Plane::from_point_normal(anchor, -sp.normal()).expect("nonzero normal"),
             wf_points(),
             None,
+            // The datum convention: points span `+normal`, the cache faces `−normal`.
+            nacre_topo::Orientation::Reversed,
         );
         assert!(
             !flipped,

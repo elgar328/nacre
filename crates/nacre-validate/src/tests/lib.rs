@@ -37,6 +37,7 @@ fn surface_handle_at(index: u32) -> Handle<Surface> {
             [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map(|p| p.map(nacre_exact::Rat::from_int)),
         ),
         motion: None,
+        sense: nacre_topo::Orientation::Forward,
     };
     let mut s: Store<Surface> = Store::new();
     let mut h = s.push(plane());
@@ -244,6 +245,7 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
                     lift(corner(tri[2])),
                 ],
                 None,
+                nacre_topo::Orientation::Forward,
             );
             h
         })
@@ -458,17 +460,36 @@ fn vertex_off_surface_when_nudged() {
 fn edge_carrier_mismatch_is_flagged() {
     let mut m = nacre_topo::Model::new();
     let r = nacre_exact::Rat::from_int;
-    let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+    let plane = |m: &mut nacre_topo::Model,
+                 n: [f64; 3],
+                 pts: [[i128; 3]; 3],
+                 sense: nacre_topo::Orientation| {
         m.push_plane(
             Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
             pts.map(|p| p.map(r)),
             None,
+            sense,
         )
         .0
     };
-    let sa = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
-    let sb = plane(&mut m, [0.0, 1.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, -1]]);
-    let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
+    let sa = plane(
+        &mut m,
+        [0.0, 0.0, 1.0],
+        [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+        nacre_topo::Orientation::Forward,
+    );
+    let sb = plane(
+        &mut m,
+        [0.0, 1.0, 1.0],
+        [[0, 0, 0], [1, 0, 0], [0, 1, -1]],
+        nacre_topo::Orientation::Forward,
+    );
+    let sc = plane(
+        &mut m,
+        [1.0, 0.0, 1.0],
+        [[0, 0, 0], [0, 1, 0], [1, 0, -1]],
+        nacre_topo::Orientation::Reversed,
+    );
     let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
         m.push_vertex(
             Vertex::ThreePlane([sa, sb, sc]),
@@ -537,17 +558,36 @@ fn same_surface_users_check_membership_not_equality() {
     let build = |stated_second_is_sc: bool| {
         let mut m = nacre_topo::Model::new();
         let r = nacre_exact::Rat::from_int;
-        let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+        let plane = |m: &mut nacre_topo::Model,
+                     n: [f64; 3],
+                     pts: [[i128; 3]; 3],
+                     sense: nacre_topo::Orientation| {
             m.push_plane(
                 Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
                 pts.map(|p| p.map(r)),
                 None,
+                sense,
             )
             .0
         };
-        let sa = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
-        let sb = plane(&mut m, [0.0, 1.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, -1]]);
-        let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
+        let sa = plane(
+            &mut m,
+            [0.0, 0.0, 1.0],
+            [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+            nacre_topo::Orientation::Forward,
+        );
+        let sb = plane(
+            &mut m,
+            [0.0, 1.0, 1.0],
+            [[0, 0, 0], [1, 0, 0], [0, 1, -1]],
+            nacre_topo::Orientation::Forward,
+        );
+        let sc = plane(
+            &mut m,
+            [1.0, 0.0, 1.0],
+            [[0, 0, 0], [0, 1, 0], [1, 0, -1]],
+            nacre_topo::Orientation::Reversed,
+        );
         let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
             m.push_vertex(
                 Vertex::ThreePlane([sa, sb, sc]),

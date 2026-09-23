@@ -587,6 +587,8 @@ pub enum Surface {
     Plane {
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,   // None = 세계, Some = 점들이 적힌 모션 전 프레임의 이력
+        sense: Orientation,                   // 평면의 향: 점들의 세계 방향 `parity · L((p₁−p₀)×(p₂−p₀))` 그대로(Forward)/반대(Reversed)
+                                              //   면의 바깥 = 평면의 향 × 면의 Orientation. interning 열쇠에 안 든다(첫 진술의 향)
     },
     /// 성분형이 옳은 이유·`ref_dir` 원시 규칙은 원통 절이 상세히 적는다.
     Cylinder {

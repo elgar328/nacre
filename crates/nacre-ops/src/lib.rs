@@ -58,6 +58,9 @@ pub use realize::{
     CacheDecline, Precision, RealizeError, Realized, RefineReport, realize_cache, realize_vertex,
     realize_vertex_decimal, refine_vertex_cache,
 };
+/// The plane-sense lock, for the measurements that live in other crates' tests.
+#[cfg(any(test, feature = "test-util"))]
+pub use rotated_vertex::{SenseAudit, audit_plane_senses};
 pub use sketch::{SketchError, arc_to_rat, arc_turns, arc_turns_rat, from_paths, from_rings};
 
 /// Assert that `f` rejects *through the intended guard* — a reject test whose fixture drifts

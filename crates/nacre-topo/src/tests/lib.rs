@@ -104,7 +104,7 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
     let mut m = Model::new();
     let r = Rat::from_int;
     // Three axis planes through the origin, pushed as their own statements.
-    let plane = |m: &mut Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+    let plane = |m: &mut Model, n: [f64; 3], pts: [[i128; 3]; 3], sense: Orientation| {
         m.push_plane(
             nacre_geom::Plane::from_point_normal(
                 Point3::origin(),
@@ -113,12 +113,30 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
             .expect("unit normal"),
             pts.map(|p| p.map(r)),
             None,
+            sense,
         )
         .0
     };
-    let px = plane(&mut m, [1.0, 0.0, 0.0], [[0, 0, 0], [0, 1, 0], [0, 0, 1]]);
-    let py = plane(&mut m, [0.0, 1.0, 0.0], [[0, 0, 0], [1, 0, 0], [0, 0, 1]]);
-    let pz = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
+    let fwd = Orientation::Forward;
+    let px = plane(
+        &mut m,
+        [1.0, 0.0, 0.0],
+        [[0, 0, 0], [0, 1, 0], [0, 0, 1]],
+        fwd,
+    );
+    // `x̂ × ẑ = −ŷ`: these points span the other way from the `+y` cache.
+    let py = plane(
+        &mut m,
+        [0.0, 1.0, 0.0],
+        [[0, 0, 0], [1, 0, 0], [0, 0, 1]],
+        fwd.flipped(),
+    );
+    let pz = plane(
+        &mut m,
+        [0.0, 0.0, 1.0],
+        [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+        fwd,
+    );
     // Two different translation chains, and a third carrier that stays in the world.
     let t =
         |m: &mut Model, o: [i128; 3]| m.push_motion(Motion::Translate { offset: o.map(r) }, None);
@@ -131,7 +149,8 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
                  src: Handle<Surface>,
                  leaf: Handle<MotionNode>,
                  n: [f64; 3],
-                 at: [f64; 3]| {
+                 at: [f64; 3],
+                 sense: Orientation| {
         let Surface::Plane {
             points: PlanePoints::Known(pts),
             ..
@@ -144,11 +163,13 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
             nacre_math::Vector3::from_array(n),
         )
         .expect("unit normal");
-        m.push_plane(world, pts, Some(leaf)).0
+        m.push_plane(world, pts, Some(leaf), sense).0
     };
     // x = 0 moved by (2,0,0) → the world plane x = 2; y = 0 moved by (0,3,0) → y = 3.
-    let mx = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
-    let my = moved(&mut m, py, t2, [0.0, 1.0, 0.0], [0.0, 3.0, 0.0]);
+    let mx = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], fwd);
+    // `py` interned onto the seeded y = 0, whose stored points `(0, ẑ, x̂)` span `+y` — the sense
+    // is against the points the arena holds, not the ones this fixture wrote.
+    let my = moved(&mut m, py, t2, [0.0, 1.0, 0.0], [0.0, 3.0, 0.0], fwd);
     let v = m.push_vertex(
         Vertex::ThreePlane([mx, my, pz]),
         PointCache::Unrealized {
@@ -177,7 +198,7 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
         },
         None,
     );
-    let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
+    let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], fwd);
     let v_turned = m.push_vertex(
         Vertex::ThreePlane([turned, mx, pz]),
         PointCache::Unrealized {
@@ -190,8 +211,8 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
     );
 
     // ② The shared-chain door still answers through itself: same leaf on both moved carriers.
-    let mx2 = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
-    let my2 = moved(&mut m, py, t1, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
+    let mx2 = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], fwd);
+    let my2 = moved(&mut m, py, t1, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], fwd);
     let v_shared = m.push_vertex(
         Vertex::ThreePlane([mx2, my2, pz]),
         PointCache::Unrealized {
@@ -981,7 +1002,7 @@ fn a_plane_is_named_by_its_points() {
 
     let mut m = Model::new();
     let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
-    let (ok, _) = m.push_plane(pl(0.0), pts, None);
+    let (ok, _) = m.push_plane(pl(0.0), pts, None, Orientation::Forward);
     assert_eq!(
         m.surface_name.get(&ok),
         Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
@@ -1006,7 +1027,7 @@ fn a_plane_is_named_by_its_points() {
         None,
         "the narrow route was expected to overflow here — the case has stopped being the case"
     );
-    let (wide, _) = m.push_plane(pl(2.0), wide_pts, None);
+    let (wide, _) = m.push_plane(pl(2.0), wide_pts, None, Orientation::Forward);
     // ★ The stored value carries the proposition — `Narrow` says "fits i128" directly.
     // (This used to compare the global counter before/after, which races against other
     // tests pushing wide planes in parallel; the value cannot.)
@@ -1076,7 +1097,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     .unwrap();
     let mut m = Model::new();
     let before = WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed);
-    let (first, _) = m.push_plane(pl, [a, b, c], None);
+    let (first, _) = m.push_plane(pl, [a, b, c], None, Orientation::Forward);
     assert!(
         WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed) > before,
         "an answer past i128 must be counted as wide"
@@ -1091,9 +1112,9 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     );
 
     // ★ The same plane stated again — permuted, even — is the same handle now.
-    let (second, _) = m.push_plane(pl, [a, b, c], None);
+    let (second, _) = m.push_plane(pl, [a, b, c], None, Orientation::Forward);
     assert_eq!(first, second, "one wide plane, one handle");
-    let (permuted, _) = m.push_plane(pl, [b, c, a], None);
+    let (permuted, _) = m.push_plane(pl, [b, c, a], None, Orientation::Forward);
     assert_eq!(
         first, permuted,
         "two spellings of one wide plane must intern"
@@ -1144,7 +1165,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     )
     .unwrap();
     let before = m.surface_count();
-    let (h, flipped) = m.push_plane_through(cache, triple, None);
+    let (h, flipped) = m.push_plane_through(cache, triple, None, Orientation::Forward);
     assert!(!flipped);
     assert!(
         !m.surface_name.contains_key(&h),
@@ -1154,7 +1175,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
 
     // The same statement again — one handle; and a cache built facing the other way is the
     // same plane with `flipped` reported, exactly as the name road reports it.
-    let (again, flipped_same) = m.push_plane_through(cache, triple, None);
+    let (again, flipped_same) = m.push_plane_through(cache, triple, None, Orientation::Forward);
     assert_eq!(h, again, "one statement, one handle");
     assert!(!flipped_same);
     let reversed = nacre_geom::Plane::from_point_normal(
@@ -1162,7 +1183,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .unwrap();
-    let (still, flipped_now) = m.push_plane_through(reversed, triple, None);
+    let (still, flipped_now) = m.push_plane_through(reversed, triple, None, Orientation::Forward);
     assert_eq!(h, still, "direction is not part of the statement");
     assert!(
         flipped_now,
@@ -1181,7 +1202,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         },
         None,
     );
-    let (moved, _) = m.push_plane_through(cache, triple, Some(node));
+    let (moved, _) = m.push_plane_through(cache, triple, Some(node), Orientation::Forward);
     assert_ne!(h, moved, "the motion belongs in the statement key");
 }
 
@@ -1265,7 +1286,7 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
     for a in anchors {
         let mut m = Model::new();
         let cache = nacre_geom::Plane::from_point_normal(a, normal).expect("a nonzero normal");
-        let (h, _) = m.push_plane(cache, pts, None);
+        let (h, _) = m.push_plane(cache, pts, None, Orientation::Forward);
         stated.push(cache);
         held.push(m.surface_cache(h).clone());
     }
@@ -1488,7 +1509,7 @@ fn a_plane_stated_through_vertices_is_named_like_any_other() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h, _) = m.push_plane_through(cache, vs, None);
+    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
     let name = m
         .surface_name
         .get(&h)
@@ -1518,7 +1539,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (through, _) = m.push_plane_through(cache, vs, None);
+    let (through, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
     let r = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let (known, _) = m.push_plane(
         cache,
@@ -1528,6 +1549,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
             [r(0, 1), r(0, 1), r(1, 1)],
         ],
         None,
+        Orientation::Forward,
     );
     assert_eq!(through, known, "one plane, two statements, one handle");
     // ★ And the first statement wins, as interning is documented to: the truth still points
@@ -1552,7 +1574,7 @@ fn a_through_plane_points_only_at_older_cells() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h, _) = m.push_plane_through(cache, vs, None);
+    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
     let Surface::Plane {
         points: PlanePoints::Through(named),
         ..
@@ -1614,7 +1636,7 @@ fn a_through_plane_is_counted_by_both_bridges() {
     )
     .unwrap();
     let seeded_before = SEEDED_HITS.load(Relaxed);
-    let (h, _) = m.push_plane_through(cache, vs, None);
+    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
     assert!(
         (h.index() as usize) < 3,
         "three corners of the box's z = 0 face are the world XY seed"
@@ -1634,7 +1656,7 @@ fn a_through_plane_is_counted_by_both_bridges() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h2, _) = m2.push_plane_through(cache2, vs2, None);
+    let (h2, _) = m2.push_plane_through(cache2, vs2, None, Orientation::Forward);
     assert!(
         m2.surface_name
             .get(&h2)
@@ -1719,7 +1741,7 @@ fn axis_plane_at(m: &mut Model, axis: usize, value: nacre_exact::Rat) -> Handle<
         nacre_math::Vector3::from_array(n),
     )
     .unwrap();
-    m.push_plane(cache, pts, None).0
+    m.push_plane(cache, pts, None, Orientation::Forward).0
 }
 
 /// **A swap renames the root, because it renames the line.**

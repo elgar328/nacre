@@ -223,7 +223,10 @@ pub(super) fn datum_plane(
             let d = sp.def.as_ref().ok_or(OpError::PlaneWithoutExactForm)?;
             let cache = Plane::from_point_normal(sp.origin(), -sp.normal())
                 .ok_or(OpError::DegenerateGeometry)?;
-            let (plane, _flipped) = model.push_plane(cache, d.points(), None);
+            // Every `PlaneDef` orders its points so `u × v` is the stated normal; the cache faces
+            // the other way (the base cap's outward).
+            let (plane, _flipped) =
+                model.push_plane(cache, d.points(), None, Orientation::Reversed);
             // ★ `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
             // `+u = −x̂` while the script convention (and `SketchPlane::world_zx`) says `+ẑ`, so a
             // placement inferred from the plane would silently turn some sketches. The values are
@@ -274,6 +277,18 @@ pub(super) fn datum_plane(
                 .cross(world[2] - world[0])
                 .normalize()
                 .ok_or(OpError::CollinearVertices)?;
+            // `stated` is the caller's order; the plane stores the sorted order, which spans
+            // `stated` times the permutation's sign — and the cache faces `−stated`. Exact: a
+            // permutation's parity is a count, not a measurement.
+            let inversions = (0..3)
+                .flat_map(|i| (i + 1..3).map(move |j| (i, j)))
+                .filter(|&(i, j)| vs[i].index() > vs[j].index())
+                .count();
+            let through_sense = if inversions % 2 == 0 {
+                Orientation::Reversed
+            } else {
+                Orientation::Forward
+            };
 
             let ThroughStatement::Named(meets, motion) = statement else {
                 // ★★★ **The judged road**: every vertex pure, frames
@@ -294,7 +309,8 @@ pub(super) fn datum_plane(
                     Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-                let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
+                let (plane, _flipped) =
+                    model.push_plane_through(cache, sorted, None, through_sense);
                 let frame =
                     measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
@@ -333,7 +349,7 @@ pub(super) fn datum_plane(
             };
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-            let (plane, _flipped) = model.push_plane_through(cache, sorted, motion);
+            let (plane, _flipped) = model.push_plane_through(cache, sorted, motion, through_sense);
             let frame = measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
                 .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
@@ -386,6 +402,12 @@ pub(super) fn datum_plane(
                 Vector3::from_array(cb.1),
                 Vector3::from_array(cb.2),
             );
+            // The base plane's handedness: `cb`'s axes are carried one by one, so `x × y` is
+            // `parity · ŵ` — and both roads below state their points through those axes.
+            let parity = nacre_judge::chain_parity(
+                &crate::rotated_vertex::frame_chain(model, base, &canonical, false)
+                    .ok_or(OpError::PlaneWithoutExactForm)?,
+            );
             let (points, motion) = match realized.exact() {
                 // ★ An overflowing pullback is a **named reject**, not a quiet switch to the frame
                 // road — that switch is exactly where the duplicate handle would appear.
@@ -394,9 +416,7 @@ pub(super) fn datum_plane(
                 // offsetting along it would put the plane on the side the caller did not ask for.
                 // The frame-node road below carries `(0, 0, d)` itself and needs no such turn.
                 Some(rf) => {
-                    let chain = crate::rotated_vertex::frame_chain(model, base, &canonical, false)
-                        .ok_or(OpError::PlaneWithoutExactForm)?;
-                    let along = match nacre_judge::chain_parity(&chain) {
+                    let along = match parity {
                         1 => d,
                         _ => nacre_exact::Rat::from_int(0)
                             .checked_sub(d)
@@ -437,7 +457,13 @@ pub(super) fn datum_plane(
             let anchor = Point3::from_array(core::array::from_fn(|k| cb.0[k] + signed * cb.3[k]));
             let w = Vector3::from_array(cb.3);
             let cache = Plane::from_point_normal(anchor, -w).ok_or(OpError::DegenerateGeometry)?;
-            let (plane, _flipped) = model.push_plane(cache, points, motion);
+            // Both roads' points span `x × y = parity · ŵ` in the world, and the cache faces `−ŵ`.
+            let sense = if parity == 1 {
+                Orientation::Reversed
+            } else {
+                Orientation::Forward
+            };
+            let (plane, _flipped) = model.push_plane(cache, points, motion, sense);
             Ok((plane, SketchFrame::canonical(plane)))
         }
     }

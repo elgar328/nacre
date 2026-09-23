@@ -34,10 +34,15 @@ impl Model {
         &mut self,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
         name: Option<nacre_exact::PlaneName>,
         cache: nacre_geom::Plane,
     ) -> Handle<Surface> {
-        let h = self.surfaces.push(Surface::Plane { points, motion });
+        let h = self.surfaces.push(Surface::Plane {
+            points,
+            motion,
+            sense,
+        });
         self.surface_cache.push(SurfaceCache {
             realized: nacre_geom::Surface::Plane(cache),
         });
@@ -140,7 +145,7 @@ impl Model {
     pub(crate) fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
-            Surface::Plane { points, motion } => {
+            Surface::Plane { points, motion, .. } => {
                 // The gate, kept verbatim: a plane the model cannot name in the world is one this
                 // derivation declines, and every measured number above assumes that population.
                 self.world_plane_name(h)?.narrow()?;

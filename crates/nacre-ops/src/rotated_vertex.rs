@@ -68,10 +68,12 @@ pub(crate) fn surface_witness_triangle(
         nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(pts),
             motion,
+            ..
         } => (*pts, *motion),
         nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
+            ..
         } => match model.through_points_rat(*vs) {
             Some(base) => (base, *motion),
             None if model.surface_name.contains_key(&h) => {
@@ -209,6 +211,43 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
     Some(chain)
 }
 
+/// **A chain's handedness, unfolded** — `−1` per reflection, the ones under a `Frame` node
+/// included (a frame expands into its plane's own chain, so walking `parent` alone would miss
+/// them). `Some(1)` for the world.
+pub(crate) fn motion_parity(model: &Model, motion: Option<Handle<MotionNode>>) -> Option<i8> {
+    match motion {
+        None => Some(1),
+        Some(leaf) => Some(nacre_judge::chain_parity(&motion_chain(model, leaf)?)),
+    }
+}
+
+/// **A plane's sense from a direction its producer knows exactly** — `toward` stated in the same
+/// frame as `points`, the plane's normal meant to point along it in the world.
+///
+/// The points' world direction is `parity · L(n)` while `toward` travels as `L(toward)`, so the
+/// sense is `sign(n · toward) · parity`. `None` when the points are collinear, `toward` lies in
+/// the plane, or the chain cannot be rebuilt.
+pub(crate) fn sense_toward(
+    model: &Model,
+    points: [[Rat; 3]; 3],
+    toward: [Rat; 3],
+    motion: Option<Handle<MotionNode>>,
+) -> Option<nacre_topo::Orientation> {
+    let m = points.map(nacre_exact::MeetPoint::Narrow);
+    let n = nacre_exact::triple_normal([&m[0], &m[1], &m[2]])?;
+    let along = match nacre_exact::normal_sense(&n, toward) {
+        nacre_exact::Orient::Positive => true,
+        nacre_exact::Orient::Negative => false,
+        nacre_exact::Orient::Zero => return None,
+    };
+    let forward = along == (motion_parity(model, motion)? == 1);
+    Some(if forward {
+        nacre_topo::Orientation::Forward
+    } else {
+        nacre_topo::Orientation::Reversed
+    })
+}
+
 /// **One plane's frame, as the motion nodes that carry it out to the world** — in reading order,
 /// root first.
 ///
@@ -238,6 +277,7 @@ pub(crate) fn frame_chain(
         let nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
+            ..
         } = model.surface(plane)
         else {
             return None;
@@ -350,6 +390,109 @@ pub(crate) fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], WitnessPointError> {
         Rat::try_from_f64(c[1]).ok_or(WitnessPointError::Downgrade)?,
         Rat::try_from_f64(c[2]).ok_or(WitnessPointError::Downgrade)?,
     ])
+}
+
+/// What [`audit_plane_senses`] found over one model's live planes.
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Debug, Default)]
+pub struct SenseAudit {
+    /// Planes whose cache faces the way the truth's sense says.
+    pub agree: usize,
+    /// Planes whose cache faces the other way. The lock is that this is empty.
+    pub disagree: Vec<Handle<Surface>>,
+    /// Planes this could not carry to the world — a wide meet, or a statement of handles under a
+    /// motion whose meets do not solve. Counted so a green run says how much it looked at.
+    pub unmeasured: usize,
+    /// Of the agreeing planes: how many ride a reflection, and how many a turn or a frame — the
+    /// populations where a sense rule is easiest to get wrong.
+    pub mirrored: usize,
+    pub turned: usize,
+}
+
+/// **Does every live plane's cache face the way its truth says?** — the world direction
+/// `(q₁ − q₀) × (q₂ − q₀) · sense`, with `qᵢ` the stored points carried through the plane's own
+/// chain, against the cache's normal.
+///
+/// An `f64` read of both sides, and only a read: it decides nothing, it checks the sense a
+/// producer stated against the cache the same producer built. The two are parallel normals of
+/// one plane, so the sign of their dot is not a rounding question.
+#[cfg(any(test, feature = "test-util"))]
+pub fn audit_plane_senses(model: &Model) -> SenseAudit {
+    use nacre_topo::PlanePoints;
+    let mut out = SenseAudit::default();
+    let mut seen = std::collections::HashSet::new();
+    for &solid in model.live_solids() {
+        let sol = model.solid(solid);
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &f in &model.shell(sh).faces {
+                let h = model.face(f).surface;
+                if !seen.insert(h) {
+                    continue;
+                }
+                let Surface::Plane {
+                    points,
+                    motion,
+                    sense,
+                } = model.surface(h)
+                else {
+                    continue;
+                };
+                let chain = match motion {
+                    None => Some(Vec::new()),
+                    Some(leaf) => motion_chain(model, *leaf),
+                };
+                let carry = |base: [Rat; 3]| -> Option<[f64; 3]> {
+                    Some(replay(WitnessPoint::at(base), chain.as_ref()?)?.coord())
+                };
+                let world: Option<[[f64; 3]; 3]> = match points {
+                    PlanePoints::Known(p) => {
+                        (|| Some([carry(p[0])?, carry(p[1])?, carry(p[2])?]))()
+                    }
+                    PlanePoints::Through(vs) => {
+                        let meet = |v| match model.vertex_meet(v) {
+                            Some((nacre_exact::MeetPoint::Narrow(p), _)) => carry(p),
+                            _ => None,
+                        };
+                        (|| Some([meet(vs[0])?, meet(vs[1])?, meet(vs[2])?]))().or_else(|| {
+                            motion
+                                .is_none()
+                                .then(|| vs.map(|v| model.vertex_point(v).as_array()))
+                        })
+                    }
+                };
+                let nacre_geom::Surface::Plane(cache) = model.surface_cache(h) else {
+                    continue;
+                };
+                let Some(q) = world else {
+                    out.unmeasured += 1;
+                    continue;
+                };
+                let e = |a: [f64; 3], b: [f64; 3]| {
+                    nacre_math::Vector3::from_array([b[0] - a[0], b[1] - a[1], b[2] - a[2]])
+                };
+                let d = e(q[0], q[1]).cross(e(q[0], q[2])).dot(cache.normal())
+                    * f64::from(sense.sign());
+                if !d.is_finite() || d == 0.0 {
+                    out.unmeasured += 1;
+                } else if d < 0.0 {
+                    out.disagree.push(h);
+                } else {
+                    out.agree += 1;
+                    let nodes = chain.as_deref().unwrap_or(&[]);
+                    if nacre_judge::chain_parity(nodes) < 0 {
+                        out.mirrored += 1;
+                    }
+                    if nodes
+                        .iter()
+                        .any(|n| !matches!(n, MoveNode::Translate { .. } | MoveNode::Mirror { .. }))
+                    {
+                        out.turned += 1;
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

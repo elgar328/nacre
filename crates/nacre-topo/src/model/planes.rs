@@ -30,6 +30,7 @@ impl Model {
         cache: nacre_geom::Plane,
         points: [[nacre_exact::Rat; 3]; 3],
         motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
     ) -> (Handle<Surface>, bool) {
         // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
         // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
@@ -37,7 +38,7 @@ impl Model {
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
         let name = nacre_exact::plane_name_exact(points[0], points[1], points[2]);
-        self.intern_plane(cache, name, PlanePoints::Known(points), motion)
+        self.intern_plane(cache, name, PlanePoints::Known(points), motion, sense)
     }
 
     /// **Interning, once — the half every plane producer shares.**
@@ -54,7 +55,12 @@ impl Model {
         name: Option<nacre_exact::PlaneName>,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
     ) -> (Handle<Surface>, bool) {
+        debug_assert!(
+            self.cache_agrees_with_sense(&cache, &points, motion, sense) != Some(false),
+            "the stated sense {sense:?} disagrees with the cache the producer built"
+        );
         if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
             WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -72,11 +78,16 @@ impl Model {
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
-                return (h, self.flipped_against(h, &cache));
+                let flipped = self.flipped_against(h, &cache);
+                debug_assert!(
+                    self.flipped_by_truth(h, &points, sense) != Some(!flipped),
+                    "the truths' senses disagree with the caches' about `flipped`"
+                );
+                return (h, flipped);
             }
         }
         // One clone per push — the name is derived once here, never on a judging loop.
-        let h = self.push_plane_raw(points, motion, name, cache);
+        let h = self.push_plane_raw(points, motion, sense, name, cache);
         if let Some(k) = key {
             self.surface_ids.insert(k, h);
         }
@@ -92,6 +103,73 @@ impl Model {
             nacre_geom::Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
             nacre_geom::Surface::Cylinder(_) => false,
         }
+    }
+
+    /// `flipped` read off the two **truths** instead of the two caches: an incoming `Known`
+    /// statement against a `Known` survivor of the same key. The key is `(name, motion)`, so both
+    /// triples ride one chain and their frame directions compare as their world ones do.
+    /// `None` where either statement is `Through`.
+    fn flipped_by_truth(
+        &self,
+        survivor: Handle<Surface>,
+        points: &PlanePoints,
+        sense: Orientation,
+    ) -> Option<bool> {
+        let Surface::Plane {
+            points: PlanePoints::Known(theirs),
+            sense: their_sense,
+            ..
+        } = self.surface(survivor)
+        else {
+            return None;
+        };
+        let PlanePoints::Known(ours) = points else {
+            return None;
+        };
+        let normal = |p: &[[nacre_exact::Rat; 3]; 3]| {
+            let m = p.map(nacre_exact::MeetPoint::Narrow);
+            nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
+        };
+        let agree =
+            nacre_exact::same_sense(&normal(ours)?, &normal(theirs)?) == (sense == *their_sense);
+        Some(!agree)
+    }
+
+    /// Whether a producer's `cache` faces the way its stated `sense` says — the migration's
+    /// cross-check between the old carrier of the sense and the new one. An `f64` read, and only
+    /// a read: nothing here decides a truth.
+    ///
+    /// `None` where this crate cannot carry the points to the world: a `Through` statement, or a
+    /// chain with a turn or a frame (their realization lives in `nacre-ops`). Translations move
+    /// no direction; a reflection negates its axis and, carrying points, reverses the cross.
+    fn cache_agrees_with_sense(
+        &self,
+        cache: &nacre_geom::Plane,
+        points: &PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
+    ) -> Option<bool> {
+        let PlanePoints::Known(p) = points else {
+            return None;
+        };
+        let f = |q: [nacre_exact::Rat; 3]| Point3::from_array(q.map(|x| x.to_f64()));
+        let mut w = (f(p[1]) - f(p[0])).cross(f(p[2]) - f(p[0])).as_array();
+        let mut cur = motion;
+        while let Some(h) = cur {
+            let node = self.motion(h);
+            match node.motion {
+                Motion::Translate { .. } => {}
+                Motion::Mirror { axis, .. } => {
+                    w[axis.index()] = -w[axis.index()];
+                    w = w.map(|c| -c);
+                }
+                Motion::Rotate { .. } | Motion::Frame { .. } => return None,
+            }
+            cur = node.parent;
+        }
+        let n = cache.normal().as_array();
+        let d = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign());
+        d.is_finite().then_some(d > 0.0)
     }
 
     /// **Push a plane stated as the three vertices it passes through** — [`push_plane`]'s twin
@@ -125,6 +203,7 @@ impl Model {
         cache: nacre_geom::Plane,
         vertices: [Handle<Vertex>; 3],
         motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
     ) -> (Handle<Surface>, bool) {
         debug_assert!(
             vertices[0].index() < vertices[1].index() && vertices[1].index() < vertices[2].index(),
@@ -132,12 +211,12 @@ impl Model {
         );
         let name = self.plane_name_through(vertices);
         if name.is_some() {
-            return self.intern_plane(cache, name, PlanePoints::Through(vertices), motion);
+            return self.intern_plane(cache, name, PlanePoints::Through(vertices), motion, sense);
         }
         if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
             return (h, self.flipped_against(h, &cache));
         }
-        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, None, cache);
+        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, sense, None, cache);
         self.surface_through_ids.insert((vertices, motion), h);
         (h, false)
     }

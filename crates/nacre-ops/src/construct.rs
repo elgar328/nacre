@@ -332,6 +332,17 @@ impl Swept {
 }
 
 impl SweptRat {
+    /// The sweep in this ring's own frame, exactly: `top[k] − base[k]`, the same for every `k`.
+    /// A cap reads its sense against it.
+    pub(crate) fn sweep(&self) -> Option<[Rat; 3]> {
+        sub(&self.top[0], &self.base[0])
+    }
+
+    /// [`SweptRat::sweep`] reversed — the direction the base cap faces.
+    pub(crate) fn sweep_back(&self) -> Option<[Rat; 3]> {
+        sub(&self.base[0], &self.top[0])
+    }
+
     /// **Segment `i → i+1`'s wall, as the three points that define it** — `base[i]`, `base[j]`,
     /// `top[i]`, the same three `Plane::through_points` is given, so the exact record and the f64
     /// one describe the plane the same way round.

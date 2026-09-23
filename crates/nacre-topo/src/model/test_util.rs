@@ -33,8 +33,9 @@ impl Model {
         &mut self,
         cache: nacre_geom::Plane,
         points: [[nacre_exact::Rat; 3]; 3],
+        sense: Orientation,
     ) -> Handle<Surface> {
-        self.push_plane_raw(PlanePoints::Known(points), None, None, cache)
+        self.push_plane_raw(PlanePoints::Known(points), None, sense, None, cache)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
@@ -159,6 +160,8 @@ impl Model {
                     rat_corner(tri[k]).expect("cuboid corners inside the decimal window")
                 }),
                 None,
+                // The cache is `through_points` of the very corners stated, in their order.
+                Orientation::Forward,
             )
         });
 
@@ -396,6 +399,12 @@ impl Model {
         height: Rat,
         motion: Option<Handle<MotionNode>>,
     ) -> Result<(Handle<Solid>, [Handle<Face>; 3]), CylinderError> {
+        // The caches below are realized from the points as they are written, which is the world
+        // only when nothing moves them.
+        debug_assert!(
+            motion.is_none(),
+            "an exact cylinder's caches are built in world coordinates"
+        );
         let zero = Rat::from_int(0);
         let one = Rat::from_int(1);
         if radius <= zero {
@@ -514,9 +523,12 @@ impl Model {
         // the other way" and the face must record `Orientation::flipped()` — the `add_cuboid`
         // spelling. Dropping the bit gave a cylinder standing on a face **two upward caps**
         // (measured: bottom cap outward `+Z` on a top-face frame), which is not a solid at all.
+        // Both constructors state a cap as `[c, c + r·ref, c + r·(axis × ref)]`, which spans
+        // `+axis`: the bottom cap's cache faces `−axis`, the top cap's `+axis`.
         let (bottom_cap_surface, bottom_flipped) =
-            self.push_plane(bottom_plane, bottom_points, motion);
-        let (top_cap_surface, top_flipped) = self.push_plane(top_plane, top_points, motion);
+            self.push_plane(bottom_plane, bottom_points, motion, Orientation::Reversed);
+        let (top_cap_surface, top_flipped) =
+            self.push_plane(top_plane, top_points, motion, Orientation::Forward);
         let facing = |flipped: bool| {
             if flipped {
                 Orientation::Forward.flipped()

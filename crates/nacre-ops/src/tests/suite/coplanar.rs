@@ -351,7 +351,11 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         q[k] += 1.0;
         Point3::from_array(q)
     };
-    let surf = m.push_plane_unregistered(plane, [lift(origin), lift(stepr(ti)), lift(stepr(tj))]);
+    let surf = m.push_plane_unregistered(
+        plane,
+        [lift(origin), lift(stepr(ti)), lift(stepr(tj))],
+        nacre_topo::Orientation::Forward,
+    );
     let face = m.push_face_unchecked(Face {
         surface: surf,
         outer: Loop { half_edges: vec![] },

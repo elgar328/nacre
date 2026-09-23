@@ -158,6 +158,7 @@ fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
         .expect("a unit normal names a plane"),
         pts,
         None,
+        nacre_topo::Orientation::Forward,
     );
     let s = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -234,6 +235,7 @@ fn a_foreign_definition_is_rejected() {
             [Rat::from_int(0), Rat::from_int(1), Rat::from_int(9)],
         ],
         None,
+        nacre_topo::Orientation::Forward,
     );
     // ...and a vertex whose definition names the world seeds — surfaces this solid's face
     // set does not contain.

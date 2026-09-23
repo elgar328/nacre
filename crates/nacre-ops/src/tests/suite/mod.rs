@@ -1045,6 +1045,7 @@ mod loop_nesting;
 mod motion;
 mod naming;
 mod parallel;
+mod plane_sense;
 mod rotation;
 mod sketch_models;
 mod user_models;

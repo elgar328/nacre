@@ -92,7 +92,7 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         unreachable!()
     };
 
-    let Surface::Plane { points, motion } = m.surface(plane) else {
+    let Surface::Plane { points, motion, .. } = m.surface(plane) else {
         unreachable!("a datum is a plane")
     };
     assert_eq!(*motion, None, "a world statement records no motion");
@@ -190,7 +190,8 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
     };
 
     let mut m = Model::new();
-    let nameless = m.push_plane_unregistered(cache, pts);
+    // The points span `+z`, the cache faces `−z`.
+    let nameless = m.push_plane_unregistered(cache, pts, nacre_topo::Orientation::Reversed);
     assert!(
         !m.surface_name.contains_key(&nameless),
         "the instrument did not produce a nameless plane"
@@ -218,7 +219,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
 
     // ★★ The control: same cache, same points, and the name recorded.
     let mut named = Model::new();
-    let (h, _) = named.push_plane(cache, pts, None);
+    let (h, _) = named.push_plane(cache, pts, None, nacre_topo::Orientation::Reversed);
     assert!(
         named.surface_name.contains_key(&h),
         "push_plane derives the name from the points"
@@ -399,7 +400,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
     };
     assert_eq!(m.surface_count(), before + 1, "z = 2 is new");
     assert_ne!(up, cap_plane);
-    let Surface::Plane { points, motion } = m.surface(up) else {
+    let Surface::Plane { points, motion, .. } = m.surface(up) else {
         unreachable!()
     };
     assert_eq!(*motion, None);
@@ -472,7 +473,7 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
         unreachable!()
     };
 
-    let Surface::Plane { points, motion } = m.surface(plane) else {
+    let Surface::Plane { points, motion, .. } = m.surface(plane) else {
         unreachable!()
     };
     assert!(
@@ -1259,6 +1260,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
             Surface::Plane {
                 points: PlanePoints::Through(_),
                 motion: None,
+                ..
             }
         ),
         "the truth is the statement: handles, and no motion of its own"
@@ -1802,6 +1804,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     let Surface::Plane {
         points: PlanePoints::Through(named),
         motion,
+        ..
     } = m.surface(m.face(cap).surface)
     else {
         unreachable!()
@@ -2104,7 +2107,8 @@ fn wide_meet_vertex(
         let f = |q: [Rat; 3]| Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()]);
         let cache = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
             .expect("a fixture plane spans");
-        m.push_plane(cache, pts, motion).0
+        m.push_plane(cache, pts, motion, nacre_topo::Orientation::Forward)
+            .0
     };
     let a = push(
         m,
@@ -2297,7 +2301,9 @@ fn a_wide_meet_datum_interns_onto_the_plane_it_lies_on() {
         [r(0, 1), r(1, 1), zc(r(0, 1), r(1, 1))],
     ];
     let cache = nacre_geom::Plane::through_points(f(t_pts[0]), f(t_pts[1]), f(t_pts[2])).unwrap();
-    let t_handle = m.push_plane(cache, t_pts, None).0;
+    let t_handle = m
+        .push_plane(cache, t_pts, None, nacre_topo::Orientation::Forward)
+        .0;
 
     let vs = wide_meet_triple(&mut m, t, None, Some(t_handle), &|c| c);
     let Ok(OpOutput::DatumPlane { plane, .. }) = apply(

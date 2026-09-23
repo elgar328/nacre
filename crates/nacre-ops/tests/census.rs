@@ -157,12 +157,31 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     (bits.len(), h.finish())
 }
 
+/// Running totals of [`nacre_ops::audit_plane_senses`] over every row — `agree`, `unmeasured`,
+/// `mirrored`, `turned`. This binary's dump is its only test, so a process-global sum is the
+/// corpus's.
+static SENSE: [std::sync::atomic::AtomicUsize; 4] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
+
 fn record(
     tag: &str,
     m: &Model,
     inputs: &str,
     out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>,
 ) {
+    // ★ The plane-sense lock: every live plane's cache faces the way its truth's sense says.
+    let audit = nacre_ops::audit_plane_senses(m);
+    assert!(
+        audit.disagree.is_empty(),
+        "{tag}: planes whose cache opposes their stated sense: {:?}",
+        audit.disagree
+    );
+    for (slot, n) in SENSE
+        .iter()
+        .zip([audit.agree, audit.unmeasured, audit.mirrored, audit.turned])
+    {
+        slot.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+    }
     print!("c {tag} in:{inputs} ");
     match out {
         Err(e) => println!("ERR {e:?}"),
@@ -2398,6 +2417,16 @@ fn measure_census() {
     println!("stat surface_declined_motion {}", d.declined_motion);
     println!("stat surface_declined_arith {}", d.declined_arith);
     println!("stat surface_declined_cylinder {}", d.declined_cylinder);
+
+    // The plane-sense lock's reach: how many planes it judged, how many it could not carry to the
+    // world, and how many of the judged ride a reflection or a turn.
+    let [agree, unmeasured, mirrored, turned] = SENSE
+        .each_ref()
+        .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+    println!("stat sense_agree {agree}");
+    println!("stat sense_unmeasured {unmeasured}");
+    println!("stat sense_mirrored {mirrored}");
+    println!("stat sense_turned {turned}");
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

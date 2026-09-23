@@ -50,8 +50,13 @@ reject-trace = []
 # where `cfg(test)` is not set for this crate — a trap this repo has hit twice:
 #   cargo test --workspace --features nacre-ops/tangency-trace -- --nocapture 2>&1 | grep '^TROW '
 tangency-trace = []
+# Test-only doors for the measurements in this crate's integration tests (`tests/census.rs`),
+# which link the non-test build and so cannot see `cfg(test)`. Nothing in a product build.
+test-util = []
 
 [dev-dependencies]
+# Turns on this crate's own `test-util` for its integration tests (the `nacre-topo` shape).
+nacre-ops = { path = ".", features = ["test-util"] }
 # Enables the topo test-only primitive `Model::add_cuboid` for building test solids
 # (unusable in production; this crate sits above topo but tests build boxes directly).
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
