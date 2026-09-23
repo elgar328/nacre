@@ -197,6 +197,42 @@ fn small_booleans(reps: usize) -> std::time::Duration {
     spent
 }
 
+/// A box given a history (a rounding translation, recorded as a node) and then turned a quarter
+/// `n` times — every turn recorded behind the last, so the chain is `n + 1` deep and every node
+/// folds. Returns the time to build it and the time of one fuse against an unmoved box: what a
+/// question about the chain costs as the history grows.
+fn recorded_quarter_turns(n: usize) -> (std::time::Duration, std::time::Duration) {
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    m.rebuild_adjacency();
+    let xf = |m: &mut Model, s: Handle<Solid>, isometry: Isometry| -> Handle<Solid> {
+        match apply(m, &Operation::Transform { solid: s, isometry }).expect("a transform") {
+            nacre_ops::OpOutput::Transform { solid } => solid,
+            o => panic!("{o:?}"),
+        }
+    };
+    let t = std::time::Instant::now();
+    let mut a = xf(
+        &mut m,
+        a,
+        Isometry::translation([Rat::new(1, 10).expect("1/10"); 3]),
+    );
+    let quarter = Isometry::rotation(Rotation {
+        axis: Axis::Z,
+        pivot: [Rat::new(1, 2).expect("1/2"); 3],
+        angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
+    });
+    for _ in 0..n {
+        a = xf(&mut m, a, quarter);
+    }
+    let built = t.elapsed();
+    m.rebuild_adjacency();
+    let t = std::time::Instant::now();
+    boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
+    (built, t.elapsed())
+}
+
 #[test]
 #[ignore = "a measurement, not an assertion (run with --ignored --nocapture)"]
 fn measure_boolean_wall_clock() {
@@ -241,6 +277,8 @@ fn measure_boolean_wall_clock() {
         "  axis-aligned small   : {d:>12.2?} over {reps} booleans ({:.1?} each)",
         d / reps as u32
     );
+    let (built, fuse) = recorded_quarter_turns(2000);
+    println!("  recorded quarter turns 2000 : build {built:>9.2?}   fuse {fuse:>9.2?}");
 }
 
 /// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing

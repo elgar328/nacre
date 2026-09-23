@@ -1160,6 +1160,42 @@ fn measure_census() {
             }
         }
     }
+    // ── **A recorded quarter turn** (`mot h+…`): the boss corpus again, but with a history first — a
+    // rounding translation `(1/10, 1/10, 1/10)` that is recorded as a node, so the turn after it is
+    // recorded too rather than carried into the statements (the `mot` rows above never leave a
+    // node). The commuting oracle's `h+` motions lock this population; these rows record it.
+    {
+        for (name, axis) in [("h+rx90", Axis::X), ("h+rz90", Axis::Z)] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let plate = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([4.0, 4.0, 2.0]),
+                );
+                let boss = m.add_cylinder(
+                    Point3::from_array([2.0, 2.0, -1.0]),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                    0.5,
+                    4.0,
+                );
+                m.rebuild_adjacency();
+                let prefix = Isometry::translation([Rat::new(1, 10).expect("1/10"); 3]);
+                let turn = Isometry::rotation(Rotation {
+                    axis,
+                    pivot: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
+                });
+                let plate = xf(&mut m, plate, prefix);
+                let boss = xf(&mut m, boss, prefix);
+                let plate = xf(&mut m, plate, turn);
+                let boss = xf(&mut m, boss, turn);
+                let inputs = operands(&m, plate, boss);
+                let out = boolean(&mut m, k, plate, boss);
+                m.rebuild_adjacency();
+                record(&format!("mot {name} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
     // ── **A cap that lies in another face's plane** (`cap`): the population where a *disk* is a
     // face of the result and the face around it holds the same circle as a hole. The two are
     // adjacent across that circle and nothing else — a disk has no nodes — so before the merge

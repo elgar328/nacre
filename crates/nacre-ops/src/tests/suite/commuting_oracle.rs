@@ -3,14 +3,53 @@
 use super::*;
 
 /// One motion per sign class, for the always-on run; the ignored run takes the whole group.
-const MOTION_SUBSET: [&str; 6] = [
+const MOTION_SUBSET: [&str; 7] = [
     "t(-4,-4,-2)",
     "rz90",
     "rx90",
     "ry90",
     "rz90+t",
     "t(7/11,3/10,1/4)",
+    "h+rx90",
 ];
+
+/// **Motions with a history** — a rounding translation first, so the motion after it is
+/// recorded as a chain node instead of carried into the statements. A fresh operand carries an
+/// exact turn into its points (`motion_group`'s rows never leave a node behind), so without this
+/// prefix the oracle never meets a recorded quarter turn.
+///
+/// ★ The prefix has no zero component: a zero would leave that axis's planes where they are,
+/// unrecorded, and mix world-stated planes with chained ones — a population no row here
+/// measures. `h` alone is the control: the prefix by itself must commute.
+fn history_motions() -> Vec<(String, nacre_exact::Isometry, nacre_exact::Isometry)> {
+    use nacre_exact::{Isometry, Rat};
+    let prefix = Isometry::translation([Rat::new(1, 10).expect("1/10"); 3]);
+    let mut v = vec![("h".to_string(), prefix, translate_iso([0, 0, 0]))];
+    for (ax, an) in [(Axis::X, "x"), (Axis::Y, "y"), (Axis::Z, "z")] {
+        for deg in [90i128, 180] {
+            v.push((format!("h+r{an}{deg}"), prefix, rot_iso(ax, deg)));
+        }
+    }
+    v
+}
+
+/// The oracle's whole motion list: the group, unprefixed, and the history motions.
+fn oracle_motions() -> Vec<(
+    String,
+    Option<nacre_exact::Isometry>,
+    nacre_exact::Isometry,
+    MotionClass,
+)> {
+    motion_group()
+        .into_iter()
+        .map(|(n, iso, class)| (n, None, iso, class))
+        .chain(
+            history_motions()
+                .into_iter()
+                .map(|(n, pre, iso)| (n, Some(pre), iso, MotionClass::Recorded)),
+        )
+        .collect()
+}
 
 /// The families the oracle runs: the boss corpus, an enclosed boss, a planar pair and the
 /// second-operation families (the first boolean's result against a tool).
@@ -198,6 +237,7 @@ fn panic_text(p: Box<dyn std::any::Any + Send>) -> String {
 fn boolean_commutes(
     build: &Build,
     kind: BoolKind,
+    prefix: Option<&nacre_exact::Isometry>,
     iso: &nacre_exact::Isometry,
     class: MotionClass,
 ) -> (Answer, Outcome, Digest) {
@@ -206,6 +246,15 @@ fn boolean_commutes(
     m0.rebuild_adjacency();
     let ans0 = answer(&m0, &r0);
     let (mut m, a, b) = build();
+    let (a, b) = match prefix {
+        None => (a, b),
+        Some(pre) => match (transform(&mut m, a, pre), transform(&mut m, b, pre)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => {
+                return (ans0, Outcome::InputUntransportable(e), Digest::NotAsked);
+            }
+        },
+    };
     let a = match transform(&mut m, a, iso) {
         Ok(x) => x,
         Err(e) => return (ans0, Outcome::InputUntransportable(e), Digest::NotAsked),
@@ -281,13 +330,45 @@ const DIVERGES: &str = "<diverges silently>";
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ The ledger is empty: every cell of the whole group commutes. It stays here as the shape the
-/// next divergence is written in.
-const KNOWN: &[(&str, &[&str], &[&str])] = &[];
+/// ★ **What it holds today: every cylinder family under a recorded quarter turn.** A history
+/// makes the turn a chain node, and a chain that is not a pure translation has no world
+/// statement for its cylinder, so the cylinder gate refuses by name (measured: all 21 families
+/// with a cylinder, all three kinds, all six turns; the planar family and the prefix alone
+/// commute).
+const KNOWN: &[(&str, &[&str], &[&str])] = &[
+    ("bore axis", HISTORY_TURNS, GATE),
+    ("bore offset", HISTORY_TURNS, GATE),
+    ("corner", HISTORY_TURNS, GATE),
+    ("corner-lo", HISTORY_TURNS, GATE),
+    ("enclosed", HISTORY_TURNS, GATE),
+    ("flush", HISTORY_TURNS, GATE),
+    ("half +x", HISTORY_TURNS, GATE),
+    ("half +x, cap below", HISTORY_TURNS, GATE),
+    ("half wall", HISTORY_TURNS, GATE),
+    ("half wall, cap below", HISTORY_TURNS, GATE),
+    ("offmid", HISTORY_TURNS, GATE),
+    ("offset-in", HISTORY_TURNS, GATE),
+    ("offset-irr", HISTORY_TURNS, GATE),
+    ("offset-out", HISTORY_TURNS, GATE),
+    ("on top", HISTORY_TURNS, GATE),
+    ("through", HISTORY_TURNS, GATE),
+    ("through mid", HISTORY_TURNS, GATE),
+    ("wall +x", HISTORY_TURNS, GATE),
+    ("wall +y", HISTORY_TURNS, GATE),
+    ("wall -x", HISTORY_TURNS, GATE),
+    ("wall -y", HISTORY_TURNS, GATE),
+];
 
-/// The count lock: how many cells `KNOWN` names (three kinds per motion) — zero, since every
-/// cell commutes.
-const KNOWN_CELLS: usize = 0;
+/// The six recorded quarter turns [`KNOWN`] names.
+const HISTORY_TURNS: &[&str] = &[
+    "h+rx90", "h+rx180", "h+ry90", "h+ry180", "h+rz90", "h+rz180",
+];
+
+/// The reason those cells are refused under — a named reject, read by the ledger's reject arm.
+const GATE: &[&str] = &["CylinderGateUndecided"];
+
+/// The count lock: how many cells `KNOWN` names (three kinds per motion).
+const KNOWN_CELLS: usize = 378;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
@@ -302,8 +383,7 @@ fn run_commuting_oracle(labels: &[&str]) {
         KNOWN_CELLS,
         "the ledger of known cells changed size"
     );
-    let group = motion_group();
-    let group: Vec<_> = group
+    let group: Vec<_> = oracle_motions()
         .into_iter()
         .filter(|g| labels.contains(&g.0.as_str()))
         .collect();
@@ -321,7 +401,7 @@ fn run_commuting_oracle(labels: &[&str]) {
         );
         for mn in k.1 {
             assert!(
-                motion_group().iter().any(|g| g.0 == *mn),
+                oracle_motions().iter().any(|g| g.0 == *mn),
                 "KNOWN names a motion: {mn}"
             );
         }
@@ -338,8 +418,9 @@ fn run_commuting_oracle(labels: &[&str]) {
     let mut known_hit = 0usize;
     for (fam, build) in &fams {
         for (kn, kind) in kinds {
-            for (mn, iso, class) in &group {
-                let (ans0, outcome, digest) = boolean_commutes(build, kind, iso, *class);
+            for (mn, prefix, iso, class) in &group {
+                let (ans0, outcome, digest) =
+                    boolean_commutes(build, kind, prefix.as_ref(), iso, *class);
                 if let Some(want) = expected_unmoved_volume(fam, kind) {
                     let got: f64 = ans0.volumes.iter().sum();
                     if (got - want).abs() > 1e-9 * (1.0 + want.abs()) {
@@ -363,6 +444,16 @@ fn run_commuting_oracle(labels: &[&str]) {
                         known_hit += 1;
                     }
                     (Some(sites), Outcome::Diverged(_)) if sites.contains(&DIVERGES) => {
+                        known_hit += 1;
+                    }
+                    // A **named** reject on the moved road: the site is the reason's name, and
+                    // only that reason matches — a different reason, or a different answer, is
+                    // red. `DIVERGES` would take any divergence, a wrong volume included.
+                    (Some(sites), Outcome::Diverged(why))
+                        if sites
+                            .iter()
+                            .any(|s| why.ends_with(&format!("-> Rejected({s})"))) =>
+                    {
                         known_hit += 1;
                     }
                     _ => failures.push(format!(
@@ -440,7 +531,7 @@ fn the_boolean_commutes_with_rigid_motion() {
 #[test]
 #[ignore = "the whole motion group (~15 × 66 booleans); the subset runs always"]
 fn the_boolean_commutes_with_every_motion_of_the_group() {
-    let group = motion_group();
+    let group = oracle_motions();
     let labels: Vec<&str> = group.iter().map(|g| g.0.as_str()).collect();
     run_commuting_oracle(&labels);
 }
