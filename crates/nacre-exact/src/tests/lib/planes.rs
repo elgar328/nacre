@@ -774,3 +774,150 @@ fn try_from_f64_is_exact_and_round_trips() {
         assert_eq!(Rat::try_from_f64(x).unwrap().to_f64(), x, "round-trip {x}");
     }
 }
+
+/// A triple's sense, exactly — against an independent `Rat` derivation, and across widths.
+mod triple_sense {
+    use crate::{MeetPoint, Orient, Rat, normal_sense, same_sense, triple_normal};
+    use proptest::prelude::*;
+
+    fn r(n: i128, d: i128) -> Rat {
+        Rat::new(n, d).expect("a rational")
+    }
+
+    /// `(b − a) × (c − a)` in `Rat`, for inputs small enough never to overflow.
+    fn rat_cross(p: &[[Rat; 3]; 3]) -> [Rat; 3] {
+        let e = |q: [Rat; 3]| -> [Rat; 3] {
+            core::array::from_fn(|i| q[i].checked_sub(p[0][i]).expect("small"))
+        };
+        let (u, v) = (e(p[1]), e(p[2]));
+        let t = |i: usize, j: usize| {
+            u[i].checked_mul(v[j])
+                .expect("small")
+                .checked_sub(u[j].checked_mul(v[i]).expect("small"))
+                .expect("small")
+        };
+        [t(1, 2), t(2, 0), t(0, 1)]
+    }
+
+    fn rat_dot_sign(a: [Rat; 3], b: [Rat; 3]) -> Orient {
+        let d = (0..3).fold(Rat::from_int(0), |acc, i| {
+            acc.checked_add(a[i].checked_mul(b[i]).expect("small"))
+                .expect("small")
+        });
+        match d {
+            x if x > Rat::from_int(0) => Orient::Positive,
+            x if x < Rat::from_int(0) => Orient::Negative,
+            _ => Orient::Zero,
+        }
+    }
+
+    /// Collinear points span no direction.
+    #[test]
+    fn collinear_points_have_no_normal() {
+        let p = |x: i128| MeetPoint::Narrow([r(x, 1), r(2 * x, 1), r(0, 1)]);
+        let (a, b, c) = (p(0), p(1), p(3));
+        assert_eq!(triple_normal([&a, &b, &c]), None);
+    }
+
+    /// Swapping two points reverses the sense; a cyclic turn keeps it.
+    #[test]
+    fn a_transposition_reverses_and_a_cycle_keeps() {
+        let p = |x: i128, y: i128, z: i128| MeetPoint::Narrow([r(x, 1), r(y, 3), r(z, 7)]);
+        let (a, b, c) = (p(0, 0, 0), p(1, 0, 2), p(0, 1, 5));
+        let n = triple_normal([&a, &b, &c]).expect("a plane");
+        assert!(!same_sense(
+            &n,
+            &triple_normal([&a, &c, &b]).expect("a plane")
+        ));
+        assert!(same_sense(
+            &n,
+            &triple_normal([&b, &c, &a]).expect("a plane")
+        ));
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+            proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+        ))]
+        /// The sign of `n · dir` is the `Rat` derivation's sign, zero included.
+        #[test]
+        fn normal_sense_is_the_rational_dot_sign(
+            pts in proptest::array::uniform3(proptest::array::uniform3((-20i128..=20, 1i128..=9))),
+            dir in proptest::array::uniform3((-20i128..=20, 1i128..=9)),
+        ) {
+            let p: [[Rat; 3]; 3] = pts.map(|q| q.map(|(n, d)| r(n, d)));
+            let dir = dir.map(|(n, d)| r(n, d));
+            let meets = p.map(MeetPoint::Narrow);
+            let cross = rat_cross(&p);
+            match triple_normal([&meets[0], &meets[1], &meets[2]]) {
+                None => prop_assert!(cross.iter().all(|c| *c == Rat::from_int(0))),
+                Some(n) => prop_assert_eq!(normal_sense(&n, dir), rat_dot_sign(cross, dir)),
+            }
+        }
+
+        /// Two triples on one plane agree exactly when their `Rat` crosses do.
+        #[test]
+        fn same_sense_is_the_rational_agreement(
+            pts in proptest::array::uniform3(proptest::array::uniform3((-20i128..=20, 1i128..=9))),
+            w in proptest::array::uniform3((-4i128..=4, -4i128..=4)),
+        ) {
+            let p: [[Rat; 3]; 3] = pts.map(|q| q.map(|(n, d)| r(n, d)));
+            // A second triple on the same plane: affine combinations of the first.
+            let q: [[Rat; 3]; 3] = w.map(|(s, t)| core::array::from_fn(|i| {
+                let u = p[1][i].checked_sub(p[0][i]).expect("small");
+                let v = p[2][i].checked_sub(p[0][i]).expect("small");
+                p[0][i]
+                    .checked_add(u.checked_mul(Rat::from_int(s)).expect("small"))
+                    .expect("small")
+                    .checked_add(v.checked_mul(Rat::from_int(t)).expect("small"))
+                    .expect("small")
+            }));
+            let (mp, mq) = (p.map(MeetPoint::Narrow), q.map(MeetPoint::Narrow));
+            if let (Some(a), Some(b)) = (
+                triple_normal([&mp[0], &mp[1], &mp[2]]),
+                triple_normal([&mq[0], &mq[1], &mq[2]]),
+            ) {
+                prop_assert_eq!(
+                    same_sense(&a, &b),
+                    rat_dot_sign(rat_cross(&p), rat_cross(&q)) == Orient::Positive
+                );
+            }
+        }
+
+        /// Width does not move a sense: shrinking every point by `2⁻²⁰⁰` (a denominator no `i128`
+        /// holds, so the meets are `Wide`) leaves the direction where it was.
+        #[test]
+        fn a_wide_triple_faces_where_its_narrow_twin_does(
+            pts in proptest::array::uniform3(proptest::array::uniform3(-20i128..=20)),
+            dir in proptest::array::uniform3(-20i128..=20),
+        ) {
+            use num_bigint::BigInt;
+            let narrow = pts.map(|q| MeetPoint::Narrow(q.map(Rat::from_int)));
+            let big = BigInt::from(1) << 200u32;
+            let wide = pts.map(|q| MeetPoint::Wide(q.map(|n| {
+                // Lowest terms with a positive denominator: strip the shared powers of two.
+                let (mut num, mut den) = (BigInt::from(n), big.clone());
+                while num != BigInt::from(0) && &num % 2 == BigInt::from(0) && &den % 2 == BigInt::from(0) {
+                    num /= 2;
+                    den /= 2;
+                }
+                if num == BigInt::from(0) {
+                    den = BigInt::from(1);
+                }
+                (num, den)
+            })));
+            let dir = dir.map(Rat::from_int);
+            match (
+                triple_normal([&narrow[0], &narrow[1], &narrow[2]]),
+                triple_normal([&wide[0], &wide[1], &wide[2]]),
+            ) {
+                (None, None) => {}
+                (Some(a), Some(b)) => {
+                    prop_assert!(same_sense(&a, &b));
+                    prop_assert_eq!(normal_sense(&a, dir), normal_sense(&b, dir));
+                }
+                other => prop_assert!(false, "collinearity disagrees across widths: {:?}", other),
+            }
+        }
+    }
+}

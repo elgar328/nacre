@@ -122,9 +122,6 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneNa
 /// one answers is the correctness argument, and `the_wide_derivation_answers_what_the_narrow_one_does`
 /// is what holds it. `None` is collinearity, or a canonical component that does not fit `Rat`.
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
-    use num_bigint::BigInt;
-    use num_integer::Integer;
-
     // ★★★★ **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
     // `plane_through_points` term for term — and that is how this started. But `Ratio` reduces by a
     // gcd on *every* multiply and subtract, and there are a dozen of them, so the reduction work
@@ -135,13 +132,7 @@ pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<Pl
     // `D_k`, so `u'` and `v'` are the true edges times `D_a·D_b` and `D_a·D_c`; their cross product
     // is the true normal times a positive factor, and the canonical form divides all of it out.
     // The `d` term is `−N·a = −(N·P_a)/D_a`, so scaling the whole 4-vector by `D_a` clears it.
-    let lift = |p: [Rat; 3]| -> ([BigInt; 3], BigInt) {
-        let den = p.map(|r| BigInt::from(r.denom()));
-        let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
-        let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
-        (num, d)
-    };
-    plane_name_from_lifted([lift(a), lift(b), lift(c)])
+    plane_name_from_lifted([a, b, c].map(|p| lift_meet(&MeetPoint::Narrow(p))))
 }
 
 /// [`plane_name_big`]'s body after the lift — three points as `(integer coordinates, positive
@@ -154,16 +145,8 @@ fn plane_name_from_lifted(
     use num_integer::Integer;
     use num_traits::{ToPrimitive, Zero};
 
-    let [(pa, da), (pb, db), (pc, dc)] = pts;
-    let edge = |q: &[BigInt; 3], dq: &BigInt| -> [BigInt; 3] {
-        core::array::from_fn(|i| &q[i] * &da - &pa[i] * dq)
-    };
-    let (u, v) = (edge(&pb, &db), edge(&pc, &dc));
-    let term = |i: usize, j: usize| &u[i] * &v[j] - &u[j] * &v[i];
-    let n = [term(1, 2), term(2, 0), term(0, 1)];
-    if n.iter().all(Zero::is_zero) {
-        return None; // collinear
-    }
+    let n = lifted_normal(&pts)?; // `None`: collinear
+    let [(pa, da), _, _] = pts;
     let dot: BigInt = (0..3).map(|i| &n[i] * &pa[i]).sum();
     let mut num = [&n[0] * &da, &n[1] * &da, &n[2] * &da, -dot];
 
@@ -209,25 +192,78 @@ fn plane_name_from_lifted(
 /// either side: wide points are lifted the same way, and a canonical answer too wide for `Rat`
 /// comes back [`PlaneName::Wide`].
 pub fn plane_name_from_meets(points: [&MeetPoint; 3]) -> Option<PlaneName> {
+    plane_name_from_lifted(points.map(lift_meet))
+}
+/// One point as integer coordinates over a positive common denominator — the lift every
+/// width-free road in this file starts from (`Narrow` and `Wide` meets alike).
+fn lift_meet(p: &MeetPoint) -> ([num_bigint::BigInt; 3], num_bigint::BigInt) {
     use num_bigint::BigInt;
     use num_integer::Integer;
-
-    let lift = |p: &MeetPoint| -> ([BigInt; 3], BigInt) {
-        match p {
-            MeetPoint::Narrow(p) => {
-                let den = p.map(|r| BigInt::from(r.denom()));
-                let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
-                let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
-                (num, d)
-            }
-            MeetPoint::Wide(p) => {
-                let d = p.iter().fold(BigInt::from(1), |l, (_, den)| l.lcm(den));
-                let num = core::array::from_fn(|i| &p[i].0 * (&d / &p[i].1));
-                (num, d)
-            }
+    match p {
+        MeetPoint::Narrow(p) => {
+            let den = p.map(|r| BigInt::from(r.denom()));
+            let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+            let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
+            (num, d)
         }
+        MeetPoint::Wide(p) => {
+            let d = p.iter().fold(BigInt::from(1), |l, (_, den)| l.lcm(den));
+            let num = core::array::from_fn(|i| &p[i].0 * (&d / &p[i].1));
+            (num, d)
+        }
+    }
+}
+
+/// `(b − a) × (c − a)` of lifted points, times the positive factor `D_a²·D_b·D_c`; `None` when
+/// the three are collinear.
+fn lifted_normal(
+    pts: &[([num_bigint::BigInt; 3], num_bigint::BigInt); 3],
+) -> Option<[num_bigint::BigInt; 3]> {
+    use num_bigint::BigInt;
+    use num_traits::Zero;
+    let [(pa, da), (pb, db), (pc, dc)] = pts;
+    let edge = |q: &[BigInt; 3], dq: &BigInt| -> [BigInt; 3] {
+        core::array::from_fn(|i| &q[i] * da - &pa[i] * dq)
     };
-    plane_name_from_lifted([lift(points[0]), lift(points[1]), lift(points[2])])
+    let (u, v) = (edge(pb, db), edge(pc, dc));
+    let term = |i: usize, j: usize| &u[i] * &v[j] - &u[j] * &v[i];
+    let n = [term(1, 2), term(2, 0), term(0, 1)];
+    (!n.iter().all(Zero::is_zero)).then_some(n)
+}
+
+/// **The direction three points span, exactly** — `(b − a) × (c − a)` up to a positive factor,
+/// at whatever width the points need. `None` when they are collinear.
+///
+/// The factor is why this is a direction and not a vector: it answers *which way*, which is all
+/// a plane's sense asks, and it never overflows because nothing here is narrowed.
+pub fn triple_normal(points: [&MeetPoint; 3]) -> Option<[num_bigint::BigInt; 3]> {
+    lifted_normal(&points.map(lift_meet))
+}
+
+/// Which way `n` faces `toward` — the exact sign of `n · toward`.
+pub fn normal_sense(n: &[num_bigint::BigInt; 3], toward: [Rat; 3]) -> Orient {
+    let (t, _) = lift_meet(&MeetPoint::Narrow(toward));
+    dot_sign(n, &t)
+}
+
+/// Whether two normals of **one plane** point the same way. Two such normals are parallel, so the
+/// dot product is never zero and its sign is the whole answer.
+pub fn same_sense(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> bool {
+    let s = dot_sign(a, b);
+    debug_assert!(s != Orient::Zero, "two normals of one plane are parallel");
+    s == Orient::Positive
+}
+
+fn dot_sign(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> Orient {
+    use num_traits::Zero;
+    let d: num_bigint::BigInt = (0..3).map(|i| &a[i] * &b[i]).sum();
+    if d.is_zero() {
+        Orient::Zero
+    } else if d > num_bigint::BigInt::zero() {
+        Orient::Positive
+    } else {
+        Orient::Negative
+    }
 }
 
 /// **The canonical representative of a rational plane** `a·x + b·y + c·z + d = 0`.
