@@ -239,8 +239,8 @@ pub trait PlaneWitness: Witness {
 /// integer stand-in for [`PlaneWitness::coeffs`], any width.
 ///
 /// The canonical name deliberately carries no direction (first nonzero coefficient positive),
-/// and the stored plane may hold it either way round — measured, 1,916 interned statements in
-/// the suite arrive `flipped`. So the raw name cannot be handed to a direction-sensitive
+/// and the stored plane may hold it either way round — measured, 246 of the census corpus's 3,125
+/// interning hits arrive `flipped`. So the raw name cannot be handed to a direction-sensitive
 /// predicate; the σ that relates the two is folded in **here, once, at construction**
 /// ([`name_stored_ints`]), so every consumer inherits the stored convention and the existing
 /// `frame_sign` bridges apply verbatim.

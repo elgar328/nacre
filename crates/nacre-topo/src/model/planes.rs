@@ -198,8 +198,8 @@ impl Model {
     /// asked for it first.
     ///
     /// ★ `vertices` is **sorted** by the caller before it gets here (the same three vertices are
-    /// the same statement in any order). Direction is not lost: it lives in the frame's measured
-    /// `flip`, exactly as it does for a stated plane.
+    /// the same statement in any order). Direction is not lost: `sense` states it against the
+    /// sorted order, which a caller with its own order reaches through that permutation's parity.
     ///
     /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
     /// A mixed-frame datum's exact world coefficients are irrational, so

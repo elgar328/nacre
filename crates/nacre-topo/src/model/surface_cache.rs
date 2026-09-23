@@ -165,10 +165,10 @@ impl Model {
     /// differently still differ. Inside one model interning makes that unreachable — one name,
     /// one handle, one truth.
     ///
-    /// ☑ **The sense cannot come from the truth** (measured): 342 non-seed `Known` planes carry a
-    /// cache normal opposing their own point order, so the point order does not name a direction.
-    /// Copying the row sidesteps the question — `flipped` and every face's outward spelling are
-    /// bit-unchanged by this derivation.
+    /// ☑ **The sense is not this derivation's business.** It is truth ([`Surface::Plane::sense`]),
+    /// and the row copied here carries the producer's, which the push door has asserted agrees
+    /// with it; [`Model::align_cache_sense`] turns the cache after this derivation wherever the
+    /// two could still differ.
     ///
     /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
     /// motion that is not a rational translation chain, a `Through` truth, a moved cylinder, or
