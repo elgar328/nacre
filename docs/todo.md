@@ -124,7 +124,9 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
   71.9·26.1·1.2%). BigInt 쌍둥이로는 안 된다(잰 것 — release, 축정렬 작은 불리언 200개: 지름길 219ms · 끔 449ms ·
   BigInt 436ms).
 - 판정 표가 `rotated == false` 를 이름이 세계 진술이라는 허가로 쓴다 — `Through` 팔은 정점 meet 의 프레임을 직접
-  묻는다(`table.rs`). interning 열쇠 `(name, motion)` 도 같은 전제에 기대고, 그것을 검사하는 곳은 없다.
+  묻는다(`table.rs`). 그 인구(모션 없음·프레임 지역 meet)에서는 지름길만 닫힐 뿐 상승 도로도 증인 점을 세계로
+  읽는다 — 오늘 인구는 0(`transform.rs` 의 `debug_assert`). interning 열쇠 `(name, motion)` 도 같은 전제에 기대고,
+  그것을 검사하는 곳은 없다.
 
 **도착점.** 평면 캐시는 «점 + 단위 법선»만 들고, 문(`push_plane(points, motion, sense)`)이 그 둘을 진실에서
 유도해 `cache` 인자가 떠난다 — 생산자 쪽에서 f64 평면을 짓는 자리 여덟(`prism.rs` 셋 · `datum.rs` 넷 ·
@@ -267,6 +269,16 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 재작성을 함께 재야 하므로 **별도 플랜**이다.
 
 ## 알려진 결함과 절벽
+
+### 순차 빌드 관문이 병렬로 돈다
+
+overview 관문의 `cargo test -p nacre-ops --no-default-features` 는 순차(`Rc<OnceCell>`, rayon 없음) 빌드를
+시험하지 않는다. ops 의 자기 dev-의존(`nacre-ops = { …, features = ["test-util"] }`)이 기본 기능을 켜 `parallel` 이
+되살아난다 — `cargo tree -p nacre-ops --no-default-features -e features -i rayon` 이 `nacre-ops feature "default"`
+를 dev-의존 아래 보이고, perf 테스트가 그 명령에서 `mode=parallel` 을 찍는다. `Cargo.toml` 의 «nothing else builds
+it, so check it with …» 도 같은 전제다. 지금 순차 빌드를 시험하는 것은 playground 의 wasm 빌드뿐이다. 후보: 자기
+dev-의존에 `default-features = false` — `cargo tree` 가 `default` 를 더 안 보이는지, 순차 스위트가 초록인지 따로
+재고 따로 커밋한다.
 
 ### 향 잠금 계기는 `Through` meet 의 프레임을 버린다
 
