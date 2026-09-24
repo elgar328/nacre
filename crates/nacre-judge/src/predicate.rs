@@ -111,15 +111,17 @@ impl Notes {
     }
 }
 
-/// A plane witnessed by three points known to lie on it, and — when the solid was rotated —
-/// their exact [`WitnessPoint`] definitions.
+/// A plane witnessed by its truth: its canonical world name where one stands, and three exact
+/// [`WitnessPoint`] definitions on it, always. **No cache** — a face's corner coordinates and a
+/// plane cache's coefficients are rounded images, and two different planes can share one, so
+/// nothing that decides may see them (the plane-class form, [`PlaneWitness`], carries the
+/// coefficients only for a caller that relates descriptions).
 ///
 /// The rotation-general predicates need only this, which is why one implementation can serve
 /// both index spaces (a plane class and a single face) without confusing them. Only
 /// [`Judge::planes_coplanar`] uses the face form — it is the predicate that *defines* the classes,
 /// so it necessarily runs before a plane table exists.
 pub trait Witness {
-    fn tri(&self) -> [Point3; 3];
     /// The plane's canonical name **in the world** — `None` where the truth cannot be stated
     /// there (a turn off the quarters, a frame, a moved wide name, an overflow).
     ///
@@ -132,7 +134,9 @@ pub trait Witness {
     /// frame, not the world — the premise every name reader shares (interning, the exact
     /// shortcuts). No producer makes one today; nothing checks it.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName>;
-    /// The three `tri` points as exact [`WitnessPoint`] definitions, **always present**.
+    /// Three points on the plane as exact [`WitnessPoint`] definitions, **always present**, and
+    /// spanning it — three collinear points lie on every plane through their line, so the table
+    /// that builds a witness refuses one whose points do not.
     ///
     /// This is a *cache*: the definition is built once, where the witness is, and every predicate
     /// borrows it. It is not an `Option` whose emptiness *also* means "not rotated": one field
@@ -184,10 +188,9 @@ pub trait Witness {
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
 /// predicates ([`Judge::orient3d`], [`Judge::cmp_coord`], [`Judge::plane_pair_dir_sign`]) need on the exact
-/// path. (The stored↔outward `frame_sign` [`Judge::plane_pair_dir_sign`] also uses is *derived* from
-/// `coeffs` + `tri` by [`PlaneWitness::frame_sign`], not required from the impl.) A single face
-/// (which never
-/// plays a plane-class role) implements only [`Witness`].
+/// path, and the stored↔outward sign [`Judge::plane_pair_dir_sign`] also uses
+/// ([`PlaneWitness::frame_sign`]). A single face (which never plays a plane-class role) implements
+/// only [`Witness`].
 pub trait PlaneWitness: Witness {
     /// The plane cache's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**: a
     /// rounded image of the plane, not a description a predicate may decide on.
@@ -196,17 +199,17 @@ pub trait PlaneWitness: Witness {
     /// `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own points span, and a
     /// predicate that answers one question from here and the next from another description is
     /// describing two planes — answers composed across them are not even an order. Predicates read
-    /// [`exact_coeffs`](Self::exact_coeffs) / [`exact_normal`](Self::exact_normal); this is for a
-    /// caller that means to *relate* descriptions (the `cfg(test)` oracles below).
+    /// [`exact_coeffs`](Self::exact_coeffs) / [`exact_normal`](Self::exact_normal). No product
+    /// code reads this; one test relates it to the base frame, and it leaves with `raw`.
     fn coeffs(&self) -> [f64; 4];
 
     /// **The plane itself, in `f64`** — its canonical name (derived from its defining points
     /// without rounding) as a row, for an unmoved plane whose name fits 53 bits a coefficient;
     /// `None` for a rotated plane, an unnamed one, or a wider name.
     ///
-    /// ★ No other description is consulted: the witness triangle [`tri`](Witness::tri) is the face
-    /// corners' `f64` caches and need not lie on this plane (`z = 0.1` is not `fl(0.1)`), so a
-    /// predicate asks every plane of an exact question by this row.
+    /// ★ No other description is consulted: the face corners' `f64` caches need not lie on this
+    /// plane (`z = 0.1` is not `fl(0.1)`), so a predicate asks every plane of an exact question by
+    /// this row.
     fn exact_coeffs(&self) -> Option<[f64; 4]>;
 
     /// The **normal** of the same row under the same rule — standing where only `d` is too wide,
@@ -824,76 +827,14 @@ impl<W: Witness> Judge<'_, W> {
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
 /// must escalate to the kernel if **any** — not all — of its planes is irrational: a single
 /// rounded coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact.
-/// **Does plane `k`'s stored *normal* point the same way as its witness triangle's?**
-///
-/// The weaker of the two agreements, and the one a normals-only predicate needs. `[a, b, c]` is
-/// the triangle's normal exactly when it is orthogonal to both edges — two dot products, in
-/// `Expansion` so the test is exact rather than a rounding of one. The direction is then read from
-/// their dot product, whose sign is safe in `f64`: parallel non-zero vectors cannot cancel.
-///
-/// ★ **Worth separating from [`coeff_exact`] because `d` is where the disagreement lives.**
-/// Measured, the failures are all of the shape `raw·origin` rounding — `3.5 × 0.2` landing on
-/// `0.7000000000000001` — which moves the plane without turning it. Demanding the stronger
-/// agreement here cost 4.7x on the axis-aligned fold for nothing.
-///
-/// ★ **`cfg(test)`: this is the oracle, not the road.** A plane now *carries* whether its
-/// coefficients and normal can be trusted ([`PlaneWitness::exact_coeffs`],
-/// [`PlaneWitness::exact_normal`]), so production reads the answer instead of deriving it here.
-/// What is left is checking that a producer's claim is true, which is a test's question.
-#[cfg(test)]
-pub(crate) fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
-    use nacre_predicates::Expansion;
-    let [ca, cb, cc, _] = planes[k].coeffs();
-    let t = planes[k].tri().map(|p| p.as_array());
-    let ortho = |q: [f64; 3]| {
-        let e = [q[0] - t[0][0], q[1] - t[0][1], q[2] - t[0][2]];
-        Expansion::two_product(ca, e[0])
-            .add(&Expansion::two_product(cb, e[1]))
-            .add(&Expansion::two_product(cc, e[2]))
-            .sign()
-            == 0
-    };
-    // ★ **Parallel is the whole condition — the direction is not part of it.** The stored normal
-    // is allowed to *oppose* the triangle's, and `WorkingPlane::frame_sign` exists to record exactly
-    // that; both branches of `plane_pair_dir_sign` already carry the convention (the exact one
-    // takes the determinant of stored normals, the toleranced one multiplies the outward
-    // determinant by the three `frame_sign`s). An earlier spelling here also demanded
-    // `coeffs · cross(tri) > 0`, which would refuse every `frame_sign == -1` plane for a
-    // disagreement it does not have. Measured: no such plane exists in any model in the suite, so
-    // it was costing nothing — but a guard that is wrong for a reason nobody has hit yet is still
-    // wrong, and the next model to carry one would lose its fast route silently.
-    ortho(t[1]) && ortho(t[2])
-}
-
-/// Is plane `k`'s witness triangle exactly on its own stored coefficients? — the **full**
-/// agreement, `d` included, which the predicates that build implicit points need.
-///
-/// ★ **`cfg(test)`, for the reason [`coeff_normal_ok`] states**: the plane carries this answer
-/// now, and what remains here is the independent check of it.
-#[cfg(test)]
-pub(crate) fn coeff_exact<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
-    use nacre_predicates::Expansion;
-    let [ca, cb, cc, cd] = planes[k].coeffs();
-    planes[k].tri().iter().all(|q| {
-        let [x, y, z] = q.as_array();
-        Expansion::two_product(ca, x)
-            .add(&Expansion::two_product(cb, y))
-            .add(&Expansion::two_product(cc, z))
-            .add(&Expansion::two_product(cd, 1.0))
-            .sign()
-            == 0
-    })
-}
-
 pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].is_rotated())
 }
 
 /// The three exact [`WitnessPoint`] defining plane `k` — **borrowed**, never rebuilt.
 ///
-/// This used to construct them per call: cloning a rotated witness (a heap allocation each time)
-/// or rebuilding an axis-aligned one from its `tri`. A boolean over 25 rotated fins called it a
-/// million times, which was 77% of its runtime. The definitions are the same every call, so the
+/// Rebuilding them per call — a clone of a rotated witness is a heap allocation — was measured at
+/// 77% of a boolean over 25 rotated fins, which called it a million times. The definitions are the same every call, so the
 /// witness owns them and this is a pure accessor.
 /// Can this judgement be answered exactly in the pre-rotation frame?
 ///

@@ -85,9 +85,6 @@ impl W {
     }
 }
 impl Witness for W {
-    fn tri(&self) -> [Point3; 3] {
-        self.tri
-    }
     // A hand-built witness has no name: every same-plane question takes the definitions' road.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         None
@@ -111,7 +108,7 @@ impl PlaneWitness for W {
         self.coeffs
     }
     fn frame_sign(&self) -> i8 {
-        let t = self.tri();
+        let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
         let c = self.coeffs;
         if c[0] * x[0] + c[1] * x[1] + c[2] * x[2] > 0.0 {
@@ -218,9 +215,6 @@ impl RW {
     }
 }
 impl Witness for RW {
-    fn tri(&self) -> [Point3; 3] {
-        self.tri
-    }
     // A hand-built witness has no name: every same-plane question takes the definitions' road.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         None
@@ -243,7 +237,7 @@ impl PlaneWitness for RW {
         self.coeffs
     }
     fn frame_sign(&self) -> i8 {
-        let t = self.tri();
+        let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
         let c = self.coeffs;
         if c[0] * x[0] + c[1] * x[1] + c[2] * x[2] > 0.0 {
@@ -420,42 +414,7 @@ fn t_planes_coplanar_reflexive_and_distinct() {
     );
 }
 
-/// **The two exact descriptions of one plane must agree, or the exact route must not be taken.**
-///
-/// A plane carries stored coefficients `[a, b, c, d]` *and* a witness triangle, and both are
-/// exact — of different planes. `d` is `−(raw·origin)`, an `f64` product: for a face at
-/// `y = −0.2` with `raw = [0, −3.5, 0]` it lands on `0.7000000000000001`, which is a plane
-/// `2⁻⁵⁴` away from the one the triangle spans.
-///
-/// That is tolerable as long as one plane is never described *both* ways. It was not: the
-/// route was chosen by the question — "does any plane here rotate?" — so a plane appeared at
-/// one position in one comparison and another in the next, and answers composed across the two
-/// were **not transitive**. `A == B`, `B < C`, `A > C` is what came out, and a lexicographic
-/// scan over that lands on a node that is not extreme.
-///
-/// So the invariant is: **`coeff_exact` ⟹ the two describe one plane**, and only then may the
-/// exact route run. This pins the implication on a plane built to fail it.
-#[test]
-fn the_exact_route_is_refused_when_the_two_descriptions_disagree() {
-    // A face at y = −0.2 spanned by an integer-ish triangle: `raw·origin` cannot be exact.
-    let tri = [
-        Point3::from_array([-4.0, -0.2, 0.0]),
-        Point3::from_array([-0.5, -0.2, 0.0]),
-        Point3::from_array([-0.5, -0.2, 1.0]),
-    ];
-    let coeffs = [0.0, -3.5, 0.0, -0.7000000000000001];
-    // The witness is not on the coefficient plane: 3.5 × 0.2 is not 0.7000000000000001 / 1.
-    let ps = [W::new(tri, coeffs)];
-    assert!(
-        !coeff_exact(&ps, 0),
-        "the stored coefficients and the witness must be seen to disagree"
-    );
-    // ★ But their *directions* do agree — the rounding moved the plane, it did not turn it —
-    // so a predicate that reads only normals keeps its fast route.
-    assert!(coeff_normal_ok(&ps, 0));
-}
-
-/// `any_rotated` is false for axis-aligned witnesses (`tri_pt3` is `None`).
+/// `any_rotated` is false for axis-aligned witnesses (none of them `is_rotated`).
 #[test]
 fn any_rotated_false_for_axis_aligned() {
     let ps = cube_corner_planes();

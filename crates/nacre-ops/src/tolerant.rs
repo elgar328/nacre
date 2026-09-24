@@ -24,9 +24,6 @@ impl Witness for WorkingPlane {
     fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.base_rat
     }
-    fn tri(&self) -> [Point3; 3] {
-        self.tri
-    }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         self.world_name.as_ref()
     }
@@ -52,9 +49,6 @@ impl Witness for FaceRow {
     // loud, never a silently wrong plane answer.
     fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.plane().base_rat
-    }
-    fn tri(&self) -> [Point3; 3] {
-        self.plane().tri
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         self.plane().world_name.as_ref()

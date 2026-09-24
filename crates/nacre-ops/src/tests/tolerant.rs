@@ -2067,8 +2067,7 @@ mod wide_name_rescue {
     }
 }
 
-/// **Every judgement over unmoved named planes is the names' judgement** — an oracle, not the road
-/// (the shape of `nacre_judge`'s `coeff_exact`).
+/// **Every judgement over unmoved named planes is the names' judgement** — an oracle, not the road.
 ///
 /// A plane's name is derived from its defining points exactly, so the BigInt twins
 /// (`int_plane_side`·`int_cmp_coord`·`int_dir_sign`) answer for the truth. The judge is asked

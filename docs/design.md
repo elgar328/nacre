@@ -1140,6 +1140,10 @@ pub(crate) struct WorkingCyl {
 }
 ```
 
+**판정 표의 증인(`Witness`)은 진실만 든다** — 세계 이름(`world_name`)과 정의 점(`tri_pt3`). 면 꼭짓점의 좌표
+캐시는 트레이트에 없어 판정이 읽을 수 없다(`WorkingPlane.tri` 필드는 ops 의 방향 읽기가 쓴다 — 「방향 부호를
+캐시로 읽는 자리」). 평면 클래스 형태(`PlaneWitness`)의 `coeffs` 는 캐시 계수이고 제품 독자가 없다.
+
 **판정층은 증인 삼각형 하나로 전체(total)다.** 판정 표의 계약은 «평면 위 세 정확한 점»(`Witness::tri_pt3`,
 늘 있다)이고, 이름 없는 `Through` 평면은 자기 프레임의 probe 로 그 점을 정의상 갖는다 — 진실의 `Through`
 는 판정층에서 변종이 아니라 **probe 로 유도된 증인 삼각형**으로 나타난다.
