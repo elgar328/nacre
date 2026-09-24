@@ -235,7 +235,10 @@ pub(crate) struct Swept {
 /// plane here rather than from the realized points is what makes two faces of one plane carry
 /// **the same coefficients** — see [`nacre_exact::canonical_plane_coeffs`].
 /// One step of a swept ring, `vertices[i] → vertices[i + 1]`: straight, or an arc around a point
-/// of the base plane, counter-clockwise about the frame normal when `ccw`. The `cache` is the f64
+/// of the base plane, counter-clockwise about the frame normal **as the ring stands in the world**
+/// when `ccw` — the reading [`SweptRat::winding`] makes, and for the same reason: a reflection in
+/// the frame's chain reverses the turn the 2-D profile states. Its readers (the prism's edge
+/// direction and its lateral's `Orientation`) compare it with the world sweep. The `cache` is the f64
 /// cylinder the arc's wall will be stored under — realized in world coordinates where the ring's
 /// vertices were, so that a motion frame's arc walls sit where its vertices sit.
 // The arc carries its f64 cylinder cache beside the straight variant's nothing: a per-step record,
@@ -481,8 +484,11 @@ pub(crate) fn prism_rings_in(
     };
     let normal = f.normal()?;
     // The chain's handedness: a reflection reverses the sense of every loop it carries, and the
-    // exact winding below is read on the profile's 2-D coordinates *before* the chain — so it is
-    // turned into the world's sense here, once, where the chain is known.
+    // exact winding below and every arc's turn are read on the profile's 2-D coordinates *before*
+    // the chain — so both are turned into the world's sense here, once, where the chain is known.
+    // An arc left in the profile's sense beside a winding in the world's inverts a mirrored
+    // circle's prism: its caps' loops run the wrong way (measured, `FaceMisoriented` on both caps
+    // and a volume of −π/12 where a disk of radius ½ swept 1 has π/4).
     let parity = chain.as_deref().map_or(1, nacre_judge::chain_parity);
     let ring = |r: &crate::Ring2d| -> Option<Swept> {
         let base = f.ring(r.vertices())?;
@@ -535,7 +541,7 @@ pub(crate) fn prism_rings_in(
                     Some(Seg3::Arc {
                         center: c,
                         r2: *r2,
-                        ccw: *ccw,
+                        ccw: *ccw == (parity == 1),
                         ref_dir,
                         cache,
                     })

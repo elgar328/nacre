@@ -1,74 +1,63 @@
 use super::*;
 use nacre_math::Vector3;
 
-/// ★ **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's
-/// sketch frame is carried by a motion chain with a reflection in it, and the exact winding
-/// read on the profile's 2-D coordinates is the *opposite* sense once the chain has carried
-/// the ring into the world — so [`SweptRat::winding`] folds the chain's parity in. Without
-/// that the prism went up inside-out (a generated session found it: rotate, mirror, pad; the
-/// f64 cross-check in `oriented_ring` fired). The control is the same solid without the
-/// mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a 1×1×½ pocket.
-#[test]
-fn a_pad_on_a_mirrored_tilted_face_stands_up() {
-    use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
+/// A 2-cube centred on the origin, turned 15° about y (its planes leave the rational world, so a
+/// face's sketch lives in the plane's own frame), then mirrored in x or not — and the face that was
+/// `x = +1`, found by its outward normal after the turn (and the mirror).
+fn turned_cube_face(
+    mirror: bool,
+) -> (
+    nacre_topo::Model,
+    nacre_store::Handle<nacre_topo::Solid>,
+    nacre_store::Handle<nacre_topo::Face>,
+) {
+    use crate::{OpOutput, Operation, SketchFrame, apply};
     use nacre_exact::{Angle, Axis, Isometry, Rotation};
-    use nacre_math::Point2;
     use nacre_topo::Model;
 
-    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
-    let rect = |x0: f64, y0: f64, x1: f64, y1: f64| {
-        from_rings(vec![vec![p2(x0, y0), p2(x1, y0), p2(x1, y1), p2(x0, y1)]])
-            .unwrap()
-            .remove(0)
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(-1.0, 1.0),
+            dist: 2.0,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
     };
-    // A 2-cube centred on the origin, turned 15° about y (its planes leave the rational
-    // world, so a face's sketch lives in the plane's own frame), then mirrored in x or not.
-    let build = |mirror: bool| -> (Model, nacre_store::Handle<nacre_topo::Solid>) {
-        let mut m = Model::new();
-        let frame = SketchFrame::world(&m, Axis::Z);
-        let OpOutput::Extrude { solid, .. } = apply(
-            &mut m,
-            &Operation::Extrude {
-                frame,
-                profile: rect(-1.0, -1.0, 1.0, 1.0),
-                dist: 2.0,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let OpOutput::Transform { solid } = apply(
-            &mut m,
-            &Operation::Transform {
-                solid,
-                isometry: Isometry::translation([
-                    Rat::from_int(0),
-                    Rat::from_int(0),
-                    Rat::from_int(-1),
-                ]),
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let OpOutput::Transform { solid } = apply(
-            &mut m,
-            &Operation::Transform {
-                solid,
-                isometry: Isometry::rotation(Rotation {
-                    axis: Axis::Y,
-                    pivot: [Rat::from_int(0); 3],
-                    angle: Angle::from_deg(Rat::from_int(15)).unwrap(),
-                }),
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        if !mirror {
-            return (m, solid);
-        }
-        let OpOutput::Mirror { solid } = apply(
+    let OpOutput::Transform { solid } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid,
+            isometry: Isometry::translation([
+                Rat::from_int(0),
+                Rat::from_int(0),
+                Rat::from_int(-1),
+            ]),
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    let OpOutput::Transform { mut solid } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid,
+            isometry: Isometry::rotation(Rotation {
+                axis: Axis::Y,
+                pivot: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(15)).unwrap(),
+            }),
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    if mirror {
+        let OpOutput::Mirror { solid: mirrored } = apply(
             &mut m,
             &Operation::Mirror {
                 solid,
@@ -79,31 +68,50 @@ fn a_pad_on_a_mirrored_tilted_face_stands_up() {
         .unwrap() else {
             unreachable!()
         };
-        (m, solid)
-    };
-    // The face that was `x = +1`: its outward normal after the turn (and the mirror).
-    let face_toward = |m: &Model, s: nacre_store::Handle<nacre_topo::Solid>, n: [f64; 3]| {
-        let shell = m.solid(s).outer;
-        *m.shell(shell)
-            .faces
-            .iter()
-            .find(|&&fh| {
-                let f = m.face(fh);
-                let nacre_geom::Surface::Plane(pl) = m.surface_cache(f.surface) else {
-                    return false;
-                };
-                let out = pl.normal() * f64::from(f.orientation.sign());
-                (0..3).all(|k| (out.as_array()[k] - n[k]).abs() < 1e-9)
-            })
-            .expect("the turned +x face")
-    };
+        solid = mirrored;
+    }
     let (s15, c15) = 15f64.to_radians().sin_cos();
-    let volume = |m: &Model, s| nacre_props::mass_props(m, s).unwrap().volume;
-    for (mirror, nx) in [(false, c15), (true, -c15)] {
+    let n = [if mirror { -c15 } else { c15 }, 0.0, -s15];
+    let shell = m.solid(solid).outer;
+    let face = *m
+        .shell(shell)
+        .faces
+        .iter()
+        .find(|&&fh| {
+            let f = m.face(fh);
+            let nacre_geom::Surface::Plane(pl) = m.surface_cache(f.surface) else {
+                return false;
+            };
+            let out = pl.normal() * f64::from(f.orientation.sign());
+            (0..3).all(|k| (out.as_array()[k] - n[k]).abs() < 1e-9)
+        })
+        .expect("the turned +x face");
+    (m, solid, face)
+}
+
+/// The square `[lo, hi]²` as a profile.
+fn square(lo: f64, hi: f64) -> crate::Profile2d {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    crate::from_rings(vec![vec![p2(lo, lo), p2(hi, lo), p2(hi, hi), p2(lo, hi)]])
+        .unwrap()
+        .remove(0)
+}
+
+/// ★ **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's
+/// sketch frame is carried by a motion chain with a reflection in it, and the exact winding
+/// read on the profile's 2-D coordinates is the *opposite* sense once the chain has carried
+/// the ring into the world — so [`SweptRat::winding`] folds the chain's parity in. Without
+/// that the prism went up inside-out (a generated session found it: rotate, mirror, pad; the
+/// f64 cross-check in `oriented_ring` fired). The control is the same solid without the
+/// mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a 1×1×½ pocket.
+#[test]
+fn a_pad_on_a_mirrored_tilted_face_stands_up() {
+    use crate::{OpOutput, Operation, apply};
+    let volume = |m: &nacre_topo::Model, s| nacre_props::mass_props(m, s).unwrap().volume;
+    for mirror in [false, true] {
         for (pocket, want) in [(false, 9.0), (true, 7.5)] {
-            let (mut m, solid) = build(mirror);
-            let face = face_toward(&m, solid, [nx, 0.0, -s15]);
-            let profile = rect(-0.5, -0.5, 0.5, 0.5);
+            let (mut m, _, face) = turned_cube_face(mirror);
+            let profile = square(-0.5, 0.5);
             let out = if pocket {
                 apply(
                     &mut m,
@@ -141,6 +149,43 @@ fn a_pad_on_a_mirrored_tilted_face_stands_up() {
                 "mirror {mirror} pocket {pocket}: {v} vs {want}"
             );
         }
+    }
+}
+
+/// ★ **A circle swept on a mirrored solid's tilted face stands up too.** The same frame as
+/// [`a_pad_on_a_mirrored_tilted_face_stands_up`], a disk of radius ½ swept 1 on it. A circle's
+/// ring has one vertex, so its direction is its arc's turn, not a vertex order — and the arc's
+/// `ccw` must be read in the world as the winding is ([`Seg3::Arc`]). The control is the unmirrored
+/// face; the oracle is `validate` and the volume π/4.
+#[test]
+fn a_circle_on_a_mirrored_tilted_face_stands_up() {
+    use crate::{OpOutput, Operation, apply};
+    for mirror in [false, true] {
+        let (mut m, _, face) = turned_cube_face(mirror);
+        let frame = crate::face_sketch_frame(&m, face).expect("the face's frame");
+        let profile = crate::from_paths(vec![
+            crate::Ring2d::circle(nacre_math::Point2::from_array([0.0, 0.0]), 0.5)
+                .expect("a circle"),
+        ])
+        .expect("a disk")
+        .remove(0);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 1.0,
+            },
+        )
+        .unwrap_or_else(|e| panic!("mirror {mirror}: {e:?}")) else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "mirror {mirror}: {vs:?}");
+        let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+        let want = std::f64::consts::PI / 4.0;
+        assert!((v - want).abs() < 1e-9, "mirror {mirror}: {v} vs {want}");
     }
 }
 
