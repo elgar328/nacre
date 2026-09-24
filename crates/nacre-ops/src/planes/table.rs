@@ -379,7 +379,7 @@ pub(crate) fn collect_planes(
             }
             out.push(FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
-                world_name: model.world_plane_name(face.surface),
+                world: WorldName::of(model, face.surface),
                 name,
                 surf: face.surface,
                 face: Some(fh),

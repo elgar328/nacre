@@ -562,39 +562,35 @@ pub(crate) fn reconstruct(
         };
         // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it as
         // `Circle::from_center_normal(centre, axis, ref_dir, r)`, so its parameter runs **CCW
-        // about the axis direction `d`**. A loop must run CCW about its own face's outward
-        // normal, so a bound on a face whose normal agrees with `d` is walked forward and one
-        // whose normal opposes it backward — exactly the convention `add_cylinder` writes down
-        // (top cap `forward: true`, bottom cap `false`). A *hole* runs the other way again,
+        // about the cylinder's axis** — the cache's, which runs the same way as the statement's
+        // `def.dir()` (the cylinder door asserts it). A loop must run CCW about its own face's
+        // outward normal, so a bound on a face whose normal agrees with the axis is walked forward
+        // and one whose normal opposes it backward — exactly the convention `add_cylinder` writes
+        // down (top cap `forward: true`, bottom cap `false`). A *hole* runs the other way again,
         // because an inner loop keeps the material on its left by winding against the outer.
         //
-        // The face's outward normal is the stored surface normal when the face is `Forward` and
-        // its negation when `Reversed` — the `flip` decision made below — so the sign is read off
-        // `frame_sign` and `flip` here rather than carried in from anywhere, and the normal read
+        // The face's outward normal is the way its plane faces when the face is `Forward` and the
+        // reverse when `Reversed` — the `flip` decision made below — so the sign is read off
+        // `frame_sign` and `flip` here rather than carried in from anywhere, and the facing read
         // against the axis is the **unflipped** one: `flip` is applied once to every kind of bound
         // right below, and reading it here too would toggle the winding twice.
         //
-        // ★★★★★ **This `f64` stays, and `world_rat` cannot replace it.** Every other axial
-        // decision on this road was moved onto exact descriptions, because they all ask *where* a
-        // plane crosses the axis — a question about the plane, whose answer does not depend on
-        // which way its coefficients are written. This one asks something else: which way this
-        // class's **frame** points relative to the axis. A class has no outward normal at all
-        // ([`crate::planes::WorkingPlane`]'s own words — it holds faces from both operands and two
-        // of them can oppose); what it has is the frame, and `plane.normal()` with `frame_sign`
-        // *is* that frame. `world_rat` is the plane's **name**, canonicalised, and carries no
-        // frame direction: measured over the suite, `world_rat · m` came out positive on all 436
-        // calls while this sign varied, so substituting it would have inverted the winding on 203
-        // of them. There is no precision to gain either — a plane bounding a circle is
-        // perpendicular to the axis, so `|n · m|` is maximal, as far from a close call as the
-        // quantity gets.
-        let axis_sign = |k: usize| -> f64 {
+        // ★★★★★ **`world_rat` alone cannot answer this; its sense can.** Every other axial
+        // decision on this road asks *where* a plane crosses the axis — a question about the plane,
+        // whose answer does not depend on which way its coefficients are written. This one asks
+        // which way the class's **frame** points relative to the axis. `world_rat` is the plane's
+        // **name**, canonicalised, and carries no direction: measured over the suite, `world_rat ·
+        // m` came out positive on all 436 calls while this sign varied, so reading the name alone
+        // would have inverted the winding on 203 of them. The name **with its sense**
+        // ([`crate::planes::plus_t_is_above`]) is the frame, exactly — read off the truth, where the
+        // `f64` plane and axis caches it replaced were two rounded images of it.
+        let axis_up = |k: usize| -> Result<bool, BoolError> {
             let c = lf.surf.plane();
-            let s = if planes[c].frame_sign > 0 { 1.0 } else { -1.0 };
-            planes[c]
-                .plane
-                .normal()
-                .dot(cyls[k].realized.axis().direction())
-                * s
+            let world = planes[c]
+                .world
+                .as_ref()
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+            Ok(crate::planes::plus_t_is_above(world, &cyls[k].def) == (planes[c].frame_sign > 0))
         };
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
@@ -613,7 +609,7 @@ pub(crate) fn reconstruct(
                 // one line above, so `None` here is the same dropped-crossing shape.
                 let e = e.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let _ = model;
-                let mut forward = axis_sign(cyl) > 0.0;
+                let mut forward = axis_up(cyl)?;
                 if hole {
                     forward = !forward;
                 }

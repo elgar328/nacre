@@ -25,7 +25,7 @@ impl Witness for WorkingPlane {
         self.base_rat
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
-        self.world_name.as_ref()
+        self.world.as_ref().map(|w| &w.name)
     }
     fn chain_id(&self) -> u64 {
         self.base.chain_id
@@ -51,7 +51,7 @@ impl Witness for FaceRow {
         self.plane().base_rat
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
-        self.plane().world_name.as_ref()
+        self.plane().world.as_ref().map(|w| &w.name)
     }
     // A face table exists before plane classes do, and the only predicate that runs on it is
     // `Judge::planes_coplanar` during class discovery. Opting out sends a face pair past the

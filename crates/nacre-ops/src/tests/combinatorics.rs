@@ -149,3 +149,80 @@ fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() 
              the parity walks its ray along e1 — true of the world and not just of the chart"
     );
 }
+
+/// ★★ **A direction sign reads the truth, never the plane cache.** A prism over
+/// `(0,0)·(1, 10⁻¹⁷)·(1,1)·(0,1)`: its wall from the origin runs along `(1, 10⁻¹⁷)`, so the
+/// plane's world name is `(10⁻¹⁷·k, −k, 0, 0)` canonicalized — a first nonzero component of
+/// `10⁻¹⁷` against the largest. The class's cache is then replaced by a rounded image of the same
+/// plane with that component's sign flipped: an error of `2·10⁻¹⁷` against a unit normal, inside
+/// one ulp of the large component, so nothing reading the cache as a rounding could object.
+///
+/// The class's facing ([`stored_coeffs_rat`]) and the canonical → outward sign
+/// ([`loops::outward_fix`]) come out the same: they read the world name and its sense. Comparing
+/// the name's first nonzero component with the cache's — the spelling `outward_fix` and two
+/// siblings had — reads the flipped sign, which the contrast below states.
+#[test]
+fn a_direction_sign_does_not_read_the_plane_cache() {
+    use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, nacre_exact::Axis::Z);
+    let profile = from_rings(vec![vec![
+        p2(0.0, 0.0),
+        p2(1.0, 1e-17),
+        p2(1.0, 1.0),
+        p2(0.0, 1.0),
+    ]])
+    .expect("a quadrilateral")
+    .remove(0);
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    ) else {
+        panic!("the prism")
+    };
+    m.rebuild_adjacency();
+    let faces = crate::planes::collect_planes(&m, solid).expect("the face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+    let (mut planes, _, _) = crate::planes::dense_planes(&faces, &canon);
+    let zero = nacre_exact::Rat::from_int(0);
+    let c = planes
+        .iter()
+        .position(|p| p.world_rat().is_some_and(|w| w[0] != zero && w[1] != zero))
+        .expect("the slanted wall");
+    let w = planes[c].world_rat().expect("a world name");
+    assert!(
+        w[0].to_f64().abs() < 1e-15 * w[1].to_f64().abs(),
+        "the name's first nonzero component is tiny: {w:?}"
+    );
+    let answers = |planes: &[WorkingPlane]| {
+        let jd = crate::planes::test_judge(planes);
+        (stored_coeffs_rat(&jd, c), loops::outward_fix(&jd, c))
+    };
+    let truth = answers(&planes);
+    assert!(truth.0.is_some() && truth.1.is_some(), "both answer");
+
+    let n = planes[c].plane.normal().as_array();
+    assert!(
+        n[0] != 0.0 && n[0].abs() < 1e-15,
+        "the cache carries the tiny component: {n:?}"
+    );
+    let lying = nacre_geom::Plane::from_point_normal(
+        planes[c].plane.origin(),
+        nacre_math::Vector3::from_array([-n[0], n[1], n[2]]),
+    )
+    .expect("a plane");
+    planes[c].plane = lying;
+    // The contrast: the first nonzero component of the name, compared with the cache's, now reads
+    // the other way — the spelling this test retires would have flipped.
+    assert_ne!(
+        (w[0] > zero) == (lying.coefficients()[0] > 0.0),
+        (w[0] > zero) == (n[0] > 0.0),
+        "the planted cache flips the first-component reading"
+    );
+    assert_eq!(answers(&planes), truth, "the direction signs read no cache");
+}

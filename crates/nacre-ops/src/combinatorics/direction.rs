@@ -169,63 +169,29 @@ fn arc_at(
         at,
         centre,
         axis: m,
-        axis_up: crate::planes::plus_t_is_above(&jd.planes[p], &a.def),
+        axis_up: crate::planes::plus_t_is_above(
+            jd.planes[p].world.as_ref().ok_or_else(undecided)?,
+            &a.def,
+        ),
         ccw: a.ccw,
     })))
 }
 
-/// A class's exact description **turned to face its stored normal**.
+/// A class's exact description **turned to face the way the plane does** — the frame every
+/// direction sign in this file is written in ([`turn`]'s `frame_sign` bridge, the cell labels'
+/// «above»).
 ///
 /// ★★★ [`class_coeffs_rat`] hands back the class's *canonical* name — first nonzero component
-/// positive — which points the **other way** from the stored normal on half the classes. Every
-/// direction sign in this file is written in the stored frame ([`turn`]'s `frame_sign` bridge, the
-/// cell labels' "above"), so a rule spelled against the canonical normal reads backwards on exactly
-/// those classes and nowhere else. `planes::plus_t_is_above` carries the same warning and the
-/// thirty-six tests that went red at once when it was not heeded.
-///
-/// The turn is decided by an `f64` dot of two **parallel** vectors — the class's own normal, twice
-/// over — so the product is `±|a||b|`, a full magnitude from the sign boundary rather than a
-/// near-zero comparison. That is `plus_t_is_above`'s argument verbatim, and it is why this is total
-/// where the integer fold below is not.
-///
-/// ★ **And it is cross-checked against that integer fold.** `nacre_judge::predicate::name_stored_ints`
-/// does the same turn exactly, in integers, on the classes it can (`None` for a wide name or a
-/// witness that speaks another frame) — so where it answers **and the class's own name has the
-/// world's normal**, the two must agree. The name speaks the frame the truth is written in; under a
-/// turn or a reflection its normal is not the world's, and comparing the two component by
-/// component compares two frames (measured: 330 cells of the commuting oracle's recorded quarter
-/// turns fired that way while every one of them commuted in release).
+/// positive — which points the **other way** from the plane on half the classes, so a rule spelled
+/// against it reads backwards on exactly those classes. The turn is the truth's
+/// ([`WorkingPlane::stored_world_rat`] — the world name's sense, read off the plane's `sense` and
+/// points), never a comparison with the plane cache: that cache is a rounded image, and the name
+/// needs no second description to say which way it faces.
 pub(crate) fn stored_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
 ) -> Option<[nacre_exact::Rat; 4]> {
-    let coeffs = class_coeffs_rat(jd, c)?;
-    let n = nacre_math::Vector3::from_array([
-        coeffs[0].to_f64(),
-        coeffs[1].to_f64(),
-        coeffs[2].to_f64(),
-    ]);
-    let agrees = jd.planes[c].plane.normal().dot(n) > 0.0;
-    debug_assert!(
-        jd.planes[c].base_rat.is_none_or(|b| b[..3] != coeffs[..3])
-            || jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
-                let k = (0..4).find(|&k| coeffs[k] != nacre_exact::Rat::from_int(0));
-                // ★ Through `NameInts`' own accessor, not by touching the integers: production code
-                // in this crate reaches `BigInt` only through `nacre-judge`'s types (the `num-bigint`
-                // dependency is dev-only, and an assertion is not a reason to promote it).
-                k.is_none_or(|k| ((ni.coeff_sign(k) > 0) == (coeffs[k].numer() > 0)) == agrees)
-            }),
-        "the canonical-to-stored turn disagrees with the class's integer fold"
-    );
-    if agrees {
-        return Some(coeffs);
-    }
-    let zero = nacre_exact::Rat::from_int(0);
-    let mut out = [zero; 4];
-    for k in 0..4 {
-        out[k] = zero.checked_sub(coeffs[k])?;
-    }
-    Some(out)
+    jd.planes[c].stored_world_rat()
 }
 
 /// **The direction of the line `L = P ∩ Q`, exactly** — `n_p × n_q` over the two classes' stored

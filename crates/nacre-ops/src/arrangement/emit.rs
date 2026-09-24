@@ -160,6 +160,9 @@ pub(super) fn emit_faces(
     // on — and where a corner speaks it must agree with this rule. Measured 3,260 of 3,260 on the
     // census corpus. That check is what makes this a *derivation* rather than a third guess.
     let ns_arcs = 2 * edges.segs.len();
+    // Arcs are split only on a class with a world statement — `split_circles` reads the class's
+    // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.
+    let world = jd.planes[wc].world.as_ref();
     let arc_labels = edges
         .arcs
         .iter()
@@ -167,7 +170,10 @@ pub(super) fn emit_faces(
         .filter_map(|(i, ma)| {
             // ★ `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
             // here would be that function's second spelling.
-            let axis_up = crate::planes::plus_t_is_above(&jd.planes[wc], &ma.def);
+            let axis_up = crate::planes::plus_t_is_above(
+                world.expect("an arc is split only on a class with a world statement"),
+                &ma.def,
+            );
             let even = ns_arcs + 2 * i;
             let he = even + usize::from(axis_up != (jd.planes[wc].frame_sign > 0));
             #[cfg(test)]

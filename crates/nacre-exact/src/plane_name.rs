@@ -262,6 +262,65 @@ pub fn same_sense(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> b
 /// on the named plane, in the frame the name speaks — so the two normals are parallel and the
 /// answer is never a near call.
 pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bool> {
+    // An interval filter, then the `Rat` route, then integers that cannot overflow — the judge's
+    // shape and `plane_residual_sign`'s. The two normals are parallel, so the dot is a full
+    // magnitude from zero and the filter answers unless the points are nearly collinear; every
+    // radius is a sound bound (`to_f64` rounds to nearest — half an ulp, and the smallest normal
+    // below that), so a filter answer is the exact answer.
+    if let (
+        PlaneName::Narrow(c),
+        [
+            MeetPoint::Narrow(a),
+            MeetPoint::Narrow(b),
+            MeetPoint::Narrow(p),
+        ],
+    ) = (name, points)
+    {
+        let iv = |r: Rat| {
+            let x = r.to_f64();
+            crate::Bounded::new(x, (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE))
+        };
+        let e = |q: &[Rat; 3]| [0, 1, 2].map(|i| iv(q[i]).sub(iv(a[i])));
+        let (u, v) = (e(b), e(p));
+        let t = |i: usize, j: usize| u[i].mul(v[j]).sub(u[j].mul(v[i]));
+        let n = [t(1, 2), t(2, 0), t(0, 1)];
+        let dot = (0..3).fold(crate::Bounded::new(0.0, 0.0), |acc, k| {
+            acc.add(iv(c[k]).mul(n[k]))
+        });
+        if let Some(positive) = dot.sign() {
+            return Some(positive);
+        }
+        let narrow = || -> Option<Option<bool>> {
+            let e = |q: &[Rat; 3]| -> Option<[Rat; 3]> {
+                Some([
+                    q[0].checked_sub(a[0])?,
+                    q[1].checked_sub(a[1])?,
+                    q[2].checked_sub(a[2])?,
+                ])
+            };
+            let (u, v) = (e(b)?, e(p)?);
+            let t =
+                |i: usize, j: usize| u[i].checked_mul(v[j])?.checked_sub(u[j].checked_mul(v[i])?);
+            let n = [t(1, 2)?, t(2, 0)?, t(0, 1)?];
+            let mut dot = Rat::from_int(0);
+            for k in 0..3 {
+                dot = dot.checked_add(c[k].checked_mul(n[k])?)?;
+            }
+            let zero = Rat::from_int(0);
+            Some(if n.iter().all(|x| *x == zero) {
+                None
+            } else {
+                debug_assert!(
+                    dot != zero,
+                    "a name's normal is parallel to its own points' turn"
+                );
+                Some(dot > zero)
+            })
+        };
+        if let Some(answer) = narrow() {
+            return answer;
+        }
+    }
     let n = triple_normal(points)?;
     let [a, b, c, _] = name.coeff_ints();
     Some(same_sense(&[a, b, c], &n))

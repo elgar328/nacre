@@ -32,21 +32,27 @@ pub(crate) fn world_plane_coeffs(
 /// place while a second site spells a reduced version of it is this repo's dominant defect
 /// shape, so it lives here once.
 /// **Does an increasing axis parameter move toward this class's "above"?** — where "above" is the
-/// side of the class's **stored** plane normal, which is the frame every cell label is written in
-/// (`arrangement`'s `w_normal`).
+/// side the class's plane faces, which is the frame every cell label is written in.
 ///
-/// ★ The `f64` dot is exact enough by construction: this is only ever asked of a class ⊥ to the
-/// axis, so the dot is `±|n||m|` — a full magnitude from the sign boundary, not a near-zero
-/// comparison.
+/// Exact: the world name against the axis (integers, no overflow), turned by the name's sense.
+/// It takes the class's [`WorldName`], so a class without one cannot ask — every reader already
+/// stands on a class whose world coefficients it read.
 ///
-/// ★★ **Ask this, do not re-derive it from the class's rational name.** `base_rat` is the
-/// *canonical* name (first nonzero component positive), which points the other way from the stored
-/// normal on half the classes; a rule spelled against it reads "above" backwards exactly there.
-/// That mistake, made while adding the second consumer below, turned 36 tests red at once.
-pub(crate) fn plus_t_is_above(wp: &WorkingPlane, def: &nacre_topo::CylinderDef) -> bool {
-    let m = def.dir();
-    let axis = Vector3::from_array([m[0].to_f64(), m[1].to_f64(), m[2].to_f64()]);
-    wp.plane.normal().dot(axis) > 0.0
+/// ★★ **Ask this, do not re-derive it from the class's rational name alone.** The name is
+/// *canonical* (first nonzero component positive), which points the other way from the plane on
+/// half the classes; a rule spelled against it reads "above" backwards exactly there. That mistake,
+/// made while adding the second consumer below, turned 36 tests red at once.
+///
+/// This is only asked of a class ⊥ to the axis, so the product never vanishes.
+pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) -> bool {
+    let [a, b, c, _] = world.name.coeff_ints();
+    let along = nacre_exact::normal_sense(&[a, b, c], def.dir());
+    debug_assert_ne!(
+        along,
+        nacre_exact::Orient::Zero,
+        "asked of a class that does not cross the axis"
+    );
+    (along == nacre_exact::Orient::Positive) == (world.sense == nacre_topo::Orientation::Forward)
 }
 
 pub(crate) fn axis_param_of_plane(

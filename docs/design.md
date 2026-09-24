@@ -1120,7 +1120,7 @@ m.rebuild_edge_cache() · m.rebuild_adjacency()             // 통째 재생
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,                          // f64 실현
     pub(crate) base_rat:  Option<[Rat; 4]>,           // 클래스 뿌리의 정확 계수(모션 이전 프레임)
-    pub(crate) world_name: Option<PlaneName>,         // 같은 평면의 세계 이름 — 좁은 투영 `world_rat()` 이 원통 도로가 세계 축과 비교하는 유일한 서술
+    pub(crate) world: Option<WorldName>,              // 같은 평면의 세계 이름과 그 향 — 좁은 투영 `world_rat()` 이 원통 도로가 세계 축과 비교하는 유일한 서술, 향을 곱한 `stored_world_rat()` 이 방향
     pub(crate) surf: Handle<Surface>,                 // 대표 곡면 — 결과 정점의 담체로 기록된다
     pub(crate) tri: [Point3; 3],                      // 뿌리 면 꼭짓점 셋의 좌표 캐시(f64), 바깥 방향 순서
     pub(crate) tri_pt3: [WitnessPoint; 3],            // 같은 증인의 정확한 정의 — 모든 술어가 빌린다
@@ -1738,12 +1738,14 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   축 방향 **결정**은 정확 서술로 내린다: `Wall::Ruling` 의 `up` 은 양 끝을 **끊는** 캡들의 축 매개변수를
   비교하고, 밴드 루프의 station 은 접점이 앉은 **cut circle 의 평면**이 축을 가로지르는 자리를 읽는다.
   `cache` 를 읽어도 되는 것은 **측정**뿐이다(공차·rim 의 중심).
-  - **밴드 조립의 `axis_sign` 은 그 규칙의 자리가 아니다**: 그 자리는 「평면이 축을 **어디서**
-    가로지르나」가 아니라 「클래스 **프레임**이 축에 대해 **어느 쪽**인가」를 묻는다. `world_rat` 는
-    평면의 **이름**이라 방향을 안 나른다 — `WorkingPlane` 이 *「there is no such thing as *the* plane's
-    outward normal」* 이라 쓴다. 클래스의 유일한 방향 사실은 **프레임**이다.
+  - **밴드 조립의 `axis_sign` 은 「어디서」가 아니라 「어느 쪽」을 묻는다**: 클래스 **프레임**이 축에 대해
+    어느 쪽인가. `world_rat` 는 평면의 **이름**이라 방향을 안 나른다(스위트에서 `world_rat · m` 은 436회
+    전부 양수, 답은 203회 반대). 방향은 이름의 **향**이 나른다 — `WorldName`(이름 + `sense`, 진실의 향과
+    점들에서 `Model::world_plane_name_sense` 가 읽는다)이고, 축 부호는 `plus_t_is_above` 가 그것으로 정확히
+    답한다. 평면 캐시의 법선은 어느 방향 판정에도 들지 않는다.
   - **`world_rat` 은 이름이지 방향이 아니다**: 룰링의 **정체**는 그것으로 읽어도 프레임 무관하지만
-    **딱지**는 안 된다 ⇒ 방향이 필요하면 `world_rat_sense` 를 `side_of` 에서 뽑아 쓴다.
+    **딱지**는 안 된다 ⇒ 방향이 필요하면 `WorldName` 의 향(`κ`)을 곱한다(`stored_coeffs_rat` 이 그 곱의
+    한 철자다).
   - **f64 경로를 정확 경로로 바꿀 때의 규율**: census 비트 동일은 「출력이 안 변했다」이지 「두 경로가
     매번 같은 답을 냈다」가 아니다 ⇒ **차등 탐침을 먼저**(둘 다 계산·어긋나면 패닉), 코퍼스 전량,
     **탐침 자체를 부정 대조**, 그다음 f64 제거.

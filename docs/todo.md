@@ -17,21 +17,13 @@
 
 ### 방향 부호를 캐시로 읽는 자리
 
-전부 «평행한 두 벡터의 내적은 ±1 근처라 반올림이 부호를 못 바꾼다»는 크기 논증에 기대고 정확한 확인이 없다.
-진실이 이미 답하는 물음이다 — `NameInts` 의 σ(이름을 저장 방향으로 접은 부호, `coeff_sign`), 진실의 향
-(`Surface::Plane.sense`), 면의 `Orientation`. 판정 입력에 닿으므로 캐시 향을 바꾸는 일과 따로 옮긴다.
+남은 자리는 «평행한 두 벡터의 내적은 ±1 근처라 반올림이 부호를 못 바꾼다»는 크기 논증에 기대고 정확한 확인이
+없다. 진실이 이미 답하는 물음이다 — 평면이 보는 쪽은 `Surface::Plane.sense` × 점들의 방향(`Model::plane_name_sense`·
+`world_plane_name_sense`, 행의 `WorldName`), 면의 바깥은 그 × `Orientation`. 판정 입력에 닿으므로 캐시 향을 바꾸는
+일과 따로 옮긴다.
 
-- 저장 방향 대 정준 계수: `world_rat_sense`(`cyl_trace.rs`)·`rel_to_stored`(`cyl_gate.rs`)·`outward_fix`
-  (`loops.rs`)는 `raw` 의 첫 0 아닌 성분의 부호, `stored_coeffs_rat`(`direction.rs`)는 캐시 법선과의 내적(σ 와
-  맞대는 `debug_assert` 뿐 — 모션 없고 이름이 좁은 클래스만 대조한다). 교선의 방향 `stored_line_dir` 가 그 κ 를
-  읽고, 원통이 낀 교선 위 점의 정렬(`order_located_quad`)이 그 방향으로 축과 부호를 고른다 — 평면 핀(σ)과 원통
-  핀(κ)이 한 정렬·한 `closed_contains` 에서 섞이므로 κ 가 틀리면 그 정렬이 뒤섞인다.
-- 원통 축 대 평면: `plus_t_is_above`(`cyl_geom.rs` — 방출·그레이즈·차트·호 방향이 읽는다), 조립의 테두리 원
-  `forward` 비트(`assembly/reconstruct.rs`).
 - 면의 바깥 대 클래스 법선: `trace_plane.rs` 의 줄 위 구간 `run_body_above` 와 앉은 면의 `body_above`, 재사용의
   뒤집기(`reuse.rs` — |cos| < 0.5 면 기권).
-- 증인 점의 순서: `planes/table.rs` 의 `wind`(셋 — 두 팔과 원 캡 분기)가 정확한 `tri_pt3` 의 순서를 캐시 `n_out`
-  과의 f64 내적으로 정한다 — 그 순서가 모든 술어의 `orient3d` 부호 규약이 된다.
 - 프리즘: 밑캡 공유의 `n_h.dot(-normal)`(면 `Orientation` 비트)과 `sweep_up`(`outer_ring.normal · normal` — 링을
   뒤집을지와 원통 벽의 향), `ops/feature.rs` 의 동일평면 캡 판단(확인 전).
 

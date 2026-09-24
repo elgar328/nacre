@@ -186,6 +186,53 @@ fn arc_contains(
     })
 }
 
+/// **A plane's statement in the world: its canonical name there, and which way that name faces.**
+///
+/// The name answers «where» and carries no direction (its first nonzero component is positive);
+/// `sense` answers «which way» against it, from the truth
+/// ([`nacre_topo::Model::world_plane_name_sense`]). One value, so a row cannot hold a world name
+/// without its sense — a reader that needs a direction asks this, never the plane cache.
+#[derive(Clone, Debug)]
+pub(crate) struct WorldName {
+    pub(crate) name: nacre_exact::PlaneName,
+    /// `Forward` when `name`'s normal points the way the plane faces (its truth's `sense`).
+    pub(crate) sense: nacre_topo::Orientation,
+}
+
+impl WorldName {
+    /// The surface's world statement, or `None` where it has none.
+    ///
+    /// ★ **The name is never dropped for want of a sense.** Both come from the same truth — the
+    /// sense exists wherever the world name does (the name is derived from the plane's points, and
+    /// collinear points have no name) — so a missing sense beside a present name is a broken door,
+    /// not an input. Dropping the name there would silently move the class merge off its name road.
+    pub(crate) fn of(model: &Model, surf: Handle<Surface>) -> Option<WorldName> {
+        let name = model.world_plane_name(surf)?;
+        let sense = model
+            .world_plane_name_sense(surf)
+            .expect("a plane with a world name faces some way in the world");
+        Some(WorldName { name, sense })
+    }
+
+    /// The name's exact coefficients **turned to face the way the plane does** — the name times
+    /// its sense; `None` for a wide name or on overflow.
+    pub(crate) fn oriented_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
+        let c = *self.name.narrow()?;
+        match self.sense {
+            nacre_topo::Orientation::Forward => Some(c),
+            nacre_topo::Orientation::Reversed => {
+                let zero = nacre_exact::Rat::from_int(0);
+                Some([
+                    zero.checked_sub(c[0])?,
+                    zero.checked_sub(c[1])?,
+                    zero.checked_sub(c[2])?,
+                    zero.checked_sub(c[3])?,
+                ])
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -230,13 +277,13 @@ pub(crate) struct FaceInfo {
     /// (`Witness::base_coeffs_rat` — the composed-rotation route), and so does the restatement
     /// mirror in `collect_planes`.
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
-    /// The same plane's canonical name **in the world**, whatever frame the truth is written in
-    /// ([`nacre_topo::Model::world_plane_name`]). `None` when no exact world statement exists (a
-    /// turn off the quarters, a frame, a moved wide name, an overflow). The class table reads its
-    /// narrow projection ([`WorkingPlane::world_rat`]); `base_rat` above answers the *other*
-    /// question (the description in the frame the provenance names, which is what `BaseFrame`
-    /// cancels).
-    pub(crate) world_name: Option<nacre_exact::PlaneName>,
+    /// The same plane **in the world** — its canonical name there and which way that name faces,
+    /// whatever frame the truth is written in ([`WorldName`]). `None` when no exact world
+    /// statement exists (a turn off the quarters, a frame, a moved wide name, an overflow). The
+    /// class table reads its narrow projection ([`WorkingPlane::world_rat`]); `base_rat` above
+    /// answers the *other* question (the description in the frame the provenance names, which is
+    /// what `BaseFrame` cancels).
+    pub(crate) world: Option<WorldName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from and [`BaseFrame`] orients its pre-motion
     /// coefficients by. `base_rat` above is its narrow projection, kept beside it because the

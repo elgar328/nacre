@@ -573,24 +573,13 @@ fn loop_triples(
 /// [`arc_departure_side`]).
 ///
 /// ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
-/// against the class's **outward** normal, and `world_rat` may be any nonzero multiple of the
-/// stored one — including a negative. Both describe one plane, so they are proportional; the sign
-/// of that constant is read off the first component `world_rat` makes nonzero, and `frame_sign`
-/// carries stored → outward.
-/// ★ Both must be nonzero, not just the rational one: they are proportional so their zero sets
-/// agree *exactly*, but `raw` is `f64` and a component it rounds to zero would make `raw[i] > 0.0`
-/// false and hand back a sign with nothing behind it. Requiring both turns that into a refusal.
+/// against the class's **outward** normal, and the name may point either way along the plane's
+/// facing. The world name's sense (`κ`, [`crate::planes::WorldName`]) relates the two — read off
+/// the truth, never off the plane cache — and `frame_sign` carries the plane's facing to the root
+/// face's outward.
 pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
-    let co = class_coeffs_rat(jd, q)?;
-    let raw = jd.planes[q].plane.coefficients();
-    let zero = nacre_exact::Rat::from_int(0);
-    let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
-    let k = if (co[i] > zero) == (raw[i] > 0.0) {
-        1
-    } else {
-        -1
-    };
-    Some(k * jd.planes[q].frame_sign)
+    let kappa = jd.planes[q].world.as_ref()?.sense.sign();
+    Some(kappa * jd.planes[q].frame_sign)
 }
 
 /// **Which side of `q` an arc leaves to**: the arc starts at `node` — a pierce point of

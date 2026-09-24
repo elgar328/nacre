@@ -465,22 +465,6 @@ pub(crate) struct Tangency {
     pub(crate) witness: Point3,
 }
 
-/// **How a class's rational coefficients relate to a face's stored plane** — `+1` when the two
-/// describe the same direction, `-1` when they oppose. The same reading as
-/// `arrangement::world_rat_sense`, asked of a face rather than a class root: both must be nonzero
-/// in the component compared, because `raw` is `f64` and a component it rounds to zero would hand
-/// back a sign with nothing behind it.
-fn rel_to_stored(coeffs: &[nacre_exact::Rat; 4], plane: &Plane) -> Option<i8> {
-    let raw = plane.coefficients();
-    let zero = nacre_exact::Rat::from_int(0);
-    let i = (0..4).find(|&i| coeffs[i] != zero && raw[i] != 0.0)?;
-    Some(if (coeffs[i] > zero) == (raw[i] > 0.0) {
-        1
-    } else {
-        -1
-    })
-}
-
 /// Sign of `n·p + d` for a rational point — the side of the plane `p` is on. `None` on overflow.
 fn plane_side_of_rat(coeffs: &[nacre_exact::Rat; 4], p: &[nacre_exact::Rat; 3]) -> Option<i8> {
     let mut acc = coeffs[3];
@@ -654,14 +638,18 @@ fn tangency_rows(
         if cleared {
             continue; // a face that clears the footprint cannot reach the tangent line
         }
-        // The wall face's material side, w.r.t. the class's coefficients. ★ The outward direction
-        // is `n_out = orient_sign · plane.normal()` (`FaceInfo::n_out`, "the single source of
-        // outward"), material lies opposite it, so the answer is `−orient_sign · rel` where `rel`
-        // relates the *stored* plane to the class's rational one. ★★ `world_rat` is **not** that
-        // relation — measured: the seed plane `x = 0` carries `world_rat = (1,0,0,0)` while its
-        // stored normal is `−x`. The sign that does relate them is spelled once already, in
-        // `arrangement::world_rat_sense`, and this is that spelling asked of a face.
-        let mat_side = rel_to_stored(coeffs, &fi.plane).map(|rel| -fi.orient_sign * rel);
+        // The wall face's material side, w.r.t. the class's coefficients. The outward direction
+        // is `orient_sign` times the way the face's plane faces, material lies opposite it, so the
+        // answer is `−orient_sign · κ` where `κ` relates the plane's facing to the class's rational
+        // name. ★★ `world_rat` is **not** that relation — the seed plane `x = 0` carries
+        // `world_rat = (1,0,0,0)` while it faces `−x`. The face's own world sense is
+        // ([`WorldName`]), where its world name *is* the class's; a face that joined the class by
+        // its definitions, with no world name of its own, is left `undecided`.
+        let mat_side = fi
+            .world
+            .as_ref()
+            .filter(|w| w.name.narrow() == Some(coeffs))
+            .map(|w| -fi.orient_sign * w.sense.sign());
         // A property of the wall face and the line, not of which lateral is paired with it.
         let straddles = fi
             .face

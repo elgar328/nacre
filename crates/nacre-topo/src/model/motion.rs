@@ -95,6 +95,37 @@ impl Model {
         Some(if along { *sense } else { sense.flipped() })
     }
 
+    /// **Which way a plane's world name faces, against the plane** — [`Model::plane_name_sense`]
+    /// for [`Model::world_plane_name`]: `Forward` when the world name's normal points the way the
+    /// plane faces in the world.
+    ///
+    /// Unmoved, the world name is the name. Moved by a chain that folds (`M` a signed
+    /// permutation, `det M = ±1`): the plane's world direction is `det M · M` of its own (a
+    /// reflection reverses the points' turn), the name's normal travels as `M·n`, and
+    /// canonicalizing that image may negate it — so the answer is the name's own sense times
+    /// `det M` times that canonical sign. Every factor is exact, and every one exists wherever the
+    /// world name does: `None` exactly where [`Model::world_plane_name`] is `None` (for a named
+    /// plane), so a caller that holds the world name always holds its sense.
+    pub fn world_plane_name_sense(&self, surf: Handle<Surface>) -> Option<Orientation> {
+        let own = self.plane_name_sense(surf)?;
+        let Some(leaf) = self.plane_motion(surf) else {
+            return Some(own);
+        };
+        let fold = self.chain_fold(leaf)?;
+        let n = self.surface_name.get(&surf)?.narrow()?;
+        let carried = fold.dir_rat([n[0], n[1], n[2]])?;
+        let world = self.world_plane_name(surf)?;
+        let world = world.narrow()?;
+        let zero = nacre_exact::Rat::from_int(0);
+        let k = (0..3).find(|&k| world[k] != zero)?;
+        let canonical_kept = (carried[k] > zero) == (world[k] > zero);
+        Some(if canonical_kept == (fold.det() > 0) {
+            own
+        } else {
+            own.flipped()
+        })
+    }
+
     /// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
     /// (written in the frame its motion names) and every consumer that compares it against world
     /// planes: the population gate's clearance arithmetic, the arrangement's circles and rulings,
@@ -111,8 +142,9 @@ impl Model {
     /// ★ **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
     /// *realized* world cylinder, so it is an independent second description of the very thing
     /// this door claims to produce: the origin must lie on the cache's axis, the axis must run
-    /// along it, and the radius must match. A fold in the wrong order disagrees on the origin or
-    /// the direction.
+    /// along it — **the same way round**, because a rim circle's edge curve is parameterized about
+    /// the cache's axis while the loops that walk it are decided on this statement's — and the
+    /// radius must match. A fold in the wrong order disagrees on the origin or the direction.
     pub fn world_cylinder_def(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
         let out = self.world_cylinder_statement(surf)?;
         debug_assert!(
@@ -125,6 +157,7 @@ impl Model {
                 let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
                 cache.axis().distance(o) <= 1e-9 * scale
                     && cache.axis().direction().cross(d).norm() <= 1e-9 * d.norm()
+                    && cache.axis().direction().dot(d) > 0.0
                     && (cache.radius() - out.radius_f64()).abs() <= 1e-9 * scale
             },
             "the world statement and the realized cache describe one cylinder"

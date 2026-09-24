@@ -2055,6 +2055,101 @@ fn a_planes_name_sense_is_read_from_its_truth() {
     assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "through");
 }
 
+/// **Which way a plane's world name faces follows its chain** — the name's own sense, times the
+/// chain's determinant (a reflection reverses the points' turn), times the sign canonicalizing the
+/// carried name may take. Planes stated both ways round and with both senses, under reflections,
+/// quarter turns and a translation. The oracle is independent of that algebra: the plane's points
+/// carried to the world ([`Model::chain_point_rat`]) and crossed in `f64`, times the sense,
+/// against the world name.
+#[test]
+fn a_planes_world_name_sense_follows_its_chain() {
+    use nacre_exact::{Angle, Axis, Rat};
+    let r = Rat::from_int;
+    let mut m = Model::new();
+    let motions = [
+        Motion::Mirror {
+            axis: Axis::Z,
+            offset: r(0),
+        },
+        Motion::Mirror {
+            axis: Axis::X,
+            offset: r(1),
+        },
+        Motion::Rotate {
+            axis: Axis::X,
+            pivot: [r(0); 3],
+            angle: Angle::from_deg(r(90)).expect("angle"),
+        },
+        Motion::Rotate {
+            axis: Axis::Y,
+            pivot: [r(1), r(0), r(0)],
+            angle: Angle::from_deg(r(270)).expect("angle"),
+        },
+        Motion::Translate {
+            offset: [r(1), r(-2), r(3)],
+        },
+    ];
+    let statements = [
+        [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]],
+        [[r(0), r(0), r(3)], [r(0), r(1), r(3)], [r(1), r(0), r(3)]],
+        // Tilted: normal (1, 2, 3) and its reverse.
+        [[r(6), r(0), r(0)], [r(0), r(3), r(0)], [r(0), r(0), r(2)]],
+        [[r(6), r(0), r(0)], [r(0), r(0), r(2)], [r(0), r(3), r(0)]],
+    ];
+    let mut checked = 0;
+    for motion in motions {
+        let leaf = m.push_motion(motion, None);
+        for pts in statements {
+            for sense in [Orientation::Forward, Orientation::Reversed] {
+                let world: Vec<Point3> = pts
+                    .iter()
+                    .map(|&p| {
+                        let q = m.chain_point_rat(leaf, p).expect("a folding chain");
+                        Point3::from_array(q.map(|x| x.to_f64()))
+                    })
+                    .collect();
+                let turn = (world[1] - world[0]).cross(world[2] - world[0]);
+                let facing = turn * f64::from(sense.sign());
+                let cache =
+                    nacre_geom::Plane::from_point_normal(world[0], facing).expect("a plane");
+                let (h, flipped) = m.push_plane(cache, pts, Some(leaf), sense);
+                let name = m
+                    .world_plane_name(h)
+                    .expect("a folding chain names the world");
+                let c = name.narrow().expect("narrow");
+                let dot: f64 = (0..3).map(|k| facing.as_array()[k] * c[k].to_f64()).sum();
+                // An interning hit keeps the survivor's sense; the new statement faces the other
+                // way from it exactly when `flipped`.
+                let along = (dot > 0.0) != flipped;
+                let want = if along {
+                    Orientation::Forward
+                } else {
+                    Orientation::Reversed
+                };
+                assert_eq!(
+                    m.world_plane_name_sense(h),
+                    Some(want),
+                    "{motion:?} {pts:?} {sense:?}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 40);
+    // Unmoved, the world name is the name.
+    let (h, _) = m.push_plane(
+        nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 5.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap(),
+        [[r(0), r(0), r(5)], [r(1), r(0), r(5)], [r(0), r(1), r(5)]],
+        None,
+        Orientation::Forward,
+    );
+    assert_eq!(m.world_plane_name_sense(h), m.plane_name_sense(h));
+}
+
 /// **A chain pushed node by node folds to its nodes applied root first** — the one lock on the
 /// order `push_motion` composes in (the census has no chain with two non-identity linear parts).
 /// The oracle is the existing per-motion arithmetic, stepped; a turn off the quarters is in the

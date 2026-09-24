@@ -24,10 +24,12 @@ pub(super) fn circle_on_class(
     wc: usize,
     cyl: usize,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
-    let wp = &jd.planes[wc];
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
-    let Some(coeffs) = wp.world_rat() else {
+    let Some(world) = jd.planes[wc].world.as_ref() else {
+        return Err(DeclineKind::CylSpan);
+    };
+    let Some(coeffs) = world.name.narrow().copied() else {
         return Err(DeclineKind::CylSpan);
     };
     // No world statement for this lateral (a rotated or frame-borne truth): the same decline
@@ -71,7 +73,7 @@ pub(super) fn circle_on_class(
     //
     // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
     // it lies toward `+t` and at the high rim toward `−t`.
-    let up = crate::planes::plus_t_is_above(wp, def);
+    let up = crate::planes::plus_t_is_above(world, def);
     if t < range[0] || range[1] < t {
         // Beyond the face: this class does not meet it at all, and every cycle lives inside the
         // range, so there is nothing for the walk below to find either.
@@ -307,23 +309,15 @@ pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
     -(orient_sign * travel_up)
 }
 
-/// **How the class's rational name is oriented against its stored normal** — `+1` when
-/// [`combinatorics::class_coeffs_rat`] points the same way as `jd.planes[c].plane`, `-1` when it
-/// opposes.
-///
-/// ★★★ **`world_rat` is a *name*, not an oriented normal** — it may be any nonzero multiple of the
-/// stored one, negative included. A predicate built on it answers about *identity* (which of two
-/// rulings, which side of a pair) frame-freely, because the same spelling is used on both sides of
-/// the comparison; a **label** is different, because "above" is defined by the stored normal. This
-/// is the correction [`combinatorics::side_of`]'s pierce arm makes inline, lifted so the ∥ ruling
-/// road can make the same one without spelling it a second time.
 /// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
-/// leaving a ruling counter-clockwise about the axis enters the wall's **stored-normal** side.
+/// leaving a ruling counter-clockwise about the axis enters the side the wall's plane faces.
 ///
 /// ★★★ **One atom, three readers.** [`combinatorics::RulingCarrier::side`] is
 /// `sign((x − o) · (m̂ × n̂_r))` against the class's *rational* name, and the scalar triple product
 /// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
-/// [`world_rat_sense`] (`κ`) carries that to the stored normal. The three consumers are the
+/// the world name's sense (`κ`, [`crate::planes::WorldName`] — the truth's, since the name alone
+/// carries no direction and the plane cache is a rounded image) carries that to the plane's own
+/// facing. The three consumers are the
 /// ruling sweep's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
 /// whole point of naming it is that none of them spells the product a second time. ★ Two of them
 /// read a **label** and stay in the stored frame; the one that picks a **cell** —
@@ -337,22 +331,8 @@ pub(crate) fn plus_theta_is_above(
     // A tangent ruling (`side == 0`) is never a recorded crossing, so nothing labelled by this
     // sign reaches it; the day one does, the answer is a measurement, not a sign.
     debug_assert_ne!(side, 0, "a tangent ruling has no +θ side to be above");
-    Some(-(world_rat_sense(jd, wc)? * side) == 1)
-}
-
-fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
-    let co = combinatorics::class_coeffs_rat(jd, c)?;
-    let raw = jd.planes[c].plane.coefficients();
-    let zero = nacre_exact::Rat::from_int(0);
-    // Both must be nonzero, not just the rational one: they are proportional so their zero sets
-    // agree exactly, but `raw` is `f64` and a component it rounds to zero would hand back a sign
-    // with nothing behind it.
-    let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
-    Some(if (co[i] > zero) == (raw[i] > 0.0) {
-        1
-    } else {
-        -1
-    })
+    let kappa = jd.planes[wc].world.as_ref()?.sense.sign();
+    Some(-(kappa * side) == 1)
 }
 
 /// **One boundary cycle — a hole, a panel, a chain rim — read against one ⊥ class**: the walk's

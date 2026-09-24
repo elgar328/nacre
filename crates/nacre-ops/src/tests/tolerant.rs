@@ -490,7 +490,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
                 // frame derives as it always did. Filling this by hand is how a fixture and the
                 // engine come to route differently.
                 base_rat: None,
-                world_name: None,
+                world: None,
                 name: None,
                 surf: f.surf,
                 face: f.face,
@@ -1133,7 +1133,7 @@ fn two_caps_described_exactly_are_one_plane() {
         let tri = d.clone().map(|p| Point3::from_array(p.coord()));
         WorkingPlane {
             base_rat: None,
-            world_name: None,
+            world: None,
             name_ints: None,
             base: crate::planes::BaseFrame::none(),
             surf: faces[ia].surf(),
@@ -1987,7 +1987,7 @@ mod wide_name_rescue {
                     let tri = std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord()));
                     WorkingPlane {
                         base_rat: None,
-                        world_name: None,
+                        world: None,
                         // ★ The exact shortcuts read the name's `f64` row, and these names are
                         // wide (scaled past 53 bits), so there is none: every question here goes
                         // to the BigInt rescue or the climb.

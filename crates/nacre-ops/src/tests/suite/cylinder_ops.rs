@@ -863,7 +863,7 @@ fn the_mesh_census_is_running() {
 /// ★★★★★ **The side is derived, and an independent description checks it.**
 /// `ruling_interior_is_even` composes three sentences already in the crate (`RulingCarrier::side`,
 /// the material-on-the-left convention in the **root face's frame** — `frame_sign` — and
-/// `world_rat_sense`'s lift between the rational name and the stored normal) into
+/// the world name's sense `κ`, the lift between the rational name and the plane's facing) into
 /// `side · κ · frame_sign`. The check shares no step with that: **inside the cylinder
 /// the lateral's own solid has material and outside it does not**, which is the same content rule
 /// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
@@ -874,7 +874,7 @@ fn the_mesh_census_is_running() {
 /// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping the product turns the check from
 /// every agreement into a contradiction — it has eyes on 97% of the population.
 ///
-/// ☑ Measured over the whole binary: **30,010 ruling pieces, 30,010 labelled** (`world_rat_sense`
+/// ☑ Measured over the whole binary: **30,010 ruling pieces, 30,010 labelled** (the sense
 /// declines none) · **29,266 agree, 0 contradict, 744 blind**. The blind ones are real and expected —
 /// a boss surrounded by its own plate has that solid's material on *both* sides of the ruling, so
 /// the content cannot tell, and only the derivation speaks there.

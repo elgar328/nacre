@@ -3,7 +3,9 @@ use super::*;
 ///
 /// The face table cannot answer "which plane" without a convention: a class holds faces from both
 /// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
-/// outward normal. What a plane has is a **frame** — the class root's stored normal — and the only
+/// outward normal. What a plane has is a **frame** — the class root's stored normal, which is the
+/// way its truth faces (`Surface::Plane::sense` against its points; the `f64` cache follows it, and
+/// no direction is read off that cache) — and the only
 /// direction fact anyone needs from it is [`WorkingPlane::frame_sign`]. Everything else here is a
 /// witness: three points known to lie on this plane, used to reconstruct it exactly.
 /// The pre-rotation twin of a witness triangle: its `chain_id`, base points and base plane.
@@ -167,11 +169,11 @@ pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
-    /// The class root's canonical name **in the world** — see [`FaceInfo::world_name`]. Its narrow
+    /// The class root's statement **in the world** — see [`FaceInfo::world`]. Its narrow
     /// projection ([`WorkingPlane::world_rat`]) is the one description the cylinder roads may
     /// compare against a world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands
-    /// out.
-    pub(crate) world_name: Option<nacre_exact::PlaneName>,
+    /// out; [`WorkingPlane::stored_world_rat`] is the same turned to face the way the plane does.
+    pub(crate) world: Option<WorldName>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
@@ -216,9 +218,17 @@ pub(crate) struct WorkingPlane {
 impl WorkingPlane {
     /// The world name's narrow projection — exact rational coefficients in the world, what the
     /// cylinder roads compare against a world axis. A projection, not a second record: it cannot
-    /// disagree with [`WorkingPlane::world_name`].
+    /// disagree with [`WorkingPlane::world`].
     pub(crate) fn world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
-        self.world_name.as_ref()?.narrow().copied()
+        self.world.as_ref()?.name.narrow().copied()
+    }
+
+    /// The same coefficients **turned to face the way the plane does** — the frame every cell
+    /// label is written in («above» is this normal's side). Read off the truth
+    /// ([`WorldName::oriented_rat`]), never off the plane cache: the name alone carries no
+    /// direction, and the cache is a rounded image of the plane.
+    pub(crate) fn stored_world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
+        self.world.as_ref()?.oriented_rat()
     }
 
     /// The class's outward normal — the root face's, which is what `tri` is wound for and what

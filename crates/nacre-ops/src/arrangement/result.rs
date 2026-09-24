@@ -116,9 +116,9 @@ pub(crate) struct RulingExtent {
     /// of them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
     /// cell inside the strip is where that plane's two sides are stated at the lateral.
     ///
-    /// `None` when the wall's rational name and its stored normal cannot be related
-    /// ([`world_rat_sense`]) — the ruling is then left without an answer and **counted**, never
-    /// guessed at.
+    /// `None` when the wall has no world statement to relate its rational name and its facing
+    /// ([`crate::planes::WorldName`]) — the ruling is then left without an answer and **counted**,
+    /// never guessed at.
     ///
     /// ★ It ships, not an instrument — the emitter does not read the horizontal lines only: a
     /// cut end
@@ -148,7 +148,7 @@ pub(crate) struct RulingExtent {
 ///
 /// * [`combinatorics::RulingCarrier::side`] is `sign((x − o) · (m̂ × n̂))` against the class's
 ///   **canonical rational** name, so the strip's interior lies along `−side · (m̂ × n̂_r)`; lifted
-///   to the stored normal by [`world_rat_sense`] (`κ`) that is `−side·κ·(m̂ × n̂_P)` — the
+///   to the plane's facing by the world name's sense (`κ`) that is `−side·κ·(m̂ × n̂_P)` — the
 ///   product [`plus_theta_is_above`] already spells.
 /// * The walk keeps a cell **on the left of its travel in the root face's outward frame**,
 ///   `n_out = frame_sign · n̂_P` ([`crate::planes::WorkingPlane::frame_sign`] — the sentence lives

@@ -909,6 +909,28 @@ mod triple_sense {
             }
         }
 
+        /// A name reads its points as the `Rat` derivation does: the sign of the name's normal
+        /// against the points' cross, `None` exactly for collinear points.
+        #[test]
+        fn a_name_along_its_points_is_the_rational_dot_sign(
+            pts in proptest::array::uniform3(proptest::array::uniform3((-20i128..=20, 1i128..=9))),
+        ) {
+            use crate::{name_along_points, plane_name_exact};
+            let p: [[Rat; 3]; 3] = pts.map(|q| q.map(|(n, d)| r(n, d)));
+            let m = p.map(MeetPoint::Narrow);
+            let cross = rat_cross(&p);
+            match plane_name_exact(p[0], p[1], p[2]) {
+                None => prop_assert!(cross.iter().all(|c| *c == Rat::from_int(0))),
+                Some(name) => {
+                    let c = *name.narrow().expect("small points name narrow");
+                    prop_assert_eq!(
+                        name_along_points(&name, [&m[0], &m[1], &m[2]]),
+                        Some(rat_dot_sign(cross, [c[0], c[1], c[2]]) == Orient::Positive)
+                    );
+                }
+            }
+        }
+
         /// Two triples on one plane agree exactly when their `Rat` crosses do.
         #[test]
         fn same_sense_is_the_rational_agreement(

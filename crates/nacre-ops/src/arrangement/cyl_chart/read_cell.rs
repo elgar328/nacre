@@ -262,7 +262,11 @@ impl Chart {
                 // ★ Bound to the class whose label is read, not to whichever class the loop
                 // visited last: one `t` is one plane and so one class today, but the sign and
                 // the label must come from the same row the day that stops being true.
-                let up = crate::planes::plus_t_is_above(&jd.planes[c], def);
+                let world = jd.planes[c]
+                    .world
+                    .as_ref()
+                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+                let up = crate::planes::plus_t_is_above(world, def);
                 let band_is_above = if e == 0 { up } else { !up };
                 if let Some(l) = curved.disk_labels.get(&(k, c)) {
                     saw_disk = true;
