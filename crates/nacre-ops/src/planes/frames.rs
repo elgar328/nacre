@@ -167,10 +167,11 @@ pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
-    /// The class root's exact rational coefficients **in the world** — see
-    /// [`FaceInfo::world_rat`]. The one description the cylinder roads may compare against a
-    /// world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands out.
-    pub(crate) world_rat: Option<[nacre_exact::Rat; 4]>,
+    /// The class root's canonical name **in the world** — see [`FaceInfo::world_name`]. Its narrow
+    /// projection ([`WorkingPlane::world_rat`]) is the one description the cylinder roads may
+    /// compare against a world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands
+    /// out.
+    pub(crate) world_name: Option<nacre_exact::PlaneName>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
@@ -212,6 +213,13 @@ pub(crate) struct WorkingPlane {
 }
 
 impl WorkingPlane {
+    /// The world name's narrow projection — exact rational coefficients in the world, what the
+    /// cylinder roads compare against a world axis. A projection, not a second record: it cannot
+    /// disagree with [`WorkingPlane::world_name`].
+    pub(crate) fn world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
+        self.world_name.as_ref()?.narrow().copied()
+    }
+
     /// The class's outward normal — the root face's, which is what `tri` is wound for and what
     /// `emit_faces` winds its rings about. Not normalized: only its direction is ever read.
     pub(crate) fn tri_n_out(&self) -> Vector3 {

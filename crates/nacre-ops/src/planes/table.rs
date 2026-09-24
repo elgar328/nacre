@@ -327,7 +327,7 @@ pub(crate) fn collect_planes(
             let name = model.surface_name.get(&face.surface).cloned();
             out.push(FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
-                world_rat: world_plane_coeffs(model, face.surface),
+                world_name: model.world_plane_name(face.surface),
                 name,
                 surf: face.surface,
                 face: Some(fh),

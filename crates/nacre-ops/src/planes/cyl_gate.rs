@@ -135,7 +135,7 @@ pub(crate) fn cylinder_gate(
             // the world. `rotated` is not that question: a plane whose truth carries a
             // translation is *judged* through its chain and still has exact world coefficients,
             // and that is the population the rulings road serves.
-            let Some(coeffs) = wp.world_rat else {
+            let Some(coeffs) = wp.world_rat() else {
                 return Err(undecided());
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
@@ -531,7 +531,7 @@ fn line_lies_in_another_class(
         if k == wall {
             continue;
         }
-        let Some(w) = wp.world_rat else { continue };
+        let Some(w) = wp.world_rat() else { continue };
         if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], m) != nacre_exact::Orient::Zero {
             continue;
         }

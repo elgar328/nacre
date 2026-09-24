@@ -233,12 +233,12 @@ fn the_tangent_wall_states_itself_exactly() {
     // The tangent class, found the gate's own way: one clearance call per class.
     let c = (0..setup.geom.len())
         .find(|&k| {
-            setup.geom[k].world_rat.is_some_and(|w| {
+            setup.geom[k].world_rat().is_some_and(|w| {
                 nacre_exact::point_plane_clearance_rat(&w, &o, r2) == nacre_exact::Orient::Zero
             })
         })
         .expect("the wall x = 0 is exactly r from the axis");
-    let coeffs = setup.geom[c].world_rat.expect("checked above");
+    let coeffs = setup.geom[c].world_rat().expect("checked above");
     let rows = tangency_rows(
         &m,
         &setup.planes,

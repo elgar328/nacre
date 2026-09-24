@@ -107,7 +107,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     // the classes cannot make it pass or fail for the wrong reason.
     assert_eq!(setup.crossings.len(), 1, "one seated pair, not more");
     for &(c, ci) in &setup.crossings {
-        let coeffs = setup.geom[c].world_rat.expect("a named wall class");
+        let coeffs = setup.geom[c].world_rat().expect("a named wall class");
         assert_eq!(
             nacre_exact::point_plane_clearance_rat(
                 &coeffs,

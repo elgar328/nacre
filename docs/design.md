@@ -1118,7 +1118,7 @@ m.rebuild_edge_cache() · m.rebuild_adjacency()             // 통째 재생
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,                          // f64 실현
     pub(crate) base_rat:  Option<[Rat; 4]>,           // 클래스 뿌리의 정확 계수(모션 이전 프레임)
-    pub(crate) world_rat: Option<[Rat; 4]>,           // 같은 것의 세계 진술 — 원통 도로가 세계 축과 비교하는 유일한 서술
+    pub(crate) world_name: Option<PlaneName>,         // 같은 평면의 세계 이름 — 좁은 투영 `world_rat()` 이 원통 도로가 세계 축과 비교하는 유일한 서술
     pub(crate) surf: Handle<Surface>,                 // 대표 곡면 — 결과 정점의 담체로 기록된다
     pub(crate) tri: [Point3; 3],                      // 뿌리 면 꼭짓점 셋의 좌표 캐시(f64), 바깥 방향 순서
     pub(crate) tri_pt3: [WitnessPoint; 3],            // 같은 증인의 정확한 정의 — 모든 술어가 빌린다

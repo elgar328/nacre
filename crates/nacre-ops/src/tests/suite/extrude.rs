@@ -281,7 +281,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
         crate::planes::FaceRow::Plane(FaceInfo {
             // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
             base_rat: None,
-            world_rat: None,
+            world_name: None,
             name: None,
             motion: None,
             surf: shared,

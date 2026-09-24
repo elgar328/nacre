@@ -386,7 +386,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         // A hand-built table has no recorded coefficients; the composed-rotation route
         // declines and the fixture takes the same escalating path it always did.
         base_rat: None,
-        world_rat: None,
+        world_name: None,
         name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
         base: crate::planes::BaseFrame::none(),
         surf,

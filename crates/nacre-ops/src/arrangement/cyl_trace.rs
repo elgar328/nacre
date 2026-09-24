@@ -27,7 +27,7 @@ pub(super) fn circle_on_class(
     let wp = &jd.planes[wc];
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
-    let Some(coeffs) = wp.world_rat else {
+    let Some(coeffs) = wp.world_rat() else {
         return Err(DeclineKind::CylSpan);
     };
     // No world statement for this lateral (a rotated or frame-borne truth): the same decline

@@ -229,12 +229,13 @@ pub(crate) struct FaceInfo {
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
-    /// The same plane as **exact rational coefficients in the world**, whatever frame the truth
-    /// is written in — see [`world_plane_coeffs`]. `None` when no exact world description exists
-    /// (a rotation, a frame, a wide name, an overflow). This is what the cylinder roads compare
-    /// against a world axis; `base_rat` above answers the *other* question (the description in
-    /// the frame the provenance names, which is what `BaseFrame` cancels).
-    pub(crate) world_rat: Option<[nacre_exact::Rat; 4]>,
+    /// The same plane's canonical name **in the world**, whatever frame the truth is written in
+    /// ([`nacre_topo::Model::world_plane_name`]). `None` when no exact world statement exists (a
+    /// turn off the quarters, a frame, a moved wide name, an overflow). The class table reads its
+    /// narrow projection ([`WorkingPlane::world_rat`]); `base_rat` above answers the *other*
+    /// question (the description in the frame the provenance names, which is what `BaseFrame`
+    /// cancels).
+    pub(crate) world_name: Option<nacre_exact::PlaneName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from. `base_rat` above is its narrow projection,
     /// kept beside it because the narrow consumers (`BaseFrame`, the composed-rotation route)
