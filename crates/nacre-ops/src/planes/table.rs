@@ -58,6 +58,19 @@ pub(crate) fn collect_planes(
             // not as the answer.
             let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
+            // ★ **Which way this face's outward runs against its plane's own points** — the truth
+            // says, exactly: the plane faces `sense` against its points' turn, and the face faces
+            // `orientation` against the plane. So any triangle of the truth's own points, in the
+            // truth's own order, turns toward the outward exactly when this product is `+1` — and
+            // a motion carries the points and the plane's direction alike (a reflection reverses
+            // both), so the product holds through it. A witness that *is* those points is wound by
+            // it; none is wound by a cross of rounded coordinates against the cache.
+            let facing = match model.surface(face.surface) {
+                nacre_topo::Surface::Plane { sense, .. } => sense.sign() * orient_sign,
+                nacre_topo::Surface::Cylinder { .. } => {
+                    unreachable!("a plane cache cannot carry a cylinder truth")
+                }
+            };
             let tri = match outer_tri(model, face) {
                 Some((tri, _)) => tri,
                 // ★ **A face bounded by a circle-curve edge has area whatever its vertices do.**
@@ -99,8 +112,7 @@ pub(crate) fn collect_planes(
                             out
                         }
                     };
-                    let wound = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
-                    if wound.dot(n_out) < 0.0 {
+                    if facing < 0 {
                         tri.swap(1, 2);
                     }
                     tri
@@ -118,14 +130,17 @@ pub(crate) fn collect_planes(
             //
             // `tri_pt3` is an *oriented* plane witness, but the recorded triple belongs to the
             // *plane* — two faces sharing it can face opposite ways, and the implicit-point
-            // `orient3d` reads the side `tri_pt3` spans. So both arms wind it to agree with
-            // *this* face's `n_out`.
-            let wind = |mut w: [WitnessPoint; 3]| -> [WitnessPoint; 3] {
-                let e1 = Vector3::from_array(w[1].coord()) - Vector3::from_array(w[0].coord());
-                let e2 = Vector3::from_array(w[2].coord()) - Vector3::from_array(w[0].coord());
-                if e1.cross(e2).dot(n_out) < 0.0 {
+            // `orient3d` reads the side `tri_pt3` spans. So every arm winds it to agree with
+            // *this* face's outward, by the sign its own points turn against it.
+            let wind = |mut w: [WitnessPoint; 3], turn: i8| -> [WitnessPoint; 3] {
+                if turn < 0 {
                     w.swap(1, 2);
                 }
+                debug_assert!(
+                    turns_outward_f64(&w, n_out) != Some(false),
+                    "the truth's winding and the aligned cache disagree: face {fh:?} on {:?}",
+                    face.surface
+                );
                 w
             };
             let (tri_pt3, rotated, motion) = match model.surface(face.surface) {
@@ -149,7 +164,7 @@ pub(crate) fn collect_planes(
                     // rounding from `Rat::to_f64`'s contract (measured here once: 38.3% of these
                     // points are not f64, and measuring them at 120 bits cost the suite 6%).
                     let w = pts.map(WitnessPoint::at_nearest);
-                    (wind(w), false, None)
+                    (wind(w, facing), false, None)
                 }
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
@@ -175,7 +190,7 @@ pub(crate) fn collect_planes(
                     // plane apart with full confidence.
                     let w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
                     _t.charge(Sub::TriPt3);
-                    (wind(w), true, Some(motion))
+                    (wind(w, facing), true, Some(motion))
                 }
                 // ★★★ **A `Through` plane is solved into the same witness triangle here.**
                 //
@@ -218,7 +233,7 @@ pub(crate) fn collect_planes(
                         }
                         Ok(w)
                     };
-                    let (w, rotated) = match model.through_points_rat(*vs) {
+                    let (w, rotated, turn) = match model.through_points_rat(*vs) {
                         Some(base) => {
                             let w = base.map(WitnessPoint::at);
                             let w = match motion {
@@ -236,7 +251,13 @@ pub(crate) fn collect_planes(
                                 && vs.iter().any(|&v| {
                                     model.vertex_meet(v).is_some_and(|(_, f)| f.is_some())
                                 });
-                            (w, motion.is_some() || frame_local)
+                            // A frame-local triangle is the rule's one blind spot: its points
+                            // speak a frame the plane records no motion for, so `facing` (a
+                            // statement about the plane in the world) says nothing about their
+                            // turn. The one road that could write one (`transform.rs`'s
+                            // `Through` arm, when it records no node) asserts it did not, and
+                            // the suite never fires that — measured, not proved.
+                            (w, motion.is_some() || frame_local, facing)
                         }
                         None => {
                             let j = crate::rotated_vertex::through_judged_points(model, *vs)
@@ -246,7 +267,7 @@ pub(crate) fn collect_planes(
                             //
                             // ★★★★ **Any implicit point: the witness is the plane's own judged
                             // frame**. The table's contract is "three exact points *on the
-                            // plane*, wound to n_out" — never "the face's corners" — and a judged plane has such points by definition: its
+                            // plane*, wound to the outward" — never "the face's corners" — and a judged plane has such points by definition: its
                             // canonical frame's probes `(0,0,0)·(1,0,0)·(0,1,0)`, the same ones
                             // `frame_world_basis` realizes. The origin is the foot of the
                             // perpendicular (on the plane exactly), û and v̂ are in-plane by
@@ -270,7 +291,7 @@ pub(crate) fn collect_planes(
                                     None => w,
                                     Some(m) => replay_all(w, m)?,
                                 };
-                                (w, true)
+                                (w, true, facing)
                             } else {
                                 let chain = crate::rotated_vertex::frame_chain(
                                     model,
@@ -291,12 +312,24 @@ pub(crate) fn collect_planes(
                                 // its tail, so no `replay_all` here — appending it twice would
                                 // move the witness off the plane.
                                 let w = [probe(0, 0)?, probe(1, 0)?, probe(0, 1)?];
-                                (w, true)
+                                // The probes turn about the frame's `ŵ`. A named plane frames from
+                                // its name (`ŵ` is the name's normal, carried by the plane's own
+                                // motion), so they turn toward the outward exactly when the name
+                                // does; a nameless one frames from its judged points in their
+                                // order (`FrameThrough`), so they turn as the truth's points do.
+                                if model.surface_name.contains_key(&face.surface) {
+                                    let s = model
+                                        .plane_name_sense(face.surface)
+                                        .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                                    (w, true, s.sign() * orient_sign)
+                                } else {
+                                    (w, true, facing)
+                                }
                             }
                         }
                     };
                     _t.charge(Sub::TriPt3);
-                    (wind(w), rotated, motion)
+                    (wind(w, turn), rotated, motion)
                 }
                 nacre_topo::Surface::Cylinder { .. } => {
                     unreachable!("a plane cache cannot carry a cylinder truth")
@@ -399,7 +432,7 @@ pub(crate) fn collect_planes(
             let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 motion: None,
-                ..
+                sense,
             } = model.surface(f.surf)
             else {
                 continue;
@@ -419,15 +452,36 @@ pub(crate) fn collect_planes(
                 .collect();
             let Some(w) = turned else { continue }; // conservative: keep the world description
             let mut w: [WitnessPoint; 3] = [w[0].clone(), w[1].clone(), w[2].clone()];
-            let e1 = Vector3::from_array(w[1].coord()) - Vector3::from_array(w[0].coord());
-            let e2 = Vector3::from_array(w[2].coord()) - Vector3::from_array(w[0].coord());
-            if e1.cross(e2).dot(f.n_out) < 0.0 {
+            // The same rule as the table's own witnesses, with the chain's handedness: `c` maps
+            // the plane onto itself row for row, so it carries the plane's direction to itself,
+            // and a reflection in it reverses the turn of the points it carries.
+            let Some(parity) = crate::rotated_vertex::motion_parity(model, Some(c)) else {
+                continue;
+            };
+            let turn = parity * sense.sign() * f.orient_sign;
+            if turn < 0 {
                 w.swap(1, 2);
             }
+            debug_assert!(
+                turns_outward_f64(&w, f.n_out) != Some(false),
+                "the restated winding and the aligned cache disagree on {:?}",
+                f.surf
+            );
             f.tri_pt3 = w;
             f.rotated = true;
             f.motion = Some(c);
         }
     }
     Ok(out)
+}
+
+/// **Whether a wound witness turns toward the outward, read in `f64`** — a debug cross-check that
+/// the truth's winding rule and the aligned plane cache agree, never an answer. `None` where the
+/// realized corners are too close to collinear for the reading to mean anything (`|cos| ≤ ½`,
+/// the bar the face corners' check in `collect_planes` holds): there the rounding picks the
+/// direction, and a check that fired on it would be checking the rounding.
+fn turns_outward_f64(w: &[WitnessPoint; 3], n_out: Vector3) -> Option<bool> {
+    let p = w.each_ref().map(|q| Vector3::from_array(q.coord()));
+    let cos = (p[1] - p[0]).cross(p[2] - p[0]).normalize()?.dot(n_out);
+    (cos.abs() > 0.5).then_some(cos > 0.0)
 }

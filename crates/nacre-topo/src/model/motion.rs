@@ -75,6 +75,26 @@ impl Model {
         }
     }
 
+    /// **Which way a plane's own name faces, against the plane** — `Forward` when the normal of
+    /// its name ([`Model::surface_name`]) points the way the plane faces, in the frame its truth is
+    /// written in; `Reversed` when it points the other way.
+    ///
+    /// The name is canonical and so carries no direction (its first nonzero component is
+    /// positive); the plane's direction is its truth's — [`Surface::Plane::sense`] against its
+    /// points' turn. This compares the two exactly, at any width
+    /// ([`nacre_exact::name_along_points`]): the answer is a fact about the truth, never read off
+    /// the `f64` cache. `None` for a surface with no name (a mixed-frame `Through` statement, a
+    /// cylinder) or a `Through` statement whose meets cannot be placed in one frame.
+    pub fn plane_name_sense(&self, surf: Handle<Surface>) -> Option<Orientation> {
+        let Surface::Plane { points, sense, .. } = self.surface(surf) else {
+            return None;
+        };
+        let name = self.surface_name.get(&surf)?;
+        let m = self.statement_points(points)?;
+        let along = nacre_exact::name_along_points(name, [&m[0], &m[1], &m[2]])?;
+        Some(if along { *sense } else { sense.flipped() })
+    }
+
     /// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
     /// (written in the frame its motion names) and every consumer that compares it against world
     /// planes: the population gate's clearance arithmetic, the arrangement's circles and rulings,

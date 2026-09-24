@@ -112,19 +112,26 @@ impl Model {
         else {
             return None;
         };
-        let normal = |p: &PlanePoints| match p {
-            PlanePoints::Known(k) => {
-                let m = k.map(nacre_exact::MeetPoint::Narrow);
-                nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
-            }
-            PlanePoints::Through(vs) => {
-                let m = self.through_meets(*vs)?;
-                nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
-            }
+        let normal = |p: &PlanePoints| {
+            let m = self.statement_points(p)?;
+            nacre_exact::triple_normal([&m[0], &m[1], &m[2]])
         };
         let agree =
             nacre_exact::same_sense(&normal(points)?, &normal(theirs)?) == (sense == *their_sense);
         Some(!agree)
+    }
+
+    /// **A plane statement's three points, exactly, in the frame the statement is written in** —
+    /// what its direction `(p₁ − p₀) × (p₂ − p₀)` and so its [`Surface::Plane::sense`] are read
+    /// against. `Known` points are themselves; a `Through` statement's are its vertices' meets
+    /// ([`Model::through_meets`], any width), in the order the statement holds them.
+    ///
+    /// `None` where a `Through` statement's meets cannot be placed in one frame.
+    pub(super) fn statement_points(&self, p: &PlanePoints) -> Option<[nacre_exact::MeetPoint; 3]> {
+        match p {
+            PlanePoints::Known(k) => Some(k.map(nacre_exact::MeetPoint::Narrow)),
+            PlanePoints::Through(vs) => self.through_meets(*vs),
+        }
     }
     /// **The world direction a plane's points span**, before its sense — in `f64`, for the reads
     /// below that compare it with a cache (two normals of one plane, so the sign of their dot is

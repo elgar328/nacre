@@ -254,6 +254,19 @@ pub fn same_sense(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> b
     s == Orient::Positive
 }
 
+/// **Whether a plane's name points the way its defining points turn** — the name's normal against
+/// `(b − a) × (c − a)`, exactly and at any width. `None` when the points are collinear.
+///
+/// The canonical name carries no direction (its first nonzero component is positive), so this is
+/// the comparison that recovers one against a statement. The points must be the plane's own —
+/// on the named plane, in the frame the name speaks — so the two normals are parallel and the
+/// answer is never a near call.
+pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bool> {
+    let n = triple_normal(points)?;
+    let [a, b, c, _] = name.coeff_ints();
+    Some(same_sense(&[a, b, c], &n))
+}
+
 fn dot_sign(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> Orient {
     use num_traits::Zero;
     let d: num_bigint::BigInt = (0..3).map(|i| &a[i] * &b[i]).sum();

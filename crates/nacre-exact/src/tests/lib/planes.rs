@@ -835,6 +835,60 @@ mod triple_sense {
         ));
     }
 
+    /// **A name is read against its own points**: the canonical name of `z = 3` is `(0, 0, 1, −3)`
+    /// whichever way its points turn, so the answer is the turn — and a wide name (a coordinate
+    /// whose denominator is past `i128`'s reach once cleared) answers the same way.
+    #[test]
+    fn a_name_is_read_against_its_points() {
+        use crate::{name_along_points, plane_name_exact};
+        let q = |x: i128, y: i128, z: i128| [r(x, 1), r(y, 1), r(z, 1)];
+        let (a, b, c) = (q(0, 0, 3), q(1, 0, 3), q(0, 1, 3));
+        let name = plane_name_exact(a, b, c).expect("a plane");
+        let m = [a, b, c].map(MeetPoint::Narrow);
+        assert_eq!(name_along_points(&name, [&m[0], &m[1], &m[2]]), Some(true));
+        assert_eq!(name_along_points(&name, [&m[0], &m[2], &m[1]]), Some(false));
+        let line = [q(0, 0, 3), q(1, 0, 3), q(2, 0, 3)].map(MeetPoint::Narrow);
+        assert_eq!(
+            name_along_points(&name, [&line[0], &line[1], &line[2]]),
+            None
+        );
+        // A wide name — `a_plane_too_wide_for_i128_is_named_wide`'s points. The oracle is an
+        // independent `f64` reading: the points' cross against the name's integers, two normals of
+        // one plane, so their dot is a full magnitude from zero.
+        use num_traits::ToPrimitive;
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let (a, b, c) = (
+            [r(big1, 3), r(big2, 7), r(0, 1)],
+            [r(-big2, 5), r(big1, 11), r(0, 1)],
+            [r(1, 13), r(1, 17), r(1, 19)],
+        );
+        let name = plane_name_exact(a, b, c).expect("a plane");
+        assert!(name.narrow().is_none(), "the name takes the wide vessel");
+        let f = |p: [Rat; 3]| p.map(|x| x.to_f64());
+        let (fa, fb, fc) = (f(a), f(b), f(c));
+        let (u, v) = (
+            [fb[0] - fa[0], fb[1] - fa[1], fb[2] - fa[2]],
+            [fc[0] - fa[0], fc[1] - fa[1], fc[2] - fa[2]],
+        );
+        let cross = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let ints = name.coeff_ints();
+        let along = (0..3)
+            .map(|k| cross[k] * ints[k].to_f64().expect("finite"))
+            .sum::<f64>()
+            > 0.0;
+        let m = [a, b, c].map(MeetPoint::Narrow);
+        assert_eq!(name_along_points(&name, [&m[0], &m[1], &m[2]]), Some(along));
+        assert_eq!(
+            name_along_points(&name, [&m[1], &m[0], &m[2]]),
+            Some(!along)
+        );
+    }
+
     proptest! {
         #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
             proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")

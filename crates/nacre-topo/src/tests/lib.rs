@@ -1956,6 +1956,105 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
     assert!(!m.align_cache_sense(h), "and asking again turns nothing");
 }
 
+/// **Which way a plane's own name faces is read off its truth** — `sense` against its points'
+/// turn — and it is the answer the aligned cache gives: the three seeds (cache down each axis, name
+/// up it), a `Known` plane stated either way round and with either sense, a `Through` datum, and a
+/// wide name. The oracle is the cache normal against the name, an independent `f64` reading of
+/// two normals of one plane.
+#[test]
+fn a_planes_name_sense_is_read_from_its_truth() {
+    use nacre_exact::Rat;
+    let expected = |m: &Model, h: Handle<Surface>| {
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+            unreachable!()
+        };
+        let c = m.surface_name.get(&h).expect("a named plane").coeff_ints();
+        let dot: f64 = (0..3)
+            .map(|k| p.normal().as_array()[k] * c[k].to_string().parse::<f64>().expect("finite"))
+            .sum();
+        if dot > 0.0 {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        }
+    };
+    let mut m = Model::new();
+    for i in 0..3 {
+        let h = m.surface_handle_at(i).expect("a seed");
+        assert_eq!(
+            m.plane_name_sense(h),
+            Some(Orientation::Reversed),
+            "seed {i}"
+        );
+        assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "seed {i}");
+    }
+    let r = Rat::from_int;
+    let turning_up = |z: i128| [[r(0), r(0), r(z)], [r(1), r(0), r(z)], [r(0), r(1), r(z)]];
+    let turning_down = |z: i128| [[r(0), r(0), r(z)], [r(0), r(1), r(z)], [r(1), r(0), r(z)]];
+    let cache = |z: f64, nz: f64| {
+        nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, z]),
+            Vector3::from_array([0.0, 0.0, nz]),
+        )
+        .unwrap()
+    };
+    for (pts, sense, nz, want) in [
+        (
+            turning_up(3),
+            Orientation::Forward,
+            1.0,
+            Orientation::Forward,
+        ),
+        (
+            turning_down(5),
+            Orientation::Forward,
+            -1.0,
+            Orientation::Reversed,
+        ),
+        (
+            turning_up(7),
+            Orientation::Reversed,
+            -1.0,
+            Orientation::Reversed,
+        ),
+        (
+            turning_down(9),
+            Orientation::Reversed,
+            1.0,
+            Orientation::Forward,
+        ),
+    ] {
+        let z = pts[0][2].to_f64();
+        let (h, flipped) = m.push_plane(cache(z, nz), pts, None, sense);
+        assert!(!flipped);
+        assert_eq!(m.plane_name_sense(h), Some(want), "z = {z}");
+        assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "z = {z}");
+    }
+    // A wide name, cache from the points' own `f64` turn.
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let (b1, b2) = ((1i128 << 90) + 1, (1i128 << 90) + 3);
+    let pts = [
+        [q(b1, 3), q(b2, 7), q(0, 1)],
+        [q(-b2, 5), q(b1, 11), q(0, 1)],
+        [q(1, 13), q(1, 17), q(1, 19)],
+    ];
+    let f = |p: [Rat; 3]| Point3::from_array(p.map(|x| x.to_f64()));
+    let wide_cache =
+        nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2])).expect("a plane");
+    let (h, _) = m.push_plane(wide_cache, pts, None, Orientation::Forward);
+    assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
+    assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "wide");
+    // A `Through` datum over three box corners.
+    let (mut m, vs) = box_corner_vertices();
+    let cache = nacre_geom::Plane::from_point_normal(
+        Point3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([1.0, 1.0, 1.0]),
+    )
+    .unwrap();
+    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "through");
+}
+
 /// **A chain pushed node by node folds to its nodes applied root first** — the one lock on the
 /// order `push_motion` composes in (the census has no chain with two non-identity linear parts).
 /// The oracle is the existing per-motion arithmetic, stepped; a turn off the quarters is in the
