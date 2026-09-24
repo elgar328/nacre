@@ -148,10 +148,11 @@ fn plane_def_from_face() {
     }
 }
 
-/// `rotated = false` forwards to the geom predicate bit-for-bit (axis-aligned hot path
-/// unchanged).
+/// `rotated = false` answers what the geom predicate answers on the plane caches — on an integer
+/// cuboid the name rows the judge reads and the caches are one plane each, so the two routes must
+/// agree (and the name's orientation fold is what makes `frame_sign` carry across).
 #[test]
-fn orient3d_unrotated_forwards_geom() {
+fn orient3d_unrotated_agrees_with_geom() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
     let n = planes.len();
@@ -228,20 +229,6 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
             }),
             rotated: false,
             frame_sign: pu[0].frame_sign,
-            // Derived by the same rule the arrangement uses -- a fixture that routed
-            // differently would be testing a different engine.
-            exact_coeffs: WorkingPlane::reconcile(
-                &pu[0].plane,
-                [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-                false,
-            )
-            .0,
-            exact_normal: WorkingPlane::reconcile(
-                &pu[0].plane,
-                [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-                false,
-            )
-            .1,
         })
         .collect();
     assert!(
@@ -317,9 +304,10 @@ fn cmp_coord_matches_coord() {
     assert!(resolved > 0, "bridge must resolve some orderings");
 }
 
-/// `rotated = false` forwards to `three_plane_cmp_coord` bit-for-bit.
+/// `rotated = false` answers what `three_plane_cmp_coord` answers on the plane caches (one plane
+/// each on an integer cuboid).
 #[test]
-fn cmp_coord_unrotated_forwards_geom() {
+fn cmp_coord_unrotated_agrees_with_geom() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
     let triples = corner_triples(&planes);
@@ -424,9 +412,10 @@ fn t_dir_sign_rotation_invariant() {
     assert!(checked > 0, "no definite triple in the corpus");
 }
 
-/// `rotated = false` forwards to `plane_pair_dir_sign` bit-for-bit.
+/// `rotated = false` answers what `plane_pair_dir_sign` answers on the plane caches — the lock on
+/// the name rows' stored-orientation fold, which a direction reads.
 #[test]
-fn t_dir_sign_unrotated_forwards_geom() {
+fn t_dir_sign_unrotated_agrees_with_geom() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
     let n = planes.len();
@@ -487,7 +476,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
             crate::planes::FaceRow::Plane(FaceInfo {
                 // A hand-built table has no surface to have recorded coefficients on, so the base
                 // frame derives as it always did. Filling this by hand is how a fixture and the
-                // engine come to route differently (see `WorkingPlane::reconcile`).
+                // engine come to route differently.
                 base_rat: None,
                 world_rat: None,
                 name: None,
@@ -1142,8 +1131,6 @@ fn two_caps_described_exactly_are_one_plane() {
             tri_pt3: d,
             rotated: true,
             frame_sign: 1,
-            exact_coeffs: None,
-            exact_normal: None,
         }
     };
     let planes = vec![mk(da), mk(db)];
@@ -1989,12 +1976,9 @@ mod wide_name_rescue {
                     WorkingPlane {
                         base_rat: None,
                         world_rat: None,
-                        // ★ Deliberately not `reconcile`: a deep-rational witness's f64
-                        // `tri` is a rounded cache, and reconciling against it would label
-                        // the *rounded* plane exact — the two-descriptions trap. `None` is
-                        // what forces every question here onto the name or the climb.
-                        exact_coeffs: None,
-                        exact_normal: None,
+                        // ★ The exact shortcuts read the name's `f64` row, and these names are
+                        // wide (scaled past 53 bits), so there is none: every question here goes
+                        // to the BigInt rescue or the climb.
                         name_ints: keep_names
                             .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
                             .flatten(),
@@ -2069,4 +2053,106 @@ mod wide_name_rescue {
             );
         }
     }
+}
+
+/// **Every judgement over unmoved named planes is the names' judgement** — an oracle, not the road
+/// (the shape of `nacre_judge`'s `coeff_exact`).
+///
+/// A plane's name is derived from its defining points exactly, so the BigInt twins
+/// (`int_plane_side`·`int_cmp_coord`·`int_dir_sign`) answer for the truth. The judge is asked
+/// through its front door, whichever road it then takes — the exact shortcut or the climb — so a
+/// shortcut that answers for the rounded model (the face corners' `f64` caches, the cache's
+/// coefficients) is caught where rounding breaks a rational coincidence: `3·0.1 = 0.3` puts the
+/// box's corner on the wall `y = 3x`, and `3·fl(0.1) ≠ fl(0.3)`.
+#[test]
+fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
+    use nacre_judge::predicate::PlaneWitness;
+    use num_bigint::BigInt;
+    let mut eligible = [0usize; 3];
+    for (xs, ys, k) in [
+        (0.1, 0.3, 3.0),
+        (0.7, 2.1, 3.0),
+        (0.1, 0.2, 2.0),
+        (0.5, 1.5, 3.0),
+    ] {
+        let case = format!("x = {xs}, y = {ys}, wall y = {k}x");
+        let (m, bx, prism) = crate::tests::decimal_coincidence(xs, ys, k);
+        let mut faces = collect_planes(&m, bx).unwrap();
+        faces.extend(collect_planes(&m, prism).unwrap());
+        let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+        let planes = crate::planes::dense_planes(&faces, &canon).0;
+        let jd = crate::planes::test_judge(&planes);
+        let ints: Vec<[BigInt; 4]> = planes
+            .iter()
+            .map(|p| p.name_ints().expect("an unmoved named plane").ints.clone())
+            .collect();
+        let n = planes.len();
+        let mut triples = Vec::new();
+        for p in 0..n {
+            for q in p + 1..n {
+                for r in q + 1..n {
+                    triples.push([p, q, r]);
+                }
+            }
+        }
+        let normals = |[p, q, r]: [usize; 3]| [&ints[p], &ints[q], &ints[r]];
+        let meets: Vec<[usize; 3]> = triples
+            .iter()
+            .copied()
+            .filter(|&t| nacre_exact::int_dir_sign(normals(t)) != 0)
+            .collect();
+        let coeffs = |ks: &[usize]| ks.iter().all(|&k| planes[k].exact_coeffs().is_some());
+        let mut wrong = Vec::new();
+        for &t in &triples {
+            let [p, a, b] = t;
+            let (got, want) = (
+                jd.plane_pair_dir_sign(p, a, b),
+                nacre_exact::int_dir_sign(normals(t)),
+            );
+            if t.iter().all(|&k| planes[k].exact_normal().is_some()) {
+                eligible[2] += 1;
+            }
+            if got != want {
+                wrong.push(format!("dir {t:?}: {got} vs {want}"));
+            }
+        }
+        for &t in &meets {
+            for j in (0..n).filter(|j| !t.contains(j)) {
+                let got = jd.orient3d(t[0], t[1], t[2], j);
+                let want =
+                    nacre_exact::int_plane_side(normals(t), &ints[j]) * planes[j].frame_sign();
+                if coeffs(&[t[0], t[1], t[2], j]) {
+                    eligible[0] += 1;
+                }
+                if got != want {
+                    wrong.push(format!("orient {t:?} vs {j}: {got} vs {want}"));
+                }
+            }
+        }
+        for (i, &a) in meets.iter().enumerate() {
+            for &b in &meets[i + 1..] {
+                for axis in 0..3 {
+                    let got = jd.cmp_coord(a, b, axis);
+                    let want = nacre_exact::int_cmp_coord(normals(a), normals(b), axis);
+                    if coeffs(&a) && coeffs(&b) {
+                        eligible[1] += 1;
+                    }
+                    if got != want {
+                        wrong.push(format!("cmp {a:?} {b:?} axis {axis}: {got} vs {want}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "{case}: {} answers differ from the names': {:?}",
+            wrong.len(),
+            &wrong[..wrong.len().min(6)]
+        );
+    }
+    // The oracle compares every answer; this says the shortcut was among them for all three kinds.
+    assert!(
+        eligible.iter().all(|&e| e > 0),
+        "the exact shortcut answered none of some kind (orient, cmp, dir): {eligible:?}"
+    );
 }

@@ -154,11 +154,12 @@ impl Model {
     ///   [`Model::push_cylinder_raw`] only measures it.
     ///
     /// ★★★★★ **Why the anchor and not the row** (measured). A canonical row is the
-    /// tidier answer, but it moves 32 census result rows, costs an exact-coefficient
-    /// road (`WorkingPlane::reconcile` gates on `Plane::spans_exactly`, which a rescaled row
-    /// fails), and makes `plane_origin_projection` square the coefficients — which overflows for
+    /// tidier answer, but it moved 32 census result rows while the judge's exact shortcut still
+    /// read the cache's coefficients (a rescaled row failed that road's check against the face
+    /// corners — the road now reads the plane's name and not this cache), and it makes
+    /// `plane_origin_projection` square the coefficients — which overflows for
     /// 8 of this corpus's planes and spends half the `i128` width budget. The anchor costs none
-    /// of that: **0** census rows move, the exact road is untouched, and the arithmetic is one
+    /// of that: **0** census rows move, and the arithmetic is one
     /// addition. What it buys is the same thing: the cache becomes **recomputable from the
     /// arena**, so two statements of one plane cannot disagree about where it is anchored.
     ///

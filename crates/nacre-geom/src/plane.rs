@@ -18,8 +18,9 @@ use nacre_math::{Point3, Vector3};
 ///
 /// ★★ **Keeping `raw` does not make the plane's own points satisfy its form exactly.** That
 /// holds when the defining vertices are integers and fails as soon as they are not, because `d`
-/// is an `f64` product — see [`Plane::coefficients`]. A caller that needs the two descriptions
-/// to be one plane asks [`Plane::spans_exactly`] rather than assuming.
+/// is an `f64` product — see [`Plane::coefficients`]. So nothing *decides* on this value where the
+/// truth is at stake: the exact judgements read the plane's name, derived from its defining points
+/// without rounding.
 ///
 /// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
 /// parametric frame (two in-plane basis vectors) arrives in M3, when tess
@@ -175,52 +176,14 @@ impl Plane {
     /// `raw·origin`, and a face at `y = −0.2` with `raw = [0, −3.5, 0]` gets
     /// `d = 0.7000000000000001` — a plane `2⁻⁵⁴` from the one its own points span.
     ///
-    /// The claim went unchecked and a caller relied on it, describing one plane by these
-    /// coefficients in one question and by its witness triangle in the next; answers composed
-    /// across the two were not even transitive. [`contains_exactly`](Plane::contains_exactly) is
-    /// that claim made checkable.
+    /// Relying on it described one plane by these coefficients in one question and by its points
+    /// in the next, and answers composed across the two were not even transitive; checking the
+    /// coefficients only against the rounded points certified the rounded plane, and a box whose
+    /// corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it.
     #[inline]
     pub fn coefficients(&self) -> [f64; 4] {
         let [a, b, c] = self.raw.as_array();
         [a, b, c, -self.raw.dot(self.origin - Point3::origin())]
-    }
-
-    /// **Does `p` satisfy this plane's [`coefficients`](Plane::coefficients) *exactly*?**
-    ///
-    /// Not "within a tolerance" and not "in `f64`": the sum is accumulated in exact expansion
-    /// arithmetic, so a `true` means the point is on the coefficient plane and nothing else does.
-    ///
-    /// The question a caller is really asking is *"may I describe this plane by its coefficients
-    /// where someone else describes it by these points?"* — and for three non-collinear points
-    /// that satisfy the form, the answer is yes, because they span exactly this plane.
-    /// [`spans_exactly`](Plane::spans_exactly) is that question in one call.
-    pub fn contains_exactly(&self, p: Point3) -> bool {
-        nacre_predicates::plane_contains(self.coefficients(), p.as_array())
-    }
-
-    /// **Do these three points span exactly this plane?** — the licence to describe one plane two
-    /// ways and expect the same answers.
-    ///
-    /// Both halves are needed. Satisfying the form is not enough on its own: three *collinear*
-    /// points satisfy infinitely many planes, so they would license a description that is not this
-    /// one. Non-collinearity is therefore tested exactly too, as the direction the three span
-    /// being non-zero.
-    pub fn spans_exactly(&self, tri: [Point3; 3]) -> bool {
-        nacre_predicates::plane_spanned_by(self.coefficients(), tri.map(|p| p.as_array()))
-    }
-
-    /// **Is this plane's stored normal parallel to what `tri` spans?** — the weaker licence, for a
-    /// caller that reads only the direction.
-    ///
-    /// ★ **Parallel, not co-directed.** A class's stored normal is allowed to *oppose* its witness
-    /// triangle's; `nacre_ops`' `WorkingPlane::frame_sign` records exactly that, and the predicates
-    /// that care carry the convention. Demanding agreement of direction here would refuse planes
-    /// that agree perfectly about *where* they are.
-    ///
-    /// This is the half that survives `d` — and `d` is where the two descriptions actually part,
-    /// so a normals-only predicate keeps its exact route on a plane the full test rejects.
-    pub fn normal_spans(&self, tri: [Point3; 3]) -> bool {
-        nacre_predicates::plane_normal_spanned_by(self.coefficients(), tri.map(|p| p.as_array()))
     }
 }
 

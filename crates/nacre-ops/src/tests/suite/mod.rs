@@ -11,8 +11,8 @@ use fixtures::{
     pocket_op, regular_ngon, rotated_l_prism, small_square, square, stacked_cubes, two_boxes,
     u_and_slab, u_prism,
 };
-// Reached from outside this module (`bands`' tests) as `crate::tests::extrude_log_op`.
-pub(crate) use fixtures::extrude_log_op;
+// Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
+pub(crate) use fixtures::{decimal_coincidence, extrude_log_op};
 use stated::{Stated, arc_turns, circle, line, stated};
 
 use super::*;

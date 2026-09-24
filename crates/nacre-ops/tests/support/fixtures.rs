@@ -97,6 +97,45 @@ pub fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
     extrude_op(&Model::new(), profile, dist)
 }
 
+/// **A corner that lies on a wall in rationals and off it in `f64`.** The box `x ∈ [0, xs]`,
+/// `y ∈ [0, ys]`, `z ∈ [−1, 2]` (the common of two slabs, so `x = xs` and `y = ys` are caps with
+/// unit normals) and the prism over the triangle `(0,0),(1,0),(1,k)`, `z ∈ [0, 1]`, whose wall
+/// `y = k·x` runs through integer points. With `ys = k·xs` in decimals the box's corner edge is on
+/// that wall exactly (`3·0.1 = 0.3`), while `3·fl(0.1) ≠ fl(0.3)`. Returns `(model, box, prism)`.
+pub fn decimal_coincidence(xs: f64, ys: f64, k: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
+    fn extrude(m: &mut Model, axis: Axis, profile: Profile2d, dist: f64) -> Handle<Solid> {
+        let op = Operation::Extrude {
+            frame: SketchFrame::world(m, axis),
+            profile,
+            dist,
+        };
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(m, &op) else {
+            panic!("extrude along {axis:?}")
+        };
+        m.rebuild_adjacency();
+        solid
+    }
+    let rect = |lo: [f64; 2], hi: [f64; 2]| {
+        Profile2d::polygon(vec![
+            p2(lo[0], lo[1]),
+            p2(hi[0], lo[1]),
+            p2(hi[0], hi[1]),
+            p2(lo[0], hi[1]),
+        ])
+        .unwrap()
+    };
+    let mut m = Model::new();
+    // `x ∈ [0, xs]`: the YZ frame (`u = ŷ`, `v = ẑ`) swept along `+x̂`.
+    let a = extrude(&mut m, Axis::X, rect([-1.0, -1.0], [4.0, 2.0]), xs);
+    // `y ∈ [0, ys]`: the ZX frame (`u = ẑ`, `v = x̂`) swept along `+ŷ`.
+    let b = extrude(&mut m, Axis::Y, rect([-1.0, -1.0], [2.0, 2.0]), ys);
+    let bx = boolean_one(&mut m, BoolKind::Common, a, b).expect("two slabs cross in a box");
+    m.rebuild_adjacency();
+    let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, k)]).unwrap();
+    let prism = extrude(&mut m, Axis::Z, tri, 1.0);
+    (m, bx, prism)
+}
+
 /// Is there an outer-shell face on the plane through `pt` with normal `n`,
 /// oriented that way? A capability test that wants to say "a face sits on z = 1.5
 /// facing +z" has no face handle in hand — asserting geometry from coordinates is

@@ -820,3 +820,110 @@ proptest! {
         }
     }
 }
+
+// ---- the filters of indirect_plane_side and indirect_cmp_coord ----
+
+/// Both halves of each new filter: a clear sign is answered here, and an exact zero — a point
+/// on the plane, two points sharing a coordinate — is declined to the expansions.
+#[test]
+fn the_side_and_cmp_filters_answer_a_clear_sign_and_decline_a_zero() {
+    let at = |p: [f64; 3]| {
+        ThreePlane([
+            [1.0, 0.0, 0.0, -p[0]],
+            [0.0, 1.0, 0.0, -p[1]],
+            [0.0, 0.0, 1.0, -p[2]],
+        ])
+    };
+    let a = at([1.0, 2.0, 3.0]);
+    assert_eq!(indirect_plane_side_filter(&a, [2.0, -1.0, 1.0, -3.0]), None);
+    assert_eq!(
+        indirect_plane_side_filter(&a, [0.0, 0.0, 1.0, 0.0]),
+        Some(indirect_plane_side_exact(&a, [0.0, 0.0, 1.0, 0.0]))
+    );
+    let b = at([1.0, 5.0, 0.0]);
+    assert_eq!(indirect_cmp_coord_filter(&a, &b, 0), None);
+    assert_eq!(
+        indirect_cmp_coord_filter(&a, &b, 1),
+        Some(indirect_cmp_coord_exact(&a, &b, 1))
+    );
+}
+
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
+    /// The side filter's one obligation, over nine decades of scale: when it answers, the
+    /// expansions agree, and it never claims a zero.
+    #[test]
+    fn prop_the_side_filter_never_disagrees_with_the_exact_path(
+        planes in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+        c in prop::array::uniform4(-1e3f64..1e3),
+        scale in -4i32..5,
+    ) {
+        let k = 10f64.powi(scale);
+        let tp = ThreePlane(planes.map(|pl| pl.map(|x| x * k)));
+        let c = c.map(|x| x * k);
+        if let Some(fast) = indirect_plane_side_filter(&tp, c) {
+            prop_assert_eq!(fast, indirect_plane_side_exact(&tp, c));
+            prop_assert_ne!(fast, 0);
+        }
+    }
+
+    /// Where the bound is tight: the fourth plane passes through the implicit point **as `f64`
+    /// computes it**, so `S` is a few roundings from zero and its sign is the rounding's. A filter
+    /// whose bound were too small would answer here with that sign; the expansions disagree.
+    #[test]
+    fn prop_the_side_filter_agrees_through_the_rounded_point(
+        planes in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+        m in prop::array::uniform3(-1e3f64..1e3),
+    ) {
+        let tp = ThreePlane(planes);
+        let (num, d, _, _) = cramer_val(&tp);
+        prop_assume!(d != 0.0);
+        let x = num.map(|n| n / d);
+        let c = [m[0], m[1], m[2], -(m[0] * x[0] + m[1] * x[1] + m[2] * x[2])];
+        if let Some(fast) = indirect_plane_side_filter(&tp, c) {
+            prop_assert_eq!(fast, indirect_plane_side_exact(&tp, c));
+        }
+    }
+
+    /// The comparison filter's obligation, over nine decades of scale.
+    #[test]
+    fn prop_the_cmp_filter_never_disagrees_with_the_exact_path(
+        a in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+        b in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+        axis in 0usize..3,
+        scale in -4i32..5,
+    ) {
+        let k = 10f64.powi(scale);
+        let (ta, tb) = (
+            ThreePlane(a.map(|pl| pl.map(|x| x * k))),
+            ThreePlane(b.map(|pl| pl.map(|x| x * k))),
+        );
+        if let Some(fast) = indirect_cmp_coord_filter(&ta, &tb, axis) {
+            prop_assert_eq!(fast, indirect_cmp_coord_exact(&ta, &tb, axis));
+            prop_assert_ne!(fast, 0);
+        }
+    }
+
+    /// Where it is tight: the second point sits on the axis plane at the first point's
+    /// coordinate **as `f64` computes it**, so the two coordinates differ by a rounding.
+    #[test]
+    fn prop_the_cmp_filter_agrees_at_the_rounded_coordinate(
+        a in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+        rest in prop::array::uniform2(prop::array::uniform4(-1e3f64..1e3)),
+        axis in 0usize..3,
+    ) {
+        let ta = ThreePlane(a);
+        let (num, d, _, _) = cramer_val(&ta);
+        prop_assume!(d != 0.0);
+        let mut axis_plane = [0.0; 4];
+        axis_plane[axis] = 1.0;
+        axis_plane[3] = -(num[axis] / d);
+        let tb = ThreePlane([axis_plane, rest[0], rest[1]]);
+        prop_assume!(cramer_val(&tb).1 != 0.0);
+        if let Some(fast) = indirect_cmp_coord_filter(&ta, &tb, axis) {
+            prop_assert_eq!(fast, indirect_cmp_coord_exact(&ta, &tb, axis));
+        }
+    }
+}

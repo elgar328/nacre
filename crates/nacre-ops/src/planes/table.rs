@@ -196,7 +196,7 @@ pub(crate) fn collect_planes(
                 // and `standard_for` sizes the operation from these very points. What such a
                 // plane has none of is exact f64 coefficients — so it is flagged `rotated`
                 // (the routing signal means "no exact description", not "carries a motion"),
-                // which makes every exact shortcut decline and `reconcile` carry nothing.
+                // which makes every exact shortcut decline.
                 //
                 // A *straddling*-vertex datum has no witness triangle **from its vertices** —
                 // its witness is the judged frame's probes, built in the branch below.
@@ -225,7 +225,18 @@ pub(crate) fn collect_planes(
                                 None => w,
                                 Some(m) => replay_all(w, m)?,
                             };
-                            (w, motion.is_some())
+                            // ★ `rotated` is also the licence to read the name as a **world**
+                            // description (`PlaneWitness::exact_coeffs`). A `Through` name is
+                            // derived from the meets in the frame the three vertices share, which
+                            // the plane's `motion` is meant to name; with no motion recorded and
+                            // the vertices meeting in a pre-motion frame, the name speaks that
+                            // frame. Asked here rather than trusted — the producers keep it, and
+                            // nothing else checks it.
+                            let frame_local = motion.is_none()
+                                && vs.iter().any(|&v| {
+                                    model.vertex_meet(v).is_some_and(|(_, f)| f.is_some())
+                                });
+                            (w, motion.is_some() || frame_local)
                         }
                         None => {
                             let j = crate::rotated_vertex::through_judged_points(model, *vs)

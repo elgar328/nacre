@@ -42,12 +42,6 @@ pub(crate) fn dense_planes(
         .iter()
         .map(|&r| {
             let pi = planes[r].plane();
-            // ★ The two descriptions are reconciled **here**, once, and a description that loses
-            // is simply not carried. A rotated plane has no exact `f64` coefficients at all, so
-            // both are `None` there — which is also what makes the predicates stop asking
-            // "is it rotated?" and ask "did I get coefficients?" instead.
-            let (exact_coeffs, exact_normal) =
-                WorkingPlane::reconcile(&pi.plane, pi.tri, pi.rotated);
             WorkingPlane {
                 base_rat: pi.base_rat,
                 world_rat: pi.world_rat,
@@ -63,8 +57,6 @@ pub(crate) fn dense_planes(
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
-                exact_coeffs,
-                exact_normal,
             }
         })
         .collect();

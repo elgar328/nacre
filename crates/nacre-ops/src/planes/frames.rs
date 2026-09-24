@@ -197,62 +197,21 @@ pub(crate) struct WorkingPlane {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
-    /// ★★★ **The coefficients, but only where they describe the same plane as [`tri`](Self::tri).**
-    ///
-    /// A plane has two exact descriptions and they need not agree: `d` is the `f64` product
-    /// `raw·origin`, so a face at `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own
-    /// witness spans (`Plane::coefficients` has the numbers). A predicate that describes one plane
-    /// by its coefficients in one question and by its triangle in the next composes answers about
-    /// **two different planes**, and what comes out is not even an order.
-    ///
-    /// So the disagreement is resolved here rather than guarded against at every call: when the
-    /// two do not agree, this is `None` and there is nothing to describe the plane with except its
-    /// triangle. **The same shape [`BaseFrame`] already uses** — a description that cannot be
-    /// trusted is not carried, so no consumer has to remember to check it.
-    ///
-    /// `None` for a rotated plane too: there are no exact `f64` coefficients for one.
-    pub(crate) exact_coeffs: Option<[f64; 4]>,
-    /// The **normal** under the weaker agreement — parallel to what `tri` spans, direction not
-    /// required (`frame_sign` records that separately).
-    ///
-    /// ★ `d` is where the two descriptions part, so a predicate that never reads it can keep its
-    /// exact route on a plane [`exact_coeffs`](Self::exact_coeffs) has to refuse. Measured:
-    /// demanding the full agreement for those cost 4.7x on the axis-aligned fold and bought
-    /// nothing.
-    pub(crate) exact_normal: Option<[f64; 3]>,
     /// The class root's name integers, folded to the stored orientation
-    /// ([`nacre_judge::predicate::name_stored_ints`]) — what gives a **wide** name its exact
-    /// judging shortcuts back. `None` when the root's surface
-    /// has no name.
+    /// ([`nacre_judge::predicate::name_stored_ints`]), and their `f64` row where it is exact.
+    /// `None` when the root's surface has no name.
+    ///
+    /// ★★★ **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
+    /// impl in `tolerant`). The name is derived from the plane's defining points without
+    /// rounding, so a predicate over its row answers for the truth. The plane cache's
+    /// coefficients (`plane`) and the face corners' caches (`tri`) are rounded images: a shortcut
+    /// that read them and checked them only against each other answered for the rounded model —
+    /// measured, a box whose corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and
+    /// the common refused. A wide name has no `f64` row and keeps its BigInt rescue.
     pub(crate) name_ints: Option<nacre_judge::predicate::NameInts>,
 }
 
 impl WorkingPlane {
-    /// **Reconcile a plane's two exact descriptions, once, at construction.**
-    ///
-    /// Returns what may be carried: the coefficients when they describe the same plane the witness
-    /// spans, and the normal under the weaker agreement (parallel — the direction is `frame_sign`'s
-    /// to record). `None` for a rotated plane, which has no exact `f64` coefficients at all.
-    ///
-    /// ★ **One function, so a test fixture cannot route differently from the arrangement.** Filling
-    /// the two fields by hand at a second construction site is how the fixture and the engine come
-    /// to disagree about which planes are describable — and this whole item exists because two
-    /// descriptions of one plane disagreed.
-    pub(crate) fn reconcile(
-        plane: &Plane,
-        tri: [Point3; 3],
-        rotated: bool,
-    ) -> (Option<[f64; 4]>, Option<[f64; 3]>) {
-        if rotated {
-            return (None, None);
-        }
-        let c = plane.coefficients();
-        (
-            plane.spans_exactly(tri).then_some(c),
-            plane.normal_spans(tri).then(|| [c[0], c[1], c[2]]),
-        )
-    }
-
     /// The class's outward normal — the root face's, which is what `tri` is wound for and what
     /// `emit_faces` winds its rings about. Not normalized: only its direction is ever read.
     pub(crate) fn tri_n_out(&self) -> Vector3 {

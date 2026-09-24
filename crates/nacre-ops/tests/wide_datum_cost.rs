@@ -16,8 +16,8 @@
 //! asks only for a [`Witness`], deliberately deciding on the faces' own coordinates rather than on
 //! derived coefficients. ⇒ **the decision this file's header asks for has been made and shipped**,
 //! and what the numbers below measure is not "the missing exact route" but the cost of the
-//! toleranced route an **irrational motion** still takes. Re-measured: `narrow_name` 246
-//! climbs against `wide_name` 475 — **1.9×**, not the 3.2× recorded below.
+//! toleranced route an **irrational motion** still takes. Re-measured: `narrow_name` 240
+//! climbs against `wide_name` 475 — **2.0×**, not the 3.2× recorded below.
 //!
 //! So the number below is not "how many `Expansion` pieces": it is **what the missing exact route
 //! costs**, and it is the input to a decision the doc does not currently list — whether the

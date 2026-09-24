@@ -372,26 +372,29 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
     };
     let _ = face;
     let tri = [origin, step(i), step(j)];
+    let tri_pt3 = tri.map(|p| {
+        nacre_judge::WitnessPoint::at_nearest(
+            p.as_array()
+                .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
+        )
+    });
+    // The name the push door would have derived from these points (the push above skips it on
+    // purpose), so the fixture's exact shortcuts read what a real table's do.
+    let name = nacre_exact::plane_name_exact(lift(tri[0]), lift(tri[1]), lift(tri[2]));
+    let frame_sign = 1; // `plane` is built from `normal`, so the two agree
     WorkingPlane {
         // A hand-built table has no recorded coefficients; the composed-rotation route
         // declines and the fixture takes the same escalating path it always did.
         base_rat: None,
         world_rat: None,
-        name_ints: None,
+        name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
         base: crate::planes::BaseFrame::none(),
         surf,
         plane,
         tri,
-        tri_pt3: tri.map(|p| {
-            nacre_judge::WitnessPoint::at_nearest(
-                p.as_array()
-                    .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
-            )
-        }),
+        tri_pt3,
         rotated: false,
-        frame_sign: 1, // `plane` is built from `normal`, so the two agree
-        exact_coeffs: WorkingPlane::reconcile(&plane, tri, false).0,
-        exact_normal: WorkingPlane::reconcile(&plane, tri, false).1,
+        frame_sign,
     }
 }
 

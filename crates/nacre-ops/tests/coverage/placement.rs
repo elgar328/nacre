@@ -7,7 +7,9 @@
 //! - two parts placed so they share a wall exactly are **one body**, even where the wall's two
 //!   f64 images are 1 ULP apart (a `Fuse` returning two disjoint bodies there would let a caller
 //!   taking `[0]` silently keep half the part);
-//! - a part that is **rotated and then placed** is described exactly, so a boolean on it builds.
+//! - a part that is **rotated and then placed** is described exactly, so a boolean on it builds;
+//! - decimal dimensions whose f64 images break a rational coincidence (`3·0.1 = 0.3`, but
+//!   `3·fl(0.1) ≠ fl(0.3)`) are **judged on the truth**, so a corner that lies on a wall is on it.
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -177,4 +179,33 @@ fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     assert_eq!(vols.len(), 1, "one body, not a split: got {vols:?}");
     // Two unit cubes meeting on the shared wall.
     assert!((vols[0] - 2.0).abs() < 1e-9, "volume {vols:?}");
+}
+
+/// The box's corner edge lies on the prism's wall `y = k·x` in rationals and off it in `f64`, so
+/// `common` is the triangular prism over `(0,0),(xs,0),(xs,ys)` — five faces, volume `xs·ys/2`.
+/// A judge that answered for the rounded model refused the first case as `ZeroLengthEdge`; the
+/// last two are controls whose images keep the coincidence (`2·fl(0.1) = fl(0.2)` is a binary
+/// shift, `0.5` and `1.5` are dyadic).
+#[test]
+fn a_coincidence_the_f64_image_breaks_is_judged_on_the_truth() {
+    for (xs, ys, k) in [
+        (0.1, 0.3, 3.0),
+        (0.7, 2.1, 3.0),
+        (0.1, 0.2, 2.0),
+        (0.5, 1.5, 3.0),
+    ] {
+        let case = format!("x = {xs}, y = {ys}, wall y = {k}x");
+        let (mut m, bx, prism) = decimal_coincidence(xs, ys, k);
+        let v = volume(&m, bx);
+        assert!((v - 3.0 * xs * ys).abs() < 1e-12, "{case}: box volume {v}");
+        let out = boolean_one(&mut m, BoolKind::Common, bx, prism)
+            .unwrap_or_else(|e| panic!("{case}: {e:?}"));
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{case}: {vs:?}");
+        let faces = m.shell(m.solid(out).outer).faces.len();
+        assert_eq!(faces, 5, "{case}: faces");
+        let v = volume(&m, out);
+        assert!((v - xs * ys / 2.0).abs() < 1e-12, "{case}: volume {v}");
+    }
 }

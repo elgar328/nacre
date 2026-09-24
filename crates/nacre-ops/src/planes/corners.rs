@@ -587,7 +587,7 @@ pub(super) fn face_clears_footprint(
         })?; // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions
-        // hazard `FaceInfo::exact_coeffs` documents). The strip decomposition takes the plane's
+        // hazard). The strip decomposition takes the plane's
         // distance from the axis as the point's, so judging a point against a plane it is not on
         // would answer about geometry that is not there. Checked, not assumed: a `debug_assert`
         // would say nothing in the build that ships. ★ It is also `cylinder_strip_side`'s own

@@ -116,8 +116,9 @@ impl PlaneWitness for W {
             -1
         }
     }
-    // The same rule the arrangement applies at construction — one implementation, so a test
-    // witness routes exactly as the real one would.
+    // A synthetic witness has no name: its coefficients stand in for the plane, and they are
+    // handed out only where its triangle lies on them, so a test's two descriptions are one plane
+    // — what `exact_coeffs` promises (the plane itself).
     fn exact_coeffs(&self) -> Option<[f64; 4]> {
         nacre_predicates::plane_spanned_by(self.coeffs, self.tri.map(|p| p.as_array()))
             .then_some(self.coeffs)
@@ -463,4 +464,49 @@ fn frame_sign_from_coeffs_and_tri() {
     // reversing the tri winding flips cross(tri) → -1 (coeffs unchanged).
     let flipped = W::new([ps[0].tri[0], ps[0].tri[2], ps[0].tri[1]], ps[0].coeffs);
     assert_eq!(flipped.frame_sign(), -1);
+}
+
+/// **A name's `f64` row stands exactly when every integer it holds fits 53 bits.** The row is
+/// what an unmoved plane's exact shortcuts read, so a row that stood for a wider integer would
+/// hand the predicates a value that is not the name — or, for a power of two that *is*
+/// representable, a magnitude their `Expansion` products overflow on.
+#[test]
+fn a_names_f64_row_stands_only_where_every_integer_fits_53_bits() {
+    use super::{WitnessPoint, name_stored_ints};
+    let r = |n: i128, d: i128| Rat::new(n, d).expect("rational");
+    let ints = |pts: [[Rat; 3]; 3]| {
+        let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).expect("a plane");
+        name_stored_ints(Some(&name), &pts.map(WitnessPoint::at), 1).expect("folded")
+    };
+    // `z = 1/10`: the name `[0, 0, 10, −1]` is small, so the row is the name exactly — the cap
+    // whose `f64` image (`fl(0.1)`) is not on it.
+    let tenth = ints([
+        [r(0, 1), r(0, 1), r(1, 10)],
+        [r(1, 1), r(0, 1), r(1, 10)],
+        [r(0, 1), r(1, 1), r(1, 10)],
+    ]);
+    let row = tenth.row.expect("a small name has a row");
+    assert_eq!(row.map(f64::abs), [0.0, 0.0, 10.0, 1.0]);
+    assert_eq!(
+        tenth.normal.map(|n| n.map(f64::abs)),
+        Some([0.0, 0.0, 10.0])
+    );
+    // `a·x − z = 0` for `a = 2⁵³ + 1` (not an `f64`) and `a = 2⁶⁰` (an `f64`, too wide anyway).
+    for a in [(1i128 << 53) + 1, 1i128 << 60] {
+        let wide = ints([
+            [r(0, 1), r(0, 1), r(0, 1)],
+            [r(0, 1), r(1, 1), r(0, 1)],
+            [r(1, 1), r(0, 1), r(a, 1)],
+        ]);
+        assert_eq!((wide.row, wide.normal), (None, None), "a = {a}");
+    }
+    // `z = 2⁶⁰ + 1`: only `d` is wide, so the normal stands and the row does not.
+    let far = (1i128 << 60) + 1;
+    let high = ints([
+        [r(0, 1), r(0, 1), r(far, 1)],
+        [r(1, 1), r(0, 1), r(far, 1)],
+        [r(0, 1), r(1, 1), r(far, 1)],
+    ]);
+    assert_eq!(high.row, None);
+    assert_eq!(high.normal.map(|n| n.map(f64::abs)), Some([0.0, 0.0, 1.0]));
 }

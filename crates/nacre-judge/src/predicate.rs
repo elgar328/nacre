@@ -27,8 +27,7 @@ use crate::kernel::frame3::{
 use nacre_exact::{Orient, Rat};
 use nacre_math::Point3;
 use nacre_predicates::{
-    ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, indirect_plane_side, orient2d,
-    orient3d,
+    ThreePlane, det3_sign, indirect_cmp_coord, indirect_plane_side, orient2d, orient3d,
 };
 use num_bigint::BigInt;
 
@@ -180,33 +179,28 @@ pub trait Witness {
 /// (which never
 /// plays a plane-class role) implements only [`Witness`].
 pub trait PlaneWitness: Witness {
-    /// The plane's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**.
+    /// The plane cache's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**: a
+    /// rounded image of the plane, not a description a predicate may decide on.
     ///
-    /// ★★★ **Raw means "not known to describe the same plane as [`tri`](Witness::tri)".** The two
-    /// are both exact descriptions and they need not agree: `d` is an `f64` product, so a face at
-    /// `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own witness spans. A predicate
-    /// that answers one question from here and the next from `tri` is describing two planes, and
-    /// answers composed across them are not even an order — which is a defect this kernel has
-    /// already had.
-    ///
-    /// **So a predicate reads [`exact_coeffs`](Self::exact_coeffs) or
-    /// [`exact_normal`](Self::exact_normal) instead**, which are `None` exactly when the
-    /// descriptions part. This one is for a caller that means to *relate* the two rather than
-    /// choose between them.
+    /// ★★★ **Raw means "not known to describe the plane".** `d` is an `f64` product, so a face at
+    /// `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own points span, and a
+    /// predicate that answers one question from here and the next from another description is
+    /// describing two planes — answers composed across them are not even an order. Predicates read
+    /// [`exact_coeffs`](Self::exact_coeffs) / [`exact_normal`](Self::exact_normal); this is for a
+    /// caller that means to *relate* descriptions (the `cfg(test)` oracles below).
     fn coeffs(&self) -> [f64; 4];
 
-    /// The coefficients **only when they describe the same plane as [`tri`](Witness::tri)** —
-    /// `None` when they do not, and for a rotated plane, which has no exact `f64` coefficients.
+    /// **The plane itself, in `f64`** — its canonical name (derived from its defining points
+    /// without rounding) as a row, for an unmoved plane whose name fits 53 bits a coefficient;
+    /// `None` for a rotated plane, an unnamed one, or a wider name.
     ///
-    /// A predicate that reads `d` needs this one: `d` is where the two descriptions part.
+    /// ★ No other description is consulted: the witness triangle [`tri`](Witness::tri) is the face
+    /// corners' `f64` caches and need not lie on this plane (`z = 0.1` is not `fl(0.1)`), so a
+    /// predicate asks every plane of an exact question by this row.
     fn exact_coeffs(&self) -> Option<[f64; 4]>;
 
-    /// The **normal** under the weaker agreement — parallel to what `tri` spans, direction not
-    /// required (that is what `frame_sign` records).
-    ///
-    /// ★ A predicate that never reads `d` may use this and keep its exact route on a plane
-    /// [`exact_coeffs`](Self::exact_coeffs) has to refuse. Measured: requiring the full agreement
-    /// for those cost 4.7x on the axis-aligned fold and bought nothing.
+    /// The **normal** of the same row under the same rule — standing where only `d` is too wide,
+    /// so a question that reads no `d` (a direction) keeps its exact route there.
     fn exact_normal(&self) -> Option<[f64; 3]>;
 
     /// `+1` when the stored normal agrees with the witness triangle's, `-1` when they oppose —
@@ -223,11 +217,12 @@ pub trait PlaneWitness: Witness {
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
     /// [`name_stored_ints`] where the witness is constructed, `None` when the plane has no name
-    /// (or the fold declined). This is what gives a *wide* name its exact shortcuts back:
-    /// [`Witness::base_coeffs_rat`] and
-    /// [`Self::base_coeffs`]/[`Self::exact_coeffs`] all read `PlaneName::narrow()` or `f64`, so
-    /// a wide name answers `None` to every one of them and the judgement climbs — **1.9×** the
-    /// escalations (246 against 475; the confound
+    /// (or the fold declined). It serves twice. Its `f64` row is what an implementor hands out as
+    /// [`Self::exact_coeffs`] for an unmoved plane. And it gives a *wide* name — no `f64` row —
+    /// its exact shortcuts back through the BigInt rescue: [`Witness::base_coeffs_rat`] and
+    /// [`Self::base_coeffs`] read `PlaneName::narrow()` or `f64`, so without it a wide name answers
+    /// `None` everywhere and the judgement climbs — **2.0×** the
+    /// escalations (240 against 475; the confound
     /// `wide_datum_cost.rs` states — the two arms pick different vertex triples — applies to
     /// either number, so read it as "several times", not as a coefficient).
     fn name_ints(&self) -> Option<&NameInts> {
@@ -253,6 +248,16 @@ pub struct NameInts {
     /// question whose planes are all narrow keeps its existing routes (behavior-identical),
     /// so the corpus (`wide_planes` 0) is untouched.
     pub wide: bool,
+    /// The same row in `f64`, `Some` only when **every** coefficient fits 53 bits — then each `f64`
+    /// *is* its integer, and a predicate over the row answers for the plane the defining points
+    /// span (the name is derived from them without rounding). This is what an unmoved plane's
+    /// exact shortcuts read ([`PlaneWitness::exact_coeffs`]). A wider integer keeps the BigInt
+    /// rescue: an `Expansion` over it overflows in `cmp_coord`'s degree-6 products, and
+    /// `nacre_exact::nearest_f64_big_exact` alone would call `2⁶⁰` exact.
+    pub row: Option<[f64; 4]>,
+    /// The first three under the same rule — what a direction question reads, which stands where
+    /// `d` alone is too wide.
+    pub normal: Option<[f64; 3]>,
 }
 
 impl NameInts {
@@ -334,9 +339,20 @@ pub fn name_stored_ints(
             *c = -&*c;
         }
     }
+    let exact = |x: &BigInt| -> Option<f64> {
+        if x.bits() > 53 {
+            return None;
+        }
+        let (v, exact) = nacre_exact::nearest_f64_big_exact(x, &BigInt::from(1))?;
+        exact.then_some(v)
+    };
+    let normal = (|| Some([exact(&ints[0])?, exact(&ints[1])?, exact(&ints[2])?]))();
+    let row = normal.and_then(|[a, b, c]| Some([a, b, c, exact(&ints[3])?]));
     Some(NameInts {
         ints,
         wide: name.narrow().is_none(),
+        row,
+        normal,
     })
 }
 
@@ -434,8 +450,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
     /// matching `order_along`'s shape (`+1`/`-1`/`0`).
     ///
-    /// - `!rotated`: the exact path — the implicit-point `orient3d` (Attene) on the stored plane
-    ///   coefficients and `tri` coordinates.
+    /// - `!rotated`: the exact path — which side of plane `j` the implicit point lies on, all four
+    ///   planes given by their names' `f64` rows ([`PlaneWitness::exact_coeffs`]), bridged to
+    ///   `tri`'s winding by `frame_sign`.
     /// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
     ///   [`WitnessPoint`] ([`plane_def`]), and [`crate::indirect_orient3d_judge`] decides the sign
     ///   from the
@@ -455,34 +472,30 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        // ★ **`j` is in the list although its coefficients are never read.** The query point comes
-        // from `j`'s *triangle*, so "asked with `j`'s triangle" and "asked with `j`'s coefficients"
-        // have to be the same question — which is exactly what `exact_coeffs` being `Some` says.
-        // Dropping `j` here because "its coefficients are unused" would reopen the defect.
-        if let (Some(cp), Some(cq), Some(cr), Some(_)) = (
+        // ★ **`j` is asked by its coefficients, not by its triangle.** The rows are the planes'
+        // names in `f64`, derived from their defining points without rounding; `tri` is the face's
+        // corners' `f64` caches, which a decimal plane does not pass through (`z = 0.1` is not
+        // `fl(0.1)`). Asking `j` by `tri` answered for the rounded model — measured, a box whose
+        // corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and the common refused as
+        // `ZeroLengthEdge`. `frame_sign` carries `j`'s stored normal to its triangle's winding, the
+        // bridge the shared-motion arm below already uses.
+        if let (Some(cp), Some(cq), Some(cr), Some(cj)) = (
             self.planes[p].exact_coeffs(),
             self.planes[q].exact_coeffs(),
             self.planes[r].exact_coeffs(),
             self.planes[j].exact_coeffs(),
         ) {
             let tp = ThreePlane([cp, cq, cr]);
-            let tj = self.planes[j].tri();
-            return Some(indirect_orient3d(
-                &tp,
-                tj[0].as_array(),
-                tj[1].as_array(),
-                tj[2].as_array(),
-            ));
+            return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
         }
         // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
         //
-        // ★★★ **All four planes are asked for coefficients, `j` included** — the same discipline
-        // the branch above states, and for a stronger reason: here `j` has no triangle in the
-        // question at all. This used to read `j`'s pre-motion *triangle* while the other three
-        // spoke in coefficients, and the two descriptions of `j` part whenever its `d` was a
-        // rounded product — measured at 27% of the census's rotated classes and 40% of the fin
-        // sweep's, answering 30% and 75% of this branch's judgements under the mismatch. Asking
-        // `j` in the same vocabulary as the rest removes the mismatch instead of detecting it.
+        // ★★★ **All four planes are asked for coefficients, `j` included** — the branch above's
+        // rule. Asking `j` by its pre-motion *triangle* while the other three speak in
+        // coefficients describes `j` twice, and the two part whenever its `d` is a rounded product
+        // — measured at 27% of the census's rotated classes and 40% of the fin sweep's, answering
+        // 30% and 75% of this branch's judgements under the mismatch. One vocabulary removes the
+        // mismatch instead of detecting it.
         //
         // ★ `frame_sign` is what carries the convention across: `indirect_plane_side` answers
         // about the plane's own normal, while this predicate's contract is the *triangle's*
@@ -608,7 +621,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
 
     /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
     /// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). `!rotated` → the exact implicit
-    /// `cmp_coord` on the stored coefficients; `rotated` → each triple's three planes as exact
+    /// `cmp_coord` on the planes' name rows ([`PlaneWitness::exact_coeffs`]); `rotated` → each
+    /// triple's three planes as exact
     /// `WitnessPoint` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
         let planes = self.planes;
@@ -644,16 +658,15 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — how the line `p ∩ a`
     /// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
     ///
-    /// `!rotated` → `det3_sign` of the stored (un-normalized) normals. `rotated` → the kernel `D`
+    /// `!rotated` → `det3_sign` of the name rows' normals ([`PlaneWitness::exact_normal`], folded
+    /// to the stored orientation). `rotated` → the kernel `D`
     /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
     /// convention by the per-plane [`PlaneWitness::frame_sign`]: `det(stored) =
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
     pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
         let planes = self.planes;
-        // ★ **Only the normals are read below, so only they have to agree** — `d`'s rounding,
-        // which is where the two descriptions actually part, never reaches this determinant.
-        // Only the normals are read, so only they have to agree — `d`, where the two descriptions
-        // actually part, never reaches this determinant.
+        // ★ **Only the normals are read**, so the row's normal half is enough — a plane whose `d`
+        // is too wide for `f64` keeps this route.
         if let (Some(np), Some(na), Some(nb)) = (
             planes[p].exact_normal(),
             planes[a].exact_normal(),

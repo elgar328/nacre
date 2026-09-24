@@ -355,6 +355,15 @@ fn cramer(p: &ThreePlane) -> ([Expansion; 3], Expansion) {
 /// **Precondition:** both triples meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
 pub fn indirect_cmp_coord(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
     debug_assert!(axis < 3, "indirect_cmp_coord: axis must be 0, 1 or 2");
+    if let Some(sign) = indirect_cmp_coord_filter(a, b, axis) {
+        return sign;
+    }
+    indirect_cmp_coord_exact(a, b, axis)
+}
+
+/// [`indirect_cmp_coord`] with no filter: exact expansions, every time. The fallback, and the
+/// oracle its filter is tested against.
+fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
     let (na, da) = cramer(a);
     let (nb, db) = cramer(b);
     debug_assert!(
@@ -362,6 +371,34 @@ pub fn indirect_cmp_coord(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
         "indirect_cmp_coord: degenerate three-plane input (D = 0)"
     );
     na[axis].mul(&db).sub(&nb[axis].mul(&da)).sign() * da.sign() * db.sign()
+}
+
+/// The floating-point filter for [`indirect_cmp_coord`] — the same construction as
+/// [`indirect_orient3d_filter`]. Both points' `D` and numerators are determinants (`≈ 5u`), and
+/// `V = Na·Db − Nb·Da` multiplies two of them and subtracts:
+///
+/// | value | derived εₓ | constant used | margin |
+/// |---|---|---|---|
+/// | `Da`, `Db` | `≈ 5u` | `32·U` | 6× |
+/// | `V = Na·Db − Nb·Da` | `≈ 5u + 5u + u + u = 12u` | `64·U` | 5× |
+///
+/// ★ **Why it exists** (measured): the exact route builds two Cramer expansions and a degree-six
+/// product on every call — `≈ 2.7 µs`, against the filtered certified route's `≈ 1 µs` — and it
+/// allocates, so under rayon the workers queue on the allocator. It was the largest single judging
+/// cost of the axis-aligned fold (460 ms of about 1 s, one thread); with this filter that fold runs
+/// in about 70% of its time.
+#[inline]
+fn indirect_cmp_coord_filter(a: &ThreePlane, b: &ThreePlane, axis: usize) -> Option<i8> {
+    let (na, da, na_mag, da_mag) = cramer_val(a);
+    let (nb, db, nb_mag, db_mag) = cramer_val(b);
+    let v = na[axis] * db - nb[axis] * da;
+    let v_mag = na_mag[axis] * db_mag + nb_mag[axis] * da_mag;
+    // An overflow to infinity makes the bound meaningless; hand it to the expansions.
+    if !v.is_finite() || !v_mag.is_finite() || !da_mag.is_finite() || !db_mag.is_finite() {
+        return None;
+    }
+    (da.abs() > 32.0 * U * da_mag && db.abs() > 32.0 * U * db_mag && v.abs() > 64.0 * U * v_mag)
+        .then(|| sgn(v) * sgn(da) * sgn(db))
 }
 
 /// Unit roundoff, `2^-53`: the relative error of one correctly rounded `f64` operation.
@@ -518,6 +555,15 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
 ///
 /// **Precondition:** the three planes meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
 pub fn indirect_plane_side(p: &ThreePlane, c: [f64; 4]) -> i8 {
+    if let Some(sign) = indirect_plane_side_filter(p, c) {
+        return sign;
+    }
+    indirect_plane_side_exact(p, c)
+}
+
+/// [`indirect_plane_side`] with no filter: exact expansions, every time. The fallback, and the
+/// oracle its filter is tested against.
+fn indirect_plane_side_exact(p: &ThreePlane, c: [f64; 4]) -> i8 {
     let ([dx, dy, dz], d) = cramer(p);
     let side = dx
         .scale(c[0])
@@ -525,6 +571,34 @@ pub fn indirect_plane_side(p: &ThreePlane, c: [f64; 4]) -> i8 {
         .add(&dz.scale(c[2]))
         .add(&d.scale(c[3]));
     side.sign() * d.sign()
+}
+
+/// The floating-point filter for [`indirect_plane_side`] — the same shape as
+/// [`indirect_orient3d_filter`], whose table this extends: `D` and the numerators are the same
+/// determinants (`≈ 5u` each), and `S = c·N + c₃·D` adds one product and three additions on exact
+/// `c`:
+///
+/// | value | derived εₓ | constant used | margin |
+/// |---|---|---|---|
+/// | `D` | `≈ 5u` | `32·U` | 6× |
+/// | `S = c·N + c₃·D` | `≈ 5u + u + 3u = 9u` | `64·U` | 7× |
+///
+/// ★ **Why it exists** (measured): without it every call builds expansions, and once an unmoved
+/// plane's `orient3d` asked its fourth plane by coefficients the axis-aligned fold ran **14×**
+/// slower; with it 21.8 M calls of that fold decided here and none reached the expansions.
+#[inline]
+fn indirect_plane_side_filter(p: &ThreePlane, c: [f64; 4]) -> Option<i8> {
+    let (num, d, num_mag, d_mag) = cramer_val(p);
+    let side = c[0] * num[0] + c[1] * num[1] + c[2] * num[2] + c[3] * d;
+    let side_mag = c[0].abs() * num_mag[0]
+        + c[1].abs() * num_mag[1]
+        + c[2].abs() * num_mag[2]
+        + c[3].abs() * d_mag;
+    // An overflow to infinity makes the bound meaningless; hand it to the expansions.
+    if !side.is_finite() || !side_mag.is_finite() || !d_mag.is_finite() {
+        return None;
+    }
+    (d.abs() > 32.0 * U * d_mag && side.abs() > 64.0 * U * side_mag).then(|| sgn(d) * sgn(side))
 }
 
 /// [`indirect_orient3d`] with no filter: exact expansions, every time. The fallback,

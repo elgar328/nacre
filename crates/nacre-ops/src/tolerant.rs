@@ -73,11 +73,14 @@ impl PlaneWitness for WorkingPlane {
     fn coeffs(&self) -> [f64; 4] {
         self.plane.coefficients()
     }
+    // ★ `rotated` gates both: a moved plane's name speaks in its pre-motion frame, and the row
+    // is a world description only when nothing moved the plane (the table sets `rotated` from
+    // that — including a `Through` plane whose vertices meet in a frame its motion does not name).
     fn exact_coeffs(&self) -> Option<[f64; 4]> {
-        self.exact_coeffs
+        self.name_ints.as_ref().filter(|_| !self.rotated)?.row
     }
     fn exact_normal(&self) -> Option<[f64; 3]> {
-        self.exact_normal
+        self.name_ints.as_ref().filter(|_| !self.rotated)?.normal
     }
     fn frame_sign(&self) -> i8 {
         self.frame_sign

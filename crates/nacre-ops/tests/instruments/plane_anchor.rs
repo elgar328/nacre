@@ -18,7 +18,8 @@
 //! Four questions, in the order that lets the cheap one end the enquiry:
 //!
 //! 1. **Do two anchors even disagree?** (`which_point_states_a_plane_changes_its_stored_d`)
-//! 2. **Does the judge read the part that disagrees?** (`no_anchor_lets_a_tilted_plane_carry_…`)
+//! 2. **Does the judge read the part that disagrees?** No, by construction — its exact shortcuts
+//!    read the plane's name, not the cache (section 2).
 //! 3. **Does the model move?** (`a_pre_pushed_plane_does_not_move_the_model`)
 //! 4. **Do the two models' surface caches agree?**
 //!    (`which_surface_caches_two_anchors_leave_disagreeing`)
@@ -261,58 +262,9 @@ fn an_axis_aligned_plane_is_anchor_blind() {
 // 2. Does the judge read the part that disagrees?
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// **No — and not by luck: `reconcile`'s net is already fully engaged on this population.**
-///
-/// `WorkingPlane::reconcile` carries a plane's f64 coefficients into the predicates only when
-/// [`Plane::spans_exactly`] says they describe the very plane the witness triangle spans, tested in
-/// exact expansion arithmetic. For a tilted decimal plane `d` is a rounded sum of products, so the
-/// test fails **for every anchor** — the coefficients are never carried, and swapping anchors
-/// cannot change which road the judgment takes.
-///
-/// The positive control is the point of the second half: "false everywhere" is only informative
-/// once the instrument is shown to be able to say true.
-#[test]
-fn no_anchor_lets_a_tilted_plane_carry_its_coefficients() {
-    let sp = wf_plane();
-    let tri = [
-        wf_ring_point(WF_RING[0][0], WF_RING[0][1]),
-        wf_ring_point(WF_RING[1][0], WF_RING[1][1]),
-        wf_ring_point(WF_RING[2][0], WF_RING[2][1]),
-    ];
-    let mut anchors: Vec<(String, Point3)> = vec![("sketch_origin".into(), sp.origin())];
-    for (i, &[u, v]) in WF_RING.iter().enumerate() {
-        anchors.push((format!("ring[{i}]"), wf_ring_point(u, v)));
-    }
-    for (name, a) in &anchors {
-        let pl = Plane::from_point_normal(*a, -sp.normal()).expect("nonzero normal");
-        let spans = pl.spans_exactly(tri);
-        println!("stat anchor_carry {name} spans_exactly={spans}");
-        assert!(
-            !spans,
-            "{name}: a tilted decimal plane is not supposed to carry its coefficients — if this \
-             now passes, the anchor became load-bearing for the judging path and the enquiry in \
-             this file must be redone"
-        );
-    }
-
-    // ★ Positive control: the instrument can say `true`, so "false everywhere" above is a
-    // measurement and not a dead probe.
-    let flat = Plane::from_point_normal(
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-    )
-    .expect("nonzero normal");
-    let flat_tri = [
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([2.0, 0.0, 1.0]),
-        Point3::from_array([0.0, 3.0, 1.0]),
-    ];
-    assert!(
-        flat.spans_exactly(flat_tri),
-        "positive control: an axis-aligned plane does carry its coefficients"
-    );
-    println!("stat anchor_carry positive_control spans_exactly=true");
-}
+// **No, by construction.** An unmoved plane's exact judging shortcuts read the plane's name — its
+// canonical integers, derived from the defining points without rounding (`NameInts::row`) — and
+// never the plane cache, so no anchor can reach a judgement. (Nothing is left here to measure.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Does the model move?
