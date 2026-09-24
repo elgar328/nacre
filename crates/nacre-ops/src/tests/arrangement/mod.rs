@@ -73,7 +73,7 @@ fn face_on_z1(fh: Handle<Face>, surf_ix: &HashMap<Handle<Face>, usize>, faces: &
     let p = &faces[surf_ix[&fh]];
     // A cap in the z=1 plane: all three defining points at z=1.
     p.plane()
-        .tri
+        .witness_coords()
         .iter()
         .all(|q| (q.as_array()[2] - 1.0).abs() < 1e-12)
 }

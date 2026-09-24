@@ -30,13 +30,12 @@ pub(crate) use table::*;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
 ///
-/// `three_plane_orient3d(.., tri[0], tri[1], tri[2])` returns `+1` when the
-/// implicit point lies on **`tri`'s right-hand-normal side** — the convention is
-/// tied to the triangle, never to `plane`. `n_out` is the face's *stated*
-/// outward — `plane.normal()` × `orientation`, the reading props and STEP trust
-/// — and the loop's winding is held to it by a `debug_assert` at construction
-/// and by `validate`'s `FaceMisoriented` at every op. Every sign test here reads
-/// `n_out` (or `tri`), and the two agree by that enforcement.
+/// An `orient3d` against a face answers `+1` when the implicit point lies on its **witness
+/// triangle's right-hand-normal side** — the convention is tied to the triangle (`tri_pt3`), never
+/// to `plane`. The triangle is wound to the face's *stated* outward — the way its plane faces (the
+/// truth's `sense`) × `orientation`, the reading props and STEP trust — by those truth bits
+/// (`collect_planes`), and `validate`'s `FaceMisoriented` holds the loop's winding to the same
+/// statement at every op.
 /// One row of the boolean's face table — the face vocabulary the engine reads.
 ///
 /// The row is an enum so a cylinder face can *sit in the table* (keeping the face-index space that
@@ -248,14 +247,6 @@ pub(crate) struct FaceInfo {
     /// and the next engine that needs one should not have to re-thread the type.
     pub(crate) face: Option<Handle<Face>>,
     pub(crate) plane: Plane,
-    /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
-    /// The order need not follow the loop: at a reflex corner it is reversed.
-    pub(crate) tri: [Point3; 3],
-    /// Outward normal — `plane.normal()` × the face's stated `orientation`; the single
-    /// source of "outward" for both the in/out sign test and face ordering. Read off
-    /// the b-rep's statement, never re-derived from loop geometry (the re-derivation's
-    /// conditioning was the pad-eats-material defect).
-    pub(crate) n_out: Vector3,
     /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
     /// face is `Reversed` and the two oppose — the `Orientation` flag as a sign.
     ///
@@ -264,9 +255,10 @@ pub(crate) struct FaceInfo {
     /// face/plane convention cannot be asserted, because both readings are legitimate.
     /// Separate names, separate questions.
     pub(crate) orient_sign: i8,
-    /// The three `tri` points as **exact `WitnessPoint` definitions**, in the same order as `tri`.
-    /// Built once here and borrowed by every predicate (`plane_def`) — rebuilt per judgment, it
-    /// dominates the boolean's runtime.
+    /// The witness: three exact points on the plane (**`WitnessPoint` definitions** — the plane's
+    /// own points, or its frame's probes), wound to this face's outward by the truth's sense and
+    /// the face's orientation. Built once here and borrowed by every predicate (`plane_def`) —
+    /// rebuilt per judgment, it dominates the boolean's runtime.
     pub(crate) tri_pt3: [WitnessPoint; 3],
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
@@ -315,8 +307,9 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 /// `find_face_coplanar_with`.
 ///
 /// "Well spread" rather than "non-collinear" is the whole contract: the triangle is what states
-/// this face's outward direction *and* what `WorkingPlane::tri` carries into the predicates, so a
-/// nearly-flat one is not a lesser answer but a wrong one. See the corner choice below.
+/// the face's area — `collect_planes` refuses a loop that spreads none (`DegenerateFace`) and
+/// checks the face's winding against it, and `find_face_coplanar_with`'s coordinate branch reads
+/// it — so a nearly-flat one is not a lesser answer but a wrong one. See the corner choice below.
 pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
     let verts: Vec<Handle<Vertex>> = face
         .outer

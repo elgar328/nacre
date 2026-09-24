@@ -55,6 +55,10 @@ pub enum Site {
     },
     /// How the line `p ∩ a` runs relative to plane `b`.
     DirSign { p: usize, a: usize, b: usize },
+    /// Whether face row `face`'s outward runs the way its plane class `class`'s root's does
+    /// (`normals_agree_judge` on the two witnesses) — asked where no shared surface or world name
+    /// answers it.
+    FacesAgree { face: usize, class: usize },
 }
 
 /// One judgement that did **not** come back with a proved sign, and what it did establish.

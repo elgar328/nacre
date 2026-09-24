@@ -627,7 +627,7 @@ fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir)
     sign(arc.ccw) * sign(arc.axis_up) * jd.planes[p].frame_sign
 }
 
-/// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
+/// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R`'s witness triangle.
 ///
 /// [`Judge::plane_pair_dir_sign`] gives the sign against `R`'s *stored* normal, judged on the
 /// truth. That normal is parallel to `N_R` but opposes it on a `Reversed` face, which the face's
@@ -636,8 +636,8 @@ fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir)
 /// The correction *is* the face's stated flag — since the stored-orientation
 /// cutover, `frame_sign` is `Forward`/`Reversed` as a sign, and
 /// "`Reversed` ⇔ `n_out = −plane.normal()`" holds by construction rather than by
-/// hope. What keeps it honest is the winding: `collect_planes` debug_asserts the
-/// witness triangle against `n_out`, and `validate` pins the loop itself as
+/// hope. What keeps it honest is the winding: `collect_planes` winds the witness triangle by the
+/// truth's sense and the face's orientation, and `validate` pins the loop itself as
 /// `FaceMisoriented`.
 pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usize) -> i8 {
     let planes = jd.planes;

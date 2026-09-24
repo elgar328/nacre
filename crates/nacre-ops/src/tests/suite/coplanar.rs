@@ -129,8 +129,9 @@ fn plane_classes_merge_a_shared_wall() {
     let find = |rng: std::ops::Range<usize>, nx: f64, x: f64| -> usize {
         rng.clone()
             .find(|&i| {
-                let n = planes[i].plane().n_out.as_array();
-                n[0] * nx > 0.5 && (planes[i].plane().tri[0].as_array()[0] - x).abs() < 1e-9
+                let f = planes[i].plane();
+                let n = (f.plane.normal() * f64::from(f.orient_sign)).as_array();
+                n[0] * nx > 0.5 && (f.witness_coords()[0].as_array()[0] - x).abs() < 1e-9
             })
             .expect("plane")
     };
@@ -391,7 +392,6 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         base: crate::planes::BaseFrame::none(),
         surf,
         plane,
-        tri,
         tri_pt3,
         rotated: false,
         frame_sign,

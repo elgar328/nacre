@@ -53,7 +53,6 @@ pub(crate) fn dense_planes(
                 ),
                 plane: pi.plane,
                 surf: pi.surf,
-                tri: pi.tri,
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,

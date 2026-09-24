@@ -170,9 +170,9 @@ fn orient3d_unrotated_agrees_with_geom() {
                         &planes[p].plane,
                         &planes[q].plane,
                         &planes[rr].plane,
-                        planes[j].tri[0],
-                        planes[j].tri[1],
-                        planes[j].tri[2],
+                        planes[j].witness_coords()[0],
+                        planes[j].witness_coords()[1],
+                        planes[j].witness_coords()[2],
                     );
                     assert_eq!(
                         crate::planes::test_judge(&planes).orient3d(p, q, rr, j),
@@ -495,8 +495,6 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
                 surf: f.surf,
                 face: f.face,
                 plane: f.plane,
-                tri: f.tri,
-                n_out: f.n_out,
                 orient_sign: f.orient_sign,
                 tri_pt3: std::array::from_fn(|i| {
                     let c = f.tri_pt3[i].coord();
@@ -549,8 +547,9 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
         "the plain spelling really does decline"
     );
     assert!(
-        pb.iter()
-            .any(|g| g.base.tri.unwrap() != g.tri || g.base.coeffs.unwrap() != g.coeffs()),
+        pb.iter().any(|g| {
+            g.base.tri.unwrap() != g.witness_coords() || g.base.coeffs.unwrap() != g.coeffs()
+        }),
         "the base frame differs from the moved one — else the comparison is free"
     );
     (pa, pb)
@@ -1139,7 +1138,6 @@ fn two_caps_described_exactly_are_one_plane() {
             surf: faces[ia].surf(),
             plane: nacre_geom::Plane::through_points(tri[0], tri[1], tri[2])
                 .expect("non-collinear"),
-            tri,
             tri_pt3: d,
             rotated: true,
             frame_sign: 1,
@@ -1984,7 +1982,8 @@ mod wide_name_rescue {
                         name.clone()
                     };
                     let tri_pt3: [WitnessPoint; 3] = bases.map(WitnessPoint::at);
-                    let tri = std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord()));
+                    let tri: [Point3; 3] =
+                        std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord()));
                     WorkingPlane {
                         base_rat: None,
                         world: None,
@@ -2001,7 +2000,6 @@ mod wide_name_rescue {
                             nacre_math::Vector3::from_array(*n_stored),
                         )
                         .unwrap(),
-                        tri,
                         tri_pt3,
                         rotated: false,
                         frame_sign: *fs,

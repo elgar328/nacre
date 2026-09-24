@@ -293,8 +293,9 @@ fn one_plane_is_one_class_whatever_the_face_size() {
     // which is the property under test.
     let x_walls: Vec<usize> = (0..faces_tab.len())
         .filter(|&i| {
-            faces_tab[i].plane().n_out.as_array() == [1.0, 0.0, 0.0]
-                && (faces_tab[i].plane().tri[0].as_array()[0] - dx).abs() < 1e-12
+            let f = faces_tab[i].plane();
+            (f.plane.normal() * f64::from(f.orient_sign)).as_array() == [1.0, 0.0, 0.0]
+                && (f.witness_coords()[0].as_array()[0] - dx).abs() < 1e-12
         })
         .collect();
     assert_eq!(x_walls.len(), 2, "one wall from each box: {x_walls:?}");

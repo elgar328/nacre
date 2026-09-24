@@ -142,7 +142,11 @@ fn armed_through_boss_z(
     let wc = setup
         .geom
         .iter()
-        .position(|p| p.tri.iter().all(|q| (q.as_array()[0] - 40.0).abs() < 1e-12))
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[0] - 40.0).abs() < 1e-12)
+        })
         .expect("the x = 40 wall class");
     let crossings: std::collections::HashSet<(usize, usize)> = [(wc, 0)].into_iter().collect();
     (m, plate, boss, setup, wc, crossings)
@@ -197,10 +201,10 @@ fn the_gates_record_arms_the_ruling_trace() {
             "a chord's ends are the two roots"
         );
         // The chord rides the cap's own class — a ⊥ plane at z = −10 or z = 40.
-        let z = setup.geom[c.wall].tri[0].as_array()[2];
+        let z = setup.geom[c.wall].witness_coords()[0].as_array()[2];
         assert!(
             setup.geom[c.wall]
-                .tri
+                .witness_coords()
                 .iter()
                 .all(|q| (q.as_array()[2] - z).abs() < 1e-12)
                 && ((z + 10.0).abs() < 1e-12 || (z - 40.0).abs() < 1e-12),
@@ -557,7 +561,11 @@ fn armed_curved(
         setup
             .geom
             .iter()
-            .position(|p| p.tri.iter().all(|q| (q.as_array()[2] - z).abs() < 1e-12))
+            .position(|p| {
+                p.witness_coords()
+                    .iter()
+                    .all(|q| (q.as_array()[2] - z).abs() < 1e-12)
+            })
             .unwrap_or_else(|| panic!("a class at z = {z}"))
     };
     let (z0, z20, cap_lo, cap_hi) = (
@@ -1528,7 +1536,11 @@ fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
 fn class_at_z(planes: &[WorkingPlane], z: f64) -> usize {
     planes
         .iter()
-        .position(|p| p.tri.iter().all(|q| (q.as_array()[2] - z).abs() < 1e-12))
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[2] - z).abs() < 1e-12)
+        })
         .expect("a z-cap class")
 }
 
@@ -2083,7 +2095,11 @@ fn partial_overlap_is_not_merged() {
     // The shared y=1 wall class (a face at y=1).
     let y1 = planes
         .iter()
-        .position(|p| p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12))
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
+        })
         .expect("a y=1 face");
     // a's chord x∈[0,2] and b's chord x∈[1,3] ride y=1 but have different endpoints, so they
     // stay as two distinct MergedSegs. A merge that ignored extent would collapse them to one.

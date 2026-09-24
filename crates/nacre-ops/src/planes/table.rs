@@ -384,8 +384,6 @@ pub(crate) fn collect_planes(
                 surf: face.surface,
                 face: Some(fh),
                 plane,
-                tri,
-                n_out,
                 orient_sign,
                 tri_pt3,
                 rotated,
@@ -463,7 +461,7 @@ pub(crate) fn collect_planes(
                 w.swap(1, 2);
             }
             debug_assert!(
-                turns_outward_f64(&w, f.n_out) != Some(false),
+                turns_outward_f64(&w, f.plane.normal() * f64::from(f.orient_sign)) != Some(false),
                 "the restated winding and the aligned cache disagree on {:?}",
                 f.surf
             );

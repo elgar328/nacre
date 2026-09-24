@@ -411,8 +411,8 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn pass_through(
     model: &Model,
+    jd: &nacre_judge::predicate::Judge<'_, WorkingPlane>,
     wc: usize,
-    geom: &WorkingPlane,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     range: std::ops::Range<usize>,
@@ -425,20 +425,10 @@ pub(crate) fn pass_through(
             continue;
         }
         let fa = &faces[fi];
-        // **Which way this face faces, in the class's frame.** The two normals are parallel — the
-        // faces are coplanar by the very judgement that put them in one class — so their dot is
-        // ±1 and no rounding can move its sign. Anything near zero would mean the class itself is
-        // wrong, so it is refused rather than rounded.
-        let n = geom.tri_n_out();
-        let d = fa.plane().n_out.dot(n);
-        // `n_out` is a unit vector but the class's is a raw cross product, so the test has to be
-        // on the **cosine**, not on the dot. Comparing the dot to a constant instead reads a small
-        // witness triangle as a near-perpendicular one — which rejected 94% of the classes this
-        // was built for, silently and while still being correct.
-        if d.abs() < 0.5 * n.norm() {
-            return None;
-        }
-        let same = d > 0.0;
+        // **Which way this face faces, in the class's frame** — the truth's answer
+        // ([`crate::planes::face_facing`]), never a dot of two rounded normals. An undecided one
+        // arranges the class instead: slower, never wrong.
+        let same = crate::planes::face_facing(jd, faces, fi, wc).ok()? > 0;
         let ring = |lp: &nacre_topo::Loop| -> Option<crate::draft::Ring> {
             let mut r: Vec<NodeId> = lp
                 .half_edges

@@ -177,9 +177,6 @@ pub(crate) struct WorkingPlane {
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
-    /// The root face's corner caches (`f64`), wound outward for that face — read by
-    /// [`WorkingPlane::tri_n_out`] alone, never by a judgement.
-    pub(crate) tri: [Point3; 3],
     /// The witness as exact `WitnessPoint` definitions (the root face's), borrowed by every predicate.
     pub(crate) tri_pt3: [WitnessPoint; 3],
     /// Whether the root face's solid is rotated — copied from it together with `tri_pt3` so the
@@ -208,7 +205,7 @@ pub(crate) struct WorkingPlane {
     /// ★★★ **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
     /// impl in `tolerant`). The name is derived from the plane's defining points without
     /// rounding, so a predicate over its row answers for the truth. The plane cache's
-    /// coefficients (`plane`) and the face corners' caches (`tri`) are rounded images: a shortcut
+    /// coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
     /// that read them and checked them only against each other answered for the rounded model —
     /// measured, a box whose corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and
     /// the common refused. A wide name has no `f64` row and keeps its BigInt rescue.
@@ -230,10 +227,62 @@ impl WorkingPlane {
     pub(crate) fn stored_world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.world.as_ref()?.oriented_rat()
     }
+}
 
-    /// The class's outward normal — the root face's, which is what `tri` is wound for and what
-    /// `emit_faces` winds its rings about. Not normalized: only its direction is ever read.
-    pub(crate) fn tri_n_out(&self) -> Vector3 {
-        (self.tri[1] - self.tri[0]).cross(self.tri[2] - self.tri[0])
+/// **Which way a face's outward runs against its plane class's root's** — `+1` when they agree.
+///
+/// The tiers the class merge itself stands on (`Judge::planes_coplanar`): one surface is one
+/// plane, so the two outwards relate by the faces' orientations alone; one world name is one plane,
+/// and the two statements' senses ([`WorldName`]) relate its two facings; otherwise the two
+/// witnesses' definitions answer ([`nacre_judge::normals_agree_judge`] — each witness is wound to
+/// its own face's outward by the truth). The plane cache takes no part: its normal is a rounded
+/// image, and a relation between two of them is a relation between two roundings.
+///
+/// `Err` only where the judge could not separate the two turns, with what it did establish — a
+/// reader that answers for the result records it ([`face_facing_noted`]); one that can do without the
+/// answer (reuse, which then arranges the class) drops it.
+pub(crate) fn face_facing(
+    jd: &Judge<'_, WorkingPlane>,
+    faces: &[FaceRow],
+    fp: usize,
+    c: usize,
+) -> Result<i8, nacre_judge::Decision> {
+    let (face, root) = (faces[fp].plane(), &jd.planes[c]);
+    if face.surf == root.surf {
+        return Ok(face.orient_sign * root.frame_sign);
     }
+    if let (Some(fw), Some(rw)) = (&face.world, &root.world) {
+        if fw.name == rw.name {
+            return Ok(face.orient_sign * fw.sense.sign() * rw.sense.sign() * root.frame_sign);
+        }
+    }
+    let (a, b) = (&face.tri_pt3, &root.tri_pt3);
+    match nacre_judge::normals_agree_judge(
+        (&a[0], &a[1], &a[2]),
+        (&b[0], &b[1], &b[2]),
+        jd.standard,
+    ) {
+        nacre_judge::Decision::Sign(nacre_exact::Orient::Positive) => Ok(1),
+        nacre_judge::Decision::Sign(nacre_exact::Orient::Negative) => Ok(-1),
+        outcome => Err(outcome),
+    }
+}
+
+/// [`face_facing`] for a reader whose answer the result rests on: an undecided facing is recorded
+/// as evidence, so the operation refuses by that judgement's name (`undecided_reject`) before
+/// anything built on it is used — the rule every undecided judgement follows.
+pub(crate) fn face_facing_noted(
+    jd: &Judge<'_, WorkingPlane>,
+    faces: &[FaceRow],
+    fp: usize,
+    c: usize,
+) -> Option<i8> {
+    face_facing(jd, faces, fp, c)
+        .map_err(|outcome| {
+            jd.notes.push(nacre_judge::predicate::Evidence {
+                site: nacre_judge::predicate::Site::FacesAgree { face: fp, class: c },
+                outcome,
+            })
+        })
+        .ok()
 }

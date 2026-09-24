@@ -94,11 +94,14 @@ fn outward_normals_agree_with_their_orientation() {
     ] {
         for pi in &collect_planes(m, s).unwrap() {
             let pi = pi.plane();
-            let cos = (pi.tri[1] - pi.tri[0])
-                .cross(pi.tri[2] - pi.tri[0])
+            let (tri, _) = crate::planes::outer_tri(m, m.face(pi.face.expect("a model face")))
+                .expect("a corner");
+            let n_out = pi.plane.normal() * f64::from(pi.orient_sign);
+            let cos = (tri[1] - tri[0])
+                .cross(tri[2] - tri[0])
                 .normalize()
                 .expect("a widest corner spans area")
-                .dot(pi.n_out);
+                .dot(n_out);
             assert!(
                 cos > 0.5,
                 "{name}: the witness triangle does not span its face's stated outward"
@@ -285,8 +288,6 @@ fn plane_classes_merge_a_shared_handle_before_judging() {
             surf: shared,
             face: Some(fh),
             plane,
-            tri,
-            n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on the
             // witnesses' definitions (`tri_pt3`) — the rows have no world name.
             orient_sign: 1,

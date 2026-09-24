@@ -888,7 +888,7 @@ fn the_walk_cuts_a_run_at_a_departure() {
         (0..setup.geom.len())
             .find(|&c| {
                 setup.geom[c]
-                    .tri
+                    .witness_coords()
                     .iter()
                     .all(|p| (p.as_array()[axis] - at).abs() < 1e-12)
             })

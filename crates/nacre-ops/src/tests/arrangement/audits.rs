@@ -821,7 +821,7 @@ pub(crate) fn frame_audit(
         };
         let mut audit = ClassAudit {
             wc,
-            root_point: geom[wc].tri[0].as_array(),
+            root_point: geom[wc].witness_coords()[0].as_array(),
             root_normal: geom[wc].plane.normal().as_array(),
             orient_sign: geom[wc].frame_sign,
             seated: side(|k| match k {

@@ -616,8 +616,8 @@ fn run_body_above(
     // ends a cylinder pinned orders by the `a + b√c` tower, and by the integer predicates
     // otherwise. `None` is a missing description, which the caller turns into its own decline.
     let t = combinatorics::order_pinned(jd, cyls, wc, fc, rs[0], rs[rs.len() - 1])?;
-    let sigma = faces[fp].plane().n_out.dot(planes[fc].plane.normal());
-    Some((t < 0) == (sigma > 0.0))
+    let sigma = planes[fc].frame_sign * crate::planes::face_facing_noted(jd, faces, fp, fc)?;
+    Some((t < 0) == (sigma > 0))
 }
 
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
@@ -639,7 +639,6 @@ pub(super) fn trace_one(
     out: &mut Trace,
 ) {
     let planes = jd.planes;
-    let w_normal = planes[wc].plane.normal();
     // ★ Every curved carrier a seated ring rode and this walk declined to re-emit, with the face
     // that rode it. Checked once at the end — a lateral face may be visited after the seated one,
     // so the question is only answerable when the solid's whole contribution is in.
@@ -689,11 +688,13 @@ pub(super) fn trace_one(
             continue;
         }
         // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
-        // side of W — `n_out` points away from the body, so the body is above W exactly when
-        // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
-        // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
-        // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
-        let body_above = faces[fp].plane().n_out.dot(w_normal) < 0.0;
+        // side of W — the face's outward points away from the body, so the body is above W
+        // exactly when that outward opposes the way W faces: `frame_sign · facing < 0`
+        // ([`crate::planes::face_facing`]). An undecided facing reads as `false` here, as an
+        // undecided sign reads as `0` everywhere — the judgement's evidence is recorded, and the
+        // operation refuses by its name before this trace is used.
+        let body_above = crate::planes::face_facing_noted(jd, faces, fp, wc)
+            .is_some_and(|f| planes[wc].frame_sign * f < 0);
         let kind = SegKind::Seated { body_above };
         // Collect every ring in class form first: a collapsed name declines the whole face, and
         // deciding that before the emitting closure exists keeps the two borrows apart.

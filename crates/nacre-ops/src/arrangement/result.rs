@@ -517,16 +517,9 @@ pub(super) fn trace_result_faces(
                     SolidSide::B => (vc_b.as_ref(), n_a..faces.len()),
                 };
                 vc.and_then(|vc| {
-                    crate::reuse::pass_through(
-                        model,
-                        wc,
-                        &planes[wc],
-                        faces,
-                        plane_ix,
-                        range,
-                        vc,
-                        |t| aliases.canon_point(t),
-                    )
+                    crate::reuse::pass_through(model, jd, wc, faces, plane_ix, range, vc, |t| {
+                        aliases.canon_point(t)
+                    })
                 })
             }
         };

@@ -215,7 +215,7 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
     let wc = (0..planes.len())
         .find(|&c| {
             planes[c]
-                .tri
+                .witness_coords()
                 .iter()
                 .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
         })
@@ -333,7 +333,7 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
     let wc = (0..planes.len())
         .find(|&c| {
             planes[c]
-                .tri
+                .witness_coords()
                 .iter()
                 .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
         })
@@ -784,7 +784,11 @@ fn partial_overlap_is_resolved() {
     // The shared y=1 wall (a face at y=1).
     let y1 = planes
         .iter()
-        .position(|p| p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12))
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
+        })
         .expect("a y=1 face");
     // x-extent of a y=1 sub-segment, plus which solids contribute.
     let piece = |s: &MergedSeg| -> ([i64; 2], bool, bool) {

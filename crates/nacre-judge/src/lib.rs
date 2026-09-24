@@ -19,6 +19,6 @@ pub mod predicate;
 pub use kernel::frame3::{
     Decision, FrameThrough, JudgedPoint, MoveNode, Standard, WideFrame, WitnessPoint, chain_parity,
     dir_orient3d_judge, dir_sign_judge, fold_suffix, indirect_cmp_coord_judge,
-    indirect_orient3d_judge, judge_precision, orient3d_filter, orient3d_judge, precision_for,
-    trial_bound,
+    indirect_orient3d_judge, judge_precision, normals_agree_judge, orient3d_filter, orient3d_judge,
+    precision_for, trial_bound,
 };

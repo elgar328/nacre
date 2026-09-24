@@ -1,6 +1,25 @@
 use super::*;
 use nacre_exact::{Angle, Axis, Rat};
 
+/// The witness points' realized coordinates — what a test that finds a face or a class **by where
+/// it lies** reads. They are the plane's own points, so every one of them lies on the plane.
+impl FaceInfo {
+    pub(crate) fn witness_coords(&self) -> [Point3; 3] {
+        self.tri_pt3
+            .each_ref()
+            .map(|w| Point3::from_array(w.coord()))
+    }
+}
+
+/// [`FaceInfo::witness_coords`] for a class (its root face's witness).
+impl WorkingPlane {
+    pub(crate) fn witness_coords(&self) -> [Point3; 3] {
+        self.tri_pt3
+            .each_ref()
+            .map(|w| Point3::from_array(w.coord()))
+    }
+}
+
 /// ★★★★★ **The same circle and the same ruling, and the arc decides.**
 ///
 /// The unit-ish circle of radius `6/5` about the origin in `z = 0`, and a cylinder along `x`
@@ -268,11 +287,13 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     // noise again, failing this in release.
     for row in &faces {
         let f = row.plane();
-        let cos = (f.tri[1] - f.tri[0])
-            .cross(f.tri[2] - f.tri[0])
+        let (tri, _) = outer_tri(&m, m.face(f.face.expect("a model face"))).expect("a corner");
+        let n_out = f.plane.normal() * f64::from(f.orient_sign);
+        let cos = (tri[1] - tri[0])
+            .cross(tri[2] - tri[0])
             .normalize()
             .expect("a widest corner spans area")
-            .dot(f.n_out);
+            .dot(n_out);
         assert!(
             cos > 0.5,
             "a face's outer triangle is {cos:.3} of the way to perpendicular against its \
@@ -342,4 +363,87 @@ fn plane_classes_merge_only_what_interning_merged() {
             assert_eq!(roots.len(), surfaces.len(), "{case}: classes vs surfaces");
         }
     }
+}
+
+/// ★★ **Which way a face runs against its class is read off the truth** — down to two turned faces
+/// with no world name, merged by their definitions, where only the witnesses' reading
+/// ([`nacre_judge::normals_agree_judge`]) answers. Two cubes turned 30° about `z` — one in a single
+/// turn, the other in two (10° then 20°) — share their turned `y = 0` and `y = 2` walls: two
+/// surfaces each (the chains differ), no world names (30° does not fold), one class apiece (the
+/// composed rotation proves them one plane).
+///
+/// Every face's facing agrees with the aligned caches' dot (two normals of one plane — an
+/// independent reading), the witness tier is exercised, and reversing every row's plane cache
+/// moves no answer.
+#[test]
+fn a_faces_facing_reads_no_plane_cache() {
+    use nacre_exact::{Isometry, Rotation};
+    let mut m = Model::new();
+    let turn = |deg: i128| {
+        Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
+        })
+    };
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let b = m.add_cuboid(
+        Point3::from_array([1.0, 0.0, 0.0]),
+        Point3::from_array([3.0, 2.0, 2.0]),
+    );
+    let a = crate::transform::transform(&mut m, a, &turn(30)).expect("a turn");
+    let b = crate::transform::transform(&mut m, b, &turn(10)).expect("a turn");
+    let b = crate::transform::transform(&mut m, b, &turn(20)).expect("a turn");
+    m.rebuild_adjacency();
+    let mut faces = collect_planes(&m, a).expect("a's faces");
+    faces.extend(collect_planes(&m, b).expect("b's faces"));
+    let canon = plane_classes(&test_judge(&faces));
+    let (mut planes, plane_ix, _) = dense_planes(&faces, &canon);
+    let rows: Vec<(usize, usize)> = (0..faces.len())
+        .filter_map(|i| match (&faces[i], plane_ix[i]) {
+            (FaceRow::Plane(_), ClassIx::Plane(c)) => Some((i, c)),
+            _ => None,
+        })
+        .collect();
+    let facings = |faces: &[FaceRow], planes: &[WorkingPlane]| -> Vec<i8> {
+        let jd = test_judge(planes);
+        rows.iter()
+            .map(|&(i, c)| face_facing(&jd, faces, i, c).expect("a decided facing"))
+            .collect()
+    };
+    let truth = facings(&faces, &planes);
+    let witness_tier = rows
+        .iter()
+        .filter(|&&(i, c)| {
+            let f = faces[i].plane();
+            f.surf != planes[c].surf && (f.world.is_none() || planes[c].world.is_none())
+        })
+        .count();
+    assert!(
+        witness_tier >= 2,
+        "the witness tier is exercised: {witness_tier}"
+    );
+    for (&(i, c), &t) in rows.iter().zip(&truth) {
+        let f = faces[i].plane();
+        let root_out = planes[c].plane.normal() * f64::from(planes[c].frame_sign);
+        let out = f.plane.normal() * f64::from(f.orient_sign);
+        assert_eq!(
+            t,
+            if out.dot(root_out) > 0.0 { 1 } else { -1 },
+            "face {i} against class {c}"
+        );
+    }
+    for row in &mut faces {
+        if let FaceRow::Plane(f) = row {
+            f.plane = f.plane.reversed();
+        }
+    }
+    for p in &mut planes {
+        p.plane = p.plane.reversed();
+    }
+    assert_eq!(
+        facings(&faces, &planes),
+        truth,
+        "the plane caches take no part"
+    );
 }

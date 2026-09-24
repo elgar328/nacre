@@ -662,6 +662,44 @@ fn dir_sign_judge_sanity() {
     );
 }
 
+/// **Two witnesses of one plane are read for their turn**: the plane `z = 0` stated by two
+/// triangles turning `+z` agree, one reversed disagrees, a collinear witness has no turn — and the
+/// same after an inexact turn about `x` (where the definitions carry tol and the filter reads
+/// intervals), so the answer is the definitions', not the unrotated coordinates'.
+#[test]
+fn normals_agree_judge_reads_two_witnesses_of_one_plane() {
+    let q = |x: i128, y: i128| [ri(x, 1), ri(y, 1), ri(0, 1)];
+    let a = [q(0, 0), q(1, 0), q(0, 1)];
+    let b = [q(2, 3), q(5, 3), q(2, 7)];
+    let b_rev = [q(2, 3), q(2, 7), q(5, 3)];
+    let line = [q(0, 0), q(1, 1), q(2, 2)];
+    for turned in [false, true] {
+        let w = |t: [[Rat; 3]; 3]| {
+            t.map(|p| {
+                let wp = WitnessPoint::at(p);
+                if turned {
+                    wp.rotate(Axis::X, deg(37_123, 1000))
+                } else {
+                    wp
+                }
+            })
+        };
+        let (wa, wb, wr, wl) = (w(a), w(b), w(b_rev), w(line));
+        let d = |x: &[WitnessPoint; 3], y: &[WitnessPoint; 3]| {
+            normals_agree_judge(t3(x), t3(y), fixture())
+        };
+        assert_eq!(d(&wa, &wb).orient(), Orient::Positive, "turned {turned}");
+        assert_eq!(d(&wa, &wr).orient(), Orient::Negative, "turned {turned}");
+        assert!(
+            !matches!(
+                d(&wa, &wl),
+                Decision::Sign(Orient::Positive | Orient::Negative)
+            ),
+            "a witness with no turn has no sign: turned {turned}"
+        );
+    }
+}
+
 /// `dir_sign` is a determinant of normals, invariant under a shared rotation
 /// (`det(R·n) = det(R)·det(n) = det(n)`).
 #[test]

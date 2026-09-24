@@ -179,6 +179,45 @@ pub fn dir_sign_judge(
     })
 }
 
+/// **Do two witnesses of one plane turn the same way?** — the sign of `n_a · n_b`, each normal the
+/// turn `(p₁ − p₀) × (p₂ − p₀)` of its triangle's **definitions**. `Positive` when they agree.
+///
+/// Asked of two faces that are one plane class (coplanar by the class merge's proof), so the two
+/// normals are parallel and the dot is `±|n_a||n_b|` — there is no «nearly zero» to call a
+/// coincidence, and no limit to hold it to: the interval filter answers unless a triangle is
+/// nearly collinear, and then this climbs until the sign stands. A dot whose midpoint is exactly
+/// zero is `Degenerate` (a witness with no turn, or two planes that are not one); the budget
+/// running out is `Exhausted`. Never a sign it has not proved.
+///
+/// **Winding-dependent**, like [`dir_sign_judge`]: the caller passes each face's outward-wound
+/// triangle and reads the answer as «the two outwards agree».
+pub fn normals_agree_judge(
+    a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    j: Standard,
+) -> Decision {
+    let (pa, pb) = (plane_iv(a.0, a.1, a.2), plane_iv(b.0, b.1, b.2));
+    let dot = (0..3).fold(Bounded::new(0.0, 0.0), |acc, k| acc.add(pa[k].mul(pb[k])));
+    if let Some(pos) = dot.sign() {
+        return Decision::Sign(orient_of(pos));
+    }
+    // No `Gap::Of` is ever reported, so the limit is never read; the angle limit
+    // `dir_sign_judge` uses is the honest one to name.
+    let Some(limit) = j.coincidence.over(j.scale) else {
+        return Decision::Degenerate;
+    };
+    escalate(j, limit, |prec| {
+        let (ha, hb) = (plane_hp(a.0, a.1, a.2, prec), plane_hp(b.0, b.1, b.2, prec));
+        let dot = (1..3).fold(ha[0].mul(&hb[0], prec), |acc, k| {
+            acc.add(&ha[k].mul(&hb[k], prec), prec)
+        });
+        match dot.sign() {
+            Some(pos) => Ok(orient_of(pos)),
+            None => Err(denom_lo(&dot).err().unwrap_or(Gap::Unresolved { short: 1 })),
+        }
+    })
+}
+
 /// **How far three plane normals are from being coplanar — as an angle, not a length.**
 ///
 /// The other judges reduce to a distance; this one cannot, because it asks a question about

@@ -1122,7 +1122,6 @@ pub(crate) struct WorkingPlane {
     pub(crate) base_rat:  Option<[Rat; 4]>,           // 클래스 뿌리의 정확 계수(모션 이전 프레임)
     pub(crate) world: Option<WorldName>,              // 같은 평면의 세계 이름과 그 향 — 좁은 투영 `world_rat()` 이 원통 도로가 세계 축과 비교하는 유일한 서술, 향을 곱한 `stored_world_rat()` 이 방향
     pub(crate) surf: Handle<Surface>,                 // 대표 곡면 — 결과 정점의 담체로 기록된다
-    pub(crate) tri: [Point3; 3],                      // 뿌리 면 꼭짓점 셋의 좌표 캐시(f64), 바깥 방향 순서
     pub(crate) tri_pt3: [WitnessPoint; 3],            // 같은 증인의 정확한 정의 — 모든 술어가 빌린다
     pub(crate) rotated: bool,                         // 술어 경로 선택 신호. `tri_pt3` 와 함께 복사돼 어긋날 수 없다
     pub(crate) frame_sign: i8,                        // 라벨 프레임이자 차트의 프레임(n_out = frame_sign · n_P)
@@ -1141,15 +1140,17 @@ pub(crate) struct WorkingCyl {
 ```
 
 **판정 표의 증인(`Witness`)은 진실만 든다** — 세계 이름(`world_name`)과 정의 점(`tri_pt3`). 면 꼭짓점의 좌표
-캐시는 트레이트에 없어 판정이 읽을 수 없다(`WorkingPlane.tri` 필드는 ops 의 방향 읽기가 쓴다 — 「방향 부호를
-캐시로 읽는 자리」). 평면 클래스 형태(`PlaneWitness`)의 `coeffs` 는 캐시 계수이고 제품 독자가 없다.
+캐시는 표 행에도 트레이트에도 없어 판정이 읽을 수 없다. 증인 삼각형의 순서는 진실의 비트가 정하고(`sense` ×
+면의 `Orientation`), 두 면의 바깥이 같은 쪽인지는 같은 곡면 → 향 비트, 같은 세계 이름 → 두 향, 그 밖엔 두 증인의
+정의(`normals_agree_judge`)가 답한다(`face_facing`) — 클래스 병합과 같은 갈래 순서다. 평면 클래스 형태
+(`PlaneWitness`)의 `coeffs` 는 캐시 계수이고 제품 독자가 없다.
 
 **판정층은 증인 삼각형 하나로 전체(total)다.** 판정 표의 계약은 «평면 위 세 정확한 점»(`Witness::tri_pt3`,
 늘 있다)이고, 이름 없는 `Through` 평면은 자기 프레임의 probe 로 그 점을 정의상 갖는다 — 진실의 `Through`
 는 판정층에서 변종이 아니라 **probe 로 유도된 증인 삼각형**으로 나타난다.
 
-**정확 지름길은 평면을 이름으로만 서술한다.** 평면 캐시의 계수(`d` 는 f64 곱 `raw·origin`)와 `tri`(면
-꼭짓점의 좌표 캐시)는 둘 다 반올림된 상이라 진실 평면에서 `2⁻⁵⁴` 떨어질 수 있고, 둘을 서로 대조해 맞는 것만
+**정확 지름길은 평면을 이름으로만 서술한다.** 평면 캐시의 계수(`d` 는 f64 곱 `raw·origin`)와 면
+꼭짓점의 좌표 캐시는 둘 다 반올림된 상이라 진실 평면에서 `2⁻⁵⁴` 떨어질 수 있고, 둘을 서로 대조해 맞는 것만
 싣는 검사는 «반올림된 평면»을 인증할 뿐이다(`3·0.1 = 0.3` 인 모서리를 벽 밖으로 판정해 유효한 교집합을
 거절했다). 그래서 모션 없는 평면의 `exact_coeffs`/`exact_normal` 은 이름(정의 점에서 반올림 없이 유도한 정준
 정수)의 f64 행이고 — 53비트 안일 때만 선다 — `orient3d` 는 넷째 평면도 그 행으로 묻는다(`indirect_plane_side`).
