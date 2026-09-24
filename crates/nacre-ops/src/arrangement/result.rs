@@ -283,10 +283,11 @@ pub(crate) fn seam_table(
     // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
     // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
     //
-    // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
-    // triples then name one point twice (measured — two `add_cuboid` walls at the same
-    // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
-    // are not exactly proportional). A genuine 4-plane concurrency does the same.
+    // One cause is a **split plane table**: one geometric plane carried by two classes, whose
+    // triples then name one point twice. Two named planes cannot split — the class merge compares
+    // their names — but planes without a world name (a turn off the quarters) are merged by a
+    // judgement, and a judgement that fails to prove them one splits them. A genuine 4-plane
+    // concurrency does the same.
     for (i, u) in seam.iter().enumerate() {
         for v in &seam[i + 1..] {
             if u.point == v.point {

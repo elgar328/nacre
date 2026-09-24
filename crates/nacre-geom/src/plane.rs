@@ -18,8 +18,9 @@ use nacre_math::{Point3, Vector3};
 ///
 /// ★★ **Keeping `raw` does not make the plane's own points satisfy its form exactly.** That
 /// holds when the defining vertices are integers and fails as soon as they are not, because `d`
-/// is an `f64` product — see [`Plane::coefficients`]. The exact judging shortcuts therefore read the
-/// plane's name, derived from its defining points without rounding, and not this value.
+/// is an `f64` product — see [`Plane::coefficients`]. Judging therefore reads the plane's name,
+/// derived from its defining points without rounding, and not this value — the exact shortcuts
+/// and the plane-class merge alike.
 ///
 /// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
 /// parametric frame (two in-plane basis vectors) arrives in M3, when tess

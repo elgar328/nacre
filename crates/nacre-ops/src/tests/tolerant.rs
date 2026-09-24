@@ -200,41 +200,53 @@ fn corner_triples(planes: &[WorkingPlane]) -> Vec<[usize; 3]> {
     out
 }
 
-/// `Judge::planes_coplanar` decides plane identity from the faces' own coordinates, so it must
-/// (a) refuse to conclude anything from a degenerate `tri` — three equal points lie on *every*
-/// plane, and merging on that evidence would fuse genuinely different planes — and
-/// (b) answer the same for a rotated solid as for the unrotated one.
+/// `Judge::planes_coplanar` decides plane identity from the planes' truth, so (a) its witnesses
+/// must span a plane — three collinear points lie on *every* plane through their line, and a
+/// judgement over them would fuse genuinely different planes — which the table that builds them
+/// keeps (`collect_planes` refuses a row whose points do not); and (b) it answers the same for a
+/// rotated solid as for the unrotated one.
 #[test]
 fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
     let (mut m, s) = cuboid();
     let pu = plane_table(&m, s);
-    // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
-    let degenerate: Vec<WorkingPlane> = (0..2)
-        .map(|k| WorkingPlane {
-            // A hand-built table has no recorded coefficients; the composed-rotation route
-            // declines and the fixture takes the same escalating path it always did.
-            base_rat: None,
-            world_name: None,
-            name_ints: None,
-            base: crate::planes::BaseFrame::none(),
-            surf: pu[0].surf,
-            plane: pu[0].plane,
-            tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-            tri_pt3: std::array::from_fn(|_| {
-                WitnessPoint::at_nearest([
-                    nacre_exact::Rat::try_from_f64(k as f64).expect("exact"),
-                    nacre_exact::Rat::from_int(0),
-                    nacre_exact::Rat::from_int(0),
-                ])
-            }),
-            rotated: false,
-            frame_sign: pu[0].frame_sign,
-        })
-        .collect();
-    assert!(
-        !crate::planes::test_judge(&degenerate).planes_coplanar(0, 1),
-        "a degenerate tri is no evidence"
-    );
+    // (a) The cuboid with one face moved onto a plane stated by three collinear points. No
+    // producer can state one; the raw door (which skips the name) is the only way in, so the
+    // table's own check is what stands between it and the judge.
+    {
+        let r = Rat::from_int;
+        let shell = m.shell(m.solid(s).outer).clone();
+        let first = m.face(shell.faces[0]).clone();
+        let cache = match m.surface_cache(first.surface) {
+            nacre_geom::Surface::Plane(p) => *p,
+            nacre_geom::Surface::Cylinder(_) => unreachable!("a cuboid is all planes"),
+        };
+        let line = m.push_plane_unregistered(
+            cache,
+            [[r(0); 3], [r(1), r(0), r(0)], [r(2), r(0), r(0)]],
+            nacre_topo::Orientation::Forward,
+        );
+        let moved = m.push_face_unchecked(nacre_topo::Face {
+            surface: line,
+            ..first
+        });
+        let mut faces = shell.faces.clone();
+        faces[0] = moved;
+        let outer = m.push_shell_unchecked(nacre_topo::Shell { faces });
+        let planted = m.push_solid_unlisted(nacre_topo::Solid {
+            outer,
+            cavities: vec![],
+        });
+        assert!(
+            matches!(
+                collect_planes(&m, planted),
+                Err(crate::BoolError::Rejected {
+                    reason: crate::RejectReason::DegenerateFace,
+                    ..
+                })
+            ),
+            "a witness that spans no plane is refused where the table is built"
+        );
+    }
     // (b) Rotation invariance over every pair of the cuboid's faces.
     let r = rotated(&mut m, s);
     let pr = plane_table(&m, r);

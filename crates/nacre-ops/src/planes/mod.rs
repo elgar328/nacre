@@ -4,7 +4,7 @@
 use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_exact::Mag;
 use nacre_geom::Plane;
-use nacre_geom::intersect::{plane_plane, planes_coplanar};
+use nacre_geom::intersect::plane_plane;
 use nacre_judge::predicate::Judge;
 use nacre_judge::{Standard, WitnessPoint};
 use nacre_math::{Point3, Vector3};

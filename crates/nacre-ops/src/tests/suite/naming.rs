@@ -263,14 +263,12 @@ fn a_boss_fused_then_cut_through() {
 
 /// One geometric plane is one class **whatever the two faces' sizes**.
 ///
-/// ★ **The reason changed, and that is the news.** This used to assert that the coefficient
-/// test *could not* prove these coplanar — two walls of one plane at different face sizes have
-/// un-normalized 4-vectors that are not exactly proportional — and that the coordinate branch
-/// was what earned the merge. Surfaces are interned on their canonical rational coefficients
-/// now, so the two walls are handed **one handle**, and the merge is a handle comparison
-/// before any geometry is asked. The f64 non-proportionality is still real and still pinned,
-/// on the planes themselves, in `nacre_topo`'s
-/// `two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals`.
+/// ★ **The merge is a handle comparison, made before any judgement.** Surfaces are interned on
+/// their canonical names, so the two walls are handed **one handle**. Their `f64` caches do not
+/// agree — two walls of one plane at different face sizes have un-normalized 4-vectors that are
+/// not exactly proportional, pinned on the planes themselves in `nacre_topo`'s
+/// `two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals` — which is why no cache
+/// may take part in the merge.
 #[test]
 fn one_plane_is_one_class_whatever_the_face_size() {
     let (dx, dy) = (1.628165457453874f64, 0.5f64);
@@ -305,10 +303,6 @@ fn one_plane_is_one_class_whatever_the_face_size() {
         faces_tab[i].surf(),
         faces_tab[j].surf(),
         "two faces, one surface — interning collapsed them at construction"
-    );
-    assert!(
-        crate::planes::test_judge(&faces_tab).planes_coplanar(i, j),
-        "and the geometry agrees, so nothing rests on the handle alone"
     );
     assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
 }

@@ -136,6 +136,58 @@ pub fn decimal_coincidence(xs: f64, ys: f64, k: f64) -> (Model, Handle<Solid>, H
     (m, bx, prism)
 }
 
+/// A prism over the world-`XY` polygon `pts`, `z ∈ [0, 1]`.
+fn prism_z(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
+    let profile = Profile2d::polygon(pts.iter().map(|&[x, y]| p2(x, y)).collect()).unwrap();
+    let op = Operation::Extrude {
+        frame: SketchFrame::world(m, Axis::Z),
+        profile,
+        dist: 1.0,
+    };
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(m, &op) else {
+        panic!("extrude along z")
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// **Two different walls whose `f64` plane caches are the same bits.** Prism `B` over
+/// `(0.1,0.3)·(1.1,3.3)·(0.1,3.3)` has its wall on `y = 3x`; prism `C` over `(0,−c)·(1,3)·(0,3)`,
+/// `c = 5.551115123125783e-17`, has its wall on `y = (3+c)x − c` — a different plane, crossing
+/// `B`'s at `x = 1`. A wall's cache is its producer's row with the truth's first point as anchor:
+/// both rows round to `(3, −1, 0)`, and the `d` of both is `fl(3·fl(0.1)) − fl(0.3) = 2⁻⁵⁴ =
+/// fl(c)`. So `[3, −1, 0, −c]` describes both, bit for bit, and a class merge that read the cache
+/// made them one plane. Returns `(model, b, c)`.
+pub fn rounded_twin_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let c = 5.551115123125783e-17;
+    let mut m = Model::new();
+    let b = prism_z(&mut m, &[[0.1, 0.3], [1.1, 3.3], [0.1, 3.3]]);
+    let cc = prism_z(&mut m, &[[0.0, -c], [1.0, 3.0], [0.0, 3.0]]);
+    (m, b, cc)
+}
+
+/// **Two different walls whose face corners' `f64` caches lie on one `f64` plane**, on two
+/// solids that do not touch. Prism `B` over `(0,0)·(0.1,0.3)·(−1,1)` has its wall on `y = 3x`
+/// with corner caches `(0,0)` and `(fl(0.1), fl(0.3))`; `C` is the prism of
+/// [`rounded_twin_walls`] cut to the slab `x ∈ [0.2, 0.4]`, whose wall `y = (3+c)x − c` has its
+/// corners at `x = 0.2, 0.4`, `c·0.8` and `c·0.6` below `0.6` and `1.2` — which round to `fl(0.6)`
+/// and `fl(1.2)`, and `(fl(0.2), fl(0.6)) = 2·(fl(0.1), fl(0.3))`, `(fl(0.4), fl(1.2)) = 4·(…)` lie
+/// exactly on `B`'s corner line. An exact `orient3d` over the corner caches calls the two walls one plane.
+/// Returns `(model, b, c)`.
+pub fn rounded_corner_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let c = 5.551115123125783e-17;
+    let mut m = Model::new();
+    let b = prism_z(&mut m, &[[0.0, 0.0], [0.1, 0.3], [-1.0, 1.0]]);
+    let full = prism_z(&mut m, &[[0.0, -c], [1.0, 3.0], [0.0, 3.0]]);
+    let slab = prism_z(
+        &mut m,
+        &[[0.2, -10.0], [0.4, -10.0], [0.4, 10.0], [0.2, 10.0]],
+    );
+    let cc = boolean_one(&mut m, BoolKind::Common, full, slab).expect("a slab of the prism");
+    m.rebuild_adjacency();
+    (m, b, cc)
+}
+
 /// Is there an outer-shell face on the plane through `pt` with normal `n`,
 /// oriented that way? A capability test that wants to say "a face sits on z = 1.5
 /// facing +z" has no face handle in hand — asserting geometry from coordinates is

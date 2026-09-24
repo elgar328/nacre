@@ -27,6 +27,9 @@ impl Witness for WorkingPlane {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
+    fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
+        self.world_name.as_ref()
+    }
     fn chain_id(&self) -> u64 {
         self.base.chain_id
     }
@@ -53,8 +56,12 @@ impl Witness for FaceRow {
     fn tri(&self) -> [Point3; 3] {
         self.plane().tri
     }
+    fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
+        self.plane().world_name.as_ref()
+    }
     // A face table exists before plane classes do, and the only predicate that runs on it is
-    // `Judge::planes_coplanar` during class discovery. Opting out here keeps that path unchanged.
+    // `Judge::planes_coplanar` during class discovery. Opting out sends a face pair past the
+    // shared-motion shortcut: its world names or its composed motions answer instead.
     fn chain_id(&self) -> u64 {
         0
     }

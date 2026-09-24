@@ -312,3 +312,34 @@ fn the_climbing_headroom_survives_a_deep_model() {
         "precision did not grow with the rotation history: {seen:?}"
     );
 }
+
+/// **Plane classes merge only what interning merged** — over two tables whose different walls
+/// share a rounded image: the plane cache's coefficients bit for bit (`rounded_twin_walls`), and
+/// the face corners' caches on one `f64` plane (`rounded_corner_walls`).
+///
+/// The oracle is interning, not the name the judge reads: every plane here is unmoved, and an
+/// unmoved plane's canonical name is its interning key, so two handles are two planes and the
+/// class count must be the surface count. Either cache, admitted as evidence, merges the two walls
+/// and comes up one short.
+#[test]
+fn plane_classes_merge_only_what_interning_merged() {
+    for (case, (m, b, c)) in [
+        ("twin caches", crate::tests::rounded_twin_walls()),
+        ("corner caches", crate::tests::rounded_corner_walls()),
+    ] {
+        for (x, y) in [(b, c), (c, b)] {
+            let mut faces = collect_planes(&m, x).unwrap();
+            faces.extend(collect_planes(&m, y).unwrap());
+            let surfaces: std::collections::HashSet<_> =
+                faces.iter().map(|f| f.plane().surf).collect();
+            assert!(
+                surfaces.iter().all(|&s| m.plane_motion(s).is_none()),
+                "{case}: the oracle needs unmoved planes"
+            );
+            let mut roots = plane_classes(&test_judge(&faces));
+            roots.sort_unstable();
+            roots.dedup();
+            assert_eq!(roots.len(), surfaces.len(), "{case}: classes vs surfaces");
+        }
+    }
+}

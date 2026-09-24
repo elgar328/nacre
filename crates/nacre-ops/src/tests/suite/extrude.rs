@@ -250,13 +250,12 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     );
 }
 
-/// The handle branch of `shares_or_coplanar` is load-bearing: a shared
-/// `Surface` handle reports coplanar even when the stored `plane` values are
-/// *not* geometrically coplanar (so the fallback would not fire). This is the
-/// path a referenced coplanar contact takes; on axis-aligned M5 it is redundant
-/// with the geometric test, but the branch must work for rotated frames.
+/// **A shared `Surface` handle is one class on its own** — `plane_classes` merges by handle
+/// before it asks the judge anything, so two rows on one surface are one class even when their
+/// witnesses describe two different planes (which no producer makes — interning is what shared
+/// the handle — so a hand-built table is the only way to separate the two questions).
 #[test]
-fn shares_or_coplanar_uses_the_handle_branch() {
+fn plane_classes_merge_a_shared_handle_before_judging() {
     let mut m = Model::new();
     let r = nacre_exact::Rat::from_int;
     let shared = m.push_plane_unregistered(
@@ -274,9 +273,8 @@ fn shares_or_coplanar_uses_the_handle_branch() {
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0])).unwrap();
     let plane_z0 =
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0])).unwrap();
-    // Each `tri` is three NON-collinear points of its own plane. A degenerate `tri` (three
-    // equal points) would make every `orient3d` vanish, so the coordinate branch would report
-    // coplanar and this test would pass without the handle branch ever mattering.
+    // Each witness is three NON-collinear points of its own plane, so the judge can tell the two
+    // rows apart and the merge below rests on the handle alone.
     let mk = |plane, tri: [Point3; 3]| {
         crate::planes::FaceRow::Plane(FaceInfo {
             // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
@@ -289,7 +287,8 @@ fn shares_or_coplanar_uses_the_handle_branch() {
             plane,
             tri,
             n_out: Vector3::from_array([0.0; 3]),
-            // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
+            // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on the
+            // witnesses' definitions (`tri_pt3`) — the rows have no world name.
             orient_sign: 1,
             tri_pt3: tri.map(|p| {
                 nacre_judge::WitnessPoint::at_nearest(
@@ -305,19 +304,11 @@ fn shares_or_coplanar_uses_the_handle_branch() {
         mk(plane_x0, [p(0., 0., 0.), p(0., 1., 0.), p(0., 0., 1.)]), // in x = 0
         mk(plane_z0, [p(0., 0., 0.), p(1., 0., 0.), p(0., 1., 0.)]), // in z = 0
     ];
-    // Neither fallback fires: the coefficients are not proportional, and the coordinates say
-    // these really are two different planes.
-    assert!(!planes_coplanar(
-        &planes[0].plane().plane,
-        &planes[1].plane().plane
-    ));
+    // The definitions say these really are two different planes…
     assert!(!crate::planes::test_judge(&planes).planes_coplanar(0, 1));
-    // The shared handle alone makes them coplanar-by-reference.
-    assert!(shares_or_coplanar(
-        &crate::planes::test_judge(&planes),
-        0,
-        1
-    ));
+    // …and the shared handle alone makes them one class.
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&planes));
+    assert_eq!(canon[0], canon[1], "one handle, one class");
 }
 
 proptest! {

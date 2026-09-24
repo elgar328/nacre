@@ -12,9 +12,9 @@
 //! `Judge::name_rescue` carry a wide name's integer coefficients into the three sign predicates
 //! that read coefficients at all — `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — and the
 //! gate is written so that an all-narrow question keeps its existing route to the bit.
-//! `planes_coplanar` is **not** a gap in that rescue: it runs *before* a plane table exists and
-//! asks only for a [`Witness`], deliberately deciding on the faces' own coordinates rather than on
-//! derived coefficients. ⇒ **the decision this file's header asks for has been made and shipped**,
+//! `planes_coplanar` is **not** a gap in that rescue: it runs *before* a plane table exists,
+//! asks only for a [`Witness`], and compares two world names whole — a wide one included — before
+//! it reads any definition. ⇒ **the decision this file's header asks for has been made and shipped**,
 //! and what the numbers below measure is not "the missing exact route" but the cost of the
 //! toleranced route an **irrational motion** still takes. Re-measured: `narrow_name` 240
 //! climbs against `wide_name` 475 — **2.0×**, not the 3.2× recorded below.

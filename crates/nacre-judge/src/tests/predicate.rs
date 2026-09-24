@@ -88,6 +88,10 @@ impl Witness for W {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
+    // A hand-built witness has no name: every same-plane question takes the definitions' road.
+    fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
+        None
+    }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.def
     }
@@ -216,6 +220,10 @@ impl RW {
 impl Witness for RW {
     fn tri(&self) -> [Point3; 3] {
         self.tri
+    }
+    // A hand-built witness has no name: every same-plane question takes the definitions' road.
+    fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
+        None
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.def

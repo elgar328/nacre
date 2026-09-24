@@ -1,13 +1,11 @@
 //! Toleranced geometric predicates: the plane-arrangement sign predicates routed through
 //! the CIP kernel so they stay exact under rotation.
 //!
-//! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so the
-//! exact predicates (`nacre-predicates`) over them are exact only w.r.t. the *rounded*
-//! geometry. When a predicate's planes are rotated, these wrappers rebuild each plane from the
-//! three exact [`WitnessPoint`] its face carries ([`Witness::tri_pt3`], or — for the axis-aligned
-//! operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` — exactly from its `tri`
-//! coordinates, see [`plane_def`]) and decide the sign with the [`crate::kernel`] judges
-//! instead.
+//! A face's plane coefficients and corner coordinates are caches — rounded images of the plane —
+//! so the exact predicates (`nacre-predicates`) over them are exact only w.r.t. the *rounded*
+//! geometry. These wrappers decide from the truth instead: a plane's canonical name where one
+//! stands, and otherwise the three exact [`WitnessPoint`] every witness carries
+//! ([`Witness::tri_pt3`], see [`plane_def`]), judged by the [`crate::kernel`] judges.
 //!
 //! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
 //! [`any_rotated`] of just the planes it touches: all-axis-aligned → the exact hot path (never
@@ -122,6 +120,18 @@ impl Notes {
 /// so it necessarily runs before a plane table exists.
 pub trait Witness {
     fn tri(&self) -> [Point3; 3];
+    /// The plane's canonical name **in the world** — `None` where the truth cannot be stated
+    /// there (a turn off the quarters, a frame, a moved wide name, an overflow).
+    ///
+    /// **Two `Some` names answer "same plane?" both ways**: the name is canonical (content-free
+    /// integers, sign-normalised, and a value that fits `i128` is always the narrow variant), so
+    /// `==` is plane identity and `!=` is a proof of difference — no judgement, no tolerance.
+    /// Required, with no default: a witness that has no name says so.
+    ///
+    /// ⚠ An unmoved `Through` plane whose vertices meet in a pre-motion frame is named in that
+    /// frame, not the world — the premise every name reader shares (interning, the exact
+    /// shortcuts). No producer makes one today; nothing checks it.
+    fn world_name(&self) -> Option<&nacre_exact::PlaneName>;
     /// The three `tri` points as exact [`WitnessPoint`] definitions, **always present**.
     ///
     /// This is a *cache*: the definition is built once, where the witness is, and every predicate
@@ -751,27 +761,31 @@ impl<W: PlaneWitness> ImplicitPoint<'_, W> {
 /// The predicate that runs **before** a plane table exists — it is what *defines* the classes,
 /// so it asks only for a [`Witness`], never a plane's coefficients.
 impl<W: Witness> Judge<'_, W> {
-    /// Whether planes `i` and `j` are the **same plane**, decided on the faces' original
-    /// coordinates instead of on their derived coefficients (three non-collinear points on a plane
-    /// determine it, so "every point of `tri_j` lies on `tri_i`'s plane" is conclusive — but only
-    /// under non-collinearity, so a degenerate `tri` answers `false`). `!rotated` → the exact
-    /// `orient3d` on `tri`; any rotated → the exact `WitnessPoint` definitions and [`orient3d_judge`].
+    /// Whether planes `i` and `j` are the **same plane**, decided on the truth: both world names
+    /// when both stand ([`Witness::world_name`] — equality either way is a proof), otherwise the
+    /// exact [`WitnessPoint`] definitions ([`Witness::tri_pt3`]) — composed motions, then
+    /// [`orient3d_judge`]. The face corners' caches take no part: two different planes whose
+    /// rounded images coincide would otherwise become one class, and every result face and
+    /// vertex on it would name the wrong plane.
+    ///
+    /// The definitions must span a plane — three collinear points lie on every plane through
+    /// their line. The table that builds the witnesses keeps that (`nacre-ops`' `collect_planes`
+    /// refuses a row whose points do not), so this does not ask it again, except where a road
+    /// below would read a collinear triangle as a proved zero.
     pub fn planes_coplanar(&self, i: usize, j: usize) -> bool {
         let planes = self.planes;
-        if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
-            return false;
-        }
-        if !any_rotated(planes, &[i, j]) {
-            return planes[j]
-                .tri()
-                .iter()
-                .all(|&q| plane_side_exact(planes[i].tri(), q) == 0);
+        if let (Some(a), Some(b)) = (planes[i].world_name(), planes[j].world_name()) {
+            return a == b;
         }
         // "Same plane" is a statement about incidence, which *any* motion preserves — proper or
         // not — so this one shortcut would survive an improper chain even uncorrected. It reads
         // the canonicalised base anyway, because one convention is cheaper to keep than two.
+        // The exact test on a collinear base answers zero for every point, hence the guard.
         if shared_motion(planes, &[i, j]) {
             if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
+                if tri_collinear(ti) || tri_collinear(tj) {
+                    return false;
+                }
                 return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
             }
         }
@@ -1125,8 +1139,8 @@ fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nac
 }
 
 /// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
-/// projections of the cross product (each an exact `orient2d`). Non-collinearity is the
-/// standing precondition of [`Judge::planes_coplanar`].
+/// projections of the cross product (each an exact `orient2d`) — asked of a pre-motion witness
+/// triangle before [`Judge::planes_coplanar`] reads it as a plane.
 fn tri_collinear(t: [Point3; 3]) -> bool {
     let [a, b, c] = t.map(|p| p.as_array());
     let proj = |i: usize, j: usize| orient2d([a[i], a[j]], [b[i], b[j]], [c[i], c[j]]) == 0.0;

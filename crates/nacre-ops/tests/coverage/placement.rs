@@ -209,3 +209,89 @@ fn a_coincidence_the_f64_image_breaks_is_judged_on_the_truth() {
         assert!((v - xs * ys / 2.0).abs() < 1e-12, "{case}: volume {v}");
     }
 }
+
+/// The one wall of `s` that is neither axis-aligned nor shared — found by its name, the truth.
+fn slanted_wall(
+    m: &Model,
+    s: nacre_store::Handle<nacre_topo::Solid>,
+) -> nacre_store::Handle<nacre_topo::Surface> {
+    let walls: Vec<_> = surfaces(m, &[s])
+        .into_iter()
+        .filter(|&h| {
+            let name = m.world_plane_name(h).expect("an unmoved plane is named");
+            let ints = name.coeff_ints();
+            ints[..3].iter().filter(|c| **c != 0.into()).count() == 2
+        })
+        .collect();
+    assert_eq!(walls.len(), 1, "one slanted wall");
+    walls[0]
+}
+
+/// Every surface the outer faces of `solids` lie on.
+fn surfaces(
+    m: &Model,
+    solids: &[nacre_store::Handle<nacre_topo::Solid>],
+) -> std::collections::BTreeSet<nacre_store::Handle<nacre_topo::Surface>> {
+    solids
+        .iter()
+        .flat_map(|&s| {
+            m.shell(m.solid(s).outer)
+                .faces
+                .iter()
+                .map(|&f| m.face(f).surface)
+        })
+        .collect()
+}
+
+/// **Two different walls with one rounded image stay two planes** — each result face lies on the
+/// plane of the face it came from, whichever operand comes first.
+///
+/// * Walls whose face corners' caches lie on one `f64` plane, on two solids that do not touch
+///   (`rounded_corner_walls`): the fuse is the two solids, face for face.
+/// * Walls whose plane caches are the same bits (`rounded_twin_walls`): the common's slanted face
+///   is `B`'s wall `y = 3x` — the binding one over the overlap — and never `C`'s. With the cache
+///   admitted as evidence, `Common(C, B)` put it on `C`'s plane (`validate` saw nothing).
+#[test]
+fn a_wall_keeps_its_plane_when_another_walls_rounded_image_matches() {
+    for swap in [false, true] {
+        let (mut m, b, c) = rounded_corner_walls();
+        let want = surfaces(&m, &[b, c]);
+        let (x, y) = if swap { (c, b) } else { (b, c) };
+        let out = boolean(&mut m, BoolKind::Fuse, x, y).expect("two apart solids fuse");
+        assert_eq!(out.len(), 2, "swap = {swap}: two bodies");
+        assert_eq!(
+            surfaces(&m, &out),
+            want,
+            "swap = {swap}: faces on their own planes"
+        );
+    }
+    let (mut m, b, c) = rounded_twin_walls();
+    let (b_wall, c_wall) = (slanted_wall(&m, b), slanted_wall(&m, c));
+    assert_ne!(b_wall, c_wall);
+    let out = boolean_one(&mut m, BoolKind::Common, c, b).expect("common");
+    let got = surfaces(&m, &[out]);
+    assert!(got.contains(&b_wall), "the binding wall is B's");
+    assert!(!got.contains(&c_wall), "C's wall is not on the common");
+}
+
+/// **Scoreboard — a valid input refused.** `Common(B, C)` over [`rounded_twin_walls`] asks for
+/// the corner where the two walls cross (`x = 1`), and the seam table realizes it from the three
+/// classes' **plane caches**: two of them are the same bits, so the `f64` solve reads them as
+/// parallel and refuses `ThreePlanes`. The planes do meet; the answer is the triangle the
+/// other operand order returns. This pins today's refusal so that the fix (todo «seam 정점
+/// 좌표를 평면 캐시로 푼다») turns it over on purpose.
+#[test]
+fn scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused() {
+    let (mut m, b, c) = rounded_twin_walls();
+    let r = boolean(&mut m, BoolKind::Common, b, c);
+    assert!(
+        matches!(
+            r,
+            Err(BoolError::Rejected {
+                reason: nacre_ops::RejectReason::ThreePlanes,
+                ..
+            })
+        ),
+        "{r:?}"
+    );
+}

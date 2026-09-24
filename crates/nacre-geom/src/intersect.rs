@@ -234,6 +234,10 @@ pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
 /// split, like [`plane_side`] and [`plane_pair_dir_sign`] — not a
 /// `Plane` method with a length tolerance. Scale-invariant and direction-agnostic:
 /// opposite normals still name the same plane.
+///
+/// ⚠ **Exact about the two caches, not about the planes they image.** Two different planes can
+/// round to the same coefficient row, so this is not a plane-identity test — the kernel's is
+/// `nacre_judge`'s `Judge::planes_coplanar`, over the planes' names. No product code asks this.
 pub fn planes_coplanar(a: &Plane, b: &Plane) -> bool {
     nacre_predicates::planes_coplanar(a.coefficients(), b.coefficients())
 }

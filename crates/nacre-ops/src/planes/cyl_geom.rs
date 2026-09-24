@@ -2,13 +2,13 @@ use super::*;
 /// **A plane's exact rational coefficients in the world** — the narrow projection of
 /// [`nacre_topo::Model::world_plane_name`], which is the one place the rule lives.
 ///
-/// ★★★ **Not a restatement of the row.** A moved plane's `rotated` flag says two things at once,
-/// and only one of them is about descriptions: it also says the row's `tri` is a *realized*
-/// triangle rather than the truth, which is what routes `Judge::planes_coplanar` to the
-/// high-precision road. Measured, by breaking it: two unit cubes shifted by `7/11` and `18/11`
-/// share a wall whose two f64 images differ in the last place, and flipping such a plane to
-/// unrotated sent the merge through the exact-f64 triangle test — one body came back as two. So
-/// the world description rides *beside* the flag, and the judging road is left alone.
+/// ★★★ **Not a restatement of the row.** A moved plane's `rotated` flag is the licence the exact
+/// shortcuts read before taking the plane's *name* as a world statement, and a moved plane's name
+/// speaks its pre-motion frame — so the flag stays set whatever this answers, and the world
+/// description rides *beside* it. Clearing the flag once sent a merge through an exact-`f64`
+/// triangle test on the face corners, and two unit cubes shifted by `7/11` and `18/11`, sharing a
+/// wall whose two `f64` images differ in the last place, came back as two bodies; the class merge
+/// reads world names now, never those corners.
 pub(crate) fn world_plane_coeffs(
     model: &Model,
     surf: Handle<Surface>,

@@ -15,20 +15,6 @@
 판정을 정하거나 진실로 흘러가는 자리가 아래 항목이다 — 출력·계측·`validate`·`props` 가 캐시를 읽는 것은 캐시의
 용도라 뺐다. «확인 전» 은 분류에서 나왔지만 코드로 다시 읽지 않은 자리다.
 
-### 평면 클래스 병합이 캐시로 정해진다
-
-`shares_or_coplanar`(`planes/incidence.rs`)는 세 증거의 OR 로 두 면을 한 평면 클래스로 합친다 — 핸들
-동일성(진실: interning 이 같은 평면을 한 핸들로 만든다) · 평면 캐시 계수의 정확 비례
-(`nacre_geom::intersect::planes_coplanar`) · `Judge::planes_coplanar`. 마지막 것의 모션 없는 갈래는 면 꼭짓점
-캐시(`tri`)로 정확 `orient3d` 를 하고(`predicate.rs`), 정의 점(`tri_pt3`)은 회전 갈래만 읽는다. 캐시 증거 둘은
-병합을 **더할 수만** 있고 진실로 확인되지 않는다 — 반올림된 상이 우연히 일치하는 서로 다른 평면이 조용히 한
-클래스가 되고, 클래스 뿌리의 곡면이 결과 정점의 정의(`Vertex::ThreePlane`)에 들어가므로 진실까지 간다. `tri` 가
-f64 로 공선이면 병합을 놓친다. 방금 고친 정확 지름길과 같은 부류이고, 틀리면 가장 넓게 퍼진다.
-
-**먼저 잴 것.** census 에서 핸들이 다른데 캐시 증거로만 합쳐진 쌍의 수(0 이면 캐시 증거를 빼도 이동 0 이 예측) ·
-반올림된 상이 일치하는 서로 다른 평면을 손으로 심은 배치(빨간 것을 먼저 본다). 진실 쪽 답: 이름 있는 평면은
-이름(`world_plane_name`) 동일성, 모션 있는 평면은 지금의 공유 모션·합성 회전 도로.
-
 ### 교점 정렬이 캐시 평면으로 축과 부호를 고른다
 
 `order_located_quad`(`combinatorics/incidence_order.rs`)는 교선 P∩Q 위 원통 관통점의 순서를 정확 `a + b√c` 비교로
@@ -80,6 +66,11 @@ f64 로 공선이면 병합을 놓친다. 방금 고친 정확 지름길과 같�
 - `push_edge` 는 두 끝점의 좌표 캐시가 같은 f64 이면 간선을 거절한다(`derive_edge_curve` 의
   `Line::through_points` — 호출자가 `ZeroLengthEdge` 로 옮긴다). 두 정의가 한 점인지는 묻지 않는다. 거절 쪽이라
   조용히 틀리지는 않는다.
+- `find_face_coplanar_with`(`ops/feature.rs` — pad/pocket 이 남은 캡을 찾는다)의 둘째 갈래가 면 꼭짓점 캐시의
+  `plane_side` 로 공면을 정한다. 평면 클래스 병합과 같은 부류이고, 진실 쪽 답은 핸들 ∨ 세계 이름이다. 그 doc 은
+  «코퍼스가 두 갈래를 안 가른다»고 적는다. `nacre_geom::intersect::planes_coplanar`·
+  `nacre_predicates::planes_coplanar`(캐시 계수의 비례)는 제품 호출처가 0 이다(픽스처 `has_face_on_plane` 과 자기
+  테스트뿐) — 발행 층의 `pub` 이라 은퇴하거나 `test-util` 뒤로 보낼지 정한다.
 - 확인 전: 다중 솔리드 결과의 순서(`assembly/grouping.rs` `comp_key` — 꼭짓점 캐시로 정렬해 핸들 번호가 정해진다);
   topo `align_cache_sense` 의 doc 은 «`Through` 의 f64 외적을 정확한 순서가 뒤집는다»고 적지만 코드는 꼭짓점
   캐시의 f64 외적을 쓴다.
@@ -92,15 +83,17 @@ f64 로 공선이면 병합을 놓친다. 방금 고친 정확 지름길과 같�
 갈래에 들지 않는다.
 
 **남은 캐시 읽기.**
-- 클래스 짓기와 방향 부호 — 「평면 클래스 병합이 캐시로 정해진다」·「방향 부호를 캐시로 읽는 자리」.
+- 방향 부호 — 「방향 부호를 캐시로 읽는 자리」.
 - 이름이 53비트를 넘는 모션 없는 평면 — f64 행이 없어 BigInt 구조(wide) 또는 상승 도로로 간다. 도착점은 이름을
   **f64 조각 몇 개로** 빠른 정확 술어(`Expansion`)에 넣는 것이다(i128 은 조각 셋; 이름 분포 조각 1·2·3 =
   71.9·26.1·1.2%). BigInt 쌍둥이로는 안 된다(잰 것 — release, 축정렬 작은 불리언 200개: 지름길 219ms · 끔 449ms ·
   BigInt 436ms).
 - 판정 표가 `rotated == false` 를 이름이 세계 진술이라는 허가로 쓴다 — `Through` 팔은 정점 meet 의 프레임을 직접
   묻는다(`table.rs`). 그 인구(모션 없음·프레임 지역 meet)에서는 지름길만 닫힐 뿐 상승 도로도 증인 점을 세계로
-  읽는다 — 오늘 인구는 0(`transform.rs` 의 `debug_assert`). interning 열쇠 `(name, motion)` 도 같은 전제에 기대고,
-  그것을 검사하는 곳은 없다.
+  읽는다 — 오늘 인구는 0(`transform.rs` 의 `debug_assert`). interning 열쇠 `(name, motion)`, 평면 클래스 병합의
+  세계 이름(`Model::world_plane_name` 은 모션 없는 이름을 그대로 돌려준다), 합성 회전 갈래의 모션 전 이름 비교도
+  같은 전제에 기대고, 그것을 검사하는 곳은 없다. 고칠 자리는 뿌리(`world_plane_name` 또는 표의 이름 붙은 거절)다 —
+  소비자마다의 필터는 그 행을 한 틀린 답에서 다른 틀린 답으로 옮길 뿐이다.
 
 **도착점.** 평면 캐시는 «점 + 단위 법선»만 들고, 문(`push_plane(points, motion, sense)`)이 그 둘을 진실에서
 유도해 `cache` 인자가 떠난다 — 생산자 쪽에서 f64 평면을 짓는 자리 여덟(`prism.rs` 셋 · `datum.rs` 넷 ·
@@ -343,6 +336,15 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 재작성을 함께 재야 하므로 **별도 플랜**이다.
 
 ## 알려진 결함과 절벽
+
+### seam 정점 좌표를 평면 캐시로 푼다
+
+`arrangement/result.rs` 는 seam 표의 점을 세 클래스의 **평면 캐시**로 푼다(`three_planes(&geom[..].plane …)`)
+그리고 `None` 을 `ThreePlanes` 로 거절한다. 서로 다른 두 평면의 캐시가 비트 단위로 같으면 f64 로는 평행이라, 실제로
+만나는 정점의 유효한 입력이 거절된다 — `tests/coverage/placement.rs` 의 점수판
+(`scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused`, 픽스처 `rounded_twin_walls`: `Common(B, C)`;
+반대 순서는 답한다)이 오늘의 거절을 든다. 조용히 틀리지는 않지만 「f64 는 실현 통로 하나로」를 어기는 자리다:
+seam 점은 정의(`realize_vertex`)에서 실현한다. 고치는 칸이 점수판을 뒤집는다.
 
 ### 순차 빌드 관문이 병렬로 돈다
 

@@ -12,7 +12,9 @@ use fixtures::{
     u_and_slab, u_prism,
 };
 // Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
-pub(crate) use fixtures::{decimal_coincidence, extrude_log_op};
+pub(crate) use fixtures::{
+    decimal_coincidence, extrude_log_op, rounded_corner_walls, rounded_twin_walls,
+};
 use stated::{Stated, arc_turns, circle, line, stated};
 
 use super::*;

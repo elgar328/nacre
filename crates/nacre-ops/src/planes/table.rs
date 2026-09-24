@@ -325,6 +325,25 @@ pub(crate) fn collect_planes(
                 face.orientation
             );
             let name = model.surface_name.get(&face.surface).cloned();
+            // ★★ **The witness must span a plane** — three collinear points lie on every plane
+            // through their line, and `Judge::planes_coplanar` would read them as "on" whatever it
+            // asked. A name is the proof: it is derived from exactly these points (a motion keeps
+            // them non-collinear), and `plane_name_exact` is `None` only for collinear ones. The
+            // other arms have theirs — a judged frame's probes are `(0,0)·(1,0)·(0,1)`, and a
+            // `Through` datum over collinear vertices is refused where it is stated. What is
+            // left is a nameless `Known` plane: collinear in production, or a test's raw push
+            // (`push_plane_unregistered` skips the name), so only there is the question asked.
+            if name.is_none() {
+                if let nacre_topo::Surface::Plane {
+                    points: nacre_topo::PlanePoints::Known(pts),
+                    ..
+                } = model.surface(face.surface)
+                {
+                    if nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
+                        return Err(reject(RejectReason::DegenerateFace));
+                    }
+                }
+            }
             out.push(FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
                 world_name: model.world_plane_name(face.surface),

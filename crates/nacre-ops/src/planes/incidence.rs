@@ -149,28 +149,6 @@ pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
         .chain(face.inner.iter().flat_map(|l| l.half_edges.iter()))
 }
 
-/// Two faces lie on the same plane — by a **shared `Surface` handle** (explicit
-/// sharing: O(1) `Handle` identity, exact, rotation-independent) or, as a fallback,
-/// by the geometric rank-1 `planes_coplanar` test. A referenced coplanar contact —
-/// a pad/pocket cap that reuses its face's surface — is caught by the handle path
-/// without any coordinate test. On the axis-aligned M5 corpus the handle path is
-/// redundant with `planes_coplanar` (same handle ⇒ same plane), so the geometric
-/// fallback is what keeps independently-built coplanar contacts working; the handle
-/// path's real payoff is rotated frames, where the geometric test would need the
-/// rotation-exact judgment.
-pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceRow>, i: usize, j: usize) -> bool {
-    let (pa, pb) = (jd.planes[i].plane(), jd.planes[j].plane());
-    // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
-    //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
-    //     its target face share, and what a chained operand's split coplanar faces share);
-    //  2. exactly proportional coefficients — the original test, kept;
-    //  3. the faces' own coordinates, exactly (`Judge::planes_coplanar`) — the only one of the three
-    //     that does not read a *derived* value, and the one that catches two independently built
-    //     solids whose walls coincide (`add_cuboid` stacked on `add_cuboid`), where the rounded
-    //     coefficients of differently-sized faces are not exactly proportional.
-    pa.surf == pb.surf || planes_coplanar(&pa.plane, &pb.plane) || jd.planes_coplanar(i, j)
-}
-
 /// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
 /// of their class, so the result is deterministic — the same log replays to the same model.
 /// Drives component grouping in [`crate::assembly::unify_coplanar_faces`].
@@ -188,13 +166,17 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
     r
 }
 
-/// Canonicalize the combined plane table by coplanarity: two planes that are the same plane
-/// (shared `Surface` handle, or exact rank-1 [`planes_coplanar`]) are merged into one class, so
-/// a wall of `a` coplanar with a wall of `b` names a **single line** in a shared plane π. Without
-/// it a wall and its coplanar twin order against each other as one (`order_along(R, R) == 0`);
-/// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
-/// is the class root (the smallest index in the class). Every decision is exact
-/// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
+/// Canonicalize the combined plane table by coplanarity: two planes that are the same plane are
+/// merged into one class, so a wall of `a` coplanar with a wall of `b` names a **single line** in
+/// a shared plane π. Without it a wall and its coplanar twin order against each other as one
+/// (`order_along(R, R) == 0`); canonicalizing turns that self-comparison into a real order.
+/// Returns `canon` where `canon[i]` is the class root (the smallest index in the class).
+///
+/// Two truths decide, and nothing else: a shared `Surface` handle (interning made one plane one
+/// handle), then [`Judge::planes_coplanar`] between one face per distinct surface (world names,
+/// else the exact definitions). The caches — the plane cache's coefficients, the face corners'
+/// coordinates — are rounded images, so two different planes can share one exactly, and a merge
+/// they vouched for put one solid's wall on another's plane. O(n²) over distinct surfaces.
 pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     let planes = jd.planes;
     let n = planes.len();
@@ -216,7 +198,7 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     // boolean, 406 faces carry 172 distinct surfaces: 82,215 pairs become 14,706, and over the
     // fold 7.52M become 2.30M — 3.3x fewer. But the scan only got ~1.4x faster (0.96s → 0.69s
     // over the fold, ~1.03x end to end), because **the pairs this drops are the cheapest ones**:
-    // they matched on the handle and returned at the first `||`. What is left is the
+    // each was answered by a handle comparison, the cheapest test there is. What is left is the
     // geometrically distinct pairs, which are the ones that were expensive all along. Counting
     // removed operations overstates the saving whenever the removed ones are the cheap ones.
     let mut rep: HashMap<Handle<Surface>, usize> = HashMap::new();
@@ -240,7 +222,7 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     for a in 0..reps.len() {
         for b in (a + 1)..reps.len() {
             let (i, j) = (reps[a], reps[b]);
-            if shares_or_coplanar(jd, i, j) {
+            if jd.planes_coplanar(i, j) {
                 let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
                 if ri != rj {
                     // Attach the larger root under the smaller so a class's root is its min index.

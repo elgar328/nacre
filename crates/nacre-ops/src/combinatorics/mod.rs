@@ -23,7 +23,7 @@
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
 //! **Exception:** the code that *defines* the classes (`planes::plane_classes` →
-//! `planes::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
+//! `Judge::planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
 use crate::planes::{ClassIx, WorkingPlane, edge_incidence};
