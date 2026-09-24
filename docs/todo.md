@@ -15,14 +15,6 @@
 판정을 정하거나 진실로 흘러가는 자리가 아래 항목이다 — 출력·계측·`validate`·`props` 가 캐시를 읽는 것은 캐시의
 용도라 뺐다. «확인 전» 은 분류에서 나왔지만 코드로 다시 읽지 않은 자리다.
 
-### 교점 정렬이 캐시 평면으로 축과 부호를 고른다
-
-`order_located_quad`(`combinatorics/incidence_order.rs`)는 교선 P∩Q 위 원통 관통점의 순서를 정확 `a + b√c` 비교로
-정하는데, 비교 축 `k` 와 그 비교에 곱할 부호를 평면 캐시로 고른다(`nacre_geom::intersect::plane_pair_dir_sign` 에
-`planes[p].plane` 을 넘긴다). 평면 도로는 같은 물음을 판정기(`Judge::plane_pair_dir_sign` — 이름 행 또는 정의)에
-묻는다. 교선 방향의 참 성분이 0 인데 반올림이 0 이 아니게 만들면 축과 부호가 틀린다. 소비자: `split_circles` ·
-`incidence_order` · `trace_plane` · `direction`. 후보: 같은 판정기로.
-
 ### 방향 부호를 캐시로 읽는 자리
 
 전부 «평행한 두 벡터의 내적은 ±1 근처라 반올림이 부호를 못 바꾼다»는 크기 논증에 기대고 정확한 확인이 없다.
@@ -31,7 +23,9 @@
 
 - 저장 방향 대 정준 계수: `world_rat_sense`(`cyl_trace.rs`)·`rel_to_stored`(`cyl_gate.rs`)·`outward_fix`
   (`loops.rs`)는 `raw` 의 첫 0 아닌 성분의 부호, `stored_coeffs_rat`(`direction.rs`)는 캐시 법선과의 내적(σ 와
-  맞대는 `debug_assert` 뿐).
+  맞대는 `debug_assert` 뿐 — 모션 없고 이름이 좁은 클래스만 대조한다). 교선의 방향 `stored_line_dir` 가 그 κ 를
+  읽고, 원통이 낀 교선 위 점의 정렬(`order_located_quad`)이 그 방향으로 축과 부호를 고른다 — 평면 핀(σ)과 원통
+  핀(κ)이 한 정렬·한 `closed_contains` 에서 섞이므로 κ 가 틀리면 그 정렬이 뒤섞인다.
 - 원통 축 대 평면: `plus_t_is_above`(`cyl_geom.rs` — 방출·그레이즈·차트·호 방향이 읽는다), 조립의 테두리 원
   `forward` 비트(`assembly/reconstruct.rs`).
 - 면의 바깥 대 클래스 법선: `trace_plane.rs` 의 줄 위 구간 `run_body_above` 와 앉은 면의 `body_above`, 재사용의
@@ -68,9 +62,11 @@
   조용히 틀리지는 않는다.
 - `find_face_coplanar_with`(`ops/feature.rs` — pad/pocket 이 남은 캡을 찾는다)의 둘째 갈래가 면 꼭짓점 캐시의
   `plane_side` 로 공면을 정한다. 평면 클래스 병합과 같은 부류이고, 진실 쪽 답은 핸들 ∨ 세계 이름이다. 그 doc 은
-  «코퍼스가 두 갈래를 안 가른다»고 적는다. `nacre_geom::intersect::planes_coplanar`·
-  `nacre_predicates::planes_coplanar`(캐시 계수의 비례)는 제품 호출처가 0 이다(픽스처 `has_face_on_plane` 과 자기
-  테스트뿐) — 발행 층의 `pub` 이라 은퇴하거나 `test-util` 뒤로 보낼지 정한다.
+  «코퍼스가 두 갈래를 안 가른다»고 적는다. 그 `plane_side` 는 `nacre_geom::intersect` 의 캐시 정확 술어 가운데
+  제품 호출처가 남은 마지막이다 — **평면 캐시**를 받는 넷(`planes_coplanar`·`plane_pair_dir_sign`·
+  `three_plane_orient3d`·`three_plane_cmp_coord`, 그리고 `nacre_predicates::planes_coplanar`)은 제품 호출처가 0 이다
+  (픽스처 `has_face_on_plane`·테스트 오라클과 자기 테스트뿐) — 발행 층의 `pub` 이라 은퇴하거나 `test-util` 뒤로
+  보낼지 정한다.
 - 확인 전: 다중 솔리드 결과의 순서(`assembly/grouping.rs` `comp_key` — 꼭짓점 캐시로 정렬해 핸들 번호가 정해진다);
   topo `align_cache_sense` 의 doc 은 «`Through` 의 f64 외적을 정확한 순서가 뒤집는다»고 적지만 코드는 꼭짓점
   캐시의 f64 외적을 쓴다.

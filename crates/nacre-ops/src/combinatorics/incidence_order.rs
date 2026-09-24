@@ -70,9 +70,9 @@ pub(crate) fn edge_faces(
 /// `V_j`, `+1` if it follows, `0` if they coincide.
 ///
 /// With `V_k = P ∩ Q ∩ R_k` and `d = n_P × n_Q`, we want `sign((V_i − V_j)·d)`. Since
-/// `V_j ∈ R_j`, [`three_plane_orient3d`](nacre_geom::intersect::three_plane_orient3d) gives `sign((V_i − V_j)·N_j)` for `N_j` the
-/// right-hand normal of `R_j.tri`; multiplying by `sign(d·N_j)` recovers the order.
-/// Both factors are exact predicates, so the comparator is a true total order.
+/// `V_j ∈ R_j`, [`Judge::orient3d`] gives `sign((V_i − V_j)·N_j)` for `N_j` the outward normal of
+/// `R_j`'s witness triangle; multiplying by `sign(d·N_j)` ([`dir_sign`]) recovers the order.
+/// Both factors are judged on the truth, so the comparator is a true total order.
 ///
 /// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
@@ -98,13 +98,12 @@ pub(crate) fn order_along(
 /// order_along = sign((Vᵢ−Vⱼ)·N_out(j)) · sign((n_p×n_q)·N_out(j)) = sign(t·(…)²) = sign(t)
 /// ```
 ///
-/// — so it orders along **`n_p × n_q` taken from the raw coefficients**, and `j`'s own orientation
-/// cancels as a square. That is why the second road below asks
-/// [`nacre_geom::intersect::plane_pair_dir_sign`] — the *same* primitive — for the sign of a
-/// component of that direction, instead of forming a cross product of its own. (A cross product of
-/// the classes' `world_rat` normals is **not** it: those may oppose the raw ones per plane, which
-/// flips the direction. Measured: the derived road agrees with `order_along` 160/160 where a
-/// `world_rat` cross agreed 80/160.)
+/// — so it orders along **`n_p × n_q` over the stored normals**, and `j`'s own orientation cancels
+/// as a square. That is why the second road below reads its axis and sign off
+/// [`stored_line_dir`] — that same product, exactly, over the classes' stored-oriented rational
+/// coefficients. A cross product of the classes' `world_rat` normals is **not** it: those are
+/// canonical and may oppose the stored ones per plane, which flips the direction (measured on a
+/// `world_rat` cross: 80 of 160 comparisons against `order_along` came out reversed).
 ///
 /// **Two roads, one rule.** Plane-pinned pairs keep the integer predicates; anything a cylinder
 /// pinned has no third plane to be ordered by, and goes through the `a + b√c` tower on one
@@ -350,6 +349,7 @@ pub(crate) fn on_line(
                 NodeKind::Pierce { cyl, .. } => cyl,
                 NodeKind::ThreePlane(_) => return None,
             };
+            debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
             let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(OnLine::Pierce {
                 name,
@@ -357,6 +357,20 @@ pub(crate) fn on_line(
             })
         }
     }
+}
+
+/// Whether a pierce point's name puts it on the line `p ∩ q` — the pair the two locators are handed.
+///
+/// ★ **A producer's invariant, asserted rather than trusted.** Every site that makes a pierce name
+/// writes the very pair its consumer later locates the point on, and the quadratic road leans on
+/// it twice: the point's meet line is solved from the name's planes, and the axis it is compared
+/// on from the line's (`stored_line_dir`). A pair that disagreed would compare a point against a
+/// line it does not lie on. `false` for a three-plane name, which no pierce arm hands in.
+fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
+    pierce_name(name).is_some_and(|(mut planes, ..)| {
+        planes.sort_unstable();
+        planes == [p.min(q), p.max(q)]
+    })
 }
 
 /// Put a point into the **first**-argument form — an [`on_line`] with the Cramer handle beside it.
@@ -383,6 +397,7 @@ pub(crate) fn locate<'j>(
                 NodeKind::Pierce { cyl, .. } => cyl,
                 NodeKind::ThreePlane(_) => return None,
             };
+            debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
             let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(Located::Pierce {
                 name,
@@ -396,8 +411,8 @@ pub(crate) fn locate<'j>(
 /// hoists handed in rather than rebuilt.
 ///
 /// ★★★★★ The plane/plane test is the **first statement** on purpose: everything after it computes
-/// the axis component `(k, dsign)` with three `plane_pair_dir_sign` calls, and the overlay asks
-/// this millions of times on pairs that never reach there.
+/// the line's rational direction and a radical comparison, and the overlay asks this millions of
+/// times on pairs that never reach there.
 /// ★★★★★ **Hot and cold are separate functions, and the profile is what says so.** With the
 /// quadratic road in the same body the plane road stopped being inlined, and the arrangement's two
 /// containment loops — 1.4M and 3.2M questions per 60-fin fold — **doubled**: collect 78→153ms
@@ -432,22 +447,6 @@ fn order_located_quad(
 ) -> Option<i8> {
     use nacre_exact::Orient;
     use nacre_exact::quad::{cmp_coord_branch, cmp_coord_meet_branch};
-    let axis = |k: usize| {
-        let mut n = [0.0; 3];
-        n[k] = 1.0;
-        nacre_geom::Plane::from_point_normal(
-            nacre_math::Point3::from_array([0.0; 3]),
-            nacre_math::Vector3::from_array(n),
-        )
-    };
-    let (k, dsign) = (0..3).find_map(|k| {
-        let s = nacre_geom::intersect::plane_pair_dir_sign(
-            &jd.planes[p].plane,
-            &jd.planes[q].plane,
-            &axis(k)?,
-        );
-        (s != 0).then_some((k, s))
-    })?;
     let sign = |o: Orient| -> i8 {
         match o {
             Orient::Positive => 1,
@@ -455,6 +454,22 @@ fn order_located_quad(
             Orient::Zero => 0,
         }
     };
+    // The axis is the first component the line's direction has, and the order along the line is
+    // the order on that axis times that component's sign. ★ The direction is the rational one:
+    // on an axis where the true component is `0` every point of the line has the same coordinate,
+    // so an axis picked off the rounded plane caches there reads two distinct points as one.
+    let d = stored_line_dir(jd, p, q)?;
+    let zero = nacre_exact::Rat::from_int(0);
+    let (k, dsign) = (0..3).find_map(|k| {
+        let s = if d[k] > zero {
+            1i8
+        } else if d[k] < zero {
+            -1
+        } else {
+            0
+        };
+        (s != 0).then_some((k, s))
+    })?;
     let rat = |n: NodeId| -> Option<nacre_exact::MeetPoint> {
         node_coords_rat(jd, n).map(nacre_exact::MeetPoint::Narrow)
     };

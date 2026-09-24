@@ -228,6 +228,25 @@ pub(crate) fn stored_coeffs_rat(
     Some(out)
 }
 
+/// **The direction of the line `L = P ∩ Q`, exactly** — `n_p × n_q` over the two classes' stored
+/// normals ([`stored_coeffs_rat`]), which is the direction [`order_along`] orders the line by. One
+/// spelling for every reader that needs the line's direction as a vector rather than as a sign
+/// against a third plane: the quadratic order's axis, an arc's tangency, an arc's side.
+///
+/// ★★ **Rational, never read off the plane caches.** A component the truth makes exactly `0`
+/// stays `0` here; a cross product of the rounded caches can leave it at a few ulps, and a reader
+/// that picks "the first nonzero component" as its axis then compares points that all share that
+/// coordinate — two distinct points read as one. `None` when a class has no world description or
+/// the product overflows.
+pub(crate) fn stored_line_dir(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+) -> Option<[nacre_exact::Rat; 3]> {
+    let (np, nq) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, q)?);
+    nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nq[0], nq[1], nq[2]])
+}
+
 /// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
 ///
 /// **No point is materialized, and no coordinate is read** — the algebra that makes that true
@@ -655,8 +674,8 @@ fn ruling_line_turn(
 /// ★ The table's first row holds against that lock too: negating the
 /// whole result leaves the whole crate green. A global flip really is absorbed.
 /// **At a node where a line and an arc are tangent, do their travel directions agree?** — the
-/// sign of `d · t`: `d` the line's travel direction (`sense` along `cross(n_p, n_wall)` of the
-/// stored coefficients — the direction [`order_pinned`] orders by and [`arc_side`] reads), and
+/// sign of `d · t`: `d` the line's travel direction (`sense` along [`stored_line_dir`] — the
+/// direction [`order_pinned`] orders by and [`arc_side`] reads), and
 /// `t = way · (m × (N − c))` the arc's travel tangent at its node `N` (`way` is `+1` for
 /// counter-clockwise travel about the axis `m`), formed in one radical from `N = base + s·dir`.
 ///
@@ -679,8 +698,7 @@ pub(crate) fn tangent_travel_agrees(
     arc: &ArcDir,
 ) -> Option<bool> {
     use nacre_exact::{Orient, quad::QuadVal};
-    let (np, nw) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, carrier)?);
-    let d = nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]])?;
+    let d = stored_line_dir(jd, p, carrier)?;
     let (line, s) = &arc.at;
     let mut rel = line.base();
     for (r, c) in rel.iter_mut().zip(arc.centre.iter()) {
@@ -736,11 +754,7 @@ fn arc_side(
     // ★★ **Stored-frame normals, not the canonical ones.** `d` is compared against `frame_sign`
     // below, which speaks the stored frame; `class_coeffs_rat` speaks the canonical one and points
     // the other way on half the classes. See [`stored_coeffs_rat`].
-    let (Some(np), Some(nw)) = (stored_coeffs_rat(jd, p), stored_coeffs_rat(jd, carrier)) else {
-        return Err(wide());
-    };
-    let d =
-        nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]]).ok_or_else(wide)?;
+    let d = stored_line_dir(jd, p, carrier).ok_or_else(wide)?;
     let plane = (|| -> Option<[Rat; 4]> {
         Some([
             d[0],

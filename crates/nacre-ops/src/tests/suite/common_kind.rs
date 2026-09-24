@@ -368,8 +368,8 @@ fn every_producer_states_its_side_in_the_label_frame() {
 }
 
 /// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder stands on a
-/// tilted rational frame (the Pythagorean axes `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)`,
-/// normal `(0.64, −0.48, 0.6)`), so none of the box's planes is either ⊥ or ∥ to its axis and its
+/// tilted rational frame (`pythagorean_frame`, normal `(0.64, −0.48, 0.6)`), so none of the box's
+/// planes is either ⊥ or ∥ to its axis and its
 /// lateral face **meets** them. Every crossing is an ellipse — the population
 /// this door still names. ★ The oblique arm asks the faces first, so the fixture
 /// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
@@ -379,14 +379,7 @@ fn every_producer_states_its_side_in_the_label_frame() {
 fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let frame = datum_frame(
-        &mut m,
-        crate::SketchPlane::from_axes(
-            Point3::from_array([1.0, 1.0, 0.0]),
-            Vector3::from_array([0.6, 0.8, 0.0]),
-            Vector3::from_array([-0.48, 0.36, 0.8]),
-        ),
-    );
+    let frame = pythagorean_frame(&mut m, Point3::from_array([1.0, 1.0, 0.0]));
     let profile = stated(vec![circle(
         nacre_math::Point2::from_array([0.0, 0.0]),
         0.5,

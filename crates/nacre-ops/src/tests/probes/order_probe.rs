@@ -2,9 +2,10 @@
 //!
 //! ★★★★★ **The two do not agree pointwise, and that is not a defect — it is measured, and it is
 //! the reason the difference has to be stated as a *shape* rather than as equality.** The ruler's
-//! direction is `n₁ × n₂` built from the classes' **rational coefficients**;
-//! [`combinatorics::order_located`] takes its axis sign from the judge's **stored** planes. Those
-//! two spellings name the same plane but not the same *side*, so on a class where one of them is
+//! direction is `n₁ × n₂` built from the classes' **canonical** rational coefficients;
+//! [`combinatorics::order_located`] orders along the product of their **stored** normals
+//! (`combinatorics::stored_line_dir`). Those two spellings name the same plane but not the same
+//! *side*, so on a class where one of them is
 //! stored negated the whole comparison flips. ☑ Measured over the suite: 9,630 of 20,453 segments
 //! come out read the other way.
 //!

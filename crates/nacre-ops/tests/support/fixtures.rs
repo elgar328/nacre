@@ -97,6 +97,65 @@ pub fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
     extrude_op(&Model::new(), profile, dist)
 }
 
+/// **A tilted sketch frame that is exact in decimals** — the Pythagorean axes `u = (0.6, 0.8, 0)`,
+/// `v = (−0.48, 0.36, 0.8)` (normal `(0.64, −0.48, 0.6)`) at `origin`. Every axis is a decimal
+/// the kernel lifts to an exact rational, so a solid sketched here is stated in the world — a
+/// cylinder on it has a world axis — while its caches round.
+pub fn pythagorean_frame(m: &mut Model, origin: Point3) -> SketchFrame {
+    datum_frame(
+        m,
+        SketchPlane::from_axes(
+            origin,
+            Vector3::from_array([0.6, 0.8, 0.0]),
+            Vector3::from_array([-0.48, 0.36, 0.8]),
+        ),
+    )
+}
+
+/// **A line whose true direction has a zero component the caches do not.** On
+/// [`pythagorean_frame`] at the origin: a cylinder `A` over the unit circle about the origin,
+/// height 2, and a prism `B` over `(−1.2,−1.5)·(3,−1.5)·(3,1.5)·(1.2,1.5)`, height 1. `B`'s
+/// slanted wall runs along the sketch direction `(2.4, 3)`, which is `2.4·u + 3·v = (0, 3, 2.4)`
+/// in the world — the `x` component is exactly `0` (`2.4·0.6 = 3·0.48`) — and passes through the
+/// origin, so it contains `A`'s axis. Where it crosses `A`'s bottom cap, the line pierces the rim
+/// twice at points with one `x`, and a cross product of the rounded plane caches leaves that
+/// component a few ulps off `0`. The wall halves the cylinder, so `A ∩ B` is a half cylinder of
+/// volume `π/2`. Returns `(model, a, b)`.
+pub fn a_tilted_bore_and_an_axial_wall() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let frame = pythagorean_frame(&mut m, Point3::from_array([0.0; 3]));
+    let extrude = |m: &mut Model, profile: Profile2d, dist: f64| {
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        ) else {
+            panic!("extrude on the Pythagorean frame")
+        };
+        m.rebuild_adjacency();
+        solid
+    };
+    let disk = nacre_ops::from_paths(vec![
+        nacre_ops::Ring2d::circle(p2(0.0, 0.0), 1.0).expect("a unit circle"),
+    ])
+    .expect("a disk")
+    .remove(0);
+    let a = extrude(&mut m, disk, 2.0);
+    let quad = Profile2d::polygon(vec![
+        p2(-1.2, -1.5),
+        p2(3.0, -1.5),
+        p2(3.0, 1.5),
+        p2(1.2, 1.5),
+    ])
+    .expect("a quadrilateral");
+    let b = extrude(&mut m, quad, 1.0);
+    (m, a, b)
+}
+
 /// **A corner that lies on a wall in rationals and off it in `f64`.** The box `x ∈ [0, xs]`,
 /// `y ∈ [0, ys]`, `z ∈ [−1, 2]` (the common of two slabs, so `x = xs` and `y = ys` are caps with
 /// unit normals) and the prism over the triangle `(0,0),(1,0),(1,k)`, `z ∈ [0, 1]`, whose wall

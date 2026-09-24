@@ -8,8 +8,8 @@ use crate::draft::LocalFace;
 use fixtures::{
     boolean_one, cube_and_notch, extrude_op, l_and_corner_box, l_and_dimple, l_and_inner_box,
     l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes, outer_points, p2,
-    pocket_op, regular_ngon, rotated_l_prism, small_square, square, stacked_cubes, two_boxes,
-    u_and_slab, u_prism,
+    pocket_op, pythagorean_frame, regular_ngon, rotated_l_prism, small_square, square,
+    stacked_cubes, two_boxes, u_and_slab, u_prism,
 };
 // Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
 pub(crate) use fixtures::{

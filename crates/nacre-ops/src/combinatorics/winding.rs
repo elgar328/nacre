@@ -366,7 +366,7 @@ fn arc_extremum_winding(
 /// The turn at a convex-hull vertex is the winding, and the lexicographically smallest node
 /// is one: it is an extreme point of the node set, which is planar, so it is a vertex of the
 /// ring's hull. Finding it is the **only** thing here that needs two implicit points in one
-/// decision, and [`three_plane_cmp_coord`](nacre_geom::intersect::three_plane_cmp_coord) is that predicate.
+/// decision, and [`Judge::cmp_coord`] is that predicate.
 ///
 /// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
 /// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
@@ -629,10 +629,9 @@ fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir)
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
 ///
-/// [`plane_pair_dir_sign`](nacre_geom::intersect::plane_pair_dir_sign) gives the sign against `R`'s *stored* normal, exactly.
-/// That normal is parallel to `N_R` but may oppose it on a `Reversed` face, so we
-/// correct with their dot — two parallel unit vectors, `|·| ≈ 1`, nowhere near the
-/// sign boundary.
+/// [`Judge::plane_pair_dir_sign`] gives the sign against `R`'s *stored* normal, judged on the
+/// truth. That normal is parallel to `N_R` but opposes it on a `Reversed` face, which the face's
+/// `frame_sign` corrects.
 ///
 /// The correction *is* the face's stated flag — since the stored-orientation
 /// cutover, `frame_sign` is `Forward`/`Reversed` as a sign, and

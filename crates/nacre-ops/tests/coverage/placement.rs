@@ -9,7 +9,11 @@
 //!   taking `[0]` silently keep half the part);
 //! - a part that is **rotated and then placed** is described exactly, so a boolean on it builds;
 //! - decimal dimensions whose f64 images break a rational coincidence (`3·0.1 = 0.3`, but
-//!   `3·fl(0.1) ≠ fl(0.3)`) are **judged on the truth**, so a corner that lies on a wall is on it.
+//!   `3·fl(0.1) ≠ fl(0.3)`) are **judged on the truth**, so a corner that lies on a wall is on it;
+//! - two different walls whose rounded images coincide stay **two planes**, each result face on
+//!   its own;
+//! - a line whose true direction has a `0` component — which its plane caches leave a few ulps
+//!   off — is **ordered on the truth**, so two points on it are not read as one.
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -294,4 +298,37 @@ fn scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused() {
         ),
         "{r:?}"
     );
+}
+
+/// **Two points on a line are ordered along its true direction**, not along an axis the rounding
+/// invents. In [`a_tilted_bore_and_an_axial_wall`] the wall's line across the cylinder's cap runs
+/// along `(0, 3, 2.4)`: an axis picked off the plane caches, where that `0` is a few ulps, compares
+/// two rim points on `x` — which they share — and every boolean was refused
+/// (`TraceDeclined { CoincidentFeatures }`). On the truth each is built, and the volumes are the
+/// analytic ones: the wall halves the unit cylinder of height 2, and `B` has area 9 and height 1.
+#[test]
+fn a_line_is_ordered_along_its_true_direction() {
+    use std::f64::consts::PI;
+    let (common, a_only, b_only) = (PI / 2.0, 2.0 * PI - PI / 2.0, 9.0 - PI / 2.0);
+    for (kind, swapped, want) in [
+        (BoolKind::Fuse, false, 2.0 * PI + 9.0 - PI / 2.0),
+        (BoolKind::Fuse, true, 2.0 * PI + 9.0 - PI / 2.0),
+        (BoolKind::Common, false, common),
+        (BoolKind::Common, true, common),
+        (BoolKind::Cut, false, a_only),
+        (BoolKind::Cut, true, b_only),
+    ] {
+        let (mut m, a, b) = a_tilted_bore_and_an_axial_wall();
+        let (x, y) = if swapped { (b, a) } else { (a, b) };
+        let out = boolean_one(&mut m, kind, x, y)
+            .unwrap_or_else(|e| panic!("{kind:?} swapped = {swapped}: {e:?}"));
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{kind:?} swapped = {swapped}: {vs:?}");
+        let v = volume(&m, out);
+        assert!(
+            (v - want).abs() < 1e-9,
+            "{kind:?} swapped = {swapped}: volume {v}, want {want}"
+        );
+    }
 }
