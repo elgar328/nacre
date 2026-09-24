@@ -175,7 +175,8 @@ pub(crate) struct WorkingPlane {
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
-    /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
+    /// The root face's corner caches (`f64`), wound outward for that face — read by
+    /// [`WorkingPlane::tri_n_out`] alone, never by a judgement.
     pub(crate) tri: [Point3; 3],
     /// The witness as exact `WitnessPoint` definitions (the root face's), borrowed by every predicate.
     pub(crate) tri_pt3: [WitnessPoint; 3],

@@ -278,8 +278,8 @@ fn a_wall_keeps_its_plane_when_another_walls_rounded_image_matches() {
 /// the corner where the two walls cross (`x = 1`), and the seam table realizes it from the three
 /// classes' **plane caches**: two of them are the same bits, so the `f64` solve reads them as
 /// parallel and refuses `ThreePlanes`. The planes do meet; the answer is the triangle the
-/// other operand order returns. This pins today's refusal so that the fix (todo «seam 정점
-/// 좌표를 평면 캐시로 푼다») turns it over on purpose.
+/// other operand order returns. This pins today's refusal so that the fix — realizing the seam
+/// point from its definition instead of from the three plane caches — turns it over on purpose.
 #[test]
 fn scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused() {
     let (mut m, b, c) = rounded_twin_walls();
