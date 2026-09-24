@@ -46,7 +46,7 @@ pub(crate) struct Carved {
 /// asserted.
 pub(crate) static SIDE_CHECK: Ledger<Option<bool>> = Ledger::new();
 
-/// One entry per ruling piece: whether it got a label at all (`world_rat_sense` may decline).
+/// One entry per ruling piece: whether it got a label at all (a class without a world sense declines).
 pub(crate) static LABELLED: Ledger<bool> = Ledger::new();
 
 /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the

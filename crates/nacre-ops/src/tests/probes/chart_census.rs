@@ -63,7 +63,7 @@ pub(crate) fn census(
         // ★★★★★ **Every vertical line carries an answer.** A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
         // the census below would then be comparing a partial chart. ☑ Measured 862/862 across the
-        // suite; `world_rat_sense` declines none of them. ★ Except a **tangent** station:
+        // suite; the world sense declines none of them. ★ Except a **tangent** station:
         // the wall touches the cylinder along it and nothing changes across it — the face
         // ends there. Its answer is that it has none, and `read_cell` skips it.
         for t in &chart.theta {

@@ -135,15 +135,17 @@ fn pt3_base_collinear_exact() {
     ));
 }
 
-/// explicit sharing (overhaul #3): a prism built with a shared base-cap
-/// surface reuses that `Surface` handle for its flush cap, and reconciles the
-/// cap's face orientation so the materialized outward normal stays `−sweep`.
+/// Explicit sharing: a prism built with a shared base-cap surface reuses that `Surface` handle for
+/// its flush cap, with the orientation its caller states — here the one a pad on a `+z` face states
+/// (the face's own, reversed), so the materialized outward normal is `−sweep`.
 #[test]
 fn build_prism_base_cap_reuses_shared_surface() {
     let mut m = Model::new();
     // A face-plane surface with outward normal +z (as a face on the base solid).
     let r = nacre_exact::Rat::from_int;
-    let (sf, _) = m.push_plane(
+    // `z = 0` interns onto the seeded world plane, which faces `−z`: `flipped` says the handle
+    // faces the other way from this statement, so a face on it facing `+z` is `Reversed`.
+    let (sf, flipped) = m.push_plane(
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0])).unwrap(),
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         None,
@@ -160,14 +162,22 @@ fn build_prism_base_cap_reuses_shared_surface() {
         swept_world(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
         vec![],
         Vector3::from_array([0.0, 0.0, 1.0]),
-        Some(sf),
+        Some((
+            sf,
+            // A pad's base cap: the face's orientation on the surface, reversed.
+            if flipped {
+                nacre_topo::Orientation::Forward
+            } else {
+                nacre_topo::Orientation::Reversed
+            },
+        )),
         None,
     )
     .unwrap();
     let cap = m.face(faces[0]); // base cap is pushed first
     // Shared handle (was a fresh push before overhaul #3).
     assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
-    // Orientation reconciled: materialized outward normal is −sweep (−z).
+    // The stated orientation: materialized outward normal is −sweep (−z).
     let nacre_geom::Surface::Plane(p) = m.surface_cache(cap.surface) else {
         unreachable!()
     };

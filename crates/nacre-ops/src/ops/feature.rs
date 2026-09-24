@@ -49,7 +49,16 @@ fn extrude_and_boolean(
         outer,
         holes,
         n * signed.signum(),
-        Some(frame.surface_h),
+        // The base cap is flush on the face and faces against the sweep: back into the solid on a
+        // pad (the sweep runs along the face's outward), out of it on a pocket — so on the face's
+        // own surface it is the face's orientation, reversed for a pad.
+        Some((
+            frame.surface_h,
+            match kind {
+                BoolKind::Cut => model.face(face).orientation,
+                _ => model.face(face).orientation.flipped(),
+            },
+        )),
         // The pad reuses the face's own surface, so it pushes no base cap and states nothing.
         None,
     )?;
@@ -86,14 +95,22 @@ fn extrude_and_boolean(
     // coordinates can see none of that: on a tilted face the cap merges with a face of the other
     // operand and the survivor carries *that* surface, which `find_face_coplanar_with` can only
     // guess at — and a missed guess throws away a correct solid.
-    let want_surf = class_of
-        .get(&far_cap)
-        .copied()
-        .unwrap_or_else(|| model.face(far_cap).surface);
-    match solids
-        .iter()
-        .find_map(|&s| find_face_coplanar_with(model, s, far_cap, want_surf, n).map(|c| (s, c)))
-    {
+    //
+    // ★ **And which way it faces there, from the truth.** The cap the caller gets back faces `+n`:
+    // the far cap itself on a pad (it was swept along `+n`), and its reverse on a pocket (the tool
+    // cap faced along the sweep, `−n`; the floor it leaves faces back into the void). So the
+    // expected orientation on the class's surface is the far cap's, flipped for a `Cut`.
+    let (want_surf, far_orientation) = class_of.get(&far_cap).copied().unwrap_or_else(|| {
+        let f = model.face(far_cap);
+        (f.surface, Some(f.orientation))
+    });
+    let want_orientation = far_orientation.map(|o| match kind {
+        BoolKind::Cut => o.flipped(),
+        _ => o,
+    });
+    match solids.iter().find_map(|&s| {
+        find_face_coplanar_with(model, s, far_cap, (want_surf, want_orientation), n).map(|c| (s, c))
+    }) {
         Some((solid, cap)) => Ok((solid, cap)),
         // Nothing carries the cap — either the prism reached through (a pocket with no floor) or
         // it removed the solid outright, which is the same verdict taken to its limit. Only `Cut`
@@ -167,23 +184,17 @@ pub(crate) fn pocket(
 /// it does (`n·p` is one coordinate) and for a slanted one it does not. With a face in hand the
 /// question is answered the way the kernel answers identity everywhere else:
 ///
-/// 1. **the same `Surface` handle** — integers, not coordinates. `assemble_fuse_cut`
-///    gives a result face the surface of the operand plane it came from, so the surviving cap
-///    normally lands here.
+/// 1. **the class's `Surface` handle** — integers, not coordinates. `assemble_fuse_cut` gives a
+///    result face the surface of its plane class's representative, which `class` names (the
+///    boolean's own answer), so the surviving cap normally lands here. Its direction is decided
+///    exactly too: `class` carries the `Orientation` the cap must have on that surface, read off
+///    the truth (`planes::face_facing`), so this branch compares two flags and reads no normal.
 /// 2. **the faces' own coordinates, exactly** — every `outer_tri` point of the candidate lies on
 ///    `reference`'s tri plane (`plane_side`, an exact `orient3d` on the points the user gave).
-///    Needed because `plane_idx` names a *class representative*: if the cap plane merged with a
-///    coplanar face of the other operand, the survivor can carry that operand's surface instead.
 ///    A `None` from `outer_tri` (no non-collinear triple) means no evidence *for this branch* —
 ///    such a candidate can still match by handle, and a degenerate `reference` leaves only
-///    branch 1.
-///
-/// The direction filter reads the **candidate's** outward normal against `want`, never
-/// `reference`'s: a pocket's tool cap faces along the sweep (`−n`) while the floor it becomes faces
-/// back into the void (`+n`). Outward is the face's *stated* one — `plane.normal()` ×
-/// `orientation`, the same cutover `collect_planes` made — not a re-derivation from its loop.
-/// Coplanarity is settled by then, so the two are parallel and the dot is a full magnitude away
-/// from zero — an f64 read whose sign cannot round the wrong way.
+///    branch 1. Its direction filter reads the candidate's cache normal against `want` (an `f64`
+///    from the caller's frame), a full magnitude from zero once coplanarity is settled.
 ///
 /// If the cap survives as several faces they all satisfy this, and the first is returned; the
 /// coefficient test had the same ambiguity.
@@ -197,25 +208,23 @@ pub(crate) fn find_face_coplanar_with(
     model: &Model,
     solid: Handle<Solid>,
     reference: Handle<Face>,
-    ref_surf: Handle<Surface>,
+    class: (Handle<Surface>, Option<Orientation>),
     want: Vector3,
 ) -> Option<Handle<Face>> {
     let ref_tri = outer_tri(model, model.face(reference)).map(|(tri, _)| tri);
     let shell = model.solid(solid).outer;
     model.shell(shell).faces.iter().copied().find(|&fh| {
         let face = model.face(fh);
-        // ★ The cache, because what follows is an `f64` direction comparison against `want`
-        // (itself an `f64` vector from the caller). Asking the truth for the kind and the cache
-        // for the normal would read one surface twice to no end; the coplanarity beside it is
-        // decided exactly, by `plane_side` on the reference triangle.
+        if face.surface == class.0 {
+            return class.1 == Some(face.orientation);
+        }
         let nacre_geom::Surface::Plane(pl) = model.surface_cache(face.surface) else {
             return false;
         };
-        let coplanar = face.surface == ref_surf
-            || ref_tri.is_some_and(|r| {
-                outer_tri(model, face)
-                    .is_some_and(|(tri, _)| tri.iter().all(|&q| plane_side(r, q) == 0))
-            });
+        let coplanar = ref_tri.is_some_and(|r| {
+            outer_tri(model, face)
+                .is_some_and(|(tri, _)| tri.iter().all(|&q| plane_side(r, q) == 0))
+        });
         let sign = f64::from(face.orientation.sign());
         coplanar && pl.normal().dot(want) * sign > 0.0
     })

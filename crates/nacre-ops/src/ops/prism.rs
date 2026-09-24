@@ -110,14 +110,48 @@ pub(crate) fn extrude_on_frame(
     };
     let (outer, holes) = crate::construct::prism_rings_in(model, rat, profile, dist, node)
         .ok_or(OpError::PlaneWithoutExactForm)?;
+    let base = (frame.plane(), base_cap_orientation(model, frame)?);
     build_prism(
         model,
         outer,
         holes,
         Vector3::from_array(w),
-        Some(frame.plane()),
+        Some(base),
         None,
     )
+}
+
+/// **How the base cap of a prism swept on `frame` faces its plane** — the cap's outward is `−ŵ`
+/// (the sweep runs along `ŵ`), read against the way the frame's plane `h` faces, from the truth.
+///
+/// `ŵ` is a difference of carried points, so the plane's motion carries it as `L(ŵ)`; the plane's
+/// facing is its points' turn times `sense`, which the motion carries as `parity · L(·)`. In `h`'s
+/// own frame `ŵ` is `±` a normal the truth relates to that facing: a named plane frames from its
+/// name (`ŵ` along the name's normal, [`nacre_topo::Model::plane_name_sense`] relates it), a
+/// nameless one from its judged points in order (`ŵ` along their turn, `sense` relates it); `flip`
+/// negates `ŵ`. So the cap faces the plane's way exactly when `−(that relation) · parity · flip`
+/// is `+1`.
+fn base_cap_orientation(model: &Model, frame: &SketchFrame) -> Result<Orientation, OpError> {
+    let h = frame.plane();
+    let nacre_topo::Surface::Plane { sense, motion, .. } = model.surface(h) else {
+        return Err(OpError::NonPlanarFace);
+    };
+    let relation = if model.surface_name.contains_key(&h) {
+        model
+            .plane_name_sense(h)
+            .ok_or(OpError::PlaneWithoutExactForm)?
+            .sign()
+    } else {
+        sense.sign()
+    };
+    let parity = crate::rotated_vertex::motion_parity(model, *motion)
+        .ok_or(OpError::PlaneWithoutExactForm)?;
+    let flip = if frame.flip() { -1 } else { 1 };
+    Ok(if -relation * parity * flip > 0 {
+        Orientation::Forward
+    } else {
+        Orientation::Reversed
+    })
 }
 
 /// Place a profile on its plane and sweep it — **exactly, or not at all**.
@@ -170,7 +204,7 @@ pub(crate) fn build_prism(
     outer_ring: Swept,
     inner_rings: Vec<Swept>,
     normal: Vector3,
-    base_cap_surface: Option<Handle<Surface>>,
+    base_cap_surface: Option<(Handle<Surface>, Orientation)>,
     // ★ The world points of the plane the caller named, when they named one. Its canonical name is
     // derived from these, so there is no second half that could travel separately.
     base_cap_points: Option<[[nacre_exact::Rat; 3]; 3]>,
@@ -184,8 +218,14 @@ pub(crate) fn build_prism(
 
     // Whether the sweep runs along the frame normal (a boss) or against it (a pocket): the rings
     // are normalized about the *sweep*, the arcs' `ccw` is stated about the *normal*, and the
-    // lateral orientation rule below compares the two.
-    let sweep_up = outer_ring.normal.dot(normal) > 0.0;
+    // lateral orientation rule below compares the two. Both are the ring's exact statement, in
+    // its own frame — a motion carries them alike, so their dot's sign is the world's.
+    let sweep_up = {
+        let e = &outer_ring.exact;
+        let d = nacre_exact::dot3_rat(&e.normal, &e.sweep().ok_or(OpError::DegenerateGeometry)?)
+            .ok_or(OpError::DegenerateGeometry)?;
+        d > nacre_exact::Rat::from_int(0)
+    };
     let outer_pts = oriented_ring(outer_ring, sweep_up, true)?;
     let hole_pts: Vec<Swept> = inner_rings
         .into_iter()
@@ -201,22 +241,12 @@ pub(crate) fn build_prism(
     // Base cap: outward normal −N, loops reversed.
     // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so
     // the flush contact is a shared-handle coplanar pair the boolean can recognize by `Handle`
-    // identity; otherwise push a fresh plane. The materialized outward normal must stay −N, so the
-    // face orientation is chosen from the shared surface's stored normal — `surface` and
-    // `orientation` travel together, and the reconstruction copies both.
+    // identity; otherwise push a fresh plane. The materialized outward normal must stay −N, and
+    // the caller states the orientation that makes it so — it knows the shared plane's truth
+    // (a face's own orientation, a frame's `flip`), where this would have to read the surface's
+    // cache. `surface` and `orientation` travel together, and the reconstruction copies both.
     let (base_surface, base_orient) = match base_cap_surface {
-        Some(h) => {
-            let n_h = match model.surface_cache(h) {
-                nacre_geom::Surface::Plane(p) => p.normal(),
-                nacre_geom::Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
-            };
-            let orient = if n_h.dot(-normal) > 0.0 {
-                Orientation::Forward
-            } else {
-                Orientation::Reversed
-            };
-            (h, orient)
-        }
+        Some(shared) => shared,
         None => {
             // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
             //
