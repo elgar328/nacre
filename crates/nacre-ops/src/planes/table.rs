@@ -472,6 +472,33 @@ pub(crate) fn collect_planes(
             f.motion = Some(c);
         }
     }
+    // ★ **Two exact readings of one fact, each checking the other.** σ — the name against the
+    // stored orientation — is read on the witness ([`nacre_judge::predicate::witness_name_sense`],
+    // what `name_ints` and `BaseFrame` fold by), and the truth states it outright
+    // ([`Model::plane_name_sense`]): the witness's order came from the truth, so the two agree,
+    // save that a restated row's witness speaks the restating chain's frame, whose reflection
+    // reverses the points' turn and not the name. An identity between truths, not a reachable
+    // failure — which is why it is an assertion.
+    #[cfg(debug_assertions)]
+    for row in &out {
+        let FaceRow::Plane(f) = row else { continue };
+        let Some(name) = f.name.as_ref() else {
+            continue;
+        };
+        let Some(sigma) =
+            nacre_judge::predicate::witness_name_sense(name, &f.tri_pt3, f.orient_sign)
+        else {
+            continue;
+        };
+        let restated = f.motion.filter(|_| model.plane_motion(f.surf).is_none());
+        let parity = crate::rotated_vertex::motion_parity(model, restated).unwrap_or(1);
+        debug_assert_eq!(
+            model.plane_name_sense(f.surf).map(|s| s.sign() * parity),
+            Some(sigma),
+            "the witness's σ and the truth's disagree on {:?}",
+            f.surf
+        );
+    }
     Ok(out)
 }
 

@@ -289,64 +289,52 @@ impl NameInts {
     }
 }
 
+/// **σ — how a plane's canonical name relates to its stored orientation**, read on its witness:
+/// `+1` when the name's normal points the way the stored normal does, `-1` when it opposes.
+///
+/// The witness triangle's `base` points lie on the named plane (the table contract: three exact
+/// points on the plane, wound to the face's outward normal), so the name's normal and the
+/// triangle's turn are parallel, and [`nacre_exact::name_along_points`] reads which way round
+/// exactly. `frame_sign` (stored vs. triangle) carries it the rest of the way:
+/// `σ = (name along the triangle) · frame_sign`.
+///
+/// ★ **Exact only where witness and name speak the same frame** — the bases must lie *on* the named
+/// plane. A nonzero residual is not a broken table: a named plane whose meets are wider than any
+/// witness base is witnessed by its own frame's probes, whose bases are frame-local coordinates.
+/// Then this is `None`, as it is for collinear bases, and every consumer keeps its other road.
+///
+/// Two consumers, one spelling: [`name_stored_ints`] folds the name by it, and `nacre-ops`'
+/// `BaseFrame` orients its pre-motion coefficients by it.
+pub fn witness_name_sense(
+    name: &nacre_exact::PlaneName,
+    tri_pt3: &[WitnessPoint; 3],
+    frame_sign: i8,
+) -> Option<i8> {
+    let bases = [tri_pt3[0].base, tri_pt3[1].base, tri_pt3[2].base];
+    if bases
+        .iter()
+        .any(|&p| nacre_exact::plane_residual_sign(name, p) != 0)
+    {
+        return None;
+    }
+    let m = bases.map(nacre_exact::MeetPoint::Narrow);
+    let along = nacre_exact::name_along_points(name, [&m[0], &m[1], &m[2]])?;
+    Some(if along { frame_sign } else { -frame_sign })
+}
+
 /// Fold a plane's canonical name to the **stored orientation** — the one-time σ computation
-/// [`PlaneWitness::name_ints`] carries.
+/// [`PlaneWitness::name_ints`] carries, σ from [`witness_name_sense`].
 ///
-/// The witness triangle's `base` points lie exactly on the named plane (the table contract:
-/// three exact points on the plane, wound to the face's outward normal), so the name's normal
-/// and the triangle's cross product are exactly parallel and their dot's sign is σ against the
-/// *triangle's* orientation — computed in integers after clearing all nine coordinate
-/// denominators by one common positive factor (a global scale moves neither the cross's
-/// direction nor the dot's sign; per-point scales would). `frame_sign` (stored vs. triangle)
-/// then carries it the rest of the way: `σ = sign(name·cross) · frame_sign`.
-///
-/// `None` when the plane has no name, or the dot is zero (a degenerate witness — collinear
-/// `base` points span no direction to compare against), in which case the rescue simply
-/// declines and the judgement keeps its toleranced route: slower, never wrong.
+/// `None` when the plane has no name, or σ has no answer on this witness, in which case the
+/// rescue simply declines and the judgement keeps its toleranced route: slower, never wrong.
 pub fn name_stored_ints(
     name: Option<&nacre_exact::PlaneName>,
     tri_pt3: &[WitnessPoint; 3],
     frame_sign: i8,
 ) -> Option<NameInts> {
-    use num_integer::Integer;
     let name = name?;
-    let bases: [&[Rat; 3]; 3] = [&tri_pt3[0].base, &tri_pt3[1].base, &tri_pt3[2].base];
-    // One common positive scale for all nine coordinates.
-    let lcm = bases
-        .iter()
-        .flat_map(|p| p.iter())
-        .fold(BigInt::from(1), |l, r| l.lcm(&BigInt::from(r.denom())));
-    let lift = |p: &[Rat; 3]| -> [BigInt; 3] {
-        core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&lcm / BigInt::from(p[i].denom())))
-    };
-    let (p0, p1, p2) = (lift(bases[0]), lift(bases[1]), lift(bases[2]));
-    let edge = |q: &[BigInt; 3]| -> [BigInt; 3] { core::array::from_fn(|i| &q[i] - &p0[i]) };
-    let (u, v) = (edge(&p1), edge(&p2));
-    let cross = [
-        &u[1] * &v[2] - &u[2] * &v[1],
-        &u[2] * &v[0] - &u[0] * &v[2],
-        &u[0] * &v[1] - &u[1] * &v[0],
-    ];
+    let sigma = witness_name_sense(name, tri_pt3, frame_sign)?;
     let mut ints = name.coeff_ints();
-    // The σ below is exact only when the witness bases lie exactly on the named plane — i.e.
-    // when witness and name **speak the same frame**. A nonzero residual here is not a broken
-    // table: a named plane whose meets are wider than any witness base is
-    // witnessed by its own frame's probes, whose bases are frame-local coordinates — a
-    // different frame from the name's. The fold then declines, `name_ints` stays `None`, and
-    // the plane keeps the toleranced routes: slower, never wrong.
-    let on_plane = [&p0, &p1, &p2].iter().all(|p| {
-        let r: BigInt = (0..3).map(|i| &ints[i] * &p[i]).sum::<BigInt>() + &ints[3] * &lcm;
-        r.sign() == num_bigint::Sign::NoSign
-    });
-    if !on_plane {
-        return None;
-    }
-    let dot: BigInt = (0..3).map(|i| &ints[i] * &cross[i]).sum();
-    let sigma = match dot.sign() {
-        num_bigint::Sign::Plus => frame_sign,
-        num_bigint::Sign::Minus => -frame_sign,
-        num_bigint::Sign::NoSign => return None,
-    };
     if sigma < 0 {
         for c in &mut ints {
             *c = -&*c;

@@ -226,8 +226,9 @@ pub(crate) struct FaceInfo {
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
     /// The surface's plane as **exact rational coefficients in the frame its truth names**
     /// (`Model::surface_name`) — the world when unmoved, the pre-motion frame when moved.
-    /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
-    /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
+    /// `None` when the producer had no rational description. The judge's pre-motion routes read it
+    /// (`Witness::base_coeffs_rat` — the composed-rotation route), and so does the restatement
+    /// mirror in `collect_planes`.
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
     /// The same plane's canonical name **in the world**, whatever frame the truth is written in
     /// ([`nacre_topo::Model::world_plane_name`]). `None` when no exact world statement exists (a
@@ -237,9 +238,10 @@ pub(crate) struct FaceInfo {
     /// cancels).
     pub(crate) world_name: Option<nacre_exact::PlaneName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
-    /// [`WorkingPlane::name_ints`] is folded from. `base_rat` above is its narrow projection,
-    /// kept beside it because the narrow consumers (`BaseFrame`, the composed-rotation route)
-    /// read `[Rat; 4]` directly.
+    /// [`WorkingPlane::name_ints`] is folded from and [`BaseFrame`] orients its pre-motion
+    /// coefficients by. `base_rat` above is its narrow projection, kept beside it because the
+    /// narrow consumers (the composed-rotation route, the restatement mirror) read `[Rat; 4]`
+    /// directly.
     pub(crate) name: Option<nacre_exact::PlaneName>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own truth (`Model::surface`).

@@ -37,7 +37,7 @@ impl BaseFrame {
         tri_pt3: &[WitnessPoint; 3],
         motion: Option<Handle<nacre_topo::MotionNode>>,
         frame_sign: i8,
-        base_rat: Option<[nacre_exact::Rat; 4]>,
+        name: Option<&nacre_exact::PlaneName>,
     ) -> Self {
         // **Identity by handle, not by hash.** This used to fold the chain into a 64-bit
         // `DefaultHasher` digest and compare digests — and a collision does not make a judgement
@@ -105,7 +105,7 @@ impl BaseFrame {
             let k = f64::from(frame_sign);
             [c[0] * k, c[1] * k, c[2] * k, c[3] * k]
         });
-        // ★★★ **Take `d` from the record and the direction from the triangle.**
+        // ★★★ **Take the plane from the record, not from the triangle.**
         //
         // The derivation above is the two-descriptions problem in miniature: `d` comes out of an
         // f64 dot product, so the plane it names is not quite the one `tri` lies on — measured, for
@@ -113,47 +113,47 @@ impl BaseFrame {
         // pre-motion coefficients (`Model::surface_name`) *are* that plane, exactly, with no
         // triangle in the derivation at all.
         //
-        // ★ Only the **direction** still comes from the triangle, and that is deliberate. The
-        // record is canonicalized, so its sign is a normal form, not this face's outward sense;
-        // and the reflection correction above cannot simply be applied to a normal, because the
-        // cross product is a pseudovector and reflecting-then-deriving differs from
-        // deriving-then-reflecting by a global sign (the comment above, and the test
-        // `a_reflected_spelling_takes_the_same_direction_signs` that found it). Orienting the
-        // exact plane to agree with the derived one reproduces whatever convention the derivation
-        // had, without re-deriving the convention — and *direction* is the half where the two
-        // descriptions do not part.
-        let exact_coeffs = base_rat.and_then(|c| {
+        // ★ **And its direction from σ**, which reads the same record against the witness exactly
+        // ([`nacre_judge::predicate::witness_name_sense`] — the fold `name_ints` makes). The record
+        // is canonical, so its sign is a normal form, not this face's orientation; σ is what
+        // relates the two.
+        let exact_coeffs = name.and_then(|name| {
+            let c = *name.narrow()?;
+            let sigma = nacre_judge::predicate::witness_name_sense(name, tri_pt3, frame_sign)?;
             // ★ **The same correction, applied to the plane.** When the chain is improper the
             // triangle above was reflected in `x`, so everything derived from it lives in the
-            // reflected base frame — and the record does not. Orienting the normals afterwards
-            // cannot repair that: an unreflected plane and a reflected one are *different planes*,
-            // not the same plane spelled with the opposite sign, so the two mirror fixtures fail
-            // outright. Reflect the plane, then let the orientation step below settle the sign
-            // (which is where reflecting-then-deriving and deriving-then-reflecting differ).
-            let c = if improper {
-                nacre_exact::mirror_plane_coeffs(
-                    c,
-                    nacre_exact::Axis::X,
-                    nacre_exact::Rat::from_int(0),
-                )?
+            // reflected base frame — and the record does not. An unreflected plane and a
+            // reflected one are *different planes*, not one plane spelled with the opposite sign,
+            // so the record is reflected too: `x ↦ −x` negates its `x` coefficient (`d` stays —
+            // the mirror is at `0`). Left uncanonical, because the sign is set next: the
+            // reflection reverses the triangle's turn (the cross product is a pseudovector) and
+            // not the record's, so the reflected record faces the reflected triangle's stored
+            // direction exactly when σ says it does not.
+            let zero = nacre_exact::Rat::from_int(0);
+            let (v, s) = if improper {
+                ([zero.checked_sub(c[0])?, c[1], c[2], c[3]], -sigma)
             } else {
-                c
+                (c, sigma)
             };
-            let f = c.map(|r| r.to_f64());
+            let v = if s < 0 {
+                [
+                    zero.checked_sub(v[0])?,
+                    zero.checked_sub(v[1])?,
+                    zero.checked_sub(v[2])?,
+                    zero.checked_sub(v[3])?,
+                ]
+            } else {
+                v
+            };
+            let f = v.map(|r| r.to_f64());
             // A canonicalized vector is integral; if it does not survive the round trip the
             // realization is a rounding and buys nothing over the derivation.
-            c.iter()
+            v.iter()
                 .zip(f)
                 .all(|(&r, x)| nacre_exact::Rat::try_from_f64(x) == Some(r))
                 .then_some(f)
         });
-        let coeffs = match (exact_coeffs, derived) {
-            (Some(e), Some(d)) => {
-                let dot = e[0] * d[0] + e[1] * d[1] + e[2] * d[2];
-                Some(if dot < 0.0 { e.map(|x| -x) } else { e })
-            }
-            _ => derived,
-        };
+        let coeffs = exact_coeffs.or(derived);
         Self {
             chain_id,
             tri: Some(tri),
