@@ -7,6 +7,110 @@
 
 지금 진행 중인 항목은 없다 — 아래 「다음」에서 고른다.
 
+## 다음 — 판정과 진실은 캐시를 읽지 않는다
+
+캐시(평면 캐시의 계수·법선, 꼭짓점 좌표 캐시, 간선 곡선, 판정 표의 `plane`·`tri`·`n_out`)는 반올림된 상이라,
+판정을 정하거나 진실로 흘러가면 진실의 유리수 일치를 반올림이 깰 때 조용히 틀린다(「가지 말 것」 «정확 지름길의
+자격을 캐시끼리의 대조로 주기»). ops·judge·topo·validate·props 의 제품 코드에서 캐시를 읽는 자리를 전부 분류했고,
+판정을 정하거나 진실로 흘러가는 자리가 아래 항목이다 — 출력·계측·`validate`·`props` 가 캐시를 읽는 것은 캐시의
+용도라 뺐다. «확인 전» 은 분류에서 나왔지만 코드로 다시 읽지 않은 자리다.
+
+### 평면 클래스 병합이 캐시로 정해진다
+
+`shares_or_coplanar`(`planes/incidence.rs`)는 세 증거의 OR 로 두 면을 한 평면 클래스로 합친다 — 핸들
+동일성(진실: interning 이 같은 평면을 한 핸들로 만든다) · 평면 캐시 계수의 정확 비례
+(`nacre_geom::intersect::planes_coplanar`) · `Judge::planes_coplanar`. 마지막 것의 모션 없는 갈래는 면 꼭짓점
+캐시(`tri`)로 정확 `orient3d` 를 하고(`predicate.rs`), 정의 점(`tri_pt3`)은 회전 갈래만 읽는다. 캐시 증거 둘은
+병합을 **더할 수만** 있고 진실로 확인되지 않는다 — 반올림된 상이 우연히 일치하는 서로 다른 평면이 조용히 한
+클래스가 되고, 클래스 뿌리의 곡면이 결과 정점의 정의(`Vertex::ThreePlane`)에 들어가므로 진실까지 간다. `tri` 가
+f64 로 공선이면 병합을 놓친다. 방금 고친 정확 지름길과 같은 부류이고, 틀리면 가장 넓게 퍼진다.
+
+**먼저 잴 것.** census 에서 핸들이 다른데 캐시 증거로만 합쳐진 쌍의 수(0 이면 캐시 증거를 빼도 이동 0 이 예측) ·
+반올림된 상이 일치하는 서로 다른 평면을 손으로 심은 배치(빨간 것을 먼저 본다). 진실 쪽 답: 이름 있는 평면은
+이름(`world_plane_name`) 동일성, 모션 있는 평면은 지금의 공유 모션·합성 회전 도로.
+
+### 교점 정렬이 캐시 평면으로 축과 부호를 고른다
+
+`order_located_quad`(`combinatorics/incidence_order.rs`)는 교선 P∩Q 위 원통 관통점의 순서를 정확 `a + b√c` 비교로
+정하는데, 비교 축 `k` 와 그 비교에 곱할 부호를 평면 캐시로 고른다(`nacre_geom::intersect::plane_pair_dir_sign` 에
+`planes[p].plane` 을 넘긴다). 평면 도로는 같은 물음을 판정기(`Judge::plane_pair_dir_sign` — 이름 행 또는 정의)에
+묻는다. 교선 방향의 참 성분이 0 인데 반올림이 0 이 아니게 만들면 축과 부호가 틀린다. 소비자: `split_circles` ·
+`incidence_order` · `trace_plane` · `direction`. 후보: 같은 판정기로.
+
+### 방향 부호를 캐시로 읽는 자리
+
+전부 «평행한 두 벡터의 내적은 ±1 근처라 반올림이 부호를 못 바꾼다»는 크기 논증에 기대고 정확한 확인이 없다.
+진실이 이미 답하는 물음이다 — `NameInts` 의 σ(이름을 저장 방향으로 접은 부호, `coeff_sign`), 진실의 향
+(`Surface::Plane.sense`), 면의 `Orientation`. 판정 입력에 닿으므로 캐시 향을 바꾸는 일과 따로 옮긴다.
+
+- 저장 방향 대 정준 계수: `world_rat_sense`(`cyl_trace.rs`)·`rel_to_stored`(`cyl_gate.rs`)·`outward_fix`
+  (`loops.rs`)는 `raw` 의 첫 0 아닌 성분의 부호, `stored_coeffs_rat`(`direction.rs`)는 캐시 법선과의 내적(σ 와
+  맞대는 `debug_assert` 뿐).
+- 원통 축 대 평면: `plus_t_is_above`(`cyl_geom.rs` — 방출·그레이즈·차트·호 방향이 읽는다), 조립의 테두리 원
+  `forward` 비트(`assembly/reconstruct.rs`).
+- 면의 바깥 대 클래스 법선: `trace_plane.rs` 의 줄 위 구간 `run_body_above` 와 앉은 면의 `body_above`, 재사용의
+  뒤집기(`reuse.rs` — |cos| < 0.5 면 기권).
+- 증인 점의 순서: `planes/table.rs` 의 `wind`(셋 — 두 팔과 원 캡 분기)가 정확한 `tri_pt3` 의 순서를 캐시 `n_out`
+  과의 f64 내적으로 정한다 — 그 순서가 모든 술어의 `orient3d` 부호 규약이 된다.
+- 프리즘: 밑캡 공유의 `n_h.dot(-normal)`(면 `Orientation` 비트)과 `sweep_up`(`outer_ring.normal · normal` — 링을
+  뒤집을지와 원통 벽의 향), `ops/feature.rs` 의 동일평면 캡 판단(확인 전).
+
+### 캐시가 진실로 흘러가는 자리
+
+연산이 캐시를 읽어 진실이 될 것을 정한다 — `refine_vertex_cache` 의 doc 이 스스로 적는 부류이고, 그래서 그 문이
+«연산을 마친 뒤에 부른다» 계약을 든다.
+
+- 면 위 스케치(`ops/frame.rs` `face_frame`): 캐시 법선으로 축을 짓고(`frame_axes`) `SketchPlane::exact` 가
+  `Rat::from_decimal` 로 들어올려 도로(세계 유리수 / 프레임 노드)를 고른다. 원점도 캐시 평면의 투영을 들어올리는
+  경우가 있고(모션이 있거나 이름이 좁지 않은 평면), `measured_frame` 의 `flip`(모션 노드이자 interning 열쇠)도
+  캐시 법선과의 내적이다. 캐시 평면 법선을 정확 반올림으로 옮기는 일이 이것에 막혀 있다(법선 비트가 바뀌면
+  들어올림이 바뀌어 게이트가 뒤집힐 수 있다 — `RatFrame` doc 의 `0.6000000000000001` 부류; 코퍼스에서 뒤집히는
+  면은 안 쟀다). 후보: 게이트가 진실에 묻는 쪽, `RatFrame` 이 이미 하는 유리수 물음.
+- 이동(`transform.rs` `carry_of`): 캐시 좌표(꼭짓점·평면 원점·원통 축 원점)가 f64 에서 정확히 옮겨지는지로 모션
+  노드를 기록할지 정한다.
+- datum: `ThroughVertices` 의 `flip` 을 꼭짓점 캐시의 외적과 잰다. 오프셋 datum 은 실현한 기저를 `from_decimal`
+  로 들어올려 도로와 평면 점을 정한다 — `construct.rs` 가 경고하는 «실현 뒤 들어올림»이고, 프리즘은 같은 물음을
+  `RatFrame::of_plane_frame` 에 묻는다. 오프셋의 `same_side` 는 f64 내적이 진실의 `d` 부호를 정한다.
+
+### 곡선의 종류와 점의 동일성이 캐시로 정해진다
+
+- `derive_edge_curve` 는 평면이 원통 축과 평행한지를 캐시 법선의 `1e-18` 상대 허용오차로 가려 선/원을 고르고,
+  판정 경로(`planes/table.rs` 원 캡 분기 · `loops.rs` 의 호 방향과 벽 종류 · `corners.rs` `corner_of`)가 그 종류를
+  읽는다. 정확한 답이 있다: `world_plane_name` 법선과 `world_cylinder_def().dir()` 의 `parallel_rat`.
+- `push_edge` 는 두 끝점의 좌표 캐시가 같은 f64 이면 간선을 거절한다(`derive_edge_curve` 의
+  `Line::through_points` — 호출자가 `ZeroLengthEdge` 로 옮긴다). 두 정의가 한 점인지는 묻지 않는다. 거절 쪽이라
+  조용히 틀리지는 않는다.
+- 확인 전: 다중 솔리드 결과의 순서(`assembly/grouping.rs` `comp_key` — 꼭짓점 캐시로 정렬해 핸들 번호가 정해진다);
+  topo `align_cache_sense` 의 doc 은 «`Through` 의 f64 외적을 정확한 순서가 뒤집는다»고 적지만 코드는 꼭짓점
+  캐시의 f64 외적을 쓴다.
+
+### `raw` 은퇴 — 판정이 평면 캐시를 읽는 남은 자리
+
+**지금 참인 것.** 모션 없는 평면의 정확 지름길(`orient3d`·`cmp_coord`·방향 부호의 첫 갈래)은 평면의 **이름**만
+읽는다 — 정의 점에서 반올림 없이 유도한 정준 정수를 53비트 안일 때 f64 행으로(`NameInts::row`/`normal`), 넷째
+평면도 삼각형이 아니라 그 행으로 묻는다(`indirect_plane_side`). 평면 캐시의 계수와 면 꼭짓점 캐시(`tri`)는 이
+갈래에 들지 않는다.
+
+**남은 캐시 읽기.**
+- 클래스 짓기와 방향 부호 — 「평면 클래스 병합이 캐시로 정해진다」·「방향 부호를 캐시로 읽는 자리」.
+- 이름이 53비트를 넘는 모션 없는 평면 — f64 행이 없어 BigInt 구조(wide) 또는 상승 도로로 간다. 도착점은 이름을
+  **f64 조각 몇 개로** 빠른 정확 술어(`Expansion`)에 넣는 것이다(i128 은 조각 셋; 이름 분포 조각 1·2·3 =
+  71.9·26.1·1.2%). BigInt 쌍둥이로는 안 된다(잰 것 — release, 축정렬 작은 불리언 200개: 지름길 219ms · 끔 449ms ·
+  BigInt 436ms).
+- 판정 표가 `rotated == false` 를 이름이 세계 진술이라는 허가로 쓴다 — `Through` 팔은 정점 meet 의 프레임을 직접
+  묻는다(`table.rs`). 그 인구(모션 없음·프레임 지역 meet)에서는 지름길만 닫힐 뿐 상승 도로도 증인 점을 세계로
+  읽는다 — 오늘 인구는 0(`transform.rs` 의 `debug_assert`). interning 열쇠 `(name, motion)` 도 같은 전제에 기대고,
+  그것을 검사하는 곳은 없다.
+
+**도착점.** 평면 캐시는 «점 + 단위 법선»만 들고, 문(`push_plane(points, motion, sense)`)이 그 둘을 진실에서
+유도해 `cache` 인자가 떠난다 — 생산자 쪽에서 f64 평면을 짓는 자리 여덟(`prism.rs` 셋 · `datum.rs` 넷 ·
+`transform.rs` 하나)이 사라진다. 유도 게이트(`world_plane_name(h)?.narrow()?`)가 거절하는 373(사슬이 안 접히는
+평면 366, 원통 7)에는 정점처럼 폴백이 남는다.
+
+**먼저 잴 것.** 이름이 53비트를 넘는 모션 없는 평면의 인구 · 방향 부호 셋을 σ/향으로 바꿀 때 census 이동 ·
+`raw` 를 문에서 유도할 때 census 이동 — 커밋 `bb28f554` 의 183·4,268(생산자 행이 최선)은 정확 지름길이 캐시를
+읽던 도로에서 잰 것이라 지금의 근거가 아니다.
+
 ## 다음 — f64 는 실현 통로 하나로
 
 숫자 규칙 「실현 통로는 하나다」를 코드가 아직 다 지키지 않는 자리들.
@@ -88,8 +192,8 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
   wasm 과 native 의 libm 차이는 안 쟀다.
 - **평면의 정규화 전 법선(`raw`)은 이 항목의 일이 아니다.** STEP 에 나가지 않고, 남은 소비자는 판정 쪽이다
   (「`raw` 은퇴」).
-- **평면 단위 법선은 막혀 있다.** 캐시 법선이 `face_frame` 에서 진실을 고르므로(「캐시 법선이 스케치 프레임의
-  도로를 고른다」) 그것을 먼저 끊는다. 이름 있는 평면은 그 뒤 문에서 `inv_sqrt_bigint_bounded` 로 닫힌다.
+- **평면 단위 법선은 막혀 있다.** 캐시 법선이 `face_frame` 에서 진실을 고르므로(「캐시가 진실로 흘러가는
+  자리」) 그것을 먼저 끊는다. 이름 있는 평면은 그 뒤 문에서 `inv_sqrt_bigint_bounded` 로 닫힌다.
   사슬이 안 접히는 평면의 방향은 188개가 «참값 0 인 성분»을 구간으로 남긴다 — 방향 실현이 어느 성분이
   정확히 0 인지를 구조로 알아야 하는 별도 설계다.
 - **순서: B → 그 다음 자릿수 지정.** B 없이 「STEP 텍스트에 f64 보다 많은 자리」는 거짓말이다(f64 의
@@ -106,36 +210,6 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
   `realize_cache` 의 선례를 따른다. `_at` 은 이 커널에서 위치의 낱말(`point_at`·`normal_at`·
   `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`hp_coord`·`judge_precision`·
   `trial_bound`)를 쓴다.
-
-### `raw` 은퇴 — 판정이 평면 캐시를 읽는 남은 자리
-
-**지금 참인 것.** 모션 없는 평면의 정확 지름길(`orient3d`·`cmp_coord`·방향 부호의 첫 갈래)은 평면의 **이름**만
-읽는다 — 정의 점에서 반올림 없이 유도한 정준 정수를 53비트 안일 때 f64 행으로(`NameInts::row`/`normal`), 넷째
-평면도 삼각형이 아니라 그 행으로 묻는다(`indirect_plane_side`). 평면 캐시의 계수와 면 꼭짓점 캐시(`tri`)는 이
-갈래에 들지 않는다.
-
-**남은 캐시 읽기.**
-- 방향 부호 셋(`world_rat_sense`·`rel_to_stored`·`outward_fix`) — 유리수 계수와 `raw` 의 부호를 맞대 저장 방향을
-  읽는다. `NameInts` 의 σ(저장 방향으로 접은 부호)나 진실의 향(`Surface::Plane.sense`)이 같은 물음에 답해 보인다 —
-  가장 쉬운 첫 걸음.
-- 클래스 짓기 — `shares_or_coplanar`(`incidence.rs`)의 반올림 계수 비례와 `planes_coplanar` 의 f64 `tri`.
-- 이름이 53비트를 넘는 모션 없는 평면 — f64 행이 없어 BigInt 구조(wide) 또는 상승 도로로 간다. 도착점은 이름을
-  **f64 조각 몇 개로** 빠른 정확 술어(`Expansion`)에 넣는 것이다(i128 은 조각 셋; 이름 분포 조각 1·2·3 =
-  71.9·26.1·1.2%). BigInt 쌍둥이로는 안 된다(잰 것 — release, 축정렬 작은 불리언 200개: 지름길 219ms · 끔 449ms ·
-  BigInt 436ms).
-- 판정 표가 `rotated == false` 를 이름이 세계 진술이라는 허가로 쓴다 — `Through` 팔은 정점 meet 의 프레임을 직접
-  묻는다(`table.rs`). 그 인구(모션 없음·프레임 지역 meet)에서는 지름길만 닫힐 뿐 상승 도로도 증인 점을 세계로
-  읽는다 — 오늘 인구는 0(`transform.rs` 의 `debug_assert`). interning 열쇠 `(name, motion)` 도 같은 전제에 기대고,
-  그것을 검사하는 곳은 없다.
-
-**도착점.** 평면 캐시는 «점 + 단위 법선»만 들고, 문(`push_plane(points, motion, sense)`)이 그 둘을 진실에서
-유도해 `cache` 인자가 떠난다 — 생산자 쪽에서 f64 평면을 짓는 자리 여덟(`prism.rs` 셋 · `datum.rs` 넷 ·
-`transform.rs` 하나)이 사라진다. 유도 게이트(`world_plane_name(h)?.narrow()?`)가 거절하는 373(사슬이 안 접히는
-평면 366, 원통 7)에는 정점처럼 폴백이 남는다.
-
-**먼저 잴 것.** 이름이 53비트를 넘는 모션 없는 평면의 인구 · 방향 부호 셋을 σ/향으로 바꿀 때 census 이동 ·
-`raw` 를 문에서 유도할 때 census 이동 — 커밋 `bb28f554` 의 183·4,268(생산자 행이 최선)은 정확 지름길이 캐시를
-읽던 도로에서 잰 것이라 지금의 근거가 아니다.
 
 ### 곡면 유도 계측이 제품 빌드에 있다
 
@@ -202,7 +276,7 @@ it names."*
 아니다(막을 인구는 0 이다). 인구: 값 21 + 테스트 44, 메서드 이전 8, 통째 출구는 `transform.rs` 한 곳.
 테스트 30곳의 종류 판별도 함께 지나간다.
 
-**캐시의 향을 읽는 자리가 가장 위험하다** — `align_cache_sense` 와 「f64 로 향을 정하는 나머지 자리」가
+**캐시의 향을 읽는 자리가 가장 위험하다** — `align_cache_sense` 와 「방향 부호를 캐시로 읽는 자리」가
 곡면 캐시의 평면 법선을 읽는다. 잘못 재철자하면 면 방향이 조용히 뒤집힌다(census 잠금
 `audit_plane_senses` 가 그 부류를 잰다).
 
@@ -287,27 +361,6 @@ census 의 향 잠금(`nacre_ops::audit_plane_senses`, test-util)은 `Through` �
 담체에도 답하므로, 모션이 있는 `Through` 평면의 meet 이 이미 세계로 돌아오면 한 번 더 옮겨질 수 있다. census 는
 초록이다(불일치 0 · 못 잰 것 0) — 그 인구가 있는지는 안 쟀다. 잴 것: census 의 모션 있는 `Through` 평면 수;
 있으면 meet 의 프레임 태그를 읽게 고친다(제품 동작이 아니라 계기의 결함이다).
-
-### 캐시 법선이 스케치 프레임의 도로를 고른다
-
-`face_frame`(`ops/frame.rs`)은 면의 곡면 캐시의 단위 법선으로 스케치 축을 짓고(`frame_axes`), 그 축을
-`SketchPlane::exact` 가 `Rat::from_decimal` 로 들어올려 도로(세계 유리수 / 프레임 노드)를 고른다 —
-`PadOnFace` 가 어느 아레나에 무엇을 짓는지가 캐시 비트에 달려 있다(`f64 → 진실`). `measured_frame` 도 같은
-법선을 받는다. 캐시의 평면 법선을 정확 반올림으로 옮기는 일이 이것에 막혀 있다: 법선 비트가 바뀌면 축의 십진
-들어올림이 바뀌어 게이트가 뒤집힐 수 있다(`RatFrame` doc 이 `0.6000000000000001` 로 적어 둔 부류 — 코퍼스에서
-뒤집히는 면이 있는지는 안 쟀다). 후보는 게이트가 진실에 묻는 쪽, `RatFrame` 이 이미 하는 유리수 물음이다.
-
-### f64 로 향을 정하는 나머지 자리
-
-평면의 향은 진실이지만(`Surface::Plane.sense`), 향을 **f64 내적으로 정하는** 자리가 아직 남아 있다 —
-판정 입력에 닿는 것이라 캐시 향을 바꾸는 일과 따로 옮긴다(«이동 0» 예측을 섞지 않으려고). 전부 두 평행
-법선의 부호라 오늘 틀리지는 않지만, 진실이 이미 답하는 물음을 캐시에게 다시 묻는다.
-
-- `planes/table.rs` 의 `wind`(셋 — 두 팔과 원 캡 분기): 삼중을 면의 바깥에 맞춰 f64 로 다시 감는다.
-- `ops/prism.rs` 밑캡 공유의 `n_h.dot(-normal)`, `ops/feature.rs` 의 동일평면 판단.
-- `measured_frame`: `Motion::Frame.flip` 은 f64 내적으로 잰 **진실**(모션 노드이자 interning 열쇠)이다 —
-  같은 부류의 `f64 → 진실`.
-- `ops/datum.rs` 오프셋의 `same_side`: f64 내적이 진실의 `d` 부호를 정한다.
 
 ### 불리언이 이름 붙여 거절하는 인구
 
