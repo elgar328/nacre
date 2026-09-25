@@ -16,7 +16,7 @@ mod model;
 mod topology;
 
 pub use adjacency::{Adjacency, nonmanifold_vertices};
-pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid};
+pub use topology::{Edge, EdgeDecline, Face, HalfEdge, Loop, Shell, Solid};
 
 use nacre_exact::{Angle, Axis, HpBounded, Mag, Rat};
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};

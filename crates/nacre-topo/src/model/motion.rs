@@ -1,6 +1,16 @@
 //! Questions asked of a motion chain.
 
 use super::*;
+use nacre_exact::LineDir;
+
+/// One step of a motion chain **as a line sees it** — the chain unrolled root first, a frame node
+/// opened into its two parts: the frame's `ẑ` onto its plane's normal ([`LineStep::Frame`]), then
+/// that plane's own chain. Compared by value: two nodes stating one motion are one step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LineStep<'a> {
+    Motion(&'a Motion),
+    Frame(Handle<Surface>),
+}
 
 impl Model {
     /// The motion node a handle names. Same seal as [`Model::surface_cache`]: writing goes through
@@ -241,6 +251,152 @@ impl Model {
         d: [nacre_exact::Rat; 3],
     ) -> Option<[nacre_exact::Rat; 3]> {
         self.chain_fold(leaf)?.inverse().dir_rat(d)
+    }
+
+    /// **How a plane stands to a cylinder's axis, from their truths** — the relation that decides
+    /// an edge's curve on the pair ([`Model::derive_edge_curve`]) and the population gate's arms,
+    /// by the one rule ([`nacre_exact::LineDir::relation_to`]).
+    ///
+    /// ★ **A question about two directions, so only the chains' linear parts matter** — and a
+    /// rigid motion keeps the relation. So the two statements need not reach the world, only one
+    /// frame: each direction (the plane's name normal, the cylinder's `def.dir()`) is carried out
+    /// along its own chain **as far as it goes exactly** — a translation leaves a line alone, a
+    /// mirror or a quarter turn permutes it, any turn leaves its own axis alone, a frame takes its
+    /// `ẑ` onto its plane's normal — and where the two stop, what is left must be **the same
+    /// motions** (compared by value). When one went further, it is carried **back** through the
+    /// other's extra steps (the same rules inverted): a plane a turn fixes is read in the turned
+    /// cylinder's frame. A plane that is itself a frame's plane stands at `ẑ` just before that
+    /// frame's step, which is how a cylinder sketched on a nameless datum still knows its base.
+    ///
+    /// `None` when the two cannot be placed in one frame — a relation the truth does not state,
+    /// which a caller refuses by that name rather than reading the cache.
+    pub fn plane_cylinder_relation(
+        &self,
+        plane: Handle<Surface>,
+        cyl: Handle<Surface>,
+    ) -> Option<nacre_exact::AxisRelation> {
+        let Surface::Cylinder { def, motion: cm } = self.surface(cyl) else {
+            return None;
+        };
+        let axis = LineDir::of_rat(&def.dir());
+        let pm = self.plane_motion(plane);
+        // Written in one frame already, or both carried whole to the world: the same rule, asked
+        // where the walk below would have arrived without walking.
+        if pm == *cm {
+            if let Some(n) = self.name_normal(plane) {
+                return Some(n.relation_to(&axis));
+            }
+        }
+        if let (Some(name), Some(world)) = (
+            self.world_plane_name(plane),
+            self.world_cylinder_statement(cyl),
+        ) {
+            return Some(LineDir::normal_of(&name).relation_to(&LineDir::of_rat(&world.dir())));
+        }
+        let c_path = self.line_path(*cm);
+        let (c_dir, c_at) = self.carry_line(axis, &c_path);
+        let (p_dir, p_rest) = match c_path.iter().position(|s| *s == LineStep::Frame(plane)) {
+            Some(i) => {
+                let (d, at) = self.carry_line(LineDir::z(), &c_path[i..]);
+                (d, c_path[i + at..].to_vec())
+            }
+            None => {
+                let p_path = self.line_path(pm);
+                let (d, at) = self.carry_line(self.name_normal(plane)?, &p_path);
+                (d, p_path[at..].to_vec())
+            }
+        };
+        let c_rest = &c_path[c_at..];
+        if p_rest == c_rest {
+            return Some(p_dir.relation_to(&c_dir));
+        }
+        // One went further: carry it back through the other's extra steps, last step first.
+        let back = |d: LineDir, extra: &[LineStep]| {
+            extra
+                .iter()
+                .rev()
+                .try_fold(d, |d, step| self.line_back(&d, step))
+        };
+        if c_rest.ends_with(&p_rest) {
+            let extra = &c_rest[..c_rest.len() - p_rest.len()];
+            return Some(back(p_dir, extra)?.relation_to(&c_dir));
+        }
+        if p_rest.ends_with(c_rest) {
+            let extra = &p_rest[..p_rest.len() - c_rest.len()];
+            return Some(p_dir.relation_to(&back(c_dir, extra)?));
+        }
+        None
+    }
+
+    /// A plane's name normal, in the frame its truth is written in.
+    fn name_normal(&self, plane: Handle<Surface>) -> Option<LineDir> {
+        Some(LineDir::normal_of(self.surface_name.get(&plane)?))
+    }
+
+    /// `leaf`'s chain as [`LineStep`]s, root first.
+    fn line_path(&self, leaf: Option<Handle<MotionNode>>) -> Vec<LineStep<'_>> {
+        let mut nodes = Vec::new();
+        let mut cur = leaf;
+        while let Some(h) = cur {
+            let n = self.motion(h);
+            nodes.push(&n.motion);
+            cur = n.parent;
+        }
+        let mut out = Vec::new();
+        for m in nodes.into_iter().rev() {
+            match *m {
+                Motion::Frame { plane, .. } => {
+                    out.push(LineStep::Frame(plane));
+                    out.extend(self.line_path(self.plane_motion(plane)));
+                }
+                _ => out.push(LineStep::Motion(m)),
+            }
+        }
+        out
+    }
+
+    /// Carry the line `d` along `path` as far as it goes exactly: the line reached, and how many
+    /// steps it took.
+    fn carry_line(&self, d: LineDir, path: &[LineStep]) -> (LineDir, usize) {
+        let mut d = d;
+        for (i, step) in path.iter().enumerate() {
+            match self.line_step(&d, step, false) {
+                Some(next) => d = next,
+                None => return (d, i),
+            }
+        }
+        (d, path.len())
+    }
+
+    /// One step on a line, forward or `back` — a translation leaves it, a mirror or a turn moves
+    /// it as [`LineDir`] says, and a frame takes `ẑ` onto its plane's normal (and back). `None`
+    /// where the step takes the line somewhere irrational.
+    fn line_step(&self, d: &LineDir, step: &LineStep, back: bool) -> Option<LineDir> {
+        match *step {
+            LineStep::Motion(Motion::Translate { .. }) => Some(d.clone()),
+            LineStep::Motion(&Motion::Mirror { axis, .. }) => Some(d.mirrored(axis)),
+            LineStep::Motion(&Motion::Rotate { axis, pivot, angle }) => {
+                d.turned(nacre_exact::Rotation { axis, pivot, angle }, back)
+            }
+            // Opened into `LineStep::Frame` and the plane's own chain by `line_path`.
+            LineStep::Motion(Motion::Frame { .. }) => None,
+            LineStep::Frame(p) if back => {
+                let n = self.name_normal(p)?;
+                (d.relation_to(&n) == nacre_exact::AxisRelation::Across).then(LineDir::z)
+            }
+            LineStep::Frame(p) => {
+                if d.is_z() {
+                    self.name_normal(p)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// [`Model::line_step`] backwards.
+    fn line_back(&self, d: &LineDir, step: &LineStep) -> Option<LineDir> {
+        self.line_step(d, step, true)
     }
 
     /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely

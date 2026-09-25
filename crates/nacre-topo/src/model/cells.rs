@@ -100,20 +100,19 @@ impl Model {
     }
 
     /// Push an edge: canonicalize the carrier pair, derive its curve, fill the cache — the one
-    /// write road. `None` when the curve does not derive, which for the line arms means
-    /// coincident endpoints (a zero-length edge); the caller maps that to its own reject
-    /// (`DegenerateGeometry` / `ZeroLengthEdge`). ★ A rim is `[v, v]` and NOT degenerate — the
+    /// write road. Refused, by cause ([`EdgeDecline`]), when the curve does not derive; the
+    /// caller says what that cause means for it. ★ A rim is `[v, v]` and NOT degenerate — the
     /// circle arm never reads the endpoints (see [`Model::derive_edge_curve`]).
     pub fn push_edge(
         &mut self,
         surfaces: [Handle<Surface>; 2],
         vertices: [Handle<Vertex>; 2],
-    ) -> Option<Handle<Edge>> {
+    ) -> Result<Handle<Edge>, EdgeDecline> {
         let surfaces = Edge::carrier_pair(surfaces[0], surfaces[1]);
         let curve = self.derive_edge_curve(surfaces, vertices)?;
         let h = self.edges.push(Edge { surfaces, vertices });
         self.edge_cache.push(EdgeCache { curve });
-        Some(h)
+        Ok(h)
     }
 
     /// Push a face — **the door that carries the face invariant**.
@@ -180,9 +179,9 @@ impl Model {
     /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
     /// those costs the work twice over and — once a caller can *move* a coordinate
     /// ([`Model::refine_vertex_cache`]) — risks a dead cell's endpoints becoming coincident, where
-    /// the derivation answers `None` and this would die on the `expect`.
+    /// the derivation refuses (`EdgeDecline::Coincident`) and this would die on the `expect`.
     ///
-    /// ☑ That `None` does not happen today: measured over the same fixtures, **zero** stored edges
+    /// ☑ That refusal does not happen today: measured over the same fixtures, **zero** stored edges
     /// fail to derive, dead or live. The filter is not a workaround for a live failure — it is what
     /// makes the failure structurally unreachable, because a superseded edge is never derived again.
     pub fn rebuild_edge_cache(&mut self) {
@@ -227,13 +226,22 @@ impl Model {
     /// Dispatch by carrier type:
     /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the two
     ///   endpoint coordinates — the very expression a producer would build the stored
-    ///   curve with, so the derivation is bit-identical, and an endpoint pair that coincides is the
-    ///   `None` (a degenerate line — the check lives in this arm only).
-    /// * **Plane × Cylinder** (a rim, or an arc of one): the circle centred where the cylinder's
-    ///   axis crosses the cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
-    ///   `radius`) — every rim's cache comes from here (`push_edge` fills it by this derivation),
-    ///   so tessellation's `θ` parameterization is the cylinder's. The endpoints are not read: a full rim
-    ///   is a closed edge (`[v, v]`), which is not a degeneracy.
+    ///   curve with, so the derivation is bit-identical, and an endpoint pair that coincides is
+    ///   [`EdgeDecline::Coincident`] (a degenerate line — the check lives in the straight arms).
+    /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
+    ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — the endpoints' line, as
+    ///   the seam; across it, a rim or an arc of one — the circle centred where the cache's axis
+    ///   crosses the cache's plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
+    ///   `radius`); every rim's cache comes from here (`push_edge` fills it by this derivation), so
+    ///   tessellation's `θ` parameterization is the cylinder's. The endpoints are not read: a full
+    ///   rim is a closed edge (`[v, v]`), which is not a degeneracy. Oblique — an ellipse — is
+    ///   [`EdgeDecline::Oblique`], and a pair whose truths cannot be placed in one frame is
+    ///   [`EdgeDecline::Unstated`].
+    ///
+    ///   ★★ **The kind is the truth's, so the «discard and regenerate» warrant holds for it
+    ///   too**: a regenerated cache is the same kind of curve, and every reader that dispatches
+    ///   on the cached curve's kind reads the truth's kind. The *values* are the cache's (the
+    ///   centre, the frame) — a curve is a measurement.
     ///
     ///   ★★ **On a circle carrier, the vertex *order* says which arc**: two distinct
     ///   endpoints cut a circle into two pieces the endpoints alone cannot tell apart, so
@@ -244,26 +252,19 @@ impl Model {
     ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
     ///   θ, and `validate`'s `loop_winding` adds each arc's circular segment with Δθ from the
     ///   same order.
-    /// * **Cylinder × Cylinder**: no producer builds one before M6 — `None`, honestly.
-    ///
-    /// ★ The M3 rim population is axis-perpendicular by construction; a *tilted* plane over a
-    /// cylinder would cross in an ellipse, which this arm cannot express (M6). The debug
-    /// assertion keeps that boundary visible.
+    /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, no edge carries it.
     pub fn derive_edge_curve(
         &self,
         surfaces: [Handle<Surface>; 2],
         vertices: [Handle<Vertex>; 2],
-    ) -> Option<Curve> {
-        let endpoints_line = || -> Option<Curve> {
+    ) -> Result<Curve, EdgeDecline> {
+        let endpoints_line = || -> Result<Curve, EdgeDecline> {
             let p0 = self.vertex_point(vertices[0]);
             let p1 = self.vertex_point(vertices[1]);
-            Some(Curve::Line(Line::through_points(p0, p1)?))
+            Ok(Curve::Line(
+                Line::through_points(p0, p1).ok_or(EdgeDecline::Coincident)?,
+            ))
         };
-        // ★★ **Both kinds asked of the cache here, deliberately**. Every arm
-        // reads cache *values* out of the very binding it matched — `p.normal()`, `c.axis()`,
-        // `c.radius()` — so dispatching on the truth would double the lookups and leave two
-        // matches whose agreement no reader could check. The rule sends *kind questions* to the
-        // truth; this match's answer is a curve, and the kinds only choose how to derive it.
         match (
             self.surface_cache(surfaces[0]),
             self.surface_cache(surfaces[1]),
@@ -276,36 +277,33 @@ impl Model {
             }
             (nacre_geom::Surface::Plane(p), nacre_geom::Surface::Cylinder(c))
             | (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Plane(p)) => {
-                let axis = c.axis();
-                // A plane **parallel** to the axis meets the lateral along rulings — straight,
-                // so the endpoints decide, exactly like the seam arm above (the rulings
-                // ladder). Same scale convention as the ⊥ assertion below, so the band between
-                // the two tests is symmetric and only a genuinely tilted plane (an ellipse)
-                // falls through to it.
-                {
-                    let n = p.normal();
-                    let d = axis.direction();
-                    if n.dot(d).powi(2) <= 1e-18 * n.norm_squared() * d.norm_squared() {
-                        return endpoints_line();
+                let (plane, cyl) = match self.surface_cache(surfaces[0]) {
+                    nacre_geom::Surface::Plane(_) => (surfaces[0], surfaces[1]),
+                    nacre_geom::Surface::Cylinder(_) => (surfaces[1], surfaces[0]),
+                };
+                match self.plane_cylinder_relation(plane, cyl) {
+                    None => Err(EdgeDecline::Unstated),
+                    Some(nacre_exact::AxisRelation::Oblique) => Err(EdgeDecline::Oblique),
+                    Some(nacre_exact::AxisRelation::Along) => endpoints_line(),
+                    Some(nacre_exact::AxisRelation::Across) => {
+                        let axis = c.axis();
+                        let center = nacre_geom::intersect::line_plane(&axis, p)
+                            .ok_or(EdgeDecline::Degenerate)?;
+                        Ok(Curve::Circle(
+                            Circle::from_center_normal(
+                                center,
+                                axis.direction(),
+                                c.ref_dir(),
+                                c.radius(),
+                            )
+                            .ok_or(EdgeDecline::Degenerate)?,
+                        ))
                     }
                 }
-                debug_assert!(
-                    {
-                        let n = p.normal();
-                        let d = axis.direction();
-                        n.cross(d).norm_squared() <= 1e-18 * n.norm_squared()
-                    },
-                    "a tilted plane over a cylinder crosses in an ellipse — M6-3, no producer yet"
-                );
-                let center = nacre_geom::intersect::line_plane(&axis, p)?;
-                Some(Curve::Circle(Circle::from_center_normal(
-                    center,
-                    axis.direction(),
-                    c.ref_dir(),
-                    c.radius(),
-                )?))
             }
-            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_)) => None, // two distinct cylinders: M6
+            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_)) => {
+                Err(EdgeDecline::TwoCylinders)
+            }
         }
     }
 

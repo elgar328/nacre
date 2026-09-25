@@ -101,13 +101,13 @@ pub(crate) fn pierce_name_from_def(
 ///
 /// ⚠ **The argument is easy to misread**,
 /// which is why the two consumers that would answer *silently wrong* now ask instead of assume.
-/// ⚠ `parallel_rat` calls a **zero** vector parallel to everything, so a zero normal or axis
-/// answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
+/// ⚠ The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
+/// axis answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
 /// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
 /// with no rational description), and the eight inline spellings this will replace already inherit
 /// that convention — but the name reads the convention backwards, so it is written down here.
 pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact::Rat; 3]) -> bool {
-    nacre_exact::parallel_rat(n, dir)
+    nacre_exact::axis_relation(n, dir) == nacre_exact::AxisRelation::Across
 }
 
 /// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces

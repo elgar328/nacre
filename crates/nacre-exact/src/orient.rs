@@ -138,6 +138,110 @@ pub fn dot_sign_rat(a: &[Rat; 3], b: &[Rat; 3]) -> Orient {
     ))
 }
 
+/// **How a plane stands to a cylinder's axis** — the one relation a plane × cylinder section
+/// depends on, and so what kind of curve an edge on that pair is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AxisRelation {
+    /// The plane crosses the axis squarely (normal ∥ axis): the section is a circle.
+    Across,
+    /// The plane runs along the axis (normal ⊥ axis): the section is rulings — straight lines.
+    Along,
+    /// Neither: the section is an ellipse.
+    Oblique,
+}
+
+/// [`AxisRelation`] of a plane with normal `n` to an axis `d`, over integer vectors — exact at any
+/// width, and scale-free: each vector's positive scale, and its sign, leave the answer alone.
+///
+/// ⚠ A zero vector is parallel to everything ([`parallel_rat`]'s convention), so it answers
+/// `Across`; a statement's own constructor refuses a zero normal or axis before one gets here.
+fn axis_relation_int(n: &[num_bigint::BigInt; 3], d: &[num_bigint::BigInt; 3]) -> AxisRelation {
+    use num_traits::Zero;
+    let term = |i: usize, j: usize| &n[i] * &d[j] - &n[j] * &d[i];
+    if term(1, 2).is_zero() && term(2, 0).is_zero() && term(0, 1).is_zero() {
+        return AxisRelation::Across;
+    }
+    let dot: num_bigint::BigInt = (0..3).map(|i| &n[i] * &d[i]).sum();
+    if dot.is_zero() {
+        AxisRelation::Along
+    } else {
+        AxisRelation::Oblique
+    }
+}
+
+/// [`AxisRelation`] of a plane with normal `n` to an axis `d` — each lifted to integers by its own
+/// positive denominator, which the relation cannot see.
+pub fn axis_relation(n: &[Rat; 3], d: &[Rat; 3]) -> AxisRelation {
+    axis_relation_int(&lift3(n).0, &lift3(d).0)
+}
+
+/// **A direction's line, in integers** — no sign and no scale, which is all a plane–axis
+/// relation reads, carried through the motions a chain records. Exact at any width: a `Wide`
+/// plane name's normal is one too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineDir([num_bigint::BigInt; 3]);
+
+impl LineDir {
+    /// The line a rational direction spans.
+    pub fn of_rat(d: &[Rat; 3]) -> LineDir {
+        LineDir(lift3(d).0)
+    }
+
+    /// The line of a plane name's normal.
+    pub fn normal_of(name: &crate::PlaneName) -> LineDir {
+        let [a, b, c, _] = name.coeff_ints();
+        LineDir([a, b, c])
+    }
+
+    /// The line of `ẑ` — a sketch frame's normal, in the frame.
+    pub fn z() -> LineDir {
+        LineDir([0.into(), 0.into(), 1.into()])
+    }
+
+    /// Whether this is the line of `ẑ`.
+    pub fn is_z(&self) -> bool {
+        use num_traits::Zero;
+        self.0[0].is_zero() && self.0[1].is_zero() && !self.0[2].is_zero()
+    }
+
+    /// The same line after (or before — a mirror is its own inverse) a reflection across `axis`.
+    pub fn mirrored(&self, axis: Axis) -> LineDir {
+        let mut out = self.0.clone();
+        let k = axis_index(axis);
+        out[k] = -out[k].clone();
+        LineDir(out)
+    }
+
+    /// The line after the turn `r` — or before it, `back` — when that is a rational line: a
+    /// quarter turn permutes it, and any turn leaves its own axis alone. `None` otherwise.
+    pub fn turned(&self, r: Rotation, back: bool) -> Option<LineDir> {
+        use num_traits::Zero;
+        match crate::AxisAffine::rotation(r) {
+            Some(f) if back => Some(LineDir(f.inverse().dir_int(&self.0))),
+            Some(f) => Some(LineDir(f.dir_int(&self.0))),
+            None => {
+                let k = axis_index(r.axis);
+                (0..3)
+                    .all(|i| i == k || self.0[i].is_zero())
+                    .then(|| self.clone())
+            }
+        }
+    }
+
+    /// How a plane with this normal stands to the axis `axis` ([`AxisRelation`]).
+    pub fn relation_to(&self, axis: &LineDir) -> AxisRelation {
+        axis_relation_int(&self.0, &axis.0)
+    }
+}
+
+fn axis_index(axis: Axis) -> usize {
+    match axis {
+        Axis::X => 0,
+        Axis::Y => 1,
+        Axis::Z => 2,
+    }
+}
+
 /// `big_sign`'s answer as the geometry's [`Orient`].
 pub(super) fn orient_of(s: i8) -> Orient {
     match s {

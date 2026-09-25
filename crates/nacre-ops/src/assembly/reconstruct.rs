@@ -266,7 +266,7 @@ pub(crate) fn reconstruct(
                     None => Some(
                         model
                             .push_edge(Edge::carrier_pair(lat, plane), [v, v])
-                            .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?,
+                            .map_err(edge_refused)?,
                     ),
                 };
                 rim.insert((g, k, c), (v, e));
@@ -363,9 +363,7 @@ pub(crate) fn reconstruct(
                     [a, b] => Edge::carrier_pair(a, b),
                     _ => Edge::carrier_pair(planes[w].surf, face_surf),
                 };
-                let e = model
-                    .push_edge(surfaces, [va, vb])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
                 edge_of.insert(key, e);
                 Ok(e)
             }
@@ -408,7 +406,7 @@ pub(crate) fn reconstruct(
                 };
                 let e = model
                     .push_edge(Edge::carrier_pair(cyls[cyl].surf, wall_surf), [va, vb])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                    .map_err(edge_refused)?;
                 edge_of.insert(key, e);
                 Ok(e)
             }
@@ -431,7 +429,7 @@ pub(crate) fn reconstruct(
                 }
                 let e = model
                     .push_edge(Edge::carrier_pair(cyls[cyl].surf, face_surf), [from, to])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                    .map_err(edge_refused)?;
                 edge_of.insert(key, e);
                 Ok(e)
             }
@@ -757,7 +755,7 @@ pub(crate) fn reconstruct(
             let slit = |model: &mut Model, a, b| {
                 model
                     .push_edge(Edge::carrier_pair(lat, lat), [a, b])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))
+                    .map_err(edge_refused)
             };
             let (seam_edge, seam_hi, up, down) = match cut {
                 None => {
@@ -1122,4 +1120,16 @@ fn shared_pierce_plane(a: NodeId, b: NodeId) -> Option<usize> {
 /// (`pub(crate)` for the twin-match fence, which counts exactly these keys.)
 pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
     if a <= b { (a, b) } else { (b, a) }
+}
+
+/// **What an edge the assembly asked for and could not have means here** — one reject per
+/// [`nacre_topo::EdgeDecline`] cause. Every edge the assembly pushes joins two distinct nodes
+/// on classes the gate admitted, so each cause is a broken promise, named for the promise.
+fn edge_refused(d: nacre_topo::EdgeDecline) -> crate::BoolError {
+    use nacre_topo::EdgeDecline::*;
+    reject(match d {
+        Coincident => RejectReason::ZeroLengthEdge,
+        Oblique | Unstated => RejectReason::ObliqueCircleClass,
+        TwoCylinders | Degenerate => RejectReason::EdgeCurveUnderived,
+    })
 }

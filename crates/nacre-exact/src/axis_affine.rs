@@ -104,6 +104,22 @@ impl AxisAffine {
         Some(out)
     }
 
+    /// [`AxisAffine::dir_rat`] for an integer direction — a signed permutation, so exact at any
+    /// width.
+    pub(crate) fn dir_int(&self, d: &[num_bigint::BigInt; 3]) -> [num_bigint::BigInt; 3] {
+        core::array::from_fn(|i| {
+            self.m[i]
+                .iter()
+                .zip(d)
+                .map(|(e, x)| match e {
+                    0 => num_bigint::BigInt::from(0),
+                    1 => x.clone(),
+                    _ => -x.clone(),
+                })
+                .sum()
+        })
+    }
+
     /// The map applied to a point: `M·p + t`.
     pub fn point_rat(&self, p: [Rat; 3]) -> Option<[Rat; 3]> {
         let q = self.dir_rat(p)?;

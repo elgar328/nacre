@@ -41,6 +41,23 @@ pub struct Edge {
     pub vertices: [Handle<Vertex>; 2],
 }
 
+/// **Why an edge's curve does not derive** ([`crate::Model::derive_edge_curve`]) — one name per
+/// cause, so a caller can say which promise broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeDecline {
+    /// A straight edge (two planes, a seam, a ruling) whose endpoints are one point: zero length.
+    Coincident,
+    /// A plane oblique to a cylinder's axis — the section is an ellipse, which no edge carries.
+    Oblique,
+    /// A plane and a cylinder whose truths cannot be placed in one frame, so their relation is
+    /// not stated.
+    Unstated,
+    /// Two distinct cylinders — their meet is a quartic, which no edge carries.
+    TwoCylinders,
+    /// The truth states a circle, but the cache could not build it (no centre, no radius).
+    Degenerate,
+}
+
 impl Edge {
     /// The carrier pair in its stored (canonical, ascending handle-index) order — the pair is
     /// a set, and one spelling keeps `==` on edges meaningful.

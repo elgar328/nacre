@@ -160,8 +160,11 @@ pub(crate) fn cylinder_gate(
             // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
             // `assembly::tangency_reject`'s. What the sentence guarantees is unchanged — no
             // degenerate seating reaches the arrangement unnamed.
-            if !nacre_exact::parallel_rat(&n, &m) {
-                if nacre_exact::dot_sign_rat(&n, &m) != Orient::Zero {
+            // The one relation rule ([`nacre_exact::axis_relation`]) — the same one that decides an
+            // edge's curve (`Model::derive_edge_curve`), so the gate and the edges cannot part.
+            let relation = nacre_exact::axis_relation(&n, &m);
+            if relation != nacre_exact::AxisRelation::Across {
+                if relation == nacre_exact::AxisRelation::Oblique {
                     // ★ **The oblique arm asks the faces** — the fourth of the gate's
                     // four sites to speak about faces rather than surfaces. The plane's station
                     // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],

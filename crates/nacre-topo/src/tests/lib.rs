@@ -1913,3 +1913,125 @@ mod chain_folds {
         }
     }
 }
+
+/// ★★ **An edge's kind is the truth's, not the cache's tolerance.** Two planes a hair off the
+/// relations a plane can have with a `+z` cylinder — one tilted `1e-10` from ⊥ the axis, one
+/// tilted `1e-10` from ∥ it — are both **oblique** in their exact statements: the section is an
+/// ellipse, which no edge here can carry. Read off `f64` normals under a tolerance, the first
+/// would pass for a circle and the second for a ruling line.
+#[test]
+fn a_plane_a_hair_off_either_relation_is_oblique() {
+    let mut m = Model::new();
+    let r = |x: i128| Rat::from_int(x);
+    let d = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+    let cyl = m.push_cylinder(
+        Cylinder::from_axis(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            1.0,
+        )
+        .expect("a cylinder"),
+        CylinderDef::new(
+            [r(0), r(0), r(0)],
+            [r(0), r(0), r(1)],
+            [r(1), r(0), r(0)],
+            nacre_exact::BigRat::square_of(r(1)),
+        )
+        .expect("a statement"),
+        None,
+    );
+    for (name, pts) in [
+        (
+            "a hair off ⊥",
+            [
+                [r(0), r(0), r(0)],
+                [r(1), r(0), d(1e-10)],
+                [r(0), r(1), r(0)],
+            ],
+        ),
+        (
+            "a hair off ∥",
+            [
+                [r(0), r(0), r(0)],
+                [r(1), r(0), r(0)],
+                [r(0), d(1e-10), r(1)],
+            ],
+        ),
+    ] {
+        let f = |p: [Rat; 3]| Point3::from_array(p.map(|x| x.to_f64()));
+        let cache = Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2])).expect("a plane");
+        let (plane, _) = m.push_plane(cache, pts, None, Orientation::Forward);
+        let v = m.push_vertex(
+            Vertex::OnSeam([cyl, plane]),
+            PointCache::Unrealized {
+                coord: Point3::from_array([1.0, 0.0, 0.0]),
+            },
+        );
+        assert_eq!(
+            m.derive_edge_curve([plane, cyl], [v, v]),
+            Err(EdgeDecline::Oblique),
+            "{name}: an oblique section is no circle and no ruling"
+        );
+    }
+}
+
+/// ★★ **A plane the cylinder's turn leaves in place is read back through that turn.** An `x`
+/// cylinder turned 30° about `z` has an irrational world axis, so no world statement; the world
+/// plane `z = 1` is square to the turn's axis. Carried forward, the plane reaches the world and the
+/// cylinder's axis stops at the turn — but the turn fixes `ẑ`, so the plane's normal carried
+/// **back** through it is `ẑ` again, square to the axis `x̂`: the section is a ruling, a line.
+#[test]
+fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
+    let mut m = Model::new();
+    let r = |x: i128| Rat::from_int(x);
+    let turn = m.push_motion(
+        Motion::Rotate {
+            axis: Axis::Z,
+            pivot: [r(0), r(0), r(0)],
+            angle: Angle::from_deg(r(30)).expect("an angle"),
+        },
+        None,
+    );
+    let (c, s) = (0.75f64.sqrt(), 0.5);
+    let cyl = m.push_cylinder(
+        Cylinder::from_axis(
+            Point3::origin(),
+            Vector3::from_array([c, s, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+        )
+        .expect("a cylinder"),
+        CylinderDef::new(
+            [r(0), r(0), r(0)],
+            [r(1), r(0), r(0)],
+            [r(0), r(0), r(1)],
+            nacre_exact::BigRat::square_of(r(1)),
+        )
+        .expect("a statement"),
+        Some(turn),
+    );
+    let plane_pts = [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]];
+    let cache = Plane::from_point_normal(
+        Point3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+    )
+    .expect("a plane");
+    let (plane, _) = m.push_plane(cache, plane_pts, None, Orientation::Forward);
+    let mut at = |x: f64| {
+        m.push_vertex(
+            Vertex::OnSeam([cyl, plane]),
+            PointCache::Unrealized {
+                coord: Point3::from_array([x * c, x * s, 1.0]),
+            },
+        )
+    };
+    let (a, b) = (at(0.0), at(2.0));
+    assert!(
+        matches!(
+            m.derive_edge_curve([plane, cyl], [a, b]),
+            Ok(Curve::Line(_))
+        ),
+        "the plane square to the turn's axis meets the turned `x` cylinder along a ruling"
+    );
+}

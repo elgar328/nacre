@@ -72,3 +72,27 @@ proptest! {
         }
     }
 }
+
+/// **The plane–axis relation answers from the statements, not from a tolerance** — a normal a
+/// hair off either relation (`1e-10` in a full-width decimal) is `Oblique`, and neither a
+/// positive scale nor a sign of either vector moves the answer.
+#[test]
+fn an_axis_relation_is_exact_and_scale_free() {
+    let r = Rat::from_int;
+    let hair = Rat::from_decimal(1e-10).expect("a short decimal");
+    let z = [r(0), r(0), r(1)];
+    for (n, want) in [
+        ([r(0), r(0), r(3)], AxisRelation::Across),
+        ([r(0), r(0), r(-1)], AxisRelation::Across),
+        ([r(2), r(-5), r(0)], AxisRelation::Along),
+        ([hair, r(0), r(1)], AxisRelation::Oblique),
+        ([r(1), r(0), hair], AxisRelation::Oblique),
+    ] {
+        assert_eq!(axis_relation(&n, &z), want, "{n:?}");
+        let scaled = n.map(|x| {
+            x.checked_mul(Rat::new(-7, 3).expect("a ratio"))
+                .expect("small")
+        });
+        assert_eq!(axis_relation(&scaled, &z), want, "scaled {n:?}");
+    }
+}

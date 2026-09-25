@@ -306,7 +306,8 @@ pub enum RejectReason {
     SeamAlias,
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is what
-    /// `Model::push_edge` refusing a zero-length line becomes, so a degenerate one is reported
+    /// `Model::push_edge` refusing a zero-length line (`EdgeDecline::Coincident`) becomes, so a
+    /// degenerate one is reported
     /// rather than built. `SeamAlias` catches the known cause earlier, so this has no firing test.
     ZeroLengthEdge,
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
@@ -393,7 +394,17 @@ pub enum RejectReason {
     /// ☑ Nothing raises it today, and that is the point: the alternative at its two sites is not a
     /// refusal but a **silently wrong containment answer** — a rim witness off the cell's own
     /// plane, or two radii compared as if an ellipse's width were its radius.
+    ///
+    /// The result assembly raises it too, for the same broken promise read at an edge: a rim, an
+    /// arc or a ruling whose plane and cylinder the truth calls oblique
+    /// ([`nacre_topo::EdgeDecline::Oblique`]) or cannot place in one frame
+    /// ([`nacre_topo::EdgeDecline::Unstated`]) — the gate admits neither to the arrangement.
     ObliqueCircleClass,
+    /// **An edge the result assembly asked for whose curve does not derive for a reason no gate
+    /// names** — two distinct cylinders ([`nacre_topo::EdgeDecline::TwoCylinders`]; the assembly
+    /// never pairs them) or a circle the truth states and the cache cannot build
+    /// ([`nacre_topo::EdgeDecline::Degenerate`]). A backstop: nothing raises it.
+    EdgeCurveUnderived,
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
     /// both (one handle with rows of both solids, or one surface under two handles — a
     /// `translate`d twin), or axes within the radius sum whose lateral faces could not be shown
@@ -1016,6 +1027,7 @@ impl RejectReason {
             Self::VertexNamesAbsentSurface => "vertex_names_absent_surface",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::ObliqueCircleClass => "oblique_circle_class",
+            Self::EdgeCurveUnderived => "edge_curve_underived",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
             Self::CylinderFaceUndecided => "cylinder_face_undecided",
@@ -1114,6 +1126,7 @@ impl RejectReason {
             | Self::HoleRoots
             | Self::PartialCircleUncut
             | Self::ObliqueCircleClass
+            | Self::EdgeCurveUnderived
             | Self::MissingSeam => RejectClass::SuspectedDefect,
         }
     }

@@ -34,12 +34,6 @@
 
 ### 곡선의 종류와 점의 동일성이 캐시로 정해진다
 
-- `derive_edge_curve` 는 평면이 원통 축과 평행한지를 캐시 법선의 `1e-18` 상대 허용오차로 가려 선/원을 고르고,
-  판정 경로(`planes/table.rs` 원 캡 분기 · `loops.rs` 의 호 방향과 벽 종류 · `corners.rs` `corner_of`)가 그 종류를
-  읽는다. 정확한 답이 있다: `world_plane_name` 법선과 `world_cylinder_def().dir()` 의 `parallel_rat`.
-- `push_edge` 는 두 끝점의 좌표 캐시가 같은 f64 이면 간선을 거절한다(`derive_edge_curve` 의
-  `Line::through_points` — 호출자가 `ZeroLengthEdge` 로 옮긴다). 두 정의가 한 점인지는 묻지 않는다. 거절 쪽이라
-  조용히 틀리지는 않는다.
 - `find_face_coplanar_with`(`ops/feature.rs` — pad/pocket 이 남은 캡을 찾는다)의 둘째 갈래가 면 꼭짓점 캐시의
   `plane_side` 로 공면을 정한다. 평면 클래스 병합과 같은 부류이고, 진실 쪽 답은 핸들 ∨ 세계 이름이다. 그 doc 은
   «코퍼스가 두 갈래를 안 가른다»고 적는다. 그 `plane_side` 는 `nacre_geom::intersect` 의 캐시 정확 술어 가운데

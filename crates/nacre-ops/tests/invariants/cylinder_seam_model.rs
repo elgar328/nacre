@@ -273,6 +273,75 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     assert_ne!(h, moved, "the motion belongs in the statement key");
 }
 
+/// The kinds of a solid's edges: (circles, lines).
+fn edge_kinds(m: &Model, s: Handle<nacre_topo::Solid>) -> (usize, usize) {
+    let mut seen = std::collections::HashSet::new();
+    let (mut circles, mut lines) = (0, 0);
+    for &fh in &m.shell(m.solid(s).outer).faces {
+        for he in &m.face(fh).outer.half_edges {
+            if seen.insert(he.edge) {
+                match m.edge_curve(he.edge) {
+                    Curve::Circle(_) => circles += 1,
+                    Curve::Line(_) => lines += 1,
+                }
+            }
+        }
+    }
+    (circles, lines)
+}
+
+/// ★★ **A moved cylinder keeps its edges' kinds** — asked of two populations whose carriers do
+/// not share one chain after the move: a cylinder on a tilted frame (a frame node) moved by a
+/// translation that rounds, and a `+z` cylinder turned 30° about `z` (its seam reference goes
+/// irrational, so the turn is recorded) then moved along its axis by one that rounds. The edge
+/// kinds are relations between two directions, which a rigid motion keeps; a move must neither
+/// refuse these nor change them.
+#[test]
+fn a_moved_cylinder_keeps_its_edges_kinds() {
+    use nacre_exact::{Isometry, Rat};
+    let third = Rat::new(1, 3).expect("a third");
+    let zero = Rat::from_int(0);
+    let cases: [(&str, [f64; 3], Vec<Isometry>); 2] = [
+        (
+            "tilted frame, moved",
+            [0.3, -0.4, 1.0],
+            vec![Isometry::translation([third, zero, third])],
+        ),
+        (
+            "turned, moved along the axis",
+            [0.0, 0.0, 1.0],
+            vec![
+                crate::fixtures::rot_iso(nacre_exact::Axis::Z, 30),
+                Isometry::translation([zero, zero, third]),
+            ],
+        ),
+    ];
+    for (name, axis, moves) in cases {
+        let mut m = Model::new();
+        let mut s = cylinder(
+            &mut m,
+            Point3::from_array([1.0, 2.0, 0.5]),
+            Vector3::from_array(axis),
+            0.7,
+            3.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        let v0 = nacre_props::mass_props(&m, s).unwrap().volume;
+        for iso in moves {
+            s = crate::fixtures::xf(&mut m, s, iso);
+        }
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{name}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(edge_kinds(&m, s), (2, 1), "{name}: two rims and a seam");
+        let v = nacre_props::mass_props(&m, s).unwrap().volume;
+        assert!((v - v0).abs() < 1e-9, "{name}: {v0} → {v}");
+    }
+}
+
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")

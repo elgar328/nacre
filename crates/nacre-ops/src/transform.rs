@@ -967,15 +967,18 @@ fn transform_solid(
     for &eh in &edge_order {
         let e = *model.edge(eh);
         // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
-        // lookups cannot miss); `push_edge` re-canonicalizes the pair. A rigid image of a
-        // non-degenerate edge cannot degenerate, so the `None` is unreachable in practice —
+        // lookups cannot miss); `push_edge` re-canonicalizes the pair. A rigid image keeps what
+        // decided the source edge's curve: its endpoints stay apart (`Coincident`), and the
+        // plane–axis relation is a relation of directions a rigid motion keeps
+        // (`Model::plane_cylinder_relation` reads the moved statements through their chains, so
+        // `Oblique`/`Unstated` cannot appear where the source derived). A refusal here is
         // mapped to the honest reject rather than a panic all the same.
         let new_e = model
             .push_edge(
                 [surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]],
                 e.vertices.map(|v| vert_map[&v]),
             )
-            .ok_or(OpError::DegenerateGeometry)?;
+            .map_err(|_| OpError::DegenerateGeometry)?;
         edge_map.insert(eh, new_e);
     }
 

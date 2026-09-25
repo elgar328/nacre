@@ -92,7 +92,7 @@ pub(super) fn push_line_edge(
 ) -> Result<Handle<Edge>, OpError> {
     model
         .push_edge(carriers, [a, b])
-        .ok_or(OpError::DegenerateGeometry)
+        .map_err(|_| OpError::DegenerateGeometry)
 }
 
 /// Put a stated plane in the arena and hand back its handle and the frame the statement implies.
