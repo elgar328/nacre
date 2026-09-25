@@ -28,22 +28,22 @@ fn extrude_and_boolean(
     refuse_non_quarter_arcs(profile)?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
-    let n = frame.n;
+    // The face's outward, realized — for the caps' caches and the cap recovery's filter below,
+    // which are a cache's uses; the prism itself is built from the frame.
+    let n = frame_basis(model, &frame.frame)
+        .map(|b| Vector3::from_array(b.3))
+        .ok_or(OpError::PlaneWithoutExactForm)?;
     // Cut carves inward, Fuse raises outward; either way the prism's near cap is flush on the face.
     let signed = if matches!(kind, BoolKind::Cut) {
         -dist
     } else {
         dist
     };
-    // The face's own frame, so a pad or pocket takes the same exact-rational path an
-    // extrude does: its axes are `{0, ±1}` exactly whenever the face is axis-aligned.
-    let plane = realized_plane(frame.origin, frame.x, frame.y);
     // ★★★ **The frame is not decided here — `face_frame` already decided it**, and that is the
     // point: `face_plane` promises a caller the frame this operation will use, so there must be
-    // exactly one place that picks it. All that is left is to name it as a motion node.
-    //
-    let sketch_frame = frame.sketch_frame.map(|f| push_frame_node(model, f));
-    let (outer, holes) = swept_profile(model, &plane, profile, signed, sketch_frame)?;
+    // exactly one place that picks it. The rings take the one road from a frame to a prism the
+    // extrude takes too.
+    let (outer, holes) = frame_rings(model, &frame.frame, profile, signed)?;
     let (prism, prism_faces) = build_prism(
         model,
         outer,

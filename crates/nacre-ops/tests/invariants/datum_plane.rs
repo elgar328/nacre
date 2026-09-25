@@ -16,7 +16,7 @@ use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
 use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
-use crate::fixtures::datum_frame;
+use crate::fixtures::{datum_frame, lifted_block, mirrored_lifted_block, top_surface};
 
 fn datum(plane: SketchPlane) -> Operation {
     Operation::DatumPlane {
@@ -2587,8 +2587,8 @@ fn an_offset_of_a_mirrored_face_lands_outward() {
             (n[2] * s - 1.0).abs() < 1e-12 && (p.origin().as_array()[2] - 1.1).abs() < 1e-12
         })
         .expect("the mirrored box keeps a top cap on z = 1.1");
-    // The face's own frame refuses a recorded mirror chain (`FrameNotRepresentable`), but the
-    // canonical frame of its plane is a public statement any caller can make.
+    // The canonical frame of its plane — a public statement any caller can make — whose `ŵ` is
+    // the carried `+ẑ`.
     let frame = SketchFrame::canonical(m.face(top).surface);
 
     let OpOutput::DatumPlane { plane, .. } = apply(&mut m, &offset(frame, 1.0)).expect("offset")
@@ -2603,78 +2603,6 @@ fn an_offset_of_a_mirrored_face_lands_outward() {
         (z - 2.1).abs() < 1e-12,
         "one outward from the top cap is z = 2.1, got z = {z}"
     );
-}
-
-/// A block `height` tall on the world XY plane, moved up by `lift` — a translation that rounds, so
-/// its caps carry it as a motion node.
-fn lifted_block(
-    m: &mut Model,
-    height: f64,
-    lift: nacre_exact::Rat,
-) -> nacre_store::Handle<nacre_topo::Solid> {
-    let OpOutput::Extrude { solid, .. } = apply(
-        m,
-        &Operation::Extrude {
-            frame: SketchFrame::world(m, Axis::Z),
-            profile: square(0.0, 2.0),
-            dist: height,
-        },
-    )
-    .expect("a block") else {
-        unreachable!()
-    };
-    let zero = nacre_exact::Rat::from_int(0);
-    crate::fixtures::xf(
-        m,
-        solid,
-        nacre_exact::Isometry::translation([zero, zero, lift]),
-    )
-}
-
-/// The surface of `solid`'s top cap — the face highest in `z`.
-fn top_surface(
-    m: &Model,
-    solid: nacre_store::Handle<nacre_topo::Solid>,
-) -> nacre_store::Handle<Surface> {
-    let shell = m.solid(solid).outer;
-    let top = m
-        .shell(shell)
-        .faces
-        .iter()
-        .copied()
-        .max_by(|&a, &b| {
-            let z = |f| {
-                nacre_props::face_props(m, f)
-                    .expect("props")
-                    .centroid
-                    .as_array()[2]
-            };
-            z(a).total_cmp(&z(b))
-        })
-        .expect("a block has faces");
-    m.face(top).surface
-}
-
-/// [`lifted_block`], then reflected in `x = 0` — recorded behind the translation, since a history
-/// exists — so its top cap's chain folds with a reflection in it.
-fn mirrored_lifted_block(
-    m: &mut Model,
-    height: f64,
-    lift: nacre_exact::Rat,
-) -> nacre_store::Handle<nacre_topo::Solid> {
-    let solid = lifted_block(m, height, lift);
-    let OpOutput::Mirror { solid } = apply(
-        m,
-        &Operation::Mirror {
-            solid,
-            axis: Axis::X,
-            offset: nacre_exact::Rat::from_int(0),
-        },
-    )
-    .expect("a mirror") else {
-        unreachable!()
-    };
-    solid
 }
 
 /// ★★ **An offset of a moved plane is the exact plane, not the decimal its realization prints.**

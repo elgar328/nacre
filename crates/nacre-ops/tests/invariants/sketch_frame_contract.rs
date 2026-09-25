@@ -1,4 +1,4 @@
-//! **`face_sketch_frame` speaks the pad's frame, or it declines by name — never a third thing.**
+//! **`face_sketch_frame` speaks the pad's frame — on every planar face, never a third thing.**
 //!
 //! The returned `SketchFrame` is not a report to read and discard: it is a value the kernel
 //! accepts back (`Operation::Extrude { frame }`, `DatumDef::Offset { frame }`), so a wrong one is
@@ -8,24 +8,17 @@
 //!
 //! The contract asserted here is the realization itself, bit for bit:
 //!
-//! > For every face, `face_sketch_frame` either returns a frame whose realization
-//! > (`frame_plane`) is **bit-identical** to `face_plane` — the frame the pad actually
-//! > sketches in — or it declines by name. There is no middle.
+//! > For every planar face, `face_sketch_frame` returns a frame whose realization
+//! > (`frame_plane`) is **bit-identical** to `face_plane` — the frame the pad sketches in.
 //!
-//! ★ Bits, not a tolerance: on the faces this sweeps, both sides come from the same exact
-//! roads ({0,±1} axes, rational projections, or the same flip-baked chain realization), so
-//! agreement is exact when it holds and a threshold would only paper over a third derivation.
-//!
-//! ★★ The refusal population is pinned per flavour below. It is defined by *verification
-//! failure*, not by a condition list. A plane the rotation maps onto itself keeps its world
-//! statement instead of carrying the motion, so those cells verify bit-for-bit and the
-//! rotated pins are 0.
-
+//! ★ It holds by construction: the face's frame is chosen once (`face_frame`), the pad builds in
+//! it, and `face_plane` is its realization. The lock keeps a second derivation from coming back;
+//! the round trip below is the operation's own witness. The flavours include the faces a
+//! derivation from the cached normal could not spell — a lift that rounds, and a mirror behind it.
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;
 use nacre_ops::{
-    OpError, OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane, face_sketch_frame,
-    frame_plane,
+    OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane, face_sketch_frame, frame_plane,
 };
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -80,39 +73,29 @@ fn rot(axis: Axis, deg: i128) -> Isometry {
     })
 }
 
-/// The four flavours: how the block is placed, and how many faces must decline.
+/// How the block is placed.
 ///
-/// Since the invariant-plane restatement, a plane the motion fixes (the z-caps here — the
-/// rotation is about their own normal, the translation slides within them) keeps its world
-/// statement and no motion node, so its canonical frame verifies and **nothing declines** in
-/// any flavour. The declining population that remains for `FrameNotRepresentable` is the one
-/// the restatement leaves recorded: exactly-statable-but-shifted images (a z-translation after the
-/// turn), mirror chains, and second-generation moved sources — none of which these flavours
-/// build. Everything must agree to the bit — including the flip=true axis-aligned faces the
-/// old fallback reported point-symmetric.
-fn flavours() -> Vec<(&'static str, Model, Handle<Solid>, usize)> {
+/// A plane the motion fixes (the z-caps under a turn about `z` or a slide within them) keeps its
+/// world statement; the walls carry the chain. The last two lift the block by `1/3` — a
+/// translation that rounds, so the caps carry it as a node — and then mirror it: faces whose
+/// frame is carried out through a folding chain, a reflection in the second.
+fn flavours() -> Vec<(&'static str, Model, Handle<Solid>)> {
     let mut out = Vec::new();
 
     let mut m = Model::new();
     let s = block(&mut m);
-    out.push(("plain", m, s, 0));
+    out.push(("plain", m, s));
 
-    // 90° is exact and restated (no motion recorded), so nothing may decline here either.
     let mut m = Model::new();
     let s = block(&mut m);
     let s = xf(&mut m, s, rot(Axis::Z, 90));
-    out.push(("rot90", m, s, 0));
+    out.push(("rot90", m, s));
 
-    // 30°: the two rotation-invariant planes (z = 0, z = 1) are restated — no motion, no
-    // decline; the four walls carry the chain and transcribe.
     let mut m = Model::new();
     let s = block(&mut m);
     let s = xf(&mut m, s, rot(Axis::Z, 30));
-    out.push(("rot30", m, s, 0));
+    out.push(("rot30", m, s));
 
-    // 30° then an exact in-plane translation — the walls' history records it, while the caps
-    // are fixed by both motions and stay restated. (Before the restatement the caps declined
-    // here, and before the transcription fix their returned frame was 1.0 off in origin.)
     let mut m = Model::new();
     let s = block(&mut m);
     let s = xf(&mut m, s, rot(Axis::Z, 30));
@@ -121,67 +104,69 @@ fn flavours() -> Vec<(&'static str, Model, Handle<Solid>, usize)> {
         s,
         Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]),
     );
-    out.push(("rot30+t", m, s, 0));
+    out.push(("rot30+t", m, s));
+
+    let third = Rat::new(1, 3).expect("a lift");
+    let mut m = Model::new();
+    let s = crate::fixtures::lifted_block(&mut m, 1.0, third);
+    out.push(("lifted", m, s));
+
+    let mut m = Model::new();
+    let s = crate::fixtures::mirrored_lifted_block(&mut m, 1.0, third);
+    out.push(("mirrored", m, s));
 
     out
 }
 
 #[test]
-fn the_returned_frame_realizes_to_the_pads_or_declines_by_name() {
+fn the_returned_frame_realizes_to_the_pads() {
     let mut wrong: Vec<String> = Vec::new();
 
-    for (tag, m, s, want_declined) in flavours() {
-        let mut declined = 0usize;
+    for (tag, m, s) in flavours() {
         for fi in 0..6 {
             let f = m.shell(m.solid(s).outer).faces[fi];
             let a = face_plane(&m, f).expect("planar");
-            match face_sketch_frame(&m, f) {
-                Ok(sf) => {
-                    let b = frame_plane(&m, &sf).expect("a returned frame realizes");
-                    let bits = |p: &nacre_ops::SketchPlane| {
-                        [
-                            p.origin().as_array().map(f64::to_bits),
-                            p.x_axis().as_array().map(f64::to_bits),
-                            p.y_axis().as_array().map(f64::to_bits),
-                        ]
-                    };
-                    if bits(&a) != bits(&b) {
-                        wrong.push(format!(
-                            "{tag} face[{fi}]: returned frame realizes to o={:?} x={:?} y={:?}, \
-                             the pad sketches at o={:?} x={:?} y={:?}",
-                            b.origin().as_array(),
-                            b.x_axis().as_array(),
-                            b.y_axis().as_array(),
-                            a.origin().as_array(),
-                            a.x_axis().as_array(),
-                            a.y_axis().as_array(),
-                        ));
-                    }
+            let sf = match face_sketch_frame(&m, f) {
+                Ok(sf) => sf,
+                Err(e) => {
+                    wrong.push(format!("{tag} face[{fi}]: no frame — {e:?}"));
+                    continue;
                 }
-                // Declining is an honest answer; *which* faces decline is pinned below.
-                Err(OpError::FrameNotRepresentable) => declined += 1,
-                Err(e) => wrong.push(format!("{tag} face[{fi}]: unexpected error {e:?}")),
+            };
+            let b = frame_plane(&m, &sf).expect("a returned frame realizes");
+            let bits = |p: &nacre_ops::SketchPlane| {
+                [
+                    p.origin().as_array().map(f64::to_bits),
+                    p.x_axis().as_array().map(f64::to_bits),
+                    p.y_axis().as_array().map(f64::to_bits),
+                ]
+            };
+            if bits(&a) != bits(&b) {
+                wrong.push(format!(
+                    "{tag} face[{fi}]: returned frame realizes to o={:?} x={:?} y={:?}, \
+                     the pad sketches at o={:?} x={:?} y={:?}",
+                    b.origin().as_array(),
+                    b.x_axis().as_array(),
+                    b.y_axis().as_array(),
+                    a.origin().as_array(),
+                    a.x_axis().as_array(),
+                    a.y_axis().as_array(),
+                ));
             }
-        }
-        if declined != want_declined {
-            wrong.push(format!(
-                "{tag}: {declined} faces declined, pinned {want_declined} — the representable \
-                 population moved (restatement landing? update the pin with the measurement)"
-            ));
         }
     }
 
     assert!(
         wrong.is_empty(),
-        "faces holding a frame that is neither the pad's nor a refusal:\n{}",
+        "faces holding a frame that is not the pad's:\n{}",
         wrong.join("\n")
     );
 }
 
 /// **The value round-trips**: a sketch built in the returned frame lands exactly where the pad
-/// lands. One flip=true face (the transcription population) and one flip=false face (the
-/// canonical population) — the realization comparison above could in principle miss something an
-/// actual operation reads, so the operation is the final witness.
+/// lands. One flip=true face (spelled `Named` — the world axes of an outward `−ẑ`) and one
+/// flip=false face (`Canonical`) — the realization comparison above could in principle miss
+/// something an actual operation reads, so the operation is the final witness.
 #[test]
 fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
     for fi in [0usize, 1] {

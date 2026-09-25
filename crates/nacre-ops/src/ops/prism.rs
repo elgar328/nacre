@@ -81,6 +81,40 @@ pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError
     profile.holes().iter().try_for_each(quarter)
 }
 
+/// **A profile's rings placed in `frame` and swept `dist` along its `ŵ`** — the one road from a
+/// frame to a prism's rings, shared by the extrude and the face operations: the world road when
+/// the frame's world basis is rational ([`exact_frame`]), otherwise written inside the frame
+/// behind its node ([`push_frame_node`]).
+///
+/// The rational path is not an optimization: it is what makes `extrude(7.7)` and `extrude(1.1)`
+/// then `extrude(6.6)` put their caps on the same plane rather than an ulp apart. Where the
+/// arithmetic cannot state the prism (`i128` overflow in the placement) the answer is a **named
+/// reject**, never a silent f64 prism: a point-less solid cannot state itself and cannot survive
+/// a motion.
+///
+/// **Mapping only — no winding decision, and no containment check.** Forcing the outer ring CCW
+/// here would be a second opinion on a question `build_prism` already answers from the sweep, and
+/// two opinions is how an outer ring and its holes end up wound the same way (the pocket case,
+/// where the sweep runs `−n` and flips the outer ring). A profile may also reach past the face
+/// boundary; an overhanging footprint routes to the overhang boolean sidecars, which reject
+/// honestly what they do not cover.
+pub(super) fn frame_rings(
+    model: &mut Model,
+    frame: &SketchFrame,
+    profile: &Profile2d,
+    dist: f64,
+) -> Result<(Swept, Vec<Swept>), OpError> {
+    let (rat, node) = match exact_frame(model, frame) {
+        Some(f) => (f, None),
+        None => (
+            crate::construct::RatFrame::identity(),
+            Some(push_frame_node(model, *frame)),
+        ),
+    };
+    crate::construct::prism_rings_in(model, rat, profile, dist, node)
+        .ok_or(OpError::PlaneWithoutExactForm)
+}
+
 pub(crate) fn extrude_on_frame(
     model: &mut Model,
     frame: &SketchFrame,
@@ -111,17 +145,7 @@ pub(crate) fn extrude_on_frame(
     )
     .ok_or(OpError::PlaneWithoutExactForm)?;
 
-    // World road when the frame's basis is rational, frame-node road otherwise — the same
-    // question `SketchPlane::exact` asks a caller's axes, asked of the frame in `Rat`.
-    let (rat, node) = match exact_frame(model, frame) {
-        Some(f) => (f, None),
-        None => (
-            crate::construct::RatFrame::identity(),
-            Some(push_frame_node(model, *frame)),
-        ),
-    };
-    let (outer, holes) = crate::construct::prism_rings_in(model, rat, profile, dist, node)
-        .ok_or(OpError::PlaneWithoutExactForm)?;
+    let (outer, holes) = frame_rings(model, frame, profile, dist)?;
     let base = (frame.plane(), base_cap_orientation(model, frame)?);
     build_prism(
         model,
@@ -156,33 +180,6 @@ fn base_cap_orientation(model: &Model, frame: &SketchFrame) -> Result<Orientatio
     } else {
         Orientation::Reversed
     })
-}
-
-/// Place a profile on its plane and sweep it — **exactly, or not at all**.
-///
-/// The rational path is not an optimization: it is what makes `extrude(7.7)` and
-/// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an
-/// ulp apart. Where it does not apply — a plane with no exact statement (axes outside the
-/// decimal window, a degenerate pair), a frame the chain cannot realize, an i128 overflow in
-/// the placement arithmetic — the answer is a **named reject**, not a silent f64 prism: a
-/// point-less solid cannot state itself and cannot survive a motion. (Profile coordinates and `dist` outside the decimal window
-/// are named before this runs.)
-///
-/// **Mapping only — no winding decision, and no containment check.** Forcing the outer
-/// ring CCW here would be a second opinion on a question `build_prism` already answers
-/// from the sweep, and two opinions is how an outer ring and its holes end up wound the
-/// same way (the pocket case, where the sweep runs `−n` and flips the outer ring). A
-/// profile may also reach past the face boundary; an overhanging footprint routes to
-/// the overhang boolean sidecars, which reject honestly what they do not cover.
-pub(super) fn swept_profile(
-    model: &Model,
-    plane: &SketchPlane,
-    profile: &Profile2d,
-    dist: f64,
-    frame: Option<Handle<MotionNode>>,
-) -> Result<(Swept, Vec<Swept>), OpError> {
-    crate::construct::prism_rings(model, plane, profile, dist, frame)
-        .ok_or(OpError::PlaneWithoutExactForm)
 }
 
 /// Sweep a profile's rings along `sweep` into a prism solid: caps, side walls, and — for each
@@ -710,18 +707,18 @@ fn sweep_ring(
     })
 }
 
-/// **Do the two roads to a sketch frame agree?** — the measurement the vocabulary swap rests on.
+/// **Does the gate read a frame the way its author wrote it?** — the measurement [`exact_frame`]
+/// rests on.
 ///
-/// Today an extrude reads its frame from the `SketchPlane` a caller handed in: `exact()` lifts the
-/// caller's f64 axes and, when they lift to exact orthonormal rationals, the whole prism is built
-/// in world coordinates with no motion node. When `Operation::Extrude` starts naming a
-/// [`SketchFrame`] instead, the axes will come from **realizing the frame's exact form** — a
-/// different route to the same real vectors.
+/// A caller writes a frame as `f64` axes; their decimals lifted (`SketchPlane::exact`, test-only)
+/// are what the caller meant. The operation asks the datum's frame in rationals instead
+/// ([`exact_frame`]), and the two must answer alike — while the route that realizes the axes and
+/// lifts them back must visibly lose the frames whose axes need normalizing.
 ///
-/// ★★★ **A one-ulp disagreement there is not an ulp of error.** `exact()` would flip to `None`,
-/// the plane would silently take the frame-node road, and the arena would gain motion nodes and
-/// write its points in frame coordinates: a *different but still valid* model. So the assertion
-/// order below matters — **same road first**, values second. This crate has been bitten by exactly
+/// ★★★ **A one-ulp disagreement there is not an ulp of error.** The plane would silently take the
+/// frame-node road, and the arena would gain motion nodes and write its points in frame
+/// coordinates: a *different but still valid* model. So the assertion order below matters —
+/// **same road first**, values second. This crate has been bitten by exactly
 /// this shape before: `nacre_exact::plane_frame_named` records `v̂` realized as `ŵ × û` coming out
 /// `0.999999999999999_7`, "an exact path quietly lost".
 ///

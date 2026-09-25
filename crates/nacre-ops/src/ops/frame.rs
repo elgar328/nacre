@@ -72,8 +72,9 @@ pub(super) fn push_frame_node(
 /// * **On every face that is not horizontal, `v` points up.** `u = ẑ × n` is horizontal, so
 ///   `v·ẑ = (n × (ẑ × n))·ẑ = 1 − n_z²`, which is positive unless `n` is vertical. Sketching on a
 ///   wall, "up" is up.
-/// * **Axis-aligned faces keep axes in `{0, ±1}`**, so `SketchPlane::exact` still fires and the
-///   rational construction path is not lost.
+/// * **Axis-aligned faces keep axes in `{0, ±1}`**, exactly the rationals
+///   [`nacre_exact::plane_frame_default`] states for a face — the same rule in exact arithmetic,
+///   which is how a face's frame is chosen (`face_sketch_frame`).
 ///
 /// ★★ **The branch is exact, not toleranced.** DXF switches on `|n_x| < 1/64`, a threshold only a
 /// float-only kernel needs; `n_x == 0 && n_y == 0` is the real question and this kernel can ask it.
@@ -86,8 +87,8 @@ pub(super) fn push_frame_node(
 /// two poles only. It is not smooth *at* the poles either — approaching `+ẑ` from different sides
 /// gives different limits — but the set where that happens is two points instead of three arcs.
 ///
-/// Returns both axes rather than just `u`, so the two call sites cannot disagree about which way
-/// `v` runs. `None` only for the zero vector.
+/// Returns both axes rather than just `u`, so a caller cannot run `v` the other way. `None` only
+/// for the zero vector.
 pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
     let [nx, ny, nz] = n.as_array();
     let raw = if nx == 0.0 && ny == 0.0 {
@@ -109,15 +110,15 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
 /// [`Operation::PocketOnFace`] place their profile in**, so a caller can work out where its
 /// `(0, 0)` will land before it builds anything.
 ///
-/// That equality is the contract, not a coincidence: this is a projection of the frame those
-/// operations use, never a second derivation. A test pins a hand-placed profile against a pad to
-/// keep it that way.
+/// That equality is the contract, not a coincidence: this is [`face_sketch_frame`]'s frame
+/// realized by [`frame_plane`], never a second derivation. A test pins a hand-placed profile
+/// against a pad to keep it that way.
 ///
 /// `NonPlanarFace` for a curved surface (only a plane carries a frame); `FaceNotInLiveSolid` if no
-/// live solid's outer shell holds the face.
+/// live solid's outer shell holds the face; `PlaneWithoutExactForm` if its plane has no frame.
 pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
     let f = face_frame(model, face)?;
-    Ok(realized_plane(f.origin, f.x, f.y))
+    frame_plane(model, &f.frame).ok_or(OpError::PlaneWithoutExactForm)
 }
 
 /// **Where a frame is, in space** — its origin and its two axes, realized as f64.
@@ -127,95 +128,71 @@ pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpEr
 /// `(u, v)` in this frame, and `origin + u·x + v·y` is the point.
 ///
 /// ★ It is a **report**, not a truth. The frame's statement is the truth — this is that
-/// statement realized, with all the rounding a realization carries, and nothing exact should be
-/// decided from it.
+/// statement realized the way a prism built in it is realized (`frame_basis`), and nothing
+/// exact should be decided from it.
 ///
 /// `None` when the frame's chain cannot be realized at all (a plane with no name). A caller
 /// that cannot place a thing should decline to draw it rather than draw it somewhere wrong.
 pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
-    let basis = crate::rotated_vertex::frame_world_basis(
-        model,
-        frame.plane(),
-        frame.placement(),
-        frame.flip(),
-    )?;
+    let (o, u, v, _) = frame_basis(model, frame)?;
     Some(realized_plane(
-        Point3::from_array(basis.0),
-        Vector3::from_array(basis.1),
-        Vector3::from_array(basis.2),
+        Point3::from_array(o),
+        Vector3::from_array(u),
+        Vector3::from_array(v),
     ))
 }
 
-/// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and
-/// flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
-/// [`face_plane`] projects that frame to realized f64 axes for a caller to *look at*, this is
-/// the exact vocabulary itself: the same value `face_frame` builds internally, not
-/// thrown away at the boundary.
+/// **A frame realized the way a prism built in it is** — `(origin, û, v̂, ŵ)`.
 ///
-/// ★★★ **What comes back is verified against the pad's frame, by realization, to the bit.** On a
-/// world-branch face (axes lifting exactly) the operation elides the frame node and sketches in
-/// `face_frame`'s world axes — so this transcribes *those* axes into the vocabulary and returns a
-/// candidate only if realizing it lands bit-identically on them. The old fallback assumed the
-/// canonical frame realizes to the same axes ("the node-omission normalization"); that holds only
-/// for flip=false faces of motion-free planes, and everywhere else the returned frame put a
-/// sketch somewhere the pad does not (measured: point-symmetric on every flip=true axis-aligned
-/// face). Verification is the contract now — no candidate can be returned wrong, whatever
-/// population shows up next.
-///
-/// A face has no caller to name a placement, so the canonical frame is tried first (the stronger
-/// normal form); where it realizes elsewhere, the pad's axes are transcribed as a `Named`
-/// placement (origin + `ref_dir`) with `flip` turned toward the face's outward as everywhere else.
-///
-/// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
-/// the plane carries no name to derive a frame from (a test-only unregistered surface); and
-/// [`OpError::FrameNotRepresentable`] when the frame exists but no spelling realizes to it —
-/// world-branch faces whose surface carries a motion; since the invariant-plane restatement
-/// a plane its motion fixes carries none, so the residual population is the recorded one
-/// (see the variant's doc).
-pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
-    let f = face_frame(model, face)?;
-    if let Some(sf) = f.sketch_frame {
-        return Ok(sf);
-    }
-    // The world-branch population: the operation will build no node and sketch in `f`'s axes.
-    // Every candidate below must prove itself by realizing to exactly those axes — bits, not a
-    // tolerance: both sides come from exact roads ({0,±1} axes, rational projections), so
-    // agreement is exact when it holds and a threshold would only paper over a third derivation.
-    let pad_frame =
-        [f.origin.as_array(), f.x.as_array(), f.y.as_array()].map(|c| c.map(f64::to_bits));
-    let verified = |sf: SketchFrame| -> Option<SketchFrame> {
-        let (o, u, v, _) =
-            crate::rotated_vertex::frame_world_basis(model, f.surface_h, sf.placement(), sf.flip)?;
-        ([o, u, v].map(|c| c.map(f64::to_bits)) == pad_frame).then_some(sf)
-    };
-    let outward = model.face(face).orientation;
-    let canonical = || {
-        frame_toward(
+/// The world road builds a prism's vertices in the frame's rational world basis and rounds each
+/// once, so that basis rounded once is its realization; the frame-node road replays its vertices
+/// through the chain, so the chain replayed is its realization
+/// ([`crate::rotated_vertex::frame_world_basis`]). The two part in the last bit where an axis
+/// needs normalizing — a replay multiplies by a numerically computed `1/5` and lands on
+/// `0.6000000000000001` — so each road's report is its own road's realization.
+pub(super) fn frame_basis(
+    model: &Model,
+    frame: &SketchFrame,
+) -> Option<crate::rotated_vertex::WorldBasis> {
+    match exact_frame(model, frame) {
+        Some(rf) => rf.realized(),
+        None => crate::rotated_vertex::frame_world_basis(
             model,
-            f.surface_h,
-            nacre_topo::FramePlacement::Canonical,
-            outward,
-        )
-    };
-    // The transcription: the pad's own origin and +u, said as a `Named` placement. `named`'s
-    // exact checks (on-plane origin, non-degenerate ref_dir) ride along; any failure just drops
-    // the candidate — the refusal below is the answer, never a silent wrong frame.
-    let transcribed = || {
-        let sf = SketchFrame::named(model, f.surface_h, f.origin, f.x).ok()?;
-        frame_toward(model, f.surface_h, sf.placement, outward)
-    };
-    if !model.surface_name.contains_key(&f.surface_h) {
-        // No name at all: nothing can realize. The distinct, older proposition.
-        return Err(OpError::PlaneWithoutExactForm);
+            frame.plane(),
+            frame.placement(),
+            frame.flip(),
+        ),
     }
-    canonical()
-        .and_then(&verified)
-        .or_else(|| transcribed().and_then(&verified))
-        .ok_or(OpError::FrameNotRepresentable)
 }
 
-/// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
-/// `FaceNotInLiveSolid` if no live outer shell holds it.
+/// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and flip
+/// that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in; [`face_plane`] is its
+/// realization. An extrude in it lands where the pad lands, as the same surfaces.
+///
+/// ★★ **Which frame a face takes is a fact about where the face is, not about how its plane is
+/// stored.** Whether a moved plane carries its motion as a node or had it carried into its points
+/// is the transform's choice of what it can state exactly, so a rule that read the
+/// representation would sketch two identical faces in two frames.
+/// - A plane whose world equation the model states ([`Model::world_plane_name`] — unmoved, or
+///   moved by a chain that folds) takes the **arbitrary-axis frame of its outward normal in the
+///   world** (`frame_axes`' rule, stated exactly by [`nacre_exact::plane_frame_default`]): the
+///   world origin's projection, `+u = ẑ × n` (`ŷ × n` when `n` is vertical). It is spelled as a
+///   placement of the plane's own statement, carried back through the chain — which folds, so
+///   exactly — and as `Canonical` wherever that is the same frame (the normal form). Through a
+///   reflection the carried frame is left-handed: `û` is the world's, `v̂` its reverse, `ŵ`
+///   still outward.
+/// - Any other plane (a frame node or a turn off the quarters in its chain, a wide name, no name)
+///   takes its own `Canonical` frame, carried out by its chain.
+///
+/// Errors: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when the plane has no
+/// frame at all (no name, and no judged frame).
+pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
+    Ok(face_frame(model, face)?.frame)
+}
+
+/// Locate `face`'s live solid and choose its frame ([`face_sketch_frame`] says which).
+/// `NonPlanarFace` for a curved surface, `FaceNotInLiveSolid` if no live outer shell holds it,
+/// `PlaneWithoutExactForm` if the plane has no frame.
 pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let (solid_h, _) = model
         .live_solids()
@@ -227,110 +204,72 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
         .ok_or(OpError::FaceNotInLiveSolid)?;
     let f = model.face(face);
     let surface_h = f.surface;
-    let orientation = f.orientation;
-    let plane = match model.surface_cache(surface_h) {
-        nacre_geom::Surface::Plane(p) => *p,
-        nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
-    };
-    let sign = f64::from(orientation.sign());
-    let n = plane.normal() * sign;
-    let (x, y) = frame_axes(n).ok_or(OpError::DegenerateGeometry)?;
-    // ★ The origin is the **world origin projected onto the face's plane** — a property of the
-    // plane, not of the face.
-    //
-    // Not the face region's area centroid, nor the mean of the outer loop's corners: both are
-    // computed in `f64` from the face's own vertices, and `construct.rs` lifts the frame origin
-    // with `Rat::from_decimal`, so a rounded cache would become the truth — measured with the
-    // centroid, padding one footprint twice places the second profile an ulp from the first and
-    // leaves faces of area `2.2e-16` that `validate` does not report.
-    //
-    // The projection is `(−d / n·n)·n` from the plane's rational coefficients: one division, no
-    // f64 in the derivation, and invariant under negating or scaling those coefficients — so two
-    // faces of one plane cannot disagree about where `(0, 0)` is. Measured over the suite: for
-    // every world-stated surface the realized point lies on the f64 plane at distance exactly `0`
-    // (1121/1121), which the centroid does not always manage.
-    //
-    // Only a world-stated plane's coefficients are world truth (`motion: None`). A moved
-    // surface records its **pre-motion** frame, so projecting those gives a pre-motion point —
-    // measured `0.29` away from the world plane, not a rounding but a different place. Those
-    // keep the f64 projection, which is the same rule computed from the description available.
-    // `narrow()` gates the wide vessel out: a `Wide` name carries identity only, so it
-    // keeps the f64 projection exactly as a missing name did.
-    let world_stated = matches!(
-        model.surface(surface_h),
-        nacre_topo::Surface::Plane { motion: None, .. }
-    );
-    let origin = match (
-        world_stated,
-        model.surface_name.get(&surface_h).and_then(|n| n.narrow()),
-    ) {
-        (true, Some(&c)) => nacre_exact::plane_origin_projection(c)
-            .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
-            .unwrap_or_else(|| plane.project(Point3::origin())),
-        _ => plane.project(Point3::origin()),
-    };
-    // ★★★★★ **When the operation will sketch in the plane's own frame, report *that* frame.**
-    //
-    // `face_plane`'s contract is that it names the frame `PadOnFace` places a profile in, and a
-    // tilted face is about to be sketched in its plane's frame rather than in world coordinates.
-    // Reporting the world axes here and using the frame's there would put a caller's profile a
-    // quarter turn from where it asked for it — measured, as a boss that missed its own face.
-    //
-    // ★★ **The gate is the same one the operation uses**, and it has to be the same expression,
-    // not the same intent: take the frame only when the world axes do not lift to exact
-    // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
-    //
-    // ★ **`flip` turns `ŵ` toward the face's outward** — by `frame_toward`, the one place it is
-    // decided, from the truth.
-    // ★★★ **The axes are then realized *with* that flip, by the same function the operation's
-    // prism replays through** — not combined by hand (see `frame_toward`: the realization
-    // half-turns about `û`, since its `ref_dir` is derived from the unflipped coefficients and
-    // survives the sign).
-    // ★★ A face has no caller to name a frame, so its placement is `Canonical` — derived
-    // when the chain is flattened, stored nowhere. That is also what opens this branch for a
-    // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
-    // succeeds through the arbitrary-precision road where a narrow derivation would decline.
-    let world = realized_plane(origin, x, y);
-    let sketch = (world.exact().is_none())
-        .then(|| {
+    let outward = f.orientation;
+    match model.surface(surface_h) {
+        nacre_topo::Surface::Plane { .. } => {}
+        nacre_topo::Surface::Cylinder { .. } => return Err(OpError::NonPlanarFace),
+    }
+    let frame = world_placement(model, surface_h, outward)
+        .and_then(|placement| frame_toward(model, surface_h, placement, outward))
+        .or_else(|| {
             frame_toward(
                 model,
                 surface_h,
                 nacre_topo::FramePlacement::Canonical,
-                orientation,
+                outward,
             )
         })
-        .flatten()
-        .and_then(|sf| {
-            let (o, u, v, _) = crate::rotated_vertex::frame_world_basis(
-                model,
-                surface_h,
-                &nacre_topo::FramePlacement::Canonical,
-                sf.flip,
-            )?;
-            Some((
-                sf,
-                Point3::from_array(o),
-                Vector3::from_array(u),
-                // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
-                // rational form (`plane_frame`), so realizing it costs one rounding where a cross
-                // product costs two that do not cancel — measured, a wall whose `v` is exactly
-                // `ẑ` came back three ulps short of `1.0` through the cross product.
-                Vector3::from_array(v),
-            ))
-        });
-    let (x, y, origin, sketch_frame) = match sketch {
-        Some((sf, o, u, v)) => (u, v, o, Some(sf)),
-        None => (x, y, origin, None),
-    };
+        .ok_or(OpError::PlaneWithoutExactForm)?;
     Ok(FaceFrame {
         solid_h,
         surface_h,
-        n,
-        x,
-        y,
-        origin,
-        sketch_frame,
+        frame,
+    })
+}
+
+/// **The placement that puts a face's sketch in the arbitrary-axis frame of its outward normal
+/// in the world**, written in the plane's own statement — `None` when the model does not state the
+/// plane's world equation (a chain that does not fold, a wide name) or the arithmetic overflows.
+///
+/// The world equation, turned to face the face's outward, gives the frame's origin and `+u` in
+/// the world ([`nacre_exact::plane_frame_default`] — the origin is the world origin's projection,
+/// a property of the plane, so two faces of one plane agree about where `(0, 0)` is). A
+/// placement speaks in the coordinates the plane's points are written in, so a moved plane takes
+/// them carried back through its chain; the chain folds, so that is exact. Where the result is
+/// the frame the plane's own name derives, it is `Canonical`.
+fn world_placement(
+    model: &Model,
+    plane: Handle<Surface>,
+    outward: Orientation,
+) -> Option<nacre_topo::FramePlacement> {
+    let world = *model.world_plane_name(plane)?.narrow()?;
+    let zero = Rat::from_int(0);
+    let world = if model.world_plane_name_sense(plane)?.sign() * outward.sign() > 0 {
+        world
+    } else {
+        [
+            zero.checked_sub(world[0])?,
+            zero.checked_sub(world[1])?,
+            zero.checked_sub(world[2])?,
+            zero.checked_sub(world[3])?,
+        ]
+    };
+    let (origin, ref_dir) = nacre_exact::plane_frame_default(world)?;
+    let (origin, ref_dir) = match model.plane_motion(plane) {
+        None => (origin, ref_dir),
+        Some(leaf) => (
+            model.chain_point_rat_inverse(leaf, origin)?,
+            model.chain_dir_rat_inverse(leaf, ref_dir)?,
+        ),
+    };
+    let own = *model.surface_name.get(&plane)?.narrow()?;
+    let (canon_origin, canon_ref) = nacre_exact::plane_frame_default(own)?;
+    let canonical = nacre_exact::plane_frame_named(own, origin, ref_dir)?
+        == nacre_exact::plane_frame_named(own, canon_origin, canon_ref)?;
+    Some(if canonical {
+        nacre_topo::FramePlacement::Canonical
+    } else {
+        nacre_topo::FramePlacement::Named { origin, ref_dir }
     })
 }
 

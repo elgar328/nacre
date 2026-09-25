@@ -265,3 +265,251 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     assert_eq!(placement, reported.placement());
     assert_eq!(*flip, reported.flip());
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A face's frame is chosen from the truth — the road, the origin and the axes
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A square `2·half` across, centred on `face`'s centroid in the frame the pad sketches in.
+fn centred_square(m: &Model, face: nacre_store::Handle<nacre_topo::Face>, half: f64) -> Profile2d {
+    let at = nacre_ops::face_plane(m, face).expect("planar");
+    let d = nacre_props::face_props(m, face).expect("props").centroid - at.origin();
+    let (cu, cv) = (d.dot(at.x_axis()), d.dot(at.y_axis()));
+    Profile2d::polygon(vec![
+        Point2::from_array([cu - half, cv - half]),
+        Point2::from_array([cu + half, cv - half]),
+        Point2::from_array([cu + half, cv + half]),
+        Point2::from_array([cu - half, cv + half]),
+    ])
+    .expect("a square")
+}
+
+/// Pad `face` with a centred square and return the pad's top face.
+fn pad_centred(
+    m: &mut Model,
+    face: nacre_store::Handle<nacre_topo::Face>,
+    dist: f64,
+) -> nacre_store::Handle<nacre_topo::Face> {
+    let profile = centred_square(m, face, 0.2);
+    let OpOutput::PadOnFace { top_face, .. } = apply(
+        m,
+        &Operation::PadOnFace {
+            face,
+            profile,
+            dist,
+        },
+    )
+    .expect("the pad") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    top_face
+}
+
+/// Extrude `profile` by `dist` in `frame` and return the far cap's surface.
+fn far_cap(
+    m: &mut Model,
+    frame: SketchFrame,
+    profile: Profile2d,
+    dist: f64,
+) -> nacre_store::Handle<nacre_topo::Surface> {
+    let OpOutput::Extrude { faces, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        },
+    )
+    .expect("the extrude") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    m.face(faces[1]).surface
+}
+
+/// ★★ **A pad on a lifted face lands its top on the exact plane.**
+///
+/// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3`, a rational with no short
+/// decimal, and the rounding translation leaves the top carrying its motion. The pad's frame
+/// origin used to be that plane's cache realized and lifted back with `Rat::from_decimal` — the
+/// decimal the `f64` prints — so the pad's far cap stood on `28666666666666667/2·10¹⁶` instead of
+/// `43/30` (measured, 6/6 lifts). The oracle is the transform's own: a block `h + 1` tall lifted
+/// the same way.
+#[test]
+fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
+    for (h, (p, q)) in [(0.1, (1, 3)), (0.3, (2, 7))] {
+        let lift = Rat::new(p, q).expect("a lift");
+        let mut m = Model::new();
+        let block = crate::fixtures::lifted_block(&mut m, h, lift);
+        let top = crate::fixtures::top_face(&m, block);
+        assert!(
+            m.plane_motion(m.face(top).surface).is_some(),
+            "the lift is recorded"
+        );
+        let padded = pad_centred(&mut m, top, 1.0);
+        let mut want = Model::new();
+        let want_block = crate::fixtures::lifted_block(&mut want, h + 1.0, lift);
+        assert_eq!(
+            m.world_plane_name(m.face(padded).surface),
+            want.world_plane_name(crate::fixtures::top_surface(&want, want_block)),
+            "h = {h}, lift = {p}/{q}: the pad's top is the lifted top of a block one taller"
+        );
+    }
+}
+
+/// ★★ **A pad on a rational tilted face stays on the world road, so its top is the plane every
+/// other statement of it names.**
+///
+/// The far cap of a prism on a `(3, 4, 0)` datum has rational axes, but its cached normal
+/// realizes to `0.6000000000000001`, and the pad used to ask whether those realized axes lift back
+/// to orthonormal rationals — they do not, so it sketched inside a frame node and its top landed
+/// under a `(name, node)` key: one plane, two handles. The frame is asked of the name now.
+#[test]
+fn a_pad_on_a_rational_tilted_face_shares_the_plane_with_an_extrude() {
+    let mut m = Model::new();
+    let frame = datum_frame(
+        &mut m,
+        SketchPlane::from_origin_normal(
+            Point3::from_array([0.0; 3]),
+            Vector3::from_array([3.0, 4.0, 0.0]),
+        )
+        .expect("a plane"),
+    );
+    let OpOutput::Extrude { faces, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 1.0),
+            dist: 1.0,
+        },
+    )
+    .expect("the prism") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let padded = pad_centred(&mut m, faces[1], 1.0);
+    let far = far_cap(&mut m, frame, square(0.0, 1.0), 2.0);
+    assert_eq!(
+        m.face(padded).surface,
+        far,
+        "the pad's top and the two-high prism's far cap are one plane, so one handle"
+    );
+}
+
+/// ★★ **A plane whose origin has no short decimal is framed exactly.**
+///
+/// `3x + 4y + 12z = 12` through three corners of a `4 × 3 × 1` box has rational axes
+/// (`(−4, 3, 0)/5`, a `v̂` over `65`) and its world origin `12/169·(3, 4, 12)` has no short
+/// decimal — the realization the pad used to lift back could not be the plane's own point. A pad
+/// on a prism raised off it must land where the prism twice as high does.
+#[test]
+fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
+    let mut m = Model::new();
+    let rect = Profile2d::polygon(vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([4.0, 3.0]),
+        Point2::from_array([0.0, 3.0]),
+    ])
+    .expect("a rectangle");
+    let world = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame: world,
+            profile: rect,
+            dist: 1.0,
+        },
+    )
+    .expect("a box") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let corner = |want: [f64; 3]| {
+        m.shell(m.solid(solid).outer)
+            .faces
+            .iter()
+            .flat_map(|&f| m.face(f).outer.half_edges.clone())
+            .flat_map(|he| m.edge(he.edge).vertices)
+            .find(|&v| m.vertex_point(v).as_array() == want)
+            .expect("a box corner")
+    };
+    let vs = [
+        corner([4.0, 0.0, 0.0]),
+        corner([0.0, 3.0, 0.0]),
+        corner([0.0, 0.0, 1.0]),
+    ];
+    let OpOutput::DatumPlane { frame, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("the datum") else {
+        unreachable!()
+    };
+    let OpOutput::Extrude { faces, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 1.0),
+            dist: 1.0,
+        },
+    )
+    .expect("the prism") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let padded = pad_centred(&mut m, faces[1], 1.0);
+    let far = far_cap(&mut m, frame, square(0.0, 1.0), 2.0);
+    assert_eq!(m.face(padded).surface, far, "one plane, one handle");
+}
+
+/// ★★ **The frame a face reports is the frame the pad builds in — on a lifted face and on a
+/// mirrored one.**
+///
+/// `face_sketch_frame` hands a caller the frame to extrude in; an extrude there must land where
+/// the pad lands, as the same handle. On a lifted face that frame is carried out through the
+/// face's own chain; on a mirrored one the chain has a reflection in it and the carried frame is
+/// left-handed — the pad and the extrude must still agree, and the solid stay right side out.
+#[test]
+fn the_reported_frame_extrudes_where_the_pad_lands() {
+    let lift = Rat::new(1, 3).expect("a lift");
+    for mirrored in [false, true] {
+        let mut m = Model::new();
+        let block = if mirrored {
+            crate::fixtures::mirrored_lifted_block(&mut m, 0.1, lift)
+        } else {
+            crate::fixtures::lifted_block(&mut m, 0.1, lift)
+        };
+        let top = crate::fixtures::top_face(&m, block);
+        let frame = nacre_ops::face_sketch_frame(&m, top).expect("a lifted face has a frame");
+        let profile = centred_square(&m, top, 0.2);
+        let OpOutput::PadOnFace { solid, top_face } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: top,
+                profile: profile.clone(),
+                dist: 1.0,
+            },
+        )
+        .expect("the pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let bad = nacre_validate::validate(&m);
+        assert!(bad.is_empty(), "mirrored = {mirrored}: {bad:?}");
+        let v = crate::fixtures::volume(&m, solid);
+        assert!(
+            (v - (4.0 * 0.1 + 0.16)).abs() < 1e-12,
+            "mirrored = {mirrored}: volume {v}"
+        );
+        let far = far_cap(&mut m, frame, profile, 1.0);
+        assert_eq!(
+            m.face(top_face).surface,
+            far,
+            "mirrored = {mirrored}: the pad's top and the extrude's far cap are one handle"
+        );
+    }
+}

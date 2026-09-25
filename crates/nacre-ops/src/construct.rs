@@ -25,7 +25,9 @@
 //! returns `Option` for that reason, and for i128 overflow, which is the same answer for
 //! the same reason.
 
-use crate::ops::{Profile2d, SketchPlane};
+use crate::ops::Profile2d;
+#[cfg(test)]
+use crate::ops::SketchPlane;
 use nacre_exact::{Orient, Rat};
 use nacre_geom::mixed::Edge2d;
 use nacre_math::{Point3, Vector3};
@@ -49,6 +51,7 @@ pub(crate) struct RatFrame {
     parity: i8,
 }
 
+#[cfg(test)]
 fn dot(a: &[Rat; 3], b: &[Rat; 3]) -> Option<Rat> {
     let mut acc = Rat::from_int(0);
     for i in 0..3 {
@@ -86,6 +89,7 @@ fn add(a: &[Rat; 3], b: &[Rat; 3]) -> Option<[Rat; 3]> {
     ])
 }
 
+#[cfg(test)]
 fn lift(p: [f64; 3]) -> Option<[Rat; 3]> {
     Some([
         Rat::from_decimal(p[0])?,
@@ -94,6 +98,13 @@ fn lift(p: [f64; 3]) -> Option<[Rat; 3]> {
     ])
 }
 
+/// The frame a caller *writes*, as `f64` axes, read in rationals — the decimals lifted with
+/// `Rat::from_decimal`, orthonormality checked exactly. Test-only: it is the oracle for what a
+/// caller's written frame means. The kernel never asks it of a realized frame — lifting a
+/// realization reads a coordinate with no short decimal, or an axis that needed normalizing
+/// (`0.6000000000000001`), as a different rational; frames are asked of the truth
+/// (`ops::exact_frame`).
+#[cfg(test)]
 impl SketchPlane {
     /// This frame in exact rationals, or `None` if it does not have one.
     ///
@@ -116,8 +127,8 @@ impl SketchPlane {
 }
 
 impl RatFrame {
-    /// **A frame's basis asked in rationals, never realized** — the exact question behind
-    /// [`SketchPlane::exact`], put to a frame instead of to a caller's `f64` axes.
+    /// **A frame's basis asked in rationals, never realized** — whether the plane's own frame has
+    /// rational orthonormal axes, and which.
     ///
     /// ★★★ **Realizing the axes first and lifting them back does not answer it.** Measured
     /// (`ops::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the primitive
@@ -161,6 +172,14 @@ impl RatFrame {
         })
     }
 
+    /// This frame realized — `to_f64` of each exact coordinate, `(origin, û, v̂, ŵ)` — the way the
+    /// world road realizes the vertices it builds in it, so a report of the frame and the prism
+    /// built in it are one rounding of one statement.
+    pub(crate) fn realized(&self) -> Option<crate::rotated_vertex::WorldBasis> {
+        let f = |v: &[Rat; 3]| v.map(|x| x.to_f64());
+        Some((f(&self.origin), f(&self.x), f(&self.y), f(&self.normal()?)))
+    }
+
     /// The frame's handedness: `−1` when it was carried through a reflection.
     pub(crate) fn parity(&self) -> i8 {
         self.parity
@@ -170,7 +189,7 @@ impl RatFrame {
     /// identity.**
     ///
     /// This is what makes a sketch on a *tilted* face exact. In world coordinates that face's
-    /// axes are irrational and [`SketchPlane::exact`] declines; inside the frame the very same
+    /// axes are irrational and the frame has no rational world basis; inside the frame the very same
     /// axes are `x̂` and `ŷ`, the origin is the origin, and orthonormality is not something to
     /// check but something to read off. The prism is then built by the arithmetic that was
     /// already here, on rationals that were already exact — the user's own profile decimals.
@@ -452,35 +471,17 @@ impl SweptRat {
     }
 }
 
-/// Every ring of a prism — placed on the plane and swept along it — computed in exact
+/// Every ring of a prism — placed in the frame and swept along its `ŵ` — computed in exact
 /// rationals and realized once, at the end. Returns the outer ring and then the holes.
 ///
-/// **Two frames can serve, and `frame` picks which.** `None` means the world: the sketch plane
-/// has to lift to exact orthonormal rationals itself, which an axis-aligned face does and a
-/// tilted one does not. `Some(motion)` means the plane's **own** frame, where the sketch frame is
-/// the identity ([`RatFrame::identity`]) and the rationals below are its `(u, v, w)` — the same
-/// arithmetic, on numbers that are exact by construction rather than by luck.
+/// **Two frames can serve, and `frame` picks which.** `None` means `f` is the frame's rational
+/// world basis (`ops::exact_frame` — asked of the truth, never of a realization). `Some(motion)`
+/// means the plane's **own** frame, where `f` is the identity ([`RatFrame::identity`]) and the
+/// rationals below are its `(u, v, w)` — the same arithmetic, on numbers that are exact by
+/// construction rather than by luck.
 ///
-/// `None` when there is no exact form to compute in: a frame that is not exactly
-/// orthonormal, or i128 overflow in the placement arithmetic. Both mean the same thing
-/// to the caller, which is to keep its f64 path. (A dimension outside the decimal window is
-/// not a reason here: the profile constructor names it before it gets here.)
-pub(crate) fn prism_rings(
-    model: &Model,
-    plane: &SketchPlane,
-    profile: &Profile2d,
-    dist: f64,
-    frame: Option<Handle<MotionNode>>,
-) -> Option<(Swept, Vec<Swept>)> {
-    let f = match frame {
-        Some(_) => RatFrame::identity(),
-        None => plane.exact()?,
-    };
-    prism_rings_in(model, f, profile, dist, frame)
-}
-
-/// [`prism_rings`] with the rational frame already in hand — for a caller that derived it from a
-/// [`crate::SketchFrame`] rather than from a caller's `f64` axes. One implementation, two doors.
+/// `None` on i128 overflow in the placement arithmetic. (A dimension outside the decimal window
+/// is not a reason here: the profile constructor names it before it gets here.)
 pub(crate) fn prism_rings_in(
     model: &Model,
     f: RatFrame,

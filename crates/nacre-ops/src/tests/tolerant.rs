@@ -1402,8 +1402,8 @@ fn a_named_planes_points_name_the_callers_plane() {
 /// because it does not misbehave until two such builds have to agree with each other.
 ///
 /// ★ **A prism on an arbitrarily tilted plane is the case that exercises it.** An axis-aligned
-/// sketch lifts to exact rationals on its own (`SketchPlane::exact`), so it takes the exact
-/// road even when everything else is broken. A tilted one can only get there through its own
+/// sketch's frame is rational in the world on its own, so it takes the exact road even when
+/// everything else is broken. A tilted one can only get there through its own
 /// frame — the caller's `PlaneDef`, its coefficients, `frame_chain`, `Motion::Frame` — and
 /// every link in that chain is load-bearing. Break any one and the extrude quietly reverts to
 /// the f64 path, still producing a prism of the right volume.

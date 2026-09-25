@@ -314,6 +314,69 @@ pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     solid
 }
 
+/// A 2 × 2 block `height` tall on the world XY plane, moved up by `lift`. A lift with no short
+/// decimal (`1/3`) rounds in `f64`, so the transform records it as a motion node: the block's caps
+/// carry a chain that folds.
+pub fn lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
+    let square = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(2.0, 2.0), p2(0.0, 2.0)])
+        .expect("a square");
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame: SketchFrame::world(m, Axis::Z),
+            profile: square,
+            dist: height,
+        },
+    )
+    .expect("a block") else {
+        unreachable!()
+    };
+    let zero = nacre_exact::Rat::from_int(0);
+    xf(m, solid, Isometry::translation([zero, zero, lift]))
+}
+
+/// [`lifted_block`], then reflected in `x = 0` — recorded behind the translation, since a history
+/// exists — so its caps carry a folding chain with a reflection in it.
+pub fn mirrored_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
+    let solid = lifted_block(m, height, lift);
+    let OpOutput::Mirror { solid } = apply(
+        m,
+        &Operation::Mirror {
+            solid,
+            axis: Axis::X,
+            offset: nacre_exact::Rat::from_int(0),
+        },
+    )
+    .expect("a mirror") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// The top cap of `solid` — the face highest in `z`.
+pub fn top_face(m: &Model, solid: Handle<Solid>) -> Handle<Face> {
+    m.shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .copied()
+        .max_by(|&a, &b| {
+            let z = |f| {
+                nacre_props::face_props(m, f)
+                    .expect("props")
+                    .centroid
+                    .as_array()[2]
+            };
+            z(a).total_cmp(&z(b))
+        })
+        .expect("a solid has faces")
+}
+
+/// The surface of [`top_face`].
+pub fn top_surface(m: &Model, solid: Handle<Solid>) -> Handle<nacre_topo::Surface> {
+    m.face(top_face(m, solid)).surface
+}
+
 /// 30° about Z through (1,1,0) — the standard oblique tilt for rotation-invariance.
 pub fn rot30() -> Isometry {
     use nacre_exact::{Angle, Rat, Rotation};

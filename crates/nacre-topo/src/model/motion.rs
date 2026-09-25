@@ -221,6 +221,28 @@ impl Model {
         self.chain_fold(leaf)?.dir_rat(d)
     }
 
+    /// **The point `p`, stated in the world, carried back to before `leaf`'s chain** — the inverse
+    /// of [`Model::chain_point_rat`]: a folded chain permutes the axes with signs and adds a
+    /// rational offset, so its inverse is exact. `None` where the chain does not fold or the
+    /// arithmetic overflows.
+    pub fn chain_point_rat_inverse(
+        &self,
+        leaf: Handle<MotionNode>,
+        p: [nacre_exact::Rat; 3],
+    ) -> Option<[nacre_exact::Rat; 3]> {
+        self.chain_fold(leaf)?.inverse().point_rat(p)
+    }
+
+    /// **The direction `d`, stated in the world, carried back to before `leaf`'s chain** — the
+    /// inverse of [`Model::chain_dir_rat`], the linear part only.
+    pub fn chain_dir_rat_inverse(
+        &self,
+        leaf: Handle<MotionNode>,
+        d: [nacre_exact::Rat; 3],
+    ) -> Option<[nacre_exact::Rat; 3]> {
+        self.chain_fold(leaf)?.inverse().dir_rat(d)
+    }
+
     /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely
     /// the set. The one place they part is a mirror whose plane is the carrier itself (`n ∥ axis`,
     /// on-plane): the set maps to itself but the row comes back negated — harmless to a Cramer

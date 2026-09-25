@@ -18,9 +18,7 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_store::Handle;
 use nacre_topo::CylinderDef;
 use nacre_topo::PointCache;
-use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Surface, Vertex,
-};
+use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Surface, Vertex};
 use std::borrow::Cow;
 
 mod apply;
@@ -217,21 +215,6 @@ pub enum OpError {
     /// overflowed `i128`. A prism built silently in f64 instead would record no exact points and
     /// could not survive a motion — a named reject is the honest answer.
     PlaneWithoutExactForm,
-    /// The face's sketch frame **exists** — [`face_plane`] reports it and the pad sketches in
-    /// it — but no [`SketchFrame`] realizes to it, so [`face_sketch_frame`] has nothing true
-    /// to return. Not [`Self::PlaneWithoutExactForm`]: that says the exact form is missing,
-    /// and here it is present — what is missing is a *spelling*.
-    ///
-    /// The population: world-branch faces whose surface carries a motion. The pad elides the
-    /// frame node and sketches in world axes there, and every `SketchFrame` on that surface
-    /// means "the pre-motion frame, then the motion" — stating the world axes in it would need
-    /// the motion's inverse image, which is irrational. Defined by **verification failure**
-    /// (no candidate's realization matches), not by that condition — which is how the
-    /// invariant-plane restatement shrinks it without a code change here: a plane
-    /// its motion *fixes* keeps the world statement and verifies. What remains recorded, and
-    /// so still lands here: exactly-statable-but-shifted images (a normal-wise translation
-    /// after a turn), mirror chains, and moved sources re-moved (stage-1 boundaries).
-    FrameNotRepresentable,
     /// A [`SketchFrame::named`] coordinate (origin or `ref_dir`) outside the decimal window
     /// (`Rat::from_decimal`), so the frame claim has no exact statement to check. The frame
     /// sibling of [`OpError::ProfileOutsideDecimalWindow`] and [`OpError::DistOutsideDecimalWindow`].
@@ -632,14 +615,10 @@ impl SketchFrame {
 struct FaceFrame {
     solid_h: Handle<Solid>,
     surface_h: Handle<Surface>,
-    n: Vector3, // outward normal
-    x: Vector3,
-    y: Vector3,
-    origin: Point3,
-    /// ★ Set when this face's sketch lives in its plane's **own frame** rather than the world:
-    /// the plane to take the frame from, and which way round. `x`/`y`/`origin` above are then that
-    /// frame's, realized — so what a caller is told and what the operation builds are one thing.
-    sketch_frame: Option<SketchFrame>,
+    /// The frame the face's sketch lives in — chosen from the truth by `face_frame`, so what a
+    /// caller is told ([`face_plane`], [`face_sketch_frame`]) and what the operation builds are
+    /// one value.
+    frame: SketchFrame,
 }
 
 /// **The handle road and the value road build the same prism.**

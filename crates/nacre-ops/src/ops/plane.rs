@@ -218,9 +218,9 @@ impl SketchPlane {
     /// — whose axes never lift to exact orthonormal rationals — extrudes through the frame
     /// road (wide names included) instead of falling silently to f64.
     ///
-    /// ★ The **world lift** still comes first: axes whose decimals square and cross to exact
-    /// `1`/`0` — a Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — pass `exact()`
-    /// and take the world-rational path, definition or not. That population is how the
+    /// ★ The **world road** still comes first: a frame whose basis is rational in the world — a
+    /// Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — takes the world-rational path
+    /// (asked of the datum's truth, not of these decimals). That population is how the
     /// `n·n`-overflow walls (the census `wf` family) are built.
     ///
     /// ★★ **What the definition states — and what it does not.** Three points, `+u`, and the

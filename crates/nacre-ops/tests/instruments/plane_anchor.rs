@@ -175,7 +175,7 @@ fn wf_points() -> [[Rat; 3]; 3] {
 }
 
 /// A profile point placed on the plane, in exact rationals, then realized once — the same road
-/// `exact::prism_rings` takes, so these are the prism's actual base-ring points.
+/// the world road (`construct::prism_rings_in`) takes, so these are the prism's actual base-ring points.
 fn wf_ring_point(u: f64, v: f64) -> Point3 {
     let (o, x, y) = (lift(WF_ORIGIN), lift(WF_X), lift(WF_Y));
     let (uu, vv) = (

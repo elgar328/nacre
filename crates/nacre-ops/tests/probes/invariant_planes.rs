@@ -7,9 +7,8 @@
 //! for the identity motion — instead of minting a moved twin that carries a motion node.
 //!
 //! What that buys, each locked below: identity heals (the turned cap *is* the seed plane,
-//! one handle), the cap never gains a history (a second turn re-qualifies), and the
-//! `FrameNotRepresentable` refusal on those faces dissolves (`face_sketch_frame` answers the
-//! world frame and the contract sweep verifies it bit-for-bit).
+//! one handle), the cap never gains a history (a second turn re-qualifies), and its sketch frame is
+//! the world one (`face_sketch_frame`; the contract sweep checks it bit for bit).
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;

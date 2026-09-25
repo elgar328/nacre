@@ -132,6 +132,29 @@ impl AxisAffine {
         core::array::from_fn(|r| (0..3).map(|c| f64::from(self.m[r][c]) * v[c]).sum())
     }
 
+    /// The inverse map, `x ↦ Mᵀ·x − Mᵀ·t` — `M` permutes the axes with signs, so its inverse is its
+    /// transpose, and the inverse is as exact as the map. A direction carried back reads `Mᵀ` alone,
+    /// so it answers where the offset overflowed, as [`AxisAffine::dir_rat`] does.
+    pub fn inverse(&self) -> AxisAffine {
+        let mut m = [[0i8; 3]; 3];
+        for (r, row) in m.iter_mut().enumerate() {
+            for (c, e) in row.iter_mut().enumerate() {
+                *e = self.m[c][r];
+            }
+        }
+        let linear = AxisAffine { m, t: None };
+        let t = self.t.and_then(|t| {
+            let back = linear.dir_rat(t)?;
+            let zero = Rat::from_int(0);
+            Some([
+                zero.checked_sub(back[0])?,
+                zero.checked_sub(back[1])?,
+                zero.checked_sub(back[2])?,
+            ])
+        });
+        AxisAffine { m, t }
+    }
+
     /// `det M`: `+1` for a proper motion, `−1` for one carrying an odd number of reflections —
     /// the factor on the cross product of the map's images of points.
     pub fn det(&self) -> i8 {

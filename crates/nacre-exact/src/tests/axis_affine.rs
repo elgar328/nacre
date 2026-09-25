@@ -145,6 +145,26 @@ proptest! {
         }
     }
 
+    /// A chain carried back by its inverse returns every point and direction where it started.
+    #[test]
+    fn a_folded_chain_undoes_itself(
+        chain in proptest::collection::vec(node(), 1..6),
+        p in point(),
+    ) {
+        let folded = chain
+            .iter()
+            .skip(1)
+            .fold(chain[0].fold().expect("folds"), |acc, n| acc.then(&n.fold().expect("folds")));
+        let back = folded.inverse();
+        if let Some(q) = folded.point_rat(p) {
+            prop_assert_eq!(back.point_rat(q), Some(p));
+        }
+        if let Some(d) = folded.dir_rat(p) {
+            prop_assert_eq!(back.dir_rat(d), Some(p));
+        }
+        prop_assert_eq!(back.det(), folded.det());
+    }
+
     /// A point on a plane lands on the plane's image — the two maps describe one motion.
     #[test]
     fn a_point_on_a_plane_stays_on_its_image(
