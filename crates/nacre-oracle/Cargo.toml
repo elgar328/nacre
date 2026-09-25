@@ -22,7 +22,7 @@ nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util
 # The nacre-side mass properties, diffed against OCCT in the end-to-end tests.
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
 # Builds a padded boss to diff against OCCT.
-nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
+nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
 # The Isometry carried by the Transform op (stage-1a translated-solid diff).
 nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

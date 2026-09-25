@@ -89,12 +89,15 @@ fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         7.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let holed = boolean(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts")[0];
     m.rebuild_adjacency();
@@ -523,12 +526,15 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([4.3, 0.5, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             4.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (plate, boss)
     };

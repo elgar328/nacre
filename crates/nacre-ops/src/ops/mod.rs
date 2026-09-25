@@ -24,6 +24,9 @@ use std::borrow::Cow;
 mod apply;
 mod datum;
 mod feature;
+/// Solids built through the product's own operations — see the module doc.
+#[cfg(any(test, feature = "test-util"))]
+pub mod fixtures;
 mod frame;
 mod plane;
 mod prism;

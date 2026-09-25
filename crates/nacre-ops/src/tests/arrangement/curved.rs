@@ -116,12 +116,15 @@ fn armed_through_boss_z(
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([40.0, 20.0, z_lo]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         5.0,
         h,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let (mut setup, cyl_surfs) =
         crate::arrangement::plane_index_setup_inner(&m, plate, boss).unwrap();
@@ -360,7 +363,7 @@ fn armed_class_edges<'a>(
 /// station (40, 25) one arc ends `hi` and the other starts `lo`: the corner rule's one
 /// discriminating population. ☑ In a notch both arcs share their ends, and «both ends
 /// count» is invisible there — measured; the staircase is why the second build exists.
-/// The other station, (40, 15), is the seam (`add_cylinder`'s `ref_dir` is −y): a
+/// The other station, (40, 15), is the seam (the fixture puts it on −y): a
 /// seam-incident root with an arc above it is the one tie the loops road keeps.
 ///
 /// ☑ Measured on the through build's rays: on the two whole-circle rims alone, «opposite
@@ -1120,9 +1123,8 @@ fn with_bitten_rings(
 /// extent picks the cut: `[40, 40, 20]` bites with one wall (two digons); `[40, 24, 20]`
 /// with two — the corner `(40, 24)` sits inside the circle and both rings are trigons
 /// whose arc ends at the rational `(37, 24)`, off the seam and off the tangent columns.
-/// `seam_off` states the cylinder exactly with `ref_dir = x`, so the seam sits at
-/// `(45, 20)` — on no ring corner — instead of `add_cylinder`'s `−y`, which puts it on the
-/// chord end `(40, 15)`.
+/// `seam_off` puts the seam on `+x`, at `(45, 20)` — on no ring corner — instead of on `−y`,
+/// which puts it on the chord end `(40, 15)`.
 fn with_cut_rings(
     plate: [f64; 3],
     seam_off: bool,
@@ -1137,27 +1139,21 @@ fn with_cut_rings(
 ) {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(plate));
-    let b = if seam_off {
-        use nacre_exact::Rat;
-        let r = Rat::from_int;
-        m.add_cylinder_exact(
-            [r(40), r(20), r(20)],
-            [r(0), r(0), r(1)],
-            [r(1), r(0), r(0)],
-            r(5),
-            r(10),
-            None,
-        )
-        .expect("an exact cylinder on an axis frame")
-        .0
+    // The seam off every ring corner (`+x`, at `(45, 20)`) or on the chord end (`−y`, `(40, 15)`).
+    let seam = if seam_off {
+        [1.0, 0.0, 0.0]
     } else {
-        m.add_cylinder(
-            Point3::from_array([40.0, 20.0, 20.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            5.0,
-            10.0,
-        )
+        [0.0, -1.0, 0.0]
     };
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([40.0, 20.0, 20.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array(seam),
+        5.0,
+        10.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     let PlaneSetup {
         planes: faces_tab,
@@ -1355,7 +1351,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                     "arc-end sweep (seam_off {seam_off}): swept {swept} abstained {abstained} \
                  boundary {boundary} arc-end decisions {decided}"
                 );
-                // With the seam on the chord end `(40, 15)` (the `add_cylinder` build) the
+                // With the seam on the chord end `(40, 15)` (`seam_off = false`) the
                 // `(true, false)` / `(false, true)` arms decide the `x = 37` column's shooting side:
                 // 12 points × 2 rings. With the seam off every corner (`ref_dir = x`) both ends are
                 // ordinary and the `(false, false)` arm decides — and the `x = 40` column's rays now
@@ -1522,12 +1518,15 @@ fn the_two_roads_agree_on_every_rational_ring() {
 /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing table.
 fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cylinder(
+    let b = crate::fixtures::cylinder_with_seam(
+        m,
         Point3::from_array([1.0, 1.0, z0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         h,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     (a, b)
 }
@@ -1974,12 +1973,15 @@ fn no_ghost_circle_outside_the_rim_span() {
 fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     let mut m = Model::new();
     let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([5.0, 5.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A second operand so the arrangement runs on the bored solid as an operand.

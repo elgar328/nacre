@@ -361,6 +361,7 @@ version = "0.0.0"
 dependencies = [
  "nacre-geom",
  "nacre-math",
+ "nacre-ops",
  "nacre-store",
  "nacre-topo",
  "step-io",
@@ -380,6 +381,7 @@ version = "0.0.0"
 dependencies = [
  "nacre-geom",
  "nacre-math",
+ "nacre-ops",
  "nacre-predicates",
  "nacre-store",
  "nacre-topo",
@@ -405,6 +407,7 @@ dependencies = [
  "nacre-exact",
  "nacre-geom",
  "nacre-math",
+ "nacre-ops",
  "nacre-store",
  "nacre-topo",
  "proptest",

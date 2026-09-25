@@ -218,12 +218,15 @@ fn the_tangent_wall_states_itself_exactly() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let cyl = m.add_cylinder(
+    let cyl = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.5, 1.0, -1.0]),
         nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        nacre_math::Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let (setup, cyl_surfs) =
         crate::arrangement::plane_index_setup_inner(&m, cube, cyl).expect("setup");

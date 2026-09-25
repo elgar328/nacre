@@ -16,12 +16,15 @@ fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Hand
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([8.0, hole_y, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         7.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     let boss = m.add_cuboid(
@@ -80,12 +83,15 @@ fn a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let tool = m.add_cylinder(
+    let tool = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([40.0, 30.0, 1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, tool).expect("a distant fuse");
     assert_eq!(out.len(), 2, "two disjoint bodies");
@@ -136,12 +142,15 @@ fn one_wall_plane_may_cross_two_bores() {
     );
     let mut holed = plate;
     for x in [8.0, 20.0] {
-        let hole = m.add_cylinder(
+        let hole = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([x, 10.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             3.0,
             7.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         holed = crate::boolean(&mut m, BoolKind::Cut, holed, hole).expect("bore")[0];
     }
@@ -174,12 +183,15 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         7.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A slab covering x ∈ [0, 40]: its y = 12 face passes straight through the bore.
@@ -217,12 +229,15 @@ fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         7.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     let slab = m.add_cuboid(
@@ -263,12 +278,15 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     let build = || {
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let stud = m.add_cylinder(
+        let stud = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([0.3, 0.0, 0.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.2,
             2.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, cube, stud)
     };
@@ -314,12 +332,15 @@ fn the_users_through_stud_gives_three_answers() {
     let build = || {
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let stud = m.add_cylinder(
+        let stud = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([0.3, 0.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.2,
             2.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, cube, stud)
     };
@@ -374,20 +395,26 @@ fn the_users_through_stud_gives_three_answers() {
 fn the_users_cross_studs_build_in_either_order() {
     let pi = std::f64::consts::PI;
     let z_stud = |m: &mut Model| {
-        m.add_cylinder(
+        crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([0.0, 0.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+            0.2,
+            2.0,
+        )
+        .solid
+    };
+    let y_stud = |m: &mut Model| {
+        crate::fixtures::cylinder_with_seam(
+            m,
+            Point3::from_array([0.0, -1.0, 0.0]),
+            Vector3::from_array([0.0, 1.0, 0.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
             0.2,
             2.0,
         )
-    };
-    let y_stud = |m: &mut Model| {
-        m.add_cylinder(
-            Point3::from_array([0.0, -1.0, 0.0]),
-            Vector3::from_array([0.0, 1.0, 0.0]),
-            0.2,
-            2.0,
-        )
+        .solid
     };
     for z_first in [true, false] {
         let build = || {
@@ -437,18 +464,24 @@ fn the_users_cross_studs_build_in_either_order() {
 #[test]
 fn crossing_studs_are_still_a_cylinder_pair_that_meets() {
     let mut m = Model::new();
-    let z = m.add_cylinder(
+    let z = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        0.2,
+        2.0,
+    )
+    .solid;
+    let y = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0, -1.0, 0.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.2,
         2.0,
-    );
-    let y = m.add_cylinder(
-        Point3::from_array([0.0, -1.0, 0.0]),
-        Vector3::from_array([0.0, 1.0, 0.0]),
-        0.2,
-        2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, z, y).expect_err("the studs cross");
     assert!(
@@ -470,18 +503,24 @@ fn crossing_studs_are_still_a_cylinder_pair_that_meets() {
 #[test]
 fn a_cross_above_a_stud_is_two_solids() {
     let mut m = Model::new();
-    let low = m.add_cylinder(
+    let low = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0; 3]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        0.2,
+        2.0,
+    )
+    .solid;
+    let high = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0, -1.0, 2.5]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.2,
         2.0,
-    );
-    let high = m.add_cylinder(
-        Point3::from_array([0.0, -1.0, 2.5]),
-        Vector3::from_array([0.0, 1.0, 0.0]),
-        0.2,
-        2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, low, high).unwrap_or_else(|e| panic!("{e:?}"));
     m.rebuild_adjacency();
@@ -493,39 +532,64 @@ fn a_cross_above_a_stud_is_two_solids() {
     }
 }
 
-/// **An oblique cross above the stud** — the same, with the upper axis `(0, 1, 1)`. The
-/// face rule would clear it too (`lateral_reach`'s `d·m ≠ 0` arm), but the pair never
-/// reaches the pair loop: the upper cylinder's caps are planes oblique to the lower axis,
-/// and the plane–cylinder gate refuses those without asking whether they clear — the same
-/// proposition still spelled at surface level there. A lock on today's name, for the cell
-/// that opens that arm to flip.
+/// **An oblique cross above the stud** — the same, with the upper axis `(0, 3, 4)`. The pair
+/// rule would clear it too (`lateral_reach`'s `d·m ≠ 0` arm), but the upper cylinder's caps are
+/// planes oblique to the lower axis, so the plane–cylinder gate asks first — of the *faces*
+/// (`oblique_plane_clears`): does every lateral face of the stud miss that infinite plane?
+///
+/// Both answers, one axis apart in height. At `z = 3` the lower cap's plane `3y + 4z = 9` stands
+/// past the stud's whole reach along its normal (`3·0.2 + 4·2 = 8.6`): cleared, and the fuse is
+/// two bodies. At `z = 2.4` the plane `3y + 4z = 6.6` runs through the stud's slab, the face
+/// question cannot show a miss, and the pair is refused by its caps — a lock on today's name for
+/// the cell that opens the ellipse road. (A 3-4-5 axis, so the upper cylinder is stated in the
+/// world: an axis like `(0, 1, 1)` has no rational unit frame, rides a frame node, and the gate
+/// refuses it earlier, as having no world statement.)
 #[test]
-fn an_oblique_cross_above_the_stud_is_refused_by_its_caps() {
-    let mut m = Model::new();
-    let low = m.add_cylinder(
-        Point3::from_array([0.0; 3]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        0.2,
-        2.0,
-    );
-    let high = m.add_cylinder(
-        Point3::from_array([0.0, -1.0, 3.0]),
-        Vector3::from_array([0.0, 1.0, 1.0]),
-        0.2,
-        2.0,
-    );
-    m.rebuild_adjacency();
-    let err = crate::boolean(&mut m, BoolKind::Fuse, low, high).expect_err("oblique caps");
-    assert!(
-        matches!(
-            err,
-            BoolError::Rejected {
-                reason: RejectReason::ObliqueCylinderCut,
-                ..
+fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
+    for (z, clears) in [(3.0, true), (2.4, false)] {
+        let mut m = Model::new();
+        let low = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+            0.2,
+            2.0,
+        )
+        .solid;
+        let high = crate::fixtures::cylinder(
+            &mut m,
+            Point3::from_array([0.0, -1.0, z]),
+            Vector3::from_array([0.0, 3.0, 4.0]),
+            0.2,
+            2.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, low, high);
+        if clears {
+            let out = out.unwrap_or_else(|e| panic!("z = {z}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), 2, "z = {z}: two bodies that never touch");
+            assert!(nacre_validate::validate(&m).is_empty());
+            for s in &out {
+                let v = nacre_props::mass_props(&m, *s).unwrap().volume;
+                assert!((v - 0.08 * std::f64::consts::PI).abs() < 1e-9, "{v}");
             }
-        ),
-        "{err:?}"
-    );
+        } else {
+            let err = out.expect_err("oblique caps across the stud");
+            assert!(
+                matches!(
+                    err,
+                    BoolError::Rejected {
+                        reason: RejectReason::ObliqueCylinderCut,
+                        ..
+                    }
+                ),
+                "z = {z}: {err:?}"
+            );
+        }
+    }
 }
 
 /// ★★★★★ **The bridge pre-pass splits the wall's two straight edges under the through stud.**
@@ -543,12 +607,17 @@ fn an_oblique_cross_above_the_stud_is_refused_by_its_caps() {
 fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-    let stud = m.add_cylinder(
+    // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` it would *be* that point, a
+    // vertex of the b-rep rather than a sample of the circle.
+    let stud = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.3, 0.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.2,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the through stud fuses");
     assert_eq!(out.len(), 1);
@@ -583,12 +652,15 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     // The blind stud (base anchoring) pinches one cap only.
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-    let stud = m.add_cylinder(
+    let stud = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.3, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.2,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
     m.rebuild_adjacency();
@@ -614,12 +686,15 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([-0.5, 2.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             4.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, plate, boss)
     };
@@ -663,12 +738,15 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     m.rebuild_adjacency();
     let block = crate::boolean(&mut m, BoolKind::Cut, outer, notch).expect("notch")[0];
     m.rebuild_adjacency();
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.5, 3.0, -0.5]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, block, boss).expect_err("a joined pinch");
     assert!(
@@ -740,24 +818,30 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
         Point3::from_array([40.0, 20.0, 10.0]),
     );
     // A crosswise bore along +X, ending inside the plate at x = 30: its cap lies on x = 30.
-    let cross = m.add_cylinder(
+    let cross = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([-1.0, 10.0, 5.0]),
         Vector3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, -1.0]),
         2.0,
         31.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, cross).expect("crosswise bore")[0];
     // A vertical drill whose axis stands 1 from the plane x = 30 — inside its radius 3 — and
     // ★ **6 from the crosswise bore's axis**, clear of the radius sum 5, so the pair rule is
     // not what answers here. (At y = 10 the two axes actually meet and this fixture would be
     // measuring `CylinderPairContact` instead — the adjacent proposition.)
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([31.0, 4.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         12.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, bored, drill).expect("the drill cuts");
     assert_eq!(out.len(), 1, "one body");

@@ -46,12 +46,15 @@ fn a_translated_tool_cuts() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );
-    let tool = m.add_cylinder(
+    let tool = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([7.3, 7.3, -5.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.1,
         30.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let tool = transform(
         &mut m,
@@ -99,12 +102,15 @@ fn a_chained_translation_folds() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );
-    let tool = m.add_cylinder(
+    let tool = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([7.3, 7.3, -5.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.1,
         30.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let tool = shift(&mut m, tool, 5.2);
     let tool = shift(&mut m, tool, 5.5);
@@ -129,12 +135,15 @@ fn a_translated_bored_body_fuses() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 10.0]),
         );
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([7.3, 7.3, -5.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.1,
             30.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
         m.rebuild_adjacency();
@@ -183,12 +192,15 @@ fn two_bored_plates_fuse_face_to_face() {
             Point3::from_array([x0 + 20.0, 20.0, 10.0]),
         );
         m.rebuild_adjacency();
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([x0 + 14.0, 14.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.0,
             12.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
         m.rebuild_adjacency();
@@ -266,21 +278,27 @@ fn a_two_by_two_grid_fuses() {
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
         m.rebuild_adjacency();
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([at[0] + 17.1, at[1] + 8.9, at[2]]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.22,
             143.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore).expect("bore 1")[0];
         m.rebuild_adjacency();
-        let bore2 = m.add_cylinder(
+        let bore2 = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([at[0] + 46.75, at[1] + 37.35, at[2]]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.34,
             143.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore2).expect("bore 2")[0];
         m.rebuild_adjacency();
@@ -418,12 +436,15 @@ fn a_boss_on_any_wall_weighs_the_same() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let b = m.add_cylinder(
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             4.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(&mut m, kind, a, b).expect("a boss on a wall builds");
         assert_eq!(out.len(), 1, "one solid");
@@ -530,12 +551,15 @@ fn the_mesh_covers_the_faces_it_approximates() {
     for (name, base_z) in [("blind stud", 0.0), ("through stud", -1.0)] {
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let stud = m.add_cylinder(
+        let stud = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([0.3, 0.0, base_z]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.2,
             2.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the tangent stud fuses");
         m.rebuild_adjacency();
@@ -560,12 +584,15 @@ fn the_mesh_covers_the_faces_it_approximates() {
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             let mut m = Model::new();
             let a = plate(&mut m);
-            let b = m.add_cylinder(
+            let b = crate::fixtures::cylinder_with_seam(
+                &mut m,
                 Point3::from_array(base),
                 Vector3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
                 0.5,
                 h,
-            );
+            )
+            .solid;
             m.rebuild_adjacency();
             // A population this ladder does not build yet is not this test's business; what it
             // *does* build has to be drawn correctly.
@@ -600,12 +627,15 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let b = m.add_cylinder(
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             h,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(&mut m, kind, a, b).expect("the boss builds");
         assert_eq!(out.len(), 1, "one solid");

@@ -6,6 +6,8 @@ mod fixtures;
 #[path = "support/stated.rs"]
 mod stated;
 
+#[path = "invariants/cylinder_seam_model.rs"]
+mod cylinder_seam_model;
 #[path = "invariants/datum_plane.rs"]
 mod datum_plane;
 #[path = "invariants/edge_carriers.rs"]

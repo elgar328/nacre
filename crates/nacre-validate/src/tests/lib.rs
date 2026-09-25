@@ -14,7 +14,13 @@ fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
 
 fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
     let mut m = Model::new();
-    m.add_cylinder(Point3::from_array(base), Vector3::from_array(axis), r, h);
+    nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array(base),
+        Vector3::from_array(axis),
+        r,
+        h,
+    );
     m
 }
 
@@ -661,9 +667,11 @@ fn same_surface_users_check_membership_not_equality() {
 #[test]
 fn a_contradictory_vertex_def_is_flagged() {
     let mut m = nacre_topo::Model::new();
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     );
@@ -1026,9 +1034,11 @@ fn a_full_width_axis_survives_the_truth_net() {
 #[test]
 fn vertex_off_its_rim_circle() {
     let mut m = nacre_topo::Model::new();
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     );
@@ -1176,7 +1186,7 @@ proptest! {
         let axis = Vector3::from_array(axis);
         prop_assume!(axis.norm() > 0.1); // skip near-zero axes
         let mut m = Model::new();
-        m.add_cylinder(Point3::from_array(base), axis, r, h);
+        nacre_ops::fixtures::cylinder(&mut m, Point3::from_array(base), axis, r, h);
         prop_assert!(validate(&m).is_empty());
     }
 }

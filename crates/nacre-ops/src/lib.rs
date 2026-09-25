@@ -50,6 +50,9 @@ pub use draft::BoolKind;
 pub use nacre_geom::mixed::Edge2d;
 pub use nacre_judge::Decision;
 pub use nacre_judge::predicate::{Evidence, Site};
+/// Test solids built through the product's operations, shared with other crates' tests.
+#[cfg(any(test, feature = "test-util"))]
+pub use ops::fixtures;
 pub use ops::{
     DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, Ring2d,
     SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,

@@ -366,22 +366,28 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
         Point3::from_array([40.0, 20.0, 10.0]),
     );
     // Tangent to `x = 0`: axis at x = 3, radius 3.
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([3.0, 10.0, 10.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         10.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let a = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss fuses")[0];
     // The bar's `+x` cap lands on `x = 0`, centred on the tangent line and overlapping the boss's
     // span, so its disk spans that line rather than clearing it.
-    let bar = m.add_cylinder(
+    let bar = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([-20.0, 10.0, 9.0]),
         Vector3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, -1.0]),
         3.0,
         20.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     for kind in [BoolKind::Fuse, BoolKind::Cut] {
         let out = crate::boolean(&mut m, kind, a, bar);
@@ -429,12 +435,15 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     assert_ne!(m.vertex_point(h), wrong);
 
     let mut m = Model::new();
-    let c = m.add_cylinder(
+    let c = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
-    );
+    )
+    .solid;
     let turned =
         transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
     m.rebuild_adjacency();

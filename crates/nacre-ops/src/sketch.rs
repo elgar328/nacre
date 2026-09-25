@@ -261,8 +261,8 @@ impl Ring2d {
     }
 
     /// The whole circle of `radius` about `center`, counter-clockwise, as the ring of one vertex
-    /// it is — its seam at `center + (r, 0)`, the same point the cylinder primitive seams at
-    /// (`+ref_dir`), which is what lets the two roads state one solid.
+    /// it is — its seam at `center + (r, 0)`, which an extrude states as the cylinder's `+ref_dir`,
+    /// where its seam vertices sit.
     pub fn circle(center: Point2, radius: f64) -> Result<Ring2d, SketchError> {
         let c = lift(center)?;
         let r = Rat::from_decimal(radius)

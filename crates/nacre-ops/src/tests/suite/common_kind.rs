@@ -373,7 +373,7 @@ fn every_producer_states_its_side_in_the_label_frame() {
 /// lateral face **meets** them. Every crossing is an ellipse — the population
 /// this door still names. ★ The oblique arm asks the faces first, so the fixture
 /// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
-/// and stated on the production road: the test door's `add_cylinder` lifts irrational caps, and
+/// and stated on a Pythagorean frame: a frame with no rational unit basis rides a frame node, and
 /// a class with no world description is `CylinderGateUndecided`, an honest but different fact.
 #[test]
 fn common_rejects_an_oblique_cylinder() {

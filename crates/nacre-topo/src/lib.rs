@@ -647,26 +647,6 @@ impl CylinderDef {
     }
 }
 
-/// Why `Model::add_cylinder_exact` (a `test-util` door) refused a statement — **every way in,
-/// named**.
-///
-/// The entry promises no panics: an application's numbers are input, not a caller bug, and a
-/// panic in wasm is a dead session rather than a sentence. The first three are the caller's
-/// statement; the last two cannot happen for a statement that passed them (see the entry's doc)
-/// and exist so that "cannot happen" never has to be spelled `expect`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CylinderError {
-    /// `axis` or `ref_dir` is not a unit vector, or the two are not perpendicular. This is the
-    /// precondition that makes every point the entry derives exact.
-    FrameNotOrthonormal,
-    NonPositiveRadius,
-    NonPositiveHeight,
-    /// An exact product left `i128` — the statement is representable, its derived points are not.
-    Overflow,
-    /// The truth, a cache, or an edge's curve refused what the statement said.
-    Degenerate,
-}
-
 /// The truth-only aggregate: exact geometry + topology stores + the derived
 /// adjacency cache. No `tess`, no `ops` (see the crate docs).
 #[derive(Debug)]

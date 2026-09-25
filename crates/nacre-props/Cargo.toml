@@ -17,7 +17,7 @@ nacre-store = { path = "../nacre-store", version = "0.0.0" }
 # Enables the topo test-only primitive `Model::add_cuboid` for building test solids.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 # Builds a concave extruded prism to test the area-weighted centroid path.
-nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
+nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
 # `Axis`, to name the world plane a test sketch sits on (an extrude names its plane).
 nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 proptest.workspace = true

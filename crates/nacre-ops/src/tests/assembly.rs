@@ -15,12 +15,15 @@ mod region_tests {
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([40.0, 20.0, -10.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             5.0,
             20.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half-height boss builds");
         m.rebuild_adjacency();

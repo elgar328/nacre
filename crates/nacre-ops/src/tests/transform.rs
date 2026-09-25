@@ -28,12 +28,15 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([4.0, 4.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             4.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let fused = crate::boolean::boolean(&mut m, crate::BoolKind::Fuse, plate, boss)
             .expect("a boss fuses onto its plate");
@@ -286,12 +289,15 @@ fn a_foreign_definition_is_rejected() {
 #[test]
 fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([1.0, 2.0, 0.5]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.5,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
@@ -326,12 +332,15 @@ fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
 #[test]
 fn a_rotated_cylinder_records_its_motion() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
@@ -385,12 +394,15 @@ fn a_rotated_cylinder_records_its_motion() {
 fn a_pierce_definition_swap_toggles_its_root() {
     use nacre_topo::QuadRoot;
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let shell = m.solid(s).outer;
     let faces = m.shell(shell).faces.clone();
@@ -507,12 +519,15 @@ fn a_pierce_definition_swap_toggles_its_root() {
 #[test]
 fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.5, -1.25, 2.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.5,
         2.5,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,

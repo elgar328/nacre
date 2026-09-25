@@ -34,6 +34,25 @@ use std::collections::BTreeSet;
 
 // ── shape helpers, copied from the tests each fixture came from ───────────────────────────────
 
+/// A cylinder the way an application states one — a datum plane, a whole circle about its origin,
+/// an extrude ([`nacre_ops::fixtures::cylinder_with_seam`]) — with the seam on
+/// `axis.any_perpendicular()`.
+///
+/// ★ **The seam is stated, not left to the frame**, because rows here were built around where it
+/// falls (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
+/// fixture. The axes stated here are integer vectors or a 3-4-5 triple, so the seam and the frame
+/// are exact decimals.
+fn cylinder(
+    m: &mut Model,
+    base: Point3,
+    axis: nacre_math::Vector3,
+    radius: f64,
+    height: f64,
+) -> Handle<Solid> {
+    let seam = axis.any_perpendicular().expect("a nonzero axis");
+    nacre_ops::fixtures::cylinder_with_seam(m, base, axis, seam, radius, height).solid
+}
+
 fn cub(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
     m.rebuild_adjacency();
@@ -201,7 +220,8 @@ fn diamond_void(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// ⑤ A non-planar operand — the coverage limit named at the plane table, not in the assembly.
 fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
-    let cyl = m.add_cylinder(
+    let cyl = cylinder(
+        m,
         Point3::from_array([1.0, 1.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
@@ -213,7 +233,8 @@ fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
-    let cyl = m.add_cylinder(
+    let cyl = cylinder(
+        m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
@@ -235,6 +256,10 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// Smallness with full digits is the property that bites. Before the gate's predicates became
 /// total this fixture answered `CylinderGateUndecided`: the arithmetic ran out, and the reject
 /// named the symptom instead of the geometry.
+///
+/// The **radius** is a short decimal: a sketched circle carries `r²` as a `Rat`, so a full-digit
+/// sub-micron radius is refused before any solid exists (`SketchError::Undecidable`). The
+/// width this fixture needs comes from the centre and the box, which square past `i128` alone.
 fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(
         m,
@@ -245,14 +270,15 @@ fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
             2.0000000000000003e-7,
         ],
     );
-    let cyl = m.add_cylinder(
+    let cyl = cylinder(
+        m,
         Point3::from_array([
             1.0000000000000002e-7,
             1.0000000000000002e-7,
             -1.0000000000000002e-7,
         ]),
         Vector3::from_array([0.0, 0.0, 1.0]),
-        5.000000000000001e-8,
+        5e-8,
         4.000000000000001e-7,
     );
     m.rebuild_adjacency();
@@ -261,7 +287,8 @@ fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
-    let cyl = m.add_cylinder(
+    let cyl = cylinder(
+        m,
         Point3::from_array([0.3, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
@@ -276,7 +303,8 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 /// **verdict**, because what it leaves near the line is two wedges of one solid.
 fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
-    let cyl = m.add_cylinder(
+    let cyl = cylinder(
+        m,
         Point3::from_array([0.5, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
@@ -287,13 +315,17 @@ fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 }
 
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
-    // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
-    // so the gate reaches the *oblique* verdict rather than declining as undecidable.
+    // A tilted axis against an axis-aligned box: the box's planes are neither ⊥ nor ∥ to
+    // (0,3,4), and — unlike rotating the box — every description stays world-rational, so the
+    // gate reaches the *oblique* verdict rather than declining as undecidable. ★ The axis is a
+    // 3-4-5 triple because the sketch frame on its caps then has a rational unit basis and is
+    // stated in the world; an axis like (0,1,1) has none, rides a frame node, and the gate refuses
+    // it earlier as having no world statement. The axis passes through the box's centre.
     let a = cub(m, [0.0; 3], [2.0; 3]);
-    let cyl = m.add_cylinder(
-        Point3::from_array([1.0, 1.0, -2.0]),
-        Vector3::from_array([0.0, 1.0, 1.0]),
+    let cyl = cylinder(
+        m,
+        Point3::from_array([1.0, -0.8, -1.4]),
+        Vector3::from_array([0.0, 3.0, 4.0]),
         0.5,
         6.0,
     );
@@ -302,13 +334,15 @@ fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 }
 
 fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = m.add_cylinder(
+    let a = cylinder(
+        m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
         2.0,
     );
-    let b = m.add_cylinder(
+    let b = cylinder(
+        m,
         Point3::from_array([0.6, 0.0, 0.5]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,

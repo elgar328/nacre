@@ -147,12 +147,14 @@ fn centroid_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cylinder_bounds_match_occt() {
     let mut model = Model::new();
-    let s = model.add_cylinder(
+    let s = nacre_ops::fixtures::cylinder(
+        &mut model,
         Point3::origin(),
         Vector3::from_array([0.0, 3.0, 4.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     model.rebuild_adjacency();
     let p = occt_props_of(&model).unwrap();
     let (lo, hi) = nacre_props::bounds(&model, s).unwrap();
@@ -183,12 +185,15 @@ fn cylinder_bounds_match_occt() {
 fn through_hole_cut_matches_occt() {
     let mut model = Model::new();
     let a = model.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = model.add_cylinder(
+    let b = nacre_ops::fixtures::cylinder_with_seam(
+        &mut model,
         Point3::from_array([1.0, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     model.rebuild_adjacency();
     let s = boolean_one(&mut model, BoolKind::Cut, a, b).unwrap();
     let ours = mass_props(&model, s).unwrap();
@@ -242,12 +247,15 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 20.0, 5.0]),
         );
-        let hole = m.add_cylinder(
+        let hole = nacre_ops::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([8.0, 10.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             3.0,
             7.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let holed = boolean_one(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts");
         let boss = m.add_cuboid(
@@ -298,12 +306,15 @@ fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
     let build = |ax: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let stud = m.add_cylinder(
+        let stud = nacre_ops::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([ax, 0.0, 0.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.2,
             2.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, cube, stud)
     };
@@ -342,12 +353,15 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = nacre_ops::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([4.0, 2.0, bz]),
             Vector3::from_array([1.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, -1.0]),
             0.5,
             1.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, plate, boss)
     };
@@ -389,12 +403,15 @@ fn two_bores_match_occt() {
         Point3::from_array([4.0, 2.0, 1.0]),
     );
     let bore = |m: &mut Model, x: f64| {
-        m.add_cylinder(
+        nacre_ops::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([x, 1.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.25,
             3.0,
         )
+        .solid
     };
     let d1 = bore(&mut model, 1.0);
     let d2 = bore(&mut model, 3.0);
@@ -513,9 +530,11 @@ fn mirrored_solid_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cylinder_matches_occt() {
     let mut model = Model::new();
-    model.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut model,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     );
@@ -616,12 +635,15 @@ fn cube_props_diff_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cylinder_props_diff_occt() {
     let mut model = Model::new();
-    let solid = model.add_cylinder(
+    let solid = nacre_ops::fixtures::cylinder_with_seam(
+        &mut model,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
     assert!(

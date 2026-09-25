@@ -643,41 +643,6 @@ fn the_surface_cache_is_writable_and_the_truth_is_not() {
     );
 }
 
-/// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the
-/// carriers and endpoints is bit-identical to the one `push_edge` filled eagerly — proof
-/// that nothing in it was truth.
-#[test]
-fn edge_cache_discard_and_regenerate_bit_identical() {
-    let mut m = Model::new();
-    m.add_cuboid(
-        Point3::from_array([-2.0, 1.0, 0.0]),
-        Point3::from_array([3.0, 4.0, 10.0]),
-    );
-    m.add_cylinder(
-        Point3::from_array([8.0, 0.0, 0.0]),
-        Vector3::from_array([0.3, -0.4, 1.0]),
-        1.25,
-        2.5,
-    );
-    let snapshot = |m: &Model| -> Vec<Curve> {
-        (0..m.edge_count() as u32)
-            .filter_map(|i| m.edge_handle_at(i))
-            .map(|h| (h, m.edge(h)))
-            .map(|(eh, _)| m.edge_curve(eh).clone())
-            .collect()
-    };
-    let before = snapshot(&m);
-    m.rebuild_edge_cache();
-    // ⚠ True of a model nothing has refined. [`Model::refine_vertex_cache`] moves coordinates,
-    // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
-    // re-derives. This asserts the derivation is stable, not that rebuilding is always free.
-    assert_eq!(
-        before,
-        snapshot(&m),
-        "regeneration must reproduce the cache bit for bit"
-    );
-}
-
 #[test]
 fn edge_endpoints_lie_on_their_curve() {
     let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
@@ -703,128 +668,6 @@ fn euler_poincare_holds() {
     // V − E + F = 2(S − G) + L_i, with S=1, G=0, L_i=0. Formal validate:
     // nacre-validate (next unit).
     assert_eq!(v - e + f, 2);
-}
-
-// --- cylinder (seam b-rep) --- (validate-clean lives in nacre-validate)
-
-fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
-    let mut m = Model::new();
-    m.add_cylinder(Point3::from_array(base), Vector3::from_array(axis), r, h);
-    m.rebuild_adjacency();
-    m
-}
-
-#[test]
-fn cylinder_counts_and_euler() {
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-    assert_eq!(m.vertex_count(), 2);
-    assert_eq!(m.edge_count(), 3);
-    assert_eq!(m.face_count(), 3);
-    assert_eq!(m.shell_count(), 1);
-    assert_eq!(m.solid_count(), 1);
-    // Euler χ = V − E + F = 2 (one shell, genus 0, no inner loops).
-    assert_eq!(
-        m.vertex_count() as i64 - m.edge_count() as i64 + m.face_count() as i64,
-        2
-    );
-}
-
-#[test]
-fn cylinder_geometry() {
-    // +Z axis, r=2, h=5. Seam direction is X (least-aligned axis of +Z).
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-    let pts: Vec<[f64; 3]> = (0..m.vertex_count() as u32)
-        .filter_map(|i| m.vertex_handle_at(i))
-        .map(|h| (h, m.vertex(h)))
-        .map(|(vh, _)| m.vertex_point(vh).as_array())
-        .collect();
-    // Seam direction for +Z is any_perpendicular([0,0,1]) = X×Z = [0,-1,0], so
-    // the seam vertices sit at radius 2 along −Y, at z=0 and z=5.
-    assert_eq!(pts, vec![[0.0, -2.0, 0.0], [0.0, -2.0, 5.0]]);
-    // Two rim circles carry a Circle; the straight seam a Line.
-    let mut circles = 0;
-    let mut i = 0u32;
-    while let Some(eh) = m.edge_handle_at(i) {
-        i += 1;
-        if let Curve::Circle(c) = m.edge_curve(eh) {
-            assert_eq!(c.radius(), 2.0);
-            circles += 1;
-        }
-    }
-    assert_eq!(circles, 2);
-}
-
-#[test]
-fn cylinder_caps_point_outward() {
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-    // Planar caps only (the lateral cylindrical face has no single normal).
-    let mut caps = 0;
-    let mut i = 0u32;
-    while let Some(h_) = m.face_handle_at(i) {
-        i += 1;
-        let f = m.face(h_);
-        if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Plane(_)) {
-            let n = face_plane_normal(&m, f).as_array();
-            // Bottom cap → −Z, top cap → +Z (outward along the axis).
-            assert!(n == [0.0, 0.0, -1.0] || n == [0.0, 0.0, 1.0]);
-            caps += 1;
-        }
-    }
-    assert_eq!(caps, 2);
-}
-
-/// ★★ **A seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
-/// The pair pins the rim circle; the cylinder's `ref_dir` truth pins the point
-/// (see `Vertex::OnSeam`). The lateral surface must be the cylinder, the other its cap.
-#[test]
-fn a_seam_vertex_states_its_rim_carriers() {
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-    let defs: Vec<_> = (0..m.vertex_count() as u32)
-        .filter_map(|i| m.vertex_handle_at(i))
-        .map(|h| *m.vertex(h))
-        .collect();
-    assert_eq!(
-        defs.len(),
-        2,
-        "a cylinder has exactly its two seam vertices"
-    );
-    for (i, d) in defs.iter().enumerate() {
-        let Vertex::OnSeam([a, b]) = d else {
-            panic!("a seam vertex carries OnSeam, got {d:?}")
-        };
-        assert!(
-            matches!(m.surface_cache(*a), nacre_geom::Surface::Cylinder(_)),
-            "first carrier is the lateral cylinder"
-        );
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(*b) else {
-            panic!("second carrier is the cap plane")
-        };
-        // Bottom vertex names the bottom cap (through z = 0), top the top cap (z = 5).
-        let z = if i == 0 { 0.0 } else { 5.0 };
-        assert_eq!(p.distance(Point3::from_array([0.0, 0.0, z])), 0.0);
-    }
-}
-
-#[test]
-fn cylinder_seam_edge_is_self_adjacent() {
-    // The novel topology: the seam edge is used twice by the SAME lateral
-    // face with opposite orientation (a valid non-manifold-looking but
-    // manifold seam). Every edge is still used exactly twice, opposite.
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-    let mut seam_uses = None;
-    let mut i = 0u32;
-    while let Some(eh) = m.edge_handle_at(i) {
-        i += 1;
-        let uses = &m.adj.edge_uses[&eh];
-        assert_eq!(uses.len(), 2);
-        assert_ne!(uses[0].1, uses[1].1); // opposite orientation
-        // The seam's discriminator IS the invariant: self-adjacent carriers.
-        if m.edge(eh).surfaces[0] == m.edge(eh).surfaces[1] {
-            seam_uses = Some(uses.clone());
-        }
-    }
-    let uses = seam_uses.expect("a seam line edge exists");
-    assert_eq!(uses[0].0, uses[1].0); // both uses are the same (lateral) face
 }
 
 // --- proptest ---
@@ -888,58 +731,6 @@ proptest! {
         }
     }
 
-    #[test]
-    fn prop_cylinder_structural(
-        base in prop::array::uniform3(-1e3f64..1e3),
-        axis in prop::array::uniform3(-1.0f64..1.0),
-        r in 0.5f64..10.0,
-        h in 0.1f64..10.0,
-    ) {
-        let axis = Vector3::from_array(axis);
-        prop_assume!(axis.norm() > 0.1); // skip near-zero axes
-        let mut m = Model::new();
-        m.add_cylinder(Point3::from_array(base), axis, r, h);
-        m.rebuild_adjacency();
-        prop_assert_eq!(m.vertex_count(), 2);
-        prop_assert_eq!(m.edge_count(), 3);
-        prop_assert_eq!(m.face_count(), 3);
-        // Every edge used exactly twice, opposite orientation (seam included).
-        for uses in m.adj.edge_uses.values() {
-            prop_assert_eq!(uses.len(), 2);
-            prop_assert_ne!(uses[0].1, uses[1].1);
-        }
-    }
-
-    /// The same structure over the population that **actually stressed the exact
-    /// arithmetic**: an axis a hair off `ẑ`, whose tiny components carry a full f64's worth
-    /// of decimal digits and so lift to rationals with ~10²⁰ denominators. Squaring one of
-    /// those leaves `i128`, which a checked parallelism test refuses — and `add_cylinder`
-    /// would read that refusal as "degenerate cylinder" and panic.
-    ///
-    /// ★ The sibling above cannot stand in for this: its uniform axis reaches this family
-    /// about **0.01%** of the time (measured), which is why the defect sat green for a
-    /// milestone and then surfaced from one unlucky seed. Here it is ~80%.
-    #[test]
-    fn prop_cylinder_near_axis_aligned_is_built_not_refused(
-        u in -1.0f64..1.0,
-        v in -1.0f64..1.0,
-        k in 1i32..9,
-        j in 1i32..9,
-        r in 0.5f64..10.0,
-        h in 0.1f64..10.0,
-    ) {
-        let axis = Vector3::from_array([u * 10f64.powi(-k), v * 10f64.powi(-j), 1.0]);
-        let mut m = Model::new();
-        m.add_cylinder(Point3::origin(), axis, r, h);
-        m.rebuild_adjacency();
-        prop_assert_eq!(m.vertex_count(), 2);
-        prop_assert_eq!(m.edge_count(), 3);
-        prop_assert_eq!(m.face_count(), 3);
-        for uses in m.adj.edge_uses.values() {
-            prop_assert_eq!(uses.len(), 2);
-            prop_assert_ne!(uses[0].1, uses[1].1);
-        }
-    }
 }
 
 // --- reversed_shell (M5 containment building block) ---
@@ -1148,91 +939,6 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     );
 }
 
-/// ★★ **A statement the name key cannot hold interns by the statement**.
-///
-/// The fixture reaches namelessness through `OnSeam` carriers — the cheapest population
-/// `plane_name_through` declines inside this crate. Semantically an ops producer would
-/// refuse this particular datum by cause; the door's contract is narrower ("store the
-/// statement, once") and holds for every nameless reason identically, which is what is
-/// pinned here. The real mixed-frame population is exercised end-to-end in `nacre-ops`.
-#[test]
-fn a_nameless_through_statement_interns_by_its_statement() {
-    let mut m = Model::new();
-    m.add_cylinder(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        2.0,
-    );
-    m.add_cuboid(
-        Point3::from_array([4.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 1.0, 1.0]),
-    );
-    let mut vs: Vec<Handle<Vertex>> = Vec::new();
-    let mut i = 0u32;
-    while let Some(h) = m.vertex_handle_at(i) {
-        i += 1;
-        if matches!(*m.vertex(h), Vertex::OnSeam(_)) && vs.len() < 2 {
-            vs.push(h);
-        } else if matches!(*m.vertex(h), Vertex::ThreePlane(_)) && vs.len() == 2 {
-            vs.push(h);
-            break;
-        }
-    }
-    let mut triple: [Handle<Vertex>; 3] = [vs[0], vs[1], vs[2]];
-    triple.sort_by_key(|v| v.index());
-    assert!(
-        m.plane_name_through(triple).is_none(),
-        "the fixture must be nameless, or this test measures the name road"
-    );
-
-    let cache = nacre_geom::Plane::from_point_normal(
-        Point3::from_array([0.0, 0.0, 0.5]),
-        Vector3::from_array([0.0, 0.0, -1.0]),
-    )
-    .unwrap();
-    let before = m.surface_count();
-    let (h, flipped) = m.push_plane_through(cache, triple, None, Orientation::Forward);
-    assert!(!flipped);
-    assert!(
-        !m.surface_name.contains_key(&h),
-        "a nameless statement must not invent a name"
-    );
-    assert_eq!(m.surface_count(), before + 1, "stored once");
-
-    // The same statement again — one handle; and a statement facing the other way is the
-    // same plane with `flipped` reported, exactly as the name road reports it.
-    let (again, flipped_same) = m.push_plane_through(cache, triple, None, Orientation::Forward);
-    assert_eq!(h, again, "one statement, one handle");
-    assert!(!flipped_same);
-    let reversed = nacre_geom::Plane::from_point_normal(
-        Point3::from_array([0.0, 0.0, 0.5]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-    )
-    .unwrap();
-    let (still, flipped_now) = m.push_plane_through(reversed, triple, None, Orientation::Reversed);
-    assert_eq!(h, still, "direction is not part of the statement");
-    assert!(
-        flipped_now,
-        "but a statement facing the other way is reported"
-    );
-    assert_eq!(m.surface_count(), before + 1, "and nothing new was stored");
-
-    // A different motion is a different statement — the same rule the name key keeps.
-    let node = m.push_motion(
-        Motion::Translate {
-            offset: [
-                nacre_exact::Rat::from_int(1),
-                nacre_exact::Rat::from_int(0),
-                nacre_exact::Rat::from_int(0),
-            ],
-        },
-        None,
-    );
-    let (moved, _) = m.push_plane_through(cache, triple, Some(node), Orientation::Forward);
-    assert_ne!(h, moved, "the motion belongs in the statement key");
-}
-
 /// ★★★ **The three world planes are born with the model** — deterministic handles,
 /// canonical truth, −axis caches — and `Default` is the same seeded model (the unseeded
 /// back door is closed).
@@ -1383,7 +1089,26 @@ fn a_derived_seed_plane_anchors_at_its_truths_first_point() {
 /// normalizes both, which is the same `√` wall a plane's unit normal sits behind.
 #[test]
 fn a_derived_cylinder_restates_its_own_axis_and_radius() {
-    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+    // The lateral alone, stated through the kernel's own door: `+z` from the origin, `r = 2`.
+    let mut m = Model::new();
+    let r = |x: i128| nacre_exact::Rat::from_int(x);
+    m.push_cylinder(
+        nacre_geom::Cylinder::from_axis(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            2.0,
+        )
+        .expect("a cylinder"),
+        CylinderDef::new(
+            [r(0), r(0), r(0)],
+            [r(0), r(0), r(1)],
+            [r(1), r(0), r(0)],
+            nacre_exact::BigRat::square_of(r(2)),
+        )
+        .expect("a statement"),
+        None,
+    );
     let mut seen = 0;
     let mut i = 0u32;
     while let Some(sh) = m.surface_handle_at(i) {
@@ -1473,55 +1198,6 @@ fn surface_handle_at_is_the_handle_the_arena_issued() {
     assert_eq!(m.surface_handle_at(s.index()), Some(s));
 }
 
-#[test]
-fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
-    let mut m = Model::new();
-    let cuboid = m.add_cuboid(
-        Point3::from_array([-3.0, -3.0, 0.0]),
-        Point3::from_array([-1.0, -1.0, 2.0]),
-    );
-    let cyl = m.add_cylinder(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        1.0,
-        2.0,
-    );
-    m.rebuild_adjacency();
-    // Every planar face of the cylinder carries points and a derived name.
-    let planar: Vec<_> = m
-        .shell(m.solid(cyl).outer)
-        .faces
-        .iter()
-        .map(|&fh| m.face(fh).surface)
-        .filter(|&s| matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_)))
-        .collect();
-    assert_eq!(planar.len(), 2, "two caps");
-    for s in &planar {
-        assert!(
-            matches!(m.surface(*s), Surface::Plane { .. }),
-            "a cap without truth"
-        );
-        assert!(m.surface_name.contains_key(s), "a cap without a name");
-    }
-    // The top cap lies on `z = 2`, the same plane as the box's top face — one plane, one
-    // handle, across two producers.
-    let box_top = m
-        .shell(m.solid(cuboid).outer)
-        .faces
-        .iter()
-        .map(|&fh| m.face(fh).surface)
-        .find(|s| {
-            m.surface_name
-                .get(s)
-                .and_then(|n| n.narrow())
-                .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -2.0])
-        })
-        .expect("the box top names z = 2");
-    assert!(
-        planar.contains(&box_top),
-        "the coplanar cap and box face must intern to one handle"
-    );
-}
 /// ★★★★★ **A plane can point at three vertices, and it is the same plane as the values.**
 ///
 /// The corners of a unit box name three coordinate planes each, so a datum through them is

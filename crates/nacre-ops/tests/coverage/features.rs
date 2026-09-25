@@ -54,9 +54,11 @@ fn pocket_on_cube_top() {
 
 /// The lateral face of a cylinder — a non-planar target both pad and pocket reject.
 fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     );

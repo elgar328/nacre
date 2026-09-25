@@ -231,8 +231,8 @@ impl Model {
     ///   `None` (a degenerate line — the check lives in this arm only).
     /// * **Plane × Cylinder** (a rim, or an arc of one): the circle centred where the cylinder's
     ///   axis crosses the cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
-    ///   `radius`) — the same parameters `add_cylinder` builds the stored rims from, so
-    ///   tessellation's `θ` parameterization is preserved. The endpoints are not read: a full rim
+    ///   `radius`) — every rim's cache comes from here (`push_edge` fills it by this derivation),
+    ///   so tessellation's `θ` parameterization is the cylinder's. The endpoints are not read: a full rim
     ///   is a closed edge (`[v, v]`), which is not a degeneracy.
     ///
     ///   ★★ **On a circle carrier, the vertex *order* says which arc**: two distinct

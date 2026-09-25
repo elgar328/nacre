@@ -26,12 +26,15 @@ fn cube_mass_matches_analytic() {
 #[test]
 fn cylinder_mass_matches_analytic() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     let props = mass_props(&m, s).unwrap();
     assert!(close(props.volume, 20.0 * PI), "volume {}", props.volume); // πr²h
     assert!(close(props.area, 28.0 * PI), "area {}", props.area); // 2πr² + 2πrh
@@ -69,12 +72,15 @@ fn the_two_normal_doors_agree_on_a_plane() {
 #[test]
 fn a_free_cylinders_wall_faces_away_from_its_axis() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let shell = m.solid(s).outer;
     let wall = *m
@@ -143,12 +149,22 @@ fn concave_extrude_mass() {
 /// **The trap this exists for.** A cylinder's lateral face bulges past its two
 /// seam vertices, so a hull of the vertices reports a box that is too small in
 /// the radial directions — a wrong answer with nothing to tip the caller off.
-/// The axis is deliberately oblique so the analytic term is not axis-aligned.
+/// The axis is deliberately oblique so the analytic term is not axis-aligned, and the seam is
+/// put on `(0, −0.8, 0.6)`, square to `x`, so the vertices sit at `x = 0` while the barrel
+/// spans `x ∈ [−2, 2]`.
 #[test]
 fn bounds_follow_the_curve_not_the_vertices() {
     let axis = Vector3::from_array([0.0, 3.0, 4.0]); // unit (0, .6, .8)
     let mut m = Model::new();
-    let s = m.add_cylinder(Point3::origin(), axis, 2.0, 5.0);
+    let s = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::origin(),
+        axis,
+        Vector3::from_array([0.0, -0.8, 0.6]),
+        2.0,
+        5.0,
+    )
+    .solid;
     let (lo, hi) = bounds(&m, s).unwrap();
 
     // x is fully perpendicular to the axis, so the barrel spans the diameter.
@@ -307,12 +323,15 @@ fn an_off_centre_void_pushes_the_centroid_away() {
 #[test]
 fn a_curved_solid_refuses_a_centroid_but_still_reports_volume() {
     let mut m = Model::new();
-    let s = m.add_cylinder(
+    let s = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
-    );
+    )
+    .solid;
     assert!(matches!(
         centroid(&m, s),
         Err(PropsError::CentroidOfCurvedFace)
@@ -519,7 +538,7 @@ proptest! {
         r in 0.5f64..10.0, h in 0.5f64..1e3,
     ) {
         let mut m = Model::new();
-        let s = m.add_cylinder(base, dir, r, h);
+        let s = nacre_ops::fixtures::cylinder(&mut m, base, dir, r, h).solid;
         let props = mass_props(&m, s).unwrap();
         prop_assert!(close(props.volume, PI * r * r * h), "vol {} vs {}", props.volume, PI*r*r*h);
         prop_assert!(close(props.area, 2.0 * PI * r * (r + h)), "area {}", props.area);

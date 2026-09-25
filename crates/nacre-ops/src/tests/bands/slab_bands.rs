@@ -115,18 +115,24 @@ fn a_two_hole_plate_drills_both() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 2.0, 1.0]),
     );
-    let d1 = m.add_cylinder(
+    let d1 = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.25,
         3.0,
-    );
-    let d2 = m.add_cylinder(
+    )
+    .solid;
+    let d2 = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([3.0, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.25,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let one = crate::boolean(&mut m, BoolKind::Cut, a, d1).expect("first bore");
     let v1 = nacre_props::mass_props(&m, one[0]).expect("props").volume;
@@ -166,12 +172,15 @@ fn three_bores_in_a_row() {
         Point3::from_array([6.0, 2.0, 1.0]),
     );
     for x in [1.0, 3.0, 5.0] {
-        let d = m.add_cylinder(
+        let d = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([x, 1.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.25,
             3.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         solid = crate::boolean(&mut m, BoolKind::Cut, solid, d).expect("a bore")[0];
     }
@@ -195,12 +204,15 @@ fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 2.0, 1.0]),
     );
-    let d = m.add_cylinder(
+    let d = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.25,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let drilled = crate::boolean(&mut m, BoolKind::Cut, plate, d).expect("bore")[0];
     let half = m.add_cuboid(
@@ -229,12 +241,15 @@ fn a_distant_cap_on_the_boxs_own_plane_removes_nothing() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
     // Far from the box in x/y, but its caps land exactly on z = 0 and z = 2.
-    let b = m.add_cylinder(
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([10.0, 10.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that misses");
     assert_eq!(out.len(), 1);

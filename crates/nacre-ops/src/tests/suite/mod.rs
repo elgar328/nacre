@@ -424,12 +424,28 @@ pub(crate) fn chained(
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let a = m.add_cylinder(Point3::from_array(first.0), up, 0.5, first.1);
+    let a = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array(first.0),
+        up,
+        up.any_perpendicular().expect("a nonzero axis"),
+        0.5,
+        first.1,
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = boolean(&mut m, first.2, plate, a).expect("the first op builds");
     assert_eq!(out.len(), 1, "the first op is one solid");
     m.rebuild_adjacency();
-    let b = m.add_cylinder(Point3::from_array(second.0), up, 0.5, second.1);
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array(second.0),
+        up,
+        up.any_perpendicular().expect("a nonzero axis"),
+        0.5,
+        second.1,
+    )
+    .solid;
     m.rebuild_adjacency();
     let r = boolean(&mut m, second.2, out[0], b);
     (m, r)
@@ -441,7 +457,17 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(Point3::from_array(at), Vector3::from_array(dir), 0.5, 4.0);
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array(at),
+        Vector3::from_array(dir),
+        Vector3::from_array(dir)
+            .any_perpendicular()
+            .expect("a nonzero axis"),
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = boolean(&mut m, kind, plate, boss).expect("the boss builds");
     m.rebuild_adjacency();
@@ -638,9 +664,8 @@ fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
 
 // ── a cylinder in the operation log is a circle extruded ────────────────────────────────
 //
-// `Model::add_cylinder_exact` is a test convenience behind a feature; the road an application
-// takes is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar, measured
-// identical to the primitive. What the frame buys is that
+// A cylinder is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar. What
+// the frame buys is that
 // the statement never leaves the rationals: the axis is the frame's unit normal, the seam its
 // `+u`. The extrude's faces come in push order: bottom cap, top cap, then the lateral.
 
@@ -701,12 +726,15 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array(base),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         h,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     (m, plate, boss)
 }

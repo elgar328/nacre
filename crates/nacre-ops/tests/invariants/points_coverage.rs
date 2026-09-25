@@ -1,6 +1,6 @@
 //! **Every live planar face records its exact points.**
 //!
-//! No producer makes a point-less plane — `from_axes` lifts its axes, `add_cylinder` records
+//! No producer makes a point-less plane — `from_axes` lifts its axes, a circle prism states
 //! its caps, an overflowing exact move records a node. The points live in the surface's truth
 //! variant, so the type guarantees it; this battery is the producer-path smoke test — one model
 //! per producer path — and the cache/truth agreement sweep.
@@ -172,9 +172,11 @@ fn every_live_planar_face_records_its_points() {
 
     // ⑥ Cylinder caps — the lateral face is the skipped population, visibly.
     let mut mc = Model::new();
-    mc.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut mc,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
     );

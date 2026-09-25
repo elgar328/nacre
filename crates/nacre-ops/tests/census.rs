@@ -61,6 +61,25 @@ fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
     }
 }
 
+/// A cylinder the way an application states one — a datum plane, a whole circle about its origin,
+/// an extrude ([`nacre_ops::fixtures::cylinder_with_seam`]) — with the seam on
+/// `axis.any_perpendicular()`.
+///
+/// ★ **The seam is stated, not left to the frame**, because rows here were built around where it
+/// falls (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
+/// fixture. The axes stated here are integer vectors or a 3-4-5 triple, so the seam and the frame
+/// are exact decimals.
+fn cylinder(
+    m: &mut Model,
+    base: Point3,
+    axis: nacre_math::Vector3,
+    radius: f64,
+    height: f64,
+) -> Handle<Solid> {
+    let seam = axis.any_perpendicular().expect("a nonzero axis");
+    nacre_ops::fixtures::cylinder_with_seam(m, base, axis, seam, radius, height).solid
+}
+
 fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     let OpOutput::Transform { solid } = apply(
         m,
@@ -723,7 +742,8 @@ fn measure_census() {
             format!("v{vn}h{vh:016x}p{pn}h{ph:016x}")
         };
         let mut m = Model::new();
-        let c = m.add_cylinder(
+        let c = cylinder(
+            &mut m,
             Point3::from_array([0.5, -1.25, 2.0]),
             nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
             1.5,
@@ -760,7 +780,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([2.0, 2.0, 2.0]),
             );
-            let b = m.add_cylinder(
+            let b = cylinder(
+                &mut m,
                 Point3::from_array([1.0, 1.0, -1.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
@@ -787,7 +808,8 @@ fn measure_census() {
                     Point3::from_array([0.0; 3]),
                     Point3::from_array([4.0, 4.0, 2.0]),
                 );
-                let b = m.add_cylinder(
+                let b = cylinder(
+                    &mut m,
                     Point3::from_array(origin),
                     Vector3::from_array(axis),
                     0.5,
@@ -810,7 +832,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
-            let bore = m.add_cylinder(
+            let bore = cylinder(
+                &mut m,
                 Point3::from_array([1.0, 1.0, -1.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
@@ -818,7 +841,8 @@ fn measure_census() {
             );
             m.rebuild_adjacency();
             let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
-            let boss = m.add_cylinder(
+            let boss = cylinder(
+                &mut m,
                 Point3::from_array([4.0, 2.0, 2.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
@@ -850,7 +874,8 @@ fn measure_census() {
                     Point3::from_array([0.0; 3]),
                     Point3::from_array([40.0, 40.0, 20.0]),
                 );
-                let b = m.add_cylinder(
+                let b = cylinder(
+                    &mut m,
                     Point3::from_array(base),
                     nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                     5.0,
@@ -886,7 +911,8 @@ fn measure_census() {
                 out = boolean(m, BoolKind::Cut, out, p).expect("the pocket cuts")[0];
                 m.rebuild_adjacency();
             }
-            let bore = m.add_cylinder(
+            let bore = cylinder(
+                m,
                 Point3::from_array([x0 + 14.0, 14.0, -1.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 2.0,
@@ -938,7 +964,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([40.0, 40.0, 10.0]),
             );
-            let tool = m.add_cylinder(
+            let tool = cylinder(
+                &mut m,
                 Point3::from_array([7.3, 7.3, -5.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 2.1,
@@ -957,7 +984,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([40.0, 40.0, 10.0]),
             );
-            let boss = m.add_cylinder(
+            let boss = cylinder(
+                &mut m,
                 Point3::from_array([10.0, 20.0, 5.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 3.0,
@@ -977,7 +1005,8 @@ fn measure_census() {
                     Point3::from_array([0.0; 3]),
                     Point3::from_array([40.0, 40.0, 10.0]),
                 );
-                let bore = m.add_cylinder(
+                let bore = cylinder(
+                    m,
                     Point3::from_array([7.3, 7.3, -5.0]),
                     nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                     2.1,
@@ -1002,7 +1031,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([40.0, 40.0, 10.0]),
             );
-            let bore = m.add_cylinder(
+            let bore = cylinder(
+                &mut m,
                 Point3::from_array([18.0, 20.0, -5.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 2.1,
@@ -1011,7 +1041,8 @@ fn measure_census() {
             m.rebuild_adjacency();
             let holed = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
             m.rebuild_adjacency();
-            let twin = m.add_cylinder(
+            let twin = cylinder(
+                &mut m,
                 Point3::from_array([7.3, 20.0, -5.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 2.1,
@@ -1055,7 +1086,8 @@ fn measure_census() {
             for (kn, k) in KINDS {
                 let mut m = Model::new();
                 let a = plate(&mut m);
-                let b = m.add_cylinder(
+                let b = cylinder(
+                    &mut m,
                     Point3::from_array(base),
                     nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                     0.5,
@@ -1101,7 +1133,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
-            let b = m.add_cylinder(
+            let b = cylinder(
+                m,
                 Point3::from_array(base),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
@@ -1172,7 +1205,8 @@ fn measure_census() {
                     Point3::from_array([0.0; 3]),
                     Point3::from_array([4.0, 4.0, 2.0]),
                 );
-                let boss = m.add_cylinder(
+                let boss = cylinder(
+                    &mut m,
                     Point3::from_array([2.0, 2.0, -1.0]),
                     nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                     0.5,
@@ -1219,7 +1253,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
-            let b = m.add_cylinder(
+            let b = cylinder(
+                &mut m,
                 Point3::from_array(base),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
@@ -1248,7 +1283,8 @@ fn measure_census() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([20.0, 20.0, 10.0]),
             );
-            let bore = m.add_cylinder(
+            let bore = cylinder(
+                m,
                 Point3::from_array([6.3, 6.3, -1.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 2.1,
@@ -1336,7 +1372,8 @@ fn measure_census() {
                 m.rebuild_adjacency();
                 let mut out = out;
                 for (c, r) in [([17.1, 8.9], 2.22), ([46.75, 37.35], 2.34)] {
-                    let bore = m.add_cylinder(
+                    let bore = cylinder(
+                        m,
                         Point3::from_array([c[0], c[1], 0.0]),
                         nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                         r,

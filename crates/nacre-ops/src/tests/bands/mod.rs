@@ -93,12 +93,15 @@ fn ends(lf: &LocalFace, ts: &[(usize, f64)]) -> (f64, f64) {
 fn box_and_drill(z0: f64, h: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cylinder(
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([1.0, 1.0, z0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         h,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     (m, a, b)
 }

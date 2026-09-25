@@ -181,18 +181,22 @@ fn derived_curves_match_stored() {
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([10.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.5,
         2.0,
     );
-    let tilted_cyl = m.add_cylinder(
+    let tilted_cyl = nacre_ops::fixtures::cylinder(
+        &mut m,
         Point3::from_array([20.0, 1.0, 0.5]),
         Vector3::from_array([0.3, -0.4, 1.0]),
         0.7,
         3.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "construction", &mut st);
 
@@ -292,9 +296,11 @@ fn edge_carriers_agree_with_adjacency() {
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([10.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.5,
         2.0,
     );
@@ -387,9 +393,11 @@ fn edge_carriers_agree_with_adjacency() {
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 2.0, 3.0]),
     );
-    m2.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m2,
         Point3::from_array([5.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
     );

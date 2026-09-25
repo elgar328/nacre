@@ -242,8 +242,8 @@ enum Said {
 ///
 /// ★ **This is not new geometry — it is the point the kernel already mints.** For a whole circle
 /// `crate::construct` states `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir`
-/// **is** that ring's one vertex, exactly, by construction; the same expression is what
-/// `add_cylinder_exact` stores as a seam point. What the arrangement drops is the *node*: an
+/// **is** that ring's one vertex, exactly, by construction — the point a seam vertex
+/// (`Vertex::OnSeam`) names. What the arrangement drops is the *node*: an
 /// uncut circle carries no `NodeId`, which is why the corner supply above finds nothing and why
 /// this rebuilds the point from the statement instead of reading it.
 ///

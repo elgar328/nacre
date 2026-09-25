@@ -17,6 +17,10 @@ nacre-store = { path = "../nacre-store", version = "0.0.0" }
 step-io = "0.2.4"
 
 [dev-dependencies]
+# Test cylinders are built the way an application builds one — a datum, a circle, an extrude
+# (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
+# too, so the library graph stays acyclic (the nacre-props shape).
+nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
 # Enables the topo test-only primitive `Model::add_cuboid` for the cube-dump example/tests.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

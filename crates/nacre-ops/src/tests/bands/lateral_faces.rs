@@ -8,12 +8,15 @@ use super::*;
 fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
     let mut m = Model::new();
     let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([5.0, 5.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         12.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Walls 3 from the axis (r = 2), so the wall rule is not what this measures.

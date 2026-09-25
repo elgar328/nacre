@@ -2,7 +2,7 @@
 
 use super::*;
 
-// ─── A whole circle extrudes into the cylinder primitive's own solid ────────────────────────
+// ─── A whole circle extrudes into the seam model ─────────────────────────────────────────────
 
 /// **A solid's b-rep, position-canonically.** What two builders must agree on when they claim to
 /// state one solid, with handle numbering left out — the two push their arenas in different
@@ -113,29 +113,15 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     }
 }
 
-/// ★★★★★ **The sugar claim, measured.** `cylinder()` is «a circle sketched, then extruded», so
-/// the extrude of a whole-circle profile must state the very solid the cylinder primitive states
-/// (`Model::add_cylinder_exact`, the test door): the
-/// same vertex coordinates (bits), the same two seam definitions, the same
-/// plane coefficients and cylinder definition, the same faces (kind, sense, loop shape), the same
-/// edges (carriers, curve, the circle closing on one vertex), the same volume bits and the same
-/// mesh. Handle numbering is the one thing left out — the two builders push their arenas in
-/// different orders, and nothing downstream reads a handle's number.
+/// ★★★★★ **A whole circle extrudes into the seam model** — the one b-rep a closed cylinder has
+/// in this kernel: two seam vertices (`OnSeam`, each the `θ = 0` point of its rim), two
+/// full-circle rims each closing on its own seam vertex, one straight seam the lateral uses
+/// twice (`[rim, seam, rim⁻, seam⁻]`), and two caps of one rim each. Read position-canonically
+/// (the digest leaves handle numbering out) and on the seam's own coordinates: the circle's seam
+/// is `center + (r, 0)` on both rims.
 #[test]
-fn a_circle_profile_extrude_states_the_cylinder_primitive_solid() {
+fn a_circle_profile_extrudes_into_the_seam_model() {
     let (center, radius, dist) = ([0.5, 0.25], 0.1, 2.0);
-    let mut a = Model::new();
-    let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
-    let (sa, _) = a
-        .add_cylinder_exact(
-            [r(center[0]), r(center[1]), r(0.0)],
-            [r(0.0), r(0.0), r(1.0)],
-            [r(1.0), r(0.0), r(0.0)],
-            r(radius),
-            r(dist),
-            None,
-        )
-        .expect("the primitive builds");
     let mut b = Model::new();
     let frame = SketchFrame::world(&b, Axis::Z);
     let OpOutput::Extrude { solid: sb, faces } = apply(
@@ -149,18 +135,38 @@ fn a_circle_profile_extrude_states_the_cylinder_primitive_solid() {
     .expect("the circle extrudes") else {
         unreachable!()
     };
-    a.rebuild_adjacency();
     b.rebuild_adjacency();
-    assert!(nacre_validate::validate(&a).is_empty());
     assert!(
         nacre_validate::validate(&b).is_empty(),
         "{:?}",
         nacre_validate::validate(&b)
     );
     assert_eq!(faces.len(), 3, "base cap, top cap, lateral");
-    let (da, db) = (brep_digest(&a, sa), brep_digest(&b, sb));
-    assert_eq!(da.vertex_defs, vec!["on-seam", "on-seam"]);
-    assert_eq!(da, db);
+    let d = brep_digest(&b, sb);
+    assert_eq!(d.vertex_defs, vec!["on-seam", "on-seam"]);
+    let bits = |p: [f64; 3]| p.map(f64::to_bits);
+    assert_eq!(
+        d.vertex_bits,
+        vec![bits([0.6, 0.25, 0.0]), bits([0.6, 0.25, 2.0])],
+        "the seam sits at `center + (r, 0)` on both rims"
+    );
+    assert_eq!(
+        d.edges,
+        vec![
+            ("cylinder+cylinder".to_string(), "line", false),
+            ("cylinder+plane".to_string(), "circle", true),
+            ("cylinder+plane".to_string(), "circle", true),
+        ],
+        "one seam line, two rims each closing on one vertex"
+    );
+    assert_eq!(
+        d.faces
+            .iter()
+            .map(|&(k, _, outer, inner)| (k, outer, inner))
+            .collect::<Vec<_>>(),
+        vec![("cylinder", 4, 0), ("plane", 1, 0), ("plane", 1, 0)],
+        "the lateral walks `[rim, seam, rim⁻, seam⁻]`; each cap is one rim"
+    );
 }
 
 /// **A round hole and a ring**: a plate with a circular bore, and an annulus — the circle as a
@@ -272,8 +278,8 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
 }
 
 /// **One cylinder surface under two solids is refused, not asserted.** Cylinders intern by
-/// their exact statement, so two identical circle prisms — or two identical `cylinder()`
-/// primitives — share one lateral surface handle, which the chart reads as one solid's. Measured
+/// their exact statement, so two identical circle prisms — on a seeded world frame or on a
+/// stated datum — share one lateral surface handle, which the chart reads as one solid's. Measured
 /// before the gate learned this: the fuse reached `cyl_chart`'s "one cylinder class carries rows
 /// of both solids" assertion. Now it is the coaxial pair's refusal, by name.
 #[test]
@@ -310,22 +316,19 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
     let (s1, s2) = (extrude(&mut m), extrude(&mut m));
     m.rebuild_adjacency();
     refused(crate::boolean(&mut m, BoolKind::Fuse, s1, s2));
-    // Two primitives — the same hazard predates the sketch road.
+    // Two circles on a stated datum plane — the same hazard on the other frame road.
     let mut m = Model::new();
-    let prim = |m: &mut Model| {
-        let r = |x: i128| nacre_exact::Rat::from_int(x);
-        m.add_cylinder_exact(
-            [r(0), r(0), r(0)],
-            [r(0), r(0), r(1)],
-            [r(1), r(0), r(0)],
-            r(1),
-            r(2),
-            None,
+    let on_datum = |m: &mut Model| {
+        crate::fixtures::cylinder(
+            m,
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+            2.0,
         )
-        .unwrap()
-        .0
+        .solid
     };
-    let (s1, s2) = (prim(&mut m), prim(&mut m));
+    let (s1, s2) = (on_datum(&mut m), on_datum(&mut m));
     m.rebuild_adjacency();
     refused(crate::boolean(&mut m, BoolKind::Cut, s1, s2));
 }
@@ -335,7 +338,7 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
 /// motion frame the way its vertices are, and the disk cap's winding check realizes the plane's
 /// truth points the same way (a frame triangle against a world normal would assert). Padding it
 /// onto the
-/// wall then declines by the name a tilted `cylinder()` primitive gets today: the cylinder gate
+/// wall then declines by the name a tilted `cylinder()` gets today: the cylinder gate
 /// cannot state a rotated cylinder against another body yet.
 #[test]
 fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {

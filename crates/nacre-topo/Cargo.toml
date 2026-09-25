@@ -18,9 +18,7 @@ nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 # Exposes the test-only solid primitive `Model::add_cuboid` (a topo convenience that bypasses
 # the ops modelling layer). Off by default, so production consumers never see it; crates below
 # nacre-ops enable it in their [dev-dependencies] to build test solids at the topo layer.
-# `add_cylinder` is behind it too, since extruding a circle profile is the production
-# road: the f64 entry derives its truth by lifting computed floats and panics outside the decimal
-# window, which is a test convenience, not something an application should be able to reach.
+# There is no cylinder primitive: a cylinder is a circle extruded (`nacre_ops::fixtures`).
 test-util = []
 
 [dev-dependencies]

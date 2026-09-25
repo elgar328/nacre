@@ -299,12 +299,15 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
 #[test]
 fn mirroring_a_cylinder_is_declined() {
     let mut m = Model::new();
-    let c = m.add_cylinder(
+    let c = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        nacre_math::Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
 
     let err = apply(

@@ -1331,28 +1331,36 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
 /// denominators are as bad as f64 can make them; the last two are the regression half. The oracle
 /// is `s³ − πr²s`.
 ///
+/// The **radius** is `s/4` where the sketch can state it and a short decimal below that: a sketched
+/// circle carries `r²` as a `Rat`, and a full-digit radius under `1e-4` squares past `i128`
+/// (`SketchError::Undecidable` — the application's road refuses the circle before any solid
+/// exists). The widths this test is about are the cube's and the centre's, which stay full-digit.
+///
 /// ⚠ **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
 /// the volume is ~6.4e-21, where any absolute epsilon is meaningless; and `π` does not cancel
 /// here, so the oracle is f64 arithmetic while the kernel's answer is not. Precedent for the
 /// relative form: `pocket_on_a_random_slanted_face_is_valid_or_rejects`' `1e-9 * 8.0`.
 #[test]
 fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
-    for s in [
-        2.0000000000000003e-7,
-        (1.0 / 3.0) * 1e-4,
-        (1.0 / 7.0) * 1e-3,
-        1.0 / 3.0,
-        2.0000000000000003,
+    for (s, r) in [
+        (2.0000000000000003e-7, 5e-8),
+        ((1.0 / 3.0) * 1e-4, 8e-6),
+        ((1.0 / 7.0) * 1e-3, 3.5e-5),
+        (1.0 / 3.0, 1.0 / 12.0),
+        (2.0000000000000003, 2.0000000000000003 / 4.0),
     ] {
-        let (h, r) = (s / 2.0, s / 4.0);
+        let h = s / 2.0;
         let mut m = Model::new();
         let block = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([s; 3]));
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([h, h, -h]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             r,
             s * 2.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(&mut m, BoolKind::Cut, block, bore)
             .unwrap_or_else(|e| panic!("s = {s:e}: {e:?}"));

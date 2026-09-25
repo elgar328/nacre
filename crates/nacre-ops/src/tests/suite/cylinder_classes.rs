@@ -90,11 +90,28 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let a = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.0, 0.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
     m.rebuild_adjacency();
-    let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([6.0, 2.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     // ★ The gate *deciding* is half the claim — past the first corner the boss makes.
     let setup = crate::arrangement::plane_index_setup(&m, first, b).expect("the gate decides");
@@ -153,7 +170,16 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.0, 0.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
@@ -201,7 +227,16 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.0, 0.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
@@ -271,11 +306,28 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let a = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.0, 0.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
     m.rebuild_adjacency();
-    let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([6.0, 2.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         let _ = boolean(&mut m, BoolKind::Cut, first, b);
@@ -382,11 +434,28 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
             Point3::from_array([12.0, 4.0, 2.0]),
         );
         let up = Vector3::from_array([0.0, 0.0, 1.0]);
-        let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+        let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+        let a = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([2.0, 0.0, -1.0]),
+            up,
+            seam,
+            0.5,
+            4.0,
+        )
+        .solid;
         m.rebuild_adjacency();
         let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
         m.rebuild_adjacency();
-        let b = m.add_cylinder(Point3::from_array([6.0, 2.0, base]), up, 0.5, 4.0);
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([6.0, 2.0, base]),
+            up,
+            seam,
+            0.5,
+            4.0,
+        )
+        .solid;
         m.rebuild_adjacency();
         crate::ledger::owned(|| {
             let _ = boolean(&mut m, BoolKind::Cut, first, b);
@@ -532,12 +601,15 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array(at),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
     m.rebuild_adjacency();
@@ -761,12 +833,15 @@ fn a_disk_merges_into_the_face_it_lies_in() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let b = m.add_cylinder(
+        let b = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             h,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (a, b)
     };
@@ -861,12 +936,15 @@ fn a_moved_face_answers_the_clearance_test() {
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
         m.rebuild_adjacency();
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([17.1, 48.6, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.12,
             80.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
         m.rebuild_adjacency();
@@ -913,12 +991,15 @@ fn a_rotated_cylinder_is_still_undecided() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );
-    let tool = m.add_cylinder(
+    let tool = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([18.0, 7.3, -5.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.1,
         30.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let tool = transform(
         &mut m,

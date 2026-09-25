@@ -29,12 +29,15 @@ fn a_flush_through_drill_bores_the_plate() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 2.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a flush through hole");
     assert_eq!(out.len(), 1);
@@ -57,12 +60,15 @@ fn a_blind_drill_seated_on_the_plates_base_bores_it() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 2.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         1.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a seated blind hole");
     assert_eq!(out.len(), 1);
@@ -85,12 +91,15 @@ fn a_boss_seated_on_the_plate_fuses_to_it() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 2.0, 2.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         1.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("a seated boss");
     assert_eq!(out.len(), 1, "one body, not two");
@@ -110,12 +119,15 @@ fn a_boss_seated_on_the_plate_fuses_to_it() {
 fn a_flush_cylinder_meets_the_box_in_itself() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cylinder(
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([1.0, 1.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         2.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Common, a, b).expect("a flush common");
     assert_eq!(out.len(), 1);
@@ -144,12 +156,15 @@ fn a_drill_seated_on_a_pocket_floor_bores_it() {
     m.rebuild_adjacency();
     let pocketed = crate::boolean(&mut m, BoolKind::Cut, block, pocket_tool).expect("pocket")[0];
     // The bore hangs from the pocket floor (z = 2) down into the material below it.
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([3.0, 3.0, 1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         1.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Cut, pocketed, drill).expect("a floor bore");
     assert_eq!(out.len(), 1);
@@ -173,12 +188,15 @@ fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array(base),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         5.0,
         50.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, kind, plate, boss).expect("the rulings road builds");
     assert_eq!(out.len(), 1, "one solid");
@@ -269,12 +287,15 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             5.0,
             50.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
             .unwrap_or_else(|e| panic!("{base:?}: {e:?}"));
@@ -317,12 +338,15 @@ fn a_half_height_boss_builds() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([40.0, 20.0, z0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             5.0,
             20.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = crate::boolean(&mut m, kind, plate, boss)
             .unwrap_or_else(|e| panic!("{kind:?} z0 {z0}: the half-height boss builds: {e:?}"));
@@ -375,12 +399,15 @@ fn a_boss_overhanging_the_plates_edge_builds() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([4.0, 2.0, 2.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         1.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
     assert_eq!(out.len(), 1, "one fused solid");
@@ -422,12 +449,15 @@ fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
-    let hole = m.add_cylinder(
+    let hole = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([8.0, 10.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         3.0,
         7.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Footprint `[7,9] × [9,11]` sits wholly inside the rim `(8,10)`, `r = 3`; `z ∈ [5,8]`

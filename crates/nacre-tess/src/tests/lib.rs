@@ -11,7 +11,13 @@ fn cube(min: [f64; 3], max: [f64; 3]) -> Model {
 
 fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
     let mut m = Model::new();
-    m.add_cylinder(Point3::from_array(base), Vector3::from_array(axis), r, h);
+    nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array(base),
+        Vector3::from_array(axis),
+        r,
+        h,
+    );
     m
 }
 

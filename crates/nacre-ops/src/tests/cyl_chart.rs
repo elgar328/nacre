@@ -40,12 +40,15 @@ fn the_chart_census_is_running() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 2.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore")
@@ -111,12 +114,15 @@ fn the_charts_vertical_answers_close() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
-    let boss = m.add_cylinder(
+    let boss = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 0.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
@@ -200,6 +206,7 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
     // no circle of this cylinder, cells outside the face), and the chained pairs (sectors
     // dropped for existence).
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
     crate::ledger::owned(|| {
         for (base, h) in [
             ([2.0, 0.0, -1.0], 4.0),
@@ -211,7 +218,15 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
-            let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
+            let boss = crate::fixtures::cylinder_with_seam(
+                &mut m,
+                Point3::from_array(base),
+                up,
+                seam,
+                0.5,
+                h,
+            )
+            .solid;
             m.rebuild_adjacency();
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
         }
@@ -227,7 +242,15 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
-            let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+            let boss = crate::fixtures::cylinder_with_seam(
+                &mut m,
+                Point3::from_array([2.0, 0.0, -1.0]),
+                up,
+                seam,
+                0.5,
+                4.0,
+            )
+            .solid;
             m.rebuild_adjacency();
             let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
             m.rebuild_adjacency();
@@ -366,15 +389,13 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
 /// are exactly orthonormal in the rationals, so `SketchPlane::from_axes` takes the
 /// world-rational path and every face of the prism raised on it states narrow coefficients
 /// (asserted below, small integers). Its normal `(0.64, −0.48, 0.6)` is the cylinder's axis,
-/// and the frame's own `u` is a **unit rational perpendicular** to it — exactly the `ref_dir`
-/// `Model::add_cylinder_exact` requires.
+/// and the frame's own `u` is a **unit rational perpendicular** to it — so the bore, sketched on
+/// that frame moved to its centre, is stated in the world too.
 ///
-/// ★★★★★ **`Model::add_cylinder` cannot state this, and that is not a kernel limit.** That
-/// entry normalizes an `f64` axis and lifts its cap points back out of `any_perpendicular`'s
-/// computed floats, so on a tilted axis the caps land outside the narrow window and the
-/// population gate honestly declines (`CylinderGateUndecided` — measured while building this).
-/// Its own doc calls it *the test entry*; the production road is `add_cylinder_exact`, and on
-/// that road the tilted case is not the irrational case.
+/// ★★★★★ **The cylinder's axis being tilted is not the cylinder being irrational.** A cylinder
+/// sketched on a frame with an exact orthonormal basis states every point exactly; only a frame
+/// without one (an axis like `(0, 1, 1)`) rides a frame node, and the population gate refuses that
+/// as having no world statement.
 ///
 /// ☑ What this establishes: the chart's two axes are built, and the axes' universal claims
 /// hold,
@@ -449,18 +470,18 @@ fn the_chart_stands_on_a_tilted_axis() {
                 "a face neither ⊥ nor ∥ to the axis would be the oblique branch"
             );
         }
-        let q = |x: f64| Rat::from_decimal(x).expect("a short decimal");
-        let (cyl, _) = m
-            .add_cylinder_exact(
-                base.map(q),
-                axis,
-                // ★ The frame's own `u`: unit, and `u · axis = 0.384 − 0.384 = 0` exactly.
-                [q(0.6), q(0.8), q(0.0)],
-                q(0.5),
-                q(3.0),
-                None,
-            )
-            .expect("the exact road states a tilted cylinder");
+        // ★ The seam on the frame's own `u`: unit, and `u · axis = 0.384 − 0.384 = 0` exactly;
+        // `axis × u = (−0.48, 0.36, 0.8)` is the frame's `v`, so the bore's sketch frame is the
+        // prism's, moved — Pythagorean, world-rational.
+        let cyl = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array(base),
+            Vector3::from_array([0.64, -0.48, 0.6]),
+            Vector3::from_array([0.6, 0.8, 0.0]),
+            0.5,
+            3.0,
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = crate::ledger::owned(|| {
             crate::boolean(&mut m, BoolKind::Cut, solid, cyl)

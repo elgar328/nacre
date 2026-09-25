@@ -214,8 +214,8 @@ pub(crate) fn reconstruct(
                 }
                 let cut = cut_rims.get(&(k, c));
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
-                // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
-                // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
+                // The seam point of this rim, spelled as a circle prism spells one: the axis meets
+                // the plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
                 let realized = cyls[k].realized;
                 let centre = nacre_geom::intersect::line_plane(
                     &realized.axis(),
@@ -565,8 +565,8 @@ pub(crate) fn reconstruct(
         // about the cylinder's axis** — the cache's, which runs the same way as the statement's
         // `def.dir()` (the cylinder door asserts it). A loop must run CCW about its own face's
         // outward normal, so a bound on a face whose normal agrees with the axis is walked forward
-        // and one whose normal opposes it backward — exactly the convention `add_cylinder` writes
-        // down (top cap `forward: true`, bottom cap `false`). A *hole* runs the other way again,
+        // and one whose normal opposes it backward — exactly how a circle prism's caps walk their
+        // rims (top cap forward, base cap backward). A *hole* runs the other way again,
         // because an inner loop keeps the material on its left by winding against the outer.
         //
         // The face's outward normal is the way its plane faces when the face is `Forward` and the
@@ -619,7 +619,7 @@ pub(crate) fn reconstruct(
             };
         // **A periodic face's outer boundary: its loops, joined along the seam generator.**
         //
-        // The four-half-edge spelling `add_cylinder` builds — two rims and the seam used twice in
+        // The four-half-edge spelling a circle prism's lateral has — two rims and the seam used twice in
         // opposite senses — is the case where **nothing is in the seam's way**. When a hole meets
         // the seam, that same generator is *interrupted* by it: the slit runs from the `lo` rim up
         // to the hole, the hole's own boundary carries the walk across, and a second slit finishes

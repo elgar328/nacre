@@ -1136,9 +1136,11 @@ fn a_datum_through_vertices_refuses_by_cause() {
     // curve, so no three planes name it and no exact coordinate follows from its definition. The
     // box beside it supplies the other two — a cylinder alone has only the two seam vertices.
     let mut cy = Model::new();
-    cy.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut cy,
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         1.0,
         2.0,
     );

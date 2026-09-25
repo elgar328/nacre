@@ -7,7 +7,8 @@
 //! helper protocol.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
-//! `Curve::{Line, Circle}` (a cylinder is the seam model of `add_cylinder`). The
+//! `Curve::{Line, Circle}` (a cylinder is the seam model: two seam vertices, two full-circle
+//! rims, one seam line the lateral uses twice). The
 //! surface/curve `match`es stay exhaustive, so future variants (sphere, NURBS)
 //! force a compile error here. AP242 Ed2 is stamped by the backend.
 

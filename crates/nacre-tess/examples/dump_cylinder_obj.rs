@@ -6,19 +6,34 @@
 //! Open in Quick Look: the surface should be watertight and outward-facing, and
 //! the fine mesh visibly rounder than the coarse one.
 
-use nacre_math::{Point3, Vector3};
+use nacre_math::Point2;
+use nacre_ops::{DatumDef, OpOutput, Operation, Ring2d, SketchPlane, apply, from_paths};
 use nacre_tess::{TessConfig, tessellate};
 use nacre_topo::Model;
 
 fn main() {
     let mut model = Model::new();
-    // Radius 10, height 20, along +Z from the origin.
-    model.add_cylinder(
-        Point3::origin(),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        10.0,
-        20.0,
-    );
+    // Radius 10, height 20, along +Z from the origin — stated the way an application states it:
+    // a sketch plane, a whole circle on it, an extrude.
+    let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+        &mut model,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(SketchPlane::world_xy()),
+        },
+    ) else {
+        panic!("the XY plane is stated")
+    };
+    let circle = Ring2d::circle(Point2::from_array([0.0, 0.0]), 10.0).expect("a circle");
+    let profile = from_paths(vec![circle]).expect("one profile").remove(0);
+    apply(
+        &mut model,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 20.0,
+        },
+    )
+    .expect("the circle extrudes");
 
     let prefix = std::env::args()
         .nth(1)

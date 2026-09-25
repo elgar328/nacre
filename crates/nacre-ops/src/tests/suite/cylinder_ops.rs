@@ -43,8 +43,8 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
 /// the seam reference exactly `(1,0,0)` — small integers, not decimals lifted back out of a
 /// normalization. The centre and radius are the caller's own written decimals, lifted once.
 ///
-/// This is the whole reason the op exists as it does: `add_cylinder` reaches the same shape by
-/// normalizing an f64 axis, and the `1/3`-base gate in `nacre-topo` shows what that costs.
+/// This is the whole reason the op exists as it does: a cylinder stated by normalizing an f64 axis
+/// would carry decimals lifted back out of that normalization.
 #[test]
 fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
     let mut m = Model::new();
@@ -770,18 +770,24 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
             Point3::from_array([-10.0, -10.0, -1.5]),
             Point3::from_array([10.0, 10.0, 1.5]),
         );
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([0.0, 0.0, -10.0]),
             nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            nacre_math::Vector3::from_array([0.0, -1.0, 0.0]),
             3.0,
             20.0,
-        );
-        let tunnel = m.add_cylinder(
+        )
+        .solid;
+        let tunnel = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([x, -25.0, 0.0]),
             nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
             1.0,
             50.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         (m, plate, bore, tunnel)
     };
@@ -839,12 +845,15 @@ fn the_mesh_census_is_running() {
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let drill = m.add_cylinder(
+    let drill = crate::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::from_array([2.0, 2.0, -1.0]),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         0.5,
         4.0,
-    );
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore"));
     // One boolean, one solid, one census entry — and it meshed.
@@ -886,7 +895,16 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let a = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.0, 0.0, -1.0]),
+        up,
+        seam,
+        0.5,
+        4.0,
+    )
+    .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")
@@ -972,12 +990,15 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
         m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(hi))
     }
     fn cyl(m: &mut Model, base: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
-        m.add_cylinder(
+        crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array(base),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             r,
             h,
         )
+        .solid
     }
     /// A `20 × 20 × 10` cell at `x0`, optionally pocketed, then bored (`ct2`).
     fn ct2cell(m: &mut Model, x0: f64, pocket: bool) -> Handle<Solid> {
@@ -1139,12 +1160,15 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([20.0, 20.0, 10.0]),
         );
-        let bore = m.add_cylinder(
+        let bore = crate::fixtures::cylinder_with_seam(
+            m,
             Point3::from_array([6.3, 6.3, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             2.1,
             12.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
         m.rebuild_adjacency();
@@ -1267,12 +1291,15 @@ fn a_spliced_band_is_cut_across_its_notch() {
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let boss = m.add_cylinder(
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
             Point3::from_array([4.0, 2.0, -1.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
             0.5,
             4.0,
-        );
+        )
+        .solid;
         m.rebuild_adjacency();
         let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
         m.rebuild_adjacency();

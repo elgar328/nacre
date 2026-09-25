@@ -169,9 +169,11 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
 #[test]
 fn cylinder_round_trips_through_step_io_reader() {
     let mut m = Model::new();
-    m.add_cylinder(
+    nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
         Point3::origin(),
         Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
         2.0,
         5.0,
     );
