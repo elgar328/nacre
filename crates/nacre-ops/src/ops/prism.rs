@@ -1,20 +1,32 @@
 use super::*;
-/// **The frame's basis in exact rationals, when it has one** — the gate that decides whether a
-/// sketch is written in world coordinates or inside a motion node.
+/// **The frame's world basis in exact rationals, when it has one** — the one gate that decides
+/// whether a sketch is written in world coordinates or inside a motion node.
 ///
-/// Only a frame on a plane with **no motion of its own** can be rational in the world: a moved
-/// plane's axes carry the motion's irrational part, which is precisely why that road exists. So a
-/// chain of one narrow frame node is the whole population, and anything longer (or wide) declines.
+/// The frame's own basis comes from its plane's name ([`RatFrame::of_plane_frame`] on the chain's
+/// narrow `Frame` head — `None` when an axis needs an irrational scale); a plane with a motion of
+/// its own then carries it through that motion's fold ([`RatFrame::carried`] — translations,
+/// quarter turns and axis reflections keep it rational; a frame node or a turn off the quarters
+/// does not fold, and declines). A wide or judged head declines too. The answer is asked of the
+/// truth, never of a realization lifted back: a realized axis that needs normalizing comes back
+/// `0.6000000000000001` and would read as irrational.
 ///
 /// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
-fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::construct::RatFrame> {
+///
+/// [`RatFrame::of_plane_frame`]: crate::construct::RatFrame::of_plane_frame
+/// [`RatFrame::carried`]: crate::construct::RatFrame::carried
+pub(super) fn exact_frame(
+    model: &Model,
+    frame: &SketchFrame,
+) -> Option<crate::construct::RatFrame> {
     let chain =
         crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
-    match chain.as_slice() {
-        [nacre_judge::MoveNode::Frame { frame: pf }] => {
-            crate::construct::RatFrame::of_plane_frame(pf)
-        }
-        _ => None,
+    let [nacre_judge::MoveNode::Frame { frame: pf }, ..] = chain.as_slice() else {
+        return None;
+    };
+    let own = crate::construct::RatFrame::of_plane_frame(pf)?;
+    match model.plane_motion(frame.plane()) {
+        None => Some(own),
+        Some(leaf) => own.carried(model, leaf),
     }
 }
 

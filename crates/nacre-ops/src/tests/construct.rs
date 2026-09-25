@@ -294,6 +294,7 @@ fn a_frame_that_cannot_be_lifted_declines_before_any_arithmetic() {
         origin: [Rat::from_int(0); 3],
         x: [huge, Rat::from_int(0), Rat::from_int(0)],
         y: [Rat::from_int(0), huge, Rat::from_int(0)],
+        parity: 1,
     };
     assert!(stretched.ring(&[[huge, huge]]).is_none());
 }

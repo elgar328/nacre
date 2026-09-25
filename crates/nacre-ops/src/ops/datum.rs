@@ -401,53 +401,34 @@ pub(super) fn datum_plane(
             // ★★ **Say it in the world when the world can hold it** — the same node-omission
             // normalization frames use. A plane stated under a frame node lives at the
             // key `(name, Some(node))`, so an offset of the world XY plane would *not* intern with
-            // a box's cap on the same plane. Where the canonical basis lifts to exact rational
-            // orthonormal axes, the offset plane is rational in the world and is stated there.
-            // (The gate expression is `exact()`, the same one the extrude road uses — asked here
-            // of the *realized* basis. The existing call site is untouched, so no node population
-            // moves.)
-            let realized = realized_plane(
-                Point3::from_array(cb.0),
-                Vector3::from_array(cb.1),
-                Vector3::from_array(cb.2),
-            );
-            // The base plane's handedness: `cb`'s axes are carried one by one, so `x × y` is
-            // `parity · ŵ` — and both roads below state their points through those axes.
+            // a box's cap on the same plane. Where the canonical frame has a rational world basis
+            // (`exact_frame` — the one gate the extrude road asks, asked of the truth), the offset
+            // plane is rational in the world and is stated there.
+            let canonical_frame = SketchFrame {
+                plane: base,
+                placement: canonical,
+                flip: false,
+            };
+            // The base plane's handedness: a frame carried through a reflection spans
+            // `x × y = parity · ŵ`, on either road.
             let parity = nacre_judge::chain_parity(
                 &crate::rotated_vertex::frame_chain(model, base, &canonical, false)
                     .ok_or(OpError::PlaneWithoutExactForm)?,
             );
-            let (points, motion) = match realized.exact() {
+            let (points, motion) = match exact_frame(model, &canonical_frame) {
                 // ★ An overflowing pullback is a **named reject**, not a quiet switch to the frame
                 // road — that switch is exactly where the duplicate handle would appear.
-                // ★ `rf` holds the two in-plane axes carried separately, so its normal `x × y` is
-                // `ŵ` times the chain's handedness: a recorded reflection makes it `−ŵ`, and
-                // offsetting along it would put the plane on the side the caller did not ask for.
-                // The frame-node road below carries `(0, 0, d)` itself and needs no such turn.
-                Some(rf) => {
-                    let along = match parity {
-                        1 => d,
-                        _ => nacre_exact::Rat::from_int(0)
-                            .checked_sub(d)
-                            .ok_or(OpError::DistOutsideDecimalWindow)?,
-                    };
-                    (
-                        rf.offset_plane_points(along)
-                            .ok_or(OpError::PlaneWithoutExactForm)?,
-                        None,
-                    )
-                }
+                // `rf`'s normal is the carried `ŵ`, a reflection included, so `d` along it lands on
+                // the side the caller asked for.
+                Some(rf) => (
+                    rf.offset_plane_points(d)
+                        .ok_or(OpError::PlaneWithoutExactForm)?,
+                    None,
+                ),
                 None => {
                     let zero = nacre_exact::Rat::from_int(0);
                     let one = nacre_exact::Rat::from_int(1);
-                    let node = push_frame_node(
-                        model,
-                        SketchFrame {
-                            plane: base,
-                            placement: canonical,
-                            flip: false,
-                        },
-                    );
+                    let node = push_frame_node(model, canonical_frame);
                     (
                         [[zero, zero, d], [one, zero, d], [zero, one, d]],
                         Some(node),

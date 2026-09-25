@@ -18,10 +18,12 @@
 //! plane has axes in `{0, ±1}`, exactly representable. A plane at 45° does not: its
 //! axes are irrational, and lifting their decimals would give vectors that are no
 //! longer unit, so `normal·dist` would come out the wrong *length* — a worse error
-//! than the one being fixed. So the entry point checks orthonormality exactly and
-//! declines rather than approximating, and the caller keeps today's f64 path. Every
-//! function here returns `Option` for that reason, and for i128 overflow, which is
-//! the same answer for the same reason.
+//! than the one being fixed. So the frame's basis is asked in rationals, of the truth
+//! ([`RatFrame::of_plane_frame`], carried through a folding motion by
+//! [`RatFrame::carried`]), and a frame without one declines rather than approximating —
+//! the sketch is then written inside the frame, behind a motion node. Every function here
+//! returns `Option` for that reason, and for i128 overflow, which is the same answer for
+//! the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
 use nacre_exact::{Orient, Rat};
@@ -31,13 +33,20 @@ use nacre_store::Handle;
 use nacre_topo::{Model, MotionNode};
 
 /// A sketch frame whose origin and axes are exact rationals, with the axes proved
-/// orthonormal. Only [`SketchPlane::exact`] constructs one, so the proof cannot be
-/// bypassed by building the struct directly.
+/// orthonormal. The fields are private, so a frame comes only from a door that proves it
+/// ([`RatFrame::of_plane_frame`], [`RatFrame::identity`], [`RatFrame::carried`]).
+///
+/// ★★ **A frame carried through a reflection is left-handed**, and `parity` says so: the motion
+/// carries each axis as `L(·)`, and `L(u) × L(v) = det L · L(w)`. The frame's `ŵ` — the way a
+/// sweep runs and the axis an arc wall stands on — is the carried `w`, so [`RatFrame::normal`] is
+/// `parity · (x × y)`, and a ring read counter-clockwise in `(x, y)` turns about `ŵ` with the same
+/// parity: the statement the frame-node road makes by reading its chain's parity.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RatFrame {
     origin: [Rat; 3],
     x: [Rat; 3],
     y: [Rat; 3],
+    parity: i8,
 }
 
 fn dot(a: &[Rat; 3], b: &[Rat; 3]) -> Option<Rat> {
@@ -97,6 +106,7 @@ impl SketchPlane {
             origin: lift(self.origin().as_array())?,
             x: lift(self.x_axis().as_array())?,
             y: lift(self.y_axis().as_array())?,
+            parity: 1,
         };
         let one = Rat::from_int(1);
         let zero = Rat::from_int(0);
@@ -129,7 +139,31 @@ impl RatFrame {
             origin: pf.origin,
             x: scale(&pf.u_raw, nacre_exact::inv_sqrt_exact(pf.uu)?)?,
             y: scale(v_raw, nacre_exact::inv_sqrt_exact(*vv)?)?,
+            parity: 1,
         })
+    }
+
+    /// **This frame, stated before `leaf`'s chain, carried to the world** — exactly, through the
+    /// chain's fold ([`Model::chain_point_rat`], [`Model::chain_dir_rat`]): a signed permutation
+    /// and a rational offset keep the axes rational and orthonormal. `None` where the chain does
+    /// not fold (a frame node, a turn off the quarters, overflow) — that frame has no rational
+    /// world basis, and the sketch is written in the frame instead.
+    pub(crate) fn carried(
+        &self,
+        model: &Model,
+        leaf: nacre_store::Handle<MotionNode>,
+    ) -> Option<RatFrame> {
+        Some(RatFrame {
+            origin: model.chain_point_rat(leaf, self.origin)?,
+            x: model.chain_dir_rat(leaf, self.x)?,
+            y: model.chain_dir_rat(leaf, self.y)?,
+            parity: self.parity * crate::rotated_vertex::motion_parity(model, Some(leaf))?,
+        })
+    }
+
+    /// The frame's handedness: `−1` when it was carried through a reflection.
+    pub(crate) fn parity(&self) -> i8 {
+        self.parity
     }
 
     /// ★★★★ **The sketch frame of a plane, read in that plane's own frame — where it is the
@@ -149,18 +183,25 @@ impl RatFrame {
             origin: [zero; 3],
             x: [one, zero, zero],
             y: [zero, one, zero],
+            parity: 1,
         }
     }
 
-    /// The unit normal `x × y`, exactly.
+    /// The frame's unit `ŵ`, exactly: `x × y`, turned by the frame's handedness.
     pub(crate) fn normal(&self) -> Option<[Rat; 3]> {
-        cross(&self.x, &self.y)
+        let n = cross(&self.x, &self.y)?;
+        if self.parity > 0 {
+            Some(n)
+        } else {
+            scale(&n, Rat::from_int(-1))
+        }
     }
 
-    /// The three points of the parallel plane `w = d`, stated in **this frame's own coordinate
-    /// system** — the exact form of "d away, along the normal".
+    /// The three points of the parallel plane `d` along [`RatFrame::normal`], in the coordinates
+    /// this frame is written in — the exact form of "d away, along `ŵ`". They span `x × y`, which
+    /// is `parity · ŵ`.
     ///
-    /// ★ This is what a datum offset uses when the frame lifts to exact rationals: the plane can
+    /// ★ This is what a datum offset uses when the frame has a rational world basis: the plane can
     /// then be said in the world, so it interns with every other statement of it (`push_plane`
     /// keys on `(name, motion)`, and a frame node would put it under a different key). `None` on
     /// `i128` overflow — which the caller must turn into a named reject rather than quietly taking
@@ -483,13 +524,16 @@ pub(crate) fn prism_rings_in(
         }
     };
     let normal = f.normal()?;
-    // The chain's handedness: a reflection reverses the sense of every loop it carries, and the
+    // The frame's handedness: a reflection reverses the sense of every loop it carries, and the
     // exact winding below and every arc's turn are read on the profile's 2-D coordinates *before*
-    // the chain — so both are turned into the world's sense here, once, where the chain is known.
-    // An arc left in the profile's sense beside a winding in the world's inverts a mirrored
-    // circle's prism: its caps' loops run the wrong way (measured, `FaceMisoriented` on both caps
-    // and a volume of −π/12 where a disk of radius ½ swept 1 has π/4).
-    let parity = chain.as_deref().map_or(1, nacre_judge::chain_parity);
+    // the reflection — so both are turned into the world's sense here, once. On the frame-node road
+    // the reflection is in the chain; on the world road it is already in the carried axes, which
+    // is what `f`'s parity says. An arc left in the profile's sense beside a winding in the
+    // world's inverts a mirrored circle's prism: its caps' loops run the wrong way (measured,
+    // `FaceMisoriented` on both caps and a volume of −π/12 where a disk of radius ½ swept 1 has π/4).
+    let parity = chain
+        .as_deref()
+        .map_or(f.parity(), nacre_judge::chain_parity);
     let ring = |r: &crate::Ring2d| -> Option<Swept> {
         let base = f.ring(r.vertices())?;
         let top = swept(&base, &sweep)?;
