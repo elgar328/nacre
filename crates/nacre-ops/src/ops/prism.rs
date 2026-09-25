@@ -25,8 +25,8 @@ fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::construct::R
 /// than as points: the flush contact then reads as one shared handle, which is what the boolean
 /// recognizes. Nothing new is pushed for it.
 ///
-/// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
-/// the frame (a datum against the caller's stated normal, a face against its outward). That is why
+/// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, turned by whoever built
+/// the frame (a datum toward the caller's stated normal, a face toward its outward). That is why
 /// this takes a frame rather than a plane and sweeps the same way.
 /// The builder's exact winding needs quarter-turn arcs (`Ring2d::winding_sign`); an arc of any
 /// other angle is refused by name here, before the builder reads the ring.
@@ -126,24 +126,16 @@ pub(crate) fn extrude_on_frame(
 ///
 /// `ŵ` is a difference of carried points, so the plane's motion carries it as `L(ŵ)`; the plane's
 /// facing is its points' turn times `sense`, which the motion carries as `parity · L(·)`. In `h`'s
-/// own frame `ŵ` is `±` a normal the truth relates to that facing: a named plane frames from its
-/// name (`ŵ` along the name's normal, [`nacre_topo::Model::plane_name_sense`] relates it), a
-/// nameless one from its judged points in order (`ŵ` along their turn, `sense` relates it); `flip`
-/// negates `ŵ`. So the cap faces the plane's way exactly when `−(that relation) · parity · flip`
-/// is `+1`.
+/// own frame `ŵ` runs with or against that facing
+/// ([`crate::rotated_vertex::frame_normal_sense`]); `flip` negates `ŵ`. So the cap faces the
+/// plane's way exactly when `−(that relation) · parity · flip` is `+1`.
 fn base_cap_orientation(model: &Model, frame: &SketchFrame) -> Result<Orientation, OpError> {
     let h = frame.plane();
-    let nacre_topo::Surface::Plane { sense, motion, .. } = model.surface(h) else {
+    let nacre_topo::Surface::Plane { motion, .. } = model.surface(h) else {
         return Err(OpError::NonPlanarFace);
     };
-    let relation = if model.surface_name.contains_key(&h) {
-        model
-            .plane_name_sense(h)
-            .ok_or(OpError::PlaneWithoutExactForm)?
-            .sign()
-    } else {
-        sense.sign()
-    };
+    let relation = crate::rotated_vertex::frame_normal_sense(model, h)
+        .ok_or(OpError::PlaneWithoutExactForm)?;
     let parity = crate::rotated_vertex::motion_parity(model, *motion)
         .ok_or(OpError::PlaneWithoutExactForm)?;
     let flip = if frame.flip() { -1 } else { 1 };

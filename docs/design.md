@@ -74,7 +74,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **면의 스케치 좌표계 — `face_plane`.** 비공개 `face_frame` 의 f64 사영이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 같은 함수의 사영 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다).
 
-**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 내부에서 만드는 값을 그대로 내주는 이음새다(`face_plane`은 같은 프레임의 f64 사영). **world-분기(노드 생략) 면에서는 «받아쓰고 실현으로 검증»한다** — pad 는 그 면들을 canonical 프레임이 아니라 법선 유도 세계축(`frame_axes(n)`)에 스케치하므로, 반환 후보(canonical, 그다음 pad 축의 `Named` 받아쓰기)의 실현이 `face_plane` 과 **비트 동일**할 때만 반환하고, 아무 철자도 검증을 못 통과하면 `FrameNotRepresentable` 로 이름 붙여 거절한다(그 인구 = motion 이 기록된 world-분기 면. 잔여 = 정확-진술-가능하지만 불변 아닌 상·mirror 사슬·2세대 이동). 계약은 `tests/invariants/sketch_frame_contract.rs` 가 4배치 × 6면으로 잠근다. flip 측정은 `measured_frame`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
+**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 내부에서 만드는 값을 그대로 내주는 이음새다(`face_plane`은 같은 프레임의 f64 사영). **world-분기(노드 생략) 면에서는 «받아쓰고 실현으로 검증»한다** — pad 는 그 면들을 canonical 프레임이 아니라 법선 유도 세계축(`frame_axes(n)`)에 스케치하므로, 반환 후보(canonical, 그다음 pad 축의 `Named` 받아쓰기)의 실현이 `face_plane` 과 **비트 동일**할 때만 반환하고, 아무 철자도 검증을 못 통과하면 `FrameNotRepresentable` 로 이름 붙여 거절한다(그 인구 = motion 이 기록된 world-분기 면. 잔여 = 정확-진술-가능하지만 불변 아닌 상·mirror 사슬·2세대 이동). 계약은 `tests/invariants/sketch_frame_contract.rs` 가 4배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
 
 **면 프레임의 원점은 꼭짓점 평균이 아니라 면의 *면적중심*이다.** 꼭짓점 평균은 오목한 면에서 면적중심이 아니고, 더 나쁘게는 **직선 도중에 꼭짓점이 하나 늘면 움직인다** — 면의 모양은 그대로인데 보스가 다른 자리에 앉는다. 면적중심은 **영역의 성질**이라 이산화에 무관하다. *(월드 원점 정사영(Onshape 방식)은 채택하지 않는다: 안정적이지만 원점에서 먼 면에 `pad`하면 프로파일이 면 밖에 앉아 대개 실패한다. Onshape는 사용자가 스케치를 모서리에 구속으로 붙이지만 스크립트엔 그 단계가 없다.)*
 
@@ -753,8 +753,8 @@ pub enum Edge2d {                             // 조각 «하나» — 순서 �
 pub struct SketchFrame {                      // 필드는 사설, 생성자가 검증한다 — 리터럴이 검사를 돌아가지 못한다
     plane: Handle<Surface>,
     placement: FramePlacement,                // `canonical(plane)` = Canonical(유도) / `named(..)` = Named(값, 검사됨)
-    flip: bool,                               // 사용자 몫이 아니다 — 생성자는 false, 연산이 실현된 ŵ 를
-}                                             //   면의 바깥 법선과 내적해 **측정**으로 정한다
+    flip: bool,                               // 사용자 몫이 아니다 — 생성자는 false, 연산이 쓰임새가
+}                                             //   향할 쪽으로 진실에서 정한다(`frame_toward`)
 // `SketchFrame::world(model, axis)` 는 이 struct 를 채우는 설탕이다 — 타입 변종이 아니다.
 // (XY·YZ 는 Canonical 과 일치, ZX 만 +u = ẑ 가 유도값 −x̂ 과 달라 Named 를 쓴다 — 그 예외가 사는 곳은 이 함수 하나.)
 ```
@@ -1346,7 +1346,7 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 
 `replay` 는 진실 `Model` 만 돌려준다. 테셀레이션은 `nacre-tess` 가 모델에서 따로 유도하는 캐시이고(`TessConfig`), `nacre-ops` 는 제품 경로에서 `nacre-tess` 에 의존하지 않는다 — `Model` 이 tess 를 필드로 담지 않는 것과 같은 층 규칙이다.
 
-**연산은 평면을 «이름 부른다».** `Extrude` 가 `SketchFrame`(평면 핸들 + 배치 + 측정된 `flip`)을 받으므로, 평면을 **값**으로 싣는 변종은 `DatumPlane` 의 `Stated` 하나뿐이다. 그래서 원칙 2 가 연산 어휘 전체에서 성립한다 — 평면은 아레나에 있고 연산은 그것을 가리킨다. 밑캡이 같은 평면의 두 번째 진술이 아니라 **공유된 핸들**이 되는 이유다.
+**연산은 평면을 «이름 부른다».** `Extrude` 가 `SketchFrame`(평면 핸들 + 배치 + 쓰임새가 정한 `flip`)을 받으므로, 평면을 **값**으로 싣는 변종은 `DatumPlane` 의 `Stated` 하나뿐이다. 그래서 원칙 2 가 연산 어휘 전체에서 성립한다 — 평면은 아레나에 있고 연산은 그것을 가리킨다. 밑캡이 같은 평면의 두 번째 진술이 아니라 **공유된 핸들**이 되는 이유다.
 
 | 무엇 | 어디서 |
 |---|---|
@@ -1354,9 +1354,9 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 | 기존 면 위 스케치 | `face_sketch_frame(&m, face)` |
 | 그 밖의 평면 | `Operation::DatumPlane` 로 **먼저 진술**하고 돌려받은 프레임을 쓴다 |
 
-**방향은 프레임의 것이고, `flip` 은 재는 값이다.** `dist > 0` 은 두께이고 어디로 가는지는 프레임의 ŵ 이다. `flip` 은 `measured_frame` **한 곳에서만** 재므로 호출자가 뒤집힌 프레임을 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 그래서 «면에 그려 안쪽으로» 파는 것은 `toward` 를 안쪽으로 재는 **복합 연산**(`PadOnFace`/`PocketOnFace` 가 `extrude_and_boolean` 의 부호 있는 sweep 으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 따로 없다 — 원이 스케치 어휘이므로 면 위 원 스케치의 `PocketOnFace` 가 그것이다.
+**방향은 프레임의 것이고, `flip` 은 쓰임새가 정하는 값이다.** `dist > 0` 은 두께이고 어디로 가는지는 프레임의 ŵ 이다. `flip` 은 `frame_toward` **한 곳에서만** 정하므로 호출자가 뒤집힌 프레임을 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 그래서 «면에 그려 안쪽으로» 파는 것은 `toward` 를 안쪽으로 두는 **복합 연산**(`PadOnFace`/`PocketOnFace` 가 `extrude_and_boolean` 의 부호 있는 sweep 으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 따로 없다 — 원이 스케치 어휘이므로 면 위 원 스케치의 `PocketOnFace` 가 그것이다.
 
-- **방향은 `flip` 이 들고, 프레임을 만든 쪽이 잰다.** 평면의 정준 이름에는 방향이 없고 평면은 interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**), 프레임이 방향을 담을 수 있는 자리는 `flip` 뿐이다. datum 은 **호출자가 진술한 법선**에 대해, 면은 **바깥 법선**에 대해 잰다. «`flip` 은 진술이 아니라 측정»이라는 한 규칙이고, 측정자가 둘일 뿐이다.
+- **방향은 `flip` 이 들고, 프레임을 만든 쪽이 진실에서 정한다.** 평면의 정준 이름에는 방향이 없고 평면은 interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**), 프레임이 방향을 담을 수 있는 자리는 `flip` 뿐이다. 답은 두 진실의 곱이다: 평면 자신의 좌표계에서 ŵ 가 평면의 향 쪽인가(`frame_normal_sense` — 이름 있는 평면은 이름 법선, 없는 평면은 판정 점의 순서로 프레임을 지으므로 `plane_name_sense`·`sense` 가 답한다) × 모션의 손방향(`motion_parity`) × 쓰임새가 향할 쪽 — datum 은 **호출자가 진술한 법선**(넣은 진술은 그 반대를 향하고, 문이 `flipped` 로 반대로 앉은 핸들을 알린다), 면은 **바깥**(`orientation`). 실현한 ŵ 와 f64 방향의 내적은 같은 물음을 두 반올림에 묻는다(「가지 말 것」 «향 관계를 캐시 법선으로 읽기»).
 - **`world_zx` 는 유도로 만들 수 없다**: arbitrary-axis 규약이 ZX 에 `+u = −x̂` 를 주는데 규약은 `+u = +ẑ` 다(`ŵ` 는 둘 다 `+ŷ`). `SketchFrame::world` 가 그 예외를 **한 곳에** 가둔다 — `canonical(씨앗 ZX)` 로 바꾸면 그 스케치들이 90° 돈다(음성 대조로 잠금).
 - **`dist` 는 두께다**(`NonPositiveDistance`). 방향은 프레임이 말한다 — `DatumDef::Offset` 의 `dist` 가 **부호 있는 변위**인 것과 대비되며, 그쪽은 부호만이 «어느 쪽»을 말하기 때문이다. 반대편을 향하는 스케치는 **그 방향으로 평면을 진술**한다.
 - **프레임의 기저는 유리수로 묻는다, 실현해서 되묻지 않는다.** `RatFrame::of_plane_frame` 이 `û = u_raw·inv_sqrt_exact(uu)` 로 답한다 — 실현한 축을 `Rat::from_decimal` 로 다시 들어올리면 정규화가 필요한 축(`(0.6,0.8,0)` → 원시 `(3,4,0)`, `uu=25`)이 `0.6000000000000001` 로 돌아와 직교정규가 깨지고, 그 평면이 **조용히 프레임-노드 도로로 옮겨간다**. `plane_frame_named` 가 `v̂` 에 대해 적어 둔 규칙과 같은 것이다.
@@ -1366,7 +1366,7 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 **정점을 이름 부르는 datum.** `ThroughVertices([Handle<Vertex>; 3])` 는 값 어휘로는 말할 수 없는 하나다 — 발견 정점의 좌표는 반올림이라, 그 좌표로 평면을 지으면 **다른 평면**이 나온다(기울어진 인구 220/220, 축정렬 음성 대조 552/0; `tests/instruments/point_width.rs`). 진실 쪽은 `PlanePoints::Through` 로 **핸들을 든다**.
 
 - **어휘가 여기서만 자란다** — «새 공개 생성자 없음»은 *값으로 말할 수 있는 것*에 걸리는 원칙이고, 핸들은 순수 값 타입인 `SketchPlane` 에 들어갈 수 없다.
-- **정렬은 키에만, 방향은 호출자의 정점 순서.** `dist` 가 양수 전용이라 순서가 방향의 유일한 입구이고, 두 개를 바꾸면 «같은 핸들 + 반대 프레임»이다(`measured_frame` 이 재는 것은 `Stated` 와 같은 기계).
+- **정렬은 키에만, 방향은 호출자의 정점 순서.** `dist` 가 양수 전용이라 순서가 방향의 유일한 입구이고, 두 개를 바꾸면 «같은 핸들 + 반대 프레임»이다(`frame_toward` 가 `Stated` 와 같은 기계로 그 쪽을 향하게 한다).
 - **이동은 핸들을 그대로 두고 노드를 기록한다.** `transform_solid` 는 정점을 **복제**하므로 가리키던 datum 은 새 복사본을 안 따라간다; 정점이 base 를 정하고 모션이 옮기며 **더해질 뿐 곱해지지 않는다**. 대가로 그런 datum 위의 솔리드는 **정확한 강체 이동에도 노드를 얻는다**.
 - **거절은 원인별**(`VerticesInMixedFrames`·`CollinearVertices`·`DuplicateVertex`·`VertexNotThreePlane`)이고, 전부 **무엇이든 push 하기 전에** 일어난다. «담체 셋이 안 만난다»는 거절이 아니라 **단언**이다 — 그 정점이 존재한다는 것이 곧 만났다는 뜻이므로 불변식 위반이지 사용자 오류가 아니다.
 - 점과 모션은 `Offset` 처럼 **한 결정에서 함께** 나와야 한다 — «점이 어느 프레임에 적혔나»가 곧 모션이기 때문이다.

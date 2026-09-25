@@ -457,8 +457,10 @@ pub enum OpOutput {
     /// holds. Returning it keeps the caller's sketch origin and `+u` exact, which is what
     /// `extrude` does internally today.
     ///
-    /// `flip` is `false`: which way `ŵ` must face is measured by the operation that consumes the
-    /// frame, never stated here ([`SketchFrame`]'s constructor contract).
+    /// `flip` makes `ŵ` face the normal the statement names — a stated plane's normal, the
+    /// right-hand turn of the caller's vertex order — so a frame is returned facing the way its
+    /// author said even when the plane interned onto a handle facing the other way. An offset
+    /// returns its plane's canonical frame (`flip` false).
     DatumPlane {
         plane: Handle<Surface>,
         frame: SketchFrame,
@@ -482,7 +484,8 @@ pub enum OpOutput {
 ///
 /// ★ **`flip` is not the caller's to state** — the canonical coefficients carry no direction, so
 /// which way `ŵ` must face is a fact about the *use* (a sweep's sense, a face's outward normal),
-/// measured by the consuming operation against the realized basis. Constructors set `false`.
+/// decided by the consuming operation from the truth: which way that use faces against the
+/// plane's own facing. Constructors set `false`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SketchFrame {
     plane: Handle<Surface>,
@@ -519,7 +522,7 @@ impl SketchFrame {
     /// world planes differently and this turns silently; the tests are what stop that.
     ///
     /// To sketch facing the *other* way, state a plane facing that way
-    /// ([`Operation::DatumPlane`] measures `flip` from the normal you state) — the same move as
+    /// ([`Operation::DatumPlane`] turns `flip` to face the normal you state) — the same move as
     /// writing `SketchPlane::from_origin_normal(o, -ẑ)` today.
     pub fn world(model: &Model, axis: nacre_exact::Axis) -> SketchFrame {
         let plane = model.world_plane(axis);
@@ -620,7 +623,7 @@ impl SketchFrame {
     }
 
     /// Whether the plane's canonical coefficients are negated to face the way the sketch does —
-    /// measured by the consuming operation, `false` as constructed.
+    /// decided by the consuming operation, `false` as constructed.
     pub fn flip(&self) -> bool {
         self.flip
     }

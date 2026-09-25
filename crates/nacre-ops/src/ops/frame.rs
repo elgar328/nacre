@@ -1,27 +1,32 @@
 use super::*;
-/// A [`SketchFrame`] with its `flip` measured — the placement's realized `ŵ` dotted against the
-/// direction the sketch must face (a sweep's sense, a face's outward normal). This is the one
-/// place `flip` is decided: every road calls it, so no two can measure differently. `None`
-/// when the chain cannot realize a basis (a plane with no name).
+/// A [`SketchFrame`] whose `ŵ` faces `toward` — the plane's own facing when `Forward`, against it
+/// when `Reversed` (a face's orientation, or which way a datum's statement faces against the
+/// handle the door returned). This is the one place `flip` is decided: every road calls it, so no
+/// two can decide differently. `None` when the plane has no frame (no name and no judged frame).
 ///
-/// ★★★ **Only the frame comes back — deliberately.** The basis realized here to measure `flip`
-/// is the *unflipped* one. Handed out to save a realization, it invites a caller to combine the
-/// measured `flip` with it **by hand**, as a half-turn about `v̂` — while the realization
-/// (`frame_chain`) half-turns about `û` — which reports every flip=true face a frame
-/// point-symmetric to the one the pad actually builds in (measured: a footprint centred on the
-/// face through such coordinates lands outside it, `PadMissesFace` on 2 of 6 faces of a turned
-/// block). A caller that needs the axes asks [`crate::rotated_vertex::frame_world_basis`] *with
-/// the measured flip*, so the geometry of `flip` is written in exactly one place; the second
-/// 4-point replay is one plain f64 chain per user operation.
-pub(super) fn measured_frame(
+/// `flip` is stated from the truth: `ŵ` runs with the plane's facing in its own frame by
+/// [`crate::rotated_vertex::frame_normal_sense`], and the plane's motion carries `ŵ` as `L(ŵ)`
+/// and the facing as `parity · L(·)`. So `ŵ` faces `toward` in the world exactly when
+/// `sense · parity · toward` is `+1`. A realized `ŵ` dotted against an `f64` direction would ask
+/// the same question of two roundings.
+///
+/// ★★★ **Only the frame comes back — deliberately.** A caller that needs the axes asks
+/// [`crate::rotated_vertex::frame_world_basis`] *with this flip*, so the geometry of `flip` is
+/// written in exactly one place. Combining an unflipped basis with `flip` **by hand**, as a
+/// half-turn about `v̂` — while the realization (`frame_chain`) half-turns about `û` — reports
+/// every flip=true face a frame point-symmetric to the one the pad builds in (measured: a
+/// footprint centred on the face through such coordinates lands outside it, `PadMissesFace` on
+/// 2 of 6 faces of a turned block).
+pub(super) fn frame_toward(
     model: &Model,
     plane: Handle<Surface>,
     placement: nacre_topo::FramePlacement,
-    toward: Vector3,
+    toward: Orientation,
 ) -> Option<SketchFrame> {
-    let basis = crate::rotated_vertex::frame_world_basis(model, plane, &placement, false)?;
-    let n = toward.as_array();
-    let flip = (0..3).map(|k| basis.3[k] * n[k]).sum::<f64>() < 0.0;
+    crate::rotated_vertex::frame_chain(model, plane, &placement, false)?;
+    let sense = crate::rotated_vertex::frame_normal_sense(model, plane)?;
+    let parity = crate::rotated_vertex::motion_parity(model, model.plane_motion(plane))?;
+    let flip = sense * parity * toward.sign() < 0;
     Some(SketchFrame {
         plane,
         placement,
@@ -142,7 +147,7 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 }
 
 /// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and
-/// measured flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
+/// flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
 /// [`face_plane`] projects that frame to realized f64 axes for a caller to *look at*, this is
 /// the exact vocabulary itself: the same value `face_frame` builds internally, not
 /// thrown away at the boundary.
@@ -159,7 +164,7 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 ///
 /// A face has no caller to name a placement, so the canonical frame is tried first (the stronger
 /// normal form); where it realizes elsewhere, the pad's axes are transcribed as a `Named`
-/// placement (origin + `ref_dir`) with `flip` measured as everywhere else.
+/// placement (origin + `ref_dir`) with `flip` turned toward the face's outward as everywhere else.
 ///
 /// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
 /// the plane carries no name to derive a frame from (a test-only unregistered surface); and
@@ -183,12 +188,13 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
             crate::rotated_vertex::frame_world_basis(model, f.surface_h, sf.placement(), sf.flip)?;
         ([o, u, v].map(|c| c.map(f64::to_bits)) == pad_frame).then_some(sf)
     };
+    let outward = model.face(face).orientation;
     let canonical = || {
-        measured_frame(
+        frame_toward(
             model,
             f.surface_h,
             nacre_topo::FramePlacement::Canonical,
-            f.n,
+            outward,
         )
     };
     // The transcription: the pad's own origin and +u, said as a `Named` placement. `named`'s
@@ -196,7 +202,7 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
     // the candidate — the refusal below is the answer, never a silent wrong frame.
     let transcribed = || {
         let sf = SketchFrame::named(model, f.surface_h, f.origin, f.x).ok()?;
-        measured_frame(model, f.surface_h, sf.placement, f.n)
+        frame_toward(model, f.surface_h, sf.placement, outward)
     };
     if !model.surface_name.contains_key(&f.surface_h) {
         // No name at all: nothing can realize. The distinct, older proposition.
@@ -274,18 +280,26 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
     // not the same intent: take the frame only when the world axes do not lift to exact
     // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
     //
-    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place.
+    // ★ **`flip` turns `ŵ` toward the face's outward** — by `frame_toward`, the one place it is
+    // decided, from the truth.
     // ★★★ **The axes are then realized *with* that flip, by the same function the operation's
-    // prism replays through** — not combined by hand (see `measured_frame`: the realization
+    // prism replays through** — not combined by hand (see `frame_toward`: the realization
     // half-turns about `û`, since its `ref_dir` is derived from the unflipped coefficients and
-    // survives the sign). For flip=false the call is bit-identical to the measuring one.
+    // survives the sign).
     // ★★ A face has no caller to name a frame, so its placement is `Canonical` — derived
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
     // succeeds through the arbitrary-precision road where a narrow derivation would decline.
     let world = realized_plane(origin, x, y);
     let sketch = (world.exact().is_none())
-        .then(|| measured_frame(model, surface_h, nacre_topo::FramePlacement::Canonical, n))
+        .then(|| {
+            frame_toward(
+                model,
+                surface_h,
+                nacre_topo::FramePlacement::Canonical,
+                orientation,
+            )
+        })
         .flatten()
         .and_then(|sf| {
             let (o, u, v, _) = crate::rotated_vertex::frame_world_basis(

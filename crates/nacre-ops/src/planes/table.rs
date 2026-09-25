@@ -312,19 +312,13 @@ pub(crate) fn collect_planes(
                                 // its tail, so no `replay_all` here — appending it twice would
                                 // move the witness off the plane.
                                 let w = [probe(0, 0)?, probe(1, 0)?, probe(0, 1)?];
-                                // The probes turn about the frame's `ŵ`. A named plane frames from
-                                // its name (`ŵ` is the name's normal, carried by the plane's own
-                                // motion), so they turn toward the outward exactly when the name
-                                // does; a nameless one frames from its judged points in their
-                                // order (`FrameThrough`), so they turn as the truth's points do.
-                                if model.surface_name.contains_key(&face.surface) {
-                                    let s = model
-                                        .plane_name_sense(face.surface)
+                                // The probes turn about the frame's `ŵ`, and they ride the plane's
+                                // own motion as its facing does — so they turn toward the outward
+                                // exactly when `ŵ` runs with the facing in the plane's own frame.
+                                let s =
+                                    crate::rotated_vertex::frame_normal_sense(model, face.surface)
                                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                    (w, true, s.sign() * orient_sign)
-                                } else {
-                                    (w, true, facing)
-                                }
+                                (w, true, s * orient_sign)
                             }
                         }
                     };

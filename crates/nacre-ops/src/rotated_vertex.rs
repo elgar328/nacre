@@ -351,18 +351,40 @@ pub(crate) fn frame_chain(
     Some(chain)
 }
 
+/// **Which way a plane's frame `ŵ` runs against the plane's facing, in the plane's own frame** —
+/// `+1` when along, before any `flip` and before the plane's own motion.
+///
+/// It follows from how [`frame_chain`] builds the frame: a named plane frames from its name (the
+/// narrow road and [`nacre_judge::WideFrame`] alike put `ŵ` along the name's normal), which
+/// [`Model::plane_name_sense`] relates to the facing; a nameless one frames from its judged points in
+/// their order ([`nacre_judge::FrameThrough`]), which `sense` relates to the facing. The world
+/// direction multiplies in the motion's handedness ([`motion_parity`]) — a reflection reverses the
+/// facing it carries but not `L(ŵ)`; a witness replayed through the same chain turns with the
+/// facing, so a caller comparing the two needs no parity. `None` for a cylinder, or a named plane
+/// whose statement cannot be placed in one frame.
+pub(crate) fn frame_normal_sense(model: &Model, plane: Handle<Surface>) -> Option<i8> {
+    let Surface::Plane { sense, .. } = model.surface(plane) else {
+        return None;
+    };
+    if model.surface_name.contains_key(&plane) {
+        Some(model.plane_name_sense(plane)?.sign())
+    } else {
+        Some(sense.sign())
+    }
+}
+
 /// A frame's origin and its three axes, realized in the world: `(origin, û, v̂, ŵ)`.
 pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 
 /// **The world image of a frame's origin and axes** — what a caller sees as the sketch plane, and
 /// what the operation places its profile in. `(origin, û, v̂, ŵ)`.
 ///
-/// ★★★★ **Realized, because the sign and the direction cannot be reasoned out from the
-/// coefficients.** They are canonical (no direction) *and* written in the plane's pre-motion
-/// frame, so a dot product against a world normal compares two different frames — the mistake
-/// that produced `PadMissesFace` on a twice-turned fixture, and one that reads as perfectly
-/// plausible right up until the plane has a motion. Replaying the axes and looking at where they
-/// land asks the question that is actually being asked.
+/// ★★★★ **Replayed, not read off the coefficients.** They are canonical (no direction) *and*
+/// written in the plane's pre-motion frame, so a dot product of them against a world normal
+/// compares two different frames — the mistake that produced `PadMissesFace` on a twice-turned
+/// fixture, and one that reads as perfectly plausible right up until the plane has a motion. Which
+/// way `ŵ` faces is a truth question and is answered from the truth ([`frame_normal_sense`],
+/// with the chain's handedness); where the axes *land* is what this replays.
 ///
 /// The axes are differences of replayed points, so the origin and every translation cancel and
 /// only the linear part is left.

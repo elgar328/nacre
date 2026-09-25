@@ -218,6 +218,18 @@ pub(super) fn datum_plane(
         Ok(ThroughStatement::Named(meets, frames[0].flatten()))
     }
 
+    /// Which way the caller's stated normal faces against the handle the door returned. Every arm
+    /// pushes its statement facing `−stated` (the base cap's outward), so it is that handle's
+    /// facing reversed — unless the door handed back a handle already facing the other way
+    /// (`flipped`: two statements of one plane compared, the door's own answer).
+    fn stated_side(flipped: bool) -> Orientation {
+        if flipped {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        }
+    }
+
     match def {
         DatumDef::Stated(sp) => {
             let d = sp.def.as_ref().ok_or(OpError::PlaneWithoutExactForm)?;
@@ -225,8 +237,7 @@ pub(super) fn datum_plane(
                 .ok_or(OpError::DegenerateGeometry)?;
             // Every `PlaneDef` orders its points so `u × v` is the stated normal; the cache faces
             // the other way (the base cap's outward).
-            let (plane, _flipped) =
-                model.push_plane(cache, d.points(), None, Orientation::Reversed);
+            let (plane, flipped) = model.push_plane(cache, d.points(), None, Orientation::Reversed);
             // ★ `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
             // `+u = −x̂` while the script convention (and `SketchPlane::world_zx`) says `+ẑ`, so a
             // placement inferred from the plane would silently turn some sketches. The values are
@@ -237,19 +248,16 @@ pub(super) fn datum_plane(
                 origin: d.origin(),
                 ref_dir: d.ref_dir(),
             };
-            // ★★★ **`flip` is measured here, against the normal the caller stated** — and that is
-            // the only place the caller's *direction* can survive.
+            // ★★★ **`flip` makes the frame face the normal the caller stated** — the only place
+            // the caller's *direction* can survive.
             //
             // A plane's canonical name has no direction, and planes intern: state `z = 0` facing
-            // `+ẑ` and state it facing `−ẑ`, and both come back as **one handle whose realized `ŵ`
-            // is `+ẑ`** (measured). So a frame built with `flip: false` would silently answer "up"
-            // to a caller who said "down". Measuring against `sp.normal()` — the direction their
-            // own point order fixes — makes the returned frame mean what they said, which is what
-            // lets an operation take a frame rather than a plane and sweep the same way.
-            //
-            // This is still the frame rule, not an exception to it: `flip` is *measured*, never
-            // stated, and `measured_frame` is the one place that measures.
-            let frame = measured_frame(model, plane, placement, sp.normal())
+            // `+ẑ` and state it facing `−ẑ`, and both come back as **one handle whose `ŵ` is `+ẑ`**
+            // (measured). So a frame built with `flip: false` would silently answer "up" to a
+            // caller who said "down". Facing the direction their own point order fixes makes the
+            // returned frame mean what they said, which is what lets an operation take a frame
+            // rather than a plane and sweep the same way.
+            let frame = frame_toward(model, plane, placement, stated_side(flipped))
                 .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
@@ -266,12 +274,11 @@ pub(super) fn datum_plane(
 
             // ★ **The caller's order is the stated normal**, by the right-hand rule — the one
             // place their choice of side can survive, since the stored triple is sorted and a
-            // canonical name carries no direction. `measured_frame` then measures `flip` against
-            // it, exactly as the `Stated` arm does against `sp.normal()`.
+            // canonical name carries no direction. The pushed statement faces against it
+            // (`through_sense` below, exactly), so the frame faces it as the `Stated` arm's does.
             //
-            // The vertices' world caches are the right input here even though they are rounded:
-            // this asks only for a *direction*, and `measured_frame` compares it against the
-            // plane's own world realization.
+            // `stated` itself is the vertices' world caches crossed — rounded, and read only to
+            // point the plane's cache, which is a cache's use.
             let world = vs.map(|v| model.vertex_point(v));
             let stated = (world[1] - world[0])
                 .cross(world[2] - world[0])
@@ -309,11 +316,14 @@ pub(super) fn datum_plane(
                     Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-                let (plane, _flipped) =
-                    model.push_plane_through(cache, sorted, None, through_sense);
-                let frame =
-                    measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
-                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                let (plane, flipped) = model.push_plane_through(cache, sorted, None, through_sense);
+                let frame = frame_toward(
+                    model,
+                    plane,
+                    nacre_topo::FramePlacement::Canonical,
+                    stated_side(flipped),
+                )
+                .ok_or(OpError::PlaneWithoutExactForm)?;
                 return Ok((plane, frame));
             };
 
@@ -349,9 +359,14 @@ pub(super) fn datum_plane(
             };
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-            let (plane, _flipped) = model.push_plane_through(cache, sorted, motion, through_sense);
-            let frame = measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
-                .ok_or(OpError::PlaneWithoutExactForm)?;
+            let (plane, flipped) = model.push_plane_through(cache, sorted, motion, through_sense);
+            let frame = frame_toward(
+                model,
+                plane,
+                nacre_topo::FramePlacement::Canonical,
+                stated_side(flipped),
+            )
+            .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
         DatumDef::Offset { frame, dist } => {
@@ -367,21 +382,15 @@ pub(super) fn datum_plane(
             // ★★ **Normalize to the plane's canonical frame, folding `flip` into the sign.** A
             // parallel plane is fixed by `(plane, signed distance)` — a placement's origin and
             // `+u` do not move it — so building in the caller's frame would give one geometric
-            // plane as many handles as there are frames naming it. The caller's `ŵ` is compared
-            // against the canonical one to recover which side they meant; the dot is between two
-            // realizations of the same unit normal, so it is a full magnitude from zero.
+            // plane as many handles as there are frames naming it. Every frame on one plane has
+            // the same `ŵ` before its `flip` — the narrow, wide and judged roads all take it from
+            // the plane, never from the placement — so the caller's side is their `flip`. (That
+            // their frame realizes at all is the constructors' promise: `SketchFrame::named`
+            // builds the frame before it hands one out.)
             let canonical = nacre_topo::FramePlacement::Canonical;
             let cb = crate::rotated_vertex::frame_world_basis(model, base, &canonical, false)
                 .ok_or(OpError::PlaneWithoutExactForm)?;
-            let sb = crate::rotated_vertex::frame_world_basis(
-                model,
-                base,
-                frame.placement(),
-                frame.flip(),
-            )
-            .ok_or(OpError::PlaneWithoutExactForm)?;
-            let same_side: f64 = (0..3).map(|k| cb.3[k] * sb.3[k]).sum();
-            let d = if same_side < 0.0 {
+            let d = if frame.flip() {
                 nacre_exact::Rat::from_int(0)
                     .checked_sub(d)
                     .ok_or(OpError::DistOutsideDecimalWindow)?
