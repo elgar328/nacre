@@ -176,7 +176,7 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 
 ### `refine_vertex_cache` 를 부르는 제품이 없다
 
-아래 항목이 «내보내기 직전에 부르는 비싼 문»이라 적는 이 문의 호출처는 테스트뿐이다
+비싼 실현 문(`Ceiling` 을 사다리 끝까지 올린다)인 이 문의 호출처는 테스트뿐이다
 (`invariants/realize_vertex.rs`·`invariants/replay.rs`). kit·playground 는 부르지 않고, `nacre-step` 은
 `vertex_point` 를 그대로 읽는다. 갈림은 둘이고 결정이 필요하다: 내보내기(STEP·kit)가 불러야 하는 **빠진
 호출**인가, 소비자 없는 문인가. `Ceiling` 인구는 비용 한계(192)를 넘는 깊은 사슬 테스트에 있다 — census
@@ -190,8 +190,8 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 
 **지금 서 있는 계약.** 연산이 만든 모든 정점에 대해 `vertex_point(v)` 는 `realize_cache` 의 답과 비트
 동일이거나, 그 길이 이름으로 거절한 것이다 — census 가 매 행에서 단언한다. 캐시는 태어날 때 실현되고,
-둘째 쓰기 문은 `refine_vertex_cache` 하나다(`Ceiling` 만 `Bounded` 로 올린다; 내보내기 직전에 부르는 비싼
-문이고, 뒤이은 연산은 캐시를 읽어 진실이 되는 것을 정하므로 그 뒤로는 연산하지 않는다). 남은 것은
+둘째 쓰기 문은 `refine_vertex_cache` 하나다(`Ceiling` 만 `Bounded` 로 올린다; 캐시만 바꾸므로 뒤이은 연산의
+진실은 그대로다 — `refining_mid_log_leaves_every_later_truth_as_it_was`). 남은 것은
 **캐시를 통째로 버리고 정의에서 다시 세워도 비트 동일**이라는 보증이다. 실현값↔담체 캐시 거리는 최대
 1.07e-14 로 validate ε 의 다섯 자릿수 아래다.
 

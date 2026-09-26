@@ -413,13 +413,15 @@ pub struct RefineReport {
 /// no road to one — re-trying those would conflate "this model is expensive" with "the kernel
 /// cannot do this", which is the distinction the two variants exist to keep.
 ///
-/// ⚠★★★★ **Call this when you are done operating on the model.** After it, an operation can take a
-/// different — still valid — road than it would have before, because operations read the cache to
-/// decide things that become truth: a plane's stated normal and its `Wide` anchor
-/// (`push_plane_through`), the `flip` of a `Motion::Frame` (which is part of the interned
-/// `SurfaceKey`, so it is *handle identity*). None of those can be rebuilt afterwards, so this
-/// door does not pretend to: it is an export-time door, and the contract is stated rather than
-/// enforced.
+/// ★★ **It changes caches, not truths — so it may run mid-log.** An operation after it derives its
+/// own caches from the refined ones (a moved vertex's fallback figure, a datum's cache anchor), so
+/// the caches differ from the unrefined road's; what becomes truth does not, because no operation
+/// decides a truth from a vertex cache: `push_plane_through` reads the caches only to point the
+/// plane's cache (its sense is the permutation's parity), a frame's `flip` comes from the truth
+/// (`frame_toward`), and whether a motion is recorded is asked of the statements. Measured on a
+/// log that moves, fuses, states a datum through vertices and pads after the door
+/// (`refining_mid_log_leaves_every_later_truth_as_it_was`, in `tests/invariants/replay.rs`).
+/// It is an export-time door because that is where the precision is wanted.
 ///
 /// Idempotent: a second call finds nothing to raise. Edge curves are re-derived once at the end,
 /// and only if something actually moved.

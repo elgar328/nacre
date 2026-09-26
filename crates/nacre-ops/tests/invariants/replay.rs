@@ -375,10 +375,11 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
 ///   cache *variant*: without that row a raised coordinate would still show up (the coordinate row
 ///   moves), but a vertex that merely changed how it knows its coordinate would not.
 ///
-/// ⚠ What is deliberately **not** locked: operating further on a refined model and expecting the
-/// log to replay identically. It need not — `push_plane_through` and `Motion::Frame`'s `flip` both
-/// read the cache to decide things that become truth, which is why the door's contract says to
-/// call it when the operating is done.
+/// ⚠ What is deliberately **not** locked here: operating further on a refined model and
+/// expecting the whole arena — caches included — to match the unrefined road's. It need not: a
+/// later operation derives caches from the refined ones (a moved vertex's fallback figure, a
+/// datum's cache anchor). The truth does match —
+/// [`refining_mid_log_leaves_every_later_truth_as_it_was`].
 #[test]
 fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
     let (log, scratch) = deep_transform_log();
@@ -404,6 +405,161 @@ fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
         arena_sig(&replayed),
         arena_sig(&scratch),
         "refining one side and not the other must be visible in the signature"
+    );
+}
+
+/// The **truth** of an arena: [`arena_sig`] less the rows a cache holds (`vertex.coord`,
+/// `vertex.cache`, `vertex.bound`, and `volume`, which `mass_props` integrates over caches), plus
+/// what `arena_sig` reaches only by reference — every surface's truth (its points or handles, its
+/// sense, its motion, a cylinder's definition) and every motion node on its chain.
+fn truth_sig(m: &Model) -> Vec<SigItem> {
+    let cache = ["vertex.coord", "vertex.cache", "vertex.bound", "volume"];
+    let mut out: Vec<SigItem> = arena_sig(m)
+        .into_iter()
+        .filter(|i| !cache.contains(&i.what))
+        .collect();
+    let mut i = 0u32;
+    while let Some(h) = m.surface_handle_at(i) {
+        i += 1;
+        let at = h.index() as usize;
+        out.push(SigItem {
+            what: "surface.truth",
+            at,
+            value: format!("{:?}", m.surface(h)),
+        });
+        let mut node = m.plane_motion(h);
+        while let Some(n) = node {
+            out.push(SigItem {
+                what: "surface.chain",
+                at,
+                value: format!("{}: {:?}", n.index(), m.motion(n)),
+            });
+            node = m.motion(n).parent;
+        }
+    }
+    out
+}
+
+/// ★★★ **Refining in the middle of a log leaves every later truth as it was.**
+///
+/// The refine door rewrites vertex caches — `Ceiling` to `Bounded` — and an operation after it
+/// reads those caches; the door may run mid-log only if none of them decides a truth from one.
+/// Asked directly, on a log that exercises the readers: a prism turned 7° and translated 200
+/// times (every vertex past the cost cap, a `Ceiling`), then — after the door on one road only —
+/// a second box moved by a non-dyadic amount onto the prism, a datum through three of its
+/// corners, the fuse of the two (one body, so the prism's corners are judged) and a pad on the
+/// result's top. The two arenas must agree on every truth row; they must differ on the cache
+/// rows, or the door did nothing to measure against.
+#[test]
+fn refining_mid_log_leaves_every_later_truth_as_it_was() {
+    // One construction, with the door on one road only; both roads push the same cells in the
+    // same order, so a handle means the same thing on both.
+    let build = |refine: bool| -> Model {
+        let (_, mut m) = deep_transform_log();
+        if refine {
+            assert!(
+                nacre_ops::refine_vertex_cache(&mut m).refined > 0,
+                "the deep prism must carry Ceilings, or the door changes nothing"
+            );
+        }
+        let prism = m.live_solids()[0];
+        let ex = extrude_op(&m, 1.0, 3.0, 1.0);
+        let OpOutput::Extrude { solid: b, .. } = apply(&mut m, &ex).expect("a second box") else {
+            unreachable!()
+        };
+        let OpOutput::Transform { solid: b } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: b,
+                // Onto the prism, which 200 steps of 1/7 took to x ≈ 28.6: the box spans
+                // x ∈ [28⅓, 30⅓], y ∈ [1, 3], so the fuse has to judge the prism's corners.
+                isometry: Isometry::translation([
+                    Rat::new(82, 3).expect("27⅓"),
+                    Rat::from_int(0),
+                    Rat::from_int(0),
+                ]),
+            },
+        )
+        .expect("the box moves") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // A datum through three corners of the moved box's top (the transform keeps face order,
+        // and an extrude's second face is its far cap).
+        let top = m.shell(m.solid(b).outer).faces[1];
+        let corners: Vec<_> = m.face(top).outer.half_edges[..3]
+            .iter()
+            .map(|&he| m.he_start(he))
+            .collect();
+        apply(
+            &mut m,
+            &Operation::DatumPlane {
+                def: nacre_ops::DatumDef::ThroughVertices([corners[0], corners[1], corners[2]]),
+            },
+        )
+        .expect("a datum through the box's corners");
+        let top_plane = m.face(top).surface;
+        let OpOutput::Boolean { solids } = apply(
+            &mut m,
+            &Operation::Boolean {
+                kind: BoolKind::Fuse,
+                a: prism,
+                b,
+            },
+        )
+        .expect("the deep prism and the box fuse") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert_eq!(solids.len(), 1, "the box overlaps the prism: one body");
+        let face = solids
+            .iter()
+            .flat_map(|&s| m.shell(m.solid(s).outer).faces.clone())
+            .find(|&f| m.face(f).surface == top_plane)
+            .expect("the fuse keeps a face on the box's top plane");
+        apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face,
+                // The top's frame is the world's (u = x, v = y): a rectangle inside the box's top.
+                profile: Profile2d::polygon(vec![
+                    Point2::from_array([29.0, 1.5]),
+                    Point2::from_array([29.5, 1.5]),
+                    Point2::from_array([29.5, 2.0]),
+                    Point2::from_array([29.0, 2.0]),
+                ])
+                .expect("a rectangle"),
+                dist: 0.5,
+            },
+        )
+        .expect("a pad on the fused top");
+        m.rebuild_adjacency();
+        m
+    };
+    let (plain, refined) = (build(false), build(true));
+    let (tp, tr) = (truth_sig(&plain), truth_sig(&refined));
+    for what in ["surface.truth", "surface.chain", "vertex.def"] {
+        assert!(
+            tp.iter().any(|i| i.what == what),
+            "the truth signature carries no {what} rows"
+        );
+    }
+    for (x, y) in tp.iter().zip(&tr) {
+        assert_eq!(
+            x, y,
+            "the door moved a truth: {}[{}] — {:?} vs {:?}",
+            x.what, x.at, x.value, y.value
+        );
+    }
+    assert_eq!(
+        tp.len(),
+        tr.len(),
+        "one road pushed more truth than the other"
+    );
+    assert_ne!(
+        arena_sig(&plain),
+        arena_sig(&refined),
+        "the caches must differ, or this measured a door that changed nothing"
     );
 }
 
