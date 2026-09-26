@@ -322,8 +322,9 @@ fn a_transform_log_replays() {
     assert_same_arena(&replayed, &scratch, "transform");
 }
 
-/// `[Extrude, Transform × 200]` — deep enough that the cache road refuses on cost, so every live
-/// vertex lands on `PointCache::Ceiling` and there is something for the refine door to raise.
+/// `[Extrude, Transform × 201]` — a 7° turn, which gives the prism a history, and then 200
+/// translations, each recorded behind it: deep enough that the cache road refuses on cost, so every
+/// live vertex lands on `PointCache::Ceiling` and there is something for the refine door to raise.
 fn deep_transform_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();
     let ex = extrude_op(&m, 0.0, 2.0, 1.0);
@@ -331,6 +332,18 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
         unreachable!()
     };
     let mut log = vec![ex];
+    let turn = Operation::Transform {
+        solid,
+        isometry: Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(7)).expect("a whole-degree angle"),
+        }),
+    };
+    let OpOutput::Transform { solid } = apply(&mut m, &turn).expect("turn") else {
+        unreachable!()
+    };
+    log.push(turn);
     let mut solid = solid;
     for _ in 0..200 {
         let xf = Operation::Transform {

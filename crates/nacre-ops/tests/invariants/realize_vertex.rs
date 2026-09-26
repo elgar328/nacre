@@ -928,8 +928,8 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).
 ///
-/// - **Cost.** 300 rational translations put the history past `CACHE_REPLAY_COST_CAP`, so the cache
-///   road never walks it — `CacheDecline::CostCap`.
+/// - **Cost.** A 7° turn and 300 rational translations put the history past
+///   `CACHE_REPLAY_COST_CAP`, so the cache road never walks it — `CacheDecline::CostCap`.
 /// - **Bits.** 70 turns of 37° stay well inside that cap, so the road *does* walk, and the ladder's
 ///   first rung cannot name an `f64` for the corners off the axis — `RealizeError::Undecided`.
 ///
@@ -947,6 +947,8 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     m.rebuild_adjacency();
+    // A 7° turn gives the box a history, so every translation after it is recorded.
+    s = moved(&mut m, s, turn(Axis::Z, 7));
     for _ in 0..300 {
         let iso = Isometry::translation([
             Rat::new(1, 7).expect("1/7"),
@@ -1007,12 +1009,15 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     );
 }
 
-/// A box carrying `n` recorded translation nodes — `1/7` is not an `f64`, so the statements cannot
-/// absorb it and every step records one.
+/// A box turned 7° and then carrying `n` recorded translation nodes — the turn is irrational, so
+/// it is recorded, and once a history exists every motion after it is recorded too (a fresh box
+/// would carry a translation into its statements). The chain is `n + 1` deep on the walls; the
+/// z-caps, which a turn about `z` and a slide along `x` both fix, stay world-stated.
 fn translated_chain(n: usize) -> Model {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     m.rebuild_adjacency();
+    s = moved(&mut m, s, turn(Axis::Z, 7));
     for _ in 0..n {
         let iso = Isometry::translation([
             Rat::new(1, 7).expect("1/7"),
@@ -1028,9 +1033,9 @@ fn translated_chain(n: usize) -> Model {
 /// ★★★★ **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
 /// touches nothing else.**
 ///
-/// The fixture is 300 rational translations: past the cache road's cost cap, so every live vertex
-/// is `Ceiling` — and decidable at the first rung once something is willing to walk the chain, so
-/// the door must raise all of them rather than report them as left behind.
+/// The fixture is a 7° turn and 300 rational translations: past the cache road's cost cap, so every
+/// live vertex is `Ceiling` — and decidable at the first rung once something is willing to walk the
+/// chain, so the door must raise all of them rather than report them as left behind.
 #[test]
 fn the_refine_door_raises_every_ceiling_to_the_realization() {
     let mut m = translated_chain(300);
@@ -1131,6 +1136,8 @@ fn translated_chain_cold(n: usize) -> Model {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     m.rebuild_adjacency();
+    m.clear_prefix_hp();
+    s = moved(&mut m, s, turn(Axis::Z, 7));
     for _ in 0..n {
         m.clear_prefix_hp();
         let iso = Isometry::translation([
