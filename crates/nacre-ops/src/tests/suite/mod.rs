@@ -6,10 +6,10 @@ mod fixtures;
 mod stated;
 use crate::draft::LocalFace;
 use fixtures::{
-    boolean_one, cube_and_notch, extrude_op, l_and_corner_box, l_and_dimple, l_and_inner_box,
-    l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes, outer_points, p2,
-    pocket_op, pythagorean_frame, regular_ngon, rotated_l_prism, small_square, square,
-    stacked_cubes, two_boxes, u_and_slab, u_prism,
+    boolean_one, cube_and_notch, extrude_op, has_face_on_plane, l_and_corner_box, l_and_dimple,
+    l_and_inner_box, l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes,
+    outer_points, p2, pocket_op, pythagorean_frame, regular_ngon, rotated_l_prism, small_square,
+    square, stacked_cubes, two_boxes, u_and_slab, u_prism,
 };
 // Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
 pub(crate) use fixtures::{
@@ -39,7 +39,7 @@ use crate::transform::transform;
 use crate::{assembly::*, ops::*, planes::*};
 use nacre_exact::Axis;
 use nacre_geom::Plane;
-use nacre_geom::intersect::{planes_coplanar, three_planes};
+use nacre_geom::intersect::three_planes;
 use nacre_judge::WitnessPoint;
 use nacre_topo::{Loop, Orientation, Surface, Vertex};
 use proptest::prelude::*;
@@ -49,25 +49,6 @@ use std::collections::HashMap;
 /// a `NodeId::Pierce` reaches its definition, so an all-plane fixture has nothing to put in it —
 /// and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
-
-/// Is there an outer-shell face on the plane through `pt` with normal `n`, oriented that way?
-/// The production path names a cap by the *face* that made it (`find_face_coplanar_with`); a
-/// test that wants to say "a face sits on z = 1.5 facing +z" has no such face in hand, and
-/// asserting geometry from coordinates is exactly what a test may do.
-fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) -> bool {
-    let Some(target) = Plane::from_point_normal(pt, n) else {
-        return false;
-    };
-    let shell = m.solid(solid).outer;
-    m.shell(shell).faces.iter().any(|&fh| {
-        let f = m.face(fh);
-        let nacre_geom::Surface::Plane(plane) = m.surface_cache(f.surface) else {
-            return false;
-        };
-        let sign = f64::from(f.orientation.sign());
-        planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n) > 0.0
-    })
-}
 
 fn near(a: Point3, b: [f64; 3]) -> bool {
     (a - Point3::from_array(b)).norm() < 1e-9

@@ -477,7 +477,7 @@ fn indirect_orient3d_soundness() {
     }
 
     eprintln!(
-        "[indirect_orient3d] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}; zero_asserted: {zero_asserted}"
+        "[indirect_orient3d_judge] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}; zero_asserted: {zero_asserted}"
     );
     assert!(
         zero_asserted > 0,
@@ -485,7 +485,7 @@ fn indirect_orient3d_soundness() {
     );
     assert!(
         zero_signed.is_empty(),
-        "indirect_orient3d: a constructed zero was judged with a sign — {} of {zero_asserted}, first {:?}",
+        "indirect_orient3d_judge: a constructed zero was judged with a sign — {} of {zero_asserted}, first {:?}",
         zero_signed.len(),
         &zero_signed[..zero_signed.len().min(5)]
     );

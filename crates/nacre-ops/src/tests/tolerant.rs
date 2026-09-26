@@ -15,8 +15,6 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
 }
 use crate::planes::collect_planes;
 use crate::{Operation, apply};
-// The exact geom predicates, used here as independent oracles for the `t_*` wrappers.
-use nacre_geom::intersect::{plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d};
 
 /// The plane table of one solid, built through the real path so these tests exercise the same
 /// `WorkingPlane` the engine does. A single convex operand has no coplanar pair, so the numbering
@@ -62,8 +60,56 @@ fn rotated(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     }
 }
 
+/// **The plane a witness triangle spans, in the integers the test wrote** — `(n, d)` with
+/// `n·x + d = 0` and `n` the triangle's right-hand normal. The cuboid's corners are integers, so
+/// this is the input's own plane: neither the cache nor the name rows the judge reads.
+fn input_plane(w: [Point3; 3]) -> ([i128; 3], i128) {
+    let int = |p: Point3| {
+        p.as_array().map(|x| {
+            assert_eq!(x.fract(), 0.0, "an integer cuboid's corner");
+            x as i128
+        })
+    };
+    let [a, b, c] = w.map(int);
+    let (u, v) = (
+        [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+        [c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+    );
+    let n = cross_i(u, v);
+    (n, -(n[0] * a[0] + n[1] * a[1] + n[2] * a[2]))
+}
+
+fn cross_i(u: [i128; 3], v: [i128; 3]) -> [i128; 3] {
+    [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]
+}
+
+fn det_i(r: [[i128; 3]; 3]) -> i128 {
+    r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
+}
+
+/// Where three input planes meet, by Cramer: `V = num / den`, `den ≠ 0`.
+fn input_meet(p: [([i128; 3], i128); 3]) -> ([i128; 3], i128) {
+    let rows = p.map(|(n, _)| n);
+    let den = det_i(rows);
+    assert_ne!(den, 0, "three planes meeting in a point");
+    let num = core::array::from_fn(|k| {
+        let mut m = rows;
+        for (i, row) in m.iter_mut().enumerate() {
+            row[k] = -p[i].1;
+        }
+        det_i(m)
+    });
+    (num, den)
+}
+
 /// The signed volume of the normal triple `(n_p, n_q, n_r)` — nonzero iff the three
-/// planes meet in a single point (so `three_plane_orient3d` is well-defined).
+/// planes meet in a single point (so their corner is well-defined).
 fn normals_independent(planes: &[WorkingPlane], p: usize, q: usize, r: usize) -> bool {
     let n = |k: usize| planes[k].plane.normal();
     n(p).dot(n(q).cross(n(r))).abs() > 0.5
@@ -71,7 +117,7 @@ fn normals_independent(planes: &[WorkingPlane], p: usize, q: usize, r: usize) ->
 
 /// Core: `orient3d` is rigid-rotation invariant, so the frame3 path over a rotated
 /// cuboid's exact `WitnessPoint` definitions must agree, on every definite config, with the
-/// geom path over the same cuboid unrotated. Validates the ops-side assembly + routing
+/// unrotated cuboid's answer (which `orient3d_unrotated_agrees_with_the_input` holds to the input). Validates the ops-side assembly + routing
 /// (predicate soundness itself is `frame3`'s `indirect_orient3d_soundness`).
 #[test]
 fn orient3d_is_rotation_invariant() {
@@ -148,40 +194,46 @@ fn plane_def_from_face() {
     }
 }
 
-/// `rotated = false` answers what the geom predicate answers on the plane caches — on an integer
-/// cuboid the name rows the judge reads and the caches are one plane each, so the two routes must
-/// agree (and the name's orientation fold is what makes `frame_sign` carry across).
+/// `rotated = false` answers what the input says — the side of plane `j`'s witness triangle the
+/// corner `∩(p, q, r)` lies on, computed from the integer corners the test wrote. (The name's
+/// orientation fold is what makes `frame_sign` carry across.)
 #[test]
-fn orient3d_unrotated_agrees_with_geom() {
+fn orient3d_unrotated_agrees_with_the_input() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
+    let input = |k: usize| input_plane(planes[k].witness_coords());
     let n = planes.len();
+    let mut checked = 0;
     for p in 0..n {
         for q in (p + 1)..n {
             for rr in (q + 1)..n {
                 if !normals_independent(&planes, p, q, rr) {
                     continue;
                 }
+                let (v, den) = input_meet([input(p), input(q), input(rr)]);
                 for j in 0..n {
                     if j == p || j == q || j == rr {
                         continue;
                     }
-                    let want = three_plane_orient3d(
-                        &planes[p].plane,
-                        &planes[q].plane,
-                        &planes[rr].plane,
-                        planes[j].witness_coords()[0],
-                        planes[j].witness_coords()[1],
-                        planes[j].witness_coords()[2],
-                    );
+                    // `orient3d(V, a, b, c) = (V − c)·((a − c) × (b − c))`, cleared of `den`.
+                    let w = planes[j]
+                        .witness_coords()
+                        .map(|x| x.as_array().map(|c| c as i128));
+                    let e = |i: usize| [w[i][0] - w[2][0], w[i][1] - w[2][1], w[i][2] - w[2][2]];
+                    let rh = cross_i(e(0), e(1));
+                    let off = [0, 1, 2].map(|k| v[k] - den * w[2][k]);
+                    let want = ((off[0] * rh[0] + off[1] * rh[1] + off[2] * rh[2]).signum()
+                        * den.signum()) as i8;
                     assert_eq!(
                         crate::planes::test_judge(&planes).orient3d(p, q, rr, j),
                         want
                     );
+                    checked += 1;
                 }
             }
         }
     }
+    assert!(checked > 0, "the cuboid has corners and planes off them");
 }
 
 /// The independent-normal plane triples of a cuboid (each meets at one corner).
@@ -316,25 +368,21 @@ fn cmp_coord_matches_coord() {
     assert!(resolved > 0, "bridge must resolve some orderings");
 }
 
-/// `rotated = false` answers what `three_plane_cmp_coord` answers on the plane caches (one plane
-/// each on an integer cuboid).
+/// `rotated = false` answers what the input says — which of two corners is further along
+/// `axis`, the corners solved from the integer witness triangles the test wrote.
 #[test]
-fn cmp_coord_unrotated_agrees_with_geom() {
+fn cmp_coord_unrotated_agrees_with_the_input() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
     let triples = corner_triples(&planes);
+    let corner = |t: [usize; 3]| input_meet(t.map(|k| input_plane(planes[k].witness_coords())));
     for i in 0..triples.len() {
         for jx in (i + 1)..triples.len() {
             let (a, b) = (triples[i], triples[jx]);
+            let ((na, da), (nb, db)) = (corner(a), corner(b));
             for axis in 0..3 {
-                let tri = |t: [usize; 3]| {
-                    [
-                        &planes[t[0]].plane,
-                        &planes[t[1]].plane,
-                        &planes[t[2]].plane,
-                    ]
-                };
-                let want = three_plane_cmp_coord(tri(a), tri(b), axis);
+                let want =
+                    ((na[axis] * db - nb[axis] * da).signum() * da.signum() * db.signum()) as i8;
                 assert_eq!(
                     crate::planes::test_judge(&planes).cmp_coord(a, b, axis),
                     want
@@ -395,8 +443,8 @@ fn mixed_rotation_handled() {
 }
 
 /// `plane_pair_dir_sign` is a determinant of normals → rigid-rotation invariant: the
-/// frame3 path (`orient_sign` · `D`) over a rotated cuboid agrees with the geom path
-/// over the same cuboid unrotated, on every definite ordered triple.
+/// frame3 path (`orient_sign` · `D`) over a rotated cuboid agrees with the unrotated cuboid's
+/// answer (`t_dir_sign_unrotated_agrees_with_the_input`), on every definite ordered triple.
 #[test]
 fn t_dir_sign_rotation_invariant() {
     let (mut m, s) = cuboid();
@@ -424,12 +472,15 @@ fn t_dir_sign_rotation_invariant() {
     assert!(checked > 0, "no definite triple in the corpus");
 }
 
-/// `rotated = false` answers what `plane_pair_dir_sign` answers on the plane caches — the lock on
-/// the name rows' stored-orientation fold, which a direction reads.
+/// `rotated = false` answers what the input says — `det[n_p; n_a; n_b]` of the witness
+/// triangles' normals from the integer corners the test wrote. The lock on the name rows'
+/// stored-orientation fold, which a direction reads: every face of an `add_cuboid` states its plane
+/// through its outward-wound corners, so the stored normal is the triangle's.
 #[test]
-fn t_dir_sign_unrotated_agrees_with_geom() {
+fn t_dir_sign_unrotated_agrees_with_the_input() {
     let (m, s) = cuboid();
     let planes = plane_table(&m, s);
+    let normal = |k: usize| input_plane(planes[k].witness_coords()).0;
     let n = planes.len();
     for p in 0..n {
         for a in 0..n {
@@ -437,8 +488,7 @@ fn t_dir_sign_unrotated_agrees_with_geom() {
                 if p == a || p == b || a == b {
                     continue;
                 }
-                let want =
-                    plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
+                let want = det_i([normal(p), normal(a), normal(b)]).signum() as i8;
                 assert_eq!(
                     crate::planes::test_judge(&planes).plane_pair_dir_sign(p, a, b),
                     want

@@ -7,8 +7,8 @@
 //! adaptive-precision predicates, MIT/Apache), which exposes both the finished
 //! predicates (`orient3d`) **and** the adaptive floating-point arithmetic
 //! primitives (`two_product`, `two_sum`, `expansion_sum`, …). Those primitives
-//! are what the **indirect** predicates are built from ([`indirect_orient3d`],
-//! [`indirect_cmp_coord`], [`indirect_plane_side`]: the sign of a determinant whose points
+//! are what the **indirect** predicates are built from ([`indirect_cmp_coord`],
+//! [`indirect_plane_side`]: the sign of a determinant whose points
 //! are *implicit* — defined as plane intersections, never materialized as coordinates;
 //! Attene 2020).
 //!
@@ -67,7 +67,7 @@ pub fn incircle(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
 /// combine (a mere sign would not compose).
 ///
 /// The value is always exact — the expansions carry every bit. The *sign* is what
-/// gets a fast path: [`indirect_orient3d`] filters in `f64` first and
+/// gets a fast path: each indirect predicate filters in `f64` first and
 /// only falls back to these expansions when the rounding bound cannot separate the
 /// sign from zero. The expansion arithmetic itself is unfiltered; a filtered
 /// coordinate representation would be a separate optimization. The inner list is
@@ -185,103 +185,6 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
     sgn(orient3d(m[0], m[1], m[2], [0.0; 3]))
 }
 
-/// Whether two planes `a, b` (each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`)
-/// are the **same plane** — coplanar, independent of normal direction or coefficient
-/// scale. Exact and coordinate-free.
-///
-/// Two planes coincide iff their coefficient 4-vectors are proportional, i.e. the
-/// `2×4` matrix `[a; b]` has rank ≤ 1, i.e. all six `2×2` minors vanish:
-/// `minor(i, j) = a[i]·b[j] − a[j]·b[i] == 0`. The first three (over the normal
-/// components) force the normals parallel; the three pairing `d` force the offsets
-/// consistent. Both signs of proportionality are accepted — opposite normals still
-/// name the same plane.
-///
-/// This is a topological decision, so it sits on the predicate side of the precision
-/// split. Unlike an absolute-length coincidence tolerance it is
-/// scale-invariant (proportionality is unchanged by scaling either plane), so it
-/// neither false-merges near-but-distinct planes nor false-splits coincident ones.
-/// Each minor's exact sign comes from the same error-free `2×2` machinery as [`det3`].
-/// **Does `p` satisfy the plane `[a, b, c, d]` exactly?** — accumulated in expansion arithmetic,
-/// so a `true` is a fact about the plane and not about `f64`.
-pub fn plane_contains(c: [f64; 4], p: [f64; 3]) -> bool {
-    Expansion::two_product(c[0], p[0])
-        .add(&Expansion::two_product(c[1], p[1]))
-        .add(&Expansion::two_product(c[2], p[2]))
-        .add(&Expansion::two_product(c[3], 1.0))
-        .sign()
-        == 0
-}
-
-/// **Do these three points span exactly the plane `[a, b, c, d]`?**
-///
-/// The licence to describe one plane two ways — by these coefficients here and by these points
-/// there — and expect the same answers of both. Composing answers taken from two descriptions
-/// that are not the same plane produces relations that are not even orders, which is a defect
-/// this kernel has had.
-///
-/// **Both halves are needed.** Satisfying the form is not enough alone: three *collinear* points
-/// satisfy infinitely many planes, so they would license a description that is not this one.
-pub fn plane_spanned_by(c: [f64; 4], tri: [[f64; 3]; 3]) -> bool {
-    tri_spans(tri) && tri.iter().all(|&p| plane_contains(c, p))
-}
-
-/// **Is `[a, b, c]` parallel to what `tri` spans?** — the weaker licence, for a caller that reads
-/// only the direction.
-///
-/// ★ **Parallel, not co-directed.** A stored normal is allowed to oppose its witness triangle's;
-/// that relation is recorded separately (`nacre_ops`' `WorkingPlane::frame_sign`) and the predicates
-/// that care carry the convention. Demanding agreement of *direction* here would refuse planes
-/// that agree perfectly about where they are.
-///
-/// This is the half that survives `d` — and `d` is where two descriptions of one plane actually
-/// part, so a normals-only predicate keeps its exact route where the full test must refuse.
-pub fn plane_normal_spanned_by(c: [f64; 4], tri: [[f64; 3]; 3]) -> bool {
-    let e = |i: usize| {
-        [
-            tri[i][0] - tri[0][0],
-            tri[i][1] - tri[0][1],
-            tri[i][2] - tri[0][2],
-        ]
-    };
-    tri_spans(tri)
-        && [e(1), e(2)].iter().all(|v| {
-            // Orthogonal to both edges exactly <=> parallel to their cross product.
-            Expansion::two_product(c[0], v[0])
-                .add(&Expansion::two_product(c[1], v[1]))
-                .add(&Expansion::two_product(c[2], v[2]))
-                .sign()
-                == 0
-        })
-}
-
-/// Three points span a direction at all — without this, "satisfies the form" licenses nothing.
-fn tri_spans(t: [[f64; 3]; 3]) -> bool {
-    let (u, v) = (
-        [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]],
-        [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]],
-    );
-    [
-        u[1] * v[2] - u[2] * v[1],
-        u[2] * v[0] - u[0] * v[2],
-        u[0] * v[1] - u[1] * v[0],
-    ]
-    .iter()
-    .any(|&x| x != 0.0)
-}
-
-pub fn planes_coplanar(a: [f64; 4], b: [f64; 4]) -> bool {
-    // Exact zero-test of the 2×2 minor `a[i]·b[j] − a[j]·b[i]`.
-    let minor_zero = |i: usize, j: usize| {
-        Expansion::two_product(a[i], b[j])
-            .sub(&Expansion::two_product(a[j], b[i]))
-            .sign()
-            == 0
-    };
-    [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
-        .iter()
-        .all(|&(i, j)| minor_zero(i, j))
-}
-
 /// Three planes, each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`. When they
 /// meet in a single point that point is *implicit* — the indirect predicates
 /// decide signs about it without ever materializing its (generally irrational)
@@ -352,7 +255,7 @@ fn cramer(p: &ThreePlane) -> ([Expansion; 3], Expansion) {
 /// coordinates are exactly equal, which for distinct three-plane triples is real
 /// information and not a tolerance question.
 ///
-/// **Precondition:** both triples meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
+/// **Precondition:** both triples meet in a point (`D ≠ 0`).
 pub fn indirect_cmp_coord(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
     debug_assert!(axis < 3, "indirect_cmp_coord: axis must be 0, 1 or 2");
     if let Some(sign) = indirect_cmp_coord_filter(a, b, axis) {
@@ -457,87 +360,11 @@ fn cramer_val(p: &ThreePlane) -> ([f64; 3], f64, [f64; 3], f64) {
     (num, det3_val(n), num_mag, det3_mag(n))
 }
 
-/// The floating-point filter for [`indirect_orient3d`]: the same polynomial in
-/// `f64`, with a rounding-error bound. `None` when the bound does not separate a
-/// sign from zero — then, and only then, the caller pays for exact expansions.
-///
-/// Attene 2020's implicit predicates are built this way, and without the filter
-/// the exact path runs on *every* call: measured at `1.46 µs`, against `~50 ns`
-/// here.
-///
-/// **The filter never returns a wrong sign.** `|fl(x) − x| ≤ εₓ·x̃` where `x̃` is the
-/// cancellation-free ([`det3_mag`]-style) evaluation, so `|fl(x)| > εₓ·x̃` forces `x`
-/// to share `fl(x)`'s sign. The error grows along the dependency chain — each product
-/// of two relatively-accurate terms adds one more `u` (`|fl(a)fl(b) − AB| ≤
-/// (εₐ + ε_b + u)·ãb̃`):
-///
-/// | value | rounded ops | derived εₓ | constant used | margin |
-/// |---|---|---|---|---|
-/// | `D` | 2 mul, 1 sub, scale, 2 add | `≈ 5u` | `32·U` | 6× |
-/// | `M = row1 · cross` | `D`→`row1`→`M` | `≈ 19u` | `64·U` | 3.4× |
-///
-/// `U = 2⁻⁵³`. **The constants are deliberately above the derived bound: raising one
-/// only sends more calls to the exact path, never changes an answer.** Because the
-/// filter answers only when `|fl(x)| > εₓ·x̃ > 0`, it never claims a zero — every
-/// coplanarity and degeneracy still reaches the exact expansions below.
-#[inline]
-fn indirect_orient3d_filter(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> Option<i8> {
-    let (num, d, num_mag, d_mag) = cramer_val(p);
-
-    let dq = [q[0] - s[0], q[1] - s[1], q[2] - s[2]];
-    let dr = [r[0] - s[0], r[1] - s[1], r[2] - s[2]];
-    let dq_mag = [
-        q[0].abs() + s[0].abs(),
-        q[1].abs() + s[1].abs(),
-        q[2].abs() + s[2].abs(),
-    ];
-    let dr_mag = [
-        r[0].abs() + s[0].abs(),
-        r[1].abs() + s[1].abs(),
-        r[2].abs() + s[2].abs(),
-    ];
-
-    let cross = [
-        dq[1] * dr[2] - dq[2] * dr[1],
-        dq[2] * dr[0] - dq[0] * dr[2],
-        dq[0] * dr[1] - dq[1] * dr[0],
-    ];
-    let cross_mag = [
-        dq_mag[1] * dr_mag[2] + dq_mag[2] * dr_mag[1],
-        dq_mag[2] * dr_mag[0] + dq_mag[0] * dr_mag[2],
-        dq_mag[0] * dr_mag[1] + dq_mag[1] * dr_mag[0],
-    ];
-
-    let row1 = [num[0] - d * s[0], num[1] - d * s[1], num[2] - d * s[2]];
-    let row1_mag = [
-        num_mag[0] + d_mag * s[0].abs(),
-        num_mag[1] + d_mag * s[1].abs(),
-        num_mag[2] + d_mag * s[2].abs(),
-    ];
-
-    let m = row1[0] * cross[0] + row1[1] * cross[1] + row1[2] * cross[2];
-    let m_mag =
-        row1_mag[0] * cross_mag[0] + row1_mag[1] * cross_mag[1] + row1_mag[2] * cross_mag[2];
-
-    // An overflow to infinity makes the bound meaningless; hand it to the expansions.
-    if !m.is_finite() || !m_mag.is_finite() || !d_mag.is_finite() {
-        return None;
-    }
-    (d.abs() > 32.0 * U * d_mag && m.abs() > 64.0 * U * m_mag).then(|| sgn(d) * sgn(m))
-}
-
-pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
-    if let Some(sign) = indirect_orient3d_filter(p, q, r, s) {
-        return sign;
-    }
-    indirect_orient3d_exact(p, q, r, s)
-}
-
 /// **Which side of the plane `c` the implicit point `p` lies on** — `+1` on the side its normal
 /// `(c₀, c₁, c₂)` points to, `-1` on the other, `0` exactly on it.
 ///
-/// The same question [`indirect_orient3d`] answers, asked with the fourth plane's **coefficients**
-/// instead of three of its points. That is not a convenience: a plane described twice — by
+/// Asked with the fourth plane's **coefficients**, not three of its points. That is not a
+/// convenience: a plane described twice — by
 /// coefficients and by a triangle — is described by two planes whenever `d` was a rounded product,
 /// and handing one predicate both descriptions is how a boolean comes to disagree with itself. With
 /// no triangle there is nothing left to disagree.
@@ -553,7 +380,7 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
 /// outward direction has to apply that relation itself (`nacre_ops`' `frame_sign`); this states
 /// where the point is relative to the coefficients it was given, and nothing else.
 ///
-/// **Precondition:** the three planes meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
+/// **Precondition:** the three planes meet in a point (`D ≠ 0`).
 pub fn indirect_plane_side(p: &ThreePlane, c: [f64; 4]) -> i8 {
     if let Some(sign) = indirect_plane_side_filter(p, c) {
         return sign;
@@ -599,47 +426,6 @@ fn indirect_plane_side_filter(p: &ThreePlane, c: [f64; 4]) -> Option<i8> {
         return None;
     }
     (d.abs() > 32.0 * U * d_mag && side.abs() > 64.0 * U * side_mag).then(|| sgn(d) * sgn(side))
-}
-
-/// [`indirect_orient3d`] with no filter: exact expansions, every time. The fallback,
-/// and the oracle its filter is tested against.
-fn indirect_orient3d_exact(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
-    let ([dx, dy, dz], d) = cramer(p);
-
-    // cross = (q − s) × (r − s), each component an exact expansion.
-    let dq = [
-        Expansion::two_diff(q[0], s[0]),
-        Expansion::two_diff(q[1], s[1]),
-        Expansion::two_diff(q[2], s[2]),
-    ];
-    let dr = [
-        Expansion::two_diff(r[0], s[0]),
-        Expansion::two_diff(r[1], s[1]),
-        Expansion::two_diff(r[2], s[2]),
-    ];
-    let cross = [
-        dq[1].mul(&dr[2]).sub(&dq[2].mul(&dr[1])),
-        dq[2].mul(&dr[0]).sub(&dq[0].mul(&dr[2])),
-        dq[0].mul(&dr[1]).sub(&dq[1].mul(&dr[0])),
-    ];
-
-    // Row1 = (Dx − D·sx, Dy − D·sy, Dz − D·sz); the D·sᵢ terms are cheap scales.
-    let row1 = [
-        dx.sub(&d.scale(s[0])),
-        dy.sub(&d.scale(s[1])),
-        dz.sub(&d.scale(s[2])),
-    ];
-    // M = Row1 · cross — three exact expansion×expansion products.
-    let m = row1[0]
-        .mul(&cross[0])
-        .add(&row1[1].mul(&cross[1]))
-        .add(&row1[2].mul(&cross[2]));
-
-    debug_assert!(
-        d.sign() != 0,
-        "indirect_orient3d: degenerate three-plane input (D = 0)"
-    );
-    d.sign() * m.sign()
 }
 
 /// The exact sign of `x`: `+1`, `-1`, or `0` (unlike `f64::signum`, which maps

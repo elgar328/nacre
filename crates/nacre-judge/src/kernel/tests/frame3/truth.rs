@@ -19,15 +19,14 @@
 //!
 //! ★★ **Agreement between two precisions cannot tell a zero.** Where the true value is exactly
 //! zero, each precision leaves a rounding residue, and two residues share a sign about half the
-//! time — measured, this oracle and the one it replaced each read a confident sign on roughly half
-//! of the constructed zeros (1,108 of 2,259 for `indirect_orient3d`), and on the other half they
-//! disagreed with each other. So a zero is never asked of an oracle: the corpora **construct** it
+//! time — measured, an agreement oracle reads a confident sign on roughly half of the constructed
+//! zeros (1,108 of 2,259 for a three-plane side test), and on the other half two such oracles
+//! disagree with each other. So a zero is never asked of an oracle: the corpora **construct** it
 //! (a pushed point with `ε = 0`, the meet placed on the query point, a normal in the span of the
 //! other two, a tie in an axis a rotation keeps) and the soundness tests assert the judge answers
 //! `Orient::Zero` there. That is the check that catches a confident sign on a true zero — the
 //! shape of the cancellation bug `indirect_hp`'s doc records. Planted in the judge's
-//! high-precision path, that defect passed the tests this replaced (`indirect_orient3d`,
-//! `indirect_cmp_coord`) and fails these.
+//! high-precision path, that defect passes an agreement oracle and fails these.
 //!
 //! What was *not* shown: that this oracle catches a defect on a **nonzero** answer that an oracle
 //! built from the judge's own functions would miss. The judge jumps straight to the precision its

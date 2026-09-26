@@ -28,8 +28,8 @@ fn extrude_and_boolean(
     refuse_non_quarter_arcs(profile)?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
-    // The face's outward, realized — for the caps' caches and the cap recovery's filter below,
-    // which are a cache's uses; the prism itself is built from the frame.
+    // The face's outward, realized — the direction the prism's caches are built along, a cache's
+    // use; the prism itself is built from the frame.
     let n = frame_basis(model, &frame.frame)
         .map(|b| Vector3::from_array(b.3))
         .ok_or(OpError::PlaneWithoutExactForm)?;
@@ -93,8 +93,7 @@ fn extrude_and_boolean(
     // afterwards. Its plane classes are decided with evidence (an exact `orient3d`, a composed
     // rotation proof, or a coincidence within the limit), and a later comparison of handles or
     // coordinates can see none of that: on a tilted face the cap merges with a face of the other
-    // operand and the survivor carries *that* surface, which `find_face_coplanar_with` can only
-    // guess at — and a missed guess throws away a correct solid.
+    // operand and the survivor carries *that* surface.
     //
     // ★ **And which way it faces there, from the truth.** The cap the caller gets back faces `+n`:
     // the far cap itself on a pad (it was swept along `+n`), and its reverse on a pocket (the tool
@@ -102,14 +101,29 @@ fn extrude_and_boolean(
     // expected orientation on the class's surface is the far cap's, flipped for a `Cut`.
     let (want_surf, far_orientation) = class_of.get(&far_cap).copied().unwrap_or_else(|| {
         let f = model.face(far_cap);
-        (f.surface, Some(f.orientation))
+        (f.surface, Ok(f.orientation))
     });
-    let want_orientation = far_orientation.map(|o| match kind {
-        BoolKind::Cut => o.flipped(),
-        _ => o,
-    });
+    let want_orientation = match far_orientation {
+        Ok(o) => match kind {
+            BoolKind::Cut => o.flipped(),
+            _ => o,
+        },
+        // ★ **The judge could not say which way the cap runs on its class's surface** — the cap is
+        // there, its facing is not decided, so this is neither the pad's `no_cap` nor a found
+        // cap: it is refused by the judgement's own name, the rule every undecided judgement the
+        // result rests on follows (`arrangement`'s `undecided_reject`). The restore is the no-cap
+        // arm's below, for the same reason.
+        Err(outcome) => {
+            model.supersede_live(&solids);
+            model.make_live(frame.solid_h);
+            return Err(OpError::Boolean(crate::reject(match outcome {
+                nacre_judge::Decision::Exhausted { .. } => crate::RejectReason::JudgeExhausted,
+                _ => crate::RejectReason::DegenerateWitness,
+            })));
+        }
+    };
     match solids.iter().find_map(|&s| {
-        find_face_coplanar_with(model, s, far_cap, (want_surf, want_orientation), n).map(|c| (s, c))
+        find_face_coplanar_with(model, s, (want_surf, want_orientation)).map(|c| (s, c))
     }) {
         Some((solid, cap)) => Ok((solid, cap)),
         // Nothing carries the cap — either the prism reached through (a pocket with no floor) or
@@ -174,58 +188,28 @@ pub(crate) fn pocket(
     )
 }
 
-/// The outer-shell face of `solid` that lies on `reference`'s plane with its outward normal on
-/// `want`'s side — how a pad/pocket recovers its own exposed cap (the boss top, the pocket floor)
-/// from the boolean result. `None` if there is none (a through-pocket has no floor).
+/// The outer-shell face of `solid` that lies on the cap's plane class and runs the cap's way — how
+/// a pad/pocket recovers its own exposed cap (the boss top, the pocket floor) from the boolean
+/// result. `None` if there is none (a through-pocket has no floor).
 ///
-/// **`reference` is a real face, not a `(point, normal)` pair, and that is the point.** Naming the
-/// plane by coefficients meant comparing `d = −n·origin` computed at *different* points of the same
-/// plane: exact only when the dot happens to reproduce bit for bit, which for an axis-aligned frame
-/// it does (`n·p` is one coordinate) and for a slanted one it does not. With a face in hand the
-/// question is answered the way the kernel answers identity everywhere else:
+/// **Asked of the boolean's own answer, in integers.** `assemble_fuse_cut` gives a result face the
+/// surface of its plane class's representative, which `class` names, and its direction is decided
+/// exactly too: `class` carries the `Orientation` the cap must have on that surface, read off the
+/// truth (`planes::face_facing`) — so this compares a handle and a flag and reads no coordinate
+/// and no normal.
 ///
-/// 1. **the class's `Surface` handle** — integers, not coordinates. `assemble_fuse_cut` gives a
-///    result face the surface of its plane class's representative, which `class` names (the
-///    boolean's own answer), so the surviving cap normally lands here. Its direction is decided
-///    exactly too: `class` carries the `Orientation` the cap must have on that surface, read off
-///    the truth (`planes::face_facing`), so this branch compares two flags and reads no normal.
-/// 2. **the faces' own coordinates, exactly** — every `outer_tri` point of the candidate lies on
-///    `reference`'s tri plane (`plane_side`, an exact `orient3d` on the points the user gave).
-///    A `None` from `outer_tri` (no non-collinear triple) means no evidence *for this branch* —
-///    such a candidate can still match by handle, and a degenerate `reference` leaves only
-///    branch 1. Its direction filter reads the candidate's cache normal against `want` (an `f64`
-///    from the caller's frame), a full magnitude from zero once coplanarity is settled.
+/// `class_of` carries every planar input face the arrangement touches, so no comparison of
+/// coordinates is asked.
 ///
-/// If the cap survives as several faces they all satisfy this, and the first is returned; the
-/// coefficient test had the same ambiguity.
-///
-/// **Measured: the corpus does not separate the two branches** — disabling either one
-/// leaves the whole suite's results unchanged. So branch 2 has no firing test today and is a
-/// documented backstop (cf. `RejectReason::NonManifoldEdge`); branch 1 is kept because handle
-/// identity is the
-/// strongest answer available and is the path a surviving cap normally takes.
+/// If the cap survives as several faces they all satisfy this, and the first is returned.
 pub(crate) fn find_face_coplanar_with(
     model: &Model,
     solid: Handle<Solid>,
-    reference: Handle<Face>,
-    class: (Handle<Surface>, Option<Orientation>),
-    want: Vector3,
+    class: (Handle<Surface>, Orientation),
 ) -> Option<Handle<Face>> {
-    let ref_tri = outer_tri(model, model.face(reference)).map(|(tri, _)| tri);
     let shell = model.solid(solid).outer;
     model.shell(shell).faces.iter().copied().find(|&fh| {
         let face = model.face(fh);
-        if face.surface == class.0 {
-            return class.1 == Some(face.orientation);
-        }
-        let nacre_geom::Surface::Plane(pl) = model.surface_cache(face.surface) else {
-            return false;
-        };
-        let coplanar = ref_tri.is_some_and(|r| {
-            outer_tri(model, face)
-                .is_some_and(|(tri, _)| tri.iter().all(|&q| plane_side(r, q) == 0))
-        });
-        let sign = f64::from(face.orientation.sign());
-        coplanar && pl.normal().dot(want) * sign > 0.0
+        face.surface == class.0 && face.orientation == class.1
     })
 }

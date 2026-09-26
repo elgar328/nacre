@@ -84,6 +84,40 @@ impl W {
         W { tri, coeffs, def }
     }
 }
+impl W {
+    /// The coefficients and the three points, exactly.
+    fn exact_inputs(&self) -> ([nacre_exact::Rat; 4], [[nacre_exact::Rat; 3]; 3]) {
+        let r = |x: f64| nacre_exact::Rat::try_from_f64(x).expect("test value");
+        (self.coeffs.map(r), self.tri.map(|p| p.as_array().map(r)))
+    }
+
+    /// The triangle spans a plane and the coefficients' normal is square to both its edges.
+    fn normal_spans(&self) -> bool {
+        let ([a, b, c, _], t) = self.exact_inputs();
+        let edge = |i: usize| -> [nacre_exact::Rat; 3] {
+            core::array::from_fn(|k| t[i][k].checked_sub(t[0][k]).expect("small"))
+        };
+        let (e1, e2) = (edge(1), edge(2));
+        let n = [a, b, c];
+        !nacre_exact::parallel_rat(&e1, &e2)
+            && nacre_exact::dot_sign_rat(&n, &e1) == nacre_exact::Orient::Zero
+            && nacre_exact::dot_sign_rat(&n, &e2) == nacre_exact::Orient::Zero
+    }
+
+    /// Every point satisfies `a·x + b·y + c·z + d = 0`.
+    fn points_satisfy(&self) -> bool {
+        let (c, t) = self.exact_inputs();
+        t.iter().all(|p| {
+            let mut acc = c[3];
+            for k in 0..3 {
+                acc = acc
+                    .checked_add(c[k].checked_mul(p[k]).expect("small"))
+                    .expect("small");
+            }
+            acc == nacre_exact::Rat::from_int(0)
+        })
+    }
+}
 impl Witness for W {
     // A hand-built witness has no name: every same-plane question takes the definitions' road.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
@@ -119,13 +153,13 @@ impl PlaneWitness for W {
     }
     // A synthetic witness has no name: its coefficients stand in for the plane, and they are
     // handed out only where its triangle lies on them, so a test's two descriptions are one plane
-    // — what `exact_coeffs` promises (the plane itself).
+    // — what `exact_coeffs` promises (the plane itself). Asked of the witness's own inputs, lifted
+    // exactly (an `f64` is a binary rational).
     fn exact_coeffs(&self) -> Option<[f64; 4]> {
-        nacre_predicates::plane_spanned_by(self.coeffs, self.tri.map(|p| p.as_array()))
-            .then_some(self.coeffs)
+        (self.normal_spans() && self.points_satisfy()).then_some(self.coeffs)
     }
     fn exact_normal(&self) -> Option<[f64; 3]> {
-        nacre_predicates::plane_normal_spanned_by(self.coeffs, self.tri.map(|p| p.as_array()))
+        self.normal_spans()
             .then(|| [self.coeffs[0], self.coeffs[1], self.coeffs[2]])
     }
     fn base_coeffs(&self) -> Option<[f64; 4]> {

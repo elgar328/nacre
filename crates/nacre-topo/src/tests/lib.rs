@@ -2,23 +2,13 @@ use super::*;
 use nacre_math::Vector3;
 use proptest::prelude::*;
 
-/// ★★★ **The defect the rational coefficients exist to remove, pinned from both sides.**
-///
-/// Two boxes meet on the plane `x = 3` with faces of different size. `Plane` stores an
-/// un-normalized normal whose length follows that size, so `d = −raw·origin` is a differently
-/// rounded product on each side and the two coefficient vectors are **not exactly
-/// proportional** — the f64 test says "different planes" about one plane. Measured across the
-/// census, 18 pairs are merged only because a second test looks at the faces' coordinates
-/// instead.
-///
-/// The rational coefficients are built from the corners the caller wrote and canonicalized, so
-/// they have no scale to disagree about and come out **equal**.
-///
-/// Both halves are load-bearing. If the first assertion ever fails the f64 defect was fixed
-/// somewhere else and this test should be re-read, not deleted; if the second fails the
-/// rational path stopped reaching these surfaces.
+/// ★★★ **One plane stated by two faces of different size is one plane.** Two boxes meet on the
+/// plane `x = 3` with faces of different size. An `f64` plane keeps an un-normalized normal whose
+/// length follows the face's size, so its offset `d = −raw·origin` is rounded differently on each
+/// side; the name is built from the corners the caller wrote and canonicalized, so it has no scale
+/// to disagree about — the two faces carry one surface, and the two statements one name.
 #[test]
-fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
+fn two_faces_of_one_plane_are_one_surface_and_one_name() {
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),
@@ -50,26 +40,6 @@ fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
     assert_eq!(sa, sb, "one plane, one surface");
     assert!(m.surface_name.contains_key(&sa), "and it is recorded");
 
-    // The f64 defect this guards against, shown on the planes themselves rather than
-    // through the model, since the model holds only one of them. `Plane` keeps an
-    // un-normalized normal whose length follows the face's size, so `d = −raw·origin` is a
-    // differently rounded product on each side and the two vectors are not exactly
-    // proportional — the f64 test says "different planes" about one plane.
-    let wall = |dy: f64| {
-        Plane::through_points(
-            Point3::from_array([3.0, 0.0, 0.0]),
-            Point3::from_array([3.0, dy, 0.0]),
-            Point3::from_array([3.0, 0.0, 1.0]),
-        )
-        .expect("non-degenerate")
-    };
-    let (pa, pb) = (wall(2.2), wall(13.2));
-    assert!(
-        !nacre_geom::intersect::planes_coplanar(&pa, &pb),
-        "f64 coefficients of one plane at two face sizes: {:?} vs {:?}",
-        pa.coefficients(),
-        pb.coefficients()
-    );
     let rat = |dy: f64| {
         let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
         nacre_exact::plane_through_points(

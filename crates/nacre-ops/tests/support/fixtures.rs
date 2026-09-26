@@ -9,8 +9,6 @@
 #![allow(dead_code)] // shared helpers: any one coverage module uses only some.
 
 use nacre_exact::{Axis, Isometry};
-use nacre_geom::intersect::planes_coplanar;
-use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::DatumDef;
 use nacre_ops::SketchFrame;
@@ -247,22 +245,48 @@ pub fn rounded_corner_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, b, cc)
 }
 
-/// Is there an outer-shell face on the plane through `pt` with normal `n`,
-/// oriented that way? A capability test that wants to say "a face sits on z = 1.5
-/// facing +z" has no face handle in hand — asserting geometry from coordinates is
-/// exactly what an acceptance test may do (public `Model`/`Plane` only).
+/// Is there an outer-shell face on the plane through `pt` with normal `n`, oriented that way?
+/// A capability test that wants to say "a face sits on z = 1.5 facing +z" has no face handle in
+/// hand, and asserting geometry from what the test wrote is exactly what an acceptance test may do.
+///
+/// ★ **Asked of the truth.** The written point and normal are lifted exactly and the plane is
+/// named from three points on it — the point and two basis crosses of the normal, the
+/// construction `SketchPlane::from_origin_normal` states a plane with (no products, so a long
+/// decimal still names it) — and compared with each face's world name; the facing is the exact
+/// sign of the name's normal against `n`, times the name's sense and the face's orientation.
 pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) -> bool {
-    let Some(target) = Plane::from_point_normal(pt, n) else {
+    use nacre_exact::Rat;
+    let lift = |v: [f64; 3]| v.map(|x| Rat::from_decimal(x).expect("a written decimal"));
+    let (o, nn) = (lift(pt.as_array()), lift(n.as_array()));
+    let zero = Rat::from_int(0);
+    let neg = |x: Rat| zero.checked_sub(x).expect("a lifted decimal negates");
+    // Two independent directions square to `n`, each a component shuffle of the written decimals.
+    let (u, w) = if nn[0] == zero && nn[1] == zero {
+        ([nn[2], zero, zero], [zero, nn[2], zero])
+    } else {
+        ([neg(nn[1]), nn[0], zero], [neg(nn[2]), zero, nn[0]])
+    };
+    let add = |a: [Rat; 3], b: [Rat; 3]| -> [Rat; 3] {
+        core::array::from_fn(|k| a[k].checked_add(b[k]).expect("a small sum"))
+    };
+    let Some(target) = nacre_exact::plane_name_exact(o, add(o, u), add(o, w)) else {
         return false;
     };
     let shell = m.solid(solid).outer;
     m.shell(shell).faces.iter().any(|&fh| {
         let f = m.face(fh);
-        let Surface::Plane(plane) = m.surface_cache(f.surface) else {
+        if m.world_plane_name(f.surface).as_ref() != Some(&target) {
             return false;
-        };
-        let sign = f64::from(f.orientation.sign());
-        planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n) > 0.0
+        }
+        let [a, b, c, _] = target.coeff_ints();
+        let along =
+            i8::from(nacre_exact::normal_sense(&[a, b, c], nn) == nacre_exact::Orient::Positive)
+                * 2
+                - 1;
+        let sense = m
+            .world_plane_name_sense(f.surface)
+            .expect("a face with a world name has its sense");
+        along * sense.sign() * f.orientation.sign() > 0
     })
 }
 

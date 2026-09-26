@@ -303,13 +303,12 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 /// ★ No production consumer reads the handles any more (the toleranced predicates take their
 /// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
 /// the `None` of a loop that spreads no three points is answered by the caller — the plane's
-/// truth points for a circle-bounded face (`collect_planes`), "no evidence" for
-/// `find_face_coplanar_with`.
+/// truth points for a circle-bounded face (`collect_planes`).
 ///
 /// "Well spread" rather than "non-collinear" is the whole contract: the triangle is what states
 /// the face's area — `collect_planes` refuses a loop that spreads none (`DegenerateFace`) and
-/// checks the face's winding against it, and `find_face_coplanar_with`'s coordinate branch reads
-/// it — so a nearly-flat one is not a lesser answer but a wrong one. See the corner choice below.
+/// checks the face's winding against it — so a nearly-flat one is not a lesser answer but a wrong
+/// one. See the corner choice below.
 pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
     let verts: Vec<Handle<Vertex>> = face
         .outer

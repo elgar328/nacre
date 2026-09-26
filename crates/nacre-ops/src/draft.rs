@@ -465,7 +465,13 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
 /// What each input face's plane became: its **plane class's representative surface**, which is
 /// what every result face on that plane carries — and the `Orientation` the face would carry stated
-/// on that surface (`None` where the judge could not say which way the two run, read off the
-/// truth by `planes::face_facing`).
-pub(crate) type ClassOf =
-    std::collections::HashMap<Handle<Face>, (Handle<Surface>, Option<nacre_topo::Orientation>)>;
+/// on that surface, read off the truth by `planes::face_facing`; where the judge could not say
+/// which way the two run, what it did establish, so a reader that rests on the answer refuses by
+/// that judgement's name.
+pub(crate) type ClassOf = std::collections::HashMap<
+    Handle<Face>,
+    (
+        Handle<Surface>,
+        Result<nacre_topo::Orientation, nacre_judge::Decision>,
+    ),
+>;

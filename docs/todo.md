@@ -34,13 +34,6 @@
 
 ### 곡선의 종류와 점의 동일성이 캐시로 정해진다
 
-- `find_face_coplanar_with`(`ops/feature.rs` — pad/pocket 이 남은 캡을 찾는다)의 둘째 갈래가 면 꼭짓점 캐시의
-  `plane_side` 로 공면을 정한다. 평면 클래스 병합과 같은 부류이고, 진실 쪽 답은 핸들 ∨ 세계 이름이다. 그 doc 은
-  «코퍼스가 두 갈래를 안 가른다»고 적는다. 그 `plane_side` 는 `nacre_geom::intersect` 의 캐시 정확 술어 가운데
-  제품 호출처가 남은 마지막이다 — **평면 캐시**를 받는 넷(`planes_coplanar`·`plane_pair_dir_sign`·
-  `three_plane_orient3d`·`three_plane_cmp_coord`, 그리고 `nacre_predicates::planes_coplanar`)은 제품 호출처가 0 이다
-  (픽스처 `has_face_on_plane`·테스트 오라클과 자기 테스트뿐) — 발행 층의 `pub` 이라 은퇴하거나 `test-util` 뒤로
-  보낼지 정한다.
 - 확인 전: 다중 솔리드 결과의 순서(`assembly/grouping.rs` `comp_key` — 꼭짓점 캐시로 정렬해 핸들 번호가 정해진다);
   topo `align_cache_sense` 의 doc 은 «`Through` 의 f64 외적을 정확한 순서가 뒤집는다»고 적지만 코드는 꼭짓점
   캐시의 f64 외적을 쓴다. datum 프레임의 `flip` 은 진실을 따르므로(`frame_toward`) 거의 공선인 `ThroughVertices`

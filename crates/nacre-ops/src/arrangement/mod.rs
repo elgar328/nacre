@@ -368,16 +368,13 @@ pub(crate) fn boolean(
             ClassIx::Plane(c) => {
                 // The face's outward is `facing` times the root's, which is `frame_sign` times the
                 // way the representative surface faces.
-                let orientation =
-                    crate::planes::face_facing(&jd, &faces_tab, i, c)
-                        .ok()
-                        .map(|facing| {
-                            if facing * geom[c].frame_sign > 0 {
-                                nacre_topo::Orientation::Forward
-                            } else {
-                                nacre_topo::Orientation::Reversed
-                            }
-                        });
+                let orientation = crate::planes::face_facing(&jd, &faces_tab, i, c).map(|facing| {
+                    if facing * geom[c].frame_sign > 0 {
+                        nacre_topo::Orientation::Forward
+                    } else {
+                        nacre_topo::Orientation::Reversed
+                    }
+                });
                 Some((f, (geom[c].surf, orientation)))
             }
             ClassIx::Cyl(_) => None,

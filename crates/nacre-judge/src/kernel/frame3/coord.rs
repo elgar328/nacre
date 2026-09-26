@@ -124,9 +124,8 @@ pub(super) fn orient_of(pos: bool) -> Orient {
     }
 }
 
-/// The sign of `det[n_a; n_b; n_c]`, the determinant of the three planes' normals — the
-/// toleranced twin of `nacre_geom`'s `plane_pair_dir_sign` (`sign((n_a × n_b) · n_c)`),
-/// which decides how the line `a ∩ b` runs relative to plane `c`. This is exactly the
+/// The sign of `det[n_a; n_b; n_c]`, the determinant of the three planes' normals —
+/// `sign((n_a × n_b) · n_c)`, which decides how the line `a ∩ b` runs relative to plane `c`. This is exactly the
 /// Cramer `D` of the three planes ([`cramer_iv`] / [`cramer_hp`]); the interval filter
 /// resolves the easy cases, an ambiguous one escalates, and a below-floor `D` is
 /// [`Orient::Zero`] (the planes' normals are coincident — degenerate).

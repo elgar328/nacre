@@ -6,11 +6,10 @@ use crate::BoolError;
 use crate::BoolKind;
 use crate::boolean::boolean;
 use crate::construct::{Seg3, Swept};
-use crate::planes::outer_tri;
 use crate::transform::transform;
 use nacre_exact::{Axis, Isometry, Rat};
 use nacre_geom::Plane;
-use nacre_geom::intersect::{RingSide, orient2d_rat, plane_side};
+use nacre_geom::intersect::{RingSide, orient2d_rat};
 use nacre_geom::mixed::{
     Edge2d, mixed_ring_self_intersection, mixed_rings_cross, point_in_mixed_ring,
 };

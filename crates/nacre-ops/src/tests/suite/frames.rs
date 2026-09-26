@@ -361,12 +361,10 @@ fn the_zero_vector_has_no_frame_axes() {
 /// proof or a coincidence within the limit, never a handle match — the cap's surface has no
 /// rational coefficients to intern by, so it is minted fresh.
 ///
-/// `find_face_coplanar_with` then had to guess which surface the class had collapsed to, from
-/// handles and an exact `plane_side` on f64 points. Both miss: the survivor carries the *other*
-/// operand's surface, and the two f64 planes sit `1.8e-15` apart. `pad` turned "cap not found"
-/// into a hard error and **threw away a correct solid** — the volume was already right.
-///
-/// Now it asks the boolean instead.
+/// A comparison made afterwards — of handles, or an exact side test on `f64` points — misses both
+/// ways here: the survivor carries the *other* operand's surface, and the two `f64` planes sit
+/// `1.8e-15` apart. A pad that read that miss as "cap not found" would **throw away a correct
+/// solid** — the volume is right. The cap's surface is read from the boolean's own answer.
 #[test]
 fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};

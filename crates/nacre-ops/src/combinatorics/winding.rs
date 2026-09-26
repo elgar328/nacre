@@ -370,7 +370,7 @@ fn arc_extremum_winding(
 ///
 /// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
 /// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
-/// the one-implicit `three_plane_orient3d` alone. But a simple polygon need not have an edge
+/// a one-implicit side test (`Judge::orient3d`) alone. But a simple polygon need not have an edge
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///

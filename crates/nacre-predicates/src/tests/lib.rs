@@ -161,32 +161,21 @@ proptest! {
 
 // ---- indirect_plane_side ----
 
-/// ★ **The coefficient form and the triangle form are the same question** — checked on a
-/// fourth plane whose two descriptions genuinely agree, which is the only case where asking
-/// both is meaningful. The triangle's right-hand normal is what `indirect_orient3d` measures
-/// against, so the two agree when the triangle is wound to the coefficients' normal and
-/// oppose when it is not. That relation is what a face's `frame_sign` records.
+/// **The coefficient form answers which side** — the implicit point `(1, 2, 3)` against `z = 0`
+/// is above it, a positive scale of the coefficients cannot move it, and negating them flips
+/// the side.
 #[test]
-fn the_coefficient_form_answers_what_the_triangle_form_does() {
+fn the_coefficient_form_answers_which_side() {
     // x = 1, y = 2, z = 3 meet at (1, 2, 3).
     let tp = ThreePlane([
         [1.0, 0.0, 0.0, -1.0],
         [0.0, 1.0, 0.0, -2.0],
         [0.0, 0.0, 1.0, -3.0],
     ]);
-    // Fourth plane z = 0, normal +z. Its triangle, wound so the RH normal is +z.
-    let c = [0.0, 0.0, 1.0, 0.0];
-    let (t0, t1, t2) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
-        indirect_plane_side(&tp, c),
-        indirect_orient3d(&tp, t0, t1, t2),
-        "same winding ⇒ same sign"
-    );
-    assert_eq!(indirect_plane_side(&tp, c), 1, "(1,2,3) is above z = 0");
-    assert_eq!(
-        indirect_plane_side(&tp, c),
-        -indirect_orient3d(&tp, t0, t2, t1),
-        "reversed winding ⇒ opposite sign"
+        indirect_plane_side(&tp, [0.0, 0.0, 1.0, 0.0]),
+        1,
+        "(1,2,3) is above z = 0"
     );
     // Scaling the coefficients cannot move the point; negating them flips the side.
     assert_eq!(indirect_plane_side(&tp, [0.0, 0.0, 7.0, 0.0]), 1);
@@ -233,69 +222,10 @@ fn a_negatively_oriented_triple_names_the_same_point() {
 
 // ---- planes_coplanar ----
 
-#[test]
-fn planes_coplanar_names_the_same_plane() {
-    // Same plane, and the same plane scaled by a negative (opposite normal).
-    assert!(planes_coplanar(
-        [0.0, 0.0, 1.0, -1.0],
-        [0.0, 0.0, 1.0, -1.0]
-    ));
-    assert!(planes_coplanar(
-        [0.0, 0.0, 1.0, -1.0],
-        [0.0, 0.0, -2.0, 2.0]
-    ));
-    // Parallel but offset (z=1 vs z=2): not the same plane.
-    assert!(!planes_coplanar(
-        [0.0, 0.0, 1.0, -1.0],
-        [0.0, 0.0, 1.0, -2.0]
-    ));
-    // Non-parallel normals.
-    assert!(!planes_coplanar(
-        [0.0, 0.0, 1.0, -1.0],
-        [0.0, 1.0, 0.0, -1.0]
-    ));
-    // Through the origin (d = 0): coplanarity reduces to parallel normals, but a
-    // parallel plane with d ≠ 0 is still distinct.
-    assert!(planes_coplanar([1.0, 1.0, 0.0, 0.0], [2.0, 2.0, 0.0, 0.0]));
-    assert!(!planes_coplanar(
-        [1.0, 1.0, 0.0, 0.0],
-        [1.0, 1.0, 0.0, -1.0]
-    ));
-}
-
-/// Why `coplanar` is not an absolute `1e-9` tolerance: two
-/// planes exactly `1e-9` apart (`z = 0` and `z = 1e-9`). An absolute
-/// `distance ≤ 1e-9` test **false-merges** them; the exact rank-1 test splits them
-/// (`minor(2,3) = 1e9·(−1) − 0·1e9 = −1e9 ≠ 0`). `two_product(1e9, 1)` is exact —
-/// no overflow, no rounding.
-#[test]
-fn planes_coplanar_splits_a_1e_9_gap_the_absolute_tolerance_would_merge() {
-    assert!(!planes_coplanar(
-        [0.0, 0.0, 1e9, 0.0],
-        [0.0, 0.0, 1e9, -1.0]
-    ));
-}
-
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// Scale-invariance — the property an absolute-length coincidence tolerance
-    /// lacks. Scaling either plane's coefficients by any nonzero λ names the same
-    /// plane, so the decision is unchanged; λ is a power of two so the scaled
-    /// coefficients are exact and the invariance is exact. A plane is always
-    /// coplanar with its own scaling.
-    #[test]
-    fn prop_planes_coplanar_is_scale_invariant(
-        a in prop::array::uniform4(-50.0f64..50.0),
-        b in prop::array::uniform4(-50.0f64..50.0),
-        lambda in prop::sample::select(vec![-4.0f64, -2.0, -0.5, 0.5, 2.0, 4.0]),
-    ) {
-        let scale = |p: [f64; 4], k: f64| p.map(|c| c * k);
-        prop_assert_eq!(planes_coplanar(a, b), planes_coplanar(scale(a, lambda), b));
-        prop_assert_eq!(planes_coplanar(a, b), planes_coplanar(a, scale(b, lambda)));
-        prop_assert!(planes_coplanar(a, scale(a, lambda)));
-    }
 }
 
 // ---- indirect orient3d (M5-a2) ----
@@ -375,195 +305,10 @@ fn plane_through(n: [i64; 3], p: [i64; 3]) -> [f64; 4] {
     [n[0] as f64, n[1] as f64, n[2] as f64, -dot as f64]
 }
 
-/// The filter decides the everyday case, and the exact path is what a coplanar
-/// input costs. Both halves matter: a filter that never fires buys nothing, and
-/// one that fires on a zero would be wrong.
-#[test]
-fn the_filter_answers_a_clear_sign_and_declines_a_coplanar_one() {
-    let planes = ThreePlane([
-        [1.0, 0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0, -1.0],
-        [0.0, 0.0, 1.0, -1.0],
-    ]);
-    // (1,1,1) against the plane x+y+z=3 it lies on: the bound cannot separate 0.
-    assert_eq!(
-        indirect_orient3d_filter(&planes, [3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]),
-        None
-    );
-    // The same point against z=0: a clear sign, and no expansion is built.
-    assert_eq!(
-        indirect_orient3d_filter(&planes, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        Some(indirect_orient3d_exact(
-            &planes,
-            [0.0; 3],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0]
-        ))
-    );
-}
-
-#[test]
-fn indirect_orient3d_coplanar_is_zero() {
-    // Planes x=1, y=1, z=1 ⇒ implicit point (1,1,1).
-    let planes = ThreePlane([
-        [1.0, 0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0, -1.0],
-        [0.0, 0.0, 1.0, -1.0],
-    ]);
-    // q,r,s span the plane x+y+z=3, which contains (1,1,1) ⇒ coplanar ⇒ 0.
-    assert_eq!(
-        indirect_orient3d(&planes, [3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]),
-        0
-    );
-}
-
-#[test]
-fn indirect_orient3d_known_sign() {
-    let planes = ThreePlane([
-        [1.0, 0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0, -1.0],
-        [0.0, 0.0, 1.0, -1.0],
-    ]);
-    // p=(1,1,1) above the CCW triangle in z=0 ⇒ det[p−s,q−s,r−s] = +1 (hand-computed).
-    assert_eq!(
-        indirect_orient3d(&planes, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        1
-    );
-    // Swapping two explicit points flips the sign.
-    assert_eq!(
-        indirect_orient3d(&planes, [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        -1
-    );
-}
-
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// The filter's one obligation: when it answers, it answers correctly. It is a
-    /// rounding-error bound, so a wrong sign here is not a slow path but a silently
-    /// wrong b-rep. The scale factor spans nine decades so the bound is tested where
-    /// it is tight, not only where it is slack.
-    #[test]
-    fn prop_the_filter_never_disagrees_with_the_exact_path(
-        planes in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
-        q in prop::array::uniform3(-1e3f64..1e3),
-        r in prop::array::uniform3(-1e3f64..1e3),
-        s in prop::array::uniform3(-1e3f64..1e3),
-        scale in -4i32..5,
-    ) {
-        let k = 10f64.powi(scale);
-        let tp = ThreePlane(planes.map(|pl| pl.map(|c| c * k)));
-        let (q, r, s) = (q.map(|c| c * k), r.map(|c| c * k), s.map(|c| c * k));
-        if let Some(fast) = indirect_orient3d_filter(&tp, q, r, s) {
-            prop_assert_eq!(fast, indirect_orient3d_exact(&tp, q, r, s));
-            prop_assert_ne!(fast, 0); // the filter may never claim a zero
-        }
-    }
-
-    /// The near-degenerate triple: the third plane is a *rounded* linear combination
-    /// of the other two, so `D` is noise rather than an exact zero. The bound should
-    /// swallow that noise and decline — but "should" is not "must", so this asserts
-    /// only what is owed: whatever the filter says, the expansions say too.
-    #[test]
-    fn prop_the_filter_agrees_near_a_degenerate_triple(
-        a in prop::array::uniform4(-100f64..100.0),
-        b in prop::array::uniform4(-100f64..100.0),
-        t in -3f64..3.0,
-        q in prop::array::uniform3(-100f64..100.0),
-        r in prop::array::uniform3(-100f64..100.0),
-        s in prop::array::uniform3(-100f64..100.0),
-    ) {
-        let c: [f64; 4] = std::array::from_fn(|i| a[i] + t * b[i]);
-        let tp = ThreePlane([a, b, c]);
-        if let Some(fast) = indirect_orient3d_filter(&tp, q, r, s) {
-            prop_assert_eq!(fast, indirect_orient3d_exact(&tp, q, r, s));
-        }
-    }
-
-    /// Primary oracle: the exact i128 result. `M` is computed by a **generic**
-    /// `det3_i128([Row1, q−s, r−s])`, a different path than the implementation's
-    /// hand-factored `Row1·cross`, so a factoring/sign/cross bug shows up as a
-    /// mismatch (no self-consistency trap). A `p`-verification pins the oracle's
-    /// own Cramer to truth. Inputs in [−100,100] keep every i128 term ≪ 1.7×10³⁸.
-    #[test]
-    fn prop_indirect_orient3d_matches_i128(
-        planes in prop::array::uniform3(prop::array::uniform4(-100i64..=100)),
-        q in prop::array::uniform3(-100i64..=100),
-        r in prop::array::uniform3(-100i64..=100),
-        s in prop::array::uniform3(-100i64..=100),
-    ) {
-        let n = [
-            [planes[0][0] as i128, planes[0][1] as i128, planes[0][2] as i128],
-            [planes[1][0] as i128, planes[1][1] as i128, planes[1][2] as i128],
-            [planes[2][0] as i128, planes[2][1] as i128, planes[2][2] as i128],
-        ];
-        let rhs = [
-            -(planes[0][3] as i128),
-            -(planes[1][3] as i128),
-            -(planes[2][3] as i128),
-        ];
-        let d = det3_i128(n);
-        prop_assume!(d != 0);
-        let col = |k: usize| {
-            let mut m = n;
-            m[0][k] = rhs[0];
-            m[1][k] = rhs[1];
-            m[2][k] = rhs[2];
-            m
-        };
-        let (dx, dy, dz) = (det3_i128(col(0)), det3_i128(col(1)), det3_i128(col(2)));
-        // p-verification: (dx/d, dy/d, dz/d) lies on all three planes.
-        for pl in &planes {
-            let (a, b, c, dd) = (pl[0] as i128, pl[1] as i128, pl[2] as i128, pl[3] as i128);
-            prop_assert_eq!(a * dx + b * dy + c * dz + dd * d, 0);
-        }
-        let si = [s[0] as i128, s[1] as i128, s[2] as i128];
-        let row1 = [dx - d * si[0], dy - d * si[1], dz - d * si[2]];
-        let dq = [(q[0] - s[0]) as i128, (q[1] - s[1]) as i128, (q[2] - s[2]) as i128];
-        let dr = [(r[0] - s[0]) as i128, (r[1] - s[1]) as i128, (r[2] - s[2]) as i128];
-        let m_int = det3_i128([row1, dq, dr]);
-        let expected = (d.signum() * m_int.signum()) as i8;
-
-        let planes_f = ThreePlane(planes.map(|pl| pl.map(|v| v as f64)));
-        let got = indirect_orient3d(
-            &planes_f,
-            q.map(|v| v as f64),
-            r.map(|v| v as f64),
-            s.map(|v| v as f64),
-        );
-        prop_assert_eq!(got, expected);
-    }
-
-    /// Independent ground truth for the parts the i128 oracle *shares* with the
-    /// implementation (Row1 assembly, the `sign(D)·sign(M)` decomposition, which
-    /// point is subtracted): build an integer point `p` and integer planes
-    /// through it, so `p_f64 = p` exactly, then compare to
-    /// `orient3d(p_f64, q, r, s)` — Shewchuk-direct, no decomposition, no
-    /// conditioning worry.
-    #[test]
-    fn prop_matches_materialized_via_integer_point(
-        p in prop::array::uniform3(-20i64..=20),
-        normals in prop::array::uniform3(prop::array::uniform3(-20i64..=20)),
-        q in prop::array::uniform3(-50i64..=50),
-        r in prop::array::uniform3(-50i64..=50),
-        s in prop::array::uniform3(-50i64..=50),
-    ) {
-        let ni = normals.map(|nn| [nn[0] as i128, nn[1] as i128, nn[2] as i128]);
-        prop_assume!(det3_i128(ni) != 0); // planes meet only at p
-        let planes = ThreePlane([
-            plane_through(normals[0], p),
-            plane_through(normals[1], p),
-            plane_through(normals[2], p),
-        ]);
-        let pf = [p[0] as f64, p[1] as f64, p[2] as f64];
-        let qf = q.map(|v| v as f64);
-        let rf = r.map(|v| v as f64);
-        let sf = s.map(|v| v as f64);
-        let expected = sign_f64(orient3d(pf, qf, rf, sf));
-        prop_assert_eq!(indirect_orient3d(&planes, qf, rf, sf), expected);
-    }
-
     /// The two-implicit comparator against the exact i128 rational. `Na/Da < Nb/Db`
     /// is compared by cross-multiplication *there too*, but through a different
     /// route: i128 integers rather than expansion arithmetic, and the sign of the
@@ -651,30 +396,6 @@ proptest! {
         ]);
         let expected = (pa[axis] - pb[axis]).signum() as i8;
         prop_assert_eq!(indirect_cmp_coord(&ta, &tb, axis), expected);
-    }
-
-    /// Scaling one plane's coefficients by λ (negative included) leaves the
-    /// result unchanged (`D → λD`, `Row1 → λRow1`). λ is a power of two so the
-    /// scaled coefficients are exact and the invariance is exact — also confirms
-    /// geom need not normalize normals.
-    #[test]
-    fn prop_scaling_a_plane_is_invariant(
-        planes in prop::array::uniform3(prop::array::uniform4(-50.0f64..50.0)),
-        q in prop::array::uniform3(-50.0f64..50.0),
-        r in prop::array::uniform3(-50.0f64..50.0),
-        s in prop::array::uniform3(-50.0f64..50.0),
-        which in 0usize..3,
-        lambda in prop::sample::select(vec![-2.0f64, -1.0, -0.5, 0.5, 2.0, 4.0]),
-    ) {
-        let base = ThreePlane(planes);
-        let mut scaled = planes;
-        for coeff in &mut scaled[which] {
-            *coeff *= lambda;
-        }
-        prop_assert_eq!(
-            indirect_orient3d(&base, q, r, s),
-            indirect_orient3d(&ThreePlane(scaled), q, r, s)
-        );
     }
 
     /// Localize the expansion×expansion product: both factors are multi-component
