@@ -2005,3 +2005,52 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
         "the plane square to the turn's axis meets the turned `x` cylinder along a ruling"
     );
 }
+
+/// ★★ **A plane's cache faces the way its truth says, not the way its points' caches cross.** A
+/// `Through` statement over three box corners — `(1,0,0)`, `(0,1,0)`, `(0,0,1)`, in that order
+/// facing `+(1,1,1)` — whose vertices' coordinate caches are planted with the last two swapped:
+/// their `f64` cross runs `−(1,1,1)`. The plane has a world name, so its facing is the name's
+/// normal times the name's sense, exact; a cache pushed facing `−(1,1,1)` is turned round.
+#[test]
+fn a_named_through_planes_cache_follows_the_truth_not_the_vertex_caches() {
+    let mut m = Model::new();
+    m.add_cuboid(Point3::origin(), Point3::from_array([1.0, 1.0, 1.0]));
+    let corner = |m: &Model, at: [f64; 3]| {
+        (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .find(|&v| m.vertex_point(v).as_array() == at)
+            .expect("a box corner")
+    };
+    let (a, b, c) = (
+        corner(&m, [1.0, 0.0, 0.0]),
+        corner(&m, [0.0, 1.0, 0.0]),
+        corner(&m, [0.0, 0.0, 1.0]),
+    );
+    // The same definitions, with the caches of `b` and `c` swapped.
+    let planted = |m: &mut Model, def: Handle<Vertex>, at: [f64; 3]| {
+        let d = *m.vertex(def);
+        m.push_vertex(
+            d,
+            PointCache::Unrealized {
+                coord: Point3::from_array(at),
+            },
+        )
+    };
+    let pa = planted(&mut m, a, [1.0, 0.0, 0.0]);
+    let pb = planted(&mut m, b, [0.0, 0.0, 1.0]);
+    let pc = planted(&mut m, c, [0.0, 1.0, 0.0]);
+    let away = Plane::from_point_normal(
+        Point3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([-1.0, -1.0, -1.0]),
+    )
+    .expect("a plane");
+    let (h, _) = m.push_plane_through(away, [pa, pb, pc], None, Orientation::Forward);
+    let nacre_geom::Surface::Plane(cache) = m.surface_cache(h) else {
+        panic!("a plane")
+    };
+    assert!(
+        cache.normal().dot(Vector3::from_array([1.0, 1.0, 1.0])) > 0.0,
+        "the cache faces the truth's +(1,1,1): {:?}",
+        cache.normal()
+    );
+}

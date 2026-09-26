@@ -998,8 +998,9 @@ pub struct SurfaceCache { realized: nacre_geom::Surface }         // Plane(..) |
 //   `push_plane_raw`·`push_cylinder_raw` 가 진실과 캐시를 같은 자리에서 채운다.
 //   **평면의 향은 진실이다**(`Surface::Plane.sense`): 면의 바깥 = 평면의 향 × `Face.orientation`, 둘 다
 //   진실이다. 생산자는 향을 정확히 진술하고(캐시에서 읽지 않는다 — `f64 → 진실` 이다), `flipped` 는 두
-//   진실의 비교다. 캐시의 향은 진실을 따른다: 회전·프레임이 없는 사슬에서는 문이 맞추고
-//   (`align_cache_sense`), 있는 사슬에서는 census 잠금(`audit_plane_senses`)이 지킨다. 원통은 기준이
+//   진실의 비교다. 캐시의 향은 진실을 따른다: 세계 이름이 있으면 문이 이름의 향으로 정확히 맞추고
+//   (`align_cache_sense`), 이름 없는 `Through` 는 점들의 f64 외적으로 맞추며, 회전·프레임이 있는 사슬에서는
+//   census 잠금(`audit_plane_senses`)이 지킨다. 원통은 기준이
 //   진실 안에 있다(축에서 바깥으로). `cache` 인자에 남는 것은 실현값(앵커·행)뿐이고 앵커는 이미 문 안에서
 //   유도한다(`derive_surface_cache`).
 //   **향을 묻는 판정은 전부 이 진실을 읽는다**: 평면이 보는 쪽 = `sense` × 점들의 방향(이름과의 관계는

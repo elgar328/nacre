@@ -59,15 +59,19 @@ impl Model {
         h
     }
 
-    /// **Turn a plane's cache to face the way its truth says** — the sense is truth, so where this
-    /// crate can carry the points to the world the cache follows it (truth → cache, the allowed
-    /// direction). Returns whether it turned anything.
+    /// **Turn a plane's cache to face the way its truth says** — the sense is truth, so the cache
+    /// follows it (truth → cache, the allowed direction). Returns whether it turned anything.
     ///
-    /// For a `Known` statement the push door has already asserted the two agree, so this is the
-    /// lock that the cache is a function of the truth rather than a correction; for a `Through`
-    /// datum it is where a caller's nearly collinear `f64` cross is overruled by the exact order.
-    /// Chains with a turn or a frame are out of reach here — the census lock
-    /// (`nacre_ops::audit_plane_senses`) holds them.
+    /// Where the plane has a world name, the question is asked of the truth, exactly and at any
+    /// width: the way the plane faces is its world name's normal times the name's sense
+    /// ([`Model::world_plane_name_sense`]), and the cache agrees when its normal — an `f64`, which
+    /// is a binary rational, lifted exactly — has a positive dot with that. So a `Through` datum's
+    /// nearly collinear `f64` cross is overruled by the exact order of its points. A plane with
+    /// no world name (a mixed-frame `Through`, a chain that does not fold) is turned by the `f64`
+    /// cross of its points carried to the world, where this crate can carry them; chains with a
+    /// turn or a frame are out of reach there — the census lock (`nacre_ops::audit_plane_senses`)
+    /// holds them. For a `Known` statement the push door has already asserted the two agree, so
+    /// this is the lock that the cache is a function of the truth rather than a correction.
     pub(crate) fn align_cache_sense(&mut self, h: Handle<Surface>) -> bool {
         let Surface::Plane {
             points,
@@ -78,21 +82,38 @@ impl Model {
             return false;
         };
         let (points, motion, sense) = (points.clone(), *motion, *sense);
-        let Some(w) = self.points_world_direction(&points, motion) else {
-            return false;
-        };
         let nacre_geom::Surface::Plane(cache) = *self.surface_cache(h) else {
             return false;
         };
         let n = cache.normal().as_array();
-        let d = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign());
-        if d < 0.0 {
+        let exact = || {
+            let name = self.world_plane_name(h)?;
+            let name_sense = self.world_plane_name_sense(h)?;
+            let lifted = n.map(nacre_exact::Rat::try_from_f64);
+            let toward = [lifted[0]?, lifted[1]?, lifted[2]?];
+            let [a, b, c, _] = name.coeff_ints();
+            let along = match nacre_exact::normal_sense(&[a, b, c], toward) {
+                nacre_exact::Orient::Positive => 1,
+                nacre_exact::Orient::Negative => -1,
+                nacre_exact::Orient::Zero => return None,
+            };
+            Some(along * name_sense.sign() < 0)
+        };
+        let turn = match exact() {
+            Some(turn) => turn,
+            None => {
+                let Some(w) = self.points_world_direction(&points, motion) else {
+                    return false;
+                };
+                (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign()) < 0.0
+            }
+        };
+        if turn {
             self.surface_cache[h.index() as usize] = SurfaceCache {
                 realized: nacre_geom::Surface::Plane(cache.reversed()),
             };
-            return true;
         }
-        false
+        turn
     }
 
     /// **Realize this surface's cache from its truth**, keeping the producer's value where the
