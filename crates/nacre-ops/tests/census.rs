@@ -1196,7 +1196,8 @@ fn measure_census() {
     // ── **A recorded quarter turn** (`mot h+…`): the boss corpus again, but with a history first — a
     // rounding translation `(1/10, 1/10, 1/10)` that is recorded as a node, so the turn after it is
     // recorded too rather than carried into the statements (the `mot` rows above never leave a
-    // node). The commuting oracle's `h+` motions lock this population; these rows record it.
+    // node). The commuting oracle's `recorded block` family locks a recorded quarter turn; these
+    // rows record one on the boss.
     {
         for (name, axis) in [("h+rx90", Axis::X), ("h+rz90", Axis::Z)] {
             for (kn, k) in KINDS {

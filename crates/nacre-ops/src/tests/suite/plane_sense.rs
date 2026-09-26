@@ -1,7 +1,8 @@
 //! **Every plane faces the way its truth says** — the sense lock over the populations where a
 //! sense rule is easiest to get wrong, gathered on purpose: reflections carried into points and
 //! recorded as nodes, turns, frames, statements of handles in both orders, and an offset under a
-//! reflection. The census holds the same lock over its corpus; its reflections are few.
+//! reflection (on a plain block and on one whose `Through` face makes every motion a node). The
+//! census holds the same lock over its corpus; its reflections are few.
 
 use super::*;
 use nacre_exact::{Angle, Isometry, Rat, Rotation};
@@ -140,6 +141,21 @@ fn every_plane_faces_the_way_its_truth_says() {
     prism_on(&mut m, off);
     cases.push(("mirror recorded + offset", m));
 
+    // The same on a block whose every motion is a node (its `Through` face): the mirror is
+    // recorded behind the lift whatever the lift is, and the offset rides it.
+    let mut m = Model::new();
+    let b = super::fixtures::through_mirrored_block(&mut m, 1.0, Rat::new(1, 10).expect("1/10"));
+    let top = top_plane(&m, b, 1.1);
+    let off = datum(
+        &mut m,
+        crate::DatumDef::Offset {
+            frame: crate::SketchFrame::canonical(top),
+            dist: 1.0,
+        },
+    );
+    prism_on(&mut m, off);
+    cases.push(("through: mirror recorded + offset", m));
+
     // A frame: a prism on a tilted plane rides a frame node; its mirror adds a reflection.
     let mut m = Model::new();
     let tilted = crate::SketchPlane::from_origin_normal(
@@ -183,6 +199,12 @@ fn every_plane_faces_the_way_its_truth_says() {
             "{name}: the lock could not look at every plane"
         );
         assert!(a.agree > 0, "{name}: nothing was judged");
+        if name.starts_with("through: mirror") {
+            assert!(
+                a.mirrored > 0,
+                "{name}: no plane rode the recorded reflection"
+            );
+        }
         mirrored_seen += a.mirrored;
         turned_seen += a.turned;
     }

@@ -378,6 +378,135 @@ pub fn mirrored_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat)
     solid
 }
 
+/// **A block whose every motion is recorded** — the product road to a *folding* motion chain.
+///
+/// A motion is carried into a solid's statements only when every face's statement moves with
+/// it, and a `Through` plane is stated by vertex handles, which no transport moves — so a solid
+/// with one `Through` face records whatever moves it, and its other faces gain chains of
+/// translations, quarter turns and reflections that fold to a world statement. A fresh block
+/// never records such a chain: its moves are carried.
+///
+/// The `Through` face is the base of a prism raised on a datum through three corners of a helper
+/// box `[0,4]×[0,3]×[0,1]` — `(4,0,0)`, `(0,3,0)`, `(4,0,1)`, on no face of the box, so the datum
+/// is pushed as a statement of handles rather than interning onto a face's `Known` plane — which
+/// is `3x + 4y = 12`. Its normal is a Pythagorean `(3,4,0)/5`, so the datum's frame is rational
+/// (`û = ẑ × n̂` horizontal, `v̂ = ẑ`) and the prism is built in the world. The profile is
+/// `[0,2] × [0,height]` in that frame, swept `2` along the normal: the top is the horizontal
+/// plane `z = height`, `2 × 2` like [`lifted_block`]'s, and the volume is `4·height`.
+///
+/// ⚠ The helper box stays live — the datum's statement names its vertices — so an assertion over
+/// every live vertex or solid sees it too.
+pub fn through_block(m: &mut Model, height: f64) -> Handle<Solid> {
+    let footprint =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 3.0), p2(0.0, 3.0)])
+            .expect("a rectangle");
+    let OpOutput::Extrude { solid: helper, .. } =
+        apply(m, &extrude_op(m, footprint, 1.0)).expect("the helper box")
+    else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let corner = |m: &Model, at: [f64; 3]| {
+        m.shell(m.solid(helper).outer)
+            .faces
+            .iter()
+            .flat_map(|&f| m.face(f).outer.half_edges.clone())
+            .map(|he| m.he_start(he))
+            .find(|&v| m.vertex_point(v).as_array() == at)
+            .expect("a corner of the helper box")
+    };
+    let corners = [[4.0, 0.0, 0.0], [0.0, 3.0, 0.0], [4.0, 0.0, 1.0]].map(|at| corner(m, at));
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(corners),
+        },
+    )
+    .expect("a datum through the helper's corners") else {
+        unreachable!()
+    };
+    assert!(
+        matches!(
+            m.surface(plane),
+            nacre_topo::Surface::Plane {
+                points: nacre_topo::PlanePoints::Through(_),
+                ..
+            }
+        ),
+        "the datum must be a statement of handles, or nothing here records"
+    );
+    let side = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, height),
+        p2(0.0, height),
+    ])
+    .expect("a rectangle");
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile: side,
+            dist: 2.0,
+        },
+    )
+    .expect("a prism on the datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert!(
+        m.shell(m.solid(solid).outer)
+            .faces
+            .iter()
+            .any(|&f| m.face(f).surface == plane),
+        "the prism's base must intern onto the datum's statement"
+    );
+    let top = top_surface(m, solid);
+    assert!(
+        m.plane_motion(top).is_none(),
+        "the prism is built in the world: its top has no chain before it moves"
+    );
+    solid
+}
+
+/// [`through_block`] moved up by `lift` — recorded whatever `lift` is, so the top carries a
+/// translation that folds to `z = height + lift`.
+pub fn through_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
+    let solid = through_block(m, height);
+    let zero = nacre_exact::Rat::from_int(0);
+    let solid = xf(m, solid, Isometry::translation([zero, zero, lift]));
+    let top = top_surface(m, solid);
+    assert!(
+        m.plane_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        "the lifted top carries a chain that folds"
+    );
+    solid
+}
+
+/// [`through_lifted_block`], then reflected in `x = 0` — its top carries a folding chain with a
+/// reflection in it, the population whose frame is carried out left-handed.
+pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
+    let solid = through_lifted_block(m, height, lift);
+    let OpOutput::Mirror { solid } = apply(
+        m,
+        &Operation::Mirror {
+            solid,
+            axis: Axis::X,
+            offset: nacre_exact::Rat::from_int(0),
+        },
+    )
+    .expect("a mirror") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let top = top_surface(m, solid);
+    assert!(
+        m.plane_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        "the mirrored top carries a chain that folds"
+    );
+    solid
+}
+
 /// The top cap of `solid` — the face highest in `z`.
 pub fn top_face(m: &Model, solid: Handle<Solid>) -> Handle<Face> {
     m.shell(m.solid(solid).outer)

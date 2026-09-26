@@ -3,53 +3,14 @@
 use super::*;
 
 /// One motion per sign class, for the always-on run; the ignored run takes the whole group.
-const MOTION_SUBSET: [&str; 7] = [
+const MOTION_SUBSET: [&str; 6] = [
     "t(-4,-4,-2)",
     "rz90",
     "rx90",
     "ry90",
     "rz90+t",
     "t(7/11,3/10,1/4)",
-    "h+rx90",
 ];
-
-/// **Motions with a history** — a rounding translation first, so the motion after it is
-/// recorded as a chain node instead of carried into the statements. A fresh operand carries an
-/// exact turn into its points (`motion_group`'s rows never leave a node behind), so without this
-/// prefix the oracle never meets a recorded quarter turn.
-///
-/// ★ The prefix has no zero component: a zero would leave that axis's planes where they are,
-/// unrecorded, and mix world-stated planes with chained ones — a population no row here
-/// measures. `h` alone is the control: the prefix by itself must commute.
-fn history_motions() -> Vec<(String, nacre_exact::Isometry, nacre_exact::Isometry)> {
-    use nacre_exact::{Isometry, Rat};
-    let prefix = Isometry::translation([Rat::new(1, 10).expect("1/10"); 3]);
-    let mut v = vec![("h".to_string(), prefix, translate_iso([0, 0, 0]))];
-    for (ax, an) in [(Axis::X, "x"), (Axis::Y, "y"), (Axis::Z, "z")] {
-        for deg in [90i128, 180] {
-            v.push((format!("h+r{an}{deg}"), prefix, rot_iso(ax, deg)));
-        }
-    }
-    v
-}
-
-/// The oracle's whole motion list: the group, unprefixed, and the history motions.
-fn oracle_motions() -> Vec<(
-    String,
-    Option<nacre_exact::Isometry>,
-    nacre_exact::Isometry,
-    MotionClass,
-)> {
-    motion_group()
-        .into_iter()
-        .map(|(n, iso, class)| (n, None, iso, class))
-        .chain(
-            history_motions()
-                .into_iter()
-                .map(|(n, pre, iso)| (n, Some(pre), iso, MotionClass::Recorded)),
-        )
-        .collect()
-}
 
 /// The families the oracle runs: the boss corpus, an enclosed boss, a planar pair and the
 /// second-operation families (the first boolean's result against a tool).
@@ -63,7 +24,23 @@ fn oracle_families() -> Vec<(&'static str, Build)> {
     v.push(("bore offset", Box::new(|| bored_plate_and_slab(12.0))));
     v.push(("bore axis", Box::new(|| bored_plate_and_slab(10.0))));
     v.push(("through mid", Box::new(fused_through_and_mid_slab)));
+    v.push(("recorded block", Box::new(recorded_block_and_box)));
     v
+}
+
+/// A block whose every motion is recorded — its `Through` face, `fixtures::through_block` — and a
+/// box across one of its edges. The family where the group's quarter turns, translations and
+/// rigid motions all become chain nodes on one operand while the other carries them into its
+/// points.
+fn recorded_block_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let a = super::fixtures::through_block(&mut m, 1.0);
+    let b = m.add_cuboid(
+        Point3::from_array([1.0, 2.5, 0.5]),
+        Point3::from_array([2.0, 3.5, 1.5]),
+    );
+    m.rebuild_adjacency();
+    (m, a, b)
 }
 
 /// The census's `rot` pair: a unit-ish box and a post through it.
@@ -240,7 +217,6 @@ fn panic_text(p: Box<dyn std::any::Any + Send>) -> String {
 fn boolean_commutes(
     build: &Build,
     kind: BoolKind,
-    prefix: Option<&nacre_exact::Isometry>,
     iso: &nacre_exact::Isometry,
     class: MotionClass,
 ) -> (Answer, Outcome, Digest) {
@@ -249,15 +225,6 @@ fn boolean_commutes(
     m0.rebuild_adjacency();
     let ans0 = answer(&m0, &r0);
     let (mut m, a, b) = build();
-    let (a, b) = match prefix {
-        None => (a, b),
-        Some(pre) => match (transform(&mut m, a, pre), transform(&mut m, b, pre)) {
-            (Ok(a), Ok(b)) => (a, b),
-            (Err(e), _) | (_, Err(e)) => {
-                return (ans0, Outcome::InputUntransportable(e), Digest::NotAsked);
-            }
-        },
-    };
     let a = match transform(&mut m, a, iso) {
         Ok(x) => x,
         Err(e) => return (ans0, Outcome::InputUntransportable(e), Digest::NotAsked),
@@ -343,6 +310,30 @@ const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 /// cell commutes.
 const KNOWN_CELLS: usize = 0;
 
+/// **Cells whose digest differs today, by name** — `(family, motions)`, for Fuse and Cut (the
+/// Common of that family keeps no such vertex). They commute: volumes, counts and validity agree;
+/// only the bits of one vertex do not. Under a recorded chain that folds, a vertex whose true
+/// coordinate is exactly `0` is realized by replaying the chain, and the replay cannot decide the
+/// zero (`RealizeError::Undecided` — the paid door as well), so the cache keeps the construction's
+/// figure and the vertex's other coordinates sit an ulp off the nearest `f64` the other road
+/// realizes (measured: `1.4399999999999997` against `1.44`). The chain folds to exact rationals,
+/// and a realization read from the fold would decide the zero outright — the day it does, these
+/// cells come out identical, go red here, and leave.
+const DIGEST_DIFFERS: &[(&str, &[&str])] = &[(
+    "recorded block",
+    &["rx90", "rx180", "rx270", "ry90", "ry180", "ry270", "ry90+t"],
+)];
+
+/// The count lock on [`DIGEST_DIFFERS`]: two kinds per motion.
+const DIGEST_DIFFERS_CELLS: usize = 14;
+
+fn digest_differs(fam: &str, motion: &str, kind: BoolKind) -> bool {
+    kind != BoolKind::Common
+        && DIGEST_DIFFERS
+            .iter()
+            .any(|d| d.0 == fam && d.1.contains(&motion))
+}
+
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
         .iter()
@@ -356,7 +347,12 @@ fn run_commuting_oracle(labels: &[&str]) {
         KNOWN_CELLS,
         "the ledger of known cells changed size"
     );
-    let group: Vec<_> = oracle_motions()
+    assert_eq!(
+        DIGEST_DIFFERS.iter().map(|d| 2 * d.1.len()).sum::<usize>(),
+        DIGEST_DIFFERS_CELLS,
+        "the digest scoreboard changed size"
+    );
+    let group: Vec<_> = motion_group()
         .into_iter()
         .filter(|g| labels.contains(&g.0.as_str()))
         .collect();
@@ -374,8 +370,21 @@ fn run_commuting_oracle(labels: &[&str]) {
         );
         for mn in k.1 {
             assert!(
-                oracle_motions().iter().any(|g| g.0 == *mn),
+                motion_group().iter().any(|g| g.0 == *mn),
                 "KNOWN names a motion: {mn}"
+            );
+        }
+    }
+    for d in DIGEST_DIFFERS {
+        assert!(
+            fams.iter().any(|f| f.0 == d.0),
+            "the scoreboard names a family: {}",
+            d.0
+        );
+        for mn in d.1 {
+            assert!(
+                motion_group().iter().any(|g| g.0 == *mn),
+                "the scoreboard names a motion: {mn}"
             );
         }
     }
@@ -391,9 +400,8 @@ fn run_commuting_oracle(labels: &[&str]) {
     let mut known_hit = 0usize;
     for (fam, build) in &fams {
         for (kn, kind) in kinds {
-            for (mn, prefix, iso, class) in &group {
-                let (ans0, outcome, digest) =
-                    boolean_commutes(build, kind, prefix.as_ref(), iso, *class);
+            for (mn, iso, class) in &group {
+                let (ans0, outcome, digest) = boolean_commutes(build, kind, iso, *class);
                 if let Some(want) = expected_unmoved_volume(fam, kind) {
                     let got: f64 = ans0.volumes.iter().sum();
                     if (got - want).abs() > 1e-9 * (1.0 + want.abs()) {
@@ -435,11 +443,18 @@ fn run_commuting_oracle(labels: &[&str]) {
                     )),
                 }
                 // ★ The commuting diagram's digest is a lock where measurement said it holds
-                // (every quadrantal cell bit-identical, 492/492; every exact-rigid cell
-                // identical or identical without its pierce vertices, 240/240 of the commuting
-                // ones — the pierce vertices of the offset bosses round once more under a
-                // translation, as their `a + b√c` predicts).
-                if known.is_none() {
+                // (the whole group: every quadrantal cell bit-identical, 600/612; every
+                // exact-rigid cell identical or identical without its pierce vertices, 338/340 —
+                // the pierce vertices of the offset bosses round once more under a translation,
+                // as their `a + b√c` predicts; the rest are the `DIGEST_DIFFERS` scoreboard).
+                if digest_differs(fam, mn, kind) {
+                    if !matches!(digest, Digest::Differs(_)) {
+                        failures.push(format!(
+                            "{fam} {kn} {mn}: digest {digest:?}, which the scoreboard says \
+                             differs — the row must go"
+                        ));
+                    }
+                } else if known.is_none() {
                     let ok = match (class, &digest) {
                         (MotionClass::Quadrantal, Digest::Identical) => true,
                         (
@@ -504,12 +519,13 @@ fn the_boolean_commutes_with_rigid_motion() {
 #[test]
 #[ignore = "the whole motion group (~15 × 66 booleans); the subset runs always"]
 fn the_boolean_commutes_with_every_motion_of_the_group() {
-    let group = oracle_motions();
+    let group = motion_group();
     let labels: Vec<&str> = group.iter().map(|g| g.0.as_str()).collect();
     run_commuting_oracle(&labels);
 }
 
-/// **The transport law, as a lock**: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`.
+/// **The transport law, as a lock**: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` —
+/// on the offset boss below and on a block whose every motion is recorded.
 ///
 /// The fixture is the counterexample to an exactness probe that tests the translation on the
 /// pre-turn coordinates — a boss whose seam vertex `(4.8, 0.5)`
@@ -591,6 +607,57 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     b.rebuild_adjacency();
     assert_eq!(sorted_vertex_bits(&a, &ra), sorted_vertex_bits(&b, &rb));
     assert!(nacre_validate::validate(&a).is_empty() && nacre_validate::validate(&b).is_empty());
+
+    // The recorded road: a block whose every motion is a node (its `Through` face) takes the
+    // same law — one rigid operation and its two halves leave every face the same chain, the
+    // same world plane and the same vertex bits.
+    let recorded = |split: bool| -> (Model, Handle<Solid>) {
+        let mut m = Model::new();
+        let s = super::fixtures::through_block(&mut m, 1.0);
+        let s = if split {
+            let s = transform(&mut m, s, &rot).unwrap();
+            transform(&mut m, s, &tr).unwrap()
+        } else {
+            transform(&mut m, s, &rigid).unwrap()
+        };
+        m.rebuild_adjacency();
+        (m, s)
+    };
+    let faces_said = |m: &Model, s: Handle<Solid>| -> Vec<String> {
+        let mut out: Vec<String> = m
+            .shell(m.solid(s).outer)
+            .faces
+            .iter()
+            .map(|&f| {
+                let h = m.face(f).surface;
+                let mut chain = Vec::new();
+                let mut at = m.plane_motion(h);
+                while let Some(node) = at {
+                    chain.push(match m.motion(node).motion {
+                        nacre_topo::Motion::Rotate { .. } => "R",
+                        nacre_topo::Motion::Translate { .. } => "T",
+                        nacre_topo::Motion::Mirror { .. } => "M",
+                        nacre_topo::Motion::Frame { .. } => "F",
+                    });
+                    at = m.motion(node).parent;
+                }
+                format!("{:?} {chain:?}", m.world_plane_name(h))
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let ((ma, sa), (mb, sb)) = (recorded(false), recorded(true));
+    let said = faces_said(&ma, sa);
+    assert!(
+        said.iter().any(|f| f.ends_with(r#"["T", "R"]"#)),
+        "the recorded road records the turn and the translation: {said:?}"
+    );
+    assert_eq!(said, faces_said(&mb, sb), "one chain shape, one world");
+    assert_eq!(
+        sorted_vertex_bits(&ma, &[sa]),
+        sorted_vertex_bits(&mb, &[sb])
+    );
 }
 
 /// **The half-recorded chain's own fixture**: the offset boss under `rz90 + t(5, −3, 2)`. Its

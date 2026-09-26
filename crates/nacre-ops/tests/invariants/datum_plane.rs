@@ -2530,48 +2530,65 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
 ///
 /// The fixture reaches the world road through a recorded mirror: a `0.1` translation rounds, so
 /// it is recorded as a node, and once a history exists the mirror is recorded behind it — while
-/// the top cap stays axis-aligned, so its frame still lifts to exact rationals.
+/// the top cap stays axis-aligned, so its frame still lifts to exact rationals. The `Through`
+/// block reaches the same road because every motion of it is a node.
 #[test]
 fn an_offset_of_a_mirrored_face_lands_outward() {
-    let mut m = Model::new();
-    let world = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { solid, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: world,
-            profile: square(0.0, 2.0),
-            dist: 1.0,
-        },
-    )
-    .expect("a box") else {
-        unreachable!()
-    };
-    let OpOutput::Transform { solid } = apply(
-        &mut m,
-        &Operation::Transform {
-            solid,
-            isometry: nacre_exact::Isometry::translation([
-                nacre_exact::Rat::from_int(0),
-                nacre_exact::Rat::from_int(0),
-                nacre_exact::Rat::from_decimal(0.1).expect("0.1"),
-            ]),
-        },
-    )
-    .expect("a translation") else {
-        unreachable!()
-    };
-    let OpOutput::Mirror { solid } = apply(
-        &mut m,
-        &Operation::Mirror {
-            solid,
-            axis: Axis::X,
-            offset: nacre_exact::Rat::from_int(0),
-        },
-    )
-    .expect("a mirror") else {
-        unreachable!()
-    };
+    let tenth = nacre_exact::Rat::from_decimal(0.1).expect("0.1");
+    for road in ["plain", "through"] {
+        let mut m = Model::new();
+        let solid = if road == "through" {
+            crate::fixtures::through_mirrored_block(&mut m, 1.0, tenth)
+        } else {
+            let world = SketchFrame::world(&m, Axis::Z);
+            let OpOutput::Extrude { solid, .. } = apply(
+                &mut m,
+                &Operation::Extrude {
+                    frame: world,
+                    profile: square(0.0, 2.0),
+                    dist: 1.0,
+                },
+            )
+            .expect("a box") else {
+                unreachable!()
+            };
+            let OpOutput::Transform { solid } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid,
+                    isometry: nacre_exact::Isometry::translation([
+                        nacre_exact::Rat::from_int(0),
+                        nacre_exact::Rat::from_int(0),
+                        tenth,
+                    ]),
+                },
+            )
+            .expect("a translation") else {
+                unreachable!()
+            };
+            let OpOutput::Mirror { solid } = apply(
+                &mut m,
+                &Operation::Mirror {
+                    solid,
+                    axis: Axis::X,
+                    offset: nacre_exact::Rat::from_int(0),
+                },
+            )
+            .expect("a mirror") else {
+                unreachable!()
+            };
+            solid
+        };
+        offset_of_the_top_lands_outward(road, &mut m, solid);
+    }
+}
 
+/// The shared half of the test above: the top cap on `z = 1.1`, offset one along its `ŵ`.
+fn offset_of_the_top_lands_outward(
+    road: &str,
+    m: &mut Model,
+    solid: nacre_store::Handle<nacre_topo::Solid>,
+) {
     // The top cap: the face on z = 1.1 whose outward is +z.
     let shell = m.solid(solid).outer;
     let top = m
@@ -2588,13 +2605,12 @@ fn an_offset_of_a_mirrored_face_lands_outward() {
             let s = f64::from(face.orientation.sign());
             (n[2] * s - 1.0).abs() < 1e-12 && (p.origin().as_array()[2] - 1.1).abs() < 1e-12
         })
-        .expect("the mirrored box keeps a top cap on z = 1.1");
+        .expect("the mirrored block keeps a top cap on z = 1.1");
     // The canonical frame of its plane — a public statement any caller can make — whose `ŵ` is
     // the carried `+ẑ`.
     let frame = SketchFrame::canonical(m.face(top).surface);
 
-    let OpOutput::DatumPlane { plane, .. } = apply(&mut m, &offset(frame, 1.0)).expect("offset")
-    else {
+    let OpOutput::DatumPlane { plane, .. } = apply(m, &offset(frame, 1.0)).expect("offset") else {
         unreachable!()
     };
     let nacre_geom::Surface::Plane(p) = m.surface_cache(plane) else {
@@ -2603,7 +2619,7 @@ fn an_offset_of_a_mirrored_face_lands_outward() {
     let z = p.origin().as_array()[2];
     assert!(
         (z - 2.1).abs() < 1e-12,
-        "one outward from the top cap is z = 2.1, got z = {z}"
+        "{road}: one outward from the top cap is z = 2.1, got z = {z}"
     );
 }
 
@@ -2618,26 +2634,41 @@ fn an_offset_of_a_mirrored_face_lands_outward() {
 /// through the transform.
 #[test]
 fn an_offset_of_a_moved_plane_is_the_exact_plane() {
-    for (h, (p, q)) in [(0.1, (1, 3)), (0.2, (2, 7))] {
-        let lift = nacre_exact::Rat::new(p, q).expect("a lift");
-        let mut m = Model::new();
-        let solid = lifted_block(&mut m, h, lift);
-        let top = top_surface(&m, solid);
-        let OpOutput::DatumPlane { plane, .. } =
-            apply(&mut m, &offset(SketchFrame::canonical(top), 1.0)).expect("an offset")
-        else {
-            unreachable!()
-        };
-        let mut want = Model::new();
-        let want_solid = lifted_block(&mut want, h + 1.0, lift);
-        let want_top = top_surface(&want, want_solid);
-        assert_eq!(
-            m.world_plane_name(plane),
-            want.world_plane_name(want_top),
-            "h = {h}, lift = {p}/{q}: one above the lifted top is the lifted top of a block one taller"
-        );
+    let roads: [(&str, Lift, bool); 2] = [
+        ("plain", lifted_block, true),
+        ("through", crate::fixtures::through_lifted_block, true),
+    ];
+    for (road, lifted, recorded) in roads {
+        for (h, (p, q)) in [(0.1, (1, 3)), (0.2, (2, 7))] {
+            let lift = nacre_exact::Rat::new(p, q).expect("a lift");
+            let mut m = Model::new();
+            let solid = lifted(&mut m, h, lift);
+            let top = top_surface(&m, solid);
+            assert_eq!(
+                m.plane_motion(top).is_some(),
+                recorded,
+                "{road}: whether the lift is recorded"
+            );
+            let OpOutput::DatumPlane { plane, .. } =
+                apply(&mut m, &offset(SketchFrame::canonical(top), 1.0)).expect("an offset")
+            else {
+                unreachable!()
+            };
+            let mut want = Model::new();
+            let want_solid = lifted(&mut want, h + 1.0, lift);
+            let want_top = top_surface(&want, want_solid);
+            assert_eq!(
+                m.world_plane_name(plane),
+                want.world_plane_name(want_top),
+                "{road}, h = {h}, lift = {p}/{q}: one above the lifted top is the lifted top of a \
+                 block one taller"
+            );
+        }
     }
 }
+
+/// A way to lift (and perhaps mirror) a block.
+type Lift = fn(&mut Model, f64, nacre_exact::Rat) -> nacre_store::Handle<nacre_topo::Solid>;
 
 /// ★★ **A frame carried through a reflection takes the world road, left-handed, and still sweeps
 /// along its `ŵ`.**
@@ -2660,48 +2691,56 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
         .expect("a disk")
         .remove(0)
     };
-    for (what, profile, area) in [
-        ("square", square(0.2, 0.8), 0.36),
-        ("disk", disk(), std::f64::consts::PI * 0.09),
-    ] {
-        let mut m = Model::new();
-        let block = mirrored_lifted_block(&mut m, 1.0, lift);
-        let top = top_surface(&m, block);
-        assert!(
-            m.plane_motion(top).is_some(),
-            "the fixture's top cap carries its chain"
-        );
-        let OpOutput::Extrude { solid, faces } = apply(
-            &mut m,
-            &Operation::Extrude {
-                frame: SketchFrame::canonical(top),
-                profile,
-                dist: 0.5,
-            },
-        )
-        .expect("the extrude") else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        let far = m.face(faces[1]).surface;
-        assert!(
-            m.plane_motion(far).is_none(),
-            "{what}: a folding chain puts the prism on the world road"
-        );
-        let bad = nacre_validate::validate(&m);
-        assert!(bad.is_empty(), "{what}: {bad:?}");
-        let v = crate::fixtures::volume(&m, solid);
-        assert!(
-            (v - area * 0.5).abs() < 1e-12,
-            "{what}: volume {v}, the profile swept 0.5 has {}",
-            area * 0.5
-        );
-        let mut want = Model::new();
-        let want_block = mirrored_lifted_block(&mut want, 1.5, lift);
-        assert_eq!(
-            m.world_plane_name(far),
-            want.world_plane_name(top_surface(&want, want_block)),
-            "{what}: the far cap is the top of a block 0.5 taller — the sweep ran along ŵ"
-        );
+    let roads: [(&str, Lift, bool); 2] = [
+        ("plain", mirrored_lifted_block, true),
+        ("through", crate::fixtures::through_mirrored_block, true),
+    ];
+    for (road, mirrored, recorded) in roads {
+        for (what, profile, area) in [
+            ("square", square(0.2, 0.8), 0.36),
+            ("disk", disk(), std::f64::consts::PI * 0.09),
+        ] {
+            let what = format!("{road} {what}");
+            let mut m = Model::new();
+            let block = mirrored(&mut m, 1.0, lift);
+            let top = top_surface(&m, block);
+            assert_eq!(
+                m.plane_motion(top).is_some(),
+                recorded,
+                "{what}: whether the fixture's top cap carries its chain"
+            );
+            let OpOutput::Extrude { solid, faces } = apply(
+                &mut m,
+                &Operation::Extrude {
+                    frame: SketchFrame::canonical(top),
+                    profile,
+                    dist: 0.5,
+                },
+            )
+            .expect("the extrude") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let far = m.face(faces[1]).surface;
+            assert!(
+                m.plane_motion(far).is_none(),
+                "{what}: a folding chain puts the prism on the world road"
+            );
+            let bad = nacre_validate::validate(&m);
+            assert!(bad.is_empty(), "{what}: {bad:?}");
+            let v = crate::fixtures::volume(&m, solid);
+            assert!(
+                (v - area * 0.5).abs() < 1e-12,
+                "{what}: volume {v}, the profile swept 0.5 has {}",
+                area * 0.5
+            );
+            let mut want = Model::new();
+            let want_block = mirrored(&mut want, 1.5, lift);
+            assert_eq!(
+                m.world_plane_name(far),
+                want.world_plane_name(top_surface(&want, want_block)),
+                "{what}: the far cap is the top of a block 0.5 taller — the sweep ran along ŵ"
+            );
+        }
     }
 }

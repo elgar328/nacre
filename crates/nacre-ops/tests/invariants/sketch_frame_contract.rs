@@ -78,7 +78,9 @@ fn rot(axis: Axis, deg: i128) -> Isometry {
 /// A plane the motion fixes (the z-caps under a turn about `z` or a slide within them) keeps its
 /// world statement; the walls carry the chain. The last two lift the block by `1/3` — a
 /// translation that rounds, so the caps carry it as a node — and then mirror it: faces whose
-/// frame is carried out through a folding chain, a reflection in the second.
+/// frame is carried out through a folding chain, a reflection in the second. The `through` pair
+/// is the same lift and mirror of a block whose `Through` face makes every motion a node
+/// (`through_block`).
 fn flavours() -> Vec<(&'static str, Model, Handle<Solid>)> {
     let mut out = Vec::new();
 
@@ -114,6 +116,14 @@ fn flavours() -> Vec<(&'static str, Model, Handle<Solid>)> {
     let mut m = Model::new();
     let s = crate::fixtures::mirrored_lifted_block(&mut m, 1.0, third);
     out.push(("mirrored", m, s));
+
+    let mut m = Model::new();
+    let s = crate::fixtures::through_lifted_block(&mut m, 1.0, third);
+    out.push(("through lifted", m, s));
+
+    let mut m = Model::new();
+    let s = crate::fixtures::through_mirrored_block(&mut m, 1.0, third);
+    out.push(("through mirrored", m, s));
 
     out
 }

@@ -43,6 +43,9 @@ use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
+#[path = "support/fixtures.rs"]
+mod fixtures;
+
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
 }
@@ -197,14 +200,18 @@ fn small_booleans(reps: usize) -> std::time::Duration {
     spent
 }
 
-/// A box given a history (a rounding translation, recorded as a node) and then turned a quarter
-/// `n` times — every turn recorded behind the last, so the chain is `n + 1` deep and every node
-/// folds. Returns the time to build it and the time of one fuse against an unmoved box: what a
-/// question about the chain costs as the history grows.
+/// A block whose every motion is recorded (its `Through` face — [`fixtures::through_block`])
+/// moved by a translation and then turned a quarter `n` times — every turn recorded behind the
+/// last, so the chain is `n + 1` deep and every node folds. Returns the time to build it and the
+/// time of one fuse against an unmoved box it overlaps (`n` a multiple of four brings it home):
+/// what a question about the chain costs as the history grows.
 fn recorded_quarter_turns(n: usize) -> (std::time::Duration, std::time::Duration) {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    let a = fixtures::through_block(&mut m, 1.0);
+    let b = m.add_cuboid(
+        Point3::from_array([1.0, 2.5, 0.5]),
+        Point3::from_array([2.0, 3.5, 1.5]),
+    );
     m.rebuild_adjacency();
     let xf = |m: &mut Model, s: Handle<Solid>, isometry: Isometry| -> Handle<Solid> {
         match apply(m, &Operation::Transform { solid: s, isometry }).expect("a transform") {

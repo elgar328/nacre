@@ -328,33 +328,45 @@ fn far_cap(
     m.face(faces[1]).surface
 }
 
+/// A way to lift a block, and whether the lift is recorded as a node.
+type Lift = fn(&mut Model, f64, Rat) -> nacre_store::Handle<nacre_topo::Solid>;
+
 /// ★★ **A pad on a lifted face lands its top on the exact plane.**
 ///
 /// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3`, a rational with no short
-/// decimal, and the rounding translation leaves the top carrying its motion. The pad's frame
-/// origin used to be that plane's cache realized and lifted back with `Rat::from_decimal` — the
-/// decimal the `f64` prints — so the pad's far cap stood on `28666666666666667/2·10¹⁶` instead of
-/// `43/30` (measured, 6/6 lifts). The oracle is the transform's own: a block `h + 1` tall lifted
-/// the same way.
+/// decimal. The pad's frame origin used to be that plane's cache realized and lifted back with
+/// `Rat::from_decimal` — the decimal the `f64` prints — so the pad's far cap stood on
+/// `28666666666666667/2·10¹⁶` instead of `43/30` (measured, 6/6 lifts). Two roads to that top:
+/// the plain block, whose rounding translation leaves the top carrying its motion, and the
+/// `Through` block, whose every motion is a node. The oracle is the transform's own: a block
+/// `h + 1` tall lifted the same way.
 #[test]
 fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
-    for (h, (p, q)) in [(0.1, (1, 3)), (0.3, (2, 7))] {
-        let lift = Rat::new(p, q).expect("a lift");
-        let mut m = Model::new();
-        let block = crate::fixtures::lifted_block(&mut m, h, lift);
-        let top = crate::fixtures::top_face(&m, block);
-        assert!(
-            m.plane_motion(m.face(top).surface).is_some(),
-            "the lift is recorded"
-        );
-        let padded = pad_centred(&mut m, top, 1.0);
-        let mut want = Model::new();
-        let want_block = crate::fixtures::lifted_block(&mut want, h + 1.0, lift);
-        assert_eq!(
-            m.world_plane_name(m.face(padded).surface),
-            want.world_plane_name(crate::fixtures::top_surface(&want, want_block)),
-            "h = {h}, lift = {p}/{q}: the pad's top is the lifted top of a block one taller"
-        );
+    let roads: [(&str, Lift, bool); 2] = [
+        ("plain", crate::fixtures::lifted_block, true),
+        ("through", crate::fixtures::through_lifted_block, true),
+    ];
+    for (road, lifted, recorded) in roads {
+        for (h, (p, q)) in [(0.1, (1, 3)), (0.3, (2, 7))] {
+            let lift = Rat::new(p, q).expect("a lift");
+            let mut m = Model::new();
+            let block = lifted(&mut m, h, lift);
+            let top = crate::fixtures::top_face(&m, block);
+            assert_eq!(
+                m.plane_motion(m.face(top).surface).is_some(),
+                recorded,
+                "{road}: whether the lift is recorded"
+            );
+            let padded = pad_centred(&mut m, top, 1.0);
+            let mut want = Model::new();
+            let want_block = lifted(&mut want, h + 1.0, lift);
+            assert_eq!(
+                m.world_plane_name(m.face(padded).surface),
+                want.world_plane_name(crate::fixtures::top_surface(&want, want_block)),
+                "{road}, h = {h}, lift = {p}/{q}: the pad's top is the lifted top of a block one \
+                 taller"
+            );
+        }
     }
 }
 
@@ -473,16 +485,19 @@ fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
 /// the pad lands, as the same handle. On a lifted face that frame is carried out through the
 /// face's own chain; on a mirrored one the chain has a reflection in it and the carried frame is
 /// left-handed — the pad and the extrude must still agree, and the solid stay right side out.
+/// Both on the plain block and on the `Through` block, whose every motion is a node.
 #[test]
 fn the_reported_frame_extrudes_where_the_pad_lands() {
     let lift = Rat::new(1, 3).expect("a lift");
-    for mirrored in [false, true] {
+    let blocks: [(&str, Lift); 4] = [
+        ("plain", crate::fixtures::lifted_block),
+        ("plain mirrored", crate::fixtures::mirrored_lifted_block),
+        ("through", crate::fixtures::through_lifted_block),
+        ("through mirrored", crate::fixtures::through_mirrored_block),
+    ];
+    for (what, make) in blocks {
         let mut m = Model::new();
-        let block = if mirrored {
-            crate::fixtures::mirrored_lifted_block(&mut m, 0.1, lift)
-        } else {
-            crate::fixtures::lifted_block(&mut m, 0.1, lift)
-        };
+        let block = make(&mut m, 0.1, lift);
         let top = crate::fixtures::top_face(&m, block);
         let frame = nacre_ops::face_sketch_frame(&m, top).expect("a lifted face has a frame");
         let profile = centred_square(&m, top, 0.2);
@@ -499,17 +514,14 @@ fn the_reported_frame_extrudes_where_the_pad_lands() {
         };
         m.rebuild_adjacency();
         let bad = nacre_validate::validate(&m);
-        assert!(bad.is_empty(), "mirrored = {mirrored}: {bad:?}");
+        assert!(bad.is_empty(), "{what}: {bad:?}");
         let v = crate::fixtures::volume(&m, solid);
-        assert!(
-            (v - (4.0 * 0.1 + 0.16)).abs() < 1e-12,
-            "mirrored = {mirrored}: volume {v}"
-        );
+        assert!((v - (4.0 * 0.1 + 0.16)).abs() < 1e-12, "{what}: volume {v}");
         let far = far_cap(&mut m, frame, profile, 1.0);
         assert_eq!(
             m.face(top_face).surface,
             far,
-            "mirrored = {mirrored}: the pad's top and the extrude's far cap are one handle"
+            "{what}: the pad's top and the extrude's far cap are one handle"
         );
     }
 }

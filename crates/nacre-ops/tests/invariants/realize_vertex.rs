@@ -879,7 +879,13 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
         ("80 turns of 7°", 80, true),
     ] {
         let mut m = Model::new();
-        let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+        // The translations need a solid that records them: a fresh block carries a translation
+        // into its statements, the `Through` block records every motion.
+        let mut s = if rotate {
+            cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0])
+        } else {
+            crate::fixtures::through_block(&mut m, 4.0)
+        };
         m.rebuild_adjacency();
         for _ in 0..n {
             let iso = if rotate {
