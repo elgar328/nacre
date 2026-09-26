@@ -572,15 +572,15 @@ fn placement_matches_occt() {
 
 /// **Reflection, scored by a kernel that has never heard of a motion history.**
 ///
-/// A reflection is a motion the chain records, which makes two answers the suite has no prior
+/// A reflection is carried into the statements when every one of them moves exactly, and
+/// recorded in the chain behind a history, which makes two answers the suite has no prior
 /// expectation for: a wall reached by reflection and a wall reached by translation are one wall,
 /// not two walls one ulp apart, and a mirrored *rotated* solid extends its chain rather than
 /// conjugating it. Both are decisions of the kernel, so both get an outside opinion.
 ///
-/// The mirror planes are deliberately **non-dyadic** (`1/3`, `7/22`, `5/7`): `2c − x` is exact
-/// for a dyadic `c`, so those are the cases where the reflection is recorded and the
-/// definition — not the `f64` coordinate — is what answers. Dyadic planes ride along as
-/// controls that must not have changed.
+/// The mirror planes are deliberately **non-dyadic** (`1/3`, `7/22`, `5/7`): their `f64` images
+/// round while the statements move exactly, so the definition — not the `f64` coordinate — is
+/// what answers. Dyadic planes ride along as controls.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn reflection_matches_occt() {

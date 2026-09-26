@@ -240,26 +240,25 @@ fn an_offset_mirror_plane() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// **A reflection that keeps every coordinate exact records nothing — and that is what keeps the
-/// ordinary mirror on the exact path.**
+/// **A reflection records nothing when every statement moves exactly — whatever its `f64` does —
+/// and records itself when one cannot.**
 ///
-/// `2c − x` is exact for a dyadic `c` (and `c = 0`, the only form the script layer emits today),
-/// so the coefficients stay the truth and the surfaces carry no motion. If this ever starts
-/// recording a node, nothing in the suite would *fail* — every answer stays correct — but every
-/// mirrored model would quietly leave the exact `f64` predicates for the toleranced ones. That is
-/// the kind of regression only a direct assertion catches.
+/// `2c − x` is rational for every rational `c`, so a fresh block's points reflect exactly in any
+/// plane the caller can state: dyadic (`0`, `3`, `1/2`) or not (`1/3`, `7/22`, whose `f64` images
+/// round). Carried, the surfaces keep no motion and the block is world-stated where it lands —
+/// the exact `f64` predicates, the world names, one handle per plane. If a reflection that could
+/// be carried started recording a node, nothing in the suite would *fail* — every answer stays
+/// correct — but every such mirrored model would quietly leave the exact predicates for the
+/// toleranced ones. That is the kind of regression only a direct assertion catches.
 ///
-/// The non-dyadic twin is the opposite claim and is checked beside it: `1/3` cannot be realized,
-/// so the reflection **must** be recorded or the kernel would be declaring a rounded plane exact
-/// (which is precisely the split `a_mirrored_wall_and_a_placed_wall_merge_the_part` pins).
+/// The other half of the rule: a block whose statement cannot be moved — a `Through` face, stated
+/// by vertex handles — records the reflection on every face, rather than moving part of it.
 #[test]
-fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
-    let exactness = |offset: Rat| {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+fn a_mirror_is_carried_when_every_statement_moves_exactly() {
+    let recorded = |m: &mut Model, a: Handle<Solid>, offset: Rat| -> Vec<bool> {
         m.rebuild_adjacency();
         let OpOutput::Mirror { solid: b } = apply(
-            &mut m,
+            m,
             &Operation::Mirror {
                 solid: a,
                 axis: Axis::X,
@@ -270,27 +269,37 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
             unreachable!("Mirror yields a Mirror output")
         };
         m.rebuild_adjacency();
-        let shell = m.solid(b).outer;
-        let mut motions = Vec::new();
-        for &fh in &m.shell(shell).faces {
-            motions.push(match m.surface(m.face(fh).surface) {
-                nacre_topo::Surface::Plane { motion, .. }
-                | nacre_topo::Surface::Cylinder { motion, .. } => motion.is_some(),
-            });
-        }
+        let motions: Vec<bool> = m
+            .shell(m.solid(b).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.plane_motion(m.face(fh).surface).is_some())
+            .collect();
         assert!(!motions.is_empty(), "walked no faces");
         motions
     };
 
-    for offset in [Rat::from_int(0), Rat::from_int(3), Rat::new(1, 2).unwrap()] {
+    for offset in [
+        Rat::from_int(0),
+        Rat::from_int(3),
+        Rat::new(1, 2).unwrap(),
+        Rat::new(1, 3).unwrap(),
+        Rat::new(7, 22).unwrap(),
+    ] {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         assert!(
-            exactness(offset).iter().all(|recorded| !recorded),
-            "a dyadic mirror plane keeps the coefficients true, so nothing is recorded"
+            recorded(&mut m, a, offset).iter().all(|r| !r),
+            "{offset:?}: every statement reflects exactly, so nothing is recorded"
         );
     }
+    let mut m = Model::new();
+    let a = through_block(&mut m, 1.0);
     assert!(
-        exactness(Rat::new(1, 3).unwrap()).iter().all(|&r| r),
-        "a mirror plane that cannot be realized must be recorded, not declared exact"
+        recorded(&mut m, a, Rat::new(1, 3).unwrap())
+            .iter()
+            .all(|&r| r),
+        "a Through face cannot be moved, so every face records the reflection"
     );
 }
 

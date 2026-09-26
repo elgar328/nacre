@@ -121,7 +121,7 @@ fn every_live_planar_face_records_its_points() {
     m.rebuild_adjacency();
     assert_all_planes_record_points(&m, "pad");
 
-    // ④ Motions: an inexact rotation (recorded node), a translation, a mirror.
+    // ④ Motions: an inexact rotation (recorded node), and a mirror recorded behind it.
     let turned = {
         let OpOutput::Transform { solid } = apply(
             &mut m,

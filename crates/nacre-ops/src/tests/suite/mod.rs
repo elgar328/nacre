@@ -737,9 +737,10 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
 // −axis) with its outward along +axis. So one dyadic translation that puts the plate's max faces
 // onto the seeds reaches that class without any rotation; the quadrantal rotations turn the axis
 // to ±x/±y (the ⊥ road's `axis_up` and the arc extremum's axis); a rigid motion of a non-dyadic
-// origin exercises the transport's exactness boundary; a non-dyadic translation the recorded
-// path itself. The same translation takes the min-side families *off* the seeds (frame +1), so
-// the two classes are complementary.
+// origin, and a non-dyadic translation, move statements whose `f64` images round — carried
+// exactly all the same. The same translation takes the min-side families *off* the seeds
+// (frame +1), so the two classes are complementary. The recorded road is the `recorded block`
+// family's: every motion of it is a node.
 //
 // ★ `KNOWN` is the ledger of cells the kernel does not commute on **today**, each named by the
 // sentence of the assertion that catches it — the crossing census's discipline: a fix flips its
@@ -752,11 +753,9 @@ enum MotionClass {
     /// A pivot-0 quadrantal rotation: a signed permutation of coordinates, exact on any `f64`,
     /// so the moved result's vertex bits equal the unmoved result's bits moved.
     Quadrantal,
-    /// An exact rigid motion or dyadic translation: rational vertices stay bit-exact; a pierce
-    /// vertex (`a + b√c`, irrational) rounds once more on the moved road.
+    /// Any other exact rigid motion: the statements carry it, and every vertex — the pierce
+    /// vertices (`a + b√c`) too — is realized from its moved definition, so the bits agree.
     ExactRigid,
-    /// A non-dyadic translation: the recorded path — volumes, counts and validity only.
-    Recorded,
 }
 
 fn motion_group() -> Vec<(String, nacre_exact::Isometry, MotionClass)> {
@@ -788,7 +787,7 @@ fn motion_group() -> Vec<(String, nacre_exact::Isometry, MotionClass)> {
             Rat::new(3, 10).unwrap(),
             Rat::new(1, 4).unwrap(),
         ]),
-        Recorded,
+        ExactRigid,
     ));
     g
 }

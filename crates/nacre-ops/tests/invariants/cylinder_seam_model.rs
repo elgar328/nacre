@@ -292,10 +292,11 @@ fn edge_kinds(m: &Model, s: Handle<nacre_topo::Solid>) -> (usize, usize) {
 
 /// ★★ **A moved cylinder keeps its edges' kinds** — asked of two populations whose carriers do
 /// not share one chain after the move: a cylinder on a tilted frame (a frame node) moved by a
-/// translation that rounds, and a `+z` cylinder turned 30° about `z` (its seam reference goes
-/// irrational, so the turn is recorded) then moved along its axis by one that rounds. The edge
-/// kinds are relations between two directions, which a rigid motion keeps; a move must neither
-/// refuse these nor change them.
+/// non-dyadic translation, recorded behind that history, and a `+z` cylinder turned 30° about `z`
+/// (its seam reference goes irrational, so the turn is recorded) then moved along its axis — the
+/// lateral records the move behind its turn, the caps the turn fixed carry it. The edge kinds are
+/// relations between two directions, which a rigid motion keeps; a move must neither refuse these
+/// nor change them.
 #[test]
 fn a_moved_cylinder_keeps_its_edges_kinds() {
     use nacre_exact::{Isometry, Rat};

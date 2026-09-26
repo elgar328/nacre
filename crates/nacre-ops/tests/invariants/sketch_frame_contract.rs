@@ -14,7 +14,8 @@
 //! ★ It holds by construction: the face's frame is chosen once (`face_frame`), the pad builds in
 //! it, and `face_plane` is its realization. The lock keeps a second derivation from coming back;
 //! the round trip below is the operation's own witness. The flavours include the faces a
-//! derivation from the cached normal could not spell — a lift that rounds, and a mirror behind it.
+//! derivation from the cached normal could not spell — a lift to a plane with no short decimal,
+//! and a mirror behind it, carried into the statements and recorded as a chain.
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;
 use nacre_ops::{
@@ -76,11 +77,11 @@ fn rot(axis: Axis, deg: i128) -> Isometry {
 /// How the block is placed.
 ///
 /// A plane the motion fixes (the z-caps under a turn about `z` or a slide within them) keeps its
-/// world statement; the walls carry the chain. The last two lift the block by `1/3` — a
-/// translation that rounds, so the caps carry it as a node — and then mirror it: faces whose
-/// frame is carried out through a folding chain, a reflection in the second. The `through` pair
-/// is the same lift and mirror of a block whose `Through` face makes every motion a node
-/// (`through_block`).
+/// world statement; the walls carry the chain. `lifted` and `mirrored` lift the block by `1/3`
+/// and then mirror it, both carried into its statements (world-stated faces, the mirror's
+/// right-handed). The `through` pair is the same lift and mirror of a block whose `Through` face
+/// makes every motion a node (`through_block`): faces whose frame is carried out through a folding
+/// chain, a reflection in the second.
 fn flavours() -> Vec<(&'static str, Model, Handle<Solid>)> {
     let mut out = Vec::new();
 

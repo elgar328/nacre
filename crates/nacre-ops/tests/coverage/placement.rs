@@ -22,8 +22,9 @@ use nacre_ops::{BoolError, BoolKind, boolean};
 use nacre_topo::Model;
 
 /// Two unit cubes placed at `n/d` and `n/d + 1`, so they share the wall `x = (n+d)/d` exactly.
-/// Returns the solids the `Fuse` produced, with their volumes.
-fn place_and_fuse(n: i128, d: i128) -> Result<Vec<f64>, BoolError> {
+/// Returns the volumes of the solids the `Fuse` produced, and whether the first cube's `+x` wall
+/// and the second's `−x` wall came out as **one surface handle** before the fuse.
+fn place_and_fuse(n: i128, d: i128) -> Result<(Vec<f64>, bool), BoolError> {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
@@ -39,30 +40,50 @@ fn place_and_fuse(n: i128, d: i128) -> Result<Vec<f64>, BoolError> {
     };
     let a = shift(&mut m, a, Rat::new(n, d).expect("offset"));
     let b = shift(&mut m, b, Rat::new(n + d, d).expect("offset"));
+    // The wall on each side: the face whose centroid is furthest along `±x`.
+    let wall = |m: &Model, s, sign: f64| {
+        m.shell(m.solid(s).outer)
+            .faces
+            .iter()
+            .copied()
+            .max_by(|&f, &g| {
+                let x = |f| {
+                    sign * nacre_props::face_props(m, f)
+                        .expect("props")
+                        .centroid
+                        .as_array()[0]
+                };
+                x(f).total_cmp(&x(g))
+            })
+            .map(|f| m.face(f).surface)
+            .expect("a cube has faces")
+    };
+    let one_handle = wall(&m, a, 1.0) == wall(&m, b, -1.0);
     let out = boolean(&mut m, BoolKind::Fuse, a, b)?;
     m.rebuild_adjacency();
-    Ok(out.into_iter().map(|s| volume(&m, s)).collect())
+    Ok((out.into_iter().map(|s| volume(&m, s)).collect(), one_handle))
 }
 
-/// **One body, though the two walls' f64 coordinates differ.**
+/// **One body, and one plane, though the two walls' f64 coordinates differ.**
 ///
 /// `x = 1` moved by `7/11` and `x = 0` moved by `18/11` are the same real number, and their f64
-/// images differ in the last place. Each wall carries its motion in its *definition*, so the
-/// judgment realizes both at high precision, finds them the same plane, and merges. The cache is
-/// not the thing to fix.
+/// images differ in the last place. Both moves are carried into the statements, so each wall is
+/// stated in the world and the two statements name the same plane — they intern onto **one**
+/// handle before the boolean ever asks. The cache is not the thing to fix.
 #[test]
-fn a_shared_wall_merges_though_its_f64_images_differ() {
+fn a_shared_wall_interns_one_plane_though_its_f64_images_differ() {
     for (n, d) in [(7i128, 11i128), (13, 23)] {
-        let vols = place_and_fuse(n, d).expect("fuse");
+        let (vols, one_handle) = place_and_fuse(n, d).expect("fuse");
+        assert!(one_handle, "{n}/{d}: the shared wall is one surface");
         assert_eq!(vols.len(), 1, "{n}/{d}: one part, got {vols:?}");
         assert!((vols[0] - 2.0).abs() < 1e-9, "{n}/{d}: {}", vols[0]);
     }
 }
 
-/// **Offsets whose wall survives the two roundings still build one body.**
+/// **Every placement's wall is one plane, and the part one body.**
 ///
-/// The control for the test above: most non-dyadic offsets round alike on both walls; the ones
-/// where the two roundings disagree are the ones that test.
+/// The control for the test above, over offsets whose two roundings agree and ones where they
+/// disagree: the statements do not round, so the answer does not depend on which.
 #[test]
 fn most_placements_still_build_one_body() {
     for (n, d) in [
@@ -77,7 +98,8 @@ fn most_placements_still_build_one_body() {
         (1, 6),
         (5, 9),
     ] {
-        let vols = place_and_fuse(n, d).expect("fuse");
+        let (vols, one_handle) = place_and_fuse(n, d).expect("fuse");
+        assert!(one_handle, "{n}/{d}: the shared wall is one surface");
         assert_eq!(vols.len(), 1, "{n}/{d}: {vols:?}");
         assert!((vols[0] - 2.0).abs() < 1e-9, "{n}/{d}: {}", vols[0]);
     }
@@ -130,16 +152,14 @@ fn rotate_then_place_builds() {
 /// **A wall reached by reflection and a wall reached by translation are the same wall.**
 ///
 /// `AxisMirror` reflects as `2·offset − x` with `offset` already dropped to `f64`. The doubling is
-/// exact (a power of two), so the split needed a *second, independent* route to the same plane:
+/// exact (a power of two), so the split needs a *second, independent* route to the same plane:
 /// here one wall arrives by reflection and the other by translation. Two roundings each, taken in
 /// a different order, and the `f64` images disagree in the last place — the same shape as
-/// [`a_shared_wall_merges_though_its_f64_images_differ`], through the mirror.
+/// [`a_shared_wall_interns_one_plane_though_its_f64_images_differ`], through the mirror.
 ///
-/// The chain holds reflections — `1/3` is not dyadic, so the node is recorded — and the two
-/// definitions realize to the same plane. (Carried instead by *conjugating* an existing chain, a
-/// surface with no chain has nothing to conjugate, its mirror image is declared exact, and the
-/// part fuses into **two** bodies.) The `f64` coordinates differ in the last place, and they
-/// should.
+/// Both motions are carried into the statements — `2·(1/3) − 1` and `0 − 1/3` are the same
+/// rational — so the two walls state one plane and the part is one body. The `f64` coordinates
+/// differ in the last place, and they should.
 #[test]
 fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.

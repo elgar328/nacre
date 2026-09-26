@@ -82,15 +82,14 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
     }
 }
 
-/// **"This step kept it exact" never excuses a chain from recording it.**
+/// **"The statements could carry this step" never excuses a chain from recording it.**
 ///
-/// A motion that leaves every coordinate on an exact `f64` needs no node *of its own* — but if
-/// the datum already has a history, the chain has to keep reproducing it, and a chain missing a
-/// link describes the datum as it was before that link. Silently.
+/// A motion every statement can carry needs no node *of its own* — but if the datum already has
+/// a history, its statement is the plane before the chain and stays verbatim, so the chain has to
+/// keep reproducing the motion; a chain missing a link describes the datum as it was before that
+/// link. Silently.
 ///
-/// Asserted on the rule rather than on a symptom. The translation half is what the rule was
-/// found to be wrong on; the reflection half is the case that made it load-bearing, since a
-/// reflection in a dyadic plane preserves exactness *and* can carry a history.
+/// Asserted on the rule rather than on a symptom, for a translation and for a reflection.
 #[test]
 fn an_exact_motion_is_still_recorded_once_there_is_a_history() {
     let mut m = Model::new();
@@ -131,16 +130,16 @@ fn an_exact_motion_is_still_recorded_once_there_is_a_history() {
         assert_eq!(got, kind, "a {what} records a {kind} node");
     }
 }
-/// ★★★ **An exact move whose rational point transport would overflow records a node
-/// instead of dropping the points.** The two exactness conditions are independent — every
-/// f64 here lands exactly (`t = 2⁻³⁰` on unit-scale corners), while one surface's stored
-/// triple has a `5⁴²` denominator, so `q + t` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. Taking
-/// the no-node path would push the moved surface point-less; the `carry_of` probe puts the
-/// whole solid on the recorded path, and the original triple survives verbatim as the
-/// pre-motion truth.
-#[test]
-fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
-    let mut m = Model::new();
+/// A unit cube whose top cap carries a **deep** statement of `z = 1` — a triple with a `5⁴²`
+/// denominator — returned with that denominator's `deep`, the triple and its surface.
+fn deep_topped_cube(
+    m: &mut Model,
+) -> (
+    Handle<Solid>,
+    Rat,
+    [[Rat; 3]; 3],
+    nacre_store::Handle<nacre_topo::Surface>,
+) {
     // ★★★ **State the deep plane first and let the cuboid intern onto it.** The three points
     // below name `z = 1` — the same plane the cuboid's top cap names — so `add_cuboid` finds
     // this handle by canonical name and the cap carries *this* statement. No test-only door
@@ -174,18 +173,25 @@ fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
             .any(|&f| m.face(f).surface == deep_surf),
         "the cuboid's top cap must intern onto the deep statement"
     );
-    // Fixture qualification: the f64 side is exact, the rational side overflows.
+    (s, deep, pts, deep_surf)
+}
+
+/// ★★★ **A move whose rational point transport would overflow records a node instead of
+/// dropping the points.** One surface's stored triple has a `5⁴²` denominator, so `q + t` with
+/// `t = 2⁻³⁰` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. Taking the no-node path would push the moved
+/// surface point-less; `carry_of` puts the whole solid on the recorded path, and the original
+/// triple survives verbatim as the pre-motion truth.
+#[test]
+fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
+    let mut m = Model::new();
+    let (s, deep, pts, _) = deep_topped_cube(&mut m);
+    // Fixture qualification: the rational side overflows.
     let t = Rat::new(1, 1 << 30).unwrap();
-    assert_eq!(
-        1.0f64 + t.to_f64(),
-        (Rat::from_int(1).checked_add(t)).unwrap().to_f64()
-    );
     assert!(deep.checked_add(t).is_none(), "the transport must overflow");
 
     // The z component keeps the deep z-plane off the invariant branch (a purely-x
     // translation *fixes* it, and a fixed plane is restated with no transport at all —
-    // this test is about the transport overflowing). `0 + 1` and `1 + 1` are exact, so
-    // the f64-side qualification above still holds for every corner.
+    // this test is about the transport overflowing).
     let iso = Isometry::translation([t, Rat::from_int(0), Rat::from_int(1)]);
     let moved = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
     m.rebuild_adjacency();
@@ -214,6 +220,85 @@ fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
         ),
         "the overflow must force the recorded path, not drop the points"
     );
+}
+
+/// ★★★ **Where one rigid motion and its two halves store differently, the world is still the
+/// same.** `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` holds as a statement about the
+/// world; how it is stored follows what each step can carry. On the deep-topped cube with
+/// `R = rz90` about the origin and `t = (2⁻³⁰, 0, 1)`:
+///
+/// - **at once**, the turn takes the deep coordinate from `x` to `y`, where `t` adds `0`, so every
+///   statement moves exactly and the whole motion is carried — no node anywhere;
+/// - **in two**, `R` fixes the top plane (its statement stays verbatim, `deep` still in `x`) and
+///   is carried, and then `t` adds `2⁻³⁰` to `deep`, which leaves `i128` — so `T` is recorded on
+///   every face.
+///
+/// The two models must still name every face's plane the same in the world and realize every
+/// vertex to the same bits.
+#[test]
+fn an_overflow_splits_the_representation_not_the_world() {
+    use nacre_exact::Rotation;
+    let turn = Rotation {
+        axis: Axis::Z,
+        pivot: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+    };
+    let shift = [
+        Rat::new(1, 1 << 30).unwrap(),
+        Rat::from_int(0),
+        Rat::from_int(1),
+    ];
+    let said = |m: &Model, s: Handle<Solid>| -> (Vec<String>, Vec<[u64; 3]>, bool) {
+        let faces = m.shell(m.solid(s).outer).faces.clone();
+        let mut names: Vec<String> = faces
+            .iter()
+            .map(|&f| format!("{:?}", m.world_plane_name(m.face(f).surface)))
+            .collect();
+        names.sort();
+        let mut bits: Vec<[u64; 3]> = faces
+            .iter()
+            .flat_map(|&f| m.face(f).outer.half_edges.clone())
+            .map(|he| m.vertex_point(m.he_start(he)).as_array().map(f64::to_bits))
+            .collect();
+        bits.sort_unstable();
+        bits.dedup();
+        let recorded = faces
+            .iter()
+            .any(|&f| m.plane_motion(m.face(f).surface).is_some());
+        (names, bits, recorded)
+    };
+
+    let mut at_once = Model::new();
+    let (s, ..) = deep_topped_cube(&mut at_once);
+    let rigid = Isometry::rigid(turn, shift);
+    let a = transform_solid(&mut at_once, s, &Xform::Rigid(&rigid)).unwrap();
+    at_once.rebuild_adjacency();
+
+    let mut in_two = Model::new();
+    let (s, ..) = deep_topped_cube(&mut in_two);
+    let r = Isometry::rotation(turn);
+    let t = Isometry::translation(shift);
+    let b = transform_solid(&mut in_two, s, &Xform::Rigid(&r)).unwrap();
+    in_two.rebuild_adjacency();
+    let b = transform_solid(&mut in_two, b, &Xform::Rigid(&t)).unwrap();
+    in_two.rebuild_adjacency();
+
+    let (names_a, bits_a, recorded_a) = said(&at_once, a);
+    let (names_b, bits_b, recorded_b) = said(&in_two, b);
+    assert!(
+        !recorded_a,
+        "at once, every statement moves exactly: nothing is recorded"
+    );
+    assert!(
+        recorded_b,
+        "in two, the translation overflows the verbatim top: it is recorded"
+    );
+    assert!(
+        names_a.iter().all(|n| n != "None"),
+        "every face names its world plane: {names_a:?}"
+    );
+    assert_eq!(names_a, names_b, "one world, two representations");
+    assert_eq!(bits_a, bits_b, "and one realization");
 }
 
 /// ★★ **A moved cylinder records its history instead of silently degrading.**

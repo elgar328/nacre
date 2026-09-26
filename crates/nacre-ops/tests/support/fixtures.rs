@@ -338,9 +338,9 @@ pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     solid
 }
 
-/// A 2 × 2 block `height` tall on the world XY plane, moved up by `lift`. A lift with no short
-/// decimal (`1/3`) rounds in `f64`, so the transform records it as a motion node: the block's caps
-/// carry a chain that folds.
+/// A 2 × 2 block `height` tall on the world XY plane, moved up by `lift` — carried into its
+/// statements (every one moves exactly), so the top is the world-stated plane `z = height + lift`
+/// even where that has no short decimal (`1/3`). [`through_lifted_block`] is the recorded twin.
 pub fn lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
     let square = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(2.0, 2.0), p2(0.0, 2.0)])
         .expect("a square");
@@ -359,8 +359,8 @@ pub fn lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handl
     xf(m, solid, Isometry::translation([zero, zero, lift]))
 }
 
-/// [`lifted_block`], then reflected in `x = 0` — recorded behind the translation, since a history
-/// exists — so its caps carry a folding chain with a reflection in it.
+/// [`lifted_block`], then reflected in `x = 0` — carried as well, so its faces are world-stated
+/// and take the world's right-handed frames. [`through_mirrored_block`] is the recorded twin.
 pub fn mirrored_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) -> Handle<Solid> {
     let solid = lifted_block(m, height, lift);
     let OpOutput::Mirror { solid } = apply(

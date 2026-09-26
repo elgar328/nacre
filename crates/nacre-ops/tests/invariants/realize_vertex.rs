@@ -1237,10 +1237,10 @@ fn the_prefix_table_stays_one_generation() {
 
 /// **Where a motion does not extend a prefix, the accelerator misses and the answer is unchanged.**
 ///
-/// Two of the three shapes are buildable here: a translation the statements absorb (an exact `f64`
-/// offset, so no node is recorded and the base itself moves) and a quarter turn about a box's own
-/// normal (which fixes each plane, so `transform` restates rather than records). Both must give the
-/// same coordinates as the same build with the table emptied throughout.
+/// Two of the three shapes are buildable here: a translation the statements absorb (a fresh
+/// box's move is carried, so no node is recorded and the base itself moves) and a quarter turn
+/// about a box's own normal (which fixes each plane, so `transform` restates rather than records).
+/// Both must give the same coordinates as the same build with the table emptied throughout.
 ///
 /// ⚠ The third — a triple that straddles two histories and solves through the world road, whose
 /// answer carries no leaf — is **not built here**. It needs two operands with different recorded

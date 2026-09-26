@@ -36,8 +36,10 @@
 //! | `tilted_frame_x2`  | 24 | 16 | **59** | 0 | 0 |
 //!
 //! ★★★ **Nothing is wide.** The corpus maximum is **59 bits**; a second feature on the tilted
-//! population does not move it (59 → 59), and stacking forty motions leaves the widest *name*
-//! exactly where it started (`stacking_operations_does_not_widen_a_name`). ★ These are **corpus
+//! population does not move it (59 → 59), and stacking forty motions leaves the widest *name* as
+//! wide as the same box moved to each place in one step
+//! (`a_stacked_name_is_as_wide_as_the_place_it_lands`).
+//! ★ These are **corpus
 //! numbers, not bounds** — the meter's negative control lives in `nacre-exact`
 //! (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 = 0` is a fact
 //! about this population and not about a clamped instrument. The narrow route answers every
@@ -816,13 +818,15 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     solid
 }
 
-/// ★★★★★ **«Operations accumulate, so surely it overflows eventually» — measured, and no.**
+/// ★★★★★ **«Operations accumulate, so surely it overflows eventually» — measured, and no: a name
+/// is as wide as the place it lands.**
 ///
-/// The width of a stored name does not depend on how many operations preceded it. Forty stacked
-/// motions leave the maximum name width **exactly where it started**, and the reason is visible in
-/// the same table: the surface count climbs by six per operation while the count of **distinct
-/// names stays put**. Every moved face is the *same name* under a new motion handle — "the face
-/// carries the motion", doing precisely what it says.
+/// A move whose statements carry it restates the solid where it lands, so after forty stacked
+/// translations the widest name is exactly the widest name of the same box moved to each place it
+/// passed through in one move — the count of operations does not enter. (A recorded move leaves the
+/// name as it was and adds a motion node instead; either way width is not accumulated.) The table
+/// prints the population's shape: surfaces climb by six per operation, and each carried step names
+/// a new place.
 ///
 /// Three facts close the question together, and the other two are structural rather than
 /// measured here:
@@ -831,14 +835,13 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
 /// - `plane_offset` fixes `n` and moves only `d`, and decimals added together share the factor
 ///   ten, so denominators meet at an lcm rather than multiplying (`1.1 + 6.6 = 7.7`).
 ///
-/// ⇒ Width is set by **the geometry someone wrote down**, not by how much was done to it. It is a
-/// single hop, and `Rat::from_decimal`'s window is what bounds that hop.
+/// ⇒ Width is set by **the geometry someone wrote down and where it ends up**, not by how much was
+/// done to it. It is a single hop, and `Rat::from_decimal`'s window is what bounds that hop.
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
-fn stacking_operations_does_not_widen_a_name() {
+fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
     let dec = |x: f64| Rat::from_decimal(x).unwrap();
-    let mut first = None;
-    let mut last = None;
+    let mut stacked = None;
 
     for (what, turn) in [("translate", false), ("rot90_translate", true)] {
         let mut m = Model::new();
@@ -868,19 +871,35 @@ fn stacking_operations_does_not_widen_a_name() {
                 println!(
                     "stat {what:18} step={i:3} width={w} surfaces={surfaces} distinct_names={names} with_motion_node={with_node}"
                 );
-                if what == "translate" {
-                    if i == 20 {
-                        first = Some(w);
-                    } else {
-                        last = Some(w);
-                    }
+                if what == "translate" && i == 40 {
+                    stacked = Some(w);
                 }
             }
         }
     }
+    // The oracle, from the inputs: the same box moved to every place the forty steps of
+    // (0.13, 0.3, 0.7) passed through, each in **one** move of `k·step` — width is not monotone in
+    // the place (`5.81 = 581/100` is wider than `5.2 = 26/5`), so every place is visited, and
+    // what differs from the stacked road is only the number of operations.
+    let mut once = Model::new();
+    let step = [dec(0.13), dec(0.3), dec(0.7)];
+    for k in 1..=40 {
+        let s = once.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 2.0, 3.0]),
+        );
+        moved(
+            &mut once,
+            s,
+            Isometry::translation(step.map(|c| c.checked_mul(Rat::from_int(k)).expect("small"))),
+        );
+    }
+    let (in_one_move, ..) = name_census(&once);
+    println!("stat each place in one move width={in_one_move}");
     assert_eq!(
-        first, last,
-        "the name width moved between step 20 and step 40 — accumulation is not free after all"
+        stacked,
+        Some(in_one_move),
+        "forty stacked translations must name the box as wide as one move to each place"
     );
 }
 

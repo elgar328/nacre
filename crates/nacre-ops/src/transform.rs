@@ -166,35 +166,28 @@ pub(crate) fn mirror(
 /// performed. It is a motion; it goes in the chain.
 ///
 /// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
-/// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
-/// an exact datum keeps it exact, and a translation that lands every coordinate back on an exact
-/// `f64` does too (`realizes_exactly`, which asks whether the realized image is the exact one).
+/// translation is the identity (`copy` is `transform_solid` under one), and a motion whose image
+/// every statement of the solid can state exactly ([`carry_of`]) is carried into those statements.
 ///
-/// **Both exceptions lapse once the datum already has a history.** "This motion kept the
-/// coordinates exact" is a statement about *this step*; it says nothing about the chain, and a
-/// chain missing a link describes the datum as it was *before* that link — silently. So once
-/// `leaf` is `Some`, every motion is recorded.
-///
-/// The translation half of that used not to be reachable — an inexact rotation leaves coordinates
-/// using the full 53-bit mantissa, so no nonzero translation of such a solid is exact. A
-/// reflection in a dyadic plane *is* exactness-preserving and can carry a history, which is what
-/// makes the rule load-bearing rather than merely correct.
+/// **That exception lapses once the datum already has a history.** A face with a history keeps
+/// its statement verbatim — it states the plane *before* the chain — so the only place this
+/// motion can live is the chain; a missing link would describe the datum as it was before it,
+/// silently. So once `leaf` is `Some`, every motion is recorded.
 fn chain_motion(
     model: &mut Model,
     parent: Option<Handle<MotionNode>>,
     motion: &Xform<'_>,
     carry: Carry,
 ) -> Option<Handle<MotionNode>> {
-    // ★ **Record what the statements did not absorb — and everything once a history exists**
-    // (the exceptions lapse the moment a chain is there to extend). One decision, made per solid
-    // by [`carry_of`], answers for both parts of a rigid motion; this function keeps no table of
-    // its own (its old `is_exact`/`leaf` filters were the two halves of the half-recorded chain).
-    let all = parent.is_some();
+    // ★ **Record what the statements did not absorb — and everything once a history exists.**
+    // One decision, made per solid by [`carry_of`], answers for the whole motion, turn and
+    // translation together; this function keeps no table of its own.
+    let record = parent.is_some() || carry == Carry::None;
     let mut leaf = parent;
     match motion {
         Xform::Rigid(iso) => {
             if let Some(r) = iso.rotate
-                && (all || carry == Carry::None)
+                && record
             {
                 leaf = Some(model.push_motion(
                     Motion::Rotate {
@@ -205,7 +198,7 @@ fn chain_motion(
                     leaf,
                 ));
             }
-            if iso.translate.iter().any(|r| r.numer() != 0) && (all || carry != Carry::Full) {
+            if iso.translate.iter().any(|r| r.numer() != 0) && record {
                 leaf = Some(model.push_motion(
                     Motion::Translate {
                         offset: iso.translate,
@@ -215,7 +208,7 @@ fn chain_motion(
             }
         }
         Xform::Mirror { axis, offset, .. } => {
-            if all || carry == Carry::None {
+            if record {
                 leaf = Some(model.push_motion(
                     Motion::Mirror {
                         axis: *axis,
@@ -229,163 +222,74 @@ fn chain_motion(
     leaf
 }
 
-/// **What of a motion a solid carries into its statements exactly** — the rest is recorded as
-/// motion nodes. The law: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` — one
-/// operation behaves as its two would, so an exact turn is transported into the statements and a
-/// translation that rounds is recorded behind it, and the chain never describes a datum as it
-/// was *before a part the statements already absorbed*.
+/// **Whether a solid carries a motion into its statements or records it** — the whole motion,
+/// one way or the other.
 ///
-/// ★★★★★ **Why this exists — the half-recorded chain.** The rule this replaced asked two
-/// questions in two places: `Isometry::is_exact` for the turn (recorded only when irrational or
-/// when a history already existed) and a data probe for the translation (recorded when the
-/// data rounded). An exact turn with a rounding translation recorded the translation **alone**,
-/// while the statements stayed pre-motion — the truth then said «unturned, shifted» and the
-/// cache «turned, shifted», and `world_cylinder_def` folded the chain into a cylinder standing
-/// somewhere else (measured: the offset boss under `rz90 + t(5,−3,2)` — its seam vertex
-/// `4.8 + 5` rounds — met its plate as *disjoint* in release, the postcondition catching it only
-/// in debug). One decision, per solid, answers both questions now.
+/// ★ Two states, so no face ever holds part of a motion in its statement and the rest in a node
+/// (a turn carried with its translation recorded would describe the datum as it was before a part
+/// the statements already absorbed). A solid can still mix faces: a face with a history records
+/// whatever `Full` says (the exception lapses — [`chain_motion`]) while a fresh face beside it
+/// carries, and the corners between them are read through the licence or the world road
+/// (`vertex_meet_of`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Carry {
-    /// Every statement is transported; nothing is recorded (an exact motion of a fresh solid).
+    /// Every statement is transported; nothing is recorded.
     Full,
-    /// The turn is transported and the translation recorded — a rigid motion whose turn is exact
-    /// on this data and whose translation rounds.
-    Rotation,
     /// Nothing is transported: the whole motion is recorded and the statements stay pre-motion.
     None,
 }
 
-/// **Does the realized image of `p` equal its exact image?** — the one spelling of «exact»: the
-/// producer's own `f64` arithmetic ([`Xform::point`]) against the rational transport
-/// ([`transport_points`]' `each`), coordinate by coordinate. `false` when the exact image does
-/// not exist (an irrational turn, or `i128` overflow) — those are recorded.
+/// **What this solid does with `motion`** — carried when every face's statement can state its
+/// image exactly, recorded otherwise. The question is asked of the truth alone: the very
+/// transports pass 1 performs (`transport_points`, `transport_cylinder`), so «this will not
+/// overflow» is structural, and no cache — no rounded coordinate — takes part.
 ///
-/// ★ The realized side is the producer's arithmetic itself, not the translation tested on the
-/// **pre-turn** coordinates (`p_i + t_i`): that test calls a datum exact that is exact before the
-/// turn and rounds after it — `(4.8, 0.5) + (−4, 8)` under `rz90`: `0.8`, `8.5` exact, `12.8`
-/// rounds — and its cache comes out one ulp off its truth.
-fn realizes_exactly(motion: &Xform<'_>, p: Point3) -> bool {
-    let q = p.as_array();
-    let Some(exact) = (|| {
-        let r = [
-            Rat::try_from_f64(q[0])?,
-            Rat::try_from_f64(q[1])?,
-            Rat::try_from_f64(q[2])?,
-        ];
-        match motion {
-            Xform::Rigid(iso) => iso.point_rat(r),
-            Xform::Mirror { axis, offset, .. } => nacre_exact::mirror_point_rat(r, *axis, *offset),
-        }
-    })() else {
-        return false;
-    };
-    let img = motion.point(p).as_array();
-    (0..3).all(|i| Rat::try_from_f64(img[i]) == Some(exact[i]))
-}
-
-/// **What of `motion` this solid carries into its statements exactly** — per solid, in one pass.
+/// Every face is asked, including one with a history or one the motion fixes as a set (pass 1
+/// transports neither — it keeps their statements verbatim), which only ever errs toward
+/// recording.
 ///
-/// Each candidate prefix of the motion — the whole of it, its turn alone (same pivot, no
-/// translation), nothing — is asked the same question of every datum a judgment reads (vertex
-/// coordinates, plane origins, cylinder axis origins) and of every statement pass 1 will
-/// transport (`transport_points`, `transport_cylinder` — the very functions, so «this will not
-/// overflow» is structural): does its realized image equal its exact image
-/// ([`realizes_exactly`])? The first candidate every datum passes is carried; the rest of the
-/// motion is recorded ([`chain_motion`]).
-///
-/// **Per solid, not per face.** `transform_solid` requires a solid's boundary vertices to share
-/// one node ("uniform motion"), and a dyadic parameter does split by magnitude — measured, `0.5`
-/// is exact at `p = 1.0` and rounds at `p = 1e17`. Deciding per face would leave one solid with
-/// some vertices carrying a node and some not, and break that invariant; so one datum failing a
-/// candidate fails it for the whole solid — a `Through` plane (a statement of handles, which
-/// no transport can move) puts the whole solid on the recorded path, turn included.
+/// **Per solid, not per face.** A face that cannot be carried — a `Through` plane (a statement of
+/// handles, which no transport moves) or a statement whose image leaves `i128` — would be recorded
+/// while its neighbours carried, and the corner between them would be a vertex whose carriers are
+/// stated in different frames: a mixed-frame corner, which the realization and the reuse road
+/// cannot always answer. A motion should not manufacture one out of a solid that had none, so one
+/// such face records the whole solid.
 ///
 /// (The per-plane **surface-statement** exemption — pass 1's `invariant` flag, a plane the
 /// motion fixes as a set — is a different question and does not touch this one: the vertices
 /// of such a plane still move and still share the solid's node story; only the plane's own
 /// statement needed no new spelling.)
 fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
-    let turn_only: Option<Isometry> = match motion {
-        Xform::Rigid(iso) => iso.rotate.map(Isometry::rotation),
-        Xform::Mirror { .. } => None,
-    };
-    let turn_xform: Option<Xform<'_>> = turn_only.as_ref().map(Xform::Rigid);
-    let candidates: Vec<(Carry, &Xform<'_>)> = std::iter::once((Carry::Full, motion))
-        .chain(turn_xform.as_ref().map(|x| (Carry::Rotation, x)))
-        .collect();
     let src = model.solid(solid);
-    // ★ The surfaces' exact points must survive the no-node path too. An exact motion
-    // carries a world-stated surface's rational triple through `point_rat`/`mirror_point_rat`,
-    // and that arithmetic can overflow `i128` even when every f64 above is exact (the two
-    // conditions are independent). Dropping the points would leave a plane with no exact
-    // statement; recording a node instead keeps the original triple as the pre-motion truth.
-    let points_move = |m: &Xform<'_>, s: Handle<Surface>| -> bool {
-        // ★★★★★ **An exhaustive `match`, deliberately — this used to be the most dangerous
-        // `let`-`else` in the file, and the compiler could not see it.** Adding
-        // `PlanePoints::Through` produced exactly two non-exhaustive-match errors and **not**
-        // one here — the fallback arm would have swallowed the new variant silently, answering
-        // for geometry it had never seen. Spelled as a match, the next variant (M6's) is a
-        // compile error at exactly this decision.
+    // ★★★★★ **An exhaustive `match`, deliberately.** Adding `PlanePoints::Through` once produced
+    // exactly two non-exhaustive-match errors and **not** one here, when this was a `let`-`else`
+    // — a fallback arm would have answered for geometry it had never seen. Spelled as a match,
+    // the next variant (M6's) is a compile error at exactly this decision.
+    let moves = |s: Handle<Surface>| -> bool {
         match model.surface(s) {
             nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(p),
                 ..
-            } => transport_points(m, *p).is_some(),
+            } => transport_points(motion, *p).is_some(),
             // A `Through` plane's truth carries geometry **by reference** — no transport can
-            // move it while the f64 cache moves, so it refuses every carrying candidate.
+            // move it while the f64 cache moves, so it refuses the carrying road.
             nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Through(_),
                 ..
             } => false,
-            nacre_topo::Surface::Cylinder { def, .. } => transport_cylinder(m, def).is_some(),
+            nacre_topo::Surface::Cylinder { def, .. } => transport_cylinder(motion, def).is_some(),
         }
     };
-    let mut ok: Vec<bool> = vec![true; candidates.len()];
-    let probe = |ok: &mut Vec<bool>, p: Point3| {
-        for (k, (_, m)) in candidates.iter().enumerate() {
-            if ok[k] && !realizes_exactly(m, p) {
-                ok[k] = false;
-            }
-        }
-    };
-    for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-        for &fh in &model.shell(sh).faces {
-            let face = model.face(fh);
-            // Exhaustive for the same reason as `points_move`: a new `Surface` variant (M6's
-            // sphere/cone) must be a compile error here, not a silently skipped probe.
-            match model.surface_cache(face.surface) {
-                nacre_geom::Surface::Plane(pl) => probe(&mut ok, pl.origin()),
-                // ★ The cylinder's axis origin is a datum a judgment reads since M6 — the gate's
-                // clearance and `world_cylinder_def`'s postcondition compare it against the
-                // cache — so it is probed like a plane's origin (the direction rides `dir_rat`,
-                // exact under any turn the rationals can state).
-                nacre_geom::Surface::Cylinder(cy) => probe(&mut ok, cy.axis().origin()),
-            }
-            for (k, (_, m)) in candidates.iter().enumerate() {
-                if ok[k] && !points_move(m, face.surface) {
-                    ok[k] = false;
-                }
-            }
-            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
-                for he in &lp.half_edges {
-                    for &vh in model.edge(he.edge).vertices.iter() {
-                        probe(&mut ok, model.vertex_point(vh));
-                    }
-                }
-            }
-        }
-    }
-    candidates
-        .iter()
-        .zip(&ok)
-        .find(|(_, o)| **o)
-        .map_or(Carry::None, |((c, _), _)| *c)
+    let every = std::iter::once(&src.outer)
+        .chain(src.cavities.iter())
+        .flat_map(|&sh| model.shell(sh).faces.iter())
+        .all(|&fh| moves(model.face(fh).surface));
+    if every { Carry::Full } else { Carry::None }
 }
 
-/// A plane's exact triple carried through the part of a motion the statements absorb — the one
-/// transport both `carry_of`'s probe and pass 1 use, so the probe's feasibility answer and the
-/// actual transport cannot disagree. `None` on `i128` overflow, which the probe turns
-/// into "record a node instead".
+/// A plane's exact triple carried through a motion — the one transport both [`carry_of`]'s
+/// question and pass 1 use, so the question's answer and the actual transport cannot disagree.
+/// `None` on `i128` overflow, which `carry_of` turns into "record the motion instead".
 fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3]> {
     let each = |q: [Rat; 3]| -> Option<[Rat; 3]> {
         match motion {
@@ -396,17 +300,17 @@ fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3
     Some([each(p[0])?, each(p[1])?, each(p[2])?])
 }
 
-/// The cylinder twin of [`transport_points`] — pass 1 transports with the very function the
-/// probe checked, so "this will not overflow" is structural, not a parallel re-derivation.
+/// The cylinder twin of [`transport_points`] — pass 1 transports with the very function
+/// [`carry_of`] asked, so "this will not overflow" is structural, not a parallel re-derivation.
 ///
 /// Rigid: the origin rides `point_rat`; the two directions ride the rotation alone
 /// (`dir_rat` — a direction is a difference of points, so pivot and translation cancel); the
 /// radius is invariant under a rigid motion. The image is rebuilt through the checked
 /// constructor, which a rigid motion cannot fail except on overflow — then `None`, the
-/// conservative answer the probe turns into "take the recorded path".
+/// conservative answer `carry_of` turns into "take the recorded path".
 ///
 /// Mirror: `None`, deliberately — pass 1's `MirrorNotPlanar` rejection preempts (a mirrored
-/// cylinder has no cache image, `Xform::surface`), so this arm only ever steers the probe and
+/// cylinder has no cache image, `Xform::surface`), so this arm only ever steers `carry_of` and
 /// must refuse quietly rather than panic.
 fn transport_cylinder(
     motion: &Xform<'_>,
@@ -426,13 +330,10 @@ fn transport_cylinder(
 /// The motion history a moved surface's image carries — the surface twin of the vertex
 /// definition rules, held in the surface's own `motion` field:
 ///
-/// | source motion | `Carry::None` — the whole motion recorded | `Carry::Rotation` — the turn carried, the translation recorded | `Carry::Full` — nothing recorded |
-/// |---|---|---|---|
-/// | `None` (world) | `Some(leaf)` — the points stay pre-motion | `Some(leaf)` — the points are **turned**, the node says the translation | `None` (points transported exactly) |
-/// | `Some(m)` | `Some(leaf)`, hanging off `m` — replaying from the root applies every motion once | as `Carry::None` (the exceptions lapse once a history exists) | as `Carry::None` |
-///
-/// ★ The middle column is the law `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` (cell
-/// ④): a recorded node states the plane **before the recorded part**, not before the motion.
+/// | source motion | `Carry::None` — the whole motion recorded | `Carry::Full` — nothing recorded |
+/// |---|---|---|
+/// | `None` (world) | `Some(leaf)` — the points stay pre-motion | `None` (points transported exactly) |
+/// | `Some(m)` | `Some(leaf)`, hanging off `m` — replaying from the root applies every motion once | as `Carry::None` (the exception lapses once a history exists) |
 ///
 /// The `None (world)` row has a third outcome decided **before** this function is asked: a
 /// rigid motion that *fixes the plane* (`Isometry::fixes_plane` — pass 1's `invariant` flag)
@@ -464,9 +365,9 @@ fn moved_surface_motion(
             h
         }
     };
-    // Nothing recorded: the motion kept the data exact and the image keeps the source's own
-    // history. (`leaf` is always `Some` when `parent` is — the exceptions lapse once a history
-    // exists — so `or` never resurrects a stale parent past a recorded node.)
+    // Nothing recorded: the motion was carried into the statements and the image keeps the
+    // source's own history. (`leaf` is always `Some` when `parent` is — the exception lapses once
+    // a history exists — so `or` never resurrects a stale parent past a recorded node.)
     leaf.or(parent)
 }
 
@@ -653,29 +554,6 @@ fn transform_solid(
 
     // Decided once, for the whole solid — see [`carry_of`].
     let carry = carry_of(model, solid, motion);
-    // The part of the motion pass 1 transports into the statements — `None` when the whole
-    // motion is recorded and the statements stay pre-motion.
-    let turn_only: Option<Isometry> = match (carry, motion) {
-        (Carry::Rotation, Xform::Rigid(iso)) => iso.rotate.map(Isometry::rotation),
-        _ => None,
-    };
-    let carry_xform: Option<Xform<'_>> = match carry {
-        Carry::Full => Some(match motion {
-            Xform::Rigid(iso) => Xform::Rigid(iso),
-            Xform::Mirror { m, axis, offset } => Xform::Mirror {
-                m: *m,
-                axis: *axis,
-                offset: *offset,
-            },
-        }),
-        Carry::Rotation => turn_only.as_ref().map(Xform::Rigid),
-        Carry::None => None,
-    };
-    // Whether the source already carries a motion history (any face surface's truth records
-    // one). There is no vertex-side motion (the faces record it themselves, and a
-    // vertex's motion is its faces'), so this is the whole of the
-    // "exceptions lapse once the solid has a history" test: an exact move of a fresh solid
-    // records nothing; anything else is recorded.
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -761,14 +639,13 @@ fn transform_solid(
         //
         // A recorded node states its plane **before** the motion, and the image's base is the
         // source's base — `moved_surface_motion` chains from the source's own leaf for the same
-        // reason — so the triple is inherited verbatim. Otherwise the carried part of the motion
-        // moves the points in the world; the transport is the very function `carry_of` probed,
-        // so it cannot fail here.
+        // reason — so the triple is inherited verbatim. Otherwise the motion moves the points in
+        // the world; the transport is the very function `carry_of` asked, so it cannot fail here.
         // ★★ A `Through` plane's statement is *handles*, and handles do not move. Its image keeps
         // the same three vertices and gains the node — the definition composes as "the plane
         // through those, then this motion". Transporting them is not an option (they may not even
         // belong to this solid), and leaving them without a node would move the cache while the
-        // truth stayed put. `points_move` refuses the no-node path for exactly this reason, so
+        // truth stayed put. `carry_of` refuses the no-node path for exactly this reason, so
         // `new_motion` is always `Some` here.
         let (new_s, flipped) = match (moved, &src_truth) {
             (
@@ -779,21 +656,18 @@ fn transform_solid(
                     ..
                 },
             ) => {
-                // ★ `invariant` must gate first: there `new_motion` and the source's motion are
-                // both `None`, and
-                // the else arm's expect names a probe (`carry_of`) that never ran on
-                // this road — an irrational turn would panic in `transport_points`. The
-                // statement is the image's verbatim, so there is nothing to transport.
-                // ★ Verbatim when the statement already has a history (the node hangs off it
-                // and says the plane before this motion) or when nothing of the motion is
-                // carried; otherwise the carried part moves the triple — and only that part,
-                // so a turn the statements absorbed is never described twice.
+                // ★ Verbatim when the motion fixes the plane (`invariant` — the statement is
+                // already the image's, and re-pushing it interns back onto the source handle),
+                // when the statement already has a history (the node hangs off it and says the
+                // plane before this motion), or when the motion is recorded; otherwise the whole
+                // motion moves the triple.
                 let carried = if invariant || model.plane_motion(s).is_some() {
                     *p
                 } else {
-                    match &carry_xform {
-                        Some(cx) => transport_points(cx, *p).expect("probed by carry_of"),
-                        None => *p,
+                    match carry {
+                        Carry::Full => transport_points(motion, *p)
+                            .expect("carry_of carries only what transports"),
+                        Carry::None => *p,
                     }
                 };
                 model.push_plane(pl, carried, new_motion, image_sense(*sense))
@@ -842,15 +716,16 @@ fn transform_solid(
                 // The same fork as the `Known` plane above, minus the invariant road (an
                 // invariant-cylinder restatement — a turn about its own axis — is deliberately
                 // deferred; the condition is narrower than a plane's because `ref_dir` turns).
-                // The same sentence as the plane's: verbatim behind a history or when nothing
-                // is carried; otherwise the carried part moves the def (the very transport the
-                // probe checked).
+                // The same sentence as the plane's: verbatim behind a history or when the
+                // motion is recorded; otherwise the whole motion moves the def (the very
+                // transport `carry_of` asked).
                 let carried = if model.plane_motion(s).is_some() {
                     def.clone()
                 } else {
-                    match &carry_xform {
-                        Some(cx) => transport_cylinder(cx, def).expect("probed by carry_of"),
-                        None => def.clone(),
+                    match carry {
+                        Carry::Full => transport_cylinder(motion, def)
+                            .expect("carry_of carries only what transports"),
+                        Carry::None => def.clone(),
                     }
                 };
                 (model.push_cylinder(cy, carried, new_motion), false)

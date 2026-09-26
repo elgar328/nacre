@@ -262,10 +262,11 @@ pub(crate) fn realize_def_tracked(
 /// (depth ≤ 2) pays. Change the budget and the number follows — that is why the formula is
 /// written here and not just the digits.
 ///
-/// ☑ **And the value carries no correctness load.** Real models measure depth ≤ 2 (census: 253 at
-/// 0, 116 at 1, 26 at 2), so every value above 2 behaves identically on them; what this decides is
-/// how much is done *eagerly*, at push time. Past it the construction's own figure stands, and a
-/// caller who wants the point exactly still has [`realize_vertex`], which climbs.
+/// ☑ **And the value carries no correctness load.** Real models measure depth ≤ 2 (census rows by
+/// their deepest chain: 345 at 0, 53 at 1, 3 at 2), so every value above 2 behaves identically on
+/// them; what this decides is how much is done *eagerly*, at push time. Past it the
+/// construction's own figure stands, and a caller who wants the point exactly still has
+/// [`realize_vertex`], which climbs.
 ///
 /// ⚠ **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
 /// *judgement* will pay for and bites at roughly four thousand turns; this one caps what a *cache*
@@ -416,8 +417,7 @@ pub struct RefineReport {
 /// different — still valid — road than it would have before, because operations read the cache to
 /// decide things that become truth: a plane's stated normal and its `Wide` anchor
 /// (`push_plane_through`), the `flip` of a `Motion::Frame` (which is part of the interned
-/// `SurfaceKey`, so it is *handle identity*), and whether a motion is recorded at all (`carry_of`
-/// asks whether the coordinates realize exactly). None of those can be rebuilt afterwards, so this
+/// `SurfaceKey`, so it is *handle identity*). None of those can be rebuilt afterwards, so this
 /// door does not pretend to: it is an export-time door, and the contract is stated rather than
 /// enforced.
 ///

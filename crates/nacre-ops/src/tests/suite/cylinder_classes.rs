@@ -916,11 +916,13 @@ fn a_disk_merges_into_the_face_it_lies_in() {
 }
 
 /// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
-/// test's own frame question. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)`
-/// by 0.8 with `r = 2.12`, so the cheap test fails and each face on that class has to answer for
-/// itself; the pocket wall that carries it sits at `x ∈ [60.3, 73.2]`, nowhere near the bore, and
-/// says so — but only if its corners are read in the same frame as the axis. The user's 12-up
-/// array is this shape, and it stopped here after the class descriptions were carried out.
+/// test. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)` by 0.8 with `r = 2.12`,
+/// so the cheap test fails and each face on that class has to answer for itself; the pocket wall
+/// that carries it sits at `x ∈ [60.3, 73.2]`, nowhere near the bore, and says so. The user's
+/// 12-up array is this shape. The move is exact on every statement, so it is carried: the moved
+/// cell is world-stated and its corners and axis share the world. (Its corners read in a frame
+/// other than the axis's — the question this test was written for — need a recorded motion: a
+/// `Through` face, an overflow or a history.)
 #[test]
 fn a_moved_face_answers_the_clearance_test() {
     use nacre_exact::Rat;
@@ -964,10 +966,10 @@ fn a_moved_face_answers_the_clearance_test() {
     )
     .unwrap();
     m.rebuild_adjacency();
-    assert!(carries_motion(&m, b), "the move records a chain");
+    assert!(!carries_motion(&m, b), "the move is carried");
     // The cells stand clear of each other (a *touching* pair is the contact family, another
     // cell), so this is an ordinary two-body result — what it pins is that the gate **decided**
-    // at all, rather than declining because a corner was stated in another frame.
+    // the near-miss wall face by face.
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved cell is judged");
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());

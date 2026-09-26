@@ -372,8 +372,8 @@ fn measure_census() {
     }
 
     // ── **Translated.**
-    // Dyadic offsets (expected untouched by the motion work) and non-dyadic ones (expected to be
-    // where every difference lands), on both operands so the *relative* placement varies too.
+    // Dyadic offsets and non-dyadic ones (whose `f64` images round), on both operands so the
+    // *relative* placement varies too. Every one is carried into the statements.
     let offsets: [(i128, i128); 10] = [
         (1, 1),
         (3, 1),
@@ -440,7 +440,7 @@ fn measure_census() {
         record(&format!("tr2 {n}/{d} fuse"), &m, &inputs, &out);
     }
 
-    // ── Mirrored, about dyadic and non-dyadic planes.
+    // ── Mirrored, about dyadic and non-dyadic planes — every one carried into the statements.
     for (n, d) in [(0i128, 1i128), (1, 2), (1, 3), (7, 22), (5, 7)] {
         for (kn, k) in KINDS {
             let mut m = Model::new();
@@ -947,9 +947,8 @@ fn measure_census() {
             record(&format!("ct2 chain {kn}"), &m, &inputs, &out);
         }
     }
-    // ── **Translated cylinders** (`trc`): the population the moved-cylinder road opened. A
-    // non-dyadic offset records a chain, so each of these carries one (the dyadic twin records
-    // nothing and is the same corpus row the `cyl` family already holds). Four placements: a
+    // ── **Translated cylinders** (`trc`): cylinders moved by a non-dyadic offset, carried into
+    // their statements — world cylinders where they land. Four placements: a
     // tool cutting, a boss fusing, a bored body fused onto its twin (the plane side), and a
     // bore translated **onto** another bore — whose axes then coincide, which the cylinder-pair
     // rule refuses by name (`CylinderPairContact`); before the road opened it never got that
@@ -1116,17 +1115,17 @@ fn measure_census() {
             record(&format!("wal {pn} fuse"), &m, &inputs, &out);
         }
     }
-    // ── **The boss corpus under rigid motion** (`mot`): the production-side rows of the
-    // commuting oracle (`tests.rs::the_boolean_commutes_with_rigid_motion`), one per sign class
-    // the oracle names — ∥ wall classes with `frame_sign = −1` (a max-side wall put on a seed
-    // plane by a translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
+    // ── **The boss corpus under rigid motion** (`mot`): the production-side rows of the commuting
+    // oracle (`tests.rs::the_boolean_commutes_with_rigid_motion`), one per sign class the oracle
+    // names — ∥ wall classes with `frame_sign = −1` (a max-side wall put on a seed plane by a
+    // translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
     // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
-    // z = 0), the transport's exactness boundary (the offset boss under a rigid motion) and the
-    // recorded path (a non-dyadic translation). ★ Rows were added only where **both** profiles
-    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the
-    // transport law — without it, `world_cylinder_def`'s postcondition (a
-    // `debug_assert`) takes the dev census down there while release answers «disjoint» (Fuse 2
-    // bodies, Cut the plate untouched, Common empty): the silent wrong answer the law closes.
+    // z = 0), and the offset boss under a rigid motion and a non-dyadic translation, whose `f64`
+    // images round while the statements move exactly. ★ Rows were added only where **both**
+    // profiles dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the
+    // transport law — without it, `world_cylinder_def`'s postcondition (a `debug_assert`) takes the
+    // dev census down there while release answers «disjoint» (Fuse 2 bodies, Cut the plate
+    // untouched, Common empty): the silent wrong answer the law closes.
     {
         let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
             let plate = m.add_cuboid(
@@ -1193,11 +1192,9 @@ fn measure_census() {
             }
         }
     }
-    // ── **A recorded quarter turn** (`mot h+…`): the boss corpus again, but with a history first — a
-    // rounding translation `(1/10, 1/10, 1/10)` that is recorded as a node, so the turn after it is
-    // recorded too rather than carried into the statements (the `mot` rows above never leave a
-    // node). The commuting oracle's `recorded block` family locks a recorded quarter turn; these
-    // rows record one on the boss.
+    // ── **A translation, then a quarter turn** (`mot h+…`): the boss corpus again, moved by
+    // `(1/10, 1/10, 1/10)` first. Both motions are carried into the statements, so these rows
+    // leave no node; a recorded quarter turn is the commuting oracle's `recorded block` family.
     {
         for (name, axis) in [("h+rx90", Axis::X), ("h+rz90", Axis::Z)] {
             for (kn, k) in KINDS {
@@ -1270,10 +1267,10 @@ fn measure_census() {
     }
     // ── **A grid built in two generations** (`xy`): an array joined along x, then joined again
     // along y. What makes this its own population is not the second axis but the second
-    // *generation* — a row is a body whose surfaces come from two provenances, so moving it puts
-    // carriers with different chains on one corner, and the corner road answers those in the
-    // world (no shared frame exists to answer them in). The `ct2` family above never reaches it:
-    // there each cell is *built* at its place, so nothing carries a chain at all.
+    // *generation* — a row is a body whose surfaces come from two provenances. Every move here is
+    // carried into the statements, so the rows are world-stated; where a row's provenances carry
+    // different chains (a recorded motion), moving it puts them on one corner and the corner road
+    // answers in the world. The `ct2` family above builds each cell at its place instead.
     //
     // The cells are deliberately feature-poor (one bore) — this table runs twice at every gate,
     // and the user-scale cell costs tens of seconds. What the rows have to pin is the road, and

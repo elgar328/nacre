@@ -2528,10 +2528,10 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
 /// carried separately span `x × y = −ŵ`. The world road offsets along the frame's normal; if that
 /// normal were read off the carried axes, `+d` would land on the *inside* of the face.
 ///
-/// The fixture reaches the world road through a recorded mirror: a `0.1` translation rounds, so
-/// it is recorded as a node, and once a history exists the mirror is recorded behind it — while
-/// the top cap stays axis-aligned, so its frame still lifts to exact rationals. The `Through`
-/// block reaches the same road because every motion of it is a node.
+/// Two roads to a mirrored top cap on `z = 1.1`: a plain box lifted by `0.1` and mirrored, both
+/// carried into its statements (a world-stated cap), and the `Through` block, whose every motion
+/// is a node — the lift, and the mirror recorded behind it, so its cap's frame is carried out
+/// left-handed. Both take the world road, the cap being axis-aligned; both must land outward.
 #[test]
 fn an_offset_of_a_mirrored_face_lands_outward() {
     let tenth = nacre_exact::Rat::from_decimal(0.1).expect("0.1");
@@ -2626,8 +2626,9 @@ fn offset_of_the_top_lands_outward(
 /// ★★ **An offset of a moved plane is the exact plane, not the decimal its realization prints.**
 ///
 /// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3` — a rational with no short
-/// decimal — and the translation rounds, so the top carries its motion as a node. Asking the
-/// realized frame whether it is rational means lifting `to_f64(h + 1/3)` back with
+/// decimal — carried into the plain block's statements, recorded on the `Through` block's (its
+/// every motion is a node). Asking the realized frame whether it is rational means lifting
+/// `to_f64(h + 1/3)` back with
 /// `Rat::from_decimal`, which answers with the decimal that f64 prints: measured, the plane one
 /// above `17/35` came out `14857142857142857/10¹⁶` instead of `52/35`. The oracle comes from the
 /// inputs, not from the offset road: a block `h + 1` tall lifted the same way names its top
@@ -2635,7 +2636,7 @@ fn offset_of_the_top_lands_outward(
 #[test]
 fn an_offset_of_a_moved_plane_is_the_exact_plane() {
     let roads: [(&str, Lift, bool); 2] = [
-        ("plain", lifted_block, true),
+        ("plain", lifted_block, false),
         ("through", crate::fixtures::through_lifted_block, true),
     ];
     for (road, lifted, recorded) in roads {
@@ -2673,14 +2674,16 @@ type Lift = fn(&mut Model, f64, nacre_exact::Rat) -> nacre_store::Handle<nacre_t
 /// ★★ **A frame carried through a reflection takes the world road, left-handed, and still sweeps
 /// along its `ŵ`.**
 ///
-/// The top cap of a lifted, mirrored block carries a chain that folds (a translation, then a
-/// reflection), so its canonical frame has a rational world basis — but a reflection carries the
-/// two in-plane axes to `L(u) × L(v) = −L(w)`. The prism must still run along `ŵ` (`dist` is a
+/// The top cap of the lifted, mirrored `Through` block carries a chain that folds (a translation,
+/// then a reflection), so its canonical frame has a rational world basis — but a reflection carries
+/// the two in-plane axes to `L(u) × L(v) = −L(w)`. The prism must still run along `ŵ` (`dist` is a
 /// thickness in the frame's direction), and a ring read counter-clockwise in `(x, y)` turns the
 /// other way about `ŵ`: the arcs of a circle and the caps' loops have to agree with that, or the
-/// solid comes out inside out (`FaceMisoriented`, a negative volume — the failure this crate
-/// once measured for a mirrored circle on the frame-node road). A polygon and a whole circle,
-/// each against its analytic volume, the exact plane its far cap lands on, and the road it took.
+/// solid comes out inside out (`FaceMisoriented`, a negative volume — the failure this crate once
+/// measured for a mirrored circle on the frame-node road). The plain block's lift and mirror are
+/// carried, so its cap is world-stated and right-handed — the control. A polygon and a whole
+/// circle, each against its analytic volume, the exact plane its far cap lands on, and the road it
+/// took.
 #[test]
 fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
     let lift = nacre_exact::Rat::new(1, 3).expect("a lift");
@@ -2692,7 +2695,7 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
         .remove(0)
     };
     let roads: [(&str, Lift, bool); 2] = [
-        ("plain", mirrored_lifted_block, true),
+        ("plain", mirrored_lifted_block, false),
         ("through", crate::fixtures::through_mirrored_block, true),
     ];
     for (road, mirrored, recorded) in roads {
@@ -2724,7 +2727,7 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
             let far = m.face(faces[1]).surface;
             assert!(
                 m.plane_motion(far).is_none(),
-                "{what}: a folding chain puts the prism on the world road"
+                "{what}: a world-stated or folding cap puts the prism on the world road"
             );
             let bad = nacre_validate::validate(&m);
             assert!(bad.is_empty(), "{what}: {bad:?}");

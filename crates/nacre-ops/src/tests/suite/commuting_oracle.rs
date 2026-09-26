@@ -443,10 +443,9 @@ fn run_commuting_oracle(labels: &[&str]) {
                     )),
                 }
                 // ★ The commuting diagram's digest is a lock where measurement said it holds
-                // (the whole group: every quadrantal cell bit-identical, 600/612; every
-                // exact-rigid cell identical or identical without its pierce vertices, 338/340 —
-                // the pierce vertices of the offset bosses round once more under a translation,
-                // as their `a + b√c` predicts; the rest are the `DIGEST_DIFFERS` scoreboard).
+                // (the whole group: every quadrantal cell bit-identical, 600/612, and every
+                // exact-rigid cell, 406/408 — the pierce vertices included, each realized from its
+                // moved definition; the rest are the `DIGEST_DIFFERS` scoreboard).
                 if digest_differs(fam, mn, kind) {
                     if !matches!(digest, Digest::Differs(_)) {
                         failures.push(format!(
@@ -457,11 +456,7 @@ fn run_commuting_oracle(labels: &[&str]) {
                 } else if known.is_none() {
                     let ok = match (class, &digest) {
                         (MotionClass::Quadrantal, Digest::Identical) => true,
-                        (
-                            MotionClass::ExactRigid,
-                            Digest::Identical | Digest::PiercelessIdentical,
-                        ) => true,
-                        (MotionClass::Recorded, Digest::NotAsked) => true,
+                        (MotionClass::ExactRigid, Digest::Identical) => true,
                         // Nothing to compare: no solid came out (a reject, or an empty Common).
                         (_, Digest::NotAsked) => ans0.volumes.is_empty(),
                         // Moving the unmoved result was refused — counted, and the volume arm
@@ -527,13 +522,13 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
 /// **The transport law, as a lock**: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` —
 /// on the offset boss below and on a block whose every motion is recorded.
 ///
-/// The fixture is the counterexample to an exactness probe that tests the translation on the
-/// pre-turn coordinates — a boss whose seam vertex `(4.8, 0.5)`
-/// is exact before the turn (`0.8`, `8.5` under `t = (−4, 8, 0)` alone) and rounds after it
-/// (`4.8 + 8 = 12.8` is not an f64): one rigid operation must leave the model the two operations
-/// leave — the turn absorbed into the statements, the translation recorded, the chain folding to
-/// the same world cylinder — and the boolean with a plate moved the same way must not be able to
-/// tell the roads apart.
+/// On the offset boss every statement moves exactly under the turn and the translation, so both
+/// roads carry the whole motion: one rigid operation must leave the model the two operations
+/// leave — the same world cylinder, the same vertex bits — and the boolean with a plate moved the
+/// same way must not be able to tell the roads apart. On the recorded block both roads record,
+/// and must leave the same chain. Where the two roads *do* store differently — a translation
+/// whose image leaves `i128` after a turn that fixed the plane — the transform's own tests hold
+/// that the world is still the same.
 #[test]
 fn a_rigid_motion_behaves_as_its_two_operations() {
     use nacre_exact::{Angle, Isometry, Rat, Rotation};
@@ -576,9 +571,8 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     let bb = transform(&mut b, bb, &rot).unwrap();
     let bb = transform(&mut b, bb, &tr).unwrap();
     b.rebuild_adjacency();
-    // Both record the translation (the datum rounds after the turn), and the chain folds to
-    // one world cylinder on both roads.
-    assert!(carries_motion(&a, ba) && carries_motion(&b, bb));
+    // Both carry the whole motion: every statement moves exactly.
+    assert!(!carries_motion(&a, ba) && !carries_motion(&b, bb));
     let lateral = |m: &Model, s: Handle<Solid>| -> nacre_topo::CylinderDef {
         let sol = m.solid(s);
         let surf = m
@@ -588,8 +582,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .map(|&fh| m.face(fh).surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the boss has a lateral");
-        m.world_cylinder_def(surf)
-            .expect("the chain folds to a world cylinder")
+        m.world_cylinder_def(surf).expect("a world cylinder")
     };
     let (da, db) = (lateral(&a, ba), lateral(&b, bb));
     assert_eq!(da.origin(), db.origin());
@@ -660,10 +653,10 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     );
 }
 
-/// **The half-recorded chain's own fixture**: the offset boss under `rz90 + t(5, −3, 2)`. Its
-/// seam vertex `4.8 + 5` rounds *before* the turn and is exact *after* it, so the whole motion
-/// carries and nothing is recorded — and `world_cylinder_def`'s postcondition (truth == cache)
-/// holds.
+/// **The offset boss under `rz90 + t(5, −3, 2)`, carried**: every statement moves exactly, so
+/// nothing is recorded and the boss is a world cylinder where the motion put it —
+/// `world_cylinder_def`'s postcondition (truth == cache) holds — and the cut against the plate
+/// moved the same way leaves the plate less the boss's share.
 #[test]
 fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
     let (mut m, plate, boss) = boss_family([4.3, 2.0, -1.0], 4.0);

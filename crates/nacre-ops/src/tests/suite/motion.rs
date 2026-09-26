@@ -34,10 +34,9 @@ fn test_iso() -> (nacre_exact::Isometry, [f64; 3]) {
     )
 }
 
-/// A cylinder tool translated onto a plate, then cutting it — **the hole-pattern idiom**, and
-/// the smallest shape the moved-cylinder road serves. The offset is non-dyadic on purpose, so
-/// the move records a chain (asserted) and the boolean has to carry the statement out to the
-/// world itself.
+/// A cylinder tool translated onto a plate, then cutting it — **the hole-pattern idiom**. The
+/// offset is non-dyadic and still exact on the tool's statements, so the move is carried into them
+/// (asserted): the tool is a world cylinder at its new place, as if it had been drawn there.
 #[test]
 fn a_translated_tool_cuts() {
     use nacre_exact::Rat;
@@ -67,7 +66,7 @@ fn a_translated_tool_cuts() {
     )
     .unwrap();
     m.rebuild_adjacency();
-    assert!(carries_motion(&m, tool), "the move records a chain");
+    assert!(!carries_motion(&m, tool), "the move is carried");
     let out = boolean(&mut m, BoolKind::Cut, plate, tool).expect("the moved tool cuts");
     assert_eq!(out.len(), 1);
     m.rebuild_adjacency();
@@ -77,9 +76,9 @@ fn a_translated_tool_cuts() {
     assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
 }
 
-/// The same total move **split in two** — the chain is walked and folded, not read one node
-/// deep. Same solid, so the same volume: the two roads must agree to the tolerance the oracle
-/// is stated at.
+/// The same total move **split in two** — each step carried into the statements, so the second
+/// moves what the first wrote. Same solid, so the same volume: the two roads must agree to the
+/// tolerance the oracle is stated at.
 #[test]
 fn a_chained_translation_folds() {
     use nacre_exact::Rat;
@@ -114,7 +113,7 @@ fn a_chained_translation_folds() {
     m.rebuild_adjacency();
     let tool = shift(&mut m, tool, 5.2);
     let tool = shift(&mut m, tool, 5.5);
-    assert!(carries_motion(&m, tool), "the moves record a chain");
+    assert!(!carries_motion(&m, tool), "both moves are carried");
     let out = boolean(&mut m, BoolKind::Cut, plate, tool).expect("the chained tool cuts");
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
@@ -124,9 +123,8 @@ fn a_chained_translation_folds() {
 }
 
 /// A **bored body** translated and fused onto its twin: the plane side of the same fact — the
-/// walls perpendicular to the move carry the chain, and the cylinder roads need their world
-/// coefficients. The offset moves all three axes, so no wall of either body is shared (a shared
-/// wall is the contact family, another cell).
+/// move is carried into every statement, walls and bore alike. The offset moves all three axes,
+/// so no wall of either body is shared (a shared wall is the contact family, another cell).
 #[test]
 fn a_translated_bored_body_fuses() {
     use nacre_exact::Rat;
@@ -161,7 +159,7 @@ fn a_translated_bored_body_fuses() {
     )
     .unwrap();
     m.rebuild_adjacency();
-    assert!(carries_motion(&m, b), "the move records a chain");
+    assert!(!carries_motion(&m, b), "the move is carried");
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved body fuses");
     assert_eq!(out.len(), 1);
     m.rebuild_adjacency();
@@ -241,27 +239,22 @@ fn two_bored_plates_fuse_face_to_face() {
     );
 }
 
-/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again.** The second
-/// generation is what makes this hard — the first fuse leaves a body whose surfaces come from
-/// *two* provenances (the original cell, and the one that moved), so moving that result puts
-/// carriers with different chains on one corner. An exact-corner road that wants one shared frame
-/// declines here, and the population gate's face test then cannot judge the face at all
-/// (`CylinderGateUndecided`, measured on the user's script). Each carrier states the world, so
-/// the corner solves there.
+/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again.** Every move is
+/// exact on the cells' statements, so each is carried: the second generation is a world-stated
+/// row, like a row drawn in place. Where a row's surfaces come from two provenances with
+/// different chains (a recorded motion — a `Through` face, an overflow or a history), moving it
+/// puts carriers with different chains on one corner, and the corner road answers those in the
+/// world; this grid no longer builds that population (every chain here is carried away).
 ///
 /// The oracle is **proportionality**: n cells of one part must weigh exactly n times one cell.
 /// That is what says nothing was lost or double-counted at the joins.
 ///
-/// ★★★★★ **The cell's features are not decoration — they are what makes this fixture go red.**
-/// A plain plate, or a plate with a bore or two, fuses into a 2×2 grid *without* the world road:
-/// its second-generation corners never land where the population gate has to judge them. The
-/// first fixture written for this lock was exactly that, and it passed with the road switched
-/// off — measuring nothing. These three features (one pocket, two through-bores, taken from the
-/// user's own part) are the smallest set measured to refuse `CylinderGateUndecided` with the road
-/// off and build with it on. The relation is **not monotone** — the user's cell cut down to two
-/// pockets and four bores *builds*, while one of those pockets with two of the other bores (the
-/// pair here) refuses — so treat the numbers as pinned: changing one moves the fixture out of the
-/// population it exists to hold.
+/// ★ **The cell is the user's part** (one pocket, two through-bores). Measured when these moves
+/// were recorded: it was the smallest set that refused `CylinderGateUndecided` with the world
+/// corner road off and built with it on — a plain plate, or one with a bore or two, never landed a
+/// second-generation corner where the gate had to judge it, and the relation is not monotone
+/// (the user's cell cut to two pockets and four bores builds, one of those pockets with two other
+/// bores refuses). Carried, it locks the proportionality of the grid.
 #[test]
 fn a_two_by_two_grid_fuses() {
     use nacre_exact::Rat;
@@ -334,7 +327,7 @@ fn a_two_by_two_grid_fuses() {
     m.rebuild_adjacency();
     // ★ The second generation: a row that already mixes two provenances, moved again.
     let row2 = shift(&mut m, row2, [0.0, 86.0, 0.0]);
-    assert!(carries_motion(&m, row2), "the move records a chain");
+    assert!(!carries_motion(&m, row2), "the move is carried");
     let out = boolean(&mut m, BoolKind::Fuse, row, row2).expect("the grid fuses");
     assert_eq!(out.len(), 1, "one solid");
     m.rebuild_adjacency();
@@ -359,13 +352,10 @@ fn a_two_by_two_grid_fuses() {
         "the mesh is watertight"
     );
 
-    // ★★ **The corners this opened are a datum's carriers too, so the ledger says so here.**
-    // The grid's vertices split: some answer in the world (their carriers each state it), some in
-    // a shared frame — both must be present, or the fixture is not the mixed body it claims to be.
-    // A datum through three of the world-answered ones then gets a **name**, which is the road
-    // `ThroughStatement` takes when the three meets agree on a frame. Before this cell the whole
-    // grid could not be built, so this capability has no earlier behaviour to change — it is new,
-    // and cheap to hold here on a model that is already standing.
+    // ★★ **The grid's corners are a datum's carriers too, so the ledger says so here.** Every
+    // move was carried, so every corner answers in the world (its carriers each state it) and
+    // none in a frame. A datum through three of them gets a **name**, which is the road
+    // `ThroughStatement` takes when the three meets agree on a frame.
     let mut world: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
     let mut framed = 0usize;
     {
@@ -390,9 +380,8 @@ fn a_two_by_two_grid_fuses() {
     }
     world.sort_by_key(|v| v.index());
     assert!(
-        world.len() >= 3 && framed > 0,
-        "a two-generation grid answers some corners in the world and some in a frame \
-         (world {}, framed {framed})",
+        world.len() >= 3 && framed == 0,
+        "a carried grid answers every corner in the world (world {}, framed {framed})",
         world.len()
     );
     let Ok(OpOutput::DatumPlane { plane, .. }) = apply(

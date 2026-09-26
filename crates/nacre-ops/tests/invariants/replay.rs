@@ -376,9 +376,9 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
 ///   moves), but a vertex that merely changed how it knows its coordinate would not.
 ///
 /// ⚠ What is deliberately **not** locked: operating further on a refined model and expecting the
-/// log to replay identically. It need not — `carry_of`, `push_plane_through` and `Motion::Frame`'s
-/// `flip` all read the cache to decide things that become truth, which is why the door's contract
-/// says to call it when the operating is done.
+/// log to replay identically. It need not — `push_plane_through` and `Motion::Frame`'s `flip` both
+/// read the cache to decide things that become truth, which is why the door's contract says to
+/// call it when the operating is done.
 #[test]
 fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
     let (log, scratch) = deep_transform_log();
