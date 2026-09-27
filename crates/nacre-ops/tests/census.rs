@@ -111,8 +111,8 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
     solid
 }
 
-/// A hash of the solid's **plane coefficients**, sorted by bits — the other half of what a
-/// boolean actually reads.
+/// A hash of the solid's **plane caches** — origin and unit normal — sorted by bits, the other
+/// half of what a boolean actually reads.
 ///
 /// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples
 /// (a measured `Vertex::ThreePlane`), so the result carries *no* trace of the operands' vertex
@@ -121,13 +121,14 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
 /// Recording the operands is what makes the census see the change it exists to see.
 fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     use std::hash::{Hash, Hasher};
-    let mut bits: Vec<[u64; 4]> = Vec::new();
+    let mut bits: Vec<[u64; 6]> = Vec::new();
     let src = m.solid(s).clone();
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &m.shell(sh).faces {
             match m.surface_cache(m.face(fh).surface) {
                 nacre_geom::Surface::Plane(pl) => {
-                    bits.push(pl.coefficients().map(f64::to_bits));
+                    let (o, n) = (pl.origin().as_array(), pl.normal().as_array());
+                    bits.push([o[0], o[1], o[2], n[0], n[1], n[2]].map(f64::to_bits));
                 }
                 nacre_geom::Surface::Cylinder(_) => {}
             }

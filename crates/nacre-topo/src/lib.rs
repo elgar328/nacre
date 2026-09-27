@@ -400,8 +400,8 @@ pub fn surface_derive_counts() -> SurfaceDeriveCounts {
 
 /// A realized surface's bits, in one array, so "identical" means *identical* and not
 /// `PartialEq`'s f64 equality (`-0.0 == 0.0`, and a `NaN` that never compares equal to itself).
-/// Ten numbers either way: a plane's origin, unit normal and four coefficients; a cylinder's
-/// axis origin and direction, its `ref_dir` and its radius.
+/// A plane is its origin and unit normal — what the cache realizes, and all of it, so the last four
+/// slots are zero; a cylinder is its axis origin and direction, its `ref_dir` and its radius.
 fn surface_bits(s: &nacre_geom::Surface) -> [u64; 10] {
     let pack = |a: [f64; 3], b: [f64; 3], c: [f64; 3], d: f64| {
         [
@@ -419,13 +419,7 @@ fn surface_bits(s: &nacre_geom::Surface) -> [u64; 10] {
     };
     match s {
         nacre_geom::Surface::Plane(p) => {
-            let c = p.coefficients();
-            pack(
-                p.origin().as_array(),
-                p.normal().as_array(),
-                [c[0], c[1], c[2]],
-                c[3],
-            )
+            pack(p.origin().as_array(), p.normal().as_array(), [0.0; 3], 0.0)
         }
         nacre_geom::Surface::Cylinder(cy) => pack(
             cy.axis().origin().as_array(),
