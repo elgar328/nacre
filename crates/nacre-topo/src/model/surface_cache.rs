@@ -275,7 +275,7 @@ impl Model {
     /// Which counter a decline belongs to — a **diagnosis of the road already taken**, not a
     /// second derivation. [`Model::derive_surface_cache`] asks [`Model::world_plane_name`],
     /// which folds every cause into one `None`; the populations have to be told apart because
-    /// they need different work, and only one of them (`Wide`) is arithmetic at all.
+    /// they need different work. An unmoved `Wide` name derives, so the `Wide` arm is a moved one.
     fn decline_reason(&self, h: Handle<Surface>) -> &'static std::sync::atomic::AtomicU64 {
         match self.surface(h) {
             Surface::Cylinder { .. } => &SURFACE_DECLINED_CYLINDER,

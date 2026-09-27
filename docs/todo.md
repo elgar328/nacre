@@ -105,12 +105,11 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 | **A. 세밀도** | 삼각형 개수 — `TessConfig { tol, max_angle_deg }`. `tol` 은 현 편차(sagitta), `max_angle_deg` 는 「2° 면 800px 원이 0.06px 안」 — 순전히 **보기**의 수 | 있다 |
 | **B. 수치 정밀도** | 각 좌표를 몇 비트로 **실현**하나 | 정점에만 있다 |
 
-**B 의 크기** (census 코퍼스 — 정확 반올림과 비트가 다른 것; 이름 있는 평면 행은 push 단위, 나머지는 live 인스턴스):
+**B 의 크기** (census 코퍼스 — 정확 반올림과 비트가 다른 것; 평면 행은 push 단위, 나머지는 live 인스턴스):
 
 | 인구 | 최근접 아님 | 최대 |
 |---|---|---|
 | 온전한 림의 tess 샘플점(`360·i/n` 도의 참값 대비) | **36,895 / 80,371** | 1,106 ulp(참값 0 근처 성분) |
-| 평면 단위 법선 — 세계 이름이 있는 평면 | 0 — 문이 이름에서 정확 반올림한다 | — |
 | 평면 단위 법선 — 사슬이 안 접히는 평면 | 34 / 63(판정된 것) | 4 ulp |
 | 원 간선 중심(`line_plane`) | 14 / 908 | 2 ulp |
 | 원통 축·`ref_dir`·반지름, 원 간선 반지름·법선·`ref_dir` | 0 — 코퍼스가 축정렬이라서다(타입은 기울어진 원통을 허용한다) | — |
@@ -146,7 +145,7 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 ### 곡면 유도 계측이 제품 빌드에 있다
 
 `SURFACE_*` 원자 카운터 아홉과 `pub SurfaceDeriveCounts`·`pub surface_derive_counts()`, 그리고
-`measure_derivation`·`count_discarded_cache`·`decline_reason`·`surface_bits` 에 `cfg` 게이트가 없어 릴리스·wasm
+`count_derivation`·`measure_derivation`·`count_discarded_cache`·`decline_reason`·`surface_bits` 에 `cfg` 게이트가 없어 릴리스·wasm
 에서도 곡면 push 마다 돈다. 원통 push 는 유도를 계산해서 버린다. 읽는 곳은 census 의 `stat` 9줄뿐이다
 (단언 0).
 

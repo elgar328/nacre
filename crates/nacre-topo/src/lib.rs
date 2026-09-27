@@ -324,9 +324,8 @@ pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// **How far the realization road reaches for surfaces** — the one road to a realization,
-/// counted push by push. A vertex reaches it whole; a plane reaches it
-/// **halfway**: the anchor is a function of the truth and the row and the
-/// sense stay the producer's.
+/// counted push by push. A vertex reaches it whole; a plane reaches it wherever it has a world
+/// name (anchor and unit normal from the truth), and keeps the producer's figure elsewhere.
 ///
 /// ⚠ `Model::apply_derivation` (private, so not a link) counts before it overwrites: `differs`
 /// reads "how far the
@@ -340,13 +339,14 @@ pub struct SurfaceDeriveCounts {
     /// Pushes whose cache the truth could derive (`Model::derive_surface_cache`, private — so
     /// this is deliberately not a link: a public field's doc cannot point inside the crate).
     pub derived: u64,
-    /// Pushes where it declined — no name, a `Wide` name, a motion chain that does not fold (a
-    /// frame, a turn off the quarters), a moved cylinder, or an overflow. **This is the population that must
-    /// reach zero (or be justified) before `cache` can leave the push doors' signatures.**
+    /// Pushes where it declined — no world name (no name, a moved `Wide` name, a motion chain that
+    /// does not fold — a frame, a turn off the quarters — or an overflow in the carry) or a moved
+    /// cylinder. **This is the population that must reach zero (or be justified) before `fallback`
+    /// can leave the push doors' signatures.**
     pub declined: u64,
     /// `declined`, split by cause. The split is what says *which* work removing the parameter
-    /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a
-    /// `Wide` name wants an arbitrary-precision arm, a motion that still declines holds a frame or
+    /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a moved
+    /// `Wide` name wants a carry wider than `Rat`, a motion that still declines holds a frame or
     /// a turn off the quarters (no rational map exists — the rest fold, `Model::chain_plane_coeffs`),
     /// and arithmetic is an `i128` ceiling.
     pub declined_unnamed: u64,
