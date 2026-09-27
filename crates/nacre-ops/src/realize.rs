@@ -383,7 +383,8 @@ pub(crate) fn realize_cache_tracked(
         // ★ **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
         // turn off the quarters, and the cost cap stops the replay at 192 nodes, so 256 bits keep
         // more than an `f64`'s 53 inside the cap. A coordinate that is exactly `0` needs its radius
-        // under the coincidence limit (`2⁻¹⁸⁰`), which 256 bits reach through about 76 such turns;
+        // under the coincidence limit (`2⁻¹⁸⁰`), which 256 bits reach through some sixty to eighty such
+        // turns (about 76 at a bit a turn; a 37°-and-back fixture decides at 60 and not at 80);
         // deeper, it stays `Ceiling` until the paid door climbs. The second rung files nothing
         // (`&mut None`): the first rung's prefix is the one the next generation asks for.
         if first.is_exact() || first.to_f64().is_some() {

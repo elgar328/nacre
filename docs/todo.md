@@ -101,7 +101,8 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 ### 곡면의 실현과 내보내기의 수치 정밀도
 
 **무엇이 문제인가.** 정점은 태어날 때 정의에서 실현되는데(`push_vertex_realized`), 원 위의 tess 샘플점·원
-간선의 중심·곡면의 방향은 f64 산술(libm `sin_cos`·`line_plane`·`normalize`)로 나온다. 내보내는 수(OBJ·STEP)가
+간선의 중심·원통의 방향은 f64 산술(libm `sin_cos`·`line_plane`·`normalize`)로 나온다(평면의 법선은 실현이다 —
+세계 이름이 있으면 문이, 사슬이 안 접히면 ops 깔때기가). 내보내는 수(OBJ·STEP)가
 «진실의 최근접 f64»가 아니다. `nacre-step` 은 면의 곡면을 `Model::surface_cache` 에서 그대로 꺼내
 `normal`·`ref_dir`·`radius` 를 내보내고, 간선의 원은 `edge_curve` 에서, 정점은 `vertex_point` 에서 읽는다.
 정점 쪽 문 `nacre_ops::realize_vertex{,_decimal}` 과 `Precision { NearestF64, Bits(usize) }`·`Realized` 는
