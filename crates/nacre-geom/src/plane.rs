@@ -2,31 +2,24 @@
 
 use nacre_math::{Point3, Vector3};
 
-/// An unbounded plane, stored as an origin point, a **unit** normal, and the
-/// **un-normalized** normal it was built from.
+/// An unbounded plane, stored as an origin point and a **unit** normal.
 ///
 /// Invariant: `normal` is unit length (to machine precision) — every
-/// constructor normalizes and rejects a zero normal, so magnitude consumers
-/// (`signed_distance`, `project`, the conditioning gates in [`crate::intersect`])
-/// may assume unit length without re-checking. `raw` is a positive multiple of
-/// `normal` (the pre-normalization normal), kept because [`Plane::coefficients`]
-/// — the handoff to the exact predicates — needs the cross product the plane was
-/// built from, not the `sqrt`-rounded unit normal. The predicates are
-/// scale-invariant, so `raw`'s length does not affect their sign
-/// (`prop_scaling_a_plane_is_invariant`). `origin` is any point on the plane and
+/// constructor normalizes or is handed a unit vector, and rejects a zero normal, so magnitude
+/// consumers (`signed_distance`, `project`, the conditioning gates in [`crate::intersect`])
+/// may assume unit length without re-checking. `origin` is any point on the plane and
 /// is not canonicalized.
 ///
-/// ★★ **Keeping `raw` does not make the plane's own points satisfy its form exactly.** That
-/// holds when the defining vertices are integers and fails as soon as they are not, because `d`
-/// is an `f64` product — see [`Plane::coefficients`]. Judging therefore reads the plane's name,
-/// derived from its defining points without rounding, and not this value — the exact shortcuts
-/// and the plane-class merge alike.
+/// ★★ **This is a rounded image of a plane, never a description to decide on.** Its own
+/// defining points need not satisfy it exactly (`z = 0.1` is not `fl(0.1)`), and two different
+/// planes can share one image. Judging reads the plane's name, derived from its defining points
+/// without rounding — the exact shortcuts and the plane-class merge alike.
 ///
 /// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
 /// parametric frame (two in-plane basis vectors) arrives in M3, when tess
 /// uv-tagging and NURBS need surface parameters.
 ///
-/// `PartialEq` is exact `f64` comparison (including `raw`) — for tests and
+/// `PartialEq` is exact `f64` comparison — for tests and
 /// literal coincidence only. "Is this point on the plane?" goes through
 /// [`Plane::distance`] / [`Plane::contains`] with a caller-supplied tolerance,
 /// never `==`. `Eq`/`Hash` are deliberately not
@@ -35,20 +28,31 @@ use nacre_math::{Point3, Vector3};
 pub struct Plane {
     origin: Point3,
     normal: Vector3,
-    raw: Vector3,
 }
 
 impl Plane {
-    /// From an origin and a normal of any nonzero length. Stores the unit normal
-    /// for magnitude use and the given normal verbatim as `raw` for exact
-    /// coefficients; returns `None` iff `normal` is the zero vector.
+    /// From an origin and a normal of any nonzero length, normalized here; returns `None` iff
+    /// `normal` is the zero vector.
     #[inline]
     pub fn from_point_normal(origin: Point3, normal: Vector3) -> Option<Plane> {
-        normal.normalize().map(|unit| Plane {
-            origin,
-            normal: unit,
-            raw: normal,
-        })
+        normal
+            .normalize()
+            .map(|unit| Plane::from_point_unit_normal(origin, unit))
+    }
+
+    /// From an origin and a normal that **is already** the unit normal, stored bit for bit.
+    ///
+    /// Normalizing a unit `f64` vector again is not the identity — the `sqrt` and the division
+    /// each round — so a caller holding the realization it wants kept (a correctly rounded
+    /// normal, or one read off another plane) hands it here rather than to
+    /// [`Plane::from_point_normal`].
+    #[inline]
+    pub fn from_point_unit_normal(origin: Point3, normal: Vector3) -> Plane {
+        debug_assert!(
+            (normal.dot(normal) - 1.0).abs() < 1e-12,
+            "a unit normal: {normal:?}"
+        );
+        Plane { origin, normal }
     }
 
     /// The plane through three points: `normal = (b − a) × (c − a)` normalized,
@@ -68,42 +72,33 @@ impl Plane {
         self.origin
     }
 
-    /// The plane translated by `offset` — the origin shifts, the normal (and its
-    /// exact `raw`) are unchanged, so `raw` exactness is preserved (a rigid
+    /// The plane translated by `offset` — the origin shifts, the normal is unchanged (a rigid
     /// translation does not rotate a plane).
     #[inline]
     pub fn translated(self, offset: Vector3) -> Plane {
         Plane {
             origin: self.origin + offset,
             normal: self.normal,
-            raw: self.raw,
         }
     }
 
-    /// The plane reflected in `m`.
-    ///
-    /// Origin **and `raw`** are mirrored, so the exact coefficients survive: rebuilding through
-    /// [`Plane::from_point_normal`] would store the *unit* normal as `raw` and lose the exact
-    /// (often integer-arithmetic) one. A reflection only flips the sign of one component, so a
-    /// mirrored `raw` is as exact as the original — and the unit normal stays unit, so no
-    /// re-normalisation is needed either.
+    /// The plane reflected in `m`. A reflection only flips the sign of one component, so the
+    /// mirrored normal is still unit bit for bit and is not normalized again.
     #[inline]
     pub fn mirrored(self, m: crate::AxisMirror) -> Plane {
         Plane {
             origin: m.point(self.origin),
             normal: m.dir(self.normal),
-            raw: m.dir(self.raw),
         }
     }
 
-    /// The same plane facing the other way: both normals negated, which is exact, and the origin
+    /// The same plane facing the other way: the normal negated, which is exact, and the origin
     /// kept.
     #[inline]
     pub fn reversed(self) -> Plane {
         Plane {
             origin: self.origin,
             normal: -self.normal,
-            raw: -self.raw,
         }
     }
 
@@ -160,30 +155,6 @@ impl Plane {
     #[inline]
     pub fn project(self, p: Point3) -> Point3 {
         p - self.signed_distance(p) * self.normal
-    }
-
-    /// The coefficients `[a, b, c, d]` of the implicit form `a·X + b·Y + c·Z + d = 0`
-    /// — `[raw, −(raw·origin)]`, using the **un-normalized** `raw` normal.
-    ///
-    /// This is the handoff to `nacre-predicates`: the exact indirect
-    /// predicates take plane coefficients as plain arrays, never kernel types, and
-    /// are scale-invariant — so `raw`'s length does not affect their sign, only
-    /// its exactness matters.
-    ///
-    /// ★★★ **"Exact" holds of the coefficients, not of any particular point on the plane.**
-    /// A plane built through exact vertices satisfies the form at those vertices to *exactly
-    /// zero* only when the vertices are integers: `d` is the `f64` product
-    /// `raw·origin`, and a face at `y = −0.2` with `raw = [0, −3.5, 0]` gets
-    /// `d = 0.7000000000000001` — a plane `2⁻⁵⁴` from the one its own points span.
-    ///
-    /// Relying on it described one plane by these coefficients in one question and by its points
-    /// in the next, and answers composed across the two were not even transitive; checking the
-    /// coefficients only against the rounded points certified the rounded plane, and a box whose
-    /// corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it.
-    #[inline]
-    pub fn coefficients(&self) -> [f64; 4] {
-        let [a, b, c] = self.raw.as_array();
-        [a, b, c, -self.raw.dot(self.origin - Point3::origin())]
     }
 }
 

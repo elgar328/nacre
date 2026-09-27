@@ -1,7 +1,7 @@
 //! **Which point states a plane is already a choice — and the judge does not read it.**
 //!
-//! A plane's f64 cache stores an *anchor*: `Plane::coefficients()` is `[raw, −raw·origin]`, so `d`
-//! is whatever that dot product rounds to at whichever point the pusher happened to hold. And
+//! A plane's f64 cache stores an *anchor*: its implicit form is `[n, −n·origin]`, so `d` is
+//! whatever that dot product rounds to at whichever point the pusher happened to hold. And
 //! `Model::push_plane` interns by `(name, motion)` — on a hit the newcomer's cache is **discarded**
 //! and the first pusher's survives. So the moment a plane exists before the operation that would
 //! have created it, that operation inherits someone else's `d`.
@@ -71,7 +71,6 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
                 nacre_geom::Surface::Plane(p) => {
                     let o = p.origin().as_array();
                     let n = p.normal().as_array();
-                    let c = p.coefficients();
                     [
                         o[0].to_bits(),
                         o[1].to_bits(),
@@ -79,10 +78,10 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
                         n[0].to_bits(),
                         n[1].to_bits(),
                         n[2].to_bits(),
-                        c[0].to_bits(),
-                        c[1].to_bits(),
-                        c[2].to_bits(),
-                        c[3].to_bits(),
+                        0,
+                        0,
+                        0,
+                        0,
                     ]
                 }
                 nacre_geom::Surface::Cylinder(cy) => {
@@ -193,15 +192,17 @@ fn ulps(a: f64, b: f64) -> i64 {
     (a.to_bits() as i64 - b.to_bits() as i64).abs()
 }
 
-/// `coefficients()[3]` for a plane anchored at `p` with the sweep-facing normal the kernel uses.
+/// The implicit form's `d = −n·anchor` for a plane anchored at `anchor` with the sweep-facing
+/// normal the kernel uses.
 ///
 /// ★ **`−normal`, always.** Pushing `+normal` would change `flipped` as well, and then a moved
 /// result could not be attributed to `d` alone. With `−normal` on both sides the intern reports
 /// `flipped == false` and the anchor is the only variable.
 fn d_at(anchor: Point3, sp: &SketchPlane) -> f64 {
-    Plane::from_point_normal(anchor, -sp.normal())
+    let n = Plane::from_point_normal(anchor, -sp.normal())
         .expect("the wf normal is nonzero")
-        .coefficients()[3]
+        .normal();
+    -n.dot(anchor - Point3::origin())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,13 +236,13 @@ fn which_point_states_a_plane_changes_its_stored_d() {
     assert!(
         worst > 0,
         "the premise of this file is that anchors disagree on a tilted plane; they did not, so \
-         either the fixture stopped being tilted or `coefficients` stopped reading the anchor"
+         either the fixture stopped being tilted or `d_at` stopped reading the anchor"
     );
 }
 
 /// **The control that says why the population had to be tilted.**
 ///
-/// `d = −raw·origin`. When `raw` has a single nonzero component that is one exact multiply, so two
+/// `d = −n·origin`. When `n` has a single nonzero component that is one exact multiply, so two
 /// anchors on the plane — which by definition agree in that coordinate — produce **bit-identical**
 /// `d`. An axis-aligned fixture, however far apart its anchors, measures nothing at all. (This is
 /// the trap the plan for this work walked into three times: the obvious fixture is the blind one.)

@@ -9,7 +9,7 @@ impl Model {
     ///
     /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
     /// here**: this door calls [`Model::apply_derivation`], so what the producer hands
-    /// in survives only in the parts the truth does not decide — the row (`raw`) and with it the
+    /// in survives only in the parts the truth does not decide — the unit normal and with it the
     /// sense — and wholesale where [`Model::derive_surface_cache`] declines.
     /// ⚠ Only the anchor is derived; «the door takes only the truth» is **not** reached
     /// while `cache` is still a parameter.
@@ -156,7 +156,7 @@ impl Model {
     /// **The f64 cache this surface's truth realizes to** — the one realization road, for surfaces.
     ///
     /// A vertex has a whole one (`push_vertex_realized` realizes the definition at
-    /// birth). A surface has **half** of one: the anchor is derived here, the row and
+    /// birth). A surface has **half** of one: the anchor is derived here, the unit normal and
     /// the sense are whatever the producer handed in.
     ///
     /// ★ **What that half buys** (measured): a producer-stated anchor on a tilted plane
@@ -166,15 +166,15 @@ impl Model {
     ///
     /// What it derives:
     /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
-    ///   world and realized. The row (`raw`) and with it the sense are copied from the value the
-    ///   producer stated.
+    ///   world and realized. The unit normal and with it the sense are copied bit for bit from the
+    ///   value the producer stated.
     /// * **Cylinder** — the world statement ([`Model::world_cylinder_def`]'s, without its
     ///   postcondition — this reader measures the disagreement it would assert away) realized: `origin` and
     ///   `radius` descend exactly; the axis direction and `ref_dir` do not
     ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today —
     ///   [`Model::push_cylinder_raw`] only measures it.
     ///
-    /// ★★★★★ **Why the anchor and not the row** (measured). A canonical row is the
+    /// ★★★★★ **Why the anchor and not a canonical row** (measured). A canonical row is the
     /// tidier answer, but it moved 32 census result rows while the judge's exact shortcut still
     /// read the cache's coefficients (a rescaled row failed that road's check against the face
     /// corners — the road now reads the plane's name and not this cache), and it makes
@@ -190,7 +190,7 @@ impl Model {
     /// one handle, one truth.
     ///
     /// ☑ **The sense is not this derivation's business.** It is truth ([`Surface::Plane::sense`]),
-    /// and the row copied here carries the producer's, which the push door has asserted agrees
+    /// and the unit normal copied here carries the producer's, which the push door has asserted agrees
     /// with it; [`Model::align_cache_sense`] turns the cache after this derivation wherever the
     /// two could still differ.
     ///
@@ -223,12 +223,12 @@ impl Model {
                     Some(leaf) => self.chain_point_rat(*leaf, pts[0])?,
                 }
                 .map(|x| x.to_f64());
-                // The row verbatim — `coefficients()` is `[raw, −raw·origin]`, so its first three
-                // are the `raw` the producer built, and copying them keeps the sense with it.
-                let c = stated.coefficients();
-                let raw = Vector3::from_array([c[0], c[1], c[2]]);
-                Plane::from_point_normal(Point3::from_array(anchor), raw)
-                    .map(nacre_geom::Surface::Plane)
+                // The producer's unit normal verbatim, and with it the sense — normalizing it
+                // again would move its bits.
+                Some(nacre_geom::Surface::Plane(Plane::from_point_unit_normal(
+                    Point3::from_array(anchor),
+                    stated.normal(),
+                )))
             }
             Surface::Cylinder { .. } => {
                 let def = self.world_cylinder_statement(h)?;

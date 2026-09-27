@@ -392,7 +392,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
             };
             counts[kind].0 += 1;
             let coeffs = planes.map(|s| match m.surface_cache(s) {
-                nacre_geom::Surface::Plane(p) => p.coefficients(),
+                nacre_geom::Surface::Plane(p) => implicit(p),
                 nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
             });
             let solved = solve_three_planes(coeffs).expect("three planes meeting at a point");
@@ -464,7 +464,7 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         panic!("a constructed corner has a definition")
     };
     let good = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
-        nacre_geom::Surface::Plane(p) => p.coefficients(),
+        nacre_geom::Surface::Plane(p) => implicit(p),
         nacre_geom::Surface::Cylinder(_) => unreachable!(),
     }))
     .expect("meets at a point");
@@ -476,7 +476,7 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         .expect("a fourth face");
     planes[0] = other;
     let bad = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
-        nacre_geom::Surface::Plane(p) => p.coefficients(),
+        nacre_geom::Surface::Plane(p) => implicit(p),
         nacre_geom::Surface::Cylinder(_) => unreachable!(),
     }));
     let moved = bad.is_none_or(|bad| {
@@ -493,6 +493,13 @@ fn a_wrong_plane_in_a_definition_is_caught() {
 }
 
 /// Three planes by Cramer, or `None` when they do not meet in a point.
+/// A plane cache's implicit form `[n, −n·origin]` — the `f64` equation this file solves.
+fn implicit(p: &nacre_geom::Plane) -> [f64; 4] {
+    let [a, b, c] = p.normal().as_array();
+    let d = -p.normal().dot(p.origin() - nacre_math::Point3::origin());
+    [a, b, c, d]
+}
+
 fn solve_three_planes(p: [[f64; 4]; 3]) -> Option<[f64; 3]> {
     let n = |i: usize| [p[i][0], p[i][1], p[i][2]];
     let (a, b, c) = (n(0), n(1), n(2));

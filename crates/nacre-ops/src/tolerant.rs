@@ -71,9 +71,6 @@ impl Witness for FaceRow {
 }
 
 impl PlaneWitness for WorkingPlane {
-    fn coeffs(&self) -> [f64; 4] {
-        self.plane.coefficients()
-    }
     // ★ `rotated` gates both: a moved plane's name speaks in its pre-motion frame, and the row
     // is a world description only when nothing moved the plane (the table sets `rotated` from
     // that — including a `Through` plane whose vertices meet in a frame its motion does not name).

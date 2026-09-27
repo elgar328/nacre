@@ -798,8 +798,8 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
         }
         let cy = match m.surface_cache(face.surface) {
             nacre_geom::Surface::Cylinder(cy) => cy,
-            // A plane has no truth-versus-cache residual to check: its truth is exact
-            // coefficients, and its orientation is `check_face_orientation`'s question. An arm
+            // A plane has no truth-versus-cache residual to check here: its truth is exact
+            // points, and its orientation is `check_face_orientation`'s question. An arm
             // rather than an `else`, so a third surface kind is a compile error here and its
             // author decides what its truth check is.
             nacre_geom::Surface::Plane(_) => continue,

@@ -102,10 +102,14 @@ impl BaseFrame {
         // the ordinary derivation from them. (The earlier spelling corrected the plane separately
         // and was off by that one sign; `a_reflected_spelling_takes_the_same_direction_signs`
         // is what found it.)
-        let derived = Plane::through_points(tri[0], tri[1], tri[2]).map(|pl| {
-            let c = pl.coefficients();
+        // The implicit form `[n, −n·a]` of the plane through `a, b, c`, `n = (b − a) × (c − a)`
+        // un-normalized; a cross whose square underflows spans nothing.
+        let cross = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
+        let derived = (cross.norm_squared() > 0.0).then(|| {
+            let [a, b, c] = cross.as_array();
+            let d = -cross.dot(tri[0] - Point3::origin());
             let k = f64::from(frame_sign);
-            [c[0] * k, c[1] * k, c[2] * k, c[3] * k]
+            [a * k, b * k, c * k, d * k]
         });
         // ★★★ **Take the plane from the record, not from the triangle.**
         //

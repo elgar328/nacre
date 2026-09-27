@@ -43,7 +43,7 @@ pub(crate) fn transform(
 ///
 /// It is [`transform_solid`] under a zero translation: the cells are duplicated (two live solids
 /// must not share cells — a shared edge would read as four face uses and break the manifold check)
-/// while the geometry is rebuilt bit-for-bit (a pure translation keeps a plane's exact `raw`).
+/// while the geometry is rebuilt bit-for-bit (a pure translation keeps a plane's unit normal).
 ///
 /// **Nothing of the source's point cache is carried.** Like every walk, the copy pushes each
 /// vertex as [`PointCache::Unrealized`] holding the moved `f64` figure and re-realizes it from
@@ -455,10 +455,9 @@ impl Xform<'_> {
     }
 }
 
-/// A surface moved by `isometry`. A pure translation uses `translated` (the normal —
-/// and its exact `raw` — is unchanged). A rotation rebuilds from the moved
-/// origin/normal via the constructor (rotation makes `raw` irrational, as expected —
-/// the plane then carries tol, judged by CIP later).
+/// A surface moved by `isometry`. A pure translation uses `translated` (the normal is
+/// unchanged, bit for bit). A rotation rebuilds from the moved origin/normal via the
+/// constructor, which normalizes the rotated normal again.
 fn transform_surface(
     s: &nacre_geom::Surface,
     iso: &Isometry,

@@ -597,9 +597,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
         "the plain spelling really does decline"
     );
     assert!(
-        pb.iter().any(|g| {
-            g.base.tri.unwrap() != g.witness_coords() || g.base.coeffs.unwrap() != g.coeffs()
-        }),
+        pb.iter().any(|g| g.base.tri.unwrap() != g.witness_coords()),
         "the base frame differs from the moved one — else the comparison is free"
     );
     (pa, pb)

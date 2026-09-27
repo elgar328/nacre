@@ -514,7 +514,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
             }
             pins += 1;
             // The f64 road: realize both points and dot the difference with `n_p × n_q` taken
-            // from the raw coefficients — the same direction `plane_pair_dir_sign` reads.
+            // from the plane caches' normals — the same direction `plane_pair_dir_sign` reads.
             let xyz = |x: combinatorics::NodeId| -> [f64; 3] {
                 match combinatorics::pierce_name(x) {
                     Some((_, cyl, _)) => {
@@ -526,10 +526,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                     }
                 }
             };
-            let nv = |c: usize| {
-                let k = jd.planes[c].plane.coefficients();
-                Vector3::from_array([k[0], k[1], k[2]])
-            };
+            let nv = |c: usize| jd.planes[c].plane.normal();
             let d = nv(p).cross(nv(q));
             let (xa, xb) = (xyz(a), xyz(b));
             let t: f64 = (0..3).map(|k| (xa[k] - xb[k]) * d.as_array()[k]).sum();

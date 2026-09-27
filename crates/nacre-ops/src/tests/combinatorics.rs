@@ -220,7 +220,7 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     // The contrast: the first nonzero component of the name, compared with the cache's, now reads
     // the other way — the spelling this test retires would have flipped.
     assert_ne!(
-        (w[0] > zero) == (lying.coefficients()[0] > 0.0),
+        (w[0] > zero) == (lying.normal().as_array()[0] > 0.0),
         (w[0] > zero) == (n[0] > 0.0),
         "the planted cache flips the first-component reading"
     );

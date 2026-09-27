@@ -138,9 +138,6 @@ impl Witness for W {
     }
 }
 impl PlaneWitness for W {
-    fn coeffs(&self) -> [f64; 4] {
-        self.coeffs
-    }
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
@@ -267,9 +264,6 @@ impl Witness for RW {
     }
 }
 impl PlaneWitness for RW {
-    fn coeffs(&self) -> [f64; 4] {
-        self.coeffs
-    }
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();

@@ -1,7 +1,7 @@
 //! Toleranced geometric predicates: the plane-arrangement sign predicates routed through
 //! the CIP kernel so they stay exact under rotation.
 //!
-//! A face's plane coefficients and corner coordinates are caches — rounded images of the plane —
+//! A face's plane cache and corner coordinates are caches — rounded images of the plane —
 //! so the exact predicates (`nacre-predicates`) over them are exact only w.r.t. the *rounded*
 //! geometry. These wrappers decide from the truth instead: a plane's canonical name where one
 //! stands, and otherwise the three exact [`WitnessPoint`] every witness carries
@@ -117,9 +117,9 @@ impl Notes {
 
 /// A plane witnessed by its truth: its canonical world name where one stands, and three exact
 /// [`WitnessPoint`] definitions on it, always. **No cache** — a face's corner coordinates and a
-/// plane cache's coefficients are rounded images, and two different planes can share one, so
-/// nothing that decides may see them (the plane-class form, [`PlaneWitness`], carries the
-/// coefficients only for a caller that relates descriptions).
+/// plane's cache are rounded images, and two different planes can share one, so nothing that
+/// decides may see them. The plane-class form, [`PlaneWitness`], adds exact descriptions only —
+/// the name's rows and the pre-motion frame.
 ///
 /// The rotation-general predicates need only this, which is why one implementation can serve
 /// both index spaces (a plane class and a single face) without confusing them. Only
@@ -196,17 +196,6 @@ pub trait Witness {
 /// ([`PlaneWitness::frame_sign`]). A single face (which never plays a plane-class role) implements
 /// only [`Witness`].
 pub trait PlaneWitness: Witness {
-    /// The plane cache's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**: a
-    /// rounded image of the plane, not a description a predicate may decide on.
-    ///
-    /// ★★★ **Raw means "not known to describe the plane".** `d` is an `f64` product, so a face at
-    /// `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own points span, and a
-    /// predicate that answers one question from here and the next from another description is
-    /// describing two planes — answers composed across them are not even an order. Predicates read
-    /// [`exact_coeffs`](Self::exact_coeffs) / [`exact_normal`](Self::exact_normal). No product
-    /// code reads this; one test relates it to the base frame, and it leaves with `raw`.
-    fn coeffs(&self) -> [f64; 4];
-
     /// **The plane itself, in `f64`** — its canonical name (derived from its defining points
     /// without rounding) as a row, for an unmoved plane whose name fits 53 bits a coefficient;
     /// `None` for a rotated plane, an unnamed one, or a wider name.
@@ -248,7 +237,7 @@ pub trait PlaneWitness: Witness {
 }
 
 /// A plane's canonical name integers, **oriented as the stored coefficients are** — the exact
-/// integer stand-in for [`PlaneWitness::coeffs`], any width.
+/// integer description of the plane, any width.
 ///
 /// The canonical name deliberately carries no direction (first nonzero coefficient positive),
 /// and the stored plane may hold it either way round — measured, 246 of the census corpus's 3,125

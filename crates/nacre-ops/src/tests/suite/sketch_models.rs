@@ -11,7 +11,7 @@ use super::*;
 struct BrepDigest {
     vertex_bits: Vec<[u64; 3]>,
     vertex_defs: Vec<String>,
-    plane_bits: Vec<[u64; 4]>,
+    plane_bits: Vec<[u64; 6]>,
     cylinder_defs: Vec<String>,
     /// `(surface kind, forward?, outer loop length, inner loop count)` per face.
     faces: Vec<(&'static str, bool, usize, usize)>,
@@ -39,7 +39,8 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
             let face = m.face(fh);
             match m.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(pl) => {
-                    plane_bits.push(pl.coefficients().map(f64::to_bits))
+                    let (o, n) = (pl.origin().as_array(), pl.normal().as_array());
+                    plane_bits.push([o[0], o[1], o[2], n[0], n[1], n[2]].map(f64::to_bits))
                 }
                 nacre_geom::Surface::Cylinder(_) => {
                     if let nacre_topo::Surface::Cylinder { def, .. } = m.surface(face.surface) {

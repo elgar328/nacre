@@ -27,8 +27,9 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
             .map(|&fh| &m.face(fh).surface)
             .find(|&&sh| match m.surface_cache(sh) {
                 nacre_geom::Surface::Plane(p) => {
-                    let [a, b, c, d] = p.coefficients();
-                    b == 0.0 && c == 0.0 && a != 0.0 && (-d / a - want_x).abs() < 1e-12
+                    let [a, b, c] = p.normal().as_array();
+                    let x = p.origin().as_array()[0];
+                    b == 0.0 && c == 0.0 && a != 0.0 && (x - want_x).abs() < 1e-12
                 }
                 nacre_geom::Surface::Cylinder(_) => false,
             })
@@ -993,11 +994,11 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
         stated.push(cache);
         held.push(m.surface_cache(h).clone());
     }
-    // ⚠★★★ **Compared as whole caches, not by `coefficients()`.** On this plane both anchors
-    // give `d = −6` *exactly*, so the two rows are identical while the producers genuinely
-    // disagree — about the anchor, which is the only thing at stake here. A control built on
-    // `coefficients()` fires on a fixture that is perfectly good; the sibling file names the
-    // same blindness (`plane_anchor.rs`'s `an_axis_aligned_plane_is_anchor_blind`).
+    // ⚠★★★ **Compared as whole caches, not by the implicit form `[n, −n·origin]`.** On this plane
+    // both anchors give `d = −6` *exactly*, so the two forms are identical while the producers
+    // genuinely disagree — about the anchor, which is the only thing at stake here. A control
+    // built on the implicit form fires on a fixture that is perfectly good; the sibling file
+    // names the same blindness (`plane_anchor.rs`'s `an_axis_aligned_plane_is_anchor_blind`).
     let whole = |p: nacre_geom::Plane| nacre_geom::Surface::Plane(p);
     assert_ne!(
         surface_bits(&whole(stated[0])),
@@ -1576,8 +1577,10 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
     )
     .expect("a plane");
     let bits = |p: &nacre_geom::Plane| {
-        let c = p.coefficients();
-        (c.map(f64::to_bits), p.origin().as_array().map(f64::to_bits))
+        (
+            p.normal().as_array().map(f64::to_bits),
+            p.origin().as_array().map(f64::to_bits),
+        )
     };
 
     let mut m = Model::new();

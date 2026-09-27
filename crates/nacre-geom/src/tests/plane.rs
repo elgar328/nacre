@@ -10,26 +10,25 @@ fn z0() -> Plane {
 
 // --- golden ---
 
-/// A mirror keeps the exact `raw` coefficients — the reason this lives here rather than in a
-/// caller: rebuilding through `from_point_normal` would substitute the rounded unit normal.
-/// The plane is built from three integer points so `raw` is an exact cross product that a
-/// unit normal cannot represent.
+/// **A unit normal handed in is kept bit for bit** — normalizing it again is not the identity.
+/// The vector below is itself `normalize` of a random direction; one more `normalize` moves all
+/// three components by an ulp, which is why a caller holding the realization it wants kept goes
+/// through `from_point_unit_normal`.
 #[test]
-fn mirroring_keeps_the_exact_raw_normal() {
-    let p = Plane::through_points(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([2.0, 1.0, 0.0]),
-        Point3::from_array([0.0, 1.0, 3.0]),
-    )
-    .unwrap();
-    let m = crate::AxisMirror::new(0, 0.0).unwrap();
-    let q = p.mirrored(m);
-
-    // `raw` is mirrored, not renormalised: exactly the source `raw` with x negated.
-    let [rx, ry, rz] = p.raw.as_array();
-    assert_eq!(q.raw.as_array(), [-rx, ry, rz]);
-    // …and it is *not* the unit normal, which is what the naive rebuild would have stored.
-    assert_ne!(q.raw.as_array(), q.normal.as_array());
+fn a_unit_normal_handed_in_is_kept_bit_for_bit() {
+    let n = Vector3::from_array([
+        -0.9792291343701904,
+        -0.018250430468946345,
+        -0.20193371236201613,
+    ]);
+    let kept = Plane::from_point_unit_normal(Point3::origin(), n);
+    assert_eq!(kept.normal().as_array(), n.as_array());
+    let renormalized = Plane::from_point_normal(Point3::origin(), n).unwrap();
+    assert_ne!(
+        renormalized.normal().as_array(),
+        n.as_array(),
+        "normalizing this unit vector again is the identity — the fixture shows nothing"
+    );
 }
 
 /// Mirroring twice about the origin plane returns the plane bit-for-bit: a sign flip is
@@ -106,43 +105,6 @@ fn from_point_normal_normalizes() {
 }
 
 #[test]
-fn coefficients_of_z5_plane() {
-    // z = 5: normal +z, origin (0,0,5) ⇒ d = signed_distance(0) = −5.
-    let p = Plane::from_point_normal(
-        Point3::from_array([0.0, 0.0, 5.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-    )
-    .unwrap();
-    assert_eq!(p.coefficients(), [0.0, 0.0, 1.0, -5.0]);
-    // A point on the plane evaluates the implicit form to exactly zero.
-    let [a, b, c, d] = p.coefficients();
-    assert_eq!(a * 0.0 + b * 0.0 + c * 5.0 + d, 0.0);
-}
-
-#[test]
-fn coefficients_are_exact_on_defining_points() {
-    // Un-normalized coefficients from integer points evaluate the implicit form to
-    // **exactly** zero on the plane — the sqrt-rounded unit normal could not. The
-    // tilted plane through these three is `3x − 6y = 0` (normal (3,−6,0), un-normalized).
-    let a = Point3::from_array([0.0, 0.0, 0.0]);
-    let b = Point3::from_array([2.0, 1.0, 0.0]);
-    let c = Point3::from_array([0.0, 0.0, 3.0]);
-    let pl = Plane::through_points(a, b, c).unwrap();
-    assert_eq!(pl.coefficients(), [3.0, -6.0, 0.0, 0.0]);
-    let [ca, cb, cc, cd] = pl.coefficients();
-    let eval = |p: Point3| {
-        let [x, y, z] = p.as_array();
-        ca * x + cb * y + cc * z + cd
-    };
-    assert_eq!(eval(a), 0.0);
-    assert_eq!(eval(b), 0.0);
-    assert_eq!(eval(c), 0.0);
-    assert_eq!(eval(Point3::from_array([2.0, 1.0, 5.0])), 0.0); // a 4th exactly-coplanar point
-    // `normal()` is still the unit normal, for magnitude consumers.
-    assert!((pl.normal().norm() - 1.0).abs() < 1e-15);
-}
-
-#[test]
 fn degenerate_constructions_return_none() {
     assert!(Plane::from_point_normal(Point3::origin(), Vector3::zero()).is_none());
     // collinear
@@ -215,18 +177,5 @@ proptest! {
         // h = 1.0 dominates the ~1e-10 projection residual, avoiding flakiness.
         prop_assert!(pl.signed_distance(q + n) > 0.0);
         prop_assert!(pl.signed_distance(q - n) < 0.0);
-    }
-
-    /// The implicit form `a·x + b·y + c·z + d` is `signed_distance` scaled by the
-    /// un-normalized `raw`'s length: `raw = |raw|·n̂`, so `eval = |raw|·signed_distance`.
-    /// Its **sign** matches (scale-invariant), which is all the predicates read.
-    #[test]
-    fn coefficients_evaluate_to_scaled_signed_distance((pl, ..) in plane_and_points(), p in pt3()) {
-        let [a, b, c, d] = pl.coefficients();
-        let [x, y, z] = p.as_array();
-        let eval = a * x + b * y + c * z + d;
-        let raw_len = (a * a + b * b + c * c).sqrt();
-        let scale = 1e-9 * raw_len * (p.as_array().iter().map(|v| v.abs()).fold(0.0, f64::max) + 1.0);
-        prop_assert!((eval - raw_len * pl.signed_distance(p)).abs() <= scale);
     }
 }
