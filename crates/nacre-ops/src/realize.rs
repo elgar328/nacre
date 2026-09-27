@@ -266,8 +266,8 @@ pub(crate) fn realize_def_tracked(
 ///
 /// ☑ **And the value carries no correctness load.** Real models measure depth ≤ 2 (census rows by
 /// their deepest chain: 345 at 0, 53 at 1, 3 at 2), so every value above 2 behaves identically on
-/// them; what this decides is how much is done *eagerly*, at push time. Past it the
-/// construction's own figure stands, and a caller who wants the point exactly still has
+/// them; what this decides is how much is done *eagerly*, at push time. Past it, on a chain that
+/// has to be replayed, the construction's own figure stands, and a caller who wants the point exactly still has
 /// [`realize_vertex`], which climbs.
 ///
 /// ⚠ **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
@@ -294,6 +294,11 @@ pub(crate) fn realize_def_tracked(
 /// the accelerator does not touch. ⇒ the derivation stands and the number does not move. What the
 /// accelerator changes is the common case, not the worst one.
 ///
+/// ★ **It bounds a replay, not a depth.** A vertex whose chain's fold answers
+/// ([`read_without_replay`]) is read at any depth: the fold was composed as each node was born, so
+/// reading it costs the same under two nodes and under two thousand. Measured on 2000 recorded
+/// quarter turns (release, same session): the build goes 65 → 100 ms, and every vertex past the
+/// cap is its exact point instead of the construction's figure.
 const CACHE_REPLAY_COST_CAP: usize = 192;
 
 /// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
@@ -315,6 +320,22 @@ pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3])
     realize_cache_tracked(model, def, &mut None)
 }
 
+/// **The realization [`build_three_plane`] reaches without replaying a chain** — an unmoved meet,
+/// or one whose chain's fold answers; `None` where only a replay would. Asked of the fold itself,
+/// not of whether the chain folds: a fold whose offset or point overflowed answers nothing, and a
+/// replay would walk the whole history — the cost [`CACHE_REPLAY_COST_CAP`] exists to bound.
+fn read_without_replay(model: &Model, def: &Vertex) -> Option<Realized> {
+    let nacre_topo::Vertex::ThreePlane(_) = def else {
+        return None;
+    };
+    let (meet, frame) = model.vertex_meet_of(def)?;
+    let (n, d) = match frame {
+        None => meet.lift(),
+        Some(node) => MeetPoint::Narrow(model.chain_point_rat(node, *meet.narrow()?)?).lift(),
+    };
+    Some(Realized(Arm::Exact(n, d)))
+}
+
 /// [`realize_cache`] that also reports what the accelerator could keep.
 ///
 /// ★ The public door stays narrow on purpose: an instrument asks it the same question the funnel
@@ -326,15 +347,16 @@ pub(crate) fn realize_cache_tracked(
     def: &Vertex,
     out: &mut Option<PrefixWrite>,
 ) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
-    if def
+    let deep = def
         .carriers()
         .filter_map(|h| model.plane_motion(h))
-        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
-    {
-        return Err(CacheDecline::CostCap);
-    }
-    let r = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
-        .map_err(CacheDecline::Cannot)?;
+        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP));
+    let r = if deep {
+        read_without_replay(model, def).ok_or(CacheDecline::CostCap)?
+    } else {
+        realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
+            .map_err(CacheDecline::Cannot)?
+    };
     r.to_f64().ok_or(CacheDecline::Cannot(match r.is_exact() {
         // An exact value no `f64` names: more bits are not the missing thing.
         true => RealizeError::Unrepresentable,

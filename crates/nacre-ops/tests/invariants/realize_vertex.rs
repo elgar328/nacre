@@ -944,6 +944,34 @@ fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
     );
 }
 
+/// **The cost cap bounds a replay, not a depth** — a vertex under 300 recorded quarter turns, past
+/// the cap, is read from the fold like one under two: the fold was composed as each node was born,
+/// so reading it costs the same at any depth. Its cache is the exact point, not the construction's
+/// figure.
+#[test]
+fn a_folding_chain_past_the_cost_cap_is_still_read_exactly() {
+    let mut m = Model::new();
+    let mut s = crate::fixtures::through_block(&mut m, 4.0);
+    m.rebuild_adjacency();
+    for _ in 0..300 {
+        s = moved(&mut m, s, turn(Axis::Z, 90));
+    }
+    m.rebuild_adjacency();
+    let vs = live_vertices(&m);
+    assert!(!vs.is_empty(), "no live vertices");
+    for &vh in &vs {
+        assert!(
+            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            "a folding chain is read past the cost cap: {:?}",
+            m.vertex_cache(vh)
+        );
+        assert!(
+            realize_vertex(&m, vh, Precision::Bits(128)).is_ok_and(|r| r.is_exact()),
+            "read from the fold"
+        );
+    }
+}
+
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).
