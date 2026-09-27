@@ -862,45 +862,29 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice
 /// while this was written*.
 ///
-/// ⚠ **A pure quadrantal chain is not a third row, and finding out why corrected the claim.** A
-/// right-angle turn about the origin is exact, so `transform` carries it whole and restates the
-/// planes rather than recording a node: a hundred of them leave *no chain at all*, and the guard
-/// caught the empty measurement. Seeding one 37° turn to force a history then failed the other way
-/// — at 128 bits that coordinate is undecidable, full walk and all. The lesson is that "a
-/// quadrantal turn costs nothing" is true of the **angle** (`cos`/`sin` are exact, contributing no
-/// radius) and false of the **node**: interval arithmetic still charges its roundings, so a radius
-/// already in flight keeps compounding. Zero times anything is still zero, which is why a chain
-/// with an exact base decides forever — but such a chain is never recorded, so the depth guard
-/// never saw it either.
+/// ⚠ **A chain that folds is not a row here.** Quarter turns, rational translations and axis
+/// reflections compose to a rational map, so a vertex under such a recorded chain is read from the
+/// fold exactly and nothing is replayed — the guard below would find no replayed vertex. The
+/// translation row therefore starts with one 7° turn, which does not fold (`translated_chain`).
 #[test]
 fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
-    for (what, n, rotate) in [
-        ("150 rational translations", 150usize, false),
-        ("80 turns of 7°", 80, true),
-    ] {
+    let turned = |n: usize| {
         let mut m = Model::new();
-        // The translations need a solid that records them: a fresh block carries a translation
-        // into its statements, the `Through` block records every motion.
-        let mut s = if rotate {
-            cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0])
-        } else {
-            crate::fixtures::through_block(&mut m, 4.0)
-        };
+        let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
         m.rebuild_adjacency();
         for _ in 0..n {
-            let iso = if rotate {
-                turn(Axis::Z, 7)
-            } else {
-                Isometry::translation([
-                    Rat::new(1, 7).expect("1/7"),
-                    Rat::from_int(0),
-                    Rat::from_int(0),
-                ])
-            };
-            s = moved(&mut m, s, iso);
+            s = moved(&mut m, s, turn(Axis::Z, 7));
         }
         m.rebuild_adjacency();
-
+        m
+    };
+    for (what, m) in [
+        (
+            "one 7° turn, then 150 rational translations",
+            translated_chain(150),
+        ),
+        ("80 turns of 7°", turned(80)),
+    ] {
         let vs = live_vertices(&m);
         assert!(!vs.is_empty(), "{what}: no live vertices");
         for &vh in &vs {
@@ -922,6 +906,42 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
             "{what}: every vertex realized exactly — no chain was replayed, so this measures nothing"
         );
     }
+}
+
+/// **A vertex under a recorded chain that folds is read from the fold, exactly** — including a
+/// coordinate that is exactly `0`. The `Through` block records every motion, and a quarter turn
+/// about `x` folds; replaying that chain cannot decide such a zero (its interval straddles `0` at
+/// every rung), so the vertex stayed on the construction's figure. Read from the fold, every
+/// vertex is an exact rational, its cache `Bounded`.
+#[test]
+fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
+    let mut m = Model::new();
+    let s = crate::fixtures::through_block(&mut m, 4.0);
+    m.rebuild_adjacency();
+    moved(&mut m, s, turn(Axis::X, 90));
+    m.rebuild_adjacency();
+    let vs = live_vertices(&m);
+    assert!(!vs.is_empty(), "no live vertices");
+    let mut zeros = 0;
+    for &vh in &vs {
+        assert!(
+            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            "a folding chain's vertex is realized: {:?}",
+            m.vertex_cache(vh)
+        );
+        let r = realize_vertex(&m, vh, Precision::Bits(128)).expect("realizes");
+        assert!(r.is_exact(), "read from the fold, not replayed");
+        zeros += m
+            .vertex_point(vh)
+            .as_array()
+            .iter()
+            .filter(|c| **c == 0.0)
+            .count();
+    }
+    assert!(
+        zeros > 0,
+        "the fixture carries no zero coordinate — it shows nothing"
+    );
 }
 
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no

@@ -10,11 +10,13 @@
 //! from it, rounding exactly once at the end. Two roads meet here and they are chosen by the
 //! *value*, not by the `Vertex` variant:
 //!
-//! - **rational** — a three-plane meet is an exact ratio ([`nacre_topo::Model::vertex_meet`]), so
-//!   its decimals come out of one long division and every digit printed is a digit of the
-//!   coordinate itself. There is no rounding question to get wrong.
-//! - **realized** — anything a motion or a radical reaches is approached at `prec` bits with the
-//!   error the realization cost, and a digit is printed only once the interval decides it.
+//! - **rational** — a three-plane meet is an exact ratio ([`nacre_topo::Model::vertex_meet`]), and
+//!   so is that meet carried through a chain that folds (`Model::chain_point_rat`), so its decimals
+//!   come out of one long division and every digit printed is a digit of the coordinate itself.
+//!   There is no rounding question to get wrong.
+//! - **realized** — anything a turn off the quarters, a frame or a radical reaches is approached at
+//!   `prec` bits with the error the realization cost, and a digit is printed only once the interval
+//!   decides it.
 //!
 //! ★ **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
 //! `vertex_meet → WitnessPoint::at → replay → realize` cannot live on `Model`; `nacre-ops` is the
@@ -583,6 +585,17 @@ fn build_three_plane(
         return Ok(Realized(Arm::Exact(n, d)));
     };
     let base = *narrow_or(&meet)?;
+    // ★ **A chain that folds is read, not replayed.** Translations, quarter turns and axis
+    // reflections compose to a signed axis permutation plus a rational offset, folded once per node
+    // as it is born (`Model::chain_point_rat`), so the meet carried through it is an exact rational
+    // — the same point the replay approaches, stated outright. A replay cannot decide a coordinate
+    // that is exactly `0` (its interval straddles it at every rung), and read from the fold it is
+    // the integer `0`. Where the fold does not answer (a frame, a turn off the quarters, an offset
+    // past `Rat`) the replay does.
+    if let Some(world) = model.chain_point_rat(node, base) {
+        let (n, d) = MeetPoint::Narrow(world).lift();
+        return Ok(Realized(Arm::Exact(n, d)));
+    }
     let chain = motion_chain(model, node).ok_or(RealizeError::NoMotionChain)?;
     let (point, used) = match remembered_prefix(model, base, node, bits) {
         // The chain runs root-to-leaf, so what this point still owes is the tail past the prefix.

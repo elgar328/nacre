@@ -310,22 +310,18 @@ const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 /// cell commutes.
 const KNOWN_CELLS: usize = 0;
 
-/// **Cells whose digest differs today, by name** — `(family, motions)`, for Fuse and Cut (the
-/// Common of that family keeps no such vertex). They commute: volumes, counts and validity agree;
-/// only the bits of one vertex do not. Under a recorded chain that folds, a vertex whose true
-/// coordinate is exactly `0` is realized by replaying the chain, and the replay cannot decide the
-/// zero (`RealizeError::Undecided` — the paid door as well), so the cache keeps the construction's
-/// figure and the vertex's other coordinates sit an ulp off the nearest `f64` the other road
-/// realizes (measured: `1.4399999999999997` against `1.44`). The chain folds to exact rationals,
-/// and a realization read from the fold would decide the zero outright — the day it does, these
-/// cells come out identical, go red here, and leave.
-const DIGEST_DIFFERS: &[(&str, &[&str])] = &[(
-    "recorded block",
-    &["rx90", "rx180", "rx270", "ry90", "ry180", "ry270", "ry90+t"],
-)];
+/// **Cells whose digest differs, by name** — `(family, motions)`, for Fuse and Cut. Such a cell
+/// commutes (volumes, counts and validity agree) while the bits of a vertex do not.
+///
+/// ★ The scoreboard is empty: a vertex under a recorded chain that folds is read from the fold
+/// (`Model::chain_point_rat`), exactly, so a coordinate that is exactly `0` is the integer `0` on
+/// both roads — the replay alone could not decide it and left its vertex on the construction's
+/// figure, an ulp off (`1.4399999999999997` against `1.44`, fourteen `recorded block` cells). It
+/// stays here as the shape the next such cell is written in, as [`KNOWN`] does.
+const DIGEST_DIFFERS: &[(&str, &[&str])] = &[];
 
-/// The count lock on [`DIGEST_DIFFERS`]: two kinds per motion.
-const DIGEST_DIFFERS_CELLS: usize = 14;
+/// The count lock on [`DIGEST_DIFFERS`]: two kinds per motion — zero.
+const DIGEST_DIFFERS_CELLS: usize = 0;
 
 fn digest_differs(fam: &str, motion: &str, kind: BoolKind) -> bool {
     kind != BoolKind::Common
@@ -443,9 +439,9 @@ fn run_commuting_oracle(labels: &[&str]) {
                     )),
                 }
                 // ★ The commuting diagram's digest is a lock where measurement said it holds
-                // (the whole group: every quadrantal cell bit-identical, 600/612, and every
-                // exact-rigid cell, 406/408 — the pierce vertices included, each realized from its
-                // moved definition; the rest are the `DIGEST_DIFFERS` scoreboard).
+                // (the whole group: every quadrantal and every exact-rigid cell bit-identical, the
+                // pierce vertices included, each realized from its moved definition; a cell that
+                // is not goes on the `DIGEST_DIFFERS` scoreboard).
                 if digest_differs(fam, mn, kind) {
                     if !matches!(digest, Digest::Differs(_)) {
                         failures.push(format!(
