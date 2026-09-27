@@ -237,7 +237,13 @@ pub(super) fn datum_plane(
                 .ok_or(OpError::DegenerateGeometry)?;
             // Every `PlaneDef` orders its points so `u × v` is the stated normal; the cache faces
             // the other way (the base cap's outward).
-            let (plane, flipped) = model.push_plane(cache, d.points(), None, Orientation::Reversed);
+            let (plane, flipped) = crate::realize::push_plane_realized(
+                model,
+                cache,
+                d.points(),
+                None,
+                Orientation::Reversed,
+            );
             // ★ `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
             // `+u = −x̂` while the script convention (and `SketchPlane::world_zx`) says `+ẑ`, so a
             // placement inferred from the plane would silently turn some sketches. The values are
@@ -453,7 +459,8 @@ pub(super) fn datum_plane(
             } else {
                 Orientation::Forward
             };
-            let (plane, _flipped) = model.push_plane(cache, points, motion, sense);
+            let (plane, _flipped) =
+                crate::realize::push_plane_realized(model, cache, points, motion, sense);
             Ok((plane, SketchFrame::canonical(plane)))
         }
     }

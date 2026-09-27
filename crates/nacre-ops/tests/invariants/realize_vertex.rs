@@ -1015,6 +1015,55 @@ fn a_coordinate_that_cancels_to_zero_is_read_as_zero() {
     );
 }
 
+/// **A plane with no world name has its normal realized from the truth** — a box turned 30° about
+/// `z` is on a chain that does not fold, so the push door cannot name its sides in the world, and
+/// their normals are realized from the pre-motion name through the chain. The oracle is the
+/// geometry: each side faces `(±cos30, ±sin30, 0)` or `(∓sin30, ±cos30, 0)`, i.e. the nearest
+/// `f64`s of `√3/2` and `1/2`, with a `+0.0` for `z`. (The top and bottom are fixed by a turn about
+/// `z`, so they are restated in the world, not recorded.)
+#[test]
+fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
+    const HALF_ROOT3: f64 = 0.8660254037844386; // nearest f64 of √3/2
+    let mut m = Model::new();
+    let s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    let s = moved(&mut m, s, turn(Axis::Z, 30));
+    m.rebuild_adjacency();
+    let shell = m.solid(s).outer;
+    let mut seen = 0;
+    for &fh in &m.shell(shell).faces {
+        let h = m.face(fh).surface;
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+            continue;
+        };
+        if m.plane_motion(h).is_none() {
+            continue;
+        }
+        let n = p.normal().as_array();
+        let near = |x: f64, t: f64| (x.abs() - t).abs() < 1e-9;
+        let want = [
+            if near(n[0], HALF_ROOT3) {
+                HALF_ROOT3.copysign(n[0])
+            } else {
+                0.5f64.copysign(n[0])
+            },
+            if near(n[1], HALF_ROOT3) {
+                HALF_ROOT3.copysign(n[1])
+            } else {
+                0.5f64.copysign(n[1])
+            },
+            0.0,
+        ];
+        assert_eq!(
+            n.map(f64::to_bits),
+            want.map(f64::to_bits),
+            "the nearest f64 of the turned normal: {n:?}"
+        );
+        seen += 1;
+    }
+    assert_eq!(seen, 4, "four sides carry the recorded turn");
+}
+
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).

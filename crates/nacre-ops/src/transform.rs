@@ -669,7 +669,13 @@ fn transform_solid(
                         Carry::None => *p,
                     }
                 };
-                model.push_plane(pl, carried, new_motion, image_sense(*sense))
+                crate::realize::push_plane_realized(
+                    model,
+                    pl,
+                    carried,
+                    new_motion,
+                    image_sense(*sense),
+                )
             }
             (
                 nacre_geom::Surface::Plane(pl),

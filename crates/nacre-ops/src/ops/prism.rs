@@ -298,7 +298,8 @@ pub(crate) fn build_prism(
                 base_motion,
             )
             .ok_or(OpError::DegenerateGeometry)?;
-            let (s, flipped) = model.push_plane(
+            let (s, flipped) = crate::realize::push_plane_realized(
+                model,
                 Plane::from_point_normal(outer_pts.base[0], -normal)
                     .ok_or(OpError::DegenerateGeometry)?,
                 cap_pts,
@@ -329,7 +330,8 @@ pub(crate) fn build_prism(
         top_motion,
     )
     .ok_or(OpError::DegenerateGeometry)?;
-    let (top_surface, top_flipped) = model.push_plane(
+    let (top_surface, top_flipped) = crate::realize::push_plane_realized(
+        model,
         Plane::from_point_normal(outer_pts.top[0], normal).ok_or(OpError::DegenerateGeometry)?,
         top_points,
         top_motion,
@@ -516,7 +518,8 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
             match &ring.exact.segs[i] {
                 // The cache is the carried ring's own three points in `wall_points`' order, so it
                 // faces the way those points do — through any chain, reflections included.
-                Seg3::Line => Ok(model.push_plane(
+                Seg3::Line => Ok(crate::realize::push_plane_realized(
+                    model,
                     Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
                         .ok_or(OpError::DegenerateGeometry)?,
                     ring.exact.wall_points(i),

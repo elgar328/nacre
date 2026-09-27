@@ -451,6 +451,94 @@ pub(crate) fn push_vertex_realized(
     model.push_vertex(def, cache)
 }
 
+/// Push a plane whose cache is **realized from its truth** where the model cannot derive one — the
+/// plane twin of [`push_vertex_realized`], and the road every constructed plane takes.
+///
+/// The push door derives a plane's cache itself wherever the plane has a world name (unmoved, or
+/// carried by a chain that folds). What it cannot name is a plane under a turn off the quarters or
+/// a frame, and there `figure` — the construction's own `f64` — would stand. This realizes that
+/// plane's **normal** instead: the pre-motion name's normal carried by the chain (the difference
+/// of the replayed origin and name vector — the translation cancels) times the name's sense
+/// against the points and the chain's parity, normalized, and read out by [`Realized::to_f64`] at
+/// 128 bits and then 256, so a component that is exactly `0` is `+0.0`. Where that does not
+/// answer — a replay past [`CACHE_REPLAY_COST_CAP`], a pre-motion name wider than `Rat`, undecided
+/// at 256 — `figure` stands, as a vertex's construction figure does.
+///
+/// ⚠ **The anchor stays `figure`'s.** Realizing it too (the first point replayed, read out the
+/// same way) is the truer cache, and it cost a cell: the seam table solves seam vertices from the
+/// three classes' plane caches (todo 「seam 정점 좌표를 평면 캐시로 푼다」), and the moved `d` made
+/// two seam points alias — `collinear_loop_points`' `Y/305deg/inset0.5` refused `SeamAlias`
+/// (107 of 108 cells built). The normal alone moved none.
+///
+/// ★ Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
+/// points in `f64`, which was measured further from the truth than the producer's figure): this
+/// realizes at 128 or 256 bits and rounds once.
+///
+/// ⚠ «Has a world name» is asked before the push, so without a handle: no motion, or a chain whose
+/// fold answers. A `Wide` pre-motion name under a folding chain is named by neither side and keeps
+/// `figure`.
+pub(crate) fn push_plane_realized(
+    model: &mut Model,
+    figure: nacre_geom::Plane,
+    points: [[nacre_exact::Rat; 3]; 3],
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+    sense: nacre_topo::Orientation,
+) -> (Handle<Surface>, bool) {
+    let normal = motion.and_then(|leaf| realize_plane_normal(model, &points, leaf, sense));
+    let cache = normal.map_or(figure, |n| {
+        nacre_geom::Plane::from_point_unit_normal(
+            figure.origin(),
+            nacre_math::Vector3::from_array(n),
+        )
+    });
+    model.push_plane(cache, points, motion, sense)
+}
+
+/// The normal [`push_plane_realized`] describes, `None` where it does not answer.
+fn realize_plane_normal(
+    model: &Model,
+    points: &[[nacre_exact::Rat; 3]; 3],
+    leaf: Handle<nacre_topo::MotionNode>,
+    sense: nacre_topo::Orientation,
+) -> Option<[f64; 3]> {
+    let zero = [nacre_exact::Rat::from_int(0); 3];
+    if model.chain_point_rat(leaf, zero).is_some()
+        || model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP)
+    {
+        return None;
+    }
+    let name = nacre_exact::plane_name_exact(points[0], points[1], points[2])?;
+    let n = *name.narrow()?;
+    let along = nacre_exact::name_along_points(
+        &name,
+        points.each_ref().map(|p| MeetPoint::Narrow(*p)).each_ref(),
+    )?;
+    // The way the plane faces, in the frame its points are written in: the name's normal when it
+    // runs with the points' turn times the sense, and a reflection in the chain turns it again.
+    let facing = if along { sense.sign() } else { -sense.sign() };
+    let turned = facing * crate::rotated_vertex::motion_parity(model, Some(leaf))? < 0;
+    let chain = motion_chain(model, leaf)?;
+    let tip = [n[0], n[1], n[2]];
+    // `tail → head` is the carried normal; swapping them negates it exactly.
+    let (tail, head) = if turned { (tip, zero) } else { (zero, tip) };
+    let tail = replay(WitnessPoint::at(tail), &chain)?;
+    let head = replay(WitnessPoint::at(head), &chain)?;
+    for bits in [LADDER[0], LADDER[1]] {
+        let (t, h) = (tail.realize(bits), head.realize(bits));
+        let d: [HpBounded; 3] = core::array::from_fn(|k| h[k].sub(&t[k], bits));
+        let nn = d[0]
+            .mul(&d[0], bits)
+            .add(&d[1].mul(&d[1], bits), bits)
+            .add(&d[2].mul(&d[2], bits), bits);
+        let inv = nn.inv_sqrt(bits)?;
+        let unit: [HpBounded; 3] = core::array::from_fn(|k| d[k].mul(&inv, bits));
+        if let Some((n, _)) = Realized(Arm::Approached(unit, bits)).to_f64() {
+            return Some(n);
+        }
+    }
+    None
+}
+
 /// What [`refine_vertex_cache`] did: how many coordinates it raised, and how many it could not.
 ///
 /// ★ `left` is not an error count. A vertex stays behind when the full ladder still does not name
