@@ -42,8 +42,9 @@ use num_bigint::BigInt;
 /// they disagree is by printing digits the realization never determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precision {
-    /// Realize from the definition and round once to the nearest `f64`, escalating until the
-    /// interval names one. This is the value the cache *should* hold.
+    /// Realize from the definition and read it out once ([`Realized::to_f64`] — the nearest
+    /// `f64`, or `+0.0` within the coincidence limit), escalating until the interval names one.
+    /// This is the value the cache *should* hold.
     NearestF64,
     /// An explicit working precision — for measurement, and for a caller driving its own ladder.
     Bits(usize),
@@ -130,8 +131,20 @@ pub enum CacheDecline {
 const LADDER: [usize; 6] = [128, 256, 512, 1024, 2048, crate::planes::JUDGE_PREC_CAP];
 
 impl Realized {
-    /// The nearest `f64` per coordinate, with the error each carries. `None` where the
-    /// realization does not name one.
+    /// The nearest `f64` per coordinate, with the error each carries — **or `+0.0` where the
+    /// coordinate is proven within the coincidence limit of zero**. `None` where the realization
+    /// names neither.
+    ///
+    /// ★★★ **The coincidence rule, as judging states it.** Two things proven closer than
+    /// `2⁻¹⁸⁰` of the model's size are one (design 「숫자 규칙」 5: below that no split survives
+    /// any output). A coordinate that is exactly `0` never decides by rounding — its interval
+    /// straddles `0` at every rung, and `-tiny` and `+tiny` are different `f64`s — so an interval
+    /// entirely inside `± max(1, largest |coordinate|) · 2⁻¹⁸⁰` is read as `+0.0`, with that
+    /// interval's upper bound as its error, which keeps «the truth lies within `coord ± bound`»
+    /// true. The scale is the point's own, which is never larger than the model's: the limit errs
+    /// strict, and erring strict only costs bits. It is asked **before** rounding, so every rung
+    /// that decides gives the same answer — asked after, a true `1e-70` would read `0` where
+    /// rounding fails and `1e-70` a rung later. An exact arm is not asked: a rational rounds.
     ///
     /// ★★★ **The error comes back as [`Mag`], not `f64`, and that is what that type is for.**
     /// `nacre-exact`'s own test says so: *"the reason this type exists: a radius the ladder
@@ -169,7 +182,17 @@ impl Realized {
             Arm::Approached(p, prec) => {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
+                let scale = p.iter().fold(Mag::of(1.0), |s, c| {
+                    let m = Mag::above(&c.value);
+                    if s.lt(m) { m } else { s }
+                });
+                let coincidence = scale.times(Mag::pow2(-180));
                 for k in 0..3 {
+                    let reach = Mag::above(&p[k].value).plus(p[k].error);
+                    if reach.lt(coincidence) {
+                        e[k] = reach;
+                        continue;
+                    }
                     v[k] = nacre_exact::round_to_f64(&p[k].value, p[k].error, *prec)?;
                     // The realization's own radius, handed over unchanged — no conversion, so
                     // nothing to underflow. That is what `Mag` is for: its own test records
@@ -302,15 +325,16 @@ pub(crate) fn realize_def_tracked(
 const CACHE_REPLAY_COST_CAP: usize = 192;
 
 /// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
-/// makes: the definition realized on the ladder's first rung and rounded once, or `None` where
-/// that rung does not name an `f64` (a realization that declines by name, an interval too wide at
-/// 128 bits) — or where the road did not even walk, because the history is deeper than
-/// [`CACHE_REPLAY_COST_CAP`] is willing to pay for.
+/// makes: the definition realized on the ladder's first two rungs (the second only where the
+/// first does not decide) and read out by [`Realized::to_f64`], or `None` where neither names an
+/// `f64` (a realization that declines by name, an interval too wide at 256 bits) — or where the
+/// road did not even walk, because a replay is deeper than [`CACHE_REPLAY_COST_CAP`] is willing
+/// to pay for.
 ///
-/// One rung, deliberately: a coordinate the first rung decides is the same nearest `f64` any
-/// higher rung would name, so where this answers it agrees with [`realize_vertex`] at
-/// `NearestF64` bit for bit; where it does not, the cost of climbing on every push is not paid,
-/// and the cache says so by carrying the construction's figure instead. Public so an instrument
+/// Two rungs, deliberately: a coordinate a low rung decides is the same answer any higher rung
+/// would give, so where this answers it agrees with [`realize_vertex`] at `NearestF64` bit for
+/// bit; where it does not, the cost of climbing on every push is not paid, and the cache says so
+/// by carrying the construction's figure instead. Public so an instrument
 /// can ask the same question the push funnel asked and hold the cache to it.
 ///
 /// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
@@ -354,8 +378,20 @@ pub(crate) fn realize_cache_tracked(
     let r = if deep {
         read_without_replay(model, def).ok_or(CacheDecline::CostCap)?
     } else {
-        realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
-            .map_err(CacheDecline::Cannot)?
+        let first = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
+            .map_err(CacheDecline::Cannot)?;
+        // ★ **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
+        // turn off the quarters, and the cost cap stops the replay at 192 nodes, so 256 bits keep
+        // more than an `f64`'s 53 inside the cap. A coordinate that is exactly `0` needs its radius
+        // under the coincidence limit (`2⁻¹⁸⁰`), which 256 bits reach through about 76 such turns;
+        // deeper, it stays `Ceiling` until the paid door climbs. The second rung files nothing
+        // (`&mut None`): the first rung's prefix is the one the next generation asks for.
+        if first.is_exact() || first.to_f64().is_some() {
+            first
+        } else {
+            realize_def_tracked(model, def, Precision::Bits(LADDER[1]), &mut None)
+                .map_err(CacheDecline::Cannot)?
+        }
     };
     r.to_f64().ok_or(CacheDecline::Cannot(match r.is_exact() {
         // An exact value no `f64` names: more bits are not the missing thing.

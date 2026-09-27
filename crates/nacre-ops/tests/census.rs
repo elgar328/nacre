@@ -180,6 +180,12 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
 /// Running totals of [`nacre_ops::audit_plane_senses`] over every row — `agree`, `unmeasured`,
 /// `mirrored`, `turned`. This binary's dump is its only test, so a process-global sum is the
 /// corpus's.
+/// Result-vertex coordinates the realization read as `+0.0` by the coincidence rule
+/// (`Realized::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero carries
+/// a zero bound, and no other decided coordinate is `0.0`, so this counts the rule's answers
+/// without a counter in the product.
+static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 static SENSE: [std::sync::atomic::AtomicUsize; 4] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
 
@@ -264,8 +270,15 @@ fn record(
                                     // `Unrealized`. Written out rather than as "not Bounded", so a
                                     // vertex cannot drift between the two refusals unnoticed.
                                     match nacre_ops::realize_cache(m, m.vertex(vh)) {
-                                        Ok((c, _)) => {
+                                        Ok((c, b)) => {
                                             realized += 1;
+                                            let zeros = (0..3)
+                                                .filter(|&k| c[k] == 0.0 && !b[k].is_zero())
+                                                .count();
+                                            ZERO_BY_COINCIDENCE.fetch_add(
+                                                zeros,
+                                                std::sync::atomic::Ordering::Relaxed,
+                                            );
                                             assert!(
                                                 matches!(m.vertex_cache(vh), PointCache::Bounded { coord, .. } if coord.as_array() == c),
                                                 "{tag}: vertex {} is not the realization: {:?} vs {c:?}",
@@ -2496,6 +2509,10 @@ fn measure_census() {
         .each_ref()
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
     println!("stat sense_agree {agree}");
+    println!(
+        "stat zero_by_coincidence {}",
+        ZERO_BY_COINCIDENCE.load(std::sync::atomic::Ordering::Relaxed)
+    );
     println!("stat sense_unmeasured {unmeasured}");
     println!("stat sense_mirrored {mirrored}");
     println!("stat sense_turned {turned}");

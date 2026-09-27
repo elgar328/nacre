@@ -814,8 +814,8 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///   within `coord ± bound`. Every vertex an operation makes carries this unless the cache road
 ///   declined.
 /// - [`Self::Ceiling`] — the cache road **stopped**, and a road willing to pay more can still
-///   answer. Two walls stop it and they say the same thing to a reader: the ladder's first rung did
-///   not decide the coordinate, or a chain the road would have to replay ran past what the cache
+///   answer. Two walls stop it and they say the same thing to a reader: the ladder's first two
+///   rungs did not decide the coordinate, or a chain the road would have to replay ran past what the cache
 ///   road pays for (`nacre_ops`'s cost cap — a chain whose fold answers is read at any depth).
 ///   `nacre_ops::refine_vertex_cache` is what lifts these.
 /// - [`Self::Unrealized`] — **no realization stands behind the coordinate**: the kernel has no road

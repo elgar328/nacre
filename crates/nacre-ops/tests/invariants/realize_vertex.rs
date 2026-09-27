@@ -972,14 +972,60 @@ fn a_folding_chain_past_the_cost_cap_is_still_read_exactly() {
     }
 }
 
+/// **A coordinate that cancels to exactly `0` is read as `+0.0`** — a box turned 45° about `z`
+/// puts its `(2, 2)` corners at `x = cos45·2 − sin45·2 = 0`. The replay's interval straddles `0` at
+/// every rung, so rounding never decides it; proven within the coincidence limit
+/// (`max(1, |point|)·2⁻¹⁸⁰`), it is `+0.0` with that proof as its bound — and a far deeper rung
+/// gives the same answer, because the rule is asked before rounding.
+#[test]
+fn a_coordinate_that_cancels_to_zero_is_read_as_zero() {
+    let mut m = Model::new();
+    let s = cuboid(&mut m, [0.0; 3], [2.0, 2.0, 1.0]);
+    m.rebuild_adjacency();
+    moved(&mut m, s, turn(Axis::Z, 45));
+    m.rebuild_adjacency();
+    let mut zeros = 0;
+    for vh in live_vertices(&m) {
+        let PointCache::Bounded { coord, bound } = *m.vertex_cache(vh) else {
+            panic!("realized: {:?}", m.vertex_cache(vh));
+        };
+        let deep = realize_vertex(&m, vh, Precision::Bits(1024))
+            .expect("realizes")
+            .to_f64()
+            .expect("decides at 1024 bits");
+        assert_eq!(
+            deep.0.map(f64::to_bits),
+            coord.as_array().map(f64::to_bits),
+            "a deeper rung gives the same answer"
+        );
+        for (c, b) in coord.as_array().into_iter().zip(bound) {
+            if c == 0.0 && !b.is_zero() {
+                assert_eq!(c.to_bits(), 0.0f64.to_bits(), "+0.0");
+                assert!(
+                    b.lt(nacre_exact::Mag::of(2.0).times(nacre_exact::Mag::pow2(-180))),
+                    "the bound is the coincidence proof: {b:?}"
+                );
+                zeros += 1;
+            }
+        }
+    }
+    assert!(
+        zeros > 0,
+        "no coordinate cancelled to zero — the fixture shows nothing"
+    );
+}
+
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).
 ///
 /// - **Cost.** A 7° turn and 300 rational translations put the history past
 ///   `CACHE_REPLAY_COST_CAP`, so the cache road never walks it — `CacheDecline::CostCap`.
-/// - **Bits.** 70 turns of 37° stay well inside that cap, so the road *does* walk, and the ladder's
-///   first rung cannot name an `f64` for the corners off the axis — `RealizeError::Undecided`.
+/// - **Bits.** A coordinate that is exactly `0` decides only once its radius is under the
+///   coincidence limit (`Realized::to_f64`). Turning 37° and back sixty times (120 nodes, inside the
+///   cap) returns every corner to where it was, so the corners on `y = 0` are true zeros carrying
+///   120 turns of radius — more than the cache road's two rungs can shrink below `2⁻¹⁸⁰` —
+///   `RealizeError::Undecided`. (A coordinate that is not `0` decides inside the cap at 256 bits.)
 ///
 /// ★★ **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
 /// answers. That is the whole difference between `Ceiling` and `Unrealized` — one says "ask again
@@ -1036,14 +1082,16 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
     m.rebuild_adjacency();
-    for _ in 0..70 {
+    for _ in 0..60 {
         s = moved(&mut m, s, turn(Axis::Z, 37));
+        s = moved(&mut m, s, turn(Axis::Z, -37));
     }
     m.rebuild_adjacency();
 
-    let undecided = live_vertices(&m)
-        .into_iter()
-        .filter(|&vh| {
+    let vs = live_vertices(&m);
+    let undecided = vs
+        .iter()
+        .filter(|&&vh| {
             matches!(m.vertex_cache(vh), PointCache::Ceiling { .. })
                 && matches!(
                     realize_cache(&m, m.vertex(vh)),
@@ -1053,8 +1101,49 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         .count();
     assert!(
         undecided > 0,
-        "70 turns of 37° must leave the first rung undecided somewhere"
+        "true zeros under 120 turns must be left undecided by the cache road's two rungs"
     );
+    for &vh in &vs {
+        assert!(
+            realize_vertex(&m, vh, Precision::NearestF64)
+                .expect("the paid door walks the chain")
+                .to_f64()
+                .is_some(),
+            "a vertex past the bits wall is not undecidable, only unpaid-for"
+        );
+    }
+}
+
+/// **The cache road's second rung decides what the first cannot** — 70 turns of 37° leave six of a
+/// box's eight corners undecided at 128 bits; at 256 every one decides, inside the cost cap where a
+/// turn costs about a bit (192 + 53 < 256).
+#[test]
+fn seventy_turns_of_thirty_seven_degrees_are_realized_on_the_second_rung() {
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..70 {
+        s = moved(&mut m, s, turn(Axis::Z, 37));
+    }
+    m.rebuild_adjacency();
+    let vs = live_vertices(&m);
+    let first_rung_short = vs
+        .iter()
+        .filter(|&&vh| {
+            realize_vertex(&m, vh, Precision::Bits(128)).is_ok_and(|r| r.to_f64().is_none())
+        })
+        .count();
+    assert!(
+        first_rung_short > 0,
+        "the fixture's first rung decides everything — it shows nothing"
+    );
+    for &vh in &vs {
+        assert!(
+            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            "the second rung realizes it: {:?}",
+            m.vertex_cache(vh)
+        );
+    }
 }
 
 /// A box turned 7° and then carrying `n` recorded translation nodes — the turn is irrational, so
@@ -1264,6 +1353,20 @@ fn the_prefix_table_stays_one_generation() {
             "depth {depth}: the table should hold one entry per live vertex, not per node"
         );
     }
+    // A 37° history whose corners need the cache road's second rung from about the 63rd turn: the
+    // second rung files nothing, so the first rung's entry is still the one generation kept.
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..100 {
+        s = moved(&mut m, s, turn(Axis::Z, 37));
+    }
+    m.rebuild_adjacency();
+    assert_eq!(
+        m.prefix_hp_len(),
+        live_vertices(&m).len(),
+        "a chain on the second rung keeps one generation too"
+    );
 
     let mut m = Model::new();
     for i in 0..8 {
