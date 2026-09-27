@@ -291,6 +291,53 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     Some(to_f64_exact(&z).unwrap_or(f64::NAN))
 }
 
+/// **The unit direction of an integer vector, each component the `f64` nearest `nₖ/|n|`**, or
+/// `None` for the zero vector — the realization of a plane's normal from its name.
+///
+/// The twin of [`sqrt_f64`], under the same correct-rounding contract, so the answer is unique and
+/// asking at more bits cannot move it. The exact branch runs first: when `n·n` is a perfect square
+/// every component is a rational, rounded once ([`nearest_f64_big_exact`]) — an axis-aligned or
+/// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized at 128 and
+/// then 256 bits — through the memoized [`inv_sqrt_bounded`] where `n·n` fits `Rat`, and
+/// [`inv_sqrt_bigint_bounded`] where it does not — and each product rounded; the midpoint stands
+/// if even 256 bits leave a component undecided, as in [`sqrt_f64`].
+///
+/// ★ **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
+/// a caller that turns the direction negates them before asking — negating the `f64` afterwards
+/// would write `-0.0`, a different bit pattern for the same value.
+pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
+    use num_traits::ToPrimitive;
+    let nn = &n[0] * &n[0] + &n[1] * &n[1] + &n[2] * &n[2];
+    if nn.sign() == num_bigint::Sign::NoSign {
+        return None;
+    }
+    let root = nn.sqrt();
+    if &root * &root == nn {
+        let c = |k: usize| nearest_f64_big_exact(&n[k], &root).map(|(v, _)| v);
+        return Some([c(0)?, c(1)?, c(2)?]);
+    }
+    let inv = |prec: usize| match nn.to_i128() {
+        Some(v) => inv_sqrt_bounded(Rat::from_int(v), prec),
+        None => inv_sqrt_bigint_bounded(&nn, prec),
+    };
+    for prec in [128usize, 256] {
+        let s = inv(prec)?;
+        let c = |k: usize| {
+            let v = HpBounded::of_bigint(&n[k], prec).mul(&s, prec);
+            round_to_f64(&v.value, v.error, prec)
+        };
+        if let (Some(x), Some(y), Some(z)) = (c(0), c(1), c(2)) {
+            return Some([x, y, z]);
+        }
+    }
+    let s = inv(256)?;
+    let c = |k: usize| {
+        let v = HpBounded::of_bigint(&n[k], 256).mul(&s, 256).value;
+        to_f64_exact(&v).unwrap_or(f64::NAN)
+    };
+    Some([c(0), c(1), c(2)])
+}
+
 /// **How far the `1/√v` the caller was handed sits from the true one** — measured against an
 /// arbitrary-precision realization, the twin of [`Angle::realization_error_of`].
 ///

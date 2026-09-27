@@ -3,9 +3,13 @@
 use super::*;
 
 impl Model {
-    /// Push a **plane**, stating its truth outright: the f64 cache, three exact points, and the
-    /// motion they are written before (`None` = the world). The truth is not optional: there is no
-    /// point-less plane.
+    /// Push a **plane**, stating its truth outright: three exact points and the motion they are
+    /// written before (`None` = the world), with the producer's own `f64` figure as the
+    /// `fallback` cache. The truth is not optional: there is no point-less plane.
+    ///
+    /// ★ **`fallback` stands only where the plane has no world name** (a chain that does not fold,
+    /// a mixed-frame `Through`) — everywhere else the cache is the truth's realization
+    /// (`derive_surface_cache`), and the figure handed in is dropped.
     ///
     /// ★★★★★ **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
@@ -27,7 +31,7 @@ impl Model {
     /// plane approached from both sides, which is as ordinary as it sounds.
     pub fn push_plane(
         &mut self,
-        cache: nacre_geom::Plane,
+        fallback: nacre_geom::Plane,
         points: [[nacre_exact::Rat; 3]; 3],
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
@@ -38,7 +42,7 @@ impl Model {
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
         let name = nacre_exact::plane_name_exact(points[0], points[1], points[2]);
-        self.intern_plane(cache, name, PlanePoints::Known(points), motion, sense)
+        self.intern_plane(fallback, name, PlanePoints::Known(points), motion, sense)
     }
 
     /// **Interning, once — the half every plane producer shares.**
@@ -51,15 +55,15 @@ impl Model {
     /// than a thing to remember.
     fn intern_plane(
         &mut self,
-        cache: nacre_geom::Plane,
+        fallback: nacre_geom::Plane,
         name: Option<nacre_exact::PlaneName>,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
     ) -> (Handle<Surface>, bool) {
         debug_assert!(
-            self.cache_agrees_with_sense(&cache, &points, motion, sense) != Some(false),
-            "the stated sense {sense:?} disagrees with the cache the producer built"
+            self.cache_agrees_with_sense(&fallback, &points, motion, sense) != Some(false),
+            "the stated sense {sense:?} disagrees with the figure the producer built"
         );
         if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
             WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -70,11 +74,11 @@ impl Model {
                 if (h.index() as usize) < 3 {
                     SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-                // ★ The cache the caller built is **dropped here** — the survivor's stands. That
-                // is what makes a plane's realization depend on which face asked first, and
-                // [`Model::count_discarded_cache`] is the only measurement of how often the two
-                // actually differ.
-                self.count_discarded_cache(h, &cache);
+                // ★ The incoming statement is **dropped here** — the survivor's cache stands. Its
+                // normal is the shared name's; its anchor is the first pusher's first point, and
+                // [`Model::count_discarded_cache`] is the only measurement of how often the
+                // incoming statement would have anchored elsewhere.
+                self.count_discarded_cache(h, &points, motion, &fallback);
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
@@ -85,7 +89,7 @@ impl Model {
             }
         }
         // One clone per push — the name is derived once here, never on a judging loop.
-        let h = self.push_plane_raw(points, motion, sense, name, cache);
+        let h = self.push_plane_raw(points, motion, sense, name, fallback);
         if let Some(k) = key {
             self.surface_ids.insert(k, h);
         }
@@ -169,12 +173,13 @@ impl Model {
         }
     }
 
-    /// Whether a producer's `cache` faces the way its stated `sense` says — the push door's
-    /// cross-check between the cache a producer built and the sense it stated. A read only.
+    /// Whether a producer's figure faces the way its stated `sense` says — the push door's
+    /// cross-check between the figure a producer built and the sense it stated. A read only.
     ///
-    /// `Known` statements only: a `Through` datum's cache comes from its caller's `f64` cross,
+    /// `Known` statements only: a `Through` datum's figure comes from its caller's `f64` cross,
     /// which a nearly collinear triple can turn, so a disagreement there is reachable from input
-    /// and is not an assertion's business ([`Model::align_cache_sense`] answers it instead).
+    /// and is not an assertion's business (a named plane's normal is derived from its name, an
+    /// unnamed one's is turned by [`Model::align_cache_sense`]).
     fn cache_agrees_with_sense(
         &self,
         cache: &nacre_geom::Plane,
@@ -218,7 +223,7 @@ impl Model {
     /// [`push_plane`]: Model::push_plane
     pub fn push_plane_through(
         &mut self,
-        cache: nacre_geom::Plane,
+        fallback: nacre_geom::Plane,
         vertices: [Handle<Vertex>; 3],
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
@@ -229,7 +234,13 @@ impl Model {
         );
         let name = self.plane_name_through(vertices);
         if name.is_some() {
-            return self.intern_plane(cache, name, PlanePoints::Through(vertices), motion, sense);
+            return self.intern_plane(
+                fallback,
+                name,
+                PlanePoints::Through(vertices),
+                motion,
+                sense,
+            );
         }
         if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
             // One statement, one handle: the same sorted vertices span one direction, so the
@@ -238,7 +249,13 @@ impl Model {
                 matches!(self.surface(h), Surface::Plane { sense: theirs, .. } if *theirs != sense);
             return (h, flipped);
         }
-        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, sense, None, cache);
+        let h = self.push_plane_raw(
+            PlanePoints::Through(vertices),
+            motion,
+            sense,
+            None,
+            fallback,
+        );
         self.surface_through_ids.insert((vertices, motion), h);
         (h, false)
     }

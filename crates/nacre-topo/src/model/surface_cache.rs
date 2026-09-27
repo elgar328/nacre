@@ -8,11 +8,11 @@ impl Model {
     /// motion — so the two cannot come apart.
     ///
     /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
-    /// here**: this door calls [`Model::apply_derivation`], so what the producer hands
-    /// in survives only in the parts the truth does not decide — the unit normal and with it the
-    /// sense — and wholesale where [`Model::derive_surface_cache`] declines.
-    /// ⚠ Only the anchor is derived; «the door takes only the truth» is **not** reached
-    /// while `cache` is still a parameter.
+    /// here**: this door calls [`Model::apply_derivation`], so wherever the plane has a world name
+    /// its cache is the truth's realization — anchor and unit normal — and `fallback`, the
+    /// producer's own figure, stands only where the derivation declines (no world name: a chain
+    /// that does not fold, a mixed-frame `Through`). Unlike a vertex's cache, a plane's does not
+    /// say which of the two it holds; the census counters do (`surface_derive_counts`).
     ///
     /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
@@ -36,7 +36,7 @@ impl Model {
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
         name: Option<nacre_exact::PlaneName>,
-        cache: nacre_geom::Plane,
+        fallback: nacre_geom::Plane,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Plane {
             points,
@@ -44,7 +44,7 @@ impl Model {
             sense,
         });
         self.surface_cache.push(SurfaceCache {
-            realized: nacre_geom::Surface::Plane(cache),
+            realized: nacre_geom::Surface::Plane(fallback),
         });
         if let Some(n) = name {
             self.surface_name.insert(h, n);
@@ -54,24 +54,24 @@ impl Model {
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
-        self.apply_derivation(h);
-        self.align_cache_sense(h);
+        if !self.apply_derivation(h) {
+            self.align_cache_sense(h);
+        }
         h
     }
 
     /// **Turn a plane's cache to face the way its truth says** — the sense is truth, so the cache
     /// follows it (truth → cache, the allowed direction). Returns whether it turned anything.
     ///
-    /// Where the plane has a world name, the question is asked of the truth, exactly and at any
-    /// width: the way the plane faces is its world name's normal times the name's sense
-    /// ([`Model::world_plane_name_sense`]), and the cache agrees when its normal — an `f64`, which
-    /// is a binary rational, lifted exactly — has a positive dot with that. So a `Through` datum's
-    /// nearly collinear `f64` cross is overruled by the exact order of its points. A plane with
-    /// no world name (a mixed-frame `Through`, a chain that does not fold) is turned by the `f64`
-    /// cross of its points carried to the world, where this crate can carry them; chains with a
-    /// turn or a frame are out of reach there — the census lock (`nacre_ops::audit_plane_senses`)
-    /// holds them. For a `Known` statement the push door has already asserted the two agree, so
-    /// this is the lock that the cache is a function of the truth rather than a correction.
+    /// For a plane whose normal the door **did not** derive — one with no world name (a
+    /// mixed-frame `Through`, a chain that does not fold), whose cache is the producer's figure.
+    /// A plane with a world name has nothing to turn: its normal is the name's times the name's
+    /// sense ([`Model::derive_surface_cache`]), which is the truth's direction by construction.
+    /// Here the `f64` cross of the plane's points, carried to the world where this crate can
+    /// carry them, is compared with the cache; chains with a turn or a frame are out of reach —
+    /// the census lock (`nacre_ops::audit_plane_senses`) holds them. For a `Known` statement the
+    /// push door has already asserted the two agree, so this is the lock that the cache is a
+    /// function of the truth rather than a correction.
     pub(crate) fn align_cache_sense(&mut self, h: Handle<Surface>) -> bool {
         let Surface::Plane {
             points,
@@ -86,28 +86,10 @@ impl Model {
             return false;
         };
         let n = cache.normal().as_array();
-        let exact = || {
-            let name = self.world_plane_name(h)?;
-            let name_sense = self.world_plane_name_sense(h)?;
-            let lifted = n.map(nacre_exact::Rat::try_from_f64);
-            let toward = [lifted[0]?, lifted[1]?, lifted[2]?];
-            let [a, b, c, _] = name.coeff_ints();
-            let along = match nacre_exact::normal_sense(&[a, b, c], toward) {
-                nacre_exact::Orient::Positive => 1,
-                nacre_exact::Orient::Negative => -1,
-                nacre_exact::Orient::Zero => return None,
-            };
-            Some(along * name_sense.sign() < 0)
+        let Some(w) = self.points_world_direction(&points, motion) else {
+            return false;
         };
-        let turn = match exact() {
-            Some(turn) => turn,
-            None => {
-                let Some(w) = self.points_world_direction(&points, motion) else {
-                    return false;
-                };
-                (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign()) < 0.0
-            }
-        };
+        let turn = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign()) < 0.0;
         if turn {
             self.surface_cache[h.index() as usize] = SurfaceCache {
                 realized: nacre_geom::Surface::Plane(cache.reversed()),
@@ -117,18 +99,25 @@ impl Model {
     }
 
     /// **Realize this surface's cache from its truth**, keeping the producer's value where the
-    /// truth cannot say ([`Model::derive_surface_cache`] declines).
+    /// truth cannot say ([`Model::derive_surface_cache`] declines). Returns whether the cache
+    /// now carries a derived normal — the one fact [`Model::push_plane_raw`] needs to know that
+    /// the sense is already the truth's.
     ///
-    /// ★ Counting happens **first**, against the value the producer stated, so the census `stat`
-    /// rows keep meaning "how far the producer's value was from the truth's".
+    /// ★ Counting reads the derivation computed here, against the value the producer stated, so
+    /// the census `stat` rows keep meaning "how far the producer's value was from the truth's".
     ///
     /// ⚠ Planes only. [`Model::push_cylinder_raw`] calls [`Model::measure_derivation`]: the
     /// cylinder arm is derived and **thrown away** — whether applying it moves any cache bit is
     /// measured for the moved cylinders only (bit-identical), not for the unmoved ones.
-    fn apply_derivation(&mut self, h: Handle<Surface>) {
-        self.measure_derivation(h);
-        if let Some(realized) = self.derive_surface_cache(h) {
-            self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+    fn apply_derivation(&mut self, h: Handle<Surface>) -> bool {
+        let derived = self.derive_surface_cache(h);
+        self.count_derivation(h, derived.as_ref());
+        match derived {
+            Some(realized) => {
+                self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+                true
+            }
+            None => false,
         }
     }
 
@@ -155,24 +144,28 @@ impl Model {
 
     /// **The f64 cache this surface's truth realizes to** — the one realization road, for surfaces.
     ///
-    /// A vertex has a whole one (`push_vertex_realized` realizes the definition at
-    /// birth). A surface has **half** of one: the anchor is derived here, the unit normal and
-    /// the sense are whatever the producer handed in.
-    ///
-    /// ★ **What that half buys** (measured): a producer-stated anchor on a tilted plane
-    /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
-    /// moved planes it does not satisfy the plane's own coefficients. The anchor is
-    /// a function of the truth, so neither varies with who asked.
-    ///
-    /// What it derives:
-    /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
-    ///   world and realized. The unit normal and with it the sense are copied bit for bit from the
-    ///   value the producer stated.
+    /// A vertex's cache is its definition realized at birth (`push_vertex_realized`). A plane's is
+    /// the same wherever the plane has a world name:
+    /// * **Unit normal** — the world name's normal times the name's sense
+    ///   ([`Model::world_plane_name_sense`]), each component the `f64` nearest the truth
+    ///   ([`nacre_exact::unit_vector_f64`]). Correctly rounded, so it is unique: asking at more
+    ///   bits cannot move it, and two statements of one plane cannot disagree about it. The sense
+    ///   is multiplied into the integers, so a zero component is `+0.0`.
+    /// * **Anchor** — the truth's first point, carried to the world and realized: a `Known`
+    ///   statement's through a chain that folds ([`Model::chain_point_rat`]), an unmoved
+    ///   `Through` statement's first meet when the meets are rational
+    ///   ([`Model::through_points_rat`]). Where neither stands (an overflow, a moved `Through`)
+    ///   the producer's anchor is kept beside the derived normal.
     /// * **Cylinder** — the world statement ([`Model::world_cylinder_def`]'s, without its
     ///   postcondition — this reader measures the disagreement it would assert away) realized: `origin` and
     ///   `radius` descend exactly; the axis direction and `ref_dir` do not
     ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today —
     ///   [`Model::push_cylinder_raw`] only measures it.
+    ///
+    /// ★ **What the anchor buys** (measured): a producer-stated anchor on a tilted plane
+    /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
+    /// moved planes it does not satisfy the plane's own coefficients. The anchor is
+    /// a function of the truth, so neither varies with who asked.
     ///
     /// ★★★★★ **Why the anchor and not a canonical row** (measured). A canonical row is the
     /// tidier answer, but it moved 32 census result rows while the judge's exact shortcut still
@@ -189,45 +182,27 @@ impl Model {
     /// differently still differ. Inside one model interning makes that unreachable — one name,
     /// one handle, one truth.
     ///
-    /// ☑ **The sense is not this derivation's business.** It is truth ([`Surface::Plane::sense`]),
-    /// and the unit normal copied here carries the producer's, which the push door has asserted agrees
-    /// with it; [`Model::align_cache_sense`] turns the cache after this derivation wherever the
-    /// two could still differ.
-    ///
-    /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
-    /// motion chain that does not fold ([`Model::chain_point_rat`]), a `Through` truth, or an
-    /// overflow. ⚠ The name is still required even though the anchor does not read it: every
-    /// number above was measured with that gate on, and widening it is its own measurement.
+    /// `None` — the caller keeps the cache it has — for a plane with no world name: an unnamed
+    /// one, a chain that does not fold, a moved `Wide` name, or an overflow in the carry.
     ///
     /// ⚠★★★ **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
     /// skips the name and therefore the derivation. It is the only remaining way for a surface's
-    /// truth and its cache to disagree about where the plane is anchored, and it is `cfg(test)`:
-    /// every call site is a fixture that wants one geometric plane held as two handles.
+    /// truth and its cache to disagree, and it is `cfg(test)`: every call site is a fixture that
+    /// wants one geometric plane held as two handles.
     pub(crate) fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
             Surface::Plane { points, motion, .. } => {
-                // The gate, kept verbatim: a plane the model cannot name in the world is one this
-                // derivation declines, and every measured number above assumes that population.
-                self.world_plane_name(h)?.narrow()?;
                 let stated = match self.surface_cache(h) {
                     nacre_geom::Surface::Plane(p) => *p,
                     nacre_geom::Surface::Cylinder(_) => return None,
                 };
-                let PlanePoints::Known(pts) = points else {
-                    // A `Through` truth names vertices, whose meet may not fit `Rat` at all.
-                    return None;
-                };
-                let anchor = match motion {
-                    None => pts[0],
-                    Some(leaf) => self.chain_point_rat(*leaf, pts[0])?,
-                }
-                .map(|x| x.to_f64());
-                // The producer's unit normal verbatim, and with it the sense — normalizing it
-                // again would move its bits.
+                let normal = self.world_unit_normal(h)?;
+                let anchor = self
+                    .truth_anchor(points, *motion)
+                    .map_or(stated.origin(), Point3::from_array);
                 Some(nacre_geom::Surface::Plane(Plane::from_point_unit_normal(
-                    Point3::from_array(anchor),
-                    stated.normal(),
+                    anchor, normal,
                 )))
             }
             Surface::Cylinder { .. } => {
@@ -243,17 +218,53 @@ impl Model {
         }
     }
 
+    /// The plane's unit normal realized from its world name and the name's sense — `None` exactly
+    /// where the plane has no world name.
+    fn world_unit_normal(&self, h: Handle<Surface>) -> Option<Vector3> {
+        let name = self.world_plane_name(h)?;
+        let sense = self.world_plane_name_sense(h)?;
+        let [a, b, c, _] = name.coeff_ints();
+        let toward = if sense.sign() < 0 {
+            [-a, -b, -c]
+        } else {
+            [a, b, c]
+        };
+        nacre_exact::unit_vector_f64(&toward).map(Vector3::from_array)
+    }
+
+    /// A plane statement's first point in the world, realized — `None` where the truth does not
+    /// place it rationally (a chain that does not fold or overflows, a moved `Through`, meets
+    /// wider than `Rat`).
+    fn truth_anchor(
+        &self,
+        points: &PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+    ) -> Option<[f64; 3]> {
+        let first = match (points, motion) {
+            (PlanePoints::Known(pts), None) => pts[0],
+            (PlanePoints::Known(pts), Some(leaf)) => self.chain_point_rat(leaf, pts[0])?,
+            (PlanePoints::Through(vs), None) => self.through_points_rat(*vs)?[0],
+            (PlanePoints::Through(_), Some(_)) => return None,
+        };
+        Some(first.map(|x| x.to_f64()))
+    }
+
     /// Count what [`Model::derive_surface_cache`] would do at this push, and change nothing —
     /// the measuring half of [`Model::apply_derivation`], for the doors that do not apply it.
     fn measure_derivation(&self, h: Handle<Surface>) {
+        self.count_derivation(h, self.derive_surface_cache(h).as_ref());
+    }
+
+    /// Count one derivation's outcome against the cache the producer stated.
+    fn count_derivation(&self, h: Handle<Surface>, derived: Option<&nacre_geom::Surface>) {
         use std::sync::atomic::Ordering::Relaxed;
-        match self.derive_surface_cache(h) {
+        match derived {
             None => {
                 SURFACE_DECLINED.fetch_add(1, Relaxed);
                 self.decline_reason(h).fetch_add(1, Relaxed);
             }
             Some(d) => {
-                if surface_bits(&d) != surface_bits(self.surface_cache(h)) {
+                if surface_bits(d) != surface_bits(self.surface_cache(h)) {
                     SURFACE_DIFFERS.fetch_add(1, Relaxed);
                 }
                 SURFACE_DERIVED.fetch_add(1, Relaxed);
@@ -281,13 +292,29 @@ impl Model {
         }
     }
 
-    /// Count an interning hit whose incoming cache is **discarded** in favour of the survivor's,
-    /// when the two are not the same bits — the product-population measurement of "the same
-    /// geometry, described twice, writes the same file".
-    pub(super) fn count_discarded_cache(&self, h: Handle<Surface>, discarded: &nacre_geom::Plane) {
-        if surface_bits(self.surface_cache(h))
-            != surface_bits(&nacre_geom::Surface::Plane(*discarded))
-        {
+    /// Count an interning hit whose incoming statement would have written a **different** cache
+    /// from the survivor's — the product-population measurement of "the same geometry, described
+    /// twice, writes the same file".
+    ///
+    /// The survivor's normal is its world name's, which the incoming statement shares (one name,
+    /// one handle); only the anchor depends on which statement came first. So where the incoming
+    /// truth places its own first point, that is what is compared; where it does not, the
+    /// incoming producer's figure — the cache it would have kept.
+    pub(super) fn count_discarded_cache(
+        &self,
+        h: Handle<Surface>,
+        points: &PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+        discarded: &nacre_geom::Plane,
+    ) {
+        let survivor = self.surface_cache(h);
+        let differs = match (self.truth_anchor(points, motion), survivor) {
+            (Some(a), nacre_geom::Surface::Plane(p)) => {
+                a.map(f64::to_bits) != p.origin().as_array().map(f64::to_bits)
+            }
+            _ => surface_bits(survivor) != surface_bits(&nacre_geom::Surface::Plane(*discarded)),
+        };
+        if differs {
             SURFACE_DISCARDED_DIFFERING.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }

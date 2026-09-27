@@ -1020,37 +1020,38 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
     );
 }
 
-/// **A seed's anchor is its truth's first point**, which for the world planes is the origin —
-/// and the seeds are the most-interned planes there are, so this is where a derivation that
-/// moved anchors would be felt first.
+/// **A seed's cache is its truth's realization**: anchored at the truth's first point (the
+/// origin) and facing `−axis` with **positive** zeros — the name's normal times the seed's
+/// `Reversed` sense, the sense multiplied into the integers before rounding. The producer hands
+/// `Model::new`'s seeds `−axis` as `f64` negations, whose zero components are `-0.0`; the cache
+/// does not keep them. The seeds are the most-interned planes there are, so this is where a
+/// derivation that moved them would be felt first.
 ///
-/// ⚠ This does not assert that the derived **normal** matches the stored one or carries
-/// no negative zero: with the row copied verbatim both are **tautologies**, and a lock
-/// that cannot fail is worse than no lock. It aims at the one thing the derivation decides.
+/// The bits are literals, not read back from the cache: the cache *is* this derivation, so
+/// comparing the two would assert nothing.
 #[test]
-fn a_derived_seed_plane_anchors_at_its_truths_first_point() {
+fn a_seed_plane_cache_is_its_truths_realization() {
     let m = Model::new();
-    for axis in [
-        nacre_exact::Axis::Z,
-        nacre_exact::Axis::X,
-        nacre_exact::Axis::Y,
+    for (axis, k) in [
+        (nacre_exact::Axis::Z, 2),
+        (nacre_exact::Axis::X, 0),
+        (nacre_exact::Axis::Y, 1),
     ] {
         let h = m.world_plane(axis);
-        let derived = m
-            .derive_surface_cache(h)
-            .expect("a seed is named and unmoved");
-        let nacre_geom::Surface::Plane(d) = &derived else {
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             panic!("a seed is a plane")
         };
+        let mut want = [0.0f64; 3];
+        want[k] = -1.0;
         assert_eq!(
-            d.origin().as_array(),
-            [0.0; 3],
+            p.origin().as_array().map(f64::to_bits),
+            [0.0f64; 3].map(f64::to_bits),
             "a seed's truth is `[[0,0,0], u, v]`, so its anchor is the origin"
         );
         assert_eq!(
-            surface_bits(&derived),
-            surface_bits(m.surface_cache(h)),
-            "the seeds were already anchored there — this derivation must not move them"
+            p.normal().as_array().map(f64::to_bits),
+            want.map(f64::to_bits),
+            "a seed faces −axis, and its zero components are +0.0"
         );
     }
 }
@@ -1608,18 +1609,16 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
 /// **Which way a plane's own name faces is read off its truth** — `sense` against its points'
 /// turn — and it is the answer the aligned cache gives: the three seeds (cache down each axis, name
 /// up it), a `Known` plane stated either way round and with either sense, a `Through` datum, and a
-/// wide name. The oracle is the cache normal against the name, an independent `f64` reading of
-/// two normals of one plane.
+/// wide name. The oracle is the normal the producer handed in against the name — an independent
+/// `f64` reading of two normals of one plane. Not the cache's: the door derives a named plane's
+/// normal from this very name and sense, so the cache would answer the question with itself.
 #[test]
 fn a_planes_name_sense_is_read_from_its_truth() {
     use nacre_exact::Rat;
-    let expected = |m: &Model, h: Handle<Surface>| {
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
-            unreachable!()
-        };
+    let expected = |m: &Model, h: Handle<Surface>, handed: Vector3| {
         let c = m.surface_name.get(&h).expect("a named plane").coeff_ints();
         let dot: f64 = (0..3)
-            .map(|k| p.normal().as_array()[k] * c[k].to_string().parse::<f64>().expect("finite"))
+            .map(|k| handed.as_array()[k] * c[k].to_string().parse::<f64>().expect("finite"))
             .sum();
         if dot > 0.0 {
             Orientation::Forward
@@ -1628,14 +1627,20 @@ fn a_planes_name_sense_is_read_from_its_truth() {
         }
     };
     let mut m = Model::new();
-    for i in 0..3 {
-        let h = m.surface_handle_at(i).expect("a seed");
+    // The seeds are handed `−axis` (`Model::new`) for XY, YZ, ZX.
+    let seed_handed = [[0.0, 0.0, -1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]];
+    for (i, handed) in seed_handed.into_iter().enumerate() {
+        let h = m.surface_handle_at(i as u32).expect("a seed");
         assert_eq!(
             m.plane_name_sense(h),
             Some(Orientation::Reversed),
             "seed {i}"
         );
-        assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "seed {i}");
+        assert_eq!(
+            m.plane_name_sense(h),
+            Some(expected(&m, h, Vector3::from_array(handed))),
+            "seed {i}"
+        );
     }
     let r = Rat::from_int;
     let turning_up = |z: i128| [[r(0), r(0), r(z)], [r(1), r(0), r(z)], [r(0), r(1), r(z)]];
@@ -1674,10 +1679,15 @@ fn a_planes_name_sense_is_read_from_its_truth() {
         ),
     ] {
         let z = pts[0][2].to_f64();
-        let (h, flipped) = m.push_plane(cache(z, nz), pts, None, sense);
+        let handed = cache(z, nz);
+        let (h, flipped) = m.push_plane(handed, pts, None, sense);
         assert!(!flipped);
         assert_eq!(m.plane_name_sense(h), Some(want), "z = {z}");
-        assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "z = {z}");
+        assert_eq!(
+            m.plane_name_sense(h),
+            Some(expected(&m, h, handed.normal())),
+            "z = {z}"
+        );
     }
     // A wide name, cache from the points' own `f64` turn.
     let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
@@ -1692,7 +1702,11 @@ fn a_planes_name_sense_is_read_from_its_truth() {
         nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2])).expect("a plane");
     let (h, _) = m.push_plane(wide_cache, pts, None, Orientation::Forward);
     assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
-    assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "wide");
+    assert_eq!(
+        m.plane_name_sense(h),
+        Some(expected(&m, h, wide_cache.normal())),
+        "wide"
+    );
     // A `Through` datum over three box corners.
     let (mut m, vs) = box_corner_vertices();
     let cache = nacre_geom::Plane::from_point_normal(
@@ -1701,7 +1715,11 @@ fn a_planes_name_sense_is_read_from_its_truth() {
     )
     .unwrap();
     let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
-    assert_eq!(m.plane_name_sense(h), Some(expected(&m, h)), "through");
+    assert_eq!(
+        m.plane_name_sense(h),
+        Some(expected(&m, h, cache.normal())),
+        "through"
+    );
 }
 
 /// **Which way a plane's world name faces follows its chain** — the name's own sense, times the
@@ -2056,4 +2074,96 @@ fn a_named_through_planes_cache_follows_the_truth_not_the_vertex_caches() {
         "the cache faces the truth's +(1,1,1): {:?}",
         cache.normal()
     );
+}
+
+/// **A named plane's cache normal is its world name's, correctly rounded** — and realizing it at
+/// 512 bits, twice the ladder's top rung, names the same `f64`s. The figure each producer hands in
+/// is deliberately off the plane's direction (its `x` nudged by `10⁻³`, same side), so a door that
+/// kept the producer's normal fails every row. The direction the oracle rounds toward is the
+/// handed figure's side of the name — not `world_plane_name_sense`, which the door itself reads.
+///
+/// Four roads to a world name: an unmoved `Known` statement, the same turned a quarter about `z`
+/// (a chain that folds), a `Wide` name, and an unmoved `Through` datum. Every `|n|` here is
+/// irrational, so none takes the exact branch.
+#[test]
+fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
+    use nacre_exact::Rat;
+    const P: usize = 512;
+    let r = Rat::from_int;
+    let nudged = |n: [f64; 3]| {
+        nacre_geom::Plane::from_point_normal(
+            Point3::origin(),
+            Vector3::from_array([n[0] + 1e-3, n[1], n[2]]),
+        )
+        .expect("a plane")
+    };
+    let check = |m: &Model, h: Handle<Surface>, handed: &nacre_geom::Plane, what: &str| {
+        let name = m.world_plane_name(h).expect("a world name");
+        let [a, b, c, _] = name.coeff_ints();
+        let side: f64 = [&a, &b, &c]
+            .iter()
+            .zip(handed.normal().as_array())
+            .map(|(k, x)| k.to_string().parse::<f64>().expect("finite") * x)
+            .sum();
+        let n = if side < 0.0 { [-a, -b, -c] } else { [a, b, c] };
+        let nn = &n[0] * &n[0] + &n[1] * &n[1] + &n[2] * &n[2];
+        let inv = nacre_exact::inv_sqrt_bigint_bounded(&nn, P).expect("a nonzero normal");
+        let want = n.each_ref().map(|k| {
+            let v = nacre_exact::bounded::HpBounded::of_bigint(k, P).mul(&inv, P);
+            nacre_exact::round_to_f64(&v.value, v.error, P).expect("decided at 512 bits")
+        });
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+            unreachable!()
+        };
+        assert_eq!(
+            p.normal().as_array().map(f64::to_bits),
+            want.map(f64::to_bits),
+            "{what}"
+        );
+    };
+
+    // x + 2y + 3z = 6.
+    let pts = [[r(6), r(0), r(0)], [r(0), r(3), r(0)], [r(0), r(0), r(2)]];
+    let mut m = Model::new();
+    let handed = nudged([1.0, 2.0, 3.0]);
+    let (h, _) = m.push_plane(handed, pts, None, Orientation::Forward);
+    check(&m, h, &handed, "unmoved");
+
+    let quarter = m.push_motion(
+        Motion::Rotate {
+            axis: Axis::Z,
+            pivot: [r(0); 3],
+            angle: Angle::from_deg(r(90)).expect("angle"),
+        },
+        None,
+    );
+    let turned = nudged([-2.0, 1.0, 3.0]);
+    let (h, _) = m.push_plane(turned, pts, Some(quarter), Orientation::Forward);
+    assert!(
+        m.plane_motion(h).is_some(),
+        "the turn is recorded, not carried"
+    );
+    check(&m, h, &turned, "turned a quarter");
+
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let (b1, b2) = ((1i128 << 90) + 1, (1i128 << 90) + 3);
+    let wide = [
+        [q(b1, 3), q(b2, 7), q(0, 1)],
+        [q(-b2, 5), q(b1, 11), q(0, 1)],
+        [q(1, 13), q(1, 17), q(1, 19)],
+    ];
+    let f = |p: [Rat; 3]| Point3::from_array(p.map(|x| x.to_f64()));
+    let across = nacre_geom::Plane::through_points(f(wide[0]), f(wide[1]), f(wide[2]))
+        .expect("a plane")
+        .normal()
+        .as_array();
+    let handed = nudged(across);
+    let (h, _) = m.push_plane(handed, wide, None, Orientation::Forward);
+    assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
+    check(&m, h, &handed, "wide");
+
+    let (mut m, vs) = box_corner_vertices();
+    let handed = nudged([1.0, 1.0, 1.0]);
+    let (h, _) = m.push_plane_through(handed, vs, None, Orientation::Forward);
+    check(&m, h, &handed, "through");
 }
