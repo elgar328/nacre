@@ -489,6 +489,7 @@ fn every_road_frames_a_flipped_plane_alike() {
             "tilted",
             [[q(2, 1), z, z], [z, q(3, 1), z], [z, z, q(5, 1)]],
             [q(2, 1), q(-3, 1), z],
+            [q(2, 1), q(-3, 1), q(1, 1)],
         ),
         (
             "horizontal",
@@ -498,6 +499,7 @@ fn every_road_frames_a_flipped_plane_alike() {
                 [z, q(1, 1), q(1, 2)],
             ],
             [q(1, 1), q(1, 1), z],
+            [q(1, 1), q(1, 1), q(1, 2)],
         ),
     ];
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -507,7 +509,7 @@ fn every_road_frames_a_flipped_plane_alike() {
             .all(|(x, y)| (0..3).all(|k| (x[k] - y[k]).abs() < 1e-12))
     };
     let mut wrong: Vec<String> = Vec::new();
-    for (what, pts, ref_dir) in planes {
+    for (what, pts, ref_dir, off_plane) in planes {
         let mut m = Model::new();
         let h = push_consistent(&mut m, pts);
         let name = m.surface_name.get(&h).expect("a named plane").clone();
@@ -515,12 +517,10 @@ fn every_road_frames_a_flipped_plane_alike() {
             name.narrow().is_some(),
             "{what}: the narrow road must take it"
         );
-        let named = nacre_topo::FramePlacement::Named {
-            origin: pts[0],
-            ref_dir,
-        };
         for flip in [false, true] {
-            let narrow = |placement| frame_world_basis(&m, h, placement, flip).expect("narrow");
+            let narrow = |placement: &nacre_topo::FramePlacement| {
+                frame_world_basis(&m, h, placement, flip).expect("narrow")
+            };
             let wide = |wf: Option<nacre_judge::WideFrame>| {
                 chain_basis(&[MoveNode::FrameWide(wf.expect("the wide road opens"))])
             };
@@ -564,14 +564,20 @@ fn every_road_frames_a_flipped_plane_alike() {
                 ));
             }
 
-            let n = narrow(&named);
-            let b = wide(nacre_judge::WideFrame::named_of(
-                &name, &pts[0], &ref_dir, flip,
-            ));
-            if !near(&n, &b) {
-                wrong.push(format!(
-                    "{what} Named flip={flip}: narrow {n:?} vs wide {b:?}"
-                ));
+            // A `Named` `ref_dir` in the plane, and one with a component along the normal —
+            // `SketchFrame::named` accepts it, and its in-plane part is what names `+u`.
+            for (side, rd) in [("in-plane", ref_dir), ("off-plane", off_plane)] {
+                let placement = nacre_topo::FramePlacement::Named {
+                    origin: pts[0],
+                    ref_dir: rd,
+                };
+                let n = narrow(&placement);
+                let b = wide(nacre_judge::WideFrame::named_of(&name, &pts[0], &rd, flip));
+                if !near(&n, &b) {
+                    wrong.push(format!(
+                        "{what} Named {side} flip={flip}: narrow {n:?} vs wide {b:?}"
+                    ));
+                }
             }
         }
     }

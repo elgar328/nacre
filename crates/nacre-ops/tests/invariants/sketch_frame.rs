@@ -84,6 +84,37 @@ fn a_named_frame_rejects_each_bad_claim_by_name() {
             ref_dir: [d(1.0), d(1.0), d(0.5)],
         }
     );
+
+    // And the frame it builds is that in-plane part: a unit square swept by `0.5` in it is the
+    // unit-square prism, standing on `z = 0` with `+u` along `(1, 1, 0)`.
+    let mut m = m;
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame: f,
+            profile: square(0.0, 1.0),
+            dist: 0.5,
+        },
+    )
+    .expect("an extrude in the accepted frame") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty(), "a valid prism");
+    let volume = nacre_props::mass_props(&m, solid).expect("props").volume;
+    assert!(
+        (volume - 0.5).abs() < 1e-12,
+        "the unit-square prism, got {volume}"
+    );
+    let u = nacre_ops::frame_plane(&m, &f)
+        .expect("realizes")
+        .x_axis()
+        .as_array();
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    assert!(
+        (u[0] - h).abs() < 1e-12 && (u[1] - h).abs() < 1e-12 && u[2] == 0.0,
+        "+u is the in-plane part of (1, 1, 0.5), got {u:?}"
+    );
 }
 
 /// ★★ **The constructor and the extrude road speak one value** — restating the axes-only plane's

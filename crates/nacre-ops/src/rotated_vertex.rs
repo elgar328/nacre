@@ -346,6 +346,15 @@ pub(crate) fn frame_chain(
 /// realization happens to be exact — so a `+u` tied to the canonical name's sign (first nonzero
 /// component positive) has no spelling there. A `Named` placement states `+u`, so there the flip
 /// leaves `û` and turns `v̂` with `ŵ`.
+///
+/// ★★ A `Named` `ref_dir` need not lie in the plane — [`crate::SketchFrame::named`] accepts any
+/// direction not parallel to the normal, and its in-plane part names `+u` — while
+/// [`nacre_exact::plane_frame_named`] takes `ref_dir` as `û` unprojected. So it is projected here,
+/// exactly (`(n·n)·r − (r·n)·n`, the wide road's own formula), and only when it is off the plane:
+/// an in-plane statement keeps its letters, and an overflowing projection is `None`, which hands
+/// the frame to the wide road. Unprojected, an off-plane `ref_dir` built a frame whose `û` left the
+/// plane — a square extruded on `z = 0` with `ref_dir = (1, 1, 0.5)` came out a different solid
+/// that `validate` passed, and with `(1, 0, 3)` one it rejected face by face.
 pub(crate) fn narrow_frame(
     c: [Rat; 4],
     placement: &nacre_topo::FramePlacement,
@@ -362,7 +371,26 @@ pub(crate) fn narrow_frame(
         c
     };
     let (origin, ref_dir) = match placement {
-        nacre_topo::FramePlacement::Named { origin, ref_dir } => (*origin, *ref_dir),
+        nacre_topo::FramePlacement::Named { origin, ref_dir } => {
+            let dot = |a: &[Rat; 3], b: &[Rat; 3]| {
+                (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(b[k])?))
+            };
+            let n = [c[0], c[1], c[2]];
+            let rn = dot(ref_dir, &n)?;
+            let ref_dir = if rn == zero {
+                *ref_dir
+            } else {
+                let nn = dot(&n, &n)?;
+                let mut u = [zero; 3];
+                for (k, x) in u.iter_mut().enumerate() {
+                    *x = nn
+                        .checked_mul(ref_dir[k])?
+                        .checked_sub(rn.checked_mul(n[k])?)?;
+                }
+                u
+            };
+            (*origin, ref_dir)
+        }
         nacre_topo::FramePlacement::Canonical => nacre_exact::plane_frame_default(c)?,
     };
     nacre_exact::plane_frame_named(c, origin, ref_dir)
