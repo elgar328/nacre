@@ -146,16 +146,23 @@ impl Realized {
     /// that decides gives the same answer — asked after, a true `1e-70` would read `0` where
     /// rounding fails and `1e-70` a rung later. An exact arm is not asked: a rational rounds.
     ///
-    /// ★★★ **The error comes back as [`Mag`], not `f64`, and that is what that type is for.**
-    /// `nacre-exact`'s own test says so: *"the reason this type exists: a radius the ladder
-    /// actually produces must not become zero. An `f64` cannot hold `2⁻²⁰⁴⁸`."* A realization at
-    /// 4096 bits carries exactly such a radius, so handing the bound over as an `f64` forces the
-    /// conversion the type was built to prevent — an earlier spelling did, reported `0e0`, and
-    /// became indistinguishable from the exact arm's honest zero. Clamping papered over that;
-    /// staying in `Mag` removes it.
+    /// ★★★ **A decided coordinate's error is half an ulp, on both arms** (`half_ulp`). The
+    /// realization's own radius bounds its *interval*, not the `f64` read out of it: the truth
+    /// sits within `2⁻¹²⁸` of the interval's middle and still up to half an ulp from the value
+    /// the readout reports. What makes half an ulp *proven* rather than typical is the rounding
+    /// predicate itself — [`nacre_exact::round_to_f64`] answers only when both ends of the
+    /// interval round to the same `f64`, so the truth, which lies between them, rounds there too.
+    /// The ladder radius handed over as the bound instead leaves `coord ± bound` short of the
+    /// truth by up to half an ulp (`a_bounded_cache_contains_the_coordinate_its_definition_names`).
+    ///
+    /// ★★ **The error comes back as [`Mag`], not `f64`.** `nacre-exact`'s own test says why: *"a
+    /// radius the ladder actually produces must not become zero. An `f64` cannot hold
+    /// `2⁻²⁰⁴⁸`."* The coincidence arm carries exactly such a radius (an interval around `0` at
+    /// 4096 bits), and an earlier spelling that converted it reported `0e0` — indistinguishable
+    /// from the exact arm's honest zero.
     ///
     /// The *value* is an `f64` because that is what the caller asked for. The *bound* on it need
-    /// not be one, and at the top of the ladder cannot be.
+    /// not be one, and on the coincidence arm cannot be.
     pub fn to_f64(&self) -> Option<([f64; 3], [Mag; 3])> {
         match &self.0 {
             Arm::Exact(n, d) => {
@@ -170,11 +177,9 @@ impl Realized {
                     // a new place, and the audit lock written for it *enforced* the lie.
                     let (val, no_loss) = nacre_exact::nearest_f64_big_exact(&n[k], d)?;
                     v[k] = val;
-                    // Half an ulp bounds a correct rounding — as a `Mag`, so a tiny coordinate's
-                    // bound cannot vanish on the way out either.
                     e[k] = match no_loss {
                         true => Mag::ZERO,
-                        false => Mag::of(val).times(Mag::pow2(-53)),
+                        false => half_ulp(val),
                     };
                 }
                 Some((v, e))
@@ -194,11 +199,7 @@ impl Realized {
                         continue;
                     }
                     v[k] = nacre_exact::round_to_f64(&p[k].value, p[k].error, *prec)?;
-                    // The realization's own radius, handed over unchanged — no conversion, so
-                    // nothing to underflow. That is what `Mag` is for: its own test records
-                    // that an `f64` cannot hold `2⁻²⁰⁴⁸` and a deep rung's radius is exactly
-                    // that small. An earlier spelling converted here and reported `0e0`.
-                    e[k] = p[k].error;
+                    e[k] = half_ulp(v[k]);
                 }
                 Some((v, e))
             }
@@ -227,6 +228,14 @@ impl Realized {
     pub fn is_exact(&self) -> bool {
         matches!(self.0, Arm::Exact(..))
     }
+}
+
+/// **How far a correctly rounded `f64` can sit from the value it rounds** — `|v| · 2⁻⁵³`, which is
+/// at least half an ulp of `v` on either side of a binade edge. As a [`Mag`], so the bound of a tiny
+/// coordinate cannot vanish on the way out. One rule for both arms of [`Realized::to_f64`]: an exact
+/// rational read at 53 bits and an interval that decided its `f64` are both a correct rounding.
+fn half_ulp(v: f64) -> Mag {
+    Mag::of(v).times(Mag::pow2(-53))
 }
 
 /// Realize one vertex's coordinate from its definition.

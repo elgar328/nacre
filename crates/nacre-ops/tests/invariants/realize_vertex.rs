@@ -710,6 +710,65 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
     );
 }
 
+/// ★★★ **A `Bounded` cache contains its truth** — `coord ± bound` holds the coordinate the
+/// definition names, on the arm that approaches it.
+///
+/// A box turned 30° realizes its corners by replaying the turn, so every coordinate is an interval
+/// read out to its nearest `f64`. The oracle is the same definition at 1024 bits, printed to 25
+/// places (its decided digits, off by at most `10⁻²⁵`), and the distance is exact rational
+/// arithmetic on the cache's own bits. The ladder radius (about `2⁻¹²⁸` of the value) bounds the
+/// interval, not the readout; a bound that carried it fails here on every inexact coordinate.
+#[test]
+fn a_bounded_cache_contains_the_coordinate_its_definition_names() {
+    let mut m = Model::new();
+    let s = cuboid(&mut m, [0.1, 0.2, 0.3], [1.7, 1.3, 0.9]);
+    moved(&mut m, s, turn(Axis::Z, 30));
+    m.rebuild_adjacency();
+    const PLACES: usize = 25;
+    let decimal = |d: &str| -> Rat {
+        let (neg, d) = d.strip_prefix('-').map_or((false, d), |t| (true, t));
+        let n: i128 = d.replace('.', "").parse().expect("decimal digits");
+        let r = Rat::new(n, 10i128.pow(PLACES as u32)).expect("a 25-place decimal");
+        if neg {
+            Rat::from_int(0).checked_sub(r).unwrap()
+        } else {
+            r
+        }
+    };
+    let (mut checked, mut off) = (0usize, 0usize);
+    for vh in live_vertices(&m) {
+        let PointCache::Bounded { coord, bound } = *m.vertex_cache(vh) else {
+            panic!("the turned box realizes: {:?}", m.vertex_cache(vh));
+        };
+        let truth = realize_vertex(&m, vh, Precision::Bits(1024))
+            .expect("realizes")
+            .to_decimal(PLACES)
+            .expect("1024 bits decide 25 places");
+        for k in 0..3 {
+            let c = Rat::try_from_f64(coord.as_array()[k]).expect("a dyadic f64");
+            let gap = decimal(&truth[k])
+                .checked_sub(c)
+                .expect("fits")
+                .to_f64()
+                .abs();
+            // The oracle's own `10⁻²⁵`, charged against the cache.
+            let reach = nacre_exact::Mag::of(gap + 1e-25);
+            assert!(
+                reach.lt(bound[k].times(nacre_exact::Mag::of(1.0 + 1e-9))),
+                "axis {k}: the truth {} is {gap:e} from {} but the bound is {:?}",
+                truth[k],
+                coord.as_array()[k],
+                bound[k]
+            );
+            checked += 1;
+            off += usize::from(gap > 1e-24);
+        }
+    }
+    // The positive control: coordinates that really sit away from their truth, or the lock
+    // measures only exact ones and cannot see the radius it is about.
+    assert!(off > 8, "only {off} of {checked} coordinates are inexact");
+}
+
 /// ★★ **Refusals are named, and never fall back to the cache.**
 ///
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
