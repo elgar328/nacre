@@ -74,7 +74,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **면의 스케치 좌표계 — `face_plane`.** 면의 `SketchFrame`(`face_sketch_frame`)을 실현한 것이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 한 값의 실현 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다). 실현은 도로마다 그 도로의 것이다(`frame_basis`): 세계 도로는 유리수 세계 기저를 한 번 반올림하고(그 도로의 꼭짓점이 그렇게 실현된다), 프레임 노드 도로는 사슬을 재생한다.
 
-**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 진실에서 고르는 값을 그대로 내주는 이음새다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
+**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 진실에서 고르는 값을 그대로 내주는 이음새다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 같은 `flip` 으로 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
 
 **면 프레임의 원점은 꼭짓점 평균이 아니라 면의 *면적중심*이다.** 꼭짓점 평균은 오목한 면에서 면적중심이 아니고, 더 나쁘게는 **직선 도중에 꼭짓점이 하나 늘면 움직인다** — 면의 모양은 그대로인데 보스가 다른 자리에 앉는다. 면적중심은 **영역의 성질**이라 이산화에 무관하다. *(월드 원점 정사영(Onshape 방식)은 채택하지 않는다: 안정적이지만 원점에서 먼 면에 `pad`하면 프로파일이 면 밖에 앉아 대개 실패한다. Onshape는 사용자가 스케치를 모서리에 구속으로 붙이지만 스크립트엔 그 단계가 없다.)*
 
@@ -684,7 +684,9 @@ pub enum Motion {
     /// 법선을 성분이 아니라 **이름으로** 든다 — 재귀는 프레임 없는 평면(세계)에서 끝난다.
     /// `flip` 이 노드를 온전한 프레임으로 만든다: 정준 계수에는 방향이 없으므로(첫 0 아닌 성분
     /// 양수) 한 평면의 두 면이 반대로 향할 수 있고, `flip` 이 계수의 부호를 뒤집어 감각까지 이름한다.
-    /// Proper(det = +1) — 계수를 뒤집으면 ŵ 와 û 가 함께 뒤집히는 반바퀴라 패리티에 기여하지 않는다.
+    /// 계수는 배치를 읽기 **전에** 뒤집는다 — `Canonical` 은 `+u` 를 법선에서 유도하므로 ŵ 와 û 가 함께
+    /// 돌고 v̂ 는 남으며(벽에서 위는 위), `Named` 는 `+u` 가 진술이므로 ŵ 와 v̂ 가 돌고 û 가 남는다.
+    /// 어느 쪽이든 반바퀴라 Proper(det = +1) — 패리티에 기여하지 않는다.
     Frame     { plane: Handle<Surface>, placement: FramePlacement, flip: bool },
 }
 
@@ -692,7 +694,9 @@ pub enum Motion {
 pub enum FramePlacement {
     /// **기본값.** 평면의 순수 함수로 유도되는 정준 프레임 — 원점 = 세계 원점의 수선의 발
     /// (`p = (−d/n·n)·n`), 축 = **Arbitrary Axis**(DXF/AutoCAD 규약: `u = ẑ×n`, 법선이
-    /// 정확히 수직이면 `ŷ×n` — 갈래를 정확히 가른다). 실현 시점에 필요한 정밀도로 계산되고
+    /// 정확히 수직이면 `ŷ×n` — 갈래를 정확히 가른다. `n` 은 프레임이 향하는 법선, 곧 `flip` 을
+    /// 쓴 계수다 — 이름 없는 도로는 계수의 부호를 증명하지 못하므로 정준 이름의 부호에 묶인
+    /// 규약은 세 도로가 함께 지킬 수 없다). 실현 시점에 필요한 정밀도로 계산되고
     /// 아무것도 저장하지 않는다 ⇒ 정준값이 `Rat` 을 넘치는 평면(분모 n·n 제곱, 코퍼스 1.6%)도
     /// **Through 평면**(거대 계수 위엔 i128 에 드는 유리수 점이 일반적으로 없다)도 같은 규약을
     /// 그대로 받는다 — 원점 위치가 오버플로 여부와 무관하게 사용자 기대대로다.

@@ -117,12 +117,6 @@ fn floor_pair(m: &mut Model, below: bool) -> (Handle<Solid>, Handle<Vertex>, Han
 /// One model of one scene. `nameless` builds the plane as the mixed-frame datum, otherwise as a
 /// named statement of the same plane; `flush` puts the other operand on the far side of the plane,
 /// so the two only touch there — the case that leans hardest on the merge.
-///
-/// ★ **Flush contact is built by moving the other operand, never by turning the datum's frame.**
-/// A flipped frame is realized differently by the narrow-name road (`û` kept) and by the
-/// wide-name and judged roads (`û` turned with `ŵ`) — a known defect (todo) — so a nameless datum's
-/// flipped frame and its named twin's put an asymmetric profile in different places, and the
-/// comparison would measure that instead of the merge.
 struct Scene {
     m: Model,
     lhs: Handle<Solid>,
@@ -173,8 +167,7 @@ fn s1(nameless: bool, flush: bool) -> Scene {
 
 /// S2 — the same `z = 0` stated as **two** mixed-frame datums through different triples; a prism
 /// on each, one against the other. Two nameless handles: the merge is a coincidence proved
-/// within the coincidence precision (A's turned corners are irrational in `x`, `y`). No flush
-/// variant: with both prisms on nameless datums, one would have to stand on a flipped frame.
+/// within the coincidence precision (A's turned corners are irrational in `x`, `y`).
 fn s2(nameless: bool, _flush: bool) -> Scene {
     let mut m = Model::new();
     let (_, a0, a1) = floor_pair(&mut m, false);

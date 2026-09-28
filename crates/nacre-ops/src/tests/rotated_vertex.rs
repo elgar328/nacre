@@ -446,3 +446,138 @@ fn a_wide_plane_hosts_a_named_frame() {
         "û does not follow the caller's ref_dir (cos = {cos})"
     );
 }
+
+/// A frame node chain realized the way [`frame_world_basis`] realizes one — `(origin, û, v̂, ŵ)`
+/// as replayed points — so a node built by hand is read exactly as the narrow road's is.
+fn chain_basis(chain: &[MoveNode]) -> WorldBasis {
+    let at = |p: [i128; 3]| -> [f64; 3] {
+        replay(WitnessPoint::at(p.map(R::from_int)), chain)
+            .expect("the frame replays")
+            .coord()
+    };
+    let o = at([0, 0, 0]);
+    let axis = |p: [i128; 3]| {
+        let q = at(p);
+        [q[0] - o[0], q[1] - o[1], q[2] - o[2]]
+    };
+    (o, axis([1, 0, 0]), axis([0, 1, 0]), axis([0, 0, 1]))
+}
+
+/// ★★★ **One name, one placement, one `flip` — one frame, whichever road builds it.**
+///
+/// The narrow road (`frame_chain`), the wide road (`WideFrame`, forced here on a name the narrow
+/// road also takes) and the judged road (`FrameThrough` over the plane's own three points —
+/// `Canonical` only, it has no `Named`) are three spellings of one convention, and a sketch must
+/// not move when a name widens or a datum turns nameless. So the roads are compared with each
+/// other over every placement × `flip`, rather than each against a property of its own: a new
+/// disagreement between any two is red here whichever cell it lands in.
+///
+/// ★ The anchor that keeps the three from agreeing on the wrong thing: a `Canonical` frame's `û`
+/// is the arbitrary axis of **its own** `ŵ` — `ẑ × ŵ`, or `ŷ × ŵ` on a horizontal plane — in
+/// either `flip`, compared with its sign. That is the convention every road can spell: the
+/// judged road proves no coefficient's sign, so a `û` tied to the canonical name's sign (first
+/// nonzero component positive) has no spelling there.
+#[test]
+fn every_road_frames_a_flipped_plane_alike() {
+    let q = |n: i128, d: i128| R::new(n, d).unwrap();
+    let z = q(0, 1);
+    // A tilted plane (canonical name `[15, 10, 6, −30]`) and a horizontal one, which takes the
+    // arbitrary axis's vertical branch. Each triple spans the canonical name's own direction, so
+    // the judged road's unflipped normal and the narrow road's face the same way.
+    let planes = [
+        (
+            "tilted",
+            [[q(2, 1), z, z], [z, q(3, 1), z], [z, z, q(5, 1)]],
+            [q(2, 1), q(-3, 1), z],
+        ),
+        (
+            "horizontal",
+            [
+                [z, z, q(1, 2)],
+                [q(1, 1), z, q(1, 2)],
+                [z, q(1, 1), q(1, 2)],
+            ],
+            [q(1, 1), q(1, 1), z],
+        ),
+    ];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let near = |a: &WorldBasis, b: &WorldBasis| {
+        [(a.0, b.0), (a.1, b.1), (a.2, b.2), (a.3, b.3)]
+            .iter()
+            .all(|(x, y)| (0..3).all(|k| (x[k] - y[k]).abs() < 1e-12))
+    };
+    let mut wrong: Vec<String> = Vec::new();
+    for (what, pts, ref_dir) in planes {
+        let mut m = Model::new();
+        let h = push_consistent(&mut m, pts);
+        let name = m.surface_name.get(&h).expect("a named plane").clone();
+        assert!(
+            name.narrow().is_some(),
+            "{what}: the narrow road must take it"
+        );
+        let named = nacre_topo::FramePlacement::Named {
+            origin: pts[0],
+            ref_dir,
+        };
+        for flip in [false, true] {
+            let narrow = |placement| frame_world_basis(&m, h, placement, flip).expect("narrow");
+            let wide = |wf: Option<nacre_judge::WideFrame>| {
+                chain_basis(&[MoveNode::FrameWide(wf.expect("the wide road opens"))])
+            };
+
+            let canonical = narrow(&nacre_topo::FramePlacement::Canonical);
+            let roads = [
+                (
+                    "wide",
+                    wide(nacre_judge::WideFrame::canonical_of(&name, flip)),
+                ),
+                (
+                    "judged",
+                    chain_basis(&[MoveNode::FrameThrough(Box::new(
+                        nacre_judge::FrameThrough::of(
+                            pts.map(|p| nacre_judge::JudgedPoint::Pure(WitnessPoint::at(p))),
+                            flip,
+                        )
+                        .expect("a healthy plane frames"),
+                    ))]),
+                ),
+            ];
+            for (road, b) in roads {
+                if !near(&canonical, &b) {
+                    wrong.push(format!(
+                        "{what} Canonical flip={flip}: narrow {canonical:?} vs {road} {b:?}"
+                    ));
+                }
+            }
+            let (_, u, _, w) = canonical;
+            let horizontal = w[0].abs() < 1e-12 && w[1].abs() < 1e-12;
+            let raw = if horizontal {
+                [w[2], 0.0, -w[0]] // ŷ × ŵ
+            } else {
+                [-w[1], w[0], 0.0] // ẑ × ŵ
+            };
+            let cos = dot(u, raw) / dot(raw, raw).sqrt();
+            if (cos - 1.0).abs() > 1e-12 {
+                wrong.push(format!(
+                    "{what} Canonical flip={flip}: û {u:?} is not the arbitrary axis of ŵ {w:?} \
+                     (cos {cos})"
+                ));
+            }
+
+            let n = narrow(&named);
+            let b = wide(nacre_judge::WideFrame::named_of(
+                &name, &pts[0], &ref_dir, flip,
+            ));
+            if !near(&n, &b) {
+                wrong.push(format!(
+                    "{what} Named flip={flip}: narrow {n:?} vs wide {b:?}"
+                ));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "roads that frame one statement differently:\n{}",
+        wrong.join("\n")
+    );
+}

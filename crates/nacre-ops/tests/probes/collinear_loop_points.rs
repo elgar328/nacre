@@ -214,12 +214,12 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
     // is the Newell sum, which was never the broken part), so the bound is the instrument that
     // moved.
     //
-    // ★ **All 108 cells build.** They did not always: the X- and Y-turned cells (72 of them) used
-    // to decline `PadMissesFace`, because `face_plane` reported a frame point-symmetric to the
-    // one the pad realized in — the flip half-turn was written about `v̂` in the report and about
-    // `û` in the realization — so a footprint centred on the face through `face_plane`'s own
-    // coordinates was built on the opposite side, outside the face. The report reads the
-    // realization itself now, and a decline reappearing here is news, not noise.
+    // ★ **All 108 cells build.** The X- and Y-turned cells (72 of them) are the ones a report
+    // spelling `flip` apart from the realization breaks: `face_plane` reports a frame
+    // point-symmetric to the one the pad realizes in, so a footprint centred on the face through
+    // `face_plane`'s own coordinates is built on the opposite side, outside the face, and the cell
+    // declines `PadMissesFace` (measured, all 72). The report reads the realization itself, and a
+    // decline reappearing here is news, not noise.
     assert_eq!(
         built, 108,
         "cells stopped building — a decline reappeared in this sweep: {declined:?}"

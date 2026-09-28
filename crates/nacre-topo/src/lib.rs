@@ -236,12 +236,14 @@ pub enum Motion {
     /// two faces of one plane can face opposite ways; `flip` says to negate the coefficients, so
     /// the node names the sense as well as the plane. Without it a sketch on a reversed face comes
     /// out mirrored in `u` with its sweep running inward (measured: a tilted second boss came back
-    /// `PadMissesFace`). It is measured (realized `ŵ` against the face's outward normal), never
-    /// chosen by a caller.
+    /// `PadMissesFace`). It is decided from the truth by the consuming operation (the plane's
+    /// facing, the motion's handedness, the side the use faces), never chosen by a caller.
     ///
     /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so
-    /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity. Negating the
-    /// coefficients flips `ŵ` and `û` together and leaves `v̂`, which is a half-turn: still proper.
+    /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity. The coefficients
+    /// are negated before the placement is read, so under `Canonical` (whose `+u` is derived from
+    /// the normal) `ŵ` and `û` turn together and `v̂` stays, and under `Named` (whose `+u` is
+    /// stated) `ŵ` and `v̂` turn and `û` stays — a half-turn either way: still proper.
     Frame {
         plane: Handle<Surface>,
         placement: FramePlacement,
@@ -256,7 +258,8 @@ pub enum Motion {
 pub enum FramePlacement {
     /// **The default.** The frame is a pure function of the plane — origin at the world
     /// origin's projection (`(−d/n·n)·n`), axes by the arbitrary-axis convention (`u = ẑ × n`,
-    /// `ŷ × n` when the normal is exactly vertical) — derived when the chain is flattened and
+    /// `ŷ × n` when the normal is exactly vertical, where `n` is the normal the frame faces — the
+    /// coefficients with the node's `flip` spent) — derived when the chain is flattened and
     /// stored nowhere. That is what lets a plane whose canonical values overflow `i128` (or
     /// whose name is `Wide`) take the **same convention through arbitrary-precision
     /// realization** instead of falling to f64. One plane, one node — sketches

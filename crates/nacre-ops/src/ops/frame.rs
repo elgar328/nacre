@@ -1,22 +1,16 @@
 use super::*;
 /// A [`SketchFrame`] whose `ŵ` faces `toward` — the plane's own facing when `Forward`, against it
 /// when `Reversed` (a face's orientation, or which way a datum's statement faces against the
-/// handle the door returned). This is the one place `flip` is decided: every road calls it, so no
-/// two can decide differently. `None` when the plane has no frame (no name and no judged frame).
-///
-/// `flip` is stated from the truth: `ŵ` runs with the plane's facing in its own frame by
-/// [`crate::rotated_vertex::frame_normal_sense`], and the plane's motion carries `ŵ` as `L(ŵ)`
-/// and the facing as `parity · L(·)`. So `ŵ` faces `toward` in the world exactly when
-/// `sense · parity · toward` is `+1`. A realized `ŵ` dotted against an `f64` direction would ask
-/// the same question of two roundings.
+/// handle the door returned). Every road calls it, and its `flip` is [`flip_toward`]'s. `None`
+/// when the plane has no frame (no name and no judged frame).
 ///
 /// ★★★ **Only the frame comes back — deliberately.** A caller that needs the axes asks
 /// [`crate::rotated_vertex::frame_world_basis`] *with this flip*, so the geometry of `flip` is
-/// written in exactly one place. Combining an unflipped basis with `flip` **by hand**, as a
-/// half-turn about `v̂` — while the realization (`frame_chain`) half-turns about `û` — reports
-/// every flip=true face a frame point-symmetric to the one the pad builds in (measured: a
-/// footprint centred on the face through such coordinates lands outside it, `PadMissesFace` on
-/// 2 of 6 faces of a turned block).
+/// written in exactly one place. A flip turns a `Canonical` frame about `v̂` and a `Named` one
+/// about `û` ([`crate::rotated_vertex::narrow_frame`]), so combining an unflipped basis with
+/// `flip` **by hand** by any one rule is wrong on one of the two (measured when a report
+/// half-turned about `v̂` and the realization about `û`: a footprint centred on the face through
+/// the reported coordinates landed outside it, `PadMissesFace` on 2 of 6 faces of a turned block).
 pub(super) fn frame_toward(
     model: &Model,
     plane: Handle<Surface>,
@@ -24,14 +18,27 @@ pub(super) fn frame_toward(
     toward: Orientation,
 ) -> Option<SketchFrame> {
     crate::rotated_vertex::frame_chain(model, plane, &placement, false)?;
-    let sense = crate::rotated_vertex::frame_normal_sense(model, plane)?;
-    let parity = crate::rotated_vertex::motion_parity(model, model.plane_motion(plane))?;
-    let flip = sense * parity * toward.sign() < 0;
+    let flip = flip_toward(model, plane, toward)?;
     Some(SketchFrame {
         plane,
         placement,
         flip,
     })
+}
+
+/// **Whether a frame on `plane` must be flipped for its `ŵ` to face `toward`** — the one place
+/// `flip` is decided, so no two roads can decide differently. It does not depend on the
+/// placement: which way `ŵ` runs is the plane's, and the placement only moves `û` within it.
+///
+/// `flip` is stated from the truth: `ŵ` runs with the plane's facing in its own frame by
+/// [`crate::rotated_vertex::frame_normal_sense`], and the plane's motion carries `ŵ` as `L(ŵ)`
+/// and the facing as `parity · L(·)`. So `ŵ` faces `toward` in the world exactly when
+/// `sense · parity · toward` is `+1`. A realized `ŵ` dotted against an `f64` direction would ask
+/// the same question of two roundings.
+fn flip_toward(model: &Model, plane: Handle<Surface>, toward: Orientation) -> Option<bool> {
+    let sense = crate::rotated_vertex::frame_normal_sense(model, plane)?;
+    let parity = crate::rotated_vertex::motion_parity(model, model.plane_motion(plane))?;
+    Some(sense * parity * toward.sign() < 0)
 }
 
 /// Name a [`SketchFrame`] as the [`nacre_topo::Motion::Frame`] node the sweep writes coordinates
@@ -236,7 +243,9 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
 /// a property of the plane, so two faces of one plane agree about where `(0, 0)` is). A
 /// placement speaks in the coordinates the plane's points are written in, so a moved plane takes
 /// them carried back through its chain; the chain folds, so that is exact. Where the result is
-/// the frame the plane's own name derives, it is `Canonical`.
+/// the frame the plane's own name derives under the same `flip`, it is `Canonical` — asked of
+/// [`crate::rotated_vertex::narrow_frame`], the derivation the frame will actually take, so the
+/// normal form cannot name a `Canonical` that realizes elsewhere.
 fn world_placement(
     model: &Model,
     plane: Handle<Surface>,
@@ -263,13 +272,14 @@ fn world_placement(
         ),
     };
     let own = *model.surface_name.get(&plane)?.narrow()?;
-    let (canon_origin, canon_ref) = nacre_exact::plane_frame_default(own)?;
-    let canonical = nacre_exact::plane_frame_named(own, origin, ref_dir)?
-        == nacre_exact::plane_frame_named(own, canon_origin, canon_ref)?;
+    let flip = flip_toward(model, plane, outward)?;
+    let named = nacre_topo::FramePlacement::Named { origin, ref_dir };
+    let canonical = crate::rotated_vertex::narrow_frame(own, &named, flip)?
+        == crate::rotated_vertex::narrow_frame(own, &nacre_topo::FramePlacement::Canonical, flip)?;
     Some(if canonical {
         nacre_topo::FramePlacement::Canonical
     } else {
-        nacre_topo::FramePlacement::Named { origin, ref_dir }
+        named
     })
 }
 

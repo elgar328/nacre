@@ -177,12 +177,10 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     let fb = nacre_ops::face_sketch_frame(&m, bottom).expect("the seeded bottom");
     assert_eq!(fb.plane(), m.world_plane(Axis::Z));
     assert!(fb.flip(), "outward −ẑ against canonical ŵ = +ẑ");
-    // ★ Not `placement == Canonical` any more — that was an implementation detail standing in
-    // for the actual contract, and it was false in substance: the canonical frame *flipped*
-    // realizes point-symmetric to the axes the pad sketches this face in (the node is elided on
-    // an axis-aligned face, and the pad uses the world axes derived from the outward normal).
-    // The contract is the realization: the frame this returns must land, bit for bit, on the
-    // plane `face_plane` reports — which is what the pad reads.
+    // ★ Not `placement == Canonical`: which placement spells the frame is an implementation
+    // detail (the normal form), and it can hold while the frame is wrong — the contract is the
+    // realization: the frame this returns must land, bit for bit, on the plane `face_plane`
+    // reports — which is what the pad reads.
     // `tests/invariants/sketch_frame_contract.rs`
     // sweeps this same proposition over four placements × six faces.
     let realized = nacre_ops::frame_plane(&m, &fb).expect("the returned frame realizes");

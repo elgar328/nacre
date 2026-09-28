@@ -711,17 +711,17 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
 
 /// **The same contract, on a turned solid — the population the test above cannot reach.**
 ///
-/// An axis-aligned face never goes near the flip/sketch-frame branch, so the pin above was green
-/// while `face_plane` on a turned face reported a frame the pad did not use: the report applied
-/// `flip` as a half-turn about `v̂` while the realization (`frame_chain`) half-turns about `û`,
-/// leaving the two point-symmetric in the plane. A footprint centred on the face through
-/// `face_plane`'s own coordinates was then built on the opposite side — outside the face —
-/// and a legal pad came back `PadMissesFace` (measured: 2 of 6 faces of a 30°-turned block,
-/// every axis).
+/// An axis-aligned face never goes near the flip/sketch-frame branch, so the pin above cannot see
+/// a report that spells `flip` apart from the realization. On a turned face it can: a report that
+/// half-turned about one axis while the realization (`frame_chain`) half-turned about the other
+/// left the two point-symmetric in the plane, a footprint centred on the face through
+/// `face_plane`'s own coordinates was built on the opposite side — outside the face — and a legal
+/// pad came back `PadMissesFace` (measured: 2 of 6 faces of a 30°-turned block, every axis).
 ///
-/// All six faces, deliberately: the two flip=true walls are the defect, the two flip=false walls
-/// are the contrast, and the two rotation-invariant planes take the world-axis branch — three
-/// populations under one assertion, so none can drift out of the contract unnoticed.
+/// All six faces, deliberately: the two flip=true walls are where the two spellings part, the two
+/// flip=false walls are the contrast, and the two rotation-invariant planes take the world-axis
+/// branch — three populations under one assertion, so none can drift out of the contract
+/// unnoticed.
 #[test]
 fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
     use nacre_exact::{Angle, Isometry, Rat, Rotation};

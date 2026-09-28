@@ -142,8 +142,8 @@ impl WideFrame {
     }
 
     /// [`WideFrame::canonical`] from a plane's stored name, with the frame's `flip` spent here
-    /// (negating the coefficients — the same place the narrow route spends it). `Narrow` names
-    /// lift; `Wide` ones are already the right width.
+    /// (negating the coefficients before the placement is derived, so `û` turns with `ŵ` — as on
+    /// the narrow route). `Narrow` names lift; `Wide` ones are already the right width.
     pub fn canonical_of(name: &nacre_exact::PlaneName, flip: bool) -> Option<WideFrame> {
         let [c0, c1, c2, c3] = name_bigints(name, flip);
         WideFrame::canonical([c0, c1, c2], &c3)
@@ -162,8 +162,8 @@ impl WideFrame {
 }
 
 /// A [`nacre_exact::PlaneName`]'s coefficients as `BigInt`s, negated when `flip` — the sign a
-/// frame node carries is spent on the coefficients, exactly as the narrow route spends it
-/// before `plane_frame_named`.
+/// frame node carries is spent on the coefficients before anything is derived from them, exactly
+/// as the narrow route spends it.
 fn name_bigints(name: &nacre_exact::PlaneName, flip: bool) -> [num_bigint::BigInt; 4] {
     let mut cs = name.coeff_ints();
     if flip {

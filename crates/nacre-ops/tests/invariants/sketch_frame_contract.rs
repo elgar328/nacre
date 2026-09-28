@@ -3,8 +3,10 @@
 //! The returned `SketchFrame` is not a report to read and discard: it is a value the kernel
 //! accepts back (`Operation::Extrude { frame }`, `DatumDef::Offset { frame }`), so a wrong one is
 //! worse than a wrong number — a sketch built in it lands somewhere the caller did not ask for.
-//! The failure this file locks: on a plain axis-aligned block, a frame combined by hand puts the
-//! same footprint point-symmetric to the pad's, 2.55 apart (measured).
+//! The failure this file locks: a returned frame derived by a second road from the one the pad
+//! builds in (measured when the returned frame half-turned about `û` and the pad took the world
+//! axes of the outward normal: on a plain axis-aligned block the same footprint landed
+//! point-symmetric to the pad's, 2.55 apart).
 //!
 //! The contract asserted here is the realization itself, bit for bit:
 //!
@@ -243,8 +245,8 @@ fn a_world_named_face_frames_on_the_arbitrary_axis_of_its_outward_normal() {
 }
 
 /// **The value round-trips**: a sketch built in the returned frame lands exactly where the pad
-/// lands. One flip=true face (spelled `Named` — the world axes of an outward `−ẑ`) and one
-/// flip=false face (`Canonical`) — the realization comparison above could in principle miss
+/// lands. One flip=true face (the outward `−ẑ` floor) and one flip=false face (the top) — the
+/// realization comparison above could in principle miss
 /// something an actual operation reads, so the operation is the final witness.
 #[test]
 fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
