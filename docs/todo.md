@@ -399,6 +399,17 @@ census 의 향 잠금(`nacre_ops::audit_plane_senses`, test-util)은 `Through` �
 있는 핸들을 먼저)인데, 이름 있는 쌍둥이끼리(접히지 않는 사슬의 `(name, Some(node))` 대 세계)의 결과에도 닿으므로
 census 를 재고 움직인다. 인구(문에 들어온 이름 없는 `Through` 진술): 스위트 12 · ignored 스윕 1 · census 0.
 
+### `Named` 배치는 진술한 `ref_dir` 를 그대로 노드 열쇠에 싣는다
+
+`SketchFrame::named` 는 법선과 평행하지 않은 어떤 `ref_dir` 도 받고, 프레임을 지을 때 그 평면 안 부분이
+`+u` 를 정한다(`narrow_frame`·`WideFrame::named` 가 정확히 사영하고 원시형으로 줄인다). 그런데 배치는 호출자의
+값을 그대로 들고(`a_named_frame_rejects_each_bad_claim_by_name` 이 «들어올린 그대로, 정규화하지 않는다»를
+잠근다) `Motion::Frame` 의 열쇠 `(plane, placement, flip)` 가 그 값을 비교하므로, 같은 프레임의 두 철자
+(`z = 0` 위 `(1,1,0)`·`(2,2,0)`·`(1,1,0.5)`)는 노드 도로(`exact_frame` 이 기저를 유리수로 못 드는 프레임)에서
+두 노드가 되고 그 위 extrude 캡은 한 평면의 두 핸들이 된다. 인구는 재지 않았다(제품이 만드는 `Named` —
+`world_placement`·Stated datum·`SketchFrame::world` — 는 한 규칙이 짓는다). 정할 것: 정규형이 사는 자리 —
+생성자에서 사영·축약하면 위 잠금의 문장이 바뀐다.
+
 ### 가라앉은 좌표의 경계 0
 
 `Realized::to_f64` 의 오차 팔이 `Mag::of(val).times(Mag::pow2(-53))` 이라 `val == 0.0` 이면 **경계도 0**
