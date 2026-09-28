@@ -298,26 +298,20 @@ fn a_wall_keeps_its_plane_when_another_walls_rounded_image_matches() {
     assert!(!got.contains(&c_wall), "C's wall is not on the common");
 }
 
-/// **Scoreboard — a valid input refused.** `Common(B, C)` over [`rounded_twin_walls`] asks for
-/// the corner where the two walls cross (`x = 1`), and the seam table realizes it from the three
-/// classes' **plane caches**: two of them are the same bits, so the `f64` solve reads them as
-/// parallel and refuses `ThreePlanes`. The planes do meet; the answer is the triangle the
-/// other operand order returns. This pins today's refusal so that the fix — realizing the seam
-/// point from its definition instead of from the three plane caches — turns it over on purpose.
+/// **The seam point of two walls whose plane caches are the same bits is where the walls meet.**
+/// `Common(B, C)` over [`rounded_twin_walls`] asks for the corner where the two walls cross
+/// (`x = 1`). Solved from the three classes' plane caches, two of them read as parallel and the
+/// corner was refused (`ThreePlanes`); realized from its definition it is the corner, and the
+/// result is the one the other operand order returns — same faces, same volume.
 #[test]
-fn scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused() {
+fn the_seam_point_of_two_twin_cached_walls_is_realized() {
     let (mut m, b, c) = rounded_twin_walls();
-    let r = boolean(&mut m, BoolKind::Common, b, c);
-    assert!(
-        matches!(
-            r,
-            Err(BoolError::Rejected {
-                reason: nacre_ops::RejectReason::ThreePlanes,
-                ..
-            })
-        ),
-        "{r:?}"
-    );
+    let bc = boolean_one(&mut m, BoolKind::Common, b, c).expect("the walls meet");
+    let (mut m2, b2, c2) = rounded_twin_walls();
+    let cb = boolean_one(&mut m2, BoolKind::Common, c2, b2).expect("common");
+    assert_eq!(surfaces(&m, &[bc]), surfaces(&m2, &[cb]), "the same faces");
+    let (vbc, vcb) = (volume(&m, bc), volume(&m2, cb));
+    assert!((vbc - vcb).abs() < 1e-12, "volume {vbc} against {vcb}");
 }
 
 /// **Two points on a line are ordered along its true direction**, not along an axis the rounding

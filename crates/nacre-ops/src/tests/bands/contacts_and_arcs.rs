@@ -615,7 +615,7 @@ fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
+        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");
         let pierce: Vec<_> = seam
             .iter()
@@ -724,7 +724,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
+        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
         let named =
             crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                 .expect("the naming stages run");
@@ -744,14 +744,14 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         let pierce_defs = named
             .defs
             .values()
-            .filter(|d| matches!(d, crate::assembly::Def::Pierce { .. }))
+            .filter(|d| matches!(d, crate::draft::Def::Pierce { .. }))
             .count();
         assert_eq!(pierce_defs, 2, "both crossings are declared, once each");
         // The bitten corner's def names the right point: realize its three planes and land
         // on (4, 0, 2) — the fixture's own number, no class index copied.
         if bites_corner {
             let hit = named.defs.values().any(|d| {
-                let crate::assembly::Def::Three(t) = d else {
+                let crate::draft::Def::Three(t) = d else {
                     return false;
                 };
                 let t = t.planes();
@@ -865,7 +865,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
+        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
         let named =
             crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                 .expect("the naming stages run");
@@ -1336,7 +1336,7 @@ fn the_grouping_joins_across_a_cut_rim() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
+        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");
         let named =
             crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)

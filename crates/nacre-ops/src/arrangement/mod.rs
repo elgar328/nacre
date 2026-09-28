@@ -516,7 +516,7 @@ pub(crate) fn boolean(
                 faces
             };
 
-            let seam = seam_table(&faces, &cyls, &jd)?;
+            let seam = seam_table(model, &faces, &cyls, &jd)?;
             Ok((faces, seam))
         };
         // ★ The raise moved into `reconstruct` (after the vertex naming, before any minting);

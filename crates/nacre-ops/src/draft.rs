@@ -3,8 +3,8 @@
 //! The arrangement decides a face's boundary long before a `Handle` exists for any of it, and the
 //! assembly turns that description into b-rep. Both halves speak this vocabulary, so it belongs to
 //! neither: [`LocalFace`] with its [`Bound`]s, a [`Ring`] of [`NodeId`]s and the [`Wall`] each edge
-//! rides, a [`Rim`], a [`SeamVertex`], and the record a cut circle carries out of the split
-//! ([`CutRim`]). Alongside them the two terms that decide whether a draft face survives at all --
+//! rides, a [`Rim`], a [`SeamVertex`] and the [`Def`] a node's vertex is minted from, and the
+//! record a cut circle carries out of the split ([`CutRim`]). Alongside them the two terms that decide whether a draft face survives at all --
 //! [`BoolKind`] and [`keep`], one predicate on one chamber's `(inA, inB)`.
 //!
 //! ★ **This module is under the engine, not beside it.** It names `combinatorics` (a ring is a ring
@@ -16,14 +16,92 @@ use crate::combinatorics::{NodeId, Wall};
 use crate::planes::{ClassIx, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, combinatorics, reject};
-use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Surface, Vertex};
 use std::collections::HashMap;
+/// **A result vertex's definition, in class space** — what becomes a `Vertex` once the classes
+/// are read as surface handles ([`Def::vertex`]).
+///
+/// ★ Two readers ask for it, and they must ask the same thing: the seam table realizes a node's
+/// coordinate from the definition the minting will push, so the two cannot describe one vertex
+/// two ways. `Three` is a triple the naming derives from the faces through the node (or, in the
+/// seam table, the node's own triple — the same point); `Pierce` is a **declaration, not a
+/// derivation**: `NodeId::Pierce` already names two result plane classes and the cylinder, so its
+/// def is the name's own payload ([`Def::of_pierce_name`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Def {
+    Three(combinatorics::Canon3),
+    Pierce {
+        planes: [usize; 2],
+        cyl: usize,
+        root: nacre_topo::QuadRoot,
+    },
+}
+
+impl Def {
+    /// A pierce node's definition — its name's payload, or `None` for a three-plane node.
+    pub(crate) fn of_pierce_name(node: NodeId) -> Option<Def> {
+        let (planes, cyl, root) = combinatorics::pierce_name(node)?;
+        Some(Def::Pierce { planes, cyl, root })
+    }
+
+    /// The definition a node's own name states — its triple, or its pierce payload. The seam table
+    /// realizes this one; the naming may define the vertex by another triple through the same
+    /// point where four planes concur.
+    pub(crate) fn of_name(node: NodeId) -> Option<Def> {
+        Def::of_pierce_name(node).or_else(|| {
+            combinatorics::three_plane_name(node)
+                .map(|t| Def::Three(combinatorics::Canon3::three(t)))
+        })
+    }
+
+    /// The model's vertex for this definition — the class → handle mapping and nothing else.
+    ///
+    /// ★★★ **That mapping is where `QuadRoot::canonical` answers a second time**: `NodeId::Pierce`
+    /// is canonical in *class* order, `Vertex::Pierce` in *handle* order, and the class → handle
+    /// map is not monotone in general — a re-sort must carry the root through (`transform`'s
+    /// remap already locks the same rule on the way back out).
+    /// ★ The flip is unexercised **at the minting**: dropping it leaves every fence green, because
+    /// both fixtures' class order happens to match their handle order. ★★★★★ **The rule is not
+    /// unexercised, though — its inverse is red.** The population that exercises it is a
+    /// boolean's *result used as the next operand*, where a second boolean builds its classes
+    /// afresh and their order is not the handles': dropping the same restatement in
+    /// `combinatorics::pierce_name_from_def` turns
+    /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red. What is still owed is only a
+    /// fixture that reaches the minting, not the rule.
+    pub(crate) fn vertex(
+        &self,
+        planes: &[WorkingPlane],
+        cyls: &[crate::planes::WorkingCyl],
+    ) -> Vertex {
+        match *self {
+            Def::Three(t) => {
+                let t = t.planes();
+                Vertex::ThreePlane([planes[t[0]].surf, planes[t[1]].surf, planes[t[2]].surf])
+            }
+            Def::Pierce {
+                planes: p2,
+                cyl,
+                root,
+            } => {
+                let (pair, root) =
+                    nacre_topo::QuadRoot::canonical([planes[p2[0]].surf, planes[p2[1]].surf], root);
+                Vertex::Pierce {
+                    planes: pair,
+                    cylinder: cyls[cyl].surf,
+                    root,
+                }
+            }
+        }
+    }
+}
+
 /// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
 /// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
 pub(crate) struct SeamVertex {
-    pub(crate) point: Point3,
+    /// The cache the vertex of this node's own definition receives ([`Def::of_name`] through
+    /// `realize::point_cache`).
+    pub(crate) cache: nacre_topo::PointCache,
     pub(crate) triple: NodeId,
     pub(crate) tol: f64,
 }

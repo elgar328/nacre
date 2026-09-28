@@ -817,7 +817,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         )
         .unwrap(),
     );
-    let seam = seam_table(&faces, &setup.cyls, &jd).unwrap();
+    let seam = seam_table(&m, &faces, &setup.cyls, &jd).unwrap();
     let out = crate::assembly::reconstruct(
         &mut m,
         &jd,

@@ -205,12 +205,21 @@ pub(crate) struct Curved {
 /// measured tolerance.** The weld table `assemble_fuse_cut` reads; built directly from the
 /// emitted rings, rejecting rather than panicking on a degenerate meet.
 ///
+/// ★★ **A node's coordinate is the cache its vertex will receive.** Each node is realized from
+/// the definition the minting pushes ([`Def::vertex`] through [`crate::realize::point_cache`] —
+/// the push funnel's own question), so the arrangement's point and the model's cache are one
+/// answer. The classes' `f64` plane caches are not read for it: two different planes whose caches
+/// round to the same bits are parallel in `f64`, and solving on them refused a corner the planes
+/// really have. They supply only the construction figure where the realization has no road, as
+/// every producer's figure does.
+///
 /// ★ A named function rather than a block for the same reason `per_class` is one: the arc fence
 /// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
 /// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
 /// means no reject name can testify that the pierce arm works, and only a direct second consumer
 /// can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
 pub(crate) fn seam_table(
+    model: &Model,
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
     jd: &Judge<'_, WorkingPlane>,
@@ -225,54 +234,59 @@ pub(crate) fn seam_table(
                 if seen.insert(node, ()).is_some() {
                     continue;
                 }
-                // ★★ **A pierce node is realized from its name, like everything else
-                // here: the truth is the definition, the coordinate its cache.** The
-                // coordinate is `a + b√c` — `pierce_point` re-solves it from the name's
-                // `(line, s)`; a rational road cannot hold it (`node_coords_rat`'s doc
-                // calls that a type fact, not a width decline). The tolerance is the same
-                // rule as the three-plane arm below: how far the realized point sits from
-                // each surface that defines it, plus the closed-form pairwise meet
-                // (`pierce_vertex_tol` carries the argument for which pairwise curves are
-                // in and out).
-                //
-                // ★ The **vertex minting** past this table is `boolean`'s
-                // `def_triple`/`node_handle`, which names a pierce node's vertex as
-                // `Vertex::Pierce` — a cut rim's node and the scan's crossing on a
-                // ruling both travel that road.
-                if let Some(([p0, p1], cyl, _)) = combinatorics::pierce_name(node) {
-                    let wcy = &cyls[cyl];
-                    let arr = combinatorics::pierce_point(jd, cyl, &wcy.def, node)
-                        .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                    let point = nacre_math::Point3::from_array(arr);
-                    seam.push(SeamVertex {
-                        point,
-                        triple: node,
-                        tol: crate::planes::pierce_vertex_tol(
-                            point,
-                            &geom[p0].plane,
-                            &geom[p1].plane,
-                            &wcy.realized,
-                        ),
-                    });
-                    continue;
-                }
                 // Declining, never `continue`: a skipped seam entry surfaces downstream as
                 // `MissingSeam`, whose class is `SuspectedDefect` and whose sentence is
                 // "a reconstruction dropped a crossing" — a wrong diagnosis for an input
                 // the kernel simply does not build yet.
-                let t = three_plane_name(node)
-                    .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
-                let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
-                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                seam.push(SeamVertex {
-                    point,
-                    triple: node,
-                    tol: vertex_tol(
+                let def =
+                    Def::of_name(node).ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
+                // The construction figure, asked only where the realization has no road. ★ A
+                // pierce node's is re-solved from its name — the coordinate is `a + b√c` and
+                // `pierce_point` reads it off the name's `(line, s)`; a rational road cannot hold
+                // it (`node_coords_rat`'s doc calls that a type fact, not a width decline).
+                let figure = || {
+                    match def {
+                        Def::Pierce { cyl, .. } => {
+                            combinatorics::pierce_point(jd, cyl, &cyls[cyl].def, node)
+                                .map(nacre_math::Point3::from_array)
+                        }
+                        Def::Three(t) => {
+                            let t = t.planes();
+                            three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
+                        }
+                    }
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))
+                };
+                let cache = crate::realize::point_cache(model, &def.vertex(geom, cyls), figure)?;
+                let point = cache.coord();
+                // The tolerance: how far the point sits from each surface that defines it, plus
+                // the closed-form pairwise meets (`pierce_vertex_tol` carries the argument for
+                // which pairwise curves are in and out on a pierce).
+                let tol = match def {
+                    Def::Pierce {
+                        planes: [p0, p1],
+                        cyl,
+                        ..
+                    } => crate::planes::pierce_vertex_tol(
                         point,
-                        &geom[t[0]].plane,
-                        &geom[t[1]].plane,
-                        &geom[t[2]].plane,
+                        &geom[p0].plane,
+                        &geom[p1].plane,
+                        &cyls[cyl].realized,
                     ),
+                    Def::Three(t) => {
+                        let t = t.planes();
+                        vertex_tol(
+                            point,
+                            &geom[t[0]].plane,
+                            &geom[t[1]].plane,
+                            &geom[t[2]].plane,
+                        )
+                    }
+                };
+                seam.push(SeamVertex {
+                    cache,
+                    triple: node,
+                    tol,
                 });
             }
         }
@@ -290,7 +304,7 @@ pub(crate) fn seam_table(
     // concurrency does the same.
     for (i, u) in seam.iter().enumerate() {
         for v in &seam[i + 1..] {
-            if u.point == v.point {
+            if u.cache.coord() == v.cache.coord() {
                 return Err(reject(RejectReason::SeamAlias));
             }
         }

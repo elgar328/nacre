@@ -1,29 +1,4 @@
 use super::*;
-/// **Everything `reconstruct` decides before a single handle is minted** — the grouping (held,
-/// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
-/// every ring node's defining triple.
-///
-/// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
-/// intercepts everything a plugged stopper would, so no
-/// reject name can testify that the naming completed — only a fence that calls it directly on the
-/// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
-/// **A result vertex's definition, in class space** — what the minting turns into a `Vertex`.
-///
-/// ★ `Three` is the derived triple the pre-pass has always built. `Pierce` is a **declaration,
-/// not a derivation**: `NodeId::Pierce` already names two result plane classes and the cylinder,
-/// so its def is the name's own payload (the class→handle mapping and `QuadRoot::canonical`'s
-/// second answer belong to the minting, which the deferred stopper still stands in front of).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Def {
-    Three(combinatorics::Canon3),
-    Pierce {
-        planes: [usize; 2],
-        cyl: usize,
-        root: nacre_topo::QuadRoot,
-    },
-}
-
 pub(crate) struct Named {
     /// The grouping, **held** — raised deep in the minting.
     /// (`pub(crate)`: the grouping fence reads the held result directly.)
@@ -35,6 +10,15 @@ pub(crate) struct Named {
     pub(crate) defs: HashMap<(usize, NodeId), Def>,
 }
 
+/// **Everything `reconstruct` decides before a single handle is minted** — the grouping (held,
+/// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
+/// every ring node's defining triple.
+///
+/// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
+/// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
+/// intercepts everything a plugged stopper would, so no
+/// reject name can testify that the naming completed — only a fence that calls it directly on the
+/// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
 pub(crate) fn name_result_vertices(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
@@ -186,12 +170,8 @@ pub(crate) fn name_result_vertices(
             for &node in &ring.nodes {
                 // ★ A pierce vertex's def is a **declaration, not a derivation** — the name
                 // already carries its two result plane classes and its cylinder.
-                if let Some((planes2, cyl, root)) = combinatorics::pierce_name(node) {
-                    def_triple.entry((g, node)).or_insert(Def::Pierce {
-                        planes: planes2,
-                        cyl,
-                        root,
-                    });
+                if let Some(def) = Def::of_pierce_name(node) {
+                    def_triple.entry((g, node)).or_insert(def);
                     continue;
                 }
                 let at = planes_at.entry((g, node)).or_default();

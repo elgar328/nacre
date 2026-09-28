@@ -199,7 +199,7 @@ pub(super) fn self_touch_reject(
 ) -> Result<(), BoolError> {
     let pt: HashMap<NodeId, (Point3, f64)> = seam
         .iter()
-        .map(|sv| (sv.triple, (sv.point, sv.tol)))
+        .map(|sv| (sv.triple, (sv.cache.coord(), sv.tol)))
         .collect();
     for g in groups {
         // ★ **Planar faces only.** The proposition this sieve tests — "an edge of

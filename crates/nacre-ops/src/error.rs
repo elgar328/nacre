@@ -287,8 +287,9 @@ pub enum RejectReason {
     /// — more handles than a solid can have, so it is not a valid closed 2-manifold. A count-based
     /// backstop below the pinch and parity checks; checked per solid post-assembly.
     NegativeGenus,
-    /// Three planes that should meet in a point do not (a parallel pair), so an arrangement
-    /// vertex has no name.
+    /// An arrangement vertex has no coordinate: its realization has no road, and the
+    /// construction figure — the three classes' `f64` planes solved as they stand — finds no point
+    /// either (two of them are parallel in `f64`).
     ThreePlanes,
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache, so this

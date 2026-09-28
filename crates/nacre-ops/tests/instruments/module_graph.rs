@@ -316,6 +316,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
                 "par",
                 "phase",
                 "planes",
+                "realize",
                 "reuse",
                 "tolerant",
                 "transform",

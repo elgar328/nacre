@@ -63,72 +63,29 @@ pub(crate) fn reconstruct(
                 // A vertex that is a corner of no face at all has no name in the result's own
                 // planes — a degeneracy, and the honest answer is the one this reason already
                 // carries ("a corner with no turn").
-                let tri = match def_triple.get(&(g, node)).copied() {
-                    Some(Def::Three(t)) => t.planes(),
-                    // ★★★ **A pierce vertex is minted from its declaration** — the def already
-                    // names two result plane classes and the cylinder, so this is the class→handle
-                    // mapping and nothing else. That mapping is where `QuadRoot::canonical`
-                    // answers a **second** time: `NodeId::Pierce` is canonical in *class* order,
-                    // `Vertex::Pierce` in *handle* order, and the class→handle map is not
-                    // monotone in general — a re-sort must carry the root through
-                    // (`transform`'s remap already locks the same rule on the way back out).
-                    // ★ The flip is unexercised **at this call**: dropping it leaves every fence
-                    // green, because both fixtures' class order happens to match their handle
-                    // order. ★★★★★ **The rule is not unexercised, though — its inverse
-                    // is red.** The population that exercises it is a
-                    // boolean's *result used as the next operand*, where a second boolean builds
-                    // its classes afresh and their order is not the handles': dropping the same
-                    // restatement in `combinatorics::pierce_name_from_def` turns
-                    // `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red. So what is
-                    // still owed here is only a fixture that reaches *this* line, not the rule.
-                    // The tolerance is the Three arm's rule below, one surface swapped: measured
-                    // against the very `model.surface` objects `validate` reads, maxed with
-                    // `sv.tol` (which `pierce_vertex_tol` built, meet-line term included).
-                    Some(Def::Pierce {
-                        planes: p2,
-                        cyl,
-                        root,
-                    }) => {
-                        let (pair, root) = nacre_topo::QuadRoot::canonical(
-                            [planes[p2[0]].surf, planes[p2[1]].surf],
-                            root,
-                        );
-                        let cylinder = cyls[cyl].surf;
-                        let def = Vertex::Pierce {
-                            planes: pair,
-                            cylinder,
-                            root,
-                        };
-                        let h = crate::realize::push_vertex_realized(
-                            model,
-                            def,
-                            PointCache::Unrealized { coord: sv.point },
-                            crate::realize::ChainLink::Fresh,
-                        );
-                        vh.insert((g, node), h);
-                        return Ok(h);
-                    }
-                    None => return Err(reject(RejectReason::StraightAngle)),
+                let Some(def) = def_triple.get(&(g, node)) else {
+                    return Err(reject(RejectReason::StraightAngle));
                 };
-                let def = Vertex::ThreePlane([
-                    planes[tri[0]].surf,
-                    planes[tri[1]].surf,
-                    planes[tri[2]].surf,
-                ]);
-                // ★★ **The arrangement's figure is a fallback coordinate now, and nothing more.**
-                //
-                // No residual is measured here for the cache. A residual — the distance from
-                // `sv.point` to the planes the vertex is *re-named* in — is one distance to the
-                // carriers and says nothing about how far the coordinate is from the truth; the
-                // realization answers that, and it runs first (`push_vertex_realized`). What the
-                // arrangement still owes the kernel
-                // is the seam table's `tol`, which the self-touch sieve reads directly.
-                crate::realize::push_vertex_realized(
-                    model,
-                    def,
-                    PointCache::Unrealized { coord: sv.point },
-                    crate::realize::ChainLink::Fresh,
-                )
+                // ★★ **The seam table already asked this vertex's question.** It realized the
+                // node's own definition through the push funnel's rule (`realize::point_cache`),
+                // so where the naming defines the vertex by that same definition its answer is
+                // pushed as it stands; asking twice paid a second realization on every vertex
+                // (fold 40, rotated: 211 → 237 ms). Where four planes concur the naming may
+                // pick another triple through the same point, and that definition is realized
+                // afresh, with the seam's coordinate as its figure.
+                let v = def.vertex(planes, cyls);
+                if Def::of_name(node) == Some(*def) {
+                    crate::realize::push_vertex_asked(model, v, sv.cache)
+                } else {
+                    crate::realize::push_vertex_realized(
+                        model,
+                        v,
+                        PointCache::Unrealized {
+                            coord: sv.cache.coord(),
+                        },
+                        crate::realize::ChainLink::Fresh,
+                    )
+                }
             };
             vh.insert((g, node), handle);
             Ok(handle)

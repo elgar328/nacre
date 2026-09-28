@@ -41,8 +41,8 @@ census 21/5,687 클래스, 스위트 모션 없는 클래스의 약 11%(10,156/8
 
 사슬이 안 접히는 평면의 법선은 ops 깔때기(`push_plane_realized`)가 진실에서 실현한다. 남은 것:
 - **앵커는 생산자의 f64 다.** 첫 점을 재생해 같은 읽기로 실현하면 `collinear_loop_points` 의
-  `Y/305deg/inset0.5` 가 `SeamAlias` 로 거절된다(108 → 107) — seam 정점을 평면 캐시로 풀기 때문이다
-  (「seam 정점 좌표를 평면 캐시로 푼다」). 그 결함이 먼저다.
+  `Y/305deg/inset0.5` 가 `SeamAlias` 로 거절된다(108 → 107) — seam 표가 모션 이력이 갈린 코너를 평면 캐시로
+  풀기 때문이다(「seam 표의 폴백과 tol 은 평면 캐시를 읽는다」). 그 결함이 먼저다.
 - **생산자 폴백이 남는 평면** — 재생이 비용 한계(192)를 넘는 사슬(스위트 약 1만 7천 push), 모션 전 이름이 넓은
   평면(252), 혼합 프레임 `Through`. 정점의 `Ceiling` 처럼 남는다.
 
@@ -321,14 +321,15 @@ doc 이 «계약을 잃기 가장 쉬운 노드»라 적는 사슬 3 의 거울�
 작은 원을 그리면 솔리드가 생기기 전에 멈춘다. `tests/reject_census.rs` 의 넓은 축 드릴과 `a_bored_cube_builds_at_any_size`
 는 이 때문에 반지름만 짧은 소수로 적는다.
 
-### seam 정점 좌표를 평면 캐시로 푼다
+### seam 표의 폴백과 tol 은 평면 캐시를 읽는다
 
-`arrangement/result.rs` 는 seam 표의 점을 세 클래스의 **평면 캐시**로 푼다(`three_planes(&geom[..].plane …)`)
-그리고 `None` 을 `ThreePlanes` 로 거절한다. 서로 다른 두 평면의 캐시가 비트 단위로 같으면 f64 로는 평행이라, 실제로
-만나는 정점의 유효한 입력이 거절된다 — `tests/coverage/placement.rs` 의 점수판
-(`scoreboard_the_seam_point_of_two_twin_cached_walls_is_refused`, 픽스처 `rounded_twin_walls`: `Common(B, C)`;
-반대 순서는 답한다)이 오늘의 거절을 든다. 조용히 틀리지는 않지만 「f64 는 실현 통로 하나로」를 어기는 자리다:
-seam 점은 정의(`realize_vertex`)에서 실현한다. 고치는 칸이 점수판을 뒤집는다.
+`arrangement/result.rs` 의 seam 표는 점을 민팅될 정점과 같은 실현 도로(`realize::point_cache`)에서 풀지만,
+도로가 없는 점 — 모션 이력이 갈린 담체의 코너(`NoMeet`: census 322) — 에는 세 클래스의 평면 캐시로 푼 구성
+수치가 선다. 그 수치는 참값에서 1ulp 벗어날 수 있다: 평면 앵커를 실현하면 `collinear_loop_points` 의
+`Y/305deg/inset0.5` 에서 그런 점 하나가 실현된 이웃과 같은 f64 가 되어 `SeamAlias` 로 거절된다(108 → 107 —
+512비트 참값은 둘을 가른다). 자기접촉 체가 읽는 `SeamVertex.tol` 은 평면 캐시에 대한 잔차이고 경계가 아니다
+(참값 최근접 f64 까지를 못 덮는 seam 점 스위트 3,415 · census 190). 고치는 길: 실현 도로를 혼합 모션 교점까지
+넓히고(`nacre_judge::JudgedPoint::Meet`), seam 표가 `PointCache` 를 들어 체가 증명된 경계를 읽는다.
 
 ### 순차 빌드 관문이 병렬로 돈다
 

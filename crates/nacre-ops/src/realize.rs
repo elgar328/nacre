@@ -416,14 +416,8 @@ pub(crate) fn realize_cache_tracked(
 /// vertex exists (design: *"the cache is what `realize` produced, never a second truth"*).
 ///
 /// `fallback` is the coordinate the construction site computed, and it stands wherever
-/// [`realize_cache`] declines — but the *variant* is this funnel's to choose, not the caller's:
-/// the caller knows a figure, only the road knows why it was needed.
-///
-/// ★ **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
-/// two reasons that mean "ask again and pay more" become [`PointCache::Ceiling`]; everything else
-/// means the kernel has no road, and becomes [`PointCache::Unrealized`]. That split exists for the
-/// reader: "this model is expensive" and "the kernel cannot do this" are different reports, and a
-/// single label would hide the second behind the first.
+/// [`realize_cache`] declines — but the *variant* is this funnel's to choose, not the caller's
+/// ([`point_cache`]).
 pub(crate) fn push_vertex_realized(
     model: &mut Model,
     def: Vertex,
@@ -431,27 +425,12 @@ pub(crate) fn push_vertex_realized(
     link: ChainLink,
 ) -> Handle<Vertex> {
     let mut prefix = None;
-    let cache = match realize_cache_tracked(model, &def, &mut prefix) {
-        Ok((coord, bound)) => PointCache::Bounded {
-            coord: Point3::from_array(coord),
-            bound,
-        },
-        // Bits or cost — either way a paid realization can still answer.
-        Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
-            PointCache::Ceiling {
-                coord: fallback.coord(),
-            }
-        }
-        Err(CacheDecline::Cannot(
-            RealizeError::NoMeet
-            | RealizeError::WideUnderMotion
-            | RealizeError::NoMotionChain
-            | RealizeError::NoCurvedPoint
-            | RealizeError::Unrepresentable,
-        )) => PointCache::Unrealized {
-            coord: fallback.coord(),
-        },
-    };
+    let Ok(cache) = point_cache_tracked(
+        model,
+        &def,
+        || Ok::<_, core::convert::Infallible>(fallback.coord()),
+        &mut prefix,
+    );
     // ★ **Take what was used and leave what was made** — the handover that keeps the table at one
     // live generation. A vertex minted here rather than carried forward files nothing: nobody will
     // ever ask for its prefix, and an entry no reader can hit is a leak with a slow fuse.
@@ -459,6 +438,65 @@ pub(crate) fn push_vertex_realized(
         model.hand_over_prefix_hp(w.used, w.key, w.value);
     }
     model.push_vertex(def, cache)
+}
+
+/// Push a vertex with the cache [`point_cache`] already chose **for this very definition** — the
+/// funnel's answer, asked once by whoever needed the coordinate first (the seam table), so the
+/// minting does not pay the realization a second time. Never a figure: a cache from anywhere else
+/// goes through [`push_vertex_realized`].
+pub(crate) fn push_vertex_asked(
+    model: &mut Model,
+    def: Vertex,
+    cache: PointCache,
+) -> Handle<Vertex> {
+    model.push_vertex(def, cache)
+}
+
+/// **The cache a vertex with this definition receives** — asked before anything is pushed, by
+/// whoever needs the coordinate first: the seam table realizes a node from the definition the
+/// minting will push, so the arrangement's point and the model's cache are one answer.
+///
+/// `fallback` is asked only where the road declines, and its error is the caller's: a
+/// construction figure the caller cannot produce either (the seam table's plane-cache solve on
+/// planes whose caches are parallel) is a refusal of its own, not a cache.
+///
+/// ★ **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
+/// two reasons that mean "ask again and pay more" become [`PointCache::Ceiling`]; everything else
+/// means the kernel has no road, and becomes [`PointCache::Unrealized`]. That split exists for the
+/// reader: "this model is expensive" and "the kernel cannot do this" are different reports, and a
+/// single label would hide the second behind the first.
+pub(crate) fn point_cache<E>(
+    model: &Model,
+    def: &Vertex,
+    fallback: impl FnOnce() -> Result<Point3, E>,
+) -> Result<PointCache, E> {
+    point_cache_tracked(model, def, fallback, &mut None)
+}
+
+/// [`point_cache`] that also reports what the accelerator could keep — the funnel's form.
+fn point_cache_tracked<E>(
+    model: &Model,
+    def: &Vertex,
+    fallback: impl FnOnce() -> Result<Point3, E>,
+    out: &mut Option<PrefixWrite>,
+) -> Result<PointCache, E> {
+    Ok(match realize_cache_tracked(model, def, out) {
+        Ok((coord, bound)) => PointCache::Bounded {
+            coord: Point3::from_array(coord),
+            bound,
+        },
+        // Bits or cost — either way a paid realization can still answer.
+        Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
+            PointCache::Ceiling { coord: fallback()? }
+        }
+        Err(CacheDecline::Cannot(
+            RealizeError::NoMeet
+            | RealizeError::WideUnderMotion
+            | RealizeError::NoMotionChain
+            | RealizeError::NoCurvedPoint
+            | RealizeError::Unrepresentable,
+        )) => PointCache::Unrealized { coord: fallback()? },
+    })
 }
 
 /// Push a plane whose cache is **realized from its truth** where the model cannot derive one — the
@@ -475,9 +513,9 @@ pub(crate) fn push_vertex_realized(
 /// at 256 — `figure` stands, as a vertex's construction figure does.
 ///
 /// ⚠ **The anchor stays `figure`'s.** Realizing it too (the first point replayed, read out the
-/// same way) is the truer cache, and it cost a cell: the seam table solves seam vertices from the
-/// three classes' plane caches (todo 「seam 정점 좌표를 평면 캐시로 푼다」), and the moved `d` made
-/// two seam points alias — `collinear_loop_points`' `Y/305deg/inset0.5` refused `SeamAlias`
+/// same way) is the truer cache, and it cost a cell: the seam table solves the seam vertices the
+/// realization has no road to from the three classes' plane caches (todo 「seam 표의 폴백과 tol 은 평면 캐시를 읽는다」), and the moved
+/// `d` made two seam points alias — `collinear_loop_points`' `Y/305deg/inset0.5` refused `SeamAlias`
 /// (107 of 108 cells built). The normal alone moved none.
 ///
 /// ★ Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
