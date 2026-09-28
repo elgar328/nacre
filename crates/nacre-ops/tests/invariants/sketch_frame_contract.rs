@@ -174,6 +174,74 @@ fn the_returned_frame_realizes_to_the_pads() {
     );
 }
 
+/// ★★ **A face whose world equation the model states sketches in the arbitrary-axis frame of its
+/// outward normal** — `+u = ẑ × n` (`ŷ × n` when `n` is vertical), whatever motion carried the
+/// plane there and whichever way its canonical name happens to face.
+///
+/// The expectation is read off the face itself (its outer loop's Newell normal — the loop winds
+/// about the outward normal), never off the kernel's frame derivation, so the lock is not the
+/// derivation compared with itself. The contract test above cannot see this: it compares the
+/// frame with its own realization, so a frame that is consistently the wrong one passes it.
+#[test]
+fn a_world_named_face_frames_on_the_arbitrary_axis_of_its_outward_normal() {
+    let mut wrong: Vec<String> = Vec::new();
+    let (mut checked, mut moved) = (0usize, 0usize);
+
+    for (tag, m, s) in flavours() {
+        for (fi, &f) in m.shell(m.solid(s).outer).faces.iter().enumerate() {
+            let surface = m.face(f).surface;
+            if m.world_plane_name(surface).is_none() {
+                continue;
+            }
+            checked += 1;
+            if m.plane_motion(surface).is_some() {
+                moved += 1;
+            }
+            let ring: Vec<[f64; 3]> = m
+                .face(f)
+                .outer
+                .half_edges
+                .iter()
+                .map(|he| m.vertex_point(m.he_start(*he)).as_array())
+                .collect();
+            let mut n = [0.0f64; 3];
+            for i in 0..ring.len() {
+                let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+                n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+                n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+                n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+            }
+            let unit = |v: [f64; 3]| {
+                let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+                v.map(|c| c / l)
+            };
+            let n = unit(n);
+            let want = unit(if n[0].abs() < 1e-12 && n[1].abs() < 1e-12 {
+                [n[2], 0.0, 0.0] // ŷ × n
+            } else {
+                [-n[1], n[0], 0.0] // ẑ × n
+            });
+            let got = face_plane(&m, f).expect("planar").x_axis().as_array();
+            if (0..3).any(|k| (got[k] - want[k]).abs() > 1e-12) {
+                wrong.push(format!(
+                    "{tag} face[{fi}]: outward {n:?} sketches with +u {got:?}, the convention \
+                     says {want:?}"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "faces sketching off the arbitrary-axis frame of their outward normal:\n{}",
+        wrong.join("\n")
+    );
+    // Premises: the population the flavours build — every face of six of them, the caps of the
+    // two turned off the quarters — and the nine of it a motion carried there.
+    assert_eq!(checked, 40, "world-named faces measured");
+    assert_eq!(moved, 9, "moved world-named faces measured");
+}
+
 /// **The value round-trips**: a sketch built in the returned frame lands exactly where the pad
 /// lands. One flip=true face (spelled `Named` — the world axes of an outward `−ẑ`) and one
 /// flip=false face (`Canonical`) — the realization comparison above could in principle miss
