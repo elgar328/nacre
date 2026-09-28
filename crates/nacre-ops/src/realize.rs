@@ -527,12 +527,16 @@ fn point_cache_tracked<E>(
 ///   anchors a named plane at, so the two kinds of plane agree about where a cache is pinned.
 /// * **Normal** — the pre-motion name's normal carried by the chain (the difference of the
 ///   replayed origin and name vector — the translation cancels) times the name's sense against
-///   the points and the chain's parity, normalized.
+///   the points and the chain's parity, normalized. A pre-motion name wider than `Rat` has no
+///   vector to replay, so its normal is the one the three replayed points span
+///   ([`nacre_judge::plane_hp`]) — the same plane, and where both roads decide the same bits
+///   (measured on 21,543 narrow names); not the road for every plane, because at 256 bits it
+///   leaves undecided 226 normals the name road decides.
 ///
 /// Both are read out by [`Realized::to_f64`] at 128 bits and then 256, so a component that is
 /// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, as a vertex's
-/// construction figure does: a replay past [`CACHE_REPLAY_COST_CAP`] (both halves), a pre-motion
-/// name wider than `Rat` (the normal), undecided at 256 (that half). The door does the same for a
+/// construction figure does: a replay past [`CACHE_REPLAY_COST_CAP`] (both halves), undecided at
+/// 256 (that half). The door does the same for a
 /// named plane whose truth cannot place its first point — a derived normal beside the producer's
 /// anchor — so a cache with one realized half is not a new shape.
 ///
@@ -546,7 +550,8 @@ fn point_cache_tracked<E>(
 /// realizes at 128 or 256 bits and rounds once.
 ///
 /// ⚠ **The guard is the chain's depth, not the nodes replayed.** Three points walk the chain (the
-/// anchor, the origin, the name vector), so a plane under 192 nodes costs up to three such
+/// anchor, the origin, the name vector — or the three stated points), so a plane under 192 nodes
+/// costs up to three such
 /// replays — where the vertex road's mixed arm counts the sum against the same cap
 /// ([`meet_road_over_cap`]). Counting the sum here would send the 5,976 planes the suite realizes
 /// at depths 65–192 back to `figure` (measured).
@@ -588,28 +593,37 @@ fn realize_plane_cache(
     let Some(chain) = motion_chain(model, leaf) else {
         return (None, None);
     };
-    let anchor = replay(WitnessPoint::at(points[0]), &chain)
-        .and_then(|first| on_the_cache_rungs(|bits| Some(first.realize(bits))));
+    let realize_point = |p: &WitnessPoint| on_the_cache_rungs(|bits| Some(p.realize(bits)));
+    let Some(name) = nacre_exact::plane_name_exact(points[0], points[1], points[2]) else {
+        return (None, None); // collinear: the points state no plane
+    };
+    let Some(&n) = name.narrow() else {
+        let Some(tri) = crate::rotated_vertex::replayed_triangle(*points, &chain) else {
+            return (None, None);
+        };
+        return (realize_point(&tri[0]), spanned_normal(&tri, sense));
+    };
+    let anchor = replay(WitnessPoint::at(points[0]), &chain).and_then(|p| realize_point(&p));
     (
         anchor,
-        carried_name_normal(model, points, leaf, sense, &chain),
+        carried_name_normal(model, &name, n, points, leaf, sense, &chain),
     )
 }
 
-/// The plane's unit normal from its pre-motion name, carried by `chain` — `None` for a name wider
-/// than `Rat`, or undecided at 256 bits.
+/// The plane's unit normal from its (narrow) pre-motion name `n`, carried by `chain` — `None`
+/// where undecided at 256 bits.
 fn carried_name_normal(
     model: &Model,
+    name: &nacre_exact::PlaneName,
+    n: [nacre_exact::Rat; 4],
     points: &[[nacre_exact::Rat; 3]; 3],
     leaf: Handle<nacre_topo::MotionNode>,
     sense: nacre_topo::Orientation,
     chain: &[nacre_judge::MoveNode],
 ) -> Option<[f64; 3]> {
     let zero = [nacre_exact::Rat::from_int(0); 3];
-    let name = nacre_exact::plane_name_exact(points[0], points[1], points[2])?;
-    let n = *name.narrow()?;
     let along = nacre_exact::name_along_points(
-        &name,
+        name,
         points.each_ref().map(|p| MeetPoint::Narrow(*p)).each_ref(),
     )?;
     // The way the plane faces, in the frame its points are written in: the name's normal when it
@@ -623,14 +637,34 @@ fn carried_name_normal(
     let head = replay(WitnessPoint::at(head), chain)?;
     on_the_cache_rungs(|bits| {
         let (t, h) = (tail.realize(bits), head.realize(bits));
-        let d: [HpBounded; 3] = core::array::from_fn(|k| h[k].sub(&t[k], bits));
-        let nn = d[0]
-            .mul(&d[0], bits)
-            .add(&d[1].mul(&d[1], bits), bits)
-            .add(&d[2].mul(&d[2], bits), bits);
-        let inv = nn.inv_sqrt(bits)?;
-        Some(core::array::from_fn(|k| d[k].mul(&inv, bits)))
+        unit(core::array::from_fn(|k| h[k].sub(&t[k], bits)), bits)
     })
+}
+
+/// The unit normal three replayed points span, facing the way `sense` says: the truth's sense is
+/// against the points' world turn `(p₁−p₀)×(p₂−p₀)` — a reflection in the chain is already in the
+/// replayed points — and swapping the two edges negates it exactly (multiplying the `f64` by `−1`
+/// would turn a `+0.0` into `−0.0`).
+fn spanned_normal(tri: &[WitnessPoint; 3], sense: nacre_topo::Orientation) -> Option<[f64; 3]> {
+    let (p1, p2) = if sense.sign() < 0 {
+        (&tri[2], &tri[1])
+    } else {
+        (&tri[1], &tri[2])
+    };
+    on_the_cache_rungs(|bits| {
+        let [a, b, c, _] = nacre_judge::plane_hp(&tri[0], p1, p2, bits);
+        unit([a, b, c], bits)
+    })
+}
+
+/// `d` scaled to unit length at `bits` — `None` where its squared length is not positive.
+fn unit(d: [HpBounded; 3], bits: usize) -> Option<[HpBounded; 3]> {
+    let nn = d[0]
+        .mul(&d[0], bits)
+        .add(&d[1].mul(&d[1], bits), bits)
+        .add(&d[2].mul(&d[2], bits), bits);
+    let inv = nn.inv_sqrt(bits)?;
+    Some(core::array::from_fn(|k| d[k].mul(&inv, bits)))
 }
 
 /// Read a realization out on the cache road's two rungs — `LADDER[0]`, then `LADDER[1]` only where

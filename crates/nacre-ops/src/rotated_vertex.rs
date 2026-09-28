@@ -86,18 +86,21 @@ pub(crate) fn surface_witness_triangle(
         },
         nacre_topo::Surface::Cylinder { .. } => return None,
     };
-    let w = base.map(WitnessPoint::at);
     match motion {
-        None => Some(w),
-        Some(m) => {
-            let chain = motion_chain(model, m)?;
-            let mut out = w;
-            for o in out.iter_mut() {
-                *o = replay(o.clone(), &chain)?;
-            }
-            Some(out)
-        }
+        None => Some(base.map(WitnessPoint::at)),
+        Some(m) => replayed_triangle(base, &motion_chain(model, m)?),
     }
+}
+
+/// A stated triple's three points replayed through `chain` — the witness triangle of a `Known`
+/// plane under a motion, for a caller that already holds the chain (the plane push funnel, before
+/// the plane has a handle).
+pub(crate) fn replayed_triangle(
+    base: [[nacre_exact::Rat; 3]; 3],
+    chain: &[MoveNode],
+) -> Option<[WitnessPoint; 3]> {
+    let [a, b, c] = base.map(|p| replay(WitnessPoint::at(p), chain));
+    Some([a?, b?, c?])
 }
 
 /// The three defining vertices of a **nameless** `Through` plane as judged points — the judged

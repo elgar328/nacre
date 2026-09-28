@@ -36,7 +36,7 @@ use nacre_ops::{
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
-use crate::fixtures::{datum_frame, p2};
+use crate::fixtures::{datum_frame, extrude_op, p2, regular_ngon};
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
@@ -1231,6 +1231,87 @@ fn a_plane_turned_off_the_quarters_has_its_anchor_realized() {
         seen += 1;
     }
     assert_eq!(seen, 4, "four sides carry the recorded turn");
+}
+
+/// **A plane whose pre-motion name is wider than `Rat` is realized from its three points** — a
+/// 16-gon of `f64` `cos`/`sin` corners extruded and turned 30° about `x`. The corner at 180° is
+/// `(−2.0, 2.4492935982947064e-16)`, a decimal over `10³²`, so the wall into it from the corner at
+/// 157.5° has a canonical name no `Rat` holds, and there is no name vector to carry. The oracle is the
+/// geometry: the wall faces `(dy, −dx, 0)` along its stated points (`Forward`), turned
+/// right-handedly about `x` to `(dy, −dx·c, −dx·s)`; its anchor is the first corner turned the same
+/// way. Both are the nearest `f64`s computed from the corners' decimals to 80 digits. Of the six
+/// wide walls this is one whose producer normal misses the nearest by an ulp (`…363` for `…366`).
+#[test]
+fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
+    let mut m = Model::new();
+    let op = extrude_op(&m, regular_ngon(16, 2.0), 3.0);
+    let Ok(OpOutput::Extrude { solid, .. }) = apply(&mut m, &op) else {
+        panic!("the 16-gon extrudes");
+    };
+    m.rebuild_adjacency();
+    let s = moved(&mut m, solid, turn(Axis::X, 30));
+    m.rebuild_adjacency();
+    let (first, next) = (
+        [-1.8477590650225735, 0.7653668647301798, 0.0],
+        [-2.0, 2.4492935982947064e-16, 0.0],
+    );
+    let shell = m.solid(s).outer;
+    let wall = m
+        .shell(shell)
+        .faces
+        .iter()
+        .map(|&fh| m.face(fh).surface)
+        .find(|&h| {
+            matches!(m.surface(h), Surface::Plane {
+                points: nacre_topo::PlanePoints::Known(p),
+                ..
+            } if p[0].map(|r| r.to_f64()) == first && p[1].map(|r| r.to_f64()) == next)
+        })
+        .expect("the wall into the 180° corner");
+    let Surface::Plane {
+        points: nacre_topo::PlanePoints::Known(p),
+        sense,
+        ..
+    } = m.surface(wall)
+    else {
+        unreachable!("found above");
+    };
+    assert!(
+        nacre_exact::plane_name_exact(p[0], p[1], p[2])
+            .expect("a wall is a plane")
+            .narrow()
+            .is_none(),
+        "the fixture's premise: this wall's pre-motion name is wider than Rat"
+    );
+    assert_eq!(
+        *sense,
+        nacre_topo::Orientation::Forward,
+        "a wall faces along its points"
+    );
+    assert!(
+        m.plane_motion(wall).is_some(),
+        "the turn is recorded, not folded"
+    );
+    let nacre_geom::Surface::Plane(cache) = m.surface_cache(wall) else {
+        unreachable!("a plane truth carries a plane cache");
+    };
+    assert_eq!(
+        cache.normal().as_array().map(f64::to_bits),
+        [
+            -0.9807852804032304,
+            0.16895317489845366,
+            0.09754516100806414
+        ]
+        .map(f64::to_bits),
+        "the nearest f64 of the turned wall normal: {:?}",
+        cache.normal()
+    );
+    assert_eq!(
+        cache.origin().as_array().map(f64::to_bits),
+        [-1.8477590650225735, 0.6628271480711838, 0.3826834323650899].map(f64::to_bits),
+        "the nearest f64 of the turned first corner: {:?}",
+        cache.origin()
+    );
 }
 
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
