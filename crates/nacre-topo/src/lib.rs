@@ -822,12 +822,12 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///   to it (the realization declines by name), or nobody asked (a hand-built fixture). The figure
 ///   is the construction's own, and a checker applies its construction epsilon.
 ///
-/// ⚠★★★ **There is no stored tolerance.** The residual the arrangement measures is **not** a
-/// bound: a residual is one distance, from the point to its carriers, and says nothing about how
+/// ⚠★★★ **There is no stored tolerance.** A residual is **not** a bound: it is one distance,
+/// from the point to its carriers, and says nothing about how
 /// far each coordinate sits from the truth — a near-degenerate crossing can be close to every
-/// carrier and far from the exact corner. The arrangement measures it (`SeamVertex.tol`, which
-/// the self-touch sieve reads); the *cache* does not store it, because what a cache is for is
-/// saying what has been **proven** about the coordinate.
+/// carrier and far from the exact corner. Nothing carries it: what a cache is for is saying what
+/// has been **proven** about the coordinate, and the arrangement's self-touch sieve reads this
+/// bound too.
 ///
 /// Unlike [`EdgeCache`] there is no discard-and-rebuild: a vertex is realized when it is pushed, so
 /// the cache is the realization's memo from the start. What can happen later is a **refinement** —

@@ -520,7 +520,7 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
     }
 }
 
-/// **The seam realizes a pierce vertex and measures it — seen through the door production
+/// **The seam realizes a pierce vertex from its definition — seen through the door production
 /// uses, because nothing else can see it at all.**
 ///
 /// ★★★ The deferred stopper intercepts the whole seam stretch, so with the pierce arm
@@ -530,13 +530,13 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
 /// production feeds it, so this walks production's stretch step for step: trace, clean,
 /// append the bands, build the seam.
 ///
-/// ★ The tolerance is asserted as a **bound**, never a copied value; the pierce coordinates
+/// ★ The cache is asserted **`Bounded` within rounding**, never a copied value; the pierce coordinates
 /// themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point` road,
 /// so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
 /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
 /// surface and `outer_rings` is what tells them apart.
 #[test]
-fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
+fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
     for (origin, axis) in [
         ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
@@ -623,10 +623,12 @@ fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
             .collect();
         assert_eq!(pierce.len(), 2, "both crossings reach the seam, once each");
         for sv in pierce {
+            let nacre_topo::PointCache::Bounded { bound, .. } = sv.cache else {
+                panic!("a pierce seam point is realized: {:?}", sv.cache);
+            };
             assert!(
-                sv.tol < 1e-12,
-                "a pierce realization sits on everything that defines it: tol {}",
-                sv.tol
+                bound.iter().all(|b| b.lt(nacre_exact::Mag::of(1e-12))),
+                "realized within rounding: {bound:?}"
             );
         }
     }

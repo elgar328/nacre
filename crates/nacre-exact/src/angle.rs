@@ -286,7 +286,7 @@ impl Angle {
             // slack is exactly zero, and then `mag + rad` rounds back down to `mag` in f64 and the
             // "bound" is short by the radius. `sin 30°` is that case: it misses 0.5 by exactly
             // `2⁻⁵⁴`, and the ground-truth test caught the missing ulp the day this was written.
-            (mag + rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32))) * (1.0 + 2.0 * f64::EPSILON)
+            (mag + rad.upper_f64()) * (1.0 + 2.0 * f64::EPSILON)
         };
         (gap(c, &hc, rc), gap(s, &hs, rs))
     }

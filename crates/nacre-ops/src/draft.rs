@@ -96,14 +96,20 @@ impl Def {
     }
 }
 
-/// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
-/// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
+/// A seam vertex — a point on both `∂A` and `∂B` (a three-plane corner or a pierce point), shared
+/// (one `Handle`) by every incident result piece.
+///
+/// ★ **It carries the cache its vertex receives, and nothing measured beside it.** `Bounded`
+/// says the truth lies within `coord ± bound` — the one thing the self-touch sieve needs to keep
+/// its boxes conservative — and any other variant says no bound is proven, which the sieve reads
+/// as "cannot rule this out". A residual (the point's distance to its carriers' `f64` planes) is
+/// not such a bound: measured against the nearest `f64` of the truth it fell short on 3,415 of the
+/// suite's seam points, 155 of them by more than a thousandfold.
 pub(crate) struct SeamVertex {
     /// The cache the vertex of this node's own definition receives ([`Def::of_name`] through
     /// `realize::point_cache`).
     pub(crate) cache: nacre_topo::PointCache,
     pub(crate) triple: NodeId,
-    pub(crate) tol: f64,
 }
 
 /// One ring of a result face: its nodes, and **the plane each edge rides**.

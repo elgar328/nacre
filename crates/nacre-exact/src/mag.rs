@@ -258,6 +258,19 @@ impl Mag {
     pub fn exp2(self) -> Option<i64> {
         (self.m != 0.0).then_some(self.e)
     }
+
+    /// **An `f64` no smaller than this bound** — `2^e`, since the mantissa is below one. Below
+    /// f64's floor it lands on the smallest positive normal rather than a zero that would claim
+    /// exactness; above the range it is honestly infinite (an infinite radius declines, never
+    /// lies). `0.0` only for the bound zero.
+    pub fn upper_f64(self) -> f64 {
+        match self.exp2() {
+            None => 0.0,
+            Some(e) if e < -1074 => f64::MIN_POSITIVE,
+            Some(e) if e > 1023 => f64::INFINITY,
+            Some(e) => 2f64.powi(e as i32),
+        }
+    }
 }
 
 #[cfg(test)]

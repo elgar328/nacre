@@ -201,8 +201,8 @@ pub(crate) struct Curved {
     pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
 }
 
-/// **The seam table — every node the result faces reference, realized to a coordinate and a
-/// measured tolerance.** The weld table `assemble_fuse_cut` reads; built directly from the
+/// **The seam table — every node the result faces reference, realized to the cache its vertex
+/// receives.** The weld table `assemble_fuse_cut` reads; built directly from the
 /// emitted rings, rejecting rather than panicking on a degenerate meet.
 ///
 /// ★★ **A node's coordinate is the cache its vertex will receive.** Each node is realized from
@@ -266,46 +266,22 @@ pub(crate) fn seam_table(
                     &mut planes,
                     figure,
                 )?;
-                let point = cache.coord();
-                // The tolerance: how far the point sits from each surface that defines it, plus
-                // the closed-form pairwise meets (`pierce_vertex_tol` carries the argument for
-                // which pairwise curves are in and out on a pierce).
-                let tol = match def {
-                    Def::Pierce {
-                        planes: [p0, p1],
-                        cyl,
-                        ..
-                    } => crate::planes::pierce_vertex_tol(
-                        point,
-                        &geom[p0].plane,
-                        &geom[p1].plane,
-                        &cyls[cyl].realized,
-                    ),
-                    Def::Three(t) => {
-                        let t = t.planes();
-                        vertex_tol(
-                            point,
-                            &geom[t[0]].plane,
-                            &geom[t[1]].plane,
-                            &geom[t[2]].plane,
-                        )
-                    }
-                };
                 seam.push(SeamVertex {
                     cache,
                     triple: node,
-                    tol,
                 });
             }
         }
     }
-    // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
-    // materialized coordinate is only its cache — so two *different* triples landing on the same
-    // coordinate means the exact substrate and the f64 cache disagree about how many vertices
-    // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
-    // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
+    // **Two names, one coordinate.** Every arrangement vertex is a distinct name, and where the
+    // realization answers its coordinate is the nearest `f64` of the truth — so two names on one
+    // coordinate are either **one point named twice** (the defect this is here for) or two points
+    // closer than an `f64` tells apart, which no output can hold as two vertices either.
+    // Downstream both become a zero-length edge, so catch it here, where both names are still in
+    // hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line. (The two are
+    // not told apart yet — todo 「`SeamAlias` 는 두 원인을 한 딱지로 거절한다」.)
     //
-    // One cause is a **split plane table**: one geometric plane carried by two classes, whose
+    // One cause of a point named twice is a **split plane table**: one geometric plane carried by two classes, whose
     // triples then name one point twice. Two named planes cannot split — the class merge compares
     // their names — but planes without a world name (a turn off the quarters) are merged by a
     // judgement, and a judgement that fails to prove them one splits them. A genuine 4-plane

@@ -291,13 +291,13 @@ pub enum RejectReason {
     /// construction figure — the three classes' `f64` planes solved as they stand — finds no point
     /// either (two of them are parallel in `f64`).
     ThreePlanes,
-    /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
-    /// coordinate. The triple is the truth and the coordinate only its cache, so this
-    /// says the exact substrate and the f64 cache disagree about how many vertices exist — always a
-    /// defect upstream, never a property of the input. Raised where the seam table is built, while
-    /// both triples are still in hand; without it the disagreement surfaces much later as a
-    /// zero-length edge. The known cause is a **split plane table** (one geometric plane carried by
-    /// two classes).
+    /// Two **different** arrangement vertices (distinct names) realized to the same coordinate.
+    /// Where the realization answers, a coordinate is the nearest `f64` of its truth, so this is
+    /// one point named twice — a defect upstream, whose known cause is a **split plane table**
+    /// (one geometric plane carried by two classes) — or two points closer than an `f64` can tell
+    /// apart, which is not a defect and is not told apart from it yet (measured population: none).
+    /// Raised where the seam table is built, while both names are still in hand; without it the
+    /// coincidence surfaces much later as a zero-length edge.
     ///
     /// ★ A genuine 4-plane concurrency is a property of the input, and reporting it here would put
     /// it under the class that says "report a bug". The arrangement folds those names — including

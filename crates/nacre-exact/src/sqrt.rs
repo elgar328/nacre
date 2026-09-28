@@ -401,7 +401,7 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
     // Rounded up, for the reason `Angle::measure_realization_error` spells out: when `|diff|` is
     // itself a power of two the octave bound has no slack, and `mag + rad` would round back down
     // to `mag` in f64 — short by the radius.
-    Some((mag + rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32))) * (1.0 + 2.0 * f64::EPSILON))
+    Some((mag + rad.upper_f64()) * (1.0 + 2.0 * f64::EPSILON))
 }
 
 /// Greatest common divisor of two magnitudes, Euclid. `gcd(0, 0) == 0`.

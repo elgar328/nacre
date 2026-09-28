@@ -138,20 +138,8 @@ pub enum MoveNode {
 /// components below f64's normal floor.
 fn narrow_hp(x: &HpBounded) -> (f64, f64) {
     match nacre_exact::round_to_f64(&x.value, x.error, 128) {
-        Some(v) => (v, rad_f64(x.error) + v.abs() * f64::EPSILON),
-        None => (0.0, rad_f64(x.error) + bf_mag(&x.value)),
-    }
-}
-
-/// An upper `f64` for a [`Mag`] radius: `2^e` from the exponent. Below f64's floor it lands on
-/// the smallest positive value rather than a zero that would claim exactness; above the range it
-/// is honestly infinite (an infinite tol declines, never lies).
-fn rad_f64(r: Mag) -> f64 {
-    match r.exp2() {
-        None => 0.0, // a genuinely zero radius
-        Some(e) if e < -1074 => f64::MIN_POSITIVE,
-        Some(e) if e > 1023 => f64::INFINITY,
-        Some(e) => 2f64.powi(e as i32),
+        Some(v) => (v, x.error.upper_f64() + v.abs() * f64::EPSILON),
+        None => (0.0, x.error.upper_f64() + bf_mag(&x.value)),
     }
 }
 

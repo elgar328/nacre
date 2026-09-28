@@ -4,7 +4,6 @@
 use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_exact::Mag;
 use nacre_geom::Plane;
-use nacre_geom::intersect::plane_plane;
 use nacre_judge::predicate::Judge;
 use nacre_judge::{Standard, WitnessPoint};
 use nacre_math::{Point3, Vector3};
@@ -358,50 +357,6 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     })
 }
 
-/// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
-/// vertex cache's measured tolerance).
-pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
-    let mut tol = a.distance(p).max(b.distance(p)).max(c.distance(p));
-    for (x, y) in [(a, b), (a, c), (b, c)] {
-        if let Some(line) = plane_plane(x, y) {
-            tol = tol.max(line.distance(p));
-        }
-    }
-    tol
-}
-
-/// [`vertex_tol`]'s pierce sibling — the measured tolerance of a realized `plane ∩ plane ∩
-/// cylinder` vertex: max distance of `p` to its two planes, the cylinder **surface**, and the
-/// planes' meet line.
-///
-/// ★★ **The meet line is the one pairwise curve this covers, on purpose.** The seam's tolerance
-/// means "surfaces *and* pairwise meets" — `boolean`'s vertex minting says the pairwise part "is
-/// a real part of what this number means", and [`vertex_tol`] above covers all three of its
-/// lines. Here only `a ∩ b` has a closed form that is always a line: a pierce plane can be
-/// **parallel to the axis**, where `plane ∩ cylinder` is a pair of ruling lines — a per-case
-/// curve family this deliberately does not chase. The cylinder-*surface* distance already bounds
-/// the radial part of that error; the meet line is also exactly the line the point is defined on
-/// (`combinatorics::pierce_point` realizes from `(line, s)`), so its residual is the first-class
-/// question about the realization.
-///
-/// ★ **The meet-line term is unexercised in today's corpus, measured** — with it removed, every
-/// assertion stays green. Both fixtures' pierce planes are perpendicular, and for a
-/// perpendicular pair the line residual never exceeds `√2 ×` the larger plane residual, so the
-/// `max` cannot turn on it. It earns its keep the day a pierce pair meets **obliquely** (a
-/// turned wall), where the line residual outgrows both plane residuals near the line.
-pub(crate) fn pierce_vertex_tol(
-    p: Point3,
-    a: &Plane,
-    b: &Plane,
-    cyl: &nacre_geom::Cylinder,
-) -> f64 {
-    let mut tol = a.distance(p).max(b.distance(p)).max(cyl.distance(p));
-    if let Some(line) = plane_plane(a, b) {
-        tol = tol.max(line.distance(p));
-    }
-    tol
-}
-
 /// Which operand a face or segment came from — the boolean's per-cell label needs both solids'
 /// material above and below, so provenance cannot be merged away.
 ///
@@ -482,9 +437,9 @@ impl ClassIx {
 pub(crate) struct WorkingCyl {
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
-    /// The f64 twin of `def` — its realization, what a *measurement* reads (`pierce_vertex_tol`
-    /// measures a pierce realization against this surface), while every decision reads `def`. Not
-    /// a cache of the model: it lives for one operation, like `WitnessPoint::realized`.
+    /// The f64 twin of `def` — its realization, what a construction figure reads (the rim table
+    /// solves a seam vertex's figure on it), while every decision reads `def`. Not a cache of the
+    /// model: it lives for one operation, like `WitnessPoint::realized`.
     pub(crate) realized: nacre_geom::Cylinder,
     /// Which operand states this class. The pair loop asks only pairs of **different**
     /// owners: two classes of one valid solid keep their faces apart by construction, and the
