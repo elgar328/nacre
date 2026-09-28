@@ -324,8 +324,10 @@ pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// **How far the realization road reaches for surfaces** — the one road to a realization,
-/// counted push by push. A vertex reaches it whole; a plane reaches it wherever it has a world
-/// name (anchor and unit normal from the truth), and keeps the producer's figure elsewhere.
+/// counted push by push. A vertex reaches it whole; a plane reaches it here wherever it has a world
+/// name (anchor and unit normal from the truth), and elsewhere keeps the cache its pusher brought —
+/// `nacre-ops` realizes what the truth answers and hands over the producer's figure for the rest,
+/// which these counters do not see.
 ///
 /// ⚠ `Model::apply_derivation` (private, so not a link) counts before it overwrites: `differs`
 /// reads "how far the

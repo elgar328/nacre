@@ -1180,6 +1180,59 @@ fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
     assert_eq!(seen, 4, "four sides carry the recorded turn");
 }
 
+/// **A plane with no world name has its anchor realized from its first point** — the same 30° box.
+/// Each side's truth keeps its pre-motion triple (a recorded turn), so the anchor is that triple's
+/// first corner `(x, y, z)` turned right-handedly about `z`: `(x·c − y·s, x·s + y·c, z)`. The
+/// oracle is the geometry — the nearest `f64`s of those, computed from the corners to 60 digits,
+/// with a `+0.0` where the corner is on the axis. The producer's anchor is the corner moved in
+/// `f64`, which misses by an ulp on the side whose first corner has `y = 3`.
+#[test]
+fn a_plane_turned_off_the_quarters_has_its_anchor_realized() {
+    let mut m = Model::new();
+    let s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    let s = moved(&mut m, s, turn(Axis::Z, 30));
+    m.rebuild_adjacency();
+    // Nearest f64 of the turned `(x, y)`, keyed by the corner.
+    let turned = |x: f64, y: f64| -> [f64; 2] {
+        match (x, y) {
+            (0.0, 0.0) => [0.0, 0.0],
+            (0.0, 3.0) => [-1.5, 2.598076211353316],
+            (2.0, 0.0) => [1.7320508075688772, 1.0],
+            (2.0, 3.0) => [0.2320508075688773, 3.598076211353316],
+            other => panic!("not a corner of the box: {other:?}"),
+        }
+    };
+    let shell = m.solid(s).outer;
+    let mut seen = 0;
+    for &fh in &m.shell(shell).faces {
+        let h = m.face(fh).surface;
+        if m.plane_motion(h).is_none() {
+            continue;
+        }
+        let Surface::Plane {
+            points: nacre_topo::PlanePoints::Known(p),
+            ..
+        } = m.surface(h)
+        else {
+            panic!("a side of the box is a stated plane");
+        };
+        let first = p[0].map(|r| r.to_f64());
+        let [x, y] = turned(first[0], first[1]);
+        let nacre_geom::Surface::Plane(cache) = m.surface_cache(h) else {
+            unreachable!("a plane truth carries a plane cache");
+        };
+        assert_eq!(
+            cache.origin().as_array().map(f64::to_bits),
+            [x, y, first[2]].map(f64::to_bits),
+            "the nearest f64 of the turned first corner {first:?}: {:?}",
+            cache.origin()
+        );
+        seen += 1;
+    }
+    assert_eq!(seen, 4, "four sides carry the recorded turn");
+}
+
 /// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).

@@ -383,9 +383,10 @@ pub(crate) fn realize_cache_tracked(
         .carriers()
         .filter_map(|h| model.plane_motion(h))
         .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP));
-    // ★ **The cap bounds the nodes a replay walks, whichever road walks them.** The shared-frame
-    // road replays one point through one chain; the mixed road ([`build_meet`]) replays three
-    // witness points through each carrier's chain, so under the same budget it counts their sum.
+    // ★ **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
+    // shared-frame road replays one point through one chain; the mixed road ([`build_meet`])
+    // replays three witness points through each carrier's chain, so under the same budget it
+    // counts their sum. (The plane funnel guards the chain's depth instead — `push_plane_realized`.)
     if !deep && meet_road_over_cap(model, def) {
         return Err(CacheDecline::CostCap);
     }
@@ -521,20 +522,34 @@ fn point_cache_tracked<E>(
 /// The push door derives a plane's cache itself wherever the plane has a world name (unmoved, or
 /// carried by a chain that folds). What it cannot name is a plane under a turn off the quarters or
 /// a frame, and there `figure` — the construction's own `f64` — would stand. This realizes that
-/// plane's **normal** instead: the pre-motion name's normal carried by the chain (the difference
-/// of the replayed origin and name vector — the translation cancels) times the name's sense
-/// against the points and the chain's parity, normalized, and read out by [`Realized::to_f64`] at
-/// 128 bits and then 256, so a component that is exactly `0` is `+0.0`. Where that does not
-/// answer — a replay past [`CACHE_REPLAY_COST_CAP`], a pre-motion name wider than `Rat`, undecided
-/// at 256 — `figure` stands, as a vertex's construction figure does.
+/// plane's cache instead, each half on its own:
+/// * **Anchor** — the truth's first point replayed through the chain: the same point the door
+///   anchors a named plane at, so the two kinds of plane agree about where a cache is pinned.
+/// * **Normal** — the pre-motion name's normal carried by the chain (the difference of the
+///   replayed origin and name vector — the translation cancels) times the name's sense against
+///   the points and the chain's parity, normalized.
 ///
-/// ⚠ **The anchor stays `figure`'s.** Realizing it too (the first point replayed, read out the
-/// same way) is the truer cache and still builds every `collinear_loop_points` cell (measured);
-/// it is not done yet (todo 「이름 없는 평면의 앵커와 생산자 폴백」).
+/// Both are read out by [`Realized::to_f64`] at 128 bits and then 256, so a component that is
+/// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, as a vertex's
+/// construction figure does: a replay past [`CACHE_REPLAY_COST_CAP`] (both halves), a pre-motion
+/// name wider than `Rat` (the normal), undecided at 256 (that half). The door does the same for a
+/// named plane whose truth cannot place its first point — a derived normal beside the producer's
+/// anchor — so a cache with one realized half is not a new shape.
+///
+/// ★ **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
+/// the producer's anchor is more than an ulp off the true plane for 6,933 of them and up to 37 ulps
+/// — a moved plane's figure is the previous cache moved in `f64`, so the rounding accumulates with
+/// each generation — and the realized one is within an ulp for all of them.
 ///
 /// ★ Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
 /// points in `f64`, which was measured further from the truth than the producer's figure): this
 /// realizes at 128 or 256 bits and rounds once.
+///
+/// ⚠ **The guard is the chain's depth, not the nodes replayed.** Three points walk the chain (the
+/// anchor, the origin, the name vector), so a plane under 192 nodes costs up to three such
+/// replays — where the vertex road's mixed arm counts the sum against the same cap
+/// ([`meet_road_over_cap`]). Counting the sum here would send the 5,976 planes the suite realizes
+/// at depths 65–192 back to `figure` (measured).
 ///
 /// ⚠ «Has a world name» is asked before the push, so without a handle: no motion, or a chain whose
 /// fold answers. A `Wide` pre-motion name under a folding chain is named by neither side and keeps
@@ -546,29 +561,51 @@ pub(crate) fn push_plane_realized(
     motion: Option<Handle<nacre_topo::MotionNode>>,
     sense: nacre_topo::Orientation,
 ) -> (Handle<Surface>, bool) {
-    let normal = motion.and_then(|leaf| realize_plane_normal(model, &points, leaf, sense));
-    let cache = normal.map_or(figure, |n| {
-        nacre_geom::Plane::from_point_unit_normal(
-            figure.origin(),
-            nacre_math::Vector3::from_array(n),
-        )
-    });
+    let (anchor, normal) = match motion {
+        Some(leaf) => realize_plane_cache(model, &points, leaf, sense),
+        None => (None, None),
+    };
+    let cache = nacre_geom::Plane::from_point_unit_normal(
+        anchor.map_or(figure.origin(), Point3::from_array),
+        normal.map_or(figure.normal(), nacre_math::Vector3::from_array),
+    );
     model.push_plane(cache, points, motion, sense)
 }
 
-/// The normal [`push_plane_realized`] describes, `None` where it does not answer.
-fn realize_plane_normal(
+/// The anchor and normal [`push_plane_realized`] describes, each `None` where it does not answer.
+fn realize_plane_cache(
     model: &Model,
     points: &[[nacre_exact::Rat; 3]; 3],
     leaf: Handle<nacre_topo::MotionNode>,
     sense: nacre_topo::Orientation,
-) -> Option<[f64; 3]> {
+) -> (Option<[f64; 3]>, Option<[f64; 3]>) {
     let zero = [nacre_exact::Rat::from_int(0); 3];
     if model.chain_point_rat(leaf, zero).is_some()
         || model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP)
     {
-        return None;
+        return (None, None);
     }
+    let Some(chain) = motion_chain(model, leaf) else {
+        return (None, None);
+    };
+    let anchor = replay(WitnessPoint::at(points[0]), &chain)
+        .and_then(|first| on_the_cache_rungs(|bits| Some(first.realize(bits))));
+    (
+        anchor,
+        carried_name_normal(model, points, leaf, sense, &chain),
+    )
+}
+
+/// The plane's unit normal from its pre-motion name, carried by `chain` — `None` for a name wider
+/// than `Rat`, or undecided at 256 bits.
+fn carried_name_normal(
+    model: &Model,
+    points: &[[nacre_exact::Rat; 3]; 3],
+    leaf: Handle<nacre_topo::MotionNode>,
+    sense: nacre_topo::Orientation,
+    chain: &[nacre_judge::MoveNode],
+) -> Option<[f64; 3]> {
+    let zero = [nacre_exact::Rat::from_int(0); 3];
     let name = nacre_exact::plane_name_exact(points[0], points[1], points[2])?;
     let n = *name.narrow()?;
     let along = nacre_exact::name_along_points(
@@ -579,13 +616,12 @@ fn realize_plane_normal(
     // runs with the points' turn times the sense, and a reflection in the chain turns it again.
     let facing = if along { sense.sign() } else { -sense.sign() };
     let turned = facing * crate::rotated_vertex::motion_parity(model, Some(leaf))? < 0;
-    let chain = motion_chain(model, leaf)?;
     let tip = [n[0], n[1], n[2]];
     // `tail → head` is the carried normal; swapping them negates it exactly.
     let (tail, head) = if turned { (tip, zero) } else { (zero, tip) };
-    let tail = replay(WitnessPoint::at(tail), &chain)?;
-    let head = replay(WitnessPoint::at(head), &chain)?;
-    for bits in [LADDER[0], LADDER[1]] {
+    let tail = replay(WitnessPoint::at(tail), chain)?;
+    let head = replay(WitnessPoint::at(head), chain)?;
+    on_the_cache_rungs(|bits| {
         let (t, h) = (tail.realize(bits), head.realize(bits));
         let d: [HpBounded; 3] = core::array::from_fn(|k| h[k].sub(&t[k], bits));
         let nn = d[0]
@@ -593,12 +629,19 @@ fn realize_plane_normal(
             .add(&d[1].mul(&d[1], bits), bits)
             .add(&d[2].mul(&d[2], bits), bits);
         let inv = nn.inv_sqrt(bits)?;
-        let unit: [HpBounded; 3] = core::array::from_fn(|k| d[k].mul(&inv, bits));
-        if let Some((n, _)) = Realized(Arm::Approached(unit, bits)).to_f64() {
-            return Some(n);
-        }
-    }
-    None
+        Some(core::array::from_fn(|k| d[k].mul(&inv, bits)))
+    })
+}
+
+/// Read a realization out on the cache road's two rungs — `LADDER[0]`, then `LADDER[1]` only where
+/// the first does not name an `f64` ([`Realized::to_f64`]) — the plane cache's copy of the rule
+/// [`realize_cache_tracked`] keeps for vertices.
+fn on_the_cache_rungs(realize: impl Fn(usize) -> Option<[HpBounded; 3]>) -> Option<[f64; 3]> {
+    [LADDER[0], LADDER[1]].into_iter().find_map(|bits| {
+        Realized(Arm::Approached(realize(bits)?, bits))
+            .to_f64()
+            .map(|(v, _)| v)
+    })
 }
 
 /// What [`refine_vertex_cache`] did: how many coordinates it raised, and how many it could not.

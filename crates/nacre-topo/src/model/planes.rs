@@ -173,8 +173,9 @@ impl Model {
         }
     }
 
-    /// Whether a producer's figure faces the way its stated `sense` says — the push door's
-    /// cross-check between the figure a producer built and the sense it stated. A read only.
+    /// Whether the cache a pusher brought faces the way its stated `sense` says — the push door's
+    /// cross-check between the figure a producer built (or `nacre-ops` realized) and the sense it
+    /// stated. A read only.
     ///
     /// `Known` statements only: a `Through` datum's figure comes from its caller's `f64` cross,
     /// which a nearly collinear triple can turn, so a disagreement there is reachable from input

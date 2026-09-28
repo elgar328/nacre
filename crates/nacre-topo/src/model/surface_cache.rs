@@ -9,10 +9,12 @@ impl Model {
     ///
     /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
     /// here**: this door calls [`Model::apply_derivation`], so wherever the plane has a world name
-    /// its cache is the truth's realization — anchor and unit normal — and `fallback`, the
-    /// producer's own figure, stands only where the derivation declines (no world name: a chain
-    /// that does not fold, a mixed-frame `Through`). Unlike a vertex's cache, a plane's does not
-    /// say which of the two it holds; the census counters do (`surface_derive_counts`).
+    /// its cache is the truth's realization — anchor and unit normal — and `fallback`, the cache the
+    /// pusher brought, stands only where the derivation declines (no world name: a chain that does
+    /// not fold, a mixed-frame `Through`). `nacre-ops` realizes that cache from the truth where it
+    /// can and hands over the producer's figure where it cannot. Unlike a vertex's cache, a plane's
+    /// does not say which it holds: `surface_derive_counts` counts this door's declines, not what
+    /// the pusher brought.
     ///
     /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
@@ -64,7 +66,7 @@ impl Model {
     /// follows it (truth → cache, the allowed direction). Returns whether it turned anything.
     ///
     /// For a plane whose normal the door **did not** derive — one with no world name (a
-    /// mixed-frame `Through`, a chain that does not fold), whose cache is the producer's figure.
+    /// mixed-frame `Through`, a chain that does not fold), whose cache is the one its pusher brought.
     /// A plane with a world name has nothing to turn: its normal is the name's times the name's
     /// sense ([`Model::derive_surface_cache`]), which is the truth's direction by construction.
     /// Here the `f64` cross of the plane's points, carried to the world where this crate can
@@ -298,8 +300,8 @@ impl Model {
     ///
     /// The survivor's normal is its world name's, which the incoming statement shares (one name,
     /// one handle); only the anchor depends on which statement came first. So where the incoming
-    /// truth places its own first point, that is what is compared; where it does not, the
-    /// incoming producer's figure — the cache it would have kept.
+    /// truth places its own first point, that is what is compared; where it does not, the cache
+    /// the incoming statement brought — the one it would have kept.
     pub(super) fn count_discarded_cache(
         &self,
         h: Handle<Surface>,
