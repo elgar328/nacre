@@ -80,7 +80,7 @@ use nacre_topo::{Model, PointCache, Solid, Vertex};
 
 #[path = "support/fixtures.rs"]
 mod fixtures;
-use fixtures::{datum_frame, p2};
+use fixtures::{datum_frame, live_vertices, p2};
 
 /// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
 /// definition**. A boolean's vertices
@@ -92,28 +92,6 @@ use fixtures::{datum_frame, p2};
 /// proven anything about — the cache road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
     matches!(m.vertex_cache(v), PointCache::Bounded { .. })
-}
-
-fn live_verts(m: &Model) -> Vec<Handle<Vertex>> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for &s in m.live_solids() {
-        let sol = m.solid(s);
-        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shell(sh).faces {
-                let f = m.face(fh);
-                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for &he in &lp.half_edges {
-                        let vh = m.he_start(he);
-                        if seen.insert(vh) {
-                            out.push(vh);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
 }
 
 /// A tilted prism whose walls are written against a recorded frame (`n·n = 3` is not a perfect
@@ -159,7 +137,7 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
 fn does_a_vertex_named_datum_produce_a_wide_name() {
     let mut m = Model::new();
     let _ = tilted_prism(&mut m, 1.7);
-    let far_cap_verts: Vec<_> = live_verts(&m)
+    let far_cap_verts: Vec<_> = live_vertices(&m)
         .into_iter()
         .filter(|v| {
             let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(*v) else {
@@ -220,7 +198,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     let m = wf_family_with_pocket();
     let mut widths = Vec::new();
     let mut wide = 0usize;
-    let solvable: Vec<_> = live_verts(&m)
+    let solvable: Vec<_> = live_vertices(&m)
         .into_iter()
         .filter(|v| vouched(&m, *v))
         .collect();
@@ -349,7 +327,7 @@ fn what_a_datum_bearing_boolean_costs() {
         // corners in another) — the discovered ones here all straddle, which is a different
         // population (a datum through a straddler is accepted through the judged meet,
         // `a_datum_on_straddling_carriers_has_no_name`), not the one this arm measures.
-        let solvable: Vec<_> = live_verts(&m)
+        let solvable: Vec<_> = live_vertices(&m)
             .into_iter()
             .filter(|v| mode == "nameless" || vouched(&m, *v))
             .collect();
@@ -459,7 +437,7 @@ fn what_a_second_generation_boolean_costs() {
         let mut m = wf_family_with_pocket();
         // A datum through the first triple of the wanted width, carrying a slab tool so large
         // that only the datum plane itself reaches the cuboid below.
-        let solvable: Vec<_> = live_verts(&m)
+        let solvable: Vec<_> = live_vertices(&m)
             .into_iter()
             .filter(|v| vouched(&m, *v))
             .collect();

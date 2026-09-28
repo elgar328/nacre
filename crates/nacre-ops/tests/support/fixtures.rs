@@ -16,7 +16,7 @@ use nacre_ops::{
     BoolError, BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
 };
 use nacre_store::Handle;
-use nacre_topo::{Face, Model, Solid};
+use nacre_topo::{Face, Model, Solid, Vertex};
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
@@ -997,4 +997,27 @@ pub fn rigid_iso(axis: Axis, deg: i128, off: [i128; 3]) -> Isometry {
             Rat::from_int(off[2]),
         ],
     )
+}
+
+/// Every live vertex of `m`, once each, in walk order (solids, then shells, faces, loops).
+pub fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for &s in m.live_solids() {
+        let sol = m.solid(s);
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for &he in &lp.half_edges {
+                        let vh = m.he_start(he);
+                        if seen.insert(vh) {
+                            out.push(vh);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
 }

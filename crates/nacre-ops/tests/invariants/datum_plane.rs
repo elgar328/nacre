@@ -16,7 +16,9 @@ use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
 use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
-use crate::fixtures::{datum_frame, lifted_block, mirrored_lifted_block, top_surface};
+use crate::fixtures::{
+    datum_frame, lifted_block, live_vertices, mirrored_lifted_block, top_surface,
+};
 
 fn datum(plane: SketchPlane) -> Operation {
     Operation::DatumPlane {
@@ -368,8 +370,8 @@ fn box_top_frame(m: &mut Model) -> nacre_ops::SketchFrame {
 ///
 /// This is the normalization that keeps "same plane, same handle" true. `push_plane` keys on
 /// `(name, motion)`, so stating `z = 1` under a frame node would file it away from the `z = 1` a
-/// box's cap already occupies — one geometry, two handles, and flush contact (which is decided by
-/// comparing handles) quietly stops recognizing itself.
+/// box's cap already occupies — one geometry, two handles, and the class discovery has to prove
+/// by predicate what a shared handle states outright.
 #[test]
 fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
     let mut m = Model::new();
@@ -964,29 +966,6 @@ fn tilted_prism_with_pocket() -> Model {
     m
 }
 
-/// Every live vertex of `m`, in walk order.
-fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for &s in m.live_solids() {
-        let sol = m.solid(s);
-        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shell(sh).faces {
-                let f = m.face(fh);
-                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for &he in &lp.half_edges {
-                        let vh = m.he_start(he);
-                        if seen.insert(vh) {
-                            out.push(vh);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
 /// Three vertices that share one frame, solve, **and name a plane the model does not already
 /// hold**.
 ///
@@ -997,7 +976,7 @@ fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
 /// wins"* — so the fixture has to reach across faces to see the new variant at all.)
 fn three_solvable(m: &Model) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
     let mut ok = Vec::new();
-    for vh in live_verts(m) {
+    for vh in live_vertices(m) {
         if m.through_points_rat([vh, vh, vh]).is_some() {
             ok.push(vh);
         }
@@ -1149,11 +1128,11 @@ fn a_datum_through_vertices_refuses_by_cause() {
         Point3::from_array([5.0, 1.0, 1.0]),
     );
     cy.rebuild_adjacency();
-    let seam = live_verts(&cy)
+    let seam = live_vertices(&cy)
         .into_iter()
         .find(|v| matches!(*cy.vertex(*v), nacre_topo::Vertex::OnSeam(_)))
         .expect("a cylinder has seam vertices");
-    let corners: Vec<_> = live_verts(&cy)
+    let corners: Vec<_> = live_vertices(&cy)
         .into_iter()
         .filter(|v| matches!(*cy.vertex(*v), nacre_topo::Vertex::ThreePlane(_)))
         .collect();
@@ -1174,7 +1153,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         Point3::from_array([1.0, 1.0, 2.0]),
     );
     st.rebuild_adjacency();
-    let on_axis: Vec<_> = live_verts(&st)
+    let on_axis: Vec<_> = live_vertices(&st)
         .into_iter()
         .filter(|v| {
             let c = st.vertex_point(*v).as_array();
@@ -2021,7 +2000,7 @@ fn frame_local_far_cap() -> (
          if they were already one handle this test would be vacuous"
     );
 
-    let corners: Vec<_> = live_verts(&m)
+    let corners: Vec<_> = live_vertices(&m)
         .into_iter()
         .filter(|v| match *m.vertex(*v) {
             nacre_topo::Vertex::ThreePlane(tri) => tri.contains(&far_cap),
@@ -2148,7 +2127,7 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
         let p = m.vertex_point(v).as_array();
         (0..3).all(|k| (p[k] - want[k]).abs() < 1e-9)
     };
-    let verts = live_verts(&m);
+    let verts = live_vertices(&m);
     let corner = |want: [f64; 3]| {
         *verts
             .iter()
@@ -2615,7 +2594,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     // ★ **Fixture validity first**: the turn must actually have left a cap world-stated beside
     // moved walls, or this measures the easy case. Without that mismatch the rescue is never
     // asked and the test would pass on a kernel that does not have it.
-    let mixed = live_verts(&m).into_iter().any(|vh| {
+    let mixed = live_vertices(&m).into_iter().any(|vh| {
         let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             return false;
         };
@@ -2627,7 +2606,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         "fixture: the turn must leave a fixed cap beside moved walls, or the rescue is untested"
     );
 
-    let vs0 = live_verts(&m);
+    let vs0 = live_vertices(&m);
     let mut vs = [vs0[0], vs0[1], vs0[2]];
     vs.sort_by_key(|v| v.index());
     let OpOutput::DatumPlane { plane, .. } = apply(

@@ -102,7 +102,7 @@ use nacre_ops::{apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
-use crate::fixtures::{datum_frame, p2};
+use crate::fixtures::{datum_frame, live_vertices, p2};
 
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/invariants/points_coverage.rs` already uses
@@ -196,28 +196,6 @@ fn motion_of(m: &Model, h: Handle<Surface>) -> Option<Handle<nacre_topo::MotionN
         Surface::Plane { motion, .. } => *motion,
         Surface::Cylinder { motion, .. } => *motion,
     }
-}
-
-fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for &s in m.live_solids() {
-        let sol = m.solid(s);
-        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shell(sh).faces {
-                let f = m.face(fh);
-                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for &he in &lp.half_edges {
-                        let vh = m.he_start(he);
-                        if seen.insert(vh) {
-                            out.push(vh);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
 }
 
 /// Walk every live vertex and ask both solves what its base coordinate is.

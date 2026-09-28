@@ -743,10 +743,11 @@ pub struct Model {
     /// whichever face first reached this surface" and winds it to *each* face's own outward
     /// normal — so it is not part of what makes two planes the same.
     surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
-    /// Interning for the planes the name key **cannot** hold: a `Through` statement whose exact
-    /// world coefficients are irrational (mixed-frame datum) has no canonical
+    /// Interning for the planes the name key **cannot** hold: a `Through` statement whose three
+    /// vertices no one frame solves rationally (mixed-frame datum) has no canonical
     /// name, so it interns by the **statement itself**: the sorted vertex triple and the motion
-    /// it is stated under.
+    /// it is stated under. The same plane may be named elsewhere — two handles, one plane — and
+    /// the class discovery merges them by predicate.
     ///
     /// ★ This is statement identity, not geometric identity. Two *different* triples on one
     /// geometric plane get two handles here, by design: a nameless plane's geometric identity is the predicates' to answer, per question.

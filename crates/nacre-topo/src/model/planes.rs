@@ -222,7 +222,7 @@ impl Model {
     /// rare, and a release build that skipped it would merge planes silently.
     ///
     /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
-    /// A mixed-frame datum's exact world coefficients are irrational, so
+    /// A mixed-frame datum has no frame that solves its three vertices rationally, so
     /// [`Model::through_meets`] finds no shared frame; such a plane takes the second key
     /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric

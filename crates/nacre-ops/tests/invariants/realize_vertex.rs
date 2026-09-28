@@ -36,7 +36,7 @@ use nacre_ops::{
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
-use crate::fixtures::{datum_frame, extrude_op, p2, regular_ngon};
+use crate::fixtures::{datum_frame, extrude_op, live_vertices, p2, regular_ngon};
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
@@ -221,28 +221,6 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
                         coord: Point3::from_array([0.0; 3]),
                     },
                 ));
-            }
-        }
-    }
-    out
-}
-
-fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for &s in m.live_solids() {
-        let sol = m.solid(s);
-        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shell(sh).faces {
-                let f = m.face(fh);
-                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for &he in &lp.half_edges {
-                        let vh = m.he_start(he);
-                        if seen.insert(vh) {
-                            out.push(vh);
-                        }
-                    }
-                }
             }
         }
     }

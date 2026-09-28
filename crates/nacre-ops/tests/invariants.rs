@@ -1,5 +1,6 @@
 //! Invariants that hold on every production path: replay determinism, the ops -> validate -> step/tess
-//! pipeline, edge carriers, recorded plane points, sketch frames, datum planes, vertex realization.
+//! pipeline, edge carriers, recorded plane points, sketch frames, datum planes, vertex realization,
+//! one plane held as two handles.
 
 #[path = "support/fixtures.rs"]
 mod fixtures;
@@ -12,6 +13,8 @@ mod cylinder_seam_model;
 mod datum_plane;
 #[path = "invariants/edge_carriers.rs"]
 mod edge_carriers;
+#[path = "invariants/one_plane_two_handles.rs"]
+mod one_plane_two_handles;
 #[path = "invariants/pipeline.rs"]
 mod pipeline;
 #[path = "invariants/points_coverage.rs"]

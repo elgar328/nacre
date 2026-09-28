@@ -270,7 +270,7 @@ pub(crate) fn frame_chain(
     use nacre_topo::FramePlacement;
     let Some(name) = model.surface_name.get(&plane) else {
         // ★★★ **The judged road**: a plane with no name at all — a
-        // mixed-frame `Through` statement, whose exact world coefficients are irrational. Its
+        // mixed-frame `Through` statement, whose three vertices no one frame solves rationally. Its
         // frame is derived from the defining points as intervals ([`nacre_judge::FrameThrough`]),
         // with the branch decided once at the fixed rung, so the same statement always frames
         // the same way. `Named` placement is refused here defensively (`SketchFrame::named`

@@ -178,8 +178,8 @@ fn name_bigints(name: &nacre_exact::PlaneName, flip: bool) -> [num_bigint::BigIn
 /// plane through three exact points whose motion chains need not agree.
 ///
 /// [`MoveNode::Frame`] and [`MoveNode::FrameWide`] both demand exact coefficients (`Rat`,
-/// `BigInt`); a mixed-frame datum plane has neither, because its exact world coefficients are
-/// irrational. What it does have is three defining points that are each exact **in their own
+/// `BigInt`); a mixed-frame datum plane has neither, because no one frame solves its three
+/// points rationally. What it does have is three defining points that are each exact **in their own
 /// frame** — so the coefficients exist as *intervals* at any precision ([`plane_hp`] realizes
 /// each point independently and never required the chains to agree), and the canonical
 /// placement (foot of perpendicular + arbitrary axis — the frozen spec) is derived from those
