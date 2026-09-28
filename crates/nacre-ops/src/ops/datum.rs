@@ -160,10 +160,10 @@ pub(super) fn datum_plane(
         // other two here would call a turned solid's corner a straddle — the invariant-plane
         // restatement leaves its cap world-stated while the walls carry a node — and, worse,
         // could *disagree* with the door: `push_plane_through` derives the interning name through
-        // `vertex_meet`, so a
-        // producer that says "no frame" while the door says "this one" files a frame-local name
-        // as a world plane. That is the defect `a_datum_through_frame_local_vertices_is_not_a
-        // _world_plane` exists to catch. One decision, one place.
+        // `vertex_meet` and asserts the statement's motion carries that frame, so a producer that
+        // says "no frame" while the door says "this one" stops there (it once filed a frame-local
+        // name as a world plane — `a_datum_through_frame_local_vertices_is_not_a_world_plane`).
+        // One decision, one place.
         let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {

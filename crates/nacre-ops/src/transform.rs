@@ -692,23 +692,12 @@ fn transform_solid(
                 // the other case, where a node is missing because the walk thought it could carry
                 // points that do not exist.
                 //
-                // ★★ **A second road to `None` exists and has not been reached
-                // here — recorded rather than assumed away.** The `invariant` test above reads
-                // the plane's *name*, and the fixed-carrier
-                // licence gives a turned solid's `Through` datums one. So `invariant = true` is
-                // possible for this arm. It needs the datum's plane to be
-                // fixed by the motion — for a rotation that means its normal lies along the
-                // axis — **and** to have stayed a `Through` truth.
-                //
-                // ★ **What is measured and what is argued, kept apart.** *Measured*: the assert
-                // below did not fire anywhere in the suite, `replay`'s proptest included, and that
-                // proptest does emit `Copy`/`Rotate` beside `DatumThroughVertices`. *Argued* (not
-                // swept): for a cuboid every axis-normal plane through three of its vertices is a
-                // face plane, so it interns onto that `Known` surface and never reaches this arm —
-                // which would explain the silence, but no probe has confirmed it is the reason.
-                // Shapes that ought to reach it: a stepped solid with three co-planar vertices off
-                // any face, or a translation along a datum's own plane. Nobody has built one, so
-                // "unreachable" is **not** what this says.
+                // ★★ The `invariant` road above is `Known`-only, so it never hands this arm `None`:
+                // `new_motion` chains from the source's own leaf (`moved_surface_motion`), which is
+                // `None` only for a source that records none and a motion that records nothing.
+                // The same chaining keeps the door's assertion — a named statement's motion
+                // carries the frame its vertices meet in — true of the image whenever it was true
+                // of the source.
                 let out = model.push_plane_through(pl, *vs, new_motion, image_sense(*sense));
                 debug_assert!(
                     new_motion.is_some() || out.0 == s,

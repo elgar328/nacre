@@ -27,6 +27,28 @@ impl Model {
         self.motion_depth_up_to(leaf, n) > n
     }
 
+    /// Whether the chain ending at `leaf` **continues** the one ending at `prefix` — `prefix` is
+    /// `leaf` or one of its ancestors, and the world (`None`) is continued by every chain. Nodes are
+    /// interned by `(motion, parent)`, so this is chain-prefix equality, asked of handles. Walks
+    /// `leaf`'s ancestors only when the two differ.
+    pub fn chain_continues(
+        &self,
+        leaf: Option<Handle<MotionNode>>,
+        prefix: Option<Handle<MotionNode>>,
+    ) -> bool {
+        let Some(prefix) = prefix else {
+            return true;
+        };
+        let mut cur = leaf;
+        while let Some(h) = cur {
+            if h == prefix {
+                return true;
+            }
+            cur = self.motion(h).parent;
+        }
+        false
+    }
+
     /// How many recorded motions stand between `leaf` and the world, counted no further than
     /// `n + 1` — the same length [`Model::motion_deeper_than`] asks about, as a number, for a caller
     /// that sums the replays several chains will cost. Walks at most `n + 1` nodes.

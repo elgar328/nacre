@@ -242,22 +242,11 @@ pub(crate) fn collect_planes(
                             };
                             // ★ `rotated` is also the licence to read the name as a **world**
                             // description (`PlaneWitness::exact_coeffs`). A `Through` name is
-                            // derived from the meets in the frame the three vertices share, which
-                            // the plane's `motion` is meant to name; with no motion recorded and
-                            // the vertices meeting in a pre-motion frame, the name speaks that
-                            // frame. Asked here rather than trusted — the producers keep it, and
-                            // nothing else checks it.
-                            let frame_local = motion.is_none()
-                                && vs.iter().any(|&v| {
-                                    model.vertex_meet(v).is_some_and(|(_, f)| f.is_some())
-                                });
-                            // A frame-local triangle is the rule's one blind spot: its points
-                            // speak a frame the plane records no motion for, so `facing` (a
-                            // statement about the plane in the world) says nothing about their
-                            // turn. The one road that could write one (`transform.rs`'s
-                            // `Through` arm, when it records no node) asserts it did not, and
-                            // the suite never fires that — measured, not proved.
-                            (w, motion.is_some() || frame_local, facing)
+                            // derived from the meets in the frame the three vertices share, so
+                            // with no motion recorded that frame is the world: the door asserts a
+                            // named statement's motion carries its vertices' frame
+                            // (`Model::push_plane_through`).
+                            (w, motion.is_some(), facing)
                         }
                         None => {
                             let j = crate::rotated_vertex::through_judged_points(model, *vs)

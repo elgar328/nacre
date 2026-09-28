@@ -1931,8 +1931,18 @@ fn every_plane_still_has_a_name() {
 ///
 /// The assertion is the harm, not the mechanism: *this datum is not the box top*. That stays true
 /// however the cause is later described.
-#[test]
-fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
+/// The fixture of [`a_datum_through_frame_local_vertices_is_not_a_world_plane`]: a prism raised on a
+/// tilted frame (its far cap `w = dist` in the frame) beside a world box whose top is `z = dist` —
+/// one canonical name, two planes. Returns the model, the prism, the box top, the far cap and the
+/// far cap's corners.
+#[allow(clippy::type_complexity)]
+fn frame_local_far_cap() -> (
+    Model,
+    nacre_store::Handle<nacre_topo::Solid>,
+    nacre_store::Handle<Surface>,
+    nacre_store::Handle<Surface>,
+    Vec<nacre_store::Handle<nacre_topo::Vertex>>,
+) {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let mut m = Model::new();
 
@@ -2019,6 +2029,12 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         })
         .collect();
     assert!(corners.len() >= 3, "the far cap has corners to name");
+    (m, solid, box_top, far_cap, corners)
+}
+
+#[test]
+fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
+    let (mut m, solid, box_top, far_cap, corners) = frame_local_far_cap();
 
     let OpOutput::DatumPlane { plane, .. } = apply(
         &mut m,
@@ -2077,6 +2093,148 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
              a frame coordinate was used as a world point"
         );
     }
+}
+
+/// ★★★★ **A `Through` statement whose motion leaves out the frame its vertices meet in is
+/// refused at the door** — the producer bug the test above caught once, now stopped where the name
+/// is made. The far cap's corners meet in the prism's frame, so their name `w = dist` speaks that
+/// frame; stated with no motion it would read as the world plane `z = dist` and intern onto the box
+/// top. The door cannot tell "the frame left out" from "the frame put in another way", so it does
+/// not pick one.
+#[test]
+#[should_panic(expected = "does not carry that frame")]
+fn a_through_statement_whose_motion_omits_its_frame_is_refused() {
+    let (mut m, _, _, _, corners) = frame_local_far_cap();
+    let mut sorted = [corners[0], corners[1], corners[2]];
+    sorted.sort_by_key(|v| v.index());
+    let fallback = nacre_geom::Plane::from_point_normal(
+        m.vertex_point(sorted[0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+    )
+    .expect("a plane");
+    m.push_plane_through(fallback, sorted, None, nacre_topo::Orientation::Forward);
+}
+
+/// **A datum on a moved frame keeps its name when it is moved again** — the door's frame check on
+/// the road where the motion *continues* the vertices' frame rather than being it. A box turned 30°
+/// about `z` records a node X (its caps are fixed by the turn, so its corners meet in X); a datum
+/// through three corners on no common face is a `Through` statement named in X with motion X. A
+/// prism raised on the datum reuses its plane as the base cap, so moving that prism moves the
+/// datum's plane: motion Y, a child of X, with the name still in X — the chain continues the frame.
+#[test]
+fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let square =
+        |a: f64| Profile2d::polygon(vec![p2(0.0, 0.0), p2(a, 0.0), p2(a, a), p2(0.0, a)]).unwrap();
+    let world = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame: world,
+            profile: square(1.0),
+            dist: 2.0,
+        },
+    )
+    .expect("a box") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let turned = crate::fixtures::xf(&mut m, solid, crate::fixtures::rot_iso(Axis::Z, 30));
+    // Corners by where the turn put them: (0,0,0) stays, (1,0,2) goes to (c,s,2), (0,1,2) to
+    // (−s,c,2) — one on the bottom, two on the top, and no face holds all three.
+    let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    let near = |v: nacre_store::Handle<nacre_topo::Vertex>, want: [f64; 3]| {
+        let p = m.vertex_point(v).as_array();
+        (0..3).all(|k| (p[k] - want[k]).abs() < 1e-9)
+    };
+    let verts = live_verts(&m);
+    let corner = |want: [f64; 3]| {
+        *verts
+            .iter()
+            .find(|&&v| near(v, want))
+            .expect("the turned box has that corner")
+    };
+    let tri = [
+        corner([0.0, 0.0, 0.0]),
+        corner([c, s, 2.0]),
+        corner([-s, c, 2.0]),
+    ];
+    let x = m
+        .shell(m.solid(turned).outer)
+        .faces
+        .iter()
+        .find_map(|&f| m.plane_motion(m.face(f).surface))
+        .expect("a wall carries the turn");
+    let x = Some(x);
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(tri),
+        },
+    )
+    .expect("three corners that meet in the turned frame") else {
+        unreachable!()
+    };
+    assert!(
+        matches!(
+            m.surface(plane),
+            Surface::Plane {
+                points: PlanePoints::Through(_),
+                ..
+            }
+        ),
+        "the fixture's premise: the datum is a Through statement, not a face it interned onto"
+    );
+    assert_eq!(
+        m.plane_motion(plane),
+        x,
+        "named in the turned frame, with that frame as its motion"
+    );
+    let OpOutput::Extrude { solid: pad, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.1),
+            dist: 0.5,
+        },
+    )
+    .expect("a prism on the datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let moved = crate::fixtures::xf(&mut m, pad, crate::fixtures::rot_iso(Axis::X, 30));
+    let through: Vec<_> = m
+        .shell(m.solid(moved).outer)
+        .faces
+        .iter()
+        .map(|&f| m.face(f).surface)
+        .filter(|&h| {
+            matches!(
+                m.surface(h),
+                Surface::Plane {
+                    points: PlanePoints::Through(_),
+                    ..
+                }
+            )
+        })
+        .collect();
+    assert_eq!(
+        through.len(),
+        1,
+        "the moved prism's base cap is the datum's plane, moved"
+    );
+    let h = through[0];
+    assert!(
+        m.surface_name.contains_key(&h),
+        "the moved datum keeps its name"
+    );
+    let y = m.plane_motion(h);
+    assert!(y.is_some() && y != x, "moving it recorded a new node");
+    assert!(
+        m.chain_continues(y, x),
+        "and that node continues the frame its vertices meet in"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2200,7 +2358,7 @@ fn a_datum_through_wide_meets_keeps_its_name() {
     sorted.sort_by_key(|v| v.index());
 
     // The wall, crossed exactly: no witness triple exists, the name does.
-    let meets = m.through_meets(sorted).expect("one shared frame");
+    let (meets, _) = m.through_meets(sorted).expect("one shared frame");
     assert!(
         meets.iter().any(|p| matches!(p, MeetPoint::Wide(_))),
         "fixture validity: a meet must be wide, or this test measures nothing"

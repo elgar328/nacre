@@ -229,9 +229,8 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
 /// vertex; the two must agree point for point — otherwise there is a second spelling of the
 /// solve, which is this repo's dominant defect shape.
 ///
-/// The frame comes back too, and on an unmoved box it is the world (`None`). That is the bit a
-/// consumer comparing against world coordinates has to demand: `through_meets` only asks the
-/// three to *agree*, which would pass a solid whose points are all stated pre-motion.
+/// The frame comes back from both, and on an unmoved box it is the world (`None`) — the fact the
+/// `Through` door checks a named statement's motion against.
 #[test]
 fn one_vertex_and_three_vertices_solve_the_same_meet() {
     let m = build([0.0; 3], [2.0, 3.0, 5.0]);
@@ -240,9 +239,10 @@ fn one_vertex_and_three_vertices_solve_the_same_meet() {
         .collect();
     assert!(vs.len() >= 3, "a box has corners");
     let tri = [vs[0], vs[1], vs[2]];
-    let together = m
+    let (together, shared) = m
         .through_meets(tri)
         .expect("a box's corners share the world");
+    assert_eq!(shared, None, "the three share the world");
     for (i, v) in tri.iter().enumerate() {
         let (alone, frame) = m.vertex_meet(*v).expect("a corner is a three-plane point");
         assert_eq!(

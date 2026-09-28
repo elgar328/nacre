@@ -134,7 +134,7 @@ impl Model {
     pub(super) fn statement_points(&self, p: &PlanePoints) -> Option<[nacre_exact::MeetPoint; 3]> {
         match p {
             PlanePoints::Known(k) => Some(k.map(nacre_exact::MeetPoint::Narrow)),
-            PlanePoints::Through(vs) => self.through_meets(*vs),
+            PlanePoints::Through(vs) => self.through_meets(*vs).map(|(m, _)| m),
         }
     }
     /// **The world direction a plane's points span**, before its sense — in `f64`, for the reads
@@ -209,9 +209,21 @@ impl Model {
     /// the same statement in any order). Direction is not lost: `sense` states it against the
     /// sorted order, which a caller with its own order reaches through that permutation's parity.
     ///
+    /// ★★★ **The name is a statement in the frame the three vertices meet in, so the motion has to
+    /// carry that frame.** `motion` means two things for a `Through` statement: with a name, the
+    /// meets are pre-motion coordinates and `motion` carries them to the world — so it must
+    /// *contain* the vertices' frame (that frame, or a chain that continues it); without one,
+    /// each vertex is placed in the world by its own chain and `motion` is what comes after. A
+    /// named statement whose motion does not continue the frame is therefore ambiguous — the frame
+    /// left out, or the frame put in some other way — and reading it either way can file a wrong
+    /// plane silently (it once did: a tilted cap and a world box top became one handle). The
+    /// producers keep this; the door **asserts** it, in release too: the check is one comparison
+    /// on the common roads (the frame is the world, or is `motion` itself), a `Through` push is
+    /// rare, and a release build that skipped it would merge planes silently.
+    ///
     /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
     /// A mixed-frame datum's exact world coefficients are irrational, so
-    /// [`Model::plane_name_through`] answers `None`; such a plane takes the second key
+    /// [`Model::through_meets`] finds no shared frame; such a plane takes the second key
     /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric
     /// identity across different statements is the predicates' to answer per question. This is
@@ -233,7 +245,15 @@ impl Model {
             vertices[0].index() < vertices[1].index() && vertices[1].index() < vertices[2].index(),
             "a Through statement must arrive sorted and duplicate-free"
         );
-        let name = self.plane_name_through(vertices);
+        let name = self.through_meets(vertices).and_then(|(meets, frame)| {
+            let name = nacre_exact::plane_name_from_meets([&meets[0], &meets[1], &meets[2]])?;
+            assert!(
+                self.chain_continues(motion, frame),
+                "a Through statement's name speaks the frame its vertices meet in ({frame:?}), \
+                 and its motion ({motion:?}) does not carry that frame"
+            );
+            Some(name)
+        });
         if name.is_some() {
             return self.intern_plane(
                 fallback,
@@ -261,9 +281,9 @@ impl Model {
         (h, false)
     }
 
-    /// **The name a `Through` statement derives**, and the one place that derivation lives — the
-    /// producer's check and [`Model::push_plane_through`] read the same answer, so "we rejected
-    /// what we could not name" is structural rather than two functions agreeing by habit.
+    /// **The name three vertices derive in the frame they meet in** — the question a test asks of a
+    /// triple before any statement exists. The door reads [`Model::through_meets`] itself, because it
+    /// needs the frame beside the name.
     ///
     /// `None` when any vertex is not a three-plane point, when the carriers do not share one
     /// motion (no frame holds a rational coordinate then), or when the three points are
@@ -271,19 +291,25 @@ impl Model {
     /// name is derived from the meets at whatever width they need
     /// ([`nacre_exact::plane_name_from_meets`]) — width was the arithmetic's problem, never
     /// the statement's.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn plane_name_through(
         &self,
         vertices: [Handle<Vertex>; 3],
     ) -> Option<nacre_exact::PlaneName> {
-        let m = self.through_meets(vertices)?;
+        let (m, _) = self.through_meets(vertices)?;
         nacre_exact::plane_name_from_meets([&m[0], &m[1], &m[2]])
     }
 
-    /// **The three vertices' exact meeting points, in the one frame they share** — the single
-    /// solve behind [`Model::plane_name_through`] (at push, width-free) and, through the
+    /// **The three vertices' exact meeting points, and the one frame they share** — the single
+    /// solve behind a `Through` statement's name (at push, width-free) and, through the
     /// all-narrow projection [`Model::through_points_rat`], the judging table's witness
     /// triangle. One spelling, so the name a plane interns under and the points a predicate
     /// reasons about cannot describe different planes.
+    ///
+    /// The frame comes back beside the points for the reason [`Model::vertex_meet`]'s does: a
+    /// coordinate means nothing without it. The door asserts that a named statement's motion
+    /// carries it ([`Model::push_plane_through`]); a reader of a stored statement's points may drop
+    /// it, because that assertion holds for every statement the arena has.
     ///
     /// `None` on any of: a vertex that is not a three-plane point, a vertex [`Model::vertex_meet`]
     /// cannot place in one frame, a carrier with no recorded name, or three vertices whose frames
@@ -291,7 +317,7 @@ impl Model {
     pub fn through_meets(
         &self,
         vertices: [Handle<Vertex>; 3],
-    ) -> Option<[nacre_exact::MeetPoint; 3]> {
+    ) -> Option<([nacre_exact::MeetPoint; 3], Option<Handle<MotionNode>>)> {
         let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
         let mut frame = None;
         for (i, vh) in vertices.iter().enumerate() {
@@ -303,7 +329,7 @@ impl Model {
             }
             pts[i] = Some(p);
         }
-        Some([pts[0].take()?, pts[1].take()?, pts[2].take()?])
+        Some(([pts[0].take()?, pts[1].take()?, pts[2].take()?], frame?))
     }
 
     /// **One vertex's exact meeting point, and the frame it is stated in** — the per-vertex half
@@ -415,7 +441,7 @@ impl Model {
         &self,
         vertices: [Handle<Vertex>; 3],
     ) -> Option<[[nacre_exact::Rat; 3]; 3]> {
-        let meets = self.through_meets(vertices)?;
+        let (meets, _) = self.through_meets(vertices)?;
         let mut pts = [[nacre_exact::Rat::from_int(0); 3]; 3];
         for (o, m) in pts.iter_mut().zip(&meets) {
             *o = *m.narrow()?;
