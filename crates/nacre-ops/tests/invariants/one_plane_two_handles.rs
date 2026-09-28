@@ -167,8 +167,11 @@ fn s1(nameless: bool, flush: bool) -> Scene {
 
 /// S2 — the same `z = 0` stated as **two** mixed-frame datums through different triples; a prism
 /// on each, one against the other. Two nameless handles: the merge is a coincidence proved
-/// within the coincidence precision (A's turned corners are irrational in `x`, `y`).
-fn s2(nameless: bool, _flush: bool) -> Scene {
+/// within the coincidence precision (A's turned corners are irrational in `x`, `y`). `flush`
+/// states the second datum in the opposite order, so it faces `−z` and its prism stands below the
+/// plane, touching the first only there — two nameless handles of one plane, facing opposite
+/// ways, whose flipped frame must place the asymmetric profile where the named twin's does.
+fn s2(nameless: bool, flush: bool) -> Scene {
     let mut m = Model::new();
     let (_, a0, a1) = floor_pair(&mut m, false);
     let (p00, p10, p11, p01) = (
@@ -182,10 +185,11 @@ fn s2(nameless: bool, _flush: bool) -> Scene {
     } else {
         [p00, p10, p11]
     };
-    let second = if nameless {
-        [p01, p11, a1]
-    } else {
-        [p10, p11, p01]
+    let second = match (nameless, flush) {
+        (true, false) => [p01, p11, a1],
+        (true, true) => [p11, p01, a1],
+        (false, false) => [p10, p11, p01],
+        (false, true) => [p11, p10, p01],
     };
     let (t1, f1) = datum(&mut m, DatumDef::ThroughVertices(first));
     let (t2, f2) = datum(&mut m, DatumDef::ThroughVertices(second));
@@ -351,8 +355,12 @@ fn run(sc: &mut Scene, kind: BoolKind) -> (Shape, BoolReport) {
 
 /// ★★★★ **A plane stated twice — once without a name — booleans as it does stated once.** Three
 /// scenes (an exact merge, two nameless handles merged on a proved coincidence, a tilted plane's
-/// judged datum merged with its named twin), each `Fuse`/`Cut`/`Common`, each overlapping and (S1,
-/// S3) in flush contact. The nameless model and the named one must give the same shape.
+/// judged datum merged with its named twin), each `Fuse`/`Cut`/`Common`, each overlapping and in
+/// flush contact. The nameless model and the named one must give the same shape.
+///
+/// ★ Each case pins the road its merge takes, as measured, so a merge that moves road is news: S2's
+/// flush pair merges exactly — its second datum faces `−z`, and the flipped frame's witnesses answer
+/// the coplanarity with an exact zero where the unflipped ones needed a proved coincidence.
 ///
 /// ★ S3's prisms are **not** compared by bits before the boolean: corners on a nameless carrier
 /// have no realization road (`Unrealized`, the `NoMeet` population), so they hold the
@@ -361,13 +369,15 @@ fn run(sc: &mut Scene, kind: BoolKind) -> (Shape, BoolReport) {
 #[test]
 fn a_plane_stated_twice_booleans_as_it_does_once() {
     type Build = fn(bool, bool) -> Scene;
-    let scenes: [(&str, Build, bool, &[bool]); 3] = [
-        ("S1", s1, false, &[false, true]),
-        ("S2", s2, true, &[false]),
-        ("S3", s3, true, &[false, true]),
+    // Per scene: `(flush, the merge rests on a proved coincidence)`.
+    type Cases = &'static [(bool, bool)];
+    let scenes: [(&str, Build, Cases); 3] = [
+        ("S1", s1, &[(false, false), (true, false)]),
+        ("S2", s2, &[(false, true), (true, false)]),
+        ("S3", s3, &[(false, true), (true, true)]),
     ];
-    for (name, build, proved, contacts) in scenes {
-        for &flush in contacts {
+    for (name, build, cases) in scenes {
+        for &(flush, proved) in cases {
             for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
                 let (mut two, mut one) = (build(true, flush), build(false, flush));
                 let at = format!("{name} flush={flush} {kind:?}");
@@ -410,10 +420,7 @@ fn a_plane_stated_twice_booleans_as_it_does_once() {
                         "{at}: the class merge rested on a proved coincidence"
                     );
                 } else {
-                    assert!(
-                        report.merges.is_empty(),
-                        "{at}: the class merge was exact (B is the first operand)"
-                    );
+                    assert!(report.merges.is_empty(), "{at}: the class merge was exact");
                 }
                 if flush && kind == BoolKind::Common {
                     assert!(
