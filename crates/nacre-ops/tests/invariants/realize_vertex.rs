@@ -769,16 +769,74 @@ fn a_bounded_cache_contains_the_coordinate_its_definition_names() {
     assert!(off > 8, "only {off} of {checked} coordinates are inexact");
 }
 
+/// ★★★ **A corner whose carriers' motions differ is realized, not solved on plane caches.**
+///
+/// `B` is a box turned 30° about `z`, so its `y = 0` wall becomes the plane through the axis at
+/// 30°; `A` is an unturned slab whose wall `x = 1` and floor `z = 0` cross that plane at
+/// `(1, 1/√3, 0)`. The three carriers share no frame the exact roads read — two stand in the
+/// world, one under a turn off the quarters — so this corner is realized from the carriers'
+/// witness triangles. The oracle is the input's own: `1/√3` written to 26 places and parsed,
+/// which rounds correctly.
+#[test]
+fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
+    let mut m = Model::new();
+    let a = cuboid(&mut m, [1.0, -1.0, 0.0], [2.0, 5.0, 1.0]);
+    let b = cuboid(&mut m, [0.0, 0.0, -1.0], [3.0, 3.0, 3.0]);
+    let b = moved(&mut m, b, turn(Axis::Z, 30));
+    let out = boolean(&mut m, BoolKind::Common, a, b).expect("the slab and the turned box overlap");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    let want = [
+        1.0,
+        "0.57735026918962576450914878".parse::<f64>().unwrap(),
+        0.0,
+    ];
+    let corner: Vec<_> = live_vertices(&m)
+        .into_iter()
+        .filter(|&vh| {
+            let c = m.vertex_cache(vh).coord().as_array();
+            (c[0] - want[0]).abs() < 1e-9 && (c[1] - want[1]).abs() < 1e-9 && c[2].abs() < 1e-9
+        })
+        .collect();
+    assert_eq!(corner.len(), 1, "one corner at (1, 1/√3, 0)");
+    let PointCache::Bounded { coord, .. } = *m.vertex_cache(corner[0]) else {
+        panic!(
+            "the mixed-frame corner is realized: {:?}",
+            m.vertex_cache(corner[0])
+        );
+    };
+    assert_eq!(
+        coord.as_array().map(f64::to_bits),
+        want.map(f64::to_bits),
+        "the nearest f64 of (1, 1/√3, 0): {:?}",
+        coord.as_array()
+    );
+}
+
 /// ★★ **Refusals are named, and never fall back to the cache.**
 ///
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
 /// everything would pass it.
+///
+/// The refusing population is a cylinder turned off the quarters: its seam vertices sit on a
+/// carrier with no world statement (`NoCurvedPoint`). The tilted frame's mixed-frame corners
+/// used to be the refusals here; the mixed road answers them now, so they stand on the success
+/// side.
 #[test]
 fn a_refusal_is_named_and_a_success_stands_beside_it() {
-    let m = tilted_frame(1);
+    let turned_cylinder = {
+        let mut m = cylinder();
+        let s = m.live_solids()[0];
+        moved(&mut m, s, turn(Axis::X, 30));
+        m.rebuild_adjacency();
+        m
+    };
     let (mut ok, mut refused) = (0usize, 0usize);
-    for vh in live_vertices(&m) {
-        match realize_vertex(&m, vh, Precision::NearestF64) {
+    for (m, vh) in [tilted_frame(1), turned_cylinder]
+        .iter()
+        .flat_map(|m| live_vertices(m).into_iter().map(move |vh| (m, vh)))
+    {
+        match realize_vertex(m, vh, Precision::NearestF64) {
             Ok(_) => ok += 1,
             Err(e) => {
                 // ★★★ **Exhaustive `match`, not `matches!`** — and the difference is not style.
@@ -789,7 +847,6 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
                 // exhaustive match makes the compiler point here instead.
                 match e {
                     RealizeError::NoMeet
-                    | RealizeError::WideUnderMotion
                     | RealizeError::NoMotionChain
                     | RealizeError::NoCurvedPoint
                     | RealizeError::Undecided
@@ -805,7 +862,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
     );
     assert!(
         refused > 0,
-        "nothing refused on the tilted family — this lock is measuring nothing"
+        "nothing refused on the turned cylinder — this lock is measuring nothing"
     );
 }
 

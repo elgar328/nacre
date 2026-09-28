@@ -40,9 +40,9 @@ census 21/5,687 클래스, 스위트 모션 없는 클래스의 약 11%(10,156/8
 ### 이름 없는 평면의 앵커와 생산자 폴백
 
 사슬이 안 접히는 평면의 법선은 ops 깔때기(`push_plane_realized`)가 진실에서 실현한다. 남은 것:
-- **앵커는 생산자의 f64 다.** 첫 점을 재생해 같은 읽기로 실현하면 `collinear_loop_points` 의
-  `Y/305deg/inset0.5` 가 `SeamAlias` 로 거절된다(108 → 107) — seam 표가 모션 이력이 갈린 코너를 평면 캐시로
-  풀기 때문이다(「seam 표의 폴백과 tol 은 평면 캐시를 읽는다」). 그 결함이 먼저다.
+- **앵커는 생산자의 f64 다.** 첫 점을 재생해 같은 읽기로 실현해도 `collinear_loop_points` 는 108/108 로
+  선다(잰 것 — seam 표가 모션 이력이 갈린 코너를 실현하기 전에는 `Y/305deg/inset0.5` 가 `SeamAlias` 로
+  거절됐다). 막힌 것은 없다.
 - **생산자 폴백이 남는 평면** — 재생이 비용 한계(192)를 넘는 사슬(스위트 약 1만 7천 push), 모션 전 이름이 넓은
   평면(252), 혼합 프레임 `Through`. 정점의 `Ceiling` 처럼 남는다.
 
@@ -323,13 +323,11 @@ doc 이 «계약을 잃기 가장 쉬운 노드»라 적는 사슬 3 의 거울�
 
 ### seam 표의 폴백과 tol 은 평면 캐시를 읽는다
 
-`arrangement/result.rs` 의 seam 표는 점을 민팅될 정점과 같은 실현 도로(`realize::point_cache`)에서 풀지만,
-도로가 없는 점 — 모션 이력이 갈린 담체의 코너(`NoMeet`: census 322) — 에는 세 클래스의 평면 캐시로 푼 구성
-수치가 선다. 그 수치는 참값에서 1ulp 벗어날 수 있다: 평면 앵커를 실현하면 `collinear_loop_points` 의
-`Y/305deg/inset0.5` 에서 그런 점 하나가 실현된 이웃과 같은 f64 가 되어 `SeamAlias` 로 거절된다(108 → 107 —
-512비트 참값은 둘을 가른다). 자기접촉 체가 읽는 `SeamVertex.tol` 은 평면 캐시에 대한 잔차이고 경계가 아니다
-(참값 최근접 f64 까지를 못 덮는 seam 점 스위트 3,415 · census 190). 고치는 길: 실현 도로를 혼합 모션 교점까지
-넓히고(`nacre_judge::JudgedPoint::Meet`), seam 표가 `PointCache` 를 들어 체가 증명된 경계를 읽는다.
+`arrangement/result.rs` 의 seam 표는 점을 민팅될 정점과 같은 실현 도로(`realize::point_cache`)에서 푼다.
+도로가 없는 점(비용 한계를 넘는 재생, 두 단에서 못 정한 좌표, 증인 삼각형이 없는 담체)에만 세 클래스의 평면
+캐시로 푼 구성 수치가 선다. 자기접촉 체가 읽는 `SeamVertex.tol` 은 평면 캐시에 대한 잔차이고 경계가 아니다
+(참값 최근접 f64 까지를 못 덮는 seam 점 스위트 3,415 · census 190). 고치는 길: seam 표가 든 `PointCache` 의
+증명된 경계를 체가 읽는다.
 
 ### 순차 빌드 관문이 병렬로 돈다
 
@@ -389,12 +387,11 @@ census 의 향 잠금(`nacre_ops::audit_plane_senses`, test-util)은 `Through` �
 세계) 유리수 pullback 이 없다. 인구는 `the_def_road_answers_for_the_populations_it_can_name` 의 ④ 가
 핀한다.
 
-같은 부류의 실현 거절 인구: 불리언 결과 정점 4,924 중 `RealizeError::NoMeet` **322** — 전부 `ThreePlane`
-이고 전부 **담체의 모션 이력이 갈리며 사슬이 안 접힌다**(Wide 0 · 이름 없음 0). 회전한 상자와 안 돌린 상자의
-불리언에서 두 몸의 면이 만나는 코너다(회전각 7°·30°·45°·123° 등 사분각 밖 — 사분각 회전의 코너는 담체가
-세계 이름을 얻어 `vertex_meet_of` 의 세계 도로가 푼다), 그리고 피연산자 6,988 중 `NoMeet` **192** ·
-`NoCurvedPoint` **12**(회전된 원통의 seam: 세계에 진술 못 하는 담체). 전부 구성 폴백으로 서고 census `r` 행이
-센다. 실현 문이 넓어지면 이 수가 준다.
+실현은 이 코너에 답한다 — 모션 이력이 갈린 담체의 교점은 담체마다의 증인 삼각형으로 실현된다
+(`nacre_judge::plane_hp` → `meet_hp`); census 결과 정점 4,972 가 전부 `Bounded` 다. 남는
+실현 거절 인구: 회전된 원통의 seam(`NoCurvedPoint` — 세계에 진술 못 하는 담체, 피연산자 12)과 증인 삼각형이 없는
+담체(이름 없는 `Through`)의 코너(`NoMeet`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
+다시 재지 않았다.
 
 ### 무리수 모션이 낀 datum 은 이름이 없다
 

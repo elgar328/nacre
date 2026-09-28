@@ -24,16 +24,23 @@ impl Model {
     /// the chain a replay would walk (a `Frame` node counts once; its own short expansion is not a
     /// history). Walks at most `n + 1` nodes, so asking about a 4,000-deep history costs `n`.
     pub fn motion_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
+        self.motion_depth_up_to(leaf, n) > n
+    }
+
+    /// How many recorded motions stand between `leaf` and the world, counted no further than
+    /// `n + 1` — the same length [`Model::motion_deeper_than`] asks about, as a number, for a caller
+    /// that sums the replays several chains will cost. Walks at most `n + 1` nodes.
+    pub fn motion_depth_up_to(&self, leaf: Handle<MotionNode>, n: usize) -> usize {
         let mut depth = 0;
         let mut cur = Some(leaf);
         while let Some(h) = cur {
             depth += 1;
             if depth > n {
-                return true;
+                break;
             }
             cur = self.motion(h).parent;
         }
-        false
+        depth
     }
 
     /// Whether every node of `leaf`'s recorded chain fixes the plane `coeffs` **as a set** —

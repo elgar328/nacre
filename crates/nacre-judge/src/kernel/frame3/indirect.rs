@@ -45,8 +45,9 @@ pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) 
 
 /// The plane's four coefficients realized at `prec` bits from the definitions
 /// (ground truth for the coefficient tol; no trig of its own — consumes point
-/// `hp_coord`).
-pub(super) fn plane_hp(
+/// `hp_coord`). Public for a caller that meets one plane in many points and realizes it once
+/// ([`meet_hp`]).
+pub fn plane_hp(
     p0: &WitnessPoint,
     p1: &WitnessPoint,
     p2: &WitnessPoint,
@@ -247,6 +248,21 @@ fn filter_from_cramer(
         .add(row1[1].mul(cross[1]))
         .add(row1[2].mul(cross[2]));
     combine(d.sign(), m.sign())
+}
+
+/// **The point three planes meet in**, realized at `prec` bits — [`cramer_hp`] divided out, each
+/// coordinate with the radius the division carries. `None` when `D` may be zero at this
+/// precision: the planes are not proven to meet in a point, and more bits may prove it.
+///
+/// ★ This is how a meet of carriers whose motion histories differ gets a coordinate: no shared
+/// frame states it exactly, and each carrier's witness triangle does ([`plane_hp`]).
+pub fn meet_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> Option<[HpBounded; 3]> {
+    let (d, n) = cramer_hp(planes, prec);
+    Some([
+        n[0].div(&d, prec)?,
+        n[1].div(&d, prec)?,
+        n[2].div(&d, prec)?,
+    ])
 }
 
 /// The Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec)` — the determinant and its

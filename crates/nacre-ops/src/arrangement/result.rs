@@ -228,6 +228,9 @@ pub(crate) fn seam_table(
     let geom = jd.planes;
     let mut seam: Vec<SeamVertex> = Vec::new();
     let mut seen: HashMap<NodeId, ()> = HashMap::new();
+    // One result's corners share their carrier planes, so the planes are realized once for all of
+    // them (`realize::PlaneMemo`).
+    let mut planes = crate::realize::PlaneMemo::default();
     for f in faces {
         for loop_ in f.poly_rings() {
             for &node in loop_.iter() {
@@ -257,7 +260,12 @@ pub(crate) fn seam_table(
                     }
                     .ok_or_else(|| reject(RejectReason::ThreePlanes))
                 };
-                let cache = crate::realize::point_cache(model, &def.vertex(geom, cyls), figure)?;
+                let cache = crate::realize::point_cache(
+                    model,
+                    &def.vertex(geom, cyls),
+                    &mut planes,
+                    figure,
+                )?;
                 let point = cache.coord();
                 // The tolerance: how far the point sits from each surface that defines it, plus
                 // the closed-form pairwise meets (`pierce_vertex_tol` carries the argument for

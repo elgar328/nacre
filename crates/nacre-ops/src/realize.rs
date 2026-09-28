@@ -72,14 +72,12 @@ enum Arm {
 /// silently answers with the thing it is measuring reports nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RealizeError {
-    /// [`nacre_topo::Model::vertex_meet`] declined: carriers carrying two motion histories, a
-    /// carrier whose name is `Wide` (its licence reads narrow coefficients), a carrier with no
-    /// recorded name, or three carriers meeting in no point.
+    /// A three-plane vertex no road reaches: its carriers share no frame the exact roads read
+    /// ([`nacre_topo::Model::vertex_meet`] declines, or the meet is wider than `Rat` under a
+    /// motion), **and** one of them has no witness triangle of its own for the mixed road
+    /// (`rotated_vertex::surface_witness_triangle` — a nameless `Through` carrier, a chain outside
+    /// the decimal window).
     NoMeet,
-    /// The meet is wider than `Rat` **and** the vertex carries a motion. The exact road is open
-    /// for either alone; replaying a motion needs a rational base
-    /// (`WitnessPoint::at` takes `[Rat; 3]`) and no wide constructor exists yet.
-    WideUnderMotion,
     /// The vertex's motion chain could not be rebuilt exactly.
     NoMotionChain,
     /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
@@ -254,22 +252,23 @@ pub(crate) fn realize_def(
     def: &Vertex,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
-    realize_def_tracked(model, def, p, &mut None)
+    realize_def_tracked(model, def, p, &mut Accel::default())
 }
 
-/// [`realize_def`] that also reports what the accelerator could keep.
+/// [`realize_def`] with the accelerators ([`Accel`]): what it may read to go faster, and what it
+/// learned that they could keep.
 ///
-/// ★ Only the fixed-precision road fills `out`. A climb asks the same definition at rung after
+/// ★ Only the fixed-precision road fills the prefix. A climb asks the same definition at rung after
 /// rung, so whatever it learned at 128 bits is not what it returns, and filing the rung it happened
 /// to pass through would put a value under a key the next reader asks at a different precision.
 pub(crate) fn realize_def_tracked(
     model: &Model,
     def: &Vertex,
     p: Precision,
-    out: &mut Option<PrefixWrite>,
+    acc: &mut Accel<'_>,
 ) -> Result<Realized, RealizeError> {
     match p {
-        Precision::Bits(bits) => build(model, def, bits, out),
+        Precision::Bits(bits) => build(model, def, bits, acc),
         Precision::NearestF64 => climb(model, def, |r| r.to_f64().map(|_| r)),
     }
 }
@@ -350,7 +349,7 @@ const CACHE_REPLAY_COST_CAP: usize = 192;
 /// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
 /// [`PointCache::Unrealized`] (there is no road).
 pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
-    realize_cache_tracked(model, def, &mut None)
+    realize_cache_tracked(model, def, &mut Accel::default())
 }
 
 /// **The realization [`build_three_plane`] reaches without replaying a chain** — an unmoved meet,
@@ -378,16 +377,22 @@ fn read_without_replay(model: &Model, def: &Vertex) -> Option<Realized> {
 pub(crate) fn realize_cache_tracked(
     model: &Model,
     def: &Vertex,
-    out: &mut Option<PrefixWrite>,
+    acc: &mut Accel<'_>,
 ) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     let deep = def
         .carriers()
         .filter_map(|h| model.plane_motion(h))
         .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP));
+    // ★ **The cap bounds the nodes a replay walks, whichever road walks them.** The shared-frame
+    // road replays one point through one chain; the mixed road ([`build_meet`]) replays three
+    // witness points through each carrier's chain, so under the same budget it counts their sum.
+    if !deep && meet_road_over_cap(model, def) {
+        return Err(CacheDecline::CostCap);
+    }
     let r = if deep {
         read_without_replay(model, def).ok_or(CacheDecline::CostCap)?
     } else {
-        let first = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
+        let first = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), acc)
             .map_err(CacheDecline::Cannot)?;
         // ★ **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
         // turn off the quarters, and the cost cap stops the replay at 192 nodes, so 256 bits keep
@@ -399,7 +404,11 @@ pub(crate) fn realize_cache_tracked(
         if first.is_exact() || first.to_f64().is_some() {
             first
         } else {
-            realize_def_tracked(model, def, Precision::Bits(LADDER[1]), &mut None)
+            let mut second = Accel {
+                prefix: None,
+                planes: acc.planes.as_deref_mut(),
+            };
+            realize_def_tracked(model, def, Precision::Bits(LADDER[1]), &mut second)
                 .map_err(CacheDecline::Cannot)?
         }
     };
@@ -424,17 +433,17 @@ pub(crate) fn push_vertex_realized(
     fallback: PointCache,
     link: ChainLink,
 ) -> Handle<Vertex> {
-    let mut prefix = None;
+    let mut acc = Accel::default();
     let Ok(cache) = point_cache_tracked(
         model,
         &def,
         || Ok::<_, core::convert::Infallible>(fallback.coord()),
-        &mut prefix,
+        &mut acc,
     );
     // ★ **Take what was used and leave what was made** — the handover that keeps the table at one
     // live generation. A vertex minted here rather than carried forward files nothing: nobody will
     // ever ask for its prefix, and an entry no reader can hit is a leak with a slow fuse.
-    if let (ChainLink::Extends, Some(w)) = (link, prefix) {
+    if let (ChainLink::Extends, Some(w)) = (link, acc.prefix) {
         model.hand_over_prefix_hp(w.used, w.key, w.value);
     }
     model.push_vertex(def, cache)
@@ -456,6 +465,9 @@ pub(crate) fn push_vertex_asked(
 /// whoever needs the coordinate first: the seam table realizes a node from the definition the
 /// minting will push, so the arrangement's point and the model's cache are one answer.
 ///
+/// `planes` is the batch's plane memo ([`PlaneMemo`]) — a caller asking this of many vertices on
+/// one model holds one, so a carrier plane shared by many corners is realized once.
+///
 /// `fallback` is asked only where the road declines, and its error is the caller's: a
 /// construction figure the caller cannot produce either (the seam table's plane-cache solve on
 /// planes whose caches are parallel) is a refusal of its own, not a cache.
@@ -468,19 +480,24 @@ pub(crate) fn push_vertex_asked(
 pub(crate) fn point_cache<E>(
     model: &Model,
     def: &Vertex,
+    planes: &mut PlaneMemo,
     fallback: impl FnOnce() -> Result<Point3, E>,
 ) -> Result<PointCache, E> {
-    point_cache_tracked(model, def, fallback, &mut None)
+    let mut acc = Accel {
+        prefix: None,
+        planes: Some(planes),
+    };
+    point_cache_tracked(model, def, fallback, &mut acc)
 }
 
-/// [`point_cache`] that also reports what the accelerator could keep — the funnel's form.
+/// [`point_cache`] with the accelerators ([`Accel`]) — the funnel's form.
 fn point_cache_tracked<E>(
     model: &Model,
     def: &Vertex,
     fallback: impl FnOnce() -> Result<Point3, E>,
-    out: &mut Option<PrefixWrite>,
+    acc: &mut Accel<'_>,
 ) -> Result<PointCache, E> {
-    Ok(match realize_cache_tracked(model, def, out) {
+    Ok(match realize_cache_tracked(model, def, acc) {
         Ok((coord, bound)) => PointCache::Bounded {
             coord: Point3::from_array(coord),
             bound,
@@ -491,7 +508,6 @@ fn point_cache_tracked<E>(
         }
         Err(CacheDecline::Cannot(
             RealizeError::NoMeet
-            | RealizeError::WideUnderMotion
             | RealizeError::NoMotionChain
             | RealizeError::NoCurvedPoint
             | RealizeError::Unrepresentable,
@@ -513,10 +529,8 @@ fn point_cache_tracked<E>(
 /// at 256 — `figure` stands, as a vertex's construction figure does.
 ///
 /// ⚠ **The anchor stays `figure`'s.** Realizing it too (the first point replayed, read out the
-/// same way) is the truer cache, and it cost a cell: the seam table solves the seam vertices the
-/// realization has no road to from the three classes' plane caches (todo 「seam 표의 폴백과 tol 은 평면 캐시를 읽는다」), and the moved
-/// `d` made two seam points alias — `collinear_loop_points`' `Y/305deg/inset0.5` refused `SeamAlias`
-/// (107 of 108 cells built). The normal alone moved none.
+/// same way) is the truer cache and still builds every `collinear_loop_points` cell (measured);
+/// it is not done yet (todo 「이름 없는 평면의 앵커와 생산자 폴백」).
 ///
 /// ★ Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
 /// points in `f64`, which was measured further from the truth than the producer's figure): this
@@ -675,7 +689,7 @@ fn climb(
     decided: impl Fn(Realized) -> Option<Realized>,
 ) -> Result<Realized, RealizeError> {
     for bits in LADDER {
-        match build(model, def, bits, &mut None) {
+        match build(model, def, bits, &mut Accel::default()) {
             Ok(r) => {
                 if r.is_exact() {
                     return Ok(r);
@@ -699,10 +713,10 @@ fn build(
     model: &Model,
     def: &Vertex,
     bits: usize,
-    out: &mut Option<PrefixWrite>,
+    acc: &mut Accel<'_>,
 ) -> Result<Realized, RealizeError> {
     match *def {
-        nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, out),
+        nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, acc),
         nacre_topo::Vertex::OnSeam([cyl, cap]) => curved(seam_point(model, cyl, cap, bits), bits),
         nacre_topo::Vertex::Pierce {
             planes,
@@ -769,16 +783,22 @@ fn build_three_plane(
     model: &Model,
     def: &Vertex,
     bits: usize,
-    out: &mut Option<PrefixWrite>,
+    acc: &mut Accel<'_>,
 ) -> Result<Realized, RealizeError> {
-    let (meet, frame) = model.vertex_meet_of(def).ok_or(RealizeError::NoMeet)?;
+    let Some((meet, frame)) = model.vertex_meet_of(def) else {
+        return build_meet(model, def, bits, acc.planes.as_deref_mut());
+    };
     let Some(node) = frame else {
         // No motion: the meet *is* the coordinate, and `lift` states it as integers whatever its
         // width — so `Wide` is not a refusal on this road.
         let (n, d) = meet.lift();
         return Ok(Realized(Arm::Exact(n, d)));
     };
-    let base = *narrow_or(&meet)?;
+    // Replaying a motion needs a rational base (`WitnessPoint::at` takes `[Rat; 3]`); a meet
+    // wider than that takes the carriers' own witnesses instead.
+    let Some(&base) = meet.narrow() else {
+        return build_meet(model, def, bits, acc.planes.as_deref_mut());
+    };
     // ★ **A chain that folds is read, not replayed.** Translations, quarter turns and axis
     // reflections compose to a signed axis permutation plus a rational offset, folded once per node
     // as it is born (`Model::chain_point_rat`), so the meet carried through it is an exact rational
@@ -804,12 +824,99 @@ fn build_three_plane(
             None,
         ),
     };
-    *out = Some(PrefixWrite {
+    acc.prefix = Some(PrefixWrite {
         used,
         key: (base, node, bits),
         value: (chain.len(), point.clone()),
     });
     Ok(Realized(Arm::Approached(point, bits)))
+}
+
+/// **A meet no shared frame states** — carriers whose motion histories differ (a turned block's
+/// wall against an unturned one's), or a meet too wide to replay: each carrier's witness triangle
+/// (`rotated_vertex::surface_witness_triangle`) is realized through its own chain into the plane's
+/// coefficients ([`nacre_judge::plane_hp`]) and the three planes are met at `bits`
+/// ([`nacre_judge::meet_hp`]), so the error is the realization's and the value is read out once.
+/// A batch's [`PlaneMemo`] realizes each carrier plane once.
+///
+/// ★ Not the rejected road of replaying three points in `f64` to state a plane (design 「가지 말
+/// 것」): that rounds at every step of the chain, and this rounds once, at the end.
+///
+/// ⚠ `Undecided` where `D` may be zero at this precision — which is also what three carriers
+/// that truly meet in no point answer, rung after rung: a vertex is a point, so that population
+/// is empty for a valid definition, and the ladder's ceiling is where it would stop.
+fn build_meet(
+    model: &Model,
+    def: &Vertex,
+    bits: usize,
+    mut memo: Option<&mut PlaneMemo>,
+) -> Result<Realized, RealizeError> {
+    let nacre_topo::Vertex::ThreePlane(tri) = *def else {
+        return Err(RealizeError::NoMeet);
+    };
+    let mut plane = |h: Handle<Surface>| match memo.as_deref_mut() {
+        Some(m) => m.plane(model, h, bits),
+        None => realize_plane(model, h, bits),
+    };
+    let planes = [plane(tri[0])?, plane(tri[1])?, plane(tri[2])?];
+    let p = nacre_judge::meet_hp(&planes, bits).ok_or(RealizeError::Undecided)?;
+    Ok(Realized(Arm::Approached(p, bits)))
+}
+
+/// One carrier plane's coefficients at `bits`, from its witness triangle. `NoMeet` for a carrier
+/// that has none (a nameless `Through` carrier — depth — or a chain outside the decimal window).
+fn realize_plane(
+    model: &Model,
+    h: Handle<Surface>,
+    bits: usize,
+) -> Result<[HpBounded; 4], RealizeError> {
+    let [p0, p1, p2] =
+        crate::rotated_vertex::surface_witness_triangle(model, h).ok_or(RealizeError::NoMeet)?;
+    Ok(nacre_judge::plane_hp(&p0, &p1, &p2, bits))
+}
+
+/// **Carrier planes realized at a precision, for one batch of realizations on one model** — the
+/// mixed road's accelerator ([`build_meet`]). A turned solid's wall is a carrier of every corner
+/// it makes, and the seam table asks the corners of a whole result at once: realizing the wall's
+/// coefficients again for each corner was the whole cost (a fold of 80 turned fins: 1.1 s → 1.8 s;
+/// with this memo 1.2 s).
+///
+/// ★ It cannot change an answer: the value is a function of the plane's truth and the precision,
+/// which is the key. Keyed by handle, so it lives no longer than one operation on one model.
+#[derive(Default)]
+pub(crate) struct PlaneMemo(std::collections::HashMap<(Handle<Surface>, usize), [HpBounded; 4]>);
+
+impl PlaneMemo {
+    fn plane(
+        &mut self,
+        model: &Model,
+        h: Handle<Surface>,
+        bits: usize,
+    ) -> Result<[HpBounded; 4], RealizeError> {
+        if let Some(p) = self.0.get(&(h, bits)) {
+            return Ok(p.clone());
+        }
+        let p = realize_plane(model, h, bits)?;
+        self.0.insert((h, bits), p.clone());
+        Ok(p)
+    }
+}
+
+/// Whether the mixed road ([`build_meet`]) would replay more chain nodes than
+/// [`CACHE_REPLAY_COST_CAP`] pays for: three witness points through each carrier's chain. The road
+/// is asked second, and only when the sum passes the cap — it is the same two branches
+/// [`build_three_plane`] takes to `build_meet` (no shared frame, or a meet too wide to replay).
+fn meet_road_over_cap(model: &Model, def: &Vertex) -> bool {
+    let nodes: usize = def
+        .carriers()
+        .filter_map(|h| model.plane_motion(h))
+        .map(|leaf| 3 * model.motion_depth_up_to(leaf, CACHE_REPLAY_COST_CAP))
+        .sum();
+    nodes > CACHE_REPLAY_COST_CAP
+        && match model.vertex_meet_of(def) {
+            None => true,
+            Some((meet, frame)) => frame.is_some() && meet.narrow().is_none(),
+        }
 }
 
 /// **The deepest remembered prefix of this vertex's chain, within two motion nodes of its leaf.**
@@ -839,6 +946,15 @@ fn remembered_prefix(
     None
 }
 
+/// **The accelerators a realization may use** — what it may read to go faster ([`PlaneMemo`], for
+/// a batch) and what it learned that the prefix table could keep ([`PrefixWrite`]). Neither
+/// changes an answer; both are why this travels beside the definition instead of inside it.
+#[derive(Default)]
+pub(crate) struct Accel<'a> {
+    pub(crate) prefix: Option<PrefixWrite>,
+    pub(crate) planes: Option<&'a mut PlaneMemo>,
+}
+
 /// What a realization learned that the accelerator could keep: the entry it consumed (if any) and
 /// the one it produced. Filled on the way down, acted on by whoever holds `&mut Model`.
 pub(crate) struct PrefixWrite {
@@ -860,10 +976,6 @@ pub(crate) enum ChainLink {
     Extends,
     /// Minted here. Read the table if it helps, but do not write to it.
     Fresh,
-}
-
-fn narrow_or(meet: &MeetPoint) -> Result<&[nacre_exact::Rat; 3], RealizeError> {
-    meet.narrow().ok_or(RealizeError::WideUnderMotion)
 }
 
 /// **`e₁ = (m·m)e − (e·m)m`** — the part of `e` perpendicular to `m`, unnormalized (the caller
