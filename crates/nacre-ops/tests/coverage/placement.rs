@@ -387,8 +387,8 @@ fn a_secant_wall_along_a_tilted_axis_is_arranged_on_its_rulings() {
 /// wall crosses the lateral off the axis (at small `y₀` the top wall crosses too). Each of the six
 /// booleans builds and is valid, and the volumes add up — `Fuse + Common = |A| + |B|`,
 /// `(A − B) + Common = |A|`, `(B − A) + Common = |B|` — which a wrong answer `validate` cannot see
-/// would break. `y₁ = 0` is left out: that corner lies on the cylinder, the wall
-/// [`a_corner_on_a_lateral_ruling_is_refused_today`] holds.
+/// would break. `y₁ = 0` is left out: that corner lies on the cylinder, the family
+/// `edge_on_a_ruling` holds.
 #[test]
 #[ignore = "1,440 booleans (run with --ignored)"]
 fn every_secant_wall_on_a_tilted_bore_builds() {
@@ -448,56 +448,4 @@ fn every_secant_wall_on_a_tilted_bore_builds() {
         }
     }
     assert_eq!(placements, 240, "the grid");
-}
-
-/// ★ **Today's answer where a corner of `B` lies exactly on `A`'s lateral — and the test the fix
-/// flips.** The corner's two walls run along `A`'s axis, so its edge lies on a ruling of `A`; every
-/// boolean is refused, on the world frame and on [`pythagorean_frame`] alike, whether one wall
-/// enters `A` (the results would be manifold solids) or both leave it (a line contact). A corner
-/// `0.001` off the lateral builds. The class is asserted, not the variant — reason names are
-/// engine vocabulary; a refusal that turns `Impossible` or `SuspectedDefect`, or a placement that
-/// starts to build, is news here and in the todo item this pins.
-#[test]
-fn a_corner_on_a_lateral_ruling_is_refused_today() {
-    let crossing_at_the_rim = [[-1.0, 1.6], [1.0, 0.0], [3.0, 0.0], [3.0, 3.6]];
-    let crossing = [[-1.0, 1.6], [0.8, -0.6], [3.0, -0.6], [3.0, 3.6]];
-    let touching = [[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]];
-    let off = [[-1.0, 1.6], [1.0, 0.001], [3.0, 0.001], [3.0, 3.6]];
-    for tilted in [false, true] {
-        let build = |quad: &[[f64; 2]]| {
-            if tilted {
-                a_bore_and_a_prism(|m| pythagorean_frame(m, Point3::from_array([0.0; 3])), quad)
-            } else {
-                a_bore_and_a_prism(|m| nacre_ops::SketchFrame::world(m, Axis::Z), quad)
-            }
-        };
-        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-            for swapped in [false, true] {
-                let at = format!("tilted = {tilted}, {kind:?} swapped = {swapped}");
-                for (what, quad) in [
-                    (
-                        "one wall entering, the corner on the rim",
-                        crossing_at_the_rim,
-                    ),
-                    ("one wall entering", crossing),
-                    ("a line contact", touching),
-                ] {
-                    let (mut m, a, b) = build(&quad);
-                    let (x, y) = if swapped { (b, a) } else { (a, b) };
-                    match boolean(&mut m, kind, x, y) {
-                        Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-                            reason.class(),
-                            nacre_ops::RejectClass::NotSupported,
-                            "{at}, {what}: refused as {reason:?}"
-                        ),
-                        other => panic!("{at}, {what}: the wall moved — {other:?}"),
-                    }
-                }
-                let (mut m, a, b) = build(&off);
-                let (x, y) = if swapped { (b, a) } else { (a, b) };
-                boolean(&mut m, kind, x, y)
-                    .unwrap_or_else(|e| panic!("{at}, the corner 0.001 off: {e:?}"));
-            }
-        }
-    }
 }

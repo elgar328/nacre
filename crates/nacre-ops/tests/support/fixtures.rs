@@ -149,9 +149,23 @@ pub fn a_bore_and_a_prism(
     frame: impl FnOnce(&mut Model) -> SketchFrame,
     quad: &[[f64; 2]],
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
+    a_solid_and_a_placed_prism(frame, unit_disk(), quad, 0.0, 1.0)
+}
+
+/// **`A` extruded over `a` (height 2) and a prism `B` over `quad`, both sketched on the frame
+/// `frame` states** — `B` on that frame offset by `lift` along its normal, `height` tall, so it
+/// can stand inside `A`'s span (`0 < lift`, `lift + height < 2`) or reach past either cap.
+/// [`a_bore_and_a_prism`] is `a` the unit disk, `lift = 0`, `height = 1`. Returns `(model, a, b)`.
+pub fn a_solid_and_a_placed_prism(
+    frame: impl FnOnce(&mut Model) -> SketchFrame,
+    a: Profile2d,
+    quad: &[[f64; 2]],
+    lift: f64,
+    height: f64,
+) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
     let frame = frame(&mut m);
-    let extrude = |m: &mut Model, profile: Profile2d, dist: f64| {
+    let extrude = |m: &mut Model, frame: SketchFrame, profile: Profile2d, dist: f64| {
         let Ok(OpOutput::Extrude { solid, .. }) = apply(
             m,
             &Operation::Extrude {
@@ -165,16 +179,56 @@ pub fn a_bore_and_a_prism(
         m.rebuild_adjacency();
         solid
     };
-    let disk = nacre_ops::from_paths(vec![
+    let a = extrude(&mut m, frame, a, 2.0);
+    let b_frame = if lift == 0.0 {
+        frame
+    } else {
+        match apply(
+            &mut m,
+            &Operation::DatumPlane {
+                def: DatumDef::Offset { frame, dist: lift },
+            },
+        ) {
+            Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("offsetting the fixture's frame: {other:?}"),
+        }
+    };
+    let quad =
+        Profile2d::polygon(quad.iter().map(|q| p2(q[0], q[1])).collect()).expect("a polygon");
+    let b = extrude(&mut m, b_frame, quad, height);
+    (m, a, b)
+}
+
+/// The unit disk about the sketch origin — its seam at `(1, 0)`.
+pub fn unit_disk() -> Profile2d {
+    nacre_ops::from_paths(vec![
         nacre_ops::Ring2d::circle(p2(0.0, 0.0), 1.0).expect("a unit circle"),
     ])
     .expect("a disk")
-    .remove(0);
-    let a = extrude(&mut m, disk, 2.0);
-    let quad =
-        Profile2d::polygon(quad.iter().map(|q| p2(q[0], q[1])).collect()).expect("a quadrilateral");
-    let b = extrude(&mut m, quad, 1.0);
-    (m, a, b)
+    .remove(0)
+}
+
+/// **The upper half of the unit disk** — the arc from `(1, 0)` to `(−1, 0)` and the diameter
+/// back, so the solid over it has a flat through its own cylinder's axis, and each end of that
+/// flat is an edge on a ruling.
+pub fn upper_half_disk() -> Profile2d {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let half = nacre_ops::Ring2d::new(
+        vec![[r(1), r(0)], [r(-1), r(0)]],
+        vec![
+            nacre_ops::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: true,
+            },
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a half disk");
+    nacre_ops::from_paths(vec![half])
+        .expect("a half disk")
+        .remove(0)
 }
 
 /// **A corner that lies on a wall in rationals and off it in `f64`.** The box `x ∈ [0, xs]`,

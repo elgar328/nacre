@@ -24,6 +24,9 @@ mod rotation;
 #[path = "coverage/placement.rs"]
 mod placement;
 
+#[path = "coverage/edge_on_a_ruling.rs"]
+mod edge_on_a_ruling;
+
 #[path = "coverage/nonconvex.rs"]
 mod nonconvex;
 
