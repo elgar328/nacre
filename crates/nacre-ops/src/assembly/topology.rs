@@ -81,6 +81,42 @@ pub(crate) fn check_result_topology(
                 Some(crate::RejectWhere::Point(model.vertex_point(va))),
             ));
         }
+        // ★ **And the other half of that proposition: the stated pair is the pair of surfaces
+        // the two using faces lie on** — `validate`'s rule, read the same way: two faces on two
+        // surfaces must *be* the stated pair; two faces on one surface (a panel and the band
+        // beside it sharing an arc, a cylinder seam) must have that surface among the two. The
+        // edge's curve derives from the stated pair, so a pair the faces do not keep is a wrong
+        // curve on a shell every count above calls closed. Measured on a trial arrangement that
+        // lets a prism's edge on a ruling through: the wedge whose two walls both enter the
+        // cylinder came back `Ok` from Common and A − B with a ruling edge stated
+        // `(cylinder, wall)` between two planes, and only `validate` said so. An edge with other
+        // than two uses is the shell guard's to name.
+        let mut disagreeing: Vec<Handle<Edge>> = Vec::new();
+        for (&eh, uses) in &edge_uses {
+            let [(f0, _), (f1, _)] = uses[..] else {
+                continue;
+            };
+            let stated = model.edge(eh).surfaces;
+            let mut observed = [model.face(f0).surface, model.face(f1).surface];
+            if observed[1].index() < observed[0].index() {
+                observed.swap(0, 1);
+            }
+            let agrees = if observed[0] == observed[1] {
+                stated.contains(&observed[0])
+            } else {
+                stated == observed
+            };
+            if !agrees {
+                disagreeing.push(eh);
+            }
+        }
+        if let Some(&eh) = disagreeing.iter().min() {
+            let [va, _] = model.edge(eh).vertices;
+            return Some((
+                RejectReason::EdgeCarrierMismatch,
+                Some(crate::RejectWhere::Point(model.vertex_point(va))),
+            ));
+        }
         let (v, e, f) = (
             vertex_edges.len() as i64,
             edge_uses.len() as i64,

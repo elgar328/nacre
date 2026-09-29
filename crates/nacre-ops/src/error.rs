@@ -163,6 +163,14 @@ pub enum RejectReason {
     /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
     /// the assembly dropped a face, which is ours to fix. Unfired in the suite.
     OpenResultShell,
+    /// A result edge's **stated** carriers are not the surfaces of the two faces that use it —
+    /// `validate`'s `EdgeCarrierMismatch`, the half [`Self::CoplanarMerge`] does not ask (that one
+    /// is a plane stated twice). The carriers are stated, never derived, and the edge's curve is
+    /// derived from them, so a mismatch is a wrong curve under a closed, valid-looking shell: the
+    /// assembly stated one surface pair and the faces kept another. A shipped check, because ops
+    /// cannot lean on `validate` and a release build would otherwise return that solid. Unfired
+    /// in the suite.
+    EdgeCarrierMismatch,
     // ---- the arrangement's own consistency checks ----
     //
     // Ten questions, ten names. One label over several questions makes a reject name a dead
@@ -1004,6 +1012,7 @@ impl RejectReason {
             Self::NonManifoldResultEdge => "non_manifold_result_edge",
             Self::SelfTouchingResult => "self_touching_result",
             Self::OpenResultShell => "open_result_shell",
+            Self::EdgeCarrierMismatch => "edge_carrier_mismatch",
             Self::CoincidentNodes => "coincident_nodes",
             Self::RingNaming => "ring_naming",
             Self::DegenerateRing => "degenerate_ring",
@@ -1111,6 +1120,7 @@ impl RejectReason {
             | Self::CoplanarMerge => RejectClass::NotSupported,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
             Self::OpenResultShell
+            | Self::EdgeCarrierMismatch
             | Self::EulerParity
             | Self::NegativeGenus
             | Self::CavityNoOwner
