@@ -141,11 +141,5 @@ fn measure_probe_ledgers() {
             asks.len(),
             asks.iter().filter(|d| **d).count(),
         );
-        eprintln!(
-            "ledger swallowed: the nesting retry swallowed non-abstention errors {}",
-            *crate::combinatorics::swallowed_probe::COUNT
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-        );
     }
 }

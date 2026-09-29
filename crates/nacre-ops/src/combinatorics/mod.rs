@@ -137,15 +137,3 @@ pub(crate) struct ArcDir {
     /// `arrangement::angular_order`, and the walk comes back `UnorderedEdges`.
     ccw: bool,
 }
-
-/// How many judgements the ring-vs-ring retry swallowed that were not an abstention
-/// (`NoClearRay`). The retry lives in `nesting::cell_inside`, and this counter's push with it; it
-/// feeds a ledger line. ★ Not zero: over the lib suite it counts 21,206 — `DegenerateRing`
-/// 13,184 · `PierceVertexUnnamed` 7,414 · `PointOnRing` 608 — each treated as «this witness
-/// abstains, try the next». Only the last is an abstention by the witness rule («a point on the
-/// ring» is remedied by the next witness; «could not build the value» is not).
-#[cfg(test)]
-pub(crate) mod swallowed_probe {
-    use std::sync::Mutex;
-    pub(crate) static COUNT: Mutex<usize> = Mutex::new(0);
-}

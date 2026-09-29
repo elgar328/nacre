@@ -593,7 +593,8 @@ pub enum RejectReason {
     /// question follow one rule ([`crate::nesting::cell_inside`]): a value that could not be
     /// **formed** is
     /// [`Self::WitnessNotRational`], an offer that was **empty** is this one, and an offer every
-    /// member of which **abstained** is [`Self::NoClearRay`]. So this name means exactly what
+    /// member of which **abstained** — or whose road declined the target — is
+    /// [`Self::NoClearRay`]. So this name means exactly what
     /// it says — the cell had nothing to offer — and there is one supply. On the **component**
     /// road, an offset boss's Common is a 0.2-deep segment prism whose halves
     /// have pierce-named corners only and no cap candidate from the centre inside — so the

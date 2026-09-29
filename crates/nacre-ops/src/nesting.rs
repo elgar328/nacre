@@ -229,6 +229,38 @@ enum Said {
     /// The value needed to ask could not be formed. The next witness may still answer, but if
     /// none does, the honest name is the arithmetic one and not "no clear ray".
     Unformed,
+    /// **The road cannot read the target**, whichever of its witnesses asks — the ray road against
+    /// a ring with a pierce corner, or a two-edge lens. Not [`Said::Abstain`]: that is one
+    /// witness's circumstance and the next witness of the same road is its remedy; here every
+    /// witness of this road would say the same, so the rest of them are skipped and the other road
+    /// (coordinates) answers. For the refusal's name it counts as an abstention.
+    Declines,
+}
+
+impl Said {
+    /// **What the ray road's refusal means for this witness** — the one place its errors are read.
+    ///
+    /// The road asks a pierce corner's side with no cylinder table (`every_ray` hands `side_of` an
+    /// empty one), so a ring **with a pierce corner** is unreadable from every ray plane:
+    /// `PierceVertexUnnamed` there is the ring's, and the road declines. Without one, the same name
+    /// comes from an arc whose two ends lie on the ray's plane — a plane the witness chose, so the
+    /// next witness may answer, and it is an abstention. A ring of fewer than three edges is a lens
+    /// when it is mixed (a chord and its arc — an ordinary shape the ray road cannot walk) and a
+    /// producer defect when it is all straight, which is raised under its own name. Anything else
+    /// (`RingNaming`: a ring whose names the road cannot read) is not a witness's circumstance and
+    /// is raised rather than retried on the next witness.
+    fn of_ray_error(e: BoolError, has_pierce: bool, mixed: bool) -> Result<Said, BoolError> {
+        let BoolError::Rejected { reason, .. } = &e else {
+            return Err(e);
+        };
+        match reason {
+            RejectReason::NoClearRay | RejectReason::PointOnRing => Ok(Said::Abstain),
+            RejectReason::PierceVertexUnnamed if has_pierce => Ok(Said::Declines),
+            RejectReason::PierceVertexUnnamed => Ok(Said::Abstain),
+            RejectReason::DegenerateRing if mixed => Ok(Said::Declines),
+            _ => Err(e),
+        }
+    }
 }
 
 /// **A circle's own witnesses: four points on its rim, then its centre.**
@@ -449,7 +481,7 @@ fn ask(
     wc: usize,
     w: &Where,
     target: Cell<'_>,
-) -> Said {
+) -> Result<Said, BoolError> {
     let radial = |p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef| {
         match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
             nacre_exact::Orient::Negative => Said::In,
@@ -459,30 +491,18 @@ fn ask(
             nacre_exact::Orient::Zero => Said::Abstain,
         }
     };
-    match (w, target) {
+    Ok(match (w, target) {
         (Where::Named(t), Cell::Ring(rb)) => match combinatorics::point_in_ring(jd, wc, *t, rb) {
             Ok(true) => Said::In,
             Ok(false) => Said::Out,
-            // ★ Every error here is taken as this probe's abstention, and the retry over the next
-            // probe as the remedy. That holds for `NoClearRay`; the others it swallows are
-            // counted by `swallowed_probe`, whose doc says what they are.
-            Err(e) => {
-                #[cfg(test)]
-                if !matches!(
-                    e,
-                    BoolError::Rejected {
-                        reason: RejectReason::NoClearRay,
-                        ..
-                    }
-                ) {
-                    *combinatorics::swallowed_probe::COUNT
-                        .lock()
-                        .expect("the probe's lock is never held across a panic") += 1;
-                }
-                #[cfg(not(test))]
-                let _ = e;
-                Said::Abstain
-            }
+            // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
+            // this witness's circumstance is an abstention.
+            Err(e) => Said::of_ray_error(
+                e,
+                rb.iter()
+                    .any(|x| combinatorics::pierce_name(x.node).is_some()),
+                combinatorics::ring_is_mixed(rb),
+            )?,
         },
         (Where::Coord(p), Cell::Ring(rb)) => match rational_point_in_ring(jd, cyls, wc, p, rb) {
             Ok(Some(true)) => Said::In,
@@ -502,7 +522,7 @@ fn ask(
             }
         }
         (Where::Coord(p), Cell::Disk(def)) => radial(p, def),
-    }
+    })
 }
 
 pub(crate) fn cell_inside(
@@ -530,15 +550,19 @@ fn inside(
 ) -> Result<bool, BoolError> {
     // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices could cut it
     // short, and both are statements about a *road* rather than about the question:
-    //   · skipping the ray road for a **mixed** target, because every ray answers `Unnameable` at
-    //     the first pierce corner — true, and said by the ray itself, which abstains and hands on
-    //     to the next witness at no cost but its own;
+    //   · skipping the ray road for a **mixed** target in advance — the ray road says so itself
+    //     when asked ([`Said::Declines`]), and from then on its remaining witnesses are skipped:
+    //     each would put the same question to the same road (measured before this rule: 2–12
+    //     identical refusals per question, and over 9,128 such questions no named witness after
+    //     the first refusal ever answered);
     //   · answering a plain ring target on names **alone** once it names any probe, which refuses
     //     a ring whose every ray grazed with coordinates still in hand.
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
     // measured, not assumed: where both roads can answer they agree
     // (`the_two_roads_never_disagree`).
-    let (mut asked, mut unformed) = (false, false);
+    let (mut asked, mut unformed, mut declined) = (false, false, false);
+    #[cfg(test)]
+    let mut tally = nesting_probe::DeclineTally::default();
     for w in witnesses(jd, cyls, wc, a) {
         let (p, interior) = match w {
             Witness::Unformed => {
@@ -553,9 +577,24 @@ fn inside(
                 (p, true)
             }
         };
-        match ask(jd, cyls, wc, &p, b) {
+        if declined && matches!(p, Where::Named(_)) {
+            continue;
+        }
+        #[cfg(test)]
+        if declined && matches!(p, Where::Named(_)) {
+            tally.named_after += 1;
+        }
+        match ask(jd, cyls, wc, &p, b)? {
             Said::Unformed => unformed = true,
             Said::Abstain => asked = true,
+            Said::Declines => {
+                asked = true;
+                declined = true;
+                #[cfg(test)]
+                {
+                    tally.declines += 1;
+                }
+            }
             // A point of `a` outside `b`: whether it is a boundary point or an interior one, `a`
             // is not inside `b`.
             Said::Out => return Ok(false),
@@ -674,9 +713,9 @@ pub(crate) fn cell_in_cell(
             // **roads** and not between two hand-written loops: the first name that decides
             // against the first coordinate that decides.
             let decided = |w: Where| match ask(jd, cyls, wc, &w, Cell::Ring(rb)) {
-                Said::In => Some(true),
-                Said::Out => Some(false),
-                Said::Abstain | Said::Unformed => None,
+                Ok(Said::In) => Some(true),
+                Ok(Said::Out) => Some(false),
+                Ok(Said::Abstain | Said::Unformed | Said::Declines) | Err(_) => None,
             };
             let by_name = ra
                 .iter()
@@ -805,4 +844,27 @@ pub(crate) mod nesting_probe {
     pub(crate) fn push(r: Row) {
         ROWS.push(r);
     }
+
+    /// Per question that the ray road declined: how many witnesses it declined for, and how many
+    /// **named** witnesses were still asked after the first refusal — `0` is the skip in
+    /// [`super::inside`], and a row is pushed as the question leaves, by whichever exit.
+    pub(crate) static DECLINES: Ledger<(usize, usize)> = Ledger::new();
+
+    #[derive(Default)]
+    pub(crate) struct DeclineTally {
+        pub(crate) declines: usize,
+        pub(crate) named_after: usize,
+    }
+
+    impl Drop for DeclineTally {
+        fn drop(&mut self) {
+            if self.declines > 0 && on() {
+                DECLINES.push((self.declines, self.named_after));
+            }
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "tests/nesting.rs"]
+mod tests;

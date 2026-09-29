@@ -73,12 +73,15 @@ pub(crate) enum RingWalk {
     /// count. A ring whose nodes are all on `q` while an edge departs is `Met` instead: the
     /// departure is an off-line entry of its own side ([`EdgeMeet::Departs`]).
     AllOn,
-    /// A node whose side this walk cannot answer.
+    /// A node whose side this walk cannot answer, or an edge between two on-`q` nodes whose meet the
+    /// caller cannot state (`on_meet` answering `None`).
     ///
-    /// ★★ **Not "a [`NodeKind::Pierce`]".** [`side_of`]'s pierce arm answers, so a cylinder's
-    /// corner is read like any other; this is that arm's own `None` — a class with no narrow
-    /// rational description, a cylinder missing from the table. ☑ Never produced: measured **0**
-    /// across the workspace suite.
+    /// ★★ **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
+    /// table.** Given one, [`side_of`]'s pierce arm answers (short of a class with no narrow
+    /// rational description or a cylinder missing from the table) and the corner is read like any
+    /// other; `every_ray` passes none, so on that road every pierce corner is this variant, whatever
+    /// the plane — which is why `nesting` reads the ray road's `PierceVertexUnnamed` on a ring with
+    /// a pierce corner as the road declining the ring.
     Unnameable,
 }
 

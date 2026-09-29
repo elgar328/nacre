@@ -523,8 +523,8 @@ pub(crate) fn point_in_component(
                             // rational road: the crossing X is a rational three-plane
                             // point, the ring is walked by its carriers, and every tie
                             // abstains for the next probe. The named walk cannot read a
-                            // pierce corner at all - letting it try would answer
-                            // `RingNaming`, a false name for the cause.
+                            // pierce corner at all (it sides nodes with no cylinder table) -
+                            // letting it try would refuse with `PierceVertexUnnamed`.
                             if ring_is_mixed(r) {
                                 let Some(coeffs) = class_coeffs_rat(jd, q) else {
                                     return Ok(None); // no exact class statement: abstain
