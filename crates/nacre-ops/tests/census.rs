@@ -5,7 +5,9 @@
 //! change can cancel out of a volume integral, so a census of volumes can pass while the geometry
 //! moved. The coordinate hash is what makes "nothing changed" checkable.
 //!
-//! Not an assertion — a dump. Run it on two commits and `diff`:
+//! A dump to diff, and two locks asserted as each row is recorded — plane senses and meshing (see
+//! `record`). The gates run it by name, in three builds (`overview.md` 「관문」). Run it on two commits
+//! and `diff`:
 //!
 //! ★ **World-plane seeding**: the seeds intern with every origin-touching producer, so the
 //! survivor's f64 plane cache — and with it the `in:` plane digest — is the seed's on the
@@ -208,6 +210,18 @@ fn record(
     {
         slot.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
     }
+    // ★ The mesh lock: every solid a boolean returns here can be drawn. The lib suite asserts the
+    // same at the boolean's exit (`tess_census`, `cfg(test)`), which this corpus does not pass through.
+    if let Ok(v) = out
+        && !v.is_empty()
+    {
+        let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default());
+        assert!(
+            mesh.is_ok(),
+            "{tag}: a boolean built a solid the mesher refuses: {:?}",
+            mesh.err()
+        );
+    }
     print!("c {tag} in:{inputs} ");
     match out {
         Err(e) => println!("ERR {e:?}"),
@@ -330,7 +344,7 @@ const KINDS: [(&str, BoolKind); 3] = [
 ];
 
 #[test]
-#[ignore = "census dump, not an assertion (run with --ignored --nocapture)"]
+#[ignore = "census dump with plane-sense and mesh locks; the gates run it (--ignored --nocapture)"]
 fn measure_census() {
     // ── Axis-aligned, no motion at all: the untouched baseline.
     let boxes: [([f64; 3], [f64; 3]); 6] = [

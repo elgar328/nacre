@@ -12,9 +12,10 @@
 //! ★★ **It runs before `rebuild_adjacency`, deliberately measured**: the failures reproduce on a
 //! rebuilt model too, so this is watching the result and not an artifact of when it looks.
 //!
-//! ★ **Scope, plainly**: `#[cfg(test)]` is this crate's *unit* tests. `tests/*.rs` — the frozen
-//! census corpus, `perf`, `pipeline` — do **not** carry this hook, so "2129 booleans" is the lib
-//! suite's number and not the workspace's.
+//! ★ **Scope, plainly**: `#[cfg(test)]` is this crate's *unit* tests. `tests/*.rs` do **not** carry
+//! this hook, so "2129 booleans" is the lib suite's number and not the workspace's. The frozen census
+//! corpus asserts the same of its own rows (`tests/census.rs`'s `record`); `perf` and
+//! `invariants/pipeline` do not.
 //!
 //! ★ A panic inside `tessellate` is left to escape. Swallowing it would make the census say
 //! "meshed" about a model that killed the mesher.
