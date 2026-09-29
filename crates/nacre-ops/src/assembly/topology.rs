@@ -172,15 +172,6 @@ pub(super) fn face_components(
             from: NodeId,
             to: NodeId,
         },
-        /// A ruling piece: straight, so the pair is unordered like a line's — but keyed apart
-        /// from plane edges by `(cyl, side)`, because a key that forgets its carrier is the fold
-        /// this enum exists to prevent (a plane edge collinear with a ruling is a refused
-        /// degeneracy, not a legal share).
-        Ruling {
-            cyl: usize,
-            side: i8,
-            pair: (NodeId, NodeId),
-        },
     }
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
@@ -191,17 +182,15 @@ pub(super) fn face_components(
             let k = ring.len();
             for t in 0..k {
                 let (a, b) = (ring[t], ring[(t + 1) % k]);
+                // ★ A ruling step is a `Line` here: straight, so its unordered pair names it —
+                // what the order bit keeps apart is a circle's complementary pieces, and two
+                // points bound one straight segment whichever vocabulary a face states it in.
                 let key = match ring.walls[t] {
-                    Wall::Plane(_) => JoinKey::Line(norm_edge(a, b)),
+                    Wall::Plane(_) | Wall::Ruling { .. } => JoinKey::Line(norm_edge(a, b)),
                     Wall::Arc { cyl, ccw } => {
                         let (from, to) = if ccw { (a, b) } else { (b, a) };
                         JoinKey::Arc { cyl, from, to }
                     }
-                    Wall::Ruling { cyl, side, .. } => JoinKey::Ruling {
-                        cyl,
-                        side,
-                        pair: norm_edge(a, b),
-                    },
                 };
                 users.entry(key).or_default().push(i);
             }

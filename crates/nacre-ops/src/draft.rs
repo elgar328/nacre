@@ -131,28 +131,19 @@ pub(crate) struct Ring {
 /// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
 /// (`Wall` is the type half).
 ///
-/// Keys live in *handle* space, the space `edge_of` always keyed. A line is its unordered
-/// endpoint pair, as before. Between one pair of pierce vertices a circle offers **two**
-/// complementary pieces, so the endpoints alone cannot name an arc — the key carries them **in
-/// CCW order about the axis** (`from → to`), and the two complementary arcs get the two orders.
-/// The minted edge stores its vertices in that same order, which is what the `[A, B]`-CCW
-/// convention means downstream (`Model::derive_edge_curve`'s circle arm).
+/// Keys live in *handle* space, the space `edge_of` always keyed. A **straight** piece is its
+/// unordered endpoint pair — a plane-pair line and a ruling alike: two points bound one straight
+/// segment, so a line one face states in the plane vocabulary and the face across states as a
+/// ruling (a tangent wall ending on a cylinder's ruling) is one edge, and its carriers are read
+/// off the faces that use it, not off the key. Between one pair of pierce vertices a circle
+/// offers **two** complementary pieces, so the endpoints alone cannot name an arc — the key
+/// carries them **in CCW order about the axis** (`from → to`), and the two complementary arcs
+/// get the two orders. The minted edge stores its vertices in that same order, which is what the
+/// `[A, B]`-CCW convention means downstream (`Model::derive_edge_curve`'s circle arm).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum EdgeKey {
     Line((usize, usize)),
-    Arc {
-        cyl: usize,
-        from: usize,
-        to: usize,
-    },
-    /// A ruling piece: straight, so the pair is unordered like a line's — keyed apart from
-    /// plane edges by `(cyl, side)`, mirroring [`Wall::Ruling`]'s identity (a plane edge
-    /// collinear with a ruling is a refused degeneracy, not a legal share).
-    Ruling {
-        cyl: usize,
-        side: i8,
-        pair: (usize, usize),
-    },
+    Arc { cyl: usize, from: usize, to: usize },
 }
 
 impl Ring {

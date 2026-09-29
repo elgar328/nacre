@@ -243,43 +243,37 @@ pub(crate) fn reconstruct(
     // that legitimately contains the edge but does not bound it here — measured, the two faces
     // sharing such an edge named two different walls. The faces themselves are the ground
     // truth, and every ring is already in hand, so one pre-scan reads it.
+    // ★ **A ruling edge reads its carriers the same way, from the same table.** A straight
+    // edge is its two ends (`EdgeKey`), whichever vocabulary a face states it in, so a ruling and
+    // a plane-pair line between one vertex pair are one edge and one entry here: a panel pushes
+    // its cylinder, a plane face its plane. Deriving a ruling's plane from the two ends' *names*
+    // (the plane they share) states the line only while a point's name is the pair that minted
+    // it: once the alias table represents a tangent corner by another pair — a class through the
+    // axis crossing the cylinder there — the shared plane is that class, which contains the line
+    // but does not bound the edge. And a ruling no panel uses at all — two planes meeting on the
+    // cylinder's line, the lateral gone from both sides — is carried by those two planes, which
+    // no rule starting from the cylinder can state.
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
-    // ★ **The same reading for a ruling edge's plane carrier.** Deriving it
-    // from the two ends' *names* (the plane they share) states the line only while a
-    // point's name is the pair that minted it: once the alias table represents a tangent corner
-    // by another pair — a class through the axis crossing the cylinder there — the shared plane
-    // is that class, which contains the line but does not bound the edge. The face that bounds
-    // it does, and the scan already walks every face. Keyed like the edge itself (`EdgeKey`),
-    // because a ruling and a plane-pair line can share one vertex pair.
-    /// A ruling edge's key in that scan — `EdgeKey::Ruling`'s fields, which is the point.
-    type RulingKey = (usize, i8, (usize, usize));
-    let mut ruling_surfs: HashMap<RulingKey, Vec<Handle<Surface>>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        // A band contributes no node edge — its rims and seam are minted with their carriers
-        // stated (`[lateral, plane]`, `[lateral, lateral]`), so there is nothing for this scan
-        // to read off it.
-        let ClassIx::Plane(fc) = lf.surf else {
-            continue;
+        // A band's own bounds contribute no node edge — its rims and seam are minted with their
+        // carriers stated (`[lateral, plane]`, `[lateral, lateral]`); what a curved face does
+        // walk as a ring (a panel's chain) is read here like any ring.
+        let fsurf = match lf.surf {
+            ClassIx::Plane(fc) => planes[fc].surf,
+            ClassIx::Cyl(k) => cyls[k].surf,
         };
-        let fsurf = planes[fc].surf;
         for r in lf.poly_rings() {
             let k = r.nodes.len();
             for t in 0..k {
-                // ★ Only plane-carried edges feed the scan. An arc edge shares its vertex pair
-                // with the chord between the same pierce vertices, and pushing this face's plane
-                // here would pollute the chord's line-key entry into the fallback arm — the arc
-                // states its carriers directly instead (`edge_for`'s arc arm).
                 let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
                 let pair = unordered(va.index() as usize, vb.index() as usize);
                 match r.walls[t] {
-                    Wall::Plane(_) => pair_surfs.entry(pair).or_default().push(fsurf),
-                    Wall::Ruling { cyl, side, .. } => ruling_surfs
-                        .entry((cyl, side, pair))
-                        .or_default()
-                        .push(fsurf),
+                    Wall::Plane(_) | Wall::Ruling { .. } => {
+                        pair_surfs.entry(pair).or_default().push(fsurf);
+                    }
                     // An arc edge shares its vertex pair with the chord between the same pierce
-                    // vertices, and pushing this face's plane here would pollute the chord's
+                    // vertices, and pushing this face's surface here would pollute the chord's
                     // line-key entry into the fallback arm — the arc states its carriers directly
                     // instead (`edge_for`'s arc arm).
                     Wall::Arc { .. } => continue,
@@ -324,46 +318,48 @@ pub(crate) fn reconstruct(
                 edge_of.insert(key, e);
                 Ok(e)
             }
-            Wall::Ruling { cyl, side, .. } => {
-                // ★ A ruling edge is straight, so the unordered pair orders it (no complementary
-                // pieces — the arc's problem does not arise); `(cyl, side)` keys it apart from
-                // plane edges. The carriers are **the edge's own fact**, stated from its end
-                // names (the shared wall plane) and the cylinder — never from `face_surf`, whose
-                // value depends on which face minted first (the wall face or the panel), and a
-                // carrier that depends on mint order is exactly the kind of drift
-                // `EdgeCarrierMismatch` exists to catch.
+            Wall::Ruling { cyl, .. } => {
+                // ★ Keyed as a line: straight, so the unordered pair names it. The carriers are
+                // **the edge's own fact**, read off the two faces that use it — never from
+                // `face_surf`, whose value depends on which face minted first (the wall face or
+                // the panel), and a carrier that depends on mint order is exactly the drift
+                // `EdgeCarrierMismatch` catches.
                 let pair = unordered(va.index() as usize, vb.index() as usize);
-                let key = EdgeKey::Ruling { cyl, side, pair };
+                let key = EdgeKey::Line(pair);
                 if let Some(&e) = edge_of.get(&key) {
                     return Ok(e);
                 }
-                // The plane that **bounds** it, read off the face that does (the scan above);
-                // the ends' shared plane is the fallback for an edge no plane face carries.
-                let bounding = match ruling_surfs.get(&(cyl, side, pair)).map(|v| {
-                    let mut v = v.clone();
-                    v.sort_unstable();
-                    v.dedup();
-                    v
-                }) {
-                    Some(v) if v.len() == 1 => Some(v[0]),
-                    _ => None,
-                };
-                let wall_surf = match bounding {
-                    Some(s) => s,
-                    None => {
-                        planes[ends
-                            .and_then(|(a, b)| shared_pierce_plane(a, b))
-                            .ok_or_else(|| {
-                                // Two Pierce ends that share no single wall plane: a naming this
-                                // ladder does not arrange yet.
-                                reject(RejectReason::RulingBoundNotYet)
-                            })?]
-                        .surf
+                let uses = &pair_surfs[&pair];
+                let surfaces = match uses[..] {
+                    [a, b] if a != b => Edge::carrier_pair(a, b),
+                    // Two panels of one cylinder, or a count on its way to the non-manifold
+                    // reject: the cylinder and the plane that **bounds** it — the one plane face
+                    // using it, else the ends' shared plane.
+                    _ => {
+                        let mut bounding: Vec<Handle<Surface>> = uses
+                            .iter()
+                            .copied()
+                            .filter(|&s| s != cyls[cyl].surf)
+                            .collect();
+                        bounding.sort_unstable();
+                        bounding.dedup();
+                        let wall_surf = match bounding[..] {
+                            [s] => s,
+                            _ => {
+                                planes[ends
+                                    .and_then(|(a, b)| shared_pierce_plane(a, b))
+                                    .ok_or_else(|| {
+                                        // Two Pierce ends that share no single wall plane: a
+                                        // naming this ladder does not arrange yet.
+                                        reject(RejectReason::RulingBoundNotYet)
+                                    })?]
+                                .surf
+                            }
+                        };
+                        Edge::carrier_pair(cyls[cyl].surf, wall_surf)
                     }
                 };
-                let e = model
-                    .push_edge(Edge::carrier_pair(cyls[cyl].surf, wall_surf), [va, vb])
-                    .map_err(edge_refused)?;
+                let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
                 edge_of.insert(key, e);
                 Ok(e)
             }
