@@ -475,6 +475,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                 def,
                 realized: *cache,
                 owner: crate::planes::SolidSide::A,
+                shared: Vec::new(),
             }
         })
         .collect();

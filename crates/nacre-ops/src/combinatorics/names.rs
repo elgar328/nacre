@@ -152,6 +152,54 @@ pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::Q
     }
 }
 
+/// **A pierce point restated on another pair of plane classes through it** — `Pierce{[a, b],
+/// cyl, root}` for the point `node` names, with the root that puts it there: of `a ∩ b`'s meets
+/// with the cylinder, the one lying on the name's own planes (a tangency's single `Double` root
+/// likewise). `None` when the pair does not meet the cylinder at that point or the arithmetic
+/// could not say. The result's naming asks it where the planes a result vertex's faces lie on
+/// are not the pair its name was minted from — a line two classes share on the cylinder names
+/// one point by several pairs, and the result keeps faces on only some of them.
+pub(crate) fn restate_pierce(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    node: NodeId,
+    a: usize,
+    b: usize,
+) -> Option<NodeId> {
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
+    use nacre_topo::QuadRoot;
+    let (own, cyl, _) = pierce_name(node)?;
+    let def = &cyls.get(cyl)?.def;
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let (wa, wb) = (class_coeffs_rat(jd, a)?, class_coeffs_rat(jd, b)?);
+    let others: Vec<[nacre_exact::Rat; 4]> = own
+        .iter()
+        .filter(|&&p| p != a && p != b)
+        .map(|&p| class_coeffs_rat(jd, p))
+        .collect::<Option<_>>()?;
+    let on = |line: &nacre_exact::quad::MeetLine, s: &QuadVal| {
+        others
+            .iter()
+            .all(|w| nacre_exact::quad::plane_side(w, line, s) == nacre_exact::Orient::Zero)
+    };
+    let root = match nacre_exact::quad::plane_plane_cylinder(&wa, &wb, &o, &m, r2)? {
+        CylinderMeet::Pair { line, s } => {
+            let hits: Vec<QuadRoot> = [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])]
+                .into_iter()
+                .filter(|(_, sv)| on(&line, sv))
+                .map(|(r, _)| r)
+                .collect();
+            match hits[..] {
+                [r] => r,
+                _ => return None,
+            }
+        }
+        CylinderMeet::Tangent { line, s } if on(&line, &QuadVal::from_rat(s)) => QuadRoot::Double,
+        _ => return None,
+    };
+    Some(NodeId::pierce(a, b, cyl, root))
+}
+
 /// **The names of a list of *candidates*, pierce points dropped.**
 ///
 /// ★★★ **This is the licence, and its name is where the licence is stated.** Behind the door there

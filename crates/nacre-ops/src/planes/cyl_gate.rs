@@ -25,7 +25,8 @@ use super::*;
 ///   keeps every one of those sentences true and the arrangement unchanged: ☑ of 21 measured
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
 ///   population [`Tangency::line_in_another_plane`] names, which the arrangement refuses on its
-///   own (`CoincidentNodes`).
+///   own — at the cap, where the rim's arc and the tangent wall leave the corner tangent and the
+///   same way (`UnorderedEdges`).
 /// - anything else — an oblique plane. It passes when every lateral face of the cylinder
 ///   provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
@@ -66,6 +67,10 @@ pub(crate) fn cylinder_gate(
 
     let mut crossings = std::collections::HashSet::new();
     let mut tangencies: Vec<Tangency> = Vec::new();
+    // The tangent half of [`SharedRuling`]'s population: `(class, cylinder, classes holding the
+    // tangent line)` for every tangent class carrying a face of the cylinder's other operand —
+    // collected where the clearance is asked, not where rows are written (see the record below).
+    let mut tangent_walls: Vec<(usize, usize, Vec<usize>)> = Vec::new();
     // ★ **Two more records, read once each**: the (plane, cylinder) pairs the oblique
     // arm could not show apart, and the cylinder pairs the pair rule could not. Today their one
     // reader is the refusal below each loop; the day the ellipse road and the
@@ -109,6 +114,7 @@ pub(crate) fn cylinder_gate(
             def,
             realized: *cache,
             owner,
+            shared: Vec::new(),
         });
     }
 
@@ -190,7 +196,29 @@ pub(crate) fn cylinder_gate(
                 // ★★ What a face is asked is whether it misses the **rectangle** this cylinder
                 // occupies in that plane: the strip across, the lateral face's span along. See
                 // [`face_clears_footprint`].
-                if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2) != Orient::Positive {
+                let clearance = nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2);
+                // ★ **The classes holding a tangent line, asked once for the pair** — the rows
+                // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
+                // asked here, before any face is: the rows are written only for faces that fail
+                // to clear the footprint, and the footprint test is closed along the axis, so a
+                // face standing on a cap writes none — yet its line is the same line.
+                let holders = if clearance == Orient::Zero {
+                    let Some(h) = classes_holding_the_line(geom, c, &coeffs, &cyl.def) else {
+                        return Err(undecided());
+                    };
+                    let other_owner = faces.iter().enumerate().any(|(i, row)| {
+                        matches!(row, FaceRow::Plane(_))
+                            && plane_ix[i] == ClassIx::Plane(c)
+                            && (i < n_a) != (cyl.owner == SolidSide::A)
+                    });
+                    if other_owner {
+                        tangent_walls.push((c, ci, h.clone()));
+                    }
+                    Some(h)
+                } else {
+                    None
+                };
+                if clearance != Orient::Positive {
                     // ★ The face-level test reads each face's own vertices, which are realized
                     // world coordinates — so it needs no frame guard of its own; `coeffs` above is
                     // already the world description (a class without one never reaches here). The
@@ -236,10 +264,19 @@ pub(crate) fn cylinder_gate(
                         // about the operation — so the geometry is stated in a row and
                         // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`,
                         // where the grouping can also say whether the pieces share a solid.
-                        if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2) == Orient::Zero {
+                        if clearance == Orient::Zero {
                             tangencies.extend(tangency_rows(
-                                model, faces, plane_ix, geom, n_a, c, ci, &coeffs, &cyl.def,
-                                cyl.surf, cyl.owner,
+                                model,
+                                faces,
+                                plane_ix,
+                                n_a,
+                                c,
+                                ci,
+                                &coeffs,
+                                &cyl.def,
+                                cyl.surf,
+                                cyl.owner,
+                                holders.as_deref().is_some_and(|h| !h.is_empty()),
                             ));
                         } else {
                             crossings.insert((c, ci));
@@ -353,10 +390,159 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
+    for (ci, sr) in
+        shared_rulings(faces, geom, &cyls, &crossings, &tangent_walls).ok_or_else(undecided)?
+    {
+        cyls[ci].shared.push(sr);
+    }
     // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
     // population outside the rulings road.
     Ok((cyls, crossings, tangencies))
+}
+
+/// **Two plane classes along a cylinder's axis whose meet line lies on the cylinder** — a ruling
+/// of one solid that is also the line of the other's edge (or of the same solid's flat through
+/// its own axis). Recorded once, here, and read by every road that must say so: the alias seed
+/// (one point, several names), the rulings split (one line, two vocabularies), the chart (one
+/// station) and the tangency verdict.
+///
+/// The population is the pairs this gate already recorded against the cylinder: a class in
+/// `crossings` (it cuts the lateral in two rulings) with another in `crossings`, or with a
+/// **tangent** class that carries a face of the cylinder's other operand. A tangent class of the
+/// cylinder's own solid is its smooth edge — a fillet — and stays out, by the sentence
+/// `tangency_rows` already stands on: a valid solid's faces do not meet.
+///
+/// ★ **And the line must lie on a lateral *face*, not only on the surface** — the four sites of
+/// this gate speak about faces, and so does this record. A fillet is a quarter of its cylinder:
+/// a slab standing on the plate beside it, with a face through the fillet's axis and another
+/// tangent to the cylinder at the quarter turn the fillet does not have, puts its corner line on
+/// the infinite cylinder and nowhere near the lateral face
+/// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, the pair recorded
+/// before this condition). The line's radial direction is asked against each lateral face's
+/// angular extent (`Footprint::theta`, ends included — a line on a face's end ruling is the
+/// face's edge, the half-cylinder family).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SharedRuling {
+    /// The two plane classes, ascending.
+    pub(crate) line: (usize, usize),
+    /// Which of the two state the ruling as a station of the cylinder's chart — the ones in
+    /// `crossings`, so one (a tangent partner) or both.
+    pub(crate) stated_by: Vec<usize>,
+}
+
+/// The plane classes other than `wall` that hold `wall`'s tangent line to the cylinder `def` —
+/// `plane_plane_cylinder` answering `OnRuling` (or the two classes being one plane). The one
+/// spelling of «this line lies on the cylinder» the record below uses for every pair. `None` is
+/// arithmetic that could not answer.
+fn classes_holding_the_line(
+    geom: &[WorkingPlane],
+    wall: usize,
+    coeffs: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+) -> Option<Vec<usize>> {
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let mut out = Vec::new();
+    for (k, wp) in geom.iter().enumerate() {
+        if k == wall {
+            continue;
+        }
+        let Some(w) = wp.world_rat() else { continue };
+        if matches!(
+            nacre_exact::quad::plane_plane_cylinder(coeffs, &w, &o, &m, r2)?,
+            nacre_exact::quad::CylinderMeet::OnRuling(_)
+                | nacre_exact::quad::CylinderMeet::CoincidentPlanes
+        ) {
+            out.push(k);
+        }
+    }
+    Some(out)
+}
+
+/// Build the [`SharedRuling`] record from the gate's own records — see its doc for the
+/// population. `None` is arithmetic that could not answer.
+fn shared_rulings(
+    faces: &[FaceRow],
+    geom: &[WorkingPlane],
+    cyls: &[WorkingCyl],
+    crossings: &std::collections::HashSet<(usize, usize)>,
+    tangent_walls: &[(usize, usize, Vec<usize>)],
+) -> Option<Vec<(usize, SharedRuling)>> {
+    let mut out = Vec::new();
+    for (ci, cyl) in cyls.iter().enumerate() {
+        let mut secants: Vec<usize> = crossings
+            .iter()
+            .filter(|&&(_, k)| k == ci)
+            .map(|&(c, _)| c)
+            .collect();
+        secants.sort_unstable();
+        let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
+        let fps = lateral_footprints(faces, cyl.surf);
+        // Whether the line through `p` along the axis lies on a lateral face of this cylinder.
+        let on_a_face = |p: &[nacre_exact::Rat; 3]| -> Option<bool> {
+            let mut w = [nacre_exact::Rat::from_int(0); 3];
+            for k in 0..3 {
+                w[k] = p[k].checked_sub(o[k])?;
+            }
+            let along = nacre_exact::dot3_rat(&w, &m)?;
+            let mm = nacre_exact::dot3_rat(&m, &m)?;
+            let q = along.checked_mul(nacre_exact::Rat::new(mm.denom(), mm.numer())?)?;
+            let mut x = [nacre_exact::Rat::from_int(0); 3];
+            for k in 0..3 {
+                x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
+            }
+            for fp in &fps {
+                match &fp.theta {
+                    None => return Some(true),
+                    Some(arc) => {
+                        if arc_contains(arc, &x, &m)? {
+                            return Some(true);
+                        }
+                    }
+                }
+            }
+            Some(false)
+        };
+        for (i, &s) in secants.iter().enumerate() {
+            let ws = geom[s].world_rat()?;
+            for &t in &secants[i + 1..] {
+                let wt = geom[t].world_rat()?;
+                if let nacre_exact::quad::CylinderMeet::OnRuling(line) =
+                    nacre_exact::quad::plane_plane_cylinder(&ws, &wt, &o, &m, r2)?
+                    && on_a_face(&line.base())?
+                {
+                    out.push((
+                        ci,
+                        SharedRuling {
+                            line: (s, t),
+                            stated_by: vec![s, t],
+                        },
+                    ));
+                }
+            }
+        }
+        for (t, k, holders) in tangent_walls {
+            if *k != ci {
+                continue;
+            }
+            let foot = tangency_foot(&geom[*t].world_rat()?, &o)?;
+            if !on_a_face(&foot)? {
+                continue;
+            }
+            for &s in holders {
+                if secants.binary_search(&s).is_ok() {
+                    out.push((
+                        ci,
+                        SharedRuling {
+                            line: (s.min(*t), s.max(*t)),
+                            stated_by: vec![s],
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    Some(out)
 }
 
 /// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question
@@ -456,9 +642,10 @@ pub(crate) struct Tangency {
     ///
     /// ★ A whole **disk** wall face clearing the tangent line is read by the footprint reader
     /// and writes no row at all, so what reaches here is the abstention's true subject.
-    /// Abstain rather than answer. (☑ Both constructed members of
-    /// this population reach `CoincidentNodes` in the arrangement anyway — two samples are not a
-    /// population claim, so the abstention stands.)
+    /// Abstain rather than answer. (☑ Every constructed member of this population — the keyhole
+    /// family, the boss on a bore's rim — is refused in the arrangement anyway, at the cap where
+    /// the rim's arc and this wall leave the corner tangent and the same way (`UnorderedEdges`);
+    /// that is a wall of its own, not a verdict, so the abstention stands.)
     pub(crate) line_in_another_plane: bool,
     /// Nothing above could be stated exactly (a face with no rational world description, an
     /// overflow). Same answer as `line_in_another_plane`, different cause.
@@ -505,30 +692,6 @@ fn tangency_foot(
     Some(out)
 }
 
-/// **Does any *other* plane class hold this tangent line?** — the exact condition under which the
-/// three-region model above stops being complete. Two rational questions per class: the line's
-/// direction lies in the plane (`n·m = 0`), and its base point is on it.
-fn line_lies_in_another_class(
-    geom: &[WorkingPlane],
-    wall: usize,
-    base: &[nacre_exact::Rat; 3],
-    m: &[nacre_exact::Rat; 3],
-) -> bool {
-    for (k, wp) in geom.iter().enumerate() {
-        if k == wall {
-            continue;
-        }
-        let Some(w) = wp.world_rat() else { continue };
-        if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], m) != nacre_exact::Orient::Zero {
-            continue;
-        }
-        if plane_side_of_rat(&w, base) == Some(0) {
-            return true;
-        }
-    }
-    false
-}
-
 /// **The rows a tangent `(class, cylinder)` pair writes** — one per (wall face, lateral face) pair
 /// that did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
 /// contributes nothing; that is why collecting here neither widens nor narrows the rule.
@@ -542,7 +705,6 @@ fn tangency_rows(
     model: &Model,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-    geom: &[WorkingPlane],
     n_a: usize,
     c: usize,
     ci: usize,
@@ -550,16 +712,15 @@ fn tangency_rows(
     def: &nacre_topo::CylinderDef,
     surf: Handle<Surface>,
     owner: SolidSide,
+    line_in_another_plane: bool,
 ) -> Vec<Tangency> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let side_of = |i: usize| {
         if i < n_a { SolidSide::A } else { SolidSide::B }
     };
-    // The line's base and whether a third plane holds it — one answer for the whole pair.
+    // The line's base — one answer for the whole pair, like whether a third plane holds it
+    // (asked by the caller, `classes_holding_the_line`).
     let base = tangency_foot(coeffs, &o);
-    let line_in_another_plane = base
-        .as_ref()
-        .is_some_and(|b| line_lies_in_another_class(geom, c, b, &m));
     // Which side of the wall plane the cylinder is on — the lens' side. ★ A tangency puts the
     // whole cylinder on one side, and `0` would mean the axis lies *in* the plane, which needs
     // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by

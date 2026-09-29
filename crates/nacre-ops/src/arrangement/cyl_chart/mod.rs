@@ -118,6 +118,26 @@ pub(crate) struct ThetaSeg {
     /// this lateral face is even here is this one's.
     #[cfg(test)]
     pub(crate) marks: Vec<(SolidSide, SegKind)>,
+    /// **The other wall stating this very ruling** — a line of two secant classes lying on the
+    /// cylinder ([`crate::planes::SharedRuling`]) is one station, stated by both. The two labels
+    /// are not one fact: each reads the chamber on its own plane, and the chamber beside the
+    /// lateral on each side of the line is bounded by a different one of the two planes — see
+    /// [`StationTwin::bounds_plus`].
+    pub(crate) twin: Option<StationTwin>,
+}
+
+/// The second wall of a station two secant classes state — see [`ThetaSeg::twin`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StationTwin {
+    pub(crate) wall: usize,
+    pub(crate) label: Option<Label>,
+    /// **Whether this wall, not the station's own, bounds the sector counter-clockwise of the
+    /// line.** Inside the cylinder the two planes run from the line as two chords; turning from
+    /// the lateral's `+θ` tangent `τ = m × r` inward (counter-clockwise about `m`, towards `−r`),
+    /// the first chord met closes the chamber beside the `+θ` sector, and the other closes the
+    /// `−θ` one. Chord `d₁` comes first iff `(d₁ × d₂)·m > 0`, with each `dᵢ = m × nᵢ` turned to
+    /// point inward — exact, from the two planes and the axis.
+    pub(crate) bounds_plus: bool,
 }
 
 /// One cylinder class's chart: the two axes, and the cells they cut.
@@ -430,16 +450,105 @@ pub(crate) fn chart_of(
                         label: r.label,
                         #[cfg(test)]
                         marks: r.marks.clone(),
+                        twin: None,
                     }
                 })
                 .collect()
         })
         .unwrap_or_default();
+    let theta = fold_shared_stations(jd, &cyls[k], theta)?;
     Ok(Chart {
         z_lines,
         theta,
         end_swapped,
     })
+}
+
+/// **One ruling two secant classes state is one station** — read off the gate's record
+/// ([`crate::planes::SharedRuling`]): the two classes' pieces over one axis interval end on the
+/// same two points, and the alias seed has given those points one name each, so the pair is
+/// found by **name** — the chart does not decide «same θ» on its own. Left as two, the cell
+/// builder hands `circular_order` one point under two stations and it refuses the coincidence.
+fn fold_shared_stations(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: &WorkingCyl,
+    mut theta: Vec<ThetaSeg>,
+) -> Result<Vec<ThetaSeg>, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    for sr in cyl.shared.iter().filter(|sr| sr.stated_by.len() == 2) {
+        let (t1, t2) = sr.line;
+        let plus_is_t2 = second_chord_first(jd, &cyl.def, t1, t2).ok_or_else(undecided)?;
+        let mut i = 0;
+        while i < theta.len() {
+            if theta[i].wall != t1 {
+                i += 1;
+                continue;
+            }
+            let Some(j) = (0..theta.len()).find(|&j| {
+                theta[j].wall == t2 && theta[j].end == theta[i].end && theta[j].z == theta[i].z
+            }) else {
+                i += 1;
+                continue;
+            };
+            let other = theta.remove(j);
+            let i = if j < i { i - 1 } else { i };
+            theta[i].twin = Some(StationTwin {
+                wall: other.wall,
+                label: other.label,
+                bounds_plus: plus_is_t2,
+            });
+        }
+    }
+    Ok(theta)
+}
+
+/// Whether plane class `t2`'s chord, not `t1`'s, is met first turning from the `+θ` tangent at
+/// their shared ruling inward — [`StationTwin::bounds_plus`]'s rule. `None` is arithmetic that
+/// could not answer, or two classes whose line is not a ruling of this cylinder.
+fn second_chord_first(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    t1: usize,
+    t2: usize,
+) -> Option<bool> {
+    use nacre_exact::{Rat, cross3_rat, dot3_rat};
+    let (w1, w2) = (
+        combinatorics::class_coeffs_rat(jd, t1)?,
+        combinatorics::class_coeffs_rat(jd, t2)?,
+    );
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let nacre_exact::quad::CylinderMeet::OnRuling(line) =
+        nacre_exact::quad::plane_plane_cylinder(&w1, &w2, &o, &m, r2)?
+    else {
+        return None;
+    };
+    // The radial direction of the line, off the axis.
+    let base = line.base();
+    let mut w = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        w[k] = base[k].checked_sub(o[k])?;
+    }
+    let mm = dot3_rat(&m, &m)?;
+    let q = dot3_rat(&w, &m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    let mut r = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        r[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
+    }
+    // Each chord's direction, turned to point into the cylinder (against `r`).
+    let inward = |wt: &[Rat; 4]| -> Option<[Rat; 3]> {
+        let d = cross3_rat(&m, &[wt[0], wt[1], wt[2]])?;
+        if dot3_rat(&d, &r)? > Rat::from_int(0) {
+            Some([
+                Rat::from_int(0).checked_sub(d[0])?,
+                Rat::from_int(0).checked_sub(d[1])?,
+                Rat::from_int(0).checked_sub(d[2])?,
+            ])
+        } else {
+            Some(d)
+        }
+    };
+    let (d1, d2) = (inward(&w1)?, inward(&w2)?);
+    Some(dot3_rat(&cross3_rat(&d1, &d2)?, &m)? < Rat::from_int(0))
 }
 
 /// The lines of one chart, looked up **by axis parameter** — never by class index. Two ⊥ classes

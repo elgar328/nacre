@@ -753,20 +753,24 @@ pub enum RejectReason {
     /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).
     CircleCrossesRuling,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
-    /// yet. The assembly's edge road is open (ruling edges mint with their own key and
-    /// carriers) and so is the gate's record-and-pass arm, so this name is
-    /// **reachable from production**. ★ A boss whose **cap sits
+    /// yet. The assembly's edge road is open (a ruling edge is a straight edge, keyed by its two
+    /// ends, its carriers read off the faces using it) and so is the gate's record-and-pass arm,
+    /// so this name is **reachable from production**. ★ A boss whose **cap sits
     /// inside the other body's material** (the half-height variant) builds,
     /// and so does the crossing census's whole column of 15 — a lateral region
     /// that crosses a z-line transversally in one sector while ending on it in another
     /// (the emitter walks regions of the chart; `cyl_chart::regions`).
     ///
-    /// What raises it today is a **producer inconsistency**, never a shape: in the region walk,
-    /// a boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling
-    /// the wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
-    /// component with no outer cycle (☑ all measured 0 across the suite);
-    /// and the assembly's standing guards — a segment lying *on* the lateral, and ruling end
-    /// names that share no single plane. [`Self::ArcBoundNotYet`]'s straight sibling.
+    /// What raises it is of two kinds. **Producer inconsistencies**, in the region walk: a
+    /// boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling the
+    /// wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
+    /// component with no outer cycle (☑ all measured 0 across the suite); and ruling end names that
+    /// share no single plane. And **shapes the rulings split does not arrange**: a segment lying
+    /// on the lateral along a line the gate did not record (`planes::SharedRuling` — the
+    /// lines of two secant classes, or of a secant and a tangent one of the other solid, that lie
+    /// on a lateral face), a recorded line's segment that shares a stretch with a ruling piece
+    /// without matching one end for end, or one that crosses its own class there (`Transversal`,
+    /// whose side is the directed line's). [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// ★ **«A class carrying both circles and rulings» is not one of those guards**:
     /// it would refuse a population it has no reason to, since the two only conflict when they

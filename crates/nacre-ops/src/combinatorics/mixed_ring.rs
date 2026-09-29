@@ -194,6 +194,14 @@ fn point_in_mixed_ring_inner(
         if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
             let (line, s) = pierce_meet(jd, cyl, def, nd)?;
+            // ★ **A rational root is used as the rational it is.** A step's two corners share one
+            // radical because they are the two meets of one line with the cylinder — unless a
+            // corner arrives under another pair's name: a point on a line two classes share
+            // on the cylinder, whose representative is the other class's pierce name. Such a
+            // point is three planes' meet, so rational, but its root carries that other pair's
+            // (square) discriminant, and mixing it with the step's radical is the caller bug
+            // `QuadVal` refuses.
+            let s = s.as_rat().map_or(s, QuadVal::from_rat);
             let (b, d) = (line.base(), line.dir());
             let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
                 QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)

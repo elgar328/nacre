@@ -447,6 +447,10 @@ pub(crate) struct WorkingCyl {
     /// both solids — the coincident pair by another spelling — never reaches this table: the class
     /// loop refuses it by name before pushing.
     pub(crate) owner: SolidSide,
+    /// **The lines of two plane classes that lie on this cylinder's lateral face** — the gate's
+    /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
+    /// the table reads it rather than deciding it again.
+    pub(crate) shared: Vec<SharedRuling>,
 }
 
 /// **The interval a lateral face reaches along a direction `d`**, in `d·p` units.

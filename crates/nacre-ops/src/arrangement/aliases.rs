@@ -69,6 +69,14 @@ pub(super) fn seed_from_operands(
     // in the same round could refuse the coincidence before the round that learnt it — a round
     // that declines returns, and there is no next. `side_of` is exact (the quad tower), and the
     // question is corners × classes, both small.
+    // ★ **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
+    // entry per such line, folded before any class is traced for the same reason as the corners
+    // below.
+    for (ci, cyl) in cyls.iter().enumerate() {
+        for sr in &cyl.shared {
+            aliases.record_shared_ruling(jd, cyls, ci, sr);
+        }
+    }
     corners.sort_unstable();
     corners.dedup();
     for &corner in &corners {
@@ -199,6 +207,69 @@ impl Aliases {
         for fc in planes {
             if let Ok(id) = crossing_on_ruling(jd, def, fc, wc, cyl, side) {
                 self.union_point(corner, id);
+            }
+        }
+    }
+
+    /// **A plane-pair line lying on a cylinder's lateral face** — the other twin of
+    /// [`Aliases::record`], read off the gate's record ([`crate::planes::SharedRuling`]) rather
+    /// than off an operand's corners. Every class across the axis meets the line `t1 ∩ t2` in one
+    /// point, and every name that point has is folded here: the three-plane `{c, t1, t2}`, each
+    /// secant's ruling crossing with `c` (the root that lies on the other plane), and a tangent
+    /// partner's double root. Asked of every class across the axis, not of the operands' corners:
+    /// where the prism reaches past the cylinder's cap, the point on the cap is no corner of
+    /// either operand, and it is the same point all the same.
+    pub(super) fn record_shared_ruling(
+        &mut self,
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        cyl: usize,
+        sr: &crate::planes::SharedRuling,
+    ) {
+        use nacre_exact::quad::{CylinderMeet, QuadVal};
+        use nacre_topo::QuadRoot;
+        let Some(wcy) = cyls.get(cyl) else { return };
+        let def = &wcy.def;
+        let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+        let (t1, t2) = sr.line;
+        let (Some(w1), Some(w2)) = (
+            combinatorics::class_coeffs_rat(jd, t1),
+            combinatorics::class_coeffs_rat(jd, t2),
+        ) else {
+            return;
+        };
+        for c in 0..jd.planes.len() {
+            let Some(wc) = combinatorics::class_coeffs_rat(jd, c) else {
+                continue;
+            };
+            if !nacre_exact::parallel_rat(&[wc[0], wc[1], wc[2]], &m) {
+                continue; // only a class across the axis meets the line in a point
+            }
+            let mut s = [c, t1, t2];
+            s.sort_unstable();
+            let Some(t) = combinatorics::canonical_triple(jd, &s) else {
+                continue;
+            };
+            let point = NodeId::three_planes(t);
+            for (x, wx, other) in [(t1, &w1, &w2), (t2, &w2, &w1)] {
+                let on_line = |line: &nacre_exact::quad::MeetLine, sv: &QuadVal| {
+                    nacre_exact::quad::plane_side(other, line, sv) == nacre_exact::Orient::Zero
+                };
+                match nacre_exact::quad::plane_plane_cylinder(&wc, wx, &o, &m, r2) {
+                    Some(CylinderMeet::Pair { line, s }) => {
+                        for (root, sv) in [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])] {
+                            if on_line(&line, sv) {
+                                self.union_point(point, NodeId::pierce(c, x, cyl, root));
+                            }
+                        }
+                    }
+                    Some(CylinderMeet::Tangent { line, s })
+                        if on_line(&line, &QuadVal::from_rat(s)) =>
+                    {
+                        self.union_point(point, NodeId::pierce(c, x, cyl, QuadRoot::Double));
+                    }
+                    _ => {}
+                }
             }
         }
     }

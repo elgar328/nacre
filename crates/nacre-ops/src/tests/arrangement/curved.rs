@@ -140,6 +140,7 @@ fn armed_through_boss_z(
             def: def.clone(),
             realized: *cache,
             owner: crate::planes::SolidSide::A,
+            shared: Vec::new(),
         });
     }
     let wc = setup

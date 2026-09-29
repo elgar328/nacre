@@ -189,16 +189,19 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     );
     m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
-    // ★★ **One point, two names** — and the split says so by name. `(8,13,5)` is the boss's
-    // corner, so the arrangement already holds it as a three-plane vertex; the rim crossing
-    // names the *same* point as a `NodeId::Pierce`. The DCEL keys vertices by name, so shipping
-    // both would put two vertices where there is one — folding them is its own step, and until
-    // then `CoincidentNodes` ("two names for one point") is the true sentence.
+    // ★★ **One point, several names — folded; then a corner no order is read at.** `(8,13,5)` is
+    // the boss's corner, a three-plane vertex; the rim crossings name the same point as pierce
+    // points of `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line
+    // `x = 8, y = 13` lies on the bore, so the gate records it and the alias seed folds the
+    // names into one (`Aliases::record_shared_ruling`). What stops it now is the plate's top:
+    // there the rim's arc and the boss's wall `y = 13` leave the corner **tangent and the same
+    // way**, and which comes first is a matter of curvature — `UnorderedEdges`, the keyhole's
+    // wall (`tests/coverage/edge_on_a_ruling.rs`).
     assert!(
         matches!(
             err,
             BoolError::Rejected {
-                reason: RejectReason::CoincidentNodes,
+                reason: RejectReason::UnorderedEdges,
                 ..
             }
         ),

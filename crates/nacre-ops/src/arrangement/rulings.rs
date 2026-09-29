@@ -167,7 +167,10 @@ fn ruling_sweep(
     // ★ **The lateral's half of a plane-pair line.** An edge of this cycle can lie on
     // this ruling with the face *across* it being another plane `t` — the fillet's tangent edge,
     // when `wc` passes through the axis and so contains the tangent ruling. That line is a
-    // plane-pair line (`wc ∩ t`), and the carrier rule says the plane vocabulary states it: the
+    // plane-pair line (`wc ∩ t`), and the lateral **ends** there, so the plane vocabulary states
+    // it — the half of the one rule for a line that is a ruling and a plane-pair line at once
+    // (the other half: where the lateral runs on across the line, the line is the other solid's
+    // edge and the ruling vocabulary states it — `split_rulings`' fold). The
     // tangent wall's own run already does (`Feature::Run` → `Graze`), from *its* side. But the
     // solid's material near that line lies on **both** sides of `wc` — the tangent wall's below,
     // the fillet face's above — and an edge's mask is the sum of its faces' statements

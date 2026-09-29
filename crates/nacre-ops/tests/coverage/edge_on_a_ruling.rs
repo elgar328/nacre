@@ -8,8 +8,9 @@
 //! - **a tangent wall and a secant one — the keyhole**: a box as wide as the cylinder's diameter,
 //!   its side walls tangent, its corners on the circle. The commonest shape of the two.
 //!
-//! Plus the shapes that must stay refused by name: both walls entering `A` (an inward wedge), and
-//! the corner touching `A` from outside (a line contact).
+//! Plus the shapes whose honest answer is partly a refusal by name: both walls entering `A` (an
+//! inward wedge — its `A − B` touches itself along the line), and the corner touching `A` from
+//! outside (a line contact).
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
@@ -88,19 +89,119 @@ fn refused_today(at: &str, _: &mut Model, got: Result<Vec<Handle<Solid>>, BoolEr
     }
 }
 
+/// One placement's six booleans, in the order `A ∪ B`, `B ∪ A`, `A − B`, `B − A`, `A ∩ B`,
+/// `B ∩ A`: each built result as `(bodies, volume)` — validated here — or the refusal's reason.
+type Six = [Result<(usize, f64), nacre_ops::RejectReason>; 6];
+
+/// Every placement of the prism over each of `quads` against `A` over `a`, as in
+/// [`every_placement`], gathered into [`Six`] per placement with its label and `B`'s volume.
+fn every_six(a: fn() -> Profile2d, quads: &[(&str, &[[f64; 2]])]) -> Vec<(String, f64, f64, Six)> {
+    let mut out: Vec<(String, f64, f64, Six)> = Vec::new();
+    let mut cur: Vec<Result<(usize, f64), nacre_ops::RejectReason>> = Vec::new();
+    every_placement(a, quads, |at, m, got| {
+        cur.push(match got {
+            Ok(solids) => {
+                m.rebuild_adjacency();
+                let vs = nacre_validate::validate(m);
+                assert!(vs.is_empty(), "{at}: {vs:?}");
+                Ok((solids.len(), solids.iter().map(|&s| volume(m, s)).sum()))
+            }
+            Err(BoolError::Rejected { reason, .. }) => Err(reason),
+            Err(e) => panic!("{at}: {e:?}"),
+        });
+        if cur.len() == 6 {
+            let label = at.rsplit_once(", ").map_or(at, |(l, _)| l).to_string();
+            let quad = quads
+                .iter()
+                .find(|(w, _)| at.starts_with(w))
+                .expect("the label starts with the family")
+                .1;
+            let area = (0..quad.len())
+                .map(|k| {
+                    let (p, q) = (quad[k], quad[(k + 1) % quad.len()]);
+                    p[0] * q[1] - q[0] * p[1]
+                })
+                .sum::<f64>()
+                .abs()
+                / 2.0;
+            let height: f64 = label
+                .split("height = ")
+                .nth(1)
+                .and_then(|h| h.parse().ok())
+                .expect("the label states the height");
+            let lift: f64 = label
+                .split("lift = ")
+                .nth(1)
+                .and_then(|l| l.split(',').next())
+                .and_then(|l| l.parse().ok())
+                .expect("the label states the lift");
+            let six: Six = std::mem::take(&mut cur).try_into().expect("six booleans");
+            out.push((
+                label,
+                area * height,
+                (lift + height).min(2.0) - lift.max(0.0),
+                six,
+            ));
+        }
+    });
+    out
+}
+
+/// The volume identities a wrong answer `validate` cannot see would break, wherever the booleans
+/// they need built: `Fuse + Common = |A| + |B|`, `(A − B) + Common = |A|`, `(B − A) + Common =
+/// |B|`, and each pair of swapped operands alike.
+fn identities(label: &str, b: f64, six: &Six) {
+    let a = 2.0 * std::f64::consts::PI;
+    let v = |i: usize| six[i].as_ref().ok().map(|&(_, v)| v);
+    for (x, y) in [(0, 1), (4, 5)] {
+        if let (Some(p), Some(q)) = (v(x), v(y)) {
+            assert!((p - q).abs() < 1e-9, "{label}: {x} vs {y}: {p} vs {q}");
+        }
+    }
+    for (i, want) in [(0, a + b), (2, a), (3, b)] {
+        if let (Some(p), Some(c)) = (v(i), v(4)) {
+            assert!(
+                (p + c - want).abs() < 1e-9,
+                "{label}: [{i}] + Common = {}, want {want}",
+                p + c
+            );
+        }
+    }
+}
+
 /// ★ **Two secant walls, one entering `A` — the corner on the rim's seam (`(1, 0)`, `θ = 0` on
-/// both frames) and off it (`(0.8, −0.6)`).** Every result would be a manifold solid; every
-/// boolean is refused today. A corner `0.001` off the lateral builds.
+/// both frames) and off it (`(0.8, −0.6)`).** Every boolean builds one body, valid, and the
+/// volumes add up; on the seam, `A ∩ B` is the circular segment beyond the slanted wall
+/// `0.8x + y = 0.8` (its distance from the axis `d = 0.8/√1.64`, area `acos d − d·√(1 − d²)`)
+/// over the height the two solids share. A corner `0.001` off the lateral builds as well.
 #[test]
-fn a_corner_entering_a_lateral_is_refused_today() {
+fn a_corner_entering_a_lateral_builds() {
     let on_the_seam: &[[f64; 2]] = &[[-1.0, 1.6], [1.0, 0.0], [3.0, 0.0], [3.0, 3.6]];
     let off_the_seam: &[[f64; 2]] = &[[-1.0, 1.6], [0.8, -0.6], [3.0, -0.6], [3.0, 3.6]];
-    let ran = every_placement(
+    let all = every_six(
         unit_disk,
         &[("on the seam", on_the_seam), ("off the seam", off_the_seam)],
-        refused_today,
     );
-    assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
+    assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
+    let d = 0.8 / 1.64f64.sqrt();
+    let segment = d.acos() - d * (1.0 - d * d).sqrt();
+    for (label, b, shared, six) in &all {
+        for (i, r) in six.iter().enumerate() {
+            match r {
+                Ok((1, _)) => {}
+                other => panic!("{label}: [{i}] {other:?}"),
+            }
+        }
+        identities(label, *b, six);
+        if label.starts_with("on the seam") {
+            let common = six[4].as_ref().expect("built").1;
+            assert!(
+                (common - segment * shared).abs() < 1e-9,
+                "{label}: Common {common}, want {}",
+                segment * shared
+            );
+        }
+    }
     let off: &[[f64; 2]] = &[[-1.0, 1.6], [1.0, 0.001], [3.0, 0.001], [3.0, 3.6]];
     every_placement(unit_disk, &[("0.001 off", off)], |at, _, got| {
         got.unwrap_or_else(|e| panic!("{at}: {e:?}"));
@@ -122,9 +223,10 @@ fn a_keyhole_is_refused_today() {
 /// own edge. `B`'s wall `x = 1` is tangent to `A`'s cylinder along that edge, either running
 /// across it or ending on it. Refused today — and where `B` reaches past both of `A`'s caps, the
 /// corners on the line are `A`'s own (no point of `B` lies on the lateral) and the refusal comes
-/// later, from the arrangement's backstops: `RingOrientation` (the wall across the edge, each
-/// operand order with `B` first) and `LabelConflict` (the wall ending on it, rotated, `B` first)
-/// — `SuspectedDefect`, 18 booleans, pinned here by count.
+/// later, from the arrangement's backstops: `RingOrientation` (the wall across the edge) and
+/// `LabelConflict` (the wall ending on it), each with `B` first — `SuspectedDefect`, 24
+/// booleans, pinned here by count. Elsewhere the cap's circle and the tangent wall leave the
+/// corner the same way, tangent (`UnorderedEdges`), the keyhole's wall.
 #[test]
 fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
     let across: &[[f64; 2]] = &[[-3.0, -2.0], [1.0, -2.0], [1.0, 0.5], [-3.0, 0.5]];
@@ -144,21 +246,55 @@ fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
         },
     );
     assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
-    assert_eq!(defects, 18, "the backstop refusals past both caps");
+    assert_eq!(defects, 24, "the backstop refusals past both caps");
 }
 
 /// ★ **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
-/// it. Refused today, and whatever this becomes it must not be a solid `validate` rejects.
+/// it. Near the line, `A − B` is two lobes meeting on it alone: where they join elsewhere (`B`
+/// inside `A`'s span or reaching past one cap) that is one solid touching itself and is refused
+/// (`NonManifoldResultEdge`, or `ArcBoundNotYet` on the seam with `B` past the top); where `B`
+/// cuts `A` through (past both caps) it is two solids. **It is never one body** — the lateral run
+/// through the line as one face would hide the touch under a closed shell. Common, `B − A` and
+/// the lifted Fuse build one body; the volumes add up. With `B`'s base on `A`'s cap (lift 0) the
+/// Fuse is refused `OpenResultShell` — the base cap's coplanar merge keeps the inner rim arc —
+/// and `A − B` with the apex on the seam `ZeroLengthEdge`: `SuspectedDefect`, 20 booleans,
+/// pinned by count.
 #[test]
-fn an_inward_wedge_on_a_lateral_is_refused_today() {
+fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     let on_the_seam: &[[f64; 2]] = &[[1.0, 0.0], [-3.0, 3.0], [-3.0, -3.0]];
     let off_the_seam: &[[f64; 2]] = &[[0.8, -0.6], [-3.0, 3.0], [-3.0, -3.0]];
-    let ran = every_placement(
+    let all = every_six(
         unit_disk,
         &[("on the seam", on_the_seam), ("off the seam", off_the_seam)],
-        refused_today,
     );
-    assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
+    assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
+    let mut defects = 0;
+    for (label, b, _, six) in &all {
+        for (i, r) in six.iter().enumerate() {
+            match (i, r) {
+                (2, Ok((n, _))) => {
+                    assert_eq!(*n, 2, "{label}: A − B is two bodies or none");
+                    assert!(label.contains("lift = -0.5"), "{label}: A − B built");
+                }
+                (_, Ok((n, _))) => assert_eq!(*n, 1, "{label}: [{i}]"),
+                (_, Err(reason)) if reason.class() == RejectClass::SuspectedDefect => {
+                    assert!(label.contains("lift = 0,"), "{label}: [{i}] {reason:?}");
+                    defects += 1;
+                }
+                (2, Err(reason)) => assert!(
+                    matches!(
+                        reason,
+                        nacre_ops::RejectReason::NonManifoldResultEdge
+                            | nacre_ops::RejectReason::ArcBoundNotYet
+                    ),
+                    "{label}: A − B refused as {reason:?}"
+                ),
+                (_, Err(reason)) => panic!("{label}: [{i}] {reason:?}"),
+            }
+        }
+        identities(label, *b, six);
+    }
+    assert_eq!(defects, 20, "the rim placement's refusals");
 }
 
 /// ★ **The corner touching `A` from outside — a line contact.** Common would be empty, Cut the

@@ -89,6 +89,37 @@ pub(crate) struct CellRead<'a> {
 }
 
 impl Chart {
+    /// **Whether the lateral ends at station `i` on both sides** — a station two secant walls
+    /// state, where the result keeps no material **between** the two walls. The chamber there
+    /// is the far side of the wall that bounds the `+θ` sector ([`StationTwin::bounds_plus`]),
+    /// read off that wall's label; `keep` says whether it is in the result. Kept, the material
+    /// runs across the line and so does the lateral; not kept, what lies on the two sides meets on
+    /// the line alone. `false` for every station one wall states; `None` when the label or the
+    /// side could not be read.
+    pub(crate) fn slit_at(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        i: usize,
+        side: SolidSide,
+        kind: BoolKind,
+    ) -> Option<bool> {
+        let seg = self.theta.get(i)?;
+        let Some(tw) = seg.twin else {
+            return Some(false);
+        };
+        let (label, wall) = if tw.bounds_plus {
+            (tw.label?, tw.wall)
+        } else {
+            (seg.label?, seg.wall)
+        };
+        let sd = ruling_side_of(jd, k, def, wall, seg.end[0])?;
+        let plus_above = crate::arrangement::plus_theta_is_above(jd, wall, sd)?;
+        let (own, other) = read_bits(&label, side, !plus_above);
+        Some(!keep_for(kind, side, own, other))
+    }
+
     /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
     /// `None` when the ruling merely passes `t` without a node there.
     fn node_on(&self, i: usize, t: Rat) -> Option<combinatorics::NodeId> {
@@ -385,8 +416,19 @@ impl Chart {
                 if seg.side == 0 {
                     return None;
                 }
-                let l = seg.label?;
-                let (wall, sd) = self.ruling_name(jd, k, def, i)?;
+                // ★ A station two walls state answers each side from the wall that bounds the
+                // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
+                // ☑ Measured: over the edge-on-a-ruling families this never decides a cell — the
+                // horizontal lines speak there, and swapping the two walls leaves every boolean
+                // as it was — so the rule stands on its derivation here, and on `slit_at`, which
+                // reads the same `bounds_plus` and does go red when it is swapped.
+                let (l, (wall, sd)) = match seg.twin {
+                    Some(tw) if tw.bounds_plus == starts_here => (
+                        tw.label?,
+                        (tw.wall, ruling_side_of(jd, k, def, tw.wall, seg.end[0])?),
+                    ),
+                    _ => (seg.label?, self.ruling_name(jd, k, def, i)?),
+                };
                 // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
                 // are read from opposite sides of their own rulings.
                 let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;

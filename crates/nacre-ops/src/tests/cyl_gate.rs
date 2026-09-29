@@ -242,11 +242,14 @@ fn the_tangent_wall_states_itself_exactly() {
         })
         .expect("the wall x = 0 is exactly r from the axis");
     let coeffs = setup.geom[c].world_rat().expect("checked above");
+    // No other plane of either operand holds the line `x = 0, y = 1` (a plane that did would
+    // have to contain `+Z` and pass through `(0, 1)`).
+    let holders = classes_holding_the_line(&setup.geom, c, &coeffs, &def).expect("exact");
+    assert!(holders.is_empty(), "{holders:?}");
     let rows = tangency_rows(
         &m,
         &setup.planes,
         &setup.plane_ix,
-        &setup.geom,
         setup.n_a,
         c,
         0,
@@ -254,6 +257,7 @@ fn the_tangent_wall_states_itself_exactly() {
         &def,
         surf,
         SolidSide::B, // the cylinder is the second operand; the wall face is the cube's
+        !holders.is_empty(),
     );
     assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
     let t = &rows[0];
@@ -270,8 +274,6 @@ fn the_tangent_wall_states_itself_exactly() {
     // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
     // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
     assert!(t.straddles, "{t:?}");
-    // No other plane of either operand holds the line `x = 0, y = 1` (a plane that did would
-    // have to contain `+Z` and pass through `(0, 1)`).
     assert!(!t.line_in_another_plane, "{t:?}");
     assert!(!t.undecided, "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.

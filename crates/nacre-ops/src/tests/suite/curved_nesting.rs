@@ -28,6 +28,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
                 def,
                 realized: *cache,
                 owner: crate::planes::SolidSide::A,
+                shared: Vec::new(),
             }
         })
         .collect();

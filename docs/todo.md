@@ -287,31 +287,29 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 
 ## 알려진 결함과 절벽
 
-### 한 솔리드의 모서리가 원통 옆면의 룰링 위에 놓이면 거절한다
+### 접선 벽이 낀 모서리 선이 원통의 룰링 위에 놓이면 거절한다 — 열쇠 구멍
 
-축에 ∥ 인 두 평면 클래스의 교선(한 솔리드의 세로 모서리 선)이 다른 솔리드의 원통 위에 정확히 놓이면 여섯 불리언이
-전부 `NotSupported` 로 거절된다 — 세계 틀과 기울어진 틀(`pythagorean_frame`) 모두, 꼭짓점 순서와 높이 배치(림 · 옆면
-중간 · 캡 너머)에 무관하게. 0.001 비키면 빌드된다. 두 부류가 있다: 두 벽이 모두 원통을 가로지르는 모서리, 그리고
-**열쇠 구멍**(지름과 같은 폭의 상자 — 옆벽이 접선, 모서리가 원 위; 게이트는 이 인구를
-`Tangency::line_in_another_plane` 으로 이름하고 판정 `tangency_reject` 는 기권한다). 스코어보드:
-`tests/coverage/edge_on_a_ruling.rs` — 들어가는 모서리 · 열쇠 구멍 · 제 축을 지나는 평면의 모서리에 접하는 벽 ·
-안쪽 쐐기 · 선 접촉, 고치는 단계가 뒤집는다. 제 축을 지나는 평면(반원기둥의 평면)의 모서리에 다른 솔리드의 벽이 접하는
-가족은 그 벽이 두 캡을 다 넘으면(선 위의 점이 전부 원통 쪽 솔리드의 제 모서리) `CoincidentNodes` 를 지나 배열의
-백스톱 `RingOrientation`·`LabelConflict`(`SuspectedDefect`)에서 멈춘다 — 18 불리언, 스코어보드가 수로 고정한다.
+축에 ∥ 인 두 평면의 교선(한 솔리드의 세로 모서리 선)이 다른 솔리드의 원통 옆면 위에 놓이는 배치 가운데 두
+벽이 모두 원통을 가로지르는 것(한 벽이 안으로 들어가는 모서리)은 빌드된다 — 게이트의 `SharedRuling` 기록,
+별칭 씨앗, 룰링 분할의 접기, 차트의 정거장 하나, 직선 간선의 열쇠, 결과 정점 이름. 스코어보드
+`tests/coverage/edge_on_a_ruling.rs` 가 가족별로 오늘의 답을 고정한다. 남은 것:
 
-**거절이 맞는 부분과 지어야 하는 부분.** 한 벽이 원통 안으로 들어가는 배치의 결과는 전부 룰링 위에 보통 간선을 가진
-매니폴드다 — 능력의 빈틈이다. 밖에서 선으로만 닿는 배치는 Common 이 비고 Cut 은 입력 그대로이며, Fuse 는 선으로
-닿는 두 몸통이다(design 의 바깥 접선 규칙). 어느 쪽이든 지금의 이름 `CoincidentNodes` 는 원인을 말하지 않는다.
-
-**거절 사슬**(잰 것). 먼저 `arrangement/split.rs` `split_at_crossings` 가 벽 직선 위에서 원통이 박은 점과 세 평면
-모서리를 한 점으로 알아보지 못해 `CoincidentNodes` 다(열쇠 구멍은 접선 벽이 ⊥ 클래스마다 만드는 `Double` pierce
-이름 때문에 `split_circles.rs` 에서도) — 별칭 표는 `seed_from_operands` 가 «원통 모서리가 평면 클래스 위»만 심고
-(`Aliases::record_on_cylinder`) 쌍대 «두 평면의 교선이 원통 위»는 심지 않는다. 쌍대를 심어 보면(시험) 안으로
-들어가는 벽은 `split_rulings.rs` `lateral_crossings` 의 `OnRuling`(`RulingBoundNotYet`)에서, 그다음 한 정점에서
-평면 쌍 선과 룰링이 같은 선인 `UnorderedEdges`, 두 벽 클래스가 한 룰링을 따로 진술하는 차트의 `WitnessNotRational`,
-클래스 상대 `side` 를 담은 간선 열쇠의 `OpenResultShell` 에서 차례로 멈추고, 밖의 접촉은 `loop_winding` 의 집힌
-링(`CoincidentNodes`)에서 멈춘다. `error.rs` 의 `RulingBoundNotYet` 문서(«a producer inconsistency, never a
-shape»)는 쌍대 씨앗이 들어오면 거짓이 된다.
+- **열쇠 구멍**(지름과 같은 폭의 상자 — 옆벽 `x = ±r` 접선, 모서리가 원 위)과 **반원기둥의 평면 모서리에
+  접하는 벽**: 캡에서 원호와 접선 벽이 모서리를 접하며 **같은 방향으로** 떠나 순서가 곡률의 물음이다 —
+  `split.rs` `angular_order` 의 `UnorderedEdges`. 선과 원호가 접해 같이 떠나면 원호는 제 중심 쪽으로 휘므로
+  «중심이 선의 어느 쪽인가»가 정확히 답한다(`tangent_pole` 의 짝). 그 뒤 판정 `tangency_reject` 가
+  `line_in_another_plane` 행에서 기권한다(`CylinderGateUndecided`) — 그 선이 접선 벽 면의 피연산자 간선이고
+  간선의 다른 면이 할선 클래스 위면 선이 배열의 간선이라 두 덩어리의 접촉은 구조가 말한다(네 면이 쓰는
+  간선) — 그 행은 기권 대신 구조에 맡긴다. `a_crossing_on_a_segments_endpoint_is_inside_it`(보어 림 위의
+  보스 모서리)도 같은 벽에서 멈춘다. 반원기둥 가족이 두 캡을 다 넘으면 배열의 백스톱
+  `RingOrientation`·`LabelConflict`(24 불리언, `SuspectedDefect`)에서 멈춘다.
+- **안쪽 쐐기**(두 벽 모두 원통으로 들어가는 꼭짓점)의 `SuspectedDefect` 20: 쐐기의 밑면이 원통 캡과 같은
+  평면이면(림 배치) Fuse 가 `OpenResultShell` — 캡 클래스의 동일평면 병합이 바깥 림 호 대신 안쪽 호를
+  경계로 고른다 — 이고, 꼭짓점이 차트 솔기 위면 `A − B` 가 `ZeroLengthEdge` 다. 나머지는 빌드되거나
+  (`A − B` 는 두 몸통) 이름으로 거절된다(`NonManifoldResultEdge` — 한 솔리드가 선에서 스스로 닿는다).
+- **선 접촉**(모서리가 밖에서 원통에 선으로만 닿는다): Common 이 비고 Cut 은 입력 그대로이며 Fuse 는 선으로
+  닿는 두 몸통이어야 한다(design 의 바깥 접선 규칙). 지금은 `CoincidentNodes` — 캡 클래스의 8자 링을
+  `loop_winding` 이 사전식 최소 꼭짓점에서 읽어 집힌 자리를 만난다.
 
 ### 접히지 않는 사슬 위 평면은 세계 이름이 없다
 

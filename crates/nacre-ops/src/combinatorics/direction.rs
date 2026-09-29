@@ -398,6 +398,18 @@ pub(crate) fn continuation(
                 None => return Err(reject(RejectReason::WitnessNotRational)),
             }
         }
+        // ★ A line and a ruling that are **one** line (a prism's edge running on past the
+        // cylinder's cap along a ruling): the straight reading once more, by the travel
+        // directions ([`line_along_ruling`]).
+        (EdgeDir::Line { .. }, EdgeDir::Ruling(_)) | (EdgeDir::Ruling(_), EdgeDir::Line { .. })
+            if turn(jd, p, earlier, later)? == 0 =>
+        {
+            match line_along_ruling(jd, p, earlier, later)? {
+                Some(true) => Continuation::Straight,
+                Some(false) => Continuation::DoublesBack,
+                None => return Err(reject(RejectReason::WitnessNotRational)),
+            }
+        }
         // A line and an arc at a **transversal** crossing turn — that is what transversal means.
         _ => Continuation::Turns,
     })
@@ -700,6 +712,50 @@ pub(crate) fn tangent_pole(
         return Ok(false);
     }
     Ok(tangent_travel_agrees(jd, p, line.0, line.1, arc) == Some(false))
+}
+
+/// Whether two **departures** from one node are a half turn apart along one straight line — a
+/// plane-pair line and a ruling that are the same line (two planes along a cylinder's axis meeting
+/// on it, [`crate::planes::SharedRuling`]), leaving opposite ways: the segment that runs on past
+/// the lateral's cap, and the ruling piece it continues. The structural [`antiparallel`] cannot
+/// see it (one carrier is a plane class, the other a cylinder); the directions can — the line's
+/// is `sense · (n_P × n_carrier)` in the stored frame ([`stored_line_dir`], the frame `sense` is
+/// made in), the ruling's `±m`. `Ok(false)` for any other pair.
+pub(crate) fn ruling_pole(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<bool, BoolError> {
+    Ok(line_along_ruling(jd, p, a, b)? == Some(false))
+}
+
+/// For a line and a ruling at one node that lie on **one** line (their turn is `0`): whether they
+/// travel the same way. `None` for any other pair.
+fn line_along_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<Option<bool>, BoolError> {
+    let ((carrier, sense), r) = match (a, b) {
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Ruling(r))
+        | (EdgeDir::Ruling(r), EdgeDir::Line { carrier, sense }) => ((*carrier, *sense), r),
+        _ => return Ok(None),
+    };
+    if turn(jd, p, a, b)? != 0 {
+        return Ok(None);
+    }
+    let d =
+        stored_line_dir(jd, p, carrier).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+    let along = match nacre_exact::dot_sign_rat(&d, &r.axis) {
+        nacre_exact::Orient::Positive => sense,
+        nacre_exact::Orient::Negative => -sense,
+        // A zero turn puts the line along the axis, so `d · m` cannot vanish; if it does, the
+        // pair is not the shape this answers.
+        nacre_exact::Orient::Zero => return Ok(None),
+    };
+    Ok(Some((along > 0) == r.up))
 }
 
 fn arc_side(

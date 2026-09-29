@@ -15,6 +15,7 @@ fn lateral_crossings(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
+    on_a_shared_line: bool,
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
     use nacre_exact::quad::CylinderMeet;
     use nacre_topo::QuadRoot;
@@ -38,8 +39,11 @@ fn lateral_crossings(
         Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
             return Ok(Some(Vec::new()));
         }
-        // The segment's line lies on the lateral (a wall meeting the cylinder exactly along a
-        // ruling), or the planes degenerate: shapes this ladder does not arrange yet.
+        // ★ The segment's line lies on the lateral: a line the gate recorded
+        // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
+        // [`split_rulings`] states it there. Anywhere else, and where the planes degenerate, the
+        // ladder does not arrange the shape yet.
+        Some(CylinderMeet::OnRuling(_)) if on_a_shared_line => return Ok(Some(Vec::new())),
         Some(CylinderMeet::OnRuling(_))
         | Some(CylinderMeet::CoincidentPlanes)
         | Some(CylinderMeet::ParallelPlanes) => {
@@ -139,6 +143,31 @@ pub(super) fn split_rulings(
             cyl_list.push((r.cyl, &r.def));
         }
     }
+    // The lines on this class that lie on a cylinder and that this class states as a ruling —
+    // `(the other class, cylinder, which of this class's two rulings)`, the pair read off the
+    // gate's record, never decided here, and the side asked of the line once: it is the identity
+    // a ruling piece carries (`MergedRuling::side`).
+    let mut shared_here: Vec<(usize, usize, i8)> = Vec::new();
+    for (ci, cy) in cyls.iter().enumerate() {
+        for sr in cy.shared.iter().filter(|sr| sr.stated_by.contains(&wc)) {
+            let (a, b) = sr.line;
+            let other = if a == wc { b } else { a };
+            let v = combinatorics::class_coeffs_rat(jd, other).ok_or_else(undecided)?;
+            let (o, m, r2) = (cy.def.origin(), cy.def.dir(), cy.def.r2());
+            let Some(nacre_exact::quad::CylinderMeet::OnRuling(line)) =
+                nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
+            else {
+                return Err(undecided());
+            };
+            let side = combinatorics::ruling_side_signed(
+                &w,
+                &cy.def,
+                (&line, &QuadVal::from_rat(Rat::from_int(0))),
+            )
+            .ok_or_else(undecided)?;
+            shared_here.push((other, ci, side));
+        }
+    }
     let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
     let mut on_seg: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); segs.len()];
     for (si, sg) in segs.iter().enumerate() {
@@ -167,7 +196,10 @@ pub(super) fn split_rulings(
         });
         let seg_ends = [it.next().unwrap()?, it.next().unwrap()?];
         for &(cyl, def) in &cyl_list {
-            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg)? else {
+            let shared = shared_here
+                .iter()
+                .any(|&(t, c, _)| t == sg.wall && c == cyl);
+            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg, shared)? else {
                 return Err(undecided());
             };
             for (n, line, s) in xs {
@@ -227,7 +259,10 @@ pub(super) fn split_rulings(
             }
         }
     }
-    if on_ruling.iter().all(|v| v.is_empty()) && on_seg.iter().all(|v| v.is_empty()) {
+    let folds = segs
+        .iter()
+        .any(|sg| shared_here.iter().any(|&(t, _, _)| t == sg.wall));
+    if on_ruling.iter().all(|v| v.is_empty()) && on_seg.iter().all(|v| v.is_empty()) && !folds {
         return Ok(None);
     }
     // ---- segments → sub-segments, the arc split's own idiom ----
@@ -282,5 +317,103 @@ pub(super) fn split_rulings(
             });
         }
     }
+    let out_segs = if folds {
+        fold_onto_rulings(jd, cyls, out_segs, &mut out_rulings, &shared_here, aliases)?
+    } else {
+        out_segs
+    };
     Ok(Some((out_segs, out_rulings)))
+}
+
+/// **A segment on a line the gate recorded is that ruling's edge** — so it is stated once, in
+/// the ruling vocabulary: its `(solid, kind)` contributions join the ruling piece with the same
+/// two ends, and the segment goes. The chart's vertical lines come from rulings alone, and the
+/// lateral continues across such a line (the prism's corner is the *other* solid's edge), so the
+/// station has to be there; stated as a plane segment as well, one line would reach the walk as
+/// two edges.
+///
+/// The splits above cut both at every point the other crosses, so a piece either matches a
+/// ruling piece end for end or shares no stretch with one. No stretch shared is a segment off the
+/// lateral — past its cap, or where the ruling is silent because the line is the lateral face's
+/// own edge (`ruling_sweep`'s `quiet_nodes`: there the plane vocabulary states it, the other half
+/// of the one rule) — and it stays a segment. A stretch shared without a match is a shape the
+/// splits did not cut, and is refused by name rather than stated twice.
+///
+/// `Seated`, `Graze` and `Tangent` say which side of the class plane a face fills, so they mean
+/// the same on a ruling. `Transversal` says which side of the *directed line*, and a ruling runs
+/// up the axis rather than along `wc × wall`: it is refused by name, not carried across frames.
+fn fold_onto_rulings(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    segs: Vec<MergedSeg>,
+    rulings: &mut [MergedRuling],
+    shared_here: &[(usize, usize, i8)],
+    aliases: &Aliases,
+) -> Result<Vec<MergedSeg>, BoolError> {
+    use nacre_exact::quad::QuadVal;
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let canon = |e: [combinatorics::NodeId; 2]| {
+        let mut x = [aliases.canon_point(e[0]), aliases.canon_point(e[1])];
+        x.sort_unstable();
+        x
+    };
+    // A point's coordinate along the cylinder's axis, exact for either kind of name.
+    let axis_at = |cyl: usize, n: combinatorics::NodeId| -> Option<QuadVal> {
+        let m = cyls.get(cyl)?.def.dir();
+        let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+            x[0].checked_mul(y[0])?
+                .checked_add(x[1].checked_mul(y[1])?)?
+                .checked_add(x[2].checked_mul(y[2])?)
+        };
+        if let Some(p) = combinatorics::node_coords_rat(jd, n) {
+            return Some(QuadVal::from_rat(dot(&p, &m)?));
+        }
+        let (_, own, _) = combinatorics::pierce_name(n)?;
+        let (line, s) = combinatorics::pierce_meet(jd, own, &cyls.get(own)?.def, n)?;
+        QuadVal::from_rat(dot(&line.base(), &m)?)
+            .checked_add(&s.checked_mul_rat(dot(&line.dir(), &m)?)?)
+    };
+    let mut kept = Vec::with_capacity(segs.len());
+    for sg in segs {
+        let Some(&(_, cyl, side)) = shared_here.iter().find(|&&(t, _, _)| t == sg.wall) else {
+            kept.push(sg);
+            continue;
+        };
+        let key = canon(sg.end);
+        if let Some(r) = rulings
+            .iter_mut()
+            .find(|r| r.cyl == cyl && canon(r.end) == key)
+        {
+            if sg
+                .merged
+                .iter()
+                .any(|(_, k)| matches!(k, SegKind::Transversal { .. }))
+            {
+                return Err(reject(RejectReason::RulingBoundNotYet));
+            }
+            r.merged.extend(sg.merged.iter().copied());
+            continue;
+        }
+        // No piece end for end: off the lateral, or a stretch the splits left uncut.
+        let (Some(a), Some(b)) = (axis_at(cyl, sg.end[0]), axis_at(cyl, sg.end[1])) else {
+            return Err(undecided());
+        };
+        let (a, b) = match cmp_along(&a, &b).ok_or_else(undecided)? {
+            core::cmp::Ordering::Greater => (b, a),
+            _ => (a, b),
+        };
+        for r in rulings.iter().filter(|r| r.cyl == cyl && r.side == side) {
+            let (Some(lo), Some(hi)) = (axis_at(cyl, r.end[0]), axis_at(cyl, r.end[1])) else {
+                return Err(undecided());
+            };
+            use core::cmp::Ordering::Less;
+            if cmp_along(&a, &hi).ok_or_else(undecided)? == Less
+                && cmp_along(&lo, &b).ok_or_else(undecided)? == Less
+            {
+                return Err(reject(RejectReason::RulingBoundNotYet));
+            }
+        }
+        kept.push(sg);
+    }
+    Ok(kept)
 }

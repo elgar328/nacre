@@ -515,13 +515,15 @@ pub(super) fn split_segments_at(
                 return Err(reject(RejectReason::RingNaming));
             }
             // ★ The crossing arrives under the table's name, which may carry another
-            // pair — a corner's own — so its pin on *this* line is derived, not assumed
-            // (`pin_for`: the cylinder when the pair is the line's, else the plane of its pair
-            // that cuts the line). `PointOn::Pierce` locates the point by its name either way.
+            // pair — a corner's own, or a secant's on a line two classes share on the cylinder —
+            // so its pin on *this* line is derived, not assumed (`pin_for`: the cylinder when the
+            // pair is the line's, else the plane of its pair that cuts the line), and the point
+            // is located by that pin, the ends' own rule: a pierce name is a locator only on
+            // the line its pair spells (`on_line`'s `names_the_line`).
             let Some(pin) = combinatorics::pin_for(jd, pair[0], pair[1], n) else {
                 return Err(reject(RejectReason::RingNaming));
             };
-            keyed.push((combinatorics::PointOn::Pierce(n), n, pin));
+            keyed.push((Split::of(n, pin).on(wc, sg.wall), n, pin));
         }
         // ★★★★★ **A crossing that *is* an endpoint is one point with one name, so it is deduped
         // rather than refused.** The old sentence here — "one point wearing two names, a three-plane

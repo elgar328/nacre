@@ -484,9 +484,11 @@ pub(super) fn angular_order(
             // Collinear with the reference: angle 0 (same ray) or π (opposite ray). ★ A line and
             // an arc tangent at this vertex with the arc leaving the other way (a fillet's smooth
             // corner) are π apart too — the structural test cannot see it, the geometric
-            // one can ([`combinatorics::tangent_pole`]).
+            // one can ([`combinatorics::tangent_pole`]) — and so are a line and a ruling that are
+            // one line, leaving opposite ways ([`combinatorics::ruling_pole`]).
             _ if combinatorics::antiparallel(&edges[i], &edges[0])
-                || combinatorics::tangent_pole(jd, w, &edges[i], &edges[0])? =>
+                || combinatorics::tangent_pole(jd, w, &edges[i], &edges[0])?
+                || combinatorics::ruling_pole(jd, w, &edges[i], &edges[0])? =>
             {
                 pole.push(i)
             }

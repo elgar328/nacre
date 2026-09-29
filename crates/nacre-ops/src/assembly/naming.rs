@@ -162,21 +162,27 @@ pub(crate) fn name_result_vertices(
     // a definition naming a surface the result has no face on is a defect
     // (`defs_are_remappable` still stands guard, true by construction). A node fewer than
     // three faces name is a straight corner and keeps `StraightAngle` below.
+    //
+    // ★ **A pierce vertex is named by them too.** Its name carries two plane classes and the
+    // cylinder, and while those are the planes the result's faces meet it on, the name is its
+    // definition as it stands. Where a line two classes share lies on the cylinder, one point
+    // has a pierce name per pair (`Aliases::record_shared_ruling`), and the representative can
+    // name a plane the result keeps no face on — the vertex then says where it is by a surface
+    // the solid does not have. So a pierce vertex keeps its name only when both its planes meet
+    // it here; otherwise it takes the canonical triple of the planes that do, or, with two, the
+    // pierce name of that pair ([`combinatorics::restate_pierce`]). Lateral faces carry no plane
+    // and are skipped — the cylinder is in every pierce definition already.
     let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         for ring in lf.poly_rings() {
             for &node in &ring.nodes {
-                // ★ A pierce vertex's def is a **declaration, not a derivation** — the name
-                // already carries its two result plane classes and its cylinder.
-                if let Some(def) = Def::of_pierce_name(node) {
-                    def_triple.entry((g, node)).or_insert(def);
-                    continue;
-                }
                 let at = planes_at.entry((g, node)).or_default();
-                if !at.contains(&lf.surf.plane()) {
-                    at.push(lf.surf.plane());
+                if let ClassIx::Plane(c) = lf.surf
+                    && !at.contains(&c)
+                {
+                    at.push(c);
                 }
             }
         }
@@ -186,8 +192,26 @@ pub(crate) fn name_result_vertices(
     for key in keys {
         let mut at = planes_at.remove(&key).unwrap_or_default();
         at.sort_unstable();
-        if let Some(t) = combinatorics::canonical_triple(jd, &at) {
-            def_triple.insert(key, Def::Three(t));
+        let Some((own, ..)) = combinatorics::pierce_name(key.1) else {
+            if let Some(t) = combinatorics::canonical_triple(jd, &at) {
+                def_triple.insert(key, Def::Three(t));
+            }
+            continue;
+        };
+        let def = if own.iter().all(|p| at.contains(p)) || at.len() < 2 {
+            Def::of_pierce_name(key.1)
+        } else if let Some(t) = combinatorics::canonical_triple(jd, &at) {
+            Some(Def::Three(t))
+        } else {
+            at.iter()
+                .enumerate()
+                .flat_map(|(i, &a)| at[i + 1..].iter().map(move |&b| (a, b)))
+                .find_map(|(a, b)| combinatorics::restate_pierce(jd, cyls, key.1, a, b))
+                .and_then(Def::of_pierce_name)
+                .or_else(|| Def::of_pierce_name(key.1))
+        };
+        if let Some(def) = def {
+            def_triple.insert(key, def);
         }
     }
 

@@ -155,6 +155,22 @@ pub(crate) fn walk(
     }
     let units = ns.max(1);
 
+    // ★ **Where the lateral ends although both sides keep it** — a station two walls state
+    // ([`Chart::slit_at`]): the result's material between the two walls is gone, so what is
+    // kept on the two sides meets on the line alone. The lateral is cut there — no adjacency
+    // across, and a boundary on both sides even within one component — so the line becomes an
+    // edge the other solid's two faces use too, and the assembly sees the touch: four uses of
+    // one edge in one solid, or two solids apart. Run through as one face, the lateral hides it
+    // under a shell every count calls closed.
+    let slits: Vec<bool> = (0..chart.theta.len())
+        .map(|j| {
+            chart
+                .slit_at(jd, k, def, j, side, kind)
+                .ok_or_else(undecided)
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let slit = |j: usize| slits.get(j).copied().unwrap_or(false);
+
     // ── 2. Emitted cells and their components (4-adjacency, θ-periodic). ──
     let emitted: Vec<bool> = reads.iter().map(|r| r.emit == Some(true)).collect();
     let neighbours: Vec<Vec<usize>> = (0..cells.len())
@@ -164,8 +180,13 @@ pub(crate) fn walk(
             let row = &by_int[c.interval];
             if row.len() > 1 {
                 let s = c.sector;
-                out.push(row[(s + 1) % row.len()]);
-                out.push(row[(s + row.len() - 1) % row.len()]);
+                let [x, y] = c.walls.unwrap_or([usize::MAX; 2]);
+                if !slit(y) {
+                    out.push(row[(s + 1) % row.len()]);
+                }
+                if !slit(x) {
+                    out.push(row[(s + row.len() - 1) % row.len()]);
+                }
             }
             for i2 in [c.interval.wrapping_sub(1), c.interval + 1] {
                 if i2 >= n_int {
@@ -322,14 +343,15 @@ pub(crate) fn walk(
                     let s = c.sector;
                     let right = row[(s + 1) % row.len()];
                     let left = row[(s + row.len() - 1) % row.len()];
-                    if !in_c(right) {
+                    let [x, y] = c.walls.unwrap_or([usize::MAX; 2]);
+                    if !in_c(right) || slit(y) {
                         edges.push(Edge::Ruling {
                             interval: c.interval,
                             station: b,
                             up: true,
                         });
                     }
-                    if !in_c(left) {
+                    if !in_c(left) || slit(x) {
                         edges.push(Edge::Ruling {
                             interval: c.interval,
                             station: a,
