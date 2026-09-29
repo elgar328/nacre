@@ -120,9 +120,37 @@ pub fn pythagorean_frame(m: &mut Model, origin: Point3) -> SketchFrame {
 /// component a few ulps off `0`. The wall halves the cylinder, so `A ∩ B` is a half cylinder of
 /// volume `π/2`. Returns `(model, a, b)`.
 pub fn a_tilted_bore_and_an_axial_wall() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    a_bore_and_a_prism(
+        |m| pythagorean_frame(m, Point3::from_array([0.0; 3])),
+        &[[-1.2, -1.5], [3.0, -1.5], [3.0, 1.5], [1.2, 1.5]],
+    )
+}
+
+/// **A wall along a tilted cylinder's axis that cuts it off the axis** — the one
+/// [`a_tilted_bore_and_an_axial_wall`] is not: its world normal has no exact zero component, so
+/// the two rulings it cuts the lateral in are found where no cache coordinate agrees with the
+/// truth. On [`pythagorean_frame`] at the origin, `B` is the prism over
+/// `(−1,1.1)·(1,−0.4)·(3,−0.4)·(3,3.1)`, height 1: its slanted wall runs `0.28` from `A`'s axis
+/// (`0.6x + 0.8y = 0.28`), and its other walls miss the unit circle (the top one runs `1.43` from
+/// the axis, the bottom one starts at `x = 1`). `A ∩ B` is the circular segment beyond the wall,
+/// area `acos(0.28) − 0.28·√(1 − 0.28²)`, height 1; `B`'s area is `8.5`. Returns `(model, a, b)`.
+pub fn a_tilted_bore_and_a_secant_wall() -> (Model, Handle<Solid>, Handle<Solid>) {
+    a_bore_and_a_prism(
+        |m| pythagorean_frame(m, Point3::from_array([0.0; 3])),
+        &[[-1.0, 1.1], [1.0, -0.4], [3.0, -0.4], [3.0, 3.1]],
+    )
+}
+
+/// **A unit cylinder `A` (height 2) and a prism `B` over `quad` (height 1), both sketched on the
+/// frame `frame` states** — the pair the bore-and-wall fixtures share, `quad` and the frame being
+/// all that differs. Both stand on the frame's plane, so `B` overlaps `A` over at most height 1.
+/// Returns `(model, a, b)`.
+pub fn a_bore_and_a_prism(
+    frame: impl FnOnce(&mut Model) -> SketchFrame,
+    quad: &[[f64; 2]],
+) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let frame = pythagorean_frame(&mut m, Point3::from_array([0.0; 3]));
+    let frame = frame(&mut m);
     let extrude = |m: &mut Model, profile: Profile2d, dist: f64| {
         let Ok(OpOutput::Extrude { solid, .. }) = apply(
             m,
@@ -132,7 +160,7 @@ pub fn a_tilted_bore_and_an_axial_wall() -> (Model, Handle<Solid>, Handle<Solid>
                 dist,
             },
         ) else {
-            panic!("extrude on the Pythagorean frame")
+            panic!("extrude on the fixture's frame")
         };
         m.rebuild_adjacency();
         solid
@@ -143,13 +171,8 @@ pub fn a_tilted_bore_and_an_axial_wall() -> (Model, Handle<Solid>, Handle<Solid>
     .expect("a disk")
     .remove(0);
     let a = extrude(&mut m, disk, 2.0);
-    let quad = Profile2d::polygon(vec![
-        p2(-1.2, -1.5),
-        p2(3.0, -1.5),
-        p2(3.0, 1.5),
-        p2(1.2, 1.5),
-    ])
-    .expect("a quadrilateral");
+    let quad =
+        Profile2d::polygon(quad.iter().map(|q| p2(q[0], q[1])).collect()).expect("a quadrilateral");
     let b = extrude(&mut m, quad, 1.0);
     (m, a, b)
 }

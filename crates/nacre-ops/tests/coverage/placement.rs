@@ -13,7 +13,9 @@
 //! - two different walls whose rounded images coincide stay **two planes**, each result face on
 //!   its own;
 //! - a line whose true direction has a `0` component — which its plane caches leave a few ulps
-//!   off — is **ordered on the truth**, so two points on it are not read as one.
+//!   off — is **ordered on the truth**, so two points on it are not read as one;
+//! - a wall whose world normal has no exact zero component is **arranged on its rulings** like one
+//!   that has.
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -344,5 +346,158 @@ fn a_line_is_ordered_along_its_true_direction() {
             (v - want).abs() < 1e-9,
             "{kind:?} swapped = {swapped}: volume {v}, want {want}"
         );
+    }
+}
+
+/// **A wall along a tilted cylinder's axis that cuts it off the axis is arranged on its rulings.**
+/// [`a_tilted_bore_and_a_secant_wall`]'s wall has no exact zero in its world normal, so where it
+/// meets the lateral no coordinate of any cache agrees with the truth; each boolean builds, and the
+/// volumes are the analytic ones — the circular segment beyond the wall, `B`'s area `8.5`, `A`'s
+/// `2π`, all at the overlap height 1.
+#[test]
+fn a_secant_wall_along_a_tilted_axis_is_arranged_on_its_rulings() {
+    use std::f64::consts::PI;
+    let d: f64 = 0.28;
+    let s = d.acos() - d * (1.0 - d * d).sqrt();
+    for (kind, swapped, want) in [
+        (BoolKind::Fuse, false, 2.0 * PI + 8.5 - s),
+        (BoolKind::Fuse, true, 2.0 * PI + 8.5 - s),
+        (BoolKind::Common, false, s),
+        (BoolKind::Common, true, s),
+        (BoolKind::Cut, false, 2.0 * PI - s),
+        (BoolKind::Cut, true, 8.5 - s),
+    ] {
+        let (mut m, a, b) = a_tilted_bore_and_a_secant_wall();
+        let (x, y) = if swapped { (b, a) } else { (a, b) };
+        let out = boolean_one(&mut m, kind, x, y)
+            .unwrap_or_else(|e| panic!("{kind:?} swapped = {swapped}: {e:?}"));
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{kind:?} swapped = {swapped}: {vs:?}");
+        let v = volume(&m, out);
+        assert!(
+            (v - want).abs() < 1e-9,
+            "{kind:?} swapped = {swapped}: volume {v}, want {want}"
+        );
+    }
+}
+
+/// **Every such wall, over a grid** — the slanted wall of `B` from `(−1, y₀)` to `(1, y₁)`, `y₀` in
+/// `0.5…1.6` and `y₁` in `−1.5…0.5` without `0`, on [`pythagorean_frame`]: 240 placements whose
+/// wall crosses the lateral off the axis (at small `y₀` the top wall crosses too). Each of the six
+/// booleans builds and is valid, and the volumes add up — `Fuse + Common = |A| + |B|`,
+/// `(A − B) + Common = |A|`, `(B − A) + Common = |B|` — which a wrong answer `validate` cannot see
+/// would break. `y₁ = 0` is left out: that corner lies on the cylinder, the wall
+/// [`a_corner_on_a_lateral_ruling_is_refused_today`] holds.
+#[test]
+#[ignore = "1,440 booleans (run with --ignored)"]
+fn every_secant_wall_on_a_tilted_bore_builds() {
+    let tau = 2.0 * std::f64::consts::PI;
+    let mut placements = 0;
+    for i0 in 5..=16 {
+        for i1 in (-15..=5).filter(|&i| i != 0) {
+            let (y0, y1) = (f64::from(i0) / 10.0, f64::from(i1) / 10.0);
+            let quad = [[-1.0, y0], [1.0, y1], [3.0, y1], [3.0, y0 + 2.0]];
+            // The premise, per placement: the wall's line crosses the unit circle.
+            let reach = (y0 + y1).abs() / (4.0 + (y1 - y0) * (y1 - y0)).sqrt();
+            assert!(
+                reach < 1.0,
+                "y₀ = {y0}, y₁ = {y1}: the wall misses the cylinder"
+            );
+            let area = (0..4)
+                .map(|k| {
+                    let (p, q) = (quad[k], quad[(k + 1) % 4]);
+                    p[0] * q[1] - q[0] * p[1]
+                })
+                .sum::<f64>()
+                .abs()
+                / 2.0;
+            let run = |kind: BoolKind, swapped: bool| -> f64 {
+                let (mut m, a, b) = a_bore_and_a_prism(
+                    |m| pythagorean_frame(m, Point3::from_array([0.0; 3])),
+                    &quad,
+                );
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let out = boolean(&mut m, kind, x, y).unwrap_or_else(|e| {
+                    panic!("y₀ = {y0}, y₁ = {y1}, {kind:?} swapped = {swapped}: {e:?}")
+                });
+                m.rebuild_adjacency();
+                let vs = nacre_validate::validate(&m);
+                assert!(
+                    vs.is_empty(),
+                    "y₀ = {y0}, y₁ = {y1}, {kind:?} swapped = {swapped}: {vs:?}"
+                );
+                out.iter().map(|&s| volume(&m, s)).sum()
+            };
+            let common = run(BoolKind::Common, false);
+            assert!((run(BoolKind::Common, true) - common).abs() < 1e-9);
+            let fuse = run(BoolKind::Fuse, false);
+            assert!((run(BoolKind::Fuse, true) - fuse).abs() < 1e-9);
+            let (a_only, b_only) = (run(BoolKind::Cut, false), run(BoolKind::Cut, true));
+            for (sum, want, what) in [
+                (fuse + common, tau + area, "Fuse + Common"),
+                (a_only + common, tau, "(A − B) + Common"),
+                (b_only + common, area, "(B − A) + Common"),
+            ] {
+                assert!(
+                    (sum - want).abs() < 1e-9,
+                    "y₀ = {y0}, y₁ = {y1}: {what} = {sum}, want {want}"
+                );
+            }
+            placements += 1;
+        }
+    }
+    assert_eq!(placements, 240, "the grid");
+}
+
+/// ★ **Today's answer where a corner of `B` lies exactly on `A`'s lateral — and the test the fix
+/// flips.** The corner's two walls run along `A`'s axis, so its edge lies on a ruling of `A`; every
+/// boolean is refused, on the world frame and on [`pythagorean_frame`] alike, whether one wall
+/// enters `A` (the results would be manifold solids) or both leave it (a line contact). A corner
+/// `0.001` off the lateral builds. The class is asserted, not the variant — reason names are
+/// engine vocabulary; a refusal that turns `Impossible` or `SuspectedDefect`, or a placement that
+/// starts to build, is news here and in the todo item this pins.
+#[test]
+fn a_corner_on_a_lateral_ruling_is_refused_today() {
+    let crossing_at_the_rim = [[-1.0, 1.6], [1.0, 0.0], [3.0, 0.0], [3.0, 3.6]];
+    let crossing = [[-1.0, 1.6], [0.8, -0.6], [3.0, -0.6], [3.0, 3.6]];
+    let touching = [[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]];
+    let off = [[-1.0, 1.6], [1.0, 0.001], [3.0, 0.001], [3.0, 3.6]];
+    for tilted in [false, true] {
+        let build = |quad: &[[f64; 2]]| {
+            if tilted {
+                a_bore_and_a_prism(|m| pythagorean_frame(m, Point3::from_array([0.0; 3])), quad)
+            } else {
+                a_bore_and_a_prism(|m| nacre_ops::SketchFrame::world(m, Axis::Z), quad)
+            }
+        };
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for swapped in [false, true] {
+                let at = format!("tilted = {tilted}, {kind:?} swapped = {swapped}");
+                for (what, quad) in [
+                    (
+                        "one wall entering, the corner on the rim",
+                        crossing_at_the_rim,
+                    ),
+                    ("one wall entering", crossing),
+                    ("a line contact", touching),
+                ] {
+                    let (mut m, a, b) = build(&quad);
+                    let (x, y) = if swapped { (b, a) } else { (a, b) };
+                    match boolean(&mut m, kind, x, y) {
+                        Err(BoolError::Rejected { reason, .. }) => assert_eq!(
+                            reason.class(),
+                            nacre_ops::RejectClass::NotSupported,
+                            "{at}, {what}: refused as {reason:?}"
+                        ),
+                        other => panic!("{at}, {what}: the wall moved — {other:?}"),
+                    }
+                }
+                let (mut m, a, b) = build(&off);
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                boolean(&mut m, kind, x, y)
+                    .unwrap_or_else(|e| panic!("{at}, the corner 0.001 off: {e:?}"));
+            }
+        }
     }
 }
