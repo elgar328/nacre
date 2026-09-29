@@ -9,13 +9,13 @@
 
 ## 다음 — 사용자가 만나는 한계
 
-순서는 잰 인구다: census 코퍼스(불리언 396, 그중 거절 23)와 kit 문법이 막히는 자리. census 는 우리가 지은
+순서는 잰 인구다: census 코퍼스(불리언 396, 그중 거절 22)와 kit 문법이 막히는 자리. census 는 우리가 지은
 코퍼스이고 거의 축정렬이다 — 거기서 0 이라는 것은 사용자가 만나지 않는다는 뜻이 아니다. census 거절 가운데
 `SelfTouchingResult` 3·`NonManifoldResultEdge` 1 은 결과가 스스로 닿는다는 진단(Impossible)이라 여기에 없다.
 
 ### 원통–원통 — `CylinderPairContact`
 
-옆면이 서로 만나는 두 원통은 교선이 4차라 짓지 않았고, 게이트가 이름으로 거절한다(M6b). **census 거절 23 가운데
+옆면이 서로 만나는 두 원통은 교선이 4차라 짓지 않았고, 게이트가 이름으로 거절한다(M6b). **census 거절 22 가운데
 12 로 가장 많다**: `roundplate`(사용자의 둥근 판 스크립트에서 파생한 배치)의 원판·교차 원통 6,
 `arcwalls stacked-same` 3, `trc onaxis` 3. 점의 어휘가 먼저다 — 「곡면 둘 이상이 만나는 점과 seam 담체」.
 
@@ -110,17 +110,9 @@
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
   `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
-- **안쪽 쐐기**(두 벽 모두 원통으로 들어가는 꼭짓점)의 `SuspectedDefect` 20: 쐐기의 밑면이 원통 캡과 같은
-  평면이면(림 배치) Fuse 가 `OpenResultShell` — 캡 클래스의 동일평면 병합이 바깥 림 호 대신 안쪽 호를
-  경계로 고른다 — 이고, 꼭짓점이 차트 솔기 위면 `A − B` 가 `ZeroLengthEdge` 다. 나머지는 빌드되거나
+- **안쪽 쐐기**(두 벽 모두 원통으로 들어가는 꼭짓점)의 `SuspectedDefect` 4: 쐐기의 밑면이 원통 캡과 같은
+  평면이고(림 배치) 꼭짓점이 차트 솔기 위면 `A − B` 가 `ZeroLengthEdge` 다(틀 넷). 나머지는 빌드되거나
   (`A − B` 는 두 몸통) 이름으로 거절된다(`NonManifoldResultEdge` — 한 솔리드가 선에서 스스로 닿는다).
-
-### 접선 벽과 같은 평면에 놓인 슬래브의 Cut 이 열린 껍질로 거절된다
-
-필렛 판(`plate1`)의 바닥 벽 `y = −4` 와 같은 평면에 면을 두고 그 벽의 선 위(접점 너머)에 밑 모서리를 둔 슬래브를,
-필렛의 축 평면에서 0.1 비킨 자리에서 빼면(census `tangentline slab wall 1.6`) 판을 그대로 남겨야 할 Cut 이
-`OpenResultShell`(SuspectedDefect)로 거절된다. Fuse·Common 은 빌드된다. census 의 SuspectedDefect 는 이 한
-행이다.
 
 ### 비스듬한 평면 × 원통 — `ObliqueCylinderCut`
 

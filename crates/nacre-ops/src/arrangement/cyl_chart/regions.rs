@@ -18,10 +18,11 @@
 //! its own grid.
 //!
 //! ★ **Vertices are where the neighbouring class has them.** A boundary run along a rim is cut
-//! at the rim's own nodes (`CutRim.nodes` — the cap face's arc edges) and a run along a ruling at
-//! the wall class's piece ends (`Curved.rulings`); a station the boundary passes straight
-//! through gets no vertex unless that class split its edge there. That is what keeps the
-//! lateral's edges welded to the faces beside them, and what the refused corner violated.
+//! at the rim's nodes as the cleaned cap faces hold them ([`crate::draft::HeldRims`] — not the
+//! split, whose nodes the cleaning pass may have dissolved) and a run along a ruling at the wall
+//! class's piece ends (`Curved.rulings`); a station the boundary passes straight through gets no
+//! vertex unless that class split its edge there. That is what keeps the lateral's edges welded
+//! to the faces beside them, and what the refused corner violated.
 
 use super::{Cell, CellRead, Chart, Lines};
 use crate::arrangement::Curved;
@@ -94,6 +95,7 @@ pub(crate) fn walk(
     cells: &[Cell],
     reads: &[CellRead<'_>],
     curved: &Curved,
+    rims: &crate::draft::HeldRims,
 ) -> Result<Walked, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
     let aliases = &curved.aliases;
@@ -282,7 +284,7 @@ pub(crate) fn walk(
         let cs = lines.classes(t);
         cs.iter()
             .copied()
-            .find(|&c| curved.cut_rims.contains_key(&(k, c)))
+            .find(|&c| curved.split_rims.contains_key(&(k, c)))
             .or_else(|| {
                 cs.iter()
                     .copied()
@@ -438,7 +440,7 @@ pub(crate) fn walk(
                         let c = class_on(line).ok_or_else(ruling_ladder)?;
                         let full = ns == 0 || run.len() == ns;
                         // An uncut rim is the assembly's closed edge — whole or nothing.
-                        let Some(rim) = curved.cut_rims.get(&(k, c)) else {
+                        let Some(rim) = rims.get(&(k, c)) else {
                             if !full {
                                 return Err(arc_ladder());
                             }
@@ -446,8 +448,8 @@ pub(crate) fn walk(
                             continue;
                         };
                         // ★ A cut rim's pieces are the arcs between its consecutive nodes
-                        // — the split's own table, which the assembly's arc join reads too;
-                        // no second table (the arc labels) is consulted for the edges.
+                        // — the held table, which the assembly's arc join reads too; neither the
+                        // split nor the arc labels is consulted for the edges.
                         let m = rim.nodes.len();
                         if m < 2 {
                             return Err(ruling_ladder());
@@ -578,7 +580,7 @@ pub(crate) fn walk(
                 flip,
             }
         } else {
-            crate::assembly::classify_cycles(k, flip, rings, rims_lo, rims_hi, &curved.cut_rims)
+            crate::assembly::classify_cycles(k, flip, rings, rims_lo, rims_hi, rims)
                 .map_err(|_| arc_ladder())?
         };
         faces.push(face);

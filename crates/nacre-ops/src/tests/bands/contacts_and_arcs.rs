@@ -618,6 +618,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
                 &faces,
                 &curved,
                 &rows,
+                &crate::draft::held_rims(&faces, &curved.split_rims),
             )
             .expect("the lateral faces emit"),
         );
@@ -729,13 +730,19 @@ fn every_result_vertex_of_the_arc_population_is_named() {
                 &faces,
                 &curved,
                 &rows,
+                &crate::draft::held_rims(&faces, &curved.split_rims),
             )
             .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
-        let named =
-            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
-                .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::draft::held_rims(&faces, &curved.split_rims),
+        )
+        .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         // Completeness: every ring node has a definition.
         let mut missing = Vec::new();
@@ -870,13 +877,19 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
                 &faces,
                 &curved,
                 &rows,
+                &crate::draft::held_rims(&faces, &curved.split_rims),
             )
             .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
-        let named =
-            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
-                .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::draft::held_rims(&faces, &curved.split_rims),
+        )
+        .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         let mut uses: std::collections::HashMap<
             (crate::combinatorics::NodeId, crate::combinatorics::NodeId),
@@ -1341,14 +1354,20 @@ fn the_grouping_joins_across_a_cut_rim() {
                 &faces,
                 &curved,
                 &rows,
+                &crate::draft::held_rims(&faces, &curved.split_rims),
             )
             .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");
-        let named =
-            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
-                .expect("the naming runs");
+        let named = crate::assembly::name_result_vertices(
+            &jd,
+            &seam,
+            &faces,
+            cyls,
+            &crate::draft::held_rims(&faces, &curved.split_rims),
+        )
+        .expect("the naming runs");
         let g = named
             .grouping
             .as_ref()

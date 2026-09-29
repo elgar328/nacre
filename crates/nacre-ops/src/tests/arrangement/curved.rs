@@ -397,6 +397,7 @@ fn lateral_lattice(staircase: bool) {
         &plane_faces,
         &curved,
         &rows,
+        &crate::draft::held_rims(&plane_faces, &curved.split_rims),
     )
     .unwrap();
     assert_eq!(fuse.len(), 1);
@@ -607,7 +608,7 @@ fn armed_curved(
         aliases: Aliases::default(),
         disk_labels,
         arc_labels,
-        cut_rims,
+        split_rims: cut_rims,
         rulings,
     };
     let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
@@ -621,7 +622,7 @@ fn a_cut_circle_bounds_the_bands() {
     let (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi]) =
         armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, [-10.0, 40.0]);
     let (disk_labels, arc_labels, cut_rims) =
-        (&curved.disk_labels, &curved.arc_labels, &curved.cut_rims);
+        (&curved.disk_labels, &curved.arc_labels, &curved.split_rims);
     assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
     assert!(disk_labels.contains_key(&(0, cap_lo)) && disk_labels.contains_key(&(0, cap_hi)));
     assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
@@ -660,6 +661,7 @@ fn a_cut_circle_bounds_the_bands() {
             &plane_faces,
             &curved,
             &rows,
+            &crate::draft::held_rims(&plane_faces, &curved.split_rims),
         )
         .unwrap()
     };
@@ -723,7 +725,7 @@ fn a_cut_circle_bounds_the_bands() {
         aliases: Aliases::default(),
         disk_labels: curved.disk_labels.clone(),
         arc_labels: HashMap::new(),
-        cut_rims: curved.cut_rims.clone(),
+        split_rims: curved.split_rims.clone(),
         rulings: curved.rulings.clone(),
     };
     blind.arc_labels.clear();
@@ -738,7 +740,8 @@ fn a_cut_circle_bounds_the_bands() {
             &setup.cyls,
             &plane_faces,
             &blind,
-            &rows
+            &rows,
+            &crate::draft::held_rims(&plane_faces, &blind.split_rims)
         )
         .is_ok(),
         "the vertical lines answer what the blinded rims cannot"
@@ -755,7 +758,8 @@ fn a_cut_circle_bounds_the_bands() {
             &setup.cyls,
             &plane_faces,
             &blind,
-            &rows
+            &rows,
+            &crate::draft::held_rims(&plane_faces, &blind.split_rims)
         ),
         Err(BoolError::Rejected {
             reason: RejectReason::CylinderGateUndecided,
@@ -801,7 +805,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         aliases: Aliases::default(),
         disk_labels,
         arc_labels,
-        cut_rims,
+        split_rims: cut_rims,
         rulings,
     };
     let faces = crate::assembly::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
@@ -815,6 +819,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
             &faces,
             &curved,
             &rows,
+            &crate::draft::held_rims(&faces, &curved.split_rims),
         )
         .unwrap(),
     );
@@ -825,7 +830,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         &seam,
         &faces,
         &setup.cyls,
-        &curved.cut_rims,
+        &crate::draft::held_rims(&faces, &curved.split_rims),
         None,
         crate::assembly::Tangencies::none(),
     )

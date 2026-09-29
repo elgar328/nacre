@@ -374,9 +374,8 @@ fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
 /// (`NonManifoldResultEdge`, or `ArcBoundNotYet` on the seam with `B` past the top); where `B`
 /// cuts `A` through (past both caps) it is two solids. **It is never one body** — the lateral run
 /// through the line as one face would hide the touch under a closed shell. Common, `B − A` and
-/// the lifted Fuse build one body; the volumes add up. With `B`'s base on `A`'s cap (lift 0) the
-/// Fuse is refused `OpenResultShell` — the base cap's coplanar merge keeps the inner rim arc —
-/// and `A − B` with the apex on the seam `ZeroLengthEdge`: `SuspectedDefect`, 20 booleans,
+/// the Fuse build one body; the volumes add up. With `B`'s base on `A`'s cap (lift 0) and the apex
+/// on the seam, `A − B` is refused `ZeroLengthEdge`: `SuspectedDefect`, 4 booleans (the frames),
 /// pinned by count.
 #[test]
 fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
@@ -397,7 +396,13 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
                 }
                 (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
                 (_, Err(reason)) if reason.class() == RejectClass::SuspectedDefect => {
-                    assert_eq!(p.height, Height::OnBase, "{p}: [{i}] {reason:?}");
+                    assert!(
+                        i == 2
+                            && p.family == "on the seam"
+                            && p.height == Height::OnBase
+                            && *reason == RejectReason::ZeroLengthEdge,
+                        "{p}: [{i}] {reason:?}"
+                    );
                     defects += 1;
                 }
                 (2, Err(reason)) => assert!(
@@ -415,7 +420,7 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
         }
         identities(p, six);
     }
-    assert_eq!(defects, 20, "the rim placement's refusals");
+    assert_eq!(defects, 4, "the rim placement's refusals");
 }
 
 /// ★ **The corner touching `A` from outside — a line contact.** Common would be empty, Cut the

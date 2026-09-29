@@ -8,7 +8,8 @@ use super::*;
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
-/// split's (`CutRim`), and the winding is `seam_step`'s (`classify_cycles`).
+/// ones the cleaned plane faces hold (`rims` — the labels are still read against the split,
+/// `Curved::split_rims`), and the winding is `seam_step`'s (`classify_cycles`).
 pub(crate) fn emit_lateral(
     kind: crate::BoolKind,
     jd: &Judge<'_, WorkingPlane>,
@@ -16,6 +17,7 @@ pub(crate) fn emit_lateral(
     plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
+    rims: &crate::draft::HeldRims,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut out: Vec<LocalFace> = Vec::new();
     for k in 0..cyls.len() {
@@ -46,7 +48,7 @@ pub(crate) fn emit_lateral(
             return Err(reject(RejectReason::CylinderGateUndecided));
         }
         let walked = regions::walk(
-            jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved,
+            jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved, rims,
         )?;
         out.extend(walked.faces);
     }

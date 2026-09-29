@@ -92,9 +92,9 @@ pub(super) fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::draft::CutRims,
+    rims: &crate::draft::HeldRims,
 ) -> Result<Grouping, BoolError> {
-    let (labels, n) = face_components(faces, cut_rims);
+    let (labels, n) = face_components(faces, rims);
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);

@@ -578,7 +578,14 @@ fn merge_component(
 /// still equal — two *same-direction* arcs of one
 /// circle — is the pair for which "no turn" is geometrically true on this face, so equality
 /// answers right there too; a crossing at such a vertex is kept by the other faces' rings
-/// (degree > 2), the function's own rule. No population produces that consecutive pair today.
+/// (degree > 2), the function's own rule. The pair is a tool resting on a cap across its rim: the
+/// cap class splits the rim at the tool's planes, a Cut merges the cap back, and those nodes
+/// dissolve here — which is why the result's rims are read off these faces afterwards
+/// (`draft::held_rims`), not off the split.
+///
+/// ★ **Deciding on the plane faces alone is enough for the rim**, though the laterals are emitted
+/// after this pass: a lateral turns at a rim node only where a ruling ends there, and that
+/// ruling's wall is a plane face with a corner at the node — already a bend on this side.
 ///
 /// ★★ **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
 /// The per-solid caller hands over every face of a group — laterals included — and the wall

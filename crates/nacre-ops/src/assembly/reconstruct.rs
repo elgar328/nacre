@@ -8,7 +8,7 @@ pub(crate) fn reconstruct(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::draft::CutRims,
+    rims: &crate::draft::HeldRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
@@ -20,7 +20,7 @@ pub(crate) fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
-    let named = name_result_vertices(jd, seam, faces, cyls, cut_rims);
+    let named = name_result_vertices(jd, seam, faces, cyls, rims);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
     // itself now stands at the assembly's very end below.
     let Named {
@@ -33,6 +33,9 @@ pub(crate) fn reconstruct(
         Err(e) => return Err(deferred.unwrap_or(e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
+    // The per-solid straight-angle pass may have dropped nodes of its own; everything below reads
+    // the rims as these faces hold them.
+    let rims = &rims.prune(faces);
     // ★ **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
@@ -158,7 +161,7 @@ pub(crate) fn reconstruct(
                             r.nodes[t],
                             r.nodes[(t + 1) % n],
                             r.walls[t],
-                            cut_rims,
+                            rims,
                         ) {
                             keys.push(key);
                         }
@@ -169,7 +172,7 @@ pub(crate) fn reconstruct(
                 if rim.contains_key(&(g, k, c)) {
                     continue;
                 }
-                let cut = cut_rims.get(&(k, c));
+                let cut = rims.get(&(k, c));
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
                 // The seam point of this rim, spelled as a circle prism spells one: the axis meets
                 // the plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
@@ -184,7 +187,7 @@ pub(crate) fn reconstruct(
                         // The arm is unreachable today: `plane` comes from `jd.planes`, the
                         // *plane* class table (`WorkingPlane` holds a `geom::Plane`), while a
                         // cylinder's rows live in `cyls` (`WorkingCyl`) — and `c` indexes the
-                        // cutting plane of a `cut_rims` key. The reject is kept rather than
+                        // cutting plane of a rim key. The reject is kept rather than
                         // `unreachable!` because that is a **table** invariant, not a type one:
                         // `planes`'s `unreachable!("a cylinder truth carries a cylinder
                         // cache")` is the type-guaranteed shape, and this is not that.
@@ -372,7 +375,7 @@ pub(crate) fn reconstruct(
             if band_chains.contains_key(&(g, k, c)) {
                 continue;
             }
-            let Some(cr) = cut_rims.get(&(k, c)) else {
+            let Some(cr) = rims.get(&(k, c)) else {
                 continue; // an uncut rim's boundary is its closed edge, no chain to build
             };
             // The rim table ran this very enumeration, so the entry exists whenever this loop
@@ -422,14 +425,14 @@ pub(crate) fn reconstruct(
                 //
                 // ★ The wrap test is **directed**: with two pierce nodes the two complementary
                 // arcs share one unordered endpoint pair, so the match orients the ring step by
-                // the `ccw` bit the wall carries and compares against the split's own θ order
+                // the `ccw` bit the wall carries and compares against the rim's θ order
                 // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
                 let split_at = match wrapping_rim(
                     lf.surf,
                     r.nodes[t],
                     r.nodes[(t + 1) % k],
                     r.walls[t],
-                    cut_rims,
+                    rims,
                 )? {
                     Some(key) => {
                         let &(v, _) = rim
@@ -488,11 +491,12 @@ pub(crate) fn reconstruct(
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
                 // ★★ **The cut check comes before the rim lookup, and answers with the
-                // population's own name.** A cut circle cannot bound a whole disk — the trace
-                // subdivides that disk into cells — so reaching here with one is a producer
-                // inconsistency this backstop names honestly rather than as a dropped crossing
-                // (`MissingSeam` would misdiagnose a `SuspectedDefect`).
-                if cut_rims.contains_key(&(cyl, cls)) {
+                // population's own name.** A circle the result still cuts cannot bound a whole
+                // disk — a face on its plane holds one of its nodes ([`HeldRims`]) — so reaching
+                // here with one is a producer inconsistency this backstop names honestly rather
+                // than as a dropped crossing (`MissingSeam` would misdiagnose a
+                // `SuspectedDefect`).
+                if rims.contains_key(&(cyl, cls)) {
                     return Err(reject(RejectReason::ArcBoundNotYet));
                 }
                 let (_, e) = *rim
@@ -535,8 +539,7 @@ pub(crate) fn reconstruct(
         // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is the
         // `OnSeam` vertex the rim table minted for that circle.
         let contacts_of = |k: usize| -> Vec<(Handle<Vertex>, usize)> {
-            cut_rims
-                .iter()
+            rims.iter()
                 .filter(|((kk, _), _)| *kk == k)
                 .filter_map(|(&(_, c), cr)| {
                     let v = if cr.seam_is_node {
@@ -628,7 +631,7 @@ pub(crate) fn reconstruct(
                     // twin is what a measurement reads, and every decision reads `def`.
                     //
                     // ☑ **The two stations cannot tie**, so the `<=` restates the comparison it
-                    // replaces rather than growing a case: `cut_rims` is keyed by `(k, c)`, so a
+                    // replaces rather than growing a case: the rims are keyed by `(k, c)`, so a
                     // circle offers at most one contact and two contacts are two distinct
                     // circles — and a cut circle's plane is perpendicular to the axis, so equal
                     // stations would be the same plane, hence one class and one `c`.
@@ -710,11 +713,12 @@ pub(crate) fn reconstruct(
                         .cyl()
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;
                     // ★ A cut rim never arrives as `Rim::Circle`: the emitter spells it
-                    // once, as the chain of its arcs (`cyl_chart::regions`), so a whole-circle
-                    // rim the split cut is a producer inconsistency — named, not walked.
+                    // once, as the chain of its arcs (`cyl_chart::regions`, reading the same
+                    // [`HeldRims`]), so a whole-circle rim this table cuts is a producer
+                    // inconsistency — named, not walked.
                     for rim in [lo, hi] {
                         if let Some(c) = rim.circle()
-                            && cut_rims.contains_key(&(k, c))
+                            && rims.contains_key(&(k, c))
                         {
                             return Err(reject(RejectReason::ArcBoundNotYet));
                         }

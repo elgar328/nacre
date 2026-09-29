@@ -28,9 +28,9 @@ pub(crate) fn classify_cycles(
     rings: Vec<Ring>,
     rims_lo: Vec<usize>,
     rims_hi: Vec<usize>,
-    cut_rims: &crate::draft::CutRims,
+    rims: &crate::draft::HeldRims,
 ) -> Result<LocalFace, CurvedAbstain> {
-    // A **contact** is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc
+    // A **contact** is a rim node *on* the seam (`CutRim::seam_is_node`) or an arc
     // that wraps past it (the loop builder splits that one at the rim's seam vertex) — the two
     // spellings are exclusive by `wrapping_rim`'s own guard, so neither is counted twice. It is
     // the slit's question — *which boundary vertices lie on θ = 0* — and not the winding's: a
@@ -41,7 +41,7 @@ pub(crate) fn classify_cycles(
         let n = r.nodes.len();
         (0..n)
             .filter(|&t| {
-                let on_seam = cut_rims.iter().any(|(&(kk, _), cr)| {
+                let on_seam = rims.iter().any(|(&(kk, _), cr)| {
                     kk == k && cr.seam_is_node && cr.nodes.first() == Some(&r.nodes[t])
                 });
                 on_seam
@@ -51,7 +51,7 @@ pub(crate) fn classify_cycles(
                             r.nodes[t],
                             r.nodes[(t + 1) % n],
                             r.walls[t],
-                            cut_rims,
+                            rims,
                         ),
                         Ok(Some(_))
                     )
@@ -60,7 +60,7 @@ pub(crate) fn classify_cycles(
     };
 
     // 5. Every threaded cycle, classified by its **winding about the axis** — Σ [`seam_step`]
-    //    over its arc steps, read off the split's order table and no coordinate. `+1` is a lower
+    //    over its arc steps, read off the rim's order table and no coordinate. `+1` is a lower
     //    boundary walked forward, `−1` an upper one walked backward, `0` a hole; a simple cycle
     //    on the lateral cannot wind twice. So the region's two rims are the `+1` cycle and the
     //    `−1` cycle, each a whole circle or a **chain** — the whole-circle case is this rule
@@ -81,7 +81,7 @@ pub(crate) fn classify_cycles(
                 r.nodes[t],
                 r.nodes[(t + 1) % n],
                 r.walls[t],
-                cut_rims,
+                rims,
             ) {
                 Ok(Some((_, _, sign))) => {
                     w += i32::from(sign);

@@ -153,7 +153,7 @@ pub(crate) fn check_result_topology(
 /// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
 pub(super) fn face_components(
     faces: &[LocalFace],
-    cut_rims: &crate::draft::CutRims,
+    rims: &crate::draft::HeldRims,
 ) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {
@@ -202,8 +202,8 @@ pub(super) fn face_components(
     // ★★ **A band whose rim is cut joins by its arcs, not by a rim key.** The cut circle bounds
     // no whole disk, so the second rule below cannot see it — and the cap side of each arc is a
     // *ring step*, so the join lands in the node rule instead: the band registers the same CCW
-    // pairs its chain is assembled from (`CutRim.nodes`, cyclic — carried from the split, the one
-    // source), and every arc meets exactly its cap face there. The wrap arc is one node pair
+    // pairs its chain is assembled from (`CutRim.nodes` in [`HeldRims`], cyclic — the one source
+    // the emitter cut the chain from too), and every arc meets exactly its cap face there. The wrap arc is one node pair
     // here even where the seam vertex splits it into two edges — S is a handle, not a node.
     for (i, lf) in faces.iter().enumerate() {
         let ClassIx::Cyl(k) = lf.surf else { continue };
@@ -212,7 +212,7 @@ pub(super) fn face_components(
             // A chain rim joins through the node rule above like any ring; only a whole circle
             // has no node of its own to register.
             for c in [lo, hi].into_iter().filter_map(Rim::circle) {
-                let Some(cr) = cut_rims.get(&(k, c)) else {
+                let Some(cr) = rims.get(&(k, c)) else {
                     continue;
                 };
                 let m = cr.nodes.len();

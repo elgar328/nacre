@@ -305,9 +305,10 @@ impl Chart {
                     end = End::Disk(*l);
                     continue;
                 }
-                let (Some(arcs), Some(rim)) =
-                    (curved.arc_labels.get(&(k, c)), curved.cut_rims.get(&(k, c)))
-                else {
+                let (Some(arcs), Some(rim)) = (
+                    curved.arc_labels.get(&(k, c)),
+                    curved.split_rims.get(&(k, c)),
+                ) else {
                     continue;
                 };
                 saw_arc = true;

@@ -59,9 +59,16 @@ fn bands(
     )
     .expect("the drill population traces");
     let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
-    let out =
-        crate::arrangement::cyl_chart::emit_lateral(kind, &jd, cyls, &plane_faces, &curved, &rows)
-            .expect("the lateral faces emit");
+    let out = crate::arrangement::cyl_chart::emit_lateral(
+        kind,
+        &jd,
+        cyls,
+        &plane_faces,
+        &curved,
+        &rows,
+        &crate::draft::held_rims(&plane_faces, &curved.split_rims),
+    )
+    .expect("the lateral faces emit");
     // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
     // origin along its raw `dir`, so a drill starting at z=−1 puts the box's cap at t=1. The
     // assertions read in world z, which is the vocabulary the fixtures are written in.

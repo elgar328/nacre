@@ -181,13 +181,16 @@ pub(super) fn ruling_interior_is_even(
     Some(plus_theta_is_above(jd, wc, side)? != (jd.planes[wc].frame_sign > 0))
 }
 
-/// What the arrangement learned about the curved boundary, bundled: the band pass reads
-/// `disk_labels`, the assembly reads `cut_rims`. One struct so the trace's return does not grow
-/// element by element (it was widened once already, for `deferred`).
+/// What the arrangement learned about the curved boundary, bundled: the lateral chart reads the
+/// labels against `split_rims`, and the result's rims are derived from the cleaned faces
+/// ([`crate::draft::held_rims`]). One struct so the trace's return does not grow element by
+/// element (it was widened once already, for `deferred`).
 pub(crate) struct Curved {
     pub(crate) disk_labels: DiskLabels,
     pub(crate) arc_labels: ArcLabels,
-    pub(crate) cut_rims: CutRims,
+    /// How the arrangement split each circle it cut ([`CutRims`]) — what the arc labels are
+    /// indexed by. Not the result's rim: the cleaning pass can dissolve its nodes.
+    pub(crate) split_rims: CutRims,
     /// ★ The alias table the class world settled on — every name in the labels, rims
     /// and rulings above is its representative, and the lateral chart, which mints station
     /// names of its own, asks it (`canon_point`) so a station on a corner *is* the corner.
@@ -529,7 +532,7 @@ pub(super) fn trace_result_faces(
     let mut curved = Curved {
         disk_labels: HashMap::new(),
         arc_labels: HashMap::new(),
-        cut_rims: HashMap::new(),
+        split_rims: HashMap::new(),
         rulings: HashMap::new(),
         aliases,
     };
@@ -551,7 +554,7 @@ pub(super) fn trace_result_faces(
                 .push(al);
         }
         for (cyl, rim) in rims {
-            curved.cut_rims.insert((cyl, work[k]), rim);
+            curved.split_rims.insert((cyl, work[k]), rim);
         }
         // ★ `wall` was this arrangement's k-th class; restate it in the global space the rest of
         // the map already speaks, exactly as the three keys above do.

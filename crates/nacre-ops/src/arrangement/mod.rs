@@ -479,7 +479,7 @@ pub(crate) fn boolean(
         // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
         // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
         // "report a bug", and its own doc records having mis-named a population once before.)
-        let stretch = || -> Result<(Vec<LocalFace>, Vec<SeamVertex>), BoolError> {
+        let stretch = || -> Result<(Vec<LocalFace>, Vec<SeamVertex>, HeldRims), BoolError> {
             // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
             // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
             // chainable solid — a second boolean on it then sees no redundant coplanar planes.
@@ -487,6 +487,10 @@ pub(crate) fn boolean(
                 UNIFY,
                 crate::assembly::unify_coplanar_faces(faces, &jd, &cyls)
             )?;
+            // ★ **The result's rims, read off the cleaned faces** — the cleaning just dissolved
+            // the split's nodes a merged cap no longer turns at, and the lateral and the assembly
+            // must meet on the rims the faces hold, not on the split (`draft::HeldRims`).
+            let rims = crate::draft::held_rims(&faces, &curved.split_rims);
 
             // ★ **The lateral bands, appended after the differential above**: reuse can
             // only change what the *plane* arrangement emits, so the two routes are compared on that
@@ -500,14 +504,15 @@ pub(crate) fn boolean(
                 // ★ **The lateral faces come from the chart**: every cylinder
                 // class's cells, read off the plane arrangement's own labels and emitted in the
                 // band road's vocabulary.
-                let lateral = cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
+                let lateral =
+                    cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows, &rims);
                 // ★★ The census sits *before* the curved cleaning pass on purpose: the cleaning
                 // merges pieces, which would blur the face-by-face question being asked.
                 // ★ The census holds the chart against its own rules (and the emitter against
                 // the census's independent count), in test builds; the emitter's refusal is
                 // handed to it before `?` decides, so a refused class is still recorded.
                 #[cfg(test)]
-                cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &lateral);
+                cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &rims, &lateral);
                 let mut faces = faces;
                 faces.extend(lateral?);
                 // ★ No curved cleaning pass follows: the emitter's lateral faces are the
@@ -517,12 +522,12 @@ pub(crate) fn boolean(
             };
 
             let seam = seam_table(model, &faces, &cyls, &jd)?;
-            Ok((faces, seam))
+            Ok((faces, seam, rims))
         };
         // ★ The raise moved into `reconstruct` (after the vertex naming, before any minting);
         // what stays here is the interception — a stretch failure on an arc input still carries
         // the stopper's name out, not its own.
-        let (faces, seam) = match stretch() {
+        let (faces, seam, rims) = match stretch() {
             Ok(x) => x,
             Err(e) => return Err(deferred.unwrap_or(e)),
         };
@@ -537,7 +542,7 @@ pub(crate) fn boolean(
                 &seam,
                 &faces,
                 &cyls,
-                &curved.cut_rims,
+                &rims,
                 deferred,
                 crate::assembly::Tangencies {
                     kind,

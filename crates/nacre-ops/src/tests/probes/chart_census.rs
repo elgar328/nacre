@@ -19,6 +19,7 @@ pub(crate) fn census(
     plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
+    rims: &crate::draft::HeldRims,
     emission: &Result<Vec<LocalFace>, BoolError>,
 ) {
     for (k, _) in cyls.iter().enumerate() {
@@ -165,7 +166,7 @@ pub(crate) fn census(
         // on the same input.
         {
             match regions::walk(
-                jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved,
+                jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved, rims,
             ) {
                 Ok(w) => {
                     let mut owner: Vec<Option<usize>> = vec![None; cells.len()];

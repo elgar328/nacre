@@ -4,7 +4,8 @@
 //! assembly turns that description into b-rep. Both halves speak this vocabulary, so it belongs to
 //! neither: [`LocalFace`] with its [`Bound`]s, a [`Ring`] of [`NodeId`]s and the [`Wall`] each edge
 //! rides, a [`Rim`], a [`SeamVertex`] and the [`Def`] a node's vertex is minted from, and the
-//! record a cut circle carries out of the split ([`CutRim`]). Alongside them the two terms that decide whether a draft face survives at all --
+//! record a cut circle carries out of the split ([`CutRim`]) with the part of it the result's
+//! faces keep ([`HeldRims`]). Alongside them the two terms that decide whether a draft face survives at all --
 //! [`BoolKind`] and [`keep`], one predicate on one chamber's `(inA, inB)`.
 //!
 //! ★ **This module is under the engine, not beside it.** It names `combinatorics` (a ring is a ring
@@ -308,8 +309,9 @@ pub(crate) enum Bound {
 }
 
 /// One rim of a lateral band: the **whole circle** of a plane class, or a **wrapping chain** —
-/// a closed ring of arcs and rulings going once around the cylinder, the shape the cleaning
-/// pass leaves when a band and a panel merge (a boss whose cap sits inside the other body). A
+/// a closed ring of arcs and rulings going once around the cylinder, the boundary a lateral
+/// region takes where it runs along a cut rim around the axis (`classify_cycles`; a boss whose
+/// cap sits inside the other body). A
 /// chain is stored in the direction it is walked (a `lo` chain forward, a `hi` chain backward)
 /// and unflipped, like every bound; its nodes are polygon nodes ([`Bound::rings`]), so the seam
 /// table, the vertex minting and the node join all read it as they read a panel ring.
@@ -446,19 +448,20 @@ impl LocalFace {
 ///   this ladder does not arrange (`RulingBoundNotYet`).
 /// - **the directed passage test** — with two pierce nodes the two complementary arcs share one
 ///   unordered endpoint pair, so the step is oriented by the `ccw` bit the wall carries and
-///   compared against the split's own θ order: the CCW arc `nodes.last() → nodes[0]` is the one
-///   holding θ = 0. ★ **Half-open.** When the seam *is* a node (`CutRim::seam_is_node`), that arc
+///   compared against the rim's θ order ([`HeldRims`] — the split's order, carried): the CCW arc
+///   `nodes.last() → nodes[0]` is the one holding θ = 0. ★ **Half-open.** When the seam *is* a
+///   node (`CutRim::seam_is_node`), that arc
 ///   is the one **ending** at the seam node, and it passes θ = 0; the arc leaving the seam node
 ///   does not. So a loop that runs *along* the seam ruling counts its arrival and its departure
 ///   once between them, never twice — which is what makes Σ sign over a cycle its winding number
 ///   about the axis (`+1` a lower boundary walked forward, `−1` an upper one walked backward, `0`
-///   a hole), read off the split's order table and no coordinate.
+///   a hole), read off the order table and no coordinate.
 pub(super) fn seam_step(
     surf: ClassIx,
     a: NodeId,
     b: NodeId,
     wall: Wall,
-    cut_rims: &crate::draft::CutRims,
+    rims: &HeldRims,
 ) -> Result<Option<(usize, usize, i8)>, BoolError> {
     let Wall::Arc { cyl, ccw } = wall else {
         return Ok(None);
@@ -476,7 +479,7 @@ pub(super) fn seam_step(
                 .into_iter()
                 .flatten()
                 .filter_map(shared)
-                .filter(|&c| cut_rims.contains_key(&(cyl, c)));
+                .filter(|&c| rims.contains_key(&(cyl, c)));
             let c = hits
                 .next()
                 .ok_or_else(|| reject(RejectReason::RulingBoundNotYet))?;
@@ -486,7 +489,7 @@ pub(super) fn seam_step(
             c
         }
     };
-    let Some(cr) = cut_rims.get(&(cyl, c)) else {
+    let Some(cr) = rims.get(&(cyl, c)) else {
         return Ok(None);
     };
     let ccw_pair = if ccw { (a, b) } else { (b, a) };
@@ -503,10 +506,10 @@ pub(super) fn wrapping_rim(
     a: NodeId,
     b: NodeId,
     wall: Wall,
-    cut_rims: &crate::draft::CutRims,
+    rims: &HeldRims,
 ) -> Result<Option<(usize, usize)>, BoolError> {
-    Ok(seam_step(surf, a, b, wall, cut_rims)?
-        .filter(|&(cyl, c, _)| !cut_rims[&(cyl, c)].seam_is_node)
+    Ok(seam_step(surf, a, b, wall, rims)?
+        .filter(|&(cyl, c, _)| rims.get(&(cyl, c)).is_some_and(|cr| !cr.seam_is_node))
         .map(|(cyl, c, _)| (cyl, c)))
 }
 
@@ -543,9 +546,93 @@ pub(crate) struct CutRim {
     pub(crate) seam_is_node: bool,
 }
 
-/// Per `(cylinder class, plane class)`, the cut circles — presence in this map **is** the one
-/// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
+/// Per `(cylinder class, plane class)`, how the arrangement **split** each circle it cut — the
+/// table the lateral chart reads its arc labels against (`Curved::split_rims`). It is not the
+/// result's rim: the cleaning pass merges cap cells back and dissolves the nodes between them, so
+/// what the result's faces and edges meet on is [`HeldRims`].
 pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
+
+/// **The result's cut rims — the split's nodes that the cleaned faces still hold.** Presence here
+/// is the one source of "this rim is cut" for everything that builds the result (the lateral's
+/// rim pieces, the assembly's rim skip, arc join and seam predicate). A type of its own because
+/// the defect it closes was one of two same-typed tables read in the wrong place: a Cut whose
+/// tool rests on a cap across its rim merged the cap back into one arc while the lateral, reading
+/// the split, still cut its rim at the tool's planes — one arc on the cap, three on the lateral,
+/// an edge used once.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct HeldRims(CutRims);
+
+impl HeldRims {
+    pub(crate) fn get(&self, key: &(usize, usize)) -> Option<&CutRim> {
+        self.0.get(key)
+    }
+
+    pub(crate) fn contains_key(&self, key: &(usize, usize)) -> bool {
+        self.0.contains_key(key)
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&(usize, usize), &CutRim)> {
+        self.0.iter()
+    }
+
+    /// This table re-read against a later face list — for the readers after the per-solid
+    /// straight-angle pass, which can drop nodes of its own. Only removes: a node the later list
+    /// adds is not a rim node this table knew. Blind to groups (the key is `(cyl, plane)`), so a
+    /// node one body dropped and another kept stays for both — no per-solid pass drops a rim node
+    /// in the suite or the census (the two pierce nodes it drops there are ruling points).
+    pub(crate) fn prune(&self, faces: &[LocalFace]) -> HeldRims {
+        held_rims(faces, &self.0)
+    }
+}
+
+/// [`HeldRims`] from the faces as they stand: for each split circle `(cyl, c)`, the nodes some
+/// face on plane class `c` still has in a ring, in the split's θ order. `seam_is_node` survives
+/// only with the node it was about. A circle none of whose nodes survive is **whole** again and
+/// leaves the table — the lateral emits its rim as the closed edge, the cap holds it as a circle.
+///
+/// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the
+/// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
+/// — the lateral's corner there — turning its `A − B` from `ZeroLengthEdge` into
+/// `ArcBoundNotYet` (measured).
+///
+/// ★ A circle left with **one** node keeps the split's nodes — the record as it was before this
+/// derivation, so an input it cannot improve answers as it did rather than by a new refusal (one
+/// node cannot state a rim as arcs, and the rim may be one no lateral reaches). No suite or census
+/// boolean reaches it: the rims this derivation shortens go from three or four nodes to two.
+pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
+    if split.is_empty() {
+        return HeldRims::default();
+    }
+    let mut held: std::collections::HashSet<(usize, combinatorics::NodeId)> =
+        std::collections::HashSet::new();
+    for lf in faces {
+        let ClassIx::Plane(c) = lf.surf else {
+            continue;
+        };
+        for ring in lf.poly_rings() {
+            held.extend(ring.nodes.iter().map(|&n| (c, n)));
+        }
+    }
+    let mut out = CutRims::new();
+    for (&(cyl, c), cr) in split {
+        let nodes: Vec<_> = cr
+            .nodes
+            .iter()
+            .copied()
+            .filter(|&n| held.contains(&(c, n)))
+            .collect();
+        let rim = match nodes.len() {
+            0 => continue,
+            1 => cr.clone(),
+            _ => CutRim {
+                seam_is_node: cr.seam_is_node && nodes[0] == cr.nodes[0],
+                nodes,
+            },
+        };
+        out.insert((cyl, c), rim);
+    }
+    HeldRims(out)
+}
 
 /// What each input face's plane became: its **plane class's representative surface**, which is
 /// what every result face on that plane carries — and the `Orientation` the face would carry stated

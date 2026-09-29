@@ -307,3 +307,129 @@ fn edge_contact_common_is_empty_in_both_orders() {
         assert!(nacre_validate::validate(&m).is_empty());
     }
 }
+
+/// Every vertex of a solid, cavities and inner loops included, as sorted coordinate bits — the
+/// identity [`a_box_resting_across_a_rim_leaves_what_it_cuts_whole`] holds a result to.
+fn vertex_bits(m: &Model, s: Handle<Solid>) -> Vec<[u64; 3]> {
+    let sol = m.solid(s);
+    let mut seen = std::collections::HashSet::new();
+    for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+        for &fh in &m.shell(sh).faces {
+            let f = m.face(fh);
+            for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for he in &lp.half_edges {
+                    seen.extend(m.edge(he.edge).vertices);
+                }
+            }
+        }
+    }
+    let mut bits: Vec<[u64; 3]> = seen
+        .into_iter()
+        .map(|v| m.vertex_point(v).as_array().map(f64::to_bits))
+        .collect();
+    bits.sort_unstable();
+    bits
+}
+
+fn face_count(m: &Model, s: Handle<Solid>) -> usize {
+    let sol = m.solid(s);
+    std::iter::once(sol.outer)
+        .chain(sol.cavities.iter().copied())
+        .map(|sh| m.shell(sh).faces.len())
+        .sum()
+}
+
+/// A 7 × 8 plate one unit thick with one fillet (r 2) at its bottom-right corner — the census's
+/// `plate1`: axis at `(1.5, −2)`, tangent to the bottom wall `y = −4` and the right wall `x = 3.5`.
+fn fillet_plate(m: &mut Model) -> Handle<Solid> {
+    use crate::stated::*;
+    let profile = stated(vec![
+        line(p2(-3.5, -4.0), p2(1.5, -4.0)),
+        arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+        line(p2(3.5, -2.0), p2(3.5, 4.0)),
+        line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+        line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
+    ])
+    .expect("a valid profile")
+    .remove(0);
+    let frame = nacre_ops::SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .expect("the plate extrudes") else {
+        unreachable!()
+    };
+    solid
+}
+
+/// ★ **A box resting on a cap across its rim leaves what it cuts whole.** `B` touches `A`'s cap
+/// face to face and nowhere else, and the contact's boundary crosses the cap's rim, so the cap
+/// class splits the rim at `B`'s planes and the cut merges the cap back. `A − B` is `A` itself —
+/// the same vertices to the bit, the same faces — `B − A` is `B`, the Fuse is one body of both
+/// volumes and Common is empty; every result valid, in both operand orders.
+///
+/// What it holds: the lateral and the assembly meet on the rim as the cleaned faces hold it
+/// (`draft::HeldRims`), not as the arrangement split it — the split cut the lateral's rim at
+/// nodes the merged cap had dissolved (an edge used once, `OpenResultShell`). The fillet slab
+/// runs flush with the plate's bottom wall on one row and stops short of it on the other: the
+/// wall plane is not what the rim meets.
+#[test]
+fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
+    type Build = fn(&mut Model) -> Handle<Solid>;
+    let cases: &[(&str, Build, [f64; 3], [f64; 3])] = &[
+        (
+            "fillet plate, a slab flush with the wall plane",
+            fillet_plate,
+            [1.6, -4.0, 1.0],
+            [2.6, 0.0, 2.0],
+        ),
+        (
+            "fillet plate, a slab short of the wall plane",
+            fillet_plate,
+            [1.6, -3.9, 1.0],
+            [2.6, -2.9, 2.0],
+        ),
+    ];
+    for &(name, build, lo, hi) in cases {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for swapped in [false, true] {
+                let at = format!("{name}: {kind:?}, swapped {swapped}");
+                let mut m = Model::new();
+                let a = build(&mut m);
+                let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+                m.rebuild_adjacency();
+                let (va, vb) = (volume(&m, a), volume(&m, b));
+                let (bits_a, faces_a) = (vertex_bits(&m, a), face_count(&m, a));
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let out = boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                m.rebuild_adjacency();
+                assert!(nacre_validate::validate(&m).is_empty(), "{at}: validate");
+                match (kind, swapped) {
+                    (BoolKind::Common, _) => assert!(out.is_empty(), "{at}: {out:?}"),
+                    (BoolKind::Fuse, _) => {
+                        assert_eq!(out.len(), 1, "{at}: one body");
+                        let v = volume(&m, out[0]);
+                        assert!((v - (va + vb)).abs() < 1e-9, "{at}: volume {v}");
+                    }
+                    (BoolKind::Cut, true) => {
+                        assert_eq!(out.len(), 1, "{at}: one body");
+                        let v = volume(&m, out[0]);
+                        assert!((v - vb).abs() < 1e-9, "{at}: volume {v}");
+                    }
+                    (BoolKind::Cut, false) => {
+                        assert_eq!(out.len(), 1, "{at}: one body");
+                        assert_eq!(vertex_bits(&m, out[0]), bits_a, "{at}: A's vertices");
+                        assert_eq!(face_count(&m, out[0]), faces_a, "{at}: A's faces");
+                        let v = volume(&m, out[0]);
+                        assert!((v - va).abs() < 1e-9, "{at}: volume {v}");
+                    }
+                }
+            }
+        }
+    }
+}

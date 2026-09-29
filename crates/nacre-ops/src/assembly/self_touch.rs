@@ -150,11 +150,11 @@ pub(crate) fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::draft::CutRims,
+    rims: &crate::draft::HeldRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces, cyls, cut_rims, deferred, tangencies)?;
+    let out = reconstruct(model, jd, seam, faces, cyls, rims, deferred, tangencies)?;
     model.supersede_live(&[a, b]);
     Ok(out)
 }
