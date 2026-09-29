@@ -136,9 +136,11 @@ mod tests {
     ///
     /// The serial build is what the wasm playground takes, and **nothing builds it**: the
     /// pre-commit hook runs the default features, and a workspace-wide
-    /// `--no-default-features` unifies `parallel` back on through `nacre-oracle`'s and
-    /// `nacre-props`'s dev-dependencies. So it has to be checked deliberately
-    /// (`cargo test -p nacre-ops --no-default-features`), and between checks the thing that
+    /// `--no-default-features` unifies `parallel` back on through the sibling crates'
+    /// dev-dependencies and the facade's defaults. So it has to be checked deliberately
+    /// (`cargo test -p nacre-ops --no-default-features` — serial only while this crate's self
+    /// dev-dependency takes no defaults, which `tests/instruments/manifest.rs` holds it to),
+    /// and between checks the thing that
     /// silently breaks it is a second place where parallelism lives — a `par_iter` reached
     /// for at a call site, without the `#[cfg]` pair that keeps the serial build compiling.
     ///

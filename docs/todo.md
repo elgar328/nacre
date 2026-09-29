@@ -139,16 +139,6 @@
 
 ## 다음 — 제품 경로의 구멍
 
-### 순차 빌드 관문이 병렬로 돈다
-
-overview 관문의 `cargo test -p nacre-ops --no-default-features` 는 순차(`Rc<OnceCell>`, rayon 없음) 빌드를
-시험하지 않는다. ops 의 자기 dev-의존(`nacre-ops = { …, features = ["test-util"] }`)이 기본 기능을 켜 `parallel` 이
-되살아난다 — `cargo tree -p nacre-ops --no-default-features -e features -i rayon` 이 `nacre-ops feature "default"`
-를 dev-의존 아래 보이고, perf 테스트가 그 명령에서 `mode=parallel` 을 찍는다. `Cargo.toml` 의 «nothing else builds
-it, so check it with …» 도 같은 전제다. 지금 순차 빌드를 시험하는 것은 playground 의 wasm 빌드뿐이다. 후보: 자기
-dev-의존에 `default-features = false` — `cargo tree` 가 `default` 를 더 안 보이는지, 순차 스위트가 초록인지 따로
-재고 따로 커밋한다.
-
 ### tessellate 는 첫 거절에서 모델 전체를 멈춘다
 
 `SelfTouchingBoundary` 로 거절되는 접촉 모양(`AtEnd`, 곡선 간선 접촉, 다리 둘 이상)이 남아 있고, 한 면의 거절이 전체 메시를 막는다. 인구는 안 쟀다 — 먼저 잰다.

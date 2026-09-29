@@ -89,9 +89,12 @@ M1 뼈대(Store/Handle, 평면·직선, 정육면체, validate, OBJ·STEP 출력
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --no-fail-fast
-cargo test -p nacre-ops --no-default-features
-cargo test -p nacre-ops --test census -- --ignored --nocapture | grep '^c '          # 두 프로파일 diff
-cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
+cargo test -p nacre-ops --no-default-features                          # 순차 빌드 = wasm 제품
+cargo clippy -p nacre-ops -p nacre-judge --no-default-features --all-targets -- -D warnings
+cargo tree -p nacre-ops --no-default-features -e normal,dev > target/tree-serial.txt   # rayon 이 없어야 한다
+cargo test -p nacre-ops --test census -- --ignored --nocapture > target/census-debug.txt
+cargo test -p nacre-ops --release --test census -- --ignored --nocapture > target/census-release.txt
+cargo test -p nacre-ops --no-default-features --test census -- --ignored --nocapture > target/census-serial.txt
 cargo test -p nacre-ops --test reject_census
 cargo test --workspace --no-fail-fast -- --ignored --skip measure_
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
@@ -100,7 +103,7 @@ cargo build --workspace                                                  # 테�
 cargo build --release -p nacre-ops                                       # debug_assertions 를 «끈» 빌드 — 경고 0
 ```
 
-- **커밋 훅이 못 보는 것 셋.** 훅은 `clippy --all-targets` 와 `test` 를 돈다 — dev-의존이 `test-util` 을 켠 채로고, `cfg(test)` 와 `debug_assertions` 가 **둘 다 켜진** 빌드다. 그래서 (1) 어떤 항목을 `test-util` 뒤로 보내 제품 빌드에서 그 항목만 쓰던 헬퍼가 죽은 코드가 돼도 훅은 초록이고(맨 `cargo build --workspace` 가 경고한다), (2) 그 항목을 가리키던 intra-doc 링크가 깨져도 훅은 모르며(`cargo doc`), (3) **`debug_assertions` 가 꺼져야 드러나는 것**은 훅도 `cargo build --workspace`(디버그)도 못 본다 — `cfg(debug_assertions)` 항목만 담던 glob 재수출이 릴리스에서 비거나, 그런 항목만 쓰던 `use` 가 릴리스에서 죽은 코드가 되는 부류다. **`cargo build --release` 가 그 눈이고, 훅 밖에 있다.** 가시성·`cfg`·게이트를 건드린 변경은 셋 다 돌린다.
+- **커밋 훅이 못 보는 것 넷.** 훅은 `clippy --all-targets` 와 `test` 를 돈다 — dev-의존이 `test-util` 을 켠 채로고, `cfg(test)` 와 `debug_assertions` 가 **둘 다 켜진** 빌드다. 그래서 (1) 어떤 항목을 `test-util` 뒤로 보내 제품 빌드에서 그 항목만 쓰던 헬퍼가 죽은 코드가 돼도 훅은 초록이고(맨 `cargo build --workspace` 가 경고한다), (2) 그 항목을 가리키던 intra-doc 링크가 깨져도 훅은 모르며(`cargo doc`), (3) **`debug_assertions` 가 꺼져야 드러나는 것**은 훅도 `cargo build --workspace`(디버그)도 못 본다 — `cfg(debug_assertions)` 항목만 담던 glob 재수출이 릴리스에서 비거나, 그런 항목만 쓰던 `use` 가 릴리스에서 죽은 코드가 되는 부류다. **`cargo build --release` 가 그 눈이고, 훅 밖에 있다.** 가시성·`cfg`·게이트를 건드린 변경은 셋 다 돌린다. (4) 훅은 **기본 기능**(`parallel`)으로만 짓는다 — 순차 빌드(wasm 제품)에서만 드러나는 것은 `--no-default-features` 줄들이 본다: 순차 스위트·순차 clippy·순차 census(`c` 행이 같은 상태의 debug census 와 같아야 한다 — 한 바이너리 안에서는 두 기능 조합을 비교할 수 없다). 그 줄들이 순차인 것은 자기 dev-의존이 기본 기능을 고르지 않기 때문이고(`tests/instruments/manifest.rs`), `cargo tree` 줄이 cargo 자신의 해석으로 확인한다. census 세 줄은 파일로 받아 각 `$?` 를 읽은 뒤 `c` 행을 비교한다 — 변경 전후를 줄마다, 그리고 순차를 같은 상태의 debug 와. 파이프로 받으면 census 가 단언으로 멈출 때 출력이 그 행에서 끊기고, 세 빌드가 같은 행에서 끊기면 비교는 비어도 같다.
 - **`cargo doc`**: 이 저장소는 intra-doc 링크를 2,000곳 넘게 쓰고 `fmt`·`clippy`·`test` 중 무엇도 그것을 해석하지 않는다. 경고의 기준선은 **72**(전부 「공개 문서가 비공개 항목을 링크」 부류)이고 규칙은 「기준선보다 늘지 않는다」, unresolved link 는 **0**. 이 계기는 이름이 사라져 깨지는 링크만 잡는다 — 이름이 살아 있는데 가리키는 대상이 바뀐 링크는 개명한 사람이 손으로 훑는다.
 - **모듈을 옮겼으면 그래프를 본다**: `cargo test -p nacre-ops --test instruments module_graph`. 두 겹이다 — 불리언 파이프라인이 한 방향으로 흐르는지(`draft` 는 바닥, `assembly` 는 엔진을 안 부른다, 엔진은 앞문을 안 부른다)와 엔진 **밑**의 넷(`bands`·`combinatorics`·`nesting`·`planes`)이 엔진을 안 부르는지와 클래스 표가 그 위의 이름을 안 부르는지(`planes` → `combinatorics`)를 **단언**하고, 나머지 간선은 **얼린 표**로 든다. 표에 없는 간선이 생기면 답은 둘뿐이다: 없애거나, 표에 넣고 **커밋 본문에 왜 그 방향이 맞는지 적는다**. 그래프는 DAG 가 아니다(순환 1쌍 — `construct ⇄ ops`, 같은 층이라 결함이 아니다 — 이 남아 있고 표가 그것을 든다) — 이 관문은 «더 나빠지지 않는다»를 지킨다. 오늘의 표는 `measure_module_graph` 가 찍는다.
 - **이름을 개명·은퇴시켰으면 문서도 훑는다**: `python3 tools/deadname-sweep.py` (기본 인자 = 세 문서; 소스 파일을 인자로 주면 주석도 훑는다 — 죽은 이름은 낡은 주석의 가장 확실한 흔적이다. `rg` 필요). 이 계기는 한 물음만 답한다 — 「`crates/` 비주석 사용이 0인가」. 출력은 후보지 작업 목록이 아니다(수식 기호·외부 도구가 섞인다). 값(개수·변종 수)이 바뀐 변경은 이름이 아니라 **옛 숫자**로 문서를 훑는다.

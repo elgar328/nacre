@@ -25,7 +25,8 @@ test-util = []
 proptest.workspace = true
 # Self dev-dependency: `tests/cylinder_truth.rs` pins the f64 entry's derivation, and an
 # integration test compiles against the lib without `cfg(test)`. Enabling the feature here — the
-# same move the facade crate makes — keeps those tests in the default `cargo test` run.
-nacre-topo = { path = ".", features = ["test-util"] }
+# same move the facade crate makes — keeps those tests in the default `cargo test` run. No
+# defaults, so a `--no-default-features` run stays one (`nacre-ops/tests/instruments/manifest.rs`).
+nacre-topo = { path = ".", default-features = false, features = ["test-util"] }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

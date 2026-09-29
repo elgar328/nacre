@@ -34,7 +34,8 @@ num-bigint = "0.4"
 # by default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build --
 # which is what the wasm playground takes, and which nothing else builds, so check it with
 # `cargo test -p nacre-ops --no-default-features` (a workspace build unifies `parallel` back
-# on through nacre-oracle's and nacre-props's dev-dependencies).
+# on through the sibling crates' dev-dependencies and the facade's defaults). That command is
+# serial only because the self dev-dependency below takes no defaults.
 default = ["parallel"]
 parallel = ["dep:rayon", "nacre-judge/parallel"]
 # Print every reject as it is raised and as it surfaces (`src/reject_census.rs`). Off by default,
@@ -56,7 +57,10 @@ test-util = []
 
 [dev-dependencies]
 # Turns on this crate's own `test-util` for its integration tests (the `nacre-topo` shape).
-nacre-ops = { path = ".", features = ["test-util"] }
+# `default-features = false`: with the defaults, this line alone turns `parallel` back on under
+# `--no-default-features`, and the serial gate quietly tests the parallel build
+# (`tests/instruments/manifest.rs` holds every self dev-dependency to that).
+nacre-ops = { path = ".", default-features = false, features = ["test-util"] }
 # Enables the topo test-only primitive `Model::add_cuboid` for building test solids
 # (unusable in production; this crate sits above topo but tests build boxes directly).
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
