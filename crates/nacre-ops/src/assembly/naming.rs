@@ -75,6 +75,9 @@ pub(crate) fn name_result_vertices(
                         || (pl.contains(&b) && combinatorics::side_of(jd, cyls, n, a) == Some(0))
                 })
                 .collect();
+            if on_line.is_empty() {
+                continue;
+            }
             let v = by_pair.entry([a, b]).or_default();
             for n in on_line {
                 if !v.contains(&n) {
@@ -197,10 +200,15 @@ pub(crate) fn name_result_vertices(
     // definition as it stands. Where a line two classes share lies on the cylinder, one point
     // has a pierce name per pair (`Aliases::record_shared_ruling`), and the representative can
     // name a plane the result keeps no face on — the vertex then says where it is by a surface
-    // the solid does not have. So a pierce vertex keeps its name only when both its planes meet
-    // it here; otherwise it takes the canonical triple of the planes that do, or, with two, the
-    // pierce name of that pair ([`combinatorics::restate_pierce`]). Lateral faces carry no plane
-    // and are skipped — the cylinder is in every pierce definition already.
+    // the solid does not have. So a pierce vertex keeps its name when both its planes meet it
+    // here, or when fewer than two planes do (nothing to restate it on); otherwise it takes the
+    // canonical triple of the planes that do, else the pierce name of the first pair of them that
+    // restates it ([`combinatorics::restate_pierce`]). Where no pair does — the pair meets the
+    // cylinder elsewhere, or the arithmetic cannot say, which `restate_pierce`'s `None` does not
+    // tell apart — the name stands; where it names a surface the solid has no face on, the
+    // shipped fence refuses the vertex by that symptom (`VertexNamesAbsentSurface`), not the
+    // cause. Lateral faces carry no plane and are skipped —
+    // the cylinder is in every pierce definition already.
     let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {

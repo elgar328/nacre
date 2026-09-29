@@ -280,18 +280,15 @@ pub(crate) fn cylinder_gate(
                         } else {
                             crossings.insert((c, ci));
                         }
-                    } else if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2)
-                        == Orient::Negative
-                        && {
-                            // ★ Only a footprint that can be **stated** proves a cut; an
-                            // unstatable one (a rotated class, no span) proves nothing either way
-                            // and records nothing — recording on it draws rulings no face has
-                            // (measured, the rigid-motion oracle).
-                            let fps = footprints
-                                .get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
-                            !fps.is_empty() && !oblique_plane_clears(&cyl.def, fps, &coeffs)
-                        }
-                    {
+                    } else if clearance == Orient::Negative && {
+                        // ★ Only a footprint that can be **stated** proves a cut; an
+                        // unstatable one (a rotated class, no span) proves nothing either way
+                        // and records nothing — recording on it draws rulings no face has
+                        // (measured, the rigid-motion oracle).
+                        let fps =
+                            footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
+                        !fps.is_empty() && !oblique_plane_clears(&cyl.def, fps, &coeffs)
+                    } {
                         // ★ **The class cuts this lateral face though no face of the other solid touches
                         // it**: the refusal question is face against face and it is clear, but
                         // the arrangement on this class still needs the ruling — every face of *this* solid
@@ -413,7 +410,8 @@ pub(crate) fn cylinder_gate(
 /// of one solid that is also the line of the other's edge (or of the same solid's flat through
 /// its own axis). Recorded once, here, and read by every road that must say so: the alias seed
 /// (one point, several names), the rulings split (one line, two vocabularies), the chart (one
-/// station) and the tangency verdict.
+/// station), the tangency verdict and the result's edge subdivision (the pierce points on the
+/// line).
 ///
 /// The population is the pairs this gate already recorded against the cylinder: a class in
 /// `crossings` (it cuts the lateral in two rulings) with another in `crossings`, or with a
@@ -673,7 +671,10 @@ pub(crate) struct Tangency {
     /// line, but only over its own stretch: a face with vertices on both sides of the line can
     /// run along it at that edge and through it elsewhere, and there the contact is inside the
     /// face — no edge, no split lateral, the six regions unjudged. A face that ends on the line
-    /// touches it along its boundary alone.
+    /// touches it along its boundary alone. ☑ The one built member of that population, an L-shaped
+    /// tangent face, never reaches this row: the rulings split refuses it first
+    /// (`RulingBoundNotYet`, `a_tangent_face_across_its_edge_on_the_line_is_refused_today`), so
+    /// the guard is unexercised until that split learns the shape.
     pub(crate) line_is_an_edge: bool,
     /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
     /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
@@ -780,8 +781,8 @@ fn tangency_rows(
         let across: Vec<usize> = fi
             .face
             .map(|fh| {
-                let own = model.face(fh).surface;
                 let f = model.face(fh);
+                let own = f.surface;
                 std::iter::once(&f.outer)
                     .chain(f.inner.iter())
                     .flat_map(|lp| lp.half_edges.iter())

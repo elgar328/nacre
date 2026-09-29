@@ -59,3 +59,74 @@ mod region_tests {
         assert!(arcs >= 1, "a chain rim of arcs");
     }
 }
+
+/// **The result guard's carrier half** (`check_result_topology`, `EdgeCarrierMismatch`): a closed
+/// cube, every count clean, but one edge stated on a pair its two faces do not lie on — Bottom ·
+/// Front restated as Bottom · Right. No boolean in the suite produces this, so the guard is
+/// planted: the untouched cube passes, the restated one is refused with the edge's end.
+#[test]
+fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
+    use crate::RejectReason;
+    use nacre_math::Point3;
+    use nacre_topo::{HalfEdge, Model, Shell, Solid};
+    let mut m = Model::new();
+    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    assert_eq!(
+        super::check_result_topology(&m, &[cube]),
+        None,
+        "the cube itself"
+    );
+    let faces = m.shell(m.solid(cube).outer).faces.clone();
+    // `add_cuboid`'s face order: Bottom, Top, Front, Back, Left, Right.
+    let (bottom, front, right) = (faces[0], faces[2], faces[5]);
+    let edges_of = |m: &Model, f| -> Vec<_> {
+        m.face(f)
+            .outer
+            .half_edges
+            .iter()
+            .map(|he| he.edge)
+            .collect()
+    };
+    let shared = *edges_of(&m, bottom)
+        .iter()
+        .find(|e| edges_of(&m, front).contains(e))
+        .expect("Bottom and Front share an edge");
+    let wrong = m
+        .push_edge(
+            [m.face(bottom).surface, m.face(right).surface],
+            m.edge(shared).vertices,
+        )
+        .expect("a line of two planes");
+    let restated = |m: &mut Model, f| {
+        let mut face = m.face(f).clone();
+        for he in &mut face.outer.half_edges {
+            if he.edge == shared {
+                *he = HalfEdge {
+                    edge: wrong,
+                    forward: he.forward,
+                };
+            }
+        }
+        m.push_face(face)
+    };
+    let (b2, f2) = (restated(&mut m, bottom), restated(&mut m, front));
+    let shell = m.push_shell(Shell {
+        faces: faces
+            .iter()
+            .map(|&f| match f {
+                f if f == bottom => b2,
+                f if f == front => f2,
+                f => f,
+            })
+            .collect(),
+    });
+    let solid = m.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    let got = super::check_result_topology(&m, &[solid]);
+    assert!(
+        matches!(got, Some((RejectReason::EdgeCarrierMismatch, Some(_)))),
+        "{got:?}"
+    );
+}

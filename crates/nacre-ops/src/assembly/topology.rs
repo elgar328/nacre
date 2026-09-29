@@ -6,8 +6,12 @@ use super::*;
 /// then, most-specific first:
 ///  1. a **non-manifold vertex** (pinch) — [`nacre_topo::nonmanifold_vertices`]; sound for any
 ///     number of pinches (unlike Euler parity, which a second pinch flips back to even);
-///  2. an **odd Euler characteristic** `χ = V − E + F − L_i` (a valid closed solid's is even);
-///  3. a **negative genus** `S − χ/2 < 0` (an even χ that still cannot be a solid).
+///  2. an edge stated on **one plane twice** — an interior boundary the coplanar merge had to
+///     erase ([`RejectReason::CoplanarMerge`]);
+///  3. an edge whose stated carriers are **not the surfaces its two faces lie on**
+///     ([`RejectReason::EdgeCarrierMismatch`]);
+///  4. an **odd Euler characteristic** `χ = V − E + F − L_i` (a valid closed solid's is even);
+///  5. a **negative genus** `S − χ/2 < 0` (an even χ that still cannot be a solid).
 ///
 /// A boolean output is freshly built, so its cells never alias another live solid's — the scoped
 /// maps are exact.
@@ -86,11 +90,10 @@ pub(crate) fn check_result_topology(
         // surfaces must *be* the stated pair; two faces on one surface (a panel and the band
         // beside it sharing an arc, a cylinder seam) must have that surface among the two. The
         // edge's curve derives from the stated pair, so a pair the faces do not keep is a wrong
-        // curve on a shell every count above calls closed. Measured on a trial arrangement that
-        // lets a prism's edge on a ruling through: the wedge whose two walls both enter the
-        // cylinder came back `Ok` from Common and A − B with a ruling edge stated
-        // `(cylinder, wall)` between two planes, and only `validate` said so. An edge with other
-        // than two uses is the shell guard's to name.
+        // curve on a shell every count above calls closed, and only `validate` would say so — the
+        // shape is a straight edge on a cylinder's ruling stated `(cylinder, wall)` between two
+        // plane faces (`an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused` plants one).
+        // An edge with other than two uses is the shell guard's to name.
         let mut disagreeing: Vec<Handle<Edge>> = Vec::new();
         for (&eh, uses) in &edge_uses {
             let [(f0, _), (f1, _)] = uses[..] else {

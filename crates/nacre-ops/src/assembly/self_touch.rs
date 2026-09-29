@@ -108,7 +108,9 @@ pub(super) fn tangency_reject(
         }
         // ★ The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
         // on an edge four faces use, and the shell guard names that — this row has nothing to
-        // add, and the six regions around a line in a third plane are not its to judge.
+        // add, and the six regions around a line in a third plane are not its to judge. Said here
+        // rather than left to the `!straddles` acquittal below, which such a row also meets: that
+        // is the gate's premise, and this verdict does not lean on it.
         if t.line_is_an_edge {
             continue;
         }

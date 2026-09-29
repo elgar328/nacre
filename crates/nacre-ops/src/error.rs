@@ -161,15 +161,15 @@ pub enum RejectReason {
     SelfTouchingResult,
     /// The assembled boundary leaves an edge used **once** — a dangling edge, so the face set is
     /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
-    /// the assembly dropped a face, which is ours to fix. Unfired in the suite.
+    /// the assembly dropped a face, which is ours to fix.
     OpenResultShell,
     /// A result edge's **stated** carriers are not the surfaces of the two faces that use it —
     /// `validate`'s `EdgeCarrierMismatch`, the half [`Self::CoplanarMerge`] does not ask (that one
     /// is a plane stated twice). The carriers are stated, never derived, and the edge's curve is
     /// derived from them, so a mismatch is a wrong curve under a closed, valid-looking shell: the
     /// assembly stated one surface pair and the faces kept another. A shipped check, because ops
-    /// cannot lean on `validate` and a release build would otherwise return that solid. Unfired
-    /// in the suite.
+    /// cannot lean on `validate` and a release build would otherwise return that solid. No
+    /// boolean in the suite fires it; a planted edge does.
     EdgeCarrierMismatch,
     // ---- the arrangement's own consistency checks ----
     //

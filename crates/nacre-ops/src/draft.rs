@@ -202,8 +202,9 @@ impl Ring {
     /// carries, in the engine's own vocabulary.
     ///
     /// A wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the class
-    /// table's def - the same clone convention every producer follows), a pierce end is pinned by
-    /// its cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
+    /// table's def - the same clone convention every producer follows), a pierce end on a plane
+    /// edge by `pin_for` (its cylinder when its pair is the edge's line) and elsewhere by its
+    /// cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
     /// consumers fork on (`ring_is_mixed`). Flattening walls to plane indices for a plane-only
     /// derivation would refuse every mixed ring here, before any consumer could abstain.
     ///

@@ -301,11 +301,14 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
                     defects += 1;
                 }
                 (2, Err(reason)) => assert!(
-                    matches!(
-                        reason,
-                        nacre_ops::RejectReason::NonManifoldResultEdge
-                            | nacre_ops::RejectReason::ArcBoundNotYet
-                    ),
+                    match reason {
+                        nacre_ops::RejectReason::NonManifoldResultEdge => true,
+                        nacre_ops::RejectReason::ArcBoundNotYet => {
+                            label.starts_with("on the seam")
+                                && label.ends_with("lift = 0.5, height = 2")
+                        }
+                        _ => false,
+                    },
                     "{label}: A − B refused as {reason:?}"
                 ),
                 (_, Err(reason)) => panic!("{label}: [{i}] {reason:?}"),
@@ -323,4 +326,78 @@ fn a_line_contact_on_a_lateral_is_refused_today() {
     let touching: &[[f64; 2]] = &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]];
     let ran = every_placement(unit_disk, &[("a line contact", touching)], refused_today);
     assert_eq!(ran, 2 * 2 * 4 * 6, "the family");
+}
+
+/// ★ **A tangent face that ends on the line at one height and crosses it at another.** `B` is
+/// an L-shaped profile in the plane `x = −1` extruded to `x = 1`: its caps `x = ±1` are tangent
+/// to `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the
+/// line `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that
+/// stretch the line runs through the cap's interior. That is the face the tangency verdict's
+/// `line_is_an_edge` keeps out (`!straddles`: an edge on the line does not make the contact an
+/// edge where the face runs across it). Today the rulings split refuses it first — the cap's
+/// segment crosses the line (`RulingBoundNotYet`), both vertex orders, all six booleans — so the
+/// verdict's guard is not reached; when this moves, the guard speaks.
+#[test]
+fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
+    use nacre_math::Vector3;
+    use nacre_ops::{OpOutput, Operation, SketchPlane, apply};
+    let l: &[[f64; 2]] = &[
+        [-1.0, 0.5],
+        [3.0, 0.5],
+        [3.0, 1.5],
+        [0.0, 1.5],
+        [0.0, 1.0],
+        [-1.0, 1.0],
+    ];
+    let mut ran = 0;
+    for rotated in [false, true] {
+        let mut l = l.to_vec();
+        if rotated {
+            l.rotate_left(1);
+        }
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for swapped in [false, true] {
+                let mut m = Model::new();
+                let extrude = |m: &mut Model, frame, profile, dist| {
+                    let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                        m,
+                        &Operation::Extrude {
+                            frame,
+                            profile,
+                            dist,
+                        },
+                    ) else {
+                        panic!("extrude")
+                    };
+                    m.rebuild_adjacency();
+                    solid
+                };
+                let world = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
+                let a = extrude(&mut m, world, unit_disk(), 2.0);
+                let side = datum_frame(
+                    &mut m,
+                    SketchPlane::from_axes(
+                        Point3::from_array([-1.0, 0.0, 0.0]),
+                        Vector3::from_array([0.0, 1.0, 0.0]),
+                        Vector3::from_array([0.0, 0.0, 1.0]),
+                    ),
+                );
+                let profile =
+                    Profile2d::polygon(l.iter().map(|q| p2(q[0], q[1])).collect()).expect("an L");
+                let b = extrude(&mut m, side, profile, 2.0);
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let at = format!("rotated = {rotated}, {kind:?} swapped = {swapped}");
+                match boolean(&mut m, kind, x, y) {
+                    Err(BoolError::Rejected { reason, .. }) => assert_eq!(
+                        reason,
+                        nacre_ops::RejectReason::RulingBoundNotYet,
+                        "{at}: the wall moved"
+                    ),
+                    other => panic!("{at}: the wall moved — {other:?}"),
+                }
+                ran += 1;
+            }
+        }
+    }
+    assert_eq!(ran, 2 * 6, "the family");
 }
