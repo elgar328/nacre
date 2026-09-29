@@ -165,6 +165,8 @@ fn a_segment_tangent_to_the_rim_builds() {
 /// it drops every root and falls back to the containment witness — a `Segment`, which would
 /// say "this edge lies inside the circle" about an edge that runs *outward* from a single
 /// touching point. Inclusive is the true sentence, and it is the one the arc split will need.
+/// ☑ Planted strict (`closed_contains` excluding the ends), this test goes red one step
+/// earlier than its boss: the plate's own bore is refused (`HoleRoots`).
 #[test]
 fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     let mut m = Model::new();

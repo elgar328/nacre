@@ -396,6 +396,7 @@ pub(crate) fn cylinder_gate(
     }
     for t in &mut tangencies {
         t.line_is_an_edge = t.line_in_another_plane
+            && !t.straddles
             && cyls[t.cyl].shared.iter().any(|sr| {
                 (sr.line.0 == t.wall || sr.line.1 == t.wall)
                     && !sr.stated_by.contains(&t.wall)
@@ -667,6 +668,12 @@ pub(crate) struct Tangency {
     /// it); the six-region picture `line_in_another_plane` abstains on is then the structure's to
     /// judge, not this row's. The keyhole: the box's tangent wall and the wall through the axis
     /// share the box's vertical edge.
+    ///
+    /// ★ **Only for a face that does not cross the line** (`!straddles`). Such an edge lies on the
+    /// line, but only over its own stretch: a face with vertices on both sides of the line can
+    /// run along it at that edge and through it elsewhere, and there the contact is inside the
+    /// face — no edge, no split lateral, the six regions unjudged. A face that ends on the line
+    /// touches it along its boundary alone.
     pub(crate) line_is_an_edge: bool,
     /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
     /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
