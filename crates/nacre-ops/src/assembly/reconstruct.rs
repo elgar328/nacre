@@ -292,77 +292,12 @@ pub(crate) fn reconstruct(
     let mut edge_for = |model: &mut Model,
                         va: Handle<Vertex>,
                         vb: Handle<Vertex>,
-                        // The two ends' names — `Some` wherever the caller walks a ring of
-                        // named nodes; the band chain passes `None` (its seam vertex has no
-                        // name), and only the ruling arm requires them.
-                        ends: Option<(NodeId, NodeId)>,
                         wall: Wall,
                         face_surf: Handle<Surface>|
      -> Result<Handle<Edge>, BoolError> {
-        match wall {
-            Wall::Plane(w) => {
-                let pair = unordered(va.index() as usize, vb.index() as usize);
-                let key = EdgeKey::Line(pair);
-                if let Some(&e) = edge_of.get(&key) {
-                    return Ok(e);
-                }
-                // Manifold edges (everything a green result contains) have exactly two uses. Any
-                // other count is on its way to the existing non-manifold reject — the fallback
-                // (this face's wall + plane) keeps construction deterministic until that reject
-                // fires, deciding nothing new.
-                let surfaces = match pair_surfs[&pair][..] {
-                    [a, b] => Edge::carrier_pair(a, b),
-                    _ => Edge::carrier_pair(planes[w].surf, face_surf),
-                };
-                let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
-                edge_of.insert(key, e);
-                Ok(e)
-            }
-            Wall::Ruling { cyl, .. } => {
-                // ★ Keyed as a line: straight, so the unordered pair names it. The carriers are
-                // **the edge's own fact**, read off the two faces that use it — never from
-                // `face_surf`, whose value depends on which face minted first (the wall face or
-                // the panel), and a carrier that depends on mint order is exactly the drift
-                // `EdgeCarrierMismatch` catches.
-                let pair = unordered(va.index() as usize, vb.index() as usize);
-                let key = EdgeKey::Line(pair);
-                if let Some(&e) = edge_of.get(&key) {
-                    return Ok(e);
-                }
-                let uses = &pair_surfs[&pair];
-                let surfaces = match uses[..] {
-                    [a, b] if a != b => Edge::carrier_pair(a, b),
-                    // Two panels of one cylinder, or a count on its way to the non-manifold
-                    // reject: the cylinder and the plane that **bounds** it — the one plane face
-                    // using it, else the ends' shared plane.
-                    _ => {
-                        let mut bounding: Vec<Handle<Surface>> = uses
-                            .iter()
-                            .copied()
-                            .filter(|&s| s != cyls[cyl].surf)
-                            .collect();
-                        bounding.sort_unstable();
-                        bounding.dedup();
-                        let wall_surf = match bounding[..] {
-                            [s] => s,
-                            _ => {
-                                planes[ends
-                                    .and_then(|(a, b)| shared_pierce_plane(a, b))
-                                    .ok_or_else(|| {
-                                        // Two Pierce ends that share no single wall plane: a
-                                        // naming this ladder does not arrange yet.
-                                        reject(RejectReason::RulingBoundNotYet)
-                                    })?]
-                                .surf
-                            }
-                        };
-                        Edge::carrier_pair(cyls[cyl].surf, wall_surf)
-                    }
-                };
-                let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
-                edge_of.insert(key, e);
-                Ok(e)
-            }
+        let wall_surf = match wall {
+            Wall::Plane(w) => planes[w].surf,
+            Wall::Ruling { cyl, .. } => cyls[cyl].surf,
             Wall::Arc { cyl, ccw } => {
                 // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
                 // B counter-clockwise about the axis, so the two complementary arcs between one
@@ -384,9 +319,30 @@ pub(crate) fn reconstruct(
                     .push_edge(Edge::carrier_pair(cyls[cyl].surf, face_surf), [from, to])
                     .map_err(edge_refused)?;
                 edge_of.insert(key, e);
-                Ok(e)
+                return Ok(e);
             }
+        };
+        // ★ **A straight edge is one edge, whichever vocabulary states it**: keyed by its two
+        // ends, carried by the surfaces of the two faces that use it (the scan above) — one
+        // expression for a plane-pair line and a ruling alike, so which face mints it first
+        // cannot change what it says. Two faces on one plane state `(P, P)`, which the result
+        // check refuses as the merge that did not happen (`CoplanarMerge`); two on one cylinder
+        // state `(C, C)`, the seam's spelling. Manifold edges (everything a green result
+        // contains) have exactly two uses; any other count is on its way to the shell guard's
+        // reject, and the fallback — this face's wall and its own surface — only keeps
+        // construction deterministic until then.
+        let pair = unordered(va.index() as usize, vb.index() as usize);
+        let key = EdgeKey::Line(pair);
+        if let Some(&e) = edge_of.get(&key) {
+            return Ok(e);
         }
+        let surfaces = match pair_surfs[&pair][..] {
+            [a, b] => Edge::carrier_pair(a, b),
+            _ => Edge::carrier_pair(wall_surf, face_surf),
+        };
+        let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
+        edge_of.insert(key, e);
+        Ok(e)
     };
 
     // ★★ **A cut rim's boundary chain, minted once per `(group, cylinder, plane)` — before the
@@ -436,14 +392,7 @@ pub(crate) fn reconstruct(
             let mut chain = Vec::with_capacity(m);
             for i in 0..m {
                 let (u, v) = (vs[i], vs[(i + 1) % m]);
-                let e = edge_for(
-                    model,
-                    u,
-                    v,
-                    None,
-                    Wall::Arc { cyl: k, ccw: true },
-                    planes[c].surf,
-                )?;
+                let e = edge_for(model, u, v, Wall::Arc { cyl: k, ccw: true }, planes[c].surf)?;
                 let forward = model.edge(e).vertices[0] == u;
                 chain.push(HalfEdge { edge: e, forward });
             }
@@ -495,14 +444,7 @@ pub(crate) fn reconstruct(
                     None => vec![[va, vb]],
                 };
                 for [u, v] in legs {
-                    let e = edge_for(
-                        model,
-                        u,
-                        v,
-                        Some((r.nodes[t], r.nodes[(t + 1) % k])),
-                        r.walls[t],
-                        face_surf,
-                    )?;
+                    let e = edge_for(model, u, v, r.walls[t], face_surf)?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
                     let forward = model.edge(e).vertices[0] == u;
@@ -1054,19 +996,6 @@ pub(crate) fn reconstruct(
         }
     }
     out
-}
-
-/// The one plane class two **Pierce** end names share — the fact a curved-face ring cannot
-/// read off its own surface (a panel's `surf` is the cylinder): an arc's two ends share the
-/// class of the circle's plane, a ruling's two ends share the wall's. `None` is the honest
-/// answer for a pair that shares none or both (a degenerate naming this ladder does not
-/// arrange) — callers refuse by the ladder's name rather than unwrap.
-fn shared_pierce_plane(a: NodeId, b: NodeId) -> Option<usize> {
-    let (pa, _, _) = combinatorics::pierce_name(a)?;
-    let (pb, _, _) = combinatorics::pierce_name(b)?;
-    let mut shared = pa.iter().filter(|x| pb.contains(x));
-    let c = *shared.next()?;
-    shared.next().is_none().then_some(c)
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.

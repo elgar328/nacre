@@ -59,8 +59,7 @@ pub(super) fn emit_faces(
                         ccw: he % 2 == 0,
                     },
                     // Same shape for a ruling: `MergedRuling::end` ascends the axis, the even
-                    // half-edge travels up. `edge_for` refuses this wall by the population's
-                    // name (`RulingBoundNotYet`) until the panel cell teaches it the key.
+                    // half-edge travels up.
                     HalfEdgeKind::Ruling(i) => {
                         let r = &edges.rulings[i];
                         crate::combinatorics::Wall::Ruling {

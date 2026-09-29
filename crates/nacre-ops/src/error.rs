@@ -764,13 +764,13 @@ pub enum RejectReason {
     /// What raises it is of two kinds. **Producer inconsistencies**, in the region walk: a
     /// boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling the
     /// wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
-    /// component with no outer cycle (☑ all measured 0 across the suite); and ruling end names that
-    /// share no single plane. And **shapes the rulings split does not arrange**: a segment lying
-    /// on the lateral along a line the gate did not record (`planes::SharedRuling` — the
-    /// lines of two secant classes, or of a secant and a tangent one of the other solid, that lie
-    /// on a lateral face), a recorded line's segment that shares a stretch with a ruling piece
-    /// without matching one end for end, or one that crosses its own class there (`Transversal`,
-    /// whose side is the directed line's). [`Self::ArcBoundNotYet`]'s straight sibling.
+    /// component with no outer cycle (☑ all measured 0 across the suite). And **shapes the rulings
+    /// split does not arrange**: a segment lying on the lateral along a line the gate did not
+    /// record (`planes::SharedRuling` — the lines of two secant classes, or of a secant and a
+    /// tangent one of the other solid, that lie on a lateral face), a recorded line's segment that
+    /// shares a stretch with a ruling piece without matching one end for end, or one that crosses
+    /// its own class there (`Transversal`, whose side is the directed line's).
+    /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// ★ **«A class carrying both circles and rulings» is not one of those guards**:
     /// it would refuse a population it has no reason to, since the two only conflict when they

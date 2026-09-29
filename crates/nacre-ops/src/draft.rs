@@ -441,7 +441,7 @@ impl LocalFace {
 /// - **which circle's plane the arc rides** — a *plane* face's own class (a cap), or, for a face
 ///   on the cylinder class (a panel), the plane its two end names share. A panel arc's ends may
 ///   share **both** planes (one wall cuts a circle twice, so each end is named
-///   {wall, circle-plane}), so the unique-share rule a ruling edge uses cannot apply: the circle's
+///   {wall, circle-plane}), so «the one plane both ends share» cannot answer: the circle's
 ///   plane is the shared candidate that carries a cut-rim record. Two such candidates is a naming
 ///   this ladder does not arrange (`RulingBoundNotYet`).
 /// - **the directed passage test** — with two pierce nodes the two complementary arcs share one
