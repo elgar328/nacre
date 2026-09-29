@@ -475,7 +475,16 @@ pub(super) fn angular_order(
     // ★ The same atom the winding reads (`combinatorics::turn`), which is what keeps the two from
     // drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π pole,
     // not the straight angle a ring's turn would reject.
-    let cross = |i: usize, j: usize| combinatorics::turn(jd, w, &edges[i], &edges[j]);
+    // ★ A line and an arc leaving tangent **and the same way** have a `0` turn and still an order:
+    // the arc bends off the line towards its centre ([`combinatorics::tangent_codirected_turn`]),
+    // so the pair is read as the infinitesimal turn that bending makes.
+    let cross = |i: usize, j: usize| -> Result<i8, BoolError> {
+        let t = combinatorics::turn(jd, w, &edges[i], &edges[j])?;
+        if t != 0 {
+            return Ok(t);
+        }
+        Ok(combinatorics::tangent_codirected_turn(jd, w, &edges[i], &edges[j])?.unwrap_or(0))
+    };
     let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
     for i in 0..edges.len() {
         match cross(0, i)? {

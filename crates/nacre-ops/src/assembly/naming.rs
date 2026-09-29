@@ -54,6 +54,35 @@ pub(crate) fn name_result_vertices(
             }
         }
     }
+    // ★ **And a line two classes share on a cylinder** (`SharedRuling`): its pierce points are
+    // named by a cap and *one* of the two classes, never by the pair itself, so the name fact
+    // above cannot find them there. A prism's edge along that line runs past the lateral's cap
+    // (the keyhole's box taller than the bore), and the lateral's ruling ends at the cap's rim
+    // point while the prism's wall — tangent, so no class split it — carries the edge whole. The
+    // point's being on the other class is asked of the point (`side_of`), once per line.
+    let pierced: Vec<NodeId> = by_pair.values().flatten().copied().collect();
+    for cy in cyls {
+        for sr in &cy.shared {
+            let (a, b) = sr.line;
+            let on_line: Vec<NodeId> = pierced
+                .iter()
+                .copied()
+                .filter(|&n| {
+                    let Some((pl, _, _)) = combinatorics::pierce_name(n) else {
+                        return false;
+                    };
+                    (pl.contains(&a) && combinatorics::side_of(jd, cyls, n, b) == Some(0))
+                        || (pl.contains(&b) && combinatorics::side_of(jd, cyls, n, a) == Some(0))
+                })
+                .collect();
+            let v = by_pair.entry([a, b]).or_default();
+            for n in on_line {
+                if !v.contains(&n) {
+                    v.push(n);
+                }
+            }
+        }
+    }
     let subdivided: Option<Vec<LocalFace>> = if by_pair.is_empty() {
         None
     } else {

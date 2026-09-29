@@ -24,9 +24,8 @@ use super::*;
 ///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
 ///   keeps every one of those sentences true and the arrangement unchanged: ☑ of 21 measured
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
-///   population [`Tangency::line_in_another_plane`] names, which the arrangement refuses on its
-///   own — at the cap, where the rim's arc and the tangent wall leave the corner tangent and the
-///   same way (`UnorderedEdges`).
+///   population [`Tangency::line_in_another_plane`] names — a line two classes share on the
+///   cylinder, recorded as a [`SharedRuling`] and arranged as one.
 /// - anything else — an oblique plane. It passes when every lateral face of the cylinder
 ///   provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
@@ -395,6 +394,14 @@ pub(crate) fn cylinder_gate(
     {
         cyls[ci].shared.push(sr);
     }
+    for t in &mut tangencies {
+        t.line_is_an_edge = t.line_in_another_plane
+            && cyls[t.cyl].shared.iter().any(|sr| {
+                (sr.line.0 == t.wall || sr.line.1 == t.wall)
+                    && !sr.stated_by.contains(&t.wall)
+                    && sr.stated_by.iter().any(|s| t.across.contains(s))
+            });
+    }
     // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
     // population outside the rulings road.
@@ -642,14 +649,25 @@ pub(crate) struct Tangency {
     ///
     /// ★ A whole **disk** wall face clearing the tangent line is read by the footprint reader
     /// and writes no row at all, so what reaches here is the abstention's true subject.
-    /// Abstain rather than answer. (☑ Every constructed member of this population — the keyhole
-    /// family, the boss on a bore's rim — is refused in the arrangement anyway, at the cap where
-    /// the rim's arc and this wall leave the corner tangent and the same way (`UnorderedEdges`);
-    /// that is a wall of its own, not a verdict, so the abstention stands.)
+    /// Abstain rather than answer — except where the line is an edge of the arrangement along
+    /// this face's contact ([`Tangency::line_is_an_edge`]), which the structure judges.
     pub(crate) line_in_another_plane: bool,
     /// Nothing above could be stated exactly (a face with no rational world description, an
     /// overflow). Same answer as `line_in_another_plane`, different cause.
     pub(crate) undecided: bool,
+    /// The plane classes across the wall face's straight edges — the other carrier of each edge
+    /// the face shares with a plane face (`Edge::surfaces`, the adjacency answer). Read once the
+    /// record is built, for [`Tangency::line_is_an_edge`].
+    pub(crate) across: Vec<usize>,
+    /// **The tangent line is an edge of the arrangement along this face's contact**: the wall
+    /// face shares an operand edge with a face on a class that states the line as a ruling
+    /// ([`SharedRuling::stated_by`]), and `wall ∩ that class` *is* the line — so the contact runs
+    /// along that edge, and the lateral, the wall face and the secant face all end on it. Two
+    /// lumps meeting there meet on an edge, which the assembly's structure sees (four faces use
+    /// it); the six-region picture `line_in_another_plane` abstains on is then the structure's to
+    /// judge, not this row's. The keyhole: the box's tangent wall and the wall through the axis
+    /// share the box's vertical edge.
+    pub(crate) line_is_an_edge: bool,
     /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
     /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
     pub(crate) witness: Point3,
@@ -751,6 +769,33 @@ fn tangency_rows(
         if k != c {
             continue;
         }
+        // The classes across this face's straight edges, by the edges' own carriers.
+        let across: Vec<usize> = fi
+            .face
+            .map(|fh| {
+                let own = model.face(fh).surface;
+                let f = model.face(fh);
+                std::iter::once(&f.outer)
+                    .chain(f.inner.iter())
+                    .flat_map(|lp| lp.half_edges.iter())
+                    .filter_map(|he| {
+                        let [a, b] = model.edge(he.edge).surfaces;
+                        let q = if a == own { b } else { a };
+                        faces
+                            .iter()
+                            .enumerate()
+                            .find_map(|(j, row)| match (row, plane_ix[j]) {
+                                (FaceRow::Plane(fj), ClassIx::Plane(cj))
+                                    if fj.face.is_some_and(|h| model.face(h).surface == q) =>
+                                {
+                                    Some(cj)
+                                }
+                                _ => None,
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         // ★ **Same-solid pairs write no row**. A wall tangent to its own solid's
         // cylinder is that solid's smooth edge — a fillet — not a contact between operands. The
         // judge would skip such a row anyway (`straddles` is false for a face that ends on the
@@ -853,6 +898,8 @@ fn tangency_rows(
                 straddles,
                 line_in_another_plane,
                 undecided,
+                across: across.clone(),
+                line_is_an_edge: false,
                 witness: witness.unwrap_or(Point3::from_array([f64::NAN; 3])),
             });
         }

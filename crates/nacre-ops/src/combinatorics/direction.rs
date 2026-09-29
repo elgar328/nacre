@@ -660,9 +660,9 @@ fn ruling_line_turn(
 /// Asked only where [`turn`] is `0` for the pair — the line is tangent to the circle at `N`, so
 /// the two directions are parallel and the dot decides. `Some(false)`: **opposite** — a smooth
 /// join, the ring runs straight through, two departures are a half turn apart. `Some(true)`:
-/// the **same** way — the ring doubles back along the arc, or two departures coincide, which is a
-/// **curvature** question this crate does not order yet (two tangent circles, M6b's shape). `None`
-/// is a zero dot (not tangent after all) or overflow.
+/// the **same** way — the ring doubles back along the arc, or two departures leave together, and
+/// then which comes first is curvature's answer ([`tangent_codirected_turn`]). `None` is a zero
+/// dot (not tangent after all) or overflow.
 ///
 /// ★ A fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
 /// root is `Double`; the angular order reads the pair as a tie (`UnorderedEdges`) and the winding
@@ -712,6 +712,40 @@ pub(crate) fn tangent_pole(
         return Ok(false);
     }
     Ok(tangent_travel_agrees(jd, p, line.0, line.1, arc) == Some(false))
+}
+
+/// **A line and an arc leaving one node tangent and the same way** — the turn from `a` to `b`
+/// that their curvature makes: the line runs straight on and the arc bends towards its centre, so
+/// the arc lies counter-clockwise of the line (about the face's outward normal) exactly when its
+/// centre is on the line's left. That is the sign [`arc_side`] multiplies a radial side by —
+/// `axis_up · ccw · frame_sign`, the arc's travel about the axis read in the face's frame — with
+/// the radial factor gone, because at a tangency the line runs along the circle, not across it.
+/// A keyhole's cap: the box's wall tangent to the bore's rim at the corner where the box's
+/// other wall stands on the rim. `Ok(None)` for any other pair — a turn that is not `0`, or two
+/// departures a half turn apart ([`tangent_pole`]).
+pub(crate) fn tangent_codirected_turn(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<Option<i8>, BoolError> {
+    let (line, arc, arc_second) = match (a, b) {
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc)) => ((*carrier, *sense), arc, true),
+        (EdgeDir::Arc(arc), EdgeDir::Line { carrier, sense }) => ((*carrier, *sense), arc, false),
+        _ => return Ok(None),
+    };
+    if turn(jd, p, a, b)? != 0 {
+        return Ok(None);
+    }
+    match tangent_travel_agrees(jd, p, line.0, line.1, arc) {
+        Some(true) => {}
+        Some(false) => return Ok(None),
+        None => return Err(reject(RejectReason::WitnessNotRational)),
+    }
+    let up = if arc.axis_up { 1i8 } else { -1 };
+    let way = if arc.ccw { 1i8 } else { -1 };
+    let arc_left = up * way * jd.planes[p].frame_sign;
+    Ok(Some(if arc_second { arc_left } else { -arc_left }))
 }
 
 /// Whether two **departures** from one node are a half turn apart along one straight line — a

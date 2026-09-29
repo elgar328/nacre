@@ -531,6 +531,19 @@ pub(crate) fn loop_winding(
             // both are `+1`, because the half whose arc **arrives** read its tangent at the far
             // end. This one is read at the node the loop actually passes through.
             Continuation::Turns => break earlier,
+            // ★ **A cusp at the extremum**: a line and an arc tangent at `lo`, the ring arriving
+            // on one and leaving back along the other (a keyhole's cap less its bore: the box's
+            // wall and the rim meet at the corner with no angle between them). The region is the
+            // sliver between the two, on the arc's **convex** side — outside its circle — so the
+            // winding is the opposite of a smooth join's ([`smooth_extremum_winding`]). Deeper in
+            // the walk a doubling back is an antenna and stays refused.
+            Continuation::DoublesBack
+                if ahead == lo
+                    && let (EdgeDir::Line { .. }, EdgeDir::Arc(a))
+                    | (EdgeDir::Arc(a), EdgeDir::Line { .. }) = (&earlier, &later) =>
+            {
+                return Ok(-smooth_extremum_winding(jd, p, a));
+            }
             Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
             // ★★★ **The step is licensed by the stretch being a *line*.** What the walk carries out
             // is `ring[back]`'s direction at its own start, and that equals `lo`'s arriving

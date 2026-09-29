@@ -189,19 +189,20 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     );
     m.rebuild_adjacency();
     let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
-    // ★★ **One point, several names — folded; then a corner no order is read at.** `(8,13,5)` is
-    // the boss's corner, a three-plane vertex; the rim crossings name the same point as pierce
-    // points of `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line
-    // `x = 8, y = 13` lies on the bore, so the gate records it and the alias seed folds the
-    // names into one (`Aliases::record_shared_ruling`). What stops it now is the plate's top:
-    // there the rim's arc and the boss's wall `y = 13` leave the corner **tangent and the same
-    // way**, and which comes first is a matter of curvature — `UnorderedEdges`, the keyhole's
-    // wall (`tests/coverage/edge_on_a_ruling.rs`).
+    // ★★ **One point, several names — folded; then a pinched ring.** `(8,13,5)` is the boss's
+    // corner, a three-plane vertex; the rim crossings name the same point as pierce points of
+    // `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line `x = 8, y = 13` lies
+    // on the bore, so the gate records it and the alias seed folds the names into one
+    // (`Aliases::record_shared_ruling`), and the rim's arc and the wall `y = 13`, leaving the
+    // corner tangent and the same way, are ordered by the arc's bending. What stops it now is the
+    // plate's top: the bore's rim and the boss's footprint are two holes of it meeting at that
+    // corner, a ring pinched at its least node — `loop_winding` refuses the ambiguous turn by
+    // name, the wall a line contact meets (the `todo` item on edges on a ruling).
     assert!(
         matches!(
             err,
             BoolError::Rejected {
-                reason: RejectReason::UnorderedEdges,
+                reason: RejectReason::CoincidentNodes,
                 ..
             }
         ),

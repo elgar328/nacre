@@ -38,7 +38,8 @@ impl Tangencies<'_> {
 /// Each region's `(in_A, in_B)` is local: the wall **face**'s material side and the lateral
 /// **face**'s `orient_sign`, nothing else — which is why this is exact without touching the
 /// arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is a
-/// secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak.)
+/// secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak —
+/// or, where that line is an edge both faces end on, hands the question to the structure.)
 ///
 /// ★★ **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
 /// wall *from outside* leaves `L ∧ F ∧ ¬W2`, and the honest answer is **two solids touching along
@@ -102,8 +103,14 @@ pub(super) fn tangency_reject(
         })
         .collect();
     for t in tg.rows {
-        if t.line_in_another_plane || t.undecided {
+        if t.undecided || (t.line_in_another_plane && !t.line_is_an_edge) {
             return Err(reject(RejectReason::CylinderGateUndecided));
+        }
+        // ★ The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
+        // on an edge four faces use, and the shell guard names that — this row has nothing to
+        // add, and the six regions around a line in a third plane are not its to judge.
+        if t.line_is_an_edge {
+            continue;
         }
         // Two lumps, and the contact is a *segment* — a corner grazing the line at a point is a
         // valid tangency (measured), and this must not convict it.

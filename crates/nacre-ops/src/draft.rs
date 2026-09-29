@@ -221,7 +221,15 @@ impl Ring {
         }
         let pin = |n: NodeId, wall: &Wall| -> Result<combinatorics::EndPin, BoolError> {
             if combinatorics::pierce_name(n).is_some() {
-                return Ok(combinatorics::EndPin::Cylinder);
+                // ★ A pierce end is pinned by its cylinder only on the line its pair spells; a
+                // point on a line two classes share on the cylinder can arrive under the other
+                // pair's name, and on a plane edge its pin is then derived — `pin_for`, the one
+                // rule («a pin is a function of the name and the line»).
+                return match (wall, p) {
+                    (Wall::Plane(c), Some(p)) => combinatorics::pin_for(jd, p, *c, n)
+                        .ok_or_else(|| reject(RejectReason::RingNaming)),
+                    _ => Ok(combinatorics::EndPin::Cylinder),
+                };
             }
             let Some(t) = combinatorics::three_plane_name(n) else {
                 return Err(reject(RejectReason::RingNaming));
