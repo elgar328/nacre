@@ -16,35 +16,133 @@
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
-//! of `B` along `A`'s axis ([`HEIGHTS`]).
+//! of `B` along `A`'s axis ([`Height`]).
 
 use crate::common::*;
 use nacre_math::Point3;
-use nacre_ops::{BoolError, BoolKind, Profile2d, RejectClass, boolean};
+use nacre_ops::{BoolError, BoolKind, Profile2d, RejectClass, RejectReason, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
-/// Where `B` stands along `A`'s axis, `(lift, height)` — `A` spans `0…2` on the frame. On `A`'s
-/// base cap; inside `A`'s span; past `A`'s top; past both caps.
-const HEIGHTS: [(f64, f64); 4] = [(0.0, 1.0), (0.5, 1.0), (0.5, 2.0), (-0.5, 3.0)];
+/// Where `B` stands along `A`'s axis — `A` spans `0…2` on the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Height {
+    /// On `A`'s base cap.
+    OnBase,
+    /// Inside `A`'s span.
+    Inside,
+    /// Past `A`'s top.
+    PastTop,
+    /// Past both of `A`'s caps.
+    PastBoth,
+}
+
+impl Height {
+    const ALL: [Height; 4] = [
+        Height::OnBase,
+        Height::Inside,
+        Height::PastTop,
+        Height::PastBoth,
+    ];
+
+    /// `B`'s `(lift, height)` on the frame.
+    fn span(self) -> (f64, f64) {
+        match self {
+            Height::OnBase => (0.0, 1.0),
+            Height::Inside => (0.5, 1.0),
+            Height::PastTop => (0.5, 2.0),
+            Height::PastBoth => (-0.5, 3.0),
+        }
+    }
+
+    /// The height `A` and `B` share.
+    fn shared(self) -> f64 {
+        let (lift, height) = self.span();
+        (lift + height).min(2.0) - lift.max(0.0)
+    }
+}
+
+/// One placement of `B` against `A` — what the six booleans of [`every_six`] share. The facts
+/// travel as values; `Display` is the label, for messages only.
+#[derive(Clone, Copy, Debug)]
+struct Placement<'q> {
+    family: &'q str,
+    /// `B`'s profile as written (its area does not depend on the vertex order).
+    quad: &'q [[f64; 2]],
+    tilted: bool,
+    rotated: bool,
+    height: Height,
+}
+
+impl Placement<'_> {
+    /// `|B|`.
+    fn b_volume(&self) -> f64 {
+        let q = self.quad;
+        let area = (0..q.len())
+            .map(|k| {
+                let (p, r) = (q[k], q[(k + 1) % q.len()]);
+                p[0] * r[1] - r[0] * p[1]
+            })
+            .sum::<f64>()
+            .abs()
+            / 2.0;
+        area * self.height.span().1
+    }
+}
+
+impl std::fmt::Display for Placement<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (lift, height) = self.height.span();
+        write!(
+            f,
+            "{}, tilted = {}, rotated = {}, {:?} (lift = {lift}, height = {height})",
+            self.family, self.tilted, self.rotated, self.height
+        )
+    }
+}
+
+/// One boolean of a [`Placement`]: the operation and whether `B` comes first.
+struct Case<'a, 'q> {
+    placement: &'a Placement<'q>,
+    kind: BoolKind,
+    swapped: bool,
+}
+
+impl std::fmt::Display for Case<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}, {:?} swapped = {}",
+            self.placement, self.kind, self.swapped
+        )
+    }
+}
 
 /// Every boolean of `A` (extruded over `a`) against the prism over each of `quads`, over both
-/// frames, both vertex orders and every [`HEIGHTS`] placement, handed to `check` with a label.
-/// Returns how many booleans ran.
-fn every_placement(
+/// frames, both vertex orders and every [`Height`], handed to `check` as a [`Case`]. Returns how
+/// many booleans ran.
+fn every_placement<'q>(
     a: fn() -> Profile2d,
-    quads: &[(&str, &[[f64; 2]])],
-    mut check: impl FnMut(&str, &mut Model, Result<Vec<Handle<Solid>>, BoolError>),
+    quads: &[(&'q str, &'q [[f64; 2]])],
+    mut check: impl FnMut(&Case<'_, 'q>, &mut Model, Result<Vec<Handle<Solid>>, BoolError>),
 ) -> usize {
     let mut ran = 0;
     for tilted in [false, true] {
-        for &(what, quad) in quads {
+        for &(family, quad) in quads {
             for rotated in [false, true] {
-                let mut quad = quad.to_vec();
+                let mut written = quad.to_vec();
                 if rotated {
-                    quad.rotate_left(1);
+                    written.rotate_left(1);
                 }
-                for (lift, height) in HEIGHTS {
+                for height in Height::ALL {
+                    let placement = Placement {
+                        family,
+                        quad,
+                        tilted,
+                        rotated,
+                        height,
+                    };
+                    let (lift, tall) = height.span();
                     for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
                         for swapped in [false, true] {
                             let (mut m, x, y) = a_solid_and_a_placed_prism(
@@ -56,17 +154,18 @@ fn every_placement(
                                     }
                                 },
                                 a(),
-                                &quad,
+                                &written,
                                 lift,
-                                height,
+                                tall,
                             );
                             let (x, y) = if swapped { (y, x) } else { (x, y) };
-                            let at = format!(
-                                "{what}, tilted = {tilted}, rotated = {rotated}, \
-                                 lift = {lift}, height = {height}, {kind:?} swapped = {swapped}"
-                            );
                             let got = boolean(&mut m, kind, x, y);
-                            check(&at, &mut m, got);
+                            let case = Case {
+                                placement: &placement,
+                                kind,
+                                swapped,
+                            };
+                            check(&case, &mut m, got);
                             ran += 1;
                         }
                     }
@@ -80,70 +179,43 @@ fn every_placement(
 /// Today's answer: refused, as a coverage limit. The class is asserted, not the variant —
 /// reason names are engine vocabulary; a refusal that turns `Impossible` or `SuspectedDefect`, or
 /// a placement that starts to build, is news here and in the todo item this pins.
-fn refused_today(at: &str, _: &mut Model, got: Result<Vec<Handle<Solid>>, BoolError>) {
+fn refused_today(c: &Case<'_, '_>, _: &mut Model, got: Result<Vec<Handle<Solid>>, BoolError>) {
     match got {
         Err(BoolError::Rejected { reason, .. }) => assert_eq!(
             reason.class(),
             RejectClass::NotSupported,
-            "{at}: refused as {reason:?}"
+            "{c}: refused as {reason:?}"
         ),
-        other => panic!("{at}: the wall moved — {other:?}"),
+        other => panic!("{c}: the wall moved — {other:?}"),
     }
 }
 
 /// One placement's six booleans, in the order `A ∪ B`, `B ∪ A`, `A − B`, `B − A`, `A ∩ B`,
 /// `B ∩ A`: each built result as `(bodies, volume)` — validated here — or the refusal's reason.
-type Six = [Result<(usize, f64), nacre_ops::RejectReason>; 6];
+type Six = [Result<(usize, f64), RejectReason>; 6];
 
 /// Every placement of the prism over each of `quads` against `A` over `a`, as in
-/// [`every_placement`], gathered into [`Six`] per placement with its label and `B`'s volume.
-fn every_six(a: fn() -> Profile2d, quads: &[(&str, &[[f64; 2]])]) -> Vec<(String, f64, f64, Six)> {
-    let mut out: Vec<(String, f64, f64, Six)> = Vec::new();
-    let mut cur: Vec<Result<(usize, f64), nacre_ops::RejectReason>> = Vec::new();
-    every_placement(a, quads, |at, m, got| {
+/// [`every_placement`], gathered into [`Six`] per [`Placement`].
+fn every_six<'q>(
+    a: fn() -> Profile2d,
+    quads: &[(&'q str, &'q [[f64; 2]])],
+) -> Vec<(Placement<'q>, Six)> {
+    let mut out: Vec<(Placement<'q>, Six)> = Vec::new();
+    let mut cur: Vec<Result<(usize, f64), RejectReason>> = Vec::new();
+    every_placement(a, quads, |c, m, got| {
         cur.push(match got {
             Ok(solids) => {
                 m.rebuild_adjacency();
                 let vs = nacre_validate::validate(m);
-                assert!(vs.is_empty(), "{at}: {vs:?}");
+                assert!(vs.is_empty(), "{c}: {vs:?}");
                 Ok((solids.len(), solids.iter().map(|&s| volume(m, s)).sum()))
             }
             Err(BoolError::Rejected { reason, .. }) => Err(reason),
-            Err(e) => panic!("{at}: {e:?}"),
+            Err(e) => panic!("{c}: {e:?}"),
         });
         if cur.len() == 6 {
-            let label = at.rsplit_once(", ").map_or(at, |(l, _)| l).to_string();
-            let quad = quads
-                .iter()
-                .find(|(w, _)| at.starts_with(w))
-                .expect("the label starts with the family")
-                .1;
-            let area = (0..quad.len())
-                .map(|k| {
-                    let (p, q) = (quad[k], quad[(k + 1) % quad.len()]);
-                    p[0] * q[1] - q[0] * p[1]
-                })
-                .sum::<f64>()
-                .abs()
-                / 2.0;
-            let height: f64 = label
-                .split("height = ")
-                .nth(1)
-                .and_then(|h| h.parse().ok())
-                .expect("the label states the height");
-            let lift: f64 = label
-                .split("lift = ")
-                .nth(1)
-                .and_then(|l| l.split(',').next())
-                .and_then(|l| l.parse().ok())
-                .expect("the label states the lift");
             let six: Six = std::mem::take(&mut cur).try_into().expect("six booleans");
-            out.push((
-                label,
-                area * height,
-                (lift + height).min(2.0) - lift.max(0.0),
-                six,
-            ));
+            out.push((*c.placement, six));
         }
     });
     out
@@ -152,20 +224,20 @@ fn every_six(a: fn() -> Profile2d, quads: &[(&str, &[[f64; 2]])]) -> Vec<(String
 /// The volume identities a wrong answer `validate` cannot see would break, wherever the booleans
 /// they need built: `Fuse + Common = |A| + |B|`, `(A − B) + Common = |A|`, `(B − A) + Common =
 /// |B|`, and each pair of swapped operands alike.
-fn identities(label: &str, b: f64, six: &Six) {
-    let a = 2.0 * std::f64::consts::PI;
+fn identities(p: &Placement<'_>, six: &Six) {
+    let (a, b) = (2.0 * std::f64::consts::PI, p.b_volume());
     let v = |i: usize| six[i].as_ref().ok().map(|&(_, v)| v);
     for (x, y) in [(0, 1), (4, 5)] {
-        if let (Some(p), Some(q)) = (v(x), v(y)) {
-            assert!((p - q).abs() < 1e-9, "{label}: {x} vs {y}: {p} vs {q}");
+        if let (Some(r), Some(q)) = (v(x), v(y)) {
+            assert!((r - q).abs() < 1e-9, "{p}: {x} vs {y}: {r} vs {q}");
         }
     }
     for (i, want) in [(0, a + b), (2, a), (3, b)] {
-        if let (Some(p), Some(c)) = (v(i), v(4)) {
+        if let (Some(r), Some(c)) = (v(i), v(4)) {
             assert!(
-                (p + c - want).abs() < 1e-9,
-                "{label}: [{i}] + Common = {}, want {want}",
-                p + c
+                (r + c - want).abs() < 1e-9,
+                "{p}: [{i}] + Common = {}, want {want}",
+                r + c
             );
         }
     }
@@ -187,26 +259,26 @@ fn a_corner_entering_a_lateral_builds() {
     assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
     let d = 0.8 / 1.64f64.sqrt();
     let segment = d.acos() - d * (1.0 - d * d).sqrt();
-    for (label, b, shared, six) in &all {
+    for (p, six) in &all {
         for (i, r) in six.iter().enumerate() {
             match r {
                 Ok((1, _)) => {}
-                other => panic!("{label}: [{i}] {other:?}"),
+                other => panic!("{p}: [{i}] {other:?}"),
             }
         }
-        identities(label, *b, six);
-        if label.starts_with("on the seam") {
+        identities(p, six);
+        if p.family == "on the seam" {
             let common = six[4].as_ref().expect("built").1;
+            let want = segment * p.height.shared();
             assert!(
-                (common - segment * shared).abs() < 1e-9,
-                "{label}: Common {common}, want {}",
-                segment * shared
+                (common - want).abs() < 1e-9,
+                "{p}: Common {common}, want {want}"
             );
         }
     }
     let off: &[[f64; 2]] = &[[-1.0, 1.6], [1.0, 0.001], [3.0, 0.001], [3.0, 3.6]];
-    every_placement(unit_disk, &[("0.001 off", off)], |at, _, got| {
-        got.unwrap_or_else(|e| panic!("{at}: {e:?}"));
+    every_placement(unit_disk, &[("0.001 off", off)], |c, _, got| {
+        got.unwrap_or_else(|e| panic!("{c}: {e:?}"));
     });
 }
 
@@ -222,19 +294,19 @@ fn a_keyhole_builds() {
     let all = every_six(unit_disk, &[("the keyhole", keyhole)]);
     assert_eq!(all.len(), 2 * 2 * 4, "the family");
     let half_disk = std::f64::consts::PI / 2.0;
-    for (label, b, shared, six) in &all {
+    for (p, six) in &all {
         for (i, r) in six.iter().enumerate() {
             match r {
                 Ok((1, _)) => {}
-                other => panic!("{label}: [{i}] {other:?}"),
+                other => panic!("{p}: [{i}] {other:?}"),
             }
         }
-        identities(label, *b, six);
+        identities(p, six);
         let common = six[4].as_ref().expect("built").1;
+        let want = half_disk * p.height.shared();
         assert!(
-            (common - half_disk * shared).abs() < 1e-9,
-            "{label}: Common {common}, want {}",
-            half_disk * shared
+            (common - want).abs() < 1e-9,
+            "{p}: Common {common}, want {want}"
         );
     }
 }
@@ -243,10 +315,19 @@ fn a_keyhole_builds() {
 /// over [`upper_half_disk`], so its flat `y = 0` meets its lateral in the ruling `(1, 0)` — `A`'s
 /// own edge, where the lateral ends. `B`'s wall `x = 1` is tangent to `A`'s cylinder along that
 /// edge, either running across it or ending on it (then `B`'s face `y = 0` lies on `A`'s flat).
-/// Refused today, by name: a wall running across the line reaches the rulings split as a
-/// stretch it does not arrange (`RulingBoundNotYet`) or the cap's winding as a doubling back
-/// (`StraightAngle`); and 84 booleans stop at the arrangement's backstops — `LabelConflict` and,
-/// past both caps, `RingOrientation` (`SuspectedDefect`), pinned here by count.
+/// Refused today, by name — and the name is the placement's, never the operation's or the vertex
+/// order's: every boolean stops before the operation decides anything.
+///
+/// - **Across**, `A` first: `RulingBoundNotYet`, at every height and in both frames.
+/// - **Across**, `B` first: the arrangement's backstops — `RingOrientation` past both caps,
+///   `LabelConflict` on the base cap. Inside the span and past the top, **the frame decides the
+///   name**: `LabelConflict` in the world frame, the cap's winding doubling back
+///   (`StraightAngle`) in the tilted one.
+/// - **Ending**, either order and frame: `StraightAngle` inside the span and past the top,
+///   `LabelConflict` on the base cap and past both caps.
+///
+/// The backstop cells ([`backstop`], `SuspectedDefect`, 84 booleans) are pinned by variant, so a
+/// backstop that moves to another placement is news; the rest by class.
 #[test]
 fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
     let across: &[[f64; 2]] = &[[-3.0, -2.0], [1.0, -2.0], [1.0, 0.5], [-3.0, 0.5]];
@@ -255,17 +336,36 @@ fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
     let ran = every_placement(
         upper_half_disk,
         &[("across the edge", across), ("ending on the edge", ending)],
-        |at, m, got| match &got {
-            Err(BoolError::Rejected { reason, .. })
-                if reason.class() == RejectClass::SuspectedDefect =>
-            {
+        |c, m, got| match backstop(c) {
+            Some(want) => {
+                match &got {
+                    Err(BoolError::Rejected { reason, .. }) => {
+                        assert_eq!(*reason, want, "{c}: the backstop moved");
+                    }
+                    other => panic!("{c}: the backstop moved — {other:?}"),
+                }
                 defects += 1;
             }
-            _ => refused_today(at, m, got),
+            None => refused_today(c, m, got),
         },
     );
     assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
     assert_eq!(defects, 84, "the backstop refusals");
+}
+
+/// The half-cylinder family's backstop cells — where [`a_tangent_wall_on_a_flats_edge_is_refused_today`]
+/// stops at `SuspectedDefect` today, and with which reason. Neither the operation nor the vertex
+/// order enters.
+fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
+    use Height::*;
+    let p = c.placement;
+    match (p.family, c.swapped, p.height, p.tilted) {
+        ("ending on the edge", _, OnBase | PastBoth, _) => Some(RejectReason::LabelConflict),
+        ("across the edge", true, PastBoth, _) => Some(RejectReason::RingOrientation),
+        ("across the edge", true, OnBase, _)
+        | ("across the edge", true, Inside | PastTop, false) => Some(RejectReason::LabelConflict),
+        _ => None,
+    }
 }
 
 /// ★ **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
@@ -288,33 +388,32 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     );
     assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
     let mut defects = 0;
-    for (label, b, _, six) in &all {
+    for (p, six) in &all {
         for (i, r) in six.iter().enumerate() {
             match (i, r) {
                 (2, Ok((n, _))) => {
-                    assert_eq!(*n, 2, "{label}: A − B is two bodies or none");
-                    assert!(label.contains("lift = -0.5"), "{label}: A − B built");
+                    assert_eq!(*n, 2, "{p}: A − B is two bodies or none");
+                    assert_eq!(p.height, Height::PastBoth, "{p}: A − B built");
                 }
-                (_, Ok((n, _))) => assert_eq!(*n, 1, "{label}: [{i}]"),
+                (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
                 (_, Err(reason)) if reason.class() == RejectClass::SuspectedDefect => {
-                    assert!(label.contains("lift = 0,"), "{label}: [{i}] {reason:?}");
+                    assert_eq!(p.height, Height::OnBase, "{p}: [{i}] {reason:?}");
                     defects += 1;
                 }
                 (2, Err(reason)) => assert!(
                     match reason {
-                        nacre_ops::RejectReason::NonManifoldResultEdge => true,
-                        nacre_ops::RejectReason::ArcBoundNotYet => {
-                            label.starts_with("on the seam")
-                                && label.ends_with("lift = 0.5, height = 2")
+                        RejectReason::NonManifoldResultEdge => true,
+                        RejectReason::ArcBoundNotYet => {
+                            p.family == "on the seam" && p.height == Height::PastTop
                         }
                         _ => false,
                     },
-                    "{label}: A − B refused as {reason:?}"
+                    "{p}: A − B refused as {reason:?}"
                 ),
-                (_, Err(reason)) => panic!("{label}: [{i}] {reason:?}"),
+                (_, Err(reason)) => panic!("{p}: [{i}] {reason:?}"),
             }
         }
-        identities(label, *b, six);
+        identities(p, six);
     }
     assert_eq!(defects, 20, "the rim placement's refusals");
 }
@@ -390,7 +489,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
                 match boolean(&mut m, kind, x, y) {
                     Err(BoolError::Rejected { reason, .. }) => assert_eq!(
                         reason,
-                        nacre_ops::RejectReason::RulingBoundNotYet,
+                        RejectReason::RulingBoundNotYet,
                         "{at}: the wall moved"
                     ),
                     other => panic!("{at}: the wall moved — {other:?}"),

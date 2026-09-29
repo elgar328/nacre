@@ -298,9 +298,13 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
   `loop_winding` 이 사전식 최소 꼭짓점에서 읽어 집힌 자리를 만난다. 판 윗면에서 보어의 원과 보스 밑면이 한 점에서
   닿는 `a_crossing_on_a_segments_endpoint_is_inside_it` 도 같은 벽이다.
 - **원통 쪽 솔리드 제 평면의 모서리**(반원기둥의 평면이 옆면과 만나는 선 — 옆면이 거기서 끝난다)에 다른 솔리드의
-  접선 벽이 놓이는 가족: 벽이 그 선을 가로지르면 룰링 분할의 «겹치는데 맞지 않음»(`RulingBoundNotYet`)이나 캡
-  감김의 되돌림(`StraightAngle`), 그리고 84 불리언이 배열의 백스톱 `LabelConflict`·`RingOrientation`
-  (`SuspectedDefect`)에서 멈춘다 — 벽의 면이 원통 쪽 솔리드의 평면과 같은 클래스에 놓이는 배치가 대부분이다.
+  접선 벽이 놓이는 가족. 192 불리언 모두 거절되고, 이유는 배치(가족·틀·피연산자 순서·높이)가 정한다 — 연산과
+  꼭짓점 순서는 들지 않는다(연산이 정하기 전에 멈춘다). 벽이 그 선을 **가로지르면 피연산자 순서가 멈추는 자리를
+  가른다**: 원통 쪽이 먼저면 전부 `RulingBoundNotYet`, 벽 쪽이 먼저면 배열의 백스톱(두 캡 너머 `RingOrientation`,
+  밑캡 `LabelConflict`)이고, 스팬 안·윗캡 너머에서는 **틀이 이름을 가른다**(world `LabelConflict`, 기운 틀 캡
+  감김의 되돌림 `StraightAngle`). 벽이 그 선에서 **끝나면**(벽 쪽 솔리드의 면이 원통 쪽 솔리드의 평면 위에
+  놓인다) 순서·틀과 무관하게 스팬 안·윗캡 너머 `StraightAngle`, 밑캡·두 캡 너머 `LabelConflict`. 백스톱 84
+  (`SuspectedDefect`)는 스코어보드가 칸마다 변종까지 고정한다.
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
   `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
