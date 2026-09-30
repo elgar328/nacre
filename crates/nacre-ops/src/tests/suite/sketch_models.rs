@@ -1806,6 +1806,98 @@ fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
     }
 }
 
+/// ★ **A wall tangent to a lateral's surface where the face is not touches nothing.** Two shapes
+/// whose surface a box wall touches on the side the lateral face lacks, so every boolean builds —
+/// each result valid, the body count and the volume the shape's own:
+///
+/// - the half cylinder over the upper half of the unit disk (`z ∈ [0, 2]`) and the box
+///   `[−0.5, 0.5] × [−1, 2] × [−0.5, 2.5]`, whose wall `y = −1` touches the circle at `(0, −1)`:
+///   `A ∩ B` is the band `|x| ≤ 0.5` of the half disk, `(0.5·√0.75 + π/6)·2`, and `A − B` its two
+///   ends apart;
+/// - the census's slot (`slot_profile(0, 4, 2, 1)`, `z ∈ [0, 3]`) fused with the box
+///   `[1, 6] × [0, 4] × [1, 5]`, whose wall `x = 1` touches the left end's circle at `(1, 2)` —
+///   the side of that circle the slot does not have: `A ∩ B` is `(6 + π/2)·2`.
+///
+/// The gate writes no tangency row for either (`a_tangency_row_is_written_only_where_the_lateral_face_is`);
+/// with one, the verdict refused both `SelfTouchingResult` though nothing touches.
+#[test]
+fn a_wall_tangent_where_the_lateral_is_not_touches_nothing() {
+    let pi = std::f64::consts::PI;
+    type Build = fn(&mut Model) -> Handle<Solid>;
+    let half_cylinder: Build = |m| {
+        let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let profile = edges_profile(vec![
+            arc_turns(p2(0.0, 0.0), p2(1.0, 0.0), 2),
+            line(p2(-1.0, 0.0), p2(1.0, 0.0)),
+        ]);
+        extrude_world_z(m, profile, 2.0).0
+    };
+    let slot: Build = |m| extrude_world_z(m, slot_profile(0.0, 4.0, 2.0, 1.0), 3.0).0;
+    let band = (0.5 * 0.75f64.sqrt() + pi / 6.0) * 2.0;
+    // (name, A, B's corners, |A ∩ B|, bodies of A − B)
+    let cases = [
+        (
+            "half cylinder",
+            half_cylinder,
+            [[-0.5, -1.0, -0.5], [0.5, 2.0, 2.5]],
+            band,
+            2,
+        ),
+        (
+            "slot",
+            slot,
+            [[1.0, 0.0, 1.0], [6.0, 4.0, 5.0]],
+            (6.0 + pi / 2.0) * 2.0,
+            1,
+        ),
+    ];
+    for (name, build, [lo, hi], common, a_minus_b) in cases {
+        let mut vols = [0.0f64; 6];
+        let mut operands = (0.0, 0.0);
+        for (i, (kind, swapped)) in [
+            (BoolKind::Fuse, false),
+            (BoolKind::Fuse, true),
+            (BoolKind::Cut, false),
+            (BoolKind::Cut, true),
+            (BoolKind::Common, false),
+            (BoolKind::Common, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut m = Model::new();
+            let a = build(&mut m);
+            let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
+            operands = (vol(&m, a), vol(&m, b));
+            let (x, y) = if swapped { (b, a) } else { (a, b) };
+            let out = boolean(&mut m, kind, x, y)
+                .unwrap_or_else(|e| panic!("{name}: {kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{name}: {kind:?} swapped {swapped}: {vs:?}");
+            let want = if i == 2 { a_minus_b } else { 1 };
+            assert_eq!(
+                out.len(),
+                want,
+                "{name}: {kind:?} swapped {swapped}: bodies"
+            );
+            vols[i] = out.iter().map(|&s| vol(&m, s)).sum();
+        }
+        let (va, vb) = operands;
+        let near = |x: f64, y: f64, what: &str| {
+            assert!((x - y).abs() < 1e-9, "{name}: {what}: {x} vs {y}");
+        };
+        near(vols[0], vols[1], "the Fuse commutes");
+        near(vols[4], vols[5], "Common commutes");
+        near(vols[4], common, "Common");
+        near(vols[0] + vols[4], va + vb, "Fuse + Common");
+        near(vols[2] + vols[4], va, "(A − B) + Common");
+        near(vols[3] + vols[4], vb, "(B − A) + Common");
+    }
+}
+
 /// ★ **One name under every rigid motion.** The tangent corner's identity with the
 /// class's ruling crossing is read from the moved operands' own topology and the moved class
 /// table (`seed_from_operands`, `side_of`), so under each motion of the oracle's group the two

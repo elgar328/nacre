@@ -425,9 +425,9 @@ pub(crate) fn cylinder_gate(
 /// tangent to the cylinder at the quarter turn the fillet does not have, puts its corner line on
 /// the infinite cylinder and nowhere near the lateral face
 /// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, the pair recorded
-/// before this condition). The line's radial direction is asked against each lateral face's
-/// angular extent (`Footprint::theta`, ends included — a line on a face's end ruling is the
-/// face's edge, the half-cylinder family).
+/// before this condition). The line is asked of each lateral face's angular extent
+/// ([`Footprint::theta_holds_line`], ends included — a line on a face's end ruling is the face's
+/// edge, the half-cylinder family) — the one predicate [`Tangency`]'s rows ask too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
@@ -486,25 +486,9 @@ fn shared_rulings(
         let fps = lateral_footprints(faces, cyl.surf);
         // Whether the line through `p` along the axis lies on a lateral face of this cylinder.
         let on_a_face = |p: &[nacre_exact::Rat; 3]| -> Option<bool> {
-            let mut w = [nacre_exact::Rat::from_int(0); 3];
-            for k in 0..3 {
-                w[k] = p[k].checked_sub(o[k])?;
-            }
-            let along = nacre_exact::dot3_rat(&w, &m)?;
-            let mm = nacre_exact::dot3_rat(&m, &m)?;
-            let q = along.checked_mul(nacre_exact::Rat::new(mm.denom(), mm.numer())?)?;
-            let mut x = [nacre_exact::Rat::from_int(0); 3];
-            for k in 0..3 {
-                x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
-            }
             for fp in &fps {
-                match &fp.theta {
-                    None => return Some(true),
-                    Some(arc) => {
-                        if arc_contains(arc, &x, &m)? {
-                            return Some(true);
-                        }
-                    }
+                if fp.theta_holds_line(p, &o, &m)? {
+                    return Some(true);
                 }
             }
             Some(false)
@@ -614,6 +598,17 @@ fn wall_faces_clear(
 /// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
 /// question only [`crate::draft::keep`] can answer. So this is a *record*, not a verdict:
 /// the gate states the geometry, the operation decides.
+///
+/// ★ **A row is about a lateral *face*, not its surface.** A half cylinder's surface is tangent to
+/// a wall on the side the face does not have, where nothing touches: a row there made the verdict
+/// convict a result that does not touch itself (census `arcprofile slot fuse`, a slot fused with a
+/// box tangent to its half-circle end's circle on the missing side). So a row is written only for
+/// a lateral face whose angular extent holds the line ([`Footprint::theta_holds_line`], the
+/// predicate [`SharedRuling`] asks). The axis is not asked per face: the wall face is cleared
+/// against the union of the laterals' spans, so on a surface with two lateral faces — the lower
+/// holding a half turn, the upper the other half, the wall touching the lower's height on the
+/// upper's side — the upper's row survives. Measured 0 such rows; nothing can build that shape to
+/// lock it yet.
 #[derive(Clone, Debug)]
 pub(crate) struct Tangency {
     /// The plane class the wall face lies on.
@@ -719,7 +714,8 @@ fn tangency_foot(
 }
 
 /// **The rows a tangent `(class, cylinder)` pair writes** — one per (wall face, lateral face) pair
-/// that did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
+/// whose lateral face holds the line ([`Footprint::theta_holds_line`]) and whose wall face did
+/// not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
 /// contributes nothing; that is why collecting here neither widens nor narrows the rule.
 ///
 /// ★★★★★ **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
@@ -873,6 +869,20 @@ fn tangency_rows(
             .map(|fh| face_straddles_line(model, model.face(fh), coeffs, &o, &m, r2))
             .unwrap_or(false);
         for (cy_ix, cf) in &laterals {
+            // The line must lie on this lateral **face**, not only on its surface: a half
+            // cylinder's surface is tangent to a wall on the side the face does not have, and
+            // nothing touches there. `None` (arithmetic) keeps the row, undecided.
+            let on_face = base
+                .as_ref()
+                .and_then(|b| cf.footprint.theta_holds_line(b, &o, &m));
+            if on_face == Some(false) {
+                #[cfg(feature = "tangency-trace")]
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("TSKIP off the lateral face");
+                }
+                continue;
+            }
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
                 let mid = span[0]
                     .checked_add(span[1])?
@@ -885,6 +895,7 @@ fn tangency_rows(
             });
             let undecided = unread
                 || base.is_none()
+                || on_face.is_none()
                 || lens_side.is_none()
                 || mat_side.is_none()
                 || witness.is_none()

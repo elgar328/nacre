@@ -283,3 +283,98 @@ fn the_tangent_wall_states_itself_exactly() {
         "the witness sits on the contact, mid-span: {w:?}"
     );
 }
+
+/// **Whether a line along the axis lies within a lateral face's angular extent** — the half turn
+/// `(1, 0) → (−1, 0)` counter-clockwise about `+z`, the upper half: a line through `(0, 1)` is on
+/// it, through `(0, −1)` is not, and both ends are (a line on a face's end ruling is its edge).
+/// The height the point is given at does not matter, and a whole circle holds every line.
+#[test]
+fn a_faces_angular_extent_holds_the_lines_on_it_ends_included() {
+    let z = Rat::from_int;
+    let upper = Footprint {
+        span: None,
+        theta: Some(RimArc {
+            from: [z(1), z(0), z(0)],
+            to: [z(-1), z(0), z(0)],
+        }),
+    };
+    let (o, m) = ([z(0); 3], [z(0), z(0), z(1)]);
+    for (p, want) in [
+        ([z(0), z(1), z(5)], true),
+        ([z(0), z(-1), z(0)], false),
+        ([z(1), z(0), z(3)], true),
+        ([z(-1), z(0), z(-2)], true),
+        ([z(1), z(-1), z(0)], false),
+    ] {
+        assert_eq!(upper.theta_holds_line(&p, &o, &m), Some(want), "{p:?}");
+    }
+    let whole = Footprint {
+        span: None,
+        theta: None,
+    };
+    assert_eq!(
+        whole.theta_holds_line(&[z(0), z(-1), z(0)], &o, &m),
+        Some(true)
+    );
+}
+
+/// A half cylinder over the upper half of the unit disk, `z ∈ [0, 2]` (its lateral the half turn
+/// `(1, 0) → (−1, 0)`), and a box `[lo, hi] × z ∈ [−0.5, 2.5]` — the box's height covers the
+/// lateral's so the axis never clears a wall face first. The gate's tangency rows.
+fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Vec<Tangency> {
+    let r = Rat::from_int;
+    let mut m = Model::new();
+    let half = crate::Ring2d::new(
+        vec![[r(1), r(0)], [r(-1), r(0)]],
+        vec![
+            crate::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: true,
+            },
+            crate::Edge2d::Line,
+        ],
+    )
+    .expect("a half disk");
+    let frame = crate::SketchFrame::world(&m, nacre_exact::Axis::Z);
+    let Ok(crate::OpOutput::Extrude { solid: a, .. }) = crate::apply(
+        &mut m,
+        &crate::Operation::Extrude {
+            frame,
+            profile: crate::from_paths(vec![half]).unwrap().remove(0),
+            dist: 2.0,
+        },
+    ) else {
+        panic!("the half cylinder extrudes")
+    };
+    let b = m.add_cuboid(
+        Point3::from_array([lo[0], lo[1], -0.5]),
+        Point3::from_array([hi[0], hi[1], 2.5]),
+    );
+    m.rebuild_adjacency();
+    crate::arrangement::plane_index_setup(&m, a, b)
+        .expect("setup")
+        .tangencies
+}
+
+/// ★ **A tangency row is about the lateral face, not its surface.** The half cylinder's surface
+/// is tangent to three box walls; the gate writes a row only where the face is:
+///
+/// - `y = −1` touches the surface at `(0, −1)`, on the half the lateral does not have — no row;
+/// - `y = 1` touches it at `(0, 1)`, on the lateral — one row, decided;
+/// - `x = 1` touches it on the lateral's **end** ruling `(1, 0)` — one row (ends are the face's
+///   edge), held by a third plane too: the half cylinder's own flat `y = 0`.
+#[test]
+fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
+    let missing = half_cylinder_and_box([-0.5, -1.0], [0.5, 2.0]);
+    assert!(missing.is_empty(), "{missing:?}");
+    let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]);
+    assert_eq!(present.len(), 1, "{present:?}");
+    assert!(
+        !present[0].undecided && !present[0].line_in_another_plane,
+        "{present:?}"
+    );
+    let end = half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]);
+    assert_eq!(end.len(), 1, "{end:?}");
+    assert!(end[0].line_in_another_plane, "{end:?}");
+}

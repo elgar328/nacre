@@ -1562,7 +1562,9 @@ fn measure_census() {
     // ── **Arc profiles**: sketched circles and arcs extruded, then met by a box. The
     // half disk's chord wall *crosses* its cylinder (pierce corners `Lo`/`Hi`), the annulus and
     // the bored plate have only whole circles; the slot's straight walls are *tangent* to its half
-    // cylinders, the ruling the tracer has no side for — its rows record that refusal by name.
+    // cylinders (its own fillet-like joints, no tangency row), and the box's wall `x = 1` touches
+    // the left end's circle on the side the slot does not have — nothing touches, and all three
+    // build.
     {
         let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
         let sketch = |m: &mut Model, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {

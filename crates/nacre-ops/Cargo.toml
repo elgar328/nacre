@@ -45,11 +45,12 @@ parallel = ["dep:rayon", "nacre-judge/parallel"]
 #   cargo test --workspace --features nacre-ops/reject-trace -- --nocapture 2>&1 | grep '^RAISE '
 # The census itself is unconditional; only the printing is behind this.
 reject-trace = []
-# The tangency population instrument: print one line per tangency row, and one per wall face the
+# The tangency population instrument: print one line per tangency row (`TROW`), one per row
+# skipped because its lateral face does not hold the line (`TSKIP`), and one per wall face the
 # footprint reader could not read. Off by default, and behind a feature rather than `cfg(test)`
 # because the population worth counting lives in the **integration** corpus (`tests/census.rs`),
 # where `cfg(test)` is not set for this crate — a trap this repo has hit twice:
-#   cargo test --workspace --features nacre-ops/tangency-trace -- --nocapture 2>&1 | grep '^TROW '
+#   cargo test --workspace --features nacre-ops/tangency-trace -- --nocapture 2>&1 | grep -E '^(TROW|TSKIP) '
 tangency-trace = []
 # Test-only doors for the measurements in this crate's integration tests (`tests/census.rs`),
 # which link the non-test build and so cannot see `cfg(test)`. Nothing in a product build.

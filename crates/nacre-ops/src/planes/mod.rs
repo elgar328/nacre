@@ -132,7 +132,8 @@ pub(crate) struct CylFaceInfo {
 /// the region the face occupies there (a lateral *is* a region of its chart). Conservative for
 /// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
 /// for the face. Every clearance the gate asks of a lateral is a two-axis question against this
-/// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces.
+/// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces. Whether a line
+/// along the axis lies on the face asks θ alone ([`Footprint::theta_holds_line`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Footprint {
     /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
@@ -143,6 +144,45 @@ pub(crate) struct Footprint {
     /// state (an irrational corner, rims that do not chain into one arc) — read as the whole
     /// circle, which is conservative.
     pub(crate) theta: Option<RimArc>,
+}
+
+impl Footprint {
+    /// **Does the line along the axis through `p` lie within this face's angular extent?** — the
+    /// face half of «this line lies on a lateral *face*, not only on its surface», which both of
+    /// the gate's line records ask (`SharedRuling`, `Tangency`). Ends included: a line on the face's
+    /// end ruling is the face's edge. `theta: None` holds every line (the whole circle, or an
+    /// extent this road could not state). `None` is arithmetic that could not answer. The axis
+    /// span is not asked here — only θ.
+    ///
+    /// ★ **A `false` here is true of the face.** `theta` is the union of the outer loop's rim arcs
+    /// ([`lateral_theta_extent`]), and a lateral face on this road is bounded on its chart by arcs
+    /// and rulings alone, so at every θ it covers, its upper and lower boundaries are arcs: the
+    /// face's θ-projection is the union of its arcs', and the extent is never narrower than the
+    /// face. What it does not see is a **hole** in the face — a line through a lateral's hole reads
+    /// `true`, the conservative side.
+    pub(super) fn theta_holds_line(
+        &self,
+        p: &[nacre_exact::Rat; 3],
+        o: &[nacre_exact::Rat; 3],
+        m: &[nacre_exact::Rat; 3],
+    ) -> Option<bool> {
+        let Some(arc) = &self.theta else {
+            return Some(true);
+        };
+        // The radial direction: `p − o` less its component along the axis.
+        let mut w = [nacre_exact::Rat::from_int(0); 3];
+        for k in 0..3 {
+            w[k] = p[k].checked_sub(o[k])?;
+        }
+        let along = nacre_exact::dot3_rat(&w, m)?;
+        let mm = nacre_exact::dot3_rat(m, m)?;
+        let q = along.checked_mul(nacre_exact::Rat::new(mm.denom(), mm.numer())?)?;
+        let mut x = [nacre_exact::Rat::from_int(0); 3];
+        for k in 0..3 {
+            x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
+        }
+        arc_contains(arc, &x, m)
+    }
 }
 
 /// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
