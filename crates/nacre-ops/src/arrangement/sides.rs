@@ -146,54 +146,88 @@ pub(crate) fn crossing_on_ruling(
     Ok(NodeId::pierce(wc, fc, cyl, found.ok_or(no)?))
 }
 
-/// **The planar scan's crossing on an arc** — the point where the class line `L = wc ∩ fc`
-/// leaves the face across an edge riding a circle of `cyl`, named as the pierce node
-/// `wc ∩ fc ∩ cyl` at the root that lies **inside** the arc.
+/// **Where the class line `L = wc ∩ fc` crosses an arc strictly inside it** — the pierce nodes
+/// `wc ∩ fc ∩ cyl` the travelled arc `a → b` contains, in the order its travel meets them (the
+/// arc runs counter-clockwise about the axis when `ccw`). One answer serves both questions the
+/// planar scan asks of an arc: the walk's *how many* (its length, where the ends cannot say) and
+/// the tracer's *which* (its `nth` entry, [`combinatorics::Feature::Crossing`]).
 ///
-/// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the pair `{wc, fc}` cuts the
-/// cylinder in two points on the arc's circle, and the crossing is the one the travelled arc
-/// `a → b` strictly contains ([`theta_between`], the ruling sweep's containment — the arc's CCW
-/// pair is `ccw ? [a, b] : [b, a]`). Exactly one must: none is a crossing the walk mis-read, and
-/// both is an arc meeting the line twice — a shape the gate keeps out (a > π arc against its own
-/// diameter's class), refused rather than guessed.
+/// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the meet decides first:
+/// - two parallel planes (`fc` against another ⊥ class — every cap meets its twin this way), a
+///   line missing the circle, or a **tangent** one cross nothing. The tangent case is common: a
+///   fillet's straight edge lies on `L` and its arc leaves the end tangentially, a touch with no
+///   crossing beyond it;
+/// - a secant line meets the circle in two roots, and each crosses the arc iff the arc strictly
+///   contains it ([`theta_between`], the ruling sweep's containment);
+/// - overflow, or a meet this shape cannot produce, is `Err`.
+///
+/// ★★ **A root at the arc's end on `L` is that end, not a crossing.** With `on_end` — the end
+/// the walk found on `L` — one root *is* that end, under the same name or another (a fillet's
+/// tangent corner is named by its own two planes, the root by `{wc, fc}`). That is asked of the two
+/// points alone: equal names, or the circle's order answering "one point" ([`circular_order`]'s
+/// `Coincident`). The containment is then asked of three **distinct** points, so its `Err` is a
+/// real failure — never a coincidence mistaken for one.
 ///
 /// ★ The same canonical name the lateral's ruling sweep gives this point as a station
 /// (`crossing_on_ruling(fc, wc, …)` — [`NodeId::pierce`] folds the pair and root together), so
 /// [`merge_coincident`] reads one point, not two.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn crossing_on_arc(
+pub(crate) fn arc_crossings(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     wc: usize,
     fc: usize,
     cyl: usize,
     ccw: bool,
-    a: NodeId,
-    b: NodeId,
-) -> Result<NodeId, DeclineKind> {
+    [a, b]: [NodeId; 2],
+    on_end: Option<NodeId>,
+) -> Result<Vec<NodeId>, DeclineKind> {
     use nacre_exact::quad::CylinderMeet;
     let no = DeclineKind::CurvedRingWall;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let Some(CylinderMeet::Pair { s, .. }) =
-        nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
-    else {
-        return Err(no);
-    };
-    let _ = s;
+    match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2).ok_or(no)? {
+        CylinderMeet::ParallelPlanes | CylinderMeet::Miss(_) | CylinderMeet::Tangent { .. } => {
+            return Ok(Vec::new());
+        }
+        CylinderMeet::Pair { .. } => {}
+        CylinderMeet::CoincidentPlanes
+        | CylinderMeet::OnRuling(_)
+        | CylinderMeet::AxisParallelMiss(_) => return Err(no),
+    }
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
-    let mut found = None;
+    let mut inside: Vec<NodeId> = Vec::with_capacity(2);
     for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
         let node = NodeId::pierce(wc, fc, cyl, root);
-        if theta_between(jd, cyl, def, lo, hi, node).map_err(|_| no)? {
-            if found.is_some() {
-                return Err(no); // both roots inside: the arc meets the line twice
+        if let Some(e) = on_end {
+            if node == e {
+                continue;
             }
-            found = Some(node);
+            match split_circles::circular_order(jd, cyl, def, &[e, node]) {
+                Err(split_circles::CircleOrderFail::Coincident) => continue,
+                Err(split_circles::CircleOrderFail::Undecided) => return Err(no),
+                Ok(_) => {}
+            }
+        }
+        if theta_between(jd, cyl, def, lo, hi, node).map_err(|_| no)? {
+            inside.push(node);
         }
     }
-    found.ok_or(no)
+    if let [r, q] = inside[..] {
+        // Travelled from `a`: counter-clockwise meets first the root counter-clockwise between
+        // `a` and the other, clockwise the one counter-clockwise between the other and `a`.
+        let r_first = if ccw {
+            theta_between(jd, cyl, def, a, q, r)
+        } else {
+            theta_between(jd, cyl, def, q, a, r)
+        }
+        .map_err(|_| no)?;
+        if !r_first {
+            inside.swap(0, 1);
+        }
+    }
+    Ok(inside)
 }
 
 /// The scan's crossings on rulings, realized — the second road to the sign

@@ -56,3 +56,6 @@ mod report;
 
 #[path = "coverage/fin_array.rs"]
 mod fin_array;
+
+#[path = "coverage/arc_crossings.rs"]
+mod arc_crossings;

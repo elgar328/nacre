@@ -243,8 +243,10 @@ impl Said {
     /// The road asks a pierce corner's side with no cylinder table (`every_ray` hands `side_of` an
     /// empty one), so a ring **with a pierce corner** is unreadable from every ray plane:
     /// `PierceVertexUnnamed` there is the ring's, and the road declines. Without one, the same name
-    /// comes from an arc whose two ends lie on the ray's plane — a plane the witness chose, so the
-    /// next witness may answer, and it is an abstention. A ring of fewer than three edges is a lens
+    /// comes from an arc whose ends do not settle it against the ray's plane — both on it, both on
+    /// one side (none or two crossings), or one on it (none or one): the road has no cylinder to
+    /// side or count the arc with. That is a plane the witness chose, so the next witness may
+    /// answer, and it is an abstention. A ring of fewer than three edges is a lens
     /// when it is mixed (a chord and its arc — an ordinary shape the ray road cannot walk) and a
     /// producer defect when it is all straight, which is raised under its own name. Anything else
     /// (`RingNaming`: a ring whose names the road cannot read) is not a witness's circumstance and

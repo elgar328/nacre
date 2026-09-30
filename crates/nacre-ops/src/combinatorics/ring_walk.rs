@@ -73,8 +73,9 @@ pub(crate) enum RingWalk {
     /// count. A ring whose nodes are all on `q` while an edge departs is `Met` instead: the
     /// departure is an off-line entry of its own side ([`EdgeMeet::Departs`]).
     AllOn,
-    /// A node whose side this walk cannot answer, or an edge between two on-`q` nodes whose meet the
-    /// caller cannot state (`on_meet` answering `None`).
+    /// A node whose side this walk cannot answer, an edge between two on-`q` nodes whose meet the
+    /// caller cannot state (`on_meet` answering `None`), or an edge whose interior crossings the
+    /// caller cannot count (`crossings` answering `None`, or a count its ends make impossible).
     ///
     /// ★★ **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
     /// table.** Given one, [`side_of`]'s pierce arm answers (short of a class with no narrow
@@ -88,13 +89,15 @@ pub(crate) enum RingWalk {
 /// Where a ring meets the line that `q` cuts its plane along — see [`ring_against_plane`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Feature {
-    /// Edge `edge` (node `edge` → node `edge + 1`) crosses the line strictly inside: both its
-    /// endpoints are off `q` and on opposite sides of it.
+    /// Edge `edge` (node `edge` → node `edge + 1`) crosses the line strictly inside it — the
+    /// `nth` such crossing met travelling the edge from its start. A straight edge crosses at most
+    /// once (`nth = 0`), and only between two ends on opposite sides; a **curved** one can cross
+    /// twice between two ends on one side, or once on the way into an end on the line.
     ///
-    /// `from` is the side the edge **leaves**, in [`side_of`]'s frame — never `0`, since a crossing
-    /// has both ends off the line. See [`Self::Run`]'s `flank` for why a side travels with a
-    /// feature at all.
-    Crossing { edge: usize, from: i8 },
+    /// `from` is the side the edge **leaves** at this crossing, in [`side_of`]'s frame — never `0`,
+    /// since a crossing is strictly between two stretches off the line. See [`Self::Run`]'s `flank`
+    /// for why a side travels with a feature at all.
+    Crossing { edge: usize, from: i8, nth: u8 },
     /// `len` consecutive nodes from `first` lie *on* `q`, **and so do the edges between them** —
     /// an on-line interval rather than a point.
     ///
@@ -118,7 +121,8 @@ pub(crate) enum Feature {
     /// same, and with it true the other is its negation, so one number carries both. Never `0`.
     ///
     /// ★ A stretch that begins where the ring *returned* to the meet is preceded by the departure
-    /// itself, and that side is the departure's σ ([`EdgeMeet::Departs`]) — so there is always a
+    /// itself, and that side is the departure's σ ([`EdgeMeet::Departs`]); one an edge reached
+    /// after crossing on its way in is preceded by that edge's last piece — so there is always a
     /// neighbour to read, and the number is never a plausible stand-in.
     Run {
         first: usize,
@@ -146,7 +150,8 @@ pub(crate) enum EdgeMeet {
 /// against a cut plane, `arrangement::cycle_on_class` reads a lateral's cycle against a circle,
 /// [`every_ray`] casts a parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a
 /// segment against a face; all must answer the same question first — *does the boundary cross
-/// this line here?* — and a node sitting **on** the line is the only hard part of it. The tracer
+/// this line here?* — and its two hard parts are a node sitting **on** the line and a **curved**
+/// edge, whose ends do not say how often it crosses. The tracer
 /// had the rule (look at the node's two off-line neighbours: opposite sides is a crossing, equal
 /// sides a touch) inlined in its scan, entangled with naming, alias recording and decline kinds;
 /// the ray caster had no rule at all and threw such a candidate away. Resilience that lives in one
@@ -160,9 +165,10 @@ pub(crate) enum EdgeMeet {
 /// `AllOn` when every node **and edge** lies on `q` — a ring in the plane has no flanks to be
 /// decided by.
 ///
-/// **Features come out in ring order from the first off-`q` entry.** That is the order the tracer's
-/// scan produced them in, and its naming step records aliases into a union-find as it goes, so the
-/// order is contract, not incident.
+/// **Features come out in ring order from the first off-`q` entry**, an edge's two crossings in the
+/// order its travel meets them. That is the order the tracer's scan produced them in, and its
+/// naming step records aliases into a union-find as it goes, so the order is contract, not
+/// incident.
 ///
 /// ★★ **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here, and if not, which side
 /// does it leave to?"** — edge `i` runs from `nodes[i]` to `nodes[i + 1]`, and it is asked only
@@ -179,14 +185,25 @@ pub(crate) enum EdgeMeet {
 /// on-line interval flanked by its neighbours — apply unchanged: a run is cut where the ring
 /// leaves, each piece's flanks are the departures beside it, and a ring whose every node is on
 /// `q` (a half-disk cap: its chord and its arc) is a run flanked by its own arc on both sides.
-/// Crossings are still only ever between two *nodes*: a departure sits between two on-`q` nodes,
-/// so it is never adjacent to an off-`q` one.
+///
+/// ★★★★★ **`crossings(i, on_end)` answers how often edge `i` crosses the meet strictly inside
+/// it, where its two ends cannot say** — and it is asked only there. A circle meets a line in at
+/// most two points, so ends on opposite sides are exactly one crossing (not asked); ends on one
+/// side are none or two, and one end on the line (`on_end`, that end's node) none or one. A
+/// straight edge answers `0`; `None` is "no exact description" and answers
+/// [`RingWalk::Unnameable`], and so does a count the ends make impossible (one between ends on one
+/// side, two into an end on the line) — the caller's arithmetic is not swallowed. The edge's
+/// crossings cut it into pieces that enter the sign sequence like departures, each piece's side
+/// read from the edge's off-line end and flipped at every crossing: so a crossing is a sign
+/// change between two nodes or between two pieces of one edge, and a node on the line is flanked
+/// by the piece beside it — an arc that crossed once on its way in arrives from the far side.
 pub(crate) fn ring_against_plane(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     nodes: &[NodeId],
     q: usize,
     on_meet: impl Fn(usize) -> Option<EdgeMeet>,
+    crossings: impl Fn(usize, Option<usize>) -> Option<u8>,
 ) -> RingWalk {
     let n = nodes.len();
     let Some(side) = (0..n)
@@ -195,16 +212,57 @@ pub(crate) fn ring_against_plane(
     else {
         return RingWalk::Unnameable;
     };
-    // The sign sequence: every node, and after node `i` its edge where that edge departs the
-    // meet between two on-`q` nodes — `(side, Some(node))` or `(σ, None)`.
-    let mut seq: Vec<(i8, Option<usize>)> = Vec::with_capacity(n);
+    // The sign sequence: every node, then — after node `i` — the pieces its edge is cut into
+    // where the ends' sides do not settle it: a departure between two on-`q` nodes, or the
+    // pieces between an edge's interior crossings.
+    #[derive(Clone, Copy)]
+    enum Entry {
+        Node(usize),
+        Departure,
+        /// Piece `k` of edge `edge`, counted from the edge's start: crossing `k - 1` precedes
+        /// it and crossing `k` follows.
+        Piece {
+            edge: usize,
+            k: u8,
+        },
+    }
+    let mut seq: Vec<(i8, Entry)> = Vec::with_capacity(n);
     for i in 0..n {
-        seq.push((side[i], Some(i)));
-        if side[i] == 0 && side[(i + 1) % n] == 0 {
+        seq.push((side[i], Entry::Node(i)));
+        let (sa, sb) = (side[i], side[(i + 1) % n]);
+        if sa == 0 && sb == 0 {
             match on_meet(i) {
                 None => return RingWalk::Unnameable,
                 Some(EdgeMeet::On) => {}
-                Some(EdgeMeet::Departs(s)) => seq.push((s, None)),
+                Some(EdgeMeet::Departs(s)) => seq.push((s, Entry::Departure)),
+            }
+        } else if sa != -sb {
+            // Same side (0 or 2 crossings), or one end on `q` (0 or 1): the ends cannot say.
+            let on_end = if sa == 0 {
+                Some(i)
+            } else if sb == 0 {
+                Some((i + 1) % n)
+            } else {
+                None
+            };
+            let Some(k) = crossings(i, on_end) else {
+                return RingWalk::Unnameable;
+            };
+            // Read the pieces from the off-line end, flipping at each crossing.
+            let (off, from_start) = if sa != 0 { (sa, true) } else { (sb, false) };
+            let possible = match on_end {
+                None => k == 0 || k == 2,
+                Some(_) => k <= 1,
+            };
+            if !possible {
+                return RingWalk::Unnameable;
+            }
+            if k > 0 {
+                for j in 0..=k {
+                    let flips = if from_start { j } else { k - j };
+                    let s = if flips % 2 == 0 { off } else { -off };
+                    seq.push((s, Entry::Piece { edge: i, k: j }));
+                }
             }
         }
     }
@@ -219,21 +277,28 @@ pub(crate) fn ring_against_plane(
         if seq[i].0 != 0 {
             let ni = (i + 1) % m;
             if seq[ni].0 != 0 && seq[ni].0 != seq[i].0 {
-                let (Some(a), Some(_)) = (seq[i].1, seq[ni].1) else {
-                    unreachable!("a departure sits between two on-line nodes")
+                let (edge, nth) = match (seq[i].1, seq[ni].1) {
+                    (Entry::Node(a), Entry::Node(_)) => (a, 0),
+                    (Entry::Piece { edge, k }, Entry::Piece { .. }) => (edge, k),
+                    _ => unreachable!(
+                        "a sign changes between two nodes or two pieces of one edge — an end piece \
+                         keeps its off-line node's side, and a departure sits between on-line nodes"
+                    ),
                 };
                 out.push(Feature::Crossing {
-                    edge: a,
+                    edge,
                     from: seq[i].0,
+                    nth,
                 });
             }
             j += 1;
         } else {
-            // A maximal run of on-line vertices, ended by an off-line node or by a departure. Two
+            // A maximal run of on-line vertices, ended by an off-line node, a departure or a
+            // piece of a crossed edge. Two
             // is the common case, but a vertex whose name had to be taken from its touching
             // planes (`loop_triples`) stays in the ring even when the loop runs straight through
             // it, so a run can be longer — and a run between two departures can be a single node.
-            let Some(first) = seq[i].1 else {
+            let Entry::Node(first) = seq[i].1 else {
                 unreachable!("an on-line entry is a node")
             };
             let mut len = 0usize;
@@ -272,7 +337,8 @@ pub(crate) fn ring_against_plane(
 ///
 /// So a `Feature::Run` — one node, or a whole edge of the ring lying on the line — contributes one
 /// crossing iff its flanks differ, and a `Feature::Crossing` contributes one where it always did.
-/// Nothing is counted twice: a crossing's endpoints are both off the line by construction.
+/// Nothing is counted twice: a crossing is strictly inside its edge, between two stretches off the
+/// line.
 ///
 /// Candidates are each node's two non-`P` planes, in ring order, `+d` before `-d`; the first
 /// usable one wins, which keeps the answer deterministic. `no_clear_ray` survives for the two

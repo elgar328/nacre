@@ -231,6 +231,39 @@ pub fn upper_half_disk() -> Profile2d {
         .remove(0)
 }
 
+/// **A 7 × 8 plate with one fillet (r 2) at its bottom-right corner** — the census's `plate1`
+/// profile: the arc about `(1.5, −2)` from `(1.5, −4)` a quarter turn counter-clockwise to
+/// `(3.5, −2)`, tangent to the bottom wall `y = −4` and the right wall `x = 3.5`.
+pub fn plate_with_a_fillet() -> Profile2d {
+    use nacre_exact::Rat;
+    let d = |x: f64| Rat::from_decimal(x).expect("a decimal");
+    let v = |x: f64, y: f64| [d(x), d(y)];
+    let ring = nacre_ops::Ring2d::new(
+        vec![
+            v(-3.5, -4.0),
+            v(1.5, -4.0),
+            v(3.5, -2.0),
+            v(3.5, 4.0),
+            v(-3.5, 4.0),
+        ],
+        vec![
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Arc {
+                center: v(1.5, -2.0),
+                r2: d(4.0),
+                ccw: true,
+            },
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+            nacre_ops::Edge2d::Line,
+        ],
+    )
+    .expect("a filleted plate");
+    nacre_ops::from_paths(vec![ring])
+        .expect("a filleted plate")
+        .remove(0)
+}
+
 /// **A corner that lies on a wall in rationals and off it in `f64`.** The box `x ∈ [0, xs]`,
 /// `y ∈ [0, ys]`, `z ∈ [−1, 2]` (the common of two slabs, so `x = xs` and `y = ys` are caps with
 /// unit normals) and the prism over the triangle `(0,0),(1,0),(1,k)`, `z ∈ [0, 1]`, whose wall

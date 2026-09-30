@@ -2117,3 +2117,119 @@ fn partial_overlap_is_not_merged() {
         "a's and b's y=1 chords stay distinct (partial overlap not merged): {on_y1}"
     );
 }
+
+/// ★ **An arc that crosses the cut line once on its way into an end lying on it** — the half disk
+/// over the arc `(1, 0) → (−1, 0)` (unit radius, `z ∈ [0, 2]`) traced on the slanted class
+/// `x + y = 1`, which runs through the arc's end `(1, 0)` and crosses it again at `(0, 1)`. Each
+/// cap's ring is read as the walk now reads it: the end on the line is flanked by the arc's last
+/// piece, which lies across it, so the end is a crossing and the arc's interior crossing is
+/// another — one chord per cap, from `(1, 0)` to `(0, 1)`. Read off the arc's two ends, the end
+/// looked like a touch and the chord was not there. (The booleans on this pair stop at
+/// `RulingBoundNotYet` before they reach the arrangement, so the trace is where this is read.)
+#[test]
+fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
+    use nacre_exact::Rat;
+    let r = Rat::from_int;
+    let mut m = Model::new();
+    let extrude = |m: &mut Model, profile: crate::Profile2d| {
+        let frame = SketchFrame::world(m, Axis::Z);
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 2.0,
+            },
+        ) else {
+            panic!("the profile extrudes")
+        };
+        solid
+    };
+    let half = crate::Ring2d::new(
+        vec![[r(1), r(0)], [r(-1), r(0)]],
+        vec![
+            crate::Edge2d::Arc {
+                center: [r(0), r(0)],
+                r2: r(1),
+                ccw: true,
+            },
+            crate::Edge2d::Line,
+        ],
+    )
+    .expect("a half disk");
+    let a = extrude(&mut m, crate::from_paths(vec![half]).unwrap().remove(0));
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let tri = crate::Profile2d::polygon(vec![p2(-1.0, 2.0), p2(3.0, -2.0), p2(3.0, 2.0)]).unwrap();
+    let b = extrude(&mut m, tri);
+    m.rebuild_adjacency();
+    let PlaneSetup {
+        planes: faces_tab,
+        geom: planes,
+        surf_ix,
+        inc_a,
+        plane_ix,
+        standard,
+        notes,
+        cyls,
+        ..
+    } = plane_index_setup(&m, a, b).unwrap();
+    let jd = Judge::new(&planes, standard, &notes);
+    let wc = (0..planes.len())
+        .find(|&c| {
+            planes[c]
+                .witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[0] + q.as_array()[1] - 1.0).abs() < 1e-12)
+        })
+        .expect("the x + y = 1 class");
+    let mut tr = Trace::default();
+    trace_one_of(
+        &m,
+        a,
+        SolidSide::A,
+        wc,
+        &jd,
+        &cyls,
+        &faces_tab,
+        &surf_ix,
+        &inc_a,
+        &plane_ix,
+        [(wc, 0)].into_iter().collect(),
+        &mut tr,
+    );
+    // The lateral's ruling road declines this class (the booleans' `RulingBoundNotYet`); the
+    // caps are what is read here.
+    assert!(
+        tr.declined
+            .iter()
+            .all(|&(fp, _)| matches!(plane_ix[fp], ClassIx::Cyl(_))),
+        "{:?}",
+        tr.declined
+    );
+    let point = |n: NodeId| -> [f64; 3] {
+        combinatorics::node_coords_rat(&jd, n)
+            .map(|p| p.map(|x| x.to_f64()))
+            .or_else(|| combinatorics::pierce_point(&jd, 0, &cyls[0].def, n))
+            .expect("a point")
+    };
+    let mut chords: Vec<[[f64; 3]; 2]> = tr
+        .segs
+        .iter()
+        .map(|s| s.end.map(point))
+        .filter(|[p, q]| (p[2] - q[2]).abs() < 1e-12)
+        .map(|mut e| {
+            e.sort_by(|p, q| p[0].total_cmp(&q[0]));
+            e
+        })
+        .collect();
+    chords.sort_by(|p, q| p[0][2].total_cmp(&q[0][2]));
+    assert_eq!(chords.len(), 2, "one chord per cap: {:?}", tr.segs);
+    for (chord, z) in chords.iter().zip([0.0, 2.0]) {
+        for (got, want) in chord.iter().zip([[0.0, 1.0, z], [1.0, 0.0, z]]) {
+            assert!(
+                (0..3).all(|k| (got[k] - want[k]).abs() < 1e-12),
+                "{chord:?} at z = {z}"
+            );
+        }
+    }
+}

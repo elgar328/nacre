@@ -384,9 +384,17 @@ fn cycle_on_class(
     // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
     // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
-    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc, |_| {
-        Some(combinatorics::EdgeMeet::On)
-    }) {
+    // No edge of a lateral's ring crosses a ⊥ class strictly inside: its arcs lie in ⊥ planes
+    // parallel to `wc` and its rulings are straight — so every edge answers `0` (the ring's arcs
+    // carry `Wall::Plane`, so the wall could not tell them apart anyway).
+    let features = match combinatorics::ring_against_plane(
+        jd,
+        cyls,
+        &nr.triples,
+        wc,
+        |_| Some(combinatorics::EdgeMeet::On),
+        |_, _| Some(0),
+    ) {
         combinatorics::RingWalk::Met(f) => f,
         // A hole ring lying wholly in the class has no thickness to bound anything with, and a
         // node the walk cannot name is the same refusal every other consumer makes of it.
@@ -433,7 +441,8 @@ fn cycle_on_class(
                 // today's holes (50 of 50).
                 for k in 0..len - 1 {
                     // ★★★★★ **"Both ends on the class" is not "the edge is on the circle."** The
-                    // walk answers about *nodes*; on a plane the edge between two on-line nodes
+                    // walk reads a run off its *nodes* and this road's blanket `On`; on a plane the
+                    // edge between two on-line nodes
                     // follows, and on a **cylinder** it does not — a tilted carrier meets the
                     // lateral in an ellipse, which can cross this class at both ends without
                     // lying on it. Taking that for a rim arc would state an extent along a curve
@@ -461,7 +470,7 @@ fn cycle_on_class(
                     });
                 }
             }
-            combinatorics::Feature::Crossing { edge, from } => {
+            combinatorics::Feature::Crossing { edge, from, .. } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
                 let crate::combinatorics::Wall::Plane(j) = nr.walls[edge] else {

@@ -369,19 +369,9 @@ fn bored_plate(m: &mut Model) -> Handle<Solid> {
     boolean_one(m, BoolKind::Cut, plate, drill).expect("the plate is bored")
 }
 
-/// A 7 × 8 plate one unit thick with one fillet (r 2) at its bottom-right corner — the census's
-/// `plate1`: axis at `(1.5, −2)`, tangent to the bottom wall `y = −4` and the right wall `x = 3.5`.
+/// [`plate_with_a_fillet`] one unit thick.
 fn fillet_plate(m: &mut Model) -> Handle<Solid> {
-    use crate::stated::*;
-    let profile = stated(vec![
-        line(p2(-3.5, -4.0), p2(1.5, -4.0)),
-        arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
-        line(p2(3.5, -2.0), p2(3.5, 4.0)),
-        line(p2(3.5, 4.0), p2(-3.5, 4.0)),
-        line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
-    ])
-    .expect("a valid profile")
-    .remove(0);
+    let profile = plate_with_a_fillet();
     let frame = nacre_ops::SketchFrame::world(m, Axis::Z);
     let OpOutput::Extrude { solid, .. } = apply(
         m,

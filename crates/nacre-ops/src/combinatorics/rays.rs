@@ -30,7 +30,7 @@ pub(crate) fn every_ray(
     for &qa in v.iter().filter(|&&x| x != p) {
         // Where the ring meets the line — the walk `trace_transversal_face` reads too.
         //
-        // ★ **A `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
+        // ★ **A straight edge's `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
         // the edge", asked with two `order_along`s — `a` the sign of `X − From` along `P ∩ R` and
         // `b` that of `X − To`, both normalized to the same direction on the same line — holds iff
         // `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a`, which the walk already
@@ -42,11 +42,15 @@ pub(crate) fn every_ray(
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
         // ★ An arc between two on-line nodes would need a cylinder table to side
-        // (`arc_departure_side`), and this road carries none — `None` is the honest answer,
-        // and the walk's `Unnameable` is the same refusal a pierce node already meets here.
+        // (`arc_departure_side`), and so would an arc whose ends do not settle how often it
+        // crosses (both on one side, or one on the line) to count them — this road carries
+        // none, so `None` is the honest answer to both, and the walk's `Unnameable` is the same
+        // refusal a pierce node already meets here.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet) {
+        let crossings =
+            |i: usize, _: Option<usize>| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(0);
+        let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
@@ -167,10 +171,13 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        // No cylinder table on this road either (see `every_ray`): an arc answers `None`.
+        // No cylinder table on this road either (see `every_ray`): an arc answers `None`, to both
+        // questions.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let features = match ring_against_plane(jd, &[], &nodes, w, on_meet) {
+        let crossings =
+            |i: usize, _: Option<usize>| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(0);
+        let features = match ring_against_plane(jd, &[], &nodes, w, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the

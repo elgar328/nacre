@@ -2,7 +2,7 @@
 //! tracer minted for it.
 //!
 //! ★ **It checks a name against coordinates, which is the one thing the namer cannot do.**
-//! `crossing_on_ruling` and `crossing_on_arc` build a [`NodeId`] from exact predicates and never
+//! `crossing_on_ruling` and `arc_crossings` build a [`NodeId`] from exact predicates and never
 //! evaluate it; this realizes the point afterwards and records its distance to all three
 //! surfaces it is supposed to lie on, plus the ruling side read in f64 against the side the
 //! ring's edge carried. A fixture then asserts the offsets are zero and the two sides agree.

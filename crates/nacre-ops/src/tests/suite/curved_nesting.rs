@@ -862,19 +862,11 @@ fn a_chain_sweeps_its_rulings() {
     }
 }
 
-/// **The ring walk cuts a run where an arc departs, and the departure's side flanks the pieces.**
-/// A hand-built ring on the unit cube's classes: `(0,0,0) → (1,0,0) → (1,1,0) → (1,1,1) →
-/// (1,0,1) → (0,0,1)`, read against the class `x = 1` — four nodes on the line between two off it
-/// (both on the `x < 1` side). With the edge `(1,1,0) → (1,1,1)` declared a departure to side σ,
-/// the line is met in two runs, `[(1,0,0),(1,1,0)]` and `[(1,1,1),(1,0,1)]`: the first is flanked
-/// by the off-line node and σ, the second by σ and the off-line node — so both pieces cross
-/// exactly when σ is the *other* side, and negating σ swaps the answer. With the edge on the line
-/// the four nodes are one run that touches and turns back. The closure supplies σ, so no
-/// cylinder is needed: this locks the walk's rule, and `arc_departure_side`'s sign is locked by
-/// the re-operation census (a wall boss's plate face is such a run with the arc's own σ).
-#[test]
-fn the_walk_cuts_a_run_at_a_departure() {
-    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane, side_of};
+/// The hand-built ring the walk's tests read — on the unit cube's classes, `(0,0,0) → (1,0,0) →
+/// (1,1,0) → (1,1,1) → (1,0,1) → (0,0,1)` — handed to `check` with the class `x = 1` and the side
+/// of it the two off-line nodes share.
+fn on_the_cube_ring(check: impl FnOnce(&Judge<'_, WorkingPlane>, [NodeId; 6], usize, i8)) {
+    use crate::combinatorics::side_of;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -913,41 +905,176 @@ fn the_walk_cuts_a_run_at_a_departure() {
     ];
     let off = side_of(&jd, &[], ring[0], x1).expect("a side");
     assert_ne!(off, 0);
-    let runs = |walk: RingWalk| -> Vec<(usize, usize, bool, i8)> {
-        let RingWalk::Met(f) = walk else {
-            panic!("the ring meets the line")
+    check(&jd, ring, x1, off);
+}
+
+/// **The ring walk cuts a run where an arc departs, and the departure's side flanks the pieces.**
+/// A hand-built ring on the unit cube's classes: `(0,0,0) → (1,0,0) → (1,1,0) → (1,1,1) →
+/// (1,0,1) → (0,0,1)`, read against the class `x = 1` — four nodes on the line between two off it
+/// (both on the `x < 1` side). With the edge `(1,1,0) → (1,1,1)` declared a departure to side σ,
+/// the line is met in two runs, `[(1,0,0),(1,1,0)]` and `[(1,1,1),(1,0,1)]`: the first is flanked
+/// by the off-line node and σ, the second by σ and the off-line node — so both pieces cross
+/// exactly when σ is the *other* side, and negating σ swaps the answer. With the edge on the line
+/// the four nodes are one run that touches and turns back. The closure supplies σ, so no
+/// cylinder is needed: this locks the walk's rule, and `arc_departure_side`'s sign is locked by
+/// the re-operation census (a wall boss's plate face is such a run with the arc's own σ).
+#[test]
+fn the_walk_cuts_a_run_at_a_departure() {
+    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane};
+    on_the_cube_ring(|jd, ring, x1, off| {
+        let runs = |walk: RingWalk| -> Vec<(usize, usize, bool, i8)> {
+            let RingWalk::Met(f) = walk else {
+                panic!("the ring meets the line")
+            };
+            f.into_iter()
+                .map(|f| match f {
+                    Feature::Run {
+                        first,
+                        len,
+                        flanks_differ,
+                        flank,
+                    } => (first, len, flanks_differ, flank),
+                    Feature::Crossing { .. } => panic!("no edge crosses x = 1 strictly"),
+                })
+                .collect()
         };
-        f.into_iter()
-            .map(|f| match f {
-                Feature::Run {
-                    first,
-                    len,
-                    flanks_differ,
-                    flank,
-                } => (first, len, flanks_differ, flank),
-                Feature::Crossing { .. } => panic!("no edge crosses x = 1 strictly"),
-            })
-            .collect()
-    };
-    for sigma in [off, -off] {
-        let got = runs(ring_against_plane(&jd, &[], &ring, x1, |i| {
-            Some(if i == 2 {
-                EdgeMeet::Departs(sigma)
-            } else {
-                EdgeMeet::On
-            })
-        }));
-        let crosses = sigma != off;
-        assert_eq!(
-            got,
-            vec![(1, 2, crosses, off), (3, 2, crosses, sigma)],
-            "σ = {sigma}, off-line side {off}"
+        for sigma in [off, -off] {
+            let got = runs(ring_against_plane(
+                jd,
+                &[],
+                &ring,
+                x1,
+                |i| {
+                    Some(if i == 2 {
+                        EdgeMeet::Departs(sigma)
+                    } else {
+                        EdgeMeet::On
+                    })
+                },
+                |_, _| Some(0),
+            ));
+            let crosses = sigma != off;
+            assert_eq!(
+                got,
+                vec![(1, 2, crosses, off), (3, 2, crosses, sigma)],
+                "σ = {sigma}, off-line side {off}"
+            );
+        }
+        let got = runs(ring_against_plane(
+            jd,
+            &[],
+            &ring,
+            x1,
+            |_| Some(EdgeMeet::On),
+            |_, _| Some(0),
+        ));
+        assert_eq!(got, vec![(1, 4, false, off)]);
+    });
+}
+
+/// **A curved edge's crossings are asked of it where its ends cannot say, and cut it into pieces
+/// that flank like departures.** The same cube ring against `x = 1`: edge 0 runs from an off-line
+/// node into the run, edge 4 out of it, edge 5 joins the two off-line nodes. Declared curved by
+/// the closure, edge 0 and edge 4 answer none or one crossing and edge 5 none or two; the walk
+/// asks exactly those three, with the end on the line, and reads:
+///
+/// - one crossing into the run: a `Crossing` from the off-line side, and the run's flank the far
+///   side — the edge arrived across the line;
+/// - two crossings between the off-line nodes: two `Crossing`s, travel order, sides alternating;
+/// - an impossible count (one between ends on one side, two into an end on the line) or none at
+///   all: `Unnameable`.
+#[test]
+fn the_walk_asks_a_curved_edge_its_crossings() {
+    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane};
+    on_the_cube_ring(|jd, ring, x1, off| {
+        let walk = |counts: [u8; 3]| {
+            let asked = std::cell::RefCell::new(Vec::new());
+            let got = ring_against_plane(
+                jd,
+                &[],
+                &ring,
+                x1,
+                |_| Some(EdgeMeet::On),
+                |i, on_end| {
+                    asked.borrow_mut().push((i, on_end));
+                    match i {
+                        0 => Some(counts[0]),
+                        4 => Some(counts[1]),
+                        5 => Some(counts[2]),
+                        _ => panic!("edge {i} was asked; its ends settle it"),
+                    }
+                },
+            );
+            let mut asked = asked.into_inner();
+            asked.sort_unstable();
+            (got, asked)
+        };
+        for (c0, c4, c5) in [0u8, 1]
+            .into_iter()
+            .flat_map(|a| [0u8, 1].into_iter().map(move |b| (a, b)))
+            .flat_map(|(a, b)| [0u8, 2].into_iter().map(move |c| (a, b, c)))
+        {
+            let (RingWalk::Met(got), asked) = walk([c0, c4, c5]) else {
+                panic!("counts {c0} {c4} {c5}: the ring meets the line")
+            };
+            assert_eq!(
+                asked,
+                [(0, Some(1)), (4, Some(4)), (5, None)],
+                "who is asked"
+            );
+            let mut want = Vec::new();
+            if c0 == 1 {
+                want.push(Feature::Crossing {
+                    edge: 0,
+                    from: off,
+                    nth: 0,
+                });
+            }
+            let before = if c0 == 1 { -off } else { off };
+            let after = if c4 == 1 { -off } else { off };
+            want.push(Feature::Run {
+                first: 1,
+                len: 4,
+                flanks_differ: before != after,
+                flank: before,
+            });
+            if c4 == 1 {
+                want.push(Feature::Crossing {
+                    edge: 4,
+                    from: -off,
+                    nth: 0,
+                });
+            }
+            if c5 == 2 {
+                want.push(Feature::Crossing {
+                    edge: 5,
+                    from: off,
+                    nth: 0,
+                });
+                want.push(Feature::Crossing {
+                    edge: 5,
+                    from: -off,
+                    nth: 1,
+                });
+            }
+            assert_eq!(got, want, "counts {c0} {c4} {c5}, off-line side {off}");
+        }
+        for counts in [[2, 0, 0], [0, 2, 0], [0, 0, 1]] {
+            assert!(
+                matches!(walk(counts).0, RingWalk::Unnameable),
+                "{counts:?} is impossible"
+            );
+        }
+        let none = ring_against_plane(
+            jd,
+            &[],
+            &ring,
+            x1,
+            |_| Some(EdgeMeet::On),
+            |i, _| (i != 5).then_some(0),
         );
-    }
-    let got = runs(ring_against_plane(&jd, &[], &ring, x1, |_| {
-        Some(EdgeMeet::On)
-    }));
-    assert_eq!(got, vec![(1, 4, false, off)]);
+        assert!(matches!(none, RingWalk::Unnameable), "an uncounted edge");
+    });
 }
 
 /// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions
