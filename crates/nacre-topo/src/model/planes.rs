@@ -40,7 +40,7 @@ impl Model {
         // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
         // for collinear points (which no production `PlaneDef` can supply); the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
-        // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
+        // ones included. A test build's `WIDE_PLANES` counts the names that took the wide vessel.
         let name = nacre_exact::plane_name_exact(points[0], points[1], points[2]);
         self.intern_plane(fallback, name, PlanePoints::Known(points), motion, sense)
     }
@@ -50,7 +50,7 @@ impl Model {
     /// A producer differs only in *how it derives the name* and *which `PlanePoints` it stores*.
     /// Everything after that — the key, the already-issued reply and its `flipped`, the arena
     /// push, the two side tables, the two counters — is the same, and was duplicated once, which
-    /// promptly cost both counters on the new road ([`WIDE_PLANES`] and [`SEEDED_HITS`] were
+    /// promptly cost both counters on the new road (`WIDE_PLANES` and `SEEDED_HITS` were
     /// simply absent from it). Sharing the tail makes losing them structurally impossible rather
     /// than a thing to remember.
     fn intern_plane(
@@ -65,19 +65,22 @@ impl Model {
             self.cache_agrees_with_sense(&fallback, &points, motion, sense) != Some(false),
             "the stated sense {sense:?} disagrees with the figure the producer built"
         );
+        #[cfg(any(test, feature = "test-util"))]
         if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
             WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         let key = name.clone().map(|n| (n, motion));
         if let Some(k) = &key {
             if let Some(&h) = self.surface_ids.get(k) {
+                #[cfg(any(test, feature = "test-util"))]
                 if (h.index() as usize) < 3 {
                     SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 // ★ The incoming statement is **dropped here** — the survivor's cache stands. Its
                 // normal is the shared name's; its anchor is the first pusher's first point, and
-                // [`Model::count_discarded_cache`] is the only measurement of how often the
+                // a test build's `count_discarded_cache` is the only measurement of how often the
                 // incoming statement would have anchored elsewhere.
+                #[cfg(any(test, feature = "test-util"))]
                 self.count_discarded_cache(h, &points, motion, &fallback);
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its

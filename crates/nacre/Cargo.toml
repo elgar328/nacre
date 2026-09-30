@@ -19,8 +19,9 @@ default = ["parallel"]
 # threads too.
 parallel = ["nacre-ops/parallel"]
 # Exposes `topo::Model::add_cuboid`, a test-only solid primitive that bypasses the
-# modelling ops. Off by default so production consumers never see it; enable it in
-# your own `[dev-dependencies]` to build fixtures at the topology layer.
+# modelling ops, and topo's push counters (every surface push then counts). Off by
+# default so production consumers never see them; enable it in your own
+# `[dev-dependencies]` to build fixtures at the topology layer.
 test-util = ["nacre-topo/test-util"]
 
 [dependencies]

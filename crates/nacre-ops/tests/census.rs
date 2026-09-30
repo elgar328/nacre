@@ -2507,9 +2507,9 @@ fn measure_census() {
     // digests may move, and a
     // `c ` row that moves without it is not explained.
     //
-    // ⚠ `cache_discarded_differing` is what the claim "the same geometry, described twice, writes
-    // the same file" rests on — measured here over the corpus, not by an experiment built to
-    // show it.
+    // ⚠ `cache_discarded_differing` is how often an interning hit's incoming statement would
+    // have anchored elsewhere — nonzero by design (a plane's anchor is the first pusher's first
+    // point), and inside one model interning keeps one handle and one answer.
     let d = nacre_topo::surface_derive_counts();
     println!("stat surface_derived {}", d.derived);
     println!("stat surface_declined {}", d.declined);

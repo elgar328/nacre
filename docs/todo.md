@@ -210,7 +210,7 @@
 
 ### 원통 캐시 유도의 적용
 
-캐시 유도의 원통 팔(`derive_surface_cache`)은 측정만 하고 버린다. 이동된 원통 69 는 유도값이 생산자 캐시와
+캐시 유도의 원통 팔(`derive_surface_cache`)은 테스트 빌드(`test-util`)에서만 계산하고, 재고 버린다. 이동된 원통 69 는 유도값이 생산자 캐시와
 비트 동일로 재졌지만, 모션 없는 원통까지 같은지는 안 쟀다 — 적용하기 전에 원통만의 `differs` 를 센다.
 
 ## 알려진 결함과 절벽
@@ -298,23 +298,6 @@ ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::re
 의 이동한 공구·보스), 이동한 몸의 모서리를 원통 축과 같은 프레임에서 읽는 클리어런스 게이트(`cylinder_classes`),
 출처가 둘인 행의 모서리를 세계에서 답하는 모서리 도로(2×2 격자). 그 테스트들은 이동이 옮겨 적히면서 옮겨 적는
 도로를 재게 됐고, 이 인구의 제품 도로는 `Through` 면이 섞인 원통 솔리드뿐이라 지금 잠금이 없다.
-
-### 곡면 유도 계측이 제품 빌드에 있다
-
-`SURFACE_*` 원자 카운터 아홉과 `pub SurfaceDeriveCounts`·`pub surface_derive_counts()`, 그리고
-`count_derivation`·`measure_derivation`·`count_discarded_cache`·`decline_reason`·`surface_bits` 에 `cfg` 게이트가 없어 릴리스·wasm
-에서도 곡면 push 마다 돈다. 원통 push 는 유도를 계산해서 버린다. 읽는 곳은 census 의 `stat` 9줄뿐이다
-(단언 0).
-
-이것은 곡면 캐시를 진실에서 유도하는 이주의 계기다 — `declined`(census 373: 사슬이 안 접히는 평면 366,
-원통 7)는 topo 가 세계 이름으로 유도하지 못한 수다. 그중 평면의 앵커·법선은 ops 깔때기가 실현하지만 폴백은 정점처럼
-남으므로(「평면 캐시의 생산자 폴백」) `fallback` 은 문 서명을 떠나지 않는다. 그래서 할 일은 삭제가 아니라 **이주가 끝나면 은퇴, 그
-전에는 `test-util` 뒤로**다.
-`WIDE_PLANES`·`climb_census`·`reject_census` 를 무조건으로 둔 이유(«`cfg(test)` 로는 다른 크레이트의 계측이
-못 읽는다», «이미 실패·상승을 정한 길이라 원자 덧셈은 잡음이다»)는 여기에 그대로 옮겨오지 않는다:
-`nacre-ops` 는 `nacre-topo` 의 `test-util` 을 dev-의존으로 켜므로 census 는 가린 뒤에도 읽고, 이 카운터는
-평범한 push 길에 있다(그 비용은 안 쟀다). 가시성을 바꾸므로 관문의 `cargo build --workspace`·`--release`·
-`cargo doc` 셋을 돈다.
 
 ### `refine_vertex_cache` 를 부르는 제품이 없다
 

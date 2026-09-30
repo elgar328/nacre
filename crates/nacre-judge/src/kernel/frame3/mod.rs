@@ -163,10 +163,10 @@ fn narrow_hp(x: &HpBounded) -> (f64, f64) {
 /// fraction of judgements the f64 filter could not settle" and "what they cost" without
 /// instrumentation scattered across the predicates.
 ///
-/// ★ Unconditional, like `nacre-topo`'s `WIDE_PLANES` — and affordable for the same kind of
-/// reason: this path has already decided to realize in arbitrary precision, so a relaxed atomic
-/// add is noise beside the BigFloat work it is about to do. (`#[cfg(test)]` would not serve: the
-/// measurements that read these live in another crate.)
+/// ★ Unconditional, like `nacre-ops`' `reject_census`, and for the same kind of reason: this path
+/// has already decided to realize in arbitrary precision, so a relaxed atomic add is noise beside
+/// the BigFloat work it is about to do. (A reader in another crate is not the reason — a
+/// `test-util` gate would reach it.)
 pub mod climb_census {
     use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 

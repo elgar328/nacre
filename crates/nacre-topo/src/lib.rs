@@ -318,12 +318,14 @@ type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
 /// differences, so `Rat = Ratio<i128>` inputs admit answers to roughly `2^2291`; today's models
 /// stay far inside `i128` because they are written in short decimals, and the count reflects that
 /// rather than any guarantee.
+#[cfg(any(test, feature = "test-util"))]
 pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// How many pushes interned onto a **seeded world plane** (handles 0–2) — the census stat that
 /// explains a plane-digest diff the wide counter cannot: a seeding-shaped change moves
 /// survivors by *name collision*, not by width, and a falsifiability bridge needs a number for
 /// that population too.
+#[cfg(any(test, feature = "test-util"))]
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// **How far the realization road reaches for surfaces** — the one road to a realization,
@@ -339,6 +341,12 @@ pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// Read through [`surface_derive_counts`]; the census prints them as `stat` rows, the same
 /// falsifiability bridge [`WIDE_PLANES`] and [`SEEDED_HITS`] are. They are process-global and
 /// never reset, so a number means "over everything this process built".
+///
+/// ★ **A test build's instrument** (`test-util`), like the two counters beside it: a product
+/// build pushes surfaces without counting, and computes no derivation it does not apply. It
+/// retires with the migration it measures — when `declined` is zero or justified, the producer's
+/// cache leaves the push doors and nothing is left to count.
+#[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SurfaceDeriveCounts {
     /// Pushes whose cache the truth could derive (`Model::derive_surface_cache`, private — so
@@ -368,26 +376,38 @@ pub struct SurfaceDeriveCounts {
     /// Of `derived`, how many differ bit-for-bit from what the producer stated — the census
     /// `in:` diff this cell predicts before it causes it.
     pub differs: u64,
-    /// Interning hits whose **discarded** cache differs bit-for-bit from the survivor's — the
-    /// only measurement of the determinism claim ("the same geometry writes the same file") on
-    /// the *product* population rather than on an experiment built to show it.
+    /// Interning hits whose **discarded** cache differs bit-for-bit from the survivor's — how
+    /// often the incoming statement would have anchored elsewhere (or, where the truth places no
+    /// anchor, cached anything else, sense included). Nonzero by design: the anchor is the first
+    /// pusher's first point, so it depends on which statement came first — inside one model
+    /// interning keeps that to one handle and one answer.
     pub discarded_differing: u64,
 }
 
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DERIVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DIFFERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DISCARDED_DIFFERING: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_UNNAMED: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_WIDE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_MOTION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_ARITH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_CYLINDER: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// A snapshot of [`SurfaceDeriveCounts`] — see its doc for what each number means.
+#[cfg(any(test, feature = "test-util"))]
 pub fn surface_derive_counts() -> SurfaceDeriveCounts {
     use std::sync::atomic::Ordering::Relaxed;
     SurfaceDeriveCounts {
@@ -407,6 +427,7 @@ pub fn surface_derive_counts() -> SurfaceDeriveCounts {
 /// `PartialEq`'s f64 equality (`-0.0 == 0.0`, and a `NaN` that never compares equal to itself).
 /// A plane is its origin and unit normal — what the cache realizes, and all of it, so the last four
 /// slots are zero; a cylinder is its axis origin and direction, its `ref_dir` and its radius.
+#[cfg(any(test, feature = "test-util"))]
 fn surface_bits(s: &nacre_geom::Surface) -> [u64; 10] {
     let pack = |a: [f64; 3], b: [f64; 3], c: [f64; 3], d: f64| {
         [

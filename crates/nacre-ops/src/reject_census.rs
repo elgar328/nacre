@@ -20,10 +20,10 @@
 //! needed: "is this guard swallowed by its caller?" is a **static** question, answered by reading
 //! the caller, not by counting.
 //!
-//! ★ **Unconditional, like `nacre_topo::WIDE_PLANES` and `nacre_judge::climb_census`** — and for
-//! their reason: `#[cfg(test)]` would not serve, because the measurements that read this live in
-//! another crate (an integration test links the non-test build). The cost is a mutex on a path
-//! that has already decided to fail.
+//! ★ **Unconditional, like `nacre_judge::climb_census`** — and for its reason: the cost is a mutex
+//! on a path that has already decided to fail, noise beside the work that decision ends. (A reader
+//! in another crate is not the reason: a `test-util` gate reaches integration tests, as
+//! `nacre_topo`'s push counters show — they sit on the ordinary push path, so they are gated.)
 //!
 //! # Reading it
 //!

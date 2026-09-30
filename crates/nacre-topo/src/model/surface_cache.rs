@@ -1,5 +1,6 @@
-//! The surface cache is *derived* from the truth: the raw pushes, the derivation, and the
-//! counters that measure where it declines.
+//! The surface cache is *derived* from the truth: the raw pushes and the derivation, and — in a
+//! test build (`test-util`), in the second `impl` block — the counters that measure where it
+//! declines.
 
 use super::*;
 
@@ -13,8 +14,8 @@ impl Model {
     /// pusher brought, stands only where the derivation declines (no world name: a chain that does
     /// not fold, a mixed-frame `Through`). `nacre-ops` realizes that cache from the truth where it
     /// can and hands over the producer's figure where it cannot. Unlike a vertex's cache, a plane's
-    /// does not say which it holds: `surface_derive_counts` counts this door's declines, not what
-    /// the pusher brought.
+    /// does not say which it holds: a test build's `surface_derive_counts` counts this door's
+    /// declines, not what the pusher brought.
     ///
     /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
@@ -105,14 +106,16 @@ impl Model {
     /// now carries a derived normal — the one fact [`Model::push_plane_raw`] needs to know that
     /// the sense is already the truth's.
     ///
-    /// ★ Counting reads the derivation computed here, against the value the producer stated, so
-    /// the census `stat` rows keep meaning "how far the producer's value was from the truth's".
+    /// ★ In a test build, counting reads the derivation computed here against the value the
+    /// producer stated, so the census `stat` rows keep meaning "how far the producer's value was
+    /// from the truth's".
     ///
-    /// ⚠ Planes only. [`Model::push_cylinder_raw`] calls [`Model::measure_derivation`]: the
-    /// cylinder arm is derived and **thrown away** — whether applying it moves any cache bit is
+    /// ⚠ Planes only. A test build's [`Model::push_cylinder_raw`] derives the cylinder arm and
+    /// **throws it away** (`measure_derivation`) — whether applying it moves any cache bit is
     /// measured for the moved cylinders only (bit-identical), not for the unmoved ones.
     fn apply_derivation(&mut self, h: Handle<Surface>) -> bool {
         let derived = self.derive_surface_cache(h);
+        #[cfg(any(test, feature = "test-util"))]
         self.count_derivation(h, derived.as_ref());
         match derived {
             Some(realized) => {
@@ -140,6 +143,7 @@ impl Model {
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
+        #[cfg(any(test, feature = "test-util"))]
         self.measure_derivation(h);
         h
     }
@@ -161,8 +165,9 @@ impl Model {
     /// * **Cylinder** — the world statement ([`Model::world_cylinder_def`]'s, without its
     ///   postcondition — this reader measures the disagreement it would assert away) realized: `origin` and
     ///   `radius` descend exactly; the axis direction and `ref_dir` do not
-    ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today —
-    ///   [`Model::push_cylinder_raw`] only measures it.
+    ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today — only a
+    ///   test build's [`Model::push_cylinder_raw`] computes it, to measure it; a product build
+    ///   never reaches it.
     ///
     /// ★ **What the anchor buys** (measured): a producer-stated anchor on a tilted plane
     /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
@@ -250,7 +255,12 @@ impl Model {
         };
         Some(first.map(|x| x.to_f64()))
     }
+}
 
+/// The counters of [`crate::SurfaceDeriveCounts`] — a test build's instrument (`test-util`); a
+/// product build pushes surfaces without them.
+#[cfg(any(test, feature = "test-util"))]
+impl Model {
     /// Count what [`Model::derive_surface_cache`] would do at this push, and change nothing —
     /// the measuring half of [`Model::apply_derivation`], for the doors that do not apply it.
     fn measure_derivation(&self, h: Handle<Surface>) {
@@ -295,8 +305,9 @@ impl Model {
     }
 
     /// Count an interning hit whose incoming statement would have written a **different** cache
-    /// from the survivor's — the product-population measurement of "the same geometry, described
-    /// twice, writes the same file".
+    /// from the survivor's — how often the incoming statement would have anchored elsewhere. The
+    /// anchor is the first pusher's first point ([`Model::derive_surface_cache`]'s «not a function
+    /// of the geometry»), so a nonzero count is the design, not a defect.
     ///
     /// The survivor's normal is its world name's, which the incoming statement shares (one name,
     /// one handle); only the anchor depends on which statement came first. So where the incoming
