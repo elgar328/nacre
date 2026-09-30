@@ -248,10 +248,11 @@ impl Model {
     ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
     ///   uphold this (`boolean`'s edge welding keys arcs in CCW order); the curve stored here is
-    ///   the whole circle either way. Both consumers read it the same way: tessellation's
+    ///   the whole circle either way. Every consumer reads it the same way: tessellation's
     ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
-    ///   θ, and `validate`'s `loop_winding` adds each arc's circular segment with Δθ from the
-    ///   same order.
+    ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
+    ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
+    ///   `outer_tri`.
     /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, no edge carries it.
     pub fn derive_edge_curve(
         &self,

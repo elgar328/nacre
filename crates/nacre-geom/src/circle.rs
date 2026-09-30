@@ -126,7 +126,7 @@ impl Circle {
     /// The area of the **circular segment** spanned by a CCW angle `dtheta` ∈ [0, 2π] — the
     /// region between the chord and the arc: `r²(Δθ − sin Δθ)/2`. This is the one spelling of
     /// the number every arc consumer adds to a chord polygon (props' integrals, validate's
-    /// winding witness); the sign — does this traversal add or remove the bulge — is the
+    /// winding witness, the boolean's `outer_tri`); the sign — does this traversal add or remove the bulge — is the
     /// caller's, read from the `[from, to]`-CCW convention.
     #[inline]
     pub fn segment_area(self, dtheta: f64) -> f64 {

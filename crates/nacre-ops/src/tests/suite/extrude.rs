@@ -79,6 +79,11 @@ fn concave_l_profile_is_valid() {
 /// is convex**, and the four fixtures below would pass that reading by accident —
 /// none starts its cap loop one vertex before a reflex corner. `rotated_l_prism`
 /// does, and it is the same solid.
+///
+/// ★ And a loop's **arcs** wind it too: the three-quarter disk's caps are three points — the
+/// centre and the arc's two ends — whose chord triangle turns the other way round from the face,
+/// the long arc enclosing the region on the chords' far side. Both caps walk the arc, in
+/// opposite directions, in the world frame and on a tilted one.
 #[test]
 fn outward_normals_agree_with_their_orientation() {
     let mut cube = Model::new();
@@ -86,14 +91,48 @@ fn outward_normals_agree_with_their_orientation() {
     let (ml, sl) = l_prism();
     let (mu, su) = u_prism();
     let (mr, sr) = rotated_l_prism();
+    let sector = |tilted: bool| {
+        let mut m = Model::new();
+        let frame = if tilted {
+            pythagorean_frame(&mut m, Point3::from_array([0.0; 3]))
+        } else {
+            SketchFrame::world(&m, nacre_exact::Axis::Z)
+        };
+        let profile = stated(vec![
+            line(p2(0.0, 0.0), p2(1.0, 0.0)),
+            arc_turns(p2(0.0, 0.0), p2(1.0, 0.0), 3),
+            line(p2(0.0, -1.0), p2(0.0, 0.0)),
+        ])
+        .unwrap()
+        .remove(0);
+        let Ok(OpOutput::Extrude { solid, .. }) = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 1.0,
+            },
+        ) else {
+            panic!("the three-quarter disk extrudes")
+        };
+        m.rebuild_adjacency();
+        (m, solid)
+    };
+    let (mq, sq) = sector(false);
+    let (mt, st) = sector(true);
     for (name, m, s) in [
         ("cube", &cube, c),
         ("l_prism", &ml, sl),
         ("u_prism", &mu, su),
         ("rotated_l_prism", &mr, sr),
+        ("three-quarter disk", &mq, sq),
+        ("three-quarter disk, tilted", &mt, st),
     ] {
-        for pi in &collect_planes(m, s).unwrap() {
-            let pi = pi.plane();
+        for row in &collect_planes(m, s).unwrap() {
+            // A lateral has no one normal to agree with.
+            let crate::planes::FaceRow::Plane(pi) = row else {
+                continue;
+            };
             let (tri, _) = crate::planes::outer_tri(m, m.face(pi.face.expect("a model face")))
                 .expect("a corner");
             let n_out = pi.plane.normal() * f64::from(pi.orient_sign);

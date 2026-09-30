@@ -10,11 +10,11 @@
 //! against the operands' own, and `A ∩ B` is the area the wall cuts off — a circular segment
 //! or a band, stated in closed form — over the height the two share.
 //!
-//! The second shape — one crossing into an end on the wall — is locked where it is read (the
-//! walk's table in `curved_nesting`, the trace of a half disk's cap against `x + y = 1` in
-//! `tests::arrangement::curved`): the booleans that reach it stop elsewhere first — the half
-//! disk against `x + y = 1` at `RulingBoundNotYet`, and the three-quarter disk against its own
-//! radius at the debug build's winding check (`todo.md`).
+//! The second shape — one crossing into an end on the wall — is the three-quarter disk's cap read
+//! against its own radius class `x = 0`, which every boolean of that disk traces; it is locked
+//! there end to end, and where it is read (the walk's table in `curved_nesting`, the trace of a
+//! half disk's cap against `x + y = 1` in `tests::arrangement::curved` — the booleans on that
+//! pair stop at `RulingBoundNotYet` first).
 
 use crate::common::*;
 use crate::stated::*;
@@ -156,6 +156,29 @@ fn families() -> Vec<Family> {
     ]
 }
 
+/// One placement's six booleans all built — `bodies(i)` bodies for boolean `i` — and their
+/// volumes adding up against the operands', with `A ∩ B` the area the wall cuts off over the
+/// height the two share.
+fn built(label: &str, shared: f64, six: &Six, common_area: f64, bodies: impl Fn(usize) -> usize) {
+    let (six, (va, vb)) = six;
+    let v = |i: usize| match &six[i] {
+        Ok((n, v)) => {
+            assert_eq!(*n, bodies(i), "{label}: [{i}] bodies");
+            *v
+        }
+        Err(reason) => panic!("{label}: [{i}] {reason:?}"),
+    };
+    let near = |x: f64, y: f64, what: &str| {
+        assert!((x - y).abs() < 1e-9, "{label}: {what}: {x} vs {y}");
+    };
+    near(v(0), v(1), "the Fuse commutes");
+    near(v(4), v(5), "Common commutes");
+    near(v(0) + v(4), va + vb, "Fuse + Common = |A| + |B|");
+    near(v(2) + v(4), *va, "(A − B) + Common = |A|");
+    near(v(3) + v(4), *vb, "(B − A) + Common = |B|");
+    near(v(4), common_area * shared, "Common");
+}
+
 /// ★ **Every family builds, all six booleans, in both frames and at both heights** — one body
 /// each, except `B − A` where the plate's cut leaves the half disk's segment standing apart from
 /// the frame around it (`B` inside `A`'s span); valid, the volumes adding up against the operands',
@@ -164,30 +187,77 @@ fn families() -> Vec<Family> {
 fn a_wall_crossing_an_arc_twice_builds() {
     let mut ran = 0;
     for f in families() {
-        for (label, shared, (six, (va, vb))) in every_six(&f) {
-            let v = |i: usize| match &six[i] {
-                Ok((n, v)) => {
-                    let want = if f.name.starts_with("a plate") && i == 3 && shared == 1.0 {
-                        2
-                    } else {
-                        1
-                    };
-                    assert_eq!(*n, want, "{label}: [{i}] bodies");
-                    *v
+        for (label, shared, six) in every_six(&f) {
+            let plate = f.name.starts_with("a plate");
+            built(&label, shared, &six, f.common_area, |i| {
+                if plate && i == 3 && shared == 1.0 {
+                    2
+                } else {
+                    1
                 }
-                Err(reason) => panic!("{label}: [{i}] {reason:?}"),
-            };
-            let near = |x: f64, y: f64, what: &str| {
-                assert!((x - y).abs() < 1e-9, "{label}: {what}: {x} vs {y}");
-            };
-            near(v(0), v(1), "the Fuse commutes");
-            near(v(4), v(5), "Common commutes");
-            near(v(0) + v(4), va + vb, "Fuse + Common = |A| + |B|");
-            near(v(2) + v(4), va, "(A − B) + Common = |A|");
-            near(v(3) + v(4), vb, "(B − A) + Common = |B|");
-            near(v(4), f.common_area * shared, "Common");
+            });
             ran += 6;
         }
     }
     assert_eq!(ran, 5 * 2 * 2 * 6, "the family");
+}
+
+/// The unit disk less its fourth quadrant — the arc from `(1, 0)` three quarter turns to
+/// `(0, −1)`, and the two radii.
+fn three_quarter_disk() -> Profile2d {
+    stated(vec![
+        line(p2(0.0, 0.0), p2(1.0, 0.0)),
+        arc_turns(p2(0.0, 0.0), p2(1.0, 0.0), 3),
+        line(p2(0.0, -1.0), p2(0.0, 0.0)),
+    ])
+    .expect("a three-quarter disk")
+    .remove(0)
+}
+
+/// ★ **A three-quarter disk, whose arc winds its cap.** Its caps are three points — the centre and
+/// the arc's two ends — whose chord triangle turns the other way round from the face, and its own
+/// radius class `x = 0` meets the cap's arc once inside, at `(0, 1)`, on the way into the end
+/// `(0, −1)` that lies on the line. Two boxes: the wall `x = 0.5` across the arc once (`A ∩ B` is
+/// the upper half of the segment beyond `x = 0.5`) and the wall `y = 0.5` across it twice (the
+/// whole segment beyond `y = 0.5`). Every boolean builds one body, the volumes adding up — except
+/// on the tilted frame with `B` inside `A`'s span, where all six refuse by the chart's name
+/// (`CylinderGateUndecided`: a lateral cell whose two ends read different chambers, recorded in
+/// `todo.md`); that name is pinned here, cell by cell.
+#[test]
+fn a_three_quarter_disk_builds_but_on_the_tilted_frame_inside_its_span() {
+    let s = segment(0.5);
+    let sector = [
+        Family {
+            name: "a three-quarter disk, the wall x = 0.5 across its arc once",
+            a: three_quarter_disk,
+            b: &[[0.5, -2.0], [2.0, -2.0], [2.0, 2.0], [0.5, 2.0]],
+            common_area: s / 2.0,
+        },
+        Family {
+            name: "a three-quarter disk, the wall y = 0.5 across its arc twice",
+            a: three_quarter_disk,
+            b: &[[-2.0, 0.5], [2.0, 0.5], [2.0, 2.0], [-2.0, 2.0]],
+            common_area: s,
+        },
+    ];
+    let mut refused = 0;
+    for f in &sector {
+        // `every_six`'s order: the world frame then the tilted one, each `B` inside the span
+        // then past both caps.
+        for (k, (label, shared, six)) in every_six(f).into_iter().enumerate() {
+            let tilted_inside = k == 2;
+            if tilted_inside {
+                for (i, r) in six.0.iter().enumerate() {
+                    assert!(
+                        matches!(r, Err(RejectReason::CylinderGateUndecided)),
+                        "{label}: [{i}] the refusal moved — {r:?}"
+                    );
+                    refused += 1;
+                }
+                continue;
+            }
+            built(&label, shared, &six, f.common_area, |_| 1);
+        }
+    }
+    assert_eq!(refused, 2 * 6, "the tilted cells inside the span");
 }

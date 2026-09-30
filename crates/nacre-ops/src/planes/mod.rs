@@ -338,7 +338,8 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 }
 
 /// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
-/// point came from — ordered so their right-hand normal points **out** of the solid.
+/// point came from — ordered so their right-hand normal points **out** of the solid: the way the
+/// whole loop winds, its arcs read with its chords (see the fold below).
 /// ★ No production consumer reads the handles any more (the toleranced predicates take their
 /// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
 /// the `None` of a loop that spreads no three points is answered by the caller — the plane's
@@ -357,13 +358,6 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         .collect();
     let pts: Vec<Point3> = verts.iter().map(|&vh| model.vertex_point(vh)).collect();
     let n = pts.len();
-    // The turn at one corner does not know which way the ring winds. Every b-rep loop is
-    // CCW about its face's outward normal, but at a *reflex* corner the local turn
-    // opposes the global winding, so three consecutive points can hand back an inward
-    // normal. The Newell sum has no single corner to be fooled by.
-    let newell = (0..n).fold(Vector3::zero(), |acc, i| {
-        acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
-    });
     // ★★★ **The widest corner, not the first non-flat one.** A loop carries vertices that do not
     // turn: two faces sharing an edge must list the same vertices along it, so a pad that splits a
     // neighbour's face leaves this loop with points strung along one straight line. Three of those
@@ -387,6 +381,36 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     if best <= 0.0 {
         return None;
     }
+    // The turn at one corner does not know which way the ring winds. Every b-rep loop is
+    // CCW about its face's outward normal, but at a *reflex* corner the local turn
+    // opposes the global winding, so three consecutive points can hand back an inward
+    // normal. The Newell sum has no single corner to be fooled by.
+    //
+    // ★★ **And its arcs have to be read, or an arc fools it the way a corner fools a turn.** The
+    // chord polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is
+    // three points whose triangle turns the other way round, the region between the chords and the
+    // long arc lying on the chords' other side. So every circle half-edge adds its **circular
+    // segment**'s area vector: `Circle::segment_area` about the circle's own normal, `Δθ` from the
+    // edge's stored `[from, to]` order (counter-clockwise about the axis, the arc convention;
+    // `Circle::angle_of` is the one spelling of the angle), signed by which way this loop walks it.
+    // The numbers are `nacre-geom`'s; the fold is the one `nacre-validate`'s winding witness and
+    // `nacre-props`' integrals make on their own, independently of this kernel — with their
+    // premise: an arc near zero length whose angle difference rounds below zero reads as nearly a
+    // whole turn.
+    let chords = (0..n).fold(Vector3::zero(), |acc, i| {
+        acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
+    });
+    let newell = face.outer.half_edges.iter().fold(chords, |acc, he| {
+        let nacre_geom::Curve::Circle(c) = model.edge_curve(he.edge) else {
+            return acc;
+        };
+        let [from, to] = model.edge(he.edge).vertices;
+        let dt = (c.angle_of(model.vertex_point(to)) - c.angle_of(model.vertex_point(from)))
+            .rem_euclid(std::f64::consts::TAU);
+        let sign = if he.forward { 1.0 } else { -1.0 };
+        // The Newell fold is twice the area vector; the segment is scaled to match.
+        acc + c.normal() * (2.0 * sign * c.segment_area(dt))
+    });
     let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
     let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
     // Same b/c swap for coords and handles, so the k-th point and the k-th handle stay aligned.

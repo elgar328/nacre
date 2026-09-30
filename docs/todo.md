@@ -221,15 +221,13 @@
 
 사전식 최소 노드가 영역의 극점이 아닌 링(호가 최소를 넘어서는 경우)에 대한 일반 답이 없다. 그런 링이 스위트에 실재한다(`design.md` 「감김과 방향」). 같은 자리의 빚: `frame_sign` 과 옆면 `orient_sign` 의 부호를 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다.
 
-### 꼭짓점만 읽는 감김 단언 — `outer_tri`
+### 부채꼴, 기운 틀·스팬 안 — 옆면 칸의 판독 불일치 `CylinderGateUndecided`
 
-`planes/table.rs` 의 debug 단언은 면의 바깥 루프 감김을 `planes::outer_tri`(꼭짓점만의 Newell 합)로 읽는다.
-호가 꼭짓점 다각형의 감김을 뒤집는 면 — 270° 부채꼴 캡(꼭짓점 셋: 중심과 호의 두 끝) — 에서 단언이 거짓으로
-멈춘다. release 는 빌드되고 부피가 맞는다(증인의 향은 진실의 `sense` 가 정하고, `tri` 를 읽는 것은 이 단언뿐).
-그래서 부채꼴 단면의 불리언(kit `arc({ sweep: 270 })` 을 중심으로 닫은 단면, 원기둥 − 사분면 상자의 결과를 다시
-자르기)은 debug 스위트에 잠글 수 없다 — 호를 한 번 넘고 선 위 끝점에 닿는 걸음의 틈이 끝까지 가는 배치가 그것이라
-그 틈은 걸음·추적 수준에서만 잠겨 있다(`tests/coverage/arc_crossings.rs` 의 머리말). 위 항목과 같은 부류다: 호가
-있는 링을 꼭짓점만으로 읽는다.
+270° 부채꼴(단위 원의 `(1, 0)` → 270° → `(0, −1)` + 반지름 둘, 높이 2) 기둥을 `pythagorean_frame` 위에 짓고, 상자가
+그 높이 안(`0.5…1.5`)에 서면 여섯 불리언이 모두 `CylinderGateUndecided`(NotSupported)다 — 옆면 칸의 두 끝이 서로
+다른 방을 읽는다(`arrangement/cyl_chart/emit.rs` 의 «a present cell whose chamber could not be read»). 월드 틀, 또는
+상자가 두 캡을 넘으면 빌드된다. 반원판은 같은 배치에서 빌드된다. 원인은 재지 않았다.
+`tests/coverage/arc_crossings.rs` 의 부채꼴 테스트가 그 칸들을 이 이름으로 고정한다.
 
 ### 접선 행이 참인 접촉을 말하지 않는 자리 — 거짓 `SelfTouchingResult`
 

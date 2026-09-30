@@ -320,15 +320,16 @@ pub(crate) fn collect_planes(
             };
             // The loop's winding, cross-checked against the flag it stated. `validate`
             // pins this same invariant as `FaceMisoriented`; here it runs at every
-            // boolean in debug. A failure is a producer bug — a lying flag or a
-            // mis-wound loop — never a conditioning artifact (`outer_tri` picks the
-            // widest corner).
+            // boolean in debug, on its own reading — that separate check is why it
+            // exists. A failure is a producer bug — a lying flag or a mis-wound loop —
+            // never a conditioning artifact (`outer_tri` picks the widest corner) and
+            // never an arc: `outer_tri` winds by the loop's chords and arcs together, as
+            // `validate` does, from the one spelling of the numbers in `nacre-geom`.
             //
             // ★ This assertion needs three points, so it says nothing about a **disk**
             // face (one closed rim) or about a face's **holes**. Those belong to the
             // same invariant and `validate` owns them — it reads a rim's circle and
-            // every inner loop. Replicating that here would be a second spelling of one
-            // rule, which is the shape this kernel keeps having to undo.
+            // every inner loop.
             debug_assert!(
                 (tri[1] - tri[0])
                     .cross(tri[2] - tri[0])

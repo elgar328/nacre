@@ -2,7 +2,8 @@ use super::*;
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 ///
 /// `+1` is the side the witness triangle's right-hand normal points to — that is `n_out(q)`, the face's
-/// **outward** side, since `outer_tri` winds the triangle outward.
+/// **outward** side, since the class table winds that witness (`tri_pt3`) to the face's outward by
+/// the plane's own truth.
 ///
 /// ★ **That is not the frame the arrangement's labels are stated in.** A plane class's
 /// `[*_above, *_below]` labels are about the class root's **stored surface normal** — the convention
