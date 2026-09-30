@@ -110,9 +110,10 @@
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
   `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
-- **안쪽 쐐기**(두 벽 모두 원통으로 들어가는 꼭짓점)의 `SuspectedDefect` 4: 쐐기의 밑면이 원통 캡과 같은
-  평면이고(림 배치) 꼭짓점이 차트 솔기 위면 `A − B` 가 `ZeroLengthEdge` 다(틀 넷). 나머지는 빌드되거나
-  (`A − B` 는 두 몸통) 이름으로 거절된다(`NonManifoldResultEdge` — 한 솔리드가 선에서 스스로 닿는다).
+- **안쪽 쐐기**(두 벽 모두 원통으로 들어가는 꼭짓점)의 `A − B` 는 빌드되거나(두 몸통) 참의 이름으로
+  거절된다(`NonManifoldResultEdge` — 한 솔리드가 꼭짓점 선에서 스스로 닿는다). 남는 갈림 하나: 꼭짓점이 차트
+  솔기 위이고 쐐기가 원통 윗캡 너머로 뻗으면(`PastTop`, 틀 넷) 옆면 사이클 분류가 `ChainContacts` 로 기권해
+  `ArcBoundNotYet` 이다 — 참은 같은 `NonManifoldResultEdge` 다.
 
 ### 비스듬한 평면 × 원통 — `ObliqueCylinderCut`
 

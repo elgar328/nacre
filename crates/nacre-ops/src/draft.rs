@@ -592,8 +592,7 @@ impl HeldRims {
 ///
 /// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the
 /// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
-/// — the lateral's corner there — turning its `A − B` from `ZeroLengthEdge` into
-/// `ArcBoundNotYet` (measured).
+/// — the lateral's corner there — and moved that `A − B`'s refusal to `ArcBoundNotYet` (measured).
 ///
 /// ★ A circle left with **one** node keeps the split's nodes — the record as it was before this
 /// derivation, so an input it cannot improve answers as it did rather than by a new refusal (one

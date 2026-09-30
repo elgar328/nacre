@@ -374,9 +374,10 @@ fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
 /// (`NonManifoldResultEdge`, or `ArcBoundNotYet` on the seam with `B` past the top); where `B`
 /// cuts `A` through (past both caps) it is two solids. **It is never one body** — the lateral run
 /// through the line as one face would hide the touch under a closed shell. Common, `B − A` and
-/// the Fuse build one body; the volumes add up. With `B`'s base on `A`'s cap (lift 0) and the apex
-/// on the seam, `A − B` is refused `ZeroLengthEdge`: `SuspectedDefect`, 4 booleans (the frames),
-/// pinned by count.
+/// the Fuse build one body; the volumes add up. The apex on the seam names the touch as it does
+/// off it — with `B`'s base on `A`'s cap too, where the lateral's slit from the base rim to the
+/// hole has no length (both end at the apex) and the shell guard speaks; only past the top does
+/// the seam keep `ArcBoundNotYet`. No placement answers `SuspectedDefect`.
 #[test]
 fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     let on_the_seam: &[[f64; 2]] = &[[1.0, 0.0], [-3.0, 3.0], [-3.0, -3.0]];
@@ -386,7 +387,6 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
         &[("on the seam", on_the_seam), ("off the seam", off_the_seam)],
     );
     assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
-    let mut defects = 0;
     for (p, six) in &all {
         for (i, r) in six.iter().enumerate() {
             match (i, r) {
@@ -395,16 +395,6 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
                     assert_eq!(p.height, Height::PastBoth, "{p}: A − B built");
                 }
                 (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
-                (_, Err(reason)) if reason.class() == RejectClass::SuspectedDefect => {
-                    assert!(
-                        i == 2
-                            && p.family == "on the seam"
-                            && p.height == Height::OnBase
-                            && *reason == RejectReason::ZeroLengthEdge,
-                        "{p}: [{i}] {reason:?}"
-                    );
-                    defects += 1;
-                }
                 (2, Err(reason)) => assert!(
                     match reason {
                         RejectReason::NonManifoldResultEdge => true,
@@ -420,7 +410,6 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
         }
         identities(p, six);
     }
-    assert_eq!(defects, 4, "the rim placement's refusals");
 }
 
 /// ★ **The corner touching `A` from outside — a line contact.** Common would be empty, Cut the

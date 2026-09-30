@@ -316,8 +316,9 @@ pub enum RejectReason {
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is what
     /// `Model::push_edge` refusing a zero-length line (`EdgeDecline::Coincident`) becomes, so a
-    /// degenerate one is reported
-    /// rather than built. `SeamAlias` catches the known cause earlier, so this has no firing test.
+    /// degenerate one is reported rather than built. A lateral's seam slit whose two ends are one
+    /// vertex is not asked for at all (no edge — the contact is shared), so what is left is two
+    /// handles at one point, the cause `SeamAlias` catches earlier; this has no firing test.
     ZeroLengthEdge,
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
     /// vertex, which the substrate cannot express.
@@ -662,9 +663,15 @@ pub enum RejectReason {
     ///   is spelled rather than assumed away;
     /// * a **chain rim with no seam contact** — a chain winds once about the axis, so it
     ///   passes the seam somewhere and the split named that point; a chain the assembly cannot
-    ///   attach its slit to is a producer inconsistency, named.
+    ///   attach its slit to is a producer inconsistency, named;
+    /// * a **lateral whose outer walk is pinched at a seam contact** — a hole or the other rim
+    ///   sharing the rim's contact, so the slit between them has no length and is no edge. Every
+    ///   other refusal of the assembly speaks first (a result touching itself along that ruling
+    ///   is `NonManifoldResultEdge`); what passes them all is a walk the lateral's reader
+    ///   (`combinatorics::lateral_cycles`) would cut wrong, so it does not leave. No boolean in
+    ///   the suite or the census reaches it.
     ///
-    /// "Not yet" is still the literal truth for all five.
+    /// "Not yet" is still the literal truth for each of them.
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///

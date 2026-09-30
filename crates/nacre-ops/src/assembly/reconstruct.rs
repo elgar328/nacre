@@ -405,6 +405,8 @@ pub(crate) fn reconstruct(
 
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
+    // Whether a lateral's outer walk passed a contact without a slit (`band_loop`'s zero slit).
+    let pinched = std::cell::Cell::new(false);
     'faces: for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         let face_surf = match lf.surf {
@@ -530,6 +532,7 @@ pub(crate) fn reconstruct(
         // other. No side test, no sign. It is also what keeps the `seam_is_node` shape honest:
         // there the seam segment *is* the hole's own ruling, and it lands in the climb as a single
         // hole edge used **once**, rather than being minted again as a slit and used a third time.
+        // And where the hole's contact *is* the rim's, there is no slit to mint at all (`slit`).
         //
         // The hole is **consumed** — it stops being an inner loop, because it is now part of the
         // outer walk. A hole that does not meet the seam is left alone.
@@ -650,47 +653,44 @@ pub(crate) fn reconstruct(
                     })
                 }
             };
-            let slit = |model: &mut Model, a, b| {
+            // ★ **A slit whose two ends are one vertex is no edge.** The rim's contact *is* the
+            // hole's (or the other rim's): the walk passes from one to the other at that vertex
+            // and visits it twice — the face is pinched there. The ends compare as handles, not
+            // points: two handles at one point are the `SeamAlias` defect and stay a refused
+            // edge. Nothing is minted and the pinch is recorded (`pinched` — the refusal at the
+            // end of this function).
+            let slit = |model: &mut Model,
+                        a: Handle<Vertex>,
+                        b: Handle<Vertex>|
+             -> Result<Option<Handle<Edge>>, BoolError> {
+                if a == b {
+                    pinched.set(true);
+                    return Ok(None);
+                }
                 model
                     .push_edge(Edge::carrier_pair(lat, lat), [a, b])
+                    .map(Some)
                     .map_err(edge_refused)
             };
-            let (seam_edge, seam_hi, up, down) = match cut {
-                None => {
-                    let e = slit(model, v_lo, v_hi)?;
-                    (e, e, Vec::new(), Vec::new())
-                }
-                Some((up, down, lower, upper)) => {
-                    let a = slit(model, v_lo, lower)?;
-                    let b = slit(model, upper, v_hi)?;
-                    (a, b, up, down)
-                }
+            let (lower_slit, upper_slit, up, down) = match cut {
+                None => (slit(model, v_lo, v_hi)?, None, Vec::new(), Vec::new()),
+                Some((up, down, lower, upper)) => (
+                    slit(model, v_lo, lower)?,
+                    slit(model, upper, v_hi)?,
+                    up,
+                    down,
+                ),
             };
-            let bridged = seam_edge != seam_hi;
+            let pass =
+                |e: Option<Handle<Edge>>, forward: bool| e.map(|edge| HalfEdge { edge, forward });
             let mut half_edges = lo_hes;
-            half_edges.push(HalfEdge {
-                edge: seam_edge,
-                forward: true,
-            });
+            half_edges.extend(pass(lower_slit, true));
             half_edges.extend(up);
-            if bridged {
-                half_edges.push(HalfEdge {
-                    edge: seam_hi,
-                    forward: true,
-                });
-            }
+            half_edges.extend(pass(upper_slit, true));
             half_edges.extend(hi_hes);
-            if bridged {
-                half_edges.push(HalfEdge {
-                    edge: seam_hi,
-                    forward: false,
-                });
-            }
+            half_edges.extend(pass(upper_slit, false));
             half_edges.extend(down);
-            half_edges.push(HalfEdge {
-                edge: seam_edge,
-                forward: false,
-            });
+            half_edges.extend(pass(lower_slit, false));
             Ok(Loop { half_edges })
         };
         // ★★★★★ **The inner loops are built first, and `flip` is applied to none of them yet.**
@@ -998,6 +998,19 @@ pub(crate) fn reconstruct(
                 ));
             }
         }
+    }
+    // ★★ **A pinched lateral does not leave — and it is the last thing asked.** A zero slit
+    // (`band_loop`) left a lateral whose outer walk visits a seam contact twice. Every other
+    // refusal speaks first, because each names more truly: the shell guard calls a result that
+    // touches itself along the contact's ruling `NonManifoldResultEdge`, with the line as its
+    // witness — the inward wedge with its apex on the seam, the same answer as off it — and the
+    // grouping, the stopper and the naming fence say theirs. What passes them all is a walk this
+    // assembly does not arrange, refused by the walk's own name. Skipping the slit and letting the
+    // face out is the alternative refused here: `combinatorics::lateral_cycles` reads a lateral
+    // back by cutting its outer loop at the slits, so a pinch with no slit would read as one
+    // cycle of rim and hole. No boolean in the suite or the census reaches this line.
+    if pinched.get() {
+        return Err(reject(RejectReason::ArcBoundNotYet));
     }
     out
 }

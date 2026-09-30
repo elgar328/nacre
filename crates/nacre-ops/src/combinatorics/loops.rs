@@ -33,9 +33,10 @@ pub(crate) fn face_vertex_triples(
 /// starts are a hole the walk had spliced in; a loop with no slit is a panel. The inner loops
 /// follow. Each cycle is named by [`loop_triples`] like every other loop.
 ///
-/// The pairing is unique because a slit is never of zero length (`ZeroLengthEdge`) and at most
-/// one hole is spliced (`band_loop`'s own bound), so an unpaired or odd set of pieces is a shape
-/// the producer never makes — refused by the producer's own name for it.
+/// The pairing is unique because a slit is never of zero length and at most one hole is spliced
+/// (`band_loop`'s own bound), so an unpaired or odd set of pieces is a shape the producer never
+/// makes — refused by the producer's own name for it. A zero slit is no edge: where a contact is
+/// shared the producer mints none, and a result with such a walk does not leave `reconstruct`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn lateral_cycles(
     model: &Model,
