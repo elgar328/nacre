@@ -761,41 +761,154 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     );
 }
 
+/// Every boolean of two disjoint-but-for-a-line operands, both orders: `Fuse` is the two
+/// operands as two bodies, each `Cut` the minuend unchanged, `Common` empty — valid, and the
+/// volumes the operands' own, read before the boolean.
+fn two_bodies_touching_on_a_line(
+    name: &str,
+    build: impl Fn() -> (Model, Handle<Solid>, Handle<Solid>),
+) {
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        for swapped in [false, true] {
+            let (mut m, a, b) = build();
+            let (a, b) = if swapped { (b, a) } else { (a, b) };
+            let vol = |m: &Model, s| nacre_props::mass_props(m, s).unwrap().volume;
+            let (va, vb) = (vol(&m, a), vol(&m, b));
+            let out = crate::boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("{name}: {kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{name}: {kind:?} swapped {swapped}: {vs:?}");
+            let mut got: Vec<f64> = out.iter().map(|&s| vol(&m, s)).collect();
+            got.sort_by(f64::total_cmp);
+            let mut want = match kind {
+                BoolKind::Fuse => vec![va, vb],
+                BoolKind::Cut => vec![va],
+                BoolKind::Common => vec![],
+            };
+            want.sort_by(f64::total_cmp);
+            assert_eq!(
+                got.len(),
+                want.len(),
+                "{name}: {kind:?} swapped {swapped}: bodies"
+            );
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g - w).abs() < 1e-9,
+                    "{name}: {kind:?} swapped {swapped}: {got:?} vs {want:?}"
+                );
+            }
+        }
+    }
+}
+
+/// ★ **A face far away on the wall's plane joins nothing.** The boss touches the box's wall
+/// `x = 0` from outside along `(0, 0)` — the lens and the far side, two bodies — and it is joined
+/// by a bar to a block whose face lies on that same plane at `y ∈ [10, 12]`, nowhere near the box.
+/// The union is still the two operands touching along the line. Read by the plane's class, the
+/// verdict found the wall's class and the cylinder's in the boss's body and refused
+/// `SelfTouchingResult`; the lens and the far side are in one body only when the result is one.
+#[test]
+fn a_far_face_on_the_walls_plane_joins_nothing() {
+    two_bodies_touching_on_a_line("boss, bar and block", || {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([-2.0, -3.0, 0.0]),
+            Point3::from_array([0.0, 3.0, 1.0]),
+        );
+        let boss = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+            1.0,
+            1.0,
+        )
+        .solid;
+        let bar = m.add_cuboid(
+            Point3::from_array([0.5, 0.0, 0.0]),
+            Point3::from_array([1.5, 11.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let b = crate::boolean(&mut m, BoolKind::Fuse, boss, bar).expect("boss and bar")[0];
+        let block = m.add_cuboid(
+            Point3::from_array([0.0, 10.0, 0.0]),
+            Point3::from_array([2.0, 12.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let b = crate::boolean(&mut m, BoolKind::Fuse, b, block).expect("and the block")[0];
+        m.rebuild_adjacency();
+        (m, a, b)
+    });
+}
+
+/// ★ **A row through a wall face's notch touches nothing.** The box's face `x = 0` is a U — a slot
+/// `y ∈ [−2, 2]`, `z ∈ [1, 3]` cut through the box — and the boss floats in the slot's void, its
+/// surface tangent to the plane `x = 0` along `(0, 0)` where the face is not. The gate reads the
+/// wall face's outer loop alone, which straddles the line, so it writes a row; the verdict clears
+/// it because no result body holds both the wall's class and the cylinder's. Every boolean builds.
+#[test]
+fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
+    two_bodies_touching_on_a_line("notched box", || {
+        let mut m = Model::new();
+        let block = m.add_cuboid(
+            Point3::from_array([0.0, -3.0, 0.0]),
+            Point3::from_array([4.0, 3.0, 2.0]),
+        );
+        let slot = m.add_cuboid(
+            Point3::from_array([-1.0, -2.0, 1.0]),
+            Point3::from_array([5.0, 2.0, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let a = crate::boolean(&mut m, BoolKind::Cut, block, slot).expect("the slot")[0];
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([1.0, 0.0, 1.2]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+            1.0,
+            0.6,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        (m, a, b)
+    });
+}
+
 /// **The pinch formula, as a truth table** — four configurations × three operations × both
 /// owner orders, checked against the geometry by hand rather than against an engine run.
 ///
 /// Read the rows as: the cylinder's side of the wall plane is (or is not) the wall face's
 /// material side, and the cylinder keeps its material inside (a boss) or outside (a bore).
 /// ★ The third row's `Common` is the one that says this is not "a rule about `Cut`": a bore
-/// intersected with the wall's solid leaves the two wedges alone.
+/// intersected with the wall's solid leaves the two wedges alone. ★ The lens and the far side
+/// come apart in one cell only — the union with a boss touching the wall from outside, in either
+/// owner order — which is what lets the verdict read that shape as the two operands' own.
 #[test]
 fn the_pinch_formula_is_a_truth_table() {
-    use crate::assembly::lumps_fall_apart;
+    use crate::assembly::{Pinch, pinch};
     use crate::planes::SolidSide::{A, B};
-    // (lens_in_wall_solid, cyl_orient, [Fuse, Cut, Common]) with the wall on side A.
-    for (lens, orient, want) in [
-        (true, 1i8, [false, true, false]), // an inside boss: only Cut pinches
-        (false, 1, [true, false, false]),  // an outside boss: only Fuse splits into lumps
-        (true, -1, [false, false, true]),  // a bore on the material side: only Common
-        (false, -1, [false, false, false]), // a bore on the void side: never
+    let (w, lf) = (Some(Pinch::Wedges), Some(Pinch::LensAndFar));
+    // (lens_in_wall_solid, cyl_orient, [Fuse, Cut, Common] with the wall on A, … on B).
+    for (lens, orient, on_a, on_b) in [
+        (true, 1i8, [None, w, None], [None, None, None]), // an inside boss: only A − B pinches
+        (false, 1, [lf, None, None], [lf, None, None]),   // an outside boss: only Fuse, lens + far
+        (true, -1, [None, None, w], [None, None, w]),     // a bore on the material side: Common
+        (false, -1, [None, None, None], [None, w, None]), // a bore on the void side: B − A only
     ] {
         for (i, kind) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
             .into_iter()
             .enumerate()
         {
-            assert_eq!(
-                lumps_fall_apart(kind, A, lens, orient),
-                want[i],
-                "wall on A, lens {lens}, orient {orient}, {kind:?}"
-            );
+            for (side, want) in [(A, on_a[i]), (B, on_b[i])] {
+                assert_eq!(
+                    pinch(kind, side, lens, orient),
+                    want,
+                    "wall on {side:?}, lens {lens}, orient {orient}, {kind:?}"
+                );
+            }
         }
     }
-    // ★ Swapping the owners is not a symmetry: `Fuse` and `Common` are commutative but `Cut`
-    // is not, so the same geometry judged with the wall on `B` reads `A − B` the other way.
-    assert!(lumps_fall_apart(BoolKind::Cut, A, true, 1));
-    assert!(!lumps_fall_apart(BoolKind::Cut, B, true, 1));
-    assert!(lumps_fall_apart(BoolKind::Cut, B, false, -1));
-    assert!(!lumps_fall_apart(BoolKind::Cut, A, false, -1));
 }
 
 /// ★★★★★ **The disk on a wall plane is read, and it clears.**

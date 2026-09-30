@@ -21,64 +21,100 @@ impl Tangencies<'_> {
     }
 }
 
-/// **A tangency pinches the result when the material it leaves is two lumps that meet only along
-/// the line — and both lumps end up in one solid.**
+/// **The shape the material near a tangent line falls into, when it falls apart** — [`pinch`]'s
+/// answer, one variant per adjacency the kept regions lose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Pinch {
+    /// `W2 ∧ ¬L ∧ ¬F`: the two wedges between the parabola and the plane, which cannot reach each
+    /// other.
+    Wedges,
+    /// `L ∧ F ∧ ¬W2`: the lens inside the cylinder and the far side, which meet only on the line.
+    LensAndFar,
+}
+
+/// **Does the material near a tangent line fall into more than one piece, and which?** — the three
+/// regions and their two adjacencies, asked through [`crate::draft::keep`] and nothing else.
 ///
-/// ★★★★★ **The operation enters here and only here, through [`crate::draft::keep`].** Near
-/// the tangent line the material is three regions — the lens inside the cylinder, the **two**
-/// wedges between the parabola and the plane, and the far half-space — and the adjacencies are
-/// `L–W2` and `F–W2` only: `L` and `F` meet along the line itself and nowhere else, because at
-/// `v = 0` the wedges are *inside* the cylinder. So the kept regions fall apart exactly when
+/// ★★★★★ **The operation enters here and only here.** Near the tangent line the material is three
+/// regions — the lens `L` inside the cylinder, the **two** wedges `W2` between the parabola and the
+/// plane, and the far half-space `F` — and the adjacencies are `L–W2` and `F–W2` only: `L` and `F`
+/// meet along the line itself and nowhere else, because at `v = 0` the wedges are *inside* the
+/// cylinder. So the kept regions fall apart exactly as the two [`Pinch`] variants say.
 ///
-/// ```text
-/// (W2 ∧ ¬L ∧ ¬F)   the two wedges cannot reach each other
-/// (L ∧ F ∧ ¬W2)    the lens and the far side meet only on the line
-/// ```
-///
-/// Each region's `(in_A, in_B)` is local: the wall **face**'s material side and the lateral
-/// **face**'s `orient_sign`, nothing else — which is why this is exact without touching the
-/// arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is a
-/// secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak —
-/// or, where that line is an edge both faces end on, hands the question to the structure.)
-///
-/// ★★ **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
-/// wall *from outside* leaves `L ∧ F ∧ ¬W2`, and the honest answer is **two solids touching along
-/// a line**, which the engine already produces (`Ok(2)`, `validate` clean, and it meshes). What
-/// makes it a defect is the two lumps landing in **one** body, and that question is the grouping's,
-/// not the geometry's: the tangency's wall class and cylinder class in one solid. The first case
-/// above always answers yes (both wedges are bounded by the same wall face *and* the same lateral,
-/// neither of which the tangency splits), and the second is where the grouping earns its keep — a
-/// boss standing in a notch, tangent to the notch's wall and overlapping the block beside it, comes
-/// back as one solid whose boundary touches itself, and nothing else in the kernel sees it.
-/// **Does the material near a tangent line fall into more than one piece?** — the three regions
-/// and their two adjacencies, asked through [`crate::draft::keep`] and nothing else.
-///
-/// `lens_in_wall_solid` says whether the cylinder's side of the wall plane is the wall **face**'s
-/// material side; `cyl_orient` is `+1` for a boss (material inside) and `-1` for a bore. Those two
-/// bits fix all six memberships, because near the line the only boundaries are those two surfaces.
-pub(crate) fn lumps_fall_apart(
+/// Each region's `(in_A, in_B)` is local: `lens_in_wall_solid` says whether the cylinder's side of
+/// the wall plane is the wall **face**'s material side, and `cyl_orient` is `+1` for a boss
+/// (material inside) and `-1` for a bore. Those two bits fix all six memberships, because near the
+/// line the only boundaries are those two surfaces — which is why this is exact without touching
+/// the arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is
+/// a secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak
+/// — or, where that line is an edge both faces end on, hands the question to the structure.)
+pub(crate) fn pinch(
     kind: BoolKind,
     wall_solid: crate::planes::SolidSide,
     lens_in_wall_solid: bool,
     cyl_orient: i8,
-) -> bool {
+) -> Option<Pinch> {
     use crate::planes::SolidSide;
-    let region = |in_lens_side: bool, inside_cyl: bool| {
-        let w = in_lens_side == lens_in_wall_solid; // in the wall face's solid
-        let c = inside_cyl == (cyl_orient > 0); // in the lateral face's solid
-        match wall_solid {
-            SolidSide::A => crate::draft::keep(kind, w, c),
-            SolidSide::B => crate::draft::keep(kind, c, w),
-        }
+    // `(in the wall face's solid, in the lateral face's solid)`.
+    let member = |in_lens_side: bool, inside_cyl: bool| {
+        (
+            in_lens_side == lens_in_wall_solid,
+            inside_cyl == (cyl_orient > 0),
+        )
     };
-    let (l, w2, f) = (
-        region(true, true),
-        region(true, false),
-        region(false, false),
-    );
-    (w2 && !l && !f) || (l && f && !w2)
+    let kept = |(w, c): (bool, bool)| match wall_solid {
+        SolidSide::A => crate::draft::keep(kind, w, c),
+        SolidSide::B => crate::draft::keep(kind, c, w),
+    };
+    let (ml, mf) = (member(true, true), member(false, false));
+    let (l, w2, f) = (kept(ml), kept(member(true, false)), kept(mf));
+    if w2 && !l && !f {
+        Some(Pinch::Wedges)
+    } else if l && f && !w2 {
+        // What the verdict's reading of this shape stands on: the lens is the cylinder's
+        // operand's material alone and the far side the wall's alone.
+        debug_assert!(
+            ml == (false, true) && mf == (true, false),
+            "the lens and the far side are the two operands' own"
+        );
+        Some(Pinch::LensAndFar)
+    } else {
+        None
+    }
 }
 
+/// **A tangency pinches the result when the material it leaves is two lumps that meet only along
+/// the line — and both lumps end up in one solid.**
+///
+/// ★★ **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
+/// wall *from outside* leaves the lens and the far side, and the honest answer is **two solids
+/// touching along a line**, which the engine produces (`Ok(2)`, `validate` clean, and it meshes).
+/// What makes it a defect is the two lumps landing in **one** body — and the [`Pinch`] says how to
+/// read that:
+///
+/// - **The wedges** are both bounded by the one wall face that crosses the line (`straddles`, this
+///   verdict's premise), and a tangency splits no face — it mints no vertex and no edge — so that
+///   face ties them into one component of the result. A statement about the engine's result, not
+///   the geometry: two pieces touching along two lines still share the face.
+/// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
+///   and a wall it touches from outside (the truth table in `bands`). The lens is then the
+///   cylinder's operand's material alone and the far side the wall's alone — two different solids
+///   (the gate keeps no row of a solid tangent to itself, `cylinder_gate`'s `retain`). An operand is
+///   one lump (a solid is one outer shell and its cavities, and a boolean hands back one solid per
+///   material component), so the union is one body or two, and the lumps are in one body exactly
+///   when the result is **one** body: two is the valid pair touching along the line; one is the two
+///   lumps joined elsewhere — a boss standing in a notch, tangent to the notch's wall and
+///   overlapping the block beside it — whose boundary touches itself, which nothing else in the
+///   kernel sees. (Bodies are face components joined across edges two faces use — where that
+///   differs from the material, at an edge four faces use, another guard refuses first.)
+///
+/// ★ **A body holding a face on the wall's class and one on the cylinder's is kept as a further
+/// condition, on both shapes** — not because the shapes need it but because a row need not state a
+/// real contact: the gate reads a wall face's **outer** loop alone (`face_clears_footprint`,
+/// `face_straddles_line`), so a line through the face's hole or notch writes a row where nothing
+/// touches, and a result with no cylinder face beside that wall then clears it. The class reading
+/// alone was the verdict once, and it convicted the lens and the far side of two bodies whenever one
+/// of them had a face anywhere on the wall's plane.
 pub(super) fn tangency_reject(
     tg: &Tangencies<'_>,
     faces: &[LocalFace],
@@ -88,20 +124,9 @@ pub(super) fn tangency_reject(
     if tg.rows.is_empty() {
         return Ok(());
     }
-    // The classes each *solid* carries — a solid is a material component plus its cavities.
-    let bodies: Vec<Vec<crate::planes::ClassIx>> = g
-        .positives
-        .iter()
-        .map(|m| {
-            let comps = &g.comps_of[m];
-            faces
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| comps.contains(&g.labels[*i]))
-                .map(|(_, lf)| lf.surf)
-                .collect()
-        })
-        .collect();
+    // The classes each *solid* carries — a solid is a material component plus its cavities. Built
+    // once, and only if a row gets that far.
+    let mut bodies: Option<Vec<Vec<ClassIx>>> = None;
     for t in tg.rows {
         if t.undecided || (t.line_in_another_plane && !t.line_is_an_edge) {
             return Err(reject(RejectReason::CylinderGateUndecided));
@@ -116,14 +141,34 @@ pub(super) fn tangency_reject(
         }
         // Two lumps, and the contact is a *segment* — a corner grazing the line at a point is a
         // valid tangency (measured), and this must not convict it.
-        if !lumps_fall_apart(tg.kind, t.wall_solid, t.lens_in_wall_solid, t.cyl_orient)
-            || !t.straddles
-        {
+        let Some(shape) = pinch(tg.kind, t.wall_solid, t.lens_in_wall_solid, t.cyl_orient) else {
+            continue;
+        };
+        if !t.straddles {
             continue;
         }
-        let together = bodies
+        let bodies = bodies.get_or_insert_with(|| {
+            g.positives
+                .iter()
+                .map(|m| {
+                    let comps = &g.comps_of[m];
+                    faces
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| comps.contains(&g.labels[*i]))
+                        .map(|(_, lf)| lf.surf)
+                        .collect()
+                })
+                .collect()
+        });
+        let classes_together = bodies
             .iter()
             .any(|cls| cls.contains(&ClassIx::Plane(t.wall)) && cls.contains(&ClassIx::Cyl(t.cyl)));
+        let together = classes_together
+            && match shape {
+                Pinch::Wedges => true,
+                Pinch::LensAndFar => g.positives.len() == 1,
+            };
         if together {
             return Err(crate::reject_at(
                 RejectReason::SelfTouchingResult,
