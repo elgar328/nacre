@@ -50,8 +50,9 @@
 //!
 //! The two axes, the **cells** they cut, the vertical lines' answers, the
 //! **cell reader** ([`Chart::read_cell`]), which reads a cell's chamber off the lines at
-//! its ends (`DiskLabels`/`ArcLabels` through `read_cell::read_bits`, the rulings' labels where the
-//! rims are silent) and its existence off the trace (`face_spans`), and the **emitter**
+//! its ends and walls (`DiskLabels`/`ArcLabels` and the rulings' labels, all through
+//! `read_cell::read_bits`, which must agree) and its existence off the trace (`face_spans`), and
+//! the **emitter**
 //! ([`emit_lateral`]) — the **region walk** ([`regions`]): emitted cells → connected
 //! components → each component's boundary on the chart's grid → runs cut into the neighbouring
 //! class's own pieces → cycles → a `Bound`. The census holds the chart against its own rules
@@ -112,7 +113,7 @@ pub(crate) struct ThetaSeg {
     /// **The chart's vertical answer** — the label of the cell this ruling borders inside the
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
     /// `DiskLabels`/`ArcLabels`; this is the half they never had, and [`Chart::read_cell`] reads
-    /// it where they are silent.
+    /// it beside them — the cell's chamber stands only where the two agree.
     pub(crate) label: Option<Label>,
     /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.

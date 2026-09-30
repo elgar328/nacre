@@ -167,18 +167,16 @@ fn the_charts_vertical_answers_close() {
     );
 }
 
-/// **The cells read their chamber off the lines at their ends, and the ledger's bookkeeping
-/// is total**.
+/// **A present cell always has a horizontal answer, and the ledger's bookkeeping is total**.
 ///
 /// The absolute claims are asserted in `census`, where the facts are made: a present cell
-/// always has a speaking end (`src0_present == 0`, `other_present == 0` — the reason no
-/// wall-side sign is needed), the emitter's faces cover exactly the emitted cells (the
+/// always has a speaking end (`src0_present == 0`, `other_present == 0` — the reason the walls'
+/// rulings only check the chamber and never have to decide it), the emitter's faces cover exactly the emitted cells (the
 /// cell→face assertions), and the ends' bookkeeping is total. What this holds, universally
 /// over every recorded row so no interleaving can break it, is the rest:
 ///
 /// * `emit_unknown == 0 || emitter_refused` — the emitter never puts a face over a present
-///   cell it could not read, e.g. one whose two ends contradict (the `wal corner-lo` corpus
-///   family has such cells — `src2_disagree` 8 per row — and is refused by name).
+///   cell it could not read, e.g. one whose speaking sides contradict each other.
 /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
 ///   existence story wherever both speak.
 /// * `nocircle_present == 0` — a present cell has a circle at both ends.
@@ -195,7 +193,7 @@ fn the_charts_vertical_answers_close() {
 /// about the far side, on an absent cell; the single-cut arm is the one still without a
 /// population.
 #[test]
-fn the_cells_read_their_chamber_from_the_horizontal_lines() {
+fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     use super::probe::cell_ends::ROWS as CELL_ENDS;
     let snapshot = || -> Vec<super::probe::cell_ends::Row> { CELL_ENDS.all() };
     let sum = |rows: &[super::probe::cell_ends::Row],

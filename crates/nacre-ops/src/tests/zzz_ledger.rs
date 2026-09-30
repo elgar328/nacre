@@ -18,7 +18,7 @@ fn measure_probe_ledgers() {
     );
     eprintln!(
         "ledger cell_ends: rows {} refused_booleans {} cells {} end_swapped {} end_disk {} end_exact {} \
-             end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
+             end_other {} end_nocircle {} other_present {} disagree {} src0_present {} exist_disagree {} \
              read_refused {} exist_marks_false {} emit {} emit_unknown {} nocircle_present {} \
              arcs_read {} exact_run_arcs {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
         ends.len(),
@@ -30,7 +30,7 @@ fn measure_probe_ledgers() {
         s(|r| r.end_other),
         s(|r| r.end_nocircle),
         s(|r| r.other_present),
-        s(|r| r.src2_disagree),
+        s(|r| r.disagree),
         s(|r| r.src0_present),
         s(|r| r.exist_disagree),
         s(|r| r.read_refused),

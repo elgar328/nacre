@@ -3,8 +3,8 @@ use super::*;
 /// ([`regions::walk`]). Per class: the chart, its cells, each cell read off the
 /// neighbouring classes ([`Chart::read_cell`]), then the walk. What is refused here by name:
 /// a class with no row or rows of both solids, a θ order that cannot be formed, and a
-/// **present cell whose chamber could not be read** (`CylinderGateUndecided` — the two-end
-/// disagreement, or a cell with no speaking end); the walk names its own.
+/// **present cell whose chamber could not be read** (`CylinderGateUndecided` — two speaking
+/// sides disagreed, or no side spoke); the walk names its own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
@@ -42,8 +42,8 @@ pub(crate) fn emit_lateral(
             .iter()
             .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
             .collect::<Result<_, _>>()?;
-        // A present cell whose chamber could not be read: the two ends disagreed, which is
-        // `chamber`'s own refusal.
+        // A present cell whose chamber could not be read: two of its speaking sides disagreed,
+        // or none spoke — `chamber`'s own refusal.
         if reads.iter().any(|r| r.present && r.emit.is_none()) {
             return Err(reject(RejectReason::CylinderGateUndecided));
         }

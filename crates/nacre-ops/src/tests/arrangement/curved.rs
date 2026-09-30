@@ -532,15 +532,6 @@ fn lateral_lattice(staircase: bool) {
     );
 }
 
-/// ★ **A cut circle is a band boundary**. On the armed
-/// through-boss, the per-class products of the four ⊥ classes are collected the production
-/// way (`per_class` on each), and the chart must break the lateral at the two **cut**
-/// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
-/// (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle interval is
-/// both-cut and is emitted as panel rings; blinding **both** of the chart's axes (the arc
-/// labels and the rulings') leaves the reader no answer there and `emit_lateral` refuses by
-/// name (`CylinderGateUndecided`) — blinding only the arcs does not, because the vertical
-/// lines answer in their place.
 /// The through-boss's curved carriers and plane faces, collected the production way
 /// (`per_class` on each of the four ⊥ classes and the wall class), with the cylinder's rows
 /// and the four ⊥ classes `[z0, z20, cap_lo, cap_hi]`. ★ This mirrors production's fold by
@@ -615,6 +606,17 @@ fn armed_curved(
     (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi])
 }
 
+/// ★ **A cut circle is a band boundary**. On the armed
+/// through-boss, the per-class products of the four ⊥ classes are collected the production
+/// way (`per_class` on each), and the chart must break the lateral at the two **cut**
+/// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
+/// (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle interval is
+/// both-cut and is emitted as panel rings. Three controls on the reader: blinding only the
+/// arcs still answers, because the vertical lines speak in their place; blinding **both** of
+/// the chart's axes (the arc labels and the rulings') leaves the reader no answer there; and
+/// turning every ruling label inside out while the arcs stand makes two sides of each cell
+/// contradict each other — both of those `emit_lateral` refuses by name
+/// (`CylinderGateUndecided`), neither side is believed over the other.
 #[test]
 fn a_cut_circle_bounds_the_bands() {
     let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
@@ -760,6 +762,36 @@ fn a_cut_circle_bounds_the_bands() {
             &blind,
             &rows,
             &crate::draft::held_rims(&plane_faces, &blind.split_rims)
+        ),
+        Err(BoolError::Rejected {
+            reason: RejectReason::CylinderGateUndecided,
+            ..
+        })
+    ));
+    // ★ **A wall that contradicts the rims is not outvoted.** With the arcs as they are and every
+    // ruling label inside out, the walls read the opposite chamber on every cell they bound, and
+    // the reader answers neither.
+    let mut contrary = Curved {
+        aliases: Aliases::default(),
+        disk_labels: curved.disk_labels.clone(),
+        arc_labels: curved.arc_labels.clone(),
+        split_rims: curved.split_rims.clone(),
+        rulings: curved.rulings.clone(),
+    };
+    for v in contrary.rulings.values_mut() {
+        for r in v.iter_mut() {
+            r.label = r.label.map(|l| l.map(|b| !b));
+        }
+    }
+    assert!(matches!(
+        crate::arrangement::cyl_chart::emit_lateral(
+            BoolKind::Fuse,
+            &jd,
+            &setup.cyls,
+            &plane_faces,
+            &contrary,
+            &rows,
+            &crate::draft::held_rims(&plane_faces, &contrary.split_rims)
         ),
         Err(BoolError::Rejected {
             reason: RejectReason::CylinderGateUndecided,

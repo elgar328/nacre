@@ -73,48 +73,6 @@ pub(crate) fn push(r: Row) {
     ROWS.push(r);
 }
 
-/// **The vertical answer beside the horizontal one** — the shadow the cutover is measured
-/// against (an instrument that ships no capability and *measures*).
-///
-/// The chart's two axes are symmetric in principle, but only the horizontal ones have ever
-/// decided a face, so the sign bridge on the vertical side ([`crate::arrangement::
-/// plus_theta_is_above`]) is unexercised. These count what it would say.
-pub(crate) mod shadow {
-    use std::sync::Mutex;
-
-    /// `(agree, disagree, vertical_only, horizontal_only, both_silent, one_ruling)`
-    pub(crate) static COUNTS: Mutex<(usize, usize, usize, usize, usize, usize)> =
-        Mutex::new((0, 0, 0, 0, 0, 0));
-
-    pub(crate) fn record(
-        horizontal: Option<(bool, bool)>,
-        vertical: &[(bool, bool)],
-        one_ruling: bool,
-    ) {
-        let mut g = COUNTS
-            .lock()
-            .expect("the probe's lock is never held across a panic");
-        g.5 += usize::from(one_ruling);
-        // The vertical readings must agree with each other before they may agree with anyone.
-        let v = match vertical {
-            [] => None,
-            [a] => Some(*a),
-            [a, b] if a == b => Some(*a),
-            _ => {
-                g.1 += 1; // two walls of one cell disagreeing is a disagreement of its own
-                return;
-            }
-        };
-        match (horizontal, v) {
-            (Some(h), Some(x)) if h == x => g.0 += 1,
-            (Some(_), Some(_)) => g.1 += 1,
-            (None, Some(_)) => g.2 += 1,
-            (Some(_), None) => g.3 += 1,
-            (None, None) => g.4 += 1,
-        }
-    }
-}
-
 /// **The cells' two ends**: what the cell reader read, what the census's own walk of the chart
 /// predicts, and how many faces the emitter put on the class. One row per chart with cells,
 /// whether or not the emitter produced a face there.
@@ -150,9 +108,9 @@ pub(crate) mod cell_ends {
         pub(crate) other_present: usize,
         /// Present cells with a `NoCircle` end — the `circle_on_class` premise at one end.
         pub(crate) nocircle_present: usize,
-        /// Cells whose two speaking ends disagreed — the two-end refusal
-        /// (`CylinderGateUndecided`), on the chart; the emitter refuses the class.
-        pub(crate) src2_disagree: usize,
+        /// Cells two of whose speaking sides disagreed — the chamber is empty, and over a present
+        /// cell the emitter refuses the class (`CylinderGateUndecided`).
+        pub(crate) disagree: usize,
         /// Cells with a face and no speaking end. Asserted 0 at the record; here as a count
         /// so the reporting test can say the assertion was live.
         pub(crate) src0_present: usize,

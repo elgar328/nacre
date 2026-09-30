@@ -1120,13 +1120,6 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
         !rows.is_empty(),
         "the fixture produced no arc labels at all"
     );
-    let sh = *crate::arrangement::cyl_chart::probe::shadow::COUNTS
-        .lock()
-        .unwrap();
-    eprintln!(
-        "SHADOW agree {} disagree {} vert_only {} horiz_only {} both_silent {} one_ruling {}",
-        sh.0, sh.1, sh.2, sh.3, sh.4, sh.5
-    );
     let checked = rows.iter().filter(|r| r.checked).count();
     let both = rows.iter().filter(|r| r.both_spoke).count();
     let frame_neg = rows.iter().filter(|r| r.frame_negative).count();

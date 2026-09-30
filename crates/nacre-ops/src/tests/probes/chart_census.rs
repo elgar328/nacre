@@ -280,7 +280,7 @@ pub(crate) fn census(
                     );
                 }
             }
-            ends.src2_disagree += usize::from(r.src2_disagree);
+            ends.disagree += usize::from(r.disagree);
             ends.exist_disagree += usize::from(r.exist_disagree);
             // Both ends cut is exactly the panel road's population, where today `face_spans`
             // drops a sector for existence — the one count with a twin on the other side.
@@ -306,11 +306,10 @@ pub(crate) fn census(
         // the fact is made: `circle_on_class` leaves a circle on every ⊥ class within a lateral
         // face's span (Crosses inside, Grazes at the rims), and `emit_faces` labels every circle
         // cell and arc outside the keep filter — which is why no "which side of the wall" sign is
-        // needed to read a cell. ★ **Not a bare zero — the corner boss × a mid slab:**
-        // the circle is there, but a cut end the reader cannot pair with its rim
-        // (`End::Other`) leaves *no* end speaking and `present` falls back to the
-        // row's span — which cannot see the hole. The true proposition is the `src2_disagree`
-        // guard's: over such a cell the emitter builds nothing, it refuses the class by name.
+        // needed to read a cell. ★ **Not a bare zero:** a cut end the reader could not pair with
+        // its rim (`End::Other`) would leave *no* end speaking, and `present` would fall back to
+        // the row's span — which cannot see a hole. The true proposition is the emitter's: over
+        // such a cell it builds nothing, it refuses the class by name.
         assert!(
             ends.src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
@@ -333,14 +332,12 @@ pub(crate) fn census(
             "a ruling arrived with z descending: cyl {k}"
         );
         // ★★★★★ **Over a present cell whose chamber could not be read, the emitter emits
-        // nothing** — the true proposition. The plain `src2_disagree == 0` does not hold
-        // over the corpus: the (0,0)-corner
-        // boss (`wal corner-lo`) has plate-class disk cells with no B material while its caps
-        // carry it (an arrangement label defect), so its cells' ends disagree — and
-        // the emitter refuses the class by name rather than reading either end. The guard does
-        // not hide the defect; it says no face is built over it. ★ Stated on `emit_unknown`
-        // (present cells only), not on `src2_disagree`, which also counts absent cells the
-        // emitter rightly ignores — that stays a ledger column.
+        // nothing** — the true proposition. A present cell's chamber is empty when its speaking
+        // sides contradict each other — an arrangement label defect, which the emitter refuses by
+        // name rather than read from either side; the guard does not hide the defect, it says no
+        // face is built over it. ★ Stated on `emit_unknown` (present cells only), not on
+        // `disagree`, which also counts absent cells the emitter rightly ignores — that stays a
+        // ledger column.
         assert!(
             ends.emit_unknown == 0 || emission.is_err(),
             "a present cell's chamber could not be read, yet the emitter emitted: cyl {k}"

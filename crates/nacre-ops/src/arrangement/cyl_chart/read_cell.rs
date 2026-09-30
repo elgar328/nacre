@@ -33,26 +33,51 @@ pub(crate) enum End<'a> {
     NoCircle,
 }
 
+/// **What several readings of one chamber say together** — the one spelling of «unanimous or
+/// nothing». Where it is asked decides what a [`Agreement::Split`] means: inside one end (a run of
+/// arcs, a whole circle's arcs) it is a cell straddling a boundary the chart has no line for, and
+/// the end says nothing; between a cell's sides it is two statements of one chamber that
+/// contradict each other.
+enum Agreement<T> {
+    /// No reading at all.
+    Silent,
+    /// Every reading the same.
+    One(T),
+    /// Two readings differ.
+    Split,
+}
+
+fn agreement<T: PartialEq>(readings: impl IntoIterator<Item = T>) -> Agreement<T> {
+    let mut out = Agreement::Silent;
+    for r in readings {
+        out = match out {
+            Agreement::Silent => Agreement::One(r),
+            Agreement::One(p) if p == r => Agreement::One(p),
+            Agreement::One(_) | Agreement::Split => return Agreement::Split,
+        };
+    }
+    out
+}
+
 impl End<'_> {
     /// **What this end says about the cell's chamber**, or `None` when it says nothing — which
-    /// now includes a run of arcs that do not agree. The read is [`read_bits`], the one
-    /// spelling, and it lives here so the two consumers below cannot drift into two.
+    /// includes a run of arcs that do not agree ([`agreement`]'s `Split` inside one end). The read
+    /// is [`read_bits`], the one spelling.
     ///
-    /// ☑ **Measured: the run case here is not exercised by the suite.** Making this answer `None`
-    /// whenever the run holds two or more arcs leaves all 340 lib tests green — because the cells
-    /// a run decides today are decided **absent** by the existence read below, and an absent cell
-    /// is never asked for its chamber. This stays the general rule rather than a written-out
+    /// ☑ **Measured: the run case is read but decides nothing.** The suite reads a run of two or
+    /// more arcs 40 times, and making this answer `None` for every such run leaves all 825
+    /// `nacre-ops` tests green — the cells a run reaches are decided **absent** by the existence
+    /// read below, and an absent cell is never asked for its chamber. This stays the general rule rather than a written-out
     /// refusal because it *is* the whole-circle arm's rule (see [`End::Disk`]'s site) with the
     /// sector's own arcs in place of the circle's; narrowing it would be the second spelling.
     fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {
         let one = |l: &Label| read_bits(l, side, above);
         match self {
             End::Disk(l) => Some(one(l)),
-            End::Exact(arcs) => {
-                let mut it = arcs.iter().map(|a| one(&a.label));
-                let first = it.next()?;
-                it.all(|b| b == first).then_some(first)
-            }
+            End::Exact(arcs) => match agreement(arcs.iter().map(|a| one(&a.label))) {
+                Agreement::One(b) => Some(b),
+                Agreement::Silent | Agreement::Split => None,
+            },
             End::Other | End::Uncovered | End::NoCircle => None,
         }
     }
@@ -68,15 +93,18 @@ enum RunFail {
 }
 
 /// One cell, read.
-/// `ends`, `src2_disagree` and `exist_disagree` are the census's readers; production reads
+/// `ends`, `disagree` and `exist_disagree` are the census's readers; production reads
 /// `chamber`, `present` and `emit` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
-    /// `(in_own, in_other)` on the cylinder's inside, agreed by every end that could speak.
-    /// `None` when no end could, or when two ends disagreed (`src2_disagree`).
+    /// `(in_own, in_other)` on the cylinder's inside, agreed by every side that could speak — the
+    /// two ends' rims and the two walls' rulings. `None` when no side could, or when two sides
+    /// disagreed (`disagree`).
     pub(crate) chamber: Option<(bool, bool)>,
-    pub(crate) src2_disagree: bool,
+    /// Two speaking sides contradicted each other — the one cause of an empty `chamber` besides
+    /// silence, which a single refusal name covers.
+    pub(crate) disagree: bool,
     /// Is this lateral face here at all — the existence question, answered by the trace
     /// where an end is cut ([`face_spans`]) and by the row's span where none is.
     pub(crate) present: bool,
@@ -256,14 +284,13 @@ impl Chart {
         Ok(run)
     }
 
-    /// **Read one cell off the horizontal lines** — what the chart's emitter reads every cell
+    /// **Read one cell off the lines around it** — what the chart's emitter reads every cell
     /// with.
     ///
     /// No sign is derived here: `band_is_above` is `planes::plus_t_is_above` at the low end and
-    /// its negation at the high end, and the bits come out through [`read_bits`]. The ruling
-    /// labels (the
-    /// vertical lines) are not consulted: a face that is here has a circle at both its ends, so
-    /// the horizontal lines always speak, and `census` asserts that (`src0_present`).
+    /// its negation at the high end, a wall's side is `plus_theta_is_above`, and the bits come out
+    /// through [`read_bits`]. A face that is here has a circle at both its ends, so the horizontal
+    /// lines always speak (`census` asserts `src0_present == 0`); the walls' rulings check them.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn read_cell<'a>(
         &self,
@@ -317,15 +344,9 @@ impl Chart {
                     None => {
                         // The whole circle is one cell here; every arc must read the same for
                         // *this* interval's side (the other half of a label is the neighbour's).
-                        let mut bits: Option<(bool, bool)> = None;
-                        let mut same = true;
-                        for a in arcs {
-                            let b = read_bits(&a.label, side, above[e]);
-                            same &= bits.replace(b).is_none_or(|p| p == b);
-                        }
-                        match (same, arcs.first()) {
-                            (true, Some(a)) => End::Disk(a.label),
-                            (false, _) | (true, None) => End::Other,
+                        match agreement(arcs.iter().map(|a| read_bits(&a.label, side, above[e]))) {
+                            Agreement::One(_) => End::Disk(arcs[0].label),
+                            Agreement::Silent | Agreement::Split => End::Other,
                         }
                     }
                     Some([x, y]) => {
@@ -375,87 +396,63 @@ impl Chart {
             Err(_) => unreachable!("two ends are pushed, one per line"),
         };
 
-        // ── Membership: every end that speaks must say the same. ──
-        let mut chamber: Option<(bool, bool)> = None;
-        let mut src2_disagree = false;
-        for e in 0..2 {
-            let Some(bits) = ends[e].chamber(side, above[e]) else {
-                continue;
-            };
-            match chamber {
-                None => chamber = Some(bits),
-                Some(prev) if prev != bits => src2_disagree = true,
-                Some(_) => {}
-            }
-        }
-        if src2_disagree {
-            chamber = None;
-        }
-
-        // ── The vertical answer: the chart's other axis, read the same way. ──
+        // ── Membership: every side that speaks must say the same. ──
         //
         // ★★★★★ **A `Label` carries the material on both sides of its own plane**, so a
         // **ruling**'s label answers the cells beside it exactly as a rim's answers the cells
-        // above and below — the chart's two axes are symmetric and only one of them was being
-        // read. A cut end the reader cannot pair with its rim (`End::Other`) leaves a cell with
-        // no horizontal answer at all, and that is the population this opens.
+        // above and below — the chart's two axes state one chamber, and the rule is one for all
+        // four sides: the chamber stands when every side that speaks says the same, and two sides
+        // that contradict each other leave none (the emitter then refuses a present cell by name).
+        // A contradiction is an arrangement label defect, and reading one side over the other would
+        // hide it — the `corner Common` boss once read its rulings against its rims so, before its
+        // plate labels were right. ☑ Measured over the suite, the ignored sweep and the census:
+        // on present cells both axes speak on 21,006 / 27,300 / 1,026 and the horizontal alone on
+        // 4,048 / 3,260 / 978; no side has contradicted another anywhere.
         //
-        // ★★ **It fills in; it does not yet overrule.** Where the horizontal lines speak they
-        // stay the answer, and the disagreements are *counted* instead (`probe::shadow`):
-        // measured over the boss corpus, the two roads agree on 4,036 cells and disagree on 218
-        // — **all of them one family** (`corner Common`, whose axis lies on *two* walls), where
-        // both horizontal ends are arcs that agree with each other and the ruling dissents, in
-        // the `own` bit only. That family already carries a recorded arrangement label defect
-        // (the `(0, 0)` corner), so making the disagreement refuse would regress a
-        // defect that is already named rather than fix it. Cross-checking is what this becomes
-        // the day that corner is fixed.
-        {
-            let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
-                let seg = self.theta.get(i)?;
-                // A tangent station has no chamber behind it to read: the face ends
-                // there, and its `label` is `None` by design — said by the side, not inferred.
-                if seg.side == 0 {
-                    return None;
-                }
-                // ★ A station two walls state answers each side from the wall that bounds the
-                // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
-                // ☑ Measured: over the edge-on-a-ruling families this never decides a cell — the
-                // horizontal lines speak there, and swapping the two walls leaves every boolean
-                // as it was — so the rule stands on its derivation here, and on `slit_at`, which
-                // reads the same `bounds_plus` and does go red when it is swapped.
-                let (l, (wall, sd)) = match seg.twin {
-                    Some(tw) if tw.bounds_plus == starts_here => (
-                        tw.label?,
-                        (tw.wall, ruling_side_of(jd, k, def, tw.wall, seg.end[0])?),
-                    ),
-                    _ => (seg.label?, self.ruling_name(jd, k, def, i)?),
-                };
-                // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
-                // are read from opposite sides of their own rulings.
-                let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
-                Some(read_bits(&l, side, above))
-            };
-            // ★ A cell whose two walls are **one** ruling (a circle opened at a single point) lies
-            // on both sides of that wall, so the vertical line says nothing about it — the two
-            // readings would contradict by construction.
-            let vert: Vec<(bool, bool)> = match cell.walls {
-                Some([x, y]) if x != y => [vertical(x, true), vertical(y, false)]
-                    .into_iter()
-                    .flatten()
-                    .collect(),
-                _ => Vec::new(),
-            };
-            #[cfg(test)]
-            probe::shadow::record(chamber, &vert, cell.walls.is_some_and(|[x, y]| x == y));
-            // The two walls must agree with each other before either may answer.
-            if chamber.is_none() && !src2_disagree {
-                chamber = match vert.as_slice() {
-                    [a] => Some(*a),
-                    [a, b] if a == b => Some(*a),
-                    _ => None,
-                };
+        // ★ The symmetry is the chamber's: existence below is the rims' marks and the rows'
+        // span, and a ruling's own marks are an instrument's field, so a wall says nothing there.
+        let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
+            let seg = self.theta.get(i)?;
+            // A tangent station has no chamber behind it to read: the face ends
+            // there, and its `label` is `None` by design — said by the side, not inferred.
+            if seg.side == 0 {
+                return None;
             }
-        }
+            // ★ A station two walls state answers each side from the wall that bounds the
+            // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
+            // ☑ Held here as well as in `slit_at`, which reads the same `bounds_plus`: swapping
+            // the two walls turns the corner and inward-wedge families of `edge_on_a_ruling` red,
+            // where the rims speak too and the swapped wall contradicts them.
+            let (l, (wall, sd)) = match seg.twin {
+                Some(tw) if tw.bounds_plus == starts_here => (
+                    tw.label?,
+                    (tw.wall, ruling_side_of(jd, k, def, tw.wall, seg.end[0])?),
+                ),
+                _ => (seg.label?, self.ruling_name(jd, k, def, i)?),
+            };
+            // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
+            // are read from opposite sides of their own rulings.
+            let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
+            Some(read_bits(&l, side, above))
+        };
+        // ★ A cell whose two walls are **one** ruling (a circle opened at a single point) lies
+        // on both sides of that wall, so the vertical line says nothing about it — the two
+        // readings would contradict by construction. A wall that cannot be read (a tangent
+        // station, a side it cannot name) is silent: it checks the chamber, it does not decide it —
+        // a present cell always has a horizontal answer (the census asserts `src0_present == 0`).
+        let walls = match cell.walls {
+            Some([x, y]) if x != y => [vertical(x, true), vertical(y, false)],
+            _ => [None, None],
+        };
+        let (chamber, disagree) = match agreement(
+            (0..2)
+                .filter_map(|e| ends[e].chamber(side, above[e]))
+                .chain(walls.into_iter().flatten()),
+        ) {
+            Agreement::One(b) => (Some(b), false),
+            Agreement::Silent => (None, false),
+            Agreement::Split => (None, true),
+        };
 
         // ── Existence: the trace where an end is cut, the span where none is. ──
         let (lo, hi) = (t[0].min(t[1]), t[0].max(t[1]));
@@ -530,7 +527,7 @@ impl Chart {
         Ok(CellRead {
             ends,
             chamber,
-            src2_disagree,
+            disagree,
             present,
             exist_disagree,
             emit,

@@ -120,10 +120,9 @@ pub(crate) struct RulingExtent {
     /// ([`crate::planes::WorldName`]) — the ruling is then left without an answer and **counted**,
     /// never guessed at.
     ///
-    /// ★ It ships, not an instrument — the emitter does not read the horizontal lines only: a
-    /// cut end
-    /// the reader cannot pair with its rim leaves a cell with no horizontal answer at all, and
-    /// this is what answers it ([`crate::arrangement::cyl_chart::Chart::read_cell`]).
+    /// ★ It ships, not an instrument — the cell reader reads it beside the rims' labels
+    /// ([`crate::arrangement::cyl_chart::Chart::read_cell`]): it answers a cell no rim speaks
+    /// for, and where both speak the two must agree or the cell has no chamber.
     pub(crate) label: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.

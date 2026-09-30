@@ -544,7 +544,7 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
     // ★★★ **And that the existence gate is what did it.** The chart's census holds it where the
     // cells are read:
     // `exist_marks_false` (a sector dropped because the face is not there — the four above, held
-    // as growth ≥ 4 in `cyl_chart::tests::the_cells_read_their_chamber_from_the_horizontal_lines`)
+    // as growth ≥ 4 in `cyl_chart::tests::a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total`)
     // and `arcs_no_mark`/`arcs_multi_mark` (every cut end read carries exactly one lateral mark of
     // its own solid — the doc that says why the `Seated` skip is load-bearing lives on `face_spans`).
 }

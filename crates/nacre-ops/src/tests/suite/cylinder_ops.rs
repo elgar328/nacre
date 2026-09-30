@@ -953,8 +953,8 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 
 /// **The census's cylinder corpus, in the lib suite.** `tests/census.rs` records these
 /// families' digests, but it is an integration test and the lib is compiled without `cfg(test)`
-/// there — so the chart's census, which asserts where the facts are made, never sees them there
-/// (`wal corner-lo` slipped past the shadow comparison that way). What these
+/// there — so the chart's census, which asserts where the facts are made, never sees them there.
+/// What these
 /// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
 /// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
 ///

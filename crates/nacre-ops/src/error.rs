@@ -440,9 +440,9 @@ pub enum RejectReason {
     /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
     ///
     /// ★ The chart's emitter raises it too, for the
-    /// `chamber` sentence: a lateral cell whose two ends **disagree** about its chamber (☑ the
-    /// (0,0)-corner boss, where the plate classes' disk cells carry no B material while the
-    /// caps do — an arrangement label defect refused here instead of assembling an open shell),
+    /// `chamber` sentence: a lateral cell two of whose speaking sides — its rims' labels and its
+    /// walls' rulings — **disagree** about its chamber (an arrangement label defect, refused here
+    /// instead of assembling an open shell; none in the suite, the ignored sweep or the census),
     /// and a cylinder class with no row or rows of both solids. The cell reader
     /// raises it for a cell with a face whose **two ends both say nothing** — answering
     /// «present» there would be a guess; measured 0 with stations placed by name.
