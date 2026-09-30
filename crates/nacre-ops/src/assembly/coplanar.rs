@@ -592,13 +592,13 @@ fn merge_component(
 /// key is `(node, ClassIx)` rather than a plane index, so a curved face compares its walls
 /// in its own key space. The drop proposition is the same sentence there: two ruling edges
 /// on one wall are collinear exactly as two plane edges are, two same-direction arcs of one
-/// circle are smooth continuation, and a cusp (the `ccw` flip) lands in `bent`. Two risks
-/// are *recorded*, both with no population today: a rim circle divided only by another
-/// solid's T-nodes could dissolve to fewer than two nodes (`Ring::new` does not check —
-/// a comment rather than a debug_assert, because an assertion no population can fire is
-/// vacuous); and a merged arc can exceed a half circle, which the edge key's CCW twin rule,
-/// the seam predicate and `mass_props` all read — the crossing census's exact-volume
-/// assertions are the standing measurement of that contract.
+/// circle are smooth continuation, and a cusp (the `ccw` flip) lands in `bent`. A rim circle
+/// divided only by another solid's T-nodes dissolves whole — a box standing across a cylinder's
+/// cap, cut away, leaves the cap a disk again — and becomes the circle it is (below). One risk is
+/// *recorded*: a merged arc can exceed a half circle, which the edge key's CCW twin rule, the seam
+/// predicate and `mass_props` all read — the crossing census's exact-volume assertions are the
+/// standing measurement of that contract. (The whole-circle arms merge no arc: a ring either
+/// keeps two nodes or more, or becomes a circle.)
 pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
@@ -635,9 +635,52 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     }
     let mut drop: HashSet<NodeId> = HashSet::new();
     for (&node, ns) in &nbrs {
-        // Exactly two neighbours, and on **every** face it appears in the two edges ride one wall.
-        if ns.len() == 2 && !bent.contains(&node) {
+        // Two edges, and on **every** face it appears in they ride one wall. Two edges are two
+        // neighbours — or one neighbour met by both, the ring of two arcs of one circle (a rim a
+        // tool crossed twice): "two neighbours" was the proxy, and it missed that ring.
+        if (ns.len() == 2 || ns.len() == 1) && !bent.contains(&node) {
             drop.insert(node);
+        }
+    }
+    if drop.is_empty() {
+        return;
+    }
+    // ★ **A ring never keeps exactly one node, and loses them all only to become its circle.** A
+    // rim crossed four times dissolves to nothing; one node left is an arc from a point back to
+    // itself, which no reader spells. So the drops that would do either are taken back — to a
+    // fixpoint, because a node taken back for one ring is kept in every ring (one set), and taking
+    // back only ever shrinks the set — and **then** the rings that lose every node become
+    // `Bound::Circle`. Converting inside the loop could leave a disk on one face while another
+    // keeps a node on the same circle. What cannot be a circle (a band's chain rim, a ring of
+    // other walls) keeps its nodes. No suite or census boolean takes a drop back.
+    let one_arc = |ring: &Ring| -> Option<usize> {
+        match *ring.walls.first()? {
+            Wall::Arc { cyl, .. } if ring.walls.iter().all(|&w| w == ring.walls[0]) => Some(cyl),
+            _ => None,
+        }
+    };
+    loop {
+        let mut back: Vec<NodeId> = Vec::new();
+        for &fi in which {
+            let lf = &out[fi];
+            for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+                for ring in b.rings() {
+                    if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
+                        continue;
+                    }
+                    let kept = ring.nodes.iter().filter(|nd| !drop.contains(nd)).count();
+                    let circle = matches!(b, Bound::Ring(_)) && one_arc(ring).is_some();
+                    if kept == 1 || (kept == 0 && !circle) {
+                        back.extend(ring.nodes.iter().copied());
+                    }
+                }
+            }
+        }
+        if back.is_empty() {
+            break;
+        }
+        for nd in back {
+            drop.remove(&nd);
         }
     }
     if drop.is_empty() {
@@ -645,6 +688,14 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     }
     for &fi in which {
         let lf = &mut out[fi];
+        for b in std::iter::once(&mut lf.outer).chain(lf.inner.iter_mut()) {
+            if let Bound::Ring(ring) = b
+                && ring.nodes.iter().all(|nd| drop.contains(nd))
+                && let Some(cyl) = one_arc(ring)
+            {
+                *b = Bound::Circle { cyl };
+            }
+        }
         for ring in lf.poly_rings_mut() {
             if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
                 continue; // untouched rings keep their allocation

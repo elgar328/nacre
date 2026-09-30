@@ -339,6 +339,36 @@ fn face_count(m: &Model, s: Handle<Solid>) -> usize {
         .sum()
 }
 
+/// A cylinder of radius 2 from `z = 0` to `z = 1` about the `z` axis, through the product's own road.
+fn round_pin(m: &mut Model) -> Handle<Solid> {
+    nacre_ops::fixtures::cylinder(
+        m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        2.0,
+        1.0,
+    )
+    .solid
+}
+
+/// An 8 × 8 plate from `z = −1` to `z = 1` with a bore of radius 2 through it about the `z` axis.
+fn bored_plate(m: &mut Model) -> Handle<Solid> {
+    let plate = m.add_cuboid(
+        Point3::from_array([-4.0, -4.0, -1.0]),
+        Point3::from_array([4.0, 4.0, 1.0]),
+    );
+    let drill = nacre_ops::fixtures::cylinder(
+        m,
+        Point3::from_array([0.0, 0.0, -2.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        2.0,
+        4.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    boolean_one(m, BoolKind::Cut, plate, drill).expect("the plate is bored")
+}
+
 /// A 7 × 8 plate one unit thick with one fillet (r 2) at its bottom-right corner — the census's
 /// `plate1`: axis at `(1.5, −2)`, tangent to the bottom wall `y = −4` and the right wall `x = 3.5`.
 fn fillet_plate(m: &mut Model) -> Handle<Solid> {
@@ -373,15 +403,54 @@ fn fillet_plate(m: &mut Model) -> Handle<Solid> {
 /// the same vertices to the bit, the same faces — `B − A` is `B`, the Fuse is one body of both
 /// volumes and Common is empty; every result valid, in both operand orders.
 ///
-/// What it holds: the lateral and the assembly meet on the rim as the cleaned faces hold it
-/// (`draft::HeldRims`), not as the arrangement split it — the split cut the lateral's rim at
-/// nodes the merged cap had dissolved (an edge used once, `OpenResultShell`). The fillet slab
-/// runs flush with the plate's bottom wall on one row and stops short of it on the other: the
-/// wall plane is not what the rim meets.
+/// What it holds, two rules. The lateral and the assembly meet on the rim as the cleaned faces
+/// hold it (`draft::HeldRims`), not as the arrangement split it — the split cut the lateral's rim
+/// at nodes the merged cap had dissolved (an edge used once, `OpenResultShell`; the fillet
+/// cells). And a whole rim a tool crossed dissolves back into its circle: crossed twice, the cap
+/// ring is two arcs whose nodes have one neighbour each (they stayed, naming the box's planes —
+/// `VertexNamesAbsentSurface`); crossed four times it dissolved to no node at all (an empty loop).
+/// The fillet slab runs flush with the plate's bottom wall on one row and stops short of it on
+/// the other: the wall plane is not what the rim meets.
 #[test]
 fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
     type Build = fn(&mut Model) -> Handle<Solid>;
     let cases: &[(&str, Build, [f64; 3], [f64; 3])] = &[
+        (
+            "cylinder, a box inside the top cap (no crossing)",
+            round_pin,
+            [-0.5, -0.5, 1.0],
+            [0.5, 0.5, 2.0],
+        ),
+        (
+            "cylinder, a box across the top rim",
+            round_pin,
+            [1.5, -0.5, 1.0],
+            [2.5, 0.5, 2.0],
+        ),
+        (
+            "cylinder, a box across the base rim",
+            round_pin,
+            [-0.5, 1.5, -1.0],
+            [0.5, 2.5, 0.0],
+        ),
+        (
+            "cylinder, a bar across the top rim twice",
+            round_pin,
+            [-3.0, -0.5, 1.0],
+            [3.0, 0.5, 2.0],
+        ),
+        (
+            "bored plate, a box across the bore's rim",
+            bored_plate,
+            [1.5, -0.5, 1.0],
+            [2.5, 0.5, 2.0],
+        ),
+        (
+            "bored plate, a bar across the bore's rim twice",
+            bored_plate,
+            [-3.0, -0.5, 1.0],
+            [3.0, 0.5, 2.0],
+        ),
         (
             "fillet plate, a slab flush with the wall plane",
             fillet_plate,
