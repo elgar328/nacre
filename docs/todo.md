@@ -260,16 +260,16 @@ pad·`face_plane` 호출 338(`collinear_loop_points` 336, `frames` 2).
 
 ### 픽스처는 제품 도로로
 
-**무엇이 문제인가.** topo 의 `test-util` 문 `add_cuboid` 가 **804곳(51 파일)** 에서 불린다. topo 는 ops 를
+**무엇이 문제인가.** topo 의 `test-util` 문 `add_cuboid` 가 **816곳(82 파일)** 에서 불린다. topo 는 ops 를
 모르므로 실현 없이 `PointCache::Unrealized` 로 push 하고, census 의 불리언 코퍼스가 이 상자로 서 있다. 존재
 이유는 «topo 층 테스트가 ops 없이 솔리드를 원했다»와 «스케치 도로보다 코퍼스가 먼저 있었다» 둘이다
 (`Model::new()` 의 씨앗은 세계 평면뿐, 정점은 없다). 원통은 이미 제품 도로다(`nacre_ops::fixtures` — 데이텀,
-원, 압출).
+원, 압출). 호출처는 `nacre-ops` 632 · `nacre-oracle` 141 · 나머지 43 이다.
 
 **모양.** 같은 모듈에 **같은 서명의 `cuboid(m, min, max)`** 를 두고 안에서 `apply(Extrude)`(사각형
 프로파일)를 부른다. 모든 픽스처가 push 깔때기(`push_vertex_realized`)를 지나 `Bounded` 가 되고, «깔때기를 안
 지난 push» 라는 사유가 제품에서 사라지며, census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid` 는
-은퇴한다. 804곳 치환은 같은 서명이라 기계적이다. topo 단위 테스트 가운데 상자의 **커널 사실**을 잠그는 것은
+은퇴한다. 816곳 치환은 같은 서명이라 기계적이다. topo 단위 테스트 가운데 상자의 **커널 사실**을 잠그는 것은
 ops 통합 테스트로 옮기고, 인접을 읽는 것은 공개 `Adjacency::rebuild` 로 읽는다.
 
 **남기는 것 하나 — 심기용 날것 문.** validate 의 자기 테스트는 **틀린 모델**(매달린 핸들·뒤집힌 면·정의와
