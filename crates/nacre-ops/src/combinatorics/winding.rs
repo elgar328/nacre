@@ -1,6 +1,8 @@
 use super::*;
 /// **A ring node's coordinate, in whichever world names it** — the key
-/// [`loop_winding`]'s lexicographic scan orders by.
+/// [`loop_winding`]'s lexicographic scan orders by. An arc's own minimum is ordered in the same
+/// currency: it is the pierce point of the cap plane, a plane through the axis, and the cylinder
+/// ([`arc_extremum_winding`]), though no ring node stands there.
 ///
 /// ★★★ **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node
 /// is the rational meet of three planes; a pierce node's coordinate is `a + b√c` and no rational
@@ -161,10 +163,8 @@ pub(crate) fn pierce_between(
 /// node set, which is planar, so it is a vertex of the ring's hull"* — true for a polygon, and
 /// false the moment an edge is an **arc**, because the arc can bulge past every node. Then the
 /// turn at `lo` is read at a point the region does not support, and the sign comes back
-/// **confident**. ☑ Measured before this was built: over the lib suite, 1,465 of 9,102 rings with
-/// arcs have their true minimum inside an arc, and in **184** of them the turn read at `lo`
-/// disagrees with the arc's own answer — all 184 on one circle, the boss whose axis sits exactly
-/// on the plate's corner, whose booleans the kernel refused for it.
+/// **confident**: a 270° sector's cap, whose smallest node is the reflex centre, winds its two
+/// orbits the wrong way round, and the walk's `−1`-cell count cannot see it (both orbits flip).
 ///
 /// ★ **The answer was named three milestones ago** and is not a wider walk:
 /// [`RejectReason::CurvedStraightRun`](crate::RejectReason::CurvedStraightRun)'s doc says *"read
@@ -172,17 +172,22 @@ pub(crate) fn pierce_between(
 /// that reading, and the winding there is [`smooth_extremum_winding`]'s product — the ring is
 /// smooth at an arc's interior point, so no turn is needed.
 ///
-/// **What it can decide.** Let `ê_a` be the first world axis the circle **spans** (`ê₀`, unless
-/// the axis *is* `ê₀` — then every point shares `x` and the minimum is taken in `y`). The circle's
-/// lexicographic minimum is its point of least coordinate `a`, and that point is rational —
-/// `c − r·ê_a` — exactly when the axis is perpendicular to `ê_a` (`m[a] = 0`); otherwise it is
-/// irrational and this says nothing, leaving the node's turn (the axis tilted *toward* `ê_a`).
-/// ★ Requiring the axis to be world **z**, and counting every other axis as tilted, leaves 84 arcs
-/// over the suite to the node's turn, and the commuting oracle has three cells where that turn
-/// is wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
-/// bulges past the minimum node, takes the unbounded cell for a bounded one and seeds the labels
-/// inside out (`NOT_OWN_SOLID`). The halves are the circle's own (below), so nothing here
-/// depends on which world axis the cylinder stands along.
+/// **The circle's minimum is a pierce point.** Let `ê_a` be the first world axis the circle
+/// **spans** (`ê₀`, unless the axis *is* `ê₀` — then every point shares `x` and the minimum is taken
+/// in `y`). The point of least coordinate `a` lies on the plane `H` through the axis with normal
+/// `n_h = m × ê_a` (it is `c − s·p` for `p = ê_a − (m_a/|m|²)·m`, which lies in the span of `m` and
+/// `ê_a`), so it is one of the two points the cap plane, `H` and the cylinder share — the
+/// [`plane_plane_cylinder`](nacre_exact::quad::plane_plane_cylinder) meet every pierce node is
+/// solved by, and a [`CoordKey::Pierce`] that [`cmp_key`] orders against the ring's nodes and
+/// against another arc's minimum. The point is irrational whenever the axis tilts toward `ê_a` or
+/// the radius is a surd (`c_x − 3√41/25` on a Pythagorean frame; `−√2` for a sector of `r² = 2` on
+/// the world frame); a road that answered only for a rational `c − r·ê_a` left both to the node's
+/// turn, and on a sector whose centre is the smallest node that turn was the wrong one.
+///
+/// ★ **What it cannot decide it refuses by name.** A minimum this cannot place or order is a ring
+/// whose winding has no proof; reading the node's turn there would be the confident wrong sign
+/// this function exists to catch. The meet's width limit is `WitnessNotRational`, as
+/// [`coord_key`] names the same meet failing for a node.
 fn arc_extremum_winding(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -191,135 +196,113 @@ fn arc_extremum_winding(
     keys: &[CoordKey],
     lo: usize,
 ) -> Result<Option<i8>, BoolError> {
-    use nacre_exact::{Orient, Rat, quad};
+    use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
+    use nacre_exact::{Orient, Rat};
+    let width = || reject(RejectReason::WitnessNotRational);
     let key = |i: usize| &keys[i];
-    // A rational coordinate against a ring node's key, through the same two comparators `cmp_key`
-    // dispatches to — so a pierce node is decided too.
-    let cmp_rat = |ext: Rat, k: &CoordKey, a: usize| -> Option<std::cmp::Ordering> {
-        let ord = |o: Orient| match o {
-            Orient::Positive => std::cmp::Ordering::Greater,
-            Orient::Negative => std::cmp::Ordering::Less,
-            Orient::Zero => std::cmp::Ordering::Equal,
-        };
-        match k {
-            CoordKey::Three(t) => {
-                let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
-                ext.partial_cmp(&q[a])
+    // `x` against `y`, axis by axis — `-1` when `x` is lexicographically the smaller, `0` when
+    // they are the same point.
+    let lex = |x: &CoordKey, y: &CoordKey| -> Result<i8, BoolError> {
+        for ax in 0..3 {
+            let o = cmp_key(jd, x, y, ax)?;
+            if o != 0 {
+                return Ok(o);
             }
-            CoordKey::Pierce(b) => Some(ord(quad::cmp_coord_meet_branch(
-                &nacre_exact::MeetPoint::Narrow([ext, ext, ext]),
-                &b.0,
-                &b.1,
-                a,
-            ))),
         }
+        Ok(0)
     };
     let n = ring.len();
     let zero = Rat::from_int(0);
-    let mut best: Option<([Rat; 3], i8)> = None;
+    let mut best: Option<(CoordKey, i8)> = None;
     for (i, e) in ring.iter().enumerate() {
         let Carrier::Arc(ac) = &e.carrier else {
             continue;
         };
-        let (m, r2) = (ac.def.dir(), ac.def.r2());
-        // The first world axis the circle spans; the minimum is rational iff the axis is ⊥ to it.
+        // ★ Read first: `arc_at` is where an arc's start is required to be a pierce name
+        // (`RingNaming` otherwise), and the halves below must not read an end that is not.
+        let EdgeDir::Arc(ad) = dir_at(jd, cyls, p, e, e.node)? else {
+            unreachable!("an arc carrier's direction is an arc")
+        };
+        let (o, m, r2) = (ac.def.origin(), ac.def.dir(), ac.def.r2());
+        // The first world axis the circle spans.
         let a = usize::from(m[1] == zero && m[2] == zero);
-        if m[a] != zero {
-            continue;
-        }
-        let Ok(EdgeDir::Arc(ad)) = dir_at(jd, cyls, p, e, e.node) else {
-            continue;
-        };
-        let c = ad.centre;
-        // The extreme is `c − r`, which needs the radius itself: a squared radius with no rational
-        // root leaves the extent undecided — the honest answer this loop already has.
-        let Some(ex) = nacre_exact::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r)) else {
-            continue;
-        };
-        let mut ext = c;
-        ext[a] = ex;
-        // Is the circle's minimum lexicographically below `lo`? ★ Three answers, not two: running
-        // out of axes with every one equal means it **is** `lo`, and the premise holds.
-        let mut lower = Some(false);
-        for (ax, v) in ext.iter().copied().enumerate() {
-            match cmp_rat(v, key(lo), ax) {
-                Some(std::cmp::Ordering::Less) => {
-                    lower = Some(true);
-                    break;
-                }
-                Some(std::cmp::Ordering::Greater) => break,
-                Some(std::cmp::Ordering::Equal) => {}
-                None => {
-                    lower = None;
-                    break;
-                }
+        let mut e_a = [zero; 3];
+        e_a[a] = Rat::from_int(1);
+        // `H`: through the axis, so through the centre — `n_h · c = n_h · o` because `c − o ∥ m`.
+        let n_h = nacre_exact::cross3_rat(&m, &e_a).ok_or_else(width)?;
+        let h_plane = nacre_exact::dot3_rat(&n_h, &o)
+            .and_then(|d| zero.checked_sub(d))
+            .map(|d| [n_h[0], n_h[1], n_h[2], d])
+            .ok_or_else(width)?;
+        let cap = class_coeffs_rat(jd, p).ok_or_else(width)?;
+        let ext = match plane_plane_cylinder(&cap, &h_plane, &o, &m, r2).ok_or_else(width)? {
+            // `s` ascends along `line.dir()`, whose `a` component is `−k(|m|² − m_a²) ≠ 0`, so the
+            // two roots differ in `a` and the smaller one is read off that one sign.
+            CylinderMeet::Pair { line, s: [s0, s1] } => {
+                let s = if line.dir()[a] > zero { s0 } else { s1 };
+                CoordKey::Pierce(Box::new((line, s)))
             }
-        }
-        let Some(true) = lower else {
-            continue;
+            // `H` holds the axis, which the cap plane crosses at the centre — inside the cylinder,
+            // so the line through it meets the surface twice; and the cap plane is ⊥ `m` while `H`
+            // contains `m`, so the two are neither one plane nor parallel.
+            CylinderMeet::CoincidentPlanes
+            | CylinderMeet::ParallelPlanes
+            | CylinderMeet::OnRuling(_)
+            | CylinderMeet::AxisParallelMiss(_)
+            | CylinderMeet::Miss(_)
+            | CylinderMeet::Tangent { .. } => {
+                unreachable!("a line through a circle's centre in its plane meets it twice")
+            }
         };
+        // Is the circle's minimum lexicographically below `lo`? ★ Three answers, not two: every
+        // axis equal means it **is** `lo`, and the premise holds.
+        if lex(&ext, key(lo))? != -1 {
+            continue;
+        }
         // ★ **And is it in the arc's INTERIOR?** It cannot be an endpoint: `lo` is the smallest
         // ring **node** and this point is smaller still, so it is no node of this ring at all.
-        // (☑ Measured before the argument was trusted: a check for it fired **0** times over the
-        // suite. That is also why a boss seated on a wall needs nothing special here — its circle
-        // is cut by a **diameter**, so this point *is* a node, and the comparison above already
-        // answered "not below".)
+        // (That is also why a boss seated on a wall needs nothing special here — its circle is cut
+        // by a **diameter**, so this point *is* a node, and the comparison above answered "not
+        // below".)
         let (ka, kb) = (key(i), key((i + 1) % n));
         // The walk below runs counter-clockwise **about the axis** — the arc's own sense, so the
         // ends are taken in that order whichever way the ring traverses it.
         let (ka, kb) = if ac.ccw { (ka, kb) } else { (kb, ka) };
-        // ★★ **The halves are the circle's own.** Split the circle by the plane through its centre
-        // with normal `n_h = m × ê_a`: at θ = 0 (`c + r·ê_a`) counter-clockwise travel runs along
-        // `m × ê_a = +n_h`, so the `+n_h` half is θ ∈ (0°, 180°) — where coordinate `a` falls — and
-        // the minimum θ = 180° (`c − r·ê_a`) is where the walk **arrives from** the `+n_h` half and
-        // **leaves into** the `−n_h` one. Nothing here reads a world picture, so no «as seen in a
-        // plane» correction is needed whichever way the axis points. ★ An end *on* the plane is
-        // θ = 0° — θ = 180° is the minimum itself, taken out above — and it belongs to the half
-        // the walk is in beside it: a start leaves θ = 0° into the upper half, an end arrives at
-        // it from the lower.
-        let mut e_a = [zero; 3];
-        e_a[a] = Rat::from_int(1);
-        let Some(n_h) = nacre_exact::cross3_rat(&m, &e_a) else {
-            continue;
-        };
-        let Some(h_plane) = nacre_exact::dot3_rat(&n_h, &c)
-            .and_then(|d| zero.checked_sub(d))
-            .map(|d| [n_h[0], n_h[1], n_h[2], d])
-        else {
-            continue;
-        };
-        let half = |k: &CoordKey, is_start: bool| -> Option<bool> {
+        // ★★ **The halves are the circle's own.** `H` splits the circle: at θ = 0 (`c + s·p`, the
+        // maximum of coordinate `a`) counter-clockwise travel runs along `m × p = m × ê_a = +n_h`,
+        // so the `+n_h` half is θ ∈ (0°, 180°) — where coordinate `a` falls — and the minimum
+        // θ = 180° is where the walk **arrives from** the `+n_h` half and **leaves into** the
+        // `−n_h` one. Nothing here reads a world picture, so no «as seen in a plane» correction is
+        // needed whichever way the axis points. ★ An end *on* `H` is θ = 0° — θ = 180° is the
+        // minimum itself, taken out above — and it belongs to the half the walk is in beside it:
+        // a start leaves θ = 0° into the upper half, an end arrives at it from the lower.
+        let half = |k: &CoordKey, is_start: bool| -> Result<bool, BoolError> {
             let o = match k {
                 CoordKey::Three(t) => {
-                    let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
-                    let v = nacre_exact::dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
-                        .checked_add(h_plane[3])?;
-                    match v.partial_cmp(&zero)? {
+                    let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))
+                        .ok_or_else(width)?;
+                    let v = nacre_exact::dot3_rat(&n_h, &q)
+                        .and_then(|v| v.checked_add(h_plane[3]))
+                        .ok_or_else(width)?;
+                    match v.cmp(&zero) {
                         std::cmp::Ordering::Greater => Orient::Positive,
                         std::cmp::Ordering::Less => Orient::Negative,
                         std::cmp::Ordering::Equal => Orient::Zero,
                     }
                 }
-                CoordKey::Pierce(b) => quad::plane_side(&h_plane, &b.0, &b.1),
+                CoordKey::Pierce(b) => nacre_exact::quad::plane_side(&h_plane, &b.0, &b.1),
             };
-            Some(match o {
+            Ok(match o {
                 Orient::Positive => true,
                 Orient::Negative => false,
                 Orient::Zero => is_start,
             })
         };
-        let (Some(ha), Some(hb)) = (half(ka, true), half(kb, false)) else {
-            continue;
-        };
+        let (ha, hb) = (half(ka, true)?, half(kb, false)?);
         // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
         // wraps the whole way round inside one half — and θ's order inside a half is read off
         // coordinate `a`: falling in the upper half, rising in the lower.
-        // ★ A declining comparison leaves today's road, exactly as every other thing this
-        // function cannot decide does — it must not become a **refusal**, which is what `?` here
-        // would have made of it (☑ measured 0 today; the shape is wrong all the same).
-        let Ok(x_cmp) = cmp_key(jd, ka, kb, a) else {
-            continue;
-        };
+        let x_cmp = cmp_key(jd, ka, kb, a)?;
         let hit = match (ha, hb) {
             (true, false) => true,
             (false, true) => false,
@@ -329,29 +312,14 @@ fn arc_extremum_winding(
         if !hit {
             continue;
         }
-        // The winding read **there**: the ring is smooth at an arc's interior point, so this is
-        // [`smooth_extremum_winding`]'s product — the one spelling.
-        let sg = |b: bool| if b { 1i8 } else { -1 };
-        let w = sg(ad.ccw) * sg(ad.axis_up) * jd.planes[p].frame_sign;
+        // The winding read **there**: the ring is smooth at an arc's interior point.
+        let w = smooth_extremum_winding(jd, p, &ad);
         // ★ **The minimum, not the first.** Two arcs of one ring can each dip below `lo` only if
         // they ride different circles; the ring is supported at the lower of the two, and reading
         // the other would ask about a point the region is not extreme at.
         let take = match &best {
             None => true,
-            Some((b, _)) => {
-                let mut lt = false;
-                for ax in 0..3 {
-                    match ext[ax].partial_cmp(&b[ax]) {
-                        Some(std::cmp::Ordering::Less) => {
-                            lt = true;
-                            break;
-                        }
-                        Some(std::cmp::Ordering::Greater) => break,
-                        _ => {}
-                    }
-                }
-                lt
-            }
+            Some((b, _)) => lex(&ext, b)? == -1,
         };
         if take {
             best = Some((ext, w));

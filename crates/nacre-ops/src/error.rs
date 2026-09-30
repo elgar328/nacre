@@ -619,8 +619,10 @@ pub enum RejectReason {
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
     /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one of
     /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
-    /// calls it), and the arrangement's split passes, where a point's own description — its
-    /// `(line, s)` or its `dir_sign` — could not be formed.
+    /// calls it), the arrangement's split passes, where a point's own description — its
+    /// `(line, s)` or its `dir_sign` — could not be formed, and a ring's winding
+    /// (`combinatorics::arc_extremum_winding`), where an arc's minimum — the pierce point of its
+    /// cap plane, a plane through the axis, and the cylinder — could not be solved.
     ///
     /// ★ **The arc split asks for an order, not for its endpoints' coordinates**, so what this
     /// name means there is the honest cause — a description past `Rat` — and not a shape the road

@@ -217,17 +217,9 @@
 
 답은 초록이지만 전제나 뒤처리가 흔들리는 자리 — 결과를 어떻게 바꾸는지를 먼저 잰다.
 
-### `loop_winding` 의 전제가 거짓인 링
+### 감김의 `frame_sign`·옆면 `orient_sign` 부호 잠금
 
-사전식 최소 노드가 영역의 극점이 아닌 링(호가 최소를 넘어서는 경우)에 대한 일반 답이 없다. 그런 링이 스위트에 실재한다(`design.md` 「감김과 방향」). 같은 자리의 빚: `frame_sign` 과 옆면 `orient_sign` 의 부호를 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다.
-
-### 부채꼴, 기운 틀·스팬 안 — 옆면 칸의 판독 불일치 `CylinderGateUndecided`
-
-270° 부채꼴(단위 원의 `(1, 0)` → 270° → `(0, −1)` + 반지름 둘, 높이 2) 기둥을 `pythagorean_frame` 위에 짓고, 상자가
-그 높이 안(`0.5…1.5`)에 서면 여섯 불리언이 모두 `CylinderGateUndecided`(NotSupported)다 — 옆면 칸의 두 끝이 서로
-다른 방을 읽는다(`arrangement/cyl_chart/emit.rs` 의 «a present cell whose chamber could not be read»). 월드 틀, 또는
-상자가 두 캡을 넘으면 빌드된다. 반원판은 같은 배치에서 빌드된다. 원인은 재지 않았다.
-`tests/coverage/arc_crossings.rs` 의 부채꼴 테스트가 그 칸들을 이 이름으로 고정한다.
+두 인자의 부호는 잠기지 않았다 — 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다(`design.md` 「감김과 방향」).
 
 ### 접선 행이 참인 접촉을 말하지 않는 자리 — 거짓 `SelfTouchingResult`
 
