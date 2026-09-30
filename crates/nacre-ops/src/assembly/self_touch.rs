@@ -46,8 +46,9 @@ pub(crate) enum Pinch {
 /// (material inside) and `-1` for a bore. Those two bits fix all six memberships, because near the
 /// line the only boundaries are those two surfaces — which is why this is exact without touching
 /// the arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is
-/// a secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak
-/// — or, where that line is an edge both faces end on, hands the question to the structure.)
+/// a secant, so the picture there is six regions, and the population gate refuses the row
+/// (`TangentLineInAnotherPlane`) — or, where that line is an edge both faces end on, hands the
+/// question to the structure.)
 pub(crate) fn pinch(
     kind: BoolKind,
     wall_solid: crate::planes::SolidSide,
@@ -115,6 +116,11 @@ pub(crate) fn pinch(
 /// touches, and a result with no cylinder face beside that wall then clears it. The class reading
 /// alone was the verdict once, and it convicted the lens and the far side of two bodies whenever one
 /// of them had a face anywhere on the wall's plane.
+///
+/// ★ **Every row here is one this verdict can read.** A row that could not be stated, or whose line
+/// a third plane holds other than as an edge (six regions, not three), was refused by the gate
+/// before anything was arranged (`planes::cylinder_gate`); what reaches here is stated, and its
+/// line is held by no other plane or is such an edge.
 pub(super) fn tangency_reject(
     tg: &Tangencies<'_>,
     faces: &[LocalFace],
@@ -128,9 +134,6 @@ pub(super) fn tangency_reject(
     // once, and only if a row gets that far.
     let mut bodies: Option<Vec<Vec<ClassIx>>> = None;
     for t in tg.rows {
-        if t.undecided || (t.line_in_another_plane && !t.line_is_an_edge) {
-            return Err(reject(RejectReason::CylinderGateUndecided));
-        }
         // ★ The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
         // on an edge four faces use, and the shell guard names that — this row has nothing to
         // add, and the six regions around a line in a third plane are not its to judge. Said here

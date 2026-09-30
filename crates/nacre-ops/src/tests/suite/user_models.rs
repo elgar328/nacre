@@ -223,7 +223,7 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 /// rests on the footprint reader reading a **disk** — the tool's own cap,
 /// which sits on the plate's side plane and clears the corner fillet's tangent line by twice its
 /// radius. Unread, that clearance folds to "did not clear", a tangency row
-/// is written for a contact that is not there, and the verdict abstains on it.
+/// is written for a contact that is not there, and the gate refuses the boolean on it.
 ///
 /// The volume is the oracle: the fuse's `100695.2213` less the two rib bores `2·π·10²·11`.
 ///

@@ -447,6 +447,26 @@ pub enum RejectReason {
     /// raises it for a cell with a face whose **two ends both say nothing** — answering
     /// «present» there would be a guess; measured 0 with stations placed by name.
     CylinderGateUndecided,
+    /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
+    /// tangency row (a wall plane exactly `r` from a cylinder's axis, the wall face's outer loop
+    /// not clear of the line on a lateral face), another plane class holds that line too, and the
+    /// line is not an edge the wall face and a face on that class both end on
+    /// (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the line six
+    /// regions meet rather than the three the tangency's verdict (`assembly::tangency_reject`)
+    /// reads, and no road judges them — the gate refuses the pair before the arrangement runs.
+    ///
+    /// ★ **Not [`Self::CylinderGateUndecided`]**: nothing here failed to be computed — the gate
+    /// decided exactly that a third plane holds the line — and that name's sentence is false of
+    /// it. **Not [`Self::RulingBoundNotYet`]** either: where the wall face runs across the line
+    /// the rulings split does refuse it (a transversal segment on a recorded line), but where it
+    /// only reaches the line nobody has shown the split cannot arrange it.
+    ///
+    /// ⚠ A row is written from the wall face's **outer** loop alone, so a line through the
+    /// face's hole or notch writes one where nothing touches, and a third plane holding that line
+    /// makes this refusal false there (measured 0). Fired by the half cylinder's flat edge with a
+    /// wall tangent across it and by an L-shaped tangent face (`tests/coverage/edge_on_a_ruling.rs`);
+    /// none in the census.
+    TangentLineInAnotherPlane,
     /// **The trace does not determine whether a lateral face is present over a sector.**
     ///
     /// A cell label says where *material* is; whether the cylinder's own face bounds it there is a
@@ -630,8 +650,8 @@ pub enum RejectReason {
     ///
     /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
     /// those were made total (they clear denominators and answer in `BigInt`), so
-    /// [`Self::CylinderGateUndecided`] means the geometry — a rotated class, a moved cylinder, a
-    /// surface contact. This one means the arithmetic: the wall a wide model meets after the gate
+    /// [`Self::CylinderGateUndecided`] means the geometry — a rotated class, a moved cylinder.
+    /// This one means the arithmetic: the wall a wide model meets after the gate
     /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
     ///
     /// ☑ **The chart half of that wall is closed**: the chart reads a **primitive** normal, so
@@ -779,7 +799,9 @@ pub enum RejectReason {
     /// record (`planes::SharedRuling` — the lines of two secant classes, or of a secant and a
     /// tangent one of the other solid, that lie on a lateral face), a recorded line's segment that
     /// shares a stretch with a ruling piece without matching one end for end, or one that crosses
-    /// its own class there (`Transversal`, whose side is the directed line's).
+    /// its own class there (`Transversal`, whose side is the directed line's — measured 0 in the
+    /// suite and the census: the one shape that reached it, a tangent wall across a half
+    /// cylinder's flat edge, is [`Self::TangentLineInAnotherPlane`] at the gate).
     /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// ★ **«A class carrying both circles and rulings» is not one of those guards**:
@@ -1054,6 +1076,7 @@ impl RejectReason {
             Self::EdgeCurveUnderived => "edge_curve_underived",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
+            Self::TangentLineInAnotherPlane => "tangent_line_in_another_plane",
             Self::CylinderFaceUndecided => "cylinder_face_undecided",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
@@ -1100,6 +1123,7 @@ impl RejectReason {
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
             | Self::CylinderGateUndecided
+            | Self::TangentLineInAnotherPlane
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             // Likewise a frame past `i128`: a wider rational would lift it.

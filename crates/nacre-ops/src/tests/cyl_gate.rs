@@ -275,7 +275,7 @@ fn the_tangent_wall_states_itself_exactly() {
     // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
     assert!(t.straddles, "{t:?}");
     assert!(!t.line_in_another_plane, "{t:?}");
-    assert!(!t.undecided, "{t:?}");
+    assert!(t.undecided.is_none(), "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
     let w = t.witness.as_array();
     assert!(
@@ -320,8 +320,8 @@ fn a_faces_angular_extent_holds_the_lines_on_it_ends_included() {
 
 /// A half cylinder over the upper half of the unit disk, `z ∈ [0, 2]` (its lateral the half turn
 /// `(1, 0) → (−1, 0)`), and a box `[lo, hi] × z ∈ [−0.5, 2.5]` — the box's height covers the
-/// lateral's so the axis never clears a wall face first. The gate's tangency rows.
-fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Vec<Tangency> {
+/// lateral's so the axis never clears a wall face first. The gate's tangency rows, or its refusal.
+fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Result<Vec<Tangency>, BoolError> {
     let r = Rat::from_int;
     let mut m = Model::new();
     let half = crate::Ring2d::new(
@@ -352,9 +352,7 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Vec<Tangency> {
         Point3::from_array([hi[0], hi[1], 2.5]),
     );
     m.rebuild_adjacency();
-    crate::arrangement::plane_index_setup(&m, a, b)
-        .expect("setup")
-        .tangencies
+    crate::arrangement::plane_index_setup(&m, a, b).map(|s| s.tangencies)
 }
 
 /// ★ **A tangency row is about the lateral face, not its surface.** The half cylinder's surface
@@ -362,19 +360,24 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Vec<Tangency> {
 ///
 /// - `y = −1` touches the surface at `(0, −1)`, on the half the lateral does not have — no row;
 /// - `y = 1` touches it at `(0, 1)`, on the lateral — one row, decided;
-/// - `x = 1` touches it on the lateral's **end** ruling `(1, 0)` — one row (ends are the face's
-///   edge), held by a third plane too: the half cylinder's own flat `y = 0`.
+/// - `x = 1` touches it on the lateral's **end** ruling `(1, 0)` — a row (ends are the face's
+///   edge), held by a third plane too: the half cylinder's own flat `y = 0`. The box's wall runs
+///   across that line rather than ending on it, so the line is no edge of both faces, the verdict
+///   could not read the six regions there, and the gate refuses the pair by that name.
 #[test]
 fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
-    let missing = half_cylinder_and_box([-0.5, -1.0], [0.5, 2.0]);
+    let missing = half_cylinder_and_box([-0.5, -1.0], [0.5, 2.0]).expect("setup");
     assert!(missing.is_empty(), "{missing:?}");
-    let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]);
+    let present = half_cylinder_and_box([-0.5, 1.0], [0.5, 2.0]).expect("setup");
     assert_eq!(present.len(), 1, "{present:?}");
     assert!(
-        !present[0].undecided && !present[0].line_in_another_plane,
+        present[0].undecided.is_none() && !present[0].line_in_another_plane,
         "{present:?}"
     );
-    let end = half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]);
-    assert_eq!(end.len(), 1, "{end:?}");
-    assert!(end[0].line_in_another_plane, "{end:?}");
+    match half_cylinder_and_box([1.0, -1.0], [2.0, 2.0]) {
+        Err(BoolError::Rejected { reason, .. }) => {
+            assert_eq!(reason, RejectReason::TangentLineInAnotherPlane);
+        }
+        other => panic!("the end ruling's row is refused at the gate: {other:?}"),
+    }
 }

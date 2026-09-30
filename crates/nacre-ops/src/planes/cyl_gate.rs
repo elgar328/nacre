@@ -19,13 +19,16 @@ use super::*;
 ///
 ///   ★★★★★ **One clearance call, three records, and that is the whole rule.** `Positive` clears
 ///   and writes nothing; `Negative` writes a crossing (two rulings); `Zero` writes a tangency (one
-///   grazing line). The third arm does not refuse, and it does not `crossings.insert` either:
-///   that would put the
+///   grazing line). The third arm does not refuse on the spot, and it does not `crossings.insert`
+///   either: that would put the
 ///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
 ///   keeps every one of those sentences true and the arrangement unchanged: ☑ of 21 measured
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
 ///   population [`Tangency::line_in_another_plane`] names — a line two classes share on the
-///   cylinder, recorded as a [`SharedRuling`] and arranged as one.
+///   cylinder, recorded as a [`SharedRuling`] and arranged as one. A row the tangency's verdict
+///   cannot judge — that line not being an edge both faces end on, or the row not stated — is
+///   refused at the gate's end ([`RejectReason::TangentLineInAnotherPlane`], or the row's own
+///   name), before anything is arranged.
 /// - anything else — an oblique plane. It passes when every lateral face of the cylinder
 ///   provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
@@ -163,8 +166,9 @@ pub(crate) fn cylinder_gate(
             // outright) or another cylinder's rim (the pair rule), so a tangency or a crossing is
             // **named** before the arrangement ever sees it. ★ Named, not refused: since the
             // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
-            // `assembly::tangency_reject`'s. What the sentence guarantees is unchanged — no
-            // degenerate seating reaches the arrangement unnamed.
+            // `assembly::tangency_reject`'s — refused here only where that verdict could not
+            // judge the row. What the sentence guarantees is unchanged — no degenerate seating
+            // reaches the arrangement unnamed.
             // The one relation rule ([`nacre_exact::axis_relation`]) — the same one that decides an
             // edge's curve (`Model::derive_edge_curve`), so the gate and the edges cannot part.
             let relation = nacre_exact::axis_relation(&n, &m);
@@ -262,7 +266,8 @@ pub(crate) fn cylinder_gate(
                         // What the pair can still do is pinch the *result*, and that is a question
                         // about the operation — so the geometry is stated in a row and
                         // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`,
-                        // where the grouping can also say whether the pieces share a solid.
+                        // where the grouping can also say whether the pieces share a solid. A row
+                        // that verdict cannot judge is refused at this gate's end.
                         if clearance == Orient::Zero {
                             tangencies.extend(tangency_rows(
                                 model,
@@ -399,6 +404,23 @@ pub(crate) fn cylinder_gate(
                     && !sr.stated_by.contains(&t.wall)
                     && sr.stated_by.iter().any(|s| t.across.contains(s))
             });
+    }
+    // ★★ **A row the verdict cannot judge does not pass.** The verdict reads three regions around
+    // the tangent line; where a secant holds the line too there are six, and where a row could
+    // not be stated there is nothing to read — refused here, by the row's own name, rather than
+    // arranged: past this line the arrangement stumbles on the shape first, and which of its
+    // backstops surfaced then depended on the order of the classes, not on the shape. Last among
+    // the gate's refusals (the edge test needs the shared rulings), first row in the gate's order.
+    for t in &tangencies {
+        if let Some(e) = t.undecided {
+            return Err(e);
+        }
+        if t.line_in_another_plane && !t.line_is_an_edge {
+            return Err(crate::reject_at(
+                RejectReason::TangentLineInAnotherPlane,
+                crate::RejectWhere::Point(t.witness),
+            ));
+        }
     }
     // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
@@ -597,7 +619,9 @@ fn wall_faces_clear(
 /// splits into three regions — the lens inside the cylinder, the **two** wedges between the
 /// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
 /// question only [`crate::draft::keep`] can answer. So this is a *record*, not a verdict:
-/// the gate states the geometry, the operation decides.
+/// the gate states the geometry, the operation decides. Where that three-region picture does not
+/// hold (a third plane holds the line) or the row could not be stated, the gate refuses instead
+/// of handing the verdict a row it cannot read.
 ///
 /// ★ **A row is about a lateral *face*, not its surface.** A half cylinder's surface is tangent to
 /// a wall on the side the face does not have, where nothing touches: a row there made the verdict
@@ -642,13 +666,17 @@ pub(crate) struct Tangency {
     /// the record below cannot speak.
     ///
     /// ★ A whole **disk** wall face clearing the tangent line is read by the footprint reader
-    /// and writes no row at all, so what reaches here is the abstention's true subject.
-    /// Abstain rather than answer — except where the line is an edge of the arrangement along
-    /// this face's contact ([`Tangency::line_is_an_edge`]), which the structure judges.
-    pub(crate) line_in_another_plane: bool,
-    /// Nothing above could be stated exactly (a face with no rational world description, an
-    /// overflow). Same answer as `line_in_another_plane`, different cause.
-    pub(crate) undecided: bool,
+    /// and writes no row at all, so what reaches here is the refusal's true subject: the gate
+    /// refuses such a row ([`RejectReason::TangentLineInAnotherPlane`]) — except where the line is
+    /// an edge of the arrangement along this face's contact ([`Tangency::line_is_an_edge`]),
+    /// which the structure judges. Read by the gate alone, so no row the verdict sees has it
+    /// without that edge.
+    line_in_another_plane: bool,
+    /// **Something above could not be stated, and the refusal that says what**: the wall face's
+    /// own, where the footprint reader could not read it (the name [`wall_faces_clear`] raises for
+    /// that face), else [`RejectReason::CylinderGateUndecided`] (a face with no world description
+    /// of its own, an overflow). The gate raises it; no row the verdict sees has one.
+    undecided: Option<BoolError>,
     /// The plane classes across the wall face's straight edges — the other carrier of each edge
     /// the face shares with a plane face (`Edge::surfaces`, the adjacency answer). Read once the
     /// record is built, for [`Tangency::line_is_an_edge`].
@@ -667,9 +695,8 @@ pub(crate) struct Tangency {
     /// run along it at that edge and through it elsewhere, and there the contact is inside the
     /// face — no edge, no split lateral, the six regions unjudged. A face that ends on the line
     /// touches it along its boundary alone. ☑ The one built member of that population, an L-shaped
-    /// tangent face, never reaches this row: the rulings split refuses it first
-    /// (`RulingBoundNotYet`, `a_tangent_face_across_its_edge_on_the_line_is_refused_today`), so
-    /// the guard is unexercised until that split learns the shape.
+    /// tangent face, is where this guard speaks: its row is no edge, so the gate refuses it
+    /// (`TangentLineInAnotherPlane`, `a_tangent_face_across_its_edge_on_the_line_is_refused_today`).
     pub(crate) line_is_an_edge: bool,
     /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
     /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
@@ -719,9 +746,11 @@ fn tangency_foot(
 /// contributes nothing; that is why collecting here neither widens nor narrows the rule.
 ///
 /// ★★★★★ **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
-/// face and raises on shapes it cannot read; walking further and *propagating* those raises would
-/// change which reason a tangency wears. Every failure here becomes `undecided` on the row
-/// instead — the verdict then abstains, which is the same answer with an honest name.
+/// face and raises on shapes it cannot read; a raise propagated from the middle of this walk
+/// would outrank the gate's other refusals by the order the faces happen to be in. Every failure
+/// here becomes `undecided` on the row instead, carrying its refusal, and the gate raises the
+/// first such row's after its other questions — the same name for an unreadable face wherever it
+/// stands.
 #[allow(clippy::too_many_arguments)]
 fn tangency_rows(
     model: &Model,
@@ -811,43 +840,40 @@ fn tangency_rows(
         ) {
             continue;
         }
-        let (cleared, unread) = fi
-            .face
-            .map(|fh| {
-                let got = face_clears_footprint(model, model.face(fh), coeffs, &o, &m, r2, &spans);
-                #[cfg(feature = "tangency-trace")]
-                if got.is_err() {
-                    let f = model.face(fh);
-                    let arcs = f
-                        .outer
-                        .half_edges
-                        .iter()
-                        .filter(|he| {
-                            !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_))
-                        })
-                        .count();
-                    #[allow(clippy::print_stderr)]
-                    {
-                        eprintln!(
-                            "TFACE unread edges={} arcs={} holes={}",
-                            f.outer.half_edges.len(),
-                            arcs,
-                            f.inner.len()
-                        );
-                    }
+        let read = fi.face.map(|fh| {
+            let got = face_clears_footprint(model, model.face(fh), coeffs, &o, &m, r2, &spans);
+            #[cfg(feature = "tangency-trace")]
+            if got.is_err() {
+                let f = model.face(fh);
+                let arcs = f
+                    .outer
+                    .half_edges
+                    .iter()
+                    .filter(|he| !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)))
+                    .count();
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!(
+                        "TFACE unread edges={} arcs={} holes={}",
+                        f.outer.half_edges.len(),
+                        arcs,
+                        f.inner.len()
+                    );
                 }
-                // ★★★★★ **A face this could not read is «unknown», not «innocent».** The doc
-                // above has always said every failure here becomes `undecided` on the row — and
-                // it did not: the failure was folded to «did not clear», a row was written, and
-                // the row then carried a `straddles` that had **never been computed** into the
-                // verdict. `!straddles` acquits, so an unreadable wall face was quietly cleared
-                // of pinching the result. Measured: every abstaining row in the corpus is such a
-                // face, and only `line_in_another_plane` kept the acquittal from being reached.
-                (got.as_ref().is_err(), got.unwrap_or(false))
-            })
-            // No face row at all is the same kind of silence.
-            .map(|(unread, cleared)| (cleared, unread))
-            .unwrap_or((false, true));
+            }
+            got
+        });
+        // ★★★★★ **A face this could not read is «unknown», not «innocent».** Folded to «did not
+        // clear», it would write a row carrying a `straddles` that was **never computed**, and
+        // `!straddles` acquits. So the row carries the face's own refusal and the gate raises it —
+        // the same name [`wall_faces_clear`] raises for such a face when it stands before the first
+        // face that fails to clear, so which name an unreadable face wears does not depend on the
+        // order of the class's faces. No face row at all is the same kind of silence.
+        let (cleared, unread) = match read {
+            Some(Ok(cleared)) => (cleared, None),
+            Some(Err(e)) => (false, Some(e)),
+            None => (false, Some(reject(RejectReason::CylinderGateUndecided))),
+        };
         if cleared {
             continue; // a face that clears the footprint cannot reach the tangent line
         }
@@ -893,18 +919,21 @@ fn tangency_rows(
                 }
                 Some(Point3::from_array(p))
             });
-            let undecided = unread
-                || base.is_none()
-                || on_face.is_none()
-                || lens_side.is_none()
-                || mat_side.is_none()
-                || witness.is_none()
-                || cf.def.is_none();
+            let undecided = unread.or_else(|| {
+                (base.is_none()
+                    || on_face.is_none()
+                    || lens_side.is_none()
+                    || mat_side.is_none()
+                    || witness.is_none()
+                    || cf.def.is_none())
+                .then(|| reject(RejectReason::CylinderGateUndecided))
+            });
             #[cfg(feature = "tangency-trace")]
             #[allow(clippy::print_stderr)]
             {
                 eprintln!(
-                    "TROW liap={line_in_another_plane} straddles={straddles} undecided={undecided}"
+                    "TROW liap={line_in_another_plane} straddles={straddles} undecided={}",
+                    undecided.is_some()
                 );
             }
             out.push(Tangency {

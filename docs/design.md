@@ -1463,7 +1463,7 @@ OCCT 는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle 의 
 
 성장은 사유 어휘에서만 일어나므로 `RejectReason`(과 그 세부인 `DeclineKind`)만 `#[non_exhaustive]` 이고 `BoolError`·`RejectClass` 는 exhaustive 다(소비자가 모든 클래스에 대해 결정하도록 강제한다 — 사유는 자라고 클래스는 안 자란다). 트레이스가 불완전한 경우는 `TraceDeclined { kind: DeclineKind, face: Option<Handle<Face>> }` 가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다(한 클래스가 여러 면을 기권할 수 있고, 이것은 첫째를 이름 댄다).
 
-**«어디»는 사유 옆에 실려 나간다.** `at: Option<RejectWhere>`(`Point(Point3)` | `Segment([Point3; 2])`, 월드 f64)는 가드가 발화한 순간 보고 있던 **증인**이다(여럿이면 엔티티 자체 순서의 최솟값 — HashMap 순회로 뽑으면 실행마다 다른 좌표가 나온다). 위치를 `RejectReason` 변종 안에 넣지 않는 이유: 사유는 범주 어휘(census 키·테스트가 이름 대는 것, `Copy+Eq`·const-구성)이고 좌표는 측정값이다 — census 의 "측정값은 키 밖" 규칙의 오류-값 판. 좌표는 진단용 실현(캐시급)이라 `RejectWhere` 는 `Eq` 가 없고, 비교는 근사로만 한다(거절끼리 비교할 때는 `reason` 을 꺼내 비교한다). 표면화 사유 중 `self_touching_result`(위반 모서리)·`non_manifold_result_edge`(위반 모서리)·`non_manifold_vertex`(핀치 정점)가 싣고, `no_clear_ray`(분산적)·`precision_budget`(전-모델)·`cylinder_face_undecided`는 싣지 않는다(면이 증인인 사유가 필요해지면 `RejectWhere` 에 면 변종을 여는 것이 길이다).
+**«어디»는 사유 옆에 실려 나간다.** `at: Option<RejectWhere>`(`Point(Point3)` | `Segment([Point3; 2])`, 월드 f64)는 가드가 발화한 순간 보고 있던 **증인**이다(여럿이면 엔티티 자체 순서의 최솟값 — HashMap 순회로 뽑으면 실행마다 다른 좌표가 나온다). 위치를 `RejectReason` 변종 안에 넣지 않는 이유: 사유는 범주 어휘(census 키·테스트가 이름 대는 것, `Copy+Eq`·const-구성)이고 좌표는 측정값이다 — census 의 "측정값은 키 밖" 규칙의 오류-값 판. 좌표는 진단용 실현(캐시급)이라 `RejectWhere` 는 `Eq` 가 없고, 비교는 근사로만 한다(거절끼리 비교할 때는 `reason` 을 꺼내 비교한다). 표면화 사유 중 `self_touching_result`(위반 모서리)·`non_manifold_result_edge`(위반 모서리)·`non_manifold_vertex`(핀치 정점)·`tangent_line_in_another_plane`(접선 위 한 점)이 싣고, `no_clear_ray`(분산적)·`precision_budget`(전-모델)·`cylinder_face_undecided`는 싣지 않는다(면이 증인인 사유가 필요해지면 `RejectWhere` 에 면 변종을 여는 것이 길이다).
 
 **어떤 사유가 실제로 발화하는지는 상설 census 가 답한다 — `nacre-ops::reject_census`.** `reject()`/`reject_at()` 쌍이 크레이트의 모든 `Rejected` 를 짓는 유일한 깔때기라, 거기 `#[track_caller]` 하나씩이 모든 호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-judge::climb_census` — `#[cfg(test)]` 는 통합 테스트가 비-test 빌드를 링크해서 못 쓴다), 비용은 raise 1회당 **~11ns** 다.
 
@@ -1627,7 +1627,8 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 
 - **게이트는 (평면 클래스, 원통) 쌍을 다섯 갈래로 가른다**: ⊥ 절단(통과, 상대 몸통에 flush 하게 앉은
   캡 포함) · r 밖으로 비킨 ∥ 벽(무기록 통과) · 평면이 r 안인 ∥ 벽(기록하고 통과) · 접선 ∥ 벽(접선으로
-  기록하고 통과) · 비스듬한 평면(옆면의 모든 면이 그 평면을 비킴을 증명하면 통과, 아니면
+  기록하고 통과 — 단 접선 판정이 읽을 수 없는 행, 곧 그 선을 셋째 평면이 간선 아닌 채로 품거나 행을
+  진술하지 못한 것은 게이트 끝에서 거절한다: `TangentLineInAnotherPlane`, 또는 행이 든 이름) · 비스듬한 평면(옆면의 모든 면이 그 평면을 비킴을 증명하면 통과, 아니면
   `ObliqueCylinderCut` — 타원은 짓지 않았다). 모든 산술은 세계 서술 위의 checked `Rat` 이고, 정확히
   결정하지 못한 것은 `CylinderGateUndecided` 다 — 보수적인 정직한 거절이지 추측이 아니다.
 - **게이트의 «기록»이 열고 배열은 기록만 믿는다.** `point_plane_clearance_rat` **한 호출**의
@@ -2040,7 +2041,9 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   열쇠 구멍) 주변은 여섯 영역이고 세 영역 판정은 말할 수 없다. 그 선이 접선 벽 면과 할선 면이 나누는
   **피연산자 간선**이고 할선이 그 선을 룰링으로 진술하면(`Tangency::line_is_an_edge` — 게이트가
   `Edge::surfaces` 로 읽는다) 선은 배열의 간선이다: 옆면·접선 벽 면·할선 면이 모두 거기서 끝나므로
-  두 덩어리의 접촉은 네 면이 쓰는 간선이고, 판정은 그 행을 **구조에 맡긴다**. 그 밖의 행은 기권한다.
+  두 덩어리의 접촉은 네 면이 쓰는 간선이고, 판정은 그 행을 **구조에 맡긴다**. 그 밖의 행은 게이트가 배열 전에
+  거절한다(`TangentLineInAnotherPlane`) — 판정이 읽지 못할 행을 들여보내면 배열이 먼저 넘어지고, 어느 백스톱이
+  나가는지를 클래스 순서가 정했다.
   옆면의 캡 너머로 뻗은 그 간선은 조립의 분할이 캡의 림 점에서 자른다 — 그 점의 이름은 캡과 한 벽의
   관통 이름이라 «짝 = 간선의 두 평면»이라는 이름 사실로는 안 보이므로, 기록된 선마다 점에게 묻는다.
 - **접선 접촉에서 집힌 것은 «표면»이 아니라 «면»이다.** 접점 둘레 작은 구 위에서 경계를

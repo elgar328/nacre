@@ -318,16 +318,16 @@ fn a_keyhole_builds() {
 /// Refused today, by name — and the name is the placement's, never the operation's or the vertex
 /// order's: every boolean stops before the operation decides anything.
 ///
-/// - **Across**, `A` first: `RulingBoundNotYet`, at every height and in both frames.
-/// - **Across**, `B` first: the arrangement's backstops — `RingOrientation` past both caps,
-///   `LabelConflict` on the base cap. Inside the span and past the top, **the frame decides the
-///   name**: `LabelConflict` in the world frame, the cap's winding doubling back
-///   (`StraightAngle`) in the tilted one.
-/// - **Ending**, either order and frame: `StraightAngle` inside the span and past the top,
-///   `LabelConflict` on the base cap and past both caps.
+/// - **Across**: `TangentLineInAnotherPlane`, from the population gate, in either operand order,
+///   at every height and in both frames. `A`'s flat holds the tangent line and `B`'s wall runs
+///   across it, so the line is no edge both faces end on; around it six regions meet, which the
+///   tangency's verdict does not read, and the gate refuses the pair before anything is arranged.
+/// - **Ending**, either order and frame: the line *is* such an edge, so the gate passes it to the
+///   structure, and the arrangement does not build that structure yet — `StraightAngle` inside the
+///   span and past the top, `LabelConflict` on the base cap and past both caps.
 ///
-/// The backstop cells ([`backstop`], `SuspectedDefect`, 84 booleans) are pinned by variant, so a
-/// backstop that moves to another placement is news; the rest by class.
+/// The backstop cells ([`backstop`], `SuspectedDefect`, 48 booleans) and the across family's name
+/// are pinned by variant, so a refusal that moves is news; the rest by class.
 #[test]
 fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
     let across: &[[f64; 2]] = &[[-3.0, -2.0], [1.0, -2.0], [1.0, 0.5], [-3.0, 0.5]];
@@ -336,34 +336,38 @@ fn a_tangent_wall_on_a_flats_edge_is_refused_today() {
     let ran = every_placement(
         upper_half_disk,
         &[("across the edge", across), ("ending on the edge", ending)],
-        |c, m, got| match backstop(c) {
-            Some(want) => {
-                match &got {
-                    Err(BoolError::Rejected { reason, .. }) => {
-                        assert_eq!(*reason, want, "{c}: the backstop moved");
-                    }
-                    other => panic!("{c}: the backstop moved — {other:?}"),
+        |c, m, got| {
+            let pinned = match (c.placement.family, backstop(c)) {
+                ("across the edge", _) => Some(RejectReason::TangentLineInAnotherPlane),
+                (_, Some(want)) => {
+                    defects += 1;
+                    Some(want)
                 }
-                defects += 1;
+                _ => None,
+            };
+            match pinned {
+                Some(want) => match &got {
+                    Err(BoolError::Rejected { reason, .. }) => {
+                        assert_eq!(*reason, want, "{c}: the refusal moved");
+                    }
+                    other => panic!("{c}: the refusal moved — {other:?}"),
+                },
+                None => refused_today(c, m, got),
             }
-            None => refused_today(c, m, got),
         },
     );
     assert_eq!(ran, 2 * 2 * 2 * 4 * 6, "the family");
-    assert_eq!(defects, 84, "the backstop refusals");
+    assert_eq!(defects, 48, "the backstop refusals");
 }
 
 /// The half-cylinder family's backstop cells — where [`a_tangent_wall_on_a_flats_edge_is_refused_today`]
-/// stops at `SuspectedDefect` today, and with which reason. Neither the operation nor the vertex
-/// order enters.
+/// stops at `SuspectedDefect` today, and with which reason: the wall ending on the edge, on the
+/// base cap or past both caps. Neither the operation nor the vertex order enters.
 fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
     use Height::*;
     let p = c.placement;
-    match (p.family, c.swapped, p.height, p.tilted) {
-        ("ending on the edge", _, OnBase | PastBoth, _) => Some(RejectReason::LabelConflict),
-        ("across the edge", true, PastBoth, _) => Some(RejectReason::RingOrientation),
-        ("across the edge", true, OnBase, _)
-        | ("across the edge", true, Inside | PastTop, false) => Some(RejectReason::LabelConflict),
+    match (p.family, p.height) {
+        ("ending on the edge", OnBase | PastBoth) => Some(RejectReason::LabelConflict),
         _ => None,
     }
 }
@@ -427,9 +431,9 @@ fn a_line_contact_on_a_lateral_is_refused_today() {
 /// line `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that
 /// stretch the line runs through the cap's interior. That is the face the tangency verdict's
 /// `line_is_an_edge` keeps out (`!straddles`: an edge on the line does not make the contact an
-/// edge where the face runs across it). Today the rulings split refuses it first — the cap's
-/// segment crosses the line (`RulingBoundNotYet`), both vertex orders, all six booleans — so the
-/// verdict's guard is not reached; when this moves, the guard speaks.
+/// edge where the face runs across it) — and that guard is what speaks here: the row is no edge,
+/// so the population gate refuses it (`TangentLineInAnotherPlane`), both vertex orders, all six
+/// booleans, before the rulings split meets the cap's segment across the line.
 #[test]
 fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
     use nacre_math::Vector3;
@@ -483,7 +487,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
                 match boolean(&mut m, kind, x, y) {
                     Err(BoolError::Rejected { reason, .. }) => assert_eq!(
                         reason,
-                        RejectReason::RulingBoundNotYet,
+                        RejectReason::TangentLineInAnotherPlane,
                         "{at}: the wall moved"
                     ),
                     other => panic!("{at}: the wall moved — {other:?}"),
