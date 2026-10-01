@@ -71,7 +71,8 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// the half-built `model` is local, so the caller never sees a partly-mutated arena.
 ///
 /// ★ **The premise this rests on: the log is the whole history.** Cells put into a model
-/// outside the log (`Model::add_cuboid`, a direct `push_*`) shift every later index, and so
+/// outside the log (a fixture's `apply` with no log beside it, a direct `push_*`) shift every
+/// later index, and so
 /// does a *late* reject — one that pushed cells before declining (`PadMissesFace`,
 /// `PocketNotBlind`, a boolean's reject) leaves them in the append-only arena while the log has
 /// no entry for them. [`OpError::LogHandleOutOfRange`] catches only the case where the index

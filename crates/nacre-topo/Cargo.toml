@@ -15,12 +15,12 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 
 [features]
-# Exposes the test-only solid primitive `Model::add_cuboid` (a topo convenience that bypasses
-# the ops modelling layer), and turns on the push counters the census reads (`WIDE_PLANES`,
-# `SEEDED_HITS`, `surface_derive_counts`). Off by default, so production consumers never see
-# either and a product build counts nothing; crates below nacre-ops enable it in their
-# [dev-dependencies] to build test solids at the topo layer.
-# There is no cylinder primitive: a cylinder is a circle extruded (`nacre_ops::fixtures`).
+# Exposes the planting doors (pushes that skip the funnel or the checks — what a test needs
+# to plant a model the product cannot build), `reversed_shell`, `plane_name_through`, the
+# motion prefix cache's length (`prefix_hp_len`), and the push counters the census reads
+# (`WIDE_PLANES`, `SEEDED_HITS`, `surface_derive_counts`). Off by default, so production
+# consumers never see them and a product build counts nothing. Test solids are built
+# through the operations (`nacre_ops::fixtures`), not here.
 test-util = []
 
 [dev-dependencies]

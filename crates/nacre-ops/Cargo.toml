@@ -62,8 +62,8 @@ test-util = []
 # `--no-default-features`, and the serial gate quietly tests the parallel build
 # (`tests/instruments/manifest.rs` holds every self dev-dependency to that).
 nacre-ops = { path = ".", default-features = false, features = ["test-util"] }
-# Enables the topo test-only primitive `Model::add_cuboid` for building test solids
-# (unusable in production; this crate sits above topo but tests build boxes directly).
+# Enables topo's test-only doors: the planting pushes (models the operations cannot build),
+# `reversed_shell`, `plane_name_through`, and the push counters the census reads.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.

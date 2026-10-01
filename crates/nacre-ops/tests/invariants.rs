@@ -1,6 +1,6 @@
 //! Invariants that hold on every production path: replay determinism, the ops -> validate -> step/tess
 //! pipeline, edge carriers, recorded plane points, sketch frames, datum planes, vertex realization,
-//! one plane held as two handles.
+//! one plane held as two handles, the topology layer's doors and live set on a product box.
 
 #[path = "support/fixtures.rs"]
 mod fixtures;
@@ -27,3 +27,5 @@ mod replay;
 mod sketch_frame;
 #[path = "invariants/sketch_frame_contract.rs"]
 mod sketch_frame_contract;
+#[path = "invariants/topo_model.rs"]
+mod topo_model;

@@ -2,40 +2,19 @@ use super::*;
 use nacre_math::Vector3;
 use proptest::prelude::*;
 
-/// ★★★ **One plane stated by two faces of different size is one plane.** Two boxes meet on the
-/// plane `x = 3` with faces of different size. An `f64` plane keeps an un-normalized normal whose
-/// length follows the face's size, so its offset `d = −raw·origin` is rounded differently on each
-/// side; the name is built from the corners the caller wrote and canonicalized, so it has no scale
-/// to disagree about — the two faces carry one surface, and the two statements one name.
+/// ★★★ **One plane stated by two faces of different size is one plane.** The plane `x = 3`
+/// stated twice, by the corners of two faces of different size that face opposite ways — a wall
+/// `2.2` deep facing `+X` and one `13.2` deep facing `−X`, as two boxes meeting there would. An
+/// `f64` plane keeps an un-normalized normal whose length follows the face's size, so its offset
+/// `d = −raw·origin` is rounded differently on each side; the name is built from the corners the
+/// caller wrote and canonicalized, so it has no scale to disagree about — the two statements carry
+/// one surface and one name.
 #[test]
 fn two_faces_of_one_plane_are_one_surface_and_one_name() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([3.0, 2.2, 1.0]),
-    );
-    let b = m.add_cuboid(
-        Point3::from_array([3.0, 0.0, 0.0]),
-        Point3::from_array([5.0, 13.2, 1.0]),
-    );
-    // Each solid's face on x = 3: a's outward +X, b's outward −X.
-    let face_on_x3 = |s: Handle<Solid>, want_x: f64| -> Handle<Surface> {
-        let shell = m.solid(s).outer;
-        *m.shell(shell)
-            .faces
-            .iter()
-            .map(|&fh| &m.face(fh).surface)
-            .find(|&&sh| match m.surface_cache(sh) {
-                nacre_geom::Surface::Plane(p) => {
-                    let [a, b, c] = p.normal().as_array();
-                    let x = p.origin().as_array()[0];
-                    b == 0.0 && c == 0.0 && a != 0.0 && (x - want_x).abs() < 1e-12
-                }
-                nacre_geom::Surface::Cylinder(_) => false,
-            })
-            .expect("a face on x = 3")
-    };
-    let (sa, sb) = (face_on_x3(a, 3.0), face_on_x3(b, 3.0));
+    let (sa, _) = plane_through(&mut m, [[3.0, 0.0, 0.0], [3.0, 2.2, 0.0], [3.0, 0.0, 1.0]]);
+    let (sb, flipped) = plane_through(&mut m, [[3.0, 0.0, 0.0], [3.0, 0.0, 1.0], [3.0, 13.2, 0.0]]);
+    assert!(flipped, "the second statement faces the other way");
 
     // ★ **They are one handle now** — that is what the rational coefficients bought.
     assert_eq!(sa, sb, "one plane, one surface");
@@ -229,19 +208,14 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
 /// vertex; the two must agree point for point — otherwise there is a second spelling of the
 /// solve, which is this repo's dominant defect shape.
 ///
-/// The frame comes back from both, and on an unmoved box it is the world (`None`) — the fact the
+/// The frame comes back from both, and on unmoved corners it is the world (`None`) — the fact the
 /// `Through` door checks a named statement's motion against.
 #[test]
 fn one_vertex_and_three_vertices_solve_the_same_meet() {
-    let m = build([0.0; 3], [2.0, 3.0, 5.0]);
-    let vs: Vec<Handle<Vertex>> = (0..m.vertex_count() as u32)
-        .filter_map(|i| m.vertex_handle_at(i))
-        .collect();
-    assert!(vs.len() >= 3, "a box has corners");
-    let tri = [vs[0], vs[1], vs[2]];
+    let (m, tri) = box_corner_vertices();
     let (together, shared) = m
         .through_meets(tri)
-        .expect("a box's corners share the world");
+        .expect("unmoved corners share the world");
     assert_eq!(shared, None, "the three share the world");
     for (i, v) in tri.iter().enumerate() {
         let (alone, frame) = m.vertex_meet(*v).expect("a corner is a three-plane point");
@@ -250,316 +224,8 @@ fn one_vertex_and_three_vertices_solve_the_same_meet() {
             together[i].narrow(),
             "vertex {i} solves differently through the two doors"
         );
-        assert_eq!(
-            frame, None,
-            "an unmoved box states its corners in the world"
-        );
+        assert_eq!(frame, None, "unmoved corners are stated in the world");
     }
-}
-
-fn build(min: [f64; 3], max: [f64; 3]) -> Model {
-    let mut m = Model::new();
-    m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
-    m.rebuild_adjacency();
-    m
-}
-
-fn he_start(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-    let [a, b] = m.edge(he.edge).vertices;
-    if he.forward { a } else { b }
-}
-fn he_end(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-    let [a, b] = m.edge(he.edge).vertices;
-    if he.forward { b } else { a }
-}
-fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
-    match m.surface_cache(f.surface) {
-        nacre_geom::Surface::Plane(p) => p.normal(),
-        // Planar-only helper: callers filter to plane faces (caps), never cylinders.
-        nacre_geom::Surface::Cylinder(_) => {
-            unreachable!("face_plane_normal called on a curved face")
-        }
-    }
-}
-fn face_centroid(m: &Model, f: &Face) -> Point3 {
-    let pts: Vec<Point3> = f
-        .outer
-        .half_edges
-        .iter()
-        .map(|he| m.vertex_point(he_start(m, *he)))
-        .collect();
-    Point3::centroid(&pts).unwrap()
-}
-
-// --- golden ---
-
-#[test]
-fn cuboid_counts() {
-    let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    assert_eq!(m.vertex_count(), 8);
-    assert_eq!(m.edge_count(), 12);
-    assert_eq!(m.face_count(), 6);
-    assert_eq!(m.shell_count(), 1);
-    assert_eq!(m.solid_count(), 1);
-    // 6, composed with the seeds: the origin box's bottom/left/front
-    // faces intern onto the three seeded world planes (same name, same handle), so the
-    // arena holds 3 seeds + 3 fresh (top/back/right). Seeding adds nothing here precisely
-    // because the seeds are these planes.
-    assert_eq!(m.surfaces.len(), 6);
-    assert_eq!(
-        m.edge_cache.len(),
-        m.edge_count(),
-        "the curve cache stays index-parallel"
-    );
-}
-
-#[test]
-fn cuboid_corner_points() {
-    let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
-    let expected = vec![
-        [-2.0, 1.0, 0.0],
-        [3.0, 1.0, 0.0],
-        [3.0, 4.0, 0.0],
-        [-2.0, 4.0, 0.0],
-        [-2.0, 1.0, 10.0],
-        [3.0, 1.0, 10.0],
-        [3.0, 4.0, 10.0],
-        [-2.0, 4.0, 10.0],
-    ];
-    let got: Vec<[f64; 3]> = (0..m.vertex_count() as u32)
-        .filter_map(|i| m.vertex_handle_at(i))
-        .map(|h| (h, m.vertex(h)))
-        .map(|(vh, _)| m.vertex_point(vh).as_array())
-        .collect();
-    assert_eq!(got, expected);
-}
-
-#[test]
-fn face_normals_point_outward() {
-    let m = build([0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
-    let center = Point3::origin().lerp(Point3::from_array([2.0, 3.0, 4.0]), 0.5);
-    let mut i = 0u32;
-    while let Some(h_) = m.face_handle_at(i) {
-        i += 1;
-        let f = m.face(h_);
-        let outward = face_plane_normal(&m, f).dot(face_centroid(&m, f) - center);
-        assert!(outward > 0.0);
-    }
-}
-
-#[test]
-fn every_edge_used_twice_opposite() {
-    let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    assert_eq!(m.adj.edge_uses.len(), 12);
-    for uses in m.adj.edge_uses.values() {
-        assert_eq!(uses.len(), 2);
-        assert_ne!(uses[0].1, uses[1].1);
-    }
-}
-
-#[test]
-fn every_vertex_incident_to_three_edges() {
-    let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    assert_eq!(m.adj.vertex_edges.len(), 8);
-    for edges in m.adj.vertex_edges.values() {
-        assert_eq!(edges.len(), 3);
-    }
-}
-
-#[test]
-fn outer_loops_are_closed() {
-    let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    let mut i = 0u32;
-    while let Some(h_) = m.face_handle_at(i) {
-        i += 1;
-        let f = m.face(h_);
-        let hes = &f.outer.half_edges;
-        assert_eq!(hes.len(), 4);
-        for i in 0..hes.len() {
-            assert_eq!(he_end(&m, hes[i]), he_start(&m, hes[(i + 1) % hes.len()]));
-        }
-    }
-}
-
-/// ★★★★ **The write doors bite** — the negative control for [`Model::push_face`] and
-/// [`Model::push_shell`].
-///
-/// ★ It is measured that *every face the product builds closes its loop*: one temporary
-/// assertion, the whole suite, 1324 tests, a single red — and that one was a fixture whose
-/// own comment called it a franken-face. That is a **different proposition** from *the
-/// assertion refuses a face that does not close*. The first says the population is clean;
-/// the second says the door has teeth. Only this test says the second, and without it the
-/// doors could assert nothing at all and every green would still be green.
-///
-/// Each case violates **exactly one** assertion and the panic **message is checked**, because
-/// asking only "did it panic" lets a case go green for the wrong reason: a face
-/// cloned out of a *throwaway* model makes walking its loop hit
-/// `Store`'s cross-model handle guard before ever reaching the door's own assertion. The face
-/// comes from the very model it is pushed into, and only the out-of-bounds handles are
-/// strangers — those are read with `.index()`, which no guard sees. The assertions are
-/// `debug_assert`, so this test is `cfg(debug_assertions)` — the shape the foreign-handle
-/// lock above already uses. Panic output is left unsuppressed on purpose: swapping the
-/// panic hook is global state, and the suite runs its tests in parallel.
-#[test]
-#[cfg(debug_assertions)]
-fn the_write_doors_refuse_what_their_invariants_forbid() {
-    // The panic message is checked, not just the panic: the claim above is that each case
-    // trips *its own* assertion, and only the message can say which one bit.
-    fn refuses(what: &str, expect: &str, call: impl FnOnce()) {
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
-        let e = r
-            .err()
-            .unwrap_or_else(|| panic!("{what}: the door let an invalid cell into the arena"));
-        let msg = e
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| e.downcast_ref::<&str>().copied())
-            .unwrap_or("<non-string panic>");
-        assert!(
-            msg.contains(expect),
-            "{what}: tripped a different assertion — wanted {expect:?}, got {msg:?}"
-        );
-    }
-    let cube = || build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    let sample = |m: &Model| {
-        m.face(m.face_handle_at(0).expect("a cuboid has faces"))
-            .clone()
-    };
-
-    // A bigger model mints handles this one does not hold. It is the only way to name an
-    // out-of-bounds cell: `handle_at` answers `None` past the end, by design.
-    let mut big = cube();
-    let _ = big.add_cuboid(
-        Point3::from_array([2.0, 2.0, 2.0]),
-        Point3::from_array([3.0, 3.0, 3.0]),
-    );
-    let stranger_surface = big
-        .surface_handle_at((big.surface_count() - 1) as u32)
-        .expect("the bigger model has surfaces");
-    let stranger_face = big
-        .face_handle_at((big.face_count() - 1) as u32)
-        .expect("the bigger model has faces");
-
-    // (1) a face names a surface the arena does not hold
-    let mut m = cube();
-    let mut f = sample(&m);
-    f.surface = stranger_surface;
-    refuses(
-        "push_face / surface in bounds",
-        "a face names a surface the arena does not hold",
-        || {
-            m.push_face(f);
-        },
-    );
-
-    // (2) a face's outer loop has no half-edges
-    let mut m = cube();
-    let mut f = sample(&m);
-    f.outer.half_edges.clear();
-    refuses(
-        "push_face / outer loop non-empty",
-        "a face's outer loop has no half-edges",
-        || {
-            m.push_face(f);
-        },
-    );
-
-    // (3) a face's inner loop has no half-edges — the outer one is left intact so this
-    //     case cannot be carried by (2).
-    let mut m = cube();
-    let mut f = sample(&m);
-    f.inner.push(Loop {
-        half_edges: Vec::new(),
-    });
-    refuses(
-        "push_face / inner loop non-empty",
-        "a face's inner loop has no half-edges",
-        || {
-            m.push_face(f);
-        },
-    );
-
-    // (4) a face loop does not close: flipping one half-edge swaps its end for its start,
-    //     which is precisely what walking the loop is there to catch.
-    let mut m = cube();
-    let mut f = sample(&m);
-    f.outer.half_edges[0].forward = !f.outer.half_edges[0].forward;
-    refuses(
-        "push_face / loop closes",
-        "a face loop does not close",
-        || {
-            m.push_face(f);
-        },
-    );
-
-    // (5) a shell with no faces bounds nothing
-    let mut m = cube();
-    refuses(
-        "push_shell / non-empty",
-        "a shell with no faces bounds nothing",
-        || {
-            m.push_shell(Shell { faces: Vec::new() });
-        },
-    );
-
-    // (6) a shell names a face the arena does not hold
-    let mut m = cube();
-    refuses(
-        "push_shell / faces in bounds",
-        "a shell names a face the arena does not hold",
-        || {
-            m.push_shell(Shell {
-                faces: vec![stranger_face],
-            });
-        },
-    );
-}
-
-/// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
-/// the index-parallel cache reads too ([`Model::debug_guard`]).
-///
-/// ★ `Model::surface`, `vertex_point` and `edge_curve` index a `Vec`, so without the guard a
-/// handle from another model reaches all three and answers with the wrong cell. The guard is
-/// `cfg(debug_assertions)`, so the
-/// test is too. Panic output is left unsuppressed on purpose: swapping the panic hook is
-/// global state, and the suite runs tests in parallel.
-#[test]
-#[cfg(debug_assertions)]
-fn a_foreign_handle_cannot_read_a_cache() {
-    let mut a = Model::new();
-    let mut b = Model::new();
-    for m in [&mut a, &mut b] {
-        let _ = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-    }
-    let surf = b.surface_handle_at(4).expect("b has surfaces");
-    let vert = b.vertex_handle_at(3).expect("b has vertices");
-    let edge = b.edges.handle_at(3).expect("b has edges");
-
-    let refuses = |what: &str, call: &dyn Fn()| {
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
-        assert!(
-            r.is_err(),
-            "{what}: a handle minted by another model must not read this model's cell"
-        );
-    };
-    refuses("surface_cache", &|| {
-        let _ = a.surface_cache(surf);
-    });
-    refuses("surface", &|| {
-        let _ = a.surface(surf);
-    });
-    refuses("vertex_point", &|| {
-        let _ = a.vertex_point(vert);
-    });
-    refuses("vertex_cache", &|| {
-        let _ = a.vertex_cache(vert);
-    });
-    refuses("edge_curve", &|| {
-        let _ = a.edge_curve(edge);
-    });
 }
 
 /// ★★★★ **The surface cache is writable, and the truth is not.**
@@ -614,96 +280,6 @@ fn the_surface_cache_is_writable_and_the_truth_is_not() {
     );
 }
 
-#[test]
-fn edge_endpoints_lie_on_their_curve() {
-    let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
-    let mut i = 0u32;
-    while let Some(eh) = m.edge_handle_at(i) {
-        i += 1;
-        let e = m.edge(eh);
-        let curve = m.edge_curve(eh);
-        let [a, b] = e.vertices;
-        assert!(curve.contains(m.vertex_point(a), 1e-9));
-        assert!(curve.contains(m.vertex_point(b), 1e-9));
-    }
-}
-
-#[test]
-fn euler_poincare_holds() {
-    let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    let (v, e, f) = (
-        m.vertex_count() as i64,
-        m.edge_count() as i64,
-        m.face_count() as i64,
-    );
-    // V − E + F = 2(S − G) + L_i, with S=1, G=0, L_i=0. Formal validate:
-    // nacre-validate (next unit).
-    assert_eq!(v - e + f, 2);
-}
-
-// --- proptest ---
-
-fn box_strategy() -> impl Strategy<Value = ([f64; 3], [f64; 3])> {
-    (
-        prop::array::uniform3(-1e3f64..1e3),
-        prop::array::uniform3(1e-2f64..1e3),
-    )
-        .prop_map(|(min, ext)| {
-            let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
-            (min, max)
-        })
-}
-
-proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
-        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
-    ))]
-    #[test]
-    fn prop_cuboid_structural((min, max) in box_strategy()) {
-        let m = build(min, max);
-        prop_assert_eq!(m.vertex_count(), 8);
-        prop_assert_eq!(m.edge_count(), 12);
-        prop_assert_eq!(m.face_count(), 6);
-        prop_assert_eq!(m.adj.edge_uses.len(), 12);
-        for uses in m.adj.edge_uses.values() {
-            prop_assert_eq!(uses.len(), 2);
-            prop_assert_ne!(uses[0].1, uses[1].1);
-        }
-        prop_assert_eq!(m.adj.vertex_edges.len(), 8);
-        for edges in m.adj.vertex_edges.values() {
-            prop_assert_eq!(edges.len(), 3);
-        }
-    }
-
-    #[test]
-    fn prop_cuboid_outward_normals((min, max) in box_strategy()) {
-        let m = build(min, max);
-        let center = Point3::from_array(min).lerp(Point3::from_array(max), 0.5);
-        let mut i = 0u32;
-        while let Some(h_) = m.face_handle_at(i) {
-            i += 1;
-            let f = m.face(h_);
-            prop_assert!(face_plane_normal(&m, f).dot(face_centroid(&m, f) - center) > 0.0);
-        }
-    }
-
-    #[test]
-    fn prop_cuboid_endpoints_on_curves((min, max) in box_strategy()) {
-        let m = build(min, max);
-        let scale = 1e-6 * (max.iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
-        let mut i = 0u32;
-        while let Some(eh) = m.edge_handle_at(i) {
-            i += 1;
-            let e = m.edge(eh);
-            let curve = m.edge_curve(eh);
-            let [a, b] = e.vertices;
-            prop_assert!(curve.contains(m.vertex_point(a), scale));
-            prop_assert!(curve.contains(m.vertex_point(b), scale));
-        }
-    }
-
-}
-
 // --- reversed_shell (M5 containment building block) ---
 
 #[test]
@@ -714,57 +290,6 @@ fn orientation_flip_is_involution() {
         Orientation::Forward.flipped().flipped(),
         Orientation::Forward
     );
-}
-
-#[test]
-fn reversed_shell_toggles_orientation_and_reverses_loops() {
-    let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    let outer = m.solid(m.live_solids[0]).outer;
-    let f0 = m.shell(outer).faces[0];
-    let orig = m.face(f0).clone();
-
-    let rev_shell = m.reversed_shell(outer);
-    // Fresh cells (not reused faces), fresh shell.
-    assert_ne!(rev_shell, outer);
-    let rf0 = m.shell(rev_shell).faces[0];
-    assert_ne!(rf0, f0);
-    let rev = m.face(rf0);
-
-    assert_eq!(rev.surface, orig.surface); // surface reused
-    assert_eq!(rev.orientation, orig.orientation.flipped());
-    let n = orig.outer.half_edges.len();
-    assert_eq!(rev.outer.half_edges.len(), n);
-    // Reversed winding: he[i] mirrors orig[n-1-i] with the edge reused and
-    // the traversal direction flipped.
-    for i in 0..n {
-        let o = orig.outer.half_edges[n - 1 - i];
-        let r = rev.outer.half_edges[i];
-        assert_eq!(r.edge, o.edge);
-        assert_ne!(r.forward, o.forward);
-    }
-}
-
-#[test]
-fn reversed_shell_is_a_valid_manifold() {
-    // Reversing every face's winding preserves the b-rep manifold: each edge
-    // is still used by exactly two faces with opposed half-edges. The
-    // reversed shell reuses the cube's edges, but the source solid is
-    // superseded, so `Adjacency` (reachable-scoped) counts only the reversed
-    // faces — no 4-use false positive.
-    let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-    let outer = m.solid(m.live_solids[0]).outer;
-    let rev = m.reversed_shell(outer);
-    let s = m.push_solid(Solid {
-        outer: rev,
-        cavities: vec![],
-    });
-    m.live_solids.retain(|&h| h == s); // supersede the original cube
-    m.rebuild_adjacency();
-    assert_eq!(m.adj.edge_uses.len(), 12);
-    for uses in m.adj.edge_uses.values() {
-        assert_eq!(uses.len(), 2);
-        assert_ne!(uses[0].1, uses[1].1); // opposite forward
-    }
 }
 
 /// ★★★★★ **A plane is named by its points, and by nothing else.**
@@ -1101,41 +626,6 @@ fn a_derived_cylinder_restates_its_own_axis_and_radius() {
     assert_eq!(seen, 1, "one lateral surface");
 }
 
-/// ★★ The seeds are the interning survivors — an origin cuboid's bottom/left/front
-/// faces carry the seed handles, so "the world plane" and "that face's plane" are one
-/// surface, stated once.
-#[test]
-fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
-    let mut m = Model::new();
-    let s = m.add_cuboid(
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    m.rebuild_adjacency();
-    let face_surfaces: Vec<_> = m
-        .shell(m.solid(s).outer)
-        .faces
-        .iter()
-        .map(|&fh| m.face(fh).surface)
-        .collect();
-    for axis in [
-        nacre_exact::Axis::Z,
-        nacre_exact::Axis::X,
-        nacre_exact::Axis::Y,
-    ] {
-        assert!(
-            face_surfaces.contains(&m.world_plane(axis)),
-            "the {axis:?}-normal face at 0 must be the seed itself"
-        );
-    }
-    // And nothing pointless was minted: 3 seeds + the 3 off-origin faces.
-    assert_eq!(m.surface_count(), 6);
-}
-
-/// ★★★ **A cylinder's caps record their three exact points**, as `add_cuboid`'s faces do.
-/// The direct evidence that the record is a real name and not a dead entry: a cap that
-/// shares a plane with a box face **interns to the same handle**, which no point-less
-/// surface could ever do.
 /// `surface_handle_at` gives back the handle the arena already issued, and nothing more.
 ///
 /// The pair to this is [`Model::surface_cache`]'s `compile_fail` lock, which still refuses to open
@@ -1162,11 +652,7 @@ fn surface_handle_at_is_the_handle_the_arena_issued() {
     assert_eq!(m.surface_handle_at(u32::MAX), None);
 
     // A surface pushed after the seeds is reachable by its own index too.
-    let cuboid = m.add_cuboid(
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let s = m.face(m.shell(m.solid(cuboid).outer).faces[0]).surface;
+    let (s, _) = plane_through(&mut m, [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 0.0, 1.0]]);
     assert_eq!(m.surface_handle_at(s.index()), Some(s));
 }
 
@@ -1271,25 +757,45 @@ fn a_through_plane_points_only_at_older_cells() {
     }
 }
 
-/// Three corners of the unit box, sorted — each the meeting of three coordinate planes.
+/// A plane stated by three decimal points through [`Model::push_plane`], its cache the plane
+/// through them — the statement a face on it makes, without the face.
+fn plane_through(m: &mut Model, pts: [[f64; 3]; 3]) -> (Handle<Surface>, bool) {
+    let p = pts.map(Point3::from_array);
+    let cache = Plane::through_points(p[0], p[1], p[2]).expect("three points span a plane");
+    let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
+    m.push_plane(cache, pts.map(|c| c.map(r)), None, Orientation::Forward)
+}
+
+/// The corners of the unit box at `at` (each coordinate `0` or `1`), each the meeting of three
+/// coordinate planes — the world seeds at `0`, a plane pushed at `1` — through the planting door,
+/// carrying their coordinate unrealized.
+fn unit_box_corners(m: &mut Model, at: &[[f64; 3]]) -> Vec<Handle<Vertex>> {
+    use nacre_exact::Axis;
+    let one = [
+        plane_through(m, [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 0.0, 1.0]]).0,
+        plane_through(m, [[0.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 1.0, 0.0]]).0,
+        plane_through(m, [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]).0,
+    ];
+    let zero = [Axis::X, Axis::Y, Axis::Z].map(|a| m.world_plane(a));
+    at.iter()
+        .map(|&c| {
+            let on = |k: usize| if c[k] == 1.0 { one[k] } else { zero[k] };
+            m.push_vertex(
+                Vertex::ThreePlane([on(2), on(1), on(0)]),
+                PointCache::Unrealized {
+                    coord: Point3::from_array(c),
+                },
+            )
+        })
+        .collect()
+}
+
+/// `(1,0,0)`, `(0,1,0)`, `(0,0,1)`, in that order — the three corners of the unit box with one
+/// coordinate `1`, each the meeting of three coordinate planes.
 fn box_corner_vertices() -> (Model, [Handle<Vertex>; 3]) {
     let mut m = Model::new();
-    m.add_cuboid(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let mut want = Vec::new();
-    for i in 0..m.vertex_count() as u32 {
-        let vh = m.vertices.handle_at(i).unwrap();
-        let c = m.vertex_point(vh).as_array();
-        if c.iter().filter(|x| **x == 1.0).count() == 1 && c.iter().all(|x| *x == 0.0 || *x == 1.0)
-        {
-            want.push(vh);
-        }
-    }
-    want.sort_by_key(|v| v.index());
-    let vs = [want[0], want[1], want[2]];
-    (m, vs)
+    let vs = unit_box_corners(&mut m, &[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    (m, [vs[0], vs[1], vs[2]])
 }
 /// ★★★★ **Both counters see the second producer too.**
 ///
@@ -1344,23 +850,12 @@ fn a_through_plane_is_counted_by_both_bridges() {
     );
 }
 
-/// Three corners of the unit box that lie on `z = 0` — the world XY seed.
+/// `(0,0,0)`, `(1,0,0)`, `(1,1,0)` — three corners of the unit box on `z = 0`, the world XY seed,
+/// wound about `+z`.
 fn seed_plane_corners() -> (Model, [Handle<Vertex>; 3]) {
     let mut m = Model::new();
-    m.add_cuboid(
-        Point3::from_array([0.0, 0.0, 0.0]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let mut want = Vec::new();
-    for i in 0..m.vertex_count() as u32 {
-        let vh = m.vertices.handle_at(i).unwrap();
-        if m.vertex_point(vh).as_array()[2] == 0.0 {
-            want.push(vh);
-        }
-    }
-    want.sort_by_key(|v| v.index());
-    let vs = [want[0], want[1], want[2]];
-    (m, vs)
+    let vs = unit_box_corners(&mut m, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]);
+    (m, [vs[0], vs[1], vs[2]])
 }
 
 /// A model whose three planes meet at a corner and whose *plane through* those corners needs
@@ -1510,56 +1005,6 @@ fn swapping_the_planes_trades_the_two_roots_names() {
         near(at(&l_ba, &s_ba[0]), [0.0, 2.0, 0.0]),
         "lo′ is the old hi"
     );
-}
-
-/// ★★★★ **`supersede_live` keeps the survivors in their original order — and nothing else in
-/// this tree would notice if it did not.**
-///
-/// `nacre_step::to_step` exports the live set *in order*, the census reads the **arena** (it
-/// never sees live order), and there is no golden STEP text anywhere. So a permutation here
-/// would travel all the way out to the exported file unseen. The order is therefore locked at
-/// the door itself, and again on the export side (`nacre-step`'s
-/// `superseding_a_solid_leaves_the_export_order_alone`).
-///
-/// ⚠ The oracle is the **construction order**, not a second call to the same machinery —
-/// comparing this against a hand-written `retain` would be one implementation checking itself.
-#[test]
-fn supersede_live_preserves_the_order_of_the_survivors() {
-    let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-    let c = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
-    assert_eq!(
-        m.live_solids(),
-        [a, b, c].as_slice(),
-        "the fixture's premise"
-    );
-
-    m.supersede_live(&[b]);
-    assert_eq!(
-        m.live_solids(),
-        [a, c].as_slice(),
-        "the middle solid goes and the order stays"
-    );
-
-    // It drops sets, not only singletons — that is what the 19 `retain` call sites ask for.
-    m.supersede_live(&[a, c]);
-    assert!(m.live_solids().is_empty());
-}
-
-/// `restore_live` is the rollback half: what a rejected operation puts back.
-#[test]
-fn restore_live_puts_the_snapshot_back() {
-    let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-    let snapshot = m.live_solids().to_vec();
-
-    m.supersede_live(&[a]);
-    assert_eq!(m.live_solids(), [b].as_slice());
-
-    m.restore_live(snapshot);
-    assert_eq!(m.live_solids(), [a, b].as_slice(), "order comes back too");
 }
 
 /// ★ **A plane's cache faces the way its truth says** — the push turns a cache stated the other
@@ -2034,19 +1479,7 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
 /// normal times the name's sense, exact; a cache pushed facing `−(1,1,1)` is turned round.
 #[test]
 fn a_named_through_planes_cache_follows_the_truth_not_the_vertex_caches() {
-    let mut m = Model::new();
-    m.add_cuboid(Point3::origin(), Point3::from_array([1.0, 1.0, 1.0]));
-    let corner = |m: &Model, at: [f64; 3]| {
-        (0..m.vertex_count() as u32)
-            .filter_map(|i| m.vertex_handle_at(i))
-            .find(|&v| m.vertex_point(v).as_array() == at)
-            .expect("a box corner")
-    };
-    let (a, b, c) = (
-        corner(&m, [1.0, 0.0, 0.0]),
-        corner(&m, [0.0, 1.0, 0.0]),
-        corner(&m, [0.0, 0.0, 1.0]),
-    );
+    let (mut m, [a, b, c]) = box_corner_vertices();
     // The same definitions, with the caches of `b` and `c` swapped.
     let planted = |m: &mut Model, def: Handle<Vertex>, at: [f64; 3]| {
         let d = *m.vertex(def);

@@ -24,8 +24,6 @@ test-util = []
 # (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
 # too, so the library graph stays acyclic (the nacre-props shape).
 nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
-# Enables the topo test-only primitive `Model::add_cuboid` for the cube-dump example/tests.
-nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

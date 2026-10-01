@@ -22,7 +22,7 @@ nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 # too, so the library graph stays acyclic (the nacre-props shape).
 nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
 nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
-# Enables the topo test-only primitive `Model::add_cuboid` for building test solids.
+# Enables topo's planting doors — the self-tests plant the defective models validate must catch.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # Tests hand-build tetrahedra, so they NAME geom's Curve/Line/Plane/Surface.

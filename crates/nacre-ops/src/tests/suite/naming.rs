@@ -298,11 +298,10 @@ fn a_boss_fused_then_cut_through() {
 /// One geometric plane is one class **whatever the two faces' sizes**.
 ///
 /// ★ **The merge is a handle comparison, made before any judgement.** Surfaces are interned on
-/// their canonical names, so the two walls are handed **one handle**. Their `f64` caches do not
-/// agree — two walls of one plane at different face sizes have un-normalized 4-vectors that are
-/// not exactly proportional, pinned on the planes themselves in `nacre_topo`'s
-/// `two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals` — which is why no cache
-/// may take part in the merge.
+/// their canonical names, so the two walls are handed **one handle** (the statements alone, no
+/// solid: `nacre_topo`'s `two_faces_of_one_plane_are_one_surface_and_one_name`). Their `f64`
+/// figures do not agree — two walls of one plane at different face sizes have un-normalized
+/// 4-vectors that are not exactly proportional — which is why no cache may take part in the merge.
 #[test]
 fn one_plane_is_one_class_whatever_the_face_size() {
     let (dx, dy) = (1.628165457453874f64, 0.5f64);

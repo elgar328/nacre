@@ -465,7 +465,7 @@ fn bridge_shared_edges(
 
 /// The bridge pre-pass alone, for a test that wants to see what it did before any face is
 /// triangulated (the returned `Tessellation` holds the sampled, split edge polylines and no
-/// triangles). Test-only, like `nacre-topo`'s `add_cuboid`.
+/// triangles). Test-only (`test-util`).
 #[cfg(feature = "test-util")]
 pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessellation) {
     let mut t = Tessellation::default();

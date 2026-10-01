@@ -18,10 +18,10 @@ default = ["parallel"]
 # stop being `Send`. A consumer that drops this for wasm gives up moving them across
 # threads too.
 parallel = ["nacre-ops/parallel"]
-# Exposes `topo::Model::add_cuboid`, a test-only solid primitive that bypasses the
-# modelling ops, and topo's push counters (every surface push then counts). Off by
-# default so production consumers never see them; enable it in your own
-# `[dev-dependencies]` to build fixtures at the topology layer.
+# Exposes topo's test-only doors (the planting pushes, `reversed_shell`, `plane_name_through`)
+# and its push counters (every surface push then counts). Off by default so production
+# consumers never see them; enable it in your own `[dev-dependencies]` to plant a model at the
+# topology layer.
 test-util = ["nacre-topo/test-util"]
 
 [dependencies]

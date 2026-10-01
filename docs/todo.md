@@ -254,22 +254,6 @@ pad·`face_plane` 호출 338(`collinear_loop_points` 336, `frames` 2).
 
 잠금 공백·API·성능·구조. 순서는 없다.
 
-### 픽스처는 제품 도로로
-
-**무엇이 남았나.** 스위트·census 의 상자는 전부 제품 도로(`nacre_ops::fixtures::cuboid`·`cuboid_on` — 데이텀,
-사각형, 압출)로 짓는다. topo 의 `test-util` 문 `add_cuboid` 는 topo 자기 테스트 28개(`src/tests/lib.rs`)만 부른다 —
-topo 는 ops 를 모르므로 그 테스트들은 문 자체의 정확성이면 은퇴하고, 평면·정점 몇 개면 topo 의 `push_plane`·심기
-문으로, 솔리드가 필요하면 ops 통합 테스트로 간다(비공개 필드 읽기는 공개 대체로). 그다음 문을 지운다.
-
-**남기는 것 하나 — 심기용 날것 문.** validate 의 자기 테스트는 **틀린 모델**(매달린 핸들·뒤집힌 면·정의와
-어긋난 캐시)을 심어야 하고 제품 도로로는 틀린 모델을 만들 수 없다. 그래서 `push_vertex`(날것 캐시)·
-`push_plane_unregistered` 같은 문은 `test-util` 아래 topo 에 남는다 — 제품에 없는 것을 테스트용으로 두는
-것이 정당한 유일한 경우다.
-
-**census 가 무엇을 보았나.** 제품 도로로 옮겨도 결과의 정점 해시는 404행 모두 같다. 움직인 것은 표현이다 —
-입력 서명의 평면 캐시 해시(앵커가 진실 삼중의 첫 점이라 다른 점에 선다; 법선 비트는 같다)와 결과 props 의
-마지막 비트(props 는 첫 면의 첫 꼭짓점을 기준으로 면 순서대로 적분하고, 압출의 면 순서는 `[밑, 위, 벽…]`).
-
 ### 실현 문의 발행 범위와 잠금
 
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
