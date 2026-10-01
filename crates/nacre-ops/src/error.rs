@@ -672,7 +672,7 @@ pub enum RejectReason {
     /// * the region walk's own two: a run along an **uncut** rim that is not the whole circle,
     ///   and cycles whose winding does not classify into one lower and one upper rim with holes
     ///   the assembly can bridge (`classify_cycles`' abstentions — a chain with more than two
-    ///   seam contacts, a hole meeting the seam at other than zero or two, two bridging holes;
+    ///   seam contact vertices, a hole meeting the seam at other than zero or two, two bridging holes;
     ///   ☑ all measured 0 across the suite);
     /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
     ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
@@ -687,7 +687,8 @@ pub enum RejectReason {
     ///   passes the seam somewhere and the split named that point; a chain the assembly cannot
     ///   attach its slit to is a producer inconsistency, named;
     /// * a **lateral whose outer walk is pinched at a seam contact** — a hole or the other rim
-    ///   sharing the rim's contact, so the slit between them has no length and is no edge. Every
+    ///   sharing the rim's contact, so the slit between them has no length and is no edge, or a
+    ///   chain rim visiting one contact twice. Every
     ///   other refusal of the assembly speaks first (a result touching itself along that ruling
     ///   is `NonManifoldResultEdge`); what passes them all is a walk the lateral's reader
     ///   (`combinatorics::lateral_cycles`) would cut wrong, so it does not leave. No boolean in

@@ -375,13 +375,13 @@ fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
 /// ★ **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
 /// it. Near the line, `A − B` is two lobes meeting on it alone: where they join elsewhere (`B`
 /// inside `A`'s span or reaching past one cap) that is one solid touching itself and is refused
-/// (`NonManifoldResultEdge`, or `ArcBoundNotYet` on the seam with `B` past the top); where `B`
+/// (`NonManifoldResultEdge`); where `B`
 /// cuts `A` through (past both caps) it is two solids. **It is never one body** — the lateral run
 /// through the line as one face would hide the touch under a closed shell. Common, `B − A` and
 /// the Fuse build one body; the volumes add up. The apex on the seam names the touch as it does
-/// off it — with `B`'s base on `A`'s cap too, where the lateral's slit from the base rim to the
-/// hole has no length (both end at the apex) and the shell guard speaks; only past the top does
-/// the seam keep `ArcBoundNotYet`. No placement answers `SuspectedDefect`.
+/// off it — with `B`'s base on `A`'s cap, where the lateral's slit from the base rim to the hole
+/// has no length (both end at the apex), and past the top, where the top rim's chain visits the
+/// apex twice; the shell guard speaks in both. No placement answers `SuspectedDefect`.
 #[test]
 fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     let on_the_seam: &[[f64; 2]] = &[[1.0, 0.0], [-3.0, 3.0], [-3.0, -3.0]];
@@ -399,14 +399,9 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
                     assert_eq!(p.height, Height::PastBoth, "{p}: A − B built");
                 }
                 (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
-                (2, Err(reason)) => assert!(
-                    match reason {
-                        RejectReason::NonManifoldResultEdge => true,
-                        RejectReason::ArcBoundNotYet => {
-                            p.family == "on the seam" && p.height == Height::PastTop
-                        }
-                        _ => false,
-                    },
+                (2, Err(reason)) => assert_eq!(
+                    *reason,
+                    RejectReason::NonManifoldResultEdge,
                     "{p}: A − B refused as {reason:?}"
                 ),
                 (_, Err(reason)) => panic!("{p}: [{i}] {reason:?}"),

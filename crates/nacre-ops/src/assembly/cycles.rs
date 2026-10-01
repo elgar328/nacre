@@ -10,8 +10,8 @@ pub(crate) enum CurvedAbstain {
     Winding,
     /// The wrapping cycles are not exactly one of each sense (`+1` and `−1`).
     WrappingNotOneEach,
-    /// A chain rim meeting the seam at more than two contacts, or passing θ = 0 other than
-    /// once — the slit walk is not written for it.
+    /// A chain rim meeting the seam at more than two contact vertices, or passing θ = 0 other
+    /// than once — the slit walk is not written for it.
     ChainContacts,
     /// A hole meets the seam at other than zero or two contacts.
     HoleContacts,
@@ -37,26 +37,42 @@ pub(crate) fn classify_cycles(
     // hole that touches the seam ruling from one side never passes θ = 0 (winding 0, no
     // crossing) yet has two contacts, and the slit must still be spliced through it, or it
     // would run on top of the hole's own ruling where no shell guard can see it.
-    let contacts = |r: &Ring| -> usize {
+    //
+    // ★ **Counted the way the walk that reads it reads it — two counts.** A hole is spliced by
+    // `band_loop` at two contact **positions** of its ring (`hits = [i, j]`), so a hole counts
+    // positions. A chain is entered at one contact **vertex**, picked by its station
+    // (`reconstruct`'s `walk_of`), so a chain counts vertices: a chain pinched at a contact —
+    // the inward wedge with its apex on the seam, past the top cap, visits the top rim's seam node
+    // twice — has two contact vertices and three positions, and reading positions there abstained
+    // before the shell guard could name the result touching itself along the apex ruling.
+    let contacts = |r: &Ring| -> (usize, usize) {
         let n = r.nodes.len();
-        (0..n)
-            .filter(|&t| {
-                let on_seam = rims.iter().any(|(&(kk, _), cr)| {
-                    kk == k && cr.seam_is_node && cr.nodes.first() == Some(&r.nodes[t])
-                });
-                on_seam
-                    || matches!(
-                        wrapping_rim(
-                            ClassIx::Cyl(k),
-                            r.nodes[t],
-                            r.nodes[(t + 1) % n],
-                            r.walls[t],
-                            rims,
-                        ),
-                        Ok(Some(_))
-                    )
-            })
-            .count()
+        let (mut positions, mut wraps) = (0usize, 0usize);
+        let mut seam_nodes: Vec<NodeId> = Vec::new();
+        for t in 0..n {
+            let on_seam = rims.iter().any(|(&(kk, _), cr)| {
+                kk == k && cr.seam_is_node && cr.nodes.first() == Some(&r.nodes[t])
+            });
+            if on_seam {
+                positions += 1;
+                if !seam_nodes.contains(&r.nodes[t]) {
+                    seam_nodes.push(r.nodes[t]);
+                }
+            } else if matches!(
+                wrapping_rim(
+                    ClassIx::Cyl(k),
+                    r.nodes[t],
+                    r.nodes[(t + 1) % n],
+                    r.walls[t],
+                    rims,
+                ),
+                Ok(Some(_))
+            ) {
+                positions += 1;
+                wraps += 1;
+            }
+        }
+        (positions, seam_nodes.len() + wraps)
     };
 
     // 5. Every threaded cycle, classified by its **winding about the axis** — Σ [`seam_step`]
@@ -68,7 +84,10 @@ pub(crate) fn classify_cycles(
     struct Cycle {
         ring: Ring,
         w: i32,
+        /// Contact positions — what a hole's splice reads.
         contacts: usize,
+        /// Contact vertices — what a chain's walk reads.
+        contact_vertices: usize,
         crossings: usize,
     }
     let mut cycles: Vec<Cycle> = Vec::with_capacity(rings.len());
@@ -94,11 +113,12 @@ pub(crate) fn classify_cycles(
         if w.abs() > 1 {
             return Err(CurvedAbstain::Winding);
         }
-        let contacts = contacts(&r);
+        let (contacts, contact_vertices) = contacts(&r);
         cycles.push(Cycle {
             ring: r,
             w,
             contacts,
+            contact_vertices,
             crossings,
         });
     }
@@ -106,7 +126,7 @@ pub(crate) fn classify_cycles(
     // 6. ★★ **Only shapes the outer walk can bridge.** A hole that meets the seam generator is
     //    spliced into the band's outer boundary (`band_loop`), and that splice is written for
     //    **two** contacts on **at most one** hole; a chain is walked from one contact, and the
-    //    slit's argument holds for a chain with at most two contacts and exactly one passage of
+    //    slit's argument holds for a chain with at most two contact vertices and exactly one passage of
     //    θ = 0 (the population measured; a chain that also crosses elsewhere is not arranged,
     //    and no walk is written for it — the `band_loop` precedent). Anything else abstains
     //    here rather than reaching the honest reject there — this pass protects the pass, and
@@ -127,7 +147,7 @@ pub(crate) fn classify_cycles(
                 holes.push(c.ring);
             }
             _ => {
-                if c.contacts > 2 || c.crossings != 1 {
+                if c.contact_vertices > 2 || c.crossings != 1 {
                     return Err(CurvedAbstain::ChainContacts);
                 }
                 if c.w == 1 {

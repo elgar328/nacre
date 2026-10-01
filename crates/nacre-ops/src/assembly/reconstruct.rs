@@ -405,7 +405,8 @@ pub(crate) fn reconstruct(
 
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
-    // Whether a lateral's outer walk passed a contact without a slit (`band_loop`'s zero slit).
+    // Whether a lateral's outer walk passed a contact twice: without a slit (`band_loop`'s zero
+    // slit), or along a chain rim that visits the contact twice (`walk_of`).
     let pinched = std::cell::Cell::new(false);
     'faces: for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
@@ -753,10 +754,23 @@ pub(crate) fn reconstruct(
                             Rim::Chain(r) => {
                                 let mut hes = ring(model, r)?.half_edges;
                                 let mut best: Option<(usize, nacre_exact::Rat)> = None;
+                                // ★ **A chain that visits a contact twice is pinched there.** A
+                                // valid chain starts one half-edge at each contact: a wrap arc
+                                // split at the seam vertex starts there once, the two spellings
+                                // of a contact are exclusive, and two wraps would be two passages
+                                // of θ = 0, which `classify_cycles` refuses. So a repeat is a
+                                // pinch (the inward wedge on the seam, its apex ruling used on
+                                // both sides), and it joins the zero slit's record.
+                                let mut visited: Vec<Handle<Vertex>> = Vec::new();
                                 for (i, &he) in hes.iter().enumerate() {
                                     let v = model.he_start(he);
                                     if !contacts.iter().any(|&(x, _)| x == v) {
                                         continue;
+                                    }
+                                    if visited.contains(&v) {
+                                        pinched.set(true);
+                                    } else {
+                                        visited.push(v);
                                     }
                                     let s = station_of(k, &contacts, v)
                                         .ok_or_else(|| reject(RejectReason::ArcBoundNotYet))?;
@@ -1000,7 +1014,8 @@ pub(crate) fn reconstruct(
         }
     }
     // ★★ **A pinched lateral does not leave — and it is the last thing asked.** A zero slit
-    // (`band_loop`) left a lateral whose outer walk visits a seam contact twice. Every other
+    // (`band_loop`), or a chain rim visiting a contact twice (`walk_of`), left a lateral whose outer
+    // walk visits a seam contact twice. Every other
     // refusal speaks first, because each names more truly: the shell guard calls a result that
     // touches itself along the contact's ruling `NonManifoldResultEdge`, with the line as its
     // witness — the inward wedge with its apex on the seam, the same answer as off it — and the
@@ -1008,7 +1023,8 @@ pub(crate) fn reconstruct(
     // assembly does not arrange, refused by the walk's own name. Skipping the slit and letting the
     // face out is the alternative refused here: `combinatorics::lateral_cycles` reads a lateral
     // back by cutting its outer loop at the slits, so a pinch with no slit would read as one
-    // cycle of rim and hole. No boolean in the suite or the census reaches this line.
+    // cycle of rim and hole. No boolean in the suite or the census reaches this line: the chain's
+    // pinch — the wedge with its apex on the seam past the top cap — is the shell guard's too.
     if pinched.get() {
         return Err(reject(RejectReason::ArcBoundNotYet));
     }
