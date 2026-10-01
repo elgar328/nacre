@@ -535,6 +535,29 @@ fn rational_ends_midpoint(
     Some(p)
 }
 
+/// **A pierce node's exact `(line, s)`, re-solved from its name** — the two classes' world
+/// coefficients and the cylinder, never a producer's coordinate.
+///
+/// `None` folds four causes, and only one of them reaches here on the product road:
+/// * **a three-plane node** — a point on a cylinder is represented on the cylinder (`Aliases`'
+///   `rep_rank`: a pierce name outranks a three-plane one), so a ruling's or an arc's end is a
+///   pierce name; only a hand-built fixture hands one in. `arc_at` and `coord_key` ask the kind
+///   first regardless;
+/// * **a class with no narrow world coefficients** — no world name, or a `Wide` one. The cylinder
+///   gate asks every class of a model with a cylinder for them and refuses before any arrangement;
+/// * **an overflow** in `plane_plane_cylinder` — reachable (long decimals at a small scale), and
+///   the one cause `WitnessNotRational`, the name most callers give this `None`, is true of;
+/// * **a meet without the name's root** — the name was minted from this same meet, of the same
+///   coefficients by the same function, with the pair and the root carried together
+///   (`QuadRoot::canonical`); only a naming defect produces it.
+///
+/// Measured over the suite, the census and the ignored sweep: no cause fires on the product road —
+/// the only hits are the first cause, from `a_circle_meeting_a_ruling_is_refused_by_name`'s
+/// hand-built ruling.
+///
+/// ⚠ A new node kind — a point two curved surfaces meet at — falls into the first arm and reaches
+/// those callers as `WitnessNotRational`, a width sentence for a naming fact. Give it its own cause
+/// here before it ships.
 pub(crate) fn pierce_meet(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,

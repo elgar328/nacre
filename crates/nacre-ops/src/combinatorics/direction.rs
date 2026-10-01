@@ -135,14 +135,13 @@ fn arc_at(
     node: NodeId,
 ) -> Result<EdgeDir, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    // ★★ **Two causes, two names.** `pierce_meet` folds four `None`s into one, and they are not the
-    // same fact: a three-plane node on an arc is a *naming* failure (the split shipped the
-    // two-names case it exists to refuse), while a class with no rational description, a meet that
-    // does not solve, and a root the meet does not have are all "the exact route declined". Asking
-    // the kind first is what keeps `RingNaming`'s sentence true where it is raised.
+    // ★★ **Two causes, two names.** `pierce_meet` folds four causes into one `None` (its doc), and
+    // one of them is a *naming* fact: a three-plane node on an arc means the split shipped the
+    // two-names case it exists to refuse. Asking the kind first is what keeps `RingNaming`'s
+    // sentence true where it is raised.
     //
-    // ★ Only the first is reachable from here: the other three would have stopped the split that
-    // built this arc, since it re-solves the same pair of classes for the same cylinder.
+    // ★ The other three do not reach here: they would have stopped the split that built this arc,
+    // since it re-solves the same pair of classes for the same cylinder.
     // ★ A `match` and not a fallback: a third variant must light this up rather than be
     // rejected under a name that is not its own (`winding`'s `coord_key` states the rule).
     match node.kind() {
