@@ -11,7 +11,9 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex};
+use nacre_topo::{
+    Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, SurfaceKey, Vertex,
+};
 
 /// Residual bound for a vertex with **no measured tolerance** lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — such a coordinate is the
@@ -210,6 +212,16 @@ pub enum Violation {
         def_value: f64,
         cache_value: f64,
     },
+    /// **Two handles of one surface** — `twin` derives the same interning key as the earlier
+    /// `kept` ([`Model::surface_key`]: a plane's canonical name, a nameless `Through` statement, a
+    /// cylinder's whole statement — each with its motion). Every door interns, so a push-built
+    /// model never holds one; what this nets is a road to the arena that skipped the table, which
+    /// compiles and leaves every other check green. A later handle sharing the key reports
+    /// against the first.
+    DuplicateSurface {
+        kept: Handle<Surface>,
+        twin: Handle<Surface>,
+    },
 }
 
 /// How far a cylinder def's realization may sit from the cache, per component, before
@@ -243,6 +255,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let reach = model.reachable();
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_vertex_def_carriers(model, &mut out);
+    check_duplicate_surfaces(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
@@ -411,6 +424,41 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
                 inner_loops,
                 genus,
             });
+        }
+    }
+}
+
+/// **«One surface, one handle»** — no two handles of the arena derive one interning key
+/// ([`Violation::DuplicateSurface`]). The key is re-derived from each surface's truth, never read
+/// from the table it would be checking, so a surface that reached the arena past the table is
+/// seen. Runs after reference integrity (it dereferences surface handles).
+///
+/// ★ **Full-arena, like [`check_reference_integrity`]** — surfaces are shared definitions that
+/// nothing supersedes, so a duplicate is one whether or not a live face still cites it.
+///
+/// ⚠ **Its cost grows with the arena, not the live model.** Measured on a model of 2,000 recorded
+/// quarter turns (12,022 surfaces, a dozen live faces): 16 ms of `validate`'s 19 ms; on an 80-fin
+/// rotated fold (325 surfaces) 4%. The suite's wall clock did not move, and no application calls
+/// `validate`.
+fn check_duplicate_surfaces(m: &Model, out: &mut Vec<Violation>) {
+    let mut first: std::collections::HashMap<SurfaceKey, Handle<Surface>> =
+        std::collections::HashMap::new();
+    let mut i = 0u32;
+    while let Some(h) = m.surface_handle_at(i) {
+        i += 1;
+        let Some(key) = m.surface_key(m.surface(h)) else {
+            continue; // collinear points: no name, nothing to collide with
+        };
+        match first.entry(key) {
+            std::collections::hash_map::Entry::Occupied(e) => {
+                out.push(Violation::DuplicateSurface {
+                    kept: *e.get(),
+                    twin: h,
+                });
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(h);
+            }
         }
     }
 }

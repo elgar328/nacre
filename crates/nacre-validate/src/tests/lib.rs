@@ -121,6 +121,34 @@ fn dangling_reference_vertex_definition() {
     );
 }
 
+/// **A surface that reached the arena past the table is two handles of one surface.** The seeded
+/// world plane stated again through the door that skips interning (test-only) — the one road a
+/// duplicate has — is reported against the seed. It is planted with no name, so a check that read
+/// the stored names instead of re-deriving the key from the points would not see it.
+#[test]
+fn a_plane_pushed_past_the_table_is_a_duplicate_surface() {
+    let mut m = Model::new();
+    let seed = m
+        .surface_handle_at(0)
+        .expect("a model starts with its seeded planes");
+    let Surface::Plane {
+        points: nacre_topo::PlanePoints::Known(points),
+        sense,
+        ..
+    } = m.surface(seed).clone()
+    else {
+        panic!("the first seed is a plane stated by its points");
+    };
+    let nacre_geom::Surface::Plane(cache) = *m.surface_cache(seed) else {
+        panic!("a plane's cache is a plane");
+    };
+    let twin = m.push_plane_unregistered(cache, points, sense);
+    assert_eq!(
+        validate(&m),
+        vec![Violation::DuplicateSurface { kept: seed, twin }]
+    );
+}
+
 #[test]
 fn vertex_def_is_copy() {
     let d = Vertex::ThreePlane([surface_handle_at(0); 3]);

@@ -895,9 +895,13 @@ push 때의 답과 같다. `push_plane` 의 `bool` 은 돌려준 곡면이 건�
 `push_plane_unregistered` 는 표를 **건너뛰므로** — 「한 평면을 두 핸들로」 픽스처가 그것을 필요로 한다 —
 test-util 아래에서는 재유도가 표와 다르다).
 
-**«같은 곡면 = 한 핸들» 불변식을 검사하는 코드는 없다**: 표를 쓰는 곳은 깔때기 하나지만, 종류별 raw
-push 는 `pub(super)` 라 `model/` 안 어디서나 불릴 수 있고(test-only 문이 그렇게 표를 건너뛴다), `validate`
-에 중복 곡면 검사가 없다.
+**«같은 곡면 = 한 핸들»은 구조가 아니라 `validate` 가 지킨다**: 표를 쓰는 곳은 깔때기 하나지만, 종류별 raw
+push 는 `pub(super)` 라 `model/` 안 어디서나 불릴 수 있다(test-only 문이 그렇게 표를 건너뛴다). `validate` 가
+아레나의 모든 곡면에 `surface_key` 를 다시 매겨 같은 열쇠의 두 핸들을 `Violation::DuplicateSurface` 로 보고한다 —
+표가 아니라 진실에서 다시 유도하므로 표를 건너뛴 곡면이 보이고, 그래서 표를 버리고 재생할 잠금이 따로 필요 없다.
+아레나 전체인 이유는 참조 무결성 검사와 같다(곡면은 대체되지 않는 공유 정의다). 비용은 아레나 크기에 비례한다 —
+사분각 회전 2,000번 모델(곡면 12,022)에서 `validate` 19 ms 중 16 ms, 회전 fin fold 80(곡면 325)에서 4%; 스위트
+벽시계는 그대로였고, 앱(kit·playground)은 `validate` 를 부르지 않는다.
 
 - 문을 넘나드는 경우는 잠겨 있다: `a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle` —
   `Through` 평면과 `Known` 평면이 같은 평면이면 한 핸들이다(변종은 그 평면의 존재가 무엇에 근거하는지를
