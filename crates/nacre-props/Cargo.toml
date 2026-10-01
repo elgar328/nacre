@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Exact mass properties (volume, surface area) for the nacre CAD kernel — analytic on the exact geometry via the divergence theorem (no tessellation). A read-only analysis over the topology Model, kept out of nacre-topo to preserve its truth-only aggregate"
+description = "Exact mass properties for the nacre CAD kernel — volume, area and centroid computed on the exact geometry, not on a mesh"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-topo = { workspace = true }

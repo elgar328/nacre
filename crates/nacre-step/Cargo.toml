@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "STEP (AP242 Ed2) export for the nacre CAD kernel — a thin adapter translating the kernel Model into AP242 entities behind a swappable serialization backend (step-io during development)"
+description = "STEP (AP242) export for the nacre CAD kernel"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-topo = { workspace = true }

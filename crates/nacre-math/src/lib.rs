@@ -9,11 +9,9 @@
 //! - **Scalar is concrete `f64`, not generic.** Extended precision does not live here:
 //!   exact values are `nacre-exact`'s `Rat`, and a coordinate that needs more than
 //!   `f64` is realized from its definition at a chosen precision (`nacre-ops::realize`,
-//!   climbing with `astro-float`). The old note named `nacre-geom`'s relaxation ladder
-//!   and double-double; neither was built.
-//! - **`Transform`/matrices are deferred** to when they are first needed
-//!   (sketch-plane placement, M2); a future `transform.rs` will host them.
-//! - **Inputs are assumed finite.** No NaN/inf guarding in M1.
+//!   climbing with `astro-float`).
+//! - **No transforms.** Rigid motions are exact and live in `nacre-exact` (`Isometry`).
+//! - **Inputs are assumed finite.** There is no NaN/inf guarding.
 //!
 //! The affine distinction between points and vectors is enforced by the type
 //! system: `Point − Point → Vector`, `Point + Vector → Point`, and

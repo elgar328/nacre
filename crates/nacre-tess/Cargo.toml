@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "mesh export for the nacre CAD kernel — M1 bootstrap: direct planar triangulation of a Model to OBJ. Grows into provenance-tagged tessellation in M3."
+description = "Tessellation for the nacre CAD kernel — crack-free meshes derived from the exact b-rep, each mesh vertex tagged with its origin"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-store = { workspace = true }

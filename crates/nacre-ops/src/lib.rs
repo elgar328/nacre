@@ -1,7 +1,7 @@
 //! Operations for the nacre kernel, plus a replayable operation log.
 //!
-//! [`Operation::Extrude`] (M2) sweeps a planar polygon profile into a prism;
-//! [`Operation::PadOnFace`]/[`Operation::PocketOnFace`] (M4) consume a prior op's face by
+//! [`Operation::Extrude`] sweeps a planar profile into a solid;
+//! [`Operation::PadOnFace`]/[`Operation::PocketOnFace`] consume a prior op's face by
 //! `Handle` (exposed via [`OpOutput`]) and supersede a solid (live-solid
 //! semantics) — each is a tool prism plus a boolean, not a direct face-split. Ops are
 //! applied by [`apply`] and folded by [`replay`]; every result is a **closed** solid, so

@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "analytic geometry (Plane, Cylinder, Line, Circle) for the nacre CAD kernel — the realization layer: closed-form in shape, f64 in its coefficients; the exact truth lives in nacre-topo"
+description = "Analytic curves and surfaces for the nacre CAD kernel — closed-form f64 evaluation of the exact definitions kept in nacre-topo"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-math = { workspace = true }

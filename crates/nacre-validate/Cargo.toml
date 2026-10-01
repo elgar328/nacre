@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "b-rep invariant checker for the nacre CAD kernel — reference integrity, loop closure, half-edge manifold pairing, geometric incidence, Euler-Poincaré (M1; tessellation checks land in M3)"
+description = "B-rep invariant checker for the nacre CAD kernel — reference integrity, closure, manifoldness, orientation, incidence and Euler–Poincaré"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-topo = { workspace = true }

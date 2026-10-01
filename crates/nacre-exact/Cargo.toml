@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Everything the nacre CAD kernel can answer exactly in rationals and integers — dimensions and angles that survive f64 (1.1 is 11/10), the canonical names of planes and their meets, quadratic values a + b*sqrt(c), and the exact sign predicates over them"
+description = "Exact arithmetic for the nacre CAD kernel — rationals, quadratic irrationals, exact geometric definitions and the sign predicates over them"
+readme = "../LAYER-README.md"
 
 [dependencies]
 num-rational = "0.4"

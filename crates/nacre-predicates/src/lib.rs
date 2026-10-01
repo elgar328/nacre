@@ -1,6 +1,6 @@
 //! Exact geometric predicates for the nacre CAD kernel.
 //!
-//! The M5 boolean ladder decides in/out and orientation by the **sign** of
+//! The boolean engine decides in/out and orientation by the **sign** of
 //! determinants, and those signs must be exact and mutually consistent or the
 //! combinatorial b-rep breaks. This crate is the sign
 //! layer. It builds on [`geometry_predicates`] (a safe Rust port of Shewchuk's

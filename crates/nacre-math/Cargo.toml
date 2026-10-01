@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "self-contained f64 linear algebra (Point<D>/Vector<D>) for the nacre CAD kernel — affine point/vector distinction in the type system"
+description = "f64 linear algebra for the nacre CAD kernel, with points and vectors kept distinct in the type system"
+readme = "../LAYER-README.md"
 
 [dependencies]
 

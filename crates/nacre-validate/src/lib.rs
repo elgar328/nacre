@@ -1,12 +1,10 @@
 //! b-rep invariant checker for the nacre kernel.
 //!
-//! [`validate`] runs every M1 check over a [`Model`] and returns all
-//! [`Violation`]s it finds (an empty `Vec` means the model is valid). Checks:
-//! reference integrity, loop closure, half-edge manifold pairing, face
-//! orientation against loop winding, geometric incidence (vertices on their
-//! curves/surfaces), and Euler-Poincaré. The
-//! tessellation checks (provenance coherence, crack-free) arrive in M3
-//! when a `Tessellation` exists.
+//! [`validate`] runs every check over a [`Model`] and returns all [`Violation`]s it
+//! finds (an empty `Vec` means the model is valid): reference integrity, loop closure,
+//! half-edge manifold pairing, face orientation against loop winding, geometric
+//! incidence (vertices on their curves and surfaces, and on their own definitions),
+//! one handle per surface, and Euler-Poincaré.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};

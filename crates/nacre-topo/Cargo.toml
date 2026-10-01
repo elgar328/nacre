@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "b-rep topology (Vertex/Edge/Face/Loop/HalfEdge/Shell/Solid, half-edge) and the truth-only Model aggregate for the nacre CAD kernel — geometry referenced by Handle, provenance carved into Origin"
+description = "B-rep topology for the nacre CAD kernel — half-edge solids and the model holding the exact definition of every vertex, edge and face"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-store = { workspace = true }

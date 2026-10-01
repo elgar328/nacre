@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Exact geometric predicates for the nacre CAD kernel — indirect predicates (sign decisions on implicit points defined as plane intersections, not coordinates) over the geometry-predicates adaptive-arithmetic base. A pure numeric layer (plane coefficients and coordinates as plain arrays, no kernel types) so it can be extracted as a standalone crate"
+description = "Exact geometric predicates for the nacre CAD kernel — sign decisions on points defined as surface intersections, without constructing their coordinates"
+readme = "../LAYER-README.md"
 
 [dependencies]
 geometry-predicates = "0.3"

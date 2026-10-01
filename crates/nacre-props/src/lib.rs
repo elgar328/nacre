@@ -9,7 +9,7 @@
 //! (not inside it) so the topology crate stays a truth-only aggregate, mirroring
 //! `nacre-validate` / `nacre-tess` / `nacre-step`.
 //!
-//! Consumers: user "part volume / surface area" queries, the M5 boolean
+//! Consumers: user "part volume / surface area" queries, the boolean
 //! volume-conservation invariants (proptest), and the OCCT oracle diff
 //! (`nacre-oracle`).
 //!

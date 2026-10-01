@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "operations for the nacre CAD kernel — sketch profiles, extrude, and a replayable operation log (M2: planar-profile prism extrude)"
+description = "Modeling operations for the nacre CAD kernel — sketch-based features, booleans and transforms, recorded in a replayable operation log"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-topo = { workspace = true }

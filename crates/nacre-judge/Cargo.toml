@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Toleranced sign judgments for the nacre CAD kernel — the twin of nacre-predicates for rotated points, whose coordinates are irrational: an f64 filter escalates to arbitrary precision and returns a proved sign, a proved coincidence, or an honest undecided. Pure numeric; never reads the b-rep"
+description = "Proved sign decisions for the nacre CAD kernel where coordinates are irrational — an f64 filter that escalates to arbitrary precision and never returns a wrong sign"
+readme = "../LAYER-README.md"
 
 [dependencies]
 nacre-exact = { workspace = true }
