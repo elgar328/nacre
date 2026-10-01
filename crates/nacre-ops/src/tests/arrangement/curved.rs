@@ -112,7 +112,8 @@ fn armed_through_boss_z(
     std::collections::HashSet<(usize, usize)>,
 ) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );
@@ -1176,7 +1177,11 @@ fn with_cut_rings(
     ),
 ) {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(plate));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array(plate),
+    );
     // The seam off every ring corner (`+x`, at `(45, 20)`) or on the chord end (`−y`, `(40, 15)`).
     let seam = if seam_off {
         [1.0, 0.0, 0.0]
@@ -1422,11 +1427,13 @@ fn the_two_roads_agree_on_every_rational_ring() {
     use nacre_exact::Rat;
     use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, 2.0, 0.0]),
         Point3::from_array([6.0, 6.0, 2.0]),
     );
@@ -1555,7 +1562,11 @@ fn the_two_roads_agree_on_every_rational_ring() {
 /// `(1,1)`, r=0.5 — every wall is a full unit from the axis, so the population gate passes
 /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing table.
 fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let a = crate::fixtures::cuboid(
+        m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let b = crate::fixtures::cylinder_with_seam(
         m,
         Point3::from_array([1.0, 1.0, z0]),
@@ -2010,7 +2021,11 @@ fn no_ghost_circle_outside_the_rim_span() {
 #[test]
 fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+    let plate = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0; 3]),
+    );
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([5.0, 5.0, 0.0]),
@@ -2023,7 +2038,8 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A second operand so the arrangement runs on the bored solid as an operand.
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 10.0]),
         Point3::from_array([2.0, 2.0, 12.0]),
     );
@@ -2092,11 +2108,13 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
 #[test]
 fn partial_overlap_is_not_merged() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([3.0, 1.0, 1.0]),
     );

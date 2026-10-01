@@ -109,7 +109,7 @@ use crate::fixtures::{datum_frame, live_vertices, p2};
 // ---------------------------------------------------------------------------------------------
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+    nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -823,7 +823,8 @@ fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
 
     for (what, turn) in [("translate", false), ("rot90_translate", true)] {
         let mut m = Model::new();
-        let mut s = m.add_cuboid(
+        let mut s = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 2.0, 3.0]),
         );
@@ -862,7 +863,8 @@ fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
     let mut once = Model::new();
     let step = [dec(0.13), dec(0.3), dec(0.7)];
     for k in 1..=40 {
-        let s = once.add_cuboid(
+        let s = nacre_ops::fixtures::cuboid(
+            &mut once,
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 2.0, 3.0]),
         );

@@ -54,7 +54,7 @@ fn approx(a: f64, b: f64) -> bool {
 /// supersedes its operands.
 fn l_prism_and_box(lo: [f64; 3], hi: [f64; 3]) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+    let bx = nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
     (m, l, bx)
 }
 

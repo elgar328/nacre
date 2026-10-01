@@ -9,8 +9,8 @@ use super::*;
 /// `[*_above, *_below]` labels are about the class root's **stored surface normal** — the convention
 /// `SegKind::Seated{body_above}` and `emit_faces`' `flip` are written against — and the two frames
 /// differ by [`crate::planes::FaceInfo::orient_sign`], which is `-1` exactly when the root face
-/// is `Reversed`. No
-/// `add_cuboid` face ever is, but a face an earlier boolean re-emitted flipped is (a pocket wall),
+/// is `Reversed` — a face whose plane an earlier face stated facing the other way (a box stacked
+/// on another), or one an earlier boolean re-emitted flipped (a pocket wall),
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.

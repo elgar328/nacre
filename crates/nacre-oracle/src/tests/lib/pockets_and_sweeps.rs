@@ -49,7 +49,11 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
 fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool) {
     use nacre_ops::BoolKind;
     let (mut m, pc) = pocketed_cube();
-    let bx = m.add_cuboid(Point3::from_array(boxes[0]), Point3::from_array(boxes[1]));
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array(boxes[0]),
+        Point3::from_array(boxes[1]),
+    );
     let (x, y) = if swap { (bx, pc) } else { (pc, bx) };
     let occt = occt_boolean_of(&m, kind, x, y).unwrap();
     let bk = match kind {
@@ -301,7 +305,8 @@ fn non_convex_overhang_cut_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    let slot = m.add_cuboid(
+    let slot = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.75, 0.25, -0.25]),
         Point3::from_array([1.0, 0.75, 0.5]),
     );
@@ -377,7 +382,8 @@ fn the_four_plane_cut_matches_occt() {
         0.0,
         1.0,
     );
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -481,8 +487,16 @@ fn placement_matches_occt() {
         (3, 1),
     ] {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0; 3]),
+        );
+        let b = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0; 3]),
+        );
         m.rebuild_adjacency();
         let a = shift(&mut m, a, Rat::new(n, d).expect("offset"));
         let b = shift(&mut m, b, Rat::new(n + d, d).expect("offset"));
@@ -512,11 +526,13 @@ fn placement_matches_occt() {
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
-            let base = m.add_cuboid(
+            let base = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-2.0, -2.0, 0.0]),
                 Point3::from_array([2.0, 2.0, 1.0]),
             );
-            let tool = m.add_cuboid(
+            let tool = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-0.5, -0.5, -1.0]),
                 Point3::from_array([0.5, 0.5, 2.0]),
             );
@@ -649,11 +665,16 @@ fn reflection_matches_occt() {
             .and_then(|q| q.checked_sub(Rat::from_int(1)))
             .expect("2p − 1");
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([1.0, 0.0, 0.0]),
             Point3::from_array([2.0, 1.0, 1.0]),
         );
-        let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0; 3]),
+        );
         m.rebuild_adjacency();
         let a = flip(&mut m, a, p);
         let b = shift(&mut m, b, t);
@@ -679,11 +700,16 @@ fn reflection_matches_occt() {
             (BoolKind::Common, OcctBool::Common, "common"),
         ] {
             let mut m = Model::new();
-            let a = m.add_cuboid(
+            let a = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([1.0, 0.0, 0.0]),
                 Point3::from_array([2.0, 1.0, 1.0]),
             );
-            let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = nacre_ops::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0; 3]),
+            );
             m.rebuild_adjacency();
             let a = flip(&mut m, a, p);
             let b = shift(&mut m, b, t);
@@ -701,11 +727,13 @@ fn reflection_matches_occt() {
     for deg in [7i128, 30, 45, 63] {
         for (n, d) in [(1i128, 3i128), (5, 7)] {
             let mut m = Model::new();
-            let base = m.add_cuboid(
+            let base = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-2.0, -2.0, 0.0]),
                 Point3::from_array([2.0, 2.0, 1.0]),
             );
-            let tool = m.add_cuboid(
+            let tool = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-0.5, -0.5, -1.0]),
                 Point3::from_array([0.5, 0.5, 2.0]),
             );
@@ -758,13 +786,15 @@ fn the_fin_array_matches_occt() {
     // StraightAngle, LabelConflict ×3, TraceDeclined.
     for theta in [16.0f64, 20.0, 23.0, 46.0, 50.0, 54.0, 59.0, 62.0] {
         let mut m = Model::new();
-        let mut part = m.add_cuboid(
+        let mut part = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, 0.0]),
             Point3::from_array([1.0, 1.0, 3.0]),
         );
         m.rebuild_adjacency();
         for deg in [theta, theta + 180.0, theta + 198.0] {
-            let fin = m.add_cuboid(
+            let fin = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.5, -0.2, 1.0]),
                 Point3::from_array([4.0, 0.2, 3.0]),
             );

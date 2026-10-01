@@ -10,7 +10,8 @@ use nacre_topo::Model;
 
 fn main() {
     let mut model = Model::new();
-    model.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut model,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );

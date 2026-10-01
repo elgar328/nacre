@@ -8,11 +8,13 @@ use super::*;
 #[test]
 fn axis_aligned_cubes_decline_nothing() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -88,12 +90,14 @@ fn direction_families_partition_the_walls() {
         let n = 24i128;
         let mut m = Model::new();
         let mut acc = if rotated {
-            m.add_cuboid(
+            crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-3.0, -3.0, 0.0]),
                 Point3::from_array([3.0, 3.0, 2.0]),
             )
         } else {
-            m.add_cuboid(
+            crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-1.0, -1.0, 0.0]),
                 Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
             )
@@ -102,7 +106,8 @@ fn direction_families_partition_the_walls() {
         let mut pairs = 0usize;
         for i in 0..n {
             let fin = if rotated {
-                let f = m.add_cuboid(
+                let f = crate::fixtures::cuboid(
+                    &mut m,
                     Point3::from_array([2.0, -0.4, 0.0]),
                     Point3::from_array([8.0, 0.4, 1.0]),
                 );
@@ -110,7 +115,8 @@ fn direction_families_partition_the_walls() {
                 tilt_by(&mut m, f, nacre_exact::Rat::new(360 * i, n).unwrap())
             } else {
                 let x = i as f64 * 0.5;
-                let f = m.add_cuboid(
+                let f = crate::fixtures::cuboid(
+                    &mut m,
                     Point3::from_array([x, 0.5, 0.0]),
                     Point3::from_array([x + 0.2, 4.0, 2.0]),
                 );
@@ -221,12 +227,14 @@ fn spend(n: i128, rotated: bool) {
     // own x instead, so both arms fuse `n` distinct blades onto a growing solid and the only
     // difference is which predicate route the judgements take.
     let mut acc = if rotated {
-        m.add_cuboid(
+        crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-3.0, -3.0, 0.0]),
             Point3::from_array([3.0, 3.0, 2.0]),
         )
     } else {
-        m.add_cuboid(
+        crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, 0.0]),
             Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
         )
@@ -234,13 +242,15 @@ fn spend(n: i128, rotated: bool) {
     m.rebuild_adjacency();
     let blade = |m: &mut Model, i: i128| {
         let f = if rotated {
-            m.add_cuboid(
+            crate::fixtures::cuboid(
+                m,
                 Point3::from_array([2.0, -0.4, 0.0]),
                 Point3::from_array([8.0, 0.4, 1.0]),
             )
         } else {
             let x = i as f64 * 0.5;
-            m.add_cuboid(
+            crate::fixtures::cuboid(
+                m,
                 Point3::from_array([x, 0.5, 0.0]),
                 Point3::from_array([x + 0.2, 4.0, 2.0]),
             )
@@ -346,14 +356,16 @@ fn spend(n: i128, rotated: bool) {
 fn measure_spike_report_after_hoisting() {
     let n = 24i128;
     let mut m = Model::new();
-    let mut acc = m.add_cuboid(
+    let mut acc = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-3.0, -3.0, 0.0]),
         Point3::from_array([3.0, 3.0, 2.0]),
     );
     m.rebuild_adjacency();
     let (mut total, mut loosest) = (0usize, String::new());
     for i in 0..n {
-        let fin = m.add_cuboid(
+        let fin = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([2.0, -0.4, 0.0]),
             Point3::from_array([8.0, 0.4, 1.0]),
         );
@@ -386,14 +398,16 @@ fn measure_spike_report_after_hoisting() {
 fn measure_spike_cull_potential() {
     let n = 60i128;
     let mut m = Model::new();
-    let mut acc = m.add_cuboid(
+    let mut acc = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-3.0, -3.0, 0.0]),
         Point3::from_array([3.0, 3.0, 2.0]),
     );
     m.rebuild_adjacency();
     let mut tot = Counts::default();
     for i in 0..n {
-        let fin = m.add_cuboid(
+        let fin = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([2.0, -0.4, 0.0]),
             Point3::from_array([8.0, 0.4, 1.0]),
         );

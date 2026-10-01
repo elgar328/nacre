@@ -31,7 +31,8 @@ use nacre_topo::{Model, Solid};
 
 fn cuboid() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -398,11 +399,13 @@ fn cmp_coord_unrotated_agrees_with_the_input() {
 #[test]
 fn mixed_rotation_handled() {
     let mut m = Model::new();
-    let a0 = m.add_cuboid(
+    let a0 = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([10.0, 10.0, 10.0]),
         Point3::from_array([12.0, 13.0, 14.0]),
     );
@@ -474,8 +477,8 @@ fn t_dir_sign_rotation_invariant() {
 
 /// `rotated = false` answers what the input says — `det[n_p; n_a; n_b]` of the witness
 /// triangles' normals from the integer corners the test wrote. The lock on the name rows'
-/// stored-orientation fold, which a direction reads: every face of an `add_cuboid` states its plane
-/// through its outward-wound corners, so the stored normal is the triangle's.
+/// stored-orientation fold, which a direction reads: every face of the fixture box carries a
+/// witness triangle wound along its stored normal, so the stored normal is the triangle's.
 #[test]
 fn t_dir_sign_unrotated_agrees_with_the_input() {
     let (m, s) = cuboid();
@@ -818,7 +821,8 @@ fn two_caps_on_a_tilted_face(
     use nacre_math::Vector3;
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let mut s = m.add_cuboid(
+    let mut s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -1349,7 +1353,8 @@ fn a_boolean_mints_no_surface() {
         // land inside the window.
         // The turns pivot on the origin, so the base cuboid's corner there does not move —
         // a box straddling it bites the solid whatever the tilt.
-        let tool = m.add_cuboid(
+        let tool = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-0.5, -0.5, -0.5]),
             Point3::from_array([0.6, 0.6, 0.6]),
         );
@@ -1770,7 +1775,8 @@ mod wide_name_rescue {
     /// names) plus the wide cap (the discovered-vertex world name).
     fn cuboid_sliced_by_the_wide_plane(m: &mut Model) -> Handle<Solid> {
         let tool = wide_datum_tool(m, 50.0, 50.0).expect("a wide-named datum carries a slab tool");
-        let cub = m.add_cuboid(
+        let cub = crate::fixtures::cuboid(
+            m,
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([5.0, 5.0, 4.0]),
         );
@@ -1846,7 +1852,8 @@ mod wide_name_rescue {
             let mut m = wf_pocket_model();
             let named: Vec<WorkingPlane> = if arm == "world" {
                 let tool = wide_datum_tool(&mut m, 0.4, 1.2).expect("a wide datum carries a tool");
-                let cub = m.add_cuboid(
+                let cub = crate::fixtures::cuboid(
+                    &mut m,
                     Point3::from_array([-1.0, -1.0, -1.0]),
                     Point3::from_array([5.0, 5.0, 4.0]),
                 );

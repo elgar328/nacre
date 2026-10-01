@@ -60,13 +60,13 @@ fn disjoint_non_convex_operand() {
     let far_max = || Point3::from_array([11.0; 3]);
     let (mut m, l) = l_prism();
     let vol_l = nacre_props::mass_props(&m, l).unwrap().volume;
-    let d = m.add_cuboid(far(), far_max());
+    let d = nacre_ops::fixtures::cuboid(&mut m, far(), far_max());
     let r = boolean_one(&mut m, BoolKind::Cut, l, d).unwrap();
     assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
     // Fusing things that never touch does not merge them — it keeps both, whole.
     let (mut m, l) = l_prism();
     let vol_d = 1.0; // far()..far_max() is the unit box
-    let d = m.add_cuboid(far(), far_max());
+    let d = nacre_ops::fixtures::cuboid(&mut m, far(), far_max());
     let both = boolean(&mut m, BoolKind::Fuse, l, d).unwrap();
     assert_eq!(both.len(), 2, "disjoint operands stay two solids");
     m.rebuild_adjacency();
@@ -81,7 +81,7 @@ fn disjoint_non_convex_operand() {
     );
     // Their intersection, on the other hand, really is empty.
     let (mut m, l) = l_prism();
-    let d = m.add_cuboid(far(), far_max());
+    let d = nacre_ops::fixtures::cuboid(&mut m, far(), far_max());
     assert!(boolean(&mut m, BoolKind::Common, l, d).unwrap().is_empty());
 }
 
@@ -126,8 +126,13 @@ fn a_common_can_leave_a_closed_seam_loop() {
     // z=0/z=3 caps the kept square [1,2]² is bounded entirely by the cut (an island
     // face) — the loop is oriented with material inside it, a sign a hole never hits.
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let bar = m.add_cuboid(
+    let cube = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let bar = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -479,17 +484,20 @@ fn fuse_blind_dimple() {
 #[test]
 fn a_boolean_result_stacks_as_an_operand() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 1.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
     let c = boolean_one(&mut m, BoolKind::Common, a, b).unwrap(); // [1,2]³
     m.rebuild_adjacency();
-    let d = m.add_cuboid(
+    let d = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 2.0]),
         Point3::from_array([2.0, 2.0, 3.0]),
     );
@@ -509,12 +517,21 @@ fn blind_hole_drills_into_a_void() {
     // split reconstruct it exactly: remove the channel [1.4,1.6]²×[0,1]=0.04 through
     // the floor, void interior removes nothing ⇒ 26 − 0.04 = 25.96.
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
     m.rebuild_adjacency();
-    let stub = m.add_cuboid(
+    let stub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.4, 1.4, -0.5]),
         Point3::from_array([1.6, 1.6, 1.5]),
     );
@@ -533,11 +550,20 @@ fn a_tunnel_drilled_through_a_void() {
     // nothing ⇒ 26 − 0.08 = 25.92. Result is a genus-1 solid (a straight tunnel),
     // one shell, no cavity.
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let tunnel = m.add_cuboid(
+    let tunnel = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.4, 1.4, -0.5]),
         Point3::from_array([1.6, 1.6, 3.5]),
     );
@@ -604,7 +630,11 @@ fn degenerate_inputs_are_rejected() {
 fn transform_op_applies() {
     let (iso, _) = test_iso();
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let out = apply(
         &mut m,
         &Operation::Transform {
@@ -643,8 +673,13 @@ fn cut_containment_makes_a_cavity() {
 fn cut_containment_off_center_cavity() {
     // The inner box need not be concentric — any strictly-interior B works.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 2.5, 3.5]),
     );
@@ -712,11 +747,13 @@ fn a_corner_cut_through_the_bottom() {
     // The corner prism pokes out the base's bottom: base 1.0 − corner column (x,y ∈ [0.5,1],
     // full height) = 1 − 0.25 = 0.75.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let through = m.add_cuboid(
+    let through = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, -0.5]),
         Point3::from_array([1.5, 1.5, 1.0]),
     );
@@ -737,7 +774,8 @@ fn a_fused_stack_chains_through_a_cut() {
     m.rebuild_adjacency();
     // A cutter straddling z=1 (the fused interface) — the seam runs across the dissolved
     // interface. Result: 2 − 0.5·0.5·1.0.
-    let cutter = m.add_cuboid(
+    let cutter = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 1.5, 1.5]),
     );
@@ -763,14 +801,12 @@ fn a_fused_stack_chains_through_a_cut() {
 fn boolean_topology_is_the_same_on_untidy_coordinates() {
     let counts = |dx: f64, dy: f64, z0: f64, h1: f64, h2: f64, kind: BoolKind| {
         let mut m = Model::new();
-        let a = m.add_cuboid(
-            Point3::from_array([0.0, 0.0, z0]),
-            Point3::from_array([dx, dy, z0 + h1]),
-        );
-        let b = m.add_cuboid(
-            Point3::from_array([0.0, 0.0, z0 + h1]),
-            Point3::from_array([dx, dy, z0 + h1 + h2]),
-        );
+        // ★ A stack on **one** plane `z0 + h1` — below it and on it — so the two boxes meet there.
+        let zm = z0 + h1;
+        let a = nacre_ops::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, -h1);
+        let b = nacre_ops::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, h2);
+        let floor = |s| m.face(m.shell(m.solid(s).outer).faces[0]).surface;
+        assert_eq!(floor(a), floor(b), "the stack shares one plane");
         let r = boolean_one(&mut m, kind, a, b).expect("stacked boxes fuse/cut");
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
@@ -833,8 +869,16 @@ fn boolean_op_applies_and_wraps_error() {
     // empty result, not an error (see `boolean_op_passes_an_empty_result_through`), so the
     // wrapping is exercised with a boolean that genuinely fails: a handle that is not live.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([10.0; 3]),
+        Point3::from_array([11.0; 3]),
+    );
     m.supersede_live(&[b]); // retire `b` behind the op's back
     assert_eq!(
         apply(
@@ -854,9 +898,17 @@ fn boolean_op_applies_and_wraps_error() {
 #[test]
 fn boolean_op_passes_an_empty_result_through() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     // Offset in all axes so no faces are coplanar with A.
-    let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([10.0; 3]),
+        Point3::from_array([11.0; 3]),
+    );
     let out = apply(
         &mut m,
         &Operation::Boolean {

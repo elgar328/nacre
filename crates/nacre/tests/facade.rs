@@ -147,7 +147,11 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
 #[test]
 fn the_test_util_primitive_is_forwarded() {
     let mut model = Model::new();
-    let cube = model.add_cuboid(Point3::origin(), Point3::from_array([2.0, 3.0, 4.0]));
+    let cube = nacre_ops::fixtures::cuboid(
+        &mut model,
+        Point3::origin(),
+        Point3::from_array([2.0, 3.0, 4.0]),
+    );
     model.rebuild_adjacency();
     assert!((mass_props(&model, cube).unwrap().volume - 24.0).abs() < 1e-12);
 
@@ -198,11 +202,13 @@ fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
     use nacre::prelude::*;
 
     let mut m = nacre::topo::Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 4.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 2.0]),
         Point3::from_array([3.0, 3.0, 5.0]),
     );

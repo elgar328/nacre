@@ -177,7 +177,8 @@ fn derived_curves_match_stored() {
 
     // ① Construction, including a tilted (irrational-normalization) cylinder axis.
     let mut m = Model::new();
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
@@ -292,7 +293,8 @@ fn derived_curves_match_stored() {
 fn edge_carriers_agree_with_adjacency() {
     // ① Plain construction: cuboid + cylinder.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
@@ -389,7 +391,8 @@ fn edge_carriers_agree_with_adjacency() {
 
     // ④ Motions: a rotated copy (surf_map re-pointing) — cuboid family and cylinder family.
     let mut m2 = Model::new();
-    let box2 = m2.add_cuboid(
+    let box2 = nacre_ops::fixtures::cuboid(
+        &mut m2,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 2.0, 3.0]),
     );

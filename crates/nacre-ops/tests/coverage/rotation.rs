@@ -78,13 +78,22 @@ fn a_rotated_cut_result_can_be_cut_again() {
     // fresh slab, then Cut. A boolean commutes with a rigid motion, so the volume matches the
     // unrotated chain (7 − 2 = 5) and the result stays valid.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     let r = xf(&mut m, r, rot30());
     // A slab that severs at x = 0.5 — no plane coincides with R's (avoids rotated coplanar).
-    let c = m.add_cuboid(
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, -1.0]),
         Point3::from_array([0.5, 4.0, 4.0]),
     );
@@ -103,7 +112,8 @@ fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
     // dimple's hole, so an inward `n_out` would reverse it — only `validate` and the
     // signed volume would ever say so.
     let (mut m, l) = rotated_l_prism();
-    let stub = m.add_cuboid(
+    let stub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
@@ -124,8 +134,13 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
     let tilt = |m: &mut Model, s| xf(m, s, rot_iso(Axis::X, 30));
     // boss fuse — fused volume 1.25.
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let boss = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.25, 0.25, 1.0]),
         Point3::from_array([0.75, 0.75, 2.0]),
     );
@@ -140,8 +155,13 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
     assert!((v - 1.25).abs() < 1e-9, "solved boss fuse is correct: {v}");
     // pocket cut — carved volume 0.875.
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let prism = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let prism = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.25, 0.25, 0.5]),
         Point3::from_array([0.75, 0.75, 1.0]),
     );
@@ -178,12 +198,18 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
     };
     for swap in [false, true] {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b_raw = m.add_cuboid(
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0; 3]),
+        );
+        let b_raw = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([1.0, 0.0, 0.0]),
             Point3::from_array([2.0, 1.0, 1.0]),
         );
-        let nick = m.add_cuboid(
+        let nick = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([1.6, 0.6, 0.6]),
             Point3::from_array([2.5, 1.5, 1.5]),
         );
@@ -261,7 +287,8 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
     ] {
         let (mut m, cube, bar) = cube_and_spun_bar(half_z, deg, pivot_z);
         let target = if fuse {
-            let block = m.add_cuboid(
+            let block = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.5, 0.0, 1.0]),
                 Point3::from_array([1.0, 1.0, 2.0]),
             );
@@ -303,7 +330,8 @@ fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
     use nacre_exact::Rat;
     let cut_volume = |ulps: i64| -> (f64, bool) {
         let (mut m, cube, bar) = cube_and_spun_bar_ulp(0.2, 45, Rat::from_int(1), ulps);
-        let block = m.add_cuboid(
+        let block = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, 0.0, 1.0]),
             Point3::from_array([1.0, 1.0, 2.0]),
         );

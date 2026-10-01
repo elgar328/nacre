@@ -59,11 +59,13 @@ fn pt(n: NodeId, jd: &Judge<'_, WorkingPlane>) -> [f64; 3] {
 #[test]
 fn a_seated_cap_emits_its_boundary_with_the_right_body_side() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -191,7 +193,8 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
     }])
     .unwrap();
     // A far cube so plane_index_setup has two solids; it never touches the y=1 class.
-    m.add_cuboid(
+    crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([10.0, 10.0, 10.0]),
         Point3::from_array([11.0, 11.0, 11.0]),
     );
@@ -311,7 +314,8 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
         dist: 1.0,
     }])
     .unwrap();
-    m.add_cuboid(
+    crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([10.0, 10.0, 10.0]),
         Point3::from_array([11.0, 11.0, 11.0]),
     );
@@ -521,11 +525,13 @@ fn coincident_cap_edges_merge_by_footprint() {
     // the 4 rim edges is produced 4× (a-seated, a-wall, b-seated, b-wall) → 4 merged edges.
     {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 1.0, 1.0]),
         );
-        let b = m.add_cuboid(
+        let b = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0, 0.0, 1.0]),
             Point3::from_array([1.0, 1.0, 2.0]),
         );
@@ -572,11 +578,13 @@ fn coincident_cap_edges_merge_by_footprint() {
     // different rims, so no a↔b coincidence: a's 4 pairs → 4, b's 4 pairs → 4 = 8.
     {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0, 1.0, 0.0]),
             Point3::from_array([3.0, 2.0, 1.0]),
         );
-        let b = m.add_cuboid(
+        let b = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([1.0, 0.0, 0.0]),
             Point3::from_array([2.0, 3.0, 1.0]),
         );
@@ -631,11 +639,13 @@ fn coincident_cap_edges_merge_by_footprint() {
 #[test]
 fn split_cuts_the_cross_into_the_right_pieces() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 1.0, 0.0]),
         Point3::from_array([3.0, 2.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
@@ -742,11 +752,13 @@ fn split_cuts_the_cross_into_the_right_pieces() {
 #[test]
 fn partial_overlap_is_resolved() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([3.0, 1.0, 1.0]),
     );
@@ -829,11 +841,13 @@ fn partial_overlap_is_resolved() {
 #[test]
 fn a_circle_meeting_a_ruling_is_refused_by_name() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 1.0, 0.0]),
         Point3::from_array([3.0, 2.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
@@ -975,11 +989,13 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
 #[test]
 fn the_cross_arrangement_has_six_cells() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 1.0, 0.0]),
         Point3::from_array([3.0, 2.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
@@ -1115,11 +1131,13 @@ fn the_cross_arrangement_has_six_cells() {
 #[test]
 fn cell_labels_propagate_and_match_footprints() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 1.0, 0.0]),
         Point3::from_array([3.0, 2.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
@@ -1192,11 +1210,13 @@ fn cell_labels_propagate_and_match_footprints() {
 #[test]
 fn a_straddle_drives_the_above_bit_and_seated_wins() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -1266,11 +1286,13 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
 #[test]
 fn boolean_keep_and_result_faces_on_the_cross() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 1.0, 0.0]),
         Point3::from_array([3.0, 2.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
@@ -1444,11 +1466,13 @@ fn boolean_keep_and_result_faces_on_the_cross() {
 #[test]
 fn stacked_fuse_emits_ten_closed_faces() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -1528,11 +1552,13 @@ fn stacked_fuse_emits_ten_closed_faces() {
 #[test]
 fn end_to_end_stacked_fuse_is_a_tall_box() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -1555,11 +1581,13 @@ fn end_to_end_stacked_fuse_is_a_tall_box() {
 fn end_to_end_overlapping_cubes_all_three() {
     let vol_of = |kind: BoolKind| -> f64 {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 1.0, 1.0]),
         );
-        let b = m.add_cuboid(
+        let b = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.5]),
         );
@@ -1585,11 +1613,13 @@ fn end_to_end_overlapping_cubes_all_three() {
 /// and sum (volume, area) over the result solids.
 fn tunnel_vol_area(kind: BoolKind) -> (f64, f64) {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -1655,11 +1685,13 @@ fn tunnel_common_is_the_bar_box_control() {
 #[test]
 fn tunnel_cut_emits_ten_faces_two_annular() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -1769,7 +1801,8 @@ fn u_slab_fuse_emits_a_two_hole_face() {
     }])
     .unwrap();
     let u = m.live_solids()[0];
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, 1.5, -0.5]),
         Point3::from_array([3.5, 2.5, 1.5]),
     );

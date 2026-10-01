@@ -97,7 +97,8 @@ fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
 #[test]
 fn a_segment_tangent_to_the_rim_builds() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -112,7 +113,8 @@ fn a_segment_tangent_to_the_rim_builds() {
     .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([11.0, 8.0, 5.0]),
         Point3::from_array([15.0, 12.0, 8.0]),
     );
@@ -170,7 +172,8 @@ fn a_segment_tangent_to_the_rim_builds() {
 #[test]
 fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -185,7 +188,8 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([8.0, 13.0, 5.0]),
         Point3::from_array([12.0, 17.0, 8.0]),
     );
@@ -216,16 +220,15 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
 /// cylinder in this repository.**
 ///
 /// Almost every cylinder in the suite stands on `[0, 0, 1]`, and that is not an accident of
-/// taste — `add_cuboid` pushes faces `[−Z, +Z, −Y, +Y, −X, +X]`
-/// and `build_prism` pushes "base cap, top cap, then walls", so a `+Z` cylinder's circle always
-/// lives on a class interned **before** the wall that crosses it. Measured over the whole ops
-/// suite: 463 of the 2060 `(class, wall)` pairs the gate examines are descending, but **all
-/// nine that reach the locator are ascending**. So `NodeId::pierce`'s canonicalization —
-/// re-sorting the pair and restating the root with it — has never once been exercised by a
-/// production path.
+/// taste — a fixture box and `build_prism` both push "base cap, top cap, then walls", so a `+Z`
+/// cylinder's circle always lives on a class interned **before** the wall that crosses it.
+/// Measured over the whole ops suite while its boxes came from a topo door that also pushed the
+/// caps first: 463 of the 2060 `(class, wall)` pairs the gate examines were descending, but **all
+/// nine that reached the locator were ascending** — `NodeId::pierce`'s canonicalization
+/// (re-sorting the pair and restating the root with it) was exercised by no other fixture.
 ///
-/// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` face (class 5,
-/// interned last) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
+/// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` wall (interned after
+/// the caps) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
 ///
 /// ★ **A tangency, so there is exactly one root** — and that also means the
 /// circle is not separated, so this **builds** rather than refusing. The single root is still
@@ -240,7 +243,8 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
 #[test]
 fn a_turned_boss_tangent_to_the_plate_top_builds() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -304,7 +308,8 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
 #[test]
 fn a_turned_boss_over_the_plates_corner_builds() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -422,7 +427,8 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         // arena residue, so each gets its own build of the same fixture.
         let build = || {
             let mut m = Model::new();
-            let plate = m.add_cuboid(
+            let plate = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
@@ -548,7 +554,8 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -662,7 +669,8 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], true),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -809,7 +817,8 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
         ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -948,7 +957,8 @@ fn a_pierce_vertex_is_minted_and_measured() {
         ),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1039,7 +1049,8 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
         ),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1195,7 +1206,8 @@ fn the_bands_loop_is_one_continuous_cycle() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0], 5usize),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1286,7 +1298,8 @@ fn the_grouping_joins_across_a_cut_rim() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1393,7 +1406,8 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
         ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1485,7 +1499,8 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
 #[ignore = "scratch OBJ dump for eyeballing — run on demand"]
 fn measure_dump_straddling_boss_obj() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -1522,7 +1537,8 @@ fn measure_dump_straddling_boss_obj() {
 /// (`WitnessNotRational`, chaining wall 3) and the mixed parity answers in ℚ(√c).
 fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );
@@ -1600,7 +1616,8 @@ fn a_bored_plate_hangs_a_straddling_boss() {
 #[test]
 fn a_chained_contact_cut_builds_clean() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );

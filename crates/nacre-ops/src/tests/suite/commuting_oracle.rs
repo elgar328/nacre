@@ -35,7 +35,8 @@ fn oracle_families() -> Vec<(&'static str, Build)> {
 fn recorded_block_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
     let a = super::fixtures::through_block(&mut m, 1.0);
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 2.5, 0.5]),
         Point3::from_array([2.0, 3.5, 1.5]),
     );
@@ -46,11 +47,13 @@ fn recorded_block_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// The census's `rot` pair: a unit-ish box and a post through it.
 fn planar_pair() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.4, 0.4, -1.0]),
         Point3::from_array([1.6, 1.6, 3.0]),
     );
@@ -62,7 +65,8 @@ fn planar_pair() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// crosses the bore — offset from the axis at `y0 = 12`, through it at `y0 = 10`.
 fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -78,7 +82,8 @@ fn bored_plate_and_slab(y0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     m.rebuild_adjacency();
     let holed = boolean(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts")[0];
     m.rebuild_adjacency();
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, y0, 0.0]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -92,7 +97,8 @@ fn fused_through_and_mid_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, plate, boss) = boss_family([2.0, 2.0, -1.0], 4.0);
     let fused = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the through boss fuses")[0];
     m.rebuild_adjacency();
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.5]),
         Point3::from_array([5.0, 5.0, 1.5]),
     );
@@ -529,7 +535,8 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
 fn a_rigid_motion_behaves_as_its_two_operations() {
     use nacre_exact::{Angle, Isometry, Rat, Rotation};
     let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );

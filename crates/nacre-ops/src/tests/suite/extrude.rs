@@ -87,7 +87,11 @@ fn concave_l_profile_is_valid() {
 #[test]
 fn outward_normals_agree_with_their_orientation() {
     let mut cube = Model::new();
-    let c = cube.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = crate::fixtures::cuboid(
+        &mut cube,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let (ml, sl) = l_prism();
     let (mu, su) = u_prism();
     let (mr, sr) = rotated_l_prism();

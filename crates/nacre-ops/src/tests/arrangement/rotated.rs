@@ -30,7 +30,7 @@ fn the_audit_does_not_invent_failures() {
     let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
         let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-            let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            let s = crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
             m.rebuild_adjacency();
             s
         };
@@ -73,11 +73,13 @@ fn rotated_overlapping_cubes_all_three() {
     use nacre_exact::Axis;
     let vol_of = |kind: BoolKind| -> f64 {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 1.0, 1.0]),
         );
-        let b = m.add_cuboid(
+        let b = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.5]),
         );
@@ -115,11 +117,13 @@ fn rotated_tunnel_cut_all_orientations() {
     use nacre_exact::Axis;
     let vol_of = |axes: &[Axis]| -> f64 {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0, 0.0, 0.0]),
             Point3::from_array([3.0, 3.0, 3.0]),
         );
-        let b = m.add_cuboid(
+        let b = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([1.0, 1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 4.0]),
         );
@@ -156,11 +160,13 @@ fn rotated_tunnel_cut_all_orientations() {
 fn rotated_tunnel_area_and_faces() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -264,11 +270,13 @@ fn rotated_tunnel_area_and_faces() {
 fn rotated_tunnel_declines_nothing() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );

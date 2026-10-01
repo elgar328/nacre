@@ -21,7 +21,8 @@ use nacre_topo::{Model, Solid};
 /// intersects it and its neighbours rather than merely touching.
 fn hub_and_fins(angles: &[f64]) -> (Model, Handle<Solid>, Vec<Handle<Solid>>) {
     let mut m = Model::new();
-    let hub = m.add_cuboid(
+    let hub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.0]),
         Point3::from_array([1.0, 1.0, 3.0]),
     );
@@ -29,7 +30,8 @@ fn hub_and_fins(angles: &[f64]) -> (Model, Handle<Solid>, Vec<Handle<Solid>>) {
     let fins = angles
         .iter()
         .map(|&a| {
-            let f = m.add_cuboid(
+            let f = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.5, -0.2, 1.0]),
                 Point3::from_array([4.0, 0.2, 3.0]),
             );
@@ -118,13 +120,15 @@ fn theta_sweep_census() {
 #[ignore = "the full 22-boolean shape (run with --ignored)"]
 fn the_whole_fin_array_with_bores_builds() {
     let mut m = Model::new();
-    let mut part = m.add_cuboid(
+    let mut part = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.0]),
         Point3::from_array([1.0, 1.0, 3.0]),
     );
     m.rebuild_adjacency();
     for i in 0..20 {
-        let fin = m.add_cuboid(
+        let fin = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, -0.2, 1.0]),
             Point3::from_array([4.0, 0.2, 3.0]),
         );
@@ -157,7 +161,8 @@ fn the_whole_fin_array_with_bores_builds() {
     .into_iter()
     .enumerate()
     {
-        let tool = m.add_cuboid(Point3::from_array(a), Point3::from_array(b));
+        let tool =
+            nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(a), Point3::from_array(b));
         m.rebuild_adjacency();
         match boolean(&mut m, BoolKind::Cut, part, tool) {
             Ok(v) => part = v[0],

@@ -270,15 +270,21 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
 fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Solid>) {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let block = m.add_cuboid(
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let block = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
     m.rebuild_adjacency();
     let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
     m.rebuild_adjacency();
-    let bar = m.add_cuboid(
+    let bar = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, -0.5, 1.0 - half_z]),
         Point3::from_array([0.7, 1.5, 1.0 + half_z]),
     );
@@ -400,7 +406,8 @@ pub(crate) fn chained(
     second: ([f64; 3], f64, BoolKind),
 ) -> (Model, Result<Vec<Handle<Solid>>, BoolError>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -434,7 +441,8 @@ pub(crate) fn chained(
 
 fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -701,7 +709,8 @@ const BOSS_FAMILIES: [(&str, [f64; 3], f64); 17] = [
 /// The plate and boss of a [`BOSS_FAMILIES`] row, adjacency rebuilt.
 fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );

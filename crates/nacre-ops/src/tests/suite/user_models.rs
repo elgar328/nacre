@@ -64,7 +64,8 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
         ] {
             let mut m = Model::new();
             let plate = rounded_plate(&mut m, 4, 4);
-            let boss = m.add_cuboid(
+            let boss = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([10.0, -20.0, 12.0]),
                 Point3::from_array([25.0, 20.0, 62.0]),
             );
@@ -153,7 +154,8 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
         for (mn, iso, _) in motion_group() {
             let mut m = Model::new();
             let plate = rounded_plate(&mut m, 4, bores);
-            let boss = m.add_cuboid(
+            let boss = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([10.0, -20.0, 12.0]),
                 Point3::from_array([25.0, 20.0, 62.0]),
             );

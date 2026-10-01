@@ -80,7 +80,8 @@ fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) 
 #[test]
 fn a_slanted_void_is_a_cavity_not_a_second_body() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
@@ -96,11 +97,13 @@ fn a_slanted_void_is_a_cavity_not_a_second_body() {
 #[test]
 fn an_axis_aligned_void_is_unchanged() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.2, 0.2, 0.2]),
         Point3::from_array([0.8, 0.8, 0.8]),
     );
@@ -120,7 +123,8 @@ fn an_axis_aligned_void_is_unchanged() {
 #[test]
 fn a_wedge_whose_tip_nearly_reaches_the_wall_is_still_one_body() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );

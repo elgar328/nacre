@@ -1123,7 +1123,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
         1.0,
         2.0,
     );
-    cy.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut cy,
         Point3::from_array([4.0, 0.0, 0.0]),
         Point3::from_array([5.0, 1.0, 1.0]),
     );
@@ -1144,11 +1145,13 @@ fn a_datum_through_vertices_refuses_by_cause() {
     // ★★ Two boxes stacked share a vertical line, so three of their corners are collinear — the
     // one shape in this vocabulary that puts three vertices on a line.
     let mut st = Model::new();
-    st.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut st,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    st.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut st,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -1184,11 +1187,13 @@ fn a_datum_through_vertices_refuses_by_cause() {
 #[test]
 fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     let mut mx = Model::new();
-    let fixed = mx.add_cuboid(
+    let fixed = nacre_ops::fixtures::cuboid(
+        &mut mx,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let spun = mx.add_cuboid(
+    let spun = nacre_ops::fixtures::cuboid(
+        &mut mx,
         Point3::from_array([4.0, 0.0, 0.0]),
         Point3::from_array([5.0, 1.0, 1.0]),
     );
@@ -1282,11 +1287,13 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     // the cross-store guard, and rightly — that is the guard working); determinism is asserted
     // on the indices and the arena count.
     let mut scratch = Model::new();
-    let f2 = scratch.add_cuboid(
+    let f2 = nacre_ops::fixtures::cuboid(
+        &mut scratch,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let s2 = scratch.add_cuboid(
+    let s2 = nacre_ops::fixtures::cuboid(
+        &mut scratch,
         Point3::from_array([4.0, 0.0, 0.0]),
         Point3::from_array([5.0, 1.0, 1.0]),
     );
@@ -1362,11 +1369,13 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
 #[test]
 fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     let mut m = Model::new();
-    let fixed = m.add_cuboid(
+    let fixed = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let spun = m.add_cuboid(
+    let spun = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([4.0, 0.0, 0.0]),
         Point3::from_array([5.0, 1.0, 1.0]),
     );
@@ -1422,7 +1431,8 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     m.rebuild_adjacency();
 
     // A box that swallows the prism wherever the judged frame put it.
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-12.0, -12.0, -12.0]),
         Point3::from_array([12.0, 12.0, 12.0]),
     );
@@ -1463,11 +1473,13 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     use nacre_topo::Vertex;
 
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([3.3, 3.3, -1.0]),
         Point3::from_array([7.7, 7.7, 11.0]),
     );
@@ -1624,7 +1636,8 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // exact on-plane definitions the escalation realizes at any precision. `Common` against a
     // swallowing box is the same crisp oracle the pure-mixed e2e uses: the result is the prism,
     // volume exactly as the sketch stated it.
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-30.0, -30.0, -30.0]),
         Point3::from_array([30.0, 30.0, 30.0]),
     );
@@ -1648,11 +1661,13 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // Deterministic rebuild: the same construction accepts the same statements into the same
     // arena slots — the meet road is judged once at a fixed rung, so replay holds.
     let mut scratch = Model::new();
-    let a2 = scratch.add_cuboid(
+    let a2 = nacre_ops::fixtures::cuboid(
+        &mut scratch,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );
-    let b2 = scratch.add_cuboid(
+    let b2 = nacre_ops::fixtures::cuboid(
+        &mut scratch,
         Point3::from_array([3.3, 3.3, -1.0]),
         Point3::from_array([7.7, 7.7, 11.0]),
     );
@@ -1954,7 +1969,8 @@ fn frame_local_far_cap() -> (
     m.rebuild_adjacency();
 
     // The world plane `z = dist`, as an ordinary box's top face.
-    let boxy = m.add_cuboid(
+    let boxy = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([10.0, 10.0, 0.0]),
         Point3::from_array([11.0, 11.0, dist]),
     );
@@ -2392,7 +2408,8 @@ fn a_datum_through_wide_meets_keeps_its_name() {
         unreachable!()
     };
     m.rebuild_adjacency();
-    let cub = m.add_cuboid(
+    let cub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-2.0, -2.0, -2.0]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
@@ -2574,7 +2591,8 @@ fn a_frame_says_where_it_is() {
 #[test]
 fn a_turn_does_not_cost_a_solid_its_named_datum() {
     let mut m = Model::new();
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );

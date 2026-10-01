@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 fn cube(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
     m
 }
 
@@ -445,8 +445,10 @@ proptest! {
         min in prop::array::uniform3(-1e3f64..1e3),
         ext in prop::array::uniform3(1e-2f64..1e3),
     ) {
-        let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
-        let obj = tessellate(&cube(min, max), &TessConfig::default()).unwrap().to_obj();
+        // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
+        let mut m = Model::new();
+        nacre_ops::fixtures::cuboid_on(&mut m, [min[0], min[1]], [min[0] + ext[0], min[1] + ext[1]], min[2], ext[2]);
+        let obj = tessellate(&m, &TessConfig::default()).unwrap().to_obj();
         prop_assert_eq!(v_lines(&obj).len(), 8);
         let faces = f_lines(&obj);
         prop_assert_eq!(faces.len(), 12);

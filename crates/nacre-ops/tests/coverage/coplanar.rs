@@ -19,7 +19,8 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 fn containment_boolean_already_keeps_a_pocket() {
     for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
         let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(
+        let bx = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.05, 0.05, 0.05]),
             Point3::from_array([0.15, 0.15, 0.15]),
         );
@@ -40,12 +41,24 @@ fn cut_with_a_hollow_operand_far_from_the_void() {
     // returns vol 26.875, cavities 0): 25.875 (27 − 1 void − 0.125 corner) with the cavity
     // intact.
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     assert_eq!(m.solid(hollow).cavities.len(), 1);
     m.rebuild_adjacency();
-    let cutter = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
+    let cutter = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([2.5; 3]),
+        Point3::from_array([3.5; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
@@ -60,11 +73,20 @@ fn a_slab_splits_a_hollow_box_into_two() {
     // The slab spans the full cross-section, so it opens the void — both pieces are
     // cavity-free.
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, 1.4, -0.5]),
         Point3::from_array([3.5, 1.6, 3.5]),
     );
@@ -92,12 +114,21 @@ fn a_slab_splits_a_hollow_box_into_two() {
 #[test]
 fn a_hollow_part_takes_a_coplanar_boss() {
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
     // Top-flush boss on z=3: a genuine coplanar contact, clear of the void's planes.
-    let boss = m.add_cuboid(
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 3.0]),
         Point3::from_array([0.75, 0.75, 4.0]),
     );
@@ -117,11 +148,20 @@ fn a_hollow_part_takes_a_coplanar_pocket() {
     // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Same blind
     // spot, same silent-wrong with outer shells only (26.96875 with the void gone).
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let tool = m.add_cuboid(
+    let tool = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 2.5]),
         Point3::from_array([0.75, 0.75, 3.0]),
     );
@@ -145,11 +185,20 @@ fn a_coplanar_boss_over_a_void_plane_is_solved() {
     // one class whatever the two faces' sizes, the arrangement solves it. 26 (hollow) + 0.04
     // (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint); void intact.
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let boss = m.add_cuboid(
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.9, 0.9, 3.0]),
         Point3::from_array([1.1, 1.1, 4.0]),
     );
@@ -174,11 +223,23 @@ fn a_hollow_part_takes_a_second_far_cut() {
     // opposite the void — the void survives, and the result is fed back as an
     // operand (chaining past the first cavity-producing op).
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let bore = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+    let bore = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-0.5; 3]),
+        Point3::from_array([0.5; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, bore).unwrap();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
@@ -259,7 +320,8 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     .unwrap();
     let mut m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
     let lsolid = *m.live_solids().first().unwrap();
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.5, 1.5, 0.5]),
     );
@@ -282,11 +344,13 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
 fn edge_contact_common_is_empty_in_both_orders() {
     let build = || {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([4.0, 2.0, 1.0]),
             Point3::from_array([5.0, 3.0, 3.0]),
         );
-        let b = m.add_cuboid(
+        let b = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([2.0, 0.0, 2.0]),
             Point3::from_array([4.0, 2.0, 3.0]),
         );
@@ -353,7 +417,8 @@ fn round_pin(m: &mut Model) -> Handle<Solid> {
 
 /// An 8 × 8 plate from `z = −1` to `z = 1` with a bore of radius 2 through it about the `z` axis.
 fn bored_plate(m: &mut Model) -> Handle<Solid> {
-    let plate = m.add_cuboid(
+    let plate = nacre_ops::fixtures::cuboid(
+        m,
         Point3::from_array([-4.0, -4.0, -1.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
@@ -460,7 +525,11 @@ fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
                 let at = format!("{name}: {kind:?}, swapped {swapped}");
                 let mut m = Model::new();
                 let a = build(&mut m);
-                let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+                let b = nacre_ops::fixtures::cuboid(
+                    &mut m,
+                    Point3::from_array(lo),
+                    Point3::from_array(hi),
+                );
                 m.rebuild_adjacency();
                 let (va, vb) = (volume(&m, a), volume(&m, b));
                 let (bits_a, faces_a) = (vertex_bits(&m, a), face_count(&m, a));

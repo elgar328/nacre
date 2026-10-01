@@ -10,11 +10,13 @@ use super::*;
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn boolean_volumes_match_occt() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 1.5, 1.5]),
     );
@@ -37,8 +39,13 @@ fn boolean_volumes_match_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn punch_through_bore_matches_occt() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let through = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let through = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.25, 0.25, -0.5]),
         Point3::from_array([0.75, 0.75, 1.0]),
     );
@@ -62,8 +69,13 @@ fn punch_through_bore_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cut_by_a_corner_overhanging_boss_matches_occt() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let corner = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let corner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 1.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
@@ -83,11 +95,20 @@ fn cut_by_a_corner_overhanging_boss_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn coplanar_boss_on_a_hollow_part_matches_occt() {
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let boss = m.add_cuboid(
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 3.0]),
         Point3::from_array([0.75, 0.75, 4.0]),
     );
@@ -108,14 +129,20 @@ fn coplanar_boss_on_a_hollow_part_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn severed_hollow_box_matches_occt() {
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 2.5, 2.5]),
     );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, -1.0, -1.0]),
         Point3::from_array([2.2, 4.0, 4.0]),
     );
@@ -136,8 +163,13 @@ fn severed_hollow_box_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn same_ground_union_matches_occt() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.0]),
         Point3::from_array([1.5, 1.5, 1.0]),
     );
@@ -156,8 +188,13 @@ fn same_ground_union_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn same_ground_cut_common_matches_occt() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.0]),
         Point3::from_array([1.5, 1.5, 1.0]),
     );
@@ -179,8 +216,13 @@ fn same_ground_cut_common_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn single_shared_plane_fuse_matches_occt() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
@@ -199,8 +241,13 @@ fn single_shared_plane_fuse_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn single_shared_plane_cut_common_matches_occt() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
@@ -221,8 +268,13 @@ fn single_shared_plane_cut_common_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn slab_overhang_matches_occt() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let slab = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, 0.4, 0.5]),
         Point3::from_array([1.5, 0.6, 1.0]),
     );
@@ -241,8 +293,13 @@ fn slab_overhang_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn flush_edge_pocket_cut_matches_occt() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let cutter = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let cutter = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.0, 0.5]),
         Point3::from_array([0.7, 0.4, 1.0]),
     );
@@ -257,8 +314,13 @@ fn flush_edge_pocket_cut_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn through_tunnel_cut_matches_occt() {
     let mut m = Model::new();
-    let bar = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let cutter = m.add_cuboid(
+    let bar = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let cutter = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 0.0]),
         Point3::from_array([0.7, 0.7, 1.0]),
     );
@@ -272,11 +334,13 @@ fn through_tunnel_cut_matches_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn disjoint_fuse_sums_volumes() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, 0.0, 0.0]),
         Point3::from_array([3.0, 1.0, 1.0]),
     );
@@ -291,8 +355,13 @@ fn disjoint_fuse_sums_volumes() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn sever_cut_matches_occt_compound() {
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let bar = m.add_cuboid(
+    let cube = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let bar = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -326,7 +395,11 @@ fn translated_solid_cut_matches_occt() {
     use nacre_exact::{Isometry, Rat};
     use nacre_ops::{BoolKind, Operation, apply, boolean};
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     // Translate A by [3/10, 2/5, 1/2] ⇒ A' = [0.3,1.3]×[0.4,1.4]×[0.5,1.5].
     let iso = Isometry::translation([
         Rat::new(3, 10).unwrap(),
@@ -345,7 +418,11 @@ fn translated_solid_cut_matches_occt() {
         panic!("expected Transform output");
     };
     // B overlaps A' at a corner.
-    let b = m.add_cuboid(Point3::from_array([0.8; 3]), Point3::from_array([1.8; 3]));
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.8; 3]),
+        Point3::from_array([1.8; 3]),
+    );
     // OCCT ground truth on the moved inputs, before nacre supersedes them.
     let occt = occt_boolean_of(&m, OcctBool::Cut, a2, b).unwrap();
     let solids = boolean(&mut m, BoolKind::Cut, a2, b).unwrap();
@@ -386,7 +463,8 @@ fn rotated_solid_props_match_occt() {
 
     // (a) rotate a plain cuboid.
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -418,8 +496,16 @@ fn rotated_solid_props_match_occt() {
 
     // (b) rotate a Cut result.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.5; 3]),
+        Point3::from_array([1.5; 3]),
+    );
     let cut = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     let out = apply(
         &mut m,

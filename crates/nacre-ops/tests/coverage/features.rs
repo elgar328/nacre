@@ -145,7 +145,8 @@ fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
     // Inside and three Outside, and the seam-free path's own `debug_assert`
     // ("classification must be consistent per solid") caught it.
     let (mut m, pc) = pocketed_cube();
-    let bx = m.add_cuboid(
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.4, 0.4, 0.6]),
         Point3::from_array([0.6, 0.6, 0.9]),
     );
@@ -248,13 +249,15 @@ fn pad_overhang_off_the_face_is_rejected() {
 #[test]
 fn a_touchless_boss_fuses_into_two_solids() {
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
     // Shares the z = 1 plane class with the base's top, but sits far away in x/y — so the plane
     // carries two separate bodies.
-    let boss = m.add_cuboid(
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.8, 1.8, 1.0]),
         Point3::from_array([2.2, 2.2, 1.3]),
     );
@@ -395,7 +398,8 @@ fn pocket_step_exports() {
 #[test]
 fn a_corner_cut_off_a_pocketed_cube() {
     let (mut m, pc) = pocketed_cube();
-    let bx = m.add_cuboid(
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.85, 0.85, 0.85]),
         Point3::from_array([1.15, 1.15, 1.15]),
     );
@@ -419,11 +423,13 @@ fn an_edge_slot_through_the_bottom() {
     // The prism pokes out the base's bottom too, and the boolean carves the slot exactly:
     // base 1.0 − (x∈[0.5,1] · y∈[0.25,0.75] · z∈[0,1]) = 1 − 0.25 = 0.75.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let prism = m.add_cuboid(
+    let prism = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.25, -0.5]),
         Point3::from_array([1.5, 0.75, 1.0]),
     );
@@ -441,11 +447,13 @@ fn a_boss_that_pierces_the_base_is_not_an_overhang() {
     // not a coplanar overhang, which the arrangement handles as a normal crossing.
     // Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let through = m.add_cuboid(
+    let through = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.25, 0.5]),
         Point3::from_array([1.5, 0.75, 2.0]),
     );
@@ -463,8 +471,13 @@ fn a_boss_that_pierces_the_base_is_not_an_overhang() {
 #[test]
 fn cut_by_a_corner_overhanging_boss_removes_nothing() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let corner = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let corner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 1.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
@@ -489,12 +502,18 @@ fn cut_by_a_corner_overhanging_boss_removes_nothing() {
 #[test]
 fn a_coplanar_boss_with_a_pin_undercuts_the_base() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let boss = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 3.0]),
         Point3::from_array([2.5, 2.5, 4.0]),
     );
-    let pin = m.add_cuboid(
+    let pin = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 2.0]),
         Point3::from_array([2.0, 2.0, 3.0]),
     );
@@ -515,8 +534,13 @@ fn a_coplanar_boss_with_a_pin_undercuts_the_base() {
 #[test]
 fn common_with_a_corner_overhanging_boss_is_empty() {
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let corner = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let corner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 1.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
@@ -534,7 +558,8 @@ fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
     // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
     // overhanging the bottom edge. Volume: pocketed 0.92 + boss 0.25 = 1.17.
     let (mut m, pc) = top_pocketed_cube();
-    let boss = m.add_cuboid(
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.25, -0.25]),
         Point3::from_array([1.5, 0.75, 0.75]),
     );
@@ -552,7 +577,8 @@ fn cut_a_blind_pocket_into_a_non_convex_solid() {
     // which the pocket contact now admits (the gates are convexity-agnostic). Removed
     // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
     let (mut m, pc) = pocketed_cube();
-    let corner = m.add_cuboid(
+    let corner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.05, 0.1, 0.6]),
         Point3::from_array([0.25, 0.2, 1.0]),
     );
@@ -571,7 +597,8 @@ fn cut_a_non_convex_blind_pocket() {
     // z=0.5 face, blind. L area = 0.6² − 0.3² = 0.27, depth 0.5 → removed 0.135; base 3²·1.5 =
     // 13.5 → 13.365.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 0.5]),
     );
@@ -608,11 +635,13 @@ fn a_pocket_that_punches_through_drills_a_bore() {
     // that merely displaces the same material. 0.75 (top) + 0.75 (bottom) + 4 (sides) +
     // 2.0 (the bore's four inner walls) = 7.5, against 6.0 for the cube.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let through = m.add_cuboid(
+    let through = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.25, 0.25, -0.5]),
         Point3::from_array([0.75, 0.75, 1.0]),
     );
@@ -646,11 +675,13 @@ fn a_boss_that_punches_through_keeps_the_stub() {
     // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75
     // (bottom) + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let through = m.add_cuboid(
+    let through = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.25, 0.25, -0.5]),
         Point3::from_array([0.75, 0.75, 1.0]),
     );

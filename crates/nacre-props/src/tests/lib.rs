@@ -14,7 +14,8 @@ fn close(got: f64, expected: f64) -> bool {
 #[test]
 fn cube_mass_matches_analytic() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -47,7 +48,8 @@ fn cylinder_mass_matches_analytic() {
 #[test]
 fn the_two_normal_doors_agree_on_a_plane() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -203,7 +205,8 @@ fn bounds_follow_the_curve_not_the_vertices() {
 #[test]
 fn bounds_of_a_box_are_its_corners() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, 2.0, 0.5]),
         Point3::from_array([3.0, 4.0, 9.0]),
     );
@@ -222,7 +225,11 @@ fn bounds_of_a_box_are_its_corners() {
 #[test]
 fn faces_can_be_picked_by_their_geometry() {
     let mut m = Model::new();
-    let s = m.add_cuboid(Point3::origin(), Point3::from_array([2.0, 3.0, 4.0]));
+    let s = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::origin(),
+        Point3::from_array([2.0, 3.0, 4.0]),
+    );
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let top = m
         .shell(m.solid(s).outer)
@@ -300,8 +307,10 @@ fn centroid_of_an_l_prism_is_not_its_bounding_centre() {
 #[test]
 fn an_off_centre_void_pushes_the_centroid_away() {
     let mut m = Model::new();
-    let outer = m.add_cuboid(Point3::origin(), Point3::from_array([10.0; 3]));
-    let inner = m.add_cuboid(
+    let outer =
+        nacre_ops::fixtures::cuboid(&mut m, Point3::origin(), Point3::from_array([10.0; 3]));
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0; 3]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
@@ -464,10 +473,16 @@ fn pocket_mass() {
 fn cube_in_cube(min: Point3, outer: f64, inner: f64) -> MassProps {
     let mut m = Model::new();
     let ext = |s: f64| Vector3::from_array([s, s, s]);
-    let a = m.add_cuboid(min, min + ext(outer));
+    // Floor and height: a corner plus a random size differs from that corner by no decimal an
+    // f64 need carry.
+    let on = |m: &mut Model, lo: Point3, size: f64| {
+        let [x, y, z] = lo.as_array();
+        nacre_ops::fixtures::cuboid_on(m, [x, y], [x + size, y + size], z, size)
+    };
+    let a = on(&mut m, min, outer);
     let gap = 0.5 * (outer - inner); // centered ⇒ strictly interior on all sides
     let inner_min = min + ext(gap);
-    let b = m.add_cuboid(inner_min, inner_min + ext(inner));
+    let b = on(&mut m, inner_min, inner);
 
     let b_outer = m.solid(b).outer;
     let void = m.reversed_shell(b_outer);
@@ -519,9 +534,10 @@ proptest! {
         min in wide_point(),
         a in 0.1f64..1e3, b in 0.1f64..1e3, c in 0.1f64..1e3,
     ) {
-        let max = min + Vector3::from_array([a, b, c]);
+        // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
+        let [x, y, z] = min.as_array();
         let mut m = Model::new();
-        let s = m.add_cuboid(min, max);
+        let s = nacre_ops::fixtures::cuboid_on(&mut m, [x, y], [x + a, y + b], z, c);
         let props = mass_props(&m, s).unwrap();
         prop_assert!(close(props.volume, a * b * c), "vol {} vs {}", props.volume, a*b*c);
         prop_assert!(close(props.area, 2.0 * (a*b + b*c + c*a)), "area {}", props.area);

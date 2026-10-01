@@ -157,11 +157,13 @@ fn a_pierced_step_realizes_on_its_defining_planes() {
 #[test]
 fn an_axis_aligned_fuse_is_unchanged() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 1.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );

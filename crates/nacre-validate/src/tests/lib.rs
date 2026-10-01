@@ -8,7 +8,7 @@ use proptest::prelude::*;
 
 fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
     m
 }
 
@@ -1127,9 +1127,9 @@ fn a_vertex_nudged_off_its_definition_flags() {
 fn hollow_cube(outer: f64, inner: f64, reverse: bool) -> Model {
     let mut m = Model::new();
     let ext = |s: f64| Vector3::from_array([s, s, s]);
-    let a = m.add_cuboid(Point3::origin(), Point3::origin() + ext(outer));
+    let a = nacre_ops::fixtures::cuboid(&mut m, Point3::origin(), Point3::origin() + ext(outer));
     let inner_min = Point3::origin() + ext(0.5 * (outer - inner));
-    let b = m.add_cuboid(inner_min, inner_min + ext(inner));
+    let b = nacre_ops::fixtures::cuboid(&mut m, inner_min, inner_min + ext(inner));
     let b_outer = m.solid(b).outer;
     let void = if reverse {
         m.reversed_shell(b_outer)
@@ -1172,8 +1172,10 @@ proptest! {
         min in prop::array::uniform3(-1e3f64..1e3),
         ext in prop::array::uniform3(1e-2f64..1e3),
     ) {
-        let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
-        prop_assert!(validate(&cuboid(min, max)).is_empty());
+        // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
+        let mut m = Model::new();
+        nacre_ops::fixtures::cuboid_on(&mut m, [min[0], min[1]], [min[0] + ext[0], min[1] + ext[1]], min[2], ext[2]);
+        prop_assert!(validate(&m).is_empty());
     }
 
     #[test]

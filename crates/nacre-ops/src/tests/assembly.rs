@@ -11,7 +11,8 @@ mod region_tests {
     #[test]
     fn the_half_height_boss_lateral_is_one_face() {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
@@ -70,15 +71,20 @@ fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
     use nacre_math::Point3;
     use nacre_topo::{HalfEdge, Model, Shell, Solid};
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     assert_eq!(
         super::check_result_topology(&m, &[cube]),
         None,
         "the cube itself"
     );
     let faces = m.shell(m.solid(cube).outer).faces.clone();
-    // `add_cuboid`'s face order: Bottom, Top, Front, Back, Left, Right.
-    let (bottom, front, right) = (faces[0], faces[2], faces[5]);
+    // The extrude's face order: the floor, the top, then the walls from the rectangle's first
+    // edge — `y = 0` first, `x = 0` last. The last wall's plane does not hold the floor–front edge.
+    let (bottom, front, side) = (faces[0], faces[2], faces[5]);
     let edges_of = |m: &Model, f| -> Vec<_> {
         m.face(f)
             .outer
@@ -93,7 +99,7 @@ fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
         .expect("Bottom and Front share an edge");
     let wrong = m
         .push_edge(
-            [m.face(bottom).surface, m.face(right).surface],
+            [m.face(bottom).surface, m.face(side).surface],
             m.edge(shared).vertices,
         )
         .expect("a line of two planes");

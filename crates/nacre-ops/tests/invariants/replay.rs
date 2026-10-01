@@ -1280,15 +1280,18 @@ fn a_late_reject_is_not_index_neutral() {
     // A boolean reject too, so all three late families back the "no reject-after-commit"
     // claim rather than two of them. Corner coincidence is genuinely non-manifold and the
     // engine declines it (cf. `a_corner_coincident_cut_is_rejected_not_silently_wrong`).
-    // `add_cuboid` puts cells in the arena outside any log, which is exactly why this probe is
-    // not a replay test — it only asks what a reject does to the model in front of it.
+    // The fixtures put cells in the arena outside any log (`apply` leaves the log to its
+    // caller), which is exactly why this probe is not a replay test — it only asks what a reject
+    // does to the model in front of it.
     let boolean_setup = || {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
             nacre_math::Point3::from_array([0.0; 3]),
             nacre_math::Point3::from_array([2.0; 3]),
         );
-        let b = m.add_cuboid(
+        let b = nacre_ops::fixtures::cuboid(
+            &mut m,
             nacre_math::Point3::from_array([1.0; 3]),
             nacre_math::Point3::from_array([3.0; 3]),
         );
@@ -1304,7 +1307,8 @@ fn a_late_reject_is_not_index_neutral() {
             unreachable!()
         };
         // C's + corner is R's concave corner: three shared planes meet there.
-        let c = m.add_cuboid(
+        let c = nacre_ops::fixtures::cuboid(
+            &mut m,
             nacre_math::Point3::from_array([-1.0; 3]),
             nacre_math::Point3::from_array([1.0; 3]),
         );

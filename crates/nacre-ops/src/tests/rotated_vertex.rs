@@ -126,7 +126,8 @@ fn replay_reproduces_the_stored_coordinate() {
     let mut declined = 0;
     for chain in &chains {
         let mut m = Model::new();
-        let s = m.add_cuboid(
+        let s = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([2.0, 3.0, 4.0]),
         );
@@ -229,7 +230,8 @@ fn replay_reproduces_the_stored_coordinate() {
 #[test]
 fn a_chain_reads_root_to_leaf() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );

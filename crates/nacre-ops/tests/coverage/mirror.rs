@@ -128,7 +128,8 @@ fn a_mirrored_solid_is_a_usable_operand() {
     let a = ell(&mut m);
     let b = mirror_solid(&mut m, a, Axis::X, 0);
     // A knife across the mirrored L's arm.
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-3.0, -1.0, 0.5]),
         Point3::from_array([3.0, 4.0, 2.0]),
     );
@@ -191,7 +192,8 @@ fn a_boolean_result_mirrors() {
     assert!((volume(&m, mirrored) - before).abs() < 1e-12);
     assert!(nacre_validate::validate(&m).is_empty());
 
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-2.0, -2.0, -2.0]),
         Point3::from_array([2.0, 2.0, -0.75]),
     );
@@ -206,8 +208,16 @@ fn a_boolean_result_mirrors() {
 #[test]
 fn a_hollow_solid_mirrors_with_its_cavity() {
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     m.rebuild_adjacency();
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
@@ -225,7 +235,11 @@ fn a_hollow_solid_mirrors_with_its_cavity() {
 #[test]
 fn an_offset_mirror_plane() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     m.rebuild_adjacency();
 
     let b = mirror_solid(&mut m, a, Axis::X, 3); // x ∈ [0,1] ↦ x ∈ [5,6]
@@ -287,7 +301,11 @@ fn a_mirror_is_carried_when_every_statement_moves_exactly() {
         Rat::new(7, 22).unwrap(),
     ] {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0; 3]),
+        );
         assert!(
             recorded(&mut m, a, offset).iter().all(|r| !r),
             "{offset:?}: every statement reflects exactly, so nothing is recorded"
@@ -336,7 +354,11 @@ fn mirroring_a_cylinder_is_declined() {
 #[test]
 fn a_rotated_solid_mirrors() {
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     m.rebuild_adjacency();
     let r = xf(&mut m, c, rot30());
     m.rebuild_adjacency();
@@ -378,7 +400,8 @@ fn a_rotated_solid_mirrors() {
 #[test]
 fn a_mirrored_rotated_solid_lands_where_reflection_says() {
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
@@ -412,13 +435,18 @@ fn a_mirrored_rotated_solid_lands_where_reflection_says() {
 #[test]
 fn a_mirrored_rotated_solid_is_a_usable_operand() {
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     m.rebuild_adjacency();
     let r = xf(&mut m, c, rot30());
     m.rebuild_adjacency();
     let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
 
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-10.0, -10.0, 1.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );

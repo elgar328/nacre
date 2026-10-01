@@ -7,7 +7,8 @@ fn fuse_a_boss_onto_a_non_convex_solid() {
     // A contained boss on the top of an L-prism (non-convex kept `a`); the contained-coplanar
     // Fuse admits it. Volume 3 (L) + 0.4²·0.5 = 3.08.
     let (mut m, l) = l_prism(); // L footprint area 3, height 1
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 1.0]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
@@ -32,7 +33,11 @@ fn fuse_a_non_convex_profile_boss() {
     // carries the L footprint as a hole.
     // Volume 1 (cube) + 0.12 (L area) · 0.4 = 1.048.
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let l_base: Vec<Point3> = [
         [0.3, 0.3],
         [0.7, 0.3],
@@ -79,12 +84,18 @@ fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
     // the ring's travel instead (`arrangement::run_body_above`), the notch comes out at the
     // hand-computed volume with a clean model.
     let mut m = Model::new();
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let block = m.add_cuboid(
+    let base = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let block = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 1.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
-    let pin = m.add_cuboid(
+    let pin = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.55, 0.55, 0.5]),
         Point3::from_array([0.75, 0.75, 1.0]),
     );
@@ -115,8 +126,13 @@ fn plane_classes_merge_a_shared_wall() {
     // plane, opposite normals). `plane_classes` must merge those two into one line class and
     // keep the far walls (a's x=0, b's x=2) distinct.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
@@ -159,8 +175,13 @@ fn plane_classes_merge_a_shared_wall() {
 #[test]
 fn two_faces_of_one_judged_surface_are_one_class() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let b = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([3.3, 3.3, -1.0]),
         Point3::from_array([7.7, 7.7, 11.0]),
     );
@@ -254,7 +275,8 @@ fn two_faces_of_one_judged_surface_are_one_class() {
         o[1] + 0.5 * u[1],
         o[2] + 0.5 * u[2],
     ]);
-    let knife = m.add_cuboid(
+    let knife = crate::fixtures::cuboid(
+        &mut m,
         centre + Vector3::from_array([-0.1, -5.0, -5.0]),
         centre + Vector3::from_array([0.1, 5.0, 5.0]),
     );
@@ -293,7 +315,11 @@ fn overhang_boss_with_a_non_convex_footprint() {
     // An L-shaped (non-convex) boss footprint overhanging a cube edge, built exactly. Volume =
     // cube 1.0 + L-prism (area 0.9·0.2 + 0.3·0.2 = 0.24) · height 0.4 = 1.096.
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let l_base: Vec<Point3> = [
         [0.3, 0.3],
         [1.2, 0.3],
@@ -449,11 +475,13 @@ fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
     // proves it against OCCT but is `#[ignore]`, so this hand-computed volume is the non-ignored
     // guard. A wrong merge collapses the topology — the volume shifts or `validate` speaks.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.25, 1.0]),
         Point3::from_array([1.5, 0.75, 2.0]),
     );
@@ -586,8 +614,9 @@ proptest! {
 
         let build = || {
             let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
-            let b = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
+            let a = crate::fixtures::cuboid_on(&mut m, [amin[0], amin[1]], [amax[0], amax[1]], amin[2], aext[2]);
+            let b = crate::fixtures::cuboid_on(&mut m, [bmin[0], bmin[1]], [bmax[0], bmax[1]], bmin[2], bmax[2] - bmin[2]);
             (m, a, b)
         };
 
@@ -621,11 +650,16 @@ proptest! {
         h2 in 0.5f64..3.0,
     ) {
         let (x1, y1) = (x0 + dx, y0 + dy);
-        let (zm, z1) = (z0 + h1, z0 + h1 + h2);
+        let zm = z0 + h1;
         let build = || {
             let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([x0, y0, z0]), Point3::from_array([x1, y1, zm]));
-            let b = m.add_cuboid(Point3::from_array([x0, y0, zm]), Point3::from_array([x1, y1, z1]));
+            // ★ The stack is two boxes on **one** plane `zm`, one hanging below it and one standing
+            // on it — the interface this property is about. Two heights summed in f64 would put
+            // the lower box's top and the upper box's floor on two planes.
+            let a = crate::fixtures::cuboid_on(&mut m, [x0, y0], [x1, y1], zm, -h1);
+            let b = crate::fixtures::cuboid_on(&mut m, [x0, y0], [x1, y1], zm, h2);
+            let floor = |s| m.face(m.shell(m.solid(s).outer).faces[0]).surface;
+            assert_eq!(floor(a), floor(b), "the stack shares one plane");
             (m, a, b)
         };
         let (va, vb) = (dx * dy * h1, dx * dy * h2);

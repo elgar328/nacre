@@ -189,7 +189,8 @@ fn a_named_frame_states_what_the_extrude_road_builds() {
 #[test]
 fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 2.0, 1.0]),
     );

@@ -39,7 +39,7 @@ use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 use crate::fixtures::{datum_frame, extrude_op, live_vertices, p2, regular_ngon};
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+    nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
 }
 
 fn boolean_corner() -> Model {
@@ -398,7 +398,8 @@ fn every_vertex_variant_answers() {
     }
     // `Pierce` has no producer in the kernel yet, so its population is built here.
     let mut m = cylinder();
-    let _ = m.add_cuboid(
+    let _ = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );

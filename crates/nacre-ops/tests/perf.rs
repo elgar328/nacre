@@ -190,8 +190,16 @@ fn small_booleans(reps: usize) -> std::time::Duration {
     let mut spent = std::time::Duration::ZERO;
     for _ in 0..reps {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let a = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0; 3]),
+        );
+        let b = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([1.0; 3]),
+            Point3::from_array([3.0; 3]),
+        );
         m.rebuild_adjacency();
         let t = std::time::Instant::now();
         boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
@@ -208,7 +216,8 @@ fn small_booleans(reps: usize) -> std::time::Duration {
 fn recorded_quarter_turns(n: usize) -> (std::time::Duration, std::time::Duration) {
     let mut m = Model::new();
     let a = fixtures::through_block(&mut m, 1.0);
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 2.5, 0.5]),
         Point3::from_array([2.0, 3.5, 1.5]),
     );

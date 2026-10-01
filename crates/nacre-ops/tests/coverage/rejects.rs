@@ -42,7 +42,7 @@ fn user_message(err: BoolError) -> String {
 fn a_pinched_fuse_tells_the_caller_why() {
     let mut m = Model::new();
     let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
         m.rebuild_adjacency();
         s
     };
@@ -81,7 +81,7 @@ fn a_pinched_fuse_tells_the_caller_why() {
 fn a_pinched_fuse_is_impossible_not_unsupported() {
     let mut m = Model::new();
     let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
         m.rebuild_adjacency();
         s
     };
@@ -114,8 +114,16 @@ fn a_pinched_fuse_is_impossible_not_unsupported() {
 #[test]
 fn a_stale_operand_is_not_a_reject_reason() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.5; 3]),
+        Point3::from_array([1.5; 3]),
+    );
     m.rebuild_adjacency();
     let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("overlapping cubes fuse");
     m.rebuild_adjacency();
@@ -153,7 +161,7 @@ fn a_rejected_boolean_leaves_the_operands_live() {
     let pinched = || -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
         let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-            let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
             m.rebuild_adjacency();
             s
         };

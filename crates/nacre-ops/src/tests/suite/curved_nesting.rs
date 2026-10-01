@@ -162,8 +162,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                             .push(format!("{name} {kind:?}: {got_cyc:?} ← want {want_cyc:?}"));
                     }
                     let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
-                    let far =
-                        m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+                    let far = crate::fixtures::cuboid(
+                        &mut m,
+                        Point3::from_array([20.0; 3]),
+                        Point3::from_array([21.0; 3]),
+                    );
                     m.rebuild_adjacency();
                     match boolean(&mut m, BoolKind::Cut, out[0], far) {
                         Result::Ok(r) => {
@@ -633,7 +636,8 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                                 (v_first - w).abs() < 1e-9,
                                 "{name} {kind:?}: first volume {v_first} ≠ {w}"
                             );
-                            let t = m.add_cuboid(
+                            let t = crate::fixtures::cuboid(
+                                &mut m,
                                 Point3::from_array(tool[0]),
                                 Point3::from_array(tool[1]),
                             );
@@ -764,7 +768,8 @@ fn a_cycle_is_carved_on_its_classes() {
             let (mut m, plate, boss) = boss_family([4.0, 2.0, -1.0], 4.0);
             let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
             m.rebuild_adjacency();
-            let t = m.add_cuboid(
+            let t = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([3.0, -1.0, 0.5]),
                 Point3::from_array([6.0, 5.0, 1.5]),
             );
@@ -776,7 +781,11 @@ fn a_cycle_is_carved_on_its_classes() {
             let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
             let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
             m.rebuild_adjacency();
-            let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+            let far = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([20.0; 3]),
+                Point3::from_array([21.0; 3]),
+            );
             m.rebuild_adjacency();
             crate::arrangement::trace_every_class(&m, out[0], far)
                 .expect("the chain's classes trace");
@@ -833,7 +842,11 @@ fn a_chain_sweeps_its_rulings() {
     let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
     let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
     m.rebuild_adjacency();
-    let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+    let far = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([20.0; 3]),
+        Point3::from_array([21.0; 3]),
+    );
     m.rebuild_adjacency();
     crate::ledger::owned(|| {
         crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace")
@@ -868,11 +881,16 @@ fn a_chain_sweeps_its_rulings() {
 fn on_the_cube_ring(check: impl FnOnce(&Judge<'_, WorkingPlane>, [NodeId; 6], usize, i8)) {
     use crate::combinatorics::side_of;
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
     m.rebuild_adjacency();
     let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("setup");
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
@@ -1106,7 +1124,8 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
                 // The second operation is what puts a `Reversed` root face on a cut circle's
                 // class (a notch's ceiling), which is where the frame factor decides.
                 m.rebuild_adjacency();
-                let t = m.add_cuboid(
+                let t = crate::fixtures::cuboid(
+                    &mut m,
                     Point3::from_array([-1.0, -1.0, 0.5]),
                     Point3::from_array([5.0, 5.0, 1.5]),
                 );
@@ -1201,7 +1220,8 @@ fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
 #[test]
 fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-10.0, -10.0, 0.0]),
         Point3::from_array([10.0, 10.0, 5.0]),
     );
@@ -1273,7 +1293,8 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     let q = nacre_exact::Rat::from_int;
     let zero = q(0);
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-10.0, -10.0, 0.0]),
         Point3::from_array([10.0, 10.0, 5.0]),
     );
@@ -1331,7 +1352,8 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     let q = nacre_exact::Rat::from_int;
     let zero = q(0);
     let mut m = Model::new();
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-10.0, -10.0, 0.0]),
         Point3::from_array([10.0, 10.0, 5.0]),
     );
@@ -1472,7 +1494,11 @@ fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
     ] {
         let h = s / 2.0;
         let mut m = Model::new();
-        let block = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([s; 3]));
+        let block = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([s; 3]),
+        );
         let bore = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([h, h, -h]),
@@ -1549,7 +1575,8 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
 fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     let mut m = Model::new();
     let plate = rounded_plate(&mut m, 4, 4);
-    let far = m.add_cuboid(
+    let far = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([200.0, -5.0, -5.0]),
         Point3::from_array([210.0, 5.0, 5.0]),
     );
@@ -1631,7 +1658,8 @@ fn the_two_roads_never_disagree() {
             for k in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
                 let mut m = Model::new();
                 let plate = rounded_plate(&mut m, fillets, bores);
-                let boss = m.add_cuboid(
+                let boss = crate::fixtures::cuboid(
+                    &mut m,
                     Point3::from_array([10.0, -20.0, 12.0]),
                     Point3::from_array([25.0, 20.0, 62.0]),
                 );
@@ -1702,7 +1730,8 @@ fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
     .expect("the holed plate extrudes") else {
         unreachable!()
     };
-    let island = m.add_cuboid(
+    let island = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-3.0, -3.0, 0.0]),
         Point3::from_array([3.0, 3.0, 5.0]),
     );
@@ -1738,7 +1767,8 @@ fn a_road_that_declined_a_ring_is_not_asked_again() {
     let out = crate::ledger::owned(|| {
         let first = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the boss cuts")[0];
         m.rebuild_adjacency();
-        let slab = m.add_cuboid(
+        let slab = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, 0.5]),
             Point3::from_array([5.0, 5.0, 1.5]),
         );

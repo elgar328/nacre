@@ -361,7 +361,8 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 #[test]
 fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([40.0, 20.0, 10.0]),
     );

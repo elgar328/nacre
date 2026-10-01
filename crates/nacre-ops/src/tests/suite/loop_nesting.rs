@@ -12,7 +12,8 @@ use super::*;
 /// pocket walls as well — two loops, nested.
 fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, pc) = pocketed_cube();
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.2, -0.25, z0]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );
@@ -364,7 +365,8 @@ fn grazed_plate(outline: &[[f64; 2]]) -> (Vec<WorkingPlane>, usize, Ring, Ring) 
     let mut m = replay(&[extrude_log_op(profile, 12.0)]).unwrap();
     let plate = m.live_solids()[0];
     // Through, so the cap really is holed rather than dimpled.
-    let pocket = m.add_cuboid(
+    let pocket = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([20.0, 10.0, -1.0]),
         Point3::from_array([30.0, 20.0, 13.0]),
     );

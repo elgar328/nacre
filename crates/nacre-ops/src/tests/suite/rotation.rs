@@ -27,11 +27,20 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
     // `rotate`: None = axis-aligned (exact path); Some = the result and cutter tilted (CIP path).
     let run = |rotate: bool| {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let a = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0; 3]),
+        );
+        let b = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([1.0; 3]),
+            Point3::from_array([3.0; 3]),
+        );
         let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         // C's +corner is (1,1,1) = R's concave corner → three shared planes meet there.
-        let c = m.add_cuboid(
+        let c = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([1.0; 3]),
         );
@@ -68,8 +77,16 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
 #[test]
 fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a point contact separates");
     assert_eq!(out.len(), 2);
@@ -90,7 +107,7 @@ fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
 fn validate_reports_the_non_manifold_pinch() {
     let mut m = Model::new();
     let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let s = crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
         m.rebuild_adjacency();
         s
     };
@@ -126,8 +143,16 @@ fn rotated_result_witness_predicates_are_invariant() {
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     let table = |m: &Model, s: Handle<Solid>| {
@@ -187,12 +212,21 @@ fn a_rotated_boolean_result_can_be_cut_again() {
     });
     // Chain: R = Cut(A, B) removes a far-corner octant; then Cut(R, C) removes a near one.
     let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let a = crate::fixtures::cuboid(
+            m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0; 3]),
+        );
+        let b = crate::fixtures::cuboid(
+            m,
+            Point3::from_array([1.0; 3]),
+            Point3::from_array([3.0; 3]),
+        );
         let r = boolean_one(m, BoolKind::Cut, a, b).unwrap();
         // A clean slab that severs R at x = 0.5 — no plane of C coincides with any of R's
         // (avoids the separate rotated-coplanar-contact gap; isolates the witness).
-        let c = m.add_cuboid(
+        let c = crate::fixtures::cuboid(
+            m,
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([0.5, 4.0, 4.0]),
         );
@@ -268,7 +302,7 @@ fn rotated_result_reuse_stress() {
     // (first kind, second kind, |m| -> (a, b, c)). R = kind1(a, b); out = kind2(R, c).
     type Build = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>, Handle<Solid>)>;
     let cuboid = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
-        m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+        crate::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi))
     };
     let fixtures: Vec<(&str, BoolKind, BoolKind, Build)> = vec![
         (
@@ -444,8 +478,12 @@ fn rotation_invariance_stress() {
     let cube = |lo: [f64; 3], hi: [f64; 3]| {
         move || {
             let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-            let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            let a = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0; 3]),
+            );
+            let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
             (m, a, b)
         }
     };

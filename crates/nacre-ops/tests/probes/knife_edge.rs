@@ -18,7 +18,8 @@ use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
 fn corner_box(m: &mut Model) -> Handle<Solid> {
-    let s = m.add_cuboid(
+    let s = nacre_ops::fixtures::cuboid(
+        m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );
@@ -140,7 +141,8 @@ fn prism(m: &mut Model, x: f64, y: f64) -> Handle<Solid> {
 #[test]
 fn axis_aligned_knife_edge_fuses_to_two_bodies() {
     let mut m = Model::new();
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-30.0, -20.0, 0.0]),
         Point3::from_array([-20.0, 20.0, 10.0]),
     );
@@ -164,7 +166,8 @@ fn axis_aligned_knife_edge_fuses_to_two_bodies() {
 #[test]
 fn edge_only_contact_separates_into_two_bodies() {
     let mut m = Model::new();
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-30.0, -20.0, 0.0]),
         Point3::from_array([-20.0, 20.0, 10.0]),
     );
@@ -193,12 +196,14 @@ fn edge_only_contact_separates_into_two_bodies() {
 #[test]
 fn centred_rotated_copy_is_untouched() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-5.0, -5.0, -5.0]),
         Point3::from_array([5.0, 5.0, 5.0]),
     );
     m.rebuild_adjacency();
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-5.0, -5.0, -5.0]),
         Point3::from_array([5.0, 5.0, 5.0]),
     );

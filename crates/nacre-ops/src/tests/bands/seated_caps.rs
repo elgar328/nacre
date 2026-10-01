@@ -25,7 +25,8 @@ use super::*;
 #[test]
 fn a_flush_through_drill_bores_the_plate() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -56,7 +57,8 @@ fn a_flush_through_drill_bores_the_plate() {
 #[test]
 fn a_blind_drill_seated_on_the_plates_base_bores_it() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -87,7 +89,8 @@ fn a_blind_drill_seated_on_the_plates_base_bores_it() {
 #[test]
 fn a_boss_seated_on_the_plate_fuses_to_it() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -118,7 +121,11 @@ fn a_boss_seated_on_the_plate_fuses_to_it() {
 #[test]
 fn a_flush_cylinder_meets_the_box_in_itself() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let b = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([1.0, 1.0, 0.0]),
@@ -147,9 +154,14 @@ fn a_flush_cylinder_meets_the_box_in_itself() {
 #[test]
 fn a_drill_seated_on_a_pocket_floor_bores_it() {
     let mut m = Model::new();
-    let block = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([6.0; 3]));
+    let block = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
     // Open at the top — a tool that stopped inside would leave a void, not a pocket.
-    let pocket_tool = m.add_cuboid(
+    let pocket_tool = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 2.0]),
         Point3::from_array([5.0, 5.0, 7.0]),
     );
@@ -184,7 +196,8 @@ fn a_drill_seated_on_a_pocket_floor_bores_it() {
 /// a flipped panel winding, disk-side selector, ruling turn or chord sense moves it.
 fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 20.0]),
     );
@@ -283,7 +296,8 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
     let want = |d: f64| 32000.0 + 1250.0 * pi - (25.0 * pi - seg(d, 5.0)) * 20.0;
     for (base, d) in [([38.0, 20.0, -10.0], 2.0), ([35.0, 20.0, -10.0], 5.0)] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
@@ -334,7 +348,8 @@ fn a_half_height_boss_builds() {
         (10.0, BoolKind::Common, 125.0 * pi, vec![1]),
     ] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
@@ -395,7 +410,8 @@ fn a_half_height_boss_builds() {
 #[test]
 fn a_boss_overhanging_the_plates_edge_builds() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -445,7 +461,8 @@ fn a_boss_overhanging_the_plates_edge_builds() {
 #[test]
 fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -462,7 +479,8 @@ fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Footprint `[7,9] × [9,11]` sits wholly inside the rim `(8,10)`, `r = 3`; `z ∈ [5,8]`
     // leaves the bore's span `t ∈ [1,6]` clear along the axis, so the wall rule passes it on.
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([7.0, 9.0, 5.0]),
         Point3::from_array([9.0, 11.0, 8.0]),
     );

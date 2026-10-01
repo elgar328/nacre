@@ -21,7 +21,11 @@ fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
 }
 
 fn unit_cube(m: &mut Model) -> Handle<Solid> {
-    m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]))
+    nacre_ops::fixtures::cuboid(
+        m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    )
 }
 
 /// Vertices the kernel vouches for — realized from their definition (`Bounded`) or measured —
@@ -72,7 +76,8 @@ fn cutting_the_copy_leaves_the_original_untouched() {
     m.rebuild_adjacency();
     let b = copy_solid(&mut m, a);
 
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, -0.5, -0.5]),
         Point3::from_array([1.5, 1.5, 1.5]),
     );
@@ -93,12 +98,18 @@ fn cutting_the_copy_leaves_the_original_untouched() {
 #[test]
 fn one_tool_cuts_two_parts() {
     let mut m = Model::new();
-    let part1 = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let part2 = m.add_cuboid(
+    let part1 = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let part2 = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([5.0, 0.0, 0.0]),
         Point3::from_array([7.0, 2.0, 2.0]),
     );
-    let tool = m.add_cuboid(
+    let tool = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, -0.5, 1.5]),
         Point3::from_array([2.5, 2.5, 2.5]),
     );
@@ -142,7 +153,8 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
     assert!(nacre_validate::validate(&m).is_empty());
 
     // Reusable: the twin still behaves as an operand.
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 1.2]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
@@ -219,8 +231,16 @@ fn a_rotated_boolean_result_copies_and_stays_usable() {
 #[test]
 fn a_hollow_solid_copies_with_its_cavity() {
     let mut m = Model::new();
-    let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let big = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     m.rebuild_adjacency();
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();

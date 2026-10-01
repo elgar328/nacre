@@ -228,8 +228,8 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
 /// class: the class root's **stored surface normal** (`Seated{body_above}` and `emit_faces`'
 /// `flip` are written against it). `combinatorics::side_of` answers in the root's **outward** frame
 /// instead, and the two are opposite exactly when the root face is `Reversed`
-/// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
-/// re-emitted flipped is. Read raw, `side_of` flips the wrong label bit on a pocket wall. No
+/// (`orient_sign == -1`) — which a fixture box's face is only where its plane was stated first
+/// facing the other way, and a face an earlier boolean re-emitted flipped is. Read raw, `side_of` flips the wrong label bit on a pocket wall. No
 /// point's side is read at all — [`arrangement::run_body_above`] derives
 /// the occupied side from the ring's travel, and the frame term cancels there because
 /// `order_along`'s direction and the label frame are defined by the same stored normal — but
@@ -271,7 +271,8 @@ fn every_producer_states_its_side_in_the_label_frame() {
         // The pocket family: `pocketed_cube` is itself a boolean result, so its pocket walls
         // are `Reversed` faces. Box coordinates are `pocket_corner_cut`'s.
         let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(
+        let bx = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.85, 0.85, 0.85]),
             Point3::from_array([1.15, 1.15, 1.15]),
         );
@@ -378,7 +379,11 @@ fn every_producer_states_its_side_in_the_label_frame() {
 #[test]
 fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let frame = pythagorean_frame(&mut m, Point3::from_array([1.0, 1.0, 0.0]));
     let profile = stated(vec![circle(
         nacre_math::Point2::from_array([0.0, 0.0]),
@@ -426,8 +431,9 @@ proptest! {
         prop_assume!(expected > 1e-3);
 
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
-        let b = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+        // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
+        let a = crate::fixtures::cuboid_on(&mut m, [amin[0], amin[1]], [amax[0], amax[1]], amin[2], aext[2]);
+        let b = crate::fixtures::cuboid_on(&mut m, [bmin[0], bmin[1]], [bmax[0], bmax[1]], bmin[2], bext[2]);
         let res = boolean_one(&mut m, BoolKind::Common, a, b);
         prop_assume!(res.is_ok()); // skip rare coplanar/degenerate configs
         let r = res.unwrap();
@@ -463,7 +469,7 @@ proptest! {
         .unwrap();
         let prism = *m.live_solids().first().unwrap();
         let vol_prism = nacre_props::mass_props(&m, prism).unwrap().volume;
-        let c = m.add_cuboid(Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
+        let c = crate::fixtures::cuboid(&mut m, Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
         let res = boolean_one(&mut m, BoolKind::Common, prism, c);
         prop_assume!(res.is_ok());
         let r = res.unwrap();

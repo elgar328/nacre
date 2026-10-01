@@ -12,7 +12,8 @@ use super::*;
 /// stands only 2 from the bore's axis (`r = 3`). The boss's face is 20 away; nothing meets.
 fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -27,7 +28,8 @@ fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Hand
     .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([28.0, 4.0, boss_z0]),
         Point3::from_array([36.0, 12.0, 8.0]),
     );
@@ -79,7 +81,8 @@ fn a_boss_whose_wall_plane_holds_the_bores_axis_still_fuses() {
 #[test]
 fn a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -136,7 +139,8 @@ fn the_same_boss_cuts_the_bored_plate() {
 #[test]
 fn one_wall_plane_may_cross_two_bores() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -154,7 +158,8 @@ fn one_wall_plane_may_cross_two_bores() {
         m.rebuild_adjacency();
         holed = crate::boolean(&mut m, BoolKind::Cut, holed, hole).expect("bore")[0];
     }
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([28.0, 4.0, 5.0]),
         Point3::from_array([36.0, 12.0, 8.0]),
     );
@@ -179,7 +184,8 @@ fn one_wall_plane_may_cross_two_bores() {
 #[test]
 fn a_wall_face_that_really_crosses_the_bore_builds() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -195,7 +201,8 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // A slab covering x ∈ [0, 40]: its y = 12 face passes straight through the bore.
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 12.0, 0.0]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -225,7 +232,8 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
 #[test]
 fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -240,7 +248,8 @@ fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
     .solid;
     m.rebuild_adjacency();
     let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 13.0, 0.0]), // y = 13 is exactly r = 3 from y = 10
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -277,7 +286,11 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 0.5);
     let build = || {
         let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let cube = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-0.5; 3]),
+            Point3::from_array([0.5; 3]),
+        );
         let stud = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.3, 0.0, 0.0]),
@@ -331,7 +344,11 @@ fn the_users_through_stud_gives_three_answers() {
     let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 1.0);
     let build = || {
         let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let cube = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-0.5; 3]),
+            Point3::from_array([0.5; 3]),
+        );
         let stud = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.3, 0.0, -1.0]),
@@ -419,7 +436,11 @@ fn the_users_cross_studs_build_in_either_order() {
     for z_first in [true, false] {
         let build = || {
             let mut m = Model::new();
-            let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+            let cube = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([-0.5; 3]),
+                Point3::from_array([0.5; 3]),
+            );
             let (first, second) = if z_first {
                 (z_stud(&mut m), y_stud(&mut m))
             } else {
@@ -606,7 +627,11 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
 #[test]
 fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-0.5; 3]),
+        Point3::from_array([0.5; 3]),
+    );
     // The seam on `−y`, off the touching point `(0.5, 0)` — on `+x` it would *be* that point, a
     // vertex of the b-rep rather than a sample of the circle.
     let stud = crate::fixtures::cylinder_with_seam(
@@ -651,7 +676,11 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     }
     // The blind stud (base anchoring) pinches one cap only.
     let mut m = Model::new();
-    let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-0.5; 3]),
+        Point3::from_array([0.5; 3]),
+    );
     let stud = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([0.3, 0.0, 0.0]),
@@ -682,7 +711,8 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
     let pi = std::f64::consts::PI;
     let build = || {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -727,11 +757,13 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
 #[test]
 fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     let mut m = Model::new();
-    let outer = m.add_cuboid(
+    let outer = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([6.0, 6.0, 2.0]),
     );
-    let notch = m.add_cuboid(
+    let notch = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, 2.6, -0.5]),
         Point3::from_array([6.5, 3.4, 2.5]),
     );
@@ -812,7 +844,8 @@ fn two_bodies_touching_on_a_line(
 fn a_far_face_on_the_walls_plane_joins_nothing() {
     two_bodies_touching_on_a_line("boss, bar and block", || {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-2.0, -3.0, 0.0]),
             Point3::from_array([0.0, 3.0, 1.0]),
         );
@@ -825,13 +858,15 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
             1.0,
         )
         .solid;
-        let bar = m.add_cuboid(
+        let bar = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, 0.0, 0.0]),
             Point3::from_array([1.5, 11.0, 1.0]),
         );
         m.rebuild_adjacency();
         let b = crate::boolean(&mut m, BoolKind::Fuse, boss, bar).expect("boss and bar")[0];
-        let block = m.add_cuboid(
+        let block = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0, 10.0, 0.0]),
             Point3::from_array([2.0, 12.0, 1.0]),
         );
@@ -851,11 +886,13 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
 fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
     two_bodies_touching_on_a_line("notched box", || {
         let mut m = Model::new();
-        let block = m.add_cuboid(
+        let block = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0, -3.0, 0.0]),
             Point3::from_array([4.0, 3.0, 2.0]),
         );
-        let slot = m.add_cuboid(
+        let slot = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -2.0, 1.0]),
             Point3::from_array([5.0, 2.0, 3.0]),
         );
@@ -926,7 +963,8 @@ fn the_pinch_formula_is_a_truth_table() {
 #[test]
 fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 10.0]),
     );

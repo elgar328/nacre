@@ -36,7 +36,8 @@ fn l_profile(w: i64, h: i64, nx: i64, ny: i64) -> Profile2d {
 /// A cuboid from integer grid coordinates.
 fn grid_box(m: &mut Model, lo: [i64; 3], ext: [i64; 3]) -> Handle<Solid> {
     let f = |v: i64| v as f64;
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        m,
         Point3::from_array([f(lo[0]), f(lo[1]), f(lo[2])]),
         Point3::from_array([f(lo[0] + ext[0]), f(lo[1] + ext[1]), f(lo[2] + ext[2])]),
     )

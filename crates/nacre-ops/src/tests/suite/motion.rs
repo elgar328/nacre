@@ -41,7 +41,8 @@ fn test_iso() -> (nacre_exact::Isometry, [f64; 3]) {
 fn a_translated_tool_cuts() {
     use nacre_exact::Rat;
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );
@@ -97,7 +98,8 @@ fn a_chained_translation_folds() {
         s
     };
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );
@@ -129,7 +131,8 @@ fn a_chained_translation_folds() {
 fn a_translated_bored_body_fuses() {
     use nacre_exact::Rat;
     let bored = |m: &mut Model| {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 10.0]),
         );
@@ -185,7 +188,8 @@ fn a_translated_bored_body_fuses() {
 #[test]
 fn two_bored_plates_fuse_face_to_face() {
     let cell = |m: &mut Model, x0: f64| {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([x0, 0.0, 0.0]),
             Point3::from_array([x0 + 20.0, 20.0, 10.0]),
         );
@@ -259,12 +263,14 @@ fn two_bored_plates_fuse_face_to_face() {
 fn a_two_by_two_grid_fuses() {
     use nacre_exact::Rat;
     let cell = |m: &mut Model, at: [f64; 3]| {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array(at),
             Point3::from_array([at[0] + 86.0, at[1] + 86.0, at[2] + 71.5]),
         );
         m.rebuild_adjacency();
-        let pocket = m.add_cuboid(
+        let pocket = crate::fixtures::cuboid(
+            m,
             Point3::from_array([at[0] + 1.0, at[1] + 38.6, at[2]]),
             Point3::from_array([at[0] + 33.2, at[1] + 58.6, at[2] + 68.5]),
         );
@@ -421,7 +427,8 @@ fn a_boss_on_any_wall_weighs_the_same() {
     let shared = 0.5 * std::f64::consts::PI * 0.25 * 2.0;
     let run = |base: [f64; 3], kind: BoolKind| -> (f64, usize) {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -496,11 +503,12 @@ fn a_boss_on_any_wall_weighs_the_same() {
         ([1.5, 3.5, -1.0], [2.5, 4.5, 3.0]),
     ] {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
-        let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
         m.rebuild_adjacency();
         let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the box straddle builds");
         m.rebuild_adjacency();
@@ -520,7 +528,8 @@ fn a_boss_on_any_wall_weighs_the_same() {
 fn the_mesh_covers_the_faces_it_approximates() {
     let check = mesh_covers_faces;
     let plate = |m: &mut Model| {
-        m.add_cuboid(
+        crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         )
@@ -539,7 +548,11 @@ fn the_mesh_covers_the_faces_it_approximates() {
     // this oracle is the only thing that would see a bridged cap come out the wrong shape.
     for (name, base_z) in [("blind stud", 0.0), ("through stud", -1.0)] {
         let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let cube = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-0.5; 3]),
+            Point3::from_array([0.5; 3]),
+        );
         let stud = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([0.3, 0.0, base_z]),
@@ -612,7 +625,8 @@ fn the_mesh_covers_the_faces_it_approximates() {
 fn a_boss_on_a_wall_has_one_lateral_face() {
     let run = |base: [f64; 3], h: f64, kind: BoolKind| -> (f64, usize, usize, Vec<usize>) {
         let mut m = Model::new();
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -718,7 +732,8 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
 fn transform_translate_cuboid() {
     let (iso, off) = test_iso();
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -810,7 +825,8 @@ fn a_chain_of_motions_is_deterministic() {
     for (name, chain) in &chains {
         let build = || {
             let mut m = Model::new();
-            let mut s = m.add_cuboid(
+            let mut s = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([2.0, 3.0, 4.0]),
             );
@@ -837,7 +853,8 @@ fn a_chain_of_motions_is_deterministic() {
 fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
     use nacre_exact::{Axis, Rat};
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
@@ -925,7 +942,8 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
 fn copy_is_deterministic() {
     let build = || {
         let mut m = Model::new();
-        let c = m.add_cuboid(
+        let c = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([2.0, 3.0, 4.0]),
         );
@@ -955,7 +973,8 @@ fn rot30() -> nacre_exact::Isometry {
 #[test]
 fn transform_rotate_cuboid_tilts_and_cuts() {
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -997,7 +1016,11 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
 
     // A mixed-rotation cut now runs: the axis-aligned `d` sits inside the rotated `c2`, so
     // `Cut(c2, d)` leaves `c2` with `d` carved out as a cavity (volume 24 − 1 = 23).
-    let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    let d = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.5; 3]),
+        Point3::from_array([1.5; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, c2, d).unwrap();
     m.rebuild_adjacency();
     assert!(
@@ -1025,7 +1048,8 @@ fn transform_rotate_90_is_exact_and_allows_boolean() {
         angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
     });
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1042,7 +1066,8 @@ fn transform_rotate_90_is_exact_and_allows_boolean() {
 
     // c rotated 90° about origin occupies x∈[-3,0], y∈[0,2], z∈[0,4].
     // Cut with d = [-1,0.5,1]-[0.5,1.5,2]: overlap volume 1 → 24 − 1 = 23.
-    let d = m.add_cuboid(
+    let d = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, 0.5, 1.0]),
         Point3::from_array([0.5, 1.5, 2.0]),
     );
@@ -1122,7 +1147,11 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
 #[test]
 fn transform_rotate_op_applies() {
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let out = apply(
         &mut m,
         &Operation::Transform {
@@ -1226,11 +1255,13 @@ fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_exact::
 fn a_chained_boolean_keeps_its_faces_exact() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.0]),
         Point3::from_array([1.0, 1.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, -0.2, 1.0]),
         Point3::from_array([4.0, 0.2, 3.0]),
     );
@@ -1277,8 +1308,13 @@ fn a_chained_boolean_keeps_its_faces_exact() {
 fn the_same_motion_applied_twice_is_one_node() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, 0.0, 0.0]),
         Point3::from_array([3.0, 1.0, 1.0]),
     );
@@ -1300,7 +1336,8 @@ fn the_same_motion_applied_twice_is_one_node() {
     }
     assert_eq!(leaf(&m, a), leaf(&m, b), "one motion, one node");
     // …and a *different* motion is a different node, or the identity would be worthless.
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([5.0, 0.0, 0.0]),
         Point3::from_array([6.0, 1.0, 1.0]),
     );
@@ -1326,11 +1363,13 @@ fn the_same_motion_applied_twice_is_one_node() {
 fn a_rerotated_boolean_result_continues_each_walls_history() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 0.0]),
         Point3::from_array([3.0, 3.0, 2.0]),
     );
@@ -1392,11 +1431,13 @@ fn a_copy_of_a_rotated_solid_answers_like_the_original() {
     use nacre_exact::Axis;
     let build = |use_copy: bool| {
         let mut m = Model::new();
-        let hub = m.add_cuboid(
+        let hub = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, 0.0]),
             Point3::from_array([1.0, 1.0, 3.0]),
         );
-        let fin = m.add_cuboid(
+        let fin = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, -0.2, 1.0]),
             Point3::from_array([4.0, 0.2, 3.0]),
         );
@@ -1445,7 +1486,8 @@ fn boolean_result_rotated_90_validates() {
 fn rotate_90_lands_vertices_exactly() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1468,7 +1510,8 @@ fn rotate_90_lands_vertices_exactly() {
 fn rerotate_same_axis_chains() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1499,7 +1542,11 @@ fn rerotate_same_axis_chains() {
     assert!(solid_is_rotated(&m, c2), "re-rotated solid stays rotated");
     // A boolean against the chain-rotated solid runs: the axis-aligned
     // `d` inside the re-rotated `c2` is carved out, and the result is a valid solid.
-    let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+    let d = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.5; 3]),
+        Point3::from_array([1.5; 3]),
+    );
     boolean_one(&mut m, BoolKind::Cut, c2, d).unwrap();
     m.rebuild_adjacency();
     assert!(
@@ -1514,7 +1561,8 @@ fn rerotate_same_axis_chains() {
 fn rerotate_different_axis_chains() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1541,7 +1589,8 @@ fn rerotate_different_axis_chains() {
 fn rerotate_exact_after_inexact_records_node() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1570,7 +1619,8 @@ fn rerotate_exact_after_inexact_records_node() {
 fn rerotate_across_translation_chains() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1597,7 +1647,8 @@ fn rerotate_across_translation_chains() {
 fn rerotate_deep_chain() {
     use nacre_exact::Axis;
     let mut m = Model::new();
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -1622,14 +1673,22 @@ fn fresh_rotation_of_constructed_unchanged() {
     use nacre_exact::Axis;
     // inexact → one root node over the cuboid.
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
     m.rebuild_adjacency();
     assert_eq!(forest_probe(&m, c1), Some((1, vec![Axis::Z])));
 
     // exact 90° → no node.
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 90)).unwrap();
     m.rebuild_adjacency();
     assert!(!solid_is_rotated(&m, c1), "fresh 90° records no motion");

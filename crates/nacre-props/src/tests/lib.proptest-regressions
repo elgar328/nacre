@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 563ee5cfb3d9394c642279d37bb60386f843ea635714e5b7b4b57834f4c2323a # shrinks to size = 1.0, hw = 0.05, dist = 0.1
 cc 5995613ea2cbb138ef505d77d6e73c6af0a77c4f100d14a0383694af28e936c0 # shrinks to size = 1.0, hw = 0.05, dist = 0.1
+cc 3d3f5658dea2431275d732ff199060beda59e25cd0fb91b1415f817eb9affe79 # shrinks to min = Point { coords: [0.0, 0.0, -1548.7381474595861] }, a = 0.1, b = 0.1, c = 858.7822514964926

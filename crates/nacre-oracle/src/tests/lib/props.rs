@@ -62,7 +62,8 @@ fn parse_reports_non_numeric() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cuboid_matches_occt() {
     let mut model = Model::new();
-    model.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut model,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );
@@ -115,8 +116,10 @@ fn centroid_matches_occt() {
     // (b) A box with an off-centre void. The cavity shell carries the opposite
     //     sign; getting that wrong is invisible on a centred void.
     let mut model = Model::new();
-    let outer = model.add_cuboid(Point3::origin(), Point3::from_array([10.0; 3]));
-    let inner = model.add_cuboid(
+    let outer =
+        nacre_ops::fixtures::cuboid(&mut model, Point3::origin(), Point3::from_array([10.0; 3]));
+    let inner = nacre_ops::fixtures::cuboid(
+        &mut model,
         Point3::from_array([1.0; 3]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );
@@ -184,7 +187,11 @@ fn cylinder_bounds_match_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn through_hole_cut_matches_occt() {
     let mut model = Model::new();
-    let a = model.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut model,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let b = nacre_ops::fixtures::cylinder_with_seam(
         &mut model,
         Point3::from_array([1.0, 1.0, -1.0]),
@@ -243,7 +250,8 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
     // The plate with a bore, and a boss whose `x = 11` face is exactly tangent to the rim.
     let build = |bx: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 20.0, 5.0]),
         );
@@ -258,7 +266,8 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
         .solid;
         m.rebuild_adjacency();
         let holed = boolean_one(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts");
-        let boss = m.add_cuboid(
+        let boss = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([bx, 8.0, 5.0]),
             Point3::from_array([15.0, 12.0, 8.0]),
         );
@@ -305,7 +314,11 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
 fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
     let build = |ax: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let cube = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-0.5; 3]),
+            Point3::from_array([0.5; 3]),
+        );
         let stud = nacre_ops::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([ax, 0.0, 0.0]),
@@ -349,7 +362,8 @@ fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
 fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
     let build = |bz: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -398,7 +412,8 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn two_bores_match_occt() {
     let mut model = Model::new();
-    let a = model.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut model,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 2.0, 1.0]),
     );
@@ -584,12 +599,21 @@ fn rotated_result_reuse_diff_occt() {
         }
     };
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     let r = xf(&mut m, r);
-    let c = m.add_cuboid(
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, -1.0]),
         Point3::from_array([0.5, 4.0, 4.0]),
     );
@@ -611,7 +635,8 @@ fn rotated_result_reuse_diff_occt() {
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cube_props_diff_occt() {
     let mut model = Model::new();
-    let solid = model.add_cuboid(
+    let solid = nacre_ops::fixtures::cuboid(
+        &mut model,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 4.0]),
     );

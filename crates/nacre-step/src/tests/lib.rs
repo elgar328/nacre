@@ -6,7 +6,7 @@ use step_io::scene::geometry::{CurveKind, SurfaceKind};
 
 fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
-    m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
+    nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
     m
 }
 
@@ -68,11 +68,13 @@ fn asymmetric_box_round_trips() {
 #[test]
 fn single_solid_export_isolates_one_solid() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([2.0, 0.0, 0.0]),
         Point3::from_array([3.0, 1.0, 1.0]),
     );
@@ -107,15 +109,18 @@ fn single_solid_export_isolates_one_solid() {
 #[test]
 fn superseding_a_solid_leaves_the_export_order_alone() {
     let mut m = Model::new();
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([111.0; 3]),
         Point3::from_array([112.0; 3]),
     );
-    let middle = m.add_cuboid(
+    let middle = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([777.0; 3]),
         Point3::from_array([778.0; 3]),
     );
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([333.0; 3]),
         Point3::from_array([334.0; 3]),
     );
@@ -141,8 +146,16 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
     // producer's primitive (`reversed_shell`): the inner shell reversed
     // inward. Exports as a BREP_WITH_VOIDS and reads back with one cavity.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
     let b_outer = m.solid(b).outer;
     let void = m.reversed_shell(b_outer);
     let a_outer = m.solid(a).outer;

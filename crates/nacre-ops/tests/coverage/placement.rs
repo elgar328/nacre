@@ -28,8 +28,16 @@ use nacre_topo::Model;
 /// and the second's `−x` wall came out as **one surface handle** before the fuse.
 fn place_and_fuse(n: i128, d: i128) -> Result<(Vec<f64>, bool), BoolError> {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     m.rebuild_adjacency();
     let shift = |m: &mut Model, s, x: Rat| {
         let s = xf(
@@ -118,11 +126,13 @@ fn rotate_then_place_builds() {
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
-            let base = m.add_cuboid(
+            let base = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-2.0, -2.0, 0.0]),
                 Point3::from_array([2.0, 2.0, 1.0]),
             );
-            let tool = m.add_cuboid(
+            let tool = nacre_ops::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([-0.5, -0.5, -1.0]),
                 Point3::from_array([0.5, 0.5, 2.0]),
             );
@@ -166,7 +176,8 @@ fn rotate_then_place_builds() {
 fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([2.0, 1.0, 1.0]),
     );
@@ -184,7 +195,8 @@ fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     };
     m.rebuild_adjacency();
     // Reach the same wall by translation instead: `x = 0` moved by `−1/3`.
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );

@@ -24,7 +24,8 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
         });
         let motion = Xform::Rigid(&iso);
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -141,8 +142,8 @@ fn deep_topped_cube(
     nacre_store::Handle<nacre_topo::Surface>,
 ) {
     // ★★★ **State the deep plane first and let the cuboid intern onto it.** The three points
-    // below name `z = 1` — the same plane the cuboid's top cap names — so `add_cuboid` finds
-    // this handle by canonical name and the cap carries *this* statement. No test-only door
+    // below name `z = 1` — the same plane the cuboid's top cap names — so the box's extrude
+    // finds this handle by canonical name and the cap carries *this* statement. No test-only door
     // and no mutation: the arena holds the truth, and interning is the production road onto it.
     // (`z = 1` rather than `z = 0` because the world seeds already state the three origin
     // planes, and interning would hand back a seed's shallow triple.)
@@ -162,7 +163,8 @@ fn deep_topped_cube(
         None,
         nacre_topo::Orientation::Forward,
     );
-    let s = m.add_cuboid(
+    let s = crate::fixtures::cuboid(
+        m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );

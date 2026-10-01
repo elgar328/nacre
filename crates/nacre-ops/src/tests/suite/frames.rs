@@ -24,7 +24,8 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         Profile2d::polygon(vec![p(-1.0, -0.6), p(1.0, -0.6), p(1.0, 0.6), p(-1.0, 0.6)]).unwrap()
     };
     let mut m = Model::new();
-    let mut solid = m.add_cuboid(
+    let mut solid = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-2.0, -2.0, 0.0]),
         Point3::from_array([2.0, 2.0, 1.0]),
     );
@@ -126,7 +127,8 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
     };
     let build = |dists: &[f64]| -> (Model, Handle<Solid>) {
         let mut m = Model::new();
-        let mut solid = m.add_cuboid(
+        let mut solid = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([98.0, 98.0, 0.0]),
             Point3::from_array([102.0, 102.0, 1.0]),
         );
@@ -195,12 +197,14 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
 #[test]
 fn two_faces_of_one_plane_share_a_sketch_origin() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 2.0, 1.0]),
     );
     // A notch out of one end: the lid `z = 1` becomes two faces of the same plane.
-    let cutter = m.add_cuboid(
+    let cutter = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.8, -1.0, 0.5]),
         Point3::from_array([1.2, 3.0, 2.0]),
     );
@@ -370,7 +374,8 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let mut s = m.add_cuboid(
+    let mut s = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );

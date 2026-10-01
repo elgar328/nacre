@@ -13,7 +13,8 @@ use super::*;
 /// A plate bored to `hole_h` deep, ready to be operated on again.
 fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 20.0, 5.0]),
     );
@@ -33,7 +34,8 @@ fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
 
 /// A boss well clear of the bore (walls 4+ from the axis, r = 3), fused onto the plate.
 fn fuse_a_clear_boss(m: &mut Model, s: Handle<Solid>, z0: f64) -> Vec<Handle<Solid>> {
-    let boss = m.add_cuboid(
+    let boss = crate::fixtures::cuboid(
+        m,
         Point3::from_array([4.0, 4.0, z0]),
         Point3::from_array([12.0, 6.0, 8.0]),
     );
@@ -67,7 +69,8 @@ fn a_blind_bore_can_be_fused_onto_afterwards() {
 #[test]
 fn a_blind_bore_can_be_cut_afterwards() {
     let (mut m, s) = plate_with_a_bore(3.0);
-    let tool = m.add_cuboid(
+    let tool = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([4.0, 4.0, 3.0]),
         Point3::from_array([12.0, 6.0, 8.0]),
     );
@@ -150,7 +153,11 @@ fn a_through_bore_is_unaffected() {
 #[test]
 fn an_enclosed_cylindrical_void_is_a_cavity() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0; 3]),
+    );
     let void = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 1.0]),
@@ -194,7 +201,8 @@ fn an_enclosed_cylindrical_void_is_a_cavity() {
 #[test]
 fn a_bore_and_a_sealed_void_live_in_one_body() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([8.0, 4.0, 4.0]),
     );
@@ -244,7 +252,11 @@ fn a_bore_and_a_sealed_void_live_in_one_body() {
 #[test]
 fn a_cavity_with_no_vertex_still_finds_its_owner() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0; 3]),
+    );
     let void = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([2.0, 2.0, 1.0]),
@@ -256,7 +268,8 @@ fn a_cavity_with_no_vertex_still_finds_its_owner() {
     .solid;
     m.rebuild_adjacency();
     let hollow = crate::boolean(&mut m, BoolKind::Cut, a, void).expect("a void inside a box");
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([10.0, 10.0, 10.0]),
         Point3::from_array([14.0, 14.0, 14.0]),
     );
@@ -296,7 +309,11 @@ fn a_cavity_with_no_vertex_still_finds_its_owner() {
 fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     let (mut m, a, b) = {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let a = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0; 3]),
+        );
         let b = crate::fixtures::cylinder_with_seam(
             &mut m,
             Point3::from_array([10.0, 10.0, 0.5]),
@@ -324,7 +341,11 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     // is `8`, and a radius-`0.5`, height-`1` cylinder is `π/4`. Two separate bodies, each a
     // sphere topologically (`χ = 2`), and `validate` clean.
     let mut m2 = Model::new();
-    let a2 = m2.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let a2 = crate::fixtures::cuboid(
+        &mut m2,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let b2 = crate::fixtures::cylinder_with_seam(
         &mut m2,
         Point3::from_array([10.0, 10.0, 0.5]),

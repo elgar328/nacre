@@ -660,7 +660,8 @@ fn a_sketched_bored_plate_meets_a_box() {
     ] {
         let mut m = Model::new();
         let (plate, _) = extrude_world_z(&mut m, bored(), 1.0);
-        let box_ = m.add_cuboid(
+        let box_ = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-2.0, 4.0, -1.0]),
             Point3::from_array([2.0, 6.0, 2.0]),
         );
@@ -712,7 +713,8 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
     .expect("the filleted plate extrudes") else {
         unreachable!()
     };
-    let far = m.add_cuboid(
+    let far = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([20.0, 20.0, 20.0]),
         Point3::from_array([21.0, 21.0, 21.0]),
     );
@@ -1169,7 +1171,8 @@ fn the_gate_reads_faces_at_every_site() {
         )
     };
     let box_b = |m: &mut Model| {
-        m.add_cuboid(
+        crate::fixtures::cuboid(
+            m,
             Point3::from_array([1.0, 0.0, 1.0]),
             Point3::from_array([6.0, 4.0, 5.0]),
         )
@@ -1753,7 +1756,8 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     .expect("the plate extrudes") else {
         unreachable!()
     };
-    let slab = m.add_cuboid(
+    let slab = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.5, -3.0, 1.0]),
         Point3::from_array([2.5, 0.0, 2.0]),
     );
@@ -1867,7 +1871,7 @@ fn a_wall_tangent_where_the_lateral_is_not_touches_nothing() {
         {
             let mut m = Model::new();
             let a = build(&mut m);
-            let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            let b = crate::fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
             m.rebuild_adjacency();
             let vol = |m: &Model, s| nacre_props::mass_props(m, s).expect("props").volume;
             operands = (vol(&m, a), vol(&m, b));

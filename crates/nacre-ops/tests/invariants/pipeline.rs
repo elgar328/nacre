@@ -279,7 +279,8 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
@@ -308,7 +309,8 @@ fn island_cut() -> (Model, Handle<Solid>) {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
@@ -424,7 +426,8 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
 /// both flipped, and they become the result's new end caps.
 fn u_cut_by_slab() -> (Model, Handle<Solid>) {
     let (mut m, u) = u_prism();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, 1.5, -0.5]),
         Point3::from_array([3.5, 2.5, 1.5]),
     );
@@ -495,8 +498,13 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -510,7 +518,11 @@ fn a_convex_hole_free_solid_meshes_exactly() {
     // The shape the fan was written for. Nothing to catch here — this pins the gate
     // itself, so a later failure means the gate moved, not the mesh.
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     let g = mesh_vs_props(&m, c);
     assert_eq!(g.tris, 12);
     assert_agrees(&g, "cube");
@@ -573,7 +585,8 @@ fn a_sealed_cavity_meshes_watertight() {
     // outer surface and the void's) and that the void's inward faces subtract in the mesh
     // volume exactly as they do in `props` — the cavity's `2.408` against the outer `2.44`.
     let (mut m, pc) = pocketed_cube();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.2, -0.25, 0.7]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );
@@ -686,7 +699,11 @@ fn only_the_signed_volume_sees_a_reversed_face() {
     // origin and contribute nothing to `Σ ⅙ p₀·(p₁ × p₂)`, so reversing one of those
     // would move the signed volume by exactly zero and this test would pass vacuously.
     let mut m = Model::new();
-    let c = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let c = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     let good = mesh_vs_props(&m, c);
     assert_eq!(good.tris, 12);
     assert_agrees(&good, "offset cube");
@@ -723,9 +740,9 @@ fn only_the_signed_volume_sees_a_reversed_face() {
     );
     let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
     assert!((vol - 1.0).abs() < 1e-12, "props stayed quiet: {vol}");
-    // Exactly ⅔: `faces[0]` is the `x = 1` face, whose flux `∮ r·n̂ dA` is `−1`, so it
+    // Exactly ⅔: `faces[0]` is the floor `z = 1`, whose flux `∮ r·n̂ dA` is `−1`, so it
     // contributed `−⅓` and now contributes `+⅓`. A different face would give a
-    // different number — if `add_cuboid` ever reorders, this says so rather than
+    // different number — if the fixture's floor ever moves, this says so rather than
     // shrugging at a loose bound.
     assert!(
         (g.volume_delta - 2.0 / 3.0).abs() < 1e-12,
@@ -880,7 +897,11 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
         ("bottom corner", [0.85, 0.85, -0.15], [1.15, 1.15, 0.15]),
     ] {
         let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(Point3::from_array(box_lo), Point3::from_array(box_hi));
+        let bx = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array(box_lo),
+            Point3::from_array(box_hi),
+        );
         let s = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let g = mesh_vs_props(&m, s);
@@ -897,7 +918,8 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
 #[test]
 fn a_flipped_face_keeps_its_hole() {
     let (mut m, pc) = pocketed_cube();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.2, -0.25, 0.3]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );
@@ -939,7 +961,8 @@ fn a_drilled_solid_meshes_watertight() {
     }])
     .unwrap();
     let a = m.live_solids()[0];
-    let rod = m.add_cuboid(
+    let rod = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, -0.5]),
         Point3::from_array([0.5, 0.6, 1.5]),
     );
@@ -963,8 +986,13 @@ fn a_drilled_solid_meshes_watertight() {
 #[test]
 fn a_notched_cube_meshes() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let notch = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0; 3]),
+    );
+    let notch = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([3.0, -1.0, -1.0]),
         Point3::from_array([7.0, 1.4, 1.2]),
     );
@@ -996,19 +1024,22 @@ fn a_notched_cube_meshes() {
 #[test]
 fn a_wall_with_two_windows_meshes() {
     let mut m = Model::new();
-    let hub = m.add_cuboid(
+    let hub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.0]),
         Point3::from_array([1.0, 1.0, 3.0]),
     );
     m.rebuild_adjacency();
-    let upper = m.add_cuboid(
+    let upper = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-4.0, 0.26, 1.0]),
         Point3::from_array([0.0, 0.70, 2.0]),
     );
     m.rebuild_adjacency();
     let part = boolean_one(&mut m, BoolKind::Fuse, hub, upper).unwrap();
     m.rebuild_adjacency();
-    let lower = m.add_cuboid(
+    let lower = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-4.0, -0.70, 1.0]),
         Point3::from_array([0.0, -0.26, 2.0]),
     );
@@ -1060,7 +1091,8 @@ fn the_fin_array_with_a_star_bore_meshes() {
 
     let fins = 7;
     let mut m = Model::new();
-    let mut part = m.add_cuboid(
+    let mut part = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.0]),
         Point3::from_array([1.0, 1.0, 3.0]),
     );
@@ -1068,7 +1100,8 @@ fn the_fin_array_with_a_star_bore_meshes() {
     for i in 0..fins {
         // The script's `i * 360.0 / fins`, lifted to the exact rational it landed on.
         let deg = Rat::try_from_f64(i as f64 * 360.0 / fins as f64).expect("degrees");
-        let fin = m.add_cuboid(
+        let fin = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, -0.2, 1.0]),
             Point3::from_array([4.0, 0.2, 2.0]),
         );
@@ -1078,7 +1111,8 @@ fn the_fin_array_with_a_star_bore_meshes() {
         m.rebuild_adjacency();
     }
     for deg in [0, 45] {
-        let bore = m.add_cuboid(
+        let bore = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-0.6, -0.6, 0.0]),
             Point3::from_array([0.6, 0.6, 2.0]),
         );

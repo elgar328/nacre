@@ -54,7 +54,7 @@ fn cylinder(
 }
 
 fn cub(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
-    let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+    let s = nacre_ops::fixtures::cuboid(m, Point3::from_array(lo), Point3::from_array(hi));
     m.rebuild_adjacency();
     s
 }

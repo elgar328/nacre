@@ -403,11 +403,13 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
 /// Two unit boxes overlapping in a corner: A = [0,1]³, B = [0.5,1.5]³.
 pub fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 1.5, 1.5]),
     );
@@ -418,11 +420,13 @@ pub fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// not overlapping volume): A = [0,1]³ below, B = z∈[1,2] above.
 pub fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
@@ -660,7 +664,7 @@ pub fn rot_iso(axis: Axis, deg: i128) -> Isometry {
     })
 }
 
-// ---- L-prism shape family (public: replay(Extrude) + add_cuboid) ----
+// ---- L-prism shape family (public: replay(Extrude) + fixtures::cuboid) ----
 
 /// The canonical L-prism (footprint area 3, height 1 ⇒ volume 3).
 pub fn l_prism() -> (Model, Handle<Solid>) {
@@ -697,7 +701,8 @@ pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
 
 pub fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.3, -0.3, 0.2]),
         Point3::from_array([2.4, 0.4, 1.4]),
     );
@@ -706,7 +711,8 @@ pub fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 pub fn l_and_rod() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let rod = m.add_cuboid(
+    let rod = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, -0.5]),
         Point3::from_array([0.5, 0.6, 1.5]),
     );
@@ -715,7 +721,11 @@ pub fn l_and_rod() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 pub fn l_and_inner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(Point3::from_array([0.1; 3]), Point3::from_array([0.9; 3]));
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.1; 3]),
+        Point3::from_array([0.9; 3]),
+    );
     (m, l, bx)
 }
 
@@ -743,14 +753,15 @@ pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
 /// hull, outside the L), where a convex half-space test would misclassify it.
 pub fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.6, 0.6, 0.2]),
         Point3::from_array([1.6, 1.6, 1.4]),
     );
     (m, l, bx)
 }
 
-// ---- U-prism and multi-chord shapes (public: apply(Extrude) + add_cuboid) ----
+// ---- U-prism and multi-chord shapes (public: apply(Extrude) + fixtures::cuboid) ----
 
 /// A U-prism (two prongs + a bridge), footprint spanning a reflex-rich outline.
 pub fn u_prism() -> (Model, Handle<Solid>) {
@@ -772,7 +783,8 @@ pub fn u_prism() -> (Model, Handle<Solid>) {
 
 pub fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, u) = u_prism();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.5, 1.5, -0.5]),
         Point3::from_array([3.5, 2.5, 1.5]),
     );
@@ -972,12 +984,17 @@ pub fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation
     }
 }
 
-// ---- more shape fixtures (all public: add_cuboid / apply(Extrude|Pocket)) ----
+// ---- more shape fixtures (all public: fixtures::cuboid / apply(Extrude|Pocket)) ----
 
 pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let y = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0; 3]),
+    );
+    let y = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([3.0, -1.0, -1.0]),
         Point3::from_array([7.0, 1.4, 1.2]),
     );
@@ -986,14 +1003,23 @@ pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 pub fn nested_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
     (m, a, b)
 }
 
 pub fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
+    let bx = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.2]),
         Point3::from_array([2.5, 1.5, 1.2]),
     );
@@ -1002,7 +1028,8 @@ pub fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 pub fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let stub = m.add_cuboid(
+    let stub = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
@@ -1036,7 +1063,8 @@ pub fn top_pocketed_cube() -> (Model, Handle<Solid>) {
 
 pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, pc) = pocketed_cube();
-    let slab = m.add_cuboid(
+    let slab = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-0.2, -0.25, z0]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );

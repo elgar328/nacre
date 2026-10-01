@@ -766,7 +766,8 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
 fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
     let build = |x: f64| -> (Model, Handle<Solid>, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-10.0, -10.0, -1.5]),
             Point3::from_array([10.0, 10.0, 1.5]),
         );
@@ -841,7 +842,8 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 #[test]
 fn the_mesh_census_is_running() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -890,7 +892,8 @@ fn the_mesh_census_is_running() {
 #[test]
 fn a_ruling_labels_the_cell_inside_the_cylinder() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -987,7 +990,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
         s
     }
     fn plate(m: &mut Model, hi: [f64; 3]) -> Handle<Solid> {
-        m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(hi))
+        crate::fixtures::cuboid(m, Point3::from_array([0.0; 3]), Point3::from_array(hi))
     }
     fn cyl(m: &mut Model, base: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
         crate::fixtures::cylinder_with_seam(
@@ -1002,14 +1005,16 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     }
     /// A `20 × 20 × 10` cell at `x0`, optionally pocketed, then bored (`ct2`).
     fn ct2cell(m: &mut Model, x0: f64, pocket: bool) -> Handle<Solid> {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([x0, 0.0, 0.0]),
             Point3::from_array([x0 + 20.0, 20.0, 10.0]),
         );
         m.rebuild_adjacency();
         let mut out = plate;
         if pocket {
-            let p = m.add_cuboid(
+            let p = crate::fixtures::cuboid(
+                m,
                 Point3::from_array([x0 + 2.0, 2.0, 4.0]),
                 Point3::from_array([x0 + 8.0, 8.0, 10.0]),
             );
@@ -1156,7 +1161,8 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
         s
     }
     fn cell(m: &mut Model) -> Handle<Solid> {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([20.0, 20.0, 10.0]),
         );
@@ -1287,7 +1293,8 @@ fn a_spliced_band_is_cut_across_its_notch() {
     let pi = std::f64::consts::PI;
     let build = || {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -1313,7 +1320,8 @@ fn a_spliced_band_is_cut_across_its_notch() {
     // (a) caps across the band above the plate and beyond it.
     {
         let (mut m, r0, v0) = build();
-        let tool = m.add_cuboid(
+        let tool = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([3.0, -1.0, 2.5]),
             Point3::from_array([6.0, 5.0, 4.0]),
         );
@@ -1339,7 +1347,8 @@ fn a_spliced_band_is_cut_across_its_notch() {
     // ruling side the ring carried — the f64 road to the sign `crossing_on_ruling` chose by.
     {
         let (mut m, r0, v0) = build();
-        let tool = m.add_cuboid(
+        let tool = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([3.0, -1.0, 0.5]),
             Point3::from_array([6.0, 5.0, 1.5]),
         );

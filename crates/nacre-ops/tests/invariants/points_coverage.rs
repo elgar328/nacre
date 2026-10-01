@@ -68,7 +68,8 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
 fn every_live_planar_face_records_its_points() {
     // ① Plain construction: cuboid + world extrude.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
@@ -157,11 +158,13 @@ fn every_live_planar_face_records_its_points() {
     // ⑤ A boolean mints no surface, so its result inherits the record — but the sweep is what
     // says so, not the argument.
     let mut mb = Model::new();
-    let a = mb.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut mb,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = mb.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut mb,
         Point3::from_array([1.0, 1.0, 1.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );

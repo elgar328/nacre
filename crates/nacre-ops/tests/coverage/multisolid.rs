@@ -15,8 +15,16 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 #[test]
 fn fuse_of_disjoint_boxes_is_two_solids() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
     let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
     assert_eq!(solids.len(), 2);
     m.rebuild_adjacency();
@@ -31,8 +39,16 @@ fn fuse_of_disjoint_boxes_is_two_solids() {
 fn cut_of_disjoint_is_a() {
     // A − B with B disjoint from A removes nothing ⇒ the result is A.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
     let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
@@ -86,8 +102,13 @@ fn cut_rod_by_l_severs_into_two() {
 #[test]
 fn a_convex_cut_severs_its_operand() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let bar = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let bar = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 4.0]),
     );
@@ -107,11 +128,16 @@ fn cut_a_seated_block_by_the_part_below_it() {
     // the separation test runs with the plane's normal the other way round. Same answer — the
     // block keeps its volume.
     let mut m = Model::new();
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 1.0]),
         Point3::from_array([1.5, 1.5, 2.0]),
     );
-    let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
     m.rebuild_adjacency();
     let r = boolean_one(&mut m, BoolKind::Cut, block, base).unwrap();
     m.rebuild_adjacency();
@@ -129,8 +155,16 @@ fn cut_a_seated_block_by_the_part_below_it() {
 #[test]
 fn a_disjoint_common_is_empty_not_an_error() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
     let solids = boolean(&mut m, BoolKind::Common, a, b).expect("empty is not a failure");
     assert!(solids.is_empty());
     assert!(

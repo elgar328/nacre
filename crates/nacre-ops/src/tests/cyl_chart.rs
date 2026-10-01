@@ -36,7 +36,8 @@ use nacre_topo::Model;
 #[test]
 fn the_chart_census_is_running() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([4.0, 4.0, 2.0]),
     );
@@ -110,7 +111,8 @@ fn the_chart_census_is_running() {
 #[test]
 fn the_charts_vertical_answers_close() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -212,7 +214,8 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             ([2.0, 2.0, 2.0], 1.0),
         ] {
             let mut m = Model::new();
-            let plate = m.add_cuboid(
+            let plate = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
@@ -236,7 +239,8 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
         // belongs to the crossing census's through-axis walls instead.
         {
             let mut m = Model::new();
-            let plate = m.add_cuboid(
+            let plate = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([0.0; 3]),
                 Point3::from_array([4.0, 4.0, 2.0]),
             );
@@ -252,7 +256,8 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             m.rebuild_adjacency();
             let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
             m.rebuild_adjacency();
-            let wall = m.add_cuboid(
+            let wall = crate::fixtures::cuboid(
+                &mut m,
                 Point3::from_array([2.0, -3.0, -2.0]),
                 Point3::from_array([5.0, 3.0, 6.0]),
             );

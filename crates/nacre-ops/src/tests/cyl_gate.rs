@@ -214,7 +214,8 @@ fn a_lateral_faces_reach_and_what_clears_it() {
 #[test]
 fn the_tangent_wall_states_itself_exactly() {
     let mut m = Model::new();
-    let cube = m.add_cuboid(
+    let cube = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
@@ -347,7 +348,8 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Result<Vec<Tangency>, Bo
     ) else {
         panic!("the half cylinder extrudes")
     };
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([lo[0], lo[1], -0.5]),
         Point3::from_array([hi[0], hi[1], 2.5]),
     );

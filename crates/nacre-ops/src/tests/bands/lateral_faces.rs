@@ -7,7 +7,11 @@ use super::*;
 /// disjoint bands on one lateral surface. Returns the model and that solid.
 fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+    let plate = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0; 3]),
+    );
     let hole = crate::fixtures::cylinder_with_seam(
         &mut m,
         Point3::from_array([5.0, 5.0, -1.0]),
@@ -20,7 +24,8 @@ fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
     // Walls 3 from the axis (r = 2), so the wall rule is not what this measures.
-    let mid = m.add_cuboid(
+    let mid = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([cut_x0, cut_x0, 4.0]),
         Point3::from_array([cut_x1, cut_x1, 6.0]),
     );
@@ -31,7 +36,8 @@ fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
 
 /// The lid tool the locks below cut with.
 fn add_lid(m: &mut Model) -> Handle<Solid> {
-    let lid = m.add_cuboid(
+    let lid = crate::fixtures::cuboid(
+        m,
         Point3::from_array([0.0, 0.0, 8.0]),
         Point3::from_array([10.0, 10.0, 12.0]),
     );
@@ -67,7 +73,8 @@ fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
 #[test]
 fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let lid = m.add_cuboid(
+    let lid = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 8.0]),
         Point3::from_array([10.0, 10.0, 12.0]),
     );
@@ -111,7 +118,8 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
 fn a_middle_cut_that_misses_the_bore_leaves_one_band() {
     let (mut m, s) = plate_with_a_split_bore(0.0, 2.0);
     assert_eq!(lateral_face_counts(&m, s), vec![1], "the wall is untouched");
-    let lid = m.add_cuboid(
+    let lid = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 8.0]),
         Point3::from_array([10.0, 10.0, 12.0]),
     );
@@ -191,7 +199,8 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 #[test]
 fn a_wall_face_in_the_gap_between_two_bands_clears() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let tool = m.add_cuboid(
+    let tool = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 4.5]),
         Point3::from_array([10.0, 6.0, 5.5]),
     );
@@ -232,7 +241,8 @@ fn either_axis_clears_the_footprint_and_neither_does_not() {
     //     by more than `r`, or *it* becomes the face under test — at `x = 3` it is exactly
     //     tangent, and this arm would then measure the tangency instead of the clearance.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let across = m.add_cuboid(
+    let across = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 3.0]),
         Point3::from_array([2.5, 6.0, 7.0]),
     );
@@ -241,7 +251,8 @@ fn either_axis_clears_the_footprint_and_neither_does_not() {
 
     // (b) Along only: the face spans the full width, so only the gap saves it.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let along = m.add_cuboid(
+    let along = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 4.5]),
         Point3::from_array([10.0, 6.0, 5.5]),
     );
@@ -253,7 +264,8 @@ fn either_axis_clears_the_footprint_and_neither_does_not() {
     // records: two ruling pieces per band at `x = 5 ± √3`, the chord on the caps and on
     // the middle cut's ceiling and floor. One body, the exact volume.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
-    let neither = m.add_cuboid(
+    let neither = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 3.0]),
         Point3::from_array([10.0, 6.0, 7.0]),
     );

@@ -54,11 +54,13 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     let swept_faces = m.shell(m.solid(swept).outer).faces.len();
 
     let mut m2 = Model::new();
-    let block = m2.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m2,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([4.0, 4.0, 1.0]),
     );
-    let bar = m2.add_cuboid(
+    let bar = nacre_ops::fixtures::cuboid(
+        &mut m2,
         Point3::from_array([1.0, 1.0, -1.0]),
         Point3::from_array([3.0, 3.0, 2.0]),
     );
@@ -180,7 +182,8 @@ fn a_profile_with_two_holes() {
 fn a_swept_hole_is_a_boolean_operand() {
     let mut m = Model::new();
     let d = extrude(&mut m, donut_profile(), 1.0);
-    let knife = m.add_cuboid(
+    let knife = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-1.0, -1.0, 0.5]),
         Point3::from_array([5.0, 5.0, 2.0]),
     );
@@ -206,7 +209,8 @@ fn a_swept_hole_is_a_boolean_operand() {
 #[test]
 fn a_pocket_with_a_hole_sweeps_the_other_way() {
     let mut m = Model::new();
-    let block = m.add_cuboid(
+    let block = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([10.0, 10.0, 4.0]),
     );
@@ -405,7 +409,8 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
 
     // Same profile, arriving through `pad` on a face of an existing solid.
     let mut m = Model::new();
-    let base = m.add_cuboid(
+    let base = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([10.0, 10.0, 1.0]),
     );
@@ -707,7 +712,8 @@ fn a_non_pythagorean_prism_is_cut_by_a_box() {
     let mut m = Model::new();
     let prism = extrude(&mut m, profile, 1.0);
     // A box covering `x ≥ 0`: the cut leaves the left half of the segment.
-    let cutter = m.add_cuboid(
+    let cutter = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, -1.0]),
         Point3::from_array([3.0, 3.0, 2.0]),
     );

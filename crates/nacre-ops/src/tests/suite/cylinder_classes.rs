@@ -85,7 +85,8 @@ fn chained_cylinder_operations_that_build_today_still_build() {
 #[test]
 fn the_gate_records_a_wall_the_boss_is_seated_on() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -165,7 +166,8 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     use crate::arrangement::extent_probe::ASKS;
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -222,7 +224,8 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
 fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     use crate::arrangement::order_probe::ROWS;
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -301,7 +304,8 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
 #[test]
 fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -410,8 +414,9 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 /// ☑ **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
 /// winding is **red**, dropping `plus_t_is_above` is **red**, and dropping the root restatement
 /// (the ruling named for a different ⊥ plane) is **red**. Dropping `frame_sign` or the face's
-/// `orient_sign` is **green** — both are `+1` everywhere in today's holed population (an
-/// `add_cuboid` face is never `Reversed`, and a boss's lateral faces outward), so this lock cannot
+/// `orient_sign` is **green** — both are `+1` everywhere in today's holed population (no plate
+/// face in it lands on a plane stated first facing the other way, which is the only place a
+/// fixture box's face is `Reversed`, and a boss's lateral faces outward), so this lock cannot
 /// see them and their reasons stand on the derivation alone. A **bore** with a hole in its lateral
 /// is what would exercise them.
 ///
@@ -429,7 +434,8 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
     // step is restating the ruling's root for a different ⊥ plane.
     for base in [-1.0, 1.0] {
         let mut m = Model::new();
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([12.0, 4.0, 2.0]),
         );
@@ -597,7 +603,8 @@ fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
 
 fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
@@ -830,7 +837,8 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
 #[test]
 fn a_disk_merges_into_the_face_it_lies_in() {
     let plate_and_boss = |m: &mut Model, base: [f64; 3], h: f64| {
-        let a = m.add_cuboid(
+        let a = crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([4.0, 4.0, 2.0]),
         );
@@ -928,11 +936,13 @@ fn a_disk_merges_into_the_face_it_lies_in() {
 fn a_moved_face_answers_the_clearance_test() {
     use nacre_exact::Rat;
     let cell = |m: &mut Model| {
-        let plate = m.add_cuboid(
+        let plate = crate::fixtures::cuboid(
+            m,
             Point3::from_array([0.0; 3]),
             Point3::from_array([86.0, 86.0, 71.5]),
         );
-        let pocket = m.add_cuboid(
+        let pocket = crate::fixtures::cuboid(
+            m,
             Point3::from_array([60.3, 47.8, 0.0]),
             Point3::from_array([73.2, 64.5, 68.5]),
         );
@@ -990,7 +1000,8 @@ fn a_moved_face_answers_the_clearance_test() {
 fn a_rotated_cylinder_is_still_undecided() {
     use nacre_exact::{Angle, Rat, Rotation};
     let mut m = Model::new();
-    let plate = m.add_cuboid(
+    let plate = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([40.0, 40.0, 10.0]),
     );

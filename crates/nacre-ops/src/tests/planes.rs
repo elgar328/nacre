@@ -336,8 +336,13 @@ fn a_faces_facing_reads_no_plane_cache() {
             angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
         })
     };
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([3.0, 2.0, 2.0]),
     );

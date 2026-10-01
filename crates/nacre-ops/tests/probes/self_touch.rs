@@ -56,7 +56,8 @@ fn moved(m: &mut Model, s: Handle<Solid>, isometry: Isometry) -> Handle<Solid> {
 /// short of that it is an ordinary enclosed cavity.
 fn cube_and_wedge(tip_x: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
@@ -119,7 +120,8 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
 #[test]
 fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
@@ -146,7 +148,8 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
 #[test]
 fn a_through_cut_that_stops_short_of_the_wall_builds() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
@@ -206,11 +209,13 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
 #[test]
 fn a_contact_between_two_bodies_keeps_its_own_name() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 0.0]),
         Point3::from_array([2.0, 2.0, 1.0]),
     );
@@ -238,7 +243,8 @@ fn a_contact_between_two_bodies_keeps_its_own_name() {
 #[test]
 fn an_area_contact_opens_the_wall_rather_than_touching_it() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
@@ -275,11 +281,13 @@ fn an_area_contact_opens_the_wall_rather_than_touching_it() {
 #[test]
 fn an_ordinary_fuse_is_untouched() {
     let mut m = Model::new();
-    let a = m.add_cuboid(
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0; 3]),
         Point3::from_array([2.0, 2.0, 2.0]),
     );
-    let b = m.add_cuboid(
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([1.0, 1.0, 1.0]),
         Point3::from_array([3.0, 3.0, 3.0]),
     );

@@ -117,7 +117,8 @@ fn cylinder_seam_edge_is_self_adjacent() {
 #[test]
 fn edge_cache_discard_and_regenerate_bit_identical() {
     let mut m = Model::new();
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-2.0, 1.0, 0.0]),
         Point3::from_array([3.0, 4.0, 10.0]),
     );
@@ -151,7 +152,8 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
 #[test]
 fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
     let mut m = Model::new();
-    let cuboid = m.add_cuboid(
+    let cuboid = nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-3.0, -3.0, 0.0]),
         Point3::from_array([-1.0, -1.0, 2.0]),
     );
@@ -206,7 +208,8 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         1.0,
         2.0,
     );
-    m.add_cuboid(
+    nacre_ops::fixtures::cuboid(
+        &mut m,
         Point3::from_array([4.0, 0.0, 0.0]),
         Point3::from_array([5.0, 1.0, 1.0]),
     );

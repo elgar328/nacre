@@ -481,7 +481,8 @@ fn what_a_second_generation_boolean_costs() {
             }
         }
         let slab = slab?;
-        let cub = m.add_cuboid(
+        let cub = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([5.0, 5.0, 4.0]),
         );
@@ -491,7 +492,8 @@ fn what_a_second_generation_boolean_costs() {
         m.rebuild_adjacency();
         // The second generation: every face of `sliced` is world-named, one of them by the
         // datum's name. Only this boolean is measured.
-        let column = m.add_cuboid(
+        let column = nacre_ops::fixtures::cuboid(
+            &mut m,
             Point3::from_array([0.5, 0.5, -2.0]),
             Point3::from_array([2.5, 2.5, 5.0]),
         );

@@ -36,8 +36,13 @@ fn square(a: f64, b: f64) -> crate::Profile2d {
 #[test]
 fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     let mut m = Model::new();
-    let unit = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let dec = m.add_cuboid(
+    let unit = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let dec = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.3, -1.0, 0.3]),
         Point3::from_array([0.7, 2.0, 0.7]),
     );
@@ -69,8 +74,16 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
 #[test]
 fn a_boolean_result_answers_from_its_definition() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let a = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0; 3]),
+    );
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
     m.rebuild_adjacency();
     let out = crate::boolean::boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
     m.rebuild_adjacency();
@@ -167,7 +180,8 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     // ③ The gate bites in the consultation direction that matters: a class owned by the world
     // cuboid asks for the *prism's* points, so it can leave `Arrange`. (The other direction —
     // prism-owned classes consulting the cuboid — proves nothing here.)
-    let cub = m.add_cuboid(
+    let cub = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([-2.0, -2.0, -2.0]),
         Point3::from_array([10.0, 10.0, 10.0]),
     );
@@ -203,11 +217,13 @@ fn a_framed_prisms_corners_solve_for_reuse() {
 fn the_def_road_answers_for_the_populations_it_can_name() {
     let mut m = Model::new();
     // ① A constructed box, decimal-friendly and decimal-unfriendly corners.
-    let a = m.add_cuboid(
+    let a = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 2.0, 3.0]),
     );
-    let b = m.add_cuboid(
+    let b = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.1, 5.0, 0.3]),
         Point3::from_array([1.7, 6.9, 2.2]),
     );
@@ -238,7 +254,8 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
 
     // ③ A fuse's result: its definition has a rational base, so it answers (reading the
     //    cache instead, a measured point "has no rational base").
-    let c = m.add_cuboid(
+    let c = crate::fixtures::cuboid(
+        &mut m,
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 2.5, 3.5]),
     );
