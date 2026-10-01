@@ -23,19 +23,19 @@
 //! costs**, and it is the input to a decision the doc does not currently list — whether the
 //! predicates should learn to read `Wide` coefficients at all.
 //!
-//! ★★★ **Run it with `--test-threads=1`, or the labels lie:**
-//!
 //! ```text
-//! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture --test-threads=1
+//! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
 //! ```
 //!
+//! ★★★ **The two measurements take one lock ([`ONE_AT_A_TIME`]), or the labels lie.**
 //! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
-//! bracket their own boolean with it. Run in parallel — the default — one test's `take()` walks
-//! off with the other's accumulated climbs, and every printed number is still plausible while
-//! being attributed to the wrong arm. Measured: the same tree printed
-//! `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917` on
-//! the next, which is how a comparison against a saved baseline invents a change that never
-//! happened. Serialized, the same tree prints the same table twice.
+//! bracket their own boolean with it. Run side by side — the test harness's default — one test's
+//! `take()` walks off with the other's accumulated climbs, and every printed number is still
+//! plausible while being attributed to the wrong arm. Measured without the lock: the same tree
+//! printed `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 /
+//! wide_name=917` on the next, which is how a comparison against a saved baseline invents a change
+//! that never happened — and how an assertion that the census moved goes red by luck. Serialized,
+//! the same tree prints the same table twice. The file's other test runs no boolean.
 //!
 //! ★ What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
@@ -81,6 +81,31 @@ use nacre_topo::{Model, PointCache, Solid, Vertex};
 #[path = "support/fixtures.rs"]
 mod fixtures;
 use fixtures::{datum_frame, live_vertices, p2};
+
+/// Held for the whole body of each measurement that reads `climb_census` — see the file note. A
+/// poisoned lock is passed through, so one measurement failing does not turn the other red.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// **The census moved** — over every arm that was built, something climbed and the climbs charged
+/// bits. Summed, not per arm: an arm may rightly not climb (the wide slice is the rescue's). A
+/// census that stopped counting — an escalation it cannot see — would otherwise print a table of
+/// zeros that reads as «free».
+fn assert_the_census_moved(climbs: u64, bits: u64) {
+    assert!(
+        climbs > 0,
+        "no arm climbed — the climb census is not counting"
+    );
+    assert!(
+        bits > 0,
+        "{climbs} climbs charged no bits — the census counts climbs but not their cost"
+    );
+}
 
 /// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
 /// definition**. A boolean's vertices
@@ -305,11 +330,12 @@ fn wf_family_with_pocket() -> Model {
 /// The counters live in `escalate`, the single funnel every production escalation passes.
 ///
 /// ★ Reported, not asserted against a threshold — a corpus number is not a budget. What is
-/// asserted is that the instrument moved at all.
+/// asserted is that the instrument moved at all ([`assert_the_census_moved`]).
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
 fn what_a_datum_bearing_boolean_costs() {
     use nacre_judge::kernel::frame3::climb_census;
+    let _line = one_at_a_time();
 
     // ★★★ The control is **wide name vs narrow name**, not "datum vs no datum".
     //
@@ -390,10 +416,13 @@ fn what_a_datum_bearing_boolean_costs() {
     };
 
     let mut seen = 0;
+    let (mut climbed, mut charged) = (0, 0);
     for label in ["narrow_name", "wide_name", "nameless"] {
         match run(label) {
             Some((climbs, bits, exhausted)) => {
                 seen += 1;
+                climbed += climbs;
+                charged += bits;
                 println!(
                     "stat cost {label:12} climbs={climbs} mean_bits={} exhausted={exhausted}",
                     bits.checked_div(climbs).unwrap_or(0)
@@ -405,6 +434,7 @@ fn what_a_datum_bearing_boolean_costs() {
         }
     }
     assert!(seen > 0, "no arm built — the measurement is empty");
+    assert_the_census_moved(climbed, charged);
 }
 
 /// ★★★ **What the name-integer rescue actually buys, measured where its gates open.**
@@ -432,6 +462,7 @@ fn what_a_datum_bearing_boolean_costs() {
 #[ignore = "measurement — run explicitly, prints the table"]
 fn what_a_second_generation_boolean_costs() {
     use nacre_judge::kernel::frame3::climb_census;
+    let _line = one_at_a_time();
 
     let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();
@@ -509,10 +540,13 @@ fn what_a_second_generation_boolean_costs() {
     };
 
     let mut seen = 0;
+    let (mut climbed, mut charged) = (0, 0);
     for (want_wide, label) in [(false, "narrow_slice"), (true, "wide_slice")] {
         match run(want_wide) {
             Some((climbs, bits, exhausted)) => {
                 seen += 1;
+                climbed += climbs;
+                charged += bits;
                 println!(
                     "stat cost2 {label:12} climbs={climbs} mean_bits={} exhausted={exhausted}",
                     bits.checked_div(climbs).unwrap_or(0)
@@ -522,4 +556,5 @@ fn what_a_second_generation_boolean_costs() {
         }
     }
     assert!(seen > 0, "no arm built — the measurement is empty");
+    assert_the_census_moved(climbed, charged);
 }

@@ -419,10 +419,11 @@ doc 이 «계약을 잃기 가장 쉬운 노드»라 적는 사슬 3 의 거울�
 
 ### 다른 바이너리의 계측은 아직 「자랐나」만 묻는다
 
-`nacre-topo` 의 `WIDE_PLANES`·`SEEDED_HITS` 와 `nacre-judge` 의 `climb_census` 는 원자 카운터고, 읽는 테스트는
-`> before` 창으로 «움직였다»만 본다 — 같은 바이너리의 다른 테스트가 대신 채워 줄 수 있는 모양이다. nacre-ops 는
-행마다 주인을 싣는 `ledger::Ledger` 로 이 부류를 닫았다(`overview.md` 「프로세스 전역 상태를 읽는 테스트」). 두
-크레이트에 같은 것을 둘지는 그 계측을 다시 읽을 때 정한다.
+`nacre-topo` 의 `WIDE_PLANES`·`SEEDED_HITS` 는 원자 카운터고, 읽는 테스트는 `> before` 창으로 «움직였다»만
+본다 — 같은 바이너리의 다른 테스트가 대신 채워 줄 수 있는 모양이다. nacre-ops 는 행마다 주인을 싣는
+`ledger::Ledger` 로 이 부류를 닫았다(`overview.md` 「프로세스 전역 상태를 읽는 테스트」). `nacre-judge` 의
+`climb_census` 는 그것이 필요 없다 — 독자가 자기 바이너리(`wide_datum_cost`)의 두 측정뿐이고 둘이 한 잠금을 잡으며,
+그 바이너리에 상승하는 테스트가 따로 없다. topo 에 같은 것을 둘지는 그 계측을 다시 읽을 때 정한다.
 
 ### `Through` 판정 비용: 깊이 2 는 필터가 없다
 
