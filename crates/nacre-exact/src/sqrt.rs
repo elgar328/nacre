@@ -221,7 +221,7 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
 /// once in the trig path.
 ///
 /// If even 256 bits leave the rounding undecided the midpoint is returned rather than a panic, and
-/// the event is counted — see [`INV_SQRT_ESCALATED`].
+/// a test build counts the event (`INV_SQRT_ESCALATED`).
 pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
@@ -246,12 +246,16 @@ fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
             error: rad,
         } = realize_inv_sqrt_memoized(v, prec);
         if let Some(f) = round_to_f64(&z, rad, prec) {
+            #[cfg(test)]
             if i > 0 {
                 INV_SQRT_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
             }
+            #[cfg(not(test))]
+            let _ = i;
             return f;
         }
     }
+    #[cfg(test)]
     INV_SQRT_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
     let z = realize_inv_sqrt_memoized(v, 256).value;
     to_f64_exact(&z).unwrap_or(f64::NAN)

@@ -82,13 +82,15 @@ pub fn boolean_with_report(
     Ok((result, BoolReport::of(&notes)))
 }
 
-/// Record that `e` is leaving the kernel — the *surfaced* column of [`crate::reject_census`].
+/// Record that `e` is leaving the kernel — the *surfaced* column of a test build's
+/// [`crate::reject_census`]; a product build passes `e` through untouched.
 ///
 /// Sits at the public entry points rather than at [`reject`] because those are two different
 /// populations: guards are raised and swallowed (a retry tries the ring's next node), and only
 /// what comes back here is something a caller ever sees. `InputNotLive` is not a
 /// [`RejectReason`] — it is a caller mistake, not a guard — so it stays out of the census.
 fn surfacing(e: BoolError) -> BoolError {
+    #[cfg(any(test, feature = "test-util"))]
     if let BoolError::Rejected { reason, .. } = e {
         crate::reject_census::surfaced(reason);
     }

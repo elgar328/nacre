@@ -193,7 +193,8 @@ impl Angle {
     /// then *faithfully* rounded (within an ulp) instead of correctly rounded, which stays sound
     /// because [`realization_error_of`](Self::realization_error_of) measures the error that is
     /// actually there and the tolerance grows to match — and it stays deterministic, because a
-    /// 256-bit midpoint is. It is counted so that "can't happen" does not quietly become "happens".
+    /// 256-bit midpoint is. A test build counts it, so that "can't happen" does not quietly become
+    /// "happens".
     fn realize_rounded_f64(self) -> (f64, f64) {
         for (i, prec) in [128usize, 256].into_iter().enumerate() {
             let (c, s) = self.cos_sin_bounded(prec);
@@ -201,12 +202,16 @@ impl Angle {
                 round_to_f64(&c.value, c.error, prec),
                 round_to_f64(&s.value, s.error, prec),
             ) {
+                #[cfg(test)]
                 if i > 0 {
                     ROUND_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
                 }
+                #[cfg(not(test))]
+                let _ = i;
                 return (cf, sf);
             }
         }
+        #[cfg(test)]
         ROUND_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
         let (c, s) = self.cos_sin_bounded(256);
         (

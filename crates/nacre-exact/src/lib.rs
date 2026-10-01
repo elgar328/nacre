@@ -143,7 +143,9 @@ thread_local! {
 
     /// How often the f64 realization needed a second, deeper pass, and how often even that left
     /// the rounding undecided — see [`Angle::cos_sin_f64`]. **Read by tests**: a checker that
-    /// never fires is indistinguishable from one that is not running.
+    /// never fires is indistinguishable from one that is not running. Its only readers are this
+    /// crate's unit tests, so a product build carries none of it.
+    #[cfg(test)]
     static ROUND_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 
     /// **Realized `1/√v` per `(rational, precision)`** — see [`inv_sqrt_bounded`].
@@ -165,6 +167,7 @@ thread_local! {
     /// How often `1/√v`'s f64 realization needed the deeper rung, and how often even that left the
     /// rounding undecided — the counterpart of [`ROUND_ESCALATED`], read by tests for the same
     /// reason.
+    #[cfg(test)]
     static INV_SQRT_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 

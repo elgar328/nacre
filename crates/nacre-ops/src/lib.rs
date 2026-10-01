@@ -33,7 +33,9 @@ mod par;
 mod phase;
 mod planes;
 mod realize;
-/// Public because the measurements that read it live in other crates — see the module doc.
+/// A test build's instrument (`test-util`): its reader, `tests/reject_census.rs`, is an
+/// integration test and links the non-test build — see the module doc.
+#[cfg(any(test, feature = "test-util"))]
 pub mod reject_census;
 mod reuse;
 mod rotated_vertex;

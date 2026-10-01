@@ -20,10 +20,11 @@
 //! needed: "is this guard swallowed by its caller?" is a **static** question, answered by reading
 //! the caller, not by counting.
 //!
-//! ★ **Unconditional, like `nacre_judge::climb_census`** — and for its reason: the cost is a mutex
-//! on a path that has already decided to fail, noise beside the work that decision ends. (A reader
-//! in another crate is not the reason: a `test-util` gate reaches integration tests, as
-//! `nacre_topo`'s push counters show — they sit on the ordinary push path, so they are gated.)
+//! ★ **A test build's instrument** (`test-util`), like `nacre_judge::climb_census` and
+//! `nacre_topo`'s push counters: its only reader is an integration test, so a product build
+//! carries none of it — the tables, the recording calls, nor `reject`'s `#[track_caller]`. That
+//! the path is cheap (it has already decided to fail) is not the question; nothing in a product
+//! reads what it would record.
 //!
 //! # Reading it
 //!

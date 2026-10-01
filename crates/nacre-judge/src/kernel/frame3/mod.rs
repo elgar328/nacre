@@ -143,30 +143,17 @@ fn narrow_hp(x: &HpBounded) -> (f64, f64) {
     }
 }
 
-/// Run one judgement at `j.prec` and, while it neither decides a sign nor proves a coincidence,
-/// again with more bits — up to the cap.
-///
-/// `attempt` answers at a given precision with the sign, if it has one, and otherwise (`Err`) the
-/// [`Gap`] its undecided determinant stands for, normalized into the unit `limit` is in. That separation
-/// is the whole point: a determinant is not a length, and a threshold applied to one directly
-/// would move with the size of the witness triangle.
-///
-/// **The next precision is computed, not doubled.** The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and
-/// `C` does not depend on the precision (measured), so `log₂(gap / limit)` *is* the number of bits
-/// missing — the same derivation [`judge_precision`] uses to size the model in the first place.
-/// One jump lands there, rounded up to a whole word because astro-float allocates whole words
-/// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
-/// starts deep, undershoot and realize everything twice for nothing.
 /// **How often a judgement had to climb, and how far.**
 ///
 /// Every production escalation goes through [`escalate`], so one place here answers "what
 /// fraction of judgements the f64 filter could not settle" and "what they cost" without
 /// instrumentation scattered across the predicates.
 ///
-/// ★ Unconditional, like `nacre-ops`' `reject_census`, and for the same kind of reason: this path
-/// has already decided to realize in arbitrary precision, so a relaxed atomic add is noise beside
-/// the BigFloat work it is about to do. (A reader in another crate is not the reason — a
-/// `test-util` gate would reach it.)
+/// ★ **A test build's instrument** (`test-util`): its only readers are measurements in another
+/// crate's integration tests, so a product build carries none of it — the counters nor the adds.
+/// That the path is cheap (it has already decided to realize in arbitrary precision) is not the
+/// question; nothing in a product reads what it would count.
+#[cfg(any(test, feature = "test-util"))]
 pub mod climb_census {
     use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 

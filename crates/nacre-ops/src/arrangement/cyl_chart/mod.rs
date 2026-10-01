@@ -578,10 +578,10 @@ impl Lines {
             if kk != k {
                 continue;
             }
-            // ★ Not swallowed: `axis_param` refuses through `reject()`, which the reject census
-            // records at the raise whether or not the caller looks. `chart_of` (iii) already asked
-            // this of every ⊥ class, so a refusal here cannot be reached after a chart was built —
-            // the `?` removes a silent arm rather than adding a population.
+            // ★ Not swallowed: `axis_param` refuses through `reject()`, which a test build's
+            // reject census records at the raise whether or not the caller looks. `chart_of`
+            // (iii) already asked this of every ⊥ class, so a refusal here cannot be reached after
+            // a chart was built — the `?` removes a silent arm rather than adding a population.
             let t = crate::bands::axis_param(jd, c, def)?;
             let v = by_t.entry(t).or_default();
             if !v.contains(&c) {

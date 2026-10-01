@@ -23,6 +23,10 @@ num-integer = "0.1"
 # parallel boolean's workers can *share* it -- the load is on the shared borrow, not on
 # anything a worker returns. Off by default; nacre-ops turns it on via its own `parallel`.
 parallel = []
+# Opens `kernel::frame3::climb_census`, the escalation counters, for the measurements that read
+# them from another crate's integration tests (`nacre-ops/tests/wide_datum_cost.rs`). Off by
+# default: a product build counts nothing.
+test-util = []
 
 [dev-dependencies]
 proptest.workspace = true

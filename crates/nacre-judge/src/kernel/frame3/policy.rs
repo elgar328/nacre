@@ -113,11 +113,26 @@ pub(super) fn denom_lo(v: &HpBounded) -> Result<Mag, Gap> {
     }
 }
 
+/// Run one judgement at `j.prec` and, while it neither decides a sign nor proves a coincidence,
+/// again with more bits — up to the cap.
+///
+/// `attempt` answers at a given precision with the sign, if it has one, and otherwise (`Err`) the
+/// [`Gap`] its undecided determinant stands for, normalized into the unit `limit` is in. That separation
+/// is the whole point: a determinant is not a length, and a threshold applied to one directly
+/// would move with the size of the witness triangle.
+///
+/// **The next precision is computed, not doubled.** The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and
+/// `C` does not depend on the precision (measured), so `log₂(gap / limit)` *is* the number of bits
+/// missing — the same derivation [`judge_precision`] uses to size the model in the first place.
+/// One jump lands there, rounded up to a whole word because astro-float allocates whole words
+/// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
+/// starts deep, undershoot and realize everything twice for nothing.
 pub(super) fn escalate(
     j: Standard,
     limit: Mag,
     mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
+    #[cfg(any(test, feature = "test-util"))]
     climb_census::CLIMBS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // A zero precision means the context never got stamped: astro-float would be asked for a
     // realization with no bits, and every judgement would come back exhausted. That is a wiring
@@ -130,7 +145,10 @@ pub(super) fn escalate(
     // or a proved zero, and counting only the `Ok` path reported a mean of exactly 0 bits — a
     // number that looked like "no cost" and was really "no instrument".
     let done = |p: usize, d: Decision| -> Decision {
+        #[cfg(any(test, feature = "test-util"))]
         climb_census::BITS.fetch_add(p as u64, std::sync::atomic::Ordering::Relaxed);
+        #[cfg(not(any(test, feature = "test-util")))]
+        let _ = p;
         d
     };
     let mut prec = j.prec;
@@ -157,6 +175,7 @@ pub(super) fn escalate(
                 (Some(gx), Some(lx)) => ((gx - lx).max(1) as usize, Some(g)),
                 // A limit with no exponent (a zero bound) is a target no depth reaches.
                 _ => {
+                    #[cfg(any(test, feature = "test-util"))]
                     climb_census::EXHAUSTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return done(
                         prec,
@@ -169,6 +188,7 @@ pub(super) fn escalate(
             },
         };
         if prec >= j.cap {
+            #[cfg(any(test, feature = "test-util"))]
             climb_census::EXHAUSTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return done(prec, Decision::Exhausted { at: prec, within });
         }

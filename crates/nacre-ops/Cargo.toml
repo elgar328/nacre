@@ -43,7 +43,9 @@ parallel = ["dep:rayon", "nacre-judge/parallel"]
 # `deny(clippy::print_stderr)`. It exists because the in-memory census dies with its process and
 # the population worth sweeping is spread over ~30 test binaries:
 #   cargo test --workspace --features nacre-ops/reject-trace -- --nocapture 2>&1 | grep '^RAISE '
-# The census itself is unconditional; only the printing is behind this.
+# It prints only where the census exists — `test-util`, which every test build has through the
+# self dev-dependency below; it does not turn `test-util` on itself, so it never opens the test
+# doors in a product build.
 reject-trace = []
 # The tangency population instrument: print one line per tangency row (`TROW`), one per row
 # skipped because its lateral face does not hold the line (`TSKIP`), and one per wall face the
@@ -52,8 +54,9 @@ reject-trace = []
 # where `cfg(test)` is not set for this crate — a trap this repo has hit twice:
 #   cargo test --workspace --features nacre-ops/tangency-trace -- --nocapture 2>&1 | grep -E '^(TROW|TSKIP) '
 tangency-trace = []
-# Test-only doors for the measurements in this crate's integration tests (`tests/census.rs`),
-# which link the non-test build and so cannot see `cfg(test)`. Nothing in a product build.
+# Test-only doors for the measurements in this crate's integration tests (`tests/census.rs`,
+# `tests/reject_census.rs` — the reject census itself), which link the non-test build and so
+# cannot see `cfg(test)`. Nothing in a product build.
 test-util = []
 
 [dev-dependencies]
@@ -65,6 +68,8 @@ nacre-ops = { path = ".", default-features = false, features = ["test-util"] }
 # Enables topo's test-only doors: the planting pushes (models the operations cannot build),
 # `reversed_shell`, `plane_name_through`, and the push counters the census reads.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+# Opens the judge's climb census for the measurements that read it (`tests/wide_datum_cost.rs`).
+nacre-judge = { path = "../nacre-judge", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.
 nacre-validate = { path = "../nacre-validate", version = "0.0.0" }

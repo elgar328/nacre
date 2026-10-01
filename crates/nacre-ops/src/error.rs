@@ -729,8 +729,8 @@ pub enum RejectReason {
     /// * `combinatorics::loop_triples` — the road itself, **swallowed**: `trace_input` maps a
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
-    ///   face has several. The reject census still records the raise, so the cause is in the ledger
-    ///   even where the surfaced label is the loop's.
+    ///   face has several. A test build's reject census still records the raise, so the cause is
+    ///   in the ledger even where the surfaced label is the loop's.
     ///
     ///   ★★ **That second site is a backstop with no firings, and deliberately so.** The ring
     ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
@@ -1198,12 +1198,13 @@ impl std::fmt::Display for RejectReason {
 /// alternative path (several sites try another route on `Err`) can never be mistaken for the
 /// one that actually surfaced.
 ///
-/// The pair being the only funnel is also what makes [`reject_census`] possible:
+/// The pair being the only funnel is also what makes a test build's [`reject_census`] possible:
 /// `#[track_caller]` here records *which* guard rang, at its own line, for every call site
-/// at once.
+/// at once. A product build carries neither the census nor the attribute.
 #[inline]
-#[track_caller]
+#[cfg_attr(any(test, feature = "test-util"), track_caller)]
 pub(crate) fn reject(reason: RejectReason) -> BoolError {
+    #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
     BoolError::Rejected { reason, at: None }
 }
@@ -1211,8 +1212,9 @@ pub(crate) fn reject(reason: RejectReason) -> BoolError {
 /// [`reject`], carrying where the guard was looking — same census instrumentation
 /// (`#[track_caller]` sees through to the raise site).
 #[inline]
-#[track_caller]
+#[cfg_attr(any(test, feature = "test-util"), track_caller)]
 pub(crate) fn reject_at(reason: RejectReason, at: RejectWhere) -> BoolError {
+    #[cfg(any(test, feature = "test-util"))]
     reject_census::raised(reason, std::panic::Location::caller());
     BoolError::Rejected {
         reason,
