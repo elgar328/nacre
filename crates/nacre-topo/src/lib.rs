@@ -286,24 +286,40 @@ pub struct MotionNode {
     pub parent: Option<Handle<MotionNode>>,
 }
 
-/// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
-/// ([`nacre_exact::PlaneName`] — `Narrow | Wide`) and **the motion it is stated in**.
-/// Identical names under different motions are different planes, because a name with no
-/// motion speaks about the world and one with a motion about the pre-motion frame.
-pub type SurfaceKey = (nacre_exact::PlaneName, Option<Handle<MotionNode>>);
-
-/// The statement key for a plane the name key cannot hold: the sorted defining
-/// triple and the motion it is stated under. See `Model::surface_through_ids`.
-type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
-
-/// The interning key for a cylinder — **deliberately conservative**: the whole exact
-/// statement, `ref_dir` included, plus the motion it is stated under. Two statements of one
-/// geometric cylinder with different `ref_dir`s stay two handles, because merging them would
-/// split the seam (seam vertices and the seam edge cite the surface as their carrier). A key
-/// this literal cannot merge wrongly; geometric identity across different statements is the
-/// predicates' to answer per question. No `flipped` report either — a
-/// literal-identical statement realizes to a literal-identical cache.
-type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
+/// **The key a surface interns under** — one table (`Model::interned`), three kinds, chosen by
+/// the stated truth ([`Model::surface_key`]) and never by the door it arrived through. Every
+/// kind carries **the motion the statement is written in**: a statement with no motion speaks
+/// about the world and one with a motion about the pre-motion frame, so identical statements
+/// under different motions are different surfaces.
+///
+/// ★ **No kind carries a plane's `sense`.** A plane's identity has no direction — one plane
+/// stated `+n` and `−n` is one handle — and the door reports `flipped` instead, so the face
+/// records its own orientation against the survivor. A key that held the sense would make the
+/// opposite statement of one plane a second handle.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SurfaceKey {
+    /// A plane's canonical name ([`nacre_exact::PlaneName`] — `Narrow | Wide`): **derived**, so
+    /// two statements of one plane merge whichever points they use.
+    Name(nacre_exact::PlaneName, Option<Handle<MotionNode>>),
+    /// A `Through` statement no one frame names — three vertices no frame solves rationally
+    /// (mixed-frame datum): the sorted vertex triple itself. **Statement** identity, not
+    /// geometric: two different triples on one plane are two handles by design, and the same
+    /// plane may be named elsewhere — a nameless plane's geometric identity is the predicates'
+    /// to answer, per question. What it guarantees is what construction-time sorting guarantees
+    /// one level down — **the same statement never becomes two handles.**
+    Through([Handle<Vertex>; 3], Option<Handle<MotionNode>>),
+    /// A cylinder — **deliberately conservative**: the whole exact statement, `ref_dir`
+    /// included. Two statements of one geometric cylinder with different `ref_dir`s stay two
+    /// handles, because merging them would split the seam (seam vertices and the seam edge cite
+    /// the surface as their carrier). A key this literal cannot merge wrongly; geometric identity
+    /// across different statements is the predicates' to answer per question. No `flipped`
+    /// report either — a literal-identical statement realizes to a literal-identical cache.
+    ///
+    /// Boxed because it is the **rare** kind and the large one (`CylinderDef` is ~2× a plane's
+    /// name): unboxed, every name key in the table would be sized for it. The [`Surface`]
+    /// precedent inverted — there the large variant is the common one, so it stays inline.
+    Cylinder(Box<CylinderDef>, Option<Handle<MotionNode>>),
+}
 
 /// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
 /// arbitrary-precision vessel. They intern
@@ -744,33 +760,16 @@ pub struct Model {
     /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
     /// exact transports) read [`nacre_exact::PlaneName::narrow`]; `Wide` carries identity only.
     pub surface_name: HashMap<Handle<Surface>, nacre_exact::PlaneName>,
-    /// Interning table for [`Model::push_plane`]: the handle already issued for a
-    /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
-    /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
+    /// **The interning table** — the handle already issued for each [`SurfaceKey`]. The twin of
+    /// [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result). Its
+    /// one writer is the private funnel every surface door calls (`intern`), and the key is
+    /// [`Model::surface_key`]'s answer about the stated truth.
     ///
-    /// ★ **The motion belongs in the key.** Coefficients with no motion speak about the world and
-    /// those with one about the pre-motion frame, so two identical arrays under different motions
-    /// are different planes.
-    ///
-    /// ★★ **The witness does not.** Two faces of one plane sharing one moved
+    /// ★ **The witness is not in the key.** Two faces of one plane sharing one moved
     /// witness is already how this works — `collect_planes` says the witness "was captured from
     /// whichever face first reached this surface" and winds it to *each* face's own outward
     /// normal — so it is not part of what makes two planes the same.
-    surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
-    /// Interning for the planes the name key **cannot** hold: a `Through` statement whose three
-    /// vertices no one frame solves rationally (mixed-frame datum) has no canonical
-    /// name, so it interns by the **statement itself**: the sorted vertex triple and the motion
-    /// it is stated under. The same plane may be named elsewhere — two handles, one plane — and
-    /// the class discovery merges them by predicate.
-    ///
-    /// ★ This is statement identity, not geometric identity. Two *different* triples on one
-    /// geometric plane get two handles here, by design: a nameless plane's geometric identity is the predicates' to answer, per question.
-    /// What this table guarantees is the same thing construction-time sorting guarantees one
-    /// level down — **the same statement never becomes two handles.**
-    surface_through_ids: HashMap<ThroughKey, Handle<Surface>>,
-    /// Interning for cylinders — by the whole exact statement plus motion; see
-    /// [`CylinderKey`] for why the key is deliberately this literal.
-    cylinder_ids: HashMap<CylinderKey, Handle<Surface>>,
+    interned: HashMap<SurfaceKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     vertices: Store<Vertex>,
     edges: Store<Edge>,

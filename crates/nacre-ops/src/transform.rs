@@ -603,8 +603,8 @@ fn transform_solid(
         // world-spoken (`face_sketch_frame` verifies instead of declining) and their
         // predicates keep the exact roads.
         //
-        // `Known` + narrow name only: a `Through` plane's truth is vertex handles in a
-        // separate intern table, and a source that already carries a motion keeps its
+        // `Known` + narrow name only: a `Through` plane's truth is vertex handles, interned by
+        // its name or by the statement itself, and a source that already carries a motion keeps its
         // recorded path — which costs a fixed plane nothing, since it never gains a history
         // and a second turn about the same normal restates again. A mirror never restates here.
         let invariant = matches!(

@@ -147,7 +147,7 @@ live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋
 **`Model` 의 필드 목록은 여기 그리지 않는다 — 「타입 구조」 부의 「최종 타입 — 진실」·「캐시」 절이 진실이다.** 진실/캐시 어휘를 두 곳에 그리면 **반드시** 한쪽이 상한다. 도메인 구분만 남긴다:
 
 - **진실**(아레나, append-only): 곡면 · 정점 · 간선 · 면 · 셸 · 솔리드 · 모션(interned) · live 솔리드 목록
-- **interning 표**(같은 진술이 두 핸들이 되지 않게 한다; 순회하지 않는다): 모션 · 평면(정준 이름 + 모션) · 이름 없는 평면(진술 자체) · 원통
+- **interning 표**(같은 진술이 두 핸들이 되지 않게 한다; 순회하지 않는다): 모션 · 곡면(열쇠는 셋 — 평면의 정준 이름 + 모션 · 이름 없는 평면의 진술 자체 · 원통의 진술 자체)
 - **캐시**(핸들 인덱스 병렬, 버리고 재생 가능): 정점 좌표 · 곡면 실현 · 간선 곡선 · 역방향 인덱스(「위상 층」 절)
 - **순수 가속기**(진실도 캐시도 아님 — 비어 있어도 항상 옳다): 모션 사슬 접두의 고정밀 값 표
 
@@ -395,7 +395,7 @@ pub struct Adjacency {
 
 `Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 **버리고 재생**한다. `adj` 에 쓰는 자리는 `Model::rebuild_adjacency` **하나**이고 그것은 통째 교체다(`edge_uses`/`vertex_edges` 를 증분으로 건드리는 코드 0줄). 소비자가 **일괄 추가 뒤 손으로 한 번** 부른다(*"the cache is otherwise stale"*). 증분 갱신은 **필요가 증명될 때** 짓는다.
 
-**Adjacency는 store 전체가 아니라 live 도달가능 셀만 인덱싱한다(supersede 의미론).** `rebuild`는 `model.faces`/`model.edges` 전체가 아니라 `live_solids`에서 도달 가능한 면·엣지만 순회한다 — 그래야 supersede된 옛 면의 엣지가 `edge_uses`를 오염시켜 manifold 검사(엣지 정확히 2회)를 깨뜨리지 않는다. 위상 참조가 하향 단방향·비순환이라 도달가능성 순회는 유한·안전하다. `Adjacency`는 **위상 셀의** 역방향 인덱스이고 캐시이므로 도달가능성 진실을 침해하지 않는다. interning 표 넷(`motion_ids`·`surface_ids`·`surface_through_ids`·`cylinder_ids` — 키 → `Handle`)은 «값으로 핸들을 찾는» 표라 성격이 다르고, **`Adjacency` 와 달리 도달가능성으로 걸러지지 않는다.** 어느 것도 순회하지 않는다(`HashMap` 의 순서가 결과에 닿으면 안 된다).
+**Adjacency는 store 전체가 아니라 live 도달가능 셀만 인덱싱한다(supersede 의미론).** `rebuild`는 `model.faces`/`model.edges` 전체가 아니라 `live_solids`에서 도달 가능한 면·엣지만 순회한다 — 그래야 supersede된 옛 면의 엣지가 `edge_uses`를 오염시켜 manifold 검사(엣지 정확히 2회)를 깨뜨리지 않는다. 위상 참조가 하향 단방향·비순환이라 도달가능성 순회는 유한·안전하다. `Adjacency`는 **위상 셀의** 역방향 인덱스이고 캐시이므로 도달가능성 진실을 침해하지 않는다. interning 표 넷(`motion_ids`·`interned` — 키 → `Handle`)은 «값으로 핸들을 찾는» 표라 성격이 다르고, **`Adjacency` 와 달리 도달가능성으로 걸러지지 않는다.** 어느 것도 순회하지 않는다(`HashMap` 의 순서가 결과에 닿으면 안 된다).
 
 **곁표에는 «진실도 캐시도 아닌» 셋째 부류가 하나 있다 — 가속기.** `Model::prefix_hp` 는 모션 체인이 이미 접은 **접두사**의 고정밀 값을 들고, 다음 모션이 base 부터 다시 접는 대신 거기서 이어 접는다(이것이 없으면 깊이 n 인 솔리드를 짓는 데 1+2+…+n 이 든다). **캐시와 다른 점**: 캐시는 진실의 메모라 «있으면 읽는다»가 계약이지만, 이것은 비어 있어도 답이 **비트까지 같다** — 없으면 정의에서 다시 접을 뿐이다. **interning 표와 다른 점**: 핸들 정체를 지지 않으므로 **언제든 비울 수 있다**(`clear_prefix_hp`). 열쇠가 정의 `(base, leaf, prec)` 라 **낡을 수 없고**(무효화 규칙이 없다), **적중이 곧 축출**이라 용량이 이력 길이가 아니라 **살아 있는 꼭짓점 수**에 묶인다. 값은 「접은 체인 노드 수 + 점」이다 — `Motion::Frame` 하나가 여러 노드로 펼쳐지므로 parent 걸음 수로는 접미사를 자를 수 없다. 쓰기는 «접두사 사슬을 잇는» 자리(`transform`)에서만 일어나고, 불리언의 결과 정점은 표를 건드리지 않는다.
 
@@ -580,7 +580,7 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
    실현한다. 이 규칙의 «항상 이름을 갖는다»는 유리수 닫힘인 평면에만 적용된다 —
    세 정점이 한 프레임에서 만나지 않는(혼합 프레임) `Through` 평면은 이름이 없다 — 이름은 한 프레임의 유리수
    풀이에서 나오는데 그런 프레임이 없다(세계 계수는 대개 무리수지만, `z = 0` 처럼 유리수여도 그렇다). 그런 평면의
-   저장은 **진술 키**(정렬 삼중항+모션, `surface_through_ids`)로 intern 되어 «같은 진술 = 한 핸들»은 지켜지고,
+   저장은 **진술 키**(정렬 삼중항+모션, `SurfaceKey::Through`)로 intern 되어 «같은 진술 = 한 핸들»은 지켜지고,
    같은 평면이 이름 있는 핸들과 이름 없는 핸들 둘이 될 수 있다. 기하 동일성은 술어가 답한다: 클래스 발견이
    핸들이 다른 평면 쌍마다 `planes_coplanar` 를 물어(정확 0, 또는 일치 정밀도 안이 증명되면 보고와 함께) 한
    클래스로 합치고, 결과의 기하는 한 핸들일 때와 비트 동일하다 — 느릴 뿐이다(release 로 잰 세 픽스처에서 3–9배;
@@ -812,11 +812,11 @@ Surface (진실 — 평면이면 점 셋, 원통이면 def, + 모션)
    ▼
 PlaneName = Narrow([Rat;4]) | Wide([BigInt;4])    ← 저장은 이것 하나
    ├─ narrow() → Option<&[Rat;4]>    산술·프레임·지름길 — 사본이 아니라 빌려 읽는다
-   └─ + 모션  → SurfaceKey           interning 표 `surface_ids` 의 키 — «합친다»
+   └─ + 모션  → SurfaceKey::Name     interning 표의 키 — «합친다»
 
 Surface (진실) ─── 이름이 유도 «안 될» 때 ──→ 진실 그대로가 키 — «안 합친다»
-   혼합 프레임 Through 평면 → ThroughKey (`surface_through_ids`)
-   원통                       → CylinderKey (`cylinder_ids`)
+   혼합 프레임 Through 평면 → SurfaceKey::Through
+   원통                       → SurfaceKey::Cylinder
 ```
 
 ```rust
@@ -841,61 +841,68 @@ impl PlaneName {
     pub fn coeff_ints(&self) -> [BigInt; 4] { … }
 }
 
-// ─── interning 표의 키 (nacre-topo) — 표가 셋이다 ──────────────────────
+// ─── interning 표의 키 (nacre-topo) — 표 하나, 열쇠 셋 ──────────────────────
 
-/// **유도된 정준형** — 다르게 진술해도 같은 평면이면 한 핸들(**기하 동일성**).
-/// 같은 계수라도 세계(모션 없음)와 모션 전 프레임은 다른 평면이므로 **모션이 늘 함께** 열쇠에 든다.
-pub type SurfaceKey = (PlaneName, Option<Handle<MotionNode>>);
-/// 이름이 없는 `Through` 평면 — 정렬 삼중항 + 모션(**문자 동일성**: 같은 진술 = 한 핸들).
-type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
-/// 원통 — 진술 전체(`ref_dir` 포함) + 모션. **일부러 보수적**이다(아래).
-type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
+/// 같은 진술이라도 세계(모션 없음)와 모션 전 프레임은 다른 곡면이므로 **모션이 늘 함께** 든다.
+/// 평면의 향(`sense`)은 **어느 열쇠에도 없다** — 한 평면을 `+n`/`−n` 으로 진술하면 한 핸들이고
+/// 문이 `flipped` 로 알린다.
+pub enum SurfaceKey {
+    /// **유도된 정준형** — 다르게 진술해도 같은 평면이면 한 핸들(**기하 동일성**).
+    Name(PlaneName, Option<Handle<MotionNode>>),
+    /// 이름이 없는 `Through` 평면 — 정렬 삼중항(**문자 동일성**: 같은 진술 = 한 핸들).
+    Through([Handle<Vertex>; 3], Option<Handle<MotionNode>>),
+    /// 원통 — 진술 전체(`ref_dir` 포함). **일부러 보수적**이다(아래). 드물고 큰 쪽이라 상자에 든다
+    /// (안 그러면 표의 모든 이름 열쇠가 그 크기를 차지한다).
+    Cylinder(Box<CylinderDef>, Option<Handle<MotionNode>>),
+}
 ```
 
-### 표는 셋이지만 관계는 둘이다 — «합치는가, 아닌가»
+### 표는 하나, 열쇠는 셋 — «합치는가, 아닌가»
 
-| 표 | 열쇠 | 실제로 무엇인가 |
+| 열쇠 | 무엇 | 실제로 무엇인가 |
 |---|---|---|
-| `surface_ids` | `(PlaneName, motion)` | **유도된 것** — 합친다 |
-| `surface_through_ids` | `([Handle<Vertex>;3], motion)` | `Surface::Plane{points: Through(vs), motion}` **그대로** |
-| `cylinder_ids` | `(CylinderDef, motion)` | `Surface::Cylinder{def, motion}` **그대로** |
+| `SurfaceKey::Name` | `(PlaneName, motion)` | **유도된 것** — 합친다 |
+| `SurfaceKey::Through` | `([Handle<Vertex>;3], motion)` | `Surface::Plane{points: Through(vs), motion}` **그대로**(향 빼고) |
+| `SurfaceKey::Cylinder` | `(CylinderDef, motion)` | `Surface::Cylinder{def, motion}` **그대로** |
 
-뒤의 둘은 «어느 종류냐»로 갈려 있을 뿐 같은 관계다 — 열쇠 필드가 **진실의 필드와 같다**. 구분의 뜻은
-«어느 종류»가 아니라 **«합치는가 아닌가»** 다. 둘을 「진실 그대로」 팔 하나로 합쳐 표를 하나로 만드는
-것이 계획이다(todo).
+뒤의 둘은 «어느 종류냐»로 갈려 있을 뿐 같은 관계다 — 열쇠 필드가 **진실의 필드와 같다**, 평면의 향만 빼고.
+구분의 뜻은 «어느 종류»가 아니라 **«합치는가 아닌가»** 다. 향을 빼는 것은 평면의 정체에 방향이 없기
+때문이다 — 같은 진술이 반대 향으로 오면 한 핸들이고 문이 `flipped` 로 알린다(「가지 말 것」 «향을 든
+진실을 interning 열쇠로»).
 
 원통의 **일부러 약한** 보장이 여기서 나온다: `ref_dir` 이 다르면 seam(θ=0 이음매)이 갈라지므로 —
 seam 정점과 seam 간선이 그 곡면을 담체로 인용한다 — 기하가 같아도 **합치면 안 된다.** 기하 동일성은
 술어가 물을 때마다 답한다(규칙 6). **원통에 정준 이름을 주지 않는 것은 «없어서»가 아니라 «결정»이다** —
 원통에 4계수형이 없는 것은 사실이지만 지키는 것은 정책이다: 누군가 원통의 정준형을 만들어 합치기
 시작하면 기하가 같은 원통이 **조용히 합쳐지고 seam 이 갈라진다.** 새 곡면 종류(구·원뿔)도 «합칠
-것인가»를 먼저 정하고 나서야 이름을 얻는다.
+것인가»를 먼저 정하고 나서야 이름을 얻는다. 이 결정의 대가(한 원통면을 두 솔리드가 공유하는 배치의 거절)와
+방향은 todo 「곡면 둘 이상이 만나는 점과 seam 담체」가 든다.
 
-### 열쇠는 문이 고른다
+### 열쇠는 진실이 고른다
 
-`push_plane` → `surface_ids`, `push_plane_through` → 이름이 있으면(`plane_name_through`) `surface_ids`
-없으면 `surface_through_ids`, `push_cylinder` → `cylinder_ids` — **어느 문으로 들어왔는지가** 열쇠를
-고른다. 평면의 두 문은 꼬리(`intern_plane`: 열쇠·이미 발급된 핸들과 `flipped` 회신·아레나 push·곁표)를
-공유한다. `push_plane` 의 `bool` 은 돌려준 곡면이 건넨 진술(점·향)과 **반대**를 향함을 말한다 — 정준형에는
+열쇠는 **진술된 진실의 함수** 하나가 고른다(`Model::surface_key`): `Known` 점은 정준 이름(공선이면 열쇠 없음),
+`Through` 는 세 정점이 한 프레임에서 이름을 주면 이름 아니면 진술 자체, 원통은 진술 자체 — 어느 문으로
+들어왔는지가 아니다. 세 문(`push_plane`·`push_plane_through`·`push_cylinder`)은 진실을 진술하고 깔때기
+하나(`intern`: 열쇠·이미 발급된 핸들과 `flipped` 회신·종류별 아레나 push·곁표·계측)를 부른다. 열쇠가 읽는
+것(점·정점 정의와 그 담체의 이름·모션 접힘)은 모두 한 번 쓰이고 열쇠보다 먼저 있으므로, 나중에 다시 물어도
+push 때의 답과 같다. `push_plane` 의 `bool` 은 돌려준 곡면이 건넨 진술(점·향)과 **반대**를 향함을 말한다 — 정준형에는
 방향이 없으므로(`[0,0,1,−3]` 과 `[0,0,−1,3]` 은 한 평면) 같은 평면이 핸들을 공유하면 방향을 어딘가에서
 맞춰야 하고, 그 자리는 호출자다(면을 `Orientation::flipped()` 로 기록). 두 진실(점의 방향 × 향)의 비교이지
 캐시의 비교가 아니다. 휴면 경로가 아니다 — 판 위에 앉은 보스는 한 평면을 양쪽에서 진술한다(census 의 수는
 `push_plane` 의 doc).
 
-**interning 표는 캐시다** — 아레나를 돌며 진실마다 열쇠를 다시 매기면 통째로 재생된다. 계획: 「표를
-버리고 재생 → 동일」 잠금(todo). 그 잠금은 **프로덕션 생산자만 거친 모델**에서 돈다: test-only
-`push_plane_unregistered` 는 표를 **건너뛰므로**(「한 평면을 두 핸들로」 픽스처가 그것을 필요로 한다)
-test-util 아래에서는 재유도가 표와 다르다.
+**interning 표는 캐시다** — 아레나를 돌며 진실마다 `surface_key` 를 다시 매기면 통째로 재생된다(test-only
+`push_plane_unregistered` 는 표를 **건너뛰므로** — 「한 평면을 두 핸들로」 픽스처가 그것을 필요로 한다 —
+test-util 아래에서는 재유도가 표와 다르다).
 
-**«같은 곡면 = 한 핸들» 불변식을 검사하는 코드는 없다**: `validate` 에 중복 곡면 검사가 없고, 지키는
-것은 생산자 넷(`intern_plane`·`push_plane_through`·`push_cylinder`·test-only
-`push_plane_unregistered`)이 **각자 표를 기억하는 규율**뿐이다. 다섯째 생산자가 잊으면 컴파일도 되고
-테스트도 초록인데 **조용히 중복 핸들**이 생긴다 — 문을 하나로 모으면 그 실수가 구조적으로 불가능해진다(todo).
+**«같은 곡면 = 한 핸들» 불변식을 검사하는 코드는 없다**: 표를 쓰는 곳은 깔때기 하나지만, 종류별 raw
+push 는 `pub(super)` 라 `model/` 안 어디서나 불릴 수 있고(test-only 문이 그렇게 표를 건너뛴다), `validate`
+에 중복 곡면 검사가 없다.
 
 - 문을 넘나드는 경우는 잠겨 있다: `a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle` —
   `Through` 평면과 `Known` 평면이 같은 평면이면 한 핸들이다(변종은 그 평면의 존재가 무엇에 근거하는지를
   적지, 누가 먼저 물었는지를 적지 않는다).
-- 유리수 점 셋으로 말한 평면은 계수가 **반드시** 유리수라 항상 이름이 있고(⇒ `surface_ids`), 진술 키로는
+- 유리수 점 셋으로 말한 평면은 계수가 **반드시** 유리수라 항상 이름이 있고(⇒ `SurfaceKey::Name`), 진술 키로는
   이름이 계산 안 되는 진술만 간다 — 그러나 **한 평면이 두 표에 걸칠 수는 있다**: 혼합 프레임 `Through` 가 이름
   있는 평면(예: `z = 0`)을 다시 진술하면 그 진술은 진술 키로 간다(아래 «핸들 `!=`», 규칙 6).
 - 진실 안에 `f64` 는 **0개**(전부 유리수·핸들)다. `CylinderDef`·`MotionNode`·`PlaneName` 은 `Eq, Hash` 를
@@ -953,10 +960,9 @@ pub struct Model {
     // `Model` 의 유일한 공개 필드다.
     pub surface_name: HashMap<Handle<Surface>, PlaneName>,
 
-    // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다). 표가 셋이다.
-    surface_ids:         HashMap<SurfaceKey,  Handle<Surface>>, // (PlaneName, 모션) — 이름 있는 평면
-    surface_through_ids: HashMap<ThroughKey,  Handle<Surface>>, // (정렬된 정점 셋, 모션) — 이름이 없는 `Through`
-    cylinder_ids:        HashMap<CylinderKey, Handle<Surface>>, // (CylinderDef 전체, 모션) — 일부러 보수적
+    // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다). 곡면의 표는 하나, 열쇠는 셋
+    // (`SurfaceKey::{Name, Through, Cylinder}` — 이름 있는 평면 · 이름 없는 `Through` · 일부러 보수적인 원통).
+    interned:            HashMap<SurfaceKey,  Handle<Surface>>,
     motion_ids:          HashMap<MotionNode,  Handle<MotionNode>>,
 }
 // interning 표는 순회하지 않는다 — `HashMap` 의 순서가 결과에 닿으면 안 된다.
@@ -2117,7 +2123,7 @@ A 를 택한 근거:
    - 성분형이 옳은 이유: 사용자 어휘의 직접 리프트이고 곱이 없는 셔플이다. 「유도된 곱(계수)」 모양이 아니라 평면의 *점* 정의에 대응하는 원통판이다.
    - `ref_dir` 원시는 `any_perpendicular` 자신의 규칙을 유리수로 따른다(최소-|성분| 축, 동률 X→Y→Z). **축 선택은 정규화된 `d` — 캐시가 실제로 읽는 값 — 를 읽는다**(구조적 일치). 원시 성분을 읽으면 f64 나눗셈 반올림이 강부등호를 동률로 붕괴시키는 입력에서 선택이 갈린다(축 `[0.34, 0.33999999999999997, 1]`: 원시는 Y, `d` 는 X) — seam 이 캐시와 약 90° 어긋난다. 외적은 원시 정확 성분으로 계산한다(어느 값이 기저를 골랐든 `ê_k×원시 ∥ ê_k×d` 양의 평행이라 seam 방향은 정확히 보존된다).
 2. **seam 은 모델 기하이고 영구 고정이다**(+`ref_dir` 방향, θ=0). 차트가 자기 배제점을 seam 위에 놓도록 맞춘다 — 차트가 seam 에 적응하지, 그 역은 없다.
-3. **interning 은 보수적이다.** `cylinder_ids`(평면과 별도 맵)는 def **문자 동일**(`ref_dir` 포함) + motion 동일만 합친다. 같은 축·반지름·다른 `ref_dir` 을 합치면 seam 이 갈라지므로, 잘못 합칠 위험이 0 인 키다. 기하 동일성은 술어의 몫이다. 평면의 `flipped` 대응물은 필요 없다(문자-동일 키면 캐시 구성도 동일).
+3. **interning 은 보수적이다.** 원통의 열쇠(`SurfaceKey::Cylinder`)는 def **문자 동일**(`ref_dir` 포함) + motion 동일만 합친다. 같은 축·반지름·다른 `ref_dir` 을 합치면 seam 이 갈라지므로, 잘못 합칠 위험이 0 인 키다. 기하 동일성은 술어의 몫이다. 평면의 `flipped` 대응물은 필요 없다(문자-동일 키면 캐시 구성도 동일).
 4. **`Vertex::OnSeam([원통, 캡])` 의 정의** = 「rim ∩ +`ref_dir` 방향 ray」. `ref_dir` 이 진실에 있으므로 유일점을 정확히 지시하고, 좌표 캐시는 load-bearing 이 아니다.
 5. **seam 담체 `[s, s]`** — 「한 면의 매개화 이음매」의 철자다. validate 의 «자기-인접 ⇔ 원통» 규칙이 지킨다.
 6. **branch 방향.** 평면∩평면∩원통 = 최대 2점이고, `Vertex::Pierce { planes, cylinder, root: QuadRoot }` 변종이 받는다 — 변종이 자기 진실을 말한다(슬롯 재활용 금지). `QuadRoot` 는 `Lo | Hi | Double` **셋**이다: `Double` 은 접점(두 근이 일치해 점이 하나)이고, 저장된 값이 자기가 접점인지 말할 수 있어야 하므로 저장 변종이다. 재정렬 규칙은 `QuadRoot::canonical` **한 곳**에 살고, 접점 예외는 `flipped(Double) = Double` 이라는 원시에서 저절로 나온다(스왑은 중근을 자기 자신으로 보낸다).
@@ -2621,13 +2627,14 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 하지 말 것 | 이유 | 커밋 |
 |---|---|---|
 | `Vertex` 를 세 평면 단일형으로 | 원통 seam 정점은 «원통 ∩ 캡» 원 위의 한 점이라 세 평면이 없다. 슬롯을 중복으로 채우면 판정의 `D=0` 이 조용한 0 이 된다 — 변종별 enum | — |
+| 향을 든 진실을 interning 열쇠로(`Verbatim(Surface)` — `Surface`·`PlanePoints` 에 `Eq, Hash` 를 붙여 진술 그대로를 열쇠로) | 평면의 진실은 향(`sense`)을 들고 평면의 정체에는 방향이 없다 — 같은 진술이 반대 향으로 오면 한 핸들 + `flipped` 여야 하는데 두 핸들이 된다(스위트에서 이름 없는 `Through` 적중 4 중 1). 열쇠는 향을 뺀 진술이다(`SurfaceKey`) | — |
 | 정점에 정확성 태그(`Constructed`/`Discovered`)를 달기 | 그 태그는 정확성을 뜻한 적이 없다 — 정확 경로로 만든 정점의 좌표도 반올림이다. 구분은 실현 캐시가 든다 | `76a07b2` |
 | 평면의 진실을 계수로 | 계수는 두 점 차의 곱이라 `i128` 적합 25.8%(점은 100%). 분모를 먼저 날려도(lcm 자체가 104~106비트) 중간 타입만 넓혀도(최종 계수 중앙 159비트) 안 든다. 진실은 점 셋이다 | — |
 | f64 계수를 `Rat` 으로 들어올리기 | 반올림이 진실에 구워지고, 같은 벽이 두 경로로 두 평면 클래스가 된다 | — |
 | 실현한 프레임 기저(캐시 법선의 축·캐시나 정확 투영의 `to_f64` 원점)를 `from_decimal` 로 되들어올려 도로와 점을 정하기 | 짧은 십진이 아닌 좌표는 그 f64 가 찍는 십진으로 돌아온다 — `1/3` 들어 올린 면의 pad 먼 캡이 `43/30` 대신 `28666666666666667/2·10¹⁶` 위에 섰고(6/6), 같은 면의 오프셋도 그랬다. 정규화가 필요한 축은 `0.6000000000000001` 로 돌아와 유리수 3-4-5 면이 프레임 노드 도로로 빠지고, pad 윗면이 같은 평면의 extrude 캡과 다른 핸들이 됐다. 프레임의 세계 기저는 이름에서 묻는다(`exact_frame`) | — |
 | `n·n` 같은 파생값을 저장 | 필요하면 정의에서 다시 실현한다. 캐시가 안 만들어진다고 진실을 거절하던 것이 병이었다 | — |
 | 모션을 정점에 달기 | 면이 든다 — 정점은 세 면의 교점이라 따라온다(정점에 달면 3중 중복) | — |
-| 모션 노드를 합쳐서 사슬을 접기 | 노드 핸들이 `SurfaceKey`·`ThroughKey`·`CylinderKey` 의 interning 열쇠라 합치면 동일성 판정이 사라진다. 접는 것은 아레나가 아니라 «읽기»다 | — |
+| 모션 노드를 합쳐서 사슬을 접기 | 노드 핸들이 `SurfaceKey` 의 세 열쇠 모두에 든 interning 열쇠라 합치면 동일성 판정이 사라진다. 접는 것은 아레나가 아니라 «읽기»다 | — |
 | 코퍼스 최대값을 상한으로 쓰기 | 폭은 타입에서 유도한다(이름 ~2²²⁹¹) — 실측 최대는 표본이다 | — |
 | 정준 원점이 넘치면 `points[0]` 으로 폴백 | 스케치의 (0,0) 이 오버플로 여부에 따라 달라진다 | — |
 | 좁은 이름을 별도 곁표로 | ~99% 가 중복 저장 — `PlaneName = Narrow | Wide` 한 enum + `narrow()` 투영 | — |

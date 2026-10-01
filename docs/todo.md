@@ -46,6 +46,14 @@
 담체로 적히지 않는다. 표기는 자기-인접 `[h_cyl, h_cyl]` 이고 validate 가 «담체 동일 ⇔ 원통» 을 지킨다
 (`Violation::EdgeCarrierMismatch`). 이 표기는 잠정이다 — 매개 표현은 원통의 `ref_dir` 과 함께 정한다.
 
+원통의 **정체**도 같은 자리다. 원통의 interning 열쇠는 진술 그대로다(`SurfaceKey::Cylinder` — `CylinderDef::new`
+는 원점·축 방향·`ref_dir`·r² 를 정준화하지 않는다). 그래서 같은 무한 원통이 원점·축 벡터의 크기와 부호·seam 만
+달라도 두 핸들이고, 두 솔리드가 한 원통면을 공유하는 배치는 «한 곡면 두 핸들»로 거절된다(게이트의 `same_surface` —
+축이 한 직선 위·반지름 같음 → `CylinderPairContact`; census `arcwalls stacked-same` 3 — 「원통–원통」이 든 수). 기하의
+같음을 묻는 술어는 이미 그 `same_surface` 다. 방향: 평면처럼 곡면의 정체는 기하(축 직선 + r²)로, seam(펼치는
+자리)과 향은 면이 든다 — seam 정점의 정의·seam 간선의 표기·옆면 차트가 원통의 `ref_dir` 에 기대므로 위의 seam
+표기와 함께 정한다. 그날 바뀌는 열쇠는 `SurfaceKey::Cylinder` 하나다.
+
 ### 원·원호의 진실: 무리수 중심
 
 **지금 참인 것.** 반지름의 진실은 r² 다: `Edge2d::Arc { center: [Rat; 2], r2: Rat, ccw }` ·
@@ -529,10 +537,6 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 ### tess 증분 갱신
 
 `tessellate` 는 매번 통째로 짓는다(`Tessellation` 에 무효화 집합이 없다). 면 단위 증분 갱신과 연산별 tolerance override 는 GUI 가 요구할 때.
-
-### interning 표 셋을 하나로
-
-`surface_ids`·`surface_through_ids`·`cylinder_ids` → 표 하나, 열쇠는 사설 깔때기에서 진실이 고른다(`Name(PlaneName, motion) | Verbatim(Surface)`). 새 생산자가 표를 잊어 조용히 중복 핸들을 만드는 실수를 구조로 막고, 구·원뿔이 와도 새 팔이 필요 없다. 전제: `Surface`·`PlanePoints` 에 `Eq, Hash`. 잴 것: 열쇠 크기(약 288 B — 문제면 `Box`). 같은 자리: validate 에 중복 곡면 검사가 없다.
 
 ### 판정층의 남은 이름과 타입
 

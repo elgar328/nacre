@@ -45,9 +45,10 @@ fn flip_toward(model: &Model, plane: Handle<Surface>, toward: Orientation) -> Op
 /// against — the one road from the frame value to a node, shared by the extrude and face paths.
 ///
 /// ★★ **`push_motion` interns**, so two sketches in one frame name the *same* node — which is
-/// what makes their surfaces intern too (`SurfaceKey` is `(name, motion)`): two routes to one
-/// height become one `Handle<Surface>` at construction, with no f64 comparison anywhere. With
-/// `Canonical` placement the node is `(plane, Canonical, flip)` — nothing per-sketch in the key.
+/// what makes their surfaces intern too (a plane's `SurfaceKey::Name` is `(name, motion)`): two
+/// routes to one height become one `Handle<Surface>` at construction, with no f64 comparison
+/// anywhere. With `Canonical` placement the node is `(plane, Canonical, flip)` — nothing
+/// per-sketch in the key.
 pub(super) fn push_frame_node(
     model: &mut Model,
     frame: SketchFrame,

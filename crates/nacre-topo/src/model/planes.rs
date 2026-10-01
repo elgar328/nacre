@@ -41,59 +41,142 @@ impl Model {
         // for collinear points (which no production `PlaneDef` can supply); the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. A test build's `WIDE_PLANES` counts the names that took the wide vessel.
-        let name = nacre_exact::plane_name_exact(points[0], points[1], points[2]);
-        self.intern_plane(fallback, name, PlanePoints::Known(points), motion, sense)
+        self.intern(Stated::Plane {
+            points: PlanePoints::Known(points),
+            motion,
+            sense,
+            fallback,
+        })
     }
 
-    /// **Interning, once — the half every plane producer shares.**
+    /// **The key a surface interns under, read off its stated truth** — the one rule the doors
+    /// and `validate` share, so «which surface is this» is answered in one place and never by
+    /// the door a statement came through. `None` only for a `Known` plane whose points are
+    /// collinear (no name, so no interning — no production statement supplies one).
     ///
-    /// A producer differs only in *how it derives the name* and *which `PlanePoints` it stores*.
-    /// Everything after that — the key, the already-issued reply and its `flipped`, the arena
-    /// push, the two side tables, the two counters — is the same, and was duplicated once, which
-    /// promptly cost both counters on the new road (`WIDE_PLANES` and `SEEDED_HITS` were
-    /// simply absent from it). Sharing the tail makes losing them structurally impossible rather
-    /// than a thing to remember.
-    fn intern_plane(
-        &mut self,
-        fallback: nacre_geom::Plane,
-        name: Option<nacre_exact::PlaneName>,
-        points: PlanePoints,
-        motion: Option<Handle<MotionNode>>,
-        sense: Orientation,
-    ) -> (Handle<Surface>, bool) {
-        debug_assert!(
-            self.cache_agrees_with_sense(&fallback, &points, motion, sense) != Some(false),
-            "the stated sense {sense:?} disagrees with the figure the producer built"
-        );
-        #[cfg(any(test, feature = "test-util"))]
-        if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
-            WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        let key = name.clone().map(|n| (n, motion));
-        if let Some(k) = &key {
-            if let Some(&h) = self.surface_ids.get(k) {
-                #[cfg(any(test, feature = "test-util"))]
-                if (h.index() as usize) < 3 {
-                    SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                // ★ The incoming statement is **dropped here** — the survivor's cache stands, and
-                // its anchor is the first pusher's: that statement's first point where the truth
-                // places one, else the figure that pusher brought. Which statement came first is
-                // therefore a choice; what it reaches is measured by `nacre-ops`'
-                // `tests/instruments/plane_anchor.rs` — not the judge, and not the model.
-                // Same plane, already issued. The canonical form says nothing about direction, so
-                // report whether the survivor points the other way and let the caller spell its
-                // outward the other way round.
-                let flipped = self
-                    .flipped_by_truth(h, &points, sense)
-                    .expect("a named plane's points span a direction");
-                return (h, flipped);
+    /// ★ **The answer does not change after the push.** What it reads — the plane's points, a
+    /// `Through` statement's vertex definitions and their carriers' names, the motion chain's
+    /// folds — is written once and exists before the key is asked, so a later recomputation
+    /// (`validate`) answers what the door answered.
+    pub fn surface_key(&self, truth: &Surface) -> Option<SurfaceKey> {
+        match truth {
+            Surface::Plane { points, motion, .. } => {
+                self.plane_key(points, *motion).map(|(k, _)| k)
+            }
+            Surface::Cylinder { def, motion } => {
+                Some(SurfaceKey::Cylinder(Box::new(def.clone()), *motion))
             }
         }
-        // One clone per push — the name is derived once here, never on a judging loop.
-        let h = self.push_plane_raw(points, motion, sense, name, fallback);
+    }
+
+    /// [`Model::surface_key`] for a plane statement, with — for a `Through` statement a frame
+    /// names — that frame beside it, which the push asserts its motion carries. A `Through`
+    /// statement no frame names (no shared frame, or meets that are collinear) keys by the
+    /// statement itself, never by `None`.
+    fn plane_key(
+        &self,
+        points: &PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+    ) -> Option<(SurfaceKey, Option<Option<Handle<MotionNode>>>)> {
+        match points {
+            PlanePoints::Known(p) => nacre_exact::plane_name_exact(p[0], p[1], p[2])
+                .map(|n| (SurfaceKey::Name(n, motion), None)),
+            PlanePoints::Through(vs) => {
+                let named = self.through_meets(*vs).and_then(|(meets, frame)| {
+                    nacre_exact::plane_name_from_meets([&meets[0], &meets[1], &meets[2]])
+                        .map(|n| (SurfaceKey::Name(n, motion), Some(frame)))
+                });
+                Some(named.unwrap_or((SurfaceKey::Through(*vs, motion), None)))
+            }
+        }
+    }
+
+    /// **Interning, once — the funnel every surface door calls.**
+    ///
+    /// A door differs only in *what it states*. Everything after that — the key, the
+    /// already-issued reply and its `flipped`, the arena push, the side tables, the two counters
+    /// — is here, so a door cannot reach the arena without the table, and the counters cannot be
+    /// lost on a new road (they once were, when this tail was duplicated: `WIDE_PLANES` and
+    /// `SEEDED_HITS` were simply absent from the copy). The counters live here and not in
+    /// [`Model::surface_key`], which `validate` also calls.
+    fn intern(&mut self, stated: Stated) -> (Handle<Surface>, bool) {
+        let key = match &stated {
+            Stated::Plane {
+                points,
+                motion,
+                sense,
+                fallback,
+            } => {
+                debug_assert!(
+                    self.cache_agrees_with_sense(fallback, points, *motion, *sense) != Some(false),
+                    "the stated sense {sense:?} disagrees with the figure the producer built"
+                );
+                let keyed = self.plane_key(points, *motion);
+                if let Some((_, Some(frame))) = &keyed {
+                    assert!(
+                        self.chain_continues(*motion, *frame),
+                        "a Through statement's name speaks the frame its vertices meet in \
+                         ({frame:?}), and its motion ({motion:?}) does not carry that frame"
+                    );
+                }
+                keyed.map(|(k, _)| k)
+            }
+            Stated::Cylinder { def, motion, .. } => {
+                Some(SurfaceKey::Cylinder(Box::new(def.clone()), *motion))
+            }
+        };
+        #[cfg(any(test, feature = "test-util"))]
+        if let Some(SurfaceKey::Name(n, _)) = &key
+            && n.narrow().is_none()
+        {
+            WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if let Some(k) = &key
+            && let Some(&h) = self.interned.get(k)
+        {
+            #[cfg(any(test, feature = "test-util"))]
+            if (h.index() as usize) < 3 {
+                SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            // ★ The incoming statement is **dropped here** — the survivor's cache stands, and
+            // its anchor is the first pusher's: that statement's first point where the truth
+            // places one, else the figure that pusher brought. Which statement came first is
+            // therefore a choice; what it reaches is measured by `nacre-ops`'
+            // `tests/instruments/plane_anchor.rs` — not the judge, and not the model.
+            // Same surface, already issued. A plane's key says nothing about direction, so report
+            // whether the survivor points the other way and let the caller spell its outward the
+            // other way round: a named plane by its two truths, one statement by its two senses
+            // (the same sorted vertices span one direction), a cylinder never (a literal-identical
+            // statement realizes to a literal-identical cache).
+            let flipped = match (&stated, k) {
+                (Stated::Plane { points, sense, .. }, SurfaceKey::Name(..)) => self
+                    .flipped_by_truth(h, points, *sense)
+                    .expect("a named plane's points span a direction"),
+                (Stated::Plane { sense, .. }, SurfaceKey::Through(..)) => {
+                    matches!(self.surface(h), Surface::Plane { sense: theirs, .. } if theirs != sense)
+                }
+                _ => false,
+            };
+            return (h, flipped);
+        }
+        let h = match stated {
+            Stated::Plane {
+                points,
+                motion,
+                sense,
+                fallback,
+            } => {
+                // One clone per push — the name is derived once here, never on a judging loop.
+                let name = match &key {
+                    Some(SurfaceKey::Name(n, _)) => Some(n.clone()),
+                    _ => None,
+                };
+                self.push_plane_raw(points, motion, sense, name, fallback)
+            }
+            Stated::Cylinder { def, motion, cache } => self.push_cylinder_raw(def, motion, cache),
+        };
         if let Some(k) = key {
-            self.surface_ids.insert(k, h);
+            self.interned.insert(k, h);
         }
         (h, false)
     }
@@ -225,8 +308,8 @@ impl Model {
     ///
     /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
     /// A mixed-frame datum has no frame that solves its three vertices rationally, so
-    /// [`Model::through_meets`] finds no shared frame; such a plane takes the second key
-    /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
+    /// [`Model::through_meets`] finds no shared frame; such a plane takes the statement key
+    /// ([`SurfaceKey::Through`]) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric
     /// identity across different statements is the predicates' to answer per question. This is
     /// **not** the record-less population: the truth (handles + motion) is complete; what does
@@ -247,40 +330,12 @@ impl Model {
             vertices[0].index() < vertices[1].index() && vertices[1].index() < vertices[2].index(),
             "a Through statement must arrive sorted and duplicate-free"
         );
-        let name = self.through_meets(vertices).and_then(|(meets, frame)| {
-            let name = nacre_exact::plane_name_from_meets([&meets[0], &meets[1], &meets[2]])?;
-            assert!(
-                self.chain_continues(motion, frame),
-                "a Through statement's name speaks the frame its vertices meet in ({frame:?}), \
-                 and its motion ({motion:?}) does not carry that frame"
-            );
-            Some(name)
-        });
-        if name.is_some() {
-            return self.intern_plane(
-                fallback,
-                name,
-                PlanePoints::Through(vertices),
-                motion,
-                sense,
-            );
-        }
-        if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
-            // One statement, one handle: the same sorted vertices span one direction, so the
-            // senses alone say whether the survivor faces the other way.
-            let flipped =
-                matches!(self.surface(h), Surface::Plane { sense: theirs, .. } if *theirs != sense);
-            return (h, flipped);
-        }
-        let h = self.push_plane_raw(
-            PlanePoints::Through(vertices),
+        self.intern(Stated::Plane {
+            points: PlanePoints::Through(vertices),
             motion,
             sense,
-            None,
             fallback,
-        );
-        self.surface_through_ids.insert((vertices, motion), h);
-        (h, false)
+        })
     }
 
     /// **The name three vertices derive in the frame they meet in** — the question a test asks of a
@@ -460,8 +515,8 @@ impl Model {
     }
 
     /// Push a **cylinder** — the lateral surface, stating its exact truth, with
-    /// interning by the whole statement (see [`CylinderKey`] for why the key is deliberately
-    /// that literal: merging two `ref_dir`s would split the seam). No `flipped` report — a
+    /// interning by the whole statement (see [`SurfaceKey::Cylinder`] for why the key is
+    /// deliberately that literal: merging two `ref_dir`s would split the seam). No `flipped` report — a
     /// literal-identical statement realizes to a literal-identical cache, so there is no other
     /// way round to report.
     pub fn push_cylinder(
@@ -470,12 +525,23 @@ impl Model {
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
     ) -> Handle<Surface> {
-        let key = (def.clone(), motion);
-        if let Some(&h) = self.cylinder_ids.get(&key) {
-            return h;
-        }
-        let h = self.push_cylinder_raw(def, motion, cache);
-        self.cylinder_ids.insert(key, h);
-        h
+        self.intern(Stated::Cylinder { def, motion, cache }).0
     }
+}
+
+/// **What a door states** — the truth and the producer's figure for its cache, kept together by
+/// kind, so a plane truth cannot travel beside a cylinder cache: the same reason the raw pushes
+/// are two typed doors rather than one taking both enums.
+enum Stated {
+    Plane {
+        points: PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+        sense: Orientation,
+        fallback: nacre_geom::Plane,
+    },
+    Cylinder {
+        def: CylinderDef,
+        motion: Option<Handle<MotionNode>>,
+        cache: nacre_geom::Cylinder,
+    },
 }

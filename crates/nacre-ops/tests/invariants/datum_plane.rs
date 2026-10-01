@@ -164,7 +164,7 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// it.
 ///
 /// ★ **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
-/// plane behind for a collinear triple (`intern_plane` builds no key), and `SketchFrame::canonical`
+/// plane behind for a collinear triple (`Model::surface_key` gives it no key), and `SketchFrame::canonical`
 /// is `pub` and checks nothing — so the pair is reachable from outside this crate today and had no
 /// test. Production is safe because every push passes a non-collinearity gate first (`PlaneDef`'s
 /// constructors call `plane_name_exact`; the prism's caps and walls gate on
@@ -1916,7 +1916,8 @@ fn every_plane_still_has_a_name() {
 /// A prism raised on a tilted frame states its far cap **inside that frame**, where it is
 /// `w = dist` — canonical name `[0,0,1,−dist]`, which is *letter for letter* the name of the world
 /// plane `z = dist`. What keeps those apart is the motion in the interning key
-/// (`SurfaceKey = (name, motion)`): the far cap is filed under `(that name, Some(node))`.
+/// (a plane's `SurfaceKey::Name` is `(name, motion)`): the far cap is filed under
+/// `(that name, Some(node))`.
 ///
 /// A datum through the far cap's corners solves them **in the same frame**, so it derives the same
 /// name — and if it files that under `None`, it is claiming to be a world plane. The model here

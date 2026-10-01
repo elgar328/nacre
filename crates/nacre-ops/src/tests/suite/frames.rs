@@ -650,7 +650,7 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
 ///
 /// Two bosses of the same height on one tilted face are one plane, not two records that agree
 /// only if their f64 coefficients happen to. Written in the plane's own frame they are both
-/// `w = 7.7`, and `SurfaceKey` is `(coefficients, motion)` — so they are **one
+/// `w = 7.7`, and a plane's `SurfaceKey::Name` is `(name, motion)` — so they are **one
 /// `Handle<Surface>` at construction**, before anything is compared. And every face of the
 /// result states itself exactly.
 ///
