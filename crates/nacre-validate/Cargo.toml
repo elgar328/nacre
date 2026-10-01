@@ -1,6 +1,6 @@
 [package]
 name = "nacre-validate"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -8,26 +8,26 @@ rust-version.workspace = true
 description = "b-rep invariant checker for the nacre CAD kernel — reference integrity, loop closure, half-edge manifold pairing, geometric incidence, Euler-Poincaré (M1; tessellation checks land in M3)"
 
 [dependencies]
-nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
-nacre-store = { path = "../nacre-store", version = "0.0.0" }
-nacre-math = { path = "../nacre-math", version = "0.0.0" }
+nacre-topo = { workspace = true }
+nacre-store = { workspace = true }
+nacre-math = { workspace = true }
 # Geometry is below topo (no cycle). The cavity-orientation check reads a planar
 # face's normal to sign its signed volume; the M1 checks reach geom's
 # distance/normal transitively, this makes that dependency explicit.
-nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
+nacre-geom = { workspace = true }
 
 [dev-dependencies]
 # Test cylinders are built the way an application builds one — a datum, a circle, an extrude
 # (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
 # too, so the library graph stays acyclic (the nacre-props shape).
-nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
-nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
+nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
+nacre-exact = { path = "../nacre-exact" }
 # Enables topo's planting doors — the self-tests plant the defective models validate must catch.
-nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 proptest.workspace = true
 # Tests hand-build tetrahedra, so they NAME geom's Curve/Line/Plane/Surface.
 # The library itself never names them (method calls only), so geom stays a
 # dev-only dependency.
-nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
+nacre-geom = { path = "../nacre-geom" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

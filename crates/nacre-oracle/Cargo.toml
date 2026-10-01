@@ -1,6 +1,6 @@
 [package]
 name = "nacre-oracle"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -10,20 +10,20 @@ publish = false
 description = "Dev-only OCCT oracle harness for the nacre CAD kernel — exports a Model to STEP and scores its mass properties against OpenCASCADE out-of-process via tools/occt-helper. Never published; OCCT is never linked into the kernel"
 
 [dependencies]
-nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
-nacre-step = { path = "../nacre-step", version = "0.0.0" }
-nacre-math = { path = "../nacre-math", version = "0.0.0" }
+nacre-topo = { path = "../nacre-topo" }
+nacre-step = { path = "../nacre-step" }
+nacre-math = { path = "../nacre-math" }
 # For naming Handle<Solid> in occt_boolean_of (the boolean-oracle convenience).
-nacre-store = { path = "../nacre-store", version = "0.0.0" }
+nacre-store = { path = "../nacre-store" }
 
 [dev-dependencies]
 # Enables topo's test-only `reversed_shell` (a cavity's shell, for the void tests).
-nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 # The nacre-side mass properties, diffed against OCCT in the end-to-end tests.
-nacre-props = { path = "../nacre-props", version = "0.0.0" }
+nacre-props = { path = "../nacre-props" }
 # Builds a padded boss to diff against OCCT.
-nacre-ops = { path = "../nacre-ops", version = "0.0.0", features = ["test-util"] }
+nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
 # The Isometry carried by the Transform op (stage-1a translated-solid diff).
-nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

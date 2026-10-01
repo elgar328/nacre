@@ -1,6 +1,6 @@
 [package]
 name = "nacre-geom"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -8,15 +8,15 @@ rust-version.workspace = true
 description = "analytic geometry (Plane, Cylinder, Line, Circle) for the nacre CAD kernel — the realization layer: closed-form in shape, f64 in its coefficients; the exact truth lives in nacre-topo"
 
 [dependencies]
-nacre-math = { path = "../nacre-math", version = "0.0.0" }
+nacre-math = { workspace = true }
 # Exact indirect predicates for three-plane vertex sign decisions.
 # A pure numeric layer with no kernel-crate deps, so this edge is acyclic.
-nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
+nacre-predicates = { workspace = true }
 # Exact rational scalars, for the Rat twins of the 2-D ring predicates: the design isolates
 # robustness-sharp classification in geom::intersect, and the profile's truth is rational,
 # so the predicates over that truth live here too. nacre-exact sits at the
 # bottom of the dependency graph (no nacre-* deps), so this edge is acyclic.
-nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
+nacre-exact = { workspace = true }
 
 [dev-dependencies]
 proptest.workspace = true

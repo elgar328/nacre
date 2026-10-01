@@ -1,6 +1,6 @@
 [package]
 name = "nacre"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -26,20 +26,19 @@ test-util = ["nacre-topo/test-util"]
 
 [dependencies]
 # Every re-exported layer must be a real dependency — `pub use nacre_x as x` does not
-# compile otherwise. `version` is carried alongside `path` because a published crate
-# cannot depend on a path alone.
-nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
-nacre-math = { path = "../nacre-math", version = "0.0.0" }
+# compile otherwise. Path and version come from the root `[workspace.dependencies]`.
+nacre-geom = { workspace = true }
+nacre-math = { workspace = true }
 # Taken without defaults so this crate's own `parallel` feature is what turns rayon
 # on. Wiring it with defaults would leave a consumer no way to turn it off.
-nacre-ops = { path = "../nacre-ops", version = "0.0.0", default-features = false }
-nacre-props = { path = "../nacre-props", version = "0.0.0" }
-nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
-nacre-step = { path = "../nacre-step", version = "0.0.0" }
-nacre-store = { path = "../nacre-store", version = "0.0.0" }
-nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
-nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
-nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
+nacre-ops = { workspace = true, default-features = false }
+nacre-props = { workspace = true }
+nacre-exact = { workspace = true }
+nacre-step = { workspace = true }
+nacre-store = { workspace = true }
+nacre-tess = { workspace = true }
+nacre-topo = { workspace = true }
+nacre-validate = { workspace = true }
 
 [dev-dependencies]
 # The integration tests build fixture solids the way an application does
@@ -47,7 +46,7 @@ nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
 # own `test-util` — keeps those tests in the default `cargo test` run; a
 # `#[cfg(feature = "...")]` test would never run. Without defaults, for the reason the
 # `[dependencies]` entry gives: `--no-default-features` must stay serial.
-nacre-ops = { path = "../nacre-ops", version = "0.0.0", default-features = false, features = ["test-util"] }
-nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+nacre-ops = { path = "../nacre-ops", default-features = false, features = ["test-util"] }
+nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

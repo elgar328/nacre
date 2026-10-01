@@ -5,6 +5,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
+version = "0.0.1-dev"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/elgar328/nacre"
@@ -13,6 +14,29 @@ rust-version = "1.85"
 [workspace.dependencies]
 proptest = "1"
 rayon = "1"
+
+# The dependencies between the layers. A published crate cannot depend on a path alone, and
+# a version requirement cannot refer to the workspace version, so the version string is
+# written here once per layer. This file is the only one a version bump touches
+# (`docs/RELEASING.md`).
+#
+# ★ Normal dependencies only. Dev-dependencies between siblings stay `{ path = "..." }` and
+# must not inherit from here: a dev-dependency with a version is kept in the published
+# manifest, and the layers' tests depend on each other in a cycle (`nacre-ops`'s tests use
+# the layers above it, and theirs use `nacre-ops`), which would leave no valid publish order.
+nacre-store = { path = "crates/nacre-store", version = "0.0.1-dev" }
+nacre-math = { path = "crates/nacre-math", version = "0.0.1-dev" }
+nacre-exact = { path = "crates/nacre-exact", version = "0.0.1-dev" }
+nacre-predicates = { path = "crates/nacre-predicates", version = "0.0.1-dev" }
+nacre-geom = { path = "crates/nacre-geom", version = "0.0.1-dev" }
+nacre-judge = { path = "crates/nacre-judge", version = "0.0.1-dev" }
+nacre-topo = { path = "crates/nacre-topo", version = "0.0.1-dev" }
+# Without defaults, so the facade's own `parallel` feature is what turns rayon on.
+nacre-ops = { path = "crates/nacre-ops", version = "0.0.1-dev", default-features = false }
+nacre-props = { path = "crates/nacre-props", version = "0.0.1-dev" }
+nacre-step = { path = "crates/nacre-step", version = "0.0.1-dev" }
+nacre-tess = { path = "crates/nacre-tess", version = "0.0.1-dev" }
+nacre-validate = { path = "crates/nacre-validate", version = "0.0.1-dev" }
 
 # ★★★★★ **The tests are the slow thing, and they are slow for one reason: the optimizer level.**
 #

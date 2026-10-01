@@ -1,6 +1,6 @@
 [package]
 name = "nacre-ops"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -8,16 +8,16 @@ rust-version.workspace = true
 description = "operations for the nacre CAD kernel — sketch profiles, extrude, and a replayable operation log (M2: planar-profile prism extrude)"
 
 [dependencies]
-nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
-nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
-nacre-math = { path = "../nacre-math", version = "0.0.0" }
-nacre-store = { path = "../nacre-store", version = "0.0.0" }
+nacre-topo = { workspace = true }
+nacre-geom = { workspace = true }
+nacre-math = { workspace = true }
+nacre-store = { workspace = true }
 # Rational scalars + the Isometry carried by the Transform op (overhaul stage 1).
-nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
+nacre-exact = { workspace = true }
 # Read-only CIP analysis (rotated-vertex WitnessPoint + indirect judges) for the toleranced
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
-nacre-judge = { path = "../nacre-judge", version = "0.0.0" }
+nacre-judge = { workspace = true }
 # Data-parallel evaluation of the boolean's three independent phases: the arrangement's
 # per-plane-class trace/split and cell build (`arrangement::trace_result_faces`), and the
 # per-point precision reading (`planes::standard_for_points`). Optional + behind the
@@ -67,19 +67,19 @@ test-util = []
 nacre-ops = { path = ".", default-features = false, features = ["test-util"] }
 # Enables topo's test-only doors: the planting pushes (models the operations cannot build),
 # `reversed_shell`, `plane_name_through`, and the push counters the census reads.
-nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 # Opens the judge's climb census for the measurements that read it (`tests/wide_datum_cost.rs`).
-nacre-judge = { path = "../nacre-judge", version = "0.0.0", features = ["test-util"] }
+nacre-judge = { path = "../nacre-judge", features = ["test-util"] }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.
-nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
+nacre-validate = { path = "../nacre-validate" }
 # The end-to-end example/integration test exports models through these; they are
 # dev-only so the published lib's dependency surface stays clean (no cycle: neither
 # depends on nacre-ops).
-nacre-step = { path = "../nacre-step", version = "0.0.0" }
-nacre-tess = { path = "../nacre-tess", version = "0.0.0", features = ["test-util"] }
+nacre-step = { path = "../nacre-step" }
+nacre-tess = { path = "../nacre-tess", features = ["test-util"] }
 # Boolean tests diff result volumes against the analytic mass properties.
-nacre-props = { path = "../nacre-props", version = "0.0.0" }
+nacre-props = { path = "../nacre-props" }
 # The wide-name rescue tests hand-build synthetic `PlaneName::Wide` fixtures (production code
 # reaches BigInt only through nacre-judge's types).
 num-bigint = "0.4"
