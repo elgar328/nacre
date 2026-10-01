@@ -179,15 +179,18 @@ fn ruling_side_of(
     def: &nacre_topo::CylinderDef,
     wall: usize,
     n: combinatorics::NodeId,
-) -> Option<i8> {
-    // A ruling piece's node names this chart's own cylinder; a name of another cylinder has no
-    // side here (M6b's pair, which no piece carries today).
-    let (_, cyl, _) = combinatorics::pierce_name(n)?;
+) -> Result<i8, RejectReason> {
+    // A ruling piece's node is a pierce name of this chart's own cylinder, and every class has a
+    // narrow world statement past the cylinder gate — so a node of another kind or another
+    // cylinder (M6b's pair, which no piece carries), or a class with none, is the split and the
+    // chart disagreeing. What is left is `pierce_meet`'s and the side's `None`: an overflow.
+    let stages = RejectReason::CylinderStagesDisagree;
+    let (_, cyl, _) = combinatorics::pierce_name(n).ok_or(stages)?;
     if cyl != k {
-        return None;
+        return Err(stages);
     }
-    let w = combinatorics::class_coeffs_rat(jd, wall)?;
-    crate::arrangement::node_ruling_side(jd, def, &w, n)
+    let w = combinatorics::class_coeffs_rat(jd, wall).ok_or(stages)?;
+    crate::arrangement::node_ruling_side(jd, def, &w, n).ok_or(RejectReason::WitnessNotRational)
 }
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.
@@ -216,7 +219,7 @@ pub(crate) struct Cell {
 }
 
 impl Chart {
-    /// **The cells the two axes cut** — `None` if any θ order could not be formed.
+    /// **The cells the two axes cut** — `Err` names why a θ order could not be formed.
     ///
     /// ★★★★★ **Every ruling's axis endpoints are themselves z-lines** — measured across the suite
     /// (263 charts, 0 exceptions) and structural besides: a ruling's node is named
@@ -234,7 +237,7 @@ impl Chart {
         jd: &Judge<'_, WorkingPlane>,
         k: usize,
         def: &nacre_topo::CylinderDef,
-    ) -> Option<Vec<Cell>> {
+    ) -> Result<Vec<Cell>, RejectReason> {
         let mut out = Vec::new();
         for i in 0..self.z_lines.len().saturating_sub(1) {
             let (lo, hi) = (self.z_lines[i].t, self.z_lines[i + 1].t);
@@ -257,7 +260,8 @@ impl Chart {
             // of the *segment*, and one endpoint states it.
             let nodes: Vec<combinatorics::NodeId> =
                 alive.iter().map(|&j| self.theta[j].end[0]).collect();
-            let (order, _) = crate::arrangement::circular_order(jd, k, def, &nodes).ok()?;
+            let (order, _) = crate::arrangement::circular_order(jd, k, def, &nodes)
+                .map_err(crate::arrangement::CircleOrderFail::reason)?;
             let n = order.len();
             for s in 0..n {
                 // `k` cuts make `k` sectors, and one cut makes one: the circle opens at that point
@@ -269,7 +273,7 @@ impl Chart {
                 });
             }
         }
-        Some(out)
+        Ok(out)
     }
 
     /// A ruling's **name** — `(wall class, side)`, the key the panel join on the other side of
@@ -281,9 +285,9 @@ impl Chart {
         k: usize,
         def: &nacre_topo::CylinderDef,
         i: usize,
-    ) -> Option<RulingName> {
-        let t = self.theta.get(i)?;
-        Some((t.wall, ruling_side_of(jd, k, def, t.wall, t.end[0])?))
+    ) -> Result<RulingName, RejectReason> {
+        let t = &self.theta[i];
+        Ok((t.wall, ruling_side_of(jd, k, def, t.wall, t.end[0])?))
     }
 
     /// **A station's canonical name on a z-line** — `crossing_on_ruling(c, wall, k, side)`: the
@@ -305,12 +309,14 @@ impl Chart {
         c: usize,
         i: usize,
         aliases: &crate::arrangement::Aliases,
-    ) -> Option<combinatorics::NodeId> {
+    ) -> Result<combinatorics::NodeId, RejectReason> {
         let (wall, side) = self.ruling_name(jd, k, def, i)?;
-        // As the table knows it: a station on a corner is the corner.
+        // As the table knows it: a station on a corner is the corner. The wall's ruling reaches
+        // this line (the cell's wall spans the interval), so no crossing is the stages
+        // disagreeing ([`crate::arrangement::RulingNameFail::reason`]).
         crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, side)
-            .ok()
             .map(|n| aliases.canon_point(n))
+            .map_err(crate::arrangement::RulingNameFail::reason)
     }
 }
 

@@ -95,7 +95,7 @@ pub(crate) fn census(
         }
 
         let def = &cyls[k].def;
-        let Some(cells) = chart.cells(jd, k, def) else {
+        let Ok(cells) = chart.cells(jd, k, def) else {
             probe::push(probe::Row {
                 z_lines: chart.z_lines.len(),
                 theta: chart.theta.len(),
@@ -141,7 +141,7 @@ pub(crate) fn census(
         {
             let mut names: Vec<(usize, i8)> = Vec::new();
             for j in 0..chart.theta.len() {
-                if let Some(n) = chart.ruling_name(jd, k, def, j) {
+                if let Ok(n) = chart.ruling_name(jd, k, def, j) {
                     if !names.contains(&n) {
                         names.push(n);
                     }
@@ -213,7 +213,7 @@ pub(crate) fn census(
                         ends.end_exact += 1;
                         ends.exact_run_arcs += a.len() - 1;
                     }
-                    End::Other => {
+                    End::Other(_) => {
                         ends.end_other += 1;
                         // With stations placed by name the only `Other` left should be
                         // the single-cut sector (both walls one ruling — `arc_around`'s first
@@ -235,7 +235,7 @@ pub(crate) fn census(
             if sources == 0 && r.present {
                 ends.src0_present += 1;
             }
-            if r.present && r.ends.iter().any(|e| matches!(e, End::Other)) {
+            if r.present && r.ends.iter().any(|e| matches!(e, End::Other(_))) {
                 ends.other_present += 1;
             }
             // A present cell with a line that carries no circle of this cylinder: the

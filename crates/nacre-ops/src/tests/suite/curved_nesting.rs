@@ -735,8 +735,8 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // line transversally in one sector while ending on it in another, which the region emitter
     // walks.
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 0);
-    // `CylinderGateUndecided`, the chart's own refusal: a sector it cannot name as one arc is
-    // read as the run of arcs it spans.
+    // `CylinderGateUndecided` is the gate's; the chart names a sector it cannot read by cause
+    // (`read_cell::silence`), and a sector spanning several arcs is read as their run.
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
         0
@@ -1171,8 +1171,8 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
 /// ★★★★ **The lock is the outcome, not a counter.** A process-global counter snapshotted around
 /// this body would not measure it: every other test's booleans write to the same counter in
 /// parallel, so the delta is not this population's. The behaviour is the honest lock, and it is a real one:
-/// reverting `arc_extremum_winding`'s early return puts all three kinds back to
-/// `CylinderGateUndecided` here and in three censuses.
+/// reverting `arc_extremum_winding`'s early return turns this test red — in a test build the plane
+/// emitter's disk-side check (`disk_side_agrees`) stops it before any refusal is named.
 #[test]
 fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
     for (kind, want) in [

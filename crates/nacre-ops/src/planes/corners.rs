@@ -187,10 +187,11 @@ impl Corner {
 /// `combinatorics::pierce_name_from_def` carries is the price of crossing from handle space into a
 /// class table's order; this side has no class table for the operand at all.)
 ///
-/// ★★ **A failure is only ever a missing *description***, never a shape this road cannot spell —
-/// the caller has already established that the vertex is a `Pierce`, and a seam vertex never
-/// reaches here at all. A meet that does not offer the name's root is a naming defect (the name
-/// was minted from this same meet); it has no name of its own and leaves as `Unstated`.
+/// ★★ **A failure is never a shape this road cannot spell** — the caller has already established
+/// that the vertex is a `Pierce`, and a seam vertex never reaches here at all. It is a missing
+/// description, or a meet that does not offer the name's root — the name was minted from this
+/// same meet, so the stored definition and the re-solved meet disagreeing is a naming defect
+/// ([`CornerFail::Inconsistent`]).
 fn pierce_corner(
     model: &Model,
     planes: [Handle<Surface>; 2],
@@ -210,12 +211,12 @@ fn pierce_corner(
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
         (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => (line, s[1]),
         (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
-        _ => return Err(CornerFail::Unstated),
+        _ => return Err(CornerFail::Inconsistent),
     };
     Ok(Corner::Pierce(line, s))
 }
 
-/// Why a boundary piece could not be read — three causes, three names.
+/// Why a boundary piece could not be read — four causes, four names.
 pub(super) enum CornerFail {
     /// A shape this road cannot spell at all — a seam vertex, a circle on a face it is not a disk
     /// of, an arc end at an irrational root (its radial vector is no rational vector). The name
@@ -227,6 +228,9 @@ pub(super) enum CornerFail {
     /// A statement the world holds and `Rat` does not — a `Wide` name or meet, an overflow
     /// carrying or combining. Width: [`RejectReason::WitnessNotRational`].
     Width,
+    /// A stored pierce definition its own re-solved meet does not offer as a point — the name was
+    /// minted from that meet. A defect: [`RejectReason::CylinderStagesDisagree`].
+    Inconsistent,
 }
 
 impl CornerFail {
@@ -248,6 +252,7 @@ impl CornerFail {
             Self::Shape => None,
             Self::Unstated => Some(RejectReason::CylinderGateUndecided),
             Self::Width => Some(RejectReason::WitnessNotRational),
+            Self::Inconsistent => Some(RejectReason::CylinderStagesDisagree),
         }
     }
 }

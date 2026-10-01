@@ -20,8 +20,9 @@ pub(crate) enum End<'a> {
     /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
     /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. ☑ Counted
     /// (`end_other`); a sector that merely spans several arcs is not here — it is an
-    /// [`End::Exact`] run.
-    Other,
+    /// [`End::Exact`] run. Carries the refusal its cause is, written where the cause is known
+    /// ([`Chart::arc_around`]) and read only if the cell turns out present and unread.
+    Other(RejectReason),
     /// The circle is cut, the cell's sector runs between two **adjacent** rim nodes, and no arc
     /// covers it: the piece of the circle no face of this class has as a rim (the three
     /// quarters a fillet's quarter leaves, the half a slot's end leaves; the split drops such a
@@ -78,9 +79,37 @@ impl End<'_> {
                 Agreement::One(b) => Some(b),
                 Agreement::Silent | Agreement::Split => None,
             },
-            End::Other | End::Uncovered | End::NoCircle => None,
+            End::Other(_) | End::Uncovered | End::NoCircle => None,
         }
     }
+}
+
+/// **Why no side of a cell spoke** — read off its ends, the only sides silent for a reason (a wall
+/// that cannot be read checks a chamber, it does not decide one). The one reader for both refusals
+/// that need it: the emitter's present cell with no chamber and the cell reader's two silent ends.
+/// An end of a cut circle is silent because its arcs disagree (a θ the chart has no line for — the
+/// rulings ladder's), or with the cause [`End::Other`] carries; a present cell with no circle at
+/// an end is the stages disagreeing («a face that is here has a circle at both its ends»).
+///
+/// ★ Where the two ends are silent for different reasons, **a defect wins**: one end's stages
+/// disagreeing makes the cell's other reads untrustworthy too, and naming the cell «not yet» would
+/// hide it. Otherwise the lower end's.
+fn silence(ends: &[End<'_>], side: SolidSide, above: [bool; 2]) -> RejectReason {
+    let why = |e: usize| match &ends[e] {
+        End::Other(r) => Some(*r),
+        End::NoCircle => Some(RejectReason::CylinderStagesDisagree),
+        End::Exact(_) if ends[e].chamber(side, above[e]).is_none() => {
+            Some(RejectReason::RulingBoundNotYet)
+        }
+        End::Exact(_) | End::Disk(_) | End::Uncovered => None,
+    };
+    let reasons: Vec<RejectReason> = (0..ends.len()).filter_map(why).collect();
+    reasons
+        .iter()
+        .copied()
+        .find(|r| r.class() == crate::RejectClass::SuspectedDefect)
+        .or_else(|| reasons.first().copied())
+        .unwrap_or(RejectReason::CylinderStagesDisagree)
 }
 
 /// Why [`Chart::arc_around`] could not hand back a run.
@@ -88,13 +117,13 @@ enum RunFail {
     /// Every piece of the run is one no contribution covers: the face is not over this sector
     /// — [`End::Uncovered`].
     AllMissing,
-    /// The run cannot be named — [`End::Other`].
-    Other,
+    /// The run cannot be named — [`End::Other`], carrying the refusal its cause is.
+    Other(RejectReason),
 }
 
 /// One cell, read.
-/// `ends` and `exist_disagree` are the census's readers; production reads `chamber`, `present`,
-/// `emit` and `disagree` (the emitter) and pays for the rest only as a copy.
+/// `ends`, `disagree` and `exist_disagree` are the census's readers; production reads `chamber`,
+/// `present`, `emit` and `unread` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
@@ -103,9 +132,12 @@ pub(crate) struct CellRead<'a> {
     /// disagreed (`disagree`).
     pub(crate) chamber: Option<(bool, bool)>,
     /// Two speaking sides contradicted each other — the one cause of an empty `chamber` besides
-    /// silence. The emitter names the two apart: a contradiction is labels the arrangement wrote
-    /// disagreeing (`LabelConflict`), silence is a cell no side reads.
+    /// silence.
     pub(crate) disagree: bool,
+    /// Why `chamber` is empty, as the refusal a present cell gets: two sides contradicting each
+    /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking is
+    /// named by why the ends are silent ([`silence`]). `None` when there is a chamber.
+    pub(crate) unread: Option<RejectReason>,
     /// Is this lateral face here at all — the existence question, answered by the trace
     /// where an end is cut ([`face_spans`]) and by the row's span where none is.
     pub(crate) present: bool,
@@ -123,8 +155,10 @@ impl Chart {
     /// is the far side of the wall that bounds the `+θ` sector ([`StationTwin::bounds_plus`]),
     /// read off that wall's label; `keep` says whether it is in the result. Kept, the material
     /// runs across the line and so does the lateral; not kept, what lies on the two sides meets on
-    /// the line alone. `false` for every station one wall states; `None` when the label or the
-    /// side could not be read.
+    /// the line alone. `false` for every station one wall states. `Err` when the label or the side
+    /// could not be read: a label or a facing needs the wall's world statement, which the cylinder
+    /// gate demands of every class, so their absence is the stages disagreeing; the side carries
+    /// its own cause ([`ruling_side_of`]).
     pub(crate) fn slit_at(
         &self,
         jd: &Judge<'_, WorkingPlane>,
@@ -133,20 +167,22 @@ impl Chart {
         i: usize,
         side: SolidSide,
         kind: BoolKind,
-    ) -> Option<bool> {
-        let seg = self.theta.get(i)?;
+    ) -> Result<bool, RejectReason> {
+        let stages = RejectReason::CylinderStagesDisagree;
+        let seg = &self.theta[i];
         let Some(tw) = seg.twin else {
-            return Some(false);
+            return Ok(false);
         };
         let (label, wall) = if tw.bounds_plus {
-            (tw.label?, tw.wall)
+            (tw.label, tw.wall)
         } else {
-            (seg.label?, seg.wall)
+            (seg.label, seg.wall)
         };
+        let label = label.ok_or(stages)?;
         let sd = ruling_side_of(jd, k, def, wall, seg.end[0])?;
-        let plus_above = crate::arrangement::plus_theta_is_above(jd, wall, sd)?;
+        let plus_above = crate::arrangement::plus_theta_is_above(jd, wall, sd).ok_or(stages)?;
         let (own, other) = read_bits(&label, side, !plus_above);
-        Some(!keep_for(kind, side, own, other))
+        Ok(!keep_for(kind, side, own, other))
     }
 
     /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
@@ -169,12 +205,14 @@ impl Chart {
     /// is searched by name equality, so no point is handed to the order twice. The run is the
     /// rim nodes from the nearest one at or before `x` to the nearest at or after `y`, walked
     /// CCW — one arc when no rim node lies strictly inside the sector, and every arc it spans
-    /// when some do. `None` when that walk yields no arc at all: the sector is the whole circle
-    /// less one ruling, or the order cannot be formed, or a row of the run is not among `arcs`.
-    /// ★ That last one is **silent here and named at the adjacent-pair site**
-    /// (`RulingBoundNotYet`): a `None` falls back to the axial span, which is the conservative
-    /// road, not a wrong answer — but the two sites state the same missing row differently, and
-    /// that is worth one road one day.
+    /// when some do. `Err` when that walk yields no arc to read, naming why where the cause is
+    /// known: a sector the chart has no line for (the whole circle less one ruling, or a sector
+    /// holding every rim node) is the rulings ladder's (`RulingBoundNotYet`), a rim of one node
+    /// the assembly's (`ArcBoundNotYet`), a station or an order that cannot be formed its own
+    /// cause, and a run of covered and missing pieces or two lines on one rim node the stages
+    /// disagreeing. A run of nothing but missing pieces is the face not being over this sector
+    /// ([`RunFail::AllMissing`]) — at the adjacent-pair site the same missing row reads
+    /// [`End::Uncovered`].
     #[allow(clippy::too_many_arguments)]
     fn arc_around<'a>(
         &self,
@@ -189,12 +227,13 @@ impl Chart {
         arcs: &'a [ArcLabel],
         aliases: &crate::arrangement::Aliases,
     ) -> Result<Vec<&'a ArcLabel>, RunFail> {
+        let other = |r: RejectReason| RunFail::Other(r);
         let m = rim.nodes.len();
         if x == y && m >= 2 {
-            return Err(RunFail::Other);
+            return Err(other(RejectReason::RulingBoundNotYet));
         }
         let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
-        let mut index_of = |i: usize| -> Option<usize> {
+        let mut index_of = |i: usize| -> Result<usize, RejectReason> {
             // A station the rim's own arc decomposition does not hold — the wall's face stops
             // short of the rim — joins the order as itself, under its canonical name, and the
             // search below asks which arc contains it. ★ Not under a node of *another* line
@@ -205,32 +244,30 @@ impl Chart {
                 None => self.station_on(jd, k, def, c, i, aliases)?,
             };
             match rim.nodes.iter().position(|&r| r == n) {
-                Some(p) => Some(p),
+                Some(p) => Ok(p),
                 None => {
                     list.push(n);
-                    Some(list.len() - 1)
+                    Ok(list.len() - 1)
                 }
             }
         };
-        let Some(ix) = index_of(x) else {
-            return Err(RunFail::Other);
-        };
+        let ix = index_of(x).map_err(other)?;
         let iy = if x == y {
             ix
         } else {
-            match index_of(y) {
-                Some(i) => i,
-                None => return Err(RunFail::Other),
-            }
+            index_of(y).map_err(other)?
         };
-        let Ok((order, _)) = crate::arrangement::circular_order(jd, k, def, &list) else {
-            return Err(RunFail::Other);
-        };
+        let (order, _) =
+            crate::arrangement::circular_order(jd, k, def, &list).map_err(|e| other(e.reason()))?;
         let n = order.len();
-        let pos = |li: usize| order.iter().position(|&o| o == li);
-        let (Some(px), Some(py)) = (pos(ix), pos(iy)) else {
-            return Err(RunFail::Other);
+        // `order` is a permutation of `list`'s indices.
+        let pos = |li: usize| {
+            order
+                .iter()
+                .position(|&o| o == li)
+                .expect("an order ranks every node it was handed")
         };
+        let (px, py) = (pos(ix), pos(iy));
         let is_rim = |p: usize| order[p] < m;
         // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
         let (mut a, mut b) = (px, py);
@@ -265,7 +302,7 @@ impl Chart {
                 Some(arc) => run.push(arc),
                 // ★ A piece no contribution covers has no arc (the split keeps no
                 // phantom). A run made of nothing but such pieces is a sector the face is not
-                // over; a run with some of each is a producer inconsistency, as before.
+                // over; a run with some of each is the split and the labels disagreeing.
                 None => missing += 1,
             }
             cur = nxt;
@@ -274,13 +311,20 @@ impl Chart {
             return if run.is_empty() {
                 Err(RunFail::AllMissing)
             } else {
-                Err(RunFail::Other)
+                Err(other(RejectReason::CylinderStagesDisagree))
             };
         }
-        // `a == b` means the sector's ends land on one rim node: no arc separates them, and the
-        // caller has nothing to read here.
+        // `a == b`: no arc separates the run's ends. A rim of one node states no arcs; two
+        // chart lines on one rim node are two stations under one name; otherwise every rim node
+        // lies inside the sector, a θ the chart has no line for.
         if run.is_empty() {
-            return Err(RunFail::Other);
+            return Err(other(if m == 1 {
+                RejectReason::ArcBoundNotYet
+            } else if ix == iy && x != y {
+                RejectReason::CylinderStagesDisagree
+            } else {
+                RejectReason::RulingBoundNotYet
+            }));
         }
         Ok(run)
     }
@@ -347,7 +391,10 @@ impl Chart {
                         // *this* interval's side (the other half of a label is the neighbour's).
                         match agreement(arcs.iter().map(|a| read_bits(&a.label, side, above[e]))) {
                             Agreement::One(_) => End::Disk(arcs[0].label),
-                            Agreement::Silent | Agreement::Split => End::Other,
+                            // Arcs that disagree: the cell straddles a θ the chart has no line
+                            // for. No arcs at all: the split cut a circle it left no arc on.
+                            Agreement::Split => End::Other(RejectReason::RulingBoundNotYet),
+                            Agreement::Silent => End::Other(RejectReason::CylinderStagesDisagree),
                         }
                     }
                     Some([x, y]) => {
@@ -379,7 +426,7 @@ impl Chart {
                             ) {
                                 Ok(run) => End::Exact(run),
                                 Err(RunFail::AllMissing) => End::Uncovered,
-                                Err(RunFail::Other) => End::Other,
+                                Err(RunFail::Other(r)) => End::Other(r),
                             },
                         }
                     }
@@ -427,9 +474,12 @@ impl Chart {
             let (l, (wall, sd)) = match seg.twin {
                 Some(tw) if tw.bounds_plus == starts_here => (
                     tw.label?,
-                    (tw.wall, ruling_side_of(jd, k, def, tw.wall, seg.end[0])?),
+                    (
+                        tw.wall,
+                        ruling_side_of(jd, k, def, tw.wall, seg.end[0]).ok()?,
+                    ),
                 ),
-                _ => (seg.label?, self.ruling_name(jd, k, def, i)?),
+                _ => (seg.label?, self.ruling_name(jd, k, def, i).ok()?),
             };
             // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
             // are read from opposite sides of their own rulings.
@@ -453,6 +503,11 @@ impl Chart {
             Agreement::One(b) => (Some(b), false),
             Agreement::Silent => (None, false),
             Agreement::Split => (None, true),
+        };
+        let unread = match (chamber, disagree) {
+            (Some(_), _) => None,
+            (None, true) => Some(RejectReason::LabelConflict),
+            (None, false) => Some(silence(&ends, side, above)),
         };
 
         // ── Existence: the trace where an end is cut, the span where none is. ──
@@ -496,10 +551,9 @@ impl Chart {
         // in the corner boss × mid slab. With stations placed by name (`station_on`) no cell in
         // the suite reaches
         // here (`src0_present` 0, the census's record-site assertion made structural), so
-        // this is a guard on the reader's premise and the name is the chart's own for a cell it
-        // cannot read.
-        if by_marks.is_none() && by_span && ends.iter().all(|e| matches!(e, End::Other)) {
-            return Err(reject(RejectReason::CylinderGateUndecided));
+        // this is a guard on the reader's premise, named by why the ends are silent.
+        if by_marks.is_none() && by_span && ends.iter().all(|e| matches!(e, End::Other(_))) {
+            return Err(reject(silence(&ends, side, above)));
         }
         // ★ The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
         // what says the face is *not* there (the `exist_marks_false` population). So the
@@ -529,6 +583,7 @@ impl Chart {
             ends,
             chamber,
             disagree,
+            unread,
             present,
             exist_disagree,
             emit,
@@ -634,3 +689,7 @@ pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: 
         SolidSide::B => crate::draft::keep(kind, in_other, in_own),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/read_cell.rs"]
+mod tests;

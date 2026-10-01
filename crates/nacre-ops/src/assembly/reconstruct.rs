@@ -559,6 +559,14 @@ pub(crate) fn reconstruct(
         // question, asked of the class the contact table carries beside the vertex.
         // [`crate::planes::WorkingCyl::cache`] states the rule this follows: the f64 twin is
         // what a measurement reads, and every decision reads `def`.
+        //
+        // ★ `None` is never an input. The contact's class keys a cut rim (`HeldRims` ⊆ the split's
+        // rims), so it is a z-line of this cylinder's chart, and the chart asked this very
+        // question of it — `bands::param_opt` is these two calls — with the same `jd` and `def`
+        // before any of this ran (`cyl_chart::emit_lateral`, which refuses a width there by
+        // name); the vertex is one picked from these same contacts. So `None` here is the
+        // chart and the assembly disagreeing — an argument across stages, so a name rather than
+        // a panic.
         let station_of = |k: usize,
                           contacts: &[(Handle<Vertex>, usize)],
                           v: Handle<Vertex>|
@@ -640,10 +648,8 @@ pub(crate) fn reconstruct(
                     let station = |v: Handle<Vertex>| station_of(k, &contacts, v);
                     let (si, sj) = match (station(pi), station(pj)) {
                         (Some(a), Some(b)) => (a, b),
-                        // The gate already required a world description of every plane class
-                        // before a band could be emitted, so this is spelled rather than assumed
-                        // away — the same discipline the both-rims-cut arm above follows.
-                        _ => return Err(reject(RejectReason::ArcBoundNotYet)),
+                        // `station_of`'s note: the chart already formed both.
+                        _ => return Err(reject(RejectReason::CylinderStagesDisagree)),
                     };
                     Some(if si <= sj {
                         (run_i, run_j, pi, pj)
@@ -770,8 +776,9 @@ pub(crate) fn reconstruct(
                                     } else {
                                         visited.push(v);
                                     }
-                                    let s = station_of(k, &contacts, v)
-                                        .ok_or_else(|| reject(RejectReason::ArcBoundNotYet))?;
+                                    let s = station_of(k, &contacts, v).ok_or_else(|| {
+                                        reject(RejectReason::CylinderStagesDisagree)
+                                    })?;
                                     let better = match &best {
                                         None => true,
                                         Some((_, b)) => {

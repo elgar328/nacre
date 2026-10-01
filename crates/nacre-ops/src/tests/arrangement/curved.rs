@@ -617,8 +617,8 @@ fn armed_curved(
 /// the chart's axes (the arc labels and the rulings') leaves the reader no answer there; and
 /// turning every ruling label inside out while the arcs stand makes two sides of each cell
 /// contradict each other — `emit_lateral` refuses both by name, neither side believed over the
-/// other: a cell no side reads (`CylinderGateUndecided`) and labels that disagree
-/// (`LabelConflict`).
+/// other: a cell no side reads — its blinded ends read no circle, which a present cell always
+/// has (`CylinderStagesDisagree`) — and labels that disagree (`LabelConflict`).
 #[test]
 fn a_cut_circle_bounds_the_bands() {
     let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
@@ -766,7 +766,7 @@ fn a_cut_circle_bounds_the_bands() {
             &crate::draft::held_rims(&plane_faces, &blind.split_rims)
         ),
         Err(BoolError::Rejected {
-            reason: RejectReason::CylinderGateUndecided,
+            reason: RejectReason::CylinderStagesDisagree,
             ..
         })
     ));

@@ -6,8 +6,8 @@ use super::*;
 // ★★ A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
 // same as any planar wall meeting a class along an edge, and `edge_mask`'s `Graze > Seated`
 // precedence exists exactly for the corner where the two disagree — a **blind bore's ceiling**.
-// Without the graze, the cap's seated rule flips the wrong label bit, the band's two ends
-// contradict each other, and the *next* boolean on that solid comes back
+// Without the graze, the cap's seated rule flipped the wrong label bit, the band's two ends
+// contradicted each other, and the *next* boolean on that solid came back
 // `CylinderGateUndecided`. A through bore has no ceiling.
 
 /// A plate bored to `hole_h` deep, ready to be operated on again.

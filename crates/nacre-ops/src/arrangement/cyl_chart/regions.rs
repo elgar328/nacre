@@ -79,10 +79,6 @@ pub(crate) struct Walked {
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
 }
-/// A rim station the walk cannot name — the rulings ladder's name until the walk carries why.
-fn ruling_ladder() -> BoolError {
-    reject(RejectReason::RulingBoundNotYet)
-}
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn walk(
@@ -98,7 +94,6 @@ pub(crate) fn walk(
     curved: &Curved,
     rims: &crate::draft::HeldRims,
 ) -> Result<Walked, BoolError> {
-    let undecided = || reject(RejectReason::WitnessNotRational);
     let aliases = &curved.aliases;
 
     // ── 1. Stations: one per (wall, side), in one global θ order. ──
@@ -106,7 +101,7 @@ pub(crate) fn walk(
     let mut reps: Vec<NodeId> = Vec::new();
     let mut name_of_theta: Vec<usize> = Vec::with_capacity(chart.theta.len());
     for j in 0..chart.theta.len() {
-        let n = chart.ruling_name(jd, k, def, j).ok_or_else(undecided)?;
+        let n = chart.ruling_name(jd, k, def, j).map_err(reject)?;
         let ni = match names.iter().position(|x| *x == n) {
             Some(p) => p,
             None => {
@@ -120,8 +115,8 @@ pub(crate) fn walk(
     let ns = names.len();
     let mut station_of_name = vec![0usize; ns];
     if ns > 0 {
-        let (order, _) =
-            crate::arrangement::circular_order(jd, k, def, &reps).map_err(|_| undecided())?;
+        let (order, _) = crate::arrangement::circular_order(jd, k, def, &reps)
+            .map_err(|e| reject(e.reason()))?;
         for (p, &ni) in order.iter().enumerate() {
             station_of_name[ni] = p;
         }
@@ -166,11 +161,7 @@ pub(crate) fn walk(
     // one edge in one solid, or two solids apart. Run through as one face, the lateral hides it
     // under a shell every count calls closed.
     let slits: Vec<bool> = (0..chart.theta.len())
-        .map(|j| {
-            chart
-                .slit_at(jd, k, def, j, side, kind)
-                .ok_or_else(undecided)
-        })
+        .map(|j| chart.slit_at(jd, k, def, j, side, kind).map_err(reject))
         .collect::<Result<_, BoolError>>()?;
     let slit = |j: usize| slits.get(j).copied().unwrap_or(false);
 
@@ -293,11 +284,13 @@ pub(crate) fn walk(
             })
     };
     // A station's canonical name on a line — [`Chart::station_on`]'s spelling, by name.
-    let station_name = |c: usize, s: usize| -> Option<NodeId> {
+    // A rim station the run ends at is one the split placed, so a crossing that is not there is
+    // the stages disagreeing ([`crate::arrangement::RulingNameFail::reason`]).
+    let station_name = |c: usize, s: usize| -> Result<NodeId, BoolError> {
         let (wall, sd) = name_at_station(s);
         crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd)
-            .ok()
             .map(|n| aliases.canon_point(n))
+            .map_err(|e| reject(e.reason()))
     };
 
     // ── 3–7. Per component: boundary edges → cycles → runs → pieces → rings → bound. ──
@@ -464,8 +457,8 @@ pub(crate) fn walk(
                         let (pa, pb) = if full {
                             (0, 0)
                         } else {
-                            let na = station_name(c, ca.1).ok_or_else(ruling_ladder)?;
-                            let nb = station_name(c, cb.1).ok_or_else(ruling_ladder)?;
+                            let na = station_name(c, ca.1)?;
+                            let nb = station_name(c, cb.1)?;
                             let pa = rim
                                 .nodes
                                 .iter()

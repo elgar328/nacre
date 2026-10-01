@@ -570,3 +570,26 @@ fn count_cull(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> Counts {
     }
     c
 }
+
+/// **The two cause enums name their refusals in one place each.** A road that knows the point
+/// exists (the chart's stations, an order the split already formed) refuses through these, so
+/// a width is width and one point under two names is the four-plane limit wherever it surfaces.
+#[test]
+fn an_order_or_a_crossing_that_cannot_be_formed_names_its_cause() {
+    assert_eq!(
+        CircleOrderFail::Undecided.reason(),
+        RejectReason::WitnessNotRational
+    );
+    assert_eq!(
+        CircleOrderFail::Coincident.reason(),
+        RejectReason::CoincidentNodes
+    );
+    assert_eq!(
+        RulingNameFail::Width.reason(),
+        RejectReason::WitnessNotRational
+    );
+    assert_eq!(
+        RulingNameFail::NoCrossing.reason(),
+        RejectReason::CylinderStagesDisagree
+    );
+}

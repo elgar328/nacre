@@ -393,8 +393,9 @@ fn trace_transversal_face(
                                     );
                                     (id, combinatorics::EndPin::Cylinder)
                                 }
-                                Err(d) => {
-                                    declined = Some(d);
+                                // Either cause is a wall this trace does not state.
+                                Err(_) => {
+                                    declined = Some(DeclineKind::CurvedRingWall);
                                     break 'rings;
                                 }
                             }

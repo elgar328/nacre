@@ -4,7 +4,8 @@ use super::*;
 /// neighbouring classes ([`Chart::read_cell`]), then the walk. What is refused here by name:
 /// a class with no row or rows of both solids (`CylinderStagesDisagree`), a θ order that cannot
 /// be formed, and a **present cell whose chamber could not be read** — two speaking sides
-/// disagreed (`LabelConflict`) or no side spoke (`CylinderGateUndecided`); the walk names its own.
+/// disagreed (`LabelConflict`) or no side spoke, named by why its ends are silent
+/// (`read_cell::silence`); the walk names its own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
@@ -33,23 +34,19 @@ pub(crate) fn emit_lateral(
         }
         let chart = chart_of(jd, cyls, k, plane_faces, curved)?;
         let lines = Lines::of(jd, k, def, curved)?;
-        // The θ order the split already formed cannot fail to form again; if it does, the point's
-        // own `(line, s)` could not be stated — that name's sentence.
-        let cells = chart
-            .cells(jd, k, def)
-            .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+        // An order of the rulings' nodes that cannot be formed names its own cause
+        // (`CircleOrderFail::reason`): past `Rat`, or one point under two names.
+        let cells = chart.cells(jd, k, def).map_err(reject)?;
         let reads: Vec<CellRead<'_>> = cells
             .iter()
             .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
             .collect::<Result<_, _>>()?;
-        // A present cell whose chamber could not be read: two of its speaking sides disagreed —
-        // labels the arrangement wrote, contradicting each other — or none spoke.
+        // A present cell whose chamber could not be read, named by why (`CellRead::unread`).
         if let Some(r) = reads.iter().find(|r| r.present && r.emit.is_none()) {
-            return Err(reject(if r.disagree {
-                RejectReason::LabelConflict
-            } else {
-                RejectReason::CylinderGateUndecided
-            }));
+            return Err(reject(
+                r.unread
+                    .expect("a cell with no chamber says why it has none"),
+            ));
         }
         let walked = regions::walk(
             jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved, rims,

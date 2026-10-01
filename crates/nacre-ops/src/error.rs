@@ -444,12 +444,10 @@ pub enum RejectReason {
     /// holds and `Rat` does not is [`Self::WitnessNotRational`]. Conservative honest refusal, never
     /// a guess.
     ///
-    /// ★ The chart's emitter raises it too, for a present lateral cell **no side speaks for** —
-    /// its ends' rims and its walls' rulings all silent — and the cell reader for a cell with a
-    /// face whose **two ends both say nothing** (answering «present» there would be a guess;
-    /// measured 0 with stations placed by name). Two sides that speak and **disagree** are
-    /// [`Self::LabelConflict`]; a class table and face rows that disagree are
-    /// [`Self::CylinderStagesDisagree`].
+    /// ★ The gate's own name, raised nowhere past it: what the chart cannot read it names by
+    /// cause — two sides that disagree are [`Self::LabelConflict`], a silent cell takes why its
+    /// ends are silent (`cyl_chart::read_cell`), and a class table and face rows that disagree
+    /// are [`Self::CylinderStagesDisagree`].
     CylinderGateUndecided,
     /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
     /// tangency row (a wall plane exactly `r` from a cylinder's axis, the wall face's outer loop
@@ -644,8 +642,9 @@ pub enum RejectReason {
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
     /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one of
     /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
-    /// calls it), the arrangement's split passes, where a point's own description — its
-    /// `(line, s)` or its `dir_sign` — could not be formed, and a ring's winding
+    /// calls it), the arrangement's split passes and the cylinder chart's stations, orders and
+    /// ruling sides, where a point's own description — its `(line, s)` or its `dir_sign` — could
+    /// not be formed, and a ring's winding
     /// (`combinatorics::arc_extremum_winding`), where an arc's minimum — the pierce point of its
     /// cap plane, a plane through the axis, and the cylinder — could not be solved.
     ///
@@ -687,9 +686,7 @@ pub enum RejectReason {
     ///   other refusal of the assembly speaks first (a result touching itself along that ruling
     ///   is `NonManifoldResultEdge`); what passes them all is a walk the lateral's reader
     ///   (`combinatorics::lateral_cycles`) would cut wrong, so it does not leave. No boolean in
-    ///   the suite or the census reaches it;
-    /// * a **seam contact with no axial station** (`band_loop`, the chain walk) — the contact's
-    ///   circle has no rational axis parameter.
+    ///   the suite or the census reaches it.
     ///
     /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
     /// spelled whole, a hole whose contacts are not the two the merge kept, a chain with no
@@ -799,9 +796,12 @@ pub enum RejectReason {
     /// crosses its own class there (`Transversal`, whose side is the directed line's — measured 0
     /// in the suite and the census: the one shape that reached it, a tangent wall across a half
     /// cylinder's flat edge, is [`Self::TangentLineInAnotherPlane`] at the gate); and a panel arc
-    /// whose two ends share no cut circle's plane, or two (`draft::seam_step`). And, until the
-    /// region walk carries why, a rim station the walk cannot name. Where the walk finds the
-    /// split's own record broken, the name is [`Self::CylinderStagesDisagree`].
+    /// whose two ends share no cut circle's plane, or two (`draft::seam_step`). And a lateral
+    /// cell that straddles a θ the chart has no vertical line for — the arcs of one rim end
+    /// disagreeing, a sector opened at one ruling of a cut rim, a sector holding every rim node
+    /// (`cyl_chart::read_cell`): the chart's vertical lines come from the ruling sweep, which
+    /// states a piece only where the lateral face is. Where the walk or the reader finds an
+    /// earlier record broken, the name is [`Self::CylinderStagesDisagree`].
     /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// ★ **«A class carrying both circles and rulings» is not one of those guards**:
@@ -854,8 +854,12 @@ pub enum RejectReason {
     /// cylinder class), the split and the chart (a rim station the run cannot place, a ruling the
     /// wall's pieces do not tile, a cycle whose pieces do not chain), the chart and the assembly
     /// (a cut circle spelled whole, a hole whose seam contacts are not the two the merge kept, a
-    /// chain rim with no contact). Each guard stands where an earlier stage already settled the
-    /// fact, so what reaches one is an engine defect, never an input this kernel does not build.
+    /// chain rim with no contact, a seam contact with no station the chart already gave its
+    /// circle), the split and the chart's cell reader (a present cell with no circle at an end, a
+    /// station the split placed that is no crossing of its wall, two chart lines on one rim node),
+    /// and a stored pierce definition and its own re-solved meet. Each guard stands where an
+    /// earlier stage already settled the fact, so what reaches one is an engine defect, never an
+    /// input this kernel does not build.
     ///
     /// ★ One name for the class rather than one per guard: each of these used to wear a
     /// coverage name (`CylinderGateUndecided`, `RulingBoundNotYet`, `ArcBoundNotYet`) whose

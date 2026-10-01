@@ -214,13 +214,8 @@ pub(super) fn split_circles(
             }
         }
         nodes.sort_unstable();
-        let (order, seam_is_node) = match circular_order(jd, circ.cyl, &circ.def, &nodes) {
-            Ok(o) => o,
-            Err(CircleOrderFail::Undecided) => return Err(undecided()),
-            Err(CircleOrderFail::Coincident) => {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
-        };
+        let (order, seam_is_node) =
+            circular_order(jd, circ.cyl, &circ.def, &nodes).map_err(|e| reject(e.reason()))?;
         let len = order.len();
         let mut at = vec![0usize; len];
         for (k, &i) in order.iter().enumerate() {
@@ -376,6 +371,18 @@ pub(crate) enum CircleOrderFail {
     Undecided,
     /// Two of the nodes are one point wearing two names.
     Coincident,
+}
+
+impl CircleOrderFail {
+    /// The refusal a boolean gives — the one mapping every road that refuses on an order reads:
+    /// an order past `Rat` is width, one point under two names is the four-plane limit
+    /// ([`RejectReason::CoincidentNodes`]).
+    pub(crate) fn reason(self) -> RejectReason {
+        match self {
+            Self::Undecided => RejectReason::WitnessNotRational,
+            Self::Coincident => RejectReason::CoincidentNodes,
+        }
+    }
 }
 
 /// **Order nodes around one circle by θ, the seam first** — the one place that order is decided.

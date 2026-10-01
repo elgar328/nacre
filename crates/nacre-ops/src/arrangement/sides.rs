@@ -98,10 +98,11 @@ pub(super) fn chord_nodes(
 /// `{⊥, wall}` are ordered along `ε·k·(m̂ × n_wall)`, so «which root» and «which side of `wall`»
 /// are the same question — a derivation the exact-volume rows of the crossing census check.
 ///
-/// `Err(CurvedRingWall)` is every shape this does not state: no exact description, a wall that
-/// is not parallel to the axis, no pair of roots, or both roots on one side (the two rulings of
-/// a wall within the radius — through the axis or offset from it — are symmetric about
-/// the plane through the axis with normal `m × n̂`, so `ruling_side` tells them apart).
+/// `Err` says why there is no such point, in two causes ([`RulingNameFail`]): a description past
+/// `Rat`, or classes that name no crossing of that wall's ruling — a wall not parallel to the
+/// axis, no pair of roots (or no double root for a tangent wall), or both roots on one side (the
+/// two rulings of a wall within the radius — through the axis or offset from it — are symmetric
+/// about the plane through the axis with normal `m × n̂`, so `ruling_side` tells them apart).
 pub(crate) fn crossing_on_ruling(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -109,41 +110,75 @@ pub(crate) fn crossing_on_ruling(
     fc: usize,
     cyl: usize,
     side: i8,
-) -> Result<NodeId, DeclineKind> {
+) -> Result<NodeId, RulingNameFail> {
+    use RulingNameFail::{NoCrossing, Width};
     use nacre_exact::quad::CylinderMeet;
-    let no = DeclineKind::CurvedRingWall;
-    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
-    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
+    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(NoCrossing)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m) {
-        return Err(no);
+        return Err(NoCrossing);
     }
     // ★ A **tangent** wall (`side == 0`) has one ruling and one root — `Double`.
-    let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2);
+    let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2).ok_or(Width)?;
     if side == 0 {
         return match meet {
-            Some(CylinderMeet::Tangent { .. }) => {
+            CylinderMeet::Tangent { .. } => {
                 Ok(NodeId::pierce(wc, fc, cyl, nacre_topo::QuadRoot::Double))
             }
-            _ => Err(no),
+            _ => Err(NoCrossing),
         };
     }
-    let Some(CylinderMeet::Pair { line, s }) = meet else {
-        return Err(no);
+    let CylinderMeet::Pair { line, s } = meet else {
+        return Err(NoCrossing);
     };
-    let mut found = None;
+    // A root whose side overflowed is not on `side` as far as this can tell; the other root may
+    // still be, so the overflow is the answer only when no root is.
+    let (mut found, mut overflow) = (None, false);
     for (root, sv) in [
         (nacre_topo::QuadRoot::Lo, &s[0]),
         (nacre_topo::QuadRoot::Hi, &s[1]),
     ] {
-        if combinatorics::ruling_side(&v, def, (&line, sv)) == Some(side) {
-            if found.is_some() {
-                return Err(no); // both roots on one side: not a pair of rulings
+        match combinatorics::ruling_side_signed(&v, def, (&line, sv)) {
+            None => overflow = true,
+            Some(sd) if sd == side => {
+                if found.is_some() {
+                    return Err(NoCrossing); // both roots on one side: not a pair of rulings
+                }
+                found = Some(root);
             }
-            found = Some(root);
+            Some(_) => {}
         }
     }
-    Ok(NodeId::pierce(wc, fc, cyl, found.ok_or(no)?))
+    match found {
+        Some(root) => Ok(NodeId::pierce(wc, fc, cyl, root)),
+        None if overflow => Err(Width),
+        None => Err(NoCrossing),
+    }
+}
+
+/// Why [`crossing_on_ruling`] names no point — two causes, because two readers turn them into
+/// different words (the tracer into its decline, the chart into a refusal), the same split
+/// [`split_circles::CircleOrderFail`] makes for an order around a circle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RulingNameFail {
+    /// A description past `Rat`: the meet of the two planes and the cylinder, or a root's side
+    /// of the wall, overflowed.
+    Width,
+    /// The classes name no crossing of that wall's ruling — or a class has no narrow world
+    /// statement, which the cylinder gate demands of every class before anything here runs.
+    NoCrossing,
+}
+
+impl RulingNameFail {
+    /// The refusal where the caller knows the crossing exists — a station the split or the
+    /// chart already placed: past `Rat` is width, no crossing is the stages disagreeing.
+    pub(crate) fn reason(self) -> crate::RejectReason {
+        match self {
+            Self::Width => crate::RejectReason::WitnessNotRational,
+            Self::NoCrossing => crate::RejectReason::CylinderStagesDisagree,
+        }
+    }
 }
 
 /// **Where the class line `L = wc ∩ fc` crosses an arc strictly inside it** — the pierce nodes
