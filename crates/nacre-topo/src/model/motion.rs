@@ -229,6 +229,15 @@ impl Model {
         self.motion_folds[leaf.index() as usize].as_ref()
     }
 
+    /// Whether `leaf`'s whole chain folds to a rational map (translations, quarter turns and axis
+    /// mirrors) — `false` for a frame node or a turn off the quarters. This is the one question
+    /// that tells apart the two ways [`Model::world_cylinder_def`] and [`Model::chain_point_rat`]
+    /// answer `None`: a chain that does not fold has no world statement to give, one that folds
+    /// overflowed `Rat` carrying it.
+    pub fn chain_folds(&self, leaf: Handle<MotionNode>) -> bool {
+        self.chain_fold(leaf).is_some()
+    }
+
     /// **The plane `c`, stated before `leaf`'s chain, restated in the world** — canonicalized, so
     /// a plane reached by two routes lands on one array. `None` where the chain does not fold (a
     /// frame, a turn off the quarters) or the arithmetic overflows `i128`.

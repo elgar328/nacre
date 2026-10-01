@@ -1630,7 +1630,9 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   기록하고 통과 — 단 접선 판정이 읽을 수 없는 행, 곧 그 선을 셋째 평면이 간선 아닌 채로 품거나 행을
   진술하지 못한 것은 게이트 끝에서 거절한다: `TangentLineInAnotherPlane`, 또는 행이 든 이름) · 비스듬한 평면(옆면의 모든 면이 그 평면을 비킴을 증명하면 통과, 아니면
   `ObliqueCylinderCut` — 타원은 짓지 않았다). 모든 산술은 세계 서술 위의 checked `Rat` 이고, 정확히
-  결정하지 못한 것은 `CylinderGateUndecided` 다 — 보수적인 정직한 거절이지 추측이 아니다.
+  결정하지 못한 것은 무엇이 막았는지로 이름이 갈린다 — 서술을 한 틀의 세계에 놓지 못함(돌린 클래스, 접히지 않는
+  사슬 위의 원통)은 기하라 `CylinderGateUndecided`, 세계는 들지만 `Rat` 에 안 담김(`Wide` 이름, 넘침)은 폭이라
+  `WitnessNotRational`. 보수적인 정직한 거절이지 추측이 아니다.
 - **게이트의 «기록»이 열고 배열은 기록만 믿는다.** `point_plane_clearance_rat` **한 호출**의
   삼분법이 그대로 세 기록이다: `Positive` 무기록 · `Negative` → `crossings`(룰링 둘) · `Zero`(접선) →
   `tangencies`(스치는 선 하나 — 그 선을 품는 옆면 **면**마다). 기록 집합은 「평면이 r 안이고 면이 띠를
@@ -1684,9 +1686,10 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   그대로 답한다. 근사도 평행 가정도 없다.
   - **재진술이 없다**: `QuadRoot` 는 정의가 **자기 두 평면을 자기 순서로** 말한 것에 대한 것이고
     여기서는 그것을 그대로 읽는다(아래 `ℓ` 보정은 class 표 순서로 **건너갈 때**의 값이다).
-  - **거절은 원인별로 갈린다**: `CurvedOperandBoundary` 는 「뒤의 도로가 못 읽는다」가 **참인**
-    자리에만 쓰고, 산술·이름 실패는 `CylinderGateUndecided` 다. 이름이 참을 말해야 다음 사람이 그
-    이름을 믿는다.
+  - **거절은 원인별로 갈린다**(`CornerFail`): `CurvedOperandBoundary` 는 「뒤의 도로가 못 읽는다」가
+    **참인** 자리(이음매 꼭짓점, 무리수 근에 끝나는 호)에만 쓰고, 서술을 세계에 놓지 못함은
+    `CylinderGateUndecided`, 숫자가 `Rat` 에 안 담김은 `WitnessNotRational` 이다. 이름이 참을 말해야 다음
+    사람이 그 이름을 믿는다.
 - **피연산자가 굽은 이름을 나를 수 있다 — 연쇄의 규칙.** 불리언의 **결과가 다음 불리언의 피연산자**가
   되면 트레이서가 평면 어휘로 못 읽는 기하가 들어올 수 있다. 그 자리의 그물은 `CurvedOperandBoundary`
   이고, `loop_triples`가 **클래스로** 읽는 사실을 **담체로** 읽은 것이다(`Edge::surfaces` 의 doc 이

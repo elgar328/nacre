@@ -187,43 +187,95 @@ impl Corner {
 /// `combinatorics::pierce_name_from_def` carries is the price of crossing from handle space into a
 /// class table's order; this side has no class table for the operand at all.)
 ///
-/// ★★ **`None` is only ever a missing *description***, never a shape this road cannot spell — the
-/// caller has already established that the vertex is a `Pierce`, so the two refusals stay apart:
-/// a plane whose world name is not narrow, a cylinder with no world statement, or a root the meet
-/// does not offer are the gate's own arithmetic running out (`CylinderGateUndecided`), while a
-/// seam vertex never reaches here at all.
+/// ★★ **A failure is only ever a missing *description***, never a shape this road cannot spell —
+/// the caller has already established that the vertex is a `Pierce`, and a seam vertex never
+/// reaches here at all. A meet that does not offer the name's root is a naming defect (the name
+/// was minted from this same meet); it has no name of its own and leaves as `Unstated`.
 fn pierce_corner(
     model: &Model,
     planes: [Handle<Surface>; 2],
     cylinder: Handle<Surface>,
     root: nacre_topo::QuadRoot,
-) -> Option<Corner> {
+) -> Result<Corner, CornerFail> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
-    let p1 = *model.world_plane_name(planes[0])?.narrow()?;
-    let p2 = *model.world_plane_name(planes[1])?.narrow()?;
-    let def = model.world_cylinder_def(cylinder)?;
+    let p1 = world_narrow(model, planes[0])?;
+    let p2 = world_narrow(model, planes[1])?;
+    let def = world_cylinder(model, cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
-        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
+        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2).ok_or(CornerFail::Width)?,
         root,
     ) {
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
         (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => (line, s[1]),
         (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
-        _ => return None,
+        _ => return Err(CornerFail::Unstated),
     };
-    Some(Corner::Pierce(line, s))
+    Ok(Corner::Pierce(line, s))
 }
 
-/// Why a boundary piece could not be read — the two causes the footprint road keeps apart.
+/// Why a boundary piece could not be read — three causes, three names.
 pub(super) enum CornerFail {
-    /// A shape this road cannot spell at all — a seam vertex. ★ An arc that
-    /// is not a whole disk is a piece, so what is
-    /// left here is a vertex with no exact name of any kind.
+    /// A shape this road cannot spell at all — a seam vertex, a circle on a face it is not a disk
+    /// of, an arc end at an irrational root (its radial vector is no rational vector). The name
+    /// depends on the boundary (`face_clears_footprint`'s `unreadable`).
     Shape,
-    /// The description ran out: a chain that will not fold, a name that is not narrow.
-    Arithmetic,
+    /// A statement that cannot be put in the world in one frame — a plane with no world name, a
+    /// chain that does not fold. Geometry: [`RejectReason::CylinderGateUndecided`].
+    Unstated,
+    /// A statement the world holds and `Rat` does not — a `Wide` name or meet, an overflow
+    /// carrying or combining. Width: [`RejectReason::WitnessNotRational`].
+    Width,
+}
+
+impl CornerFail {
+    /// Why carrying a statement along `leaf` to the world came back `None` —
+    /// `world_cylinder_def` and `chain_point_rat` fold the chain and then carry, so a chain that
+    /// folds overflowed `Rat` (`Width`) and one that does not has no world statement (`Unstated`).
+    pub(super) fn of_carry(model: &Model, leaf: Handle<nacre_topo::MotionNode>) -> Self {
+        if model.chain_folds(leaf) {
+            Self::Width
+        } else {
+            Self::Unstated
+        }
+    }
+
+    /// The name a stated failure refuses under; `None` for [`Self::Shape`], whose name the caller
+    /// reads off the boundary.
+    pub(super) fn stated_reason(&self) -> Option<RejectReason> {
+        match self {
+            Self::Shape => None,
+            Self::Unstated => Some(RejectReason::CylinderGateUndecided),
+            Self::Width => Some(RejectReason::WitnessNotRational),
+        }
+    }
+}
+
+/// A plane's narrow world coefficients, or why it has none: no world name (`Unstated`), or a
+/// `Wide` one (`Width`).
+fn world_narrow(
+    model: &Model,
+    plane: Handle<Surface>,
+) -> Result<[nacre_exact::Rat; 4], CornerFail> {
+    let name = model.world_plane_name(plane).ok_or(CornerFail::Unstated)?;
+    name.narrow().copied().ok_or(CornerFail::Width)
+}
+
+/// A cylinder's world statement, or why it has none ([`CornerFail::of_carry`] for its motion — an
+/// unmoved cylinder's statement is its own and never fails).
+pub(super) fn world_cylinder(
+    model: &Model,
+    cylinder: Handle<Surface>,
+) -> Result<nacre_topo::CylinderDef, CornerFail> {
+    model
+        .world_cylinder_def(cylinder)
+        .ok_or_else(|| match model.surface(cylinder) {
+            nacre_topo::Surface::Cylinder {
+                motion: Some(leaf), ..
+            } => CornerFail::of_carry(model, *leaf),
+            _ => unreachable!("an unmoved cylinder's world statement is its own"),
+        })
 }
 
 /// **One boundary piece of a face, in whichever exact spelling it has — the single reader.**
@@ -248,15 +300,14 @@ pub(super) fn corner_of(
         // A single circular edge is the whole boundary, so the face is a disk — anything else
         // curved bulges past a hull this road cannot state.
         nacre_geom::Curve::Circle(_) if face.outer.half_edges.len() == 1 => {
-            return disk_of(model, face, he).ok_or(CornerFail::Shape);
+            return disk_of(model, face, he);
         }
         // ★★★★★ **An arc is a piece too**. A loop that mixes lines and arcs — a filleted
         // outline is the everyday one — is spellable: the same circle a whole loop would be, cut
         // to the extent its two ends name (a face the reader cannot spell refuses the boolean).
-        // So a failure here is `Arithmetic` — a value that could not be stated — and never
-        // `Shape`.
+        // A failure here says its own cause, the way the whole disk's does.
         nacre_geom::Curve::Circle(_) => {
-            return arc_of(model, face, he).ok_or(CornerFail::Arithmetic);
+            return arc_of(model, face, he);
         }
     }
     let vh = he_start(model, *he);
@@ -268,10 +319,10 @@ pub(super) fn corner_of(
         // that does not fold: honest, never a comparison across two frames.
         Some((p, None)) => Ok(Corner::Rational(p)),
         Some((p, Some(leaf))) => {
-            let w = p
-                .narrow()
-                .and_then(|q| model.chain_point_rat(leaf, *q))
-                .ok_or(CornerFail::Arithmetic)?;
+            let q = p.narrow().ok_or(CornerFail::Width)?;
+            let w = model
+                .chain_point_rat(leaf, *q)
+                .ok_or_else(|| CornerFail::of_carry(model, leaf))?;
             Ok(Corner::Rational(nacre_exact::MeetPoint::Narrow(w)))
         }
         // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
@@ -289,7 +340,7 @@ pub(super) fn corner_of(
             else {
                 return Err(CornerFail::Shape);
             };
-            pierce_corner(model, planes, cylinder, root).ok_or(CornerFail::Arithmetic)
+            pierce_corner(model, planes, cylinder, root)
         }
     }
 }
@@ -301,23 +352,23 @@ pub(super) fn corner_of(
 /// [`arc_extent`] speak. The ends come from the **edge's stored order**, because that is what
 /// `derive_edge_curve` orders counter-clockwise about the axis; the half-edge's traversal
 /// direction says nothing about which arc this is, and two faces sharing the edge see the same one.
-fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
+fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corner, CornerFail> {
     let Corner::Round {
         centre, rho2, axis, ..
     } = disk_of(model, face, he)?
     else {
-        return None;
+        unreachable!("disk_of builds a round piece")
     };
     let [a, b] = model.edge(he.edge).vertices;
-    let radial = |vh: Handle<Vertex>| -> Option<[nacre_exact::Rat; 3]> {
+    let radial = |vh: Handle<Vertex>| -> Result<[nacre_exact::Rat; 3], CornerFail> {
         let p = vertex_point(model, vh)?;
         let mut v = p;
         for k in 0..3 {
-            v[k] = v[k].checked_sub(centre[k])?;
+            v[k] = v[k].checked_sub(centre[k]).ok_or(CornerFail::Width)?;
         }
-        Some(v)
+        Ok(v)
     };
-    Some(Corner::Round {
+    Ok(Corner::Round {
         centre,
         rho2,
         axis,
@@ -333,12 +384,17 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
 ///
 /// [`corner_of`] deliberately does not narrow: a `Wide` meet still judges exactly, and a `Pierce`
 /// corner answers through its own line-and-root spelling. An arc's radial vector is arithmetic on
-/// coordinates, so it needs them — a `Wide` meet or a pierce whose root is irrational declines,
-/// and the caller says so by name.
-fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_exact::Rat; 3]> {
+/// coordinates, so it needs them — a `Wide` meet declines for its width, and a pierce whose root is
+/// irrational for its shape: no rational vector reaches it.
+fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Result<[nacre_exact::Rat; 3], CornerFail> {
     match model.vertex_meet(vh) {
-        Some((p, None)) => p.narrow().copied(),
-        Some((p, Some(leaf))) => model.chain_point_rat(leaf, *p.narrow()?),
+        Some((p, None)) => p.narrow().copied().ok_or(CornerFail::Width),
+        Some((p, Some(leaf))) => {
+            let q = p.narrow().ok_or(CornerFail::Width)?;
+            model
+                .chain_point_rat(leaf, *q)
+                .ok_or_else(|| CornerFail::of_carry(model, leaf))
+        }
         None => {
             let nacre_topo::Vertex::Pierce {
                 planes,
@@ -346,18 +402,21 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_exact::Rat; 
                 root,
             } = *model.vertex(vh)
             else {
-                return None;
+                return Err(CornerFail::Shape);
             };
             let Corner::Pierce(line, s) = pierce_corner(model, planes, cylinder, root)? else {
-                return None;
+                unreachable!("pierce_corner builds a pierce piece")
             };
-            let sr = s.as_rat()?;
+            let sr = s.as_rat().ok_or(CornerFail::Shape)?;
             let (b, d) = (line.base(), line.dir());
             let mut out = b;
             for k in 0..3 {
-                out[k] = out[k].checked_add(sr.checked_mul(d[k])?)?;
+                out[k] = sr
+                    .checked_mul(d[k])
+                    .and_then(|t| out[k].checked_add(t))
+                    .ok_or(CornerFail::Width)?;
             }
-            Some(out)
+            Ok(out)
         }
     }
 }
@@ -474,10 +533,11 @@ pub(crate) fn arc_ends_along(
 /// class by *rounded* coefficients its own points do not satisfy. Deriving the centre from the
 /// class would make that check pass by construction and quietly retire it.
 ///
-/// `None` is any shape this is not: a face that is not planar, an edge no cylinder carries, or an
-/// axis not perpendicular to the plane — that last one traces an **ellipse**, and this piece would
-/// be claiming to know a shape it does not.
-fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
+/// [`CornerFail::Shape`] is any shape this is not: a face that is not planar, an edge no cylinder
+/// carries, or an axis not perpendicular to the plane — that last one traces an **ellipse**, and
+/// this piece would be claiming to know a shape it does not. The plane's and the cylinder's world
+/// statements, and the arithmetic of the centre, fail by their own causes.
+fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corner, CornerFail> {
     // ★ Asked of the **truth**, like the `world_plane_name` on the very next line: a face's
     // kind is a fact about what it *is*, and the cache is a rounded copy of that. Before, this
     // one function asked the cache what kind it was and then the truth what it said.
@@ -485,31 +545,36 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         model.surface(face.surface),
         nacre_topo::Surface::Plane { .. }
     ) {
-        return None;
+        return Err(CornerFail::Shape);
     }
-    let plane = *model.world_plane_name(face.surface)?.narrow()?;
+    let plane = world_narrow(model, face.surface)?;
     let n = [plane[0], plane[1], plane[2]];
-    let def = model
+    let cylinder = *model
         .edge(he.edge)
         .surfaces
         .iter()
         .find(|&&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
-        .and_then(|&s| model.world_cylinder_def(s))?;
+        .ok_or(CornerFail::Shape)?;
+    let def = world_cylinder(model, cylinder)?;
     let (o, m) = (def.origin(), def.dir());
     if !nacre_exact::parallel_rat(&n, &m) {
-        return None;
+        return Err(CornerFail::Shape);
     }
     // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.
-    let nm = nacre_exact::dot3_rat(&n, &m)?;
-    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(plane[3])?;
-    let t = nacre_exact::Rat::from_int(0)
-        .checked_sub(no_d)?
-        .checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;
-    let mut centre = o;
-    for k in 0..3 {
-        centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
-    }
-    Some(Corner::Round {
+    let centre = (|| {
+        let nm = nacre_exact::dot3_rat(&n, &m)?;
+        let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(plane[3])?;
+        let t = nacre_exact::Rat::from_int(0)
+            .checked_sub(no_d)?
+            .checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;
+        let mut centre = o;
+        for k in 0..3 {
+            centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
+        }
+        Some(centre)
+    })()
+    .ok_or(CornerFail::Width)?;
+    Ok(Corner::Round {
         centre,
         rho2: def.r2().clone(),
         axis: m,
@@ -555,14 +620,16 @@ pub(super) fn face_clears_footprint(
                 .iter()
                 .any(|&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
         });
-    // ★★★★★ **Two refusals, split by cause rather than by the flag.** `unreadable` is for a shape
-    // this road cannot spell at all — an arc edge, a seam vertex — and there
-    // `CurvedOperandBoundary`'s sentence ("the road behind cannot read this ring") is true.
-    // `arithmetic` is for the gate's own description running out: a chain that will not fold, a
-    // name that is not narrow, a class whose coefficients miss its own face. Those are
-    // [`RejectReason::CylinderGateUndecided`] whatever the boundary looks like, because the road
-    // behind has nothing to do with them — and since a **pierce corner is now readable**, calling
-    // them "curved" would put a false sentence on a true refusal.
+    // ★★★★★ **Three refusals, split by cause rather than by the flag.** `unreadable` is for a shape
+    // this road cannot spell at all — a seam vertex, an arc end at an irrational root — and there
+    // `CurvedOperandBoundary`'s sentence ("the road behind cannot read this ring") is true. A
+    // statement that cannot be put in the world in one frame (no world name, a chain that does not
+    // fold) is geometry, [`RejectReason::CylinderGateUndecided`]; one the world holds and `Rat`
+    // does not (a `Wide` name, an overflow) is width, [`RejectReason::WitnessNotRational`]
+    // ([`CornerFail::stated_reason`]). Neither depends on what the boundary looks like, because the
+    // road behind has nothing to do with them — and since a **pierce corner is now readable**,
+    // calling them "curved" would put a false sentence on a true refusal. A class whose
+    // coefficients miss its own face is the gate's own (`misfit` below).
     let unreadable = || {
         reject(if curved {
             RejectReason::CurvedOperandBoundary
@@ -570,7 +637,7 @@ pub(super) fn face_clears_footprint(
             RejectReason::CylinderGateUndecided
         })
     };
-    let arithmetic = || reject(RejectReason::CylinderGateUndecided);
+    let misfit = || reject(RejectReason::CylinderGateUndecided);
     let mut side: Option<StripSide> = None;
     let mut across = true;
     // Per span, whether every vertex so far has stayed at or below its start, and at or above its
@@ -581,10 +648,8 @@ pub(super) fn face_clears_footprint(
         // ★★★★ **The piece's description is chosen once, in one reader** — the three questions
         // below then ask it the same things whichever spelling it wears, and the straddle road
         // reads it the very same way.
-        let corner = corner_of(model, face, he).map_err(|e| match e {
-            CornerFail::Shape => unreadable(),
-            CornerFail::Arithmetic => arithmetic(),
-        })?; // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
+        let corner = corner_of(model, face, he)
+            .map_err(|e| e.stated_reason().map_or_else(unreadable, reject))?; // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions
         // hazard). The strip decomposition takes the plane's
@@ -593,7 +658,7 @@ pub(super) fn face_clears_footprint(
         // would say nothing in the build that ships. ★ It is also `cylinder_strip_side`'s own
         // precondition, so it comes first.
         if !corner.on_plane(coeffs) {
-            return Err(arithmetic());
+            return Err(misfit());
         }
         vertices += 1;
         // The axis across the strip.

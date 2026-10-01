@@ -435,9 +435,12 @@ pub enum RejectReason {
     /// laid across it are apart along the rulings' cross product and nothing else
     /// (the rational candidate set is closed).
     CylinderPairContact,
-    /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
-    /// with no narrow rational description, a rotated class, a moved cylinder (its def is
-    /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
+    /// The population gate could not decide a (plane, cylinder) pair **exactly** because a
+    /// description cannot be put in the world in one frame — a class with no world name (a
+    /// rotated one), a cylinder on a chain that does not fold (its def is pre-motion) — or because
+    /// a class's coefficients miss its own face. **Geometry, not width**: a description the world
+    /// holds and `Rat` does not is [`Self::WitnessNotRational`]. Conservative honest refusal, never
+    /// a guess.
     ///
     /// ★ The chart's emitter raises it too, for the
     /// `chamber` sentence: a lateral cell two of whose speaking sides — its rims' labels and its
@@ -631,8 +634,9 @@ pub enum RejectReason {
     /// emptiness of *this* corpus); the disk's rim witnesses close
     /// it, and `a_disk_inside_a_disk_is_decided_by_its_rim` is that road's only coverage.
     RingHasNoWitness,
-    /// **An exact *value* could not be formed** — a class with no narrow rational description (a
-    /// rotated one, say) or a coordinate past `Rat`'s ceiling.
+    /// **An exact *value* could not be formed** — a class whose world name is `Wide`, or a
+    /// coordinate or coefficient past `Rat`'s ceiling. (A class with no world statement at all is
+    /// geometry, [`Self::CylinderGateUndecided`], refused at the gate before these roads run.)
     ///
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
@@ -648,11 +652,14 @@ pub enum RejectReason {
     /// name means there is the honest cause — a description past `Rat` — and not a shape the road
     /// cannot spell. A chained cylinder operand does not stop here.
     ///
-    /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
-    /// those were made total (they clear denominators and answer in `BigInt`), so
-    /// [`Self::CylinderGateUndecided`] means the geometry — a rotated class, a moved cylinder.
-    /// This one means the arithmetic: the wall a wide model meets after the gate
-    /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
+    /// ★ **Distinct from the gate's own name on purpose.** The population gate's *signs* were made
+    /// total (they clear denominators and answer in `BigInt`), so [`Self::CylinderGateUndecided`]
+    /// means the geometry — a rotated class, a cylinder on a chain that does not fold. This one
+    /// means the arithmetic, and the gate raises it too where its descriptions are wider than
+    /// `Rat`: a class with a `Wide` world name, a cylinder statement or a face corner that
+    /// overflows on its way to the world, a meet with another class that overflows. Sharing one
+    /// name would put a width limit inside a geometric verdict — and would tell the user that the
+    /// placement is in doubt when the digits are.
     ///
     /// ☑ **The chart half of that wall is closed**: the chart reads a **primitive** normal, so
     /// a plain sub-millimetre model does not meet the width of its plane offset's denominator

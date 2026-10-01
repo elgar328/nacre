@@ -85,9 +85,8 @@
 ### 사분각 밖 회전 위의 원통 — `CylinderGateUndecided`
 
 구멍 뚫린 판을 37° 돌린 뒤의 불리언(census `xy turned` 의 Fuse·Cut·Common 3)을 원통 게이트가 정확히 진술하지
-못해 거절한다. census 의 주석은 돌린 줄에 세계 진술이 없다고 적는다. 게이트의 어느 질문에서 멈추는지는 안
-갈랐다 — 발생 위치 기록이 게이트의 `undecided` 한 자리로 모인다. 「접히지 않는 사슬 위 평면은 세계 이름이
-없다」와 뿌리가 같은지는 안 쟀다.
+못해 거절한다. 셋 다 원통의 세계 진술에서 멈춘다 — 원통의 사슬이 접히지 않아 `world_cylinder_def` 가 답하지
+않는다(스위트에서도 같은 자리 6). 「접히지 않는 사슬 위 평면은 세계 이름이 없다」와 뿌리가 같은지는 안 쟀다.
 
 ### 원통의 룰링 위에 놓인 모서리 선 — 남은 가족
 
@@ -114,6 +113,24 @@
 
 원통 축에 비스듬한 평면(교선이 타원)은 짓지 않았다. census 는 0 이다 — 코퍼스에 원통을 비스듬히 자르는 배치가
 없다는 뜻이지, 사용자가 안 만난다는 뜻이 아니다.
+
+### `Wide` 이름 평면 곁의 원통 — `WitnessNotRational`
+
+원통 게이트와 그 면 판독기는 클래스·꼭짓점·원통의 **좁은** 세계 서술(`Rat`)을 읽는다. 그래서 `Wide` 이름의
+평면(기울어진 부품의 꼭짓점 셋으로 잡은 datum)이 원통과 한 모델에 있으면, 기하의 답이 무엇이든 폭으로 거절한다 —
+같은 모양의 좁은 이름 판은 `ObliqueCylinderCut`(비스듬함)을 받는데 Wide 판은 `WitnessNotRational` 을 받는다
+(`wide_datum_cost.rs` 의 `a_wide_datum_beside_a_cylinder_is_refused_for_its_width`). census 0 — 코퍼스에 그런
+배치가 없다. 다음 단계는 게이트 산술을 폭에서 자유롭게 하는 것(부호 질문을 BigInt 로 total 하게 만든 원칙을 서술
+읽기까지). 같은 일로 사라질 자리:
+
+- 게이트 안의 checked 산술이 «통과 못 함»으로 접히는 곳(`oblique_plane_clears`·`lateral_reach`) — 넘침이
+  `ObliqueCylinderCut` 으로 나갈 수 있다(잰 인구 0).
+- 접선 행의 `undecided` 는 원인이 섞여 있다 — 면이 자기 세계 이름을 안 든 것(이름 짓기)과 checked 산술(폭)이 한
+  이름으로 나간다(잰 인구 0).
+- topo 의 `EdgeDecline::Unstated`(`plane_cylinder_relation` 의 `None` — 넘침 포함)가 `reconstruct.rs` 에서
+  `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
+  (`world_cylinder_def`·`chain_point_rat`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
+  정확히 가른다.
 
 ### 불리언이 이름 붙여 거절하는 인구
 

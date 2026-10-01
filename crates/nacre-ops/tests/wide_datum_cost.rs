@@ -35,7 +35,8 @@
 //! printed `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 /
 //! wide_name=917` on the next, which is how a comparison against a saved baseline invents a change
 //! that never happened — and how an assertion that the census moved goes red by luck. Serialized,
-//! the same tree prints the same table twice. The file's other test runs no boolean.
+//! the same tree prints the same table twice. Every test here that runs a boolean takes it;
+//! `does_a_vertex_named_datum_produce_a_wide_name` runs none.
 //!
 //! ★ What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
@@ -82,8 +83,9 @@ use nacre_topo::{Model, PointCache, Solid, Vertex};
 mod fixtures;
 use fixtures::{datum_frame, live_vertices, p2};
 
-/// Held for the whole body of each measurement that reads `climb_census` — see the file note. A
-/// poisoned lock is passed through, so one measurement failing does not turn the other red.
+/// Held for the whole body of every test here that runs a boolean — the measurements read
+/// `climb_census`, and a boolean beside them would pour its climbs into their windows (see the
+/// file note). A poisoned lock is passed through, so one test failing does not turn another red.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
@@ -437,6 +439,69 @@ fn what_a_datum_bearing_boolean_costs() {
     assert_the_census_moved(climbed, charged);
 }
 
+/// **The cuboid sliced by a datum plane of the wanted width** — the shape the second-generation
+/// measurement and the gate's width refusal both ask about. A datum through the first triple of
+/// the wanted width carries a slab tool so large that only the datum plane itself reaches the
+/// cuboid below, so every face of the slice is world-named, one of them by the datum's name.
+/// `None` when the family offers no such slice.
+fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
+    let mut m = wf_family_with_pocket();
+    let solvable: Vec<_> = live_vertices(&m)
+        .into_iter()
+        .filter(|v| vouched(&m, *v))
+        .collect();
+    let mut slab = None;
+    'pick: for i in 0..solvable.len() {
+        for j in (i + 1)..solvable.len() {
+            for k in (j + 1)..solvable.len() {
+                let mut t = [solvable[i], solvable[j], solvable[k]];
+                t.sort_by_key(|v| v.index());
+                match m.plane_name_through(t) {
+                    Some(n) if n.narrow().is_none() == want_wide => {}
+                    _ => continue,
+                }
+                let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+                    &mut m,
+                    &Operation::DatumPlane {
+                        def: DatumDef::ThroughVertices([solvable[i], solvable[j], solvable[k]]),
+                    },
+                ) else {
+                    continue;
+                };
+                if let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                    &mut m,
+                    &Operation::Extrude {
+                        frame,
+                        profile: Profile2d::polygon(vec![
+                            p2(-50.0, -50.0),
+                            p2(50.0, -50.0),
+                            p2(50.0, 50.0),
+                            p2(-50.0, 50.0),
+                        ])
+                        .unwrap(),
+                        dist: 50.0,
+                    },
+                ) {
+                    m.rebuild_adjacency();
+                    slab = Some(solid);
+                    break 'pick;
+                }
+            }
+        }
+    }
+    let slab = slab?;
+    let cub = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-1.0, -1.0, -1.0]),
+        Point3::from_array([5.0, 5.0, 4.0]),
+    );
+    let sliced = *nacre_ops::boolean(&mut m, BoolKind::Cut, cub, slab)
+        .ok()?
+        .first()?;
+    m.rebuild_adjacency();
+    Some((m, sliced))
+}
+
 /// ★★★ **What the name-integer rescue actually buys, measured where its gates open.**
 ///
 /// The first datum-bearing boolean (the table above) is a **mixed-frame** table: the wide name
@@ -465,62 +530,7 @@ fn what_a_second_generation_boolean_costs() {
     let _line = one_at_a_time();
 
     let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
-        let mut m = wf_family_with_pocket();
-        // A datum through the first triple of the wanted width, carrying a slab tool so large
-        // that only the datum plane itself reaches the cuboid below.
-        let solvable: Vec<_> = live_vertices(&m)
-            .into_iter()
-            .filter(|v| vouched(&m, *v))
-            .collect();
-        let mut slab = None;
-        'pick: for i in 0..solvable.len() {
-            for j in (i + 1)..solvable.len() {
-                for k in (j + 1)..solvable.len() {
-                    let mut t = [solvable[i], solvable[j], solvable[k]];
-                    t.sort_by_key(|v| v.index());
-                    match m.plane_name_through(t) {
-                        Some(n) if n.narrow().is_none() == want_wide => {}
-                        _ => continue,
-                    }
-                    let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
-                        &mut m,
-                        &Operation::DatumPlane {
-                            def: DatumDef::ThroughVertices([solvable[i], solvable[j], solvable[k]]),
-                        },
-                    ) else {
-                        continue;
-                    };
-                    if let Ok(OpOutput::Extrude { solid, .. }) = apply(
-                        &mut m,
-                        &Operation::Extrude {
-                            frame,
-                            profile: Profile2d::polygon(vec![
-                                p2(-50.0, -50.0),
-                                p2(50.0, -50.0),
-                                p2(50.0, 50.0),
-                                p2(-50.0, 50.0),
-                            ])
-                            .unwrap(),
-                            dist: 50.0,
-                        },
-                    ) {
-                        m.rebuild_adjacency();
-                        slab = Some(solid);
-                        break 'pick;
-                    }
-                }
-            }
-        }
-        let slab = slab?;
-        let cub = nacre_ops::fixtures::cuboid(
-            &mut m,
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([5.0, 5.0, 4.0]),
-        );
-        let sliced = *nacre_ops::boolean(&mut m, BoolKind::Cut, cub, slab)
-            .ok()?
-            .first()?;
-        m.rebuild_adjacency();
+        let (mut m, sliced) = sliced_by_a_datum(want_wide)?;
         // The second generation: every face of `sliced` is world-named, one of them by the
         // datum's name. Only this boolean is measured.
         let column = nacre_ops::fixtures::cuboid(
@@ -557,4 +567,43 @@ fn what_a_second_generation_boolean_costs() {
     }
     assert!(seen > 0, "no arm built — the measurement is empty");
     assert_the_census_moved(climbed, charged);
+}
+
+/// ★★ **A width the gate cannot carry is refused for its width, not as a doubt about placement.**
+/// The slice of [`sliced_by_a_datum`], cut by a cylinder column standing inside it. The narrow
+/// slice's plane is oblique to the column's axis, and the gate says so (`ObliqueCylinderCut` — an
+/// ellipse). The wide slice is the same geometry, but its world name is `Wide`: the gate reads
+/// narrow coefficients, so it stops before the geometry is asked — and says why,
+/// `WitnessNotRational`, rather than `CylinderGateUndecided`, whose sentence is about the
+/// placement. The narrow arm is the control: without it, a gate that refused everything here by
+/// the width name would pass.
+#[test]
+fn a_wide_datum_beside_a_cylinder_is_refused_for_its_width() {
+    let _line = one_at_a_time();
+    let refused_for = |want_wide: bool| {
+        let (mut m, sliced) =
+            sliced_by_a_datum(want_wide).expect("the wf family offers a slice of this width");
+        let column = nacre_ops::fixtures::cylinder(
+            &mut m,
+            Point3::from_array([1.5, 1.5, -2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.75,
+            7.0,
+        )
+        .solid;
+        match boolean(&mut m, BoolKind::Cut, sliced, column) {
+            Err(nacre_ops::BoolError::Rejected { reason, .. }) => reason,
+            other => panic!("the column cut is refused, got {other:?}"),
+        }
+    };
+    assert_eq!(
+        refused_for(false),
+        nacre_ops::RejectReason::ObliqueCylinderCut,
+        "the narrow slice meets the column at a slant"
+    );
+    assert_eq!(
+        refused_for(true),
+        nacre_ops::RejectReason::WitnessNotRational,
+        "the wide slice stops at the gate for its width"
+    );
 }

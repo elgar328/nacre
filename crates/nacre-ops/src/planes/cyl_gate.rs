@@ -1,9 +1,12 @@
 use super::*;
 /// **The population gate** — decides, exactly, whether this operand pair stays inside
 /// the axis-perpendicular population the cylinder arrangement serves, and names the refusal
-/// otherwise. All arithmetic is checked `Rat` on world-stated descriptions; anything the gate
-/// cannot decide exactly is [`RejectReason::CylinderGateUndecided`] — a conservative honest
-/// refusal, never a guess.
+/// otherwise. All arithmetic is checked `Rat` on world-stated descriptions, and a refusal says
+/// which of two things stopped it: a description that cannot be put in the world in one frame (a
+/// rotated class, a cylinder on a chain that does not fold) is geometry,
+/// [`RejectReason::CylinderGateUndecided`]; one the world holds and `Rat` does not (a `Wide` name,
+/// an overflow) is width, [`RejectReason::WitnessNotRational`]. Conservative honest refusals,
+/// never a guess.
 ///
 /// Per (plane class, cylinder) pair, with `n` the class's rational normal and `m`/`o`/`r` the
 /// cylinder's raw axis/origin/radius:
@@ -85,11 +88,15 @@ pub(crate) fn cylinder_gate(
         // ★ **The world statement or nothing.** A moved cylinder's def is written before its
         // motion, and every test below compares it against world planes. A chain that folds
         // carries it out exactly (`Model::world_cylinder_def` — the same door the face rows
-        // take); anything else (a frame node, a turn off the quarters, overflow) has no world
-        // description here and is refused rather than measured across two frames.
-        let Some(def) = model.world_cylinder_def(surf) else {
-            return Err(undecided());
-        };
+        // take); a frame node or a turn off the quarters has no world description here and is
+        // refused rather than measured across two frames, and an overflow carrying it is refused
+        // for its width ([`world_cylinder`] tells the two apart).
+        let def = world_cylinder(model, surf).map_err(|e| {
+            reject(
+                e.stated_reason()
+                    .expect("a cylinder statement fails for its frame or its width"),
+            )
+        })?;
         let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
             unreachable!("push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache")
         };
@@ -143,8 +150,14 @@ pub(crate) fn cylinder_gate(
             // the world. `rotated` is not that question: a plane whose truth carries a
             // translation is *judged* through its chain and still has exact world coefficients,
             // and that is the population the rulings road serves.
+            // A class with no world name is geometry; a `Wide` one is width — the world holds it,
+            // `Rat` does not.
             let Some(coeffs) = wp.world_rat() else {
-                return Err(undecided());
+                return Err(if wp.world.is_none() {
+                    undecided()
+                } else {
+                    reject(RejectReason::WitnessNotRational)
+                });
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             // A perpendicular cut is the circle population, and it passes — **including a cap
@@ -207,7 +220,7 @@ pub(crate) fn cylinder_gate(
                 // face standing on a cap writes none — yet its line is the same line.
                 let holders = if clearance == Orient::Zero {
                     let Some(h) = classes_holding_the_line(geom, c, &coeffs, &cyl.def) else {
-                        return Err(undecided());
+                        return Err(reject(RejectReason::WitnessNotRational));
                     };
                     let other_owner = faces.iter().enumerate().any(|(i, row)| {
                         matches!(row, FaceRow::Plane(_))
@@ -391,8 +404,8 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
-    for (ci, sr) in
-        shared_rulings(faces, geom, &cyls, &crossings, &tangent_walls).ok_or_else(undecided)?
+    for (ci, sr) in shared_rulings(faces, geom, &cyls, &crossings, &tangent_walls)
+        .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
     {
         cyls[ci].shared.push(sr);
     }
