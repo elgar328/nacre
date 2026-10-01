@@ -93,8 +93,8 @@ enum RunFail {
 }
 
 /// One cell, read.
-/// `ends`, `disagree` and `exist_disagree` are the census's readers; production reads
-/// `chamber`, `present` and `emit` (the emitter) and pays for the rest only as a copy.
+/// `ends` and `exist_disagree` are the census's readers; production reads `chamber`, `present`,
+/// `emit` and `disagree` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
@@ -103,7 +103,8 @@ pub(crate) struct CellRead<'a> {
     /// disagreed (`disagree`).
     pub(crate) chamber: Option<(bool, bool)>,
     /// Two speaking sides contradicted each other — the one cause of an empty `chamber` besides
-    /// silence, which a single refusal name covers.
+    /// silence. The emitter names the two apart: a contradiction is labels the arrangement wrote
+    /// disagreeing (`LabelConflict`), silence is a cell no side reads.
     pub(crate) disagree: bool,
     /// Is this lateral face here at all — the existence question, answered by the trace
     /// where an end is cut ([`face_spans`]) and by the row's span where none is.
@@ -384,10 +385,10 @@ impl Chart {
                     }
                 };
             }
-            // A whole-disk label and arcs of one cylinder on one line is a producer inconsistency
-            // (`ArcBoundNotYet`'s own sentence), not a chart shape.
+            // A whole-disk label and arcs of one cylinder on one line is the split and the labels
+            // disagreeing about whether that circle was cut, not a chart shape.
             if saw_disk && saw_arc {
-                return Err(reject(RejectReason::ArcBoundNotYet));
+                return Err(reject(RejectReason::CylinderStagesDisagree));
             }
             ends.push(end);
         }

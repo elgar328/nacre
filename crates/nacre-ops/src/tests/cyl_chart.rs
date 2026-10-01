@@ -233,10 +233,9 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
         }
         // ★ A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
         // lateral along two rulings — and the chart has a θ line for only the one the face
-        // reaches. The **Cut** is the kind that builds through it (the wall boss's Fuse waits on
-        // the emitter's rim-station ladder — `RulingBoundNotYet`). ★★ It reads **no run of arcs**:
-        // measured over this test's own rows, `exact_run_arcs` is 0 here, and the run population
-        // belongs to the crossing census's through-axis walls instead.
+        // reaches. The **Cut** is the kind this test builds through it. ★★ It reads **no run of
+        // arcs**: measured over this test's own rows, `exact_run_arcs` is 0 here, and the run
+        // population belongs to the crossing census's through-axis walls instead.
         {
             let mut m = Model::new();
             let plate = crate::fixtures::cuboid(

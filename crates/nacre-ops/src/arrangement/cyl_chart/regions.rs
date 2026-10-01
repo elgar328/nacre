@@ -69,18 +69,19 @@ pub(crate) struct Walked {
     pub(crate) neighbours: Vec<Vec<usize>>,
 }
 
-/// Named refusals of the walk. Every one states a **producer inconsistency** — the trace
-/// and the split disagree about where a boundary runs — never a shape this road cannot
-/// spell: a run along a rim whose end is not one of the rim's nodes, a run along a ruling
-/// the wall's pieces do not tile, a cycle whose pieces do not chain, a component with no
-/// outer cycle (`RulingBoundNotYet`); a run along an uncut rim that is not the whole
-/// circle, or the cycles' winding not classifying (`ArcBoundNotYet` — the assembly's own
-/// limits on chains and holes, which `classify_cycles` states).
+/// The walk's refusal where the split's own record is broken — the trace and the split disagree
+/// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
+/// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
+/// with no outer cycle, a run along an uncut rim that is not the whole circle. What the walk
+/// cannot spell is named where it fires: a cut rim of one node and the cycles' winding not
+/// classifying (`ArcBoundNotYet` — the assembly's own limits on chains and holes, which
+/// `classify_cycles` states).
+fn split_disagrees() -> BoolError {
+    reject(RejectReason::CylinderStagesDisagree)
+}
+/// A rim station the walk cannot name — the rulings ladder's name until the walk carries why.
 fn ruling_ladder() -> BoolError {
     reject(RejectReason::RulingBoundNotYet)
-}
-fn arc_ladder() -> BoolError {
-    reject(RejectReason::ArcBoundNotYet)
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -401,7 +402,7 @@ pub(crate) fn walk(
                     .collect();
                 cands.sort_unstable();
                 let Some(&(_, j)) = cands.first() else {
-                    return Err(ruling_ladder());
+                    return Err(split_disagrees());
                 };
                 used[j] = true;
                 cyc.push(edges[j]);
@@ -437,12 +438,12 @@ pub(crate) fn walk(
                 let (_, cb) = ends(*run.last().expect("a run has an edge"));
                 match run[0] {
                     Edge::Arc { line, ccw, .. } => {
-                        let c = class_on(line).ok_or_else(ruling_ladder)?;
+                        let c = class_on(line).ok_or_else(split_disagrees)?;
                         let full = ns == 0 || run.len() == ns;
                         // An uncut rim is the assembly's closed edge — whole or nothing.
                         let Some(rim) = rims.get(&(k, c)) else {
                             if !full {
-                                return Err(arc_ladder());
+                                return Err(split_disagrees());
                             }
                             whole_rim = Some((c, ccw));
                             continue;
@@ -451,8 +452,14 @@ pub(crate) fn walk(
                         // — the held table, which the assembly's arc join reads too; neither the
                         // split nor the arc labels is consulted for the edges.
                         let m = rim.nodes.len();
+                        // One node cannot state a rim as arcs, and the cut-rim table keeps such a rim
+                        // on purpose (`draft::held_rims`). No node at all is a rim the split never cut.
                         if m < 2 {
-                            return Err(ruling_ladder());
+                            return Err(if m == 1 {
+                                reject(RejectReason::ArcBoundNotYet)
+                            } else {
+                                split_disagrees()
+                            });
                         }
                         let (pa, pb) = if full {
                             (0, 0)
@@ -463,12 +470,12 @@ pub(crate) fn walk(
                                 .nodes
                                 .iter()
                                 .position(|&n| n == na)
-                                .ok_or_else(ruling_ladder)?;
+                                .ok_or_else(split_disagrees)?;
                             let pb = rim
                                 .nodes
                                 .iter()
                                 .position(|&n| n == nb)
-                                .ok_or_else(ruling_ladder)?;
+                                .ok_or_else(split_disagrees)?;
                             (pa, pb)
                         };
                         let mut p = pa;
@@ -513,7 +520,7 @@ pub(crate) fn walk(
                                     && chart.theta[w[0]].end[1] == chart.theta[w[1]].end[0]
                             });
                         if !tiled {
-                            return Err(ruling_ladder());
+                            return Err(split_disagrees());
                         }
                         let ordered: Vec<usize> = if up {
                             segs
@@ -544,13 +551,13 @@ pub(crate) fn walk(
             }
             let n = pieces.len();
             if n < 2 {
-                return Err(ruling_ladder());
+                return Err(split_disagrees());
             }
             let mut nodes = Vec::with_capacity(n);
             let mut walls = Vec::with_capacity(n);
             for (p, piece) in pieces.iter().enumerate() {
                 if piece.ends.1 != pieces[(p + 1) % n].ends.0 {
-                    return Err(ruling_ladder());
+                    return Err(split_disagrees());
                 }
                 nodes.push(piece.ends.0);
                 walls.push(piece.wall);
@@ -570,7 +577,7 @@ pub(crate) fn walk(
             .expect("an emitted cell has a chamber");
         let flip = !super::read_cell::keep_for(kind, side, own, other);
         let face = if rims_lo.is_empty() && rims_hi.is_empty() {
-            let o = outer.ok_or_else(ruling_ladder)?;
+            let o = outer.ok_or_else(split_disagrees)?;
             let mut rings = rings;
             let outer = rings.remove(o);
             LocalFace {
@@ -581,7 +588,7 @@ pub(crate) fn walk(
             }
         } else {
             crate::assembly::classify_cycles(k, flip, rings, rims_lo, rims_hi, rims)
-                .map_err(|_| arc_ladder())?
+                .map_err(|_| reject(RejectReason::ArcBoundNotYet))?
         };
         faces.push(face);
         cells_of.push(members.clone());

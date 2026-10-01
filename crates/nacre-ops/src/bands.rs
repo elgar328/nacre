@@ -125,12 +125,12 @@ pub(crate) fn cyl_rows(
         });
     }
     out.sort_by(|a, b| (a.class, a.span[0]).cmp(&(b.class, b.span[0])));
-    // ★ A guard with its own sentence: a class exists because a face made it, so a class with no
-    // row is a wiring failure rather than an input.
-    // It has never fired; an unfired *guard* stays (an unfired *name* would not).
+    // ★ A class exists because a face made it, so a class with no row is the class table and the
+    // face rows disagreeing rather than an input. It has never fired; an unfired guard stays,
+    // under the name its whole class of guards shares (`CylinderStagesDisagree`).
     for k in 0..n_class {
         if !out.iter().any(|r| r.class == k) {
-            return Err(reject(RejectReason::CylinderGateUndecided));
+            return Err(reject(RejectReason::CylinderStagesDisagree));
         }
     }
     Ok(out)

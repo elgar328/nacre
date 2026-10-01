@@ -593,9 +593,9 @@ pub(crate) fn loop_winding(
 /// because this function's answer is a sign and a wrong one is silent.
 ///
 /// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
-/// `axis_up` each move the chained fixtures' wall (to `NonManifoldResultEdge`,
-/// [`RejectReason::RingOrientation`] and [`RejectReason::RulingBoundNotYet`] respectively), so the
-/// lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
+/// `axis_up` each turn 60–75 of the crate's tests red, refused as
+/// [`RejectReason::RingOrientation`] and [`RejectReason::LabelConflict`] (the plane cells and the
+/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
 /// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
 /// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
 /// ☑ Under the motion group it is still not caught — the commuting

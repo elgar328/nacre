@@ -731,9 +731,9 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // `PierceVertexUnnamed`: the names road builds carriers from its walls, so nothing dies at
     // ring construction.
     assert_eq!(count(|c| *c == Rejected(PierceVertexUnnamed)), 0);
-    // `RulingBoundNotYet`: a run whose boundary ruling has no node on the interval's z-line — a
-    // region crossing that line transversally in one sector while ending on it in another, which
-    // the region emitter walks.
+    // `RulingBoundNotYet`: a rim station the region walk cannot name — a region crossing that
+    // line transversally in one sector while ending on it in another, which the region emitter
+    // walks.
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 0);
     // `CylinderGateUndecided`, the chart's own refusal: a sector it cannot name as one arc is
     // read as the run of arcs it spans.

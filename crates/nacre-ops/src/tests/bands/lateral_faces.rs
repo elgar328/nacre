@@ -151,6 +151,32 @@ fn cyl_rows_gives_one_row_per_lateral_face() {
     assert!(rows.iter().all(|r| r.class == 0), "both on the one surface");
 }
 
+/// **A class the face rows never name is the stages disagreeing, not an input.** The real setup
+/// with its lateral rows relabelled to class 1 leaves class 0 with no row — a wiring failure no
+/// boolean reaches, planted so the guard's name is seen to bite.
+#[test]
+fn a_cylinder_class_no_face_row_names_is_a_defect() {
+    let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+    let lid = add_lid(&mut m);
+    let mut setup = plane_index_setup(&m, s, lid).unwrap();
+    for ix in &mut setup.plane_ix {
+        if *ix == ClassIx::Cyl(0) {
+            *ix = ClassIx::Cyl(1);
+        }
+    }
+    let got = cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).err();
+    assert!(
+        matches!(
+            got,
+            Some(BoolError::Rejected {
+                reason: RejectReason::CylinderStagesDisagree,
+                ..
+            })
+        ),
+        "{got:?}"
+    );
+}
+
 /// ★★ **The band pass makes nothing in the gap.** This is where the right fix parts company
 /// with the plausible one: merging the two faces' spans into a single `min..max` would put a
 /// band across `z ∈ [4,6]`, where the solid has no lateral face at all.

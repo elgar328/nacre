@@ -109,7 +109,7 @@ pub(crate) mod cell_ends {
         /// Present cells with a `NoCircle` end — the `circle_on_class` premise at one end.
         pub(crate) nocircle_present: usize,
         /// Cells two of whose speaking sides disagreed — the chamber is empty, and over a present
-        /// cell the emitter refuses the class (`CylinderGateUndecided`).
+        /// cell the emitter refuses the class (`LabelConflict`).
         pub(crate) disagree: usize,
         /// Cells with a face and no speaking end. Asserted 0 at the record; here as a count
         /// so the reporting test can say the assertion was live.

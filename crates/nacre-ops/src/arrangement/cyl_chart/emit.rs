@@ -2,9 +2,9 @@ use super::*;
 /// **The lateral faces of every cylinder class, emitted from the chart** — the regions road
 /// ([`regions::walk`]). Per class: the chart, its cells, each cell read off the
 /// neighbouring classes ([`Chart::read_cell`]), then the walk. What is refused here by name:
-/// a class with no row or rows of both solids, a θ order that cannot be formed, and a
-/// **present cell whose chamber could not be read** (`CylinderGateUndecided` — two speaking
-/// sides disagreed, or no side spoke); the walk names its own.
+/// a class with no row or rows of both solids (`CylinderStagesDisagree`), a θ order that cannot
+/// be formed, and a **present cell whose chamber could not be read** — two speaking sides
+/// disagreed (`LabelConflict`) or no side spoke (`CylinderGateUndecided`); the walk names its own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
@@ -26,10 +26,10 @@ pub(crate) fn emit_lateral(
         // share no handles) — stated as the refusal `cyl_rows` names for the wiring failure.
         let mut sides = rows.iter().filter(|r| r.class == k).map(|r| r.side);
         let Some(side) = sides.next() else {
-            return Err(reject(RejectReason::CylinderGateUndecided));
+            return Err(reject(RejectReason::CylinderStagesDisagree));
         };
         if sides.any(|s| s != side) {
-            return Err(reject(RejectReason::CylinderGateUndecided));
+            return Err(reject(RejectReason::CylinderStagesDisagree));
         }
         let chart = chart_of(jd, cyls, k, plane_faces, curved)?;
         let lines = Lines::of(jd, k, def, curved)?;
@@ -42,10 +42,14 @@ pub(crate) fn emit_lateral(
             .iter()
             .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
             .collect::<Result<_, _>>()?;
-        // A present cell whose chamber could not be read: two of its speaking sides disagreed,
-        // or none spoke — `chamber`'s own refusal.
-        if reads.iter().any(|r| r.present && r.emit.is_none()) {
-            return Err(reject(RejectReason::CylinderGateUndecided));
+        // A present cell whose chamber could not be read: two of its speaking sides disagreed —
+        // labels the arrangement wrote, contradicting each other — or none spoke.
+        if let Some(r) = reads.iter().find(|r| r.present && r.emit.is_none()) {
+            return Err(reject(if r.disagree {
+                RejectReason::LabelConflict
+            } else {
+                RejectReason::CylinderGateUndecided
+            }));
         }
         let walked = regions::walk(
             jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved, rims,

@@ -115,8 +115,9 @@ pub(crate) fn cylinder_gate(
             (true, true) => return Err(reject(RejectReason::CylinderPairContact)),
             (true, false) => SolidSide::A,
             (false, true) => SolidSide::B,
-            // A class is named by some face row; a table with none describes nothing.
-            (false, false) => return Err(undecided()),
+            // A class is named by some face row; a table with none is the class table and the
+            // face rows disagreeing.
+            (false, false) => return Err(reject(RejectReason::CylinderStagesDisagree)),
         };
         cyls.push(WorkingCyl {
             surf,
@@ -602,18 +603,17 @@ fn wall_faces_clear(
         if k != c {
             continue;
         }
-        let Some(fh) = fi.face else {
-            return Err(reject(RejectReason::CylinderGateUndecided));
-        };
+        let fh = fi.face.expect("collect_planes yields real faces");
         seen += 1;
         if !face_clears_footprint(model, model.face(fh), coeffs, o, m, r2, spans)? {
             return Ok(false);
         }
     }
-    // A class exists because faces made it, so finding none is a wiring failure rather than an
-    // input — and "every one of no faces clears" is a pass this must not hand out by default.
+    // A class exists because faces made it, so finding none is the class table and the face rows
+    // disagreeing rather than an input — and "every one of no faces clears" is a pass this must
+    // not hand out by default.
     if seen == 0 {
-        return Err(reject(RejectReason::CylinderGateUndecided));
+        return Err(reject(RejectReason::CylinderStagesDisagree));
     }
     Ok(true)
 }
@@ -815,33 +815,34 @@ fn tangency_rows(
         if k != c {
             continue;
         }
+        let fh = fi.face.expect("collect_planes yields real faces");
         // The classes across this face's straight edges, by the edges' own carriers.
-        let across: Vec<usize> = fi
-            .face
-            .map(|fh| {
-                let f = model.face(fh);
-                let own = f.surface;
-                std::iter::once(&f.outer)
-                    .chain(f.inner.iter())
-                    .flat_map(|lp| lp.half_edges.iter())
-                    .filter_map(|he| {
-                        let [a, b] = model.edge(he.edge).surfaces;
-                        let q = if a == own { b } else { a };
-                        faces
-                            .iter()
-                            .enumerate()
-                            .find_map(|(j, row)| match (row, plane_ix[j]) {
-                                (FaceRow::Plane(fj), ClassIx::Plane(cj))
-                                    if fj.face.is_some_and(|h| model.face(h).surface == q) =>
-                                {
-                                    Some(cj)
-                                }
-                                _ => None,
-                            })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let across: Vec<usize> = {
+            let f = model.face(fh);
+            let own = f.surface;
+            std::iter::once(&f.outer)
+                .chain(f.inner.iter())
+                .flat_map(|lp| lp.half_edges.iter())
+                .filter_map(|he| {
+                    let [a, b] = model.edge(he.edge).surfaces;
+                    let q = if a == own { b } else { a };
+                    faces
+                        .iter()
+                        .enumerate()
+                        .find_map(|(j, row)| match (row, plane_ix[j]) {
+                            (FaceRow::Plane(fj), ClassIx::Plane(cj))
+                                if model
+                                    .face(fj.face.expect("collect_planes yields real faces"))
+                                    .surface
+                                    == q =>
+                            {
+                                Some(cj)
+                            }
+                            _ => None,
+                        })
+                })
+                .collect()
+        };
         // ★ **Same-solid pairs write no row**. A wall tangent to its own solid's
         // cylinder is that solid's smooth edge — a fillet — not a contact between operands. The
         // judge would skip such a row anyway (`straddles` is false for a face that ends on the
@@ -853,7 +854,7 @@ fn tangency_rows(
         ) {
             continue;
         }
-        let read = fi.face.map(|fh| {
+        let read = {
             let got = face_clears_footprint(model, model.face(fh), coeffs, &o, &m, r2, &spans);
             #[cfg(feature = "tangency-trace")]
             if got.is_err() {
@@ -875,17 +876,16 @@ fn tangency_rows(
                 }
             }
             got
-        });
+        };
         // ★★★★★ **A face this could not read is «unknown», not «innocent».** Folded to «did not
         // clear», it would write a row carrying a `straddles` that was **never computed**, and
         // `!straddles` acquits. So the row carries the face's own refusal and the gate raises it —
         // the same name [`wall_faces_clear`] raises for such a face when it stands before the first
         // face that fails to clear, so which name an unreadable face wears does not depend on the
-        // order of the class's faces. No face row at all is the same kind of silence.
+        // order of the class's faces.
         let (cleared, unread) = match read {
-            Some(Ok(cleared)) => (cleared, None),
-            Some(Err(e)) => (false, Some(e)),
-            None => (false, Some(reject(RejectReason::CylinderGateUndecided))),
+            Ok(cleared) => (cleared, None),
+            Err(e) => (false, Some(e)),
         };
         if cleared {
             continue; // a face that clears the footprint cannot reach the tangent line
@@ -903,10 +903,7 @@ fn tangency_rows(
             .filter(|w| w.name.narrow() == Some(coeffs))
             .map(|w| -fi.orient_sign * w.sense.sign());
         // A property of the wall face and the line, not of which lateral is paired with it.
-        let straddles = fi
-            .face
-            .map(|fh| face_straddles_line(model, model.face(fh), coeffs, &o, &m, r2))
-            .unwrap_or(false);
+        let straddles = face_straddles_line(model, model.face(fh), coeffs, &o, &m, r2);
         for (cy_ix, cf) in &laterals {
             // The line must lie on this lateral **face**, not only on its surface: a half
             // cylinder's surface is tangent to a wall on the side the face does not have, and

@@ -249,8 +249,10 @@ pub enum RejectReason {
     /// a component sharing none is bridged by its nesting host instead — so this says the host
     /// was not found, and the cell has no side.
     UnreachedCell,
-    /// Labels reached a cell two ways and disagreed, so the flip relation does not hold across
-    /// the whole complex.
+    /// Labels reached a cell two ways and disagreed. On a plane class the flip relation does not
+    /// hold across the whole complex; on a cylinder's chart, where a cell's chamber is read off
+    /// its four sides rather than propagated, two sides that speak say different things
+    /// (`cyl_chart::emit_lateral`). Either way the labels are the arrangement's own writing.
     LabelConflict,
     /// One face's trace on a plane class came back incomplete, so the arrangement cannot
     /// conclude — a consumer must not read "no segments" as "the plane misses the solid".
@@ -442,13 +444,12 @@ pub enum RejectReason {
     /// holds and `Rat` does not is [`Self::WitnessNotRational`]. Conservative honest refusal, never
     /// a guess.
     ///
-    /// ★ The chart's emitter raises it too, for the
-    /// `chamber` sentence: a lateral cell two of whose speaking sides — its rims' labels and its
-    /// walls' rulings — **disagree** about its chamber (an arrangement label defect, refused here
-    /// instead of assembling an open shell; none in the suite, the ignored sweep or the census),
-    /// and a cylinder class with no row or rows of both solids. The cell reader
-    /// raises it for a cell with a face whose **two ends both say nothing** — answering
-    /// «present» there would be a guess; measured 0 with stations placed by name.
+    /// ★ The chart's emitter raises it too, for a present lateral cell **no side speaks for** —
+    /// its ends' rims and its walls' rulings all silent — and the cell reader for a cell with a
+    /// face whose **two ends both say nothing** (answering «present» there would be a guess;
+    /// measured 0 with stations placed by name). Two sides that speak and **disagree** are
+    /// [`Self::LabelConflict`]; a class table and face rows that disagree are
+    /// [`Self::CylinderStagesDisagree`].
     CylinderGateUndecided,
     /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
     /// tangency row (a wall plane exactly `r` from a cylinder's axis, the wall face's outer loop
@@ -671,37 +672,28 @@ pub enum RejectReason {
     /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, not a stopper.
     ///
     /// The arc population builds (the straddling boss — `bands`' fences), so no stopper
-    /// carries this name. What keeps the name alive are its honest backstops:
+    /// carries this name. What it names are the shapes the lateral's walk and assembly do not
+    /// arrange:
     ///
-    /// * a **band rim spelled `Rim::Circle` on a cut circle** — the emitter spells a cut
-    ///   rim once, as the chain of its arcs, so `band_loop` reaching a whole-circle rim that the
-    ///   split cut is a producer inconsistency, spelled there rather than assumed away;
-    /// * the region walk's own two: a run along an **uncut** rim that is not the whole circle,
-    ///   and cycles whose winding does not classify into one lower and one upper rim with holes
-    ///   the assembly can bridge (`classify_cycles`' abstentions — a chain with more than two
-    ///   seam contact vertices, a hole meeting the seam at other than zero or two, two bridging holes;
+    /// * cycles whose winding does not classify into one lower and one upper rim with holes the
+    ///   assembly can bridge (`classify_cycles`' abstentions — a chain with more than two seam
+    ///   contact vertices, a hole meeting the seam at other than zero or two, two bridging holes;
     ///   ☑ all measured 0 across the suite);
-    /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
-    ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
-    ///   crossing;
-    /// * a **hole meeting the seam at other than two contacts** — the merge that produces such a
-    ///   hole abstains on the same count, so this is a producer inconsistency too;
-    /// * a **contact whose cut circle has no world description** — `band_loop` orders the two
-    ///   contacts by their circles' exact axial parameters, and the population gate demanded a
-    ///   world description of every plane class long before a band could be emitted, so this too
-    ///   is spelled rather than assumed away;
-    /// * a **chain rim with no seam contact** — a chain winds once about the axis, so it
-    ///   passes the seam somewhere and the split named that point; a chain the assembly cannot
-    ///   attach its slit to is a producer inconsistency, named;
+    /// * a cut rim left with **one** node — the cut-rim table keeps such a rim on purpose
+    ///   (`draft::held_rims`), and one node cannot state a rim as arcs;
     /// * a **lateral whose outer walk is pinched at a seam contact** — a hole or the other rim
     ///   sharing the rim's contact, so the slit between them has no length and is no edge, or a
     ///   chain rim visiting one contact twice. Every
     ///   other refusal of the assembly speaks first (a result touching itself along that ruling
     ///   is `NonManifoldResultEdge`); what passes them all is a walk the lateral's reader
     ///   (`combinatorics::lateral_cycles`) would cut wrong, so it does not leave. No boolean in
-    ///   the suite or the census reaches it.
+    ///   the suite or the census reaches it;
+    /// * a **seam contact with no axial station** (`band_loop`, the chain walk) — the contact's
+    ///   circle has no rational axis parameter.
     ///
-    /// "Not yet" is still the literal truth for each of them.
+    /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
+    /// spelled whole, a hole whose contacts are not the two the merge kept, a chain with no
+    /// contact — the name is [`Self::CylinderStagesDisagree`].
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///
@@ -731,8 +723,8 @@ pub enum RejectReason {
     ///   against is rational), so what this name covers is only what the scan genuinely cannot
     ///   spell: an **arc** edge — whose bulge breaks the
     ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
-    ///   rather than a point. The gate's *arithmetic* failures are not this name: they wear
-    ///   [`Self::CylinderGateUndecided`], whose sentence is true of them and false of these.
+    ///   rather than a point. The gate's other failures are not this name: a statement it cannot
+    ///   put in the world wears [`Self::CylinderGateUndecided`], a width [`Self::WitnessNotRational`].
     /// * `combinatorics::loop_triples` — the road itself, **swallowed**: `trace_input` maps a
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
@@ -799,17 +791,17 @@ pub enum RejectReason {
     /// that crosses a z-line transversally in one sector while ending on it in another
     /// (the emitter walks regions of the chart; `cyl_chart::regions`).
     ///
-    /// What raises it is of two kinds. **Producer inconsistencies**, in the region walk: a
-    /// boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling the
-    /// wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
-    /// component with no outer cycle (☑ all measured 0 across the suite). And **shapes the rulings
-    /// split does not arrange**: a segment lying on the lateral along a line the gate did not
-    /// record (`planes::SharedRuling` — the lines of two secant classes, or of a secant and a
-    /// tangent one of the other solid, that lie on a lateral face), a recorded line's segment that
-    /// shares a stretch with a ruling piece without matching one end for end, or one that crosses
-    /// its own class there (`Transversal`, whose side is the directed line's — measured 0 in the
-    /// suite and the census: the one shape that reached it, a tangent wall across a half
-    /// cylinder's flat edge, is [`Self::TangentLineInAnotherPlane`] at the gate).
+    /// What raises it are **shapes the rulings split does not arrange**: a segment lying on the
+    /// lateral along a line the gate did not record (`planes::SharedRuling` — the lines of two
+    /// secant classes, or of a secant and a tangent one of the other solid, that lie on a lateral
+    /// face), or on planes that degenerate against the cylinder there; a recorded line's segment
+    /// that shares a stretch with a ruling piece without matching one end for end, or one that
+    /// crosses its own class there (`Transversal`, whose side is the directed line's — measured 0
+    /// in the suite and the census: the one shape that reached it, a tangent wall across a half
+    /// cylinder's flat edge, is [`Self::TangentLineInAnotherPlane`] at the gate); and a panel arc
+    /// whose two ends share no cut circle's plane, or two (`draft::seam_step`). And, until the
+    /// region walk carries why, a rim station the walk cannot name. Where the walk finds the
+    /// split's own record broken, the name is [`Self::CylinderStagesDisagree`].
     /// [`Self::ArcBoundNotYet`]'s straight sibling.
     ///
     /// ★ **«A class carrying both circles and rulings» is not one of those guards**:
@@ -857,6 +849,20 @@ pub enum RejectReason {
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.
     MissingSeam,
+    /// **Two stages of the cylinder road state one fact differently** — the class table and the
+    /// face rows (a cylinder or plane class no face row names, or rows of both solids on one
+    /// cylinder class), the split and the chart (a rim station the run cannot place, a ruling the
+    /// wall's pieces do not tile, a cycle whose pieces do not chain), the chart and the assembly
+    /// (a cut circle spelled whole, a hole whose seam contacts are not the two the merge kept, a
+    /// chain rim with no contact). Each guard stands where an earlier stage already settled the
+    /// fact, so what reaches one is an engine defect, never an input this kernel does not build.
+    ///
+    /// ★ One name for the class rather than one per guard: each of these used to wear a
+    /// coverage name (`CylinderGateUndecided`, `RulingBoundNotYet`, `ArcBoundNotYet`) whose
+    /// sentence was false of it, and none of the existing defect names says it — they state the
+    /// planar machine's own invariants. None has fired in the suite, the ignored sweep or the
+    /// census; a planted class with no face row does (`bands`' tests).
+    CylinderStagesDisagree,
     /// **The coplanar merge could not fold a group of same-class faces** — one of its defensive
     /// guards spoke (`assembly::coplanar`), or a result edge still has the same plane on both
     /// sides (`assembly::topology`), which the merge should have folded.
@@ -1103,6 +1109,7 @@ impl RejectReason {
             Self::HoleDepth => "hole_depth",
             Self::HoleRoots => "hole_roots",
             Self::MissingSeam => "missing_seam",
+            Self::CylinderStagesDisagree => "cylinder_stages_disagree",
             Self::CoplanarMerge => "coplanar_merge",
             Self::PartialCircleUncut => "partial_circle_uncut",
         }
@@ -1151,7 +1158,10 @@ impl RejectReason {
             | Self::UnorderedEdges
             | Self::EdgeOccupancyConflict
             // Two exact facts about one lateral face's presence, pointing opposite ways: the
-            // configuration is outside what this road covers, not a broken arrangement.
+            // configuration is outside what this road covers, not a broken arrangement. Presence
+            // is read off what the *operand* faces cover, so two faces disagreeing is an input this
+            // road does not arrange; a lateral cell's *chamber* is read off labels the arrangement
+            // wrote, so two of its sides disagreeing is `LabelConflict`, a defect.
             | Self::CylinderFaceUndecided
             | Self::NoClearRay
             | Self::RingHasNoWitness
@@ -1184,7 +1194,9 @@ impl RejectReason {
             | Self::PartialCircleUncut
             | Self::ObliqueCircleClass
             | Self::EdgeCurveUnderived
-            | Self::MissingSeam => RejectClass::SuspectedDefect,
+            | Self::MissingSeam
+            // Two stages of the cylinder road disagree about a fact an earlier one settled.
+            | Self::CylinderStagesDisagree => RejectClass::SuspectedDefect,
         }
     }
 }

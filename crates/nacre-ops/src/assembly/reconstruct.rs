@@ -493,14 +493,12 @@ pub(crate) fn reconstruct(
         };
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
-                // ★★ **The cut check comes before the rim lookup, and answers with the
-                // population's own name.** A circle the result still cuts cannot bound a whole
-                // disk — a face on its plane holds one of its nodes ([`HeldRims`]) — so reaching
-                // here with one is a producer inconsistency this backstop names honestly rather
-                // than as a dropped crossing (`MissingSeam` would misdiagnose a
-                // `SuspectedDefect`).
+                // ★★ **The cut check comes before the rim lookup.** A circle the result still
+                // cuts cannot bound a whole disk — a face on its plane holds one of its nodes
+                // ([`HeldRims`]) — so reaching here with one is the split and the faces
+                // disagreeing, named as that rather than as a dropped seam (`MissingSeam`).
                 if rims.contains_key(&(cyl, cls)) {
-                    return Err(reject(RejectReason::ArcBoundNotYet));
+                    return Err(reject(RejectReason::CylinderStagesDisagree));
                 }
                 let (_, e) = *rim
                     .get(&(g, cyl, cls))
@@ -614,11 +612,11 @@ pub(crate) fn reconstruct(
                     let hits: Vec<usize> = (0..lp.half_edges.len())
                         .filter(|&i| is_contact(model.he_start(lp.half_edges[i])))
                         .collect();
-                    // Two contacts, or this is a shape the walk does not arrange. The merge
-                    // that produces such a hole abstains on the same count, so a face reaching
-                    // here with any other number is a producer inconsistency, not an input.
+                    // Two contacts: the merge that produces such a hole abstains on any other
+                    // count, so a face reaching here with one is the merge and this walk
+                    // disagreeing, not an input.
                     let [i, j] = hits[..] else {
-                        return Err(reject(RejectReason::ArcBoundNotYet));
+                        return Err(reject(RejectReason::CylinderStagesDisagree));
                     };
                     let (pi, pj) = (
                         model.he_start(lp.half_edges[i]),
@@ -721,7 +719,7 @@ pub(crate) fn reconstruct(
                         if let Some(c) = rim.circle()
                             && rims.contains_key(&(k, c))
                         {
-                            return Err(reject(RejectReason::ArcBoundNotYet));
+                            return Err(reject(RejectReason::CylinderStagesDisagree));
                         }
                     }
                     let contacts = contacts_of(k);
@@ -790,8 +788,8 @@ pub(crate) fn reconstruct(
                                 }
                                 // A chain winds once, so it passes the seam somewhere: a chain
                                 // with no contact is a producer inconsistency, named.
-                                let (i, _) =
-                                    best.ok_or_else(|| reject(RejectReason::ArcBoundNotYet))?;
+                                let (i, _) = best
+                                    .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))?;
                                 hes.rotate_left(i);
                                 let v = model.he_start(hes[0]);
                                 Ok((hes, v))
