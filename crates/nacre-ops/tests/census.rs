@@ -2575,15 +2575,10 @@ fn measure_census() {
     // dump is this binary's only test): `surface_cache_differs` is exactly how many `in:` plane
     // digests may move, and a
     // `c ` row that moves without it is not explained.
-    //
-    // ⚠ `cache_discarded_differing` is how often an interning hit's incoming statement would
-    // have anchored elsewhere — nonzero by design (a plane's anchor is the first pusher's first
-    // point), and inside one model interning keeps one handle and one answer.
     let d = nacre_topo::surface_derive_counts();
     println!("stat surface_derived {}", d.derived);
     println!("stat surface_declined {}", d.declined);
     println!("stat surface_cache_differs {}", d.differs);
-    println!("stat cache_discarded_differing {}", d.discarded_differing);
     println!("stat surface_declined_unnamed {}", d.declined_unnamed);
     println!("stat surface_declined_wide {}", d.declined_wide);
     println!("stat surface_declined_motion {}", d.declined_motion);

@@ -376,12 +376,6 @@ pub struct SurfaceDeriveCounts {
     /// Of `derived`, how many differ bit-for-bit from what the producer stated — the census
     /// `in:` diff this cell predicts before it causes it.
     pub differs: u64,
-    /// Interning hits whose **discarded** cache differs bit-for-bit from the survivor's — how
-    /// often the incoming statement would have anchored elsewhere (or, where the truth places no
-    /// anchor, cached anything else, sense included). Nonzero by design: the anchor is the first
-    /// pusher's first point, so it depends on which statement came first — inside one model
-    /// interning keeps that to one handle and one answer.
-    pub discarded_differing: u64,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -390,9 +384,6 @@ static SURFACE_DERIVED: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 static SURFACE_DECLINED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "test-util"))]
 static SURFACE_DIFFERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-#[cfg(any(test, feature = "test-util"))]
-static SURFACE_DISCARDED_DIFFERING: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "test-util"))]
 static SURFACE_DECLINED_UNNAMED: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -414,7 +405,6 @@ pub fn surface_derive_counts() -> SurfaceDeriveCounts {
         derived: SURFACE_DERIVED.load(Relaxed),
         declined: SURFACE_DECLINED.load(Relaxed),
         differs: SURFACE_DIFFERS.load(Relaxed),
-        discarded_differing: SURFACE_DISCARDED_DIFFERING.load(Relaxed),
         declined_unnamed: SURFACE_DECLINED_UNNAMED.load(Relaxed),
         declined_wide: SURFACE_DECLINED_WIDE.load(Relaxed),
         declined_motion: SURFACE_DECLINED_MOTION.load(Relaxed),

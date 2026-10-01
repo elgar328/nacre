@@ -240,8 +240,9 @@ pub trait PlaneWitness: Witness {
 /// integer description of the plane, any width.
 ///
 /// The canonical name deliberately carries no direction (first nonzero coefficient positive),
-/// and the stored plane may hold it either way round — measured, 246 of the census corpus's 3,125
-/// interning hits arrive `flipped`. So the raw name cannot be handed to a direction-sensitive
+/// and the stored plane may hold it either way round — not a dormant case: a boss on its plate
+/// states one plane from both sides (the census count is on `nacre_topo::Model::push_plane`'s
+/// `flipped`). So the raw name cannot be handed to a direction-sensitive
 /// predicate; the σ that relates the two is folded in **here, once, at construction**
 /// ([`name_stored_ints`]), so every consumer inherits the stored convention and the existing
 /// `frame_sign` bridges apply verbatim.

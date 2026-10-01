@@ -303,32 +303,4 @@ impl Model {
             },
         }
     }
-
-    /// Count an interning hit whose incoming statement would have written a **different** cache
-    /// from the survivor's — how often the incoming statement would have anchored elsewhere. The
-    /// anchor is the first pusher's first point ([`Model::derive_surface_cache`]'s «not a function
-    /// of the geometry»), so a nonzero count is the design, not a defect.
-    ///
-    /// The survivor's normal is its world name's, which the incoming statement shares (one name,
-    /// one handle); only the anchor depends on which statement came first. So where the incoming
-    /// truth places its own first point, that is what is compared; where it does not, the cache
-    /// the incoming statement brought — the one it would have kept.
-    pub(super) fn count_discarded_cache(
-        &self,
-        h: Handle<Surface>,
-        points: &PlanePoints,
-        motion: Option<Handle<MotionNode>>,
-        discarded: &nacre_geom::Plane,
-    ) {
-        let survivor = self.surface_cache(h);
-        let differs = match (self.truth_anchor(points, motion), survivor) {
-            (Some(a), nacre_geom::Surface::Plane(p)) => {
-                a.map(f64::to_bits) != p.origin().as_array().map(f64::to_bits)
-            }
-            _ => surface_bits(survivor) != surface_bits(&nacre_geom::Surface::Plane(*discarded)),
-        };
-        if differs {
-            SURFACE_DISCARDED_DIFFERING.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
 }

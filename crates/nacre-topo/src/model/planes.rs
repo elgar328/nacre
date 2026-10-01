@@ -26,8 +26,8 @@ impl Model {
     /// direction has to be reconciled somewhere, and the honest place is where the caller still
     /// knows what it asked for. It is read off the two truths, never the caches.
     ///
-    /// ★★ **It is not a dormant path.** Measured over the census corpus, interning hits 3,125
-    /// times and **246 of those report `flipped`** — a boss meeting the plate it sits on is one
+    /// ★★ **It is not a dormant path.** Measured over the census corpus, interning hits 3,281
+    /// times and **297 of those report `flipped`** — a boss meeting the plate it sits on is one
     /// plane approached from both sides, which is as ordinary as it sounds.
     pub fn push_plane(
         &mut self,
@@ -76,12 +76,11 @@ impl Model {
                 if (h.index() as usize) < 3 {
                     SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-                // ★ The incoming statement is **dropped here** — the survivor's cache stands. Its
-                // normal is the shared name's; its anchor is the first pusher's first point, and
-                // a test build's `count_discarded_cache` is the only measurement of how often the
-                // incoming statement would have anchored elsewhere.
-                #[cfg(any(test, feature = "test-util"))]
-                self.count_discarded_cache(h, &points, motion, &fallback);
+                // ★ The incoming statement is **dropped here** — the survivor's cache stands, and
+                // its anchor is the first pusher's: that statement's first point where the truth
+                // places one, else the figure that pusher brought. Which statement came first is
+                // therefore a choice; what it reaches is measured by `nacre-ops`'
+                // `tests/instruments/plane_anchor.rs` — not the judge, and not the model.
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
