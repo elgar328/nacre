@@ -26,7 +26,7 @@ Nacre is at an early stage. While the version is `0.0.z`, any release may change
 
 | Milestone | Coverage | Status |
 |---|---|---|
-| **M1–M4**: foundation | Exact storage and handles, sketches with lines and arcs, extrude, pad and pocket, datum planes, rigid motions and mirroring, replay, validation, mass properties, tessellation, shape-only STEP export | **Done** |
+| **M1–M4**: foundation | Exact storage and handles, sketches with lines and arcs, extrude either way off a plane or a face, datum planes, rigid motions and mirroring, replay, validation, mass properties, tessellation, shape-only STEP export | **Done** |
 | **M5**: polyhedral boolean | Booleans on planar solids, including coplanar contact, containment, cavities, multiple bodies and rotated operands | **Done** |
 | **M6**: quadric boolean | Planes with cylinders, spheres and cones | **In progress**: cylinders work against planes perpendicular or parallel to their axis |
 | **M7**: general NURBS | Intersections of free-form surfaces | Research track |

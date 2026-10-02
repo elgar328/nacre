@@ -235,8 +235,8 @@ pub enum Motion {
     /// because their question is *"are these the same plane"*. A frame's `ŵ` is a direction, and
     /// two faces of one plane can face opposite ways; `flip` says to negate the coefficients, so
     /// the node names the sense as well as the plane. Without it a sketch on a reversed face comes
-    /// out mirrored in `u` with its sweep running inward (measured: a tilted second boss came back
-    /// `PadMissesFace`). It is decided from the truth by the consuming operation (the plane's
+    /// out mirrored in `u` with its sweep running inward (measured: a tilted second boss missed its
+    /// face). It is decided from the truth by the consuming operation (the plane's
     /// facing, the motion's handedness, the side the use faces), never chosen by a caller.
     ///
     /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so

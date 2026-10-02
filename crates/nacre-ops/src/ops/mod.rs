@@ -1,4 +1,4 @@
-//! Feature operations: the public sketch/extrude/pad/pocket API and the `apply`/
+//! Feature operations: the public sketch/extrude API and the `apply`/
 //! `replay` driver. The top layer — it composes the boolean engine ([`crate::boolean`]) and rigid
 //! transform ([`crate::transform`]) over the plane substrate below.
 
@@ -22,7 +22,6 @@ use std::borrow::Cow;
 
 mod apply;
 mod datum;
-mod feature;
 /// Solids built through the product's own operations — see the module doc.
 #[cfg(any(test, feature = "test-util"))]
 pub mod fixtures;
@@ -33,7 +32,6 @@ mod profile;
 
 pub use apply::*;
 use datum::*;
-pub(crate) use feature::*;
 pub use frame::*;
 pub use plane::*;
 pub(crate) use prism::*;
@@ -82,26 +80,6 @@ pub enum Operation {
     /// ([`OpError::ZeroDistance`]).
     Extrude {
         frame: SketchFrame,
-        profile: Profile2d,
-        dist: f64,
-    },
-    /// Pad a boss: extrude `profile` on a planar `face` into a tool prism (height
-    /// `dist`) and `Fuse` it onto the solid — boolean sugar over [`Operation::Boolean`],
-    /// not a direct face-split. No "profile inside the face" constraint: an overhanging
-    /// footprint is handled by the boolean's coplanar-contact / overhang path. Adds
-    /// material.
-    PadOnFace {
-        face: Handle<Face>,
-        profile: Profile2d,
-        dist: f64,
-    },
-    /// Carve a blind pocket: extrude `profile` on a planar `face` into a tool prism
-    /// (depth `dist`) and `Cut` it from the solid — boolean sugar over
-    /// [`Operation::Boolean`], not a direct face-split. No "profile inside the face"
-    /// constraint (overhang footprints route through the boolean). A cut that would
-    /// punch through is rejected as not-blind. Removes material.
-    PocketOnFace {
-        face: Handle<Face>,
         profile: Profile2d,
         dist: f64,
     },
@@ -209,9 +187,6 @@ pub enum OpError {
     /// distinct cylinders) — the same frontier as the cylinder–cylinder boolean (M6b). A lens, a
     /// cam lobe; a straight step between the arcs is what builds today.
     ArcsMeetAtVertex,
-    /// A pad's or pocket's distance that is not positive — there the distance is a depth and the
-    /// face's outward says the side.
-    NonPositiveDistance,
     /// An extrusion distance of zero: a prism of no thickness. Either sign is a side
     /// ([`Operation::Extrude`]); zero is neither.
     ZeroDistance,
@@ -239,23 +214,12 @@ pub enum OpError {
     /// A curve/surface construction collapsed (collinear/coincident points, a
     /// zero-length profile edge).
     DegenerateGeometry,
-    /// A pad/pocket target face is not planar (only planar faces carry a sketch frame;
-    /// curved-face features arrive with the quadric milestones).
+    /// A sketch asked to stand on a face or surface that is not planar (only planar faces carry a
+    /// sketch frame; curved-face features arrive with the quadric milestones).
     NonPlanarFace,
-    /// A pad/pocket target face belongs to no live solid's outer shell (a stale
-    /// or non-live handle).
+    /// A face asked for its sketch frame belongs to no live solid's outer shell (a stale or
+    /// non-live handle).
     FaceNotInLiveSolid,
-    /// A pocket's depth reaches through the solid: the carved prism is not blind, so `Cut`
-    /// produced a through-hole with no floor face. `pocket` requires `dist` less than the
-    /// thickness at the face (the boolean pocket path rejects honestly rather than return a
-    /// solid with no floor).
-    PocketNotBlind,
-    /// A pad's footprint does not meet the face at all: the `Fuse` came back severed, which two
-    /// one-shell solids can only do if they never touched. Like [`OpError::PocketNotBlind`] this is
-    /// the *operation's* premise breaking, not a boolean failure — the boolean answered correctly
-    /// (a base and a detached boss). Use `Operation::Boolean` directly if two disjoint solids are
-    /// what you want. An overhanging footprint still touches and is not this error.
-    PadMissesFace,
     /// A boolean operation failed (M5).
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
@@ -346,7 +310,6 @@ pub enum OpError {
 /// Which store an operation-log handle indexes. (`Surface` is what datum ops name.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogCell {
-    Face,
     Solid,
     Surface,
     Vertex,
@@ -423,16 +386,6 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         faces: Vec<Handle<Face>>,
     },
-    /// The superseding solid and the boss's top cap face.
-    PadOnFace {
-        solid: Handle<Solid>,
-        top_face: Handle<Face>,
-    },
-    /// The superseding solid and the pocket's floor face.
-    PocketOnFace {
-        solid: Handle<Solid>,
-        bottom_face: Handle<Face>,
-    },
     /// The boolean result solids (supersede both inputs). Usually one; a boolean that severs the
     /// body yields several, and `Cut(A, A)` (deferred) would yield none.
     Boolean { solids: Vec<Handle<Solid>> },
@@ -460,9 +413,6 @@ pub enum OpOutput {
     },
 }
 
-/// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
-/// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
-/// profile on a face (pad / pocket).
 /// **Which frame a sketch lives in** — the plane (a handle: one statement of the plane, shared
 /// with every face on it), its [`nacre_topo::FramePlacement`], and whether the plane's canonical
 /// coefficients need negating to face the way the sketch does. Everything a
@@ -620,15 +570,6 @@ impl SketchFrame {
     pub fn flip(&self) -> bool {
         self.flip
     }
-}
-
-struct FaceFrame {
-    solid_h: Handle<Solid>,
-    surface_h: Handle<Surface>,
-    /// The frame the face's sketch lives in — chosen from the truth by `face_frame`, so what a
-    /// caller is told ([`face_plane`], [`face_sketch_frame`]) and what the operation builds are
-    /// one value.
-    frame: SketchFrame,
 }
 
 /// **The handle road and the value road build the same prism.**

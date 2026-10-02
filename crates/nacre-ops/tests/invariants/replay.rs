@@ -1085,8 +1085,6 @@ fn a_log_using_every_variant_replays() {
         match op {
             Operation::DatumPlane { .. } => "DatumPlane",
             Operation::Extrude { .. } => "Extrude",
-            Operation::PadOnFace { .. } => "PadOnFace",
-            Operation::PocketOnFace { .. } => "PocketOnFace",
             Operation::Boolean { .. } => "Boolean",
             Operation::Transform { .. } => "Transform",
             Operation::Mirror { .. } => "Mirror",
@@ -1366,43 +1364,9 @@ fn a_late_reject_is_not_index_neutral() {
     }
 
     // ── Late: the geometry had to exist before the answer was known ─────────
-    for (name, setup) in [
-        (
-            "PadMissesFace",
-            Box::new(|| {
-                let (m, _, faces) = seeded();
-                let op = Operation::PadOnFace {
-                    face: faces[1],
-                    profile: rect(20.0, 20.0, 21.0, 21.0), // nowhere near the cap
-                    dist: 1.0,
-                };
-                (m, op)
-            }) as Box<dyn Fn() -> _>,
-        ),
-        (
-            "PocketNotBlind",
-            Box::new(|| {
-                let (m, _, faces) = seeded();
-                let op = Operation::PocketOnFace {
-                    face: faces[1],
-                    profile: rect(0.5, 0.5, 1.5, 1.5),
-                    dist: 5.0, // straight through the 1-thick block
-                };
-                (m, op)
-            }),
-        ),
-    ] {
-        let d = probe(name, &setup).unwrap_or_else(|| panic!("{name} was supposed to reject"));
-        assert!(
-            d > 0,
-            "{name} is a late reject and is expected to leave residue"
-        );
-        late += 1;
-    }
 
-    // A boolean reject too, so all three late families back the "no reject-after-commit"
-    // claim rather than two of them. Corner coincidence is genuinely non-manifold and the
-    // engine declines it (cf. `a_corner_coincident_cut_is_rejected_not_silently_wrong`).
+    // A boolean reject — the late family: its arrangement runs before it declines. Corner
+    // coincidence is genuinely non-manifold and the engine declines it (cf. `a_corner_coincident_cut_is_rejected_not_silently_wrong`).
     // The fixtures put cells in the arena outside any log (`apply` leaves the log to its
     // caller), which is exactly why this probe is not a replay test — it only asks what a reject
     // does to the model in front of it.
@@ -1584,70 +1548,6 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
             }
         }
     }
-}
-
-/// ★ **A reject does not commit.**
-///
-/// `ops` names this contract where `PadMissesFace` restores `live_solids`: "the model the
-/// caller sees is the one it had before". `PocketNotBlind` is the case to watch: its verdict
-/// comes after the boolean has retired the caller's solid and installed the through-cut result
-/// in its place, so it must be raised in the scope that still holds the result solids —
-/// otherwise the caller gets an `Err` **and** a different live model.
-///
-/// What a late reject still leaves is **arena residue** — the store is append-only and the
-/// prism's cells stay. That is the honest remainder, and the reason a session must rebuild from
-/// its log before recording again ([`a_session_that_keeps_recording_after_a_late_reject_diverges`]).
-#[test]
-fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
-    let mut m = Model::new();
-    let __seed = extrude_op(&m, 0.0, 2.0, 1.0);
-    let OpOutput::Extrude { solid, faces } = apply(&mut m, &__seed).expect("seed") else {
-        unreachable!()
-    };
-    let live_before: Vec<_> = m.live_solids().to_vec();
-    let arena_before = arena_lengths(&m);
-
-    let err = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: rect(0.5, 0.5, 1.5, 1.5),
-            dist: 5.0, // straight through the 1-thick block
-        },
-    )
-    .expect_err("a through-cut is not a blind pocket");
-    assert!(matches!(err, nacre_ops::OpError::PocketNotBlind));
-
-    assert!(
-        m.live_solids().contains(&solid),
-        "the declined pocket must leave the caller's solid live"
-    );
-    assert_eq!(
-        m.live_solids().to_vec(),
-        live_before,
-        "the live model after a reject is the one the caller had before it"
-    );
-    // The model still works: the solid can be pocketed for real.
-    apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: rect(0.5, 0.5, 1.5, 1.5),
-            dist: 0.5,
-        },
-    )
-    .expect("a blind pocket on the restored solid");
-
-    // The remainder that is *not* repaired, stated rather than implied.
-    let grew: usize = arena_lengths(&m)
-        .iter()
-        .zip(&arena_before)
-        .map(|(a, b)| a - b)
-        .sum();
-    assert!(
-        grew > 0,
-        "the append-only arena still keeps the declined prism's cells"
-    );
 }
 
 /// ★ **The positive control for the repair: re-anchoring did not weaken the door.**

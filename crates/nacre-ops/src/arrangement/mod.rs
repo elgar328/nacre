@@ -329,7 +329,7 @@ pub(crate) fn boolean(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<(Vec<Handle<Solid>>, Notes, ClassOf), BoolError> {
+) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -354,32 +354,6 @@ pub(crate) fn boolean(
     // `Judge::planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
-    // ★★★ **What every input face's plane became.** The classes are decided by now, and
-    // `assemble_fuse_cut` gives each result face `geom[..].surf` — its class's representative — so
-    // this is the only honest answer to *"which surface did my face's plane end up as?"*. A caller
-    // that asks it afterwards, by comparing handles or coordinates, is re-deciding a question this
-    // engine already settled with evidence (see `ops::find_face_coplanar_with`).
-    // Plane rows only: "which plane class did my face end up on" is not a question a lateral
-    // face has an answer to, and the report's consumers ask it of planar faces
-    // (`ops::find_face_coplanar_with`).
-    let class_of: ClassOf = surf_ix
-        .iter()
-        .filter_map(|(&f, &i)| match plane_ix[i] {
-            ClassIx::Plane(c) => {
-                // The face's outward is `facing` times the root's, which is `frame_sign` times the
-                // way the representative surface faces.
-                let orientation = crate::planes::face_facing(&jd, &faces_tab, i, c).map(|facing| {
-                    if facing * geom[c].frame_sign > 0 {
-                        nacre_topo::Orientation::Forward
-                    } else {
-                        nacre_topo::Orientation::Reversed
-                    }
-                });
-                Some((f, (geom[c].surf, orientation)))
-            }
-            ClassIx::Cyl(_) => None,
-        })
-        .collect();
     // ★ **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
     // may reject, and every one of those rejects has to pass through `undecided_reject` first —
     // otherwise a symptom is reported where a precision failure is the cause. Returning early from
@@ -558,7 +532,7 @@ pub(crate) fn boolean(
     // if it were the problem — a precision shortage hiding behind a ring-orientation symptom — and
     // checking the evidence *before* returning the symptom is what keeps it shut.
     undecided_reject(&notes)?;
-    out.map(|solids| (solids, notes, class_of))
+    out.map(|solids| (solids, notes))
 }
 
 /// **A judgement that could not be made is a reject, not a zero.**

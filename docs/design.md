@@ -33,7 +33,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom
 ├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)   ← topo · geom · math · store
-├── nacre-ops        # 연산: datum 평면/sketch/extrude/pad/pocket/boolean/transform/mirror/copy
+├── nacre-ops        # 연산: datum 평면/sketch/extrude/boolean/transform/mirror/copy
 │                    #   불리언은 한 방향이다: boolean(앞문) → arrangement(엔진) → assembly(조립),
 │                    #   셋 다 draft(지어지기 전 면의 어휘)를 읽는다. 관문이 그 방향을 단언한다
 │                    #   ← topo · geom · math · store · exact · judge (+ 선택적 rayon)
@@ -72,7 +72,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
   - **`face_props.normal`은 `Option`이다.** 원통 면에는 하나의 법선이 없는데, **면 고르기는 모든 면을 훑는 일**이라 실패시키면 필터가 통째로 망가진다. `None`이면 자연스럽게 건너뛴다.
   - **면 고르기가 위상 명명 문제를 우회한다.** 코드-CAD는 면을 번호가 아니라 `filter(법선≈+Z).max_by(중심.z)`처럼 **생김새로** 고르고 매 실행 다시 고른다 — 저장된 참조가 없으니 상류가 바뀌어도 썩지 않는다.
 
-**면의 스케치 좌표계 — `face_plane`.** 면의 `SketchFrame`(`face_sketch_frame`)을 실현한 것이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 한 값의 실현 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다). 실현은 도로마다 그 도로의 것이다(`frame_basis`): 세계 도로는 유리수 세계 기저를 한 번 반올림하고(그 도로의 꼭짓점이 그렇게 실현된다), 프레임 노드 도로는 사슬을 재생한다.
+**면의 스케치 좌표계 — `face_plane`.** 면의 `SketchFrame`(`face_sketch_frame`)을 실현한 것이고, **그 프레임 위의 `Extrude`(pad 의 보스, pocket 의 공구)가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 한 값의 실현 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다). 실현은 도로마다 그 도로의 것이다(`frame_basis`): 세계 도로는 유리수 세계 기저를 한 번 반올림하고(그 도로의 꼭짓점이 그렇게 실현된다), 프레임 노드 도로는 사슬을 재생한다.
 
 **공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 진실에서 고르는 값을 그대로 내주는 이음새다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 같은 `flip` 으로 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
 
@@ -123,7 +123,7 @@ impl<T> Eq for Handle<T> {}
 
 주의: Handle의 유효성은 **자기 Model 안에서만** 성립한다. replay가 새 Model을 반환하므로 모델 두 개가 공존하는 순간이 실제로 생기고, A 모델의 Handle을 B에 쓰면 조용히 엉뚱한 객체가 나온다. 디버그 빌드에서 Handle 이 자기를 발급한 store 의 id 를 들고 `Store::get` 이 검사한다(`#[cfg(debug_assertions)]` — 릴리즈에서는 zero-cost로 제거). id 는 프로세스 로컬 `AtomicU64` 카운터로 `Store` 생성 때마다 발급한다(replay마다 새 값). 따라서 **Handle 자체는 직렬화하지 않는다** — 영속화 대상은 연산 로그(「연산 층」 절)이고, replay가 인덱스를 결정적으로 재생성한다.
 
-**로그 속 핸들은 «인덱스 어휘»다.** `Operation` 의 변종은 `Stated` datum 하나를 빼고 전부 핸들을 싣는데(`Extrude` 의 프레임 평면·`DatumPlane` 의 정점/프레임·`PadOnFace`·`PocketOnFace`·`Boolean`·`Transform`·`Mirror`·`Copy`), 그 핸들이 가리키는 셀은 로그가 기록된 모델의 것이지 replay 가 짓고 있는 모델의 것이 아니다. 핸들에서 모델을 건너 살아남는 부분은 **인덱스뿐**이므로, replay 는 op 를 적용하기 직전 그 인덱스를 **자기 아레나의 핸들로 재고정(rebind)** 한다. 범위 밖이면 `LogHandleOutOfRange { cell, index }` — **존재만** 답하고, live 여부·합법성은 여전히 op 자신의 `SolidNotLive`/`FaceNotInLiveSolid` 몫이다.
+**로그 속 핸들은 «인덱스 어휘»다.** `Operation` 의 변종은 `Stated` datum 하나를 빼고 전부 핸들을 싣는데(`Extrude` 의 프레임 평면 — 앞선 연산이 만든 면의 평면일 수 있다 · `DatumPlane` 의 정점/프레임 · `Boolean`·`Transform`·`Mirror`·`Copy`), 그 핸들이 가리키는 셀은 로그가 기록된 모델의 것이지 replay 가 짓고 있는 모델의 것이 아니다. 핸들에서 모델을 건너 살아남는 부분은 **인덱스뿐**이므로, replay 는 op 를 적용하기 직전 그 인덱스를 **자기 아레나의 핸들로 재고정(rebind)** 한다. 범위 밖이면 `LogHandleOutOfRange { cell, index }` — **존재만** 답하고, live 여부·합법성은 여전히 op 자신의 몫이다(`SolidNotLive` 등).
 
 재고정은 **op 단위 just-in-time** 이다(op N 의 핸들은 op N−1 이 만든 셀을 가리키므로 사전 일괄 변환은 성립하지 않는다). 덕분에 원자성이 공짜로 따라온다: 재고정 실패는 그 op 가 아직 아무것도 push 하기 전에 일어나고, 실패한 replay 의 지역 모델은 통째로 버려진다.
 
@@ -136,9 +136,9 @@ impl<T> Eq for Handle<T> {}
 **거절은 live 모델에 원자적이지만 아레나 인덱스에는 아니다.** 거절에는 두 종류가 있다:
 
 - **이른 거절** — 요청만 보고 판정(`ZeroDistance`, 창 밖, `Profile2d::check`, `NonPlanarFace`, `SolidNotLive`…). 아레나 Δ = 0.
-- **늦은 거절** — 기하를 지어 봐야 알 수 있는 판정(`PadMissesFace`, `PocketNotBlind`, `Boolean(_)`). 도구 프리즘의 셀이 **append-only 아레나에 남는다**.
+- **늦은 거절** — 기하를 지어 봐야 알 수 있는 판정(`Boolean(_)`). 배열이 지은 셀이 **append-only 아레나에 남는다**.
 
-live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 부울에서 이것은 우연이 아니라 **구조**다: 조립의 피연산자 은퇴는 「결과가 받아들여진 뒤 한 자리」에서만 일어나고(`assemble_fuse_cut` → `reconstruct`), 그와 별도로 `boolean`/`boolean_with_classes` 가 엔진의 **모든** `Err` 에 live set 스냅샷을 복원한다(`restore_live`; `coverage/rejects.rs` 와 `self_touch.rs` 가 단언한다). 그러나 아레나 길이는 되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model = replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는 **이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(예: `LogHandleOutOfRange{Solid, 4}`).
+live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 부울에서 이것은 우연이 아니라 **구조**다: 조립의 피연산자 은퇴는 「결과가 받아들여진 뒤 한 자리」에서만 일어나고(`assemble_fuse_cut` → `reconstruct`), 그와 별도로 `boolean` 이 엔진의 **모든** `Err` 에 live set 스냅샷을 복원한다(`restore_live`; `coverage/rejects.rs` 와 `self_touch.rs` 가 단언한다). 그러나 아레나 길이는 되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model = replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는 **이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(예: `LogHandleOutOfRange{Solid, 4}`).
 
 이 절의 주장은 전부 `crates/nacre-ops/tests/invariants/replay.rs` 가 측정한다.
 
@@ -159,7 +159,7 @@ live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋
 
 ### 편집 연산의 supersede 의미론 — live 도달가능성 (partially persistent)
 
-편집 연산(pad·pocket·boolean·transform·mirror)이 기존 위상을 바꿀 때, append-only라 옛 셀을 **지우지 못한다**. 그래서 Model은 **`live_solids: Vec<Handle<Solid>>`(살아있는 솔리드 목록)를 진실로 보유**하고, 편집 연산은 옛 셀을 남긴 채 새 셀을 push한 뒤 **live 목록이 새 결과 Solid만 참조하도록 갱신**한다(소비된 입력 Solid는 목록에서 빠진다). **"살아있는 모델"의 정의 = live_solids에서 하향 참조로 도달 가능한 셀의 폐포(reachable closure).** supersede된 옛 셀은 아레나에 남되 어떤 live solid도 안 가리키므로 자동으로 "안 보인다".
+편집 연산(boolean·transform·mirror)이 기존 위상을 바꿀 때, append-only라 옛 셀을 **지우지 못한다**. 그래서 Model은 **`live_solids: Vec<Handle<Solid>>`(살아있는 솔리드 목록)를 진실로 보유**하고, 편집 연산은 옛 셀을 남긴 채 새 셀을 push한 뒤 **live 목록이 새 결과 Solid만 참조하도록 갱신**한다(소비된 입력 Solid는 목록에서 빠진다). **"살아있는 모델"의 정의 = live_solids에서 하향 참조로 도달 가능한 셀의 폐포(reachable closure).** supersede된 옛 셀은 아레나에 남되 어떤 live solid도 안 가리키므로 자동으로 "안 보인다".
 
 **`Mirror` — 반사는 루프 역순으로 표현한다.** `Operation::Mirror { solid, axis, offset }`는 좌표평면 `axis = offset` 기준 반사다(**3개 방향 × 임의 위치**). 길이를 보존하고 **손잡이를 뒤집는다** — `Isometry`가 proper motion 전용이라 회전·이동의 어떤 조합으로도 못 만드는 유일한 강체 운동이다("−1배 스케일"은 미러와 스케일을 뭉개는 트릭이고 커널에 스케일은 없다). `transform`처럼 입력을 supersede하므로 원본을 남기려면 `copy`와 짝짓는다.
 
@@ -946,7 +946,7 @@ pub struct Model {
     motions:  Store<MotionNode>,              // interned — 쓰기는 `push_motion` 하나
 
     // 루트 — 살아 있는 솔리드 핸들 목록(도달 집합의 뿌리). 저장소가 아니라 «무엇이 현재 모델인가».
-    // 읽기는 `live_solids()`, 쓰기는 `push_solid`·`supersede_live`·`make_live`·`restore_live`.
+    // 읽기는 `live_solids()`, 쓰기는 `push_solid`·`supersede_live`·`restore_live`.
     live_solids: Vec<Handle<Solid>>,
     world_planes: Vec<Handle<Surface>>,       // `Model::new` 가 심은 세계 평면 셋(길이 늘 3)
 
@@ -1369,9 +1369,6 @@ pub enum Operation {
     // 스케치 평면·프로파일 개념은 Extrude 인자로 흡수된다(별도 Sketch op 없음).
     // 평면은 값으로 싣지 않고 `SketchFrame` 으로 «이름 부른다». `dist` 는 부호 있는 두께(음수는 ŵ 반대쪽), 0 은 거절.
     Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },
-    // 기존 면 위 작업 — 툴 프리즘을 세워 Fuse / Cut 하는 불리언 설탕. Handle<Face> 참조.
-    PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 },
-    PocketOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 },
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },   // BoolKind = Fuse | Cut | Common
     // 강체 변환: `solid` 를 그 상(像)으로 대체한다. `Isometry` 가 정확한 정의(로그의 진실)이고
     // 기하는 실현된 캐시다.
@@ -1387,7 +1384,7 @@ pub enum Operation {
 // topo 보다 위 레이어에 살아야 한다.
 ///
 /// 로그를 처음부터 재생. 보장: 동일 로그 → 동일 모델(인덱스까지 재현).
-/// **8변종 전부**에서 성립한다(값-전용 변종은 없다) — replay 가 연산 하나마다 로그의 핸들을
+/// **6변종 전부**에서 성립한다 — replay 가 연산 하나마다 로그의 핸들을
 /// 인덱스로 재고정하기 때문이며(「인덱스 어휘」), 잠금은 `tests/invariants/replay.rs` 다.
 /// `apply` 는 재고정하지 않는다 — 그 모델은 호출자의 것이고, 거기서 조용히 재고정하면 진짜
 /// 남의 핸들을 세탁해 교차-모델 가드를 무력화한다.
@@ -1439,7 +1436,7 @@ datum 일반:
 
 검산: 도넛 각기둥은 V16 − E24 + F10 − L_i 2 = 0 = 2(S−G), genus 1 — **오일러의 `L_i` 항이 실제로 필요한 형상**이다.
 
-**프로파일 계약은 커널이 검사한다 — `Profile2d::check`.** 생성자(`polygon`/`with_holes`)는 **진실을 잡는다**: 각 좌표를 `Rat::from_decimal` 로 리프트해 `Ring2d` 의 유리수 정점으로 보관하고(십진 창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러), **공선 중간점을 소멸**시킨다(엄격 내부만 — 무손실 정규화; 중복점·스파이크는 생존해 제 이름의 에러로 보고된다. 이로써 모든 프리즘 코너가 3-평면 정의를 보유한다). *계약*(단순성·서로소·포함)은 생성자가 아니라 **프로파일을 소비하는 모든 연산이 먼저 `check()` 를 통과시킨다**(진입점은 `extrude` 와 pad·pocket 이 공유하는 `extrude_and_boolean` 둘뿐). 계약은 넷: 모든 링이 **단순 다각형**, 링끼리 서로소, 구멍은 외곽 안, 구멍 속 구멍 없음(그건 섬이고 `from_rings` 가 갈라낸다). 판정은 전부 **저장된 유리수 진실 위**에서다 — f64 이진값의 정확 부호와 십진 진실의 부호는 퇴화 근처에서 실제로 갈리고(0.1·0.2·0.3 공선이 이진에선 굽음), 작성자가 쓴 수가 이긴다.
+**프로파일 계약은 커널이 검사한다 — `Profile2d::check`.** 생성자(`polygon`/`with_holes`)는 **진실을 잡는다**: 각 좌표를 `Rat::from_decimal` 로 리프트해 `Ring2d` 의 유리수 정점으로 보관하고(십진 창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러), **공선 중간점을 소멸**시킨다(엄격 내부만 — 무손실 정규화; 중복점·스파이크는 생존해 제 이름의 에러로 보고된다. 이로써 모든 프리즘 코너가 3-평면 정의를 보유한다). *계약*(단순성·서로소·포함)은 생성자가 아니라 **프로파일을 소비하는 모든 연산이 먼저 `check()` 를 통과시킨다**(진입점은 `extrude_on_frame` 하나다). 계약은 넷: 모든 링이 **단순 다각형**, 링끼리 서로소, 구멍은 외곽 안, 구멍 속 구멍 없음(그건 섬이고 `from_rings` 가 갈라낸다). 판정은 전부 **저장된 유리수 진실 위**에서다 — f64 이진값의 정확 부호와 십진 진실의 부호는 퇴화 근처에서 실제로 갈리고(0.1·0.2·0.3 공선이 이진에선 굽음), 작성자가 쓴 수가 이긴다.
 
 **왜 "호출자의 약속"으로 둘 수 없는가.** 계약을 어긴 프로파일은 검사가 없으면 전부 `extrude` 성공 · `validate` 위반 0건 · STEP 내보내기 성공이다. 나비넥타이는 부피가 `NaN` 이지만, **구멍이 외곽 밖이면 12.0(정답 16), 구멍 속 구멍이면 20.0(짝-홀 정답 52)** — 눈치챌 단서가 없는 그럴듯한 숫자다. 조용히 틀린 답은 약속으로 둘 수 있는 종류가 아니다.
 
@@ -2172,27 +2169,16 @@ A 를 택한 근거:
 - Handle 기반 정의(`Vertex::ThreePlane([Handle<Surface>; 3])`)는 위상 계층(`nacre-topo`)에 살고, 부호 판정 시 위층이 Handle → 계수를 뽑아 술어에 넘긴다.
 - `nacre-judge` 도 같은 규율이다: `nacre-exact`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
 
-## pad/pocket 은 extrude + 불리언
+## 면 위 작업(pad/pocket)은 부호 있는 extrude + 불리언
 
-`Operation::PadOnFace` / `Operation::PocketOnFace` 는 상용 CAD 와 동형인 **tool body + boolean** 이다: `pad` = 프로파일 압출 → `Fuse`, `pocket` = 압출 → `Cut`. 둘 다 `extrude_and_boolean` 한 함수의 얇은 래퍼이고, 그 함수는 세 걸음이다 — **면 프레임**(`face_frame`: 면의 live 솔리드를 찾고 평면 프레임을 세운다) → **extrude**(`frame_rings` + `build_prism`) → **불리언**(`boolean_with_classes`). 새 정확 술어는 없다; 판정은 전부 불리언의 것이다.
+pad·pocket 은 커널 연산이 아니라 편의 레이어(kit)의 조합이다 — 상용 CAD 와 동형인 **tool body + boolean**: 면의 스케치 프레임(`face_sketch_frame`) → `Extrude`(pad 는 `+d`, pocket 은 `−d` — 같은 프레임에서 ŵ 반대로) → `Boolean`(면의 솔리드가 첫 피연산자, pad 는 `Fuse`, pocket 은 `Cut`). 새 정확 술어는 없다; 판정은 전부 불리언의 것이다.
 
-- **프레임은 한 곳에서 정해진다.** `face_frame` 이 정한 프레임이 곧 `face_plane` 이 호출자에게 약속하는 프레임이다. `extrude_and_boolean` 은 extrude 와 같은 한 도로(`frame_rings` — 게이트 `exact_frame` 이 세계 기저가 유리수라 하면 세계 도로, 아니면 `push_frame_node`)로 고리를 짓는다.
-- **밑면은 대상 면의 `Surface` 핸들을 공유한다.** `build_prism` 에 `Some(frame.surface_h)` 를 넘기므로 프리즘의 near cap 은 새 평면을 push 하지 않고 아무것도 진술하지 않는다. `Cut` 은 안쪽(`-dist`), `Fuse` 는 바깥쪽으로 쓸며 어느 쪽이든 near cap 은 면과 flush 다.
+- **프레임은 한 곳에서 정해진다.** `face_sketch_frame` 이 정한 프레임이 곧 `face_plane` 이 호출자에게 약속하는 프레임이고, `Extrude` 는 그 프레임에서 고리를 짓는다(`frame_rings` — 게이트 `exact_frame` 이 세계 기저가 유리수라 하면 세계 도로, 아니면 `push_frame_node`).
+- **밑면은 대상 면의 `Surface` 핸들을 공유한다.** `Extrude` 의 밑캡은 늘 프레임의 평면 핸들이라 새 평면을 push 하지 않고 아무것도 진술하지 않는다 — 어느 쪽으로 쓸든 near cap 은 면과 flush 다.
 - **공면은 진실로 안다.** 불리언의 평면 클래스 병합(`plane_classes`)은 **먼저 `Surface` 핸들로 묶고**(interning 이 한 평면을 한 핸들로 만들었다 — O(1), 정확, 회전 무관) 서로 다른 핸들의 대표끼리만 `Judge::planes_coplanar` 에 묻는다. 판정은 두 세계 이름이 다 있으면 정준형의 동일성으로 끝나고(같으면 병합, 다르면 증명된 비병합), 없으면(사분각 밖 회전·프레임) 정의 점의 도로 — 합성 회전, 상승 — 로 간다. 캐시(평면 캐시의 계수·면 꼭짓점 좌표)는 어느 갈래에도 없다: 서로 다른 두 평면의 반올림된 상이 비트 단위로 같을 수 있고, 그 병합은 한 몸의 벽을 다른 몸의 평면 위에 놓는다. 증인이 평면을 펴지 못하는 행(이름 없는 `Known` 의 공선 점)은 표(`collect_planes`)가 `DegenerateFace` 로 거절한다. 「참조로 아는 공면은 공짜, 우연한 공면만 계산」 — 상용 커널이 coincident 면을 imprint 로 공유 토폴로지로 승격하는 것의 nacre 판이다.
-- **프로파일은 면 밖으로 나가도 된다(오버행).** 「프로파일이 면 안에 있다」는 제약이 없다. 면 안에 담긴 footprint 도, 면을 넘는 footprint(boss cantilever, 모서리 슬롯)도 같은 불리언이 답한다.
-- **노출 cap 의 회수.** 결과에서 boss top / pocket floor 를 찾을 때, cap 평면이 **어느 surface 가 됐는지는 불리언 자신의 답**(`class_of`)을 읽는다. 기울어진 면에서는 cap 이 다른 피연산자의 면과 병합해 생존자가 *그쪽* surface 를 들 수 있고, 사후의 핸들·좌표 비교는 그 증거를 볼 수 없다. 그 답은 cap 이 그 surface 위에서 가질 `Orientation` 도 함께 싣는다(`ClassOf` — 진실에서, `face_facing`) — 그래서 회수(`find_face_coplanar_with`)는 좌표도 법선도 읽지 않고 핸들과 방향 비트를 비교하며, 판정기가 향을 가르지 못한 캡은 그 판정의 이름(`JudgeExhausted`·`DegenerateWitness`)으로 거절한다 — 바닥 없음(`PocketNotBlind`)과는 다른 사실이다.
-- **pocket 이 솔리드를 가르면** 결과는 여러 솔리드이고, cap 을 든 조각을 돌려주며 나머지도 live 로 남는다 — 유효한 다중 솔리드 모델이다.
-
-**정직하게 거절하는 인구**(전부 이름이 있고, 거절은 커밋하지 않는다):
-
-- `NonPositiveDistance` — `dist ≤ 0`. `DistOutsideDecimalWindow` — `dist` 가 십진 유리수 창 밖.
-- 프로파일: `Profile2d::check` 의 거절(`DegenerateProfile` 등)과 `ArcSweepNotQuarterTurn`(빌더의 정확 감김 `Ring2d::winding_sign` 이 1/4 회전 호를 요구한다 — 그 밖의 각도의 호는 빌더가 링을 읽기 전에 이름으로 거절).
-- `NonPlanarFace` — 곡면 위의 pad/pocket. `FaceNotInLiveSolid` — 어느 live 외곽 셸도 그 면을 들지 않음.
-- `PadMissesFace` — `Fuse` 가 여러 솔리드로 돌아옴. 두 live 솔리드의 Fuse 는 서로 닿지 않았을 때만 갈라지므로 footprint 가 면을 완전히 빗나간 것이다. 불리언은 옳게 답했고(두 솔리드) 깨진 것은 pad 의 전제다 — cap 을 든 조각만 돌려주면 떠 있는 boss 를 건네고 base 를 조용히 잃는다. 오버행만 하는 footprint 는 여전히 닿으므로 한 솔리드로 fuse 된다.
-- `PocketNotBlind` — cap 을 든 면이 결과에 없음(관통 컷에는 바닥이 없다; 솔리드를 통째로 지운 경우도 같은 판결의 극한).
-- `Boolean(_)` — 불리언이 덮지 않는 구성은 불리언의 거절 이름 그대로 올라온다.
-
-**거절이 참이 되게 하는 복원.** 불리언은 성공하면 피연산자를 은퇴시키고 자기 결과를 live 로 올린다. 그 뒤에 pad/pocket 이 거절하려면 `live_solids` 를 되돌려야 호출자가 본 모델이 거절 전의 모델이다(`supersede_live` + `make_live`). store 는 append-only 라 프리즘의 셀은 아레나에 남는다 — 세션은 다시 기록하기 전에 로그에서 재구축한다. 불리언 자체가 실패하면 임시 프리즘만 live 에서 내린다.
+- **결과 면은 클래스 대표의 핸들을 든다.** 같은 평면이 두 핸들로 진술돼 있으면(기운 면의 프레임 노드 진술) 공구의 먼 캡은 결과에서 몸 쪽 핸들 위에 남는다 — 「내 캡이 어디로 갔나」를 핸들로 묻는 쪽은 그 경우를 놓친다(테스트 픽스처 `fixtures::Feature::cap_face` 는 그래서 평면과 위치로 고른다).
+- **프로파일은 면 밖으로 나가도 된다(오버행).** 「프로파일이 면 안에 있다」는 제약이 없다. 면 안에 담긴 footprint 도, 면을 넘는 footprint(boss cantilever, 모서리 슬롯)도 같은 불리언이 답한다. 몸보다 깊은 pocket 은 관통 컷이고, 몸을 가르는 pocket 은 여러 솔리드다.
+- **kit 이 지는 전제는 하나다**: pad 의 `Fuse` 가 여러 솔리드로 돌아오면(두 단일 셸 솔리드는 닿지 않았을 때만 갈라진다) footprint 가 면을 빗나간 것이고, kit 이 그것을 거절한다 — 솔리드 개수라 정확 술어가 아니다.
 
 **exactness 는 후퇴하지 않는다.** 회전 없는 불리언의 출력 정점은 전부 평면 삼중항으로 이름 붙는다(`Vertex::ThreePlane`; 잠금 = `an_unrotated_boolean_names_every_vertex_by_its_plane_triple`). 상자 모서리는 실제로 세 평면의 교점이므로 그 정의는 참이고, 축정렬 사례에서 그 정점들의 tol 은 0 이라 `EPS_CONSTRUCTED`(1e-9)보다 엄격하다. 그 귀결: **provenance 로 면·정점을 고르는 코드는 성립하지 않는다** — 「컷에서 온 정점」이라는 구별은 출력에 없고, 모든 면에 대해 같은 답이 나온다.
 
@@ -2214,7 +2200,7 @@ A 를 택한 근거:
 1. **유리수 치수·각도 표현**(`nacre-exact`). 유리수는 입력과 유리수-순수 파생에만 살고, 무리수·복잡 연산·비트 상한이 닿는 순간 캐시는 f64/고정밀 실현으로 내려간다. 정의는 불변이라 필요할 때 재계산으로 정확히 복원된다.
 2. **명시 공유 — 전역 자동병합은 없다**(TNP 와 충돌한다). 면 위 스케치 = `Surface` Handle 재사용, 그리고 불리언이 계산한 접촉만 공유한다. 우연히 같은 좌표는 별개로 남고 불리언 시점에 판정된다. 「같다」고 판정되면 Handle 재사용으로 추이성 붕괴를 구조적으로 막는다.
 3. **판정 정책 — 묻지 않고, 근거를 붙여 보고한다.** 자세한 것은 CIP 절의 「판정 결과와 보고」.
-4. **계획: op-log 소유.** 상위 `Document` 가 `Vec<Operation>`(진실) + 파생 `Model` 을 소유하고 sugar(`PadOnFace` 등)를 그대로 기록한다(피처 트리). TNP 는 「치수 변경 = 자동 replay, 위상 변화 = 수동 재지정」. (`Document` 타입은 코드에 없다.)
+4. **계획: op-log 소유.** 상위 `Document` 가 `Vec<Operation>`(진실) + 파생 `Model` 을 소유하고, 피처 트리는 편의 레이어의 단계(pad·pocket 같은 조합)를 기록한다. TNP 는 「치수 변경 = 자동 replay, 위상 변화 = 수동 재지정」. (`Document` 타입은 코드에 없다.)
 5. **다중 솔리드 출력** — 위 절.
 
 ## CIP — 허용오차 부호 술어
@@ -2563,7 +2549,7 @@ nacre 가 쓴 STEP 을 step-io **리더로 되읽어** 구조를 비교한다. �
 
 **M3 — 곡선 기하.** Arc, Cylinder, NurbsCurve/Surface 평가(The NURBS Book 기준 구현 + 수치 미분 대조 테스트). tess 출처 태그, tolerance 재계산(같은 모델, tol 3단). proptest.
 
-**M4 — 면 위 작업.** `PadOnFace` — «만나는 자리를 아는» 연산. 여기까지 모델의 모든 점이 **구성된 점**이다(실측 tol 0). OCCT 오라클이 이 단계부터 돈다.
+**M4 — 면 위 작업.** 면의 스케치 프레임 위 돌출 + 불리언(pad·pocket 은 kit 의 조합). 여기까지 모델의 모든 점이 **구성된 점**이다(실측 tol 0). OCCT 오라클이 이 단계부터 돈다.
 
 **M5 — 평면 솔리드 불리언.** 모든 면이 평면인 솔리드 간 fuse/cut/common. 평면–평면 교차는 닫힌 형식의 직선이다(SSI 행진·Newton·캐시 불필요). 꼭짓점은 평면 3장의 교차를 **좌표로 만들어 병합하지 않고 implicit point 로 두고**, 내/외·orientation 부호는 그 정의를 **indirect orient3d**(좌표를 만들지 않는다)에 넣어 정확히 판정한다 — 좌표를 만드는 순간의 오차·불일치를 원천 차단한다(Attene 2020). 세 엣지가 하나의 Vertex Handle 을 공유해 봉합 문제의 본체를 우회하고, 정점은 자기 정의를 든다(`Vertex::ThreePlane`). 이 세계에서 강건 불리언은 연구가 아니라 꼼꼼한 케이스워크(공면, 엣지–엣지 퇴화)다. 선·평면(다항식) 교차점은 indirect predicate 이론이 가장 깔끔하게 도는 영역이다. 커버리지 밖 입력은 `Rejected` 로 정직하게 거절한다. **발견된 점**의 경로·국소 tolerance·정의에서의 실현이 여기서 실전에 들어가고, 이 단계에서 «OCCT 없이 직동하는, 평면 위주 기계 부품을 STEP 으로 내보내는» 커널이 된다. 알고리즘 참고: Manifold(Apache-2.0 — 차용·번역 가능), Hoffmann 등 문헌. Truck 대비 벤치마크·정밀도 비교(전역 1e-6 폴리라인 vs 정점별 실측 tol + 닫힌 형식)는 수치로 보일 수 있는 차별점이다 — 공개 지표 후보.
 
@@ -2679,3 +2665,4 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 동일평면 면을 이어붙여서 정리 | 비스포크였다. 경계 대수로 일반화한다 — 이어붙이지 말고 내부를 지운다 | — |
 | 45° 폴드를 위한 figure-8 재봉합 기계 | 지역-한계 사슬의 깊이는 정확히 2겹이었다. 병합은 기권하고 전역 판정(`SelfTouchingResult`)이 발행 전에 말한다 | — |
 | 면 위 직접 구성(`ImprintSketch`·`raise_region`) | 소비자 0 이었고 커널 유일의 동일평면 인접면 생산자였다. pad = extrude + Fuse, pocket = extrude + Cut. Split Face 의 소비자(구역별 재질·FEA 경계조건·파팅라인)가 생기면 두 제거 커밋의 revert 가 출발점이다 | — |
+| pad/pocket 을 커널 연산(`PadOnFace`·`PocketOnFace`)으로 | 새 정확 술어 없는 «면 프레임 + 돌출 + 불리언» 래퍼였다(설탕 판별 기준). 커널에 남은 이유는 «면에서 안쪽으로»를 기본 어휘가 말하지 못해서였다 — 돌출이 부호 있는 거리를 받자 사라졌다. 바닥 면을 돌려주려는 캡 회수가 **모든** 불리언에 입력 평면 면마다 클래스·향 표(`ClassOf`, 면마다 `face_facing`)를 계산하게 했고, 깊은 pocket 을 `PocketNotBlind` 로 거절하게 했다. kit 은 캡을 읽지 않았고, 가른 몸의 나머지 조각을 값에서 잃었다 | — |

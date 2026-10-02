@@ -19,7 +19,7 @@
 //! | [`exact`] | `Rat` / `Angle` / `Isometry` / `PlaneName` — what is answered exactly in rationals |
 //! | [`geom`] | `Plane` / `Line` / `Circle` / `Cylinder`, and the isolated `intersect` predicates |
 //! | [`topo`] | `Model` and the b-rep cells — the truth aggregate |
-//! | [`ops`] | `Operation` / `apply` / `replay`, sketch profiles, extrude, pad, pocket, boolean |
+//! | [`ops`] | `Operation` / `apply` / `replay`, sketch profiles, extrude, boolean |
 //! | [`props`] | volume, area, centroid, bounding box, per-face facts |
 //! | [`validate`] | b-rep invariant checking |
 //! | [`tess`] | triangulation and OBJ export |

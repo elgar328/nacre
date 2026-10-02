@@ -260,7 +260,7 @@ pub(crate) fn sense_toward(
 ///
 /// The single spelling of that, so [`motion_chain`] and the sketch frame `nacre-ops` reports to a
 /// caller cannot describe different frames — which they must not, because `face_plane`'s contract
-/// is that it names the frame `PadOnFace` actually places a profile in.
+/// is that it names the frame an extrude on the face actually places a profile in.
 pub(crate) fn frame_chain(
     model: &Model,
     plane: Handle<Surface>,
@@ -426,7 +426,7 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 ///
 /// ★★★★ **Replayed, not read off the coefficients.** They are canonical (no direction) *and*
 /// written in the plane's pre-motion frame, so a dot product of them against a world normal
-/// compares two different frames — the mistake that produced `PadMissesFace` on a twice-turned
+/// compares two different frames — the mistake that made a pad miss its face on a twice-turned
 /// fixture, and one that reads as perfectly plausible right up until the plane has a motion. Which
 /// way `ŵ` faces is a truth question and is answered from the truth ([`frame_normal_sense`],
 /// with the chain's handedness); where the axes *land* is what this replays.

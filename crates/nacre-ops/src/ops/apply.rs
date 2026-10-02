@@ -15,22 +15,6 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
             let (solid, faces) = extrude_on_frame(model, frame, profile, *dist)?;
             Ok(OpOutput::Extrude { solid, faces })
         }
-        Operation::PadOnFace {
-            face,
-            profile,
-            dist,
-        } => {
-            let (solid, top_face) = pad(model, *face, profile, *dist)?;
-            Ok(OpOutput::PadOnFace { solid, top_face })
-        }
-        Operation::PocketOnFace {
-            face,
-            profile,
-            dist,
-        } => {
-            let (solid, bottom_face) = pocket(model, *face, profile, *dist)?;
-            Ok(OpOutput::PocketOnFace { solid, bottom_face })
-        }
         Operation::Boolean { kind, a, b } => {
             let solids = boolean(model, *kind, *a, *b).map_err(OpError::Boolean)?;
             Ok(OpOutput::Boolean { solids })
@@ -58,7 +42,7 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// reproduces the same model down to handle indices.
 ///
 /// ★★ **A log's handles are an index vocabulary, and this is where they are re-anchored.**
-/// Six of [`Operation`]'s variants name a cell by `Handle`, and those handles belong to the
+/// Every [`Operation`] but a `Stated` datum names a cell by `Handle`, and those handles belong to the
 /// model the log was *recorded* against — a different arena from the one being built here. A
 /// `Handle`'s identity is its index (`Store`'s manual `Eq`/`Hash` use nothing else), so the
 /// index is the part that carries meaning across models, and [`nacre_store::Store::handle_at`]
@@ -73,9 +57,8 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// ★ **The premise this rests on: the log is the whole history.** Cells put into a model
 /// outside the log (a fixture's `apply` with no log beside it, a direct `push_*`) shift every
 /// later index, and so
-/// does a *late* reject — one that pushed cells before declining (`PadMissesFace`,
-/// `PocketNotBlind`, a boolean's reject) leaves them in the append-only arena while the log has
-/// no entry for them. [`OpError::LogHandleOutOfRange`] catches only the case where the index
+/// does a *late* reject — a boolean that pushed cells before declining leaves them in the
+/// append-only arena while the log has no entry for them. [`OpError::LogHandleOutOfRange`] catches only the case where the index
 /// runs off the end; an index that lands on a real-but-wrong cell cannot be detected here. So a
 /// session that keeps recording after a late reject must rebuild from its log first.
 ///
@@ -111,14 +94,6 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
                 index: h.index(),
             })
     };
-    let face = |h: Handle<Face>| {
-        model
-            .face_handle_at(h.index())
-            .ok_or(OpError::LogHandleOutOfRange {
-                cell: LogCell::Face,
-                index: h.index(),
-            })
-    };
     let solid = |h: Handle<Solid>| {
         model
             .solid_handle_at(h.index())
@@ -135,24 +110,6 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             dist,
         } => Cow::Owned(Operation::Extrude {
             frame: frame.rebound(surface(frame.plane())?),
-            profile: profile.clone(),
-            dist: *dist,
-        }),
-        Operation::PadOnFace {
-            face: f,
-            profile,
-            dist,
-        } => Cow::Owned(Operation::PadOnFace {
-            face: face(*f)?,
-            profile: profile.clone(),
-            dist: *dist,
-        }),
-        Operation::PocketOnFace {
-            face: f,
-            profile,
-            dist,
-        } => Cow::Owned(Operation::PocketOnFace {
-            face: face(*f)?,
             profile: profile.clone(),
             dist: *dist,
         }),

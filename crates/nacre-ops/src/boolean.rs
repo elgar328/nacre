@@ -60,7 +60,7 @@ pub fn boolean_with_report(
     // (Orphaned result cells stay in the append-only arena, unreachable, as any superseded solid's
     // do — the arena is not restored and is not meant to be.)
     let snapshot = model.live_solids().to_vec();
-    let (result, notes, _class_of) = match crate::arrangement::boolean(model, kind, a, b) {
+    let (result, notes) = match crate::arrangement::boolean(model, kind, a, b) {
         Ok(v) => v,
         Err(e) => {
             model.restore_live(snapshot);
@@ -95,44 +95,6 @@ fn surfacing(e: BoolError) -> BoolError {
         crate::reject_census::surfaced(reason);
     }
     e
-}
-
-/// [`boolean`], and **what each input face's plane became** — its plane class's representative
-/// surface, which is what every result face on that plane carries.
-///
-/// ★★★ A caller that needs to find *its own* face in the result must ask this rather than compare
-/// handles or coordinates afterwards. The engine settled "are these one plane?" with evidence —
-/// including for two faces turned by **different motion chains**, where only a composed-rotation
-/// proof or a coincidence within the limit can answer — and none of that is visible to a later
-/// geometric test. `ops::find_face_coplanar_with` is the one caller today.
-///
-/// A parallel entry point for the same reason [`boolean_with_report`] is one: the map is wanted by
-/// one caller, and widening `boolean`'s return would rewrite every other one for nothing.
-pub(crate) fn boolean_with_classes(
-    model: &mut Model,
-    kind: BoolKind,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<(Vec<Handle<Solid>>, crate::draft::ClassOf), BoolError> {
-    // The live-set restore is [`boolean`]'s rule, held here too: a reject leaves the live model
-    // alone whichever entry point raised it.
-    let snapshot = model.live_solids().to_vec();
-    let (result, notes, class_of) = match crate::arrangement::boolean(model, kind, a, b) {
-        Ok(v) => v,
-        Err(e) => {
-            model.restore_live(snapshot);
-            return Err(surfacing(e));
-        }
-    };
-    if let Some((t, at)) = check_result_topology(model, &result) {
-        model.restore_live(snapshot);
-        return Err(surfacing(match at {
-            Some(w) => crate::reject_at(t, w),
-            None => reject(t),
-        }));
-    }
-    let _ = notes;
-    Ok((result, class_of))
 }
 
 /// **What the boolean had to take on faith**, so a user can see it and act on it.

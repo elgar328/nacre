@@ -52,7 +52,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 ## 마일스톤
 
-M1 뼈대(Store/Handle, 평면·직선, 정육면체, validate, OBJ·STEP 출력) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(pad·pocket, 오라클 가동) → M5~M7 불리언 사다리. 상세는 `design.md` 「마일스톤 사다리」, **현재 위치는 `todo.md` 의 맨 위 항목**이다.
+M1 뼈대(Store/Handle, 평면·직선, 정육면체, validate, OBJ·STEP 출력) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(면 프레임 위 돌출 + 불리언, 오라클 가동) → M5~M7 불리언 사다리. 상세는 `design.md` 「마일스톤 사다리」, **현재 위치는 `todo.md` 의 맨 위 항목**이다.
 
 ## 작업 스타일
 

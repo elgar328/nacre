@@ -94,7 +94,7 @@ fn every_live_planar_face_records_its_points() {
     extrude(&mut m, axes_only, square(0.1, 1.6), 0.7);
     assert_all_planes_record_points(&m, "frame roads");
 
-    // ③ Face features: pad and pocket share `extrude_and_boolean`.
+    // ③ Face features: a pad is the face's frame, an extrude and a fuse.
     let top = *m
         .shell(m.solid(base).outer)
         .faces

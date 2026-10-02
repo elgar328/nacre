@@ -8,6 +8,16 @@ While the version is `0.0.z`, every release may break anything.
 
 ## [Unreleased]
 
+### Changed
+
+- `Operation::Extrude` takes a signed distance: a negative one sweeps against the frame's normal, in the same frame, with the base cap still on the frame's plane. A distance of zero is `OpError::ZeroDistance`.
+
+### Removed
+
+- `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.
+- `LogCell::Face`, which only the removed operations used.
+- `topo::Model::make_live`, whose only callers were the removed operations.
+
 ## [0.0.1] - 2026-10-02
 
 ### Added

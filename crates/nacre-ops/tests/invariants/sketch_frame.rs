@@ -181,13 +181,13 @@ fn a_named_frame_states_what_the_extrude_road_builds() {
     );
 }
 
-/// ★★ **`face_sketch_frame` reports the very frame the pad sketches in** — same plane handle,
-/// same placement, same measured flip as the `Frame` node the pad leaves behind. And on an
-/// axis-aligned face, where the operation elides the node, the canonical frame it reports still
-/// tells the truth about direction: the top face (outward `+ẑ`, canonical `ŵ = +ẑ`) is unflipped,
-/// the seeded bottom (outward `−ẑ`) is flipped.
+/// ★★ **`face_sketch_frame` reports the very frame an extrude on the face builds in** — same
+/// plane handle, same placement, same measured flip as the `Frame` node a pad (that extrude, fused)
+/// leaves behind. And on an axis-aligned face, where the operation elides the node, the canonical
+/// frame it reports still tells the truth about direction: the top face (outward `+ẑ`, canonical
+/// `ŵ = +ẑ`) is unflipped, the seeded bottom (outward `−ẑ`) is flipped.
 #[test]
-fn face_sketch_frame_reports_the_frame_the_pad_uses() {
+fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
     let mut m = Model::new();
     let s = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -492,11 +492,11 @@ fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
     assert_eq!(m.face(padded).surface, far, "one plane, one handle");
 }
 
-/// ★★ **The frame a face reports is the frame the pad builds in — on a lifted face and on a
+/// ★★ **The frame a face reports is the frame a pad builds in — on a lifted face and on a
 /// mirrored one.**
 ///
 /// `face_sketch_frame` hands a caller the frame to extrude in; an extrude there must land where
-/// the pad lands, as the same handle. On the `Through` block, whose every motion is a node, a
+/// the pad (that extrude, fused onto the face's solid) keeps its top, as the same handle. On the `Through` block, whose every motion is a node, a
 /// lifted face's frame is carried out through the face's own chain, and a mirrored one's chain
 /// has a reflection in it, so the carried frame is left-handed; the plain block carries its lift
 /// and mirror into its statements and takes the world's frame. The pad and the extrude must agree

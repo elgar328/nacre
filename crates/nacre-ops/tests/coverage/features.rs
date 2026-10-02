@@ -1,10 +1,12 @@
-//! Feature operations — pad (boss) and pocket + honest rejections.
+//! Features on a face — pad (boss) and pocket, built as an application builds them: the face's
+//! sketch frame, a signed extrude, a boolean (`nacre_ops::fixtures::{pad, pocket}`).
 
 #![allow(unused_imports)]
 use crate::common::*;
 use nacre_exact::Axis;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::fixtures::FeatureError;
 use nacre_ops::{
     BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean,
     replay,
@@ -15,10 +17,9 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 #[test]
 fn pad_boss_on_cube_top() {
     let (mut m, top) = cube_with_top();
-    let out = apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
-    let OpOutput::PadOnFace { top_face, .. } = out else {
-        unreachable!()
-    };
+    let top_face = nacre_ops::fixtures::pad(&mut m, top, small_square(), 0.5)
+        .unwrap()
+        .cap_face(&m);
     m.rebuild_adjacency();
     let v = nacre_validate::validate(&m);
     assert!(v.is_empty(), "{v:?}");
@@ -35,10 +36,9 @@ fn pad_boss_on_cube_top() {
 #[test]
 fn pocket_on_cube_top() {
     let (mut m, top) = cube_with_top();
-    let out = apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
-    let OpOutput::PocketOnFace { bottom_face, .. } = out else {
-        unreachable!()
-    };
+    let bottom_face = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5)
+        .unwrap()
+        .cap_face(&m);
     m.rebuild_adjacency();
     let v = nacre_validate::validate(&m);
     assert!(v.is_empty(), "{v:?}");
@@ -52,7 +52,7 @@ fn pocket_on_cube_top() {
     assert!(reach.faces.contains(&bottom_face));
 }
 
-/// The lateral face of a cylinder — a non-planar target both pad and pocket reject.
+/// The lateral face of a cylinder — a face with no sketch frame.
 fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
     nacre_ops::fixtures::cylinder_with_seam(
         m,
@@ -70,72 +70,36 @@ fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
         .unwrap()
 }
 
+/// A sketch on a curved face is refused by the frame's own name, before anything is built.
 #[test]
-fn pad_rejects_nonplanar_face() {
+fn a_feature_on_a_curved_face_is_refused() {
     let mut m = Model::new();
     let lateral = cylinder_lateral(&mut m);
-    assert!(matches!(
-        apply(&mut m, &pad_op(lateral, small_square(), 0.5)),
+    assert_eq!(
+        nacre_ops::face_sketch_frame(&m, lateral),
         Err(OpError::NonPlanarFace)
-    ));
-}
-
-#[test]
-fn pocket_rejects_nonplanar_face() {
-    let mut m = Model::new();
-    let lateral = cylinder_lateral(&mut m);
-    assert!(matches!(
-        apply(&mut m, &pocket_op(lateral, small_square(), 0.5)),
-        Err(OpError::NonPlanarFace)
-    ));
-}
-
-#[test]
-fn pad_rejects_nonpositive_dist() {
-    let (mut m, top) = cube_with_top();
-    assert!(matches!(
-        apply(&mut m, &pad_op(top, small_square(), 0.0)),
-        Err(OpError::NonPositiveDistance)
-    ));
-}
-
-#[test]
-fn pocket_rejects_nonpositive_dist() {
-    let (mut m, top) = cube_with_top();
-    assert!(matches!(
-        apply(&mut m, &pocket_op(top, small_square(), 0.0)),
-        Err(OpError::NonPositiveDistance)
-    ));
-}
-
-#[test]
-fn pad_rejects_degenerate_profile() {
-    let (mut m, top) = cube_with_top();
-    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]).unwrap();
-    assert!(matches!(
-        apply(&mut m, &pad_op(top, two, 0.5)),
-        Err(OpError::DegenerateProfile)
-    ));
-}
-
-#[test]
-fn pocket_rejects_degenerate_profile() {
-    let (mut m, top) = cube_with_top();
-    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]).unwrap();
-    assert!(matches!(
-        apply(&mut m, &pocket_op(top, two, 0.5)),
-        Err(OpError::DegenerateProfile)
-    ));
-}
-
-#[test]
-fn pocket_through_the_solid_is_rejected() {
-    let (mut m, top) = cube_with_top(); // 1.0-thick cube
-    let got = apply(&mut m, &pocket_op(top, small_square(), 1.5));
-    assert!(
-        matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
-        "through-pocket must reject honestly, got {got:?}"
     );
+}
+
+#[test]
+fn a_degenerate_profile_on_a_face_is_refused() {
+    let (mut m, top) = cube_with_top();
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]).unwrap();
+    assert!(matches!(
+        nacre_ops::fixtures::pocket(&mut m, top, two, 0.5),
+        Err(FeatureError::Op(OpError::DegenerateProfile))
+    ));
+}
+
+#[test]
+fn pocket_through_the_solid() {
+    let (mut m, top) = cube_with_top(); // 1.0-thick cube
+    let got = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 1.5);
+    // A pocket deeper than the body is a through-cut: the `0.4²` hole, `1 − 0.16`.
+    let solid = got.expect("a through-pocket cuts through").solid();
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.84).abs() < 1e-12);
 }
 
 #[test]
@@ -166,11 +130,8 @@ fn pad_an_overhanging_boss() {
     // sidecar (Ok here proves the routing — a contained-only pad would reject). The boss lives
     // wholly above z=1, so vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
     let (mut m, top) = cube_with_top();
-    let OpOutput::PadOnFace { solid, top_face } =
-        apply(&mut m, &pad_op(top, edge_overhang_profile(), 1.0)).unwrap()
-    else {
-        unreachable!()
-    };
+    let feat = nacre_ops::fixtures::pad(&mut m, top, edge_overhang_profile(), 1.0).unwrap();
+    let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
     m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
@@ -182,10 +143,9 @@ fn pad_an_overhanging_boss() {
 fn pad_a_spanning_slab_boss() {
     // A slab crossing the whole face (overhangs two opposite edges). vol = 1 + 0.75 · 1 = 1.75.
     let (mut m, top) = cube_with_top();
-    let out = apply(&mut m, &pad_op(top, spanning_slab_profile(), 1.0)).unwrap();
-    let OpOutput::PadOnFace { solid, .. } = out else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pad(&mut m, top, spanning_slab_profile(), 1.0)
+        .unwrap()
+        .solid();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.75).abs() < 1e-12);
@@ -196,11 +156,8 @@ fn pocket_an_edge_slot() {
     // A blind pocket whose footprint overhangs one edge — an edge slot open to the side.
     // Only the on-face part (world x[0.25,0.75]×y[0,0.75] = 0.375) carves: 1 − 0.375·0.5 = 0.8125.
     let (mut m, top) = cube_with_top();
-    let OpOutput::PocketOnFace { solid, bottom_face } =
-        apply(&mut m, &pocket_op(top, edge_overhang_profile(), 0.5)).unwrap()
-    else {
-        unreachable!()
-    };
+    let feat = nacre_ops::fixtures::pocket(&mut m, top, edge_overhang_profile(), 0.5).unwrap();
+    let (solid, bottom_face) = (feat.solid(), feat.cap_face(&m));
     m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
@@ -213,39 +170,18 @@ fn pocket_a_slab_channel() {
     // A blind channel crossing the whole face (breaches two opposite walls). On-face carve
     // world x[0.25,0.75]×y[0,1] = 0.5: 1 − 0.5·0.5 = 0.75.
     let (mut m, top) = cube_with_top();
-    let out = apply(&mut m, &pocket_op(top, spanning_slab_profile(), 0.5)).unwrap();
-    let OpOutput::PocketOnFace { solid, .. } = out else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, top, spanning_slab_profile(), 0.5)
+        .unwrap()
+        .solid();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.75).abs() < 1e-12);
 }
 
-#[test]
-fn pad_overhang_off_the_face_is_rejected() {
-    // A footprint that does not touch the face at all. The boolean is not what fails here — it
-    // fuses the two into a base plus a detached boss, which is the right answer (see
-    // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
-    // error names that, and the model the caller is left holding is the one it started with.
-    let (mut m, top) = cube_with_top();
-    let far =
-        Profile2d::polygon(vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)]).unwrap();
-    let before = m.live_solids().to_vec();
-    assert_eq!(
-        apply(&mut m, &pad_op(top, far, 0.3)),
-        Err(OpError::PadMissesFace)
-    );
-    let (mut a, mut b) = (before, m.live_solids().to_vec());
-    a.sort_by_key(|h| h.index());
-    b.sort_by_key(|h| h.index());
-    assert_eq!(a, b, "a rejected pad must leave the live model untouched");
-}
-
 /// The kernel's answer for a boss that misses the face, stated on its own so nobody "fixes" the
 /// boolean to reject it: fusing two solids that do not touch **is** two solids, and both are
-/// whole. Only `pad` refuses that outcome, because a pad is defined as material joined to a face
-/// (`pad_overhang_off_the_face_is_rejected`).
+/// whole. Only a pad refuses that outcome, because a pad is defined as material joined to a face
+/// (the kit's refusal, and the fixtures' `FeatureError::Missed`).
 #[test]
 fn a_touchless_boss_fuses_into_two_solids() {
     let mut m = Model::new();
@@ -277,23 +213,22 @@ fn a_touchless_boss_fuses_into_two_solids() {
 }
 
 #[test]
-fn pocket_through_overhang_is_rejected() {
-    // An overhang pocket deep enough to pierce the far side is not blind — no single floor.
-    // Honest reject via whichever path fires (the overhang detector declines, the seam path
-    // rejects the mixed contact), mirroring `pocket_through_the_solid_is_rejected`.
+fn pocket_through_an_overhang() {
+    // An overhang pocket deep enough to pierce the far side: an edge slot all the way down.
     let (mut m, top) = cube_with_top();
-    let got = apply(&mut m, &pocket_op(top, edge_overhang_profile(), 1.5));
-    assert!(
-        matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
-        "through overhang must reject honestly, got {got:?}"
-    );
+    let got = nacre_ops::fixtures::pocket(&mut m, top, edge_overhang_profile(), 1.5);
+    // The on-face part (world `x[0.25,0.75] × y[0,0.75]`, `0.375`) goes all the way down.
+    let solid = got.expect("a through edge slot cuts through").solid();
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.625).abs() < 1e-12);
 }
 
 #[test]
 fn pad_step_exports() {
     // The boss (holed outer face + walls + cap) exports without error.
     let (mut m, top) = cube_with_top();
-    apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
+    nacre_ops::fixtures::pad(&mut m, top, small_square(), 0.5).unwrap();
     let step = nacre_step::to_step(&m).expect("boss exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
@@ -329,10 +264,9 @@ fn a_pocket_on_a_slanted_face() {
     .unwrap() else {
         unreachable!()
     };
-    let out = apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap();
-    let OpOutput::PocketOnFace { solid, .. } = out else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, faces[1], small_square(), 0.5)
+        .unwrap()
+        .solid();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
@@ -366,18 +300,9 @@ fn a_pad_on_a_slanted_face() {
     .unwrap() else {
         unreachable!()
     };
-    let out = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: small_square(),
-            dist: 0.5,
-        },
-    )
-    .unwrap();
-    let OpOutput::PadOnFace { solid, .. } = out else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pad(&mut m, faces[1], small_square(), 0.5)
+        .unwrap()
+        .solid();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
@@ -387,7 +312,7 @@ fn a_pad_on_a_slanted_face() {
 #[test]
 fn pocket_step_exports() {
     let (mut m, top) = cube_with_top();
-    apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
+    nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5).unwrap();
     let step = nacre_step::to_step(&m).expect("pocket exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
@@ -723,10 +648,9 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     let profile =
         Profile2d::polygon(vec![p2(0.7, 0.4), p2(0.7, 0.2), p2(0.9, 0.2), p2(0.9, 0.4)]).unwrap();
     let dist = 0.5;
-    let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(top, profile, dist)).unwrap()
-    else {
-        unreachable!()
-    };
+    let top_face = nacre_ops::fixtures::pad(&mut m, top, profile, dist)
+        .unwrap()
+        .cap_face(&m);
     m.rebuild_adjacency();
 
     // Where the caller predicts the boss's cap centre is, from `face_plane` alone.
@@ -747,7 +671,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
 /// half-turned about one axis while the realization (`frame_chain`) half-turned about the other
 /// left the two point-symmetric in the plane, a footprint centred on the face through
 /// `face_plane`'s own coordinates was built on the opposite side — outside the face — and a legal
-/// pad came back `PadMissesFace` (measured: 2 of 6 faces of a 30°-turned block, every axis).
+/// pad missed its face (measured: 2 of 6 faces of a 30°-turned block, every axis).
 ///
 /// All six faces, deliberately: the two flip=true walls are where the two spellings part, the two
 /// flip=false walls are the contrast, and the two rotation-invariant planes take the world-axis
@@ -795,13 +719,11 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
             ])
             .unwrap();
             let dist = 0.5;
-            let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(face, profile, dist))
+            let top_face = nacre_ops::fixtures::pad(&mut m, face, profile, dist)
                 .unwrap_or_else(|e| {
                     panic!("{axis:?} face[{fi}]: the pad missed the frame it was promised: {e:?}")
                 })
-            else {
-                unreachable!()
-            };
+                .cap_face(&m);
             m.rebuild_adjacency();
 
             let n = plane.x_axis().cross(plane.y_axis());
@@ -947,338 +869,5 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
     assert!(
         moved > 0.2,
         "the corner-mean rule must visibly move: {ma:?} vs {mb:?}"
-    );
-}
-
-// ---- the signed extrude builds what pad and pocket build ----
-
-/// One face to work on, built afresh for each road — `Model` does not clone, and its
-/// construction is deterministic, so two builds hold the same handles.
-type FaceBuilder = fn() -> (Model, Handle<Face>);
-
-/// The profile a case draws on its face, read in that face's frame.
-type ProfileOn = fn(&Model, Handle<Face>) -> Profile2d;
-
-/// A `2×2×2` prism on the `(1,1,1)`-slanted plane, and its far cap.
-fn slanted_cap() -> (Model, Handle<Face>) {
-    let plane =
-        SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
-            .unwrap();
-    let mut m = Model::new();
-    let big = Profile2d::polygon(vec![
-        p2(-1.0, -1.0),
-        p2(1.0, -1.0),
-        p2(1.0, 1.0),
-        p2(-1.0, 1.0),
-    ])
-    .unwrap();
-    let frame = datum_frame(&mut m, plane);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame,
-            profile: big,
-            dist: 2.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    (m, faces[1])
-}
-
-/// A `2`-cube turned 15° about `y`, optionally mirrored across `x = 0`, and its turned `+x` face —
-/// a face frame carried by a chain with a reflection in it.
-fn turned_face(mirror: bool) -> (Model, Handle<Face>) {
-    use nacre_exact::{Angle, Isometry, Rat, Rotation};
-    let mut m = Model::new();
-    let frame = nacre_ops::SketchFrame::world(&m, Axis::Z);
-    let square = Profile2d::polygon(vec![
-        p2(-1.0, -1.0),
-        p2(1.0, -1.0),
-        p2(1.0, 1.0),
-        p2(-1.0, 1.0),
-    ])
-    .unwrap();
-    let OpOutput::Extrude { solid, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame,
-            profile: square,
-            dist: 2.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    let down = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(-1)]);
-    let solid = xf(&mut m, solid, down);
-    let turn = Isometry::rotation(Rotation {
-        axis: Axis::Y,
-        pivot: [Rat::from_int(0); 3],
-        angle: Angle::from_deg(Rat::from_int(15)).unwrap(),
-    });
-    let mut solid = xf(&mut m, solid, turn);
-    if mirror {
-        let OpOutput::Mirror { solid: mirrored } = apply(
-            &mut m,
-            &Operation::Mirror {
-                solid,
-                axis: Axis::X,
-                offset: Rat::from_int(0),
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        solid = mirrored;
-    }
-    let (s15, c15) = 15f64.to_radians().sin_cos();
-    let n = [if mirror { -c15 } else { c15 }, 0.0, -s15];
-    let face = *m
-        .shell(m.solid(solid).outer)
-        .faces
-        .iter()
-        .find(|&&fh| {
-            let f = m.face(fh);
-            let Surface::Plane(pl) = m.surface_cache(f.surface) else {
-                return false;
-            };
-            let out = pl.normal() * f64::from(f.orientation.sign());
-            (0..3).all(|k| (out.as_array()[k] - n[k]).abs() < 1e-9)
-        })
-        .expect("the turned +x face");
-    (m, face)
-}
-
-/// The census `wf` base: a prism on a tilted decimal orthonormal frame, and the wall whose
-/// canonical name has no rational default frame — the kernel's natural producer of wide names.
-fn wf_wall() -> (Model, Handle<Face>) {
-    let mut m = Model::new();
-    let plane = SketchPlane::from_axes(
-        Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
-        Vector3::from_array([0.6, 0.8, 0.0]),
-        Vector3::from_array([-0.48, 0.36, 0.8]),
-    );
-    let frame = datum_frame(&mut m, plane);
-    let OpOutput::Extrude { solid, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame,
-            profile: Profile2d::polygon(vec![
-                p2(0.1111111111111111, 0.1234567890123456),
-                p2(4.123456789012345, 0.2345678901234567),
-                p2(3.9876543210987654, 3.1234567890123459),
-                p2(0.2222222222222222, 2.765432109876543),
-            ])
-            .unwrap(),
-            dist: 2.5,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    m.rebuild_adjacency();
-    let wall = *m
-        .shell(m.solid(solid).outer)
-        .faces
-        .iter()
-        .find(|&&f| {
-            let s = m.face(f).surface;
-            m.surface_name
-                .get(&s)
-                .and_then(|n| n.narrow())
-                .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
-        })
-        .expect("the wf population");
-    (m, wall)
-}
-
-/// A `0.6` square centred on the face's outer-loop vertex average, in the face's own frame.
-fn centred_square(m: &Model, face: Handle<Face>) -> Profile2d {
-    let sp = nacre_ops::face_plane(m, face).expect("planar");
-    let pts: Vec<Point3> = m
-        .face(face)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| m.vertex_point(m.he_start(he)))
-        .collect();
-    let n = pts.len() as f64;
-    let c = Point3::from_array(std::array::from_fn(|k| {
-        pts.iter().map(|p| p.as_array()[k]).sum::<f64>() / n
-    }));
-    let d = c - sp.origin();
-    let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
-    Profile2d::polygon(vec![
-        p2(cu - 0.3, cv - 0.3),
-        p2(cu + 0.3, cv - 0.3),
-        p2(cu + 0.3, cv + 0.3),
-        p2(cu - 0.3, cv + 0.3),
-    ])
-    .unwrap()
-}
-
-/// What a road left behind, bit for bit: the arena's size, then every live solid — volume, area
-/// and centroid bits, its vertices' coordinate bits, and every face's surface handle, orientation
-/// and surface cache (`Debug` of an `f64` is its shortest round-trip, so equal text is equal bits).
-fn road_digest(m: &Model) -> Vec<String> {
-    let mut out = vec![format!(
-        "arena s{} v{} e{} f{}",
-        m.surface_count(),
-        m.vertex_count(),
-        m.edge_count(),
-        m.face_count()
-    )];
-    for &s in m.live_solids() {
-        let p = nacre_props::mass_props(m, s).expect("props");
-        let c = nacre_props::centroid(m, s).expect("a planar result has a centroid");
-        let mut coords: Vec<[u64; 3]> = Vec::new();
-        let mut faces = Vec::new();
-        let solid = m.solid(s);
-        for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-            for &fh in &m.shell(sh).faces {
-                let f = m.face(fh);
-                faces.push(format!(
-                    "{} {:?} {:?}",
-                    f.surface.index(),
-                    f.orientation,
-                    m.surface_cache(f.surface)
-                ));
-                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for &he in &lp.half_edges {
-                        coords.push(m.vertex_point(m.he_start(he)).as_array().map(f64::to_bits));
-                    }
-                }
-            }
-        }
-        coords.sort_unstable();
-        coords.dedup();
-        out.push(format!(
-            "solid {} {:016x}/{:016x}/{:016x},{:016x},{:016x} {coords:?}",
-            s.index(),
-            p.volume.to_bits(),
-            p.area.to_bits(),
-            c[0].to_bits(),
-            c[1].to_bits(),
-            c[2].to_bits(),
-        ));
-        out.extend(faces);
-    }
-    out
-}
-
-/// ★★ **Pad and pocket are a face's frame, a signed extrude, and a boolean — bit for bit.**
-///
-/// The face operations build their tool by the extrude's own road (`frame_rings` + `build_prism`,
-/// the face's surface as the base cap) and sweep a pocket against `ŵ`; the public `Extrude` now
-/// takes that sign. Each case runs both roads on the same face, built twice: the old operation,
-/// and `face_sketch_frame` + `Extrude(±d)` + `Boolean` with the operands in the operation's order
-/// (the face's solid first). What either road leaves behind — arena, live solids, coordinates,
-/// surface caches — must agree. The cases are the shapes the face operations are tested on: a lid,
-/// an overhang, a channel, a profile with a hole, the slanted cap, a turned face with and without
-/// a reflection in its chain, and the wide-name wall.
-#[test]
-fn the_signed_extrude_builds_what_pad_and_pocket_build() {
-    let lid_ring = |lo: f64, hi: f64| vec![p2(lo, lo), p2(hi, lo), p2(hi, hi), p2(lo, hi)];
-    let holed = || Profile2d::with_holes(lid_ring(0.2, 0.8), vec![lid_ring(0.4, 0.6)]).unwrap();
-    let cases: Vec<(&str, FaceBuilder, ProfileOn, f64, f64)> = vec![
-        ("lid", cube_with_top, |_, _| small_square(), 0.5, 0.5),
-        (
-            "overhang",
-            cube_with_top,
-            |_, _| edge_overhang_profile(),
-            1.0,
-            0.5,
-        ),
-        (
-            "channel",
-            cube_with_top,
-            |_, _| spanning_slab_profile(),
-            1.0,
-            0.5,
-        ),
-        ("slanted", slanted_cap, |_, _| small_square(), 0.5, 0.5),
-        ("turned", || turned_face(false), centred_square, 1.0, 0.5),
-        (
-            "turned mirrored",
-            || turned_face(true),
-            centred_square,
-            1.0,
-            0.5,
-        ),
-        ("wf wall", wf_wall, centred_square, 0.4, 0.4),
-    ];
-    let run = |name: &str,
-               build: &dyn Fn() -> (Model, Handle<Face>, Profile2d),
-               pad: f64,
-               pocket: f64| {
-        for (kind, dist) in [(BoolKind::Fuse, pad), (BoolKind::Cut, pocket)] {
-            let (mut old, face, profile) = build();
-            let op = match kind {
-                BoolKind::Fuse => pad_op(face, profile.clone(), dist),
-                _ => pocket_op(face, profile.clone(), dist),
-            };
-            apply(&mut old, &op)
-                .unwrap_or_else(|e| panic!("{name} {kind:?}: the operation: {e:?}"));
-            let (mut new, face, _) = build();
-            let solid = *new
-                .live_solids()
-                .iter()
-                .find(|&&s| new.shell(new.solid(s).outer).faces.contains(&face))
-                .expect("the face's solid");
-            let frame = nacre_ops::face_sketch_frame(&new, face).expect("a planar live face");
-            let signed = if matches!(kind, BoolKind::Fuse) {
-                dist
-            } else {
-                -dist
-            };
-            let OpOutput::Extrude { solid: tool, .. } = apply(
-                &mut new,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist: signed,
-                },
-            )
-            .unwrap_or_else(|e| panic!("{name} {kind:?}: the extrude: {e:?}")) else {
-                unreachable!()
-            };
-            apply(
-                &mut new,
-                &Operation::Boolean {
-                    kind,
-                    a: solid,
-                    b: tool,
-                },
-            )
-            .unwrap_or_else(|e| panic!("{name} {kind:?}: the boolean: {e:?}"));
-            let (a, b) = (road_digest(&old), road_digest(&new));
-            assert_eq!(a.len(), b.len(), "{name} {kind:?}: {a:#?}\nvs\n{b:#?}");
-            for (x, y) in a.iter().zip(&b) {
-                assert_eq!(x, y, "{name} {kind:?}");
-            }
-        }
-    };
-    for (name, build, profile, pad, pocket) in cases {
-        run(
-            name,
-            &|| {
-                let (m, f) = build();
-                let p = profile(&m, f);
-                (m, f, p)
-            },
-            pad,
-            pocket,
-        );
-    }
-    run(
-        "holed",
-        &|| {
-            let (m, f) = cube_with_top();
-            (m, f, holed())
-        },
-        0.5,
-        0.5,
     );
 }

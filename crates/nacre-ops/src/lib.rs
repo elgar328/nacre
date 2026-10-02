@@ -1,11 +1,10 @@
 //! Operations for the nacre kernel, plus a replayable operation log.
 //!
-//! [`Operation::Extrude`] sweeps a planar profile into a solid;
-//! [`Operation::PadOnFace`]/[`Operation::PocketOnFace`] consume a prior op's face by
-//! `Handle` (exposed via [`OpOutput`]) and supersede a solid (live-solid
-//! semantics) — each is a tool prism plus a boolean, not a direct face-split. Ops are
-//! applied by [`apply`] and folded by [`replay`]; every result is a **closed** solid, so
-//! `nacre-validate` applies fully.
+//! [`Operation::Extrude`] sweeps a planar profile into a solid, on a frame that may name a prior
+//! op's face plane ([`face_sketch_frame`]) and either way off it; [`Operation::Boolean`] and the
+//! motions supersede solids (live-solid semantics). A feature on a face — a pad, a pocket — is
+//! those two composed, the convenience layer's to spell. Ops are applied by [`apply`] and folded
+//! by [`replay`]; every result is a **closed** solid, so `nacre-validate` applies fully.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::Point3;

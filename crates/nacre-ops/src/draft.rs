@@ -18,7 +18,7 @@ use crate::planes::{ClassIx, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, combinatorics, reject};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, Surface, Vertex};
+use nacre_topo::{Edge, Vertex};
 use std::collections::HashMap;
 /// **A result vertex's definition, in class space** — what becomes a `Vertex` once the classes
 /// are read as surface handles ([`Def::vertex`]).
@@ -632,16 +632,3 @@ pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
     }
     HeldRims(out)
 }
-
-/// What each input face's plane became: its **plane class's representative surface**, which is
-/// what every result face on that plane carries — and the `Orientation` the face would carry stated
-/// on that surface, read off the truth by `planes::face_facing`; where the judge could not say
-/// which way the two run, what it did establish, so a reader that rests on the answer refuses by
-/// that judgement's name.
-pub(crate) type ClassOf = std::collections::HashMap<
-    Handle<Face>,
-    (
-        Handle<Surface>,
-        Result<nacre_topo::Orientation, nacre_judge::Decision>,
-    ),
->;

@@ -946,7 +946,7 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, l, st)
 }
 
-// ---- pad / pocket features (public: apply(Operation::Pad/PocketOnFace)) ----
+// ---- pad / pocket features (nacre_ops::fixtures::{pad, pocket}) ----
 
 /// A unit cube with its top face handle — the standard target for pad/pocket.
 pub fn cube_with_top() -> (Model, Handle<Face>) {
@@ -968,23 +968,7 @@ pub fn small_square() -> Profile2d {
     Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)]).unwrap()
 }
 
-pub fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
-    Operation::PadOnFace {
-        face,
-        profile,
-        dist,
-    }
-}
-
-pub fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
-    Operation::PocketOnFace {
-        face,
-        profile,
-        dist,
-    }
-}
-
-// ---- more shape fixtures (all public: fixtures::cuboid / apply(Extrude|Pocket)) ----
+// ---- more shape fixtures (all public: fixtures::cuboid / apply(Extrude) / fixtures::pocket) ----
 
 pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();

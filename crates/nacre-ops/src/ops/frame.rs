@@ -10,7 +10,8 @@ use super::*;
 /// about `û` ([`crate::rotated_vertex::narrow_frame`]), so combining an unflipped basis with
 /// `flip` **by hand** by any one rule is wrong on one of the two (measured when a report
 /// half-turned about `v̂` and the realization about `û`: a footprint centred on the face through
-/// the reported coordinates landed outside it, `PadMissesFace` on 2 of 6 faces of a turned block).
+/// the reported coordinates landed outside it — the pad missed its face — on 2 of 6 faces of a
+/// turned block).
 pub(super) fn frame_toward(
     model: &Model,
     plane: Handle<Surface>,
@@ -114,19 +115,19 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
     Some((u, tidy(n.cross(u))))
 }
 
-/// The sketch plane of a planar face — **the very frame [`Operation::PadOnFace`] and
-/// [`Operation::PocketOnFace`] place their profile in**, so a caller can work out where its
-/// `(0, 0)` will land before it builds anything.
+/// The sketch plane of a planar face — **the very frame an [`Operation::Extrude`] on
+/// [`face_sketch_frame`] places its profile in**, so a caller can work out where its `(0, 0)` will
+/// land before it builds anything.
 ///
 /// That equality is the contract, not a coincidence: this is [`face_sketch_frame`]'s frame
 /// realized by [`frame_plane`], never a second derivation. A test pins a hand-placed profile
-/// against a pad to keep it that way.
+/// against a boss built in that frame to keep it that way.
 ///
 /// `NonPlanarFace` for a curved surface (only a plane carries a frame); `FaceNotInLiveSolid` if no
 /// live solid's outer shell holds the face; `PlaneWithoutExactForm` if its plane has no frame.
 pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
-    let f = face_frame(model, face)?;
-    frame_plane(model, &f.frame).ok_or(OpError::PlaneWithoutExactForm)
+    let frame = face_sketch_frame(model, face)?;
+    frame_plane(model, &frame).ok_or(OpError::PlaneWithoutExactForm)
 }
 
 /// **Where a frame is, in space** — its origin and its two axes, realized as f64.
@@ -173,9 +174,10 @@ pub(super) fn frame_basis(
     }
 }
 
-/// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and flip
-/// that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in; [`face_plane`] is its
-/// realization. An extrude in it lands where the pad lands, as the same surfaces.
+/// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and flip a
+/// feature on the face sketches in: an [`Operation::Extrude`] in it builds the boss (`dist > 0`)
+/// or the pocket's tool (`dist < 0`) on the face's own plane handle; [`face_plane`] is its
+/// realization.
 ///
 /// ★★ **Which frame a face takes is a fact about where the face is, not about how its plane is
 /// stored.** Whether a moved plane carries its motion as a node or had it carried into its points
@@ -195,20 +197,12 @@ pub(super) fn frame_basis(
 /// Errors: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when the plane has no
 /// frame at all (no name, and no judged frame).
 pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
-    Ok(face_frame(model, face)?.frame)
-}
-
-/// Locate `face`'s live solid and choose its frame ([`face_sketch_frame`] says which).
-/// `NonPlanarFace` for a curved surface, `FaceNotInLiveSolid` if no live outer shell holds it,
-/// `PlaneWithoutExactForm` if the plane has no frame.
-pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
-    let (solid_h, _) = model
+    model
         .live_solids()
         .iter()
-        .map(|&s| (s, model.solid(s).outer))
         // Index-only equality again: a face handle from another model can match here. The
         // shell lookup that follows is where the cross-store guard fires.
-        .find(|&(_, sh)| model.shell(sh).faces.contains(&face))
+        .find(|&&s| model.shell(model.solid(s).outer).faces.contains(&face))
         .ok_or(OpError::FaceNotInLiveSolid)?;
     let f = model.face(face);
     let surface_h = f.surface;
@@ -228,11 +222,7 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
             )
         })
         .ok_or(OpError::PlaneWithoutExactForm)?;
-    Ok(FaceFrame {
-        solid_h,
-        surface_h,
-        frame,
-    })
+    Ok(frame)
 }
 
 /// **The placement that puts a face's sketch in the arbitrary-axis frame of its outward normal

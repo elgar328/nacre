@@ -71,8 +71,8 @@ pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError
     profile.holes().iter().try_for_each(quarter)
 }
 
-/// **A profile's rings placed in `frame` and swept `dist` along its `ŵ`** — the one road from a
-/// frame to a prism's rings, shared by the extrude and the face operations: the world road when
+/// **A profile's rings placed in `frame` and swept `dist` along its `ŵ`** (against it when `dist`
+/// is negative) — the one road from a frame to a prism's rings: the world road when
 /// the frame's world basis is rational ([`exact_frame`]), otherwise written inside the frame
 /// behind its node ([`push_frame_node`]).
 ///
@@ -84,7 +84,7 @@ pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError
 ///
 /// **Mapping only — no winding decision, and no containment check.** Forcing the outer ring CCW
 /// here would be a second opinion on a question `build_prism` already answers from the sweep, and
-/// two opinions is how an outer ring and its holes end up wound the same way (the pocket case,
+/// two opinions is how an outer ring and its holes end up wound the same way (a negative extrude,
 /// where the sweep runs `−n` and flips the outer ring). A profile may also reach past the face
 /// boundary; an overhanging footprint routes to the overhang boolean sidecars, which reject
 /// honestly what they do not cover.
@@ -106,7 +106,7 @@ pub(super) fn frame_rings(
 }
 
 /// **Extrude a profile on a frame the model already holds** — the handle vocabulary of
-/// [`Operation::Extrude`], and the same three steps `extrude_and_boolean` takes for a pad.
+/// [`Operation::Extrude`].
 ///
 /// The base cap **is** the frame's plane, so it is handed to [`build_prism`] as a surface rather
 /// than as points: the flush contact then reads as one shared handle, which is what the boolean
@@ -209,7 +209,7 @@ fn base_cap_orientation(
 ///
 /// No vertex carries a measured tolerance. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
-/// Shared by [`extrude_on_frame`] (a boss) and the pocket (`sweep = −n`).
+/// [`extrude_on_frame`]'s builder, either way along the frame's normal.
 pub(crate) fn build_prism(
     model: &mut Model,
     outer_ring: Swept,
@@ -250,7 +250,7 @@ pub(crate) fn build_prism(
     // preserved exactly: base cap, then top cap, then walls, outer ring before the holes.
 
     // Base cap: outward normal −N, loops reversed.
-    // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so
+    // When the prism stands on a plane the model holds, reuse its `Surface` handle (explicit sharing) so
     // the flush contact is a shared-handle coplanar pair the boolean can recognize by `Handle`
     // identity; otherwise push a fresh plane. The materialized outward normal must stay −N, and
     // the caller states the orientation that makes it so — it knows the shared plane's truth
