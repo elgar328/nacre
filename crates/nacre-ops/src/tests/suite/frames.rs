@@ -9,11 +9,11 @@ use super::*;
 /// cuboid left two faces of area `2.2e-16` on the plane `z = 2.1`, whose long edges sat one
 /// ulp apart (`-0.6` against `-0.6000000000000001`).
 ///
-/// The ulp came from the sketch frame's **origin**. `face_frame` takes it from the face's area
-/// centroid, and `ring_area_centroid` was rounding twice more than it needed to, so the first
-/// pad's top face reported its centre as `-1.11e-16` instead of `0`. The second pad then placed
-/// the same profile one ulp away from where the first had placed it, and the kernel — correctly
-/// — built the one-ulp-wide faces that answer describes.
+/// The ulp came from the sketch frame's **origin**, read off the face: an origin at the face's
+/// area centroid, with `ring_area_centroid` rounding twice more than it needed to, put the first
+/// pad's top face's centre at `-1.11e-16` instead of `0`, so the second pad placed the same
+/// profile one ulp away and the kernel — correctly — built the one-ulp-wide faces that answer
+/// describes. The origin reads no face now: it is the world origin's projection.
 ///
 /// ★ `SketchPlane::exact()` does not catch this: it checks only that the axes are orthonormal,
 /// never the origin.

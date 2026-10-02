@@ -30,7 +30,11 @@ fn pad_boss_on_cube_top() {
     assert_eq!(reach.edges.len(), 24); // 12 cube + 4 base + 4 top + 4 vertical
     let inner: usize = reach.faces.iter().map(|fh| m.face(*fh).inner.len()).sum();
     assert_eq!(inner, 1);
-    assert!(reach.faces.contains(&top_face));
+    let (area, z) = area_and_height(&m, top_face);
+    assert!(
+        (area - 0.16).abs() < 1e-12 && (z - 1.5).abs() < 1e-12,
+        "the boss top: area {area} at z {z}"
+    );
 }
 
 #[test]
@@ -49,7 +53,11 @@ fn pocket_on_cube_top() {
     assert_eq!(reach.edges.len(), 24);
     let inner: usize = reach.faces.iter().map(|fh| m.face(*fh).inner.len()).sum();
     assert_eq!(inner, 1);
-    assert!(reach.faces.contains(&bottom_face));
+    let (area, z) = area_and_height(&m, bottom_face);
+    assert!(
+        (area - 0.16).abs() < 1e-12 && (z - 0.5).abs() < 1e-12,
+        "the pocket floor: area {area} at z {z}"
+    );
 }
 
 /// The lateral face of a cylinder — a face with no sketch frame.
@@ -136,7 +144,11 @@ fn pad_an_overhanging_boss() {
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.5).abs() < 1e-12);
-    assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
+    let (area, z) = area_and_height(&m, top_face);
+    assert!(
+        (area - 0.5).abs() < 1e-12 && (z - 2.0).abs() < 1e-12,
+        "the cantilevered boss top: area {area} at z {z}"
+    );
 }
 
 #[test]
@@ -162,7 +174,11 @@ fn pocket_an_edge_slot() {
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.8125).abs() < 1e-12);
-    assert!(m.reachable().faces.contains(&bottom_face)); // slot floor recovered
+    let (area, z) = area_and_height(&m, bottom_face);
+    assert!(
+        (area - 0.375).abs() < 1e-12 && (z - 0.5).abs() < 1e-12,
+        "the slot floor, its on-face part: area {area} at z {z}"
+    );
 }
 
 #[test]
@@ -870,4 +886,11 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
         moved > 0.2,
         "the corner-mean rule must visibly move: {ma:?} vs {mb:?}"
     );
+}
+
+/// The face's area and the height its centroid stands at — where a boss top or a pocket floor is
+/// and how big, which is what "the cap went there" means.
+fn area_and_height(m: &Model, f: Handle<Face>) -> (f64, f64) {
+    let p = nacre_props::face_props(m, f).expect("a planar face's props");
+    (p.area, p.centroid.as_array()[2])
 }

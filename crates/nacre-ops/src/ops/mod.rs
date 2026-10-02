@@ -50,10 +50,9 @@ pub use profile::*;
 pub enum Operation {
     /// **Put a plane in the model because the caller named it** — not because a face lies on it.
     ///
-    /// Until this existed a log could name only two kinds of plane: the three seeded world planes
-    /// and the plane of a face it had already built ([`face_sketch_frame`]). Everything else was
-    /// stated *by value* inside [`Operation::Extrude`], which is why that variant is the last one
-    /// carrying a `SketchPlane` at all.
+    /// Without it a log could name only two kinds of plane: the three seeded world planes and the
+    /// plane of a face it had already built ([`face_sketch_frame`]); every other plane would have
+    /// to travel by value. This is the one variant that carries a plane's statement (`Stated`).
     ///
     /// ★ **It is an operation, not a plain function, because `replay` must reproduce the handle.**
     /// A plane minted outside the log leaves a model that is not self-contained, and the

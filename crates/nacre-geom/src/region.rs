@@ -88,10 +88,11 @@ mod tests {
     /// square root's rounding rode along too. The terms of a symmetric ring then failed to cancel
     /// and the answer came out one ulp off zero.
     ///
-    /// That is not cosmetic. `face_frame` uses this point as a sketch frame's **origin**, so a
-    /// profile placed on such a face lands one ulp away from where the same profile landed on the
-    /// face below it — and padding a footprint twice left two faces of area `2.2e-16` in the
-    /// result, which `validate` did not report.
+    /// That is not cosmetic. A sketch frame whose **origin** is this point lands a profile placed
+    /// on such a face one ulp away from where the same profile landed on the face below it —
+    /// padding a footprint twice left two faces of area `2.2e-16` in the result, which `validate`
+    /// did not report. (The face frame's origin is the world origin's projection, which reads no
+    /// face; this point's exactness matters to every other reader of a face's centre.)
     ///
     /// The `1/3` is factored out and the weights use the un-normalized area vector: the centroid
     /// is a *ratio* of those weights, so the common `|area_vec|` cancels and normalizing only ever

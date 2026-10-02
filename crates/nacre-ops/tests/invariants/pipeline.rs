@@ -1196,9 +1196,9 @@ fn a_split_dimension_meets_the_undivided_one() {
     );
 }
 
-/// **The exact-dimension guarantee reaches `pad`/`pocket` too**, and that is a claim about
-/// `face_frame` — whose axes come from `any_perpendicular`, not from the caller — so it has
-/// to be measured on that path rather than inferred from the extrude one.
+/// **The exact-dimension guarantee reaches `pad`/`pocket` too**, and that is a claim about the
+/// face's sketch frame (`face_sketch_frame`) — whose axes the kernel chooses, not the caller — so
+/// it has to be measured on that path rather than inferred from the world-plane extrude.
 ///
 /// **★ The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against
 /// one padded `7.7`, agrees *already* in f64: `(2.0 + 1.1) + 6.6 == 2.0 + 7.7`. That test

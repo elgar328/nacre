@@ -286,7 +286,11 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
     let p = nacre_props::mass_props(&m, solid).unwrap();
     assert!((p.volume - 1.625).abs() < 1e-12, "volume {}", p.volume);
     assert!((p.area - 9.75).abs() < 1e-12, "area {}", p.area);
-    assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
+    let (area, z) = area_and_height(&m, top_face);
+    assert!(
+        (area - 0.625).abs() < 1e-12 && (z - 2.0).abs() < 1e-12,
+        "the L boss top: area {area} at z {z}"
+    );
 }
 
 #[test]
@@ -557,4 +561,11 @@ fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
             }
         }
     }
+}
+
+/// The face's area and the height its centroid stands at — where a boss top or a pocket floor is
+/// and how big, which is what "the cap went there" means.
+fn area_and_height(m: &Model, f: Handle<Face>) -> (f64, f64) {
+    let p = nacre_props::face_props(m, f).expect("a planar face's props");
+    (p.area, p.centroid.as_array()[2])
 }

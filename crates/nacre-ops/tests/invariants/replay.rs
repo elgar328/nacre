@@ -854,12 +854,18 @@ fn concretize(m: &Model, step: &Step) -> Option<Planned> {
             let f = *faces.get(face % faces.len().max(1))?;
             let i = f64::from(inset) * 0.25;
             let pad = matches!(step, Step::Pad { .. });
+            // A pad sweeps out of the face, a pocket's tool into it.
+            let (dist, kind) = if pad {
+                (f64::from(dist), BoolKind::Fuse)
+            } else {
+                (-f64::from(dist), BoolKind::Cut)
+            };
             return Some(Planned::Feature {
                 face: f,
                 body: s,
                 profile: rect(i, i, i + 1.0, i + 1.0),
-                dist: if pad { 1.0 } else { -1.0 } * f64::from(dist),
-                kind: if pad { BoolKind::Fuse } else { BoolKind::Cut },
+                dist,
+                kind,
             });
         }
         Step::Boolean { kind, a, b } => {
