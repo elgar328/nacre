@@ -263,6 +263,20 @@
 
 두 인자의 부호는 잠기지 않았다 — 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다(`design.md` 「감김과 방향」).
 
+### 얇은 활꼴 둘의 `Common` 은 탐침이 바닥난다 — `NoClearRay`
+
+블록 `[0,6]×[−3,3]` 에 홈이나 구멍(`y ∈ [−2,2]`, `z ∈ [1,3]`)을 내고, 보스(축 `(2.5, 0)` `+z`, `r = 2.5`, seam 방향
+`(0,−1,0)`)를 그 높이 안에 세운 배치의 `Common` 은 `|y| > 2` 의 얇은 활꼴 둘(두 성분)이다. 성분의 깊이를 묻는
+탐침(`assembly::grouping` — 관통 코너·캡 후보의 1차 16개, 모서리 점의 2차)이 **전부 기권**해 `NoClearRay` 로
+거절된다. 양 순서, 홈·구멍 둘 다(`a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today`).
+
+- 접선과 무관하다: x=0 벽이 없는 같은 원통(블록 `x ≥ −1`)도 같고, 보스를 `x = 2.6` 으로 옮기면 두 몸통이 빌드된다.
+- 기권의 원인(`tie_probe`, 한 연산): `SeamRoot` 24 · `ArcRootAtProbe` 12 · `ProbeOnStep` 9 · `ProbeAtCorner` 3, 다른
+  순서 `SeamRoot` 32 · `ArcRootAtProbe` 16 — 축 방향·가로 방향 광선이 보스의 seam 룰링을 지나거나 호의 근이 탐침
+  위에 놓인다.
+- 미확인: 같은 `(p, dir)` 광선이 한 번 `None`, 한 번 `Some(false)` 로 찍혔다(`x = 2.6` 쪽). 피연산자 순서나 debug 의
+  참조 실행에 따라 답이 갈리는지 아직 모른다.
+
 ### 접선 행의 옆면 쪽은 근사다 — 거짓 `SelfTouchingResult`
 
 접선 판정(`assembly::self_touch::tangency_reject`)은 게이트의 행이 참인 접촉을 말한다고 믿는다. 벽 면 쪽은 그렇다

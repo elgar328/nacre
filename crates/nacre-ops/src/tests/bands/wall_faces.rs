@@ -1129,6 +1129,38 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
+/// **The same boss's `Common` runs out of probes today.** What the boss and the block share is
+/// the two thin segments past `|y| = 2` — two components, and the depth of each is asked of the
+/// other by rays (`assembly::grouping`). Every probe the component road offers abstains — the rays
+/// along the axis and across it from the segments' corners and edge points graze the boss's seam
+/// ruling or meet an arc root on the probe — and the boolean is refused `NoClearRay`, both orders
+/// and both gaps. Nothing here is the tangency's: the same boss on a block with no wall at `x = 0`
+/// is refused the same, and moved to `x = 2.6` it builds two bodies. todo 「얇은 활꼴 둘의
+/// `Common` 은 탐침이 바닥난다 — `NoClearRay`」.
+#[test]
+fn a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today() {
+    for gap in [WallGap::Notch, WallGap::Hole] {
+        for swapped in [false, true] {
+            let (mut m, block, boss) = wide_boss_in_a_wall_gap(gap);
+            let (a, b) = if swapped {
+                (boss, block)
+            } else {
+                (block, boss)
+            };
+            match crate::boolean(&mut m, BoolKind::Common, a, b) {
+                Err(BoolError::Rejected { reason, .. }) => {
+                    assert_eq!(
+                        reason,
+                        RejectReason::NoClearRay,
+                        "{gap:?} swapped {swapped}"
+                    )
+                }
+                other => panic!("{gap:?} swapped {swapped}: {other:?}"),
+            }
+        }
+    }
+}
+
 /// ★★ **A hole whose edge lies on the tangent line hands the line to the structure.** The slot
 /// `y ∈ [0, 2]` leaves the face `x = 0` a hole whose edge `y = 0` is the tangent line over the
 /// boss's height, and the slot's own wall `y = 0` holds the line too. The face ends on the line

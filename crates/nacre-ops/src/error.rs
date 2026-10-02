@@ -598,8 +598,11 @@ pub enum RejectReason {
     /// ([`crate::combinatorics::edge_interior_points`]) every one of those questions decides. The
     /// six rotations **build**, with one body, a clean `validate` and the exact volume; the void
     /// gets the name its shape has one grazing corner down
-    /// ([`Self::SelfTouchingResult`]). What is left under this name raises **0 or 1 times per
-    /// whole-suite sweep** — a backstop with no population, and no fixture surfaces it.
+    /// ([`Self::SelfTouchingResult`]). What is left under this name has one built shape: the two
+    /// thin circular segments a wide boss shares with a slotted block, whose every probe grazes
+    /// the boss's seam ruling or meets an arc root on the probe
+    /// (`a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today`; todo 「얇은 활꼴 둘의
+    /// `Common` 은 탐침이 바닥난다」).
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
