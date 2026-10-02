@@ -12,6 +12,12 @@
 
 > Named for *nacre*, mother-of-pearl, which grows one layer at a time and never rewrites the layers beneath. The kernel treats geometry the same way and, unlike most CAD kernels, its topology too.
 
+## Try it
+
+[![Parts built with nacre in the playground](https://github.com/elgar328/nacre-playground/releases/download/assets/showcase.png)](https://elgar328.github.io/nacre-playground/gallery/)
+
+The [playground](https://github.com/elgar328/nacre-playground) runs the kernel right in your browser: write a short script and watch it build the exact solid. The [gallery](https://elgar328.github.io/nacre-playground/gallery/) collects example parts, rebuilt every day from the latest kernel. Click one to open it in the playground.
+
 ## Status
 
 Nacre is at an early stage. While the version is `0.0.z`, any release may change anything. The kernel grows milestone by milestone, from planar solids to quadric surfaces to general NURBS, and each milestone leaves a working kernel behind.
@@ -33,7 +39,7 @@ Nacre is a geometry kernel, not a CAD application. It covers the geometry and to
 
 `nacre-step` exports compact STEP files that carry only the shape. An application that wants complete STEP files, with product data and the rest, should use its own exporter instead.
 
-Two separate repositories exercise the kernel. **nacre-kit** is a convenience layer on top of it, and **nacre-playground** is a browser app where you write code-CAD scripts that run on nacre-kit.
+Two separate repositories put the kernel to work: [nacre-kit](https://github.com/elgar328/nacre-kit), a convenience layer on top of it, and [nacre-playground](https://github.com/elgar328/nacre-playground), a browser app built on the kit.
 
 ## Relation to Fornjot
 
