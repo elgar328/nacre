@@ -5,7 +5,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2-dev"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/elgar328/nacre"
@@ -24,19 +24,19 @@ rayon = "1"
 # must not inherit from here: a dev-dependency with a version is kept in the published
 # manifest, and the layers' tests depend on each other in a cycle (`nacre-ops`'s tests use
 # the layers above it, and theirs use `nacre-ops`), which would leave no valid publish order.
-nacre-store = { path = "crates/nacre-store", version = "0.0.1" }
-nacre-math = { path = "crates/nacre-math", version = "0.0.1" }
-nacre-exact = { path = "crates/nacre-exact", version = "0.0.1" }
-nacre-predicates = { path = "crates/nacre-predicates", version = "0.0.1" }
-nacre-geom = { path = "crates/nacre-geom", version = "0.0.1" }
-nacre-judge = { path = "crates/nacre-judge", version = "0.0.1" }
-nacre-topo = { path = "crates/nacre-topo", version = "0.0.1" }
+nacre-store = { path = "crates/nacre-store", version = "0.0.2-dev" }
+nacre-math = { path = "crates/nacre-math", version = "0.0.2-dev" }
+nacre-exact = { path = "crates/nacre-exact", version = "0.0.2-dev" }
+nacre-predicates = { path = "crates/nacre-predicates", version = "0.0.2-dev" }
+nacre-geom = { path = "crates/nacre-geom", version = "0.0.2-dev" }
+nacre-judge = { path = "crates/nacre-judge", version = "0.0.2-dev" }
+nacre-topo = { path = "crates/nacre-topo", version = "0.0.2-dev" }
 # Without defaults, so the facade's own `parallel` feature is what turns rayon on.
-nacre-ops = { path = "crates/nacre-ops", version = "0.0.1", default-features = false }
-nacre-props = { path = "crates/nacre-props", version = "0.0.1" }
-nacre-step = { path = "crates/nacre-step", version = "0.0.1" }
-nacre-tess = { path = "crates/nacre-tess", version = "0.0.1" }
-nacre-validate = { path = "crates/nacre-validate", version = "0.0.1" }
+nacre-ops = { path = "crates/nacre-ops", version = "0.0.2-dev", default-features = false }
+nacre-props = { path = "crates/nacre-props", version = "0.0.2-dev" }
+nacre-step = { path = "crates/nacre-step", version = "0.0.2-dev" }
+nacre-tess = { path = "crates/nacre-tess", version = "0.0.2-dev" }
+nacre-validate = { path = "crates/nacre-validate", version = "0.0.2-dev" }
 
 # ★★★★★ **The tests are the slow thing, and they are slow for one reason: the optimizer level.**
 #
