@@ -30,16 +30,6 @@ pub(super) fn exact_frame(
     }
 }
 
-/// **Extrude a profile on a frame the model already holds** — the handle vocabulary of
-/// [`Operation::Extrude`], and the same three steps `extrude_and_boolean` takes for a pad.
-///
-/// The base cap **is** the frame's plane, so it is handed to [`build_prism`] as a surface rather
-/// than as points: the flush contact then reads as one shared handle, which is what the boolean
-/// recognizes. Nothing new is pushed for it.
-///
-/// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, turned by whoever built
-/// the frame (a datum toward the caller's stated normal, a face toward its outward). That is why
-/// this takes a frame rather than a plane and sweeps the same way.
 /// The builder's exact winding needs quarter-turn arcs (`Ring2d::winding_sign`); an arc of any
 /// other angle is refused by name here, before the builder reads the ring.
 pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError> {
@@ -115,14 +105,25 @@ pub(super) fn frame_rings(
         .ok_or(OpError::PlaneWithoutExactForm)
 }
 
+/// **Extrude a profile on a frame the model already holds** — the handle vocabulary of
+/// [`Operation::Extrude`], and the same three steps `extrude_and_boolean` takes for a pad.
+///
+/// The base cap **is** the frame's plane, so it is handed to [`build_prism`] as a surface rather
+/// than as points: the flush contact then reads as one shared handle, which is what the boolean
+/// recognizes. Nothing new is pushed for it, whichever way the prism runs.
+///
+/// `dist` is signed: `ŵ` is the frame's, turned by whoever built the frame (a datum toward the
+/// caller's stated normal, a face toward its outward), and a negative `dist` sweeps against it in
+/// the same axes. The rings take the sign as it is ([`frame_rings`]); the sweep normal and the base
+/// cap's facing turn with it.
 pub(crate) fn extrude_on_frame(
     model: &mut Model,
     frame: &SketchFrame,
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    if dist <= 0.0 {
-        return Err(OpError::NonPositiveDistance);
+    if dist == 0.0 {
+        return Err(OpError::ZeroDistance);
     }
     if nacre_exact::Rat::from_decimal(dist).is_none() {
         return Err(OpError::DistOutsideDecimalWindow);
@@ -145,27 +146,35 @@ pub(crate) fn extrude_on_frame(
     )
     .ok_or(OpError::PlaneWithoutExactForm)?;
 
+    let along = dist > 0.0;
     let (outer, holes) = frame_rings(model, frame, profile, dist)?;
-    let base = (frame.plane(), base_cap_orientation(model, frame)?);
+    let base = (frame.plane(), base_cap_orientation(model, frame, along)?);
+    let w = Vector3::from_array(w);
     build_prism(
         model,
         outer,
         holes,
-        Vector3::from_array(w),
+        if along { w } else { -w },
         Some(base),
         None,
     )
 }
 
-/// **How the base cap of a prism swept on `frame` faces its plane** — the cap's outward is `−ŵ`
-/// (the sweep runs along `ŵ`), read against the way the frame's plane `h` faces, from the truth.
+/// **How the base cap of a prism swept on `frame` faces its plane** — the cap's outward is against
+/// the sweep: `−ŵ` when the prism runs `along` `ŵ`, `+ŵ` when it runs against it — read against the
+/// way the frame's plane `h` faces, from the truth.
 ///
 /// `ŵ` is a difference of carried points, so the plane's motion carries it as `L(ŵ)`; the plane's
 /// facing is its points' turn times `sense`, which the motion carries as `parity · L(·)`. In `h`'s
 /// own frame `ŵ` runs with or against that facing
-/// ([`crate::rotated_vertex::frame_normal_sense`]); `flip` negates `ŵ`. So the cap faces the
-/// plane's way exactly when `−(that relation) · parity · flip` is `+1`.
-fn base_cap_orientation(model: &Model, frame: &SketchFrame) -> Result<Orientation, OpError> {
+/// ([`crate::rotated_vertex::frame_normal_sense`]); `flip` negates `ŵ`, and so does a sweep
+/// against it. So the cap faces the plane's way exactly when
+/// `−(that relation) · parity · flip · sweep` is `+1`.
+fn base_cap_orientation(
+    model: &Model,
+    frame: &SketchFrame,
+    along: bool,
+) -> Result<Orientation, OpError> {
     let h = frame.plane();
     let nacre_topo::Surface::Plane { motion, .. } = model.surface(h) else {
         return Err(OpError::NonPlanarFace);
@@ -175,7 +184,8 @@ fn base_cap_orientation(model: &Model, frame: &SketchFrame) -> Result<Orientatio
     let parity = crate::rotated_vertex::motion_parity(model, *motion)
         .ok_or(OpError::PlaneWithoutExactForm)?;
     let flip = if frame.flip() { -1 } else { 1 };
-    Ok(if -relation * parity * flip > 0 {
+    let sweep = if along { 1 } else { -1 };
+    Ok(if -relation * parity * flip * sweep > 0 {
         Orientation::Forward
     } else {
         Orientation::Reversed

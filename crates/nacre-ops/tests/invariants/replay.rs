@@ -1204,7 +1204,7 @@ fn a_late_reject_is_not_index_neutral() {
     // ── Early: decided before any geometry is built ─────────────────────────
     for (name, setup) in [
         (
-            "NonPositiveDistance",
+            "ZeroDistance",
             Box::new(|| {
                 let m = Model::new();
                 let op = extrude_op(&m, 0.0, 2.0, 0.0);

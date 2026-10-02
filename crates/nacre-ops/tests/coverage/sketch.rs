@@ -268,6 +268,69 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
     );
 }
 
+/// ★ **A negative extrude sweeps against `ŵ` in the frame's own axes, and its base cap is still
+/// the frame's plane.** An annulus drawn on the world `XY` seed, swept `−2`: the body lies in
+/// `z ∈ [−2, 0]`, the footprint is where it was drawn (no mirror), the base cap is the seed's own
+/// handle facing `+z` — away from the body, against the sweep — and the far cap faces `−z`. The
+/// sweep reverses the outer ring, so this is also the direction where the hole's winding is
+/// decided against a flipped outer: a mis-wound hole fails `validate` and the volume.
+#[test]
+fn a_negative_extrude_sweeps_below_its_plane() {
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let sq = |lo: f64, hi: f64| {
+        vec![
+            Point2::from_array([lo, lo]),
+            Point2::from_array([hi, lo]),
+            Point2::from_array([hi, hi]),
+            Point2::from_array([lo, hi]),
+        ]
+    };
+    let profile = Profile2d::with_holes(sq(1.0, 9.0), vec![sq(3.0, 7.0)]).unwrap();
+    let OpOutput::Extrude { solid, faces } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: -2.0,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    assert!((volume(&m, solid) - 2.0 * (64.0 - 16.0)).abs() < 1e-9);
+    let (lo, hi) = nacre_props::bounds(&m, solid).expect("bounds");
+    assert_eq!(
+        (lo.as_array(), hi.as_array()),
+        ([1.0, 1.0, -2.0], [9.0, 9.0, 0.0])
+    );
+    assert_eq!(
+        m.face(faces[0]).surface,
+        frame.plane(),
+        "the base cap is the seed's handle"
+    );
+    let outward = |f| {
+        let face = m.face(f);
+        let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+            unreachable!("a cap is planar")
+        };
+        (pl.normal() * f64::from(face.orientation.sign())).as_array()
+    };
+    assert_eq!(
+        outward(faces[0]),
+        [0.0, 0.0, 1.0],
+        "the base cap faces away from the body"
+    );
+    assert_eq!(
+        outward(faces[1]),
+        [0.0, 0.0, -1.0],
+        "the far cap faces down"
+    );
+}
+
 /// The first vertex of a face's outer loop — a local helper, kept out of `common` because only
 /// the pocket fixture above needs it.
 fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<nacre_topo::Vertex> {

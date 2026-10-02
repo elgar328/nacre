@@ -135,7 +135,7 @@ impl<T> Eq for Handle<T> {}
 
 **거절은 live 모델에 원자적이지만 아레나 인덱스에는 아니다.** 거절에는 두 종류가 있다:
 
-- **이른 거절** — 요청만 보고 판정(`NonPositiveDistance`, 창 밖, `Profile2d::check`, `NonPlanarFace`, `SolidNotLive`…). 아레나 Δ = 0.
+- **이른 거절** — 요청만 보고 판정(`ZeroDistance`, 창 밖, `Profile2d::check`, `NonPlanarFace`, `SolidNotLive`…). 아레나 Δ = 0.
 - **늦은 거절** — 기하를 지어 봐야 알 수 있는 판정(`PadMissesFace`, `PocketNotBlind`, `Boolean(_)`). 도구 프리즘의 셀이 **append-only 아레나에 남는다**.
 
 live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 부울에서 이것은 우연이 아니라 **구조**다: 조립의 피연산자 은퇴는 「결과가 받아들여진 뒤 한 자리」에서만 일어나고(`assemble_fuse_cut` → `reconstruct`), 그와 별도로 `boolean`/`boolean_with_classes` 가 엔진의 **모든** `Err` 에 live set 스냅샷을 복원한다(`restore_live`; `coverage/rejects.rs` 와 `self_touch.rs` 가 단언한다). 그러나 아레나 길이는 되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model = replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는 **이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(예: `LogHandleOutOfRange{Solid, 4}`).
@@ -1367,7 +1367,7 @@ pub enum Operation {
     // 평면은 구성 시점 interning 대상이라 «이미 있으면 그 핸들»이 정답이다(아레나 안 자람).
     DatumPlane { def: DatumDef },  // Stated(SketchPlane) | Offset { frame, dist } | ThroughVertices([Handle<Vertex>; 3])
     // 스케치 평면·프로파일 개념은 Extrude 인자로 흡수된다(별도 Sketch op 없음).
-    // 평면은 값으로 싣지 않고 `SketchFrame` 으로 «이름 부른다». `dist` 는 양수 두께.
+    // 평면은 값으로 싣지 않고 `SketchFrame` 으로 «이름 부른다». `dist` 는 부호 있는 두께(음수는 ŵ 반대쪽), 0 은 거절.
     Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },
     // 기존 면 위 작업 — 툴 프리즘을 세워 Fuse / Cut 하는 불리언 설탕. Handle<Face> 참조.
     PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 },
@@ -1406,11 +1406,11 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 | 기존 면 위 스케치 | `face_sketch_frame(&m, face)` |
 | 그 밖의 평면 | `Operation::DatumPlane` 로 **먼저 진술**하고 돌려받은 프레임을 쓴다 |
 
-**방향은 프레임의 것이고, `flip` 은 쓰임새가 정하는 값이다.** `dist > 0` 은 두께이고 어디로 가는지는 프레임의 ŵ 이다. `flip` 은 `frame_toward` **한 곳에서만** 정하므로 호출자가 뒤집힌 프레임을 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 그래서 «면에 그려 안쪽으로» 파는 것은 `toward` 를 안쪽으로 두는 **복합 연산**(`PadOnFace`/`PocketOnFace` 가 `extrude_and_boolean` 의 부호 있는 sweep 으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 따로 없다 — 원이 스케치 어휘이므로 면 위 원 스케치의 `PocketOnFace` 가 그것이다.
+**ŵ 는 프레임의 것이고, «어느 쪽»은 `dist` 의 부호다.** `flip` 은 `frame_toward` **한 곳에서만** 정하므로 호출자가 뒤집힌 프레임을 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 프레임을 뒤집으면 축까지 다시 유도되어(`flip` 은 계수의 부호를 먼저 바꾸고 `+u` 를 그 법선에서 짓는다) 같은 스케치가 거울상으로 떨어지므로, «면에 그려 안쪽으로»는 같은 프레임에서 ŵ 반대로 쓰는 **음의 돌출**이다. 밑캡은 어느 쪽이든 프레임의 평면 핸들이다. 원통 축은 쓸기 부호와 무관하게 프레임의 법선이라, «datum −n 에 +d» 와 «datum +n 에 −d» 는 같은 원통을 두 진술로 적는다 — 원통의 interning 열쇠가 진술 그대로인 것(todo 「곡면 둘 이상이 만나는 점과 seam 담체」의 원통 정체)과 같은 부류다.
 
 - **방향은 `flip` 이 들고, 프레임을 만든 쪽이 진실에서 정한다.** 평면의 정준 이름에는 방향이 없고 평면은 interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**), 프레임이 방향을 담을 수 있는 자리는 `flip` 뿐이다. 답은 두 진실의 곱이다: 평면 자신의 좌표계에서 ŵ 가 평면의 향 쪽인가(`frame_normal_sense` — 이름 있는 평면은 이름 법선, 없는 평면은 판정 점의 순서로 프레임을 지으므로 `plane_name_sense`·`sense` 가 답한다) × 모션의 손방향(`motion_parity`) × 쓰임새가 향할 쪽 — datum 은 **호출자가 진술한 법선**(넣은 진술은 그 반대를 향하고, 문이 `flipped` 로 반대로 앉은 핸들을 알린다), 면은 **바깥**(`orientation`). 실현한 ŵ 와 f64 방향의 내적은 같은 물음을 두 반올림에 묻는다(「가지 말 것」 «향 관계를 캐시 법선으로 읽기»).
 - **`world_zx` 는 유도로 만들 수 없다**: arbitrary-axis 규약이 ZX 에 `+u = −x̂` 를 주는데 규약은 `+u = +ẑ` 다(`ŵ` 는 둘 다 `+ŷ`). `SketchFrame::world` 가 그 예외를 **한 곳에** 가둔다 — `canonical(씨앗 ZX)` 로 바꾸면 그 스케치들이 90° 돈다(음성 대조로 잠금).
-- **`dist` 는 두께다**(`NonPositiveDistance`). 방향은 프레임이 말한다 — `DatumDef::Offset` 의 `dist` 가 **부호 있는 변위**인 것과 대비되며, 그쪽은 부호만이 «어느 쪽»을 말하기 때문이다. 반대편을 향하는 스케치는 **그 방향으로 평면을 진술**한다.
+- **`dist` 는 부호 있는 두께다**(0 은 `ZeroDistance`). ŵ 와 스케치의 축은 프레임이, 몸이 평면의 어느 쪽에 서는지는 부호가 말한다 — `DatumDef::Offset` 의 부호 있는 변위와 같은 자리다. 반대편을 향하는 **스케치**(축까지 뒤집힌 것)가 필요하면 그 방향으로 평면을 진술한다.
 - **프레임의 기저는 유리수로 묻는다, 실현해서 되묻지 않는다.** `RatFrame::of_plane_frame` 이 `û = u_raw·inv_sqrt_exact(uu)` 로 답한다 — 실현한 축을 `Rat::from_decimal` 로 다시 들어올리면 정규화가 필요한 축(`(0.6,0.8,0)` → 원시 `(3,4,0)`, `uu=25`)이 `0.6000000000000001` 로 돌아와 직교정규가 깨지고, 그 평면이 **조용히 프레임-노드 도로로 옮겨간다**. `plane_frame_named` 가 `v̂` 에 대해 적어 둔 규칙과 같은 것이다.
 
 **datum 평면의 규칙.** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은 평면을 만들지 않는다(깊이 불변식, `a_boolean_mints_no_surface`).
@@ -1435,7 +1435,7 @@ datum 일반:
 
 **다중 루프 프로파일 — 구멍 있는 스케치를 정확히 세운다.** `Profile2d { outer: Ring2d, holes: Vec<Ring2d> }` 가 외곽 링 하나와 구멍 링 N개(제한 없음)를 담고(`polygon`/`with_holes` 생성자, 필드는 비공개; `inners` 는 필드가 아니라 `with_holes(outer, inners)` 의 **인자** 이름이다), `build_prism` 이 구멍마다 벽을 세우고 두 캡에 내부 루프를 단다. **불리언으로 흉내낼 때와의 차이가 요점이다** — 잘라 만든 도넛은 모든 코너가 `Discovered`(측정된 tol)이지만, 프로파일을 쓸어 만든 도넛은 전부 `Constructed`(tol 없음)다. 원칙 4 가 요구하는 바로 그 차이다. 그래서 **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed` 였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance 는 발견된 교차에만)를 스스로 어긴다.
 
-**감김은 한 곳에서만 정한다.** `build_prism` 이 sweep 을 아는 유일한 자리이므로 외곽을 sweep 기준 CCW 로 정규화하고 구멍을 그 반대로 맞춘다. 타입은 링을 그대로 담는다 — 두 곳에서 정하면 pocket 처럼 sweep 이 외곽을 뒤집는 경로에서 둘이 갈린다. 이 설계는 그 버그 부류를 구조적으로 없앤다: "정규화된 외곽의 반대"와 "sweep 기준 CW"가 같은 규칙이 되기 때문이다.
+**감김은 한 곳에서만 정한다.** `build_prism` 이 sweep 을 아는 유일한 자리이므로 외곽을 sweep 기준 CCW 로 정규화하고 구멍을 그 반대로 맞춘다. 타입은 링을 그대로 담는다 — 두 곳에서 정하면 음의 돌출처럼 sweep 이 외곽을 뒤집는 경로에서 둘이 갈린다. 이 설계는 그 버그 부류를 구조적으로 없앤다: "정규화된 외곽의 반대"와 "sweep 기준 CW"가 같은 규칙이 되기 때문이다.
 
 검산: 도넛 각기둥은 V16 − E24 + F10 − L_i 2 = 0 = 2(S−G), genus 1 — **오일러의 `L_i` 항이 실제로 필요한 형상**이다.
 

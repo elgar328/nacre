@@ -604,7 +604,7 @@ fn degenerate_inputs_are_rejected() {
     );
     assert_eq!(
         apply(&mut Model::new(), &extrude_op(&m, square(), 0.0)),
-        Err(OpError::NonPositiveDistance)
+        Err(OpError::ZeroDistance)
     );
     // A repeated point. This used to surface as `DegenerateGeometry` from `Line::through_points`
     // failing deep in the prism builder; the profile contract now names it at the input instead.

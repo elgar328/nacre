@@ -949,3 +949,336 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
         "the corner-mean rule must visibly move: {ma:?} vs {mb:?}"
     );
 }
+
+// ---- the signed extrude builds what pad and pocket build ----
+
+/// One face to work on, built afresh for each road — `Model` does not clone, and its
+/// construction is deterministic, so two builds hold the same handles.
+type FaceBuilder = fn() -> (Model, Handle<Face>);
+
+/// The profile a case draws on its face, read in that face's frame.
+type ProfileOn = fn(&Model, Handle<Face>) -> Profile2d;
+
+/// A `2×2×2` prism on the `(1,1,1)`-slanted plane, and its far cap.
+fn slanted_cap() -> (Model, Handle<Face>) {
+    let plane =
+        SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+            .unwrap();
+    let mut m = Model::new();
+    let big = Profile2d::polygon(vec![
+        p2(-1.0, -1.0),
+        p2(1.0, -1.0),
+        p2(1.0, 1.0),
+        p2(-1.0, 1.0),
+    ])
+    .unwrap();
+    let frame = datum_frame(&mut m, plane);
+    let OpOutput::Extrude { faces, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: big,
+            dist: 2.0,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    (m, faces[1])
+}
+
+/// A `2`-cube turned 15° about `y`, optionally mirrored across `x = 0`, and its turned `+x` face —
+/// a face frame carried by a chain with a reflection in it.
+fn turned_face(mirror: bool) -> (Model, Handle<Face>) {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
+    let mut m = Model::new();
+    let frame = nacre_ops::SketchFrame::world(&m, Axis::Z);
+    let square = Profile2d::polygon(vec![
+        p2(-1.0, -1.0),
+        p2(1.0, -1.0),
+        p2(1.0, 1.0),
+        p2(-1.0, 1.0),
+    ])
+    .unwrap();
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square,
+            dist: 2.0,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    let down = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(-1)]);
+    let solid = xf(&mut m, solid, down);
+    let turn = Isometry::rotation(Rotation {
+        axis: Axis::Y,
+        pivot: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(15)).unwrap(),
+    });
+    let mut solid = xf(&mut m, solid, turn);
+    if mirror {
+        let OpOutput::Mirror { solid: mirrored } = apply(
+            &mut m,
+            &Operation::Mirror {
+                solid,
+                axis: Axis::X,
+                offset: Rat::from_int(0),
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        solid = mirrored;
+    }
+    let (s15, c15) = 15f64.to_radians().sin_cos();
+    let n = [if mirror { -c15 } else { c15 }, 0.0, -s15];
+    let face = *m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .find(|&&fh| {
+            let f = m.face(fh);
+            let Surface::Plane(pl) = m.surface_cache(f.surface) else {
+                return false;
+            };
+            let out = pl.normal() * f64::from(f.orientation.sign());
+            (0..3).all(|k| (out.as_array()[k] - n[k]).abs() < 1e-9)
+        })
+        .expect("the turned +x face");
+    (m, face)
+}
+
+/// The census `wf` base: a prism on a tilted decimal orthonormal frame, and the wall whose
+/// canonical name has no rational default frame — the kernel's natural producer of wide names.
+fn wf_wall() -> (Model, Handle<Face>) {
+    let mut m = Model::new();
+    let plane = SketchPlane::from_axes(
+        Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+        Vector3::from_array([0.6, 0.8, 0.0]),
+        Vector3::from_array([-0.48, 0.36, 0.8]),
+    );
+    let frame = datum_frame(&mut m, plane);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: Profile2d::polygon(vec![
+                p2(0.1111111111111111, 0.1234567890123456),
+                p2(4.123456789012345, 0.2345678901234567),
+                p2(3.9876543210987654, 3.1234567890123459),
+                p2(0.2222222222222222, 2.765432109876543),
+            ])
+            .unwrap(),
+            dist: 2.5,
+        },
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let wall = *m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .find(|&&f| {
+            let s = m.face(f).surface;
+            m.surface_name
+                .get(&s)
+                .and_then(|n| n.narrow())
+                .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
+        })
+        .expect("the wf population");
+    (m, wall)
+}
+
+/// A `0.6` square centred on the face's outer-loop vertex average, in the face's own frame.
+fn centred_square(m: &Model, face: Handle<Face>) -> Profile2d {
+    let sp = nacre_ops::face_plane(m, face).expect("planar");
+    let pts: Vec<Point3> = m
+        .face(face)
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| m.vertex_point(m.he_start(he)))
+        .collect();
+    let n = pts.len() as f64;
+    let c = Point3::from_array(std::array::from_fn(|k| {
+        pts.iter().map(|p| p.as_array()[k]).sum::<f64>() / n
+    }));
+    let d = c - sp.origin();
+    let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
+    Profile2d::polygon(vec![
+        p2(cu - 0.3, cv - 0.3),
+        p2(cu + 0.3, cv - 0.3),
+        p2(cu + 0.3, cv + 0.3),
+        p2(cu - 0.3, cv + 0.3),
+    ])
+    .unwrap()
+}
+
+/// What a road left behind, bit for bit: the arena's size, then every live solid — volume, area
+/// and centroid bits, its vertices' coordinate bits, and every face's surface handle, orientation
+/// and surface cache (`Debug` of an `f64` is its shortest round-trip, so equal text is equal bits).
+fn road_digest(m: &Model) -> Vec<String> {
+    let mut out = vec![format!(
+        "arena s{} v{} e{} f{}",
+        m.surface_count(),
+        m.vertex_count(),
+        m.edge_count(),
+        m.face_count()
+    )];
+    for &s in m.live_solids() {
+        let p = nacre_props::mass_props(m, s).expect("props");
+        let c = nacre_props::centroid(m, s).expect("a planar result has a centroid");
+        let mut coords: Vec<[u64; 3]> = Vec::new();
+        let mut faces = Vec::new();
+        let solid = m.solid(s);
+        for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
+                faces.push(format!(
+                    "{} {:?} {:?}",
+                    f.surface.index(),
+                    f.orientation,
+                    m.surface_cache(f.surface)
+                ));
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for &he in &lp.half_edges {
+                        coords.push(m.vertex_point(m.he_start(he)).as_array().map(f64::to_bits));
+                    }
+                }
+            }
+        }
+        coords.sort_unstable();
+        coords.dedup();
+        out.push(format!(
+            "solid {} {:016x}/{:016x}/{:016x},{:016x},{:016x} {coords:?}",
+            s.index(),
+            p.volume.to_bits(),
+            p.area.to_bits(),
+            c[0].to_bits(),
+            c[1].to_bits(),
+            c[2].to_bits(),
+        ));
+        out.extend(faces);
+    }
+    out
+}
+
+/// ★★ **Pad and pocket are a face's frame, a signed extrude, and a boolean — bit for bit.**
+///
+/// The face operations build their tool by the extrude's own road (`frame_rings` + `build_prism`,
+/// the face's surface as the base cap) and sweep a pocket against `ŵ`; the public `Extrude` now
+/// takes that sign. Each case runs both roads on the same face, built twice: the old operation,
+/// and `face_sketch_frame` + `Extrude(±d)` + `Boolean` with the operands in the operation's order
+/// (the face's solid first). What either road leaves behind — arena, live solids, coordinates,
+/// surface caches — must agree. The cases are the shapes the face operations are tested on: a lid,
+/// an overhang, a channel, a profile with a hole, the slanted cap, a turned face with and without
+/// a reflection in its chain, and the wide-name wall.
+#[test]
+fn the_signed_extrude_builds_what_pad_and_pocket_build() {
+    let lid_ring = |lo: f64, hi: f64| vec![p2(lo, lo), p2(hi, lo), p2(hi, hi), p2(lo, hi)];
+    let holed = || Profile2d::with_holes(lid_ring(0.2, 0.8), vec![lid_ring(0.4, 0.6)]).unwrap();
+    let cases: Vec<(&str, FaceBuilder, ProfileOn, f64, f64)> = vec![
+        ("lid", cube_with_top, |_, _| small_square(), 0.5, 0.5),
+        (
+            "overhang",
+            cube_with_top,
+            |_, _| edge_overhang_profile(),
+            1.0,
+            0.5,
+        ),
+        (
+            "channel",
+            cube_with_top,
+            |_, _| spanning_slab_profile(),
+            1.0,
+            0.5,
+        ),
+        ("slanted", slanted_cap, |_, _| small_square(), 0.5, 0.5),
+        ("turned", || turned_face(false), centred_square, 1.0, 0.5),
+        (
+            "turned mirrored",
+            || turned_face(true),
+            centred_square,
+            1.0,
+            0.5,
+        ),
+        ("wf wall", wf_wall, centred_square, 0.4, 0.4),
+    ];
+    let run = |name: &str,
+               build: &dyn Fn() -> (Model, Handle<Face>, Profile2d),
+               pad: f64,
+               pocket: f64| {
+        for (kind, dist) in [(BoolKind::Fuse, pad), (BoolKind::Cut, pocket)] {
+            let (mut old, face, profile) = build();
+            let op = match kind {
+                BoolKind::Fuse => pad_op(face, profile.clone(), dist),
+                _ => pocket_op(face, profile.clone(), dist),
+            };
+            apply(&mut old, &op)
+                .unwrap_or_else(|e| panic!("{name} {kind:?}: the operation: {e:?}"));
+            let (mut new, face, _) = build();
+            let solid = *new
+                .live_solids()
+                .iter()
+                .find(|&&s| new.shell(new.solid(s).outer).faces.contains(&face))
+                .expect("the face's solid");
+            let frame = nacre_ops::face_sketch_frame(&new, face).expect("a planar live face");
+            let signed = if matches!(kind, BoolKind::Fuse) {
+                dist
+            } else {
+                -dist
+            };
+            let OpOutput::Extrude { solid: tool, .. } = apply(
+                &mut new,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist: signed,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name} {kind:?}: the extrude: {e:?}")) else {
+                unreachable!()
+            };
+            apply(
+                &mut new,
+                &Operation::Boolean {
+                    kind,
+                    a: solid,
+                    b: tool,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name} {kind:?}: the boolean: {e:?}"));
+            let (a, b) = (road_digest(&old), road_digest(&new));
+            assert_eq!(a.len(), b.len(), "{name} {kind:?}: {a:#?}\nvs\n{b:#?}");
+            for (x, y) in a.iter().zip(&b) {
+                assert_eq!(x, y, "{name} {kind:?}");
+            }
+        }
+    };
+    for (name, build, profile, pad, pocket) in cases {
+        run(
+            name,
+            &|| {
+                let (m, f) = build();
+                let p = profile(&m, f);
+                (m, f, p)
+            },
+            pad,
+            pocket,
+        );
+    }
+    run(
+        "holed",
+        &|| {
+            let (m, f) = cube_with_top();
+            (m, f, holed())
+        },
+        0.5,
+        0.5,
+    );
+}

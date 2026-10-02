@@ -65,17 +65,21 @@ pub enum Operation {
     /// case this returns the handle that exists and the arena does not grow. That is the intended
     /// answer, not a special case: *same plane, same handle*.
     DatumPlane { def: DatumDef },
-    /// Extrude `profile`, drawn in `frame`, by `dist` along that frame's `ŵ`.
+    /// Extrude `profile`, drawn in `frame`, by `dist` along that frame's `ŵ` — or against it when
+    /// `dist` is negative.
     ///
     /// ★ **The plane is named, not carried.** `frame` holds a `Handle<Surface>`, so the plane it
     /// sketches on is one the model already has — a seeded world plane
     /// ([`SketchFrame::world`]), the plane of a face ([`face_sketch_frame`]), or one a
     /// [`Operation::DatumPlane`] put there. That is what makes the base cap a *shared* handle
-    /// rather than a second statement of the same plane.
+    /// rather than a second statement of the same plane, whichever way the prism runs.
     ///
-    /// `dist` is a **thickness** and must be positive; which way it goes is the frame's, measured
-    /// by whoever built the frame. (Contrast [`DatumDef::Offset`], whose `dist` is a signed
-    /// displacement because there the sign is the only thing that says a side.)
+    /// ★ **The frame says where `ŵ` points and where the sketch's `+u` lies; the sign says which
+    /// side of the plane the body takes.** `flip` is the frame maker's, decided from the truth, so
+    /// a face's frame always faces outward — and turning the frame over would re-derive its axes
+    /// and land the same sketch mirrored. Sweeping against `ŵ` keeps the axes and is the only
+    /// spelling of «drawn on this face, cut into it». `0` names no body
+    /// ([`OpError::ZeroDistance`]).
     Extrude {
         frame: SketchFrame,
         profile: Profile2d,
@@ -205,8 +209,12 @@ pub enum OpError {
     /// distinct cylinders) — the same frontier as the cylinder–cylinder boolean (M6b). A lens, a
     /// cam lobe; a straight step between the arcs is what builds today.
     ArcsMeetAtVertex,
-    /// A non-positive extrusion distance.
+    /// A pad's or pocket's distance that is not positive — there the distance is a depth and the
+    /// face's outward says the side.
     NonPositiveDistance,
+    /// An extrusion distance of zero: a prism of no thickness. Either sign is a side
+    /// ([`Operation::Extrude`]); zero is neither.
+    ZeroDistance,
     /// An extrusion distance outside the decimal window (`Rat::from_decimal` — `~1e38` above,
     /// `~1e-22` below for a full-width value): it has no rational truth for the sweep to be
     /// computed in. The sibling of [`OpError::ProfileOutsideDecimalWindow`], named at the

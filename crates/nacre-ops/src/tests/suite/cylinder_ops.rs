@@ -143,10 +143,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
         m.live_solids().len(),
     );
     let cases: [(Operation, OpError); 2] = [
-        (
-            cylinder_op(&m, [0.0, 0.0], 1.0, 0.0),
-            OpError::NonPositiveDistance,
-        ),
+        (cylinder_op(&m, [0.0, 0.0], 1.0, 0.0), OpError::ZeroDistance),
         (
             Operation::Extrude {
                 frame: on_lateral,
