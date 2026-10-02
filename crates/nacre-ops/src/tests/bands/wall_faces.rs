@@ -1129,17 +1129,31 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// **The same boss's `Common` runs out of probes today.** What the boss and the block share is
-/// the two thin segments past `|y| = 2` — two components, and the depth of each is asked of the
-/// other by rays (`assembly::grouping`). Every probe the component road offers abstains — most of
-/// the rays along the axis and across it from the segments' corners and edge points cross the
-/// boss's seam ruling or meet an arc root on the probe, the rest start on a ring's step or corner
-/// — and the boolean is refused `NoClearRay`, both orders and both gaps. Nothing here is the tangency's: the same boss on a block with no wall at `x = 0`
-/// is refused the same, and moved to `x = 2.6` it builds two bodies. todo 「얇은 활꼴 둘의
-/// `Common` 은 탐침이 바닥난다 — `NoClearRay`」.
+/// ★★ **The same boss's `Common` is two thin pieces, and their depths are decided.** What the
+/// boss and the block share is the two circular segments past `|y| = 2` (and, with the slot's
+/// edge on the tangent line, the boss's half disk `y < 0` beside one of them) — two components,
+/// and the depth of each is asked of the other by rays (`assembly::grouping`). The rays from the
+/// chords' middles run in the plane through the boss's axis and its seam, so every arc root they
+/// meet sits on the seam: those are ordered as the cyclic order's first point
+/// (`nacre_exact::quad::SeamOrder::seam_first`), and a root at the probe on the circle off the
+/// arc is no boundary of that ring. Read as ties instead, every probe abstained and the boolean
+/// was refused `NoClearRay` here, in both orders (measured).
+///
+/// The oracle is the inputs': a segment is `h(r²·acos(d/r) − d·√(r² − d²))` with `d = 2`, the half
+/// disk `h·πr²/2`.
 #[test]
-fn a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today() {
-    for gap in [WallGap::Notch, WallGap::Hole] {
+fn a_wide_boss_in_a_wall_gap_common_builds() {
+    let (r, d): (f64, f64) = (2.5, 2.0);
+    let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    let half_disk = std::f64::consts::PI * r * r / 2.0;
+    for gap in [WallGap::Notch, WallGap::Hole, WallGap::HoleAlongLine] {
+        let (h, near) = match gap {
+            WallGap::Notch => (0.6, segment),
+            WallGap::HoleAlongLine => (1.0, half_disk),
+            _ => (1.0, segment),
+        };
+        let mut want = [h * segment, h * near];
+        want.sort_by(f64::total_cmp);
         for swapped in [false, true] {
             let (mut m, block, boss) = wide_boss_in_a_wall_gap(gap);
             let (a, b) = if swapped {
@@ -1147,15 +1161,22 @@ fn a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today() {
             } else {
                 (block, boss)
             };
-            match crate::boolean(&mut m, BoolKind::Common, a, b) {
-                Err(BoolError::Rejected { reason, .. }) => {
-                    assert_eq!(
-                        reason,
-                        RejectReason::NoClearRay,
-                        "{gap:?} swapped {swapped}"
-                    )
-                }
-                other => panic!("{gap:?} swapped {swapped}: {other:?}"),
+            let out = crate::boolean(&mut m, BoolKind::Common, a, b)
+                .unwrap_or_else(|e| panic!("{gap:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{gap:?} swapped {swapped}: {vs:?}");
+            let mut got: Vec<f64> = out
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                .collect();
+            got.sort_by(f64::total_cmp);
+            assert_eq!(got.len(), 2, "{gap:?} swapped {swapped}: {got:?}");
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g - w).abs() < 1e-9,
+                    "{gap:?} swapped {swapped}: {got:?} vs {want:?}"
+                );
             }
         }
     }

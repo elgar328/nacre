@@ -580,8 +580,8 @@ pub enum RejectReason {
     /// measured per attempt, two of each probe's three rays meet the other half's **lateral**;
     /// a lateral's boundary loops answer whether the crossing is on it on
     /// the cylinder's own chart, and the crossing census raises this
-    /// reason nowhere. What can still exhaust a probe list is the probe on a ring, a tangent
-    /// ray, or a seam-incident root with an arc above it.
+    /// reason nowhere. What can still exhaust a probe list is the probe on a ring or a tangent
+    /// ray — a root on the seam is the cyclic order's first point and decides like any other.
     ///
     /// ★★★★★ **Exhaustion is not emptiness.** A probe list that starts **empty** — a
     /// ring cut out of a cylinder names its corners with the quadric and `three_plane_probes`
@@ -598,11 +598,11 @@ pub enum RejectReason {
     /// ([`crate::combinatorics::edge_interior_points`]) every one of those questions decides. The
     /// six rotations **build**, with one body, a clean `validate` and the exact volume; the void
     /// gets the name its shape has one grazing corner down
-    /// ([`Self::SelfTouchingResult`]). What is left under this name has one built shape: the two
-    /// thin circular segments a wide boss shares with a slotted block, whose every probe grazes
-    /// the boss's seam ruling or meets an arc root on the probe
-    /// (`a_wide_boss_in_a_wall_gap_common_is_refused_no_clear_ray_today`; todo 「얇은 활꼴 둘의
-    /// `Common` 은 탐침이 바닥난다」).
+    /// ([`Self::SelfTouchingResult`]). The thin circular segments a wide boss shares with a
+    /// slotted block decide too — their probes' rays run through the boss's seam plane, and a
+    /// root there is the cyclic order's first point, not a tie
+    /// (`a_wide_boss_in_a_wall_gap_common_builds`). What is left under this name raises **0
+    /// times** over the nacre-ops suite and the census — a backstop with no population.
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from

@@ -8,6 +8,70 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
         .any(|e| matches!(e.carrier, Carrier::Arc(_)) || pierce_name(e.node).is_some())
 }
 
+/// Where a point of an arc's circle sits against the arc's CCW span `lo → hi`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArcSpan {
+    Inside,
+    Outside,
+    /// Exactly at the `lo` end — the end the arc leaves counter-clockwise.
+    AtLo,
+    /// Exactly at the `hi` end — the end the arc leaves clockwise.
+    AtHi,
+}
+
+/// **Is the circle point `root` in the arc's CCW span `lo → hi`, or at one of its ends?** — the
+/// one spelling of the span question, read by the planar ring parity (an arc step of a mixed
+/// ring, [`point_in_mixed_ring`]) and by the lateral face parity ([`loop_parity`]).
+///
+/// Cyclic, with the seam point first ([`nacre_exact::quad::SeamOrder::seam_first`]) — an end or
+/// a root on the seam is ordered like any other point, so a span that runs across the seam holds
+/// a root there and one that does not leaves it out. A seam-incident end is how the straddling
+/// boss's alias corner arrives. `None` for a zero-span arc (two ends at one place, the seam's
+/// two names for one point included — upstream refuses it) and for checked arithmetic running
+/// out; `tie_probe` says which.
+pub(crate) fn arc_span(
+    def: &nacre_topo::CylinderDef,
+    e_lo: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    e_hi: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    root: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+) -> Option<ArcSpan> {
+    use core::cmp::Ordering;
+    use nacre_exact::quad::{MeetLine, QuadVal, circular_order_about_seam};
+    let (o, m, rd) = (def.origin(), def.dir(), def.ref_dir());
+    let ord = |p: &(MeetLine, QuadVal), qq: &(MeetLine, QuadVal)| -> Option<Ordering> {
+        Some(circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&qq.0, &qq.1))?.seam_first())
+    };
+    let x0 = ord(root, e_lo)?;
+    let x1 = ord(root, e_hi)?;
+    Some(match (x0 == Ordering::Equal, x1 == Ordering::Equal) {
+        (true, true) => {
+            // zero-span arc cannot stand
+            #[cfg(test)]
+            tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
+            return None;
+        }
+        (true, false) => ArcSpan::AtLo,
+        (false, true) => ArcSpan::AtHi,
+        (false, false) => {
+            let inside = match ord(e_lo, e_hi)? {
+                Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
+                Ordering::Greater => x0 == Ordering::Greater || x1 == Ordering::Less,
+                Ordering::Equal => {
+                    // zero-span arc cannot stand
+                    #[cfg(test)]
+                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
+                    return None;
+                }
+            };
+            if inside {
+                ArcSpan::Inside
+            } else {
+                ArcSpan::Outside
+            }
+        }
+    })
+}
+
 /// **Parity of a rational point against a ring with pierce corners and arc steps** — the mixed
 /// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
 ///
@@ -36,117 +100,15 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
-/// across the ray, at an arc root), a tangent ray, a horizontal tangent at an arc end the root
-/// lands on, a seam-incident root, checked-`Rat` overflow — and the caller keeps its
-/// `WitnessNotRational`. The kinds are counted under `tie_probe` in tests.
+/// across the ray, at an arc root inside the arc's closed span), a tangent ray, a horizontal
+/// tangent at an arc end the root lands on, checked-`Rat` overflow — and the caller keeps its
+/// `WitnessNotRational`. The kinds are counted under `tie_probe` in tests. A root on the seam is
+/// none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
 /// ★ **A radical mismatch is not among them.**
 /// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
 /// a test or debug build it **panics** rather than abstaining. The contract it states is
 /// same-radical arithmetic, and a caller that could mix two must not reach it.
-/// Where a point of an arc's circle sits against the arc's CCW span `lo → hi`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ArcSpan {
-    Inside,
-    Outside,
-    /// Exactly at the `lo` end — the end the arc leaves counter-clockwise.
-    AtLo,
-    /// Exactly at the `hi` end — the end the arc leaves clockwise.
-    AtHi,
-}
-
-/// **Is the circle point `root` in the arc's CCW span `lo → hi`, or at one of its ends?** — the
-/// one spelling of the span question, read by the planar ring parity (an arc step of a mixed
-/// ring, [`point_in_mixed_ring`]) and by the lateral face parity ([`loop_parity`]).
-///
-/// Cyclic in the seam chart. A seam-incident **end** is information, not a tie (the straddling
-/// boss's alias corner sits exactly there): its θ is the chart boundary, so the span test
-/// collapses to one comparison against the other end. Only a seam-incident **root** — the
-/// crossing at the joint itself — abstains, as do two seam ends (one point twice; upstream
-/// refuses it) and a zero-span arc. `None` for those and for checked arithmetic running out;
-/// `tie_probe` says which.
-pub(crate) fn arc_span(
-    def: &nacre_topo::CylinderDef,
-    e_lo: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    e_hi: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    root: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-) -> Option<ArcSpan> {
-    use core::cmp::Ordering;
-    use nacre_exact::quad::{MeetLine, QuadVal, SeamOrder, circular_order_about_seam};
-    let (o, m, rd) = (def.origin(), def.dir(), def.ref_dir());
-    let on_seam = |p: &(MeetLine, QuadVal)| -> Option<bool> {
-        match circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&p.0, &p.1))? {
-            SeamOrder::SeamIncident { first, .. } => Some(first),
-            SeamOrder::Ordered(_) => Some(false),
-        }
-    };
-    let ord = |p: &(MeetLine, QuadVal), qq: &(MeetLine, QuadVal)| -> Option<Ordering> {
-        match circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&qq.0, &qq.1))? {
-            SeamOrder::Ordered(o) => Some(o),
-            SeamOrder::SeamIncident { .. } => None,
-        }
-    };
-    if on_seam(root)? {
-        // the root is the joint itself — a tie
-        #[cfg(test)]
-        tie_probe::mark(tie_probe::Tie::SeamRoot);
-        return None;
-    }
-    Some(match (on_seam(e_lo)?, on_seam(e_hi)?) {
-        // Two seam ends would be one point twice — upstream refuses it.
-        (true, true) => {
-            #[cfg(test)]
-            tie_probe::mark(tie_probe::Tie::TwoSeamEnds);
-            return None;
-        }
-        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi). Only the seam end is unreachable
-        // (a seam-incident root already returned above), so the **other** end is exactly what
-        // can coincide, and `ord` answers it totally. **Three arms, one convention.**
-        (true, false) => match ord(root, e_hi)? {
-            Ordering::Equal => ArcSpan::AtHi,
-            Ordering::Less => ArcSpan::Inside,
-            Ordering::Greater => ArcSpan::Outside,
-        },
-        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
-        (false, true) => match ord(root, e_lo)? {
-            Ordering::Equal => ArcSpan::AtLo,
-            Ordering::Greater => ArcSpan::Inside,
-            Ordering::Less => ArcSpan::Outside,
-        },
-        (false, false) => {
-            let x0 = ord(root, e_lo)?;
-            let x1 = ord(root, e_hi)?;
-            match (x0 == Ordering::Equal, x1 == Ordering::Equal) {
-                (true, true) => {
-                    // zero-span arc cannot stand
-                    #[cfg(test)]
-                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
-                    return None;
-                }
-                (true, false) => ArcSpan::AtLo,
-                (false, true) => ArcSpan::AtHi,
-                (false, false) => {
-                    let inside = match ord(e_lo, e_hi)? {
-                        Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
-                        Ordering::Greater => x0 == Ordering::Greater || x1 == Ordering::Less,
-                        Ordering::Equal => {
-                            // zero-span arc cannot stand
-                            #[cfg(test)]
-                            tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
-                            return None;
-                        }
-                    };
-                    if inside {
-                        ArcSpan::Inside
-                    } else {
-                        ArcSpan::Outside
-                    }
-                }
-            }
-        }
-    })
-}
-
 pub(crate) fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -307,9 +269,20 @@ fn point_in_mixed_ring_inner(
                     let x = QuadVal::from_rat(dot(&bse, e1)?)
                         .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
                     let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
+                    let rootp = (line.clone(), root);
                     match xsign {
+                        // ★ **A root at the probe is the probe itself** (it is on the ray's
+                        // plane and the class's), so the probe is on this circle — and on this
+                        // **ring's boundary** only where the arc is: within its closed span. Off
+                        // the span it is another part of the circle, and the root, not on the
+                        // open ray, counts nothing. The lateral road reads the same rule
+                        // (`loop_parity`'s arc at the point's own height), and so do the line
+                        // steps (a corner is the boundary only when the probe *is* that corner).
+                        // The span is asked here alone: a root left of the probe never needs it.
                         Orient::Zero => {
-                            // root exactly at the probe
+                            if arc_span(&arc.def, &e_lo, &e_hi, &rootp) == Some(ArcSpan::Outside) {
+                                continue;
+                            }
                             #[cfg(test)]
                             tie_probe::mark(tie_probe::Tie::ArcRootAtProbe);
                             return None;
@@ -317,12 +290,8 @@ fn point_in_mixed_ring_inner(
                         Orient::Negative => continue,
                         Orient::Positive => {}
                     }
-                    // Inside the CCW span end[0] → end[1]? Cyclic in the seam chart. A
-                    // seam-incident **end** is information, not a tie (the straddling boss's
-                    // alias corner sits exactly there): its θ is the chart boundary, so the
-                    // span test collapses to one comparison against the other end. Only a
-                    // seam-incident **root** — the crossing at the joint itself — abstains.
-                    let rootp = (line.clone(), root);
+                    // Inside the CCW span end[0] → end[1]? Cyclic, with the seam point first
+                    // (`arc_span`): an end or a root on the seam is ordered like any other.
                     // ★ **A root at the arc's own end is the corner on the ray in the arc's
                     // clothing**, and it takes the rule the line steps and the planar roads take
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
@@ -350,7 +319,7 @@ fn point_in_mixed_ring_inner(
                     };
                     // ★★★★★ **`Equal` is not "outside the span"** — read so, a root on the arc's
                     // own end counts nothing, silently: a confident wrong answer, not an
-                    // abstention. The three arms decide it alike (`departs_across`), and the span
+                    // abstention. Both ends decide it alike (`departs_across`), and the span
                     // itself is one spelling (`arc_span`) the lateral road reads too.
                     let contained = match arc_span(&arc.def, &e_lo, &e_hi, &rootp)? {
                         ArcSpan::Inside => true,

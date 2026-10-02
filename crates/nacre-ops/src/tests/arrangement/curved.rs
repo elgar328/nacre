@@ -365,8 +365,9 @@ fn armed_class_edges<'a>(
 /// station (40, 25) one arc ends `hi` and the other starts `lo`: the corner rule's one
 /// discriminating population. ☑ In a notch both arcs share their ends, and «both ends
 /// count» is invisible there — measured; the staircase is why the second build exists.
-/// The other station, (40, 15), is the seam (the fixture puts it on −y): a
-/// seam-incident root with an arc above it is the one tie the loops road keeps.
+/// The other station, (40, 15), is the seam (the fixture puts it on −y): a root there is the
+/// cyclic order's first point, and below the notch the notch's arcs above decide it like any
+/// other.
 ///
 /// ☑ Measured on the through build's rays: on the two whole-circle rims alone, «opposite
 /// sides of the two rim planes» and the loops road's «exactly one rim above» agree on all
@@ -435,14 +436,10 @@ fn lateral_lattice(staircase: bool) {
     // The notch's z range: the plate's own (0, 20) through the boss, or — with the lower
     // cap inside the plate — the chain's step from the cap (10) to the plate's top (20).
     let (n_lo, n_hi) = (if staircase { cap_lo } else { zero }, ri(20));
-    // The truth on the cylinder, by the root's side of the wall and the ray's z. `seam`:
-    // the root is the station (40, 15), the seam generator; a seam-incident root with an
-    // arc above it is the tie the loops road keeps (`arc_span`'s `SeamRoot`; z is asked
-    // first, so with no arc above the rims still decide).
-    let truth = |x_side: Orient, z0: Rat, seam: bool| -> Option<bool> {
-        if seam && z0 < n_hi {
-            return None;
-        }
+    // The truth on the cylinder, by the root's side of the wall and the ray's z — the seam
+    // station (40, 15) included: a root there is ordered as the cyclic order's first point, so
+    // the notch's arcs above it say whether they hold it like any other.
+    let truth = |x_side: Orient, z0: Rat| -> Option<bool> {
         if z0 >= cap_hi {
             return if z0 == cap_hi { None } else { Some(false) };
         }
@@ -482,7 +479,8 @@ fn lateral_lattice(staircase: bool) {
             }
         }
     };
-    // on face, off (hole), boundary, tangent, station on-ruling, station on-face, seam ties
+    // on face, off (hole), boundary, tangent, station on-ruling, station on-face, and the seam
+    // station below the notch, where the notch's arcs above decide a root on the seam
     let mut n = [0usize; 7];
     let mut ask = |pa: [Rat; 4], pb: [Rat; 4], z0: Rat, station: bool| {
         let roots = match plane_plane_cylinder(&pa, &pb, &o, &mm, r2).unwrap() {
@@ -497,7 +495,7 @@ fn lateral_lattice(staircase: bool) {
         for root in &s {
             let x_side = plane_side(&x40, &line, root);
             let seam = station && plane_side(&y20, &line, root) == Orient::Negative;
-            let want = truth(x_side, z0, seam);
+            let want = truth(x_side, z0);
             let got = combinatorics::loop_parity(&jd, def, loops, &line, root);
             assert_eq!(
                 got, want,
@@ -507,7 +505,7 @@ fn lateral_lattice(staircase: bool) {
                 (Some(true), false, _) => n[0] += 1,
                 (Some(false), false, _) => n[1] += 1,
                 (None, false, _) => n[2] += 1,
-                (None, true, true) if z0 < n_lo || z0 > n_hi => n[6] += 1,
+                (Some(_), true, true) if z0 < n_lo => n[6] += 1,
                 (None, true, _) => n[4] += 1,
                 (Some(_), true, _) => n[5] += 1,
             }
@@ -524,7 +522,7 @@ fn lateral_lattice(staircase: bool) {
     }
     eprintln!(
         "lateral lattice (staircase {staircase}): on {} hole {} boundary {} tangent {} \
-             station on-ruling {} station on-face {} seam ties {}",
+             station on-ruling {} station on-face {} seam decided {}",
         n[0], n[1], n[2], n[3], n[4], n[5], n[6]
     );
     assert!(
@@ -1304,18 +1302,18 @@ fn with_cut_rings(
 /// whether the arc counts it** — the half-open rule in the arc arm, on the one
 /// fixture that reaches it.
 ///
-/// The bitten fixture cannot: its chord's ends are the seam and the tangent columns, and
-/// each abstains first (measured over the whole suite: the arc arm's end rule decides nothing
-/// there, while the straight arm's corner tie speaks for the same corners). The plate's second wall
+/// The bitten fixture cannot: its chord `x = 40` runs along its lattice rays, so a ray meets both
+/// of the chord's ends at once and the two flip together. The plate's second wall
 /// `y = 24` puts the corner `(40, 24)` inside the circle, so the bite's arc ends at
 /// `(37, 24)` — a 3-4-5 point, rational, off the seam `(40, 15)` and off the tangent
 /// columns `x = 35, 45` — and the lattice column `x = 37` sends its rays through that end
 /// **alone**, beside an ordinary second root at `(37, 16)`. That is the single-end crossing
 /// a global sign error cannot hide: two ends on one ray flip together and keep the parity
 /// (the bitten fixture's chord), one end on a ray does not. Every answer the sweep gives
-/// is the truth, the boundary abstains, and the arm decided the end exactly once per point
-/// on the shooting side of that column, for both rings — under both seam placements, so
-/// the seam-incident arms and the `(false, false)` arm each decide an end.
+/// is the truth, each ring abstains on its own boundary (its arc and the chords) and answers
+/// «outside» on the rest of the circle, and the arm decided the end exactly once per point on the
+/// shooting side of that column, for both rings — under both seam placements, so an end on the
+/// seam decides the way an ordinary end does.
 #[test]
 fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
     use nacre_exact::{Orient, Rat};
@@ -1345,18 +1343,49 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                         );
                         let (x, y) = (p[0], p[1]);
                         let (wx, wy) = (x == Rat::from_int(40), y == Rat::from_int(24));
-                        // Both rings' boundary: the circle and the two chords, `x = 40` for
-                        // `15 ≤ y ≤ 24` and `y = 24` for `37 ≤ x ≤ 40`, ends included.
+                        // Both rings' shared boundary: the two chords, `x = 40` for `15 ≤ y ≤ 24`
+                        // and `y = 24` for `37 ≤ x ≤ 40`, ends included — the ends are both arcs'
+                        // ends too, and (40, 15) is the seam when `seam_off` is false.
                         let on_chord = (wx && y >= Rat::from_int(15) && y <= Rat::from_int(24))
                             || (wy && x >= Rat::from_int(37) && x <= Rat::from_int(40));
-                        if radial == Orient::Zero || on_chord {
+                        if on_chord {
                             boundary += 1;
                             for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
                                 assert_eq!(
                                     combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring),
                                     None,
-                                    "{who} must abstain on its boundary at {p:?}"
+                                    "{who} must abstain on its chord at {p:?}"
                                 );
+                            }
+                            continue;
+                        }
+                        // ★ **A ring's boundary is its own arc, not the whole circle.** The bite's
+                        // arc is the circle on the plate's side (`x ≤ 40 ∧ y ≤ 24`), the
+                        // overhang's the rest: on its own arc a ring abstains, off it the point is
+                        // outside that ring. The tangent columns `x = 35, 45` are the exception the
+                        // ray makes, not the ring: a ray along `y` there only touches the circle,
+                        // and that ray abstains before any root is read.
+                        if radial == Orient::Zero {
+                            boundary += 1;
+                            let on_bite_arc = x <= Rat::from_int(40) && y <= Rat::from_int(24);
+                            let tangent_column = x == Rat::from_int(35) || x == Rat::from_int(45);
+                            for (ring, own, who) in [
+                                (bite, on_bite_arc, "bite"),
+                                (overhang, !on_bite_arc, "overhang"),
+                            ] {
+                                let got =
+                                    combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring);
+                                if own {
+                                    assert_eq!(got, None, "{who} must abstain on its arc at {p:?}");
+                                } else if tangent_column {
+                                    assert_ne!(got, Some(true), "{who} off its arc at {p:?}");
+                                } else {
+                                    assert_eq!(
+                                        got,
+                                        Some(false),
+                                        "{who}: the circle off its arc is outside it at {p:?}"
+                                    );
+                                }
                             }
                             continue;
                         }
@@ -1395,16 +1424,14 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                     "arc-end sweep (seam_off {seam_off}): swept {swept} abstained {abstained} \
                  boundary {boundary} arc-end decisions {decided}"
                 );
-                // With the seam on the chord end `(40, 15)` (`seam_off = false`) the
-                // `(true, false)` / `(false, true)` arms decide the `x = 37` column's shooting side:
-                // 12 points × 2 rings. With the seam off every corner (`ref_dir = x`) both ends are
-                // ordinary and the `(false, false)` arm decides — and the `x = 40` column's rays now
-                // meet `(40, 15)` alone as well (its other root `(40, 25)` is the overhang's
-                // interior), 12 more per ring, one of them a call that then abstains at the corner
-                // `(40, 24)`; the column's seam-root abstentions are gone (182 → 160).
+                // The `x = 37` column's shooting side, 12 points × 2 rings, and the `x = 40`
+                // column's rays, which meet `(40, 15)` alone (its other root `(40, 25)` is the
+                // overhang's interior), 12 more per ring, one of them a call that then abstains at
+                // the corner `(40, 24)` — under either seam placement: with the seam on the chord
+                // end `(40, 15)` that end is the cyclic order's first point and decides the same
+                // way as an ordinary one.
                 assert_eq!(
-                    decided,
-                    if seam_off { 48 } else { 24 },
+                    decided, 48,
                     "the arc-end arm decided the single-end rays (seam_off {seam_off})"
                 );
             },

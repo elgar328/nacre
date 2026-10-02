@@ -508,6 +508,51 @@ fn the_seam_point_is_surfaced_not_ranked() {
     );
 }
 
+/// **The seam point ranks first in the cyclic order** — before θ = π, after nothing, and equal to
+/// itself; an ordered pair keeps its order.
+#[test]
+fn the_seam_point_ranks_first_in_the_cyclic_order() {
+    use core::cmp::Ordering;
+    let (o, m, radius) = zcyl();
+    let ref_dir = [ri(1), ri(0), ri(0)];
+    let meet = plane_plane_cylinder(&plane(0, 1, 0, 0), &plane(0, 0, 1, 0), &o, &m, &radius)
+        .expect("fits");
+    let CylinderMeet::Pair { line, s } = meet else {
+        panic!("expected Pair, got {meet:?}");
+    };
+    let (seam_s, pi_s) = if line.point_f64(&s[0])[0] > 0.0 {
+        (&s[0], &s[1])
+    } else {
+        (&s[1], &s[0])
+    };
+    let order = |a: &QuadVal, b: &QuadVal| {
+        circular_order_about_seam(&o, &m, &ref_dir, (&line, a), (&line, b))
+            .expect("no overflow")
+            .seam_first()
+    };
+    assert_eq!(order(seam_s, pi_s), Ordering::Less, "the seam before θ = π");
+    assert_eq!(
+        order(pi_s, seam_s),
+        Ordering::Greater,
+        "θ = π after the seam"
+    );
+    assert_eq!(
+        order(seam_s, seam_s),
+        Ordering::Equal,
+        "the seam is one place"
+    );
+    assert_eq!(
+        order(pi_s, pi_s),
+        Ordering::Equal,
+        "an ordinary point is itself"
+    );
+    assert_eq!(
+        SeamOrder::Ordered(Ordering::Less).seam_first(),
+        Ordering::Less,
+        "an ordered pair keeps its order"
+    );
+}
+
 /// Two cuts 1e−18 apart: their upper roots realize to the **same** f64 angle (the instrument
 /// f64 is blind), and the exact comparator still gives the strict order — the reason this
 /// tower exists.

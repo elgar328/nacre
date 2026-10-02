@@ -226,3 +226,97 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     );
     assert_eq!(answers(&planes), truth, "the direction signs read no cache");
 }
+
+/// **An arc's span holds the seam point like any other** — `arc_span` against an oracle derived
+/// apart from it: a point `P` of a circle is on the counter-clockwise arc `A → B` iff it lies to the
+/// right of the chord, `orient2d(A, B, P) < 0`, viewed with the axis toward the viewer.
+///
+/// The circle is radius 5 about `+z` through the origin, and its twelve points with integer
+/// coordinates (`(±5, 0)`, `(0, ±5)`, `(±3, ±4)`, `(±4, ±3)`) are every arc's ends and every
+/// root. The seam is put on one of them three ways — and, the fourth, between them — so ends and
+/// roots on the seam, arcs across it and arcs beside it all occur: every ordered pair of distinct
+/// ends against every point, `AtLo`/`AtHi` at the ends.
+#[test]
+fn an_arc_span_reads_the_seam_point_as_any_other() {
+    use nacre_exact::quad::{CylinderMeet, QuadVal, plane_plane_cylinder};
+    use nacre_exact::{BigRat, Orient, Rat};
+    let ri = Rat::from_int;
+    let mut pts: Vec<(i128, i128)> = vec![(5, 0), (0, 5), (-5, 0), (0, -5)];
+    for (a, b) in [(3, 4), (4, 3)] {
+        for (sa, sb) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+            pts.push((sa * a, sb * b));
+        }
+    }
+    let r2 = BigRat::from(ri(25));
+    for seam in [[1, 0], [0, -1], [3, 4], [1, 2]] {
+        let def = nacre_topo::CylinderDef::new(
+            [ri(0); 3],
+            [ri(0), ri(0), ri(1)],
+            [ri(seam[0]), ri(seam[1]), ri(0)],
+            r2.clone(),
+        )
+        .expect("a cylinder");
+        // The point `(x, y)` as the meet of `x = px` and `z = 0` and the root on its side of `y`.
+        let at = |(px, py): (i128, i128)| {
+            let meet = plane_plane_cylinder(
+                &[ri(1), ri(0), ri(0), ri(-px)],
+                &[ri(0), ri(0), ri(1), ri(0)],
+                &def.origin(),
+                &def.dir(),
+                def.r2(),
+            )
+            .expect("fits");
+            let (line, roots) = match meet {
+                CylinderMeet::Pair { line, s } => (line, s.to_vec()),
+                CylinderMeet::Tangent { line, s } => (line, vec![QuadVal::from_rat(s)]),
+                other => panic!("({px}, {py}) is on the circle: {other:?}"),
+            };
+            let y_of = |s: &QuadVal| {
+                QuadVal::from_rat(line.base()[1])
+                    .checked_add(&s.checked_mul_rat(line.dir()[1]).unwrap())
+                    .unwrap()
+            };
+            let s = *roots
+                .iter()
+                .find(|s| {
+                    y_of(s)
+                        .checked_sub(&QuadVal::from_rat(ri(py)))
+                        .unwrap()
+                        .sign()
+                        == Orient::Zero
+                })
+                .expect("the root at the point");
+            (line, s)
+        };
+        let mut decided = 0usize;
+        for &a in &pts {
+            for &b in &pts {
+                if a == b {
+                    continue;
+                }
+                for &p in &pts {
+                    let want = if p == a {
+                        ArcSpan::AtLo
+                    } else if p == b {
+                        ArcSpan::AtHi
+                    } else {
+                        let o = (b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0);
+                        if o < 0 {
+                            ArcSpan::Inside
+                        } else {
+                            ArcSpan::Outside
+                        }
+                    };
+                    let got = arc_span(&def, &at(a), &at(b), &at(p));
+                    assert_eq!(
+                        got,
+                        Some(want),
+                        "seam {seam:?}: arc {a:?} → {b:?}, point {p:?}"
+                    );
+                    decided += 1;
+                }
+            }
+        }
+        assert_eq!(decided, 12 * 11 * 12, "seam {seam:?}");
+    }
+}

@@ -298,10 +298,9 @@ fn corner_wall_class(
 /// its own name (`plane_side(wall) == 0 ∧ ruling_side == side`, the predicate
 /// `crossing_on_ruling` names stations with).
 ///
-/// `None` = `x` on the boundary (a rim, an arc, a ruling — `tie_probe` says which), a seam tie
-/// inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
-/// arithmetic running out. `z` is asked before `θ`: an arc below `x` needs no order, and that is
-/// what lets a ray whose seam-incident root has no arc above it answer.
+/// `None` = `x` on the boundary (a rim, an arc, a ruling — `tie_probe` says which), a zero-span
+/// arc inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
+/// arithmetic running out. `z` is asked before `θ`: an arc below `x` needs no order.
 pub(crate) fn loop_parity(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -351,8 +350,8 @@ pub(crate) fn loop_parity(
                             let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?;
                             let Some(span) = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))
                             else {
-                                // A seam tie (the root on the seam, two seam ends, a zero span)
-                                // or arithmetic out — the mark says which.
+                                // A zero-span arc (two ends at one place) or arithmetic out —
+                                // the mark says which.
                                 #[cfg(test)]
                                 tie_probe::flush_or(tie_probe::Tie::Other);
                                 return None;
@@ -458,7 +457,7 @@ pub(crate) fn lateral_face_crossings(
     let mut count = 0usize;
     for s in &roots {
         match loop_parity(jd, def, loops, &meet, s) {
-            // On the boundary, a seam tie, an unreadable loop, arithmetic out: this ray
+            // On the boundary, a zero-span arc, an unreadable loop, arithmetic out: this ray
             // cannot count this face — the banded arm's `Graze` on a rim, generalized.
             None => return Some(CurvedHit::Graze),
             Some(false) => continue,

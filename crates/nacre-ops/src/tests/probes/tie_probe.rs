@@ -1,7 +1,7 @@
 //! **Why the mixed road abstains**, one row per `None`, by the site that said it: the
 //! probe *at* a ring corner, the probe *on* a step (along the ray or across it), a tangent ray,
-//! a root at the probe, a seam-incident root, two seam ends, a horizontal tangent at an arc end
-//! the root lands on, a zero-span arc — or `Other` for the silent `?` arms (no chart, overflow).
+//! a root at the probe on its arc, a horizontal tangent at an arc end the root lands on, a
+//! zero-span arc — or `Other` for the silent `?` arms (no chart, overflow).
 //! Read by the crossing census (per cell) and the ledger (whole suite). A corner on the ray is
 //! not among them: the half-open rule decides it, and `ARC_END` counts the arc-end arm's
 //! decisions so a fixture can say it ran.
@@ -19,8 +19,6 @@ pub(crate) enum Tie {
     ProbeOnStep,
     TangentRay,
     ArcRootAtProbe,
-    SeamRoot,
-    TwoSeamEnds,
     TangentAtEnd,
     ZeroSpanArc,
     Other,

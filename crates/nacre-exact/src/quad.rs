@@ -1065,10 +1065,33 @@ enum SeamClass {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeamOrder {
     /// At least one point lies on the seam generator (θ = 0) — outside the chart's total
-    /// order, answered by name so a sweep cannot silently rank the excluded point.
+    /// order, answered by name; the rank a cyclic order gives it is [`SeamOrder::seam_first`]'s.
     SeamIncident { first: bool, second: bool },
     /// Both points are chart-interior; their order along θ ∈ (0, 2π).
     Ordered(core::cmp::Ordering),
+}
+
+impl SeamOrder {
+    /// **The cyclic order, read with the seam point first** — the one rule every consumer that
+    /// orders points around a circle reads.
+    ///
+    /// θ ∈ (0, 2π) leaves the seam point out because it is the chart's cut, which is a fact about
+    /// the chart, not about the circle: a cyclic order tolerates one cut anywhere, so the point
+    /// at θ = 0 simply comes first, and two seam points are one place. A span that runs across
+    /// the seam (its `lo` after its `hi`) then holds the seam point, and one that does not
+    /// leaves it out — the same comparisons as any other point.
+    pub fn seam_first(self) -> core::cmp::Ordering {
+        use core::cmp::Ordering;
+        match self {
+            Self::Ordered(o) => o,
+            Self::SeamIncident {
+                first: true,
+                second: true,
+            } => Ordering::Equal,
+            Self::SeamIncident { first: true, .. } => Ordering::Less,
+            Self::SeamIncident { .. } => Ordering::Greater,
+        }
+    }
 }
 
 /// Compare two points of the cylinder's surface by their angle θ ∈ (0, 2π) about the seam.

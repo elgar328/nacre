@@ -84,29 +84,14 @@ fn ring_interior_candidates(
     let (e1, e2) = chart.axes();
     let mut out = vec![*centre];
     let r2 = def.r2();
-    let sum = |a: &[Rat; 3], b: &[Rat; 3], neg: bool| -> Option<[Rat; 3]> {
-        let mut v = [Rat::from_int(0); 3];
-        for i in 0..3 {
-            v[i] = if neg {
-                a[i].checked_sub(b[i])?
-            } else {
-                a[i].checked_add(b[i])?
-            };
-        }
-        Some(v)
-    };
-    // ★★★★★ **The chart's own lattice directions, not a search.** Two axes are not enough: a
-    // chord can lie *along* one of them (then that step stays on the boundary) while the other's
-    // ray crosses the circle exactly at the **seam**, where `circular_order_about_seam` has no
-    // order to give and the arc step abstains. ☑ Measured: with `{±e1, ±e2}` alone, sixteen cap
-    // faces answered `None` for every candidate, split exactly that way. The diagonals are off
-    // both, and they cost one more derivation of the same inequality rather than a new rule.
-    let diag: Vec<[Rat; 3]> = [false, true]
-        .into_iter()
-        .filter_map(|neg| sum(e1, e2, neg))
-        .collect();
-    let dirs: Vec<&[Rat; 3]> = [e1, e2].into_iter().chain(diag.iter()).collect();
-    for e in dirs {
+    // ★★★★★ **The chart's own two axes, not a search.** A chord can lie *along* one of them (that
+    // step then stays on the boundary), and the other's ray meets the circle where the ring
+    // answers whatever lies there — a root on the seam included, which is the cyclic order's first
+    // point ([`nacre_exact::quad::SeamOrder::seam_first`]). ☑ Read as a tie instead, a root on the
+    // seam left sixteen cap faces with `None` for every axis candidate, split exactly that way, and
+    // diagonal steps `e1 ± e2` were needed to step off both; ordered, no face of the suite or the
+    // census needs one (measured: no diagonal candidate was ever the first inside).
+    for e in [e1, e2] {
         let len2 = nacre_exact::dot3_rat(e, e)?;
         // A step strictly inside the circle along `e`. With a rational radius it is `r/(|e|²+1)`
         // — the spelling the corpus was measured with, kept verbatim so a stated radius walks the
