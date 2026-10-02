@@ -720,8 +720,9 @@ pub(crate) struct Tangency {
     /// (`TangentLineInAnotherPlane`, `a_tangent_face_across_its_edge_on_the_line_is_refused_today`).
     pub(crate) line_is_an_edge: bool,
     /// The tangency point — `RejectWhere`'s doc asks for a witness that is actually there: the
-    /// middle of the first stretch where the line runs through the wall face, when that stretch has
-    /// rational ends, else the middle of the lateral face's own span.
+    /// middle of the first stretch where the line runs through the wall face, else of the first it
+    /// runs along, when that stretch has rational ends; otherwise the middle of the lateral face's
+    /// own span.
     pub(crate) witness: Point3,
 }
 
@@ -928,18 +929,21 @@ fn tangency_rows(
             }
             // ★★ **Per lateral, over that lateral's own span** — the wall face meets the line where
             // *this* lateral face is, or the row says nothing. A face that touches the line nowhere
-            // there writes no row, as a face that clears the footprint writes none. Unread, it
-            // keeps the row and reads as a contact through the interior (`line_runs_through_face`).
+            // there writes no row, as a face that clears the footprint writes none. A face the
+            // clearance road could not read is not asked again: it keeps the row, carrying its
+            // refusal, and reads as a contact through the interior — dropped here, that refusal
+            // would vanish with it (`line_runs_through_face`).
             let contact = base
                 .as_ref()
                 .zip(cf.footprint.span)
+                .filter(|_| unread.is_none())
                 .and_then(|(b, span)| {
                     line_runs_through_face(model, model.face(fh), coeffs, &o, &m, r2, b, span)
                 })
                 .unwrap_or(LineContact {
                     touches: true,
                     runs_through: true,
-                    inside_at: None,
+                    contact_at: None,
                 });
             if !contact.touches {
                 #[cfg(feature = "tangency-trace")]
@@ -950,7 +954,7 @@ fn tangency_rows(
                 continue;
             }
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
-                let mid = match contact.inside_at {
+                let mid = match contact.contact_at {
                     Some(v) => v,
                     None => span[0]
                         .checked_add(span[1])?
@@ -1014,9 +1018,10 @@ struct LineContact {
     touches: bool,
     /// The line runs through the face's **interior** over positive length ([`Tangency::runs_through`]).
     runs_through: bool,
-    /// An axis parameter inside a stretch where the line runs through the interior, when that
-    /// stretch has rational ends — the row's witness, which then sits on the contact.
-    inside_at: Option<nacre_exact::Rat>,
+    /// The middle of the first stretch where the face meets the line — through the interior when
+    /// there is one, else along the boundary — when that stretch has rational ends: the row's
+    /// witness, which then sits on the contact.
+    contact_at: Option<nacre_exact::Rat>,
 }
 
 /// How one loop of the wall face meets the tangent line.
@@ -1085,7 +1090,8 @@ fn cmp_quad(x: nacre_exact::QuadVal, y: nacre_exact::QuadVal) -> Option<core::cm
 /// a pierce corner's value keeps its own one radical.
 ///
 /// `None` is «could not read the face»: a step whose crossing could not be placed, an arc in a
-/// loop the line reaches, an outer piece [`corner_of`] cannot spell. The caller reads that as a
+/// loop the line reaches, an outer piece [`corner_of`] cannot spell or that is off the class's
+/// plane. The caller reads that as a
 /// contact through the interior — the answer the outer loop's two sides gave before this read
 /// holes and spans, never a silent acquittal. A **hole** that cannot be read is left out
 /// instead: the face only grows, so the answer can only lean towards a contact.
@@ -1160,6 +1166,12 @@ fn line_runs_through_face(
             .iter()
             .map(|he| corner_of(model, face, lp, he).map_err(|_| ()))
             .collect::<Result<_, ()>>()?;
+        // The strip test's precondition: a piece off the class's plane is judged against a
+        // distance that is not its own — the two-descriptions hazard `face_clears_footprint`
+        // refuses on. Unread, not guessed.
+        if !pieces.iter().all(|c| c.on_plane(coeffs)) {
+            return Err(());
+        }
         let sides: Vec<StripSide> = pieces
             .iter()
             .map(|c| c.strip_side(coeffs, o, m, r2))
@@ -1246,7 +1258,7 @@ fn line_runs_through_face(
         return Some(LineContact {
             touches: false,
             runs_through: false,
-            inside_at: None,
+            contact_at: None,
         });
     }
     // A hole that cannot be read is left out: the face only grows.
@@ -1306,7 +1318,7 @@ fn line_runs_through_face(
     let mut out = LineContact {
         touches: false,
         runs_through: false,
-        inside_at: None,
+        contact_at: None,
     };
     for pair in sorted.windows(2) {
         let (lo, hi) = (pair[0], pair[1]);
@@ -1321,13 +1333,18 @@ fn line_runs_through_face(
             }
             *slot = inn;
         }
-        out.touches |= reading[0] || reading[1];
+        let middle = || {
+            lo.as_rat()
+                .zip(hi.as_rat())
+                .and_then(|(a, b)| a.checked_add(b)?.checked_mul(Rat::new(1, 2)?))
+        };
+        if (reading[0] || reading[1]) && !out.touches {
+            out.touches = true;
+            out.contact_at = middle();
+        }
         if reading[0] && reading[1] && !out.runs_through {
             out.runs_through = true;
-            out.inside_at = lo
-                .as_rat()
-                .zip(hi.as_rat())
-                .and_then(|(a, b)| a.checked_add(b)?.checked_mul(Rat::new(1, 2)?));
+            out.contact_at = middle();
         }
     }
     Some(out)

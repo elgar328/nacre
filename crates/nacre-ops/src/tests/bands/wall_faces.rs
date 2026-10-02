@@ -1131,10 +1131,10 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
 
 /// **The same boss's `Common` runs out of probes today.** What the boss and the block share is
 /// the two thin segments past `|y| = 2` — two components, and the depth of each is asked of the
-/// other by rays (`assembly::grouping`). Every probe the component road offers abstains — the rays
-/// along the axis and across it from the segments' corners and edge points graze the boss's seam
-/// ruling or meet an arc root on the probe — and the boolean is refused `NoClearRay`, both orders
-/// and both gaps. Nothing here is the tangency's: the same boss on a block with no wall at `x = 0`
+/// other by rays (`assembly::grouping`). Every probe the component road offers abstains — most of
+/// the rays along the axis and across it from the segments' corners and edge points cross the
+/// boss's seam ruling or meet an arc root on the probe, the rest start on a ring's step or corner
+/// — and the boolean is refused `NoClearRay`, both orders and both gaps. Nothing here is the tangency's: the same boss on a block with no wall at `x = 0`
 /// is refused the same, and moved to `x = 2.6` it builds two bodies. todo 「얇은 활꼴 둘의
 /// `Common` 은 탐침이 바닥난다 — `NoClearRay`」.
 #[test]
