@@ -385,14 +385,13 @@ impl CircleOrderFail {
     }
 }
 
-/// **Order nodes around one circle by θ, the seam first** — the one place that order is decided.
+/// **Order nodes around one circle by θ, the seam first** — the nodes' reading of the cyclic order
+/// [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs' spans read it too).
 ///
-/// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.**
-/// `circular_order_about_seam` ranks θ ∈ (0, 2π) and answers `SeamIncident` **by name** for a point
-/// at θ = 0, because that point is outside the chart's *total* order. But what arcs need is the
-/// **cyclic** order, and a cyclic order tolerates one cut anywhere: the seam point is simply first.
-/// (Measured: the very first fixture puts a crossing there — a boss on a plate's edge cuts its own
-/// rim exactly on the seam generator, so this is the common case, not an exotic one.)
+/// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
+/// very first fixture puts a crossing there — a boss on a plate's edge cuts its own rim exactly on
+/// the seam generator, so this is the common case, not an exotic one.) Callers read `order[0]` as
+/// that point when the flag says it is a node.
 ///
 /// ★ At most one node can be seam-incident: two would be the same point, which the adjacency check
 /// below refuses as the two-names-for-one-point it is.
@@ -424,23 +423,24 @@ pub(crate) fn circular_order(
             (&meets[j].0, &meets[j].1),
         )
     };
-    let mut seam: Vec<usize> = Vec::new();
-    let mut chart: Vec<usize> = Vec::new();
+    // ★ Counted before the sort, so two seam nodes are `Coincident` ahead of any order the sort
+    // could not form (`Undecided`).
+    let mut seam_nodes = 0usize;
     for i in 0..meets.len() {
-        let on_seam = match cmp(i, i) {
-            Some(SeamOrder::SeamIncident { first, .. }) => first,
-            Some(SeamOrder::Ordered(_)) => false,
+        match cmp(i, i) {
+            Some(SeamOrder::SeamIncident { first: true, .. }) => seam_nodes += 1,
+            Some(_) => {}
             None => return Err(CircleOrderFail::Undecided),
-        };
-        if on_seam { seam.push(i) } else { chart.push(i) }
+        }
     }
-    if seam.len() > 1 {
+    if seam_nodes > 1 {
         return Err(CircleOrderFail::Coincident);
     }
     let mut bad_theta = false;
-    chart.sort_by(|&i, &j| match cmp(i, j) {
-        Some(SeamOrder::Ordered(o)) => o,
-        _ => {
+    let mut order: Vec<usize> = (0..meets.len()).collect();
+    order.sort_by(|&i, &j| match cmp(i, j) {
+        Some(o) => o.seam_first(),
+        None => {
             bad_theta = true;
             core::cmp::Ordering::Equal
         }
@@ -448,8 +448,7 @@ pub(crate) fn circular_order(
     if bad_theta {
         return Err(CircleOrderFail::Undecided);
     }
-    let seam_is_node = !seam.is_empty();
-    let order: Vec<usize> = seam.into_iter().chain(chart).collect();
+    let seam_is_node = seam_nodes == 1;
     for w in order.windows(2) {
         if matches!(
             cmp(w[0], w[1]),
