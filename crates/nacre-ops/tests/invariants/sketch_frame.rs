@@ -269,15 +269,7 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
         })
         .expect("a most-upward face");
     let reported = nacre_ops::face_sketch_frame(&m, top).expect("a planar live face");
-    apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: top,
-            profile: square(0.2, 0.8),
-            dist: 0.3,
-        },
-    )
-    .expect("pad on the tilted face");
+    nacre_ops::fixtures::pad(&mut m, top, square(0.2, 0.8), 0.3).expect("pad on the tilted face");
     let used: Vec<_> = frame_nodes(&m)
         .into_iter()
         .filter(|n| matches!(n, Motion::Frame { plane, .. } if *plane == reported.plane()))
@@ -321,17 +313,9 @@ fn pad_centred(
     dist: f64,
 ) -> nacre_store::Handle<nacre_topo::Face> {
     let profile = centred_square(m, face, 0.2);
-    let OpOutput::PadOnFace { top_face, .. } = apply(
-        m,
-        &Operation::PadOnFace {
-            face,
-            profile,
-            dist,
-        },
-    )
-    .expect("the pad") else {
-        unreachable!()
-    };
+    let top_face = nacre_ops::fixtures::pad(m, face, profile, dist)
+        .expect("the pad")
+        .cap_face(m);
     m.rebuild_adjacency();
     top_face
 }
@@ -532,17 +516,8 @@ fn the_reported_frame_extrudes_where_the_pad_lands() {
         let top = crate::fixtures::top_face(&m, block);
         let frame = nacre_ops::face_sketch_frame(&m, top).expect("a lifted face has a frame");
         let profile = centred_square(&m, top, 0.2);
-        let OpOutput::PadOnFace { solid, top_face } = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: top,
-                profile: profile.clone(),
-                dist: 1.0,
-            },
-        )
-        .expect("the pad") else {
-            unreachable!()
-        };
+        let feat = nacre_ops::fixtures::pad(&mut m, top, profile.clone(), 1.0).expect("the pad");
+        let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
         m.rebuild_adjacency();
         let bad = nacre_validate::validate(&m);
         assert!(bad.is_empty(), "{what}: {bad:?}");

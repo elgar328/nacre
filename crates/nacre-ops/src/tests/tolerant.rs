@@ -882,17 +882,9 @@ fn two_caps_on_a_tilted_face(
                profile: Profile2d,
                dist: f64|
      -> (Handle<Solid>, Handle<nacre_topo::Face>) {
-        let OpOutput::PadOnFace { solid, top_face } = apply(
-            m,
-            &Operation::PadOnFace {
-                face: f,
-                profile,
-                dist,
-            },
-        )
-        .unwrap_or_else(|e| panic!("pad dist={dist} on {f:?}: {e:?}")) else {
-            unreachable!()
-        };
+        let feat = crate::fixtures::pad(m, f, profile, dist)
+            .unwrap_or_else(|e| panic!("pad dist={dist} on {f:?}: {e:?}"));
+        let (solid, top_face) = (feat.solid(), feat.cap_face(m));
         m.rebuild_adjacency();
         (solid, top_face)
     };
@@ -1025,7 +1017,7 @@ fn a_plate_across_both_caps_builds_a_well_formed_solid() {
 /// and report `(faces whose stored normal is not parallel to their own outward normal,
 /// volume is right, validate is clean)`.
 fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
-    use crate::{OpOutput, Profile2d};
+    use crate::Profile2d;
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let (mut m, s, _) = two_caps_on_a_tilted_face(recipe);
     let up = tilt_up();
@@ -1054,17 +1046,9 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
         p(cu + lo, cv + 0.2),
     ])
     .unwrap();
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: cap,
-            profile,
-            dist: 0.5,
-        },
-    )
-    .unwrap_or_else(|e| panic!("{recipe:?} span={span}: the plate must build, got {e:?}")) else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pad(&mut m, cap, profile, 0.5)
+        .unwrap_or_else(|e| panic!("{recipe:?} span={span}: the plate must build, got {e:?}"))
+        .solid();
     m.rebuild_adjacency();
     let after = nacre_props::mass_props(&m, solid).unwrap().volume;
     let volume_ok = (after - before - (0.4 - lo) * 0.4 * 0.5).abs() < 1e-9;
@@ -1678,19 +1662,17 @@ mod wide_name_rescue {
         }));
         let d = c - sp.origin();
         let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
-        apply(
+        crate::fixtures::pocket(
             &mut m,
-            &Operation::PocketOnFace {
-                face: wall,
-                profile: Profile2d::polygon(vec![
-                    p2(cu - 0.3, cv - 0.3),
-                    p2(cu + 0.3, cv - 0.3),
-                    p2(cu + 0.3, cv + 0.3),
-                    p2(cu - 0.3, cv + 0.3),
-                ])
-                .unwrap(),
-                dist: 0.4,
-            },
+            wall,
+            Profile2d::polygon(vec![
+                p2(cu - 0.3, cv - 0.3),
+                p2(cu + 0.3, cv - 0.3),
+                p2(cu + 0.3, cv + 0.3),
+                p2(cu - 0.3, cv + 0.3),
+            ])
+            .unwrap(),
+            0.4,
         )
         .expect("the wf pocket");
         m.rebuild_adjacency();

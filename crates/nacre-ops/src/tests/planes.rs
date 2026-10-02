@@ -200,17 +200,9 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     m.rebuild_adjacency();
     // A pad covering part of the face: the walls around it inherit the split edge.
     let face = m.shell(m.solid(solid).outer).faces[0];
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face,
-            profile: rect(0.25, 0.25, 1.25, 1.25),
-            dist: 1.0,
-        },
-    )
-    .expect("the pad") else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pad(&mut m, face, rect(0.25, 0.25, 1.25, 1.25), 1.0)
+        .expect("the pad")
+        .solid();
     m.rebuild_adjacency();
 
     let faces = collect_planes(&m, solid).expect("the planes of a padded block");

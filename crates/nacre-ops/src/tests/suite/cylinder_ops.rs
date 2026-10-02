@@ -280,9 +280,8 @@ fn a_cylinder_clear_of_the_plate_removes_nothing() {
 /// drilling in.** Asked as a placement question, which is where it is decided — the seam
 /// vertices sit at the plate's top face and one unit above it, not below.
 ///
-/// This is the honest statement of what the log expresses today: `flip` is decided by the
-/// consuming operation (`frame_toward`), never stated by a caller, so drilling into a face is a
-/// composite that turns `toward` inward — `PocketOnFace`'s sibling, and not yet written.
+/// `flip` is decided by the consuming operation (`frame_toward`), never stated by a caller, so
+/// drilling into a face is the same frame swept with a negative distance, not a turned frame.
 #[test]
 fn a_cylinder_on_a_face_frame_stands_outward() {
     let mut m = Model::new();

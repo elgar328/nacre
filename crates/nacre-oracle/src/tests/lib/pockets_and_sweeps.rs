@@ -5,7 +5,7 @@ use super::*;
 
 /// The unit cube with a `0.4`-square pocket `0.5` deep in its top face — the fixture
 /// whose lid carries an inner loop. OCCT reads the same solid from STEP; nothing here
-/// asks it to reproduce `PocketOnFace`.
+/// asks it to reproduce the pocket.
 fn pocketed_cube() -> (Model, Handle<Solid>) {
     use nacre_ops::{OpOutput, Operation, Profile2d, apply};
     let prof = |pts: &[[f64; 2]]| {
@@ -29,17 +29,14 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
     .unwrap() else {
         unreachable!()
     };
-    let OpOutput::PocketOnFace { solid, .. } = apply(
+    let solid = nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
-            dist: 0.5,
-        },
+        faces[1],
+        prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+        0.5,
     )
-    .unwrap() else {
-        unreachable!()
-    };
+    .unwrap()
+    .solid();
     (m, solid)
 }
 
@@ -291,20 +288,16 @@ fn non_convex_overhang_cut_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+    // `[0.3, 0.7]²` of the lid. On a lid the sketch frame is the identity on world x and y: the
+    // origin is the world origin projected onto `z = 1` and the axes are `u = +x̂`, `v = +ŷ`.
+    let pc = nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            // `[0.3, 0.7]²` of the lid. On a lid the sketch frame is the identity on world
-            // x and y: the origin is the world origin projected onto `z = 1` and the axes are
-            // `u = +x̂`, `v = +ŷ`.
-            profile: sq(&[[0.3, 0.7], [0.3, 0.3], [0.7, 0.3], [0.7, 0.7]]),
-            dist: 0.5,
-        },
+        faces[1],
+        sq(&[[0.3, 0.7], [0.3, 0.3], [0.7, 0.3], [0.7, 0.7]]),
+        0.5,
     )
-    .unwrap() else {
-        unreachable!()
-    };
+    .unwrap()
+    .solid();
     let slot = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.75, 0.25, -0.25]),

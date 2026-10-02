@@ -22,7 +22,8 @@
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3};
-use nacre_ops::{OpError, OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane};
+use nacre_ops::fixtures::FeatureError;
+use nacre_ops::{OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane};
 use nacre_store::Handle;
 use nacre_topo::{Face, Model, Solid};
 
@@ -77,8 +78,8 @@ fn every_face_knows_which_way_it_faces(m: &Model, s: Handle<Solid>, cell: &str) 
 /// A 1×1 footprint **centred on the face, then shifted by `off`** — the placement idiom the rest
 /// of the suite uses (`tests/census.rs`'s `wf` family). A profile stated in raw sketch coordinates
 /// lands wherever the face's frame origin happens to be, which for a turned solid is usually off
-/// the face entirely: the first draft of this sweep declined 84 of 108 cells with `PadMissesFace`
-/// and was measuring nothing.
+/// the face entirely: the first draft of this sweep declined 84 of 108 cells as a pad that missed
+/// its face ([`FeatureError::Missed`]) and was measuring nothing.
 fn footprint_on(m: &Model, face: Handle<Face>, off: f64) -> Profile2d {
     let sp = face_plane(m, face).expect("planar");
     let d = nacre_props::face_props(m, face).expect("props").centroid - sp.origin();
@@ -93,7 +94,11 @@ fn footprint_on(m: &Model, face: Handle<Face>, off: f64) -> Profile2d {
 
 /// One cell: a 2×2×1 block turned by `deg` about `axis`, a pad that covers part of one face (so
 /// the neighbouring walls gain non-turning points), then a second pad on a face of *that* result.
-fn cell(axis: Axis, deg: i128, inset: f64) -> Result<(Model, Handle<Solid>, f64, f64), OpError> {
+fn cell(
+    axis: Axis,
+    deg: i128,
+    inset: f64,
+) -> Result<(Model, Handle<Solid>, f64, f64), FeatureError> {
     let mut m = Model::new();
     let world = SketchFrame::world(&m, Axis::Z);
     let OpOutput::Extrude { solid, .. } = apply(
@@ -128,17 +133,7 @@ fn cell(axis: Axis, deg: i128, inset: f64) -> Result<(Model, Handle<Solid>, f64,
     // First pad: partial cover, so the walls around it inherit points that do not turn.
     let f = faces_of(&m, solid)[0];
     let profile = footprint_on(&m, f, inset);
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: f,
-            profile,
-            dist: 1.0,
-        },
-    )?
-    else {
-        unreachable!("pad yields PadOnFace output")
-    };
+    let solid = nacre_ops::fixtures::pad(&mut m, f, profile, 1.0)?.solid();
     m.rebuild_adjacency();
     every_face_knows_which_way_it_faces(&m, solid, "after the first pad");
     let before = nacre_props::mass_props(&m, solid).expect("props").volume;
@@ -146,17 +141,7 @@ fn cell(axis: Axis, deg: i128, inset: f64) -> Result<(Model, Handle<Solid>, f64,
     // Second pad, on a face of the first pad's result — this is where the split edge is read.
     let f = faces_of(&m, solid)[0];
     let profile = footprint_on(&m, f, 0.0);
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: f,
-            profile,
-            dist: 1.0,
-        },
-    )?
-    else {
-        unreachable!("pad yields PadOnFace output")
-    };
+    let solid = nacre_ops::fixtures::pad(&mut m, f, profile, 1.0)?.solid();
     m.rebuild_adjacency();
     let after = nacre_props::mass_props(&m, solid).expect("props").volume;
     Ok((m, solid, before, after))
@@ -170,7 +155,7 @@ fn cell(axis: Axis, deg: i128, inset: f64) -> Result<(Model, Handle<Solid>, f64,
 #[test]
 fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() {
     let mut built = 0;
-    let mut declined: Vec<(String, OpError)> = Vec::new();
+    let mut declined: Vec<(String, FeatureError)> = Vec::new();
 
     for axis in [Axis::X, Axis::Y, Axis::Z] {
         for deg in [5i128, 15, 30, 45, 60, 75, 100, 123, 150, 200, 250, 305] {
@@ -218,7 +203,7 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
     // spelling `flip` apart from the realization breaks: `face_plane` reports a frame
     // point-symmetric to the one the pad realizes in, so a footprint centred on the face through
     // `face_plane`'s own coordinates is built on the opposite side, outside the face, and the cell
-    // declines `PadMissesFace` (measured, all 72). The report reads the realization itself, and a
+    // declines as a pad that missed its face (`FeatureError::Missed`; measured, all 72). The report reads the realization itself, and a
     // decline reappearing here is news, not noise.
     assert_eq!(
         built, 108,

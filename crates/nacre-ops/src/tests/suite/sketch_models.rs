@@ -371,21 +371,16 @@ fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
         let v = nacre_props::mass_props(&m2, solid).unwrap().volume;
         assert!((v - 0.16 * std::f64::consts::PI).abs() < 1e-9, "{v}");
     }
-    let r = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: wall,
-            profile,
-            dist: 1.0,
-        },
-    );
+    let r = crate::fixtures::pad(&mut m, wall, profile, 1.0);
     assert!(
         matches!(
             r,
-            Err(OpError::Boolean(BoolError::Rejected {
-                reason: RejectReason::CylinderGateUndecided,
-                ..
-            }))
+            Err(crate::fixtures::FeatureError::Op(OpError::Boolean(
+                BoolError::Rejected {
+                    reason: RejectReason::CylinderGateUndecided,
+                    ..
+                }
+            )))
         ),
         "{r:?}"
     );
@@ -557,11 +552,10 @@ fn a_slot_pads_and_pockets_at_the_tangent_ruling() {
     };
     let slot = || slot_profile(-10.0, 10.0, 0.0, 2.0);
     let pi = std::f64::consts::PI;
-    let built = |m: &mut Model, r: Result<OpOutput, OpError>, want: f64| {
-        let solid = match r.expect("the slot builds at its tangent rulings") {
-            OpOutput::PadOnFace { solid, .. } | OpOutput::PocketOnFace { solid, .. } => solid,
-            other => panic!("{other:?}"),
-        };
+    let built = |m: &mut Model,
+                 r: Result<crate::fixtures::Feature, crate::fixtures::FeatureError>,
+                 want: f64| {
+        let solid = r.expect("the slot builds at its tangent rulings").solid();
         m.rebuild_adjacency();
         assert!(
             nacre_validate::validate(m).is_empty(),
@@ -572,24 +566,10 @@ fn a_slot_pads_and_pockets_at_the_tangent_ruling() {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     };
     let (mut m, _, top) = plate();
-    let r = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: top,
-            profile: slot(),
-            dist: 3.0,
-        },
-    );
+    let r = crate::fixtures::pad(&mut m, top, slot(), 3.0);
     built(&mut m, r, 8000.0 + 3.0 * (80.0 + 4.0 * pi));
     let (mut m, _, top) = plate();
-    let r = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: top,
-            profile: slot(),
-            dist: 2.0,
-        },
-    );
+    let r = crate::fixtures::pocket(&mut m, top, slot(), 2.0);
     built(&mut m, r, 8000.0 - 2.0 * (20.0 + pi));
 }
 
@@ -614,17 +594,8 @@ fn a_half_disk_boss_pads_onto_a_plate() {
         line(p2(0.0, 5.0), p2(0.0, -5.0)),
         arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2),
     ]);
-    let r = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: d_shape,
-            dist: 3.0,
-        },
-    );
-    let OpOutput::PadOnFace { solid, .. } = r.expect("the half disk pads") else {
-        unreachable!()
-    };
+    let r = crate::fixtures::pad(&mut m, faces[1], d_shape, 3.0);
+    let solid = r.expect("the half disk pads").solid();
     m.rebuild_adjacency();
     assert!(
         nacre_validate::validate(&m).is_empty(),

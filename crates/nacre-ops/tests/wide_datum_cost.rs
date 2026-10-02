@@ -306,19 +306,17 @@ fn wf_family_with_pocket() -> Model {
     let sp = nacre_ops::face_plane(&m, wall).expect("planar");
     let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin();
     let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
-    apply(
+    nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: wall,
-            profile: Profile2d::polygon(vec![
-                p2(cu - 0.3, cv - 0.3),
-                p2(cu + 0.3, cv - 0.3),
-                p2(cu + 0.3, cv + 0.3),
-                p2(cu - 0.3, cv + 0.3),
-            ])
-            .unwrap(),
-            dist: 0.4,
-        },
+        wall,
+        Profile2d::polygon(vec![
+            p2(cu - 0.3, cv - 0.3),
+            p2(cu + 0.3, cv - 0.3),
+            p2(cu + 0.3, cv + 0.3),
+            p2(cu - 0.3, cv + 0.3),
+        ])
+        .unwrap(),
+        0.4,
     )
     .expect("the wf pocket");
     m.rebuild_adjacency();

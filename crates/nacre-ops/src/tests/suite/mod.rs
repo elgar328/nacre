@@ -8,8 +8,8 @@ use crate::draft::LocalFace;
 use fixtures::{
     boolean_one, cube_and_notch, extrude_op, has_face_on_plane, l_and_corner_box, l_and_dimple,
     l_and_inner_box, l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes,
-    outer_points, p2, pocket_op, pythagorean_frame, regular_ngon, rotated_l_prism, small_square,
-    square, stacked_cubes, two_boxes, u_and_slab, u_prism,
+    outer_points, p2, pythagorean_frame, regular_ngon, rotated_l_prism, small_square, square,
+    stacked_cubes, two_boxes, u_and_slab, u_prism,
 };
 // Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
 pub(crate) use fixtures::{
@@ -178,11 +178,9 @@ fn holed_face_rings_of(
 /// lid is the only face in the suite that carries an inner loop.
 fn pocketed_cube() -> (Model, Handle<Solid>) {
     let (mut m, top) = cube_with_top();
-    let OpOutput::PocketOnFace { solid, .. } =
-        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
-    else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pocket(&mut m, top, small_square(), 0.5)
+        .unwrap()
+        .solid();
     (m, solid)
 }
 

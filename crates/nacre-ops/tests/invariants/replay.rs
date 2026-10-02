@@ -239,21 +239,31 @@ fn assert_same_arena(a: &Model, b: &Model, what: &str) {
 // Fixtures — logs that carry a handle
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// `[Extrude, PadOnFace]` — the log and a model built by applying it.
+/// A pad, as a log — `[Extrude, Extrude on the top cap's frame, Fuse]`: the second extrude names
+/// the cap's plane through its frame, the boolean names both solids.
 fn pad_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();
     let ex = extrude_op(&m, 0.0, 2.0, 1.0);
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &ex).expect("extrude") else {
+    let OpOutput::Extrude { solid, faces } = apply(&mut m, &ex).expect("extrude") else {
         unreachable!()
     };
-    let pad = Operation::PadOnFace {
-        face: faces[1], // top cap
+    let frame = nacre_ops::face_sketch_frame(&m, faces[1]).expect("the top cap's frame");
+    let tool = Operation::Extrude {
+        frame,
         profile: square(0.5, 1.5),
         dist: 0.5,
     };
-    apply(&mut m, &pad).expect("pad on the live model");
+    let OpOutput::Extrude { solid: boss, .. } = apply(&mut m, &tool).expect("the boss") else {
+        unreachable!()
+    };
+    let fuse = Operation::Boolean {
+        kind: BoolKind::Fuse,
+        a: solid,
+        b: boss,
+    };
+    apply(&mut m, &fuse).expect("pad on the live model");
     m.rebuild_adjacency();
-    (vec![ex, pad], m)
+    (vec![ex, tool, fuse], m)
 }
 
 /// `[Extrude, Extrude, Boolean]`.
@@ -517,20 +527,18 @@ fn refining_mid_log_leaves_every_later_truth_as_it_was() {
             .flat_map(|&s| m.shell(m.solid(s).outer).faces.clone())
             .find(|&f| m.face(f).surface == top_plane)
             .expect("the fuse keeps a face on the box's top plane");
-        apply(
+        // The top's frame is the world's (u = x, v = y): a rectangle inside the box's top.
+        nacre_ops::fixtures::pad(
             &mut m,
-            &Operation::PadOnFace {
-                face,
-                // The top's frame is the world's (u = x, v = y): a rectangle inside the box's top.
-                profile: Profile2d::polygon(vec![
-                    Point2::from_array([29.0, 1.5]),
-                    Point2::from_array([29.5, 1.5]),
-                    Point2::from_array([29.5, 2.0]),
-                    Point2::from_array([29.0, 2.0]),
-                ])
-                .expect("a rectangle"),
-                dist: 0.5,
-            },
+            face,
+            Profile2d::polygon(vec![
+                Point2::from_array([29.0, 1.5]),
+                Point2::from_array([29.5, 1.5]),
+                Point2::from_array([29.5, 2.0]),
+                Point2::from_array([29.0, 2.0]),
+            ])
+            .expect("a rectangle"),
+            0.5,
         )
         .expect("a pad on the fused top");
         m.rebuild_adjacency();
@@ -775,13 +783,27 @@ fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
     m.shell(m.solid(s).outer).faces.clone()
 }
 
-/// Turn a [`Step`] into a concrete `Operation` against **this** model, or `None` if the model
-/// cannot host it at all (no live solid to name). A step that resolves but will be *rejected*
-/// still resolves — the reject is the operation's answer to give, not the generator's.
-fn concretize(m: &Model, step: &Step) -> Option<Operation> {
+/// What a [`Step`] asks of the model: one operation, or a feature on a face — the tool extruded off
+/// the face's frame (into it for a pocket), then the boolean with the face's solid, which can only
+/// be written once the tool exists.
+enum Planned {
+    One(Box<Operation>),
+    Feature {
+        face: Handle<Face>,
+        body: Handle<Solid>,
+        profile: Profile2d,
+        dist: f64,
+        kind: BoolKind,
+    },
+}
+
+/// Turn a [`Step`] into what it asks of **this** model, or `None` if the model cannot host it at
+/// all (no live solid to name). A step that resolves but will be *rejected* still resolves — the
+/// reject is the operation's answer to give, not the generator's.
+fn concretize(m: &Model, step: &Step) -> Option<Planned> {
     let live: Vec<Handle<Solid>> = m.live_solids().to_vec();
     let pick = |i: usize| live.get(i % live.len().max(1)).copied();
-    Some(match *step {
+    Some(Planned::One(Box::new(match *step {
         Step::DatumThroughVertices { solid, a, b, c } => {
             let s = pick(solid)?;
             let mut vs = Vec::new();
@@ -831,21 +853,14 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
             let faces = faces_of(m, s);
             let f = *faces.get(face % faces.len().max(1))?;
             let i = f64::from(inset) * 0.25;
-            let profile = rect(i, i, i + 1.0, i + 1.0);
-            let dist = f64::from(dist);
-            if matches!(step, Step::Pad { .. }) {
-                Operation::PadOnFace {
-                    face: f,
-                    profile,
-                    dist,
-                }
-            } else {
-                Operation::PocketOnFace {
-                    face: f,
-                    profile,
-                    dist,
-                }
-            }
+            let pad = matches!(step, Step::Pad { .. });
+            return Some(Planned::Feature {
+                face: f,
+                body: s,
+                profile: rect(i, i, i + 1.0, i + 1.0),
+                dist: if pad { 1.0 } else { -1.0 } * f64::from(dist),
+                kind: if pad { BoolKind::Fuse } else { BoolKind::Cut },
+            });
         }
         Step::Boolean { kind, a, b } => {
             let (ha, hb) = (pick(a)?, pick(b)?);
@@ -890,7 +905,39 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
         Step::Copy { solid } => Operation::Copy {
             solid: pick(solid)?,
         },
-    })
+    })))
+}
+
+/// Apply what a step planned, returning the operations to log — all of them or, on a reject,
+/// none (the caller re-syncs from the log, which drops a feature's tool with the rest).
+fn apply_planned(m: &mut Model, planned: Planned) -> Result<Vec<Operation>, nacre_ops::OpError> {
+    match planned {
+        Planned::One(op) => apply(m, &op).map(|_| vec![*op]),
+        Planned::Feature {
+            face,
+            body,
+            profile,
+            dist,
+            kind,
+        } => {
+            let frame = nacre_ops::face_sketch_frame(m, face)?;
+            let tool = Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            };
+            let OpOutput::Extrude { solid, .. } = apply(m, &tool)? else {
+                unreachable!()
+            };
+            let join = Operation::Boolean {
+                kind,
+                a: body,
+                b: solid,
+            };
+            apply(m, &join)?;
+            Ok(vec![tool, join])
+        }
+    }
 }
 
 /// What a generated session did, so the population can be reported instead of guessed.
@@ -925,28 +972,28 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
     log.push(seed);
 
     for step in steps {
-        let Some(op) = concretize(&model, step) else {
+        let Some(planned) = concretize(&model, step) else {
             st.unresolvable += 1;
             continue;
         };
         st.attempted += 1;
-        match apply(&mut model, &op) {
-            Ok(_) => {
+        match apply_planned(&mut model, planned) {
+            Ok(ops) => {
                 // ★ Every variant names a cell (`Extrude` carries a frame), so this counts
                 // accepted operations.
                 st.handle_carrying += 1;
                 st.accepted += 1;
                 if st.rejected > 0
                     && matches!(
-                        op,
-                        Operation::DatumPlane {
+                        ops.as_slice(),
+                        [Operation::DatumPlane {
                             def: nacre_ops::DatumDef::ThroughVertices(_)
-                        }
+                        }]
                     )
                 {
                     st.datum_after_reject += 1;
                 }
-                log.push(op);
+                log.extend(ops);
             }
             Err(_) => {
                 st.rejected += 1;
@@ -1025,12 +1072,27 @@ proptest! {
     }
 }
 
-/// Property (6), in plain text: **all six** handle-carrying variants in one log.
+/// Property (6), in plain text: **every** variant in one log — each names a cell (`Extrude` its
+/// plane, through its frame), and an extrude on a face's frame names a plane a previous operation
+/// made, which is the re-anchoring a face feature leans on.
 ///
 /// The generator reaches them by chance; this reaches them by name, so a variant that silently
-/// stops being generated cannot take the coverage with it.
+/// stops being generated cannot take the coverage with it — and [`variant`] is exhaustive, so a
+/// new variant does not compile until this fixture says how it is reached.
 #[test]
-fn a_log_using_every_handle_carrying_variant_replays() {
+fn a_log_using_every_variant_replays() {
+    fn variant(op: &Operation) -> &'static str {
+        match op {
+            Operation::DatumPlane { .. } => "DatumPlane",
+            Operation::Extrude { .. } => "Extrude",
+            Operation::PadOnFace { .. } => "PadOnFace",
+            Operation::PocketOnFace { .. } => "PocketOnFace",
+            Operation::Boolean { .. } => "Boolean",
+            Operation::Transform { .. } => "Transform",
+            Operation::Mirror { .. } => "Mirror",
+            Operation::Copy { .. } => "Copy",
+        }
+    }
     let mut m = Model::new();
     let mut log = Vec::new();
     let mut run = |m: &mut Model, op: Operation| {
@@ -1038,23 +1100,54 @@ fn a_log_using_every_handle_carrying_variant_replays() {
         log.push(op);
         out
     };
+    // A face feature, as a log: the tool off the face's frame (`dist < 0` into it), then the
+    // boolean with the face's solid. Returns the result.
+    let feature = |m: &mut Model,
+                   run: &mut dyn FnMut(&mut Model, Operation) -> OpOutput,
+                   body: Handle<Solid>,
+                   face: Handle<Face>,
+                   profile: Profile2d,
+                   dist: f64,
+                   kind: BoolKind| {
+        let frame = nacre_ops::face_sketch_frame(m, face).expect("a planar live face");
+        let OpOutput::Extrude { solid: tool, .. } = run(
+            m,
+            Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        ) else {
+            unreachable!()
+        };
+        let OpOutput::Boolean { solids } = run(
+            m,
+            Operation::Boolean {
+                kind,
+                a: body,
+                b: tool,
+            },
+        ) else {
+            unreachable!()
+        };
+        assert_eq!(solids.len(), 1, "one body");
+        solids[0]
+    };
 
     let op = extrude_op(&m, 0.0, 2.0, 2.0);
-    let OpOutput::Extrude { faces, .. } = run(&mut m, op) else {
+    let OpOutput::Extrude { solid, faces } = run(&mut m, op) else {
         unreachable!()
     };
-    let top = faces[1];
     // Every edit but `Copy` supersedes its input, so the fixture threads the *new* handle on.
-    let OpOutput::PadOnFace { solid: a, .. } = run(
+    let a = feature(
         &mut m,
-        Operation::PadOnFace {
-            face: top,
-            profile: rect(0.25, 0.25, 1.75, 1.75),
-            dist: 1.0,
-        },
-    ) else {
-        unreachable!()
-    };
+        &mut run,
+        solid,
+        faces[1],
+        rect(0.25, 0.25, 1.75, 1.75),
+        1.0,
+        BoolKind::Fuse,
+    );
     let OpOutput::Copy { solid: b } = run(&mut m, Operation::Copy { solid: a }) else {
         unreachable!()
     };
@@ -1079,7 +1172,7 @@ fn a_log_using_every_handle_carrying_variant_replays() {
     };
     // The boss's top cap, found by geometry rather than by index — the solid has been copied,
     // translated and mirrored since it was built, so no remembered handle survives.
-    let corners = |f: Handle<Face>| -> Vec<[f64; 3]> {
+    let corners = |m: &Model, f: Handle<Face>| -> Vec<[f64; 3]> {
         m.face(f)
             .outer
             .half_edges
@@ -1090,13 +1183,13 @@ fn a_log_using_every_handle_carrying_variant_replays() {
     let cap = *faces_of(&m, b)
         .iter()
         .filter(|&&f| {
-            let c = corners(f);
+            let c = corners(&m, f);
             let z = c[0][2];
             c.iter().all(|p| p[2] == z)
         })
-        .max_by(|&&x, &&y| corners(x)[0][2].total_cmp(&corners(y)[0][2]))
+        .max_by(|&&x, &&y| corners(&m, x)[0][2].total_cmp(&corners(&m, y)[0][2]))
         .expect("the boss has a top cap");
-    let c = corners(cap);
+    let c = corners(&m, cap);
     let (x0, x1) = (
         c.iter().map(|p| p[0]).fold(f64::MAX, f64::min),
         c.iter().map(|p| p[0]).fold(f64::MIN, f64::max),
@@ -1106,34 +1199,64 @@ fn a_log_using_every_handle_carrying_variant_replays() {
         c.iter().map(|p| p[1]).fold(f64::MIN, f64::max),
     );
     let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    run(
+    let b = feature(
         &mut m,
-        Operation::PocketOnFace {
-            face: cap,
-            profile: rect(mx - 0.25, my - 0.25, mx + 0.25, my + 0.25),
-            dist: 0.5, // into a 1-thick boss: blind
-        },
+        &mut run,
+        b,
+        cap,
+        rect(mx - 0.25, my - 0.25, mx + 0.25, my + 0.25),
+        -0.5, // into a 1-thick boss
+        BoolKind::Cut,
     );
-    let live: Vec<_> = m.live_solids().to_vec();
-    run(
+    let OpOutput::Boolean { solids } = run(
         &mut m,
         Operation::Boolean {
             kind: BoolKind::Fuse,
-            a: live[0],
-            b: live[1],
+            a,
+            b,
+        },
+    ) else {
+        unreachable!()
+    };
+    // Three corners of the result's top cap name a plane — the variant whose handles are vertices.
+    m.rebuild_adjacency();
+    let top = *faces_of(&m, solids[0])
+        .iter()
+        .max_by(|&&x, &&y| corners(&m, x)[0][2].total_cmp(&corners(&m, y)[0][2]))
+        .expect("a top face");
+    let vs: Vec<_> = m
+        .face(top)
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| m.he_start(he))
+        .collect();
+    run(
+        &mut m,
+        Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices([vs[0], vs[1], vs[2]]),
         },
     );
     m.rebuild_adjacency();
 
-    // All six carried a handle.
-    let carried = log
-        .iter()
-        .filter(|o| !matches!(o, Operation::Extrude { .. }))
-        .count();
-    assert_eq!(carried, 6, "this fixture is supposed to exercise all six");
+    let mut kinds: Vec<&str> = log.iter().map(variant).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    assert_eq!(
+        kinds,
+        [
+            "Boolean",
+            "Copy",
+            "DatumPlane",
+            "Extrude",
+            "Mirror",
+            "Transform"
+        ],
+        "this fixture is supposed to exercise every variant an application writes"
+    );
 
-    let replayed = replay(&log).expect("a log of every handle-carrying variant replays");
-    assert_same_arena(&replayed, &m, "all-six");
+    let replayed = replay(&log).expect("a log of every variant replays");
+    assert_same_arena(&replayed, &m, "every variant");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1332,6 +1455,64 @@ fn a_late_reject_is_not_index_neutral() {
     println!("stat reject_delta_summary early={early} late={late}");
 }
 
+/// A session whose log builds the corner-coincident pair of `a_late_reject_is_not_index_neutral`
+/// — `[0,2]³` cut by `[1,3]³`, and `[−1,1]³` — and the cut of the two that the engine declines
+/// after its arrangement has run: a late reject with **every operand in the log**, so the only
+/// cells the log does not hold are the reject's own. Returns the log, the model, the declined
+/// operation, and the first cut's result.
+fn a_log_before_a_late_reject() -> (Vec<Operation>, Model, Operation, Handle<Solid>) {
+    let mut m = Model::new();
+    let mut log = Vec::new();
+    let mut run = |m: &mut Model, op: Operation| {
+        let out = apply(m, &op).expect("each step before the reject is legal");
+        log.push(op);
+        out
+    };
+    let mut cube = |m: &mut Model, a: f64, b: f64, lift: i128| {
+        let op = extrude_op(m, a, b, 2.0);
+        let OpOutput::Extrude { solid, .. } = run(m, op) else {
+            unreachable!()
+        };
+        if lift == 0 {
+            return solid;
+        }
+        let OpOutput::Transform { solid } = run(
+            m,
+            Operation::Transform {
+                solid,
+                isometry: Isometry::translation([
+                    Rat::from_int(0),
+                    Rat::from_int(0),
+                    Rat::from_int(lift),
+                ]),
+            },
+        ) else {
+            unreachable!()
+        };
+        solid
+    };
+    let a = cube(&mut m, 0.0, 2.0, 0);
+    let b = cube(&mut m, 1.0, 3.0, 1);
+    let c = cube(&mut m, -1.0, 1.0, -1);
+    let OpOutput::Boolean { solids } = run(
+        &mut m,
+        Operation::Boolean {
+            kind: BoolKind::Cut,
+            a,
+            b,
+        },
+    ) else {
+        unreachable!()
+    };
+    // C's + corner is R's concave corner: three shared planes meet there.
+    let declined = Operation::Boolean {
+        kind: BoolKind::Cut,
+        a: solids[0],
+        b: c,
+    };
+    (log, m, declined, solids[0])
+}
+
 /// ★★ **The hazard, executed** — and the reason the re-sync in [`run_recipe`] is a rule and not
 /// a convenience.
 ///
@@ -1342,27 +1523,13 @@ fn a_late_reject_is_not_index_neutral() {
 /// `docs/overview.md`), and an off-by-a-few log is squarely "cannot do".
 #[test]
 fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
-    let mut m = Model::new();
-    let mut log = Vec::new();
+    let (mut log, mut m, declined, solid) = a_log_before_a_late_reject();
 
-    let seed = extrude_op(&m, 0.0, 2.0, 1.0);
-    let OpOutput::Extrude { solid, faces } = apply(&mut m, &seed).expect("seed") else {
-        unreachable!()
-    };
-    log.push(seed);
-
-    // A late reject: builds the tool prism, then declines. Not recorded — but its cells stay.
+    // A late reject: the arrangement runs, then the cut declines. Not recorded — but its cells
+    // stay. A boolean reject restores `live_solids`, so what is left is arena residue and nothing
+    // else.
     let before = arena_lengths(&m);
-    // `PadMissesFace` is used deliberately: it is the late reject that *does* restore
-    // `live_solids` (`ops`, "no reject-after-commit"), so what is left is arena residue and
-    // nothing else. The reject decided after the commit is `PocketNotBlind`'s
-    // ([`a_pocket_that_is_not_blind_leaves_the_live_model_alone`]).
-    let declined = Operation::PadOnFace {
-        face: faces[1],
-        profile: rect(20.0, 20.0, 21.0, 21.0),
-        dist: 1.0,
-    };
-    let err = apply(&mut m, &declined).expect_err("this pad misses the face");
+    let err = apply(&mut m, &declined).expect_err("the corner-coincident cut declines");
     let residue: usize = arena_lengths(&m)
         .iter()
         .zip(&before)
@@ -1593,26 +1760,11 @@ fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
 /// that a datum naming *vertices* is not an exception to it.
 #[test]
 fn a_datum_naming_vertices_survives_a_session_that_rejected() {
-    let mut m = Model::new();
-    let mut log: Vec<Operation> = Vec::new();
+    let (mut log, mut m, declined, _) = a_log_before_a_late_reject();
 
-    let seed = extrude_op(&m, 0.0, 2.0, 1.0);
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &seed).expect("seed") else {
-        unreachable!()
-    };
-    log.push(seed);
-
-    // A late reject — builds its tool prism, then declines. Its cells stay behind.
+    // A late reject — the arrangement runs, then the cut declines. Its cells stay behind.
     let before = arena_lengths(&m);
-    let err = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: rect(20.0, 20.0, 21.0, 21.0),
-            dist: 1.0,
-        },
-    )
-    .expect_err("this pad misses the face");
+    let err = apply(&mut m, &declined).expect_err("the corner-coincident cut declines");
     let residue: usize = arena_lengths(&m)
         .iter()
         .zip(&before)
@@ -1629,7 +1781,7 @@ fn a_datum_naming_vertices_survives_a_session_that_rejected() {
     m = replay(&log).expect("the log so far replays");
     let solid = m.live_solids()[0];
 
-    // Now name three corners of the seed solid — the step whose handles are vertices.
+    // Now name three corners of a live solid — the step whose handles are vertices.
     let mut vs = Vec::new();
     let sol = m.solid(solid);
     for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {

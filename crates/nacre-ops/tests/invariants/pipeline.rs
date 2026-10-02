@@ -182,7 +182,7 @@ fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()
 }
 
-/// `PocketOnFace`'s profile lives in a frame **derived from the face**, not in world
+/// A pocket's profile lives in a frame **derived from the face**, not in world
 /// coordinates — but on the unit cube's lid the two coincide.
 ///
 /// The sketch origin is the world origin projected onto the face's plane, and the arbitrary-axis
@@ -244,17 +244,9 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
             })
         })
         .expect("the top face");
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: top,
-            profile: centred_on_the_cube_lid(0.2),
-            dist: 0.5,
-        },
-    )
-    .unwrap() else {
-        unreachable!("pocket yields PocketOnFace output")
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, top, centred_on_the_cube_lid(0.2), 0.5)
+        .unwrap()
+        .solid();
     (m, solid)
 }
 
@@ -1248,17 +1240,9 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     }
     fn pad(m: &mut Model, s: Handle<Solid>, dist: f64) -> Handle<Solid> {
         let face = top_face(m, s);
-        let OpOutput::PadOnFace { solid, .. } = nacre_ops::apply(
-            m,
-            &Operation::PadOnFace {
-                face,
-                profile: boss(),
-                dist,
-            },
-        )
-        .expect("pad") else {
-            unreachable!()
-        };
+        let solid = nacre_ops::fixtures::pad(m, face, boss(), dist)
+            .expect("pad")
+            .solid();
         m.rebuild_adjacency();
         solid
     }

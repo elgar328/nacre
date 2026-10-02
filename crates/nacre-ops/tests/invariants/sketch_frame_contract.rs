@@ -261,17 +261,9 @@ fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
         let profile = rect(cu + 0.05, cv - 0.15, cu + 0.25, cv + 0.05);
         let n = a.x_axis().cross(a.y_axis());
 
-        let OpOutput::PadOnFace { top_face, .. } = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: f,
-                profile: profile.clone(),
-                dist: 0.5,
-            },
-        )
-        .expect("the pad") else {
-            unreachable!()
-        };
+        let top_face = nacre_ops::fixtures::pad(&mut m, f, profile.clone(), 0.5)
+            .expect("the pad")
+            .cap_face(&m);
         m.rebuild_adjacency();
         let pad_fp = nacre_props::face_props(&m, top_face)
             .expect("props")

@@ -430,15 +430,12 @@ proptest! {
         let OpOutput::Extrude { faces, .. } =
             apply(&mut m, &Operation::Extrude { frame, profile: big, dist: 2.0 }).unwrap()
         else { unreachable!() };
-        match apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)) {
-            Ok(OpOutput::PocketOnFace { solid, .. }) => {
-                m.rebuild_adjacency();
-                prop_assert!(nacre_validate::validate(&m).is_empty());
-                let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
-                prop_assert!((vol - (8.0 - 0.16 * 0.5)).abs() <= 1e-9 * 8.0, "volume {}", vol);
-            }
-            Ok(_) => prop_assert!(false, "unexpected op output"),
-            Err(_) => {} // an honest reject is acceptable; a panic is not (and would fail the test)
+        // An honest reject is acceptable; a panic is not (and would fail the test).
+        if let Ok(f) = crate::fixtures::pocket(&mut m, faces[1], small_square(), 0.5) {
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, f.solid()).unwrap().volume;
+            prop_assert!((vol - (8.0 - 0.16 * 0.5)).abs() <= 1e-9 * 8.0, "volume {}", vol);
         }
     }
 
@@ -461,7 +458,7 @@ proptest! {
             dist: sz,
         }).unwrap() else { unreachable!() };
         let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
-        apply(&mut m, &Operation::PadOnFace { face: faces[1], profile: hole, dist }).unwrap();
+        crate::fixtures::pad(&mut m, faces[1], hole, dist).unwrap();
         m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
     }
@@ -485,7 +482,7 @@ proptest! {
             dist: sz,
         }).unwrap() else { unreachable!() };
         let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
-        apply(&mut m, &Operation::PocketOnFace { face: faces[1], profile: hole, dist }).unwrap();
+        crate::fixtures::pocket(&mut m, faces[1], hole, dist).unwrap();
         m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
     }

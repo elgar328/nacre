@@ -668,23 +668,20 @@ fn pocket_into_non_convex_solid_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+    let pc = nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: Profile2d::polygon(
-                [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
-                    .iter()
-                    .map(|&p| nacre_math::Point2::from_array(p))
-                    .collect(),
-            )
-            .unwrap(),
-            dist: 0.5,
-        },
+        faces[1],
+        Profile2d::polygon(
+            [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        )
+        .unwrap(),
+        0.5,
     )
-    .unwrap() else {
-        unreachable!()
-    };
+    .unwrap()
+    .solid();
     let corner = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.05, 0.1, 0.6]),
@@ -778,23 +775,20 @@ fn overhang_boss_on_non_convex_solid_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+    let pc = nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: Profile2d::polygon(vec![
-                p2(-0.2, -0.2),
-                p2(0.2, -0.2),
-                p2(0.2, 0.2),
-                p2(-0.2, 0.2),
-            ])
-            .unwrap(),
-            dist: 0.5,
-        },
+        faces[1],
+        Profile2d::polygon(vec![
+            p2(-0.2, -0.2),
+            p2(0.2, -0.2),
+            p2(0.2, 0.2),
+            p2(-0.2, 0.2),
+        ])
+        .unwrap(),
+        0.5,
     )
-    .unwrap() else {
-        unreachable!()
-    };
+    .unwrap()
+    .solid();
     // Boss on the +x side face, overhanging the bottom edge.
     let boss = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -1514,17 +1508,14 @@ fn pocketed_cut_in_the_void_matches_occt() {
     .unwrap() else {
         unreachable!("extrude yields Extrude output");
     };
-    let OpOutput::PocketOnFace { solid, .. } = apply(
+    let solid = nacre_ops::fixtures::pocket(
         &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1], // top cap
-            profile: sq([[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
-            dist: 0.5,
-        },
+        faces[1],
+        sq([[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+        0.5,
     )
-    .unwrap() else {
-        unreachable!("pocket yields PocketOnFace output");
-    };
+    .unwrap()
+    .solid();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.4, 0.4, 0.6]),

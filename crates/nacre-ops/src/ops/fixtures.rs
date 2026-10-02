@@ -131,10 +131,10 @@ pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Handle<Solid> {
 }
 
 /// An axis-aligned box over the rectangle `xy_min .. xy_max`, standing on the plane `z` and
-/// reaching `height` along `+z` — or, for a negative `height`, hanging below the plane. The plane
-/// is a datum through `(0, 0, z)`; below it the frame's normal is `−z` (its `ŷ` turned, and the
-/// rectangle's `y` with it), so two boxes on one plane in opposite directions **share** it — one
-/// statement of `z`, which a stack needs and two heights summed in `f64` do not give.
+/// reaching `height` along `+z` — or, for a negative `height`, hanging below the plane (the
+/// extrude's negative distance). The plane is a datum through `(0, 0, z)`, so two boxes on one
+/// plane in opposite directions **share** it — one statement of `z`, which a stack needs and two
+/// heights summed in `f64` do not give.
 ///
 /// The extrude's `[floor cap, far cap, walls…]` order is the fixture's: `faces[0]` is the cap on
 /// the plane `z`, `faces[1]` the far one — for [`cuboid`] the bottom and the top. Asserted here,
@@ -152,11 +152,10 @@ pub fn cuboid_on(
         x1 > x0 && y1 > y0 && height != 0.0,
         "cuboid_on needs a rectangle and a nonzero height: {xy_min:?} .. {xy_max:?}, {height}"
     );
-    let s = if height < 0.0 { -1.0 } else { 1.0 };
     let plane = SketchPlane::from_axes(
         Point3::from_array([0.0, 0.0, z]),
         Vector3::from_array([1.0, 0.0, 0.0]),
-        Vector3::from_array([0.0, s, 0.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
     );
     let frame = match apply(
         m,
@@ -167,7 +166,7 @@ pub fn cuboid_on(
         Ok(OpOutput::DatumPlane { frame, .. }) => frame,
         other => panic!("stating the box's floor plane: {other:?}"),
     };
-    let p = |x: f64, y: f64| Point2::from_array([x, s * y]);
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
     let profile = Profile2d::polygon(vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)])
         .expect("a rectangle inside the decimal window");
     let (solid, faces) = match apply(
@@ -175,7 +174,7 @@ pub fn cuboid_on(
         &Operation::Extrude {
             frame,
             profile,
-            dist: height.abs(),
+            dist: height,
         },
     ) {
         Ok(OpOutput::Extrude { solid, faces }) => (solid, faces),
@@ -226,4 +225,176 @@ pub fn cuboid_on(
         .collect();
     assert_eq!(edges.len(), 12, "a box has twelve edges");
     solid
+}
+
+/// What a pad or pocket built: every solid the boolean left, and the tool's far cap — its plane,
+/// which way it faced, and its corners' mean — where the boss top or the pocket floor lies.
+#[derive(Clone, Debug)]
+pub struct Feature {
+    pub solids: Vec<Handle<Solid>>,
+    pub cap: Handle<Surface>,
+    cap_normal: Vector3,
+    cap_at: Point3,
+}
+
+/// Why [`pad`] or [`pocket`] built nothing.
+#[derive(Debug, PartialEq)]
+pub enum FeatureError {
+    /// The extrude or the boolean refused.
+    Op(OpError),
+    /// The pad's fuse came back in pieces: two one-shell solids do that only when they never
+    /// touched, so the footprint missed the face. The boolean answered right; the pad's premise
+    /// broke — and a test that places footprints through [`face_plane`] reads this as «the frame
+    /// it was told is not the one the tool was built in».
+    Missed,
+}
+
+/// A boss on a planar `face`, the way an application builds one: the face's sketch frame
+/// ([`face_sketch_frame`]), the profile extruded `dist` outward, and a `Fuse` with the face's solid
+/// first.
+pub fn pad(
+    m: &mut Model,
+    face: Handle<Face>,
+    profile: Profile2d,
+    dist: f64,
+) -> Result<Feature, FeatureError> {
+    feature(m, face, profile, dist, BoolKind::Fuse)
+}
+
+/// A pocket in a planar `face`: [`pad`]'s tool swept `dist` inward (a negative extrude in the same
+/// frame) and cut away. Deeper than the body cuts through.
+pub fn pocket(
+    m: &mut Model,
+    face: Handle<Face>,
+    profile: Profile2d,
+    dist: f64,
+) -> Result<Feature, FeatureError> {
+    feature(m, face, profile, -dist, BoolKind::Cut)
+}
+
+impl From<OpError> for FeatureError {
+    fn from(e: OpError) -> Self {
+        Self::Op(e)
+    }
+}
+
+fn feature(
+    m: &mut Model,
+    face: Handle<Face>,
+    profile: Profile2d,
+    dist: f64,
+    kind: BoolKind,
+) -> Result<Feature, FeatureError> {
+    let frame = face_sketch_frame(m, face).map_err(FeatureError::Op)?;
+    let body = *m
+        .live_solids()
+        .iter()
+        .find(|&&s| m.shell(m.solid(s).outer).faces.contains(&face))
+        .expect("face_sketch_frame found the face on a live solid's outer shell");
+    let (tool, faces) = match apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        },
+    )
+    .map_err(FeatureError::Op)?
+    {
+        OpOutput::Extrude { solid, faces } => (solid, faces),
+        other => unreachable!("an extrude answered {other:?}"),
+    };
+    let cap = m.face(faces[1]).surface;
+    let (cap_normal, cap_at) = facing_and_mean(m, faces[1]);
+    let solids = match apply(
+        m,
+        &Operation::Boolean {
+            kind,
+            a: body,
+            b: tool,
+        },
+    )
+    .map_err(FeatureError::Op)?
+    {
+        OpOutput::Boolean { solids } => solids,
+        other => unreachable!("a boolean answered {other:?}"),
+    };
+    if matches!(kind, BoolKind::Fuse) && solids.len() > 1 {
+        return Err(FeatureError::Missed);
+    }
+    Ok(Feature {
+        solids,
+        cap,
+        cap_normal,
+        cap_at,
+    })
+}
+
+/// A planar face's outward unit normal and its outer corners' mean, from the caches — a test's
+/// way of pointing at a face, not a judgment.
+fn facing_and_mean(m: &Model, f: Handle<Face>) -> (Vector3, Point3) {
+    let face = m.face(f);
+    let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+        panic!("a feature's cap is planar")
+    };
+    let pts: Vec<[f64; 3]> = face
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| m.vertex_point(m.he_start(he)).as_array())
+        .collect();
+    let n = pts.len() as f64;
+    let mean = std::array::from_fn(|k| pts.iter().map(|p| p[k]).sum::<f64>() / n);
+    (
+        pl.normal() * f64::from(face.orientation.sign()),
+        Point3::from_array(mean),
+    )
+}
+
+impl Feature {
+    /// The one solid the feature left. Panics when it left none or several — a test that expects
+    /// a severing cut reads [`Feature::solids`].
+    pub fn solid(&self) -> Handle<Solid> {
+        match self.solids.as_slice() {
+            [s] => *s,
+            other => panic!("the feature left {} solids, not one", other.len()),
+        }
+    }
+
+    /// The result face where the tool's far cap went — the boss top or the pocket floor — picked
+    /// the way a test picks a face: on the cap's plane, facing the cap's way, nearest the cap's
+    /// corners' mean. **A selection, not a judgment.** "On the cap's plane" is the cap's handle
+    /// *or* the cap's plane read off the caches, because a result face carries its plane class's
+    /// representative: where the body already held that plane under another handle (a frame-node
+    /// statement on a tilted face), the cap survives on that one. Two caps on one plane (two
+    /// bosses of one height) are told apart by where they stand. Panics when nothing qualifies.
+    pub fn cap_face(&self, m: &Model) -> Handle<Face> {
+        let planar = |f: Handle<Face>| {
+            matches!(
+                m.surface_cache(m.face(f).surface),
+                nacre_geom::Surface::Plane(_)
+            )
+        };
+        let near = |f: Handle<Face>| -> Option<f64> {
+            let (n, at) = facing_and_mean(m, f);
+            let off = (self.cap_at - at).dot(self.cap_normal).abs();
+            let on = m.face(f).surface == self.cap
+                || (n.dot(self.cap_normal) > 1.0 - 1e-9 && off < 1e-9);
+            on.then(|| (at - self.cap_at).norm())
+        };
+        self.solids
+            .iter()
+            .flat_map(|&s| {
+                let solid = m.solid(s);
+                std::iter::once(solid.outer)
+                    .chain(solid.cavities.iter().copied())
+                    .flat_map(|sh| m.shell(sh).faces.iter().copied())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|&f| planar(f))
+            .filter_map(|f| near(f).map(|d| (f, d)))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(f, _)| f)
+            .expect("a result face where the tool's far cap went")
+    }
 }

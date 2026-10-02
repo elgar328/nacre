@@ -50,17 +50,9 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
     };
     for dist in [1.1, 6.6] {
         let face = top(&m, solid);
-        let OpOutput::PadOnFace { solid: out, .. } = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face,
-                profile: rect(),
-                dist,
-            },
-        )
-        .expect("pad") else {
-            unreachable!()
-        };
+        let out = crate::fixtures::pad(&mut m, face, rect(), dist)
+            .expect("pad")
+            .solid();
         m.rebuild_adjacency();
         solid = out;
     }
@@ -135,17 +127,9 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
         m.rebuild_adjacency();
         for &dist in dists {
             let face = top(&m, solid);
-            let OpOutput::PadOnFace { solid: out, .. } = apply(
-                &mut m,
-                &Operation::PadOnFace {
-                    face,
-                    profile: rect(),
-                    dist,
-                },
-            )
-            .expect("pad") else {
-                unreachable!()
-            };
+            let out = crate::fixtures::pad(&mut m, face, rect(), dist)
+                .expect("pad")
+                .solid();
             m.rebuild_adjacency();
             solid = out;
         }
@@ -437,17 +421,9 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
             p(cu + lo, cv + 0.5),
         ])
         .unwrap();
-        let OpOutput::PadOnFace { solid, top_face } = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: f,
-                profile,
-                dist: 7.7,
-            },
-        )
-        .expect("a boss on a tilted face keeps its cap") else {
-            unreachable!()
-        };
+        let feat = crate::fixtures::pad(&mut m, f, profile, 7.7)
+            .expect("a boss on a tilted face keeps its cap");
+        let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
         m.rebuild_adjacency();
         s = solid;
         caps.push(top_face);
@@ -531,17 +507,8 @@ fn a_slanted_walls_name_is_rational_and_its_reported_sketch_plane_is_not() {
 fn a_boss_on_a_slanted_wall_is_correct_today() {
     let (mut m, wall) = prism_with_a_slanted_wall();
     let profile = centred_on(&m, wall, 0.5);
-    let OpOutput::PadOnFace { solid, top_face } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: wall,
-            profile,
-            dist: 1.0,
-        },
-    )
-    .expect("pad") else {
-        unreachable!()
-    };
+    let feat = crate::fixtures::pad(&mut m, wall, profile, 1.0).expect("pad");
+    let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
     m.rebuild_adjacency();
     // Base prism 15 × 3 = 45, plus a 1 × 1 × 1 boss.
     let props = nacre_props::mass_props(&m, solid).unwrap();
@@ -568,17 +535,8 @@ fn a_boss_on_a_slanted_wall_is_correct_today() {
 fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
     let (mut m, wall) = prism_with_a_slanted_wall();
     let profile = centred_on(&m, wall, 0.5);
-    let OpOutput::PadOnFace { solid, top_face } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: wall,
-            profile,
-            dist: 1.0,
-        },
-    )
-    .expect("pad") else {
-        unreachable!()
-    };
+    let feat = crate::fixtures::pad(&mut m, wall, profile, 1.0).expect("pad");
+    let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
     m.rebuild_adjacency();
     // A side face of that boss: not the cap, not on the original wall's plane.
     let cap_n = nacre_props::face_props(&m, top_face)
@@ -598,17 +556,9 @@ fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
         })
         .expect("a boss side face");
     let profile = centred_on(&m, side, 0.2);
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: side,
-            profile,
-            dist: 0.5,
-        },
-    )
-    .expect("nested pad") else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pad(&mut m, side, profile, 0.5)
+        .expect("nested pad")
+        .solid();
     m.rebuild_adjacency();
     let props = nacre_props::mass_props(&m, solid).unwrap();
     // The nested boss is 0.4 × 0.4 × 0.5 = 0.08.
@@ -625,17 +575,9 @@ fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
 fn a_pocket_in_a_slanted_wall_is_correct_today() {
     let (mut m, wall) = prism_with_a_slanted_wall();
     let profile = centred_on(&m, wall, 0.5);
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: wall,
-            profile,
-            dist: 0.5,
-        },
-    )
-    .expect("pocket") else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pocket(&mut m, wall, profile, 0.5)
+        .expect("pocket")
+        .solid();
     m.rebuild_adjacency();
     let props = nacre_props::mass_props(&m, solid).unwrap();
     assert!(
@@ -728,17 +670,8 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
             p(cu + lo, cv + 0.5),
         ])
         .unwrap();
-        let OpOutput::PadOnFace { solid, top_face } = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: f,
-                profile,
-                dist: 7.7,
-            },
-        )
-        .expect("boss") else {
-            unreachable!()
-        };
+        let feat = crate::fixtures::pad(&mut m, f, profile, 7.7).expect("boss");
+        let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
         m.rebuild_adjacency();
         s = solid;
         let su = m.face(top_face).surface;
@@ -1048,17 +981,9 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
         })
         .expect("an nn-overflow wall — retune the fixture constants if this fails");
     let profile = centred_on(&m, wall, 0.3);
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: wall,
-            profile,
-            dist: 0.4,
-        },
-    )
-    .expect("S4: a pad on a wide-named wall must build") else {
-        unreachable!()
-    };
+    let solid = crate::fixtures::pad(&mut m, wall, profile, 0.4)
+        .expect("S4: a pad on a wide-named wall must build")
+        .solid();
     m.rebuild_adjacency();
     // The chain is cut: every face of the result states its exact points.
     let mut missing = 0;

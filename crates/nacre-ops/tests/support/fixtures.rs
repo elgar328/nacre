@@ -1039,11 +1039,9 @@ pub fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// A unit cube with a small blind pocket carved in its top.
 pub fn pocketed_cube() -> (Model, Handle<Solid>) {
     let (mut m, top) = cube_with_top();
-    let OpOutput::PocketOnFace { solid, .. } =
-        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
-    else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5)
+        .unwrap()
+        .solid();
     (m, solid)
 }
 
@@ -1053,11 +1051,9 @@ pub fn top_pocketed_cube() -> (Model, Handle<Solid>) {
     let OpOutput::Extrude { faces, .. } = apply(&mut m, &__op).unwrap() else {
         unreachable!()
     };
-    let OpOutput::PocketOnFace { solid, .. } =
-        apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap()
-    else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, faces[1], small_square(), 0.5)
+        .unwrap()
+        .solid();
     (m, solid)
 }
 

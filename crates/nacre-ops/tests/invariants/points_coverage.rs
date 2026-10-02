@@ -107,18 +107,9 @@ fn every_live_planar_face_records_its_points() {
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -1.0])
         })
         .expect("the cuboid top");
-    let out = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: top,
-            profile: square(1.0, 2.0),
-            dist: 0.5,
-        },
-    )
-    .expect("pad");
-    let OpOutput::PadOnFace { solid: padded, .. } = out else {
-        unreachable!()
-    };
+    let padded = nacre_ops::fixtures::pad(&mut m, top, square(1.0, 2.0), 0.5)
+        .expect("pad")
+        .solid();
     m.rebuild_adjacency();
     assert_all_planes_record_points(&m, "pad");
 

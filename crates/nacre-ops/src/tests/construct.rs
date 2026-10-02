@@ -106,37 +106,19 @@ fn square(lo: f64, hi: f64) -> crate::Profile2d {
 /// mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a 1×1×½ pocket.
 #[test]
 fn a_pad_on_a_mirrored_tilted_face_stands_up() {
-    use crate::{OpOutput, Operation, apply};
     let volume = |m: &nacre_topo::Model, s| nacre_props::mass_props(m, s).unwrap().volume;
     for mirror in [false, true] {
         for (pocket, want) in [(false, 9.0), (true, 7.5)] {
             let (mut m, _, face) = turned_cube_face(mirror);
             let profile = square(-0.5, 0.5);
             let out = if pocket {
-                apply(
-                    &mut m,
-                    &Operation::PocketOnFace {
-                        face,
-                        profile,
-                        dist: 0.5,
-                    },
-                )
+                crate::fixtures::pocket(&mut m, face, profile, 0.5)
             } else {
-                apply(
-                    &mut m,
-                    &Operation::PadOnFace {
-                        face,
-                        profile,
-                        dist: 1.0,
-                    },
-                )
+                crate::fixtures::pad(&mut m, face, profile, 1.0)
             };
-            let solid = match out
+            let solid = out
                 .unwrap_or_else(|e| panic!("mirror {mirror} pocket {pocket}: {e:?}"))
-            {
-                OpOutput::PadOnFace { solid, .. } | OpOutput::PocketOnFace { solid, .. } => solid,
-                other => panic!("{other:?}"),
-            };
+                .solid();
             m.rebuild_adjacency();
             assert!(
                 nacre_validate::validate(&m).is_empty(),

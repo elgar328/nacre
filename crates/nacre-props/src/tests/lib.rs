@@ -395,17 +395,9 @@ fn cube_then_pad(size: f64, hw: f64, dist: f64) -> MassProps {
         unreachable!()
     };
     let boss = centred_on_the_lid(size, hw);
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: boss,
-            dist,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pad(&mut m, faces[1], boss, dist)
+        .unwrap()
+        .solid();
     mass_props(&m, solid).unwrap()
 }
 
@@ -444,17 +436,9 @@ fn cube_then_pocket(size: f64, hw: f64, dist: f64) -> MassProps {
         unreachable!()
     };
     let pocket = centred_on_the_lid(size, hw);
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: pocket,
-            dist,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, faces[1], pocket, dist)
+        .unwrap()
+        .solid();
     mass_props(&m, solid).unwrap()
 }
 

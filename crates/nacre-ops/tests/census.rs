@@ -710,25 +710,33 @@ fn measure_census() {
             ])
             .unwrap();
             let inputs = operands(&m, solid, solid);
-            let op = if pad {
-                Operation::PadOnFace {
-                    face: wall,
+            // The feature as an application builds it — the wall's frame, the tool swept off it
+            // (into the wall for a pocket), the boolean with the wall's solid first. Written out
+            // here rather than through a shared fixture, so the corpus does not move with one.
+            let frame = nacre_ops::face_sketch_frame(&m, wall).expect("the wall's frame");
+            let Ok(OpOutput::Extrude { solid: tool, .. }) = apply(
+                &mut m,
+                &Operation::Extrude {
+                    frame,
                     profile,
-                    dist: 0.4,
-                }
-            } else {
-                Operation::PocketOnFace {
-                    face: wall,
-                    profile,
-                    dist: 0.4,
-                }
+                    dist: if pad { 0.4 } else { -0.4 },
+                },
+            ) else {
+                panic!("the wf tool must build")
             };
-            let out = match apply(&mut m, &op).expect("the wf feature must build (S4)") {
-                OpOutput::PadOnFace { solid, .. } | OpOutput::PocketOnFace { solid, .. } => solid,
-                _ => unreachable!(),
+            let kind = if pad { BoolKind::Fuse } else { BoolKind::Cut };
+            let Ok(OpOutput::Boolean { solids }) = apply(
+                &mut m,
+                &Operation::Boolean {
+                    kind,
+                    a: solid,
+                    b: tool,
+                },
+            ) else {
+                panic!("the wf feature must build")
             };
             m.rebuild_adjacency();
-            record(&format!("wf {kn}"), &m, &inputs, &Ok(vec![out]));
+            record(&format!("wf {kn}"), &m, &inputs, &Ok(solids));
         }
     }
 

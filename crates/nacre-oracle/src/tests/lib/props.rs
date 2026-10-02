@@ -723,17 +723,9 @@ fn pad_diff_occt() {
             .collect(),
     )
     .unwrap();
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut model,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: boss,
-            dist: 0.5,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pad(&mut model, faces[1], boss, 0.5)
+        .unwrap()
+        .solid();
 
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
@@ -788,17 +780,9 @@ fn pocket_diff_occt() {
             .collect(),
     )
     .unwrap();
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut model,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: pocket,
-            dist: 0.5,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut model, faces[1], pocket, 0.5)
+        .unwrap()
+        .solid();
 
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
@@ -816,9 +800,8 @@ fn pocket_diff_occt() {
     );
 }
 
-/// A pad whose footprint overhangs one face edge (a boss cantilever). This is the first time
-/// the `PadOnFace` pipe produces an overhang — it routes to the overhang Fuse sidecar. OCCT
-/// scores the cantilevered boss.
+/// A pad whose footprint overhangs one face edge (a boss cantilever): the tool reaches past the
+/// face, so the fuse meets an overhang. OCCT scores the cantilevered boss.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn overhang_pad_matches_occt() {
@@ -850,17 +833,9 @@ fn overhang_pad_matches_occt() {
             .collect(),
     )
     .unwrap();
-    let OpOutput::PadOnFace { solid, .. } = apply(
-        &mut model,
-        &Operation::PadOnFace {
-            face: faces[1],
-            profile: boss,
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pad(&mut model, faces[1], boss, 1.0)
+        .unwrap()
+        .solid();
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
     assert!(
@@ -871,9 +846,8 @@ fn overhang_pad_matches_occt() {
     );
 }
 
-/// A blind pocket whose footprint overhangs one face edge (an edge slot open to the side).
-/// First overhang through the `PocketOnFace` pipe - routes to the overhang Cut sidecar. OCCT
-/// scores the slotted solid.
+/// A blind pocket whose footprint overhangs one face edge (an edge slot open to the side): the
+/// tool reaches past the face, so the cut meets an overhang. OCCT scores the slotted solid.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn overhang_pocket_matches_occt() {
@@ -904,17 +878,9 @@ fn overhang_pocket_matches_occt() {
             .collect(),
     )
     .unwrap();
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut model,
-        &Operation::PocketOnFace {
-            face: faces[1],
-            profile: slot,
-            dist: 0.5,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut model, faces[1], slot, 0.5)
+        .unwrap()
+        .solid();
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
     assert!(

@@ -245,17 +245,9 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
         ]
     };
     let profile = Profile2d::with_holes(sq(1.0, 9.0), vec![sq(3.0, 7.0)]).unwrap();
-    let OpOutput::PocketOnFace { solid, .. } = apply(
-        &mut m,
-        &Operation::PocketOnFace {
-            face: top,
-            profile,
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!("PocketOnFace yields its own output")
-    };
+    let solid = nacre_ops::fixtures::pocket(&mut m, top, profile, 1.0)
+        .unwrap()
+        .solid();
     m.rebuild_adjacency();
 
     // The trench is (8² − 4²) = 48 in plan, 1 deep. A hole wound the wrong way would remove the
@@ -480,15 +472,10 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
     m.rebuild_adjacency();
     let top = *m.shell(m.solid(base).outer).faces.last().unwrap();
     assert!(matches!(
-        apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: top,
-                profile: touching,
-                dist: 1.0,
-            },
-        ),
-        Err(nacre_ops::OpError::ProfileRingsMeet { .. })
+        nacre_ops::fixtures::pad(&mut m, top, touching, 1.0),
+        Err(nacre_ops::fixtures::FeatureError::Op(
+            nacre_ops::OpError::ProfileRingsMeet { .. }
+        ))
     ));
 }
 

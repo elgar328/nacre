@@ -278,11 +278,8 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
         p2(1.0, 0.75),
     ])
     .unwrap();
-    let OpOutput::PadOnFace { solid, top_face } =
-        apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")
-    else {
-        unreachable!()
-    };
+    let boss = nacre_ops::fixtures::pad(&mut m, top, l_over, 1.0).expect("the cantilevered L pad");
+    let (solid, top_face) = (boss.solid(), boss.cap_face(&m));
     m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
