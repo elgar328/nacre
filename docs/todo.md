@@ -133,6 +133,10 @@
   같은 부류의 필렛 쪽: 판의 제 접선 벽 클래스에서 옆면의 끝은 `side = 0` 룰링 정거장인데, 다른 솔리드의 면이
   그 선 위에 세그먼트를 두면 접히지 않는다(`lateral_crossings` 의 `OnRuling` 경비, `RulingBoundNotYet` — census
   `slab wall 1.5`). 기록은 그 선을 할선만 진술한다고 적으므로, 접선 쪽의 제 정거장과 한 선으로 묶는 규칙이 없다.
+- **벽 면의 구멍만 지나는 접선을 먼 할선 면이 품는** 가족. 닿는 벽 면이 없어 접선 행은 없고, 할선과 다른 솔리드의
+  접선 클래스가 그 선을 공유 룰링으로 기록해 룰링 분할(`fold_onto_rulings`)이 자기 클래스를 가로지르는 조각을
+  만나 `RulingBoundNotYet` 으로 거절한다 — 모든 연산, 양 순서. 접선만 없앤 같은 배치는 빌드된다.
+  `a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today` 가 고정한다.
 
 ### 비스듬한 평면 × 원통 — `ObliqueCylinderCut`
 
@@ -259,20 +263,13 @@
 
 두 인자의 부호는 잠기지 않았다 — 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다(`design.md` 「감김과 방향」).
 
-### 접선 행이 참인 접촉을 말하지 않는 자리 — 거짓 `SelfTouchingResult`
+### 접선 행의 옆면 쪽은 근사다 — 거짓 `SelfTouchingResult`
 
-접선 판정(`assembly::self_touch::tangency_reject`)은 게이트의 행이 참인 접촉을 말한다고 믿는다. 행이 거짓일 수
-있는 자리 둘:
-
-- **벽 면의 구멍·홈**: 게이트는 벽 면의 바깥 루프만 읽는다(`face_clears_footprint`·`face_straddles_line`). 선이 면의
-  구멍이나 U자 홈을 지나도 행이 쓰이고, 결과의 한 몸통에 벽 클래스 면과 원통 면이 함께 있으면 거짓 거절이다(쐐기
-  모양; 렌즈와 건너편은 몸통이 하나일 때만). 결과에 원통 면이 없으면 무죄 —
-  `a_tangency_through_a_wall_faces_notch_touches_nothing`. 행을 쓸 때 벽 면에 안쪽 루프가 있는 경우는 스위트·census
-  에서 0. 그 선을 셋째 평면도 품으면 게이트의 `TangentLineInAnotherPlane` 도 같은 이유로 거짓 거절이다
-  (잰 인구 0).
-- **축 방향**: 벽 면이 비키는지는 옆면 **축 구간의 합**으로 묻고 행은 옆면 면마다 쓰므로, 한 곡면에 옆면 면이 둘이고
-  벽이 한쪽의 높이에서 다른 쪽의 각에 닿으면 그 행이 남는다(`Tangency` doc; 잰 인구 0). 두 피연산자가 다른 데서
-  이어져 몸통이 하나면 렌즈와 건너편에서도 거절한다.
+접선 판정(`assembly::self_touch::tangency_reject`)은 게이트의 행이 참인 접촉을 말한다고 믿는다. 벽 면 쪽은 그렇다
+— 행은 옆면 span 안에서 선에 닿는 벽 면에만 쓰이고 `runs_through` 는 구멍·홈까지 읽은 내부를 묻는다
+(`line_runs_through_face`). 옆면 쪽은 아직 근사다: 옆면 면의 `Footprint.span` 은 «넓지 좁지 않고»(사슬 림·홈 난
+옆면), `theta_holds_line` 은 옆면의 구멍을 못 본다(둘 다 그 doc 이 «conservative» 라 적는다). 선이 지나는 자리에
+옆면이 없는데 행이 남으면 판사는 거절 쪽으로 틀린다. 잰 인구 0.
 
 ### 혼합 프레임 정점은 reuse 가 답하지 못한다
 

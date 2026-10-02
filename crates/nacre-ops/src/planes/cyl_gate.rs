@@ -217,8 +217,9 @@ pub(crate) fn cylinder_gate(
                 // ★ **The classes holding a tangent line, asked once for the pair** — the rows
                 // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
                 // asked here, before any face is: the rows are written only for faces that fail
-                // to clear the footprint, and the footprint test is closed along the axis, so a
-                // face standing on a cap writes none — yet its line is the same line.
+                // to clear the footprint and touch the line within a lateral's span, so a face
+                // standing on a cap, or one the line passes through a hole of, writes none — yet
+                // its line is the same line.
                 let holders = if clearance == Orient::Zero {
                     let Some(h) = classes_holding_the_line(geom, c, &coeffs, &cyl.def) else {
                         return Err(reject(RejectReason::WitnessNotRational));
@@ -412,7 +413,7 @@ pub(crate) fn cylinder_gate(
     }
     for t in &mut tangencies {
         t.line_is_an_edge = t.line_in_another_plane
-            && !t.straddles
+            && !t.runs_through
             && cyls[t.cyl].shared.iter().any(|sr| {
                 (sr.line.0 == t.wall || sr.line.1 == t.wall)
                     && !sr.stated_by.contains(&t.wall)
@@ -641,11 +642,13 @@ fn wall_faces_clear(
 /// convict a result that does not touch itself (census `arcprofile slot fuse`, a slot fused with a
 /// box tangent to its half-circle end's circle on the missing side). So a row is written only for
 /// a lateral face whose angular extent holds the line ([`Footprint::theta_holds_line`], the
-/// predicate [`SharedRuling`] asks). The axis is not asked per face: the wall face is cleared
-/// against the union of the laterals' spans, so on a surface with two lateral faces — the lower
-/// holding a half turn, the upper the other half, the wall touching the lower's height on the
-/// upper's side — the upper's row survives. Measured 0 such rows; nothing can build that shape to
-/// lock it yet.
+/// predicate [`SharedRuling`] asks) — and only for a wall face that meets the line **within that
+/// lateral face's own span** ([`line_runs_through_face`]). A face that reaches the line only
+/// through a notch or a hole, or only above or below this lateral, touches nothing here and writes
+/// no row, as a face that clears the footprint writes none: the line is still recorded, class by
+/// class, for the shared rulings. So on a surface with two lateral faces — the lower holding a
+/// half turn, the upper the other half — a wall touching the lower's height on the upper's side
+/// writes no row for the upper (no built shape has two such faces yet).
 #[derive(Clone, Debug)]
 pub(crate) struct Tangency {
     /// The plane class the wall face lies on.
@@ -661,17 +664,22 @@ pub(crate) struct Tangency {
     /// `+1` material inside the cylinder (a boss), `-1` outside (a bore) — the lateral face's own
     /// [`CylFaceInfo::orient_sign`].
     pub(crate) cyl_orient: i8,
-    /// **The wall face has vertices on both sides of the tangent line** — so the contact is a
-    /// *segment*, not a corner grazing it at a point. A point tangency is a
-    /// valid solid, so without this the verdict would accuse a shape it cannot convict. ★ Needed
-    /// because [`nacre_exact::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`,
-    /// which its own doc calls *"merely conservative"* on an empty strip — and a tangent plane's
-    /// strip is exactly that, so "not clear of the strip" says nothing on its own here.
+    /// **The tangent line runs through the wall face's interior**, over positive length within the
+    /// lateral face's open span — so the contact is a *segment* the face crosses, not a corner
+    /// grazing the line at a point nor an edge the face ends on. A point tangency is a valid
+    /// solid, so without this the verdict would accuse a shape it cannot convict. ★ Needed because
+    /// [`nacre_exact::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`, which its own
+    /// doc calls *"merely conservative"* on an empty strip — and a tangent plane's strip is exactly
+    /// that, so "not clear of the strip" says nothing on its own here.
     ///
-    /// ★★ **The axis span is deliberately *not* part of this** — see [`face_straddles_line`]: it is
-    /// already guaranteed, and asking again with the open-interval reading throws away every corner
-    /// of a face flush with the cap planes (☑ measured on the frozen `bore-slab` shape).
-    pub(crate) straddles: bool,
+    /// ★★ **Interior, holes and span included** ([`line_runs_through_face`]). Corners on both
+    /// sides of the line say this only of a convex face without holes: a U-shaped face or one with
+    /// a hole has them while the line runs through the gap alone, and a face can cross the line
+    /// below the lateral and not beside it. Read as that, a row convicts `block − boss` of a pinch
+    /// where the boss stands in a wall's slot and cuts the material beside it (measured). The span is
+    /// open, and a face flush with the cap planes still has its interior inside it (the frozen
+    /// `bore-slab` shape).
+    pub(crate) runs_through: bool,
     /// **Another plane class holds this tangent line.** Such a plane is a *secant*: substituting
     /// `u = c·v` into `(u+r)² + v² = r²` gives `v·(v(1+c²) + 2cr) = 0`, so it meets the cylinder in
     /// this ruling *and* one more, runs within the radius, and is recorded as a crossing. The local
@@ -703,16 +711,17 @@ pub(crate) struct Tangency {
     /// judge, not this row's. The keyhole: the box's tangent wall and the wall through the axis
     /// share the box's vertical edge.
     ///
-    /// ★ **Only for a face that does not cross the line** (`!straddles`). Such an edge lies on the
-    /// line, but only over its own stretch: a face with vertices on both sides of the line can
-    /// run along it at that edge and through it elsewhere, and there the contact is inside the
-    /// face — no edge, no split lateral, the six regions unjudged. A face that ends on the line
-    /// touches it along its boundary alone. ☑ The one built member of that population, an L-shaped
+    /// ★ **Only for a face the line does not run through** (`!runs_through`). Such an edge lies on
+    /// the line, but only over its own stretch: a face can run along the line at that edge and
+    /// through it elsewhere on the lateral, and there the contact is inside the face — no edge, no
+    /// split lateral, the six regions unjudged. A face that ends on the line touches it along its
+    /// boundary alone — a hole's edge on the line is one (`a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure`). ☑ The one built member of that population, an L-shaped
     /// tangent face, is where this guard speaks: its row is no edge, so the gate refuses it
     /// (`TangentLineInAnotherPlane`, `a_tangent_face_across_its_edge_on_the_line_is_refused_today`).
     pub(crate) line_is_an_edge: bool,
-    /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
-    /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
+    /// The tangency point — `RejectWhere`'s doc asks for a witness that is actually there: the
+    /// middle of the first stretch where the line runs through the wall face, when that stretch has
+    /// rational ends, else the middle of the lateral face's own span.
     pub(crate) witness: Point3,
 }
 
@@ -845,7 +854,7 @@ fn tangency_rows(
         };
         // ★ **Same-solid pairs write no row**. A wall tangent to its own solid's
         // cylinder is that solid's smooth edge — a fillet — not a contact between operands. The
-        // judge would skip such a row anyway (`straddles` is false for a face that ends on the
+        // judge would skip such a row anyway (`runs_through` is false for a face that ends on the
         // line), but a row it could not decide would refuse the boolean by a name that is about
         // nothing. The same sentence the pair loop stands on: a valid solid's faces do not meet.
         if matches!(
@@ -878,8 +887,8 @@ fn tangency_rows(
             got
         };
         // ★★★★★ **A face this could not read is «unknown», not «innocent».** Folded to «did not
-        // clear», it would write a row carrying a `straddles` that was **never computed**, and
-        // `!straddles` acquits. So the row carries the face's own refusal and the gate raises it —
+        // clear», it would write a row carrying a `runs_through` that was **never computed**, and
+        // `!runs_through` acquits. So the row carries the face's own refusal and the gate raises it —
         // the same name [`wall_faces_clear`] raises for such a face when it stands before the first
         // face that fails to clear, so which name an unreadable face wears does not depend on the
         // order of the class's faces.
@@ -902,8 +911,6 @@ fn tangency_rows(
             .as_ref()
             .filter(|w| w.name.narrow() == Some(coeffs))
             .map(|w| -fi.orient_sign * w.sense.sign());
-        // A property of the wall face and the line, not of which lateral is paired with it.
-        let straddles = face_straddles_line(model, model.face(fh), coeffs, &o, &m, r2);
         for (cy_ix, cf) in &laterals {
             // The line must lie on this lateral **face**, not only on its surface: a half
             // cylinder's surface is tangent to a wall on the side the face does not have, and
@@ -919,10 +926,36 @@ fn tangency_rows(
                 }
                 continue;
             }
+            // ★★ **Per lateral, over that lateral's own span** — the wall face meets the line where
+            // *this* lateral face is, or the row says nothing. A face that touches the line nowhere
+            // there writes no row, as a face that clears the footprint writes none. Unread, it
+            // keeps the row and reads as a contact through the interior (`line_runs_through_face`).
+            let contact = base
+                .as_ref()
+                .zip(cf.footprint.span)
+                .and_then(|(b, span)| {
+                    line_runs_through_face(model, model.face(fh), coeffs, &o, &m, r2, b, span)
+                })
+                .unwrap_or(LineContact {
+                    touches: true,
+                    runs_through: true,
+                    inside_at: None,
+                });
+            if !contact.touches {
+                #[cfg(feature = "tangency-trace")]
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("TSKIP the wall face does not reach the line on the lateral");
+                }
+                continue;
+            }
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
-                let mid = span[0]
-                    .checked_add(span[1])?
-                    .checked_mul(nacre_exact::Rat::new(1, 2)?)?;
+                let mid = match contact.inside_at {
+                    Some(v) => v,
+                    None => span[0]
+                        .checked_add(span[1])?
+                        .checked_mul(nacre_exact::Rat::new(1, 2)?)?,
+                };
                 let mut p = [0.0f64; 3];
                 for j in 0..3 {
                     p[j] = b[j].checked_add(mid.checked_mul(m[j])?)?.to_f64();
@@ -942,7 +975,8 @@ fn tangency_rows(
             #[allow(clippy::print_stderr)]
             {
                 eprintln!(
-                    "TROW liap={line_in_another_plane} straddles={straddles} undecided={}",
+                    "TROW liap={line_in_another_plane} runs_through={} undecided={}",
+                    contact.runs_through,
                     undecided.is_some()
                 );
             }
@@ -953,7 +987,7 @@ fn tangency_rows(
                 cyl_solid: side_of(*cy_ix),
                 lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side,
                 cyl_orient: cf.orient_sign,
-                straddles,
+                runs_through: contact.runs_through,
                 line_in_another_plane,
                 undecided,
                 across: across.clone(),
@@ -971,57 +1005,332 @@ fn tangency_rows(
     out
 }
 
-/// **Does the face reach across the tangent line?** — the proof that the contact is a *segment*
-/// rather than a corner grazing the line at one point (a valid tangency).
-/// `StripSide::Plus`/`Minus` are the two sides of the zero-width strip a tangent plane cuts, and
-/// a face with a corner on each has the line running through its hull.
+/// **What the tangent line meets of one wall face, over one lateral face's axis span** — the
+/// answer [`line_runs_through_face`] gives when it could read the face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LineContact {
+    /// The closed face meets the open stretch of the line in positive length — through its
+    /// interior or along its boundary. Without this the face touches nothing a row could speak of.
+    touches: bool,
+    /// The line runs through the face's **interior** over positive length ([`Tangency::runs_through`]).
+    runs_through: bool,
+    /// An axis parameter inside a stretch where the line runs through the interior, when that
+    /// stretch has rational ends — the row's witness, which then sits on the contact.
+    inside_at: Option<nacre_exact::Rat>,
+}
+
+/// How one loop of the wall face meets the tangent line.
+enum LoopOnLine {
+    /// The loop's pieces all lie strictly on one side: its region meets the line nowhere.
+    Clear,
+    /// A disk the line crosses: its region on the line is the open chord between the two values.
+    Chord(nacre_exact::QuadVal, nacre_exact::QuadVal),
+    /// A polygon: the values where its steps cross the line, under each of the two half-open
+    /// readings — `[0]` counts a piece on the line as below it, `[1]` as above.
+    Crossings([Vec<nacre_exact::QuadVal>; 2]),
+}
+
+/// The order of two values that may carry different radicals — `None` is arithmetic that could
+/// not answer. ★ Same-radical arithmetic is [`nacre_exact::QuadVal`]'s contract (it
+/// `debug_assert`s on a mix), so two different radicals go through
+/// [`nacre_exact::biquad_sign`]; a perfect-square radical is folded to its rational first, since it
+/// otherwise looks like a radical of its own.
+fn cmp_quad(x: nacre_exact::QuadVal, y: nacre_exact::QuadVal) -> Option<core::cmp::Ordering> {
+    use nacre_exact::{Orient, QuadVal, Rat};
+    let zero = Rat::from_int(0);
+    let norm = |q: QuadVal| q.as_rat().map_or(q, QuadVal::from_rat);
+    let (x, y) = (norm(x), norm(y));
+    let sign = if x.b() == zero || y.b() == zero || x.c() == y.c() {
+        x.checked_sub(&y)?.sign()
+    } else {
+        nacre_exact::biquad_sign(
+            x.a().checked_sub(y.a())?,
+            x.b(),
+            zero.checked_sub(y.b())?,
+            zero,
+            x.c(),
+            y.c(),
+        )?
+    };
+    Some(match sign {
+        Orient::Positive => core::cmp::Ordering::Greater,
+        Orient::Negative => core::cmp::Ordering::Less,
+        Orient::Zero => core::cmp::Ordering::Equal,
+    })
+}
+
+/// **Where does the tangent line run through the wall face, over one lateral face's span?** —
+/// the proposition a row carries ([`Tangency::runs_through`]), and whether the face touches the
+/// line there at all.
 ///
-/// ★ **The axis overlap needs no test here** — the caller only asks this of a face that already
-/// failed [`face_clears_footprint`], and that function returns `false` exactly when the face
-/// clears *neither* axis: not across the strip **and**, for every lateral span, not wholly at or
-/// below its start nor wholly at or above its end. The second half is the overlap, already proved.
-/// Re-testing it with [`Corner::reaches`] would be worse than redundant: the span is read **open**
-/// (`planes`'s own note), so a face whose corners sit exactly on the cap planes — a slab cut
-/// flush with a bore's own height, the frozen `bore-slab` shape — would have every corner dropped
-/// and the straddle read as absent. ☑ Measured: that is exactly what happened.
-fn face_straddles_line(
+/// The line is `foot + v·m` (`foot` is the perpendicular foot from the axis origin, so `v` is the
+/// axis parameter itself — the scale the span is in), and the question is about the **open**
+/// stretch `span[0] < v < span[1]`: the lateral face is there and nowhere else along the line.
+///
+/// ★★★ **It is point-in-polygon with the line itself as the ray.** Every loop — the outer and
+/// every hole — is read through [`corner_of`], and a step whose ends lie on opposite sides of the
+/// line crosses it once; the parity of the crossings below a point says whether the point is in
+/// that loop's region, and the face's region is inside the outer and outside every hole. The
+/// crossing rule is [`nacre_geom::intersect::ray_straddle`]'s, the one half-open rule the ring
+/// walks read: a piece *on* the line is «not above». Asked twice — once as is, once with the
+/// sides swapped — it reads the face along the line pushed off to either side, and a stretch is
+/// **interior** exactly when both readings put it inside: a face that ends on the line along an
+/// edge, or meets it at one corner, is inside on one side only. The arrangement's own sweep
+/// (`trace_transversal_face`) answers the same kind of question, but `planes` sits below the
+/// engine, and that sweep's line is a meet of two classes, which this one is not.
+///
+/// ★★ **The crossing is placed from one end of the step and the step's direction** — the edge's
+/// two ends when both are rational, else its carrier pair (`Edge::surfaces`): a plane neighbour's
+/// meet with the wall, a cylinder neighbour's ruling. That is linear in the end's coordinates, so
+/// a pierce corner's value keeps its own one radical.
+///
+/// `None` is «could not read the face»: a step whose crossing could not be placed, an arc in a
+/// loop the line reaches, an outer piece [`corner_of`] cannot spell. The caller reads that as a
+/// contact through the interior — the answer the outer loop's two sides gave before this read
+/// holes and spans, never a silent acquittal. A **hole** that cannot be read is left out
+/// instead: the face only grows, so the answer can only lean towards a contact.
+#[allow(clippy::too_many_arguments)]
+fn line_runs_through_face(
     model: &Model,
     face: &Face,
     coeffs: &[nacre_exact::Rat; 4],
     o: &[nacre_exact::Rat; 3],
     m: &[nacre_exact::Rat; 3],
     r2: &nacre_exact::BigRat,
-) -> bool {
-    use nacre_exact::StripSide;
-    let (mut plus, mut minus) = (false, false);
-    for he in &face.outer.half_edges {
-        // ★ **The same reader the clearance road uses.** This used to take rational vertices and
-        // skip everything else, so a face ringed by tangent corners straddled nothing as far as
-        // this could tell — and «does not straddle» acquits. A piece it still cannot read is not
-        // a silent acquittal either: such a face fails the clearance call as well, and its row is
-        // marked undecided there.
-        let Ok(corner) = corner_of(model, face, he) else {
-            continue;
-        };
-        if !corner.on_plane(coeffs) {
-            continue;
+    foot: &[nacre_exact::Rat; 3],
+    span: [nacre_exact::Rat; 2],
+) -> Option<LineContact> {
+    use super::corners::Corner;
+    use core::cmp::Ordering;
+    use nacre_exact::{Orient, QuadVal, Rat, StripSide, cross3_rat, dot3_rat};
+    let zero = Rat::from_int(0);
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    // `w` is the direction across the line in the wall's plane; `StripSide::Plus` is its side.
+    let w = cross3_rat(&n, m)?;
+    let mm = dot3_rat(m, m)?;
+    let inv_mm = Rat::new(mm.denom(), mm.numer())?;
+    // A point's `(u, v)`: its offset across the line along `w`, and its axis parameter.
+    let uv = |base: &[Rat; 3], dir: &[Rat; 3], s: QuadVal| -> Option<(QuadVal, QuadVal)> {
+        let mut rel = [zero; 3];
+        for k in 0..3 {
+            rel[k] = base[k].checked_sub(foot[k])?;
         }
-        match corner.strip_side(coeffs, o, m, r2) {
-            StripSide::Plus => plus = true,
-            StripSide::Minus => minus = true,
-            // A corner sitting *on* the line spans nothing, and neither does a piece that reaches
-            // the strip without crossing out the far side.
-            StripSide::Inside => {}
-            // ★ **A piece with width can be the whole straddle by itself.** Two corners on
-            // opposite sides is one way for the line to run through the face; a single piece whose
-            // interior lies on both sides is the other, and it is the same fact.
-            StripSide::Crosses => {
-                plus = true;
-                minus = true;
+        let along = |e: &[Rat; 3], scale: Rat| -> Option<QuadVal> {
+            QuadVal::from_rat(dot3_rat(&rel, e)?.checked_mul(scale)?)
+                .checked_add(&s.checked_mul_rat(dot3_rat(dir, e)?.checked_mul(scale)?)?)
+        };
+        Some((along(&w, Rat::from_int(1))?, along(m, inv_mm)?))
+    };
+    let point_uv = |c: &Corner| -> Option<(QuadVal, QuadVal)> {
+        match c {
+            Corner::Rational(p) => uv(p.narrow()?, &[zero; 3], QuadVal::from_rat(zero)),
+            Corner::Pierce(line, s) => uv(&line.base(), &line.dir(), *s),
+            Corner::Round { .. } => None,
+        }
+    };
+    // The direction of the straight edge `he`, `a → b` being its two ends' pieces.
+    let step_dir = |he: &nacre_topo::HalfEdge, a: &Corner, b: &Corner| -> Option<[Rat; 3]> {
+        if let (Corner::Rational(pa), Corner::Rational(pb)) = (a, b)
+            && let (Some(pa), Some(pb)) = (pa.narrow(), pb.narrow())
+        {
+            let mut d = [zero; 3];
+            for k in 0..3 {
+                d[k] = pb[k].checked_sub(pa[k])?;
+            }
+            return Some(d);
+        }
+        let [s0, s1] = model.edge(he.edge).surfaces;
+        let other = match (s0 == face.surface, s1 == face.surface) {
+            (true, false) => s1,
+            (false, true) => s0,
+            _ => return None,
+        };
+        match model.surface(other) {
+            nacre_topo::Surface::Plane { .. } => {
+                let q = model.world_plane_name(other)?.narrow().copied()?;
+                cross3_rat(&n, &[q[0], q[1], q[2]])
+            }
+            nacre_topo::Surface::Cylinder { .. } => Some(model.world_cylinder_def(other)?.dir()),
+        }
+    };
+    // Each loop's meeting with the line; `Err` is a loop that could not be read.
+    let read_loop = |lp: &nacre_topo::Loop| -> Result<LoopOnLine, ()> {
+        let pieces: Vec<Corner> = lp
+            .half_edges
+            .iter()
+            .map(|he| corner_of(model, face, lp, he).map_err(|_| ()))
+            .collect::<Result<_, ()>>()?;
+        let sides: Vec<StripSide> = pieces
+            .iter()
+            .map(|c| c.strip_side(coeffs, o, m, r2))
+            .collect();
+        if sides.iter().all(|s| *s == StripSide::Plus)
+            || sides.iter().all(|s| *s == StripSide::Minus)
+        {
+            return Ok(LoopOnLine::Clear);
+        }
+        if let [
+            Corner::Round {
+                centre,
+                rho2,
+                arc: None,
+                ..
+            },
+        ] = pieces.as_slice()
+        {
+            if sides[0] != StripSide::Crosses {
+                // On the line at one point, or nowhere: no positive length either way.
+                return Ok(LoopOnLine::Clear);
+            }
+            // The chord: centre `c`, half-length `h` in the axis scale, `h² = (ρ² − d²)/(m·m)`
+            // with `d² = u_c²/(w·w)`.
+            let chord = (|| {
+                let (u, v) = uv(centre, &[zero; 3], QuadVal::from_rat(zero))?;
+                let (u, v) = (u.as_rat()?, v.as_rat()?);
+                let ww = dot3_rat(&w, &w)?;
+                let d2 = u
+                    .checked_mul(u)?
+                    .checked_mul(Rat::new(ww.denom(), ww.numer())?)?;
+                let h2 = rho2.narrow()?.checked_sub(d2)?.checked_mul(inv_mm)?;
+                Some(LoopOnLine::Chord(
+                    QuadVal::new(v, Rat::from_int(-1), h2)?,
+                    QuadVal::new(v, Rat::from_int(1), h2)?,
+                ))
+            })();
+            return chord.ok_or(());
+        }
+        if pieces.iter().any(|c| matches!(c, Corner::Round { .. })) {
+            return Err(()); // an arc in a loop the line reaches: no crossing value for it here
+        }
+        let k = pieces.len();
+        let mut out: [Vec<QuadVal>; 2] = [Vec::new(), Vec::new()];
+        for i in 0..k {
+            let (a, b) = (&pieces[i], &pieces[(i + 1) % k]);
+            let (sa, sb) = (sides[i], sides[(i + 1) % k]);
+            let orient = |s: StripSide, flip: bool| match (s, flip) {
+                (StripSide::Plus, false) | (StripSide::Minus, true) => Orient::Positive,
+                (StripSide::Minus, false) | (StripSide::Plus, true) => Orient::Negative,
+                _ => Orient::Zero,
+            };
+            let crosses: [bool; 2] = core::array::from_fn(|r| {
+                nacre_geom::intersect::ray_straddle(orient(sa, r == 1), orient(sb, r == 1))
+                    .is_some()
+            });
+            if !crosses[0] && !crosses[1] {
+                continue;
+            }
+            // Where the step meets `u = 0`: from an end `(u, v)` along `d`, `v − u·(d·m)/((d·w)(m·m))`.
+            let value = (|| {
+                let d = step_dir(&lp.half_edges[i], a, b)?;
+                let dw = dot3_rat(&d, &w)?;
+                if dw == zero {
+                    return None;
+                }
+                let kk = dot3_rat(&d, m)?
+                    .checked_mul(Rat::new(dw.denom(), dw.numer())?)?
+                    .checked_mul(inv_mm)?;
+                let (u, v) = point_uv(a).or_else(|| point_uv(b))?;
+                v.checked_sub(&u.checked_mul_rat(kk)?)
+            })()
+            .ok_or(())?;
+            for r in 0..2 {
+                if crosses[r] {
+                    out[r].push(value);
+                }
             }
         }
+        Ok(LoopOnLine::Crossings(out))
+    };
+    let outer = read_loop(&face.outer).ok()?;
+    if matches!(outer, LoopOnLine::Clear) {
+        return Some(LineContact {
+            touches: false,
+            runs_through: false,
+            inside_at: None,
+        });
     }
-    plus && minus
+    // A hole that cannot be read is left out: the face only grows.
+    let holes: Vec<LoopOnLine> = face
+        .inner
+        .iter()
+        .filter_map(|lp| read_loop(lp).ok())
+        .collect();
+    // The breakpoints along the line, in order: every crossing and chord end, and the span's ends.
+    let mut points: Vec<QuadVal> = vec![QuadVal::from_rat(span[0]), QuadVal::from_rat(span[1])];
+    for l in core::iter::once(&outer).chain(holes.iter()) {
+        match l {
+            LoopOnLine::Clear => {}
+            LoopOnLine::Chord(lo, hi) => points.extend([*lo, *hi]),
+            LoopOnLine::Crossings(c) => points.extend(c[0].iter().chain(c[1].iter()).copied()),
+        }
+    }
+    let mut sorted: Vec<QuadVal> = Vec::with_capacity(points.len());
+    for p in points {
+        let mut at = sorted.len();
+        for (i, q) in sorted.iter().enumerate() {
+            match cmp_quad(p, *q)? {
+                Ordering::Equal => {
+                    at = usize::MAX;
+                    break;
+                }
+                Ordering::Less => {
+                    at = i;
+                    break;
+                }
+                Ordering::Greater => {}
+            }
+        }
+        if at != usize::MAX {
+            sorted.insert(at, p);
+        }
+    }
+    // Is the gap just above `lo` inside the loop's region, under reading `r`?
+    let inside = |l: &LoopOnLine, lo: QuadVal, hi: QuadVal, r: usize| -> Option<bool> {
+        Some(match l {
+            LoopOnLine::Clear => false,
+            LoopOnLine::Chord(a, b) => {
+                cmp_quad(*a, lo)? != Ordering::Greater && cmp_quad(hi, *b)? != Ordering::Greater
+            }
+            LoopOnLine::Crossings(c) => {
+                let mut below = 0usize;
+                for x in &c[r] {
+                    if cmp_quad(*x, lo)? != Ordering::Greater {
+                        below += 1;
+                    }
+                }
+                below % 2 == 1
+            }
+        })
+    };
+    let (s0, s1) = (QuadVal::from_rat(span[0]), QuadVal::from_rat(span[1]));
+    let mut out = LineContact {
+        touches: false,
+        runs_through: false,
+        inside_at: None,
+    };
+    for pair in sorted.windows(2) {
+        let (lo, hi) = (pair[0], pair[1]);
+        if cmp_quad(lo, s0)? == Ordering::Less || cmp_quad(hi, s1)? == Ordering::Greater {
+            continue;
+        }
+        let mut reading = [false; 2];
+        for (r, slot) in reading.iter_mut().enumerate() {
+            let mut inn = inside(&outer, lo, hi, r)?;
+            for h in &holes {
+                inn = inn && !inside(h, lo, hi, r)?;
+            }
+            *slot = inn;
+        }
+        out.touches |= reading[0] || reading[1];
+        if reading[0] && reading[1] && !out.runs_through {
+            out.runs_through = true;
+            out.inside_at = lo
+                .as_rat()
+                .zip(hi.as_rat())
+                .and_then(|(a, b)| a.checked_add(b)?.checked_mul(Rat::new(1, 2)?));
+        }
+    }
+    Some(out)
 }
 
 /// The axis-parameter spans this cylinder's lateral faces occupy — one per face, in the scale

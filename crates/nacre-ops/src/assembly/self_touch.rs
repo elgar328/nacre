@@ -93,8 +93,8 @@ pub(crate) fn pinch(
 /// What makes it a defect is the two lumps landing in **one** body — and the [`Pinch`] says how to
 /// read that:
 ///
-/// - **The wedges** are both bounded by the one wall face that crosses the line (`straddles`, this
-///   verdict's premise), and a tangency splits no face — it mints no vertex and no edge — so that
+/// - **The wedges** are both bounded by the one wall face the line runs through (`runs_through`,
+///   this verdict's premise), and a tangency splits no face — it mints no vertex and no edge — so that
 ///   face ties them into one component of the result. A statement about the engine's result, not
 ///   the geometry: two pieces touching along two lines still share the face.
 /// - **The lens and the far side** arise only where `keep` keeps both, which is the union of a boss
@@ -109,35 +109,25 @@ pub(crate) fn pinch(
 ///   kernel sees. (Bodies are face components joined across edges two faces use — where that
 ///   differs from the material, at an edge four faces use, another guard refuses first.)
 ///
-/// ★ **A body holding a face on the wall's class and one on the cylinder's is kept as a further
-/// condition, on both shapes** — not because the shapes need it but because a row need not state a
-/// real contact: the gate reads a wall face's **outer** loop alone (`face_clears_footprint`,
-/// `face_straddles_line`), so a line through the face's hole or notch writes a row where nothing
-/// touches, and a result with no cylinder face beside that wall then clears it. The class reading
-/// alone was the verdict once, and it convicted the lens and the far side of two bodies whenever one
-/// of them had a face anywhere on the wall's plane.
+/// ★ **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
+/// real contact: the gate writes one only for a wall face that touches the line within the
+/// lateral face's span, and `runs_through` says the line crosses that face's interior there
+/// (holes and gaps read, `planes::cylinder_gate`'s `line_runs_through_face`). The wedges then lie
+/// against that face and the lateral in one body, and the lens and the far side are in one body
+/// exactly when the result is one. Asking whether a body holds a face on the wall's class and one
+/// on the cylinder's is not the rule: read alone, it convicted the lens and the far side of two
+/// bodies whenever one of them had a face anywhere on the wall's plane.
 ///
 /// ★ **Every row here is one this verdict can read.** A row that could not be stated, or whose line
 /// a third plane holds other than as an edge (six regions, not three), was refused by the gate
 /// before anything was arranged (`planes::cylinder_gate`); what reaches here is stated, and its
 /// line is held by no other plane or is such an edge.
-pub(super) fn tangency_reject(
-    tg: &Tangencies<'_>,
-    faces: &[LocalFace],
-    g: &Grouping,
-) -> Result<(), BoolError> {
-    use crate::planes::ClassIx;
-    if tg.rows.is_empty() {
-        return Ok(());
-    }
-    // The classes each *solid* carries — a solid is a material component plus its cavities. Built
-    // once, and only if a row gets that far.
-    let mut bodies: Option<Vec<Vec<ClassIx>>> = None;
+pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), BoolError> {
     for t in tg.rows {
         // ★ The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
         // on an edge four faces use, and the shell guard names that — this row has nothing to
         // add, and the six regions around a line in a third plane are not its to judge. Said here
-        // rather than left to the `!straddles` acquittal below, which such a row also meets: that
+        // rather than left to the `!runs_through` acquittal below, which such a row also meets: that
         // is the gate's premise, and this verdict does not lean on it.
         if t.line_is_an_edge {
             continue;
@@ -147,31 +137,13 @@ pub(super) fn tangency_reject(
         let Some(shape) = pinch(tg.kind, t.wall_solid, t.lens_in_wall_solid, t.cyl_orient) else {
             continue;
         };
-        if !t.straddles {
+        if !t.runs_through {
             continue;
         }
-        let bodies = bodies.get_or_insert_with(|| {
-            g.positives
-                .iter()
-                .map(|m| {
-                    let comps = &g.comps_of[m];
-                    faces
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| comps.contains(&g.labels[*i]))
-                        .map(|(_, lf)| lf.surf)
-                        .collect()
-                })
-                .collect()
-        });
-        let classes_together = bodies
-            .iter()
-            .any(|cls| cls.contains(&ClassIx::Plane(t.wall)) && cls.contains(&ClassIx::Cyl(t.cyl)));
-        let together = classes_together
-            && match shape {
-                Pinch::Wedges => true,
-                Pinch::LensAndFar => g.positives.len() == 1,
-            };
+        let together = match shape {
+            Pinch::Wedges => true,
+            Pinch::LensAndFar => g.positives.len() == 1,
+        };
         if together {
             return Err(crate::reject_at(
                 RejectReason::SelfTouchingResult,

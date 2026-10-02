@@ -274,7 +274,7 @@ fn the_tangent_wall_states_itself_exactly() {
     assert_eq!(t.cyl_orient, 1, "{t:?}");
     // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
     // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
-    assert!(t.straddles, "{t:?}");
+    assert!(t.runs_through, "{t:?}");
     assert!(!t.line_in_another_plane, "{t:?}");
     assert!(t.undecided.is_none(), "{t:?}");
     // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
@@ -382,4 +382,55 @@ fn a_tangency_row_is_written_only_where_the_lateral_face_is() {
         }
         other => panic!("the end ruling's row is refused at the gate: {other:?}"),
     }
+}
+
+/// **The same U face, read over two spans.** The block `[0, 6] × [−3, 3] × [0, 2]` with the slot
+/// `y ∈ [−2, 2]`, `z ∈ [1, 3]` has a U-shaped face on `x = 0`, and a boss of radius `5/2` with
+/// its axis at `(5/2, 0)` is tangent to that plane along `(0, 0)`. The face crosses the line
+/// where `z ∈ [0, 1]` and nowhere above — the U's gap:
+///
+/// - the boss over `z ∈ [6/5, 9/5]` meets the line only in the gap, so the face touches nothing
+///   on the lateral and writes no row (its corners lie on both sides of the line all the same);
+/// - the boss over `z ∈ [1/2, 9/5]` meets it where the face is, `z ∈ (1/2, 1)`: one row, the line
+///   through the face's interior, its witness the middle of that stretch, `z = 3/4`.
+#[test]
+fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
+    let rows = |z0: f64, h: f64| {
+        let mut m = Model::new();
+        let block = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0, -3.0, 0.0]),
+            Point3::from_array([6.0, 3.0, 2.0]),
+        );
+        let slot = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-1.0, -2.0, 1.0]),
+            Point3::from_array([7.0, 2.0, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let a = crate::boolean(&mut m, crate::BoolKind::Cut, block, slot).expect("the slot")[0];
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([2.5, 0.0, z0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            nacre_math::Vector3::from_array([0.0, -1.0, 0.0]),
+            2.5,
+            h,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        crate::arrangement::plane_index_setup(&m, a, b)
+            .expect("the gate passes")
+            .tangencies
+    };
+    let in_the_gap = rows(1.2, 0.6);
+    assert!(in_the_gap.is_empty(), "{in_the_gap:?}");
+    let across = rows(0.5, 1.3);
+    assert_eq!(across.len(), 1, "{across:?}");
+    assert!(across[0].runs_through, "{across:?}");
+    let w = across[0].witness.as_array();
+    assert!(
+        w[0].abs() < 1e-12 && w[1].abs() < 1e-12 && (w[2] - 0.75).abs() < 1e-12,
+        "the witness sits on the contact: {w:?}"
+    );
 }

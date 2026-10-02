@@ -41,7 +41,7 @@ pub(crate) fn reconstruct(
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
     // question "do these two lumps share a solid" is only askable of a grouping that answered.
     if let Ok(g) = &grouping {
-        tangency_reject(&tangencies, faces, g)?;
+        tangency_reject(&tangencies, g)?;
     }
 
     // Vertices (deterministic: first appearance across faces in order).

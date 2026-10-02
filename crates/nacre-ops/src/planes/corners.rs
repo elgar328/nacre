@@ -285,26 +285,30 @@ pub(super) fn world_cylinder(
 
 /// **One boundary piece of a face, in whichever exact spelling it has — the single reader.**
 ///
-/// ★★★★★ **One reader for both roads.** `face_clears_footprint` and `face_straddles_line` both
-/// read a face's corners here, where motion chains fold and `Pierce` corners solve. A second
-/// reader that took rational vertices and *skipped* everything else would read a face ringed by
-/// tangent corners from nothing and answer «does not straddle», which acquits.
+/// ★★★★★ **One reader for both roads.** `face_clears_footprint` and the tangency road's
+/// `line_runs_through_face` both read a face's corners here, where motion chains fold and `Pierce`
+/// corners solve. A second reader that took rational vertices and *skipped* everything else
+/// would read a face ringed by tangent corners from nothing and answer «does not reach the
+/// line», which acquits.
 ///
-/// ★★ **A whole disk is a piece too.** A face whose outer loop is a single circle carried by a
-/// cylinder perpendicular to its plane *is* that disk, and its reach along any direction is
-/// `centre ± ρ`. A straight-edge demand is not needed: «all vertices on one side» would be
-/// satisfied by a single point and would pass a disk that crosses the strip, but the piece
-/// answers for its own extent instead of for one point of it.
+/// ★★ **A whole disk is a piece too.** A loop that is a single circle carried by a cylinder
+/// perpendicular to the face's plane *is* that disk — the face itself when it is the outer loop, a
+/// bore through the face when it is a hole — and its reach along any direction is `centre ± ρ`.
+/// A straight-edge demand is not needed: «all vertices on one side» would be satisfied by a single
+/// point and would pass a disk that crosses the strip, but the piece answers for its own extent
+/// instead of for one point of it. `lp` is the loop `he` belongs to, because «a single circle» is
+/// a fact about that loop and not about the face.
 pub(super) fn corner_of(
     model: &Model,
     face: &Face,
+    lp: &nacre_topo::Loop,
     he: &nacre_topo::HalfEdge,
 ) -> Result<Corner, CornerFail> {
     match model.edge_curve(he.edge) {
         nacre_geom::Curve::Line(_) => {}
-        // A single circular edge is the whole boundary, so the face is a disk — anything else
+        // A single circular edge is the whole loop, so the loop is a disk — anything else
         // curved bulges past a hull this road cannot state.
-        nacre_geom::Curve::Circle(_) if face.outer.half_edges.len() == 1 => {
+        nacre_geom::Curve::Circle(_) if lp.half_edges.len() == 1 => {
             return disk_of(model, face, he);
         }
         // ★★★★★ **An arc is a piece too**. A loop that mixes lines and arcs — a filleted
@@ -350,7 +354,7 @@ pub(super) fn corner_of(
     }
 }
 
-/// **One arc of a face's outer loop, as the round piece it is**.
+/// **One arc of a face's loop, as the round piece it is**.
 ///
 /// Centre, radius and axis are [`disk_of`]'s — the same derivation a whole circle takes — and the
 /// extent is the arc's two ends as **radial vectors**, which is the vocabulary [`RimArc`] and
@@ -653,7 +657,7 @@ pub(super) fn face_clears_footprint(
         // ★★★★ **The piece's description is chosen once, in one reader** — the three questions
         // below then ask it the same things whichever spelling it wears, and the straddle road
         // reads it the very same way.
-        let corner = corner_of(model, face, he)
+        let corner = corner_of(model, face, &face.outer, he)
             .map_err(|e| e.stated_reason().map_or_else(unreadable, reject))?; // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions

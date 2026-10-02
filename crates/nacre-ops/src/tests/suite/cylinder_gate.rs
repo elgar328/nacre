@@ -344,10 +344,10 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// yet.**
 ///
 /// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
-/// disk **containing** the tangent line. The gate writes the tangency row (measured: `straddles`
-/// comes back **true**, and since that wall face is one disk the only way both sides get a vote is
-/// [`nacre_exact::StripSide::Crosses`] — the fold this cell added), and then the cylinder-pair
-/// rule speaks first and the operation stops.
+/// disk **containing** the tangent line. The gate writes the tangency row (measured:
+/// `runs_through` comes back **true** — that wall face is one disk, and the line runs through it
+/// along the disk's open chord, which only [`nacre_exact::StripSide::Crosses`] opens), and then the
+/// cylinder-pair rule speaks first and the operation stops.
 ///
 /// ☑ **The two cannot be separated today.** For the row to be written at all the disk must overlap
 /// the boss's axis span; overlapping it puts the bar's own lateral inside the boss's reach, which

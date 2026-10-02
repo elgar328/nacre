@@ -425,7 +425,7 @@ fn a_line_contact_on_a_lateral_is_refused_today() {
 /// to `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the
 /// line `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that
 /// stretch the line runs through the cap's interior. That is the face the tangency verdict's
-/// `line_is_an_edge` keeps out (`!straddles`: an edge on the line does not make the contact an
+/// `line_is_an_edge` keeps out (`!runs_through`: an edge on the line does not make the contact an
 /// edge where the face runs across it) — and that guard is what speaks here: the row is no edge,
 /// so the population gate refuses it (`TangentLineInAnotherPlane`), both vertex orders, all six
 /// booleans, before the rulings split meets the cap's segment across the line.

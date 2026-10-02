@@ -879,9 +879,10 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
 
 /// ★ **A row through a wall face's notch touches nothing.** The box's face `x = 0` is a U — a slot
 /// `y ∈ [−2, 2]`, `z ∈ [1, 3]` cut through the box — and the boss floats in the slot's void, its
-/// surface tangent to the plane `x = 0` along `(0, 0)` where the face is not. The gate reads the
-/// wall face's outer loop alone, which straddles the line, so it writes a row; the verdict clears
-/// it because no result body holds both the wall's class and the cylinder's. Every boolean builds.
+/// surface tangent to the plane `x = 0` along `(0, 0)` where the face is not. Over the boss's
+/// height the line runs through the notch alone, so the face touches nothing on the lateral and
+/// the gate writes no row — though the U's corners lie on both sides of the line. Every boolean
+/// builds.
 #[test]
 fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
     two_bodies_touching_on_a_line("notched box", || {
@@ -910,6 +911,125 @@ fn a_tangency_through_a_wall_faces_notch_touches_nothing() {
         m.rebuild_adjacency();
         (m, a, b)
     });
+}
+
+/// Where the tangent line meets the wall plane `x = 0`: a slot `z ∈ [1, 3]` cut through the
+/// block, which leaves the face a U (`Notch`, the block 2 high) or a face with a rectangular hole
+/// (the rest, the block 4 high).
+#[derive(Clone, Copy, Debug)]
+enum WallGap {
+    /// The slot `y ∈ [−2, 2]`: the line runs through the U's gap.
+    Notch,
+    /// The slot `y ∈ [−2, 2]`: the line runs through the hole.
+    Hole,
+    /// The slot `y ∈ [0, 2]`: the line runs along the hole's edge `y = 0`, which the slot's wall
+    /// `y = 0` holds too.
+    HoleAlongLine,
+    /// `Hole`, and a step cut out of the block's far end, `x ∈ [4, 6]`, `y ≥ 0`, whose face `y = 0`
+    /// holds the line far from it.
+    HoleBesideStep,
+}
+
+/// **A wide boss tangent to a wall face only where the face is not** — and cutting material
+/// beside it. The block `[0, 6] × [−3, 3]` has the gap of [`WallGap`] in its face `x = 0`; the
+/// boss (axis `(2.5, 0)` along `+z`, `r = 2.5`) touches the plane `x = 0` along `(0, 0)`, which
+/// within the boss's height runs through the gap alone, and it reaches past `|y| = 2` into the
+/// block's material on both sides of the slot. Returns the model, the block and the boss.
+fn wide_boss_in_a_wall_gap(gap: WallGap) -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (top, z0, h) = match gap {
+        WallGap::Notch => (2.0, 1.2, 0.6),
+        _ => (4.0, 1.5, 1.0),
+    };
+    let slot_y0 = match gap {
+        WallGap::HoleAlongLine => 0.0,
+        _ => -2.0,
+    };
+    let mut m = Model::new();
+    let block = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0, -3.0, 0.0]),
+        Point3::from_array([6.0, 3.0, top]),
+    );
+    let slot = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-1.0, slot_y0, 1.0]),
+        Point3::from_array([7.0, 2.0, 3.0]),
+    );
+    m.rebuild_adjacency();
+    let mut a = crate::boolean(&mut m, BoolKind::Cut, block, slot).expect("the slot")[0];
+    if let WallGap::HoleBesideStep = gap {
+        let step = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([4.0, 0.0, -1.0]),
+            Point3::from_array([7.0, 4.0, 5.0]),
+        );
+        m.rebuild_adjacency();
+        a = crate::boolean(&mut m, BoolKind::Cut, a, step).expect("the step")[0];
+    }
+    let b = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([2.5, 0.0, z0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        2.5,
+        h,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    (m, a, b)
+}
+
+/// ★★ **A tangency through a wall face's gap writes no row, so the cut beside it builds.** The
+/// line `(0, 0)` touches the plane `x = 0` only inside the slot over the boss's height, so no
+/// wall face touches it there; the boss still overlaps the block in the two circular segments past
+/// `|y| = 2`. The U face (and the face around the hole) has corners on both sides of the line, so
+/// a row read off the outer loop alone convicts `block − boss` of a pinch it does not have
+/// (`SelfTouchingResult`, measured).
+///
+/// The oracle is the inputs': the overlap is two segments of the boss's circle cut by the chords
+/// `y = ±2`, `2h(r²·acos(d/r) − d·√(r² − d²))` with `d = 2`.
+#[test]
+fn a_tangency_through_a_wall_faces_gap_beside_material_builds() {
+    let (r, d): (f64, f64) = (2.5, 2.0);
+    let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    for gap in [WallGap::Notch, WallGap::Hole] {
+        let h = match gap {
+            WallGap::Notch => 0.6,
+            _ => 1.0,
+        };
+        let overlap = 2.0 * segment * h;
+        for (kind, swapped) in [
+            (BoolKind::Fuse, false),
+            (BoolKind::Fuse, true),
+            (BoolKind::Cut, false),
+            (BoolKind::Cut, true),
+        ] {
+            let (mut m, block, boss) = wide_boss_in_a_wall_gap(gap);
+            let vol = |m: &Model, s| nacre_props::mass_props(m, s).unwrap().volume;
+            let (vblock, vboss) = (vol(&m, block), vol(&m, boss));
+            let (a, b) = if swapped {
+                (boss, block)
+            } else {
+                (block, boss)
+            };
+            let out = crate::boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("{gap:?} {kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{gap:?} {kind:?} swapped {swapped}: {vs:?}");
+            assert_eq!(out.len(), 1, "{gap:?} {kind:?} swapped {swapped}");
+            let want = match (kind, swapped) {
+                (BoolKind::Fuse, _) => vblock + vboss - overlap,
+                (_, false) => vblock - overlap,
+                (_, true) => vboss - overlap,
+            };
+            let got = vol(&m, out[0]);
+            assert!(
+                (got - want).abs() < 1e-9,
+                "{gap:?} {kind:?} swapped {swapped}: {got} vs {want}"
+            );
+        }
+    }
 }
 
 /// **The pinch formula, as a truth table** — four configurations × three operations × both
@@ -1007,4 +1127,90 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     // through the ten of thickness). Their axes pass six apart, clear of the radius sum.
     let want = 8000.0 - std::f64::consts::PI * (4.0 * 30.0 + 9.0 * 10.0);
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+}
+
+/// ★★ **A hole whose edge lies on the tangent line hands the line to the structure.** The slot
+/// `y ∈ [0, 2]` leaves the face `x = 0` a hole whose edge `y = 0` is the tangent line over the
+/// boss's height, and the slot's own wall `y = 0` holds the line too. The face ends on the line
+/// there rather than crossing it, so the row says so (`runs_through` false), the line is an edge
+/// the wall face and the slot's wall both end on, and the shell guard judges the contact. The face
+/// has corners on both sides of the line, so a row read off the outer loop alone is no edge, and
+/// the gate refuses every operation `TangentLineInAnotherPlane` (measured).
+///
+/// The oracle is the inputs': the boss meets the block in its half disk `y < 0` and the segment
+/// past `y = 2`, `h(πr²/2 + r²·acos(d/r) − d·√(r² − d²))` with `d = 2`.
+#[test]
+fn a_hole_edge_on_the_tangent_line_hands_the_line_to_the_structure() {
+    let (m, block, boss) = wide_boss_in_a_wall_gap(WallGap::HoleAlongLine);
+    let rows = crate::arrangement::plane_index_setup(&m, block, boss)
+        .expect("the gate passes")
+        .tangencies;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(!rows[0].runs_through && rows[0].line_is_an_edge, "{rows:?}");
+    let (r, d, h): (f64, f64, f64) = (2.5, 2.0, 1.0);
+    let overlap = h
+        * (std::f64::consts::PI * r * r / 2.0 + r * r * (d / r).acos()
+            - d * (r * r - d * d).sqrt());
+    for (kind, swapped) in [
+        (BoolKind::Fuse, false),
+        (BoolKind::Fuse, true),
+        (BoolKind::Cut, false),
+        (BoolKind::Cut, true),
+    ] {
+        let (mut m, block, boss) = wide_boss_in_a_wall_gap(WallGap::HoleAlongLine);
+        let vol = |m: &Model, s| nacre_props::mass_props(m, s).unwrap().volume;
+        let (vblock, vboss) = (vol(&m, block), vol(&m, boss));
+        let (a, b) = if swapped {
+            (boss, block)
+        } else {
+            (block, boss)
+        };
+        let out = crate::boolean(&mut m, kind, a, b)
+            .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{kind:?} swapped {swapped}: {vs:?}");
+        assert_eq!(out.len(), 1, "{kind:?} swapped {swapped}");
+        let want = match (kind, swapped) {
+            (BoolKind::Fuse, _) => vblock + vboss - overlap,
+            (_, false) => vblock - overlap,
+            (_, true) => vboss - overlap,
+        };
+        let got = vol(&m, out[0]);
+        assert!(
+            (got - want).abs() < 1e-9,
+            "{kind:?} swapped {swapped}: {got} vs {want}"
+        );
+    }
+}
+
+/// **A tangent line through a hole, held by a far face's plane, is refused by the rulings road
+/// today.** The line `(0, 0)` runs through the hole of `x = 0`, so no wall face touches it and
+/// the gate writes no row; but the step's face `y = 0` is a secant on the boss's axis plane, and
+/// with a tangent class of the other solid it records the line as a shared ruling. That road does
+/// not arrange this shape yet and refuses it by name (`RulingBoundNotYet`) — every operation, either
+/// order. The same block with the boss moved off the wall (axis at `x = 2.6`) builds all six, so
+/// the refusal is the tangent line's, not the step's. A row read off the outer loop alone has the
+/// gate refuse it `TangentLineInAnotherPlane` instead, whose six-region sentence is false here:
+/// nothing touches the line.
+#[test]
+fn a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today() {
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        for swapped in [false, true] {
+            let (mut m, block, boss) = wide_boss_in_a_wall_gap(WallGap::HoleBesideStep);
+            let (a, b) = if swapped {
+                (boss, block)
+            } else {
+                (block, boss)
+            };
+            match crate::boolean(&mut m, kind, a, b) {
+                Err(BoolError::Rejected { reason, .. }) => assert_eq!(
+                    reason,
+                    RejectReason::RulingBoundNotYet,
+                    "{kind:?} swapped {swapped}"
+                ),
+                other => panic!("{kind:?} swapped {swapped}: {other:?}"),
+            }
+        }
+    }
 }
