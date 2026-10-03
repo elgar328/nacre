@@ -387,15 +387,22 @@ pub(crate) fn realize_cache_tracked(
     // ★ **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
     // shared-frame road replays one point through one chain; the mixed road ([`build_meet`])
     // replays three witness points through each carrier's chain, so under the same budget it
-    // counts their sum. (The plane funnel guards the chain's depth instead — `push_plane_realized`.)
+    // counts their sum. (The plane funnel guards the chain's depth instead — `push_plane_realized`
+    // — and so does a seam met in the world, [`seam_point_met`]: three points through the
+    // cylinder's chain and, for a cap without a world name, three through the cap's; the
+    // per-carrier depth test above is its guard, `deep` sending it to `CostCap`.)
     if !deep && meet_road_over_cap(model, def) {
         return Err(CacheDecline::CostCap);
     }
     let r = if deep {
         read_without_replay(model, def).ok_or(CacheDecline::CostCap)?
     } else {
-        let first = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), acc)
-            .map_err(CacheDecline::Cannot)?;
+        // A first rung that could not decide (`Undecided` — a seam met after a long chain) is the
+        // second rung's business, as a first rung whose interval names no `f64` is.
+        let first = match realize_def_tracked(model, def, Precision::Bits(LADDER[0]), acc) {
+            Err(RealizeError::Undecided) => None,
+            other => Some(other.map_err(CacheDecline::Cannot)?),
+        };
         // ★ **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
         // turn off the quarters, and the cost cap stops the replay at 192 nodes, so 256 bits keep
         // more than an `f64`'s 53 inside the cap. A coordinate that is exactly `0` needs its radius
@@ -403,7 +410,7 @@ pub(crate) fn realize_cache_tracked(
         // turns (about 76 at a bit a turn; a 37°-and-back fixture decides at 60 and not at 80);
         // deeper, it stays `Ceiling` until the paid door climbs. The second rung files nothing
         // (`&mut None`): the first rung's prefix is the one the next generation asks for.
-        if first.is_exact() || first.to_f64().is_some() {
+        if let Some(first) = first.filter(|f| f.is_exact() || f.to_f64().is_some()) {
             first
         } else {
             let mut second = Accel {
@@ -889,6 +896,9 @@ fn climb(
                     return Ok(r);
                 }
             }
+            // Not decided at these bits: more bits are exactly the thing (a seam met in the world
+            // whose run into its cap is not yet apart from zero after a long chain).
+            Err(RealizeError::Undecided) => continue,
             // A structural refusal does not improve with precision.
             Err(e) => return Err(e),
         }
@@ -899,7 +909,8 @@ fn climb(
 
 /// One realization at `bits`, from the definition.
 /// `out` is the accelerator's channel and only the three-plane road fills it — a curved definition
-/// realizes from its own geometry, not by walking a chain, so it has no prefix to hand on.
+/// realizes from its own geometry, or (a seam under a motion that does not fold) by replaying its
+/// carriers' chains from their statements, never from a shared prefix, so it has none to hand on.
 fn build(
     model: &Model,
     def: &Vertex,
@@ -908,7 +919,9 @@ fn build(
 ) -> Result<Realized, RealizeError> {
     match *def {
         nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, acc),
-        nacre_topo::Vertex::OnSeam([cyl, cap]) => curved(seam_point(model, cyl, cap, bits), bits),
+        nacre_topo::Vertex::OnSeam([cyl, cap]) => {
+            seam_point(model, cyl, cap, bits).map(|p| Realized(Arm::Approached(p, bits)))
+        }
         nacre_topo::Vertex::Pierce {
             planes,
             cylinder,
@@ -937,8 +950,11 @@ fn seam_point(
     cyl: Handle<Surface>,
     cap: Handle<Surface>,
     bits: usize,
-) -> Option<[HpBounded; 3]> {
-    seam_point_stated(model, cyl, cap, bits).or_else(|| seam_point_met(model, cyl, cap, bits))
+) -> Result<[HpBounded; 3], RealizeError> {
+    match seam_point_stated(model, cyl, cap, bits) {
+        Some(p) => Ok(p),
+        None => seam_point_met(model, cyl, cap, bits),
+    }
 }
 
 /// [`seam_point`] where the cylinder and the cap are stated in the world.
@@ -969,23 +985,25 @@ fn seam_point_stated(
 /// So the cap answers for itself — its world name where it has one, else the plane its witness
 /// triangle spans after its own chain ([`nacre_judge::plane_hp`]).
 ///
-/// `None` where a chain cannot be read, or the line's run into the cap is not decided away from
-/// zero at `bits` (`HpBounded::div`) — the ladder climbs.
+/// [`RealizeError::NoCurvedPoint`] where a chain or the statement cannot be read;
+/// [`RealizeError::Undecided`] where the line's run into the cap is not decided away from zero at
+/// `bits` (`HpBounded::div`) — a long chain spends a bit a turn, and the ladder climbs.
 fn seam_point_met(
     model: &Model,
     cyl: Handle<Surface>,
     cap: Handle<Surface>,
     bits: usize,
-) -> Option<[HpBounded; 3]> {
+) -> Result<[HpBounded; 3], RealizeError> {
     let Surface::Cylinder { def, motion } = model.surface(cyl) else {
-        return None;
+        return Err(RealizeError::NoCurvedPoint);
     };
-    let hp = world_cylinder_hp(model, def, *motion, bits)?;
+    let hp = world_cylinder_hp(model, def, *motion, bits).ok_or(RealizeError::NoCurvedPoint)?;
     let on_rim: [HpBounded; 3] = core::array::from_fn(|k| hp.origin[k].add(&hp.seam[k], bits));
     let plane: [HpBounded; 4] = match crate::planes::world_plane_coeffs(model, cap) {
         Some(c) => c.map(|r| HpBounded::of_rat(r, bits)),
         None => {
-            let tri = crate::rotated_vertex::surface_witness_triangle(model, cap)?;
+            let tri = crate::rotated_vertex::surface_witness_triangle(model, cap)
+                .ok_or(RealizeError::NoCurvedPoint)?;
             nacre_judge::plane_hp(&tri[0], &tri[1], &tri[2], bits)
         }
     };
@@ -998,8 +1016,9 @@ fn seam_point_met(
     // `on_rim − s·axis` lies on `n·x + c = 0` for `s = (n·on_rim + c) / (n·axis)`.
     let s = dot(&on_rim)
         .add(&plane[3], bits)
-        .div(&dot(&hp.axis), bits)?;
-    Some(core::array::from_fn(|k| {
+        .div(&dot(&hp.axis), bits)
+        .ok_or(RealizeError::Undecided)?;
+    Ok(core::array::from_fn(|k| {
         on_rim[k].sub(&s.mul(&hp.axis[k], bits), bits)
     }))
 }
@@ -1539,6 +1558,73 @@ mod tests {
                     "{what}: {met:?} is not where the definition puts it"
                 );
             }
+        }
+    }
+
+    /// **Past the replay budget the seam waits for the paid door, and the door answers.** A cylinder
+    /// turned 193 times — its chain one node past [`CACHE_REPLAY_COST_CAP`] — keeps its seam
+    /// vertices `Ceiling` (the cache road declines by cost, not for want of a road), and
+    /// [`refine_vertex_cache`] raises every one of them to `Bounded` through the same meet.
+    #[test]
+    fn a_seam_past_the_replay_budget_waits_for_the_paid_door() {
+        use nacre_exact::{Angle, Axis, Isometry, Rotation};
+        let mut m = Model::new();
+        let mut solid = crate::fixtures::cylinder(
+            &mut m,
+            Point3::from_array([1.0, 2.0, 0.5]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            1.5,
+            2.0,
+        )
+        .solid;
+        for _ in 0..=CACHE_REPLAY_COST_CAP {
+            let Ok(crate::OpOutput::Transform { solid: s }) = crate::apply(
+                &mut m,
+                &crate::Operation::Transform {
+                    solid,
+                    isometry: Isometry::rotation(Rotation {
+                        axis: Axis::X,
+                        pivot: [r(0); 3],
+                        angle: Angle::from_deg(r(37)).unwrap(),
+                    }),
+                },
+            ) else {
+                panic!("the turn")
+            };
+            solid = s;
+        }
+        m.rebuild_adjacency();
+        let seams: Vec<Handle<Vertex>> = m
+            .reachable()
+            .vertices
+            .into_iter()
+            .filter(|&v| matches!(*m.vertex(v), Vertex::OnSeam(_)))
+            .filter(|&v| {
+                m.shell(m.solid(solid).outer).faces.iter().any(|&f| {
+                    m.face(f)
+                        .outer
+                        .half_edges
+                        .iter()
+                        .any(|he| m.edge(he.edge).vertices.contains(&v))
+                })
+            })
+            .collect();
+        assert!(!seams.is_empty());
+        for &v in &seams {
+            assert!(
+                matches!(m.vertex_cache(v), PointCache::Ceiling { .. }),
+                "{:?}",
+                m.vertex_cache(v)
+            );
+        }
+        let report = refine_vertex_cache(&mut m);
+        assert!(report.refined >= seams.len(), "{report:?}");
+        for &v in &seams {
+            assert!(
+                matches!(m.vertex_cache(v), PointCache::Bounded { .. }),
+                "{:?}",
+                m.vertex_cache(v)
+            );
         }
     }
 
