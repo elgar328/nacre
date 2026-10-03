@@ -648,40 +648,8 @@ fn non_convex_profile_pocket_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn pocket_into_non_convex_solid_matches_occt() {
-    use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
-    let mut m = Model::new();
-    let __w6 = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: __w6,
-            profile: Profile2d::polygon(
-                [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
-                    .iter()
-                    .map(|&p| nacre_math::Point2::from_array(p))
-                    .collect(),
-            )
-            .unwrap(),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    let pc = nacre_ops::fixtures::pocket(
-        &mut m,
-        faces[1],
-        Profile2d::polygon(
-            [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        )
-        .unwrap(),
-        0.5,
-    )
-    .unwrap()
-    .solid();
+    use nacre_ops::BoolKind;
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let corner = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.05, 0.1, 0.6]),
@@ -695,6 +663,12 @@ fn pocket_into_non_convex_solid_matches_occt() {
         "pocket into non-convex solid: {} vs {}",
         mass_props(&m, r).unwrap().volume,
         occt.volume
+    );
+    // The box stands in material beside the void (`x < 0.3`): `0.92 − 0.2·0.1·0.4`.
+    let v = mass_props(&m, r).unwrap().volume;
+    assert!(
+        approx(v, 0.912),
+        "pocket into non-convex solid: {v} vs hand 0.912"
     );
 }
 
@@ -754,41 +728,8 @@ fn non_convex_profile_boss_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn overhang_boss_on_non_convex_solid_matches_occt() {
-    use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
-    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let mut m = Model::new();
-    let __w4 = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: __w4,
-            profile: Profile2d::polygon(vec![
-                p2(0.0, 0.0),
-                p2(1.0, 0.0),
-                p2(1.0, 1.0),
-                p2(0.0, 1.0),
-            ])
-            .unwrap(),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    let pc = nacre_ops::fixtures::pocket(
-        &mut m,
-        faces[1],
-        Profile2d::polygon(vec![
-            p2(-0.2, -0.2),
-            p2(0.2, -0.2),
-            p2(0.2, 0.2),
-            p2(-0.2, 0.2),
-        ])
-        .unwrap(),
-        0.5,
-    )
-    .unwrap()
-    .solid();
+    use nacre_ops::BoolKind;
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     // Boss on the +x side face, overhanging the bottom edge.
     let boss = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -803,6 +744,12 @@ fn overhang_boss_on_non_convex_solid_matches_occt() {
         "overhang boss on non-convex solid: {} vs {}",
         mass_props(&m, r).unwrap().volume,
         occt.volume
+    );
+    // The boss touches the `x = 1` wall and overlaps nothing: `0.92 + 0.5·0.5·1`.
+    let v = mass_props(&m, r).unwrap().volume;
+    assert!(
+        approx(v, 1.17),
+        "overhang boss on non-convex solid: {v} vs hand 1.17"
     );
 }
 
@@ -1490,32 +1437,8 @@ fn island_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn pocketed_cut_in_the_void_matches_occt() {
-    use nacre_math::Point2;
-    use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
-    let mut m = Model::new();
-    let sq = |pts: [[f64; 2]; 4]| {
-        Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap()
-    };
-    let __w2 = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: __w2,
-            profile: sq([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!("extrude yields Extrude output");
-    };
-    let solid = nacre_ops::fixtures::pocket(
-        &mut m,
-        faces[1],
-        sq([[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
-        0.5,
-    )
-    .unwrap()
-    .solid();
+    use nacre_ops::BoolKind;
+    let (mut m, solid) = nacre_ops::fixtures::pocketed_cube();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.4, 0.4, 0.6]),
@@ -1529,6 +1452,11 @@ fn pocketed_cut_in_the_void_matches_occt() {
         "pocketed cut in the void: {} vs {}",
         nacre.volume,
         occt.volume
+    );
+    assert!(
+        approx(nacre.volume, 0.92),
+        "pocketed cut in the void: {} vs the untouched 0.92",
+        nacre.volume
     );
 }
 

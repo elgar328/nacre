@@ -690,42 +690,33 @@ fn cylinder_props_diff_occt() {
 fn pad_diff_occt() {
     use nacre_ops::{OpOutput, Operation, Profile2d, apply};
 
-    // Unit cube, then a 0.4-square boss of height 0.5 on the top face. The
-    // padded solid's top face has a real hole (a FACE_BOUND in STEP); this
-    // checks OCCT reads that holed boss as a closed solid and agrees on its
-    // volume (1.08) and area (6.8) with nacre's analytic value.
-    let sq = |s: f64| {
-        Profile2d::polygon(
-            [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        )
-        .unwrap()
-    };
+    // Unit cube, then a 0.4-square boss of height 0.5 in the middle of the top face. The
+    // padded solid's top face has a real hole (a FACE_BOUND in STEP); this checks OCCT reads
+    // that holed boss as a closed solid and agrees on its volume (1.08) and area (6.8) with
+    // nacre's analytic value.
     let mut model = Model::new();
     let __w13 = SketchFrame::world(&model, Axis::Z);
     let OpOutput::Extrude { faces, .. } = apply(
         &mut model,
         &Operation::Extrude {
             frame: __w13,
-            profile: sq(1.0),
+            profile: Profile2d::polygon(
+                [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                    .iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+            )
+            .unwrap(),
             dist: 1.0,
         },
     )
     .unwrap() else {
         unreachable!()
     };
-    let boss = Profile2d::polygon(
-        [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
-            .iter()
-            .map(|&p| nacre_math::Point2::from_array(p))
-            .collect(),
-    )
-    .unwrap();
-    let solid = nacre_ops::fixtures::pad(&mut model, faces[1], boss, 0.5)
-        .unwrap()
-        .solid();
+    let solid =
+        nacre_ops::fixtures::pad(&mut model, faces[1], nacre_ops::fixtures::lid_square(), 0.5)
+            .unwrap()
+            .solid();
 
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
@@ -740,49 +731,22 @@ fn pad_diff_occt() {
         "{} vs {}",
         nacre.area,
         occt.area
+    );
+    assert!(
+        approx(nacre.volume, 1.08) && approx(nacre.area, 6.8),
+        "volume {}, area {} vs hand 1.08, 6.8",
+        nacre.volume,
+        nacre.area
     );
 }
 
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn pocket_diff_occt() {
-    use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-
-    // Unit cube, then a 0.4-square pocket of depth 0.5 in the top face. The
-    // inward walls remove material; this checks OCCT reads the holed,
-    // concave solid and agrees (volume 0.92, area 6.8) with nacre.
-    let sq = |s: f64| {
-        Profile2d::polygon(
-            [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        )
-        .unwrap()
-    };
-    let mut model = Model::new();
-    let __w12 = SketchFrame::world(&model, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut model,
-        &Operation::Extrude {
-            frame: __w12,
-            profile: sq(1.0),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    let pocket = Profile2d::polygon(
-        [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
-            .iter()
-            .map(|&p| nacre_math::Point2::from_array(p))
-            .collect(),
-    )
-    .unwrap();
-    let solid = nacre_ops::fixtures::pocket(&mut model, faces[1], pocket, 0.5)
-        .unwrap()
-        .solid();
+    // `pocketed_cube`: a 0.4-square pocket of depth 0.5 in the middle of the top face. The
+    // inward walls remove material; this checks OCCT reads the holed, concave solid and agrees
+    // (volume 0.92, area 6.8) with nacre.
+    let (model, solid) = nacre_ops::fixtures::pocketed_cube();
 
     let occt = occt_props_of(&model).unwrap();
     let nacre = mass_props(&model, solid).unwrap();
@@ -797,6 +761,12 @@ fn pocket_diff_occt() {
         "{} vs {}",
         nacre.area,
         occt.area
+    );
+    assert!(
+        approx(nacre.volume, 0.92) && approx(nacre.area, 6.8),
+        "volume {}, area {} vs hand 0.92, 6.8",
+        nacre.volume,
+        nacre.area
     );
 }
 
@@ -825,9 +795,10 @@ fn overhang_pad_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
-    // Footprint world x in [0.25,0.75], y in [-0.25,0.75] - overhangs the y=0 edge.
+    // Footprint world x in [0.25,0.75], y in [-0.25,0.75] - overhangs the y=0 edge. On the lid
+    // frame coordinates are world x and y (`nacre_ops::fixtures::lid_square`).
     let boss = Profile2d::polygon(
-        [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+        [[0.25, 0.75], [0.25, -0.25], [0.75, -0.25], [0.75, 0.75]]
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
@@ -843,6 +814,13 @@ fn overhang_pad_matches_occt() {
         "{} vs {}",
         nacre.volume,
         occt.volume
+    );
+    // The whole boss stands above `z = 1`; area `5.625 + 0.5 + 0.125 + 3` — lid, boss top, the cantilever's underside, boss walls.
+    assert!(
+        approx(nacre.volume, 1.5) && approx(nacre.area, 9.25),
+        "volume {}, area {} vs hand 1.5, 9.25",
+        nacre.volume,
+        nacre.area
     );
 }
 
@@ -871,8 +849,9 @@ fn overhang_pocket_matches_occt() {
     .unwrap() else {
         unreachable!()
     };
+    // Footprint world x in [0.25,0.75], y in [-0.25,0.75] - overhangs the y=0 edge.
     let slot = Profile2d::polygon(
-        [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+        [[0.25, 0.75], [0.25, -0.25], [0.75, -0.25], [0.75, 0.75]]
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
@@ -888,5 +867,12 @@ fn overhang_pocket_matches_occt() {
         "{} vs {}",
         nacre.volume,
         occt.volume
+    );
+    // Only the on-face part `0.375` carves; area `4.75 + 0.625 + 0.375 + 1.0` — the faces below the lid less the slot's opening, lid, floor, walls.
+    assert!(
+        approx(nacre.volume, 0.8125) && approx(nacre.area, 6.75),
+        "volume {}, area {} vs hand 0.8125, 6.75",
+        nacre.volume,
+        nacre.area
     );
 }

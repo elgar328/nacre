@@ -3,49 +3,16 @@
 
 use super::*;
 
-/// The unit cube with a `0.4`-square pocket `0.5` deep in its top face — the fixture
-/// whose lid carries an inner loop. OCCT reads the same solid from STEP; nothing here
-/// asks it to reproduce the pocket.
-fn pocketed_cube() -> (Model, Handle<Solid>) {
-    use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-    let prof = |pts: &[[f64; 2]]| {
-        Profile2d::polygon(
-            pts.iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        )
-        .unwrap()
-    };
-    let mut m = Model::new();
-    let __w1 = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: __w1,
-            profile: prof(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    let solid = nacre_ops::fixtures::pocket(
-        &mut m,
-        faces[1],
-        prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
-        0.5,
-    )
-    .unwrap()
-    .solid();
-    (m, solid)
-}
-
 /// Score one boolean of a holed operand against OCCT, on volume and on area. Area
 /// matters here: nacre's own gates all read the same rings, so only an independent
 /// kernel makes the surviving hole's size a real claim.
-fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool) {
+///
+/// ★ And on `want`, the volume worked by hand from the boxes and the
+/// [`nacre_ops::fixtures::pocketed_cube`] void. Agreeing with OCCT does not say the shape is
+/// the one described — both kernels read the same STEP, wherever the pocket landed.
+fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool, want: f64) {
     use nacre_ops::BoolKind;
-    let (mut m, pc) = pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array(boxes[0]),
@@ -72,6 +39,11 @@ fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool) {
         nacre.area,
         occt.area
     );
+    assert!(
+        approx(nacre.volume, want),
+        "{name} volume: {} vs hand {want}",
+        nacre.volume
+    );
 }
 
 /// A boolean composing on a shape a boolean can make. The seam bites
@@ -88,6 +60,7 @@ fn pocket_corner_cut_matches_occt() {
         OcctBool::Cut,
         [[0.85, 0.85, 0.85], [1.15, 1.15, 1.15]],
         false,
+        0.916625,
     );
 }
 
@@ -100,6 +73,7 @@ fn pocket_bottom_corner_cut_matches_occt() {
         OcctBool::Cut,
         [[0.85, 0.85, -0.15], [1.15, 1.15, 0.15]],
         false,
+        0.916625,
     );
 }
 
@@ -115,6 +89,7 @@ fn pocket_rim_corner_cut_matches_occt() {
         OcctBool::Cut,
         [[0.55, 0.55, 0.85], [1.15, 1.15, 1.15]],
         false,
+        0.893,
     );
 }
 
@@ -128,6 +103,7 @@ fn pocket_rim_corner_cut_either_way_matches_occt() {
         OcctBool::Cut,
         [[0.55, 0.55, 0.85], [1.15, 1.15, 1.15]],
         true,
+        0.081,
     );
 }
 
@@ -142,7 +118,8 @@ fn slab_nests_pocket_cut_matches_occt() {
         "slab nests pocket cut",
         OcctBool::Cut,
         [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
-        false,
+        true,
+        1.488,
     );
 }
 
@@ -155,7 +132,8 @@ fn slab_nests_pocket_cut_either_way_matches_occt() {
         "slab nests pocket cut either way",
         OcctBool::Cut,
         [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
-        true,
+        false,
+        0.668,
     );
 }
 
@@ -171,6 +149,7 @@ fn slab_seals_pocket_fuse_matches_occt() {
         OcctBool::Fuse,
         [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
         false,
+        2.408,
     );
 }
 
@@ -185,6 +164,7 @@ fn slab_cut_by_pocket_matches_occt() {
         OcctBool::Cut,
         [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
         true,
+        1.99,
     );
 }
 
@@ -196,6 +176,7 @@ fn slab_and_pocket_fuse_matches_occt() {
         OcctBool::Fuse,
         [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
         true,
+        2.91,
     );
 }
 
@@ -207,6 +188,7 @@ fn pocket_cut_by_slab_matches_occt() {
         OcctBool::Cut,
         [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
         false,
+        0.3,
     );
 }
 
@@ -266,38 +248,7 @@ fn l_and_rod_fuse_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn non_convex_overhang_cut_matches_occt() {
-    use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-    let sq = |pts: &[[f64; 2]]| {
-        Profile2d::polygon(
-            pts.iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        )
-        .unwrap()
-    };
-    let mut m = Model::new();
-    let __w0 = SketchFrame::world(&m, Axis::Z);
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut m,
-        &Operation::Extrude {
-            frame: __w0,
-            profile: sq(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
-            dist: 1.0,
-        },
-    )
-    .unwrap() else {
-        unreachable!()
-    };
-    // `[0.3, 0.7]²` of the lid. On a lid the sketch frame is the identity on world x and y: the
-    // origin is the world origin projected onto `z = 1` and the axes are `u = +x̂`, `v = +ŷ`.
-    let pc = nacre_ops::fixtures::pocket(
-        &mut m,
-        faces[1],
-        sq(&[[0.3, 0.7], [0.3, 0.3], [0.7, 0.3], [0.7, 0.7]]),
-        0.5,
-    )
-    .unwrap()
-    .solid();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let slot = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.75, 0.25, -0.25]),
