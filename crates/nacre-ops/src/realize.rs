@@ -1610,6 +1610,36 @@ mod tests {
             })
             .collect();
         assert!(!seams.is_empty());
+        // On that chain the cylinder funnel leaves a new statement the figure it was handed, bit
+        // for bit. ★ This pins the outcome, not the cost guard: past 192 turns the 256-bit rung
+        // cannot decide either (the cap is sized so it can inside it), so the funnel without its
+        // depth test answers the same — measured, that plant stays green. The guard's effect is
+        // the replay not paid, which no result shows.
+        let Some(Surface::Cylinder { def, motion }) = m
+            .shell(m.solid(solid).outer)
+            .faces
+            .iter()
+            .map(|&f| m.surface(m.face(f).surface).clone())
+            .find(|s| matches!(s, Surface::Cylinder { .. }))
+        else {
+            panic!("a lateral face")
+        };
+        let wider = nacre_topo::CylinderDef::new(
+            def.origin(),
+            def.dir(),
+            def.ref_dir(),
+            nacre_exact::BigRat::from(r(4)),
+        )
+        .unwrap();
+        let figure = nacre_geom::Cylinder::from_axis(
+            Point3::from_array([0.1, 0.2, 0.3]),
+            nacre_math::Vector3::from_array([0.0, 0.6, 0.8]),
+            nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+            2.0,
+        )
+        .unwrap();
+        let h = push_cylinder_realized(&mut m, figure, wider, motion);
+        assert_eq!(m.surface_cache(h), &nacre_geom::Surface::Cylinder(figure));
         for &v in &seams {
             assert!(
                 matches!(m.vertex_cache(v), PointCache::Ceiling { .. }),
