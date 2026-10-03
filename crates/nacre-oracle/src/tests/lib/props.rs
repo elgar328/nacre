@@ -226,6 +226,46 @@ fn through_hole_cut_matches_occt() {
     assert!((ours.volume - (8.0 - PI * 0.25 * 2.0)).abs() < 1e-9);
 }
 
+/// **A tangent wall through a window in a boss, scored by a second kernel.** The slab's face
+/// `x = 1` is tangent to the boss's cylinder along `x = 1, y = 0`, but only inside the window
+/// [`nacre_ops::fixtures::windowed_boss`] cut through the lateral, so cutting the boss from the
+/// slab leaves the slab's face whole — one body. OCCT is given the same two operands; and both
+/// kernels must also agree with the hand figure, the slab less the cylinder's slice less what the
+/// window took out of it (`w·√(1−w²) + asin(w) − w`), since the shape is the point here.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_tangent_wall_through_a_lateral_window_matches_occt() {
+    for w in [0.3f64, 0.6] {
+        for seam in [1.0, -1.0] {
+            let mut m = Model::new();
+            let boss = nacre_ops::fixtures::windowed_boss(&mut m, w, seam);
+            let slab = nacre_ops::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([-2.0, -2.0, 1.7]),
+                Point3::from_array([1.0, 2.0, 2.3]),
+            );
+            m.rebuild_adjacency();
+            let occt = occt_boolean_of(&m, OcctBool::Cut, slab, boss).unwrap();
+            let r = boolean_one(&mut m, BoolKind::Cut, slab, boss).unwrap();
+            let ours = mass_props(&m, r).unwrap();
+            let window = w * (1.0 - w * w).sqrt() + w.asin() - w;
+            let hand = 7.2 - (PI - window) * 0.6;
+            assert!(
+                approx(ours.volume, occt.volume) && approx(ours.volume, hand),
+                "w {w} seam {seam}: volume nacre {} occt {} hand {hand}",
+                ours.volume,
+                occt.volume
+            );
+            assert!(
+                approx(ours.area, occt.area),
+                "w {w} seam {seam}: area nacre {} occt {}",
+                ours.area,
+                occt.area
+            );
+        }
+    }
+}
+
 /// **The tangency fixtures, scored by a second kernel**.
 ///
 /// Two booleans in `nacre-ops` produce a solid whose *face* is pinched at one point — a boss
