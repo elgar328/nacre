@@ -517,3 +517,7 @@ pub(super) fn arc_extent(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/cyl_geom.rs"]
+mod tests;

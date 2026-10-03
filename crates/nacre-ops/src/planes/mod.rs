@@ -133,7 +133,9 @@ pub(crate) struct CylFaceInfo {
 /// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
 /// for the face. Every clearance the gate asks of a lateral is a two-axis question against this
 /// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces. Whether a line
-/// along the axis lies on the face asks θ alone ([`Footprint::theta_holds_line`]).
+/// along the axis lies on the face is not a clearance: a tangency row asks the face's own stretches
+/// of the line (`cyl_geom::lateral_cover_on_ruling`), a shared ruling θ alone
+/// ([`Footprint::theta_holds_line`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Footprint {
     /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
@@ -148,8 +150,9 @@ pub(crate) struct Footprint {
 
 impl Footprint {
     /// **Does the line along the axis through `p` lie within this face's angular extent?** — the
-    /// face half of «this line lies on a lateral *face*, not only on its surface», which both of
-    /// the gate's line records ask (`SharedRuling`, `Tangency`). Ends included: a line on the face's
+    /// face half of «this line lies on a lateral *face*, not only on its surface», which a
+    /// `SharedRuling` asks, and a `Tangency` where the face's stretches of the line could not be
+    /// read. Ends included: a line on the face's
     /// end ruling is the face's edge. `theta: None` holds every line (the whole circle, or an
     /// extent this road could not state). `None` is arithmetic that could not answer. The axis
     /// span is not asked here — only θ.

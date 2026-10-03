@@ -451,7 +451,7 @@ pub enum RejectReason {
     CylinderGateUndecided,
     /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
     /// tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching the line
-    /// within a lateral face's span), another plane class holds that line too, and the
+    /// where a lateral face lies on it), another plane class holds that line too, and the
     /// line is not an edge the wall face and a face on that class both end on
     /// (`planes::Tangency::line_is_an_edge`). Such a plane is a secant, so around the line six
     /// regions meet rather than the three the tangency's verdict (`assembly::tangency_reject`)
