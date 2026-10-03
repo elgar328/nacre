@@ -439,8 +439,8 @@ proptest! {
         }
     }
 
-    /// A random boss on a random box stays a valid b-rep (any interior
-    /// profile, any positive height).
+    /// A random boss in the middle of a random box's lid stays a valid b-rep, and the lid
+    /// carries its footprint as a hole (any interior profile, any positive height).
     #[test]
     fn prop_pad_stays_valid(
         sx in 0.5f64..5.0,
@@ -457,14 +457,25 @@ proptest! {
             profile: rect,
             dist: sz,
         }).unwrap() else { unreachable!() };
-        let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
-        crate::fixtures::pad(&mut m, faces[1], hole, dist).unwrap();
+        // On a lid frame coordinates are world x and y (`crate::fixtures::lid_square`).
+        let (cx, cy) = (sx / 2.0, sy / 2.0);
+        let boss = Profile2d::polygon(vec![
+            p2(cx - h, cy - h), p2(cx + h, cy - h), p2(cx + h, cy + h), p2(cx - h, cy + h),
+        ]).unwrap();
+        let s = crate::fixtures::pad(&mut m, faces[1], boss, dist).unwrap().solid();
         m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
+        // The volume is the same wherever the boss touches; the hole is what says it is inside.
+        let holes: Vec<usize> = m.shell(m.solid(s).outer).faces.iter()
+            .map(|&f| m.face(f).inner.len())
+            .filter(|&n| n > 0)
+            .collect();
+        prop_assert_eq!(holes, vec![1]);
     }
 
-    /// A random blind pocket on a random box stays valid. `dist ≤ 0.8 < sz`
-    /// keeps the pocket from punching through the box (height `sz ≥ 1`).
+    /// A random blind pocket in the middle of a random box's lid stays valid and removes its
+    /// whole prism. `dist ≤ 0.8 < sz` keeps the pocket from punching through the box (height
+    /// `sz ≥ 1`).
     #[test]
     fn prop_pocket_stays_valid(
         sx in 0.5f64..5.0,
@@ -481,9 +492,15 @@ proptest! {
             profile: rect,
             dist: sz,
         }).unwrap() else { unreachable!() };
-        let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
-        crate::fixtures::pocket(&mut m, faces[1], hole, dist).unwrap();
+        let (cx, cy) = (sx / 2.0, sy / 2.0);
+        let hole = Profile2d::polygon(vec![
+            p2(cx - h, cy - h), p2(cx + h, cy - h), p2(cx + h, cy + h), p2(cx - h, cy + h),
+        ]).unwrap();
+        let s = crate::fixtures::pocket(&mut m, faces[1], hole, dist).unwrap().solid();
         m.rebuild_adjacency();
         prop_assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, s).unwrap().volume;
+        let want = sx * sy * sz - 4.0 * h * h * dist;
+        prop_assert!((vol - want).abs() <= 1e-9 * want, "volume {} vs {}", vol, want);
     }
 }

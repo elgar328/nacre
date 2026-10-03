@@ -171,9 +171,10 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
                         assert!(bad.is_empty(), "{name}: {bad:?}");
                         // ★ A bound from the definition, not an independent answer: a pad never
                         // removes material and cannot add more than the tool prism holds. The
-                        // second boss overlaps the first and overhangs the block, so there is no
-                        // hand-computable volume to compare against — this catches a grossly
-                        // wrong answer and says so rather than implying more.
+                        // second boss stands on what is left of the first one's face, centred on
+                        // that remainder, so it overlaps the first boss by an amount each cell
+                        // decides — there is no hand-computable volume to compare against. This
+                        // catches a grossly wrong answer and says so rather than implying more.
                         //
                         // ★★ The lower bound is `>=`, not `>`: a footprint that lands entirely
                         // inside material adds *nothing*, and that is a correct answer. Measured
