@@ -928,8 +928,9 @@ pub struct EdgeGiven {
 }
 
 impl EdgeGiven {
-    /// Nothing given: the derivation answers from what this crate can read, and where it cannot,
-    /// from the caches.
+    /// Nothing given by this pusher: the derivation answers from what this crate can read — the
+    /// truth's names and what earlier pushers gave for the same carrier pair — and where neither
+    /// answers, from the caches.
     pub const NONE: EdgeGiven = EdgeGiven {
         direction: None,
         centre: None,

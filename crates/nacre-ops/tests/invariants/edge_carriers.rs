@@ -75,9 +75,10 @@ fn assert_carriers_agree(m: &Model, what: &str) {
 }
 
 /// Lock: **derived curve == stored curve** — the curve re-derived from the carriers and the end
-/// points by `derive_edge_curve`, with nothing given, agrees with the one the producer stored (a
-/// line on a plane without a world name was stored along the direction the push realized, and is
-/// re-derived here along its end points — the ulps between the two are the bound below).
+/// points by `derive_edge_curve`, with this caller giving nothing, agrees with the one the producer
+/// stored (a line on a plane without a world name reads the direction its push realized, which the
+/// model keeps for the carrier pair; where nothing was kept it is re-derived along its end points —
+/// the ulps between the two are the bound below).
 ///
 /// * Line: **origin bit-identical**, direction within a relative 1e-12. A first-construction line
 ///   is bit-identical in direction too (the derivation uses the producer's expression and end-point

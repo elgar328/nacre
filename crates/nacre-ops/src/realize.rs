@@ -615,16 +615,24 @@ pub(crate) fn push_cylinder_realized(
 /// **Realize what a surface's cache does not know yet, on `budget`, and raise it** — at birth (a
 /// funnel's `Unrealized`, not yet asked) and at the refine door (`Ceiling`). A `Realized` cache is
 /// left as it is; a cache only comes to know more ([`Model::refine_surface_cache`]).
-pub(crate) fn raise_surface(model: &mut Model, h: Handle<Surface>, budget: Budget) {
+///
+/// Returns what the realization itself came to — `None` for no road at all. That is the honest
+/// count for a caller: a cache whose standing could not rise (it never falls) still says by this
+/// whether the paid road ran out or found no road.
+pub(crate) fn raise_surface(
+    model: &mut Model,
+    h: Handle<Surface>,
+    budget: Budget,
+) -> Option<CacheStanding> {
     let now = model.surface_cache_standing(h);
     if now == CacheStanding::Realized {
-        return;
+        return Some(now);
     }
-    if let Some((cache, standing)) = surface_realization(model, h, budget)
-        && (standing > now || surface_bits(&cache) != surface_bits(model.surface_cache(h)))
-    {
+    let (cache, standing) = surface_realization(model, h, budget)?;
+    if standing > now || surface_bits(&cache) != surface_bits(model.surface_cache(h)) {
         model.refine_surface_cache(h, cache, standing.max(now));
     }
+    Some(standing)
 }
 
 /// A surface cache's bits, for «did it change» — `f64`'s `==` takes `-0.0` for `+0.0`, and a
@@ -717,12 +725,21 @@ pub(crate) fn surface_realization(
 /// **A surface's cache as the push funnel would leave it now** — the question the census asks of
 /// every surface to hold the cache and its standing to the funnel's answer (the twin of
 /// [`realize_cache`] for vertices). `None` where there is no road.
+///
+/// ★ The funnel's first step is the push door's own derivation, which reads a chain that folds at
+/// any depth, where the cache road stops at its cost cap. So a cache the model calls `Realized` is
+/// held to the paid realization — correctly rounded, so the same bits wherever both answer — and
+/// only the rest to the cache road.
 #[cfg(any(test, feature = "test-util"))]
 pub fn realize_surface_cache(
     model: &Model,
     h: Handle<Surface>,
 ) -> Option<(nacre_geom::Surface, CacheStanding)> {
-    surface_realization(model, h, Budget::Cache)
+    let budget = match model.surface_cache_standing(h) {
+        CacheStanding::Realized => Budget::Paid,
+        CacheStanding::Ceiling | CacheStanding::Unrealized => Budget::Cache,
+    };
+    surface_realization(model, h, budget)
 }
 
 /// The cache [`push_cylinder_realized`] describes, on `budget`'s rungs.
@@ -732,6 +749,11 @@ fn cylinder_realization(
     motion: Option<Handle<nacre_topo::MotionNode>>,
     budget: Budget,
 ) -> Half<nacre_geom::Cylinder> {
+    // No road, read off the statement before any cost is weighed: a reference direction along the
+    // axis, or a squared radius wider than `Rat` (`world_cylinder_hp`'s structural refusals).
+    if perp_component(&def.ref_dir(), &def.dir()).is_none() || def.r2().narrow().is_none() {
+        return Half::NoRoad;
+    }
     if budget == Budget::Cache
         && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     {
@@ -889,17 +911,6 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         return None;
     };
     let (motion, sense) = (*motion, *sense);
-    if budget == Budget::Cache
-        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
-    {
-        return Some((Half::Stopped, Half::Stopped));
-    }
-    let chain = match motion {
-        Some(leaf) => motion_chain(model, leaf)?,
-        None => Vec::new(),
-    };
-    let rungs = budget.rungs();
-    let realize_point = |p: &WitnessPoint| on_rungs(rungs, |bits| Some(p.realize(bits)));
     // The statement's points: a `Known` plane's own, a `Through` plane's vertex meets in the frame
     // they meet in (which the plane's motion continues). A mixed-frame `Through` has none, and no
     // name: there is no road.
@@ -910,8 +921,32 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
             None => return Some((Half::NoRoad, Half::NoRoad)),
         },
     };
-    let anchor = match (meets[0].narrow(), points) {
-        (Some(p0), _) => match replay(WitnessPoint::at(*p0), &chain) {
+    let name = model.surface_name.get(&h);
+    let narrow_meets = meets.each_ref().map(|m| m.narrow().copied());
+    // ★ Which halves have a road is read off the statement before any cost is weighed, so a cache
+    // that stops on cost is one a paid realization can answer (`CacheStanding::Ceiling`'s word):
+    // the anchor needs its first meet narrow, or — nothing having moved the plane since — the first
+    // vertex itself; the normal needs a narrow name, or three narrow meets to span it.
+    let anchor_road = narrow_meets[0].is_some()
+        || (motion.is_none() && matches!(points, nacre_topo::PlanePoints::Through(_)));
+    let normal_road = match name {
+        Some(n) => n.narrow().is_some() || narrow_meets.iter().all(Option::is_some),
+        None => false,
+    };
+    let road = |r: bool| if r { Half::Stopped } else { Half::NoRoad };
+    if budget == Budget::Cache
+        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+    {
+        return Some((road(anchor_road), road(normal_road)));
+    }
+    let chain = match motion {
+        Some(leaf) => motion_chain(model, leaf)?,
+        None => Vec::new(),
+    };
+    let rungs = budget.rungs();
+    let realize_point = |p: &WitnessPoint| on_rungs(rungs, |bits| Some(p.realize(bits)));
+    let anchor = match (narrow_meets[0], points) {
+        (Some(p0), _) => match replay(WitnessPoint::at(p0), &chain) {
             Some(p) => Half::from_stopped(realize_point(&p)),
             None => Half::NoRoad,
         },
@@ -928,14 +963,14 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
     };
     // ★ The normal is the name's, carried — never a judging witness's span: a named plane's
     // witness may be its frame's probes, whose turn is the frame's and not the statement's.
-    let Some(name) = model.surface_name.get(&h) else {
+    let Some(name) = name else {
         return Some((anchor, Half::NoRoad));
     };
     let normal = match name.narrow() {
         Some(&n) => carried_name_normal(name, n, &meets, sense, &chain, rungs),
         // A name wider than `Rat` has no vector to replay: the statement's own three points span
         // the normal, in their order, where they fit a witness base.
-        None => match meets.each_ref().map(|m| m.narrow().copied()) {
+        None => match narrow_meets {
             [Some(a), Some(b), Some(c)] => {
                 match crate::rotated_vertex::replayed_triangle([a, b, c], &chain) {
                     Some(tri) => Half::from_stopped(spanned_normal(&tri, sense, rungs)),
@@ -1057,14 +1092,15 @@ pub struct RefineReport {
 /// The cache roads run on every push, so they take two rungs and refuse a history past their cost
 /// cap; this door runs when a caller asks, so it climbs the whole ladder at any depth:
 /// 1. every live vertex's `Ceiling` ([`PointCache`]) is realized from its definition;
-/// 2. every live surface's `Ceiling` ([`CacheStanding`]) is realized from its truth — after the
-///    vertices, because a plane through vertices whose meets are wider than `Rat` anchors at its
-///    first vertex's realization;
+/// 2. every live surface short of `Realized` ([`CacheStanding`]) is realized from its truth —
+///    after the vertices, because a plane through vertices whose meets are wider than `Rat` anchors
+///    at its first vertex's realization;
 /// 3. every live edge is re-derived on the paid budget — last, because a curve reads both the
 ///    vertex caches (a line's anchor) and the surface caches (a rim's frame).
 ///
-/// `Realized`/`Bounded` caches are already the realization, and `Unrealized` ones have no road;
-/// neither is touched — they are counted. «Live» is what the live solids reach: a surface no live
+/// `Realized`/`Bounded` caches are already the realization and are not touched. An `Unrealized`
+/// vertex has no road; an `Unrealized` surface may have one to the half it still lacks, so it is
+/// asked — what cannot be realized is counted by name. «Live» is what the live solids reach: a surface no live
 /// face carries (a datum plane nothing was built on) is not walked, as an export does not write it.
 ///
 /// ★★ **It changes caches, not truths — but it is the door at the end of a log.** No operation
@@ -1109,17 +1145,17 @@ pub fn refine_caches(model: &mut Model) -> RefineReport {
         reach.faces.iter().map(|&f| model.face(f).surface).collect();
     surfaces.sort_by_key(|s| s.index());
     surfaces.dedup();
+    // Every surface short of `Realized` is asked on the paid budget — an `Unrealized` one too: a
+    // plane with no road to one half may still have a stopped other half to pay for. The count is
+    // what the paid realization came to, since a standing never falls.
     for h in surfaces {
-        match model.surface_cache_standing(h) {
-            CacheStanding::Realized => {}
-            CacheStanding::Unrealized => out.surfaces.left_unrealized += 1,
-            CacheStanding::Ceiling => {
-                raise_surface(model, h, Budget::Paid);
-                match model.surface_cache_standing(h) {
-                    CacheStanding::Realized => out.surfaces.refined += 1,
-                    _ => out.surfaces.left_undecided += 1,
-                }
-            }
+        if model.surface_cache_standing(h) == CacheStanding::Realized {
+            continue;
+        }
+        match raise_surface(model, h, Budget::Paid) {
+            Some(CacheStanding::Realized) => out.surfaces.refined += 1,
+            Some(CacheStanding::Ceiling) => out.surfaces.left_undecided += 1,
+            Some(CacheStanding::Unrealized) | None => out.surfaces.left_unrealized += 1,
         }
     }
 
@@ -1167,8 +1203,9 @@ impl Budget {
 /// the planes' coefficients realized at `bits` — the world name's where the plane has one, else the
 /// plane its witness triangle spans after its chain ([`PlaneMemo`], the seam table's own road and
 /// memo) — scaled to a unit and read out once ([`Realized::to_f64`]), unsigned: the derivation turns
-/// it toward the end vertex. Where the names answer, nothing is given — `nacre-topo` reads them
-/// itself ([`Model::line_direction_from_names`], asked here so «the names answer» has one spelling).
+/// it toward the end vertex. `nacre-topo` asks only where its own roads — the names
+/// ([`Model::line_direction_from_names`]) and what pushers gave this pair before — do not answer,
+/// so «the names answer» is spelled there alone.
 pub(crate) fn edge_given(
     model: &Model,
     surfaces: [Handle<Surface>; 2],
@@ -1223,7 +1260,7 @@ fn rim_centre(
     None
 }
 
-/// [`edge_given`]'s line arm — `None` where the names answer, a carrier is not a plane, a carrier
+/// [`edge_given`]'s line arm — `None` where a carrier is not a plane, a carrier
 /// has no road (a nameless `Through`), the budget does not walk the chain, or no rung decides.
 fn line_direction(
     model: &Model,
@@ -1374,19 +1411,25 @@ pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let realized = line_meets_plane_hp(&o, &a, &n, bits)
         .and_then(|c| Realized(Arm::Approached(c, bits)).to_f64())
         .map(|(v, _)| v);
-    // The cached `f64`s, exactly: a dyadic `m·2⁻ᵏ` is `m / 2ᵏ`.
+    // The cached `f64`s, exactly, read off their bits: `±mantissa · 2^exponent`.
     let exact = |v: f64| -> Option<HpBounded> {
-        if v == 0.0 {
-            return Some(HpBounded::of_rat(nacre_exact::Rat::from_int(0), bits));
+        let b = v.to_bits();
+        let raw_exp = ((b >> 52) & 0x7ff) as i64;
+        let frac = b & ((1u64 << 52) - 1);
+        let (mantissa, exp) = match raw_exp {
+            0 => (frac, -1074),
+            _ => (frac | (1u64 << 52), raw_exp - 1075),
+        };
+        let mut m = num_bigint::BigInt::from(mantissa);
+        if v.is_sign_negative() {
+            m = -m;
         }
-        let (mut m, mut k) = (v, 0u32);
-        while m.fract() != 0.0 {
-            m *= 2.0;
-            k += 1;
+        if exp >= 0 {
+            Some(HpBounded::of_bigint(&(m << exp as usize), bits))
+        } else {
+            let den = num_bigint::BigInt::from(1) << (-exp) as usize;
+            HpBounded::of_bigint(&m, bits).div(&HpBounded::of_bigint(&den, bits), bits)
         }
-        let num = num_bigint::BigInt::from(m as i128);
-        let den = num_bigint::BigInt::from(1) << k;
-        HpBounded::of_bigint(&num, bits).div(&HpBounded::of_bigint(&den, bits), bits)
     };
     let c = circle.center().as_array();
     let ch: [HpBounded; 3] = [exact(c[0])?, exact(c[1])?, exact(c[2])?];

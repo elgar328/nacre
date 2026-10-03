@@ -1601,21 +1601,109 @@ fn the_refine_door_raises_every_surface_ceiling_onto_its_corners() {
     );
 }
 
-/// ★★ **Same log, same door, same file** — two models built by the same operations and refined
-/// export byte-identical STEP: the door is a function of the definitions, so it cannot make two
-/// agreeing models disagree on the way out.
+/// ★★ **Same log, same door, same file — and the door shows in the file.** Two models built by
+/// the same operations and refined export byte-identical STEP: the door is a function of the
+/// definitions, so it cannot make two agreeing models disagree on the way out. And the refined
+/// file is not the unrefined one — otherwise the agreement would say nothing about the door (the
+/// same log exports the same bytes with or without it).
 #[test]
 fn a_refined_model_exports_the_same_bytes_twice() {
     let (mut a, mut b) = (translated_chain(300), translated_chain(300));
+    // The header carries a timestamp; the shape is the DATA section.
+    let data = |m: &Model| {
+        let s = nacre_step::to_step(m).expect("export");
+        s[s.find("DATA;").expect("a DATA section")..].to_owned()
+    };
+    let unrefined = data(&a);
     nacre_ops::refine_caches(&mut a);
     nacre_ops::refine_caches(&mut b);
-    let (sa, sb) = (
-        nacre_step::to_step(&a).expect("export"),
-        nacre_step::to_step(&b).expect("export"),
+    assert_eq!(data(&a), data(&b));
+    assert_ne!(data(&a), unrefined, "the door must reach the file");
+}
+
+/// ★★★ **The door raises a cylinder too** — a cylinder solid turned 7° and carried 300 recorded
+/// translations is past the cache road's cost cap, so its lateral cache is the producer's figure,
+/// `Ceiling`. After the door it is `Realized`, and the seam corners — realized beforehand on the
+/// expensive road, as the oracle — lie at the radius from its axis within what the roundings allow
+/// (the seam point and the cylinder replay the same chain, so this checks the cache's frame and
+/// rounding rather than the replay). Before the door the same bound fails, or it measures nothing.
+#[test]
+fn the_refine_door_raises_a_deep_cylinder() {
+    let mut m = Model::new();
+    let c = nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([1.0, 0.5, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.75,
+        2.0,
     );
-    // The header carries a timestamp; the shape is the DATA section.
-    let data = |s: &str| s[s.find("DATA;").expect("a DATA section")..].to_owned();
-    assert_eq!(data(&sa), data(&sb));
+    m.rebuild_adjacency();
+    let mut s = moved(&mut m, c.solid, turn(Axis::Z, 7));
+    for _ in 0..300 {
+        let iso = Isometry::translation([
+            Rat::new(1, 7).expect("1/7"),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]);
+        s = moved(&mut m, s, iso);
+    }
+    m.rebuild_adjacency();
+    let lateral = m
+        .shell(m.solid(s).outer)
+        .faces
+        .iter()
+        .map(|&f| m.face(f).surface)
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
+        .expect("a lateral face");
+    assert_eq!(
+        m.surface_cache_standing(lateral),
+        nacre_topo::CacheStanding::Ceiling,
+        "the fixture must leave the cylinder Ceiling"
+    );
+    let truth: Vec<Point3> = live_vertices(&m)
+        .into_iter()
+        .map(|vh| {
+            let r = realize_vertex(&m, vh, Precision::NearestF64).expect("a seam point realizes");
+            Point3::from_array(r.to_f64().expect("an f64").0)
+        })
+        .collect();
+    let worst_excess = |m: &Model| -> f64 {
+        let nacre_geom::Surface::Cylinder(cyl) = m.surface_cache(lateral) else {
+            unreachable!("a cylinder truth has a cylinder cache")
+        };
+        let (o, a, r) = (cyl.axis().origin(), cyl.axis().direction(), cyl.radius());
+        let half_ulp = |v: f64| (f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0;
+        truth
+            .iter()
+            .map(|&v| {
+                let d = v - o;
+                let off = (d - a * a.dot(d)).norm();
+                let allowed = 3f64.sqrt() * f64::EPSILON / 2.0 * d.norm()
+                    + (0..3)
+                        .map(|k| half_ulp(o.as_array()[k]) + half_ulp(v.as_array()[k]))
+                        .sum::<f64>()
+                    + half_ulp(r)
+                    + 8.0 * f64::EPSILON * d.norm();
+                (off - r).abs() - allowed
+            })
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    assert!(
+        worst_excess(&m) > 0.0,
+        "before the door the producer's figure must miss somewhere, or this measures nothing"
+    );
+    let report = nacre_ops::refine_caches(&mut m);
+    assert!(report.surfaces.refined >= 1, "{report:?}");
+    assert_eq!(report.surfaces.left_undecided, 0, "{report:?}");
+    assert_eq!(
+        m.surface_cache_standing(lateral),
+        nacre_topo::CacheStanding::Realized
+    );
+    let excess = worst_excess(&m);
+    assert!(
+        excess <= 0.0,
+        "a raised cylinder misses its realized seam corners by {excess:e} past the roundings"
+    );
 }
 
 /// ★★★★ **The door carries the edges with it** — the order problem, back again.
@@ -1843,5 +1931,56 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
                 a.index()
             );
         }
+    }
+}
+
+/// ★★ **The surface lock holds where the door derives and the cache road would stop** — a block
+/// with a `Through` face carried by 250 recorded quarter turns: every chain folds, so the push door
+/// derives every surface cache from the truth (`Realized`) at a depth the cache road would not walk.
+/// The census's question (`realize_surface_cache`) must agree there too, or it cries wolf on the
+/// first deep folding model the census meets.
+#[test]
+fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
+    let mut m = Model::new();
+    let mut s = crate::fixtures::through_block(&mut m, 1.0);
+    m.rebuild_adjacency();
+    let quarter = Isometry::rotation(Rotation {
+        axis: Axis::Z,
+        pivot: [Rat::new(1, 2).expect("1/2"); 3],
+        angle: Angle::from_deg(Rat::from_int(90)).expect("a quarter"),
+    });
+    for _ in 0..250 {
+        s = moved(&mut m, s, quarter);
+    }
+    m.rebuild_adjacency();
+    let mut seen: Vec<_> = m
+        .reachable()
+        .faces
+        .into_iter()
+        .map(|f| m.face(f).surface)
+        .collect();
+    seen.sort_by_key(|h| h.index());
+    seen.dedup();
+    for h in seen {
+        assert_eq!(
+            m.surface_cache_standing(h),
+            nacre_topo::CacheStanding::Realized,
+            "surface {}",
+            h.index()
+        );
+        let (cache, standing) =
+            nacre_ops::realize_surface_cache(&m, h).expect("a road to every surface here");
+        assert_eq!(
+            standing,
+            nacre_topo::CacheStanding::Realized,
+            "surface {}",
+            h.index()
+        );
+        assert_eq!(
+            format!("{cache:?}"),
+            format!("{:?}", m.surface_cache(h)),
+            "surface {}",
+            h.index()
+        );
     }
 }
