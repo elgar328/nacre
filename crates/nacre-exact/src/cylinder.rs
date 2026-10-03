@@ -77,9 +77,10 @@ pub fn cyl_unit_frame_f64(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([f64; 3
 }
 
 /// **Where a plane meets the line `o + t·m`, as the parameter `t`** — `t = −(n·o + d)/(n·m)` for
-/// the plane `n·x + d = 0`, in checked `Rat`. The one spelling of a cylinder axis meeting a cap:
-/// every question of where a plane crosses an axis is this, and [`axis_plane_meet`] is the point
-/// it names.
+/// the plane `n·x + d = 0`, in checked `Rat`. The one exact spelling of a cylinder axis meeting a
+/// cap: every exact question of where a plane crosses an axis asks this, and [`axis_plane_meet`]
+/// is the point it names. (The `f64` meets that remain are construction fallbacks, where the
+/// truth is not stated in the world.)
 ///
 /// `None` when the plane is parallel to the line (`n·m = 0`, no meeting point) or the arithmetic
 /// leaves `i128`.
