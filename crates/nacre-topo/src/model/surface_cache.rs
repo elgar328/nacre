@@ -110,9 +110,8 @@ impl Model {
     /// producer stated, so the census `stat` rows keep meaning "how far the producer's value was
     /// from the truth's".
     ///
-    /// ⚠ Planes only. A test build's [`Model::push_cylinder_raw`] derives the cylinder arm and
-    /// **throws it away** (`measure_derivation`) — whether applying it moves any cache bit is
-    /// measured for the moved cylinders only (bit-identical), not for the unmoved ones.
+    /// Planes. A cylinder's push applies the same derivation itself, after holding the producer's
+    /// cache to it ([`Model::push_cylinder_raw`]).
     fn apply_derivation(&mut self, h: Handle<Surface>) -> bool {
         let derived = self.derive_surface_cache(h);
         #[cfg(any(test, feature = "test-util"))]
@@ -128,11 +127,24 @@ impl Model {
 
     /// A cylinder's push (private) — [`Model::push_plane_raw`]'s twin, and the other half of the
     /// reason neither takes a `nacre_geom::Surface`.
+    ///
+    /// ★ **The cache is the truth's realization wherever the truth is stated in the world** — the
+    /// statement's origin, unit axis, unit `ref_dir` and radius, each correctly rounded
+    /// ([`Model::derive_surface_cache`]); the producer's `cache` stands where the derivation
+    /// declines (a chain that does not fold — `nacre-ops` realizes those from the chain). `derive`
+    /// is `false` only on the test door that plants a cache the truth contradicts.
+    ///
+    /// ★ **The producer's cache is still checked, before it is replaced.** It is the one value the
+    /// statement did not produce — the producer moved it in `f64` beside the exact transport of
+    /// the statement — so holding the two together is what catches a statement carried wrong (a
+    /// fold in the wrong order). Overwritten unchecked, the check `world_cylinder_def` and
+    /// `validate` make afterwards would compare the statement with itself.
     pub(super) fn push_cylinder_raw(
         &mut self,
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
         cache: nacre_geom::Cylinder,
+        derive: bool,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Cylinder { def, motion });
         self.surface_cache.push(SurfaceCache {
@@ -143,8 +155,22 @@ impl Model {
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
-        #[cfg(any(test, feature = "test-util"))]
-        self.measure_derivation(h);
+        if derive {
+            let derived = self.derive_surface_cache(h);
+            #[cfg(any(test, feature = "test-util"))]
+            self.count_derivation(h, derived.as_ref());
+            if let Some(realized) = derived {
+                debug_assert!(
+                    match &realized {
+                        nacre_geom::Surface::Cylinder(d) => cylinders_agree(&cache, d),
+                        nacre_geom::Surface::Plane(_) => false,
+                    },
+                    "the producer's cylinder cache strays from its statement: {cache:?} vs \
+                     {realized:?}"
+                );
+                self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+            }
+        }
         h
     }
 
@@ -214,10 +240,11 @@ impl Model {
             }
             Surface::Cylinder { .. } => {
                 let def = self.world_cylinder_statement(h)?;
-                Cylinder::from_axis(
+                let (axis, ref_dir) = nacre_exact::cyl_unit_frame_f64(&def.dir(), &def.ref_dir())?;
+                Cylinder::from_unit_frame(
                     Point3::from_array(rat3(def.origin())),
-                    Vector3::from_array(rat3(def.dir())),
-                    Vector3::from_array(rat3(def.ref_dir())),
+                    Vector3::from_array(axis),
+                    Vector3::from_array(ref_dir),
                     def.radius_f64(),
                 )
                 .map(nacre_geom::Surface::Cylinder)
@@ -257,16 +284,37 @@ impl Model {
     }
 }
 
+/// **The producer's cylinder cache and the realization of its statement describe one cylinder** —
+/// each part within `1e-9` of the model's scale there (the producer's `f64` transport errs in
+/// proportion to the coordinates it moves, so a fixed bound would cry wolf on a large model).
+/// The origins may be different points of the axis only if the producer chose another; the
+/// producers here state the statement's own origin, so they are compared as points.
+fn cylinders_agree(producer: &Cylinder, derived: &Cylinder) -> bool {
+    let (a, b) = (producer.axis(), derived.axis());
+    let scale = 1f64
+        .max(
+            b.origin()
+                .as_array()
+                .iter()
+                .fold(0f64, |m, c| m.max(c.abs())),
+        )
+        .max(derived.radius());
+    let tol = 1e-9 * scale;
+    let close = |u: [f64; 3], v: [f64; 3], t: f64| (0..3).all(|k| (u[k] - v[k]).abs() <= t);
+    close(a.origin().as_array(), b.origin().as_array(), tol)
+        && close(a.direction().as_array(), b.direction().as_array(), 1e-9)
+        && close(
+            producer.ref_dir().as_array(),
+            derived.ref_dir().as_array(),
+            1e-9,
+        )
+        && (producer.radius() - derived.radius()).abs() <= tol
+}
+
 /// The counters of [`crate::SurfaceDeriveCounts`] — a test build's instrument (`test-util`); a
 /// product build pushes surfaces without them.
 #[cfg(any(test, feature = "test-util"))]
 impl Model {
-    /// Count what [`Model::derive_surface_cache`] would do at this push, and change nothing —
-    /// the measuring half of [`Model::apply_derivation`], for the doors that do not apply it.
-    fn measure_derivation(&self, h: Handle<Surface>) {
-        self.count_derivation(h, self.derive_surface_cache(h).as_ref());
-    }
-
     /// Count one derivation's outcome against the cache the producer stated.
     fn count_derivation(&self, h: Handle<Surface>, derived: Option<&nacre_geom::Surface>) {
         use std::sync::atomic::Ordering::Relaxed;

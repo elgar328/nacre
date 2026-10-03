@@ -59,6 +59,28 @@ impl Cylinder {
         })
     }
 
+    /// A cylinder whose axis direction and `ref_dir` **are already** the unit, mutually
+    /// perpendicular vectors to keep, stored bit for bit — the cache a realization rounded
+    /// correctly, which [`Cylinder::from_axis`] would round again (it normalizes both and strips
+    /// the axial part of `ref_dir` in `f64`). `None` for a radius that is not positive.
+    #[inline]
+    pub fn from_unit_frame(
+        origin: Point3,
+        direction: Vector3,
+        ref_dir: Vector3,
+        radius: f64,
+    ) -> Option<Cylinder> {
+        debug_assert!(
+            (ref_dir.dot(ref_dir) - 1.0).abs() < 1e-12 && direction.dot(ref_dir).abs() < 1e-12,
+            "a unit ref_dir across the axis: {direction:?} {ref_dir:?}"
+        );
+        (radius > 0.0).then_some(Cylinder {
+            axis: Line::from_point_unit_direction(origin, direction),
+            ref_dir,
+            radius,
+        })
+    }
+
     /// The axis line.
     #[inline]
     pub fn axis(&self) -> Line {

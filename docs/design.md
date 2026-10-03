@@ -387,7 +387,8 @@ pub struct Adjacency {
   (`CavityMisoriented`).
 - **기하 접속** — 캐시된 점이 자기 정의의 곡면(`VertexOffDefinition`)·간선의 곡선(`VertexOffCurve`)·
   면의 곡면(`VertexOffSurface`) 위에 tol 안으로 앉아 있다. 원통은 진실과 f64 캐시가 맞는지도 본다
-  (`CylinderTruthCacheMismatch`).
+  (`CylinderTruthCacheMismatch`) — 세계에 진술된 원통의 캐시는 문이 그 진술에서 실현하므로, 진술을 생산자가 따로
+  옮긴 값과 대조하는 일은 문(`push_cylinder_raw` 의 `debug_assert`)이 덮어쓰기 전에 한다.
 - **오일러-푸앵카레** — `V − E + F = 2(S − G) + L_i`(`L_i` = 면의 내부 루프 수, `S` = 껍질 수,
   `G` = genus). **기준은 `V−E+F=2` 가 아니다**: `validate` 는 **χ = V − E + F − L_i** 를 세어 **짝수인지**
   (`EulerParity`)와 **G = S − χ/2 ≥ 0** 인지(`NegativeGenus`)를 본다. 뚫린 솔리드는 genus 1 이라 χ = 0

@@ -50,7 +50,15 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         nacre_exact::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
-    let c = m.push_cylinder(cache, other, None);
+    // Its own cache — the door holds a producer's cache to the statement it comes with.
+    let other_cache = nacre_geom::Cylinder::from_axis(
+        pt(0.0, 0.0, 0.0),
+        vec(0.0, 0.0, 1.0),
+        vec(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .expect("non-degenerate");
+    let c = m.push_cylinder(other_cache, other, None);
     assert_ne!(a, c, "a different seam statement is a different surface");
 }
 
@@ -150,5 +158,52 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
         )
         .is_none(),
         "a zero ref_dir pins no seam either"
+    );
+}
+
+/// **The cache is the statement's correct rounding, not the producer's figure.** Two producers'
+/// figures that miss it in the last place — a tilted axis normalized in `f64` (`(1, 1, 1)` and
+/// `(1, −1, 0)` are two whose `f64` normalization is not the nearest unit vector)
+/// ([`nacre_geom::Cylinder::from_axis`]), and an origin moved in `f64` beside a statement moved
+/// exactly — are replaced at the door by the statement's origin rounded once and its unit frame
+/// rounded once ([`nacre_exact::cyl_unit_frame_f64`]).
+#[test]
+fn the_door_realizes_a_cylinder_cache_from_its_statement() {
+    let mut m = Model::new();
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let dir = [q(1, 1), q(1, 1), q(1, 1)];
+    let ref_dir = [q(1, 1), q(-1, 1), q(0, 1)];
+    let origin = [q(1, 3), q(2, 7), q(5, 11)];
+    let def = CylinderDef::new(origin, dir, ref_dir, nacre_exact::BigRat::from(q(9, 4))).unwrap();
+    // The producer's figure: every part computed in `f64`, and the origin a step away from the
+    // statement's rounding, as an `f64` transport leaves it.
+    let figure = nacre_geom::Cylinder::from_axis(
+        pt(1.0 / 3.0 + 1e-15, 2.0 / 7.0, 5.0 / 11.0),
+        vec(1.0, 1.0, 1.0),
+        vec(1.0, -1.0, 0.0),
+        1.5,
+    )
+    .unwrap();
+    let h = m.push_cylinder(figure, def, None);
+    let nacre_geom::Surface::Cylinder(c) = m.surface_cache(h) else {
+        panic!("a cylinder")
+    };
+    let (axis, across) = nacre_exact::cyl_unit_frame_f64(&dir, &ref_dir).unwrap();
+    assert_eq!(c.axis().origin().as_array(), origin.map(|r| r.to_f64()));
+    assert_eq!(c.axis().direction().as_array(), axis);
+    assert_eq!(c.ref_dir().as_array(), across);
+    assert_eq!(c.radius(), 1.5);
+    // The producer's own figure is not the rounding — the case the door exists for, on the
+    // origin and on the frame alike.
+    assert_ne!(
+        figure.axis().origin().as_array(),
+        origin.map(|r| r.to_f64())
+    );
+    assert_ne!(
+        (
+            figure.axis().direction().as_array(),
+            figure.ref_dir().as_array()
+        ),
+        (axis, across)
     );
 }

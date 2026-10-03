@@ -173,7 +173,9 @@ impl Model {
                 };
                 self.push_plane_raw(points, motion, sense, name, fallback)
             }
-            Stated::Cylinder { def, motion, cache } => self.push_cylinder_raw(def, motion, cache),
+            Stated::Cylinder { def, motion, cache } => {
+                self.push_cylinder_raw(def, motion, cache, true)
+            }
         };
         if let Some(k) = key {
             self.interned.insert(k, h);

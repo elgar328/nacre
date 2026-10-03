@@ -52,6 +52,30 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
     ))
 }
 
+/// **A cylinder's cache frame, correctly rounded** — the unit axis `dir/‖dir‖` and the unit
+/// reference direction `e₁/‖e₁‖`, `e₁ = (dir·dir)·ref_dir − (ref_dir·dir)·dir` the part of `ref_dir`
+/// perpendicular to the axis, each component the `f64` nearest the true value
+/// ([`unit_vector_f64`]). The cache's twin of [`cyl_unit_frame`], which answers only where the
+/// norms are rational; this one always does, because an `f64` names every unit vector.
+///
+/// Projected, not refused: the cache's `ref_dir` is the seam's direction across the axis, and a
+/// statement whose `ref_dir` leans along the axis still names that direction. The two vectors are
+/// lifted to integers first (a positive common denominator does not move a direction), so a wide
+/// statement does not fall out of `Rat` on the way. `None` for a zero axis or a `ref_dir` parallel
+/// to it.
+pub fn cyl_unit_frame_f64(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([f64; 3], [f64; 3])> {
+    use num_bigint::BigInt;
+    let ints = |v: &[Rat; 3]| -> [BigInt; 3] {
+        let den: BigInt = v.iter().map(|r| BigInt::from(r.denom())).product();
+        (*v).map(|r| BigInt::from(r.numer()) * (&den / BigInt::from(r.denom())))
+    };
+    let (m, e) = (ints(dir), ints(ref_dir));
+    let dot = |a: &[BigInt; 3], b: &[BigInt; 3]| &a[0] * &b[0] + &a[1] * &b[1] + &a[2] * &b[2];
+    let (mm, em) = (dot(&m, &m), dot(&e, &m));
+    let e1: [BigInt; 3] = core::array::from_fn(|k| &mm * &e[k] - &em * &m[k]);
+    Some((unit_vector_f64(&m)?, unit_vector_f64(&e1)?))
+}
+
 /// **How a point's distance from a plane compares with `r`**, the radius stated as its square
 /// `r2` — [`Orient::Negative`] inside the slab of half-width `r` about the plane, [`Orient::Zero`]
 /// exactly at distance `r`, [`Orient::Positive`] clear of it. Exact and total.

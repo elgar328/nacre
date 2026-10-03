@@ -22,6 +22,20 @@ impl Model {
         self.push_plane_raw(PlanePoints::Known(points), None, sense, None, cache)
     }
 
+    /// Push a cylinder whose cache is **not** derived from its statement, and not interned —
+    /// test-only: the door a fixture uses to plant a cache its truth contradicts (the check that
+    /// catches the lie is the proposition), which the public door would overwrite with the
+    /// statement's own realization.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_cylinder_unregistered(
+        &mut self,
+        cache: nacre_geom::Cylinder,
+        def: CylinderDef,
+        motion: Option<Handle<MotionNode>>,
+    ) -> Handle<Surface> {
+        self.push_cylinder_raw(def, motion, cache, false)
+    }
+
     /// A new shell whose faces are copies of `src`'s with their outward normals
     /// flipped inward: every loop's winding is reversed and every face
     /// `orientation` is toggled. Pushes fresh [`Face`] cells and a fresh

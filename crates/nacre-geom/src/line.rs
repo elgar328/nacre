@@ -28,6 +28,19 @@ impl Line {
             .map(|direction| Line { origin, direction })
     }
 
+    /// From an origin and a direction that **is already** the unit direction, stored bit for bit —
+    /// [`Plane::from_point_unit_normal`](crate::Plane::from_point_unit_normal)'s twin: normalizing
+    /// a unit `f64` vector again rounds twice, and a caller holding a correctly rounded direction
+    /// wants it kept.
+    #[inline]
+    pub fn from_point_unit_direction(origin: Point3, direction: Vector3) -> Line {
+        debug_assert!(
+            (direction.dot(direction) - 1.0).abs() < 1e-12,
+            "a unit direction: {direction:?}"
+        );
+        Line { origin, direction }
+    }
+
     /// The line through two points: `direction = (b − a)` normalized,
     /// `origin = a`. Returns `None` if `a == b` (coincident).
     #[inline]

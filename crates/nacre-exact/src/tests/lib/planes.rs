@@ -997,3 +997,40 @@ mod triple_sense {
         }
     }
 }
+
+/// **The cache frame is the correct rounding of the true unit frame** — on an axis-aligned
+/// statement (exact units), a 3-4-5 one (rational norms: the rounding of the exact rational frame),
+/// an irrational one (axis `(1, 1, 1)`: every component `1/√3`, read against `unit_vector_f64`), a
+/// `ref_dir` leaning along the axis (projected: the lean is dropped), and components wider than
+/// `i128` once scaled to a common denominator. A parallel `ref_dir` names no seam.
+#[test]
+fn the_cache_frame_rounds_the_true_unit_frame() {
+    use crate::{Rat, cyl_unit_frame, cyl_unit_frame_f64, unit_vector_f64};
+    use num_bigint::BigInt;
+    let q = |n: i128| Rat::from_int(n);
+    let v = |a: i128, b: i128, c: i128| [q(a), q(b), q(c)];
+    assert_eq!(
+        cyl_unit_frame_f64(&v(0, 0, 2), &v(3, 0, 0)),
+        Some(([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]))
+    );
+    let (u1, _) = cyl_unit_frame(&v(0, 0, 5), &v(3, 4, 0)).unwrap();
+    let (axis, ref_dir) = cyl_unit_frame_f64(&v(0, 0, 5), &v(3, 4, 0)).unwrap();
+    assert_eq!(axis, [0.0, 0.0, 1.0]);
+    assert_eq!(ref_dir, u1.map(|r| r.to_f64()));
+    let b = |a: i64, c: i64, d: i64| [BigInt::from(a), BigInt::from(c), BigInt::from(d)];
+    let (axis, ref_dir) = cyl_unit_frame_f64(&v(1, 1, 1), &v(1, -1, 0)).unwrap();
+    assert_eq!(Some(axis), unit_vector_f64(&b(1, 1, 1)));
+    assert_eq!(Some(ref_dir), unit_vector_f64(&b(1, -1, 0)));
+    // Leaning along the axis: `(3, 0, 4)` about `ẑ` is `x̂` across it.
+    assert_eq!(
+        cyl_unit_frame_f64(&v(0, 0, 1), &v(3, 0, 4)).map(|f| f.1),
+        Some([1.0, 0.0, 0.0])
+    );
+    // Denominators whose product leaves `i128`: the direction is the same.
+    let tiny = Rat::new(1, 10i128.pow(30)).unwrap();
+    let small = Rat::new(1, 10i128.pow(29)).unwrap();
+    let neg_small = Rat::new(-1, 10i128.pow(29)).unwrap();
+    let wide = cyl_unit_frame_f64(&[tiny, tiny, tiny], &[small, neg_small, q(0)]).unwrap();
+    assert_eq!(wide, cyl_unit_frame_f64(&v(1, 1, 1), &v(1, -1, 0)).unwrap());
+    assert!(cyl_unit_frame_f64(&v(0, 0, 1), &v(0, 0, 2)).is_none());
+}

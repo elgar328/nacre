@@ -872,7 +872,7 @@ fn a_lying_cylinder_def_is_caught() {
         nacre_exact::BigRat::from(r(4.0)), // the lie: r² = 4, where the cache's radius is 1
     )
     .expect("well-formed statement");
-    let liar = m.push_cylinder(cache, lying, None);
+    let liar = m.push_cylinder_unregistered(cache, lying, None);
     let twin = {
         let f = m.face(victim).clone();
         m.push_face(Face { surface: liar, ..f })
