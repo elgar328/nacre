@@ -15,7 +15,7 @@ nacre-math = { workspace = true }
 nacre-store = { workspace = true }
 # Serialization backend (kernel is backend-agnostic; step-io is confined to this
 # crate). StepBuilder has existed since 0.1.0, so ^0.2 (→ 0.2.2) works.
-step-io = "0.2.4"
+step-io = "0.2.5"
 
 [dev-dependencies]
 # Test cylinders are built the way an application builds one — a datum, a circle, an extrude
