@@ -11,6 +11,7 @@ While the version is `0.0.z`, every release may break anything.
 ### Changed
 
 - `Operation::Extrude` takes a signed distance: a negative one sweeps against the frame's normal, in the same frame, with the base cap still on the frame's plane. A distance of zero is `OpError::ZeroDistance`.
+- **Breaking:** `topo::Model::push_edge`, `topo::Model::derive_edge_curve` and `topo::Model::rebuild_edge_cache` take a closure that gives, when asked, what the caller realized of the edge's truth (`topo::EdgeGiven`) — pass `|_| EdgeGiven::NONE` to give nothing.
 
 ### Removed
 
@@ -21,7 +22,7 @@ While the version is `0.0.z`, every release may break anything.
 ### Fixed
 
 - A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre unless the cylinder was turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame; before, these values could be a few units in the last place off.
-- A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction when both of its faces lie on planes stated in world coordinates or it runs along a cylinder (a seam or a ruling); before, the direction and the length were recomputed from the rounded end points.
+- A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction — including edges on faces turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, the direction and the length were recomputed from the rounded end points.
 
 ## [0.0.1] - 2026-10-02
 

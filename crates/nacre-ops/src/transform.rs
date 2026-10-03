@@ -751,7 +751,7 @@ fn transform_solid(
     }
 
     // (There is no pass 2 — curves are not stored: the moved edge's
-    // curve derives from its moved carriers and endpoints in pass 4's `push_edge`.)
+    // curve derives from its moved carriers and endpoints in pass 4's edge funnel.)
 
     // Pass 3 — vertices (dedup): the definition's handles re-pointed onto the moved surfaces,
     // the coordinate moved as a fallback figure, the point re-realized from the definition.
@@ -836,6 +836,8 @@ fn transform_solid(
 
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
     let mut edge_map: HashMap<Handle<Edge>, Handle<Edge>> = HashMap::new();
+    // A moved plane carries several edges, so it is realized once (`realize::PlaneMemo`).
+    let mut memo = crate::realize::PlaneMemo::default();
     for &eh in &edge_order {
         let e = *model.edge(eh);
         // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
@@ -845,12 +847,13 @@ fn transform_solid(
         // (`Model::plane_cylinder_relation` reads the moved statements through their chains, so
         // `Oblique`/`Unstated` cannot appear where the source derived). A refusal here is
         // mapped to the honest reject rather than a panic all the same.
-        let new_e = model
-            .push_edge(
-                [surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]],
-                e.vertices.map(|v| vert_map[&v]),
-            )
-            .map_err(|_| OpError::DegenerateGeometry)?;
+        let new_e = crate::realize::push_edge_realized(
+            model,
+            [surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]],
+            e.vertices.map(|v| vert_map[&v]),
+            &mut memo,
+        )
+        .map_err(|_| OpError::DegenerateGeometry)?;
         edge_map.insert(eh, new_e);
     }
 

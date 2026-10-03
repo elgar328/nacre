@@ -530,8 +530,9 @@ fn an_operations_cache_is_the_realization() {
 }
 
 /// ★ **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
-/// after its vertices, so `push_edge` derives its line from realized coordinates; rebuilding every
-/// edge curve afterwards changes nothing — the derivation, standing on realized endpoints.
+/// after its vertices, so the push anchors its line at a realized coordinate (and, where no truth
+/// gives the direction, runs it along realized coordinates); rebuilding every edge curve afterwards
+/// changes nothing — the derivation, standing on realized endpoints.
 ///
 /// ⚠ This is a statement about a model **nothing has refined**. `refine_vertex_cache` moves
 /// coordinates, and after it a rebuild is emphatically not a no-op — which is why that door
@@ -545,7 +546,7 @@ fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
         .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
-    m.rebuild_edge_cache();
+    nacre_ops::rebuild_edge_cache(&mut m);
     let after: Vec<_> = (0..m.edge_count() as u32)
         .filter_map(|i| m.edge_handle_at(i))
         .map(|h| (h, m.edge(h)))
@@ -1497,7 +1498,7 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
 ///
 /// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That was
 /// safe while coordinates never moved after the fact; this door moves them. So the door re-derives,
-/// and the proof is that a rebuild *afterwards* finds nothing left to do.
+/// and the proof is that a rebuild *afterwards*, on the door's own budget, finds nothing left to do.
 #[test]
 fn the_refine_door_carries_the_edges_with_it() {
     let mut m = translated_chain(300);
@@ -1518,7 +1519,7 @@ fn the_refine_door_carries_the_edges_with_it() {
         "if the curves did not move, this fixture proves nothing about carrying them"
     );
 
-    m.rebuild_edge_cache();
+    nacre_ops::rebuild_edge_cache_paid(&mut m);
     let again: Vec<_> = (0..m.edge_count() as u32)
         .filter_map(|i| m.edge_handle_at(i))
         .map(|h| (h, m.edge(h)))

@@ -704,7 +704,8 @@ pub struct Model {
     /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
     world_planes: Vec<Handle<Surface>>,
     /// Per-edge curve caches, index-parallel to `edges` — **cache, not truth**: the
-    /// carriers and endpoints decide the curve ([`Model::derive_edge_curve`]), and
+    /// carriers and endpoints decide the curve ([`Model::derive_edge_curve`], asking the pusher
+    /// for what only a chain replay can realize — [`EdgeGiven`]), and
     /// [`Model::rebuild_edge_cache`] discards and regenerates the lot. Filled eagerly by
     /// [`Model::push_edge`]; read through [`Model::edge_curve`]. A raw `edges.push` without a
     /// cache entry desyncs the two — the accessor's debug_assert and validate's parallelism
@@ -737,6 +738,20 @@ pub struct Model {
     /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
     /// is quadratic in the history.
     motion_folds: Vec<Option<nacre_exact::AxisAffine>>,
+    /// **The direction two planes meet in, realized, by carrier pair** ([`Edge::carrier_pair`]'s
+    /// order) — every [`EdgeGiven::direction`] a pusher handed in, kept so the next edge on the
+    /// same two planes reads it instead of realizing it again. Read through
+    /// [`Model::line_direction_cache`].
+    ///
+    /// A cache: a function of the two planes' truths alone (correctly rounded, so whoever realized
+    /// it, at whatever budget, wrote the same bits), and the truths are append-only, so an entry
+    /// cannot go stale.
+    ///
+    /// ★ **Measured**: a boolean re-mints every edge of its result, and a fold re-mints the
+    /// accumulated body's edges each step — 45,888 edges with an unnamed plane over a fold of 80
+    /// turned fins, on about a dozen new carrier pairs a step. Realizing each anew took the fold
+    /// from 1.33 s to 1.94 s.
+    line_directions: HashMap<[Handle<Surface>; 2], [f64; 3]>,
     /// Each surface's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points —
     /// present for every surface whose producer had a rational description to record.
     ///
@@ -888,6 +903,30 @@ impl PointCache {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EdgeCache {
     curve: Curve,
+}
+
+/// **What a pusher realized of an edge's truth that this crate cannot** — asked of the pusher by
+/// [`Model::derive_edge_curve`] (through [`Model::push_edge`] and [`Model::rebuild_edge_cache`]),
+/// and only where this crate's own roads do not answer.
+///
+/// ★ The curve's values are a function of the carriers' truths, and some of those truths are
+/// carried by a motion chain that does not fold (a turn off the quarters, a frame): reaching them
+/// means replaying the chain at a precision, which is `nacre-ops`' work, not this crate's. So the
+/// one who can realizes the value when asked — the plane cache's own arrangement (`push_plane`'s
+/// `fallback`, realized by the ops funnel). The derivation decides everything it can decide
+/// itself first, so «the truth answers here» is spelled in this crate alone and a piece it answers
+/// is never read from this.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EdgeGiven {
+    /// The unit direction two planes meet in, for a line one of whose planes has no world name —
+    /// the nearest `f64` of the truth's, unsigned.
+    pub direction: Option<[f64; 3]>,
+}
+
+impl EdgeGiven {
+    /// Nothing given: the derivation answers from what this crate can read, and where it cannot,
+    /// from the caches.
+    pub const NONE: EdgeGiven = EdgeGiven { direction: None };
 }
 
 /// One surface's realized geometry — a **cache** beside the surface store (index-parallel),

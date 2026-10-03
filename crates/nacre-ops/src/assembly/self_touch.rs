@@ -173,8 +173,11 @@ pub(crate) fn assemble_fuse_cut(
     rims: &crate::draft::HeldRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
+    memo: &mut crate::realize::PlaneMemo,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces, cyls, rims, deferred, tangencies)?;
+    let out = reconstruct(
+        model, jd, seam, faces, cyls, rims, deferred, tangencies, memo,
+    )?;
     model.supersede_live(&[a, b]);
     Ok(out)
 }

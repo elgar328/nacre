@@ -11,6 +11,7 @@ pub(crate) fn reconstruct(
     rims: &crate::draft::HeldRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
+    memo: &mut crate::realize::PlaneMemo,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
@@ -224,8 +225,7 @@ pub(crate) fn reconstruct(
                 let e = match cut {
                     Some(_) => None,
                     None => Some(
-                        model
-                            .push_edge(Edge::carrier_pair(lat, plane), [v, v])
+                        crate::realize::push_edge_realized(model, [lat, plane], [v, v], memo)
                             .map_err(edge_refused)?,
                     ),
                 };
@@ -293,6 +293,7 @@ pub(crate) fn reconstruct(
     // catches the known way this happens — two triples on one point — at the seam table, where the
     // names are still in hand, so this is a backstop with no firing test (cf. `NonManifoldEdge`).
     let mut edge_for = |model: &mut Model,
+                        memo: &mut crate::realize::PlaneMemo,
                         va: Handle<Vertex>,
                         vb: Handle<Vertex>,
                         wall: Wall,
@@ -318,9 +319,13 @@ pub(crate) fn reconstruct(
                 if let Some(&e) = edge_of.get(&key) {
                     return Ok(e);
                 }
-                let e = model
-                    .push_edge(Edge::carrier_pair(cyls[cyl].surf, face_surf), [from, to])
-                    .map_err(edge_refused)?;
+                let e = crate::realize::push_edge_realized(
+                    model,
+                    [cyls[cyl].surf, face_surf],
+                    [from, to],
+                    memo,
+                )
+                .map_err(edge_refused)?;
                 edge_of.insert(key, e);
                 return Ok(e);
             }
@@ -343,7 +348,8 @@ pub(crate) fn reconstruct(
             [a, b] => Edge::carrier_pair(a, b),
             _ => Edge::carrier_pair(wall_surf, face_surf),
         };
-        let e = model.push_edge(surfaces, [va, vb]).map_err(edge_refused)?;
+        let e = crate::realize::push_edge_realized(model, surfaces, [va, vb], memo)
+            .map_err(edge_refused)?;
         edge_of.insert(key, e);
         Ok(e)
     };
@@ -395,7 +401,14 @@ pub(crate) fn reconstruct(
             let mut chain = Vec::with_capacity(m);
             for i in 0..m {
                 let (u, v) = (vs[i], vs[(i + 1) % m]);
-                let e = edge_for(model, u, v, Wall::Arc { cyl: k, ccw: true }, planes[c].surf)?;
+                let e = edge_for(
+                    model,
+                    memo,
+                    u,
+                    v,
+                    Wall::Arc { cyl: k, ccw: true },
+                    planes[c].surf,
+                )?;
                 let forward = model.edge(e).vertices[0] == u;
                 chain.push(HalfEdge { edge: e, forward });
             }
@@ -414,7 +427,10 @@ pub(crate) fn reconstruct(
             ClassIx::Plane(c) => planes[c].surf,
             ClassIx::Cyl(k) => cyls[k].surf,
         };
-        let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
+        let mut ring = |model: &mut Model,
+                        memo: &mut crate::realize::PlaneMemo,
+                        r: &Ring|
+         -> Result<Loop, BoolError> {
             let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[&(g, *nd)]).collect();
             let k = handles.len();
             let mut half_edges: Vec<HalfEdge> = Vec::with_capacity(k);
@@ -450,7 +466,7 @@ pub(crate) fn reconstruct(
                     None => vec![[va, vb]],
                 };
                 for [u, v] in legs {
-                    let e = edge_for(model, u, v, r.walls[t], face_surf)?;
+                    let e = edge_for(model, memo, u, v, r.walls[t], face_surf)?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
                     let forward = model.edge(e).vertices[0] == u;
@@ -600,6 +616,7 @@ pub(crate) fn reconstruct(
         // backward — a whole circle's closed edge or chain, or a wrapping chain's ring
         // rotated to its contact (`build` makes both).
         let band_loop = |model: &mut Model,
+                         memo: &mut crate::realize::PlaneMemo,
                          k: usize,
                          (lo_hes, v_lo): (Vec<HalfEdge>, Handle<Vertex>),
                          (hi_hes, v_hi): (Vec<HalfEdge>, Handle<Vertex>),
@@ -665,6 +682,7 @@ pub(crate) fn reconstruct(
             // edge. Nothing is minted and the pinch is recorded (`pinched` — the refusal at the
             // end of this function).
             let slit = |model: &mut Model,
+                        memo: &mut crate::realize::PlaneMemo,
                         a: Handle<Vertex>,
                         b: Handle<Vertex>|
              -> Result<Option<Handle<Edge>>, BoolError> {
@@ -672,16 +690,15 @@ pub(crate) fn reconstruct(
                     pinched.set(true);
                     return Ok(None);
                 }
-                model
-                    .push_edge(Edge::carrier_pair(lat, lat), [a, b])
+                crate::realize::push_edge_realized(model, [lat, lat], [a, b], memo)
                     .map(Some)
                     .map_err(edge_refused)
             };
             let (lower_slit, upper_slit, up, down) = match cut {
-                None => (slit(model, v_lo, v_hi)?, None, Vec::new(), Vec::new()),
+                None => (slit(model, memo, v_lo, v_hi)?, None, Vec::new(), Vec::new()),
                 Some((up, down, lower, upper)) => (
-                    slit(model, v_lo, lower)?,
-                    slit(model, upper, v_hi)?,
+                    slit(model, memo, v_lo, lower)?,
+                    slit(model, memo, upper, v_hi)?,
                     up,
                     down,
                 ),
@@ -710,7 +727,7 @@ pub(crate) fn reconstruct(
                          hole: bool|
          -> Result<Loop, BoolError> {
             match b {
-                Bound::Ring(r) => ring(model, r),
+                Bound::Ring(r) => ring(model, memo, r),
                 Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole),
                 Bound::Band { lo, hi } => {
                     let k = lf
@@ -756,7 +773,7 @@ pub(crate) fn reconstruct(
                                 Ok((hes, v))
                             }
                             Rim::Chain(r) => {
-                                let mut hes = ring(model, r)?.half_edges;
+                                let mut hes = ring(model, memo, r)?.half_edges;
                                 let mut best: Option<(usize, nacre_exact::Rat)> = None;
                                 // ★ **A chain that visits a contact twice is pinched there.** A
                                 // valid chain starts one half-edge at each contact: a wrap arc
@@ -805,7 +822,7 @@ pub(crate) fn reconstruct(
                     };
                     let lo_walk = walk_of(model, lo, true)?;
                     let hi_walk = walk_of(model, hi, false)?;
-                    band_loop(model, k, lo_walk, hi_walk, holes)
+                    band_loop(model, memo, k, lo_walk, hi_walk, holes)
                 }
             }
         };

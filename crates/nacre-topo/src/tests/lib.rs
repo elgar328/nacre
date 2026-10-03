@@ -1405,7 +1405,7 @@ fn a_plane_a_hair_off_either_relation_is_oblique() {
             },
         );
         assert_eq!(
-            m.derive_edge_curve([plane, cyl], [v, v]),
+            m.derive_edge_curve([plane, cyl], [v, v], |_| crate::EdgeGiven::NONE),
             Err(EdgeDecline::Oblique),
             "{name}: an oblique section is no circle and no ruling"
         );
@@ -1465,7 +1465,7 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
     let (a, b) = (at(0.0), at(2.0));
     assert!(
         matches!(
-            m.derive_edge_curve([plane, cyl], [a, b]),
+            m.derive_edge_curve([plane, cyl], [a, b], |_| crate::EdgeGiven::NONE),
             Ok(Curve::Line(_))
         ),
         "the plane square to the turn's axis meets the turned `x` cylinder along a ruling"

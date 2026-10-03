@@ -345,7 +345,9 @@ fn a_foreign_definition_is_rejected() {
     let v0 = mk_v(&mut m, 0.0);
     let v1 = mk_v(&mut m, 1.0);
     let e = m
-        .push_edge([own, m.world_plane(Axis::Z)], [v0, v1])
+        .push_edge([own, m.world_plane(Axis::Z)], [v0, v1], |_| {
+            nacre_topo::EdgeGiven::NONE
+        })
         .unwrap();
     let f = m.push_face_unchecked(Face {
         surface: own,
@@ -527,7 +529,7 @@ fn a_pierce_definition_swap_toggles_its_root() {
     // remaps only what its face walk reaches, and `defs_are_remappable` requires every
     // carrier among the face surfaces.
     let edge = m
-        .push_edge([bottom, x0], [v_lo, v_hi])
+        .push_edge([bottom, x0], [v_lo, v_hi], |_| nacre_topo::EdgeGiven::NONE)
         .expect("a line through distinct endpoints");
     let franken = m.push_face(Face {
         surface: x0,

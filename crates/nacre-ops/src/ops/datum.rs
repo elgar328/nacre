@@ -89,9 +89,9 @@ pub(super) fn push_line_edge(
     a: Handle<Vertex>,
     b: Handle<Vertex>,
     carriers: [Handle<Surface>; 2],
+    memo: &mut crate::realize::PlaneMemo,
 ) -> Result<Handle<Edge>, OpError> {
-    model
-        .push_edge(carriers, [a, b])
+    crate::realize::push_edge_realized(model, carriers, [a, b], memo)
         .map_err(|_| OpError::DegenerateGeometry)
 }
 

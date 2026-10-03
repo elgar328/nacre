@@ -75,7 +75,9 @@ fn assert_carriers_agree(m: &Model, what: &str) {
 }
 
 /// Lock: **derived curve == stored curve** — the curve re-derived from the carriers and the end
-/// points by `derive_edge_curve` agrees with the one the producer stored.
+/// points by `derive_edge_curve`, with nothing given, agrees with the one the producer stored (a
+/// line on a plane without a world name was stored along the direction the push realized, and is
+/// re-derived here along its end points — the ulps between the two are the bound below).
 ///
 /// * Line: **origin bit-identical**, direction within a relative 1e-12. A first-construction line
 ///   is bit-identical in direction too (the derivation uses the producer's expression and end-point
@@ -106,7 +108,7 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
                     }
                     let e = m.edge(he.edge);
                     let derived = m
-                        .derive_edge_curve(e.surfaces, e.vertices)
+                        .derive_edge_curve(e.surfaces, e.vertices, |_| nacre_topo::EdgeGiven::NONE)
                         .expect("a live edge's curve must derive");
                     match (m.edge_curve(he.edge), &derived) {
                         (Curve::Line(stored), Curve::Line(d)) => {

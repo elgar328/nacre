@@ -163,7 +163,9 @@ mod tests {
             [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(0), r(1)]],
             Orientation::Reversed,
         );
-        let e = m.push_edge([sb, sa], [v0, v1]).expect("distinct endpoints");
+        let e = m
+            .push_edge([sb, sa], [v0, v1], |_| crate::EdgeGiven::NONE)
+            .expect("distinct endpoints");
 
         let stored = *m.edge(e);
         assert_eq!(stored.surfaces, [sa, sb], "already ascending — kept as-is");

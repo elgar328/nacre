@@ -112,8 +112,10 @@ fn cylinder_seam_edge_is_self_adjacent() {
 }
 
 /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
-/// endpoints is bit-identical to the one `push_edge` filled eagerly — proof that nothing in it
-/// was truth. A tilted cylinder beside a box, so circles, a seam and straight edges all regenerate.
+/// endpoints — on the push's own budget (`nacre_ops::rebuild_edge_cache`) — is bit-identical to the
+/// one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
+/// box and a box turned 37°, so circles, a seam, straight edges on named planes and straight edges
+/// whose direction only a chain replay realizes all regenerate.
 #[test]
 fn edge_cache_discard_and_regenerate_bit_identical() {
     let mut m = Model::new();
@@ -129,6 +131,42 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
         1.25,
         2.5,
     );
+    let boxed = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-6.0, -6.0, 0.0]),
+        Point3::from_array([-4.0, -5.0, 3.0]),
+    );
+    m.rebuild_adjacency();
+    nacre_ops::apply(
+        &mut m,
+        &nacre_ops::Operation::Transform {
+            solid: boxed,
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+                axis: nacre_exact::Axis::Z,
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn");
+    // The population the given direction serves must be here, or the lock checks only the roads
+    // the names already answer.
+    let unnamed = m
+        .reachable()
+        .edges
+        .into_iter()
+        .filter(|&eh| {
+            let s = m.edge(eh).surfaces;
+            matches!(m.edge_curve(eh), Curve::Line(_))
+                && s.iter()
+                    .all(|&h| matches!(m.surface(h), Surface::Plane { .. }))
+                && m.line_direction_from_names(s).is_none()
+        })
+        .count();
+    assert!(
+        unnamed > 0,
+        "the fixture holds no line on a plane without a world name"
+    );
     let snapshot = |m: &Model| -> Vec<Curve> {
         (0..m.edge_count() as u32)
             .filter_map(|i| m.edge_handle_at(i))
@@ -136,7 +174,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
             .collect()
     };
     let before = snapshot(&m);
-    m.rebuild_edge_cache();
+    nacre_ops::rebuild_edge_cache(&mut m);
     // ⚠ True of a model nothing has refined. `Model::refine_vertex_cache` moves coordinates,
     // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
     // re-derives. This asserts the derivation is stable, not that rebuilding is always free.

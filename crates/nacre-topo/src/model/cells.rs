@@ -103,13 +103,24 @@ impl Model {
     /// write road. Refused, by cause ([`EdgeDecline`]), when the curve does not derive; the
     /// caller says what that cause means for it. ★ A rim is `[v, v]` and NOT degenerate — the
     /// circle arm never reads the endpoints (see [`Model::derive_edge_curve`]).
+    ///
+    /// `given` asks the pusher for what it can realize of the truth where this crate cannot
+    /// ([`EdgeGiven`]) — asked only when this crate's own roads do not answer, so «what the truth
+    /// answers here» is decided in one place; a pusher that realizes nothing answers
+    /// [`EdgeGiven::NONE`].
     pub fn push_edge(
         &mut self,
         surfaces: [Handle<Surface>; 2],
         vertices: [Handle<Vertex>; 2],
+        given: impl FnOnce(&Model) -> EdgeGiven,
     ) -> Result<Handle<Edge>, EdgeDecline> {
         let surfaces = Edge::carrier_pair(surfaces[0], surfaces[1]);
-        let curve = self.derive_edge_curve(surfaces, vertices)?;
+        let mut asked = EdgeGiven::NONE;
+        let curve = self.derive_edge_curve(surfaces, vertices, |m| {
+            asked = given(m);
+            asked
+        })?;
+        self.keep_given(surfaces, asked);
         let h = self.edges.push(Edge { surfaces, vertices });
         self.edge_cache.push(EdgeCache { curve });
         Ok(h)
@@ -172,8 +183,11 @@ impl Model {
         self.shells.push(shell)
     }
 
-    /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant:
-    /// nothing is lost, because nothing there was truth.
+    /// Discard every edge-curve cache and derive it afresh, asking `given` for each live edge what
+    /// its pusher would realize ([`EdgeGiven`], asked as [`Model::push_edge`] asks it) — the «cache,
+    /// not truth» warrant: nothing is lost, because nothing there was truth. The directions the
+    /// pushers gave are discarded with the curves (`line_directions` is the same kind of cache), so
+    /// every given piece is asked again rather than read back.
     /// ⚠★★★ **Only the reachable edges are re-derived, and a superseded one keeps what it has.**
     /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
     /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
@@ -184,20 +198,32 @@ impl Model {
     /// ☑ That refusal does not happen today: measured over the same fixtures, **zero** stored edges
     /// fail to derive, dead or live. The filter is not a workaround for a live failure — it is what
     /// makes the failure structurally unreachable, because a superseded edge is never derived again.
-    pub fn rebuild_edge_cache(&mut self) {
+    pub fn rebuild_edge_cache(&mut self, mut given: impl FnMut(&Model, Handle<Edge>) -> EdgeGiven) {
         let reach = self.reachable();
-        self.edge_cache = self
+        self.line_directions.clear();
+        let mut asked = Vec::new();
+        let cache = self
             .edges
             .iter()
             .map(|(eh, e)| match reach.edges.contains(&eh) {
-                true => EdgeCache {
-                    curve: self
-                        .derive_edge_curve(e.surfaces, e.vertices)
-                        .expect("every live edge derives its curve"),
-                },
+                true => {
+                    let mut got = EdgeGiven::NONE;
+                    let curve = self
+                        .derive_edge_curve(e.surfaces, e.vertices, |m| {
+                            got = given(m, eh);
+                            got
+                        })
+                        .expect("every live edge derives its curve");
+                    asked.push((e.surfaces, got));
+                    EdgeCache { curve }
+                }
                 false => self.edge_cache[eh.index() as usize].clone(),
             })
             .collect();
+        self.edge_cache = cache;
+        for (surfaces, got) in asked {
+            self.keep_given(surfaces, got);
+        }
     }
 
     /// The vertex a half-edge starts at: its edge's `vertices[0]` when the use runs
@@ -229,7 +255,9 @@ impl Model {
     ///   names meet in the direction of their normals' exact cross product
     ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector), and a seam or a
     ///   ruling runs along the cylinder cache's axis — turned to run from the start vertex to the
-    ///   end; where a plane has no world name, along the two endpoint coordinates' difference.
+    ///   end. Where a plane has no world name the direction is the one `given` carries — the same
+    ///   meet, realized by whoever can replay the plane's chain — and only where nothing gives
+    ///   one, the two endpoint coordinates' difference.
     ///   An endpoint pair that coincides is [`EdgeDecline::Coincident`] (a degenerate line — the
     ///   check lives in the straight arms).
     /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
@@ -263,6 +291,7 @@ impl Model {
         &self,
         surfaces: [Handle<Surface>; 2],
         vertices: [Handle<Vertex>; 2],
+        given: impl FnOnce(&Model) -> EdgeGiven,
     ) -> Result<Curve, EdgeDecline> {
         // A straight edge runs through its start vertex. Its direction is the truth's where the
         // truth names one (`exact`, rounded once, turned to run from the start vertex to the end);
@@ -292,13 +321,8 @@ impl Model {
             self.surface_cache(surfaces[1]),
         ) {
             (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => line(
-                match (
-                    self.world_plane_name(surfaces[0]),
-                    self.world_plane_name(surfaces[1]),
-                ) {
-                    (Some(a), Some(b)) => nacre_exact::meet_direction_f64(&a, &b),
-                    _ => None,
-                },
+                self.line_direction_cache(surfaces)
+                    .or_else(|| given(self).direction),
             ),
             (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Cylinder(_))
                 if surfaces[0] == surfaces[1] =>
@@ -346,6 +370,38 @@ impl Model {
             (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_)) => {
                 Err(EdgeDecline::TwoCylinders)
             }
+        }
+    }
+
+    /// **The direction two planes meet in, from their world names** — the nearest `f64` unit
+    /// vector of their normals' exact cross product ([`nacre_exact::meet_direction_f64`]), unsigned
+    /// (a line edge turns it toward its end vertex). `None` where either is not a plane with a
+    /// world name: that direction needs the plane's chain replayed, which a caller that can do it
+    /// hands to [`Model::derive_edge_curve`] as [`EdgeGiven::direction`] — and asks this first, so
+    /// the one spelling of «the names answer» is here.
+    pub fn line_direction_from_names(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
+        let a = self.world_plane_name(surfaces[0])?;
+        let b = self.world_plane_name(surfaces[1])?;
+        nacre_exact::meet_direction_f64(&a, &b)
+    }
+
+    /// **The direction two planes meet in, wherever the model already knows it** — from their world
+    /// names ([`Model::line_direction_from_names`]), else as a pusher realized it for an earlier
+    /// edge on the same pair.
+    pub fn line_direction_cache(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
+        self.line_direction_from_names(surfaces).or_else(|| {
+            self.line_directions
+                .get(&Edge::carrier_pair(surfaces[0], surfaces[1]))
+                .copied()
+        })
+    }
+
+    /// File what a pusher realized under its carrier pair (canonical order).
+    fn keep_given(&mut self, surfaces: [Handle<Surface>; 2], given: EdgeGiven) {
+        if let Some(d) = given.direction {
+            self.line_directions
+                .entry(Edge::carrier_pair(surfaces[0], surfaces[1]))
+                .or_insert(d);
         }
     }
 

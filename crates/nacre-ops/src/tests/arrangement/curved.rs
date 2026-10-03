@@ -855,7 +855,8 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         )
         .unwrap(),
     );
-    let seam = seam_table(&m, &faces, &setup.cyls, &jd).unwrap();
+    let mut memo = crate::realize::PlaneMemo::default();
+    let seam = seam_table(&m, &faces, &setup.cyls, &jd, &mut memo).unwrap();
     let out = crate::assembly::reconstruct(
         &mut m,
         &jd,
@@ -865,6 +866,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         &crate::draft::held_rims(&faces, &curved.split_rims),
         None,
         crate::assembly::Tangencies::none(),
+        &mut memo,
     )
     .unwrap();
     assert_eq!(out.len(), 1, "one welded solid");
@@ -903,7 +905,9 @@ fn the_armed_assembly_welds_the_panels() {
         if !mixed {
             continue;
         }
-        let curve = m.derive_edge_curve(e.surfaces, e.vertices).unwrap();
+        let curve = m
+            .derive_edge_curve(e.surfaces, e.vertices, |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
         if matches!(curve, nacre_geom::Curve::Line(_)) {
             rulings += 1;
             assert!(

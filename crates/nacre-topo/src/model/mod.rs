@@ -38,6 +38,7 @@ impl Model {
             motions: Store::default(),
             motion_ids: HashMap::new(),
             motion_folds: Vec::new(),
+            line_directions: HashMap::new(),
             surface_name: HashMap::new(),
             interned: HashMap::new(),
             vertices: Store::default(),

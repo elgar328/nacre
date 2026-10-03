@@ -629,8 +629,14 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd)
-            .expect("the seam realizes pierce nodes");
+        let seam = crate::arrangement::seam_table(
+            &m,
+            &faces,
+            cyls,
+            &jd,
+            &mut crate::realize::PlaneMemo::default(),
+        )
+        .expect("the seam realizes pierce nodes");
         let pierce: Vec<_> = seam
             .iter()
             .filter(|sv| crate::combinatorics::pierce_name(sv.triple).is_some())
@@ -742,7 +748,14 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
+        let seam = crate::arrangement::seam_table(
+            &m,
+            &faces,
+            cyls,
+            &jd,
+            &mut crate::realize::PlaneMemo::default(),
+        )
+        .expect("seam");
         let named = crate::assembly::name_result_vertices(
             &jd,
             &seam,
@@ -890,7 +903,14 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd).expect("seam");
+        let seam = crate::arrangement::seam_table(
+            &m,
+            &faces,
+            cyls,
+            &jd,
+            &mut crate::realize::PlaneMemo::default(),
+        )
+        .expect("seam");
         let named = crate::assembly::name_result_vertices(
             &jd,
             &seam,
@@ -1371,8 +1391,14 @@ fn the_grouping_joins_across_a_cut_rim() {
             )
             .expect("the lateral faces emit"),
         );
-        let seam = crate::arrangement::seam_table(&m, &faces, cyls, &jd)
-            .expect("the seam realizes pierce nodes");
+        let seam = crate::arrangement::seam_table(
+            &m,
+            &faces,
+            cyls,
+            &jd,
+            &mut crate::realize::PlaneMemo::default(),
+        )
+        .expect("the seam realizes pierce nodes");
         let named = crate::assembly::name_result_vertices(
             &jd,
             &seam,

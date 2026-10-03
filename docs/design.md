@@ -277,7 +277,10 @@ leaf 에서 이어진다」가 그 노드 위에 선다.
 
 **간선의 진실은 «담체 둘 + 끝점 둘»이다.** 실현된 곡선은 필드가 아니라 곁의 캐시(`Model::edge_cache`,
 `EdgeCache`)다 — 담체와 끝점이 그것을 정한다(`Model::derive_edge_curve`). `Model::push_edge` 가 캐시를
-함께 채우고, `Model::rebuild_edge_cache` 가 통째로 버리고 재생한다. **곡선의 종류도 진실이 정한다** —
+함께 채우고, `Model::rebuild_edge_cache` 가 통째로 버리고 재생한다. 값 가운데 topo 가 진실에서 못 내는 것 —
+세계 이름 없는 평면이 낀 직선의 방향(그 평면의 사슬을 재생해야 한다) — 은 유도가 자기 길로 답하지 못할 때만
+push 하는 쪽에 묻는다(`EdgeGiven`; ops 깔때기 `push_edge_realized` 가 실현해 답한다). «진실이 여기서
+답하나»는 그래서 topo 한 곳에서만 정해진다. **곡선의 종류도 진실이 정한다** —
 평면 × 원통 간선이 원(평면이 축을 가로지름)인지 룰링(축을 따름)인지는 평면 이름의 법선과 원통 `def.dir()` 의
 정확한 관계(`nacre_exact::AxisRelation`, `Model::plane_cylinder_relation`)이고, 비스듬하면(타원) 간선이 없다
 (`EdgeDecline::Oblique`). 캐시가 드는 것은 그 곡선의 값(중심·프레임)뿐이라 재생이 종류까지 같고, 간선 곡선의
@@ -957,6 +960,7 @@ pub struct Model {
     vertex_cache:  Vec<PointCache>,
     surface_cache: Vec<SurfaceCache>,         // 실현. 아레나가 진실을 든다
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
+    line_directions: HashMap<[Handle<Surface>; 2], [f64; 3]>, // 담체 쌍 → push 하는 쪽이 실현한 직선 방향
     adj: Adjacency,                           // 요청 시 재구축(`rebuild_adjacency`)
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
     motion_folds: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
@@ -1060,6 +1064,9 @@ pub struct SurfaceCache { realized: nacre_geom::Surface }         // Plane(..) |
 
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
 //   담체와 끝점이 곡선을 정한다(`derive_edge_curve`). `rebuild_edge_cache` 가 통째로 버리고 재생한다.
+//   topo 가 진실에서 못 내는 조각은 유도가 push 하는 쪽에 묻는다(`EdgeGiven` — 지금은 세계 이름 없는 평면이 낀
+//   직선의 방향). ops 의 답은 담체 쌍마다 `line_directions` 에 남아 같은 쌍의 다음 간선이 읽고, 재생은 그것도
+//   버려 다시 묻는다.
 // **캐시는 «실현값 (+ 필요하면 그 오차)»** 다: 캐시가 드는 오차는 증명된 경계뿐이고
 //   (`PointCache::Bounded{coord, bound}`), 오차 필드는 «소비자가 있으면» 붙지 대칭으로 붙지 않는다 —
 //   `EdgeCache`·`SurfaceCache` 에는 오차 필드가 없다.
@@ -1087,7 +1094,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 
 | | 모델 캐시 (`PointCache`·`SurfaceCache`·`EdgeCache`) | 실현 (`WitnessPoint.realized`·`WorkingCyl.realized`) |
 |---|---|---|
-| 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 사슬이 안 접히면 ops 깔때기가 앵커와 단위 법선을 따로 실현한다. 답하지 않는 반쪽과 그 밖엔 생산자가 계산한 f64 가 선다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 캐시끼리의 f64 만남; 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 아니면 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
+| 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 사슬이 안 접히면 ops 깔때기가 앵커와 단위 법선을 따로 실현한다. 답하지 않는 반쪽과 그 밖엔 생산자가 계산한 f64 가 선다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 캐시끼리의 f64 만남; 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 평면 하나라도 세계 이름이 없으면 ops 깔때기가 두 평면의 계수(세계 이름, 아니면 증인 삼각형 — `PlaneMemo`)의 외적을 실현한 최근접 단위를 따르고, 그 길이 답하지 않을 때만(비용 한계를 넘는 사슬·증인 없는 평면) 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
 | 오차 | 정점만 축별 경계 셋(`Bounded` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
 | 누가 읽나 | 테셀레이션·STEP·물성·validate · ops 판정 표의 seam 표 — 실현 도로가 없는 점의 구성 수치 | 판정 1단(f64 필터) → 2단 정수 → 3단 상승 |
 | 수명 | 모델과 함께 | **연산 하나** |
@@ -1099,10 +1106,11 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | 모델 캐시 (f64) | 핸들 인덱스 (밀집) | **모델과 같이** | push 시점에 채운다. 판정의 정확 지름길은 읽지 않는다(평면의 이름을 읽는다) |
 | 고정밀 메모 | (정의, 정밀도) (희소) | **연산 하나** | 판정이 실제로 만든 점에만 — 위 «실현». `trial_bound` 는 일부러 이 메모를 우회한다 |
 | 각도·√ 표 | `(Angle, prec)` / `(Rat, prec)` | 프로세스(스레드) | 값이 키의 순수 함수 — `cos 37°`·`1/√(n·n)` 은 어디서나 같다. 정확 반올림이라 실현이 유일하고 tol 도 유일 |
-| 평면 계수 메모 (`PlaneMemo`) | (곡면 핸들, 정밀도) | **실현 한 묶음**(seam 표 하나) | 모션 이력이 갈린 코너의 도로가 담체 평면의 고정밀 계수를 한 번만 실현한다 — 값이 키의 순수 함수라 답을 바꾸지 못한다. 없으면 회전 핀 80 fold 가 1.1 → 1.8 s |
+| 평면 계수 메모 (`PlaneMemo`) | (곡면 핸들, 정밀도) | **연산 하나**(불리언·변환·프리즘) | 모션 이력이 갈린 코너의 도로(seam 표)와 간선의 직선 방향이 담체 평면의 고정밀 계수를 한 번만 실현한다 — 값이 키의 순수 함수라 답을 바꾸지 못한다. 없으면 회전 핀 80 fold 가 1.1 → 1.8 s |
+| 직선 방향 (`line_directions`) | 담체 쌍 | **모델과 같이** | push 하는 쪽이 실현한 직선 방향을 쌍마다 남긴다 — 두 진실의 함수(정확 반올림이라 유일)이고 진실은 append-only 라 낡지 않는다. 불리언은 결과의 간선을 매번 다시 push 하므로(회전 핀 80 fold: 이름 없는 평면이 낀 간선 45,888, 걸음마다 새 쌍은 열 남짓) 없으면 그 fold 가 1.33 → 1.94 s |
 | 사슬 접기 | 모션 핸들 (밀집) | **모델과 같이** | 노드가 태어날 때(`push_motion`) 부모의 접기에 자기 하나를 합성 — 이동·사분각 회전·축 거울은 «부호 있는 축 치환 + 유리수 이동»(`AxisAffine`)으로 닫힌다. `Frame`·사분각 밖 회전이 끼면 `None`. 질의마다 사슬을 걸으면 깊이의 제곱이다 |
 
-다섯은 인덱스 공간이나 수명이 달라 합치지 않는다.
+여섯은 인덱스 공간이나 수명이 달라 합치지 않는다.
 
 ---
 
@@ -1133,6 +1141,7 @@ m.vertex_cache(v).coord() -> Point3                        // 세 변종이 모�
 m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Bounded 만 — 실현의 축별 경계
 m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
 m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
+m.line_direction_cache([p, q]) -> Option<[f64; 3]>        // 두 평면이 만나는 방향 — 이름에서, 아니면 push 하는 쪽이 실현해 남긴 것
 m.surface_name                                             // pub 곁표 — 평면의 이름(캐시)
 
 // ── 세계 진술 — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히 ────────
@@ -1141,10 +1150,10 @@ m.chain_plane_coeffs(leaf, c) · m.chain_point_rat(leaf, p) · m.chain_dir_rat(l
 
 // ── 쓰기 문 ──────────────────────────────────────────────────────────
 m.push_plane(..) · m.push_plane_through(..) · m.push_cylinder(..)   // 곡면은 진실을 진술하며 들어온다
-m.push_vertex(def, cache) · m.push_edge(..) · m.push_face(..) · m.push_shell(..) · m.push_solid(..)
+m.push_vertex(def, cache) · m.push_edge(.., given) · m.push_face(..) · m.push_shell(..) · m.push_solid(..)
 m.push_motion(..)                                          // interned
 m.refine_vertex_cache(v, coord, bound)                     // 캐시의 둘째 쓰기 문 — `Ceiling` 만 «올린다»
-m.rebuild_edge_cache() · m.rebuild_adjacency()             // 통째 재생
+m.rebuild_edge_cache(given) · m.rebuild_adjacency()        // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
 ```
 
 **진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에

@@ -32,7 +32,7 @@ use nacre_exact::{HpBounded, Mag, MeetPoint};
 use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, PrefixKey, Surface, Vertex};
+use nacre_topo::{Edge, EdgeGiven, Model, PointCache, PrefixKey, Surface, Vertex};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -859,9 +859,188 @@ pub fn refine_vertex_cache(model: &mut Model) -> RefineReport {
         }
     }
     if out.refined > 0 {
-        model.rebuild_edge_cache();
+        rebuild_edges(model, Budget::Paid);
     }
     out
+}
+
+/// **How much an edge's realization may spend** — the two budgets a cache is realized under.
+///
+/// `Cache` is what a push pays, on every push: the cache road's two rungs, and no replay of a chain
+/// deeper than [`CACHE_REPLAY_COST_CAP`] (the vertex funnel's own bargain, [`realize_cache`]).
+/// `Paid` is what the refine door pays when a caller asks: the whole [`LADDER`], at any depth.
+/// Correct rounding makes the answer unique, so where `Cache` answers, `Paid` answers the same bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Budget {
+    Cache,
+    Paid,
+}
+
+impl Budget {
+    fn rungs(self) -> &'static [usize] {
+        match self {
+            Budget::Cache => &LADDER[..2],
+            Budget::Paid => &LADDER,
+        }
+    }
+}
+
+/// **What an edge's pusher realizes of its truth** ([`EdgeGiven`]) — the pieces `nacre-topo`
+/// cannot, because they sit behind a motion chain only this crate replays.
+///
+/// The line's direction: where one of its two planes has no world name (a turn off the quarters,
+/// a frame), the direction the two planes meet in is the cross product of their normals, read off
+/// the planes' coefficients realized at `bits` — the world name's where the plane has one, else the
+/// plane its witness triangle spans after its chain ([`PlaneMemo`], the seam table's own road and
+/// memo) — scaled to a unit and read out once ([`Realized::to_f64`]), unsigned: the derivation turns
+/// it toward the end vertex. Where the names answer, nothing is given — `nacre-topo` reads them
+/// itself ([`Model::line_direction_from_names`], asked here so «the names answer» has one spelling).
+pub(crate) fn edge_given(
+    model: &Model,
+    surfaces: [Handle<Surface>; 2],
+    budget: Budget,
+    memo: &mut PlaneMemo,
+) -> EdgeGiven {
+    EdgeGiven {
+        direction: line_direction(model, surfaces, budget, memo),
+    }
+}
+
+/// [`edge_given`]'s line arm — `None` where the names answer, a carrier is not a plane, a carrier
+/// has no road (a nameless `Through`), the budget does not walk the chain, or no rung decides.
+fn line_direction(
+    model: &Model,
+    s: [Handle<Surface>; 2],
+    budget: Budget,
+    memo: &mut PlaneMemo,
+) -> Option<[f64; 3]> {
+    if !s
+        .iter()
+        .all(|&h| matches!(model.surface(h), Surface::Plane { .. }))
+    {
+        return None;
+    }
+    // ★ The guard runs before any chain is walked: the witness triangle replays its plane's whole
+    // history, and a push must not pay for a history the cache road would not.
+    if budget == Budget::Cache
+        && s.iter().any(|&h| {
+            crate::planes::world_plane_coeffs(model, h).is_none()
+                && model
+                    .plane_motion(h)
+                    .is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+        })
+    {
+        return None;
+    }
+    for &bits in budget.rungs() {
+        let a = plane_coeffs_hp(model, s[0], bits, memo).ok()?;
+        let b = plane_coeffs_hp(model, s[1], bits, memo).ok()?;
+        let x = |i: usize, j: usize| a[i].mul(&b[j], bits).sub(&a[j].mul(&b[i], bits), bits);
+        // A cross whose length is not yet apart from zero at these bits climbs.
+        let Some(u) = unit([x(1, 2), x(2, 0), x(0, 1)], bits) else {
+            continue;
+        };
+        if let Some((v, _)) = Realized(Arm::Approached(u, bits)).to_f64() {
+            return Some(v);
+        }
+    }
+    None
+}
+
+/// A plane's coefficients at `bits`: its narrow world name's, exactly, where it has one; else the
+/// plane its witness triangle spans after its chain, once per batch ([`PlaneMemo`]). The cap's
+/// fork in [`seam_point_met`], spelled once for the edge road.
+fn plane_coeffs_hp(
+    model: &Model,
+    h: Handle<Surface>,
+    bits: usize,
+    memo: &mut PlaneMemo,
+) -> Result<[HpBounded; 4], RealizeError> {
+    match crate::planes::world_plane_coeffs(model, h) {
+        Some(c) => Ok(c.map(|r| HpBounded::of_rat(r, bits))),
+        None => memo.plane(model, h, bits),
+    }
+}
+
+/// **Push an edge whose cache is realized from its truth** — the edge twin of
+/// [`push_vertex_realized`] and [`push_plane_realized`], and the road every edge an operation makes
+/// takes: what `nacre-topo` cannot derive is realized here ([`edge_given`], [`Budget::Cache`]) and
+/// handed to [`Model::push_edge`].
+pub(crate) fn push_edge_realized(
+    model: &mut Model,
+    surfaces: [Handle<Surface>; 2],
+    vertices: [Handle<Vertex>; 2],
+    memo: &mut PlaneMemo,
+) -> Result<Handle<Edge>, nacre_topo::EdgeDecline> {
+    model.push_edge(surfaces, vertices, |m| {
+        edge_given(m, surfaces, Budget::Cache, memo)
+    })
+}
+
+/// Re-derive every live edge's curve with what `budget` realizes — the given pieces computed first
+/// against the model as it stands, then handed to [`Model::rebuild_edge_cache`] as a table.
+pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) {
+    let mut memo = PlaneMemo::default();
+    model.rebuild_edge_cache(|m, e| edge_given(m, m.edge(e).surfaces, budget, &mut memo));
+}
+
+/// **The edge cache as a push would derive it now** — every live edge re-derived on the push's own
+/// budget. The «discard and regenerate» lock's door: on a model nothing has refined it changes no
+/// bit.
+#[cfg(any(test, feature = "test-util"))]
+pub fn rebuild_edge_cache(model: &mut Model) {
+    rebuild_edges(model, Budget::Cache);
+}
+
+/// **The edge cache as the refine door derives it** — every live edge re-derived on the door's
+/// budget, which walks any chain. After the door this changes no bit; the push's budget
+/// ([`rebuild_edge_cache`]) would, wherever the door realized a direction behind a chain deeper
+/// than the push pays for.
+#[cfg(any(test, feature = "test-util"))]
+pub fn rebuild_edge_cache_paid(model: &mut Model) {
+    rebuild_edges(model, Budget::Paid);
+}
+
+/// **A line edge's direction from its two endpoints' definitions** — the instrument's independent
+/// road to the truth the edge road realizes: both endpoints realized at `bits` from their own
+/// definitions ([`realize_vertex`]'s road), their difference scaled to a unit at `bits` and read out
+/// by the one rule ([`Realized::to_f64`]), run from `vertices[0]` to `vertices[1]`. `None` where an
+/// endpoint does not realize or the rung does not decide.
+///
+/// The second value says whether both endpoints were met in a shared frame (an exact meet, folded
+/// or replayed) — the road that shares nothing with the edge's plane coefficients. An endpoint
+/// realized by the mixed road ([`build_meet`]) reads the same witness planes the edge road does.
+#[cfg(any(test, feature = "test-util"))]
+pub fn line_direction_from_endpoints(
+    model: &Model,
+    e: Handle<Edge>,
+    bits: usize,
+) -> Option<([f64; 3], bool)> {
+    let ends = model.edge(e).vertices;
+    let hp = |v: Handle<Vertex>| -> Option<[HpBounded; 3]> {
+        match build(model, model.vertex(v), bits, &mut Accel::default())
+            .ok()?
+            .0
+        {
+            Arm::Approached(p, _) => Some(p),
+            Arm::Exact(n, d) => {
+                let d = HpBounded::of_bigint(&d, bits);
+                let mut out = Vec::with_capacity(3);
+                for k in &n {
+                    out.push(HpBounded::of_bigint(k, bits).div(&d, bits)?);
+                }
+                out.try_into().ok()
+            }
+        }
+    };
+    let (a, b) = (hp(ends[0])?, hp(ends[1])?);
+    let u = unit(core::array::from_fn(|k| b[k].sub(&a[k], bits)), bits)?;
+    let shared = ends.iter().all(|&v| {
+        model
+            .vertex_meet_of(model.vertex(v))
+            .is_some_and(|(meet, _)| meet.narrow().is_some())
+    });
+    Some((Realized(Arm::Approached(u, bits)).to_f64()?.0, shared))
 }
 
 /// `places` decimal places, escalating until the realization determines them.
@@ -1141,10 +1320,11 @@ fn realize_plane(
 }
 
 /// **Carrier planes realized at a precision, for one batch of realizations on one model** — the
-/// mixed road's accelerator ([`build_meet`]). A turned solid's wall is a carrier of every corner
-/// it makes, and the seam table asks the corners of a whole result at once: realizing the wall's
-/// coefficients again for each corner was the whole cost (a fold of 80 turned fins: 1.1 s → 1.8 s;
-/// with this memo 1.2 s).
+/// accelerator of the mixed road ([`build_meet`]) and of the edge road ([`edge_given`]), one memo
+/// per operation so a boolean's seam table and its edges realize a plane once between them. A
+/// turned solid's wall is a carrier of every corner it makes, and the seam table asks the corners
+/// of a whole result at once: realizing the wall's coefficients again for each corner was the whole
+/// cost (a fold of 80 turned fins: 1.1 s → 1.8 s; with this memo 1.2 s).
 ///
 /// ★ It cannot change an answer: the value is a function of the plane's truth and the precision,
 /// which is the key. Keyed by handle, so it lives no longer than one operation on one model.

@@ -101,6 +101,7 @@ fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
         .push_edge(
             [m.face(bottom).surface, m.face(side).surface],
             m.edge(shared).vertices,
+            |_| nacre_topo::EdgeGiven::NONE,
         )
         .expect("a line of two planes");
     let restated = |m: &mut Model, f| {

@@ -230,13 +230,18 @@ fn circle_centre_truth(
 /// Every live circle edge of `m` against its truth: the tags of the stated circles whose cached
 /// centre is not the truth's nearest `f64`, and of the circles whose frame (normal, `ref_dir`,
 /// radius) is not the cylinder cache's to the bit.
-/// Line edges the line lock reads: `[named, along an axis, unnamed, endpoints would differ]` —
-/// a line between two world-named planes is checked against the truth's direction, a seam or a
-/// ruling against its cylinder cache's axis; a line on a plane without a world name still takes
-/// the endpoints' difference and is counted; the last slot counts the checked lines whose
-/// endpoint-derived direction has other bits, so the lock is seen to measure something.
-static LINES: [std::sync::atomic::AtomicUsize; 4] =
-    [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
+/// Line edges the line lock reads: `[named, along an axis, unnamed, endpoints would differ,
+/// unnamed undecided, unnamed through a mixed meet]` — a line between two world-named planes is
+/// checked against the truth's direction, a seam or a ruling against its cylinder cache's axis,
+/// and a line on a plane without a world name against the direction its two endpoints' own
+/// definitions realize at 512 bits (`nacre_ops::line_direction_from_endpoints` — the vertex road,
+/// not the plane coefficients the edge road reads). The fourth slot counts the checked lines whose
+/// endpoint-derived `f64` direction has other bits, so the lock is seen to measure something; the
+/// fifth counts the unnamed lines that instrument could not decide (the lock's reach), and the
+/// sixth those whose endpoints were met by the mixed road, which reads the same witness planes as
+/// the edge road and so checks it less independently.
+static LINES: [std::sync::atomic::AtomicUsize; 6] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 6];
 
 /// Every live line edge of `m` against its truth: the tags of the lines whose cached direction is
 /// not the truth's nearest unit vector, run from the start vertex to the end.
@@ -278,7 +283,18 @@ fn line_audit(m: &Model) -> Vec<String> {
                     }
                     _ => {
                         bump(2);
-                        continue;
+                        match nacre_ops::line_direction_from_endpoints(m, eh, 512) {
+                            Some((u, shared)) => {
+                                if !shared {
+                                    bump(5);
+                                }
+                                toward(u)
+                            }
+                            None => {
+                                bump(4);
+                                continue;
+                            }
+                        }
                     }
                 }
             }
@@ -2804,13 +2820,15 @@ fn measure_census() {
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
     println!("stat rims_stated {stated}");
     println!("stat rims_unstated {unstated}");
-    let [named, along_axis, unnamed, would_differ] = LINES
+    let [named, along_axis, unnamed, would_differ, undecided, mixed] = LINES
         .each_ref()
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
     println!("stat lines_named {named}");
     println!("stat lines_along_axis {along_axis}");
     println!("stat lines_unnamed {unnamed}");
     println!("stat lines_endpoints_would_differ {would_differ}");
+    println!("stat lines_unnamed_undecided {undecided}");
+    println!("stat lines_unnamed_mixed {mixed}");
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

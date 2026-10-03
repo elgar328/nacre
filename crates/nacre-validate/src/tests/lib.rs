@@ -323,7 +323,7 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
             let [ca, cb] = carriers[..] else {
                 panic!("a tetra edge is on exactly 2 faces")
             };
-            m.push_edge([ca, cb], [vh[a], vh[b]])
+            m.push_edge([ca, cb], [vh[a], vh[b]], |_| nacre_topo::EdgeGiven::NONE)
                 .expect("distinct tetra corners")
         })
         .collect();
@@ -536,11 +536,21 @@ fn edge_carrier_mismatch_is_flagged() {
     let v2 = v(&mut m, [0.0, 1.0, 0.0]);
     let v3 = v(&mut m, [0.0, -1.0, 0.0]);
     // The shared edge states carriers [sa, sc] — but the faces using it are on sa and sb.
-    let e_shared = m.push_edge([sa, sc], [v0, v1]).unwrap();
-    let ea1 = m.push_edge([sa, sb], [v1, v2]).unwrap();
-    let ea2 = m.push_edge([sa, sb], [v2, v0]).unwrap();
-    let eb1 = m.push_edge([sa, sb], [v1, v3]).unwrap();
-    let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
+    let e_shared = m
+        .push_edge([sa, sc], [v0, v1], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ea1 = m
+        .push_edge([sa, sb], [v1, v2], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ea2 = m
+        .push_edge([sa, sb], [v2, v0], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let eb1 = m
+        .push_edge([sa, sb], [v1, v3], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let eb2 = m
+        .push_edge([sa, sb], [v3, v0], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
     let he = |edge, forward| HalfEdge { edge, forward };
     let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
         m.push_face(Face {
@@ -640,11 +650,21 @@ fn same_surface_users_check_membership_not_equality() {
         } else {
             [sb, sc]
         };
-        let e_shared = m.push_edge(stated, [v0, v1]).unwrap();
-        let ea1 = m.push_edge([sa, sb], [v1, v2]).unwrap();
-        let ea2 = m.push_edge([sa, sb], [v2, v0]).unwrap();
-        let eb1 = m.push_edge([sa, sb], [v1, v3]).unwrap();
-        let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
+        let e_shared = m
+            .push_edge(stated, [v0, v1], |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
+        let ea1 = m
+            .push_edge([sa, sb], [v1, v2], |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
+        let ea2 = m
+            .push_edge([sa, sb], [v2, v0], |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
+        let eb1 = m
+            .push_edge([sa, sb], [v1, v3], |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
+        let eb2 = m
+            .push_edge([sa, sb], [v3, v0], |_| nacre_topo::EdgeGiven::NONE)
+            .unwrap();
         let he = |edge, forward| HalfEdge { edge, forward };
         let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
             m.push_face(Face {
@@ -952,7 +972,9 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
             coord: Point3::from_array([0.0, -2.0, 0.0]),
         },
     );
-    let edge = m.push_edge([bottom, x0], [anchor, bad]).expect("a line");
+    let edge = m
+        .push_edge([bottom, x0], [anchor, bad], |_| nacre_topo::EdgeGiven::NONE)
+        .expect("a line");
     let face = m.push_face_unchecked(Face {
         surface: x0,
         outer: Loop {
@@ -1092,7 +1114,7 @@ fn vertex_off_its_rim_circle() {
         },
     );
     let rim = m
-        .push_edge([lateral, cap], [bad, bad])
+        .push_edge([lateral, cap], [bad, bad], |_| nacre_topo::EdgeGiven::NONE)
         .expect("a rim derives from its carriers, not its vertices");
     let face = m.push_face(Face {
         surface: cap,

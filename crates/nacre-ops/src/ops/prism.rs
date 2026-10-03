@@ -702,6 +702,8 @@ fn sweep_ring(
         .map(|s| !matches!(s, Seg3::Arc { ccw: false, .. }))
         .collect();
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
+    // The walls and caps are each a carrier of several edges, so they are realized once.
+    let mut memo = crate::realize::PlaneMemo::default();
     for i in 0..n {
         let j = (i + 1) % n;
         // Carriers: the same expression `define` uses for the corner triples — a base/top edge
@@ -710,13 +712,26 @@ fn sweep_ring(
         // kernel's `[A, B]` counter-clockwise — names the same points; the loops then walk it
         // backwards (`along`).
         let (p, q) = if along[i] { (i, j) } else { (j, i) };
-        be.push(push_line_edge(model, bv[p], bv[q], [walls[i].0, caps.0])?);
-        te.push(push_line_edge(model, tv[p], tv[q], [walls[i].0, caps.1])?);
+        be.push(push_line_edge(
+            model,
+            bv[p],
+            bv[q],
+            [walls[i].0, caps.0],
+            &mut memo,
+        )?);
+        te.push(push_line_edge(
+            model,
+            tv[p],
+            tv[q],
+            [walls[i].0, caps.1],
+            &mut memo,
+        )?);
         ve.push(push_line_edge(
             model,
             bv[i],
             tv[i],
             [walls[(i + n - 1) % n].0, walls[i].0],
+            &mut memo,
         )?);
     }
     Ok(RingCells {

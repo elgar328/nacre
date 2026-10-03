@@ -453,6 +453,9 @@ pub(crate) fn boolean(
         // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
         // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
         // "report a bug", and its own doc records having mis-named a population once before.)
+        // One result's carrier planes are realized once for the corners (the seam table) and the
+        // edges (`reconstruct`) alike (`realize::PlaneMemo`).
+        let mut memo = crate::realize::PlaneMemo::default();
         let stretch = || -> Result<(Vec<LocalFace>, Vec<SeamVertex>, HeldRims), BoolError> {
             // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
             // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
@@ -495,7 +498,7 @@ pub(crate) fn boolean(
                 faces
             };
 
-            let seam = seam_table(model, &faces, &cyls, &jd)?;
+            let seam = seam_table(model, &faces, &cyls, &jd, &mut memo)?;
             Ok((faces, seam, rims))
         };
         // ★ The raise moved into `reconstruct` (after the vertex naming, before any minting);
@@ -522,6 +525,7 @@ pub(crate) fn boolean(
                     kind,
                     rows: &tangencies
                 },
+                &mut memo,
             )
         )
     };
