@@ -110,8 +110,8 @@ pub(crate) fn pinch(
 ///   differs from the material, at an edge four faces use, another guard refuses first.)
 ///
 /// ★ **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
-/// real contact: the gate writes one only for a wall face that touches the line within the
-/// lateral face's span, and `runs_through` says the line crosses that face's interior there
+/// real contact: the gate writes one only for a wall face that touches the line where the lateral
+/// face lies on it, and `runs_through` says the line crosses that face's interior there
 /// (holes and gaps read, `planes::cylinder_gate`'s `line_runs_through_face`). The wedges then lie
 /// against that face and the lateral in one body, and the lens and the far side are in one body
 /// exactly when the result is one. Asking whether a body holds a face on the wall's class and one

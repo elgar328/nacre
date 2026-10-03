@@ -434,3 +434,41 @@ fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
         "the witness sits on the contact: {w:?}"
     );
 }
+
+/// **The same question from the lateral's side: a row only where the lateral face is on the
+/// line.** [`crate::fixtures::windowed_boss`] has no lateral face on `x = 1, y = 0` over
+/// `z ∈ [1.5, 2.5]`, and the slab's face `x = 1` is tangent to the cylinder along that line:
+///
+/// - the slab over `z ∈ [1.7, 2.3]` meets the line only in the window, so nothing touches the
+///   lateral and the pair writes no row — though the surface is tangent there and the face's
+///   angular extent and axial span both hold the line;
+/// - the slab over `z ∈ [1, 3]` meets it where the face is, `z ∈ (1, 1.5) ∪ (2.5, 3)`: one row,
+///   the line through the wall face's interior.
+///
+/// Both window widths (corners at `x = √0.91` and at `x = 4/5`) and both seams (through the
+/// window, where it is a notch in the outer loop; opposite, where it is an inner loop).
+#[test]
+fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
+    let rows = |w: f64, seam: f64, z: [f64; 2]| {
+        let mut m = Model::new();
+        let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
+        let slab = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-2.0, -2.0, z[0]]),
+            Point3::from_array([1.0, 2.0, z[1]]),
+        );
+        m.rebuild_adjacency();
+        crate::arrangement::plane_index_setup(&m, slab, boss)
+            .expect("the gate passes")
+            .tangencies
+    };
+    for w in [0.3, 0.6] {
+        for seam in [1.0, -1.0] {
+            let inside = rows(w, seam, [1.7, 2.3]);
+            assert!(inside.is_empty(), "w {w} seam {seam}: {inside:?}");
+            let longer = rows(w, seam, [1.0, 3.0]);
+            assert_eq!(longer.len(), 1, "w {w} seam {seam}: {longer:?}");
+            assert!(longer[0].runs_through, "w {w} seam {seam}: {longer:?}");
+        }
+    }
+}

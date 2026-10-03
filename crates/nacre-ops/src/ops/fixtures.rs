@@ -101,6 +101,36 @@ fn extruded_circle(m: &mut Model, plane: SketchPlane, radius: f64, height: f64) 
     }
 }
 
+/// A boss with a window through its side: the cylinder `r = 1` on the `z` axis over `z ∈ [0, 4]`,
+/// seam on the `seam_x`·`x̂` side (`±1`), less the box `x ∈ [0.5, 2]`, `|y| < half_width`,
+/// `z ∈ [1.5, 2.5]`. The lateral face is absent from the line `x = 1, y = 0` over
+/// `z ∈ [1.5, 2.5]`; where the window meets the seam (`seam_x = 1`) it is a notch in the outer
+/// loop, elsewhere an inner loop.
+///
+/// The window's corners are rational exactly when `1 − half_width²` is a square (`0.6` → `x = 0.8`);
+/// `0.3` gives `x = √0.91`.
+pub fn windowed_boss(m: &mut Model, half_width: f64, seam_x: f64) -> Handle<Solid> {
+    let boss = cylinder_with_seam(
+        m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([seam_x, 0.0, 0.0]),
+        1.0,
+        4.0,
+    )
+    .solid;
+    let window = cuboid(
+        m,
+        Point3::from_array([0.5, -half_width, 1.5]),
+        Point3::from_array([2.0, half_width, 2.5]),
+    );
+    m.rebuild_adjacency();
+    let out = boolean(m, BoolKind::Cut, boss, window).expect("the window");
+    assert_eq!(out.len(), 1, "a window leaves one body");
+    m.rebuild_adjacency();
+    out[0]
+}
+
 /// An axis-aligned box from `min` to `max` — [`cuboid_on`] with the floor at `min.z` and the
 /// height `max.z − min.z`, **exactly**: the height is the difference of the two corners'
 /// decimals, and it must be a decimal an `f64` carries (its shortest decimal), or the far cap

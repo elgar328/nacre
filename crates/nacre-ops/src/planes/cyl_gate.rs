@@ -641,12 +641,14 @@ fn wall_faces_clear(
 /// a wall on the side the face does not have, where nothing touches: a row there made the verdict
 /// convict a result that does not touch itself (census `arcprofile slot fuse`, a slot fused with a
 /// box tangent to its half-circle end's circle on the missing side). So a row is written only for
-/// a lateral face whose angular extent holds the line ([`Footprint::theta_holds_line`], the
-/// predicate [`SharedRuling`] asks) — and only for a wall face that meets the line **within that
-/// lateral face's own span** ([`line_runs_through_face`]). A face that reaches the line only
-/// through a notch or a hole, or only above or below this lateral, touches nothing here and writes
-/// no row, as a face that clears the footprint writes none: the line is still recorded, class by
-/// class, for the shared rulings. So on a surface with two lateral faces — the lower holding a
+/// a lateral face that lies on the line, and only for a wall face that meets the line **within
+/// that lateral face's own stretches of it** ([`line_runs_through_face`] over each stretch
+/// `lateral_cover_on_ruling` reads off the face's loops; where the face cannot be read there, its
+/// angular extent ([`Footprint::theta_holds_line`], the predicate [`SharedRuling`] asks) and its
+/// axial span stand in, the wider answer). A wall face that reaches the line only through a notch
+/// or a hole of its own, or only where a window in the lateral leaves the line bare, or only above
+/// or below this lateral, touches nothing here and writes no row, as a face that clears the
+/// footprint writes none: the line is still recorded, class by class, for the shared rulings. So on a surface with two lateral faces — the lower holding a
 /// half turn, the upper the other half — a wall touching the lower's height on the upper's side
 /// writes no row for the upper (no built shape has two such faces yet).
 #[derive(Clone, Debug)]
@@ -763,9 +765,12 @@ fn tangency_foot(
     Some(out)
 }
 
+/// A lateral face's stretches of one ruling, in the axis parameter (`lateral_cover_on_ruling`).
+type Stretches = Vec<[nacre_exact::Rat; 2]>;
+
 /// **The rows a tangent `(class, cylinder)` pair writes** — one per (wall face, lateral face) pair
-/// whose lateral face holds the line ([`Footprint::theta_holds_line`]) and whose wall face did
-/// not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
+/// whose lateral face lies on the line ([`Tangency`]'s doc says how that is read) and whose wall
+/// face did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
 /// contributes nothing; that is why collecting here neither widens nor narrows the rule.
 ///
 /// ★★★★★ **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
@@ -808,12 +813,21 @@ fn tangency_rows(
     // ★ Built **once**, not once per face — the same warning `wall_faces_clear`'s caller carries
     // (a cut over a plate with 16 bores once built this table 16 times and read it 0).
     let spans = lateral_spans(faces, surf);
-    // The lateral faces of this cylinder, with their own orientation and span.
-    let laterals: Vec<(usize, &CylFaceInfo)> = faces
+    // The lateral faces of this cylinder, with their own orientation and span — and where each
+    // lies on the tangent line, read once per pair (the line is the pair's, not a wall face's).
+    // `None` is a face that could not be read there, which keeps the face's bounding rectangle.
+    let laterals: Vec<(usize, &CylFaceInfo, Option<Stretches>)> = faces
         .iter()
         .enumerate()
         .filter_map(|(i, row)| match row {
-            FaceRow::Cylinder(cf) if cf.surf == surf => Some((i, cf)),
+            FaceRow::Cylinder(cf) if cf.surf == surf => {
+                let cover = base
+                    .as_ref()
+                    .zip(cf.face)
+                    .zip(cf.def.as_ref())
+                    .and_then(|((b, fh), d)| lateral_cover_on_ruling(model, model.face(fh), d, b));
+                Some((i, cf, cover))
+            }
             _ => None,
         })
         .collect();
@@ -912,13 +926,18 @@ fn tangency_rows(
             .as_ref()
             .filter(|w| w.name.narrow() == Some(coeffs))
             .map(|w| -fi.orient_sign * w.sense.sign());
-        for (cy_ix, cf) in &laterals {
+        for (cy_ix, cf, cover) in &laterals {
             // The line must lie on this lateral **face**, not only on its surface: a half
             // cylinder's surface is tangent to a wall on the side the face does not have, and
-            // nothing touches there. `None` (arithmetic) keeps the row, undecided.
-            let on_face = base
-                .as_ref()
-                .and_then(|b| cf.footprint.theta_holds_line(b, &o, &m));
+            // nothing touches there; nor where a window in the face lets the line through.
+            // Read off the face's stretches of the line when it could be, else off its angular
+            // extent. `None` (arithmetic) keeps the row, undecided.
+            let on_face = match cover {
+                Some(c) => Some(!c.is_empty()),
+                None => base
+                    .as_ref()
+                    .and_then(|b| cf.footprint.theta_holds_line(b, &o, &m)),
+            };
             if on_face == Some(false) {
                 #[cfg(feature = "tangency-trace")]
                 #[allow(clippy::print_stderr)]
@@ -927,24 +946,52 @@ fn tangency_rows(
                 }
                 continue;
             }
-            // ★★ **Per lateral, over that lateral's own span** — the wall face meets the line where
-            // *this* lateral face is, or the row says nothing. A face that touches the line nowhere
-            // there writes no row, as a face that clears the footprint writes none. A face the
-            // clearance road could not read is not asked again: it keeps the row, carrying its
-            // refusal, and reads as a contact through the interior — dropped here, that refusal
-            // would vanish with it (`line_runs_through_face`).
-            let contact = base
+            // ★★ **Per lateral, over that lateral's own stretches of the line** — the wall face
+            // meets the line where *this* lateral face is, or the row says nothing. A face that
+            // touches the line nowhere there writes no row, as a face that clears the footprint
+            // writes none. The stretches are the face's own where they could be read
+            // (`lateral_cover_on_ruling` — a window or a notch leaves a gap), else its axial span.
+            // A face the clearance road could not read is not asked again: it keeps the row,
+            // carrying its refusal, and reads as a contact through the interior — dropped here,
+            // that refusal would vanish with it (`line_runs_through_face`); and so does a row any
+            // stretch of which could not be read.
+            let stretches: Option<Stretches> = match cover {
+                Some(c) => Some(c.clone()),
+                None => cf.footprint.span.map(|sp| vec![sp]),
+            };
+            let per_stretch = base
                 .as_ref()
-                .zip(cf.footprint.span)
+                .zip(stretches)
                 .filter(|_| unread.is_none())
-                .and_then(|(b, span)| {
-                    line_runs_through_face(model, model.face(fh), coeffs, &o, &m, r2, b, span)
-                })
-                .unwrap_or(LineContact {
+                .and_then(|(b, stretches)| {
+                    stretches
+                        .into_iter()
+                        .map(|sp| {
+                            line_runs_through_face(model, model.face(fh), coeffs, &o, &m, r2, b, sp)
+                                .map(|c| (sp, c))
+                        })
+                        .collect::<Option<Vec<_>>>()
+                });
+            // The witness stands on the first stretch the line runs through the face's interior,
+            // else the first it touches — never on a graze when an interior contact exists.
+            let chosen = per_stretch.as_ref().and_then(|v| {
+                v.iter()
+                    .find(|(_, c)| c.runs_through)
+                    .or_else(|| v.iter().find(|(_, c)| c.touches))
+                    .copied()
+            });
+            let contact = match &per_stretch {
+                Some(v) => LineContact {
+                    touches: v.iter().any(|(_, c)| c.touches),
+                    runs_through: v.iter().any(|(_, c)| c.runs_through),
+                    contact_at: chosen.and_then(|(_, c)| c.contact_at),
+                },
+                None => LineContact {
                     touches: true,
                     runs_through: true,
                     contact_at: None,
-                });
+                },
+            };
             if !contact.touches {
                 #[cfg(feature = "tangency-trace")]
                 #[allow(clippy::print_stderr)]
@@ -953,7 +1000,8 @@ fn tangency_rows(
                 }
                 continue;
             }
-            let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
+            let witness_span = chosen.map(|(sp, _)| sp).or(cf.footprint.span);
+            let witness = base.as_ref().zip(witness_span).and_then(|(b, span)| {
                 let mid = match contact.contact_at {
                     Some(v) => v,
                     None => span[0]
@@ -1064,13 +1112,15 @@ fn cmp_quad(x: nacre_exact::QuadVal, y: nacre_exact::QuadVal) -> Option<core::cm
     })
 }
 
-/// **Where does the tangent line run through the wall face, over one lateral face's span?** —
+/// **Where does the tangent line run through the wall face, over one stretch of the line a lateral
+/// face covers?** —
 /// the proposition a row carries ([`Tangency::runs_through`]), and whether the face touches the
 /// line there at all.
 ///
 /// The line is `foot + v·m` (`foot` is the perpendicular foot from the axis origin, so `v` is the
 /// axis parameter itself — the scale the span is in), and the question is about the **open**
-/// stretch `span[0] < v < span[1]`: the lateral face is there and nowhere else along the line.
+/// stretch `span[0] < v < span[1]`: the lateral face is there, and a row reads each of the face's
+/// stretches in turn.
 ///
 /// ★★★ **It is point-in-polygon with the line itself as the ray.** Every loop — the outer and
 /// every hole — is read through [`corner_of`], and a step whose ends lie on opposite sides of the

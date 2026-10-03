@@ -793,6 +793,68 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     );
 }
 
+/// ★★★★★ **A tangent wall through a window in the lateral does not touch it.** The slab's face
+/// `x = 1` is tangent to [`crate::fixtures::windowed_boss`]'s cylinder along `x = 1, y = 0`, but
+/// only over `z ∈ [1.7, 2.3]`, inside the window where the lateral face is absent — so cutting the
+/// boss from the slab leaves the slab's face whole and a bridge of slab between the bore's two
+/// sides. One body, its volume the slab less the cylinder's slice less what the window took out of
+/// it: the window's cross-section inside the unit circle is `w·√(1−w²) + asin(w) − w`.
+///
+/// ★ The pair beside it is the pinch: a slab longer than the window touches the lateral above and
+/// below it, and the result's surface meets itself along those two stretches.
+#[test]
+fn a_tangent_wall_through_a_lateral_window_builds() {
+    for w in [0.3f64, 0.6] {
+        for seam in [1.0, -1.0] {
+            let mut m = Model::new();
+            let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
+            let slab = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([-2.0, -2.0, 1.7]),
+                Point3::from_array([1.0, 2.0, 2.3]),
+            );
+            m.rebuild_adjacency();
+            let out = crate::boolean(&mut m, BoolKind::Cut, slab, boss)
+                .unwrap_or_else(|e| panic!("w {w} seam {seam}: {e:?}"));
+            assert_eq!(out.len(), 1, "w {w} seam {seam}");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "w {w} seam {seam}");
+            let window = w * (1.0 - w * w).sqrt() + w.asin() - w;
+            let want = 7.2 - (std::f64::consts::PI - window) * 0.6;
+            let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+            assert!((v - want).abs() < 1e-9, "w {w} seam {seam}: {v} vs {want}");
+        }
+    }
+}
+
+#[test]
+fn a_tangent_wall_longer_than_the_window_still_pinches() {
+    for w in [0.3, 0.6] {
+        for seam in [1.0, -1.0] {
+            let mut m = Model::new();
+            let boss = crate::fixtures::windowed_boss(&mut m, w, seam);
+            let slab = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([-2.0, -2.0, 1.0]),
+                Point3::from_array([1.0, 2.0, 3.0]),
+            );
+            m.rebuild_adjacency();
+            let err = crate::boolean(&mut m, BoolKind::Cut, slab, boss)
+                .expect_err("the slab touches the lateral above and below the window");
+            assert!(
+                matches!(
+                    err,
+                    BoolError::Rejected {
+                        reason: RejectReason::SelfTouchingResult,
+                        ..
+                    }
+                ),
+                "w {w} seam {seam}: {err:?}"
+            );
+        }
+    }
+}
+
 /// Every boolean of two disjoint-but-for-a-line operands, both orders: `Fuse` is the two
 /// operands as two bodies, each `Cut` the minuend unchanged, `Common` empty — valid, and the
 /// volumes the operands' own, read before the boolean.

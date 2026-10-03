@@ -128,89 +128,13 @@ pub(super) fn lateral_theta_extent(
     def: &nacre_topo::CylinderDef,
 ) -> Option<RimArc> {
     use nacre_exact::Rat;
-    use nacre_exact::quad::CylinderMeet;
-    use nacre_topo::{QuadRoot, Vertex};
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    use nacre_topo::Vertex;
+    let m = def.dir();
     let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
         model.world_plane_name(plane)?.narrow().copied()
     };
-    let sub = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            a[0].checked_sub(b[0])?,
-            a[1].checked_sub(b[1])?,
-            a[2].checked_sub(b[2])?,
-        ])
-    };
-    let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
-        Some([
-            v[0].checked_mul(k)?,
-            v[1].checked_mul(k)?,
-            v[2].checked_mul(k)?,
-        ])
-    };
-    // The radial vector of a rim corner on the cap `cap`.
-    let radial = |vh: Handle<Vertex>, cap: [Rat; 4]| -> Option<[Rat; 3]> {
-        let t = axis_param_of_plane(&cap, def)?;
-        let mut centre = o;
-        for k in 0..3 {
-            centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
-        }
-        match *model.vertex(vh) {
-            Vertex::OnSeam(_) => {
-                let e = def.ref_dir();
-                let (mm, em) = (
-                    nacre_exact::dot3_rat(&m, &m)?,
-                    nacre_exact::dot3_rat(&e, &m)?,
-                );
-                let mut e1 = [Rat::from_int(0); 3];
-                for k in 0..3 {
-                    e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
-                }
-                // `r/|e₁|` read as `√(r²/|e₁|²)`: the same rational when both roots are, and a
-                // rational where neither is alone (`r = √2` on `|e₁| = √2`).
-                let ee = nacre_exact::dot3_rat(&e1, &e1)?;
-                scaled(
-                    &e1,
-                    nacre_exact::rat_sqrt_exact_big(
-                        &r2.mul_rat(Rat::new(ee.denom(), ee.numer())?),
-                    )?,
-                )
-            }
-            Vertex::Pierce {
-                planes,
-                cylinder,
-                root,
-            } => {
-                if cylinder != face.surface {
-                    return None;
-                }
-                // `planes` are stored in ascending-handle order and the roots run along
-                // `n₀ × n₁` (`Vertex::Pierce`'s convention); the world statement translates
-                // only the constants, so the normals — and the order — are the stored ones.
-                let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
-                let (line, sv) =
-                    match nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
-                        CylinderMeet::Pair { line, s } => match root {
-                            QuadRoot::Lo => (line, s[0].as_rat()?),
-                            QuadRoot::Hi => (line, s[1].as_rat()?),
-                            QuadRoot::Double => return None,
-                        },
-                        CylinderMeet::Tangent { line, s } => match root {
-                            QuadRoot::Double => (line, s),
-                            _ => return None,
-                        },
-                        _ => return None,
-                    };
-                let (b, d) = (line.base(), line.dir());
-                let mut p = b;
-                for k in 0..3 {
-                    p[k] = p[k].checked_add(sv.checked_mul(d[k])?)?;
-                }
-                sub(&p, &centre)
-            }
-            Vertex::ThreePlane(_) => None,
-        }
-    };
+    let radial =
+        |vh: Handle<Vertex>, cap: [Rat; 4]| rim_radial(model, face, def, vh, &cap)?.as_rat();
     let mut acc: Option<RimArc> = None;
     for he in &face.outer.half_edges {
         let e = model.edge(he.edge);
@@ -266,6 +190,263 @@ pub(super) fn lateral_theta_extent(
         });
     }
     acc
+}
+
+/// A radial vector `r₀ + √c·r₁` — rational vectors and one radical. A rim corner's radial vector
+/// is rational for a seam vertex and for a pierce corner whose root is; a wall off the axis cuts
+/// the rim at an irrational root, and this is how such a corner is held without rounding it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct QuadVec {
+    r0: [nacre_exact::Rat; 3],
+    r1: [nacre_exact::Rat; 3],
+    c: nacre_exact::Rat,
+}
+
+impl QuadVec {
+    /// The vector itself when it is rational (no radical part, or a square radicand).
+    pub(super) fn as_rat(&self) -> Option<[nacre_exact::Rat; 3]> {
+        let mut out = [nacre_exact::Rat::from_int(0); 3];
+        for (k, o) in out.iter_mut().enumerate() {
+            *o = nacre_exact::QuadVal::new(self.r0[k], self.r1[k], self.c)?.as_rat()?;
+        }
+        Some(out)
+    }
+
+    /// `(self × v)·m` for a rational `v`.
+    fn turn_to(
+        &self,
+        v: &[nacre_exact::Rat; 3],
+        m: &[nacre_exact::Rat; 3],
+    ) -> Option<nacre_exact::QuadVal> {
+        let a = nacre_exact::dot3_rat(&nacre_exact::cross3_rat(&self.r0, v)?, m)?;
+        let b = nacre_exact::dot3_rat(&nacre_exact::cross3_rat(&self.r1, v)?, m)?;
+        nacre_exact::QuadVal::new(a, b, self.c)
+    }
+
+    /// `self · v` for a rational `v`.
+    fn dot(&self, v: &[nacre_exact::Rat; 3]) -> Option<nacre_exact::QuadVal> {
+        nacre_exact::QuadVal::new(
+            nacre_exact::dot3_rat(&self.r0, v)?,
+            nacre_exact::dot3_rat(&self.r1, v)?,
+            self.c,
+        )
+    }
+
+    /// The sign of `f(self, other)` for a bilinear `f` — `(u × v)·m` or `u·v` — over two radicals:
+    /// `f(r₀,s₀) + √c·f(r₁,s₀) + √c′·f(r₀,s₁) + √(c·c′)·f(r₁,s₁)`.
+    fn bilinear_sign(
+        &self,
+        other: &QuadVec,
+        f: impl Fn(&[nacre_exact::Rat; 3], &[nacre_exact::Rat; 3]) -> Option<nacre_exact::Rat>,
+    ) -> Option<nacre_exact::Orient> {
+        nacre_exact::biquad_sign(
+            f(&self.r0, &other.r0)?,
+            f(&self.r1, &other.r0)?,
+            f(&self.r0, &other.r1)?,
+            f(&self.r1, &other.r1)?,
+            self.c,
+            other.c,
+        )
+    }
+}
+
+/// **A rim corner's radial vector** — the corner minus the axis point on its cap `cap`. A seam
+/// vertex is `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm
+/// is, `None` otherwise); a pierce corner is the meet line's point at its root, held with its
+/// radical. One rule for both readers: [`lateral_theta_extent`] folds it to a rational vector,
+/// [`lateral_cover_on_ruling`] reads it as it is.
+pub(super) fn rim_radial(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+    vh: Handle<nacre_topo::Vertex>,
+    cap: &[nacre_exact::Rat; 4],
+) -> Option<QuadVec> {
+    use nacre_exact::Rat;
+    use nacre_exact::quad::CylinderMeet;
+    use nacre_topo::{QuadRoot, Vertex};
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let zero = Rat::from_int(0);
+    let t = axis_param_of_plane(cap, def)?;
+    let mut centre = o;
+    for k in 0..3 {
+        centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
+    }
+    match *model.vertex(vh) {
+        Vertex::OnSeam(_) => {
+            let e = def.ref_dir();
+            let (mm, em) = (
+                nacre_exact::dot3_rat(&m, &m)?,
+                nacre_exact::dot3_rat(&e, &m)?,
+            );
+            let mut e1 = [zero; 3];
+            for k in 0..3 {
+                e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
+            }
+            // `r/|e₁|` read as `√(r²/|e₁|²)`: the same rational when both roots are, and a
+            // rational where neither is alone (`r = √2` on `|e₁| = √2`).
+            let ee = nacre_exact::dot3_rat(&e1, &e1)?;
+            let k =
+                nacre_exact::rat_sqrt_exact_big(&r2.mul_rat(Rat::new(ee.denom(), ee.numer())?))?;
+            let mut r0 = [zero; 3];
+            for i in 0..3 {
+                r0[i] = e1[i].checked_mul(k)?;
+            }
+            Some(QuadVec {
+                r0,
+                r1: [zero; 3],
+                c: zero,
+            })
+        }
+        Vertex::Pierce {
+            planes,
+            cylinder,
+            root,
+        } => {
+            if cylinder != face.surface {
+                return None;
+            }
+            // `planes` are stored in ascending-handle order and the roots run along `n₀ × n₁`
+            // (`Vertex::Pierce`'s convention); the world statement translates only the constants,
+            // so the normals — and the order — are the stored ones.
+            let (c0, c1) = (
+                world_plane_coeffs(model, planes[0])?,
+                world_plane_coeffs(model, planes[1])?,
+            );
+            let (line, s) = match nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
+                CylinderMeet::Pair { line, s } => match root {
+                    QuadRoot::Lo => (line, s[0]),
+                    QuadRoot::Hi => (line, s[1]),
+                    QuadRoot::Double => return None,
+                },
+                CylinderMeet::Tangent { line, s } => match root {
+                    QuadRoot::Double => (line, nacre_exact::QuadVal::from_rat(s)),
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            let (b, d) = (line.base(), line.dir());
+            let (mut r0, mut r1) = ([zero; 3], [zero; 3]);
+            for k in 0..3 {
+                r0[k] = b[k]
+                    .checked_add(s.a().checked_mul(d[k])?)?
+                    .checked_sub(centre[k])?;
+                r1[k] = s.b().checked_mul(d[k])?;
+            }
+            Some(QuadVec { r0, r1, c: s.c() })
+        }
+        Vertex::ThreePlane(_) => None,
+    }
+}
+
+/// Whether the rim arc `from → to` (counter-clockwise about `m`) holds the rational radial
+/// direction `x`, **half-open**: `from` in, `to` out. Half-open so that where the arcs of one rim
+/// meet on the line — at a seam vertex, which splits a cut circle into two arcs there — the rim
+/// is counted once. [`arc_contains`]'s three-way reading, over [`QuadVec`] ends.
+fn arc_holds_half_open(
+    from: &QuadVec,
+    to: &QuadVec,
+    x: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<bool> {
+    use nacre_exact::Orient;
+    let turn = |u: &[nacre_exact::Rat; 3], v: &[nacre_exact::Rat; 3]| {
+        nacre_exact::dot3_rat(&nacre_exact::cross3_rat(u, v)?, m)
+    };
+    let ft = from.bilinear_sign(to, turn)?;
+    let fx = from.turn_to(x, m)?.sign();
+    // `(x × to)·m = −(to × x)·m`.
+    let xt = match to.turn_to(x, m)?.sign() {
+        Orient::Positive => Orient::Negative,
+        Orient::Negative => Orient::Positive,
+        Orient::Zero => Orient::Zero,
+    };
+    let held = match ft {
+        Orient::Positive => fx != Orient::Negative && xt != Orient::Negative,
+        Orient::Negative => !(xt == Orient::Negative && fx == Orient::Negative),
+        Orient::Zero => {
+            from.bilinear_sign(to, nacre_exact::dot3_rat)? == Orient::Positive
+                || fx != Orient::Negative
+        }
+    };
+    let at_to = xt == Orient::Zero && to.dot(x)?.sign() == Orient::Positive;
+    Some(held && !at_to)
+}
+
+/// **Where a lateral face lies on one ruling** — the axis-parameter intervals the ruling through
+/// `foot` (a point on the cylinder) shares with the face, in the parameter
+/// [`axis_param_of_plane`] gives a station.
+///
+/// On its chart a lateral face is bounded by arcs (a rim on a cap ⊥ the axis, `t` fixed) and
+/// rulings (`θ` fixed), so the vertical line `θ = θ₀` meets its boundary only where an arc's
+/// angular range holds `θ₀`: those stations, sorted, alternate in and out, and paired they are
+/// the face's stretches of the line. Every loop counts — a window is an inner loop, or a notch in
+/// the outer one where the seam runs through it — which is what the face's angular extent and
+/// axial span, a bounding rectangle, cannot say.
+///
+/// `None` is a face this cannot read, and the caller keeps its conservative answer: a corner off
+/// the rational seam, a carrier neither ⊥ nor ∥ the axis, a ruling edge on the line itself (its
+/// plane holds the line — the face ends there, which is the gate's own question, not this one's),
+/// or stations that do not pair.
+pub(super) fn lateral_cover_on_ruling(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+    foot: &[nacre_exact::Rat; 3],
+) -> Option<Vec<[nacre_exact::Rat; 2]>> {
+    use nacre_exact::Rat;
+    let (o, m) = (def.origin(), def.dir());
+    let zero = Rat::from_int(0);
+    // The ruling's radial direction: `foot − o` less its component along the axis.
+    let mut w = [zero; 3];
+    for k in 0..3 {
+        w[k] = foot[k].checked_sub(o[k])?;
+    }
+    let mm = nacre_exact::dot3_rat(&m, &m)?;
+    let q = nacre_exact::dot3_rat(&w, &m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    let mut x = [zero; 3];
+    for k in 0..3 {
+        x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
+    }
+    let mut stations: Vec<Rat> = Vec::new();
+    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+        for he in &lp.half_edges {
+            let e = model.edge(he.edge);
+            let [a, b] = e.surfaces;
+            let other = if a == face.surface { b } else { a };
+            if other == face.surface {
+                continue; // the seam: a parametrization's edge, not the face's boundary
+            }
+            let coeffs = world_plane_coeffs(model, other)?;
+            let n = [coeffs[0], coeffs[1], coeffs[2]];
+            if nacre_exact::parallel_rat(&n, &m) {
+                let [va, vb] = e.vertices;
+                let held = va == vb
+                    || arc_holds_half_open(
+                        &rim_radial(model, face, def, va, &coeffs)?,
+                        &rim_radial(model, face, def, vb, &coeffs)?,
+                        &x,
+                        &m,
+                    )?;
+                if held {
+                    stations.push(axis_param_of_plane(&coeffs, def)?);
+                }
+            } else if nacre_exact::dot3_rat(&n, &m)? == zero {
+                // A ruling edge: off the line it never meets it; on it, the face ends there.
+                let side = nacre_exact::dot3_rat(&n, foot)?.checked_add(coeffs[3])?;
+                if side == zero {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+    if stations.len() % 2 != 0 {
+        return None;
+    }
+    stations.sort_unstable();
+    Some(stations.chunks(2).map(|p| [p[0], p[1]]).collect())
 }
 
 /// **How far an arc reaches either side of its centre, along `d`** — the rule for a
