@@ -621,9 +621,27 @@ pub(crate) fn raise_surface(model: &mut Model, h: Handle<Surface>, budget: Budge
         return;
     }
     if let Some((cache, standing)) = surface_realization(model, h, budget)
-        && (standing > now || cache != *model.surface_cache(h))
+        && (standing > now || surface_bits(&cache) != surface_bits(model.surface_cache(h)))
     {
         model.refine_surface_cache(h, cache, standing.max(now));
+    }
+}
+
+/// A surface cache's bits, for «did it change» — `f64`'s `==` takes `-0.0` for `+0.0`, and a
+/// realization's zero is `+0.0` on purpose.
+fn surface_bits(s: &nacre_geom::Surface) -> Vec<u64> {
+    let v = |x: [f64; 3]| x.map(f64::to_bits);
+    match s {
+        nacre_geom::Surface::Plane(p) => {
+            [v(p.origin().as_array()), v(p.normal().as_array())].concat()
+        }
+        nacre_geom::Surface::Cylinder(c) => [
+            v(c.axis().origin().as_array()).to_vec(),
+            v(c.axis().direction().as_array()).to_vec(),
+            v(c.ref_dir().as_array()).to_vec(),
+            vec![c.radius().to_bits()],
+        ]
+        .concat(),
     }
 }
 
@@ -1046,7 +1064,8 @@ pub struct RefineReport {
 ///    vertex caches (a line's anchor) and the surface caches (a rim's frame).
 ///
 /// `Realized`/`Bounded` caches are already the realization, and `Unrealized` ones have no road;
-/// neither is touched — they are counted.
+/// neither is touched — they are counted. «Live» is what the live solids reach: a surface no live
+/// face carries (a datum plane nothing was built on) is not walked, as an export does not write it.
 ///
 /// ★★ **It changes caches, not truths — but it is the door at the end of a log.** No operation
 /// decides a truth from a vertex cache (`refining_mid_log_leaves_every_later_truth_as_it_was`,

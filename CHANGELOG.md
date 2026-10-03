@@ -23,7 +23,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
-- A plane through three vertices that a transform moved (a datum plane, or a face built on one) is now exported at the nearest `f64` of its true position and orientation, unless it was turned by an angle that is not a multiple of 90° more than 192 times; before, it carried the previous position moved in floating point.
+- A plane through three vertices that a transform moved (a datum plane, or a face built on one) is now exported at the nearest `f64` of its true position and orientation, unless its history is longer than 192 recorded motions behind a turn that is not a multiple of 90° or a sketch plane with no rational frame; before, it carried the previous position moved in floating point.
 - A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre — including cylinders turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, these values could be a few units in the last place off.
 - A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction — including edges on faces turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, the direction and the length were recomputed from the rounded end points.
 
