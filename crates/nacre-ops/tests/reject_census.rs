@@ -377,13 +377,8 @@ fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     for deg in (45..360).step_by(45) {
         let c = copy_of(m, unit);
         let c = rot_z(m, c, deg as i128);
-        match boolean(m, BoolKind::Fuse, part, c) {
-            Ok(out) => {
-                part = out[0];
-                m.rebuild_adjacency();
-            }
-            Err(e) => return Err(e),
-        }
+        part = boolean(m, BoolKind::Fuse, part, c)?[0];
+        m.rebuild_adjacency();
     }
     Ok(vec![part])
 }
