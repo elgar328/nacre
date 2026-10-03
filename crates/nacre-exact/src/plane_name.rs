@@ -254,6 +254,20 @@ pub fn same_sense(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> b
     s == Orient::Positive
 }
 
+/// **The direction of the line two named planes meet in, as the nearest `f64` unit vector** —
+/// the cross product of their normals, in exact integers at any width, then
+/// [`unit_vector_f64`]. Its sign is the names': a canonical name carries no direction, so a
+/// caller that wants the line to run a particular way turns the result (`0.0 - c` turns it
+/// exactly and keeps a zero `+0.0`). `None` for parallel planes, which meet in no line.
+pub fn meet_direction_f64(a: &PlaneName, b: &PlaneName) -> Option<[f64; 3]> {
+    let (p, q) = (a.coeff_ints(), b.coeff_ints());
+    unit_vector_f64(&[
+        &p[1] * &q[2] - &p[2] * &q[1],
+        &p[2] * &q[0] - &p[0] * &q[2],
+        &p[0] * &q[1] - &p[1] * &q[0],
+    ])
+}
+
 /// **Whether a plane's name points the way its defining points turn** — the name's normal against
 /// `(b − a) × (c − a)`, exactly and at any width. `None` when the points are collinear.
 ///

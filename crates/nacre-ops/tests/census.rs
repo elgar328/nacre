@@ -230,6 +230,88 @@ fn circle_centre_truth(
 /// Every live circle edge of `m` against its truth: the tags of the stated circles whose cached
 /// centre is not the truth's nearest `f64`, and of the circles whose frame (normal, `ref_dir`,
 /// radius) is not the cylinder cache's to the bit.
+/// Line edges the line lock reads: `[named, along an axis, unnamed, endpoints would differ]` —
+/// a line between two world-named planes is checked against the truth's direction, a seam or a
+/// ruling against its cylinder cache's axis; a line on a plane without a world name still takes
+/// the endpoints' difference and is counted; the last slot counts the checked lines whose
+/// endpoint-derived direction has other bits, so the lock is seen to measure something.
+static LINES: [std::sync::atomic::AtomicUsize; 4] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
+
+/// Every live line edge of `m` against its truth: the tags of the lines whose cached direction is
+/// not the truth's nearest unit vector, run from the start vertex to the end.
+///
+/// ★ **Spelled here, not borrowed.** The direction two named planes meet in is the cross product
+/// of their normals, written out in this test's own integer arithmetic from the truth's public
+/// names; only the rounding of that exact vector to `f64` is the kernel's (`unit_vector_f64`).
+fn line_audit(m: &Model) -> Vec<String> {
+    let bump = |k: usize| LINES[k].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut off = Vec::new();
+    let mut edges: Vec<_> = m.reachable().edges.into_iter().collect();
+    edges.sort_by_key(|e| e.index());
+    for eh in edges {
+        let nacre_geom::Curve::Line(l) = m.edge_curve(eh) else {
+            continue;
+        };
+        let e = m.edge(eh);
+        let d = m.vertex_point(e.vertices[1]) - m.vertex_point(e.vertices[0]);
+        let toward = |u: [f64; 3]| {
+            if nacre_math::Vector3::from_array(u).dot(d) < 0.0 {
+                u.map(|c| 0.0 - c)
+            } else {
+                u
+            }
+        };
+        let [s0, s1] = e.surfaces;
+        let want = match (m.surface(s0), m.surface(s1)) {
+            (nacre_topo::Surface::Plane { .. }, nacre_topo::Surface::Plane { .. }) => {
+                match (m.world_plane_name(s0), m.world_plane_name(s1)) {
+                    (Some(a), Some(b)) => {
+                        let (p, q) = (a.coeff_ints(), b.coeff_ints());
+                        let cross = [
+                            &p[1] * &q[2] - &p[2] * &q[1],
+                            &p[2] * &q[0] - &p[0] * &q[2],
+                            &p[0] * &q[1] - &p[1] * &q[0],
+                        ];
+                        bump(0);
+                        toward(nacre_exact::unit_vector_f64(&cross).expect("planes that meet"))
+                    }
+                    _ => {
+                        bump(2);
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                let cyl = if matches!(m.surface(s0), nacre_topo::Surface::Cylinder { .. }) {
+                    s0
+                } else {
+                    s1
+                };
+                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+                    unreachable!("a cylinder truth has a cylinder cache")
+                };
+                bump(1);
+                toward(cc.axis().direction().as_array())
+            }
+        };
+        let bits = |v: [f64; 3]| v.map(f64::to_bits);
+        let got = bits(l.direction().as_array());
+        if got != bits(want) {
+            off.push(format!(
+                "e{} {:?} vs {:?}",
+                eh.index(),
+                l.direction().as_array(),
+                want
+            ));
+        }
+        if d.normalize().map(|v| bits(v.as_array())) != Some(got) {
+            bump(3);
+        }
+    }
+    off
+}
+
 fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
     let (mut centre, mut frame) = (Vec::new(), Vec::new());
     let mut edges: Vec<_> = m.reachable().edges.into_iter().collect();
@@ -281,6 +363,12 @@ fn record(
 ) {
     // ★ The rim lock: every circle edge's frame is its cylinder cache's, and every stated rim's
     // centre is the truth's nearest `f64` — the edge cache's twin of the vertex lock below.
+    // ★ The line lock: every line edge that the truth gives a direction carries that direction.
+    let lines = line_audit(m);
+    assert!(
+        lines.is_empty(),
+        "{tag}: line directions that are not the truth's nearest f64: {lines:?}"
+    );
     let (centre, frame) = circle_audit(m);
     assert!(
         centre.is_empty(),
@@ -918,6 +1006,11 @@ fn measure_census() {
             assert!(
                 centre.is_empty() && frame.is_empty(),
                 "cyl solo/turn: rims off the truth: {centre:?} {frame:?}"
+            );
+            let lines = line_audit(m);
+            assert!(
+                lines.is_empty(),
+                "cyl solo/turn: lines off the truth: {lines:?}"
             );
             let (vn, vh) = coord_digest(m, s);
             let (pn, ph) = plane_digest(m, s);
@@ -2711,6 +2804,13 @@ fn measure_census() {
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
     println!("stat rims_stated {stated}");
     println!("stat rims_unstated {unstated}");
+    let [named, along_axis, unnamed, would_differ] = LINES
+        .each_ref()
+        .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+    println!("stat lines_named {named}");
+    println!("stat lines_along_axis {along_axis}");
+    println!("stat lines_unnamed {unnamed}");
+    println!("stat lines_endpoints_would_differ {would_differ}");
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

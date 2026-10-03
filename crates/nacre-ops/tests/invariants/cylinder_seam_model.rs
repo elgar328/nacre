@@ -327,6 +327,77 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
     );
 }
 
+/// ★★ **A seam runs along its cylinder's axis, to the bit** — the line's direction is the cylinder
+/// cache's axis (the truth's correctly rounded direction), turned to run from the start vertex to
+/// the end, not the difference of the two rounded endpoints. On a 3-4-0 axis, a (1,1,1) frame node
+/// and a `+z` cylinder turned 37° about `y`.
+///
+/// ★ The sweep also counts the seams whose endpoint-derived direction has other bits, and requires
+/// one — a fixture where the two agree cannot tell the roads apart.
+#[test]
+fn a_seam_runs_along_its_cylinders_axis() {
+    use crate::fixtures::rot_iso;
+    use nacre_exact::Axis;
+    let cases: [(&str, [f64; 3], Vec<nacre_exact::Isometry>); 3] = [
+        ("3-4-0 axis", [3.0, 4.0, 0.0], vec![]),
+        ("frame node (1,1,1)", [1.0, 1.0, 1.0], vec![]),
+        (
+            "turned 37 about y",
+            [0.0, 0.0, 1.0],
+            vec![rot_iso(Axis::Y, 37)],
+        ),
+    ];
+    let bits = |v: Vector3| v.as_array().map(f64::to_bits);
+    let mut endpoints_differ = 0;
+    for (name, axis, turns) in cases {
+        let mut m = Model::new();
+        let mut s = cylinder(
+            &mut m,
+            Point3::from_array([0.1, 0.7, 0.3]),
+            Vector3::from_array(axis),
+            0.3,
+            1.1,
+        )
+        .solid;
+        for iso in turns {
+            s = crate::fixtures::xf(&mut m, s, iso);
+        }
+        m.rebuild_adjacency();
+        let mut seams = 0;
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            for he in &m.face(fh).outer.half_edges {
+                let e = m.edge(he.edge);
+                if e.surfaces[0] != e.surfaces[1] {
+                    continue;
+                }
+                let Curve::Line(l) = m.edge_curve(he.edge) else {
+                    panic!("{name}: a seam is a line")
+                };
+                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(e.surfaces[0]) else {
+                    unreachable!("a seam's carrier is a cylinder")
+                };
+                let d = m.vertex_point(e.vertices[1]) - m.vertex_point(e.vertices[0]);
+                let ax = cc.axis().direction();
+                let want = if ax.dot(d) < 0.0 {
+                    Vector3::from_array(ax.as_array().map(|c| 0.0 - c))
+                } else {
+                    ax
+                };
+                assert_eq!(bits(l.direction()), bits(want), "{name}: seam direction");
+                if bits(d.normalize().expect("a seam has length")) != bits(want) {
+                    endpoints_differ += 1;
+                }
+                seams += 1;
+            }
+        }
+        assert!(seams >= 1, "{name}: the sweep met no seam");
+    }
+    assert!(
+        endpoints_differ > 0,
+        "every seam here has endpoints that already give its axis — the lock cannot tell the roads apart"
+    );
+}
+
 /// A cylinder's caps state points and a name, and a cap on the plane of another producer's face
 /// **is** that face's plane — one plane, one handle, across two producers.
 #[test]

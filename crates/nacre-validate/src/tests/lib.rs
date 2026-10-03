@@ -311,9 +311,9 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
         .map(|i| {
             let (a, b) = TETRA_EDGES[i];
             // The two faces whose loops use edge `i` — its carriers, read off the same
-            // table the loops are built from. `push_edge` derives the curve through the
-            // (possibly nudged) vertex points — an endpoint cannot sit off its own
-            // line (see `vertex_off_its_rim_circle`).
+            // table the loops are built from. `push_edge` derives the line through the
+            // (possibly nudged) start vertex, along the direction the two carriers' names
+            // meet in — so a nudged far vertex sits off it (`vertex_off_surface_when_nudged`).
             let carriers: Vec<Handle<Surface>> = TETRA_FACES
                 .iter()
                 .enumerate()
@@ -467,10 +467,9 @@ fn a_built_vertex_off_its_definition_is_caught() {
 #[test]
 fn vertex_off_surface_when_nudged() {
     // Vertex 0 moved by 2·EPS_CONSTRUCTED; the planes stay on the un-moved corners, so
-    // the vertex is off them. (`VertexOffCurve` cannot fire here: a line edge's
-    // curve derives *through its endpoints*, so an endpoint is on its own line by
-    // construction — the check's remaining teeth are the circles, see
-    // `vertex_off_its_rim_circle`.)
+    // the vertex is off them. It is off its lines too: a line edge runs through its start
+    // vertex along the direction its two named planes meet in, not through both endpoints,
+    // so a vertex that left its planes leaves the line of every edge it does not start.
     let vs = validate(&tetra_with(TetraOpts {
         nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED])),
         ..Default::default()
@@ -480,9 +479,9 @@ fn vertex_off_surface_when_nudged() {
             .any(|v| matches!(v, Violation::VertexOffSurface { .. }))
     );
     assert!(
-        !vs.iter()
+        vs.iter()
             .any(|v| matches!(v, Violation::VertexOffCurve { .. })),
-        "a line endpoint is on its own derived line by construction"
+        "a vertex off its planes is off the lines they meet in"
     );
 }
 
@@ -1055,7 +1054,8 @@ fn a_full_width_axis_survives_the_truth_net() {
 
 /// ★ The check `VertexOffCurve` has teeth where the curve does NOT derive from
 /// the vertex — a rim circle comes from the carriers (cylinder axis × cap), so a seam
-/// vertex off the rim is caught. The stores are sealed against mutation, so the defect is
+/// vertex off the rim is caught (a line's far vertex likewise, its direction being the
+/// carriers' — `vertex_off_surface_when_nudged`). The stores are sealed against mutation, so the defect is
 /// *built*: a disk face whose rim edge carries a seam vertex at the wrong radius. (The
 /// fixture is deliberately not a closed solid — other violations fire too; the assertion
 /// is only that this one is among them.)

@@ -224,13 +224,17 @@ impl Model {
     /// is a cache that can be discarded and regenerated.
     ///
     /// Dispatch by carrier type:
-    /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the two
-    ///   endpoint coordinates — the very expression a producer would build the stored
-    ///   curve with, so the derivation is bit-identical, and an endpoint pair that coincides is
-    ///   [`EdgeDecline::Coincident`] (a degenerate line — the check lives in the straight arms).
+    /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the start
+    ///   vertex, along the truth's direction where the truth names one — the two planes' world
+    ///   names meet in the direction of their normals' exact cross product
+    ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector), and a seam or a
+    ///   ruling runs along the cylinder cache's axis — turned to run from the start vertex to the
+    ///   end; where a plane has no world name, along the two endpoint coordinates' difference.
+    ///   An endpoint pair that coincides is [`EdgeDecline::Coincident`] (a degenerate line — the
+    ///   check lives in the straight arms).
     /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
-    ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — the endpoints' line, as
-    ///   the seam; across it, a rim or an arc of one — the circle centred where the truth's axis
+    ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — a line along the axis,
+    ///   as the seam; across it, a rim or an arc of one — the circle centred where the truth's axis
     ///   crosses the truth's plane, the nearest `f64` of that exact meet (the caches' `f64` meet
     ///   where the cylinder has no world statement), with the **cylinder cache's** frame
     ///   (`axis direction`, `ref_dir`, `radius`) stored bit for bit; every rim's cache comes from
@@ -260,22 +264,47 @@ impl Model {
         surfaces: [Handle<Surface>; 2],
         vertices: [Handle<Vertex>; 2],
     ) -> Result<Curve, EdgeDecline> {
-        let endpoints_line = || -> Result<Curve, EdgeDecline> {
+        // A straight edge runs through its start vertex. Its direction is the truth's where the
+        // truth names one (`exact`, rounded once, turned to run from the start vertex to the end);
+        // otherwise it is the endpoints' own difference.
+        let line = |exact: Option<[f64; 3]>| -> Result<Curve, EdgeDecline> {
             let p0 = self.vertex_point(vertices[0]);
             let p1 = self.vertex_point(vertices[1]);
-            Ok(Curve::Line(
-                Line::through_points(p0, p1).ok_or(EdgeDecline::Coincident)?,
-            ))
+            let Some(u) = exact else {
+                return Ok(Curve::Line(
+                    Line::through_points(p0, p1).ok_or(EdgeDecline::Coincident)?,
+                ));
+            };
+            let d = p1 - p0;
+            if d.norm_squared() <= 0.0 {
+                return Err(EdgeDecline::Coincident);
+            }
+            let along = Vector3::from_array(u).dot(d);
+            // `0.0 - c` turns a component exactly and keeps a zero `+0.0`.
+            let u = if along < 0.0 { u.map(|c| 0.0 - c) } else { u };
+            Ok(Curve::Line(Line::from_point_unit_direction(
+                p0,
+                Vector3::from_array(u),
+            )))
         };
         match (
             self.surface_cache(surfaces[0]),
             self.surface_cache(surfaces[1]),
         ) {
-            (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => endpoints_line(),
-            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_))
+            (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => line(
+                match (
+                    self.world_plane_name(surfaces[0]),
+                    self.world_plane_name(surfaces[1]),
+                ) {
+                    (Some(a), Some(b)) => nacre_exact::meet_direction_f64(&a, &b),
+                    _ => None,
+                },
+            ),
+            (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Cylinder(_))
                 if surfaces[0] == surfaces[1] =>
             {
-                endpoints_line() // the seam — a parameterization joint, straight along the axis
+                // The seam — a parameterization joint, straight along the axis.
+                line(Some(c.axis().direction().as_array()))
             }
             (nacre_geom::Surface::Plane(p), nacre_geom::Surface::Cylinder(c))
             | (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Plane(p)) => {
@@ -286,7 +315,9 @@ impl Model {
                 match self.plane_cylinder_relation(plane, cyl) {
                     None => Err(EdgeDecline::Unstated),
                     Some(nacre_exact::AxisRelation::Oblique) => Err(EdgeDecline::Oblique),
-                    Some(nacre_exact::AxisRelation::Along) => endpoints_line(),
+                    Some(nacre_exact::AxisRelation::Along) => {
+                        line(Some(c.axis().direction().as_array()))
+                    }
                     Some(nacre_exact::AxisRelation::Across) => {
                         let axis = c.axis();
                         // The centre is the truth's where the truth is stated in the world; a
