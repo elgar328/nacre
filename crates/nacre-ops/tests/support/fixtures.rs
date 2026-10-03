@@ -959,15 +959,6 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
     (m, top)
 }
 
-/// The `0.4` boss/pocket footprint on `[0.3, 0.7]²` of the unit cube's lid.
-///
-/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
-/// onto the face's plane, and the axes are the arbitrary-axis convention's, which for `n = ẑ` are
-/// `u = +x̂`, `v = +ŷ` — so a frame point `(a, b)` is world `(a, b, 1)`, the identity.
-pub fn small_square() -> Profile2d {
-    Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)]).unwrap()
-}
-
 // ---- more shape fixtures (all public: fixtures::cuboid / apply(Extrude) / fixtures::pocket) ----
 
 pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
@@ -1020,29 +1011,8 @@ pub fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, l, stub)
 }
 
-/// A unit cube with a small blind pocket carved in its top.
-pub fn pocketed_cube() -> (Model, Handle<Solid>) {
-    let (mut m, top) = cube_with_top();
-    let solid = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5)
-        .unwrap()
-        .solid();
-    (m, solid)
-}
-
-pub fn top_pocketed_cube() -> (Model, Handle<Solid>) {
-    let mut m = Model::new();
-    let __op = extrude_op(&m, square(), 1.0);
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &__op).unwrap() else {
-        unreachable!()
-    };
-    let solid = nacre_ops::fixtures::pocket(&mut m, faces[1], small_square(), 0.5)
-        .unwrap()
-        .solid();
-    (m, solid)
-}
-
 pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, pc) = pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let slab = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([-0.2, -0.25, z0]),
@@ -1052,7 +1022,7 @@ pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 }
 
 /// A slot that runs off **one** edge of the unit cube's lid — world `x ∈ [0.25, 0.75]`,
-/// `y ∈ [-0.25, 0.75]`. On a lid, frame coordinates are world coordinates (see [`small_square`]).
+/// `y ∈ [-0.25, 0.75]`. On a lid, frame coordinates are world coordinates (see [`nacre_ops::fixtures::lid_square`]).
 pub fn edge_overhang_profile() -> Profile2d {
     Profile2d::polygon(vec![
         p2(0.25, 0.75),

@@ -17,7 +17,7 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 #[test]
 fn pad_boss_on_cube_top() {
     let (mut m, top) = cube_with_top();
-    let top_face = nacre_ops::fixtures::pad(&mut m, top, small_square(), 0.5)
+    let top_face = nacre_ops::fixtures::pad(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5)
         .unwrap()
         .cap_face(&m);
     m.rebuild_adjacency();
@@ -40,9 +40,10 @@ fn pad_boss_on_cube_top() {
 #[test]
 fn pocket_on_cube_top() {
     let (mut m, top) = cube_with_top();
-    let bottom_face = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5)
-        .unwrap()
-        .cap_face(&m);
+    let bottom_face =
+        nacre_ops::fixtures::pocket(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5)
+            .unwrap()
+            .cap_face(&m);
     m.rebuild_adjacency();
     let v = nacre_validate::validate(&m);
     assert!(v.is_empty(), "{v:?}");
@@ -102,7 +103,7 @@ fn a_degenerate_profile_on_a_face_is_refused() {
 #[test]
 fn pocket_through_the_solid() {
     let (mut m, top) = cube_with_top(); // 1.0-thick cube
-    let got = nacre_ops::fixtures::pocket(&mut m, top, small_square(), 1.5);
+    let got = nacre_ops::fixtures::pocket(&mut m, top, nacre_ops::fixtures::lid_square(), 1.5);
     // A pocket deeper than the body is a through-cut: the `0.4²` hole, `1 − 0.16`.
     let solid = got.expect("a through-pocket cuts through").solid();
     m.rebuild_adjacency();
@@ -116,7 +117,7 @@ fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
     // Reading the lid as filled instead classified the box's eight corners five
     // Inside and three Outside, and the seam-free path's own `debug_assert`
     // ("classification must be consistent per solid") caught it.
-    let (mut m, pc) = pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.4, 0.4, 0.6]),
@@ -244,7 +245,7 @@ fn pocket_through_an_overhang() {
 fn pad_step_exports() {
     // The boss (holed outer face + walls + cap) exports without error.
     let (mut m, top) = cube_with_top();
-    nacre_ops::fixtures::pad(&mut m, top, small_square(), 0.5).unwrap();
+    nacre_ops::fixtures::pad(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5).unwrap();
     let step = nacre_step::to_step(&m).expect("boss exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
@@ -280,9 +281,10 @@ fn a_pocket_on_a_slanted_face() {
     .unwrap() else {
         unreachable!()
     };
-    let solid = nacre_ops::fixtures::pocket(&mut m, faces[1], small_square(), 0.5)
-        .unwrap()
-        .solid();
+    let solid =
+        nacre_ops::fixtures::pocket(&mut m, faces[1], nacre_ops::fixtures::lid_square(), 0.5)
+            .unwrap()
+            .solid();
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
@@ -316,7 +318,7 @@ fn a_pad_on_a_slanted_face() {
     .unwrap() else {
         unreachable!()
     };
-    let solid = nacre_ops::fixtures::pad(&mut m, faces[1], small_square(), 0.5)
+    let solid = nacre_ops::fixtures::pad(&mut m, faces[1], nacre_ops::fixtures::lid_square(), 0.5)
         .unwrap()
         .solid();
     m.rebuild_adjacency();
@@ -328,7 +330,7 @@ fn a_pad_on_a_slanted_face() {
 #[test]
 fn pocket_step_exports() {
     let (mut m, top) = cube_with_top();
-    nacre_ops::fixtures::pocket(&mut m, top, small_square(), 0.5).unwrap();
+    nacre_ops::fixtures::pocket(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5).unwrap();
     let step = nacre_step::to_step(&m).expect("pocket exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
@@ -338,7 +340,7 @@ fn pocket_step_exports() {
 /// bites `0.15³` of solid (it clears the pocket, whose footprint stops at `x = 0.7`).
 #[test]
 fn a_corner_cut_off_a_pocketed_cube() {
-    let (mut m, pc) = pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.85, 0.85, 0.85]),
@@ -498,7 +500,7 @@ fn common_with_a_corner_overhanging_boss_is_empty() {
 fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
     // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
     // overhanging the bottom edge. Volume: pocketed 0.92 + boss 0.25 = 1.17.
-    let (mut m, pc) = top_pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let boss = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([1.0, 0.25, -0.25]),
@@ -517,7 +519,7 @@ fn cut_a_blind_pocket_into_a_non_convex_solid() {
     // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex,
     // which the pocket contact now admits (the gates are convexity-agnostic). Removed
     // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
-    let (mut m, pc) = pocketed_cube();
+    let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let corner = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.05, 0.1, 0.6]),

@@ -272,6 +272,58 @@ pub fn pocket(
     feature(m, face, profile, -dist, BoolKind::Cut)
 }
 
+/// The `0.4` boss/pocket footprint on `[0.3, 0.7]²` of the unit cube's lid.
+///
+/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+/// onto the face's plane, and the axes are the arbitrary-axis convention's, which for `n = ẑ` are
+/// `u = +x̂`, `v = +ŷ` — so a frame point `(a, b)` is world `(a, b, 1)`, the identity.
+pub fn lid_square() -> Profile2d {
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    Profile2d::polygon(vec![p(0.3, 0.7), p(0.3, 0.3), p(0.7, 0.3), p(0.7, 0.7)])
+        .expect("a square inside the decimal window")
+}
+
+/// The unit cube with a [`lid_square`] pocket `0.5` deep in its top face: the void is
+/// `[0.3, 0.7]² × [0.5, 1]` and the solid measures `1 − 0.16·0.5 = 0.92`.
+///
+/// ★ Its lid carries an inner loop, and that is what its consumers measure — so it is asserted
+/// here. A footprint the frame places elsewhere (on the lid's corner, say) builds a solid every
+/// test still accepts, and a boolean scored only against another kernel stays green on it.
+pub fn pocketed_cube() -> (Model, Handle<Solid>) {
+    let mut m = Model::new();
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    let square = Profile2d::polygon(vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)])
+        .expect("the unit square");
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let top = match apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square,
+            dist: 1.0,
+        },
+    ) {
+        Ok(OpOutput::Extrude { faces, .. }) => faces[1],
+        other => panic!("extruding the unit cube: {other:?}"),
+    };
+    let solid = pocket(&mut m, top, lid_square(), 0.5)
+        .expect("the pocket")
+        .solid();
+    let holed: Vec<usize> = m
+        .shell(m.solid(solid).outer)
+        .faces
+        .iter()
+        .map(|&f| m.face(f).inner.len())
+        .filter(|&n| n > 0)
+        .collect();
+    assert_eq!(
+        holed,
+        [1],
+        "the pocketed cube's lid carries the pocket as its one hole"
+    );
+    (m, solid)
+}
+
 impl From<OpError> for FeatureError {
     fn from(e: OpError) -> Self {
         Self::Op(e)

@@ -18,7 +18,7 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 #[test]
 fn containment_boolean_already_keeps_a_pocket() {
     for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
-        let (mut m, pc) = pocketed_cube();
+        let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
         let bx = nacre_ops::fixtures::cuboid(
             &mut m,
             Point3::from_array([0.05, 0.05, 0.05]),

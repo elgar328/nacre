@@ -8,8 +8,8 @@ use crate::draft::LocalFace;
 use fixtures::{
     boolean_one, cube_and_notch, extrude_op, has_face_on_plane, l_and_corner_box, l_and_dimple,
     l_and_inner_box, l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes,
-    outer_points, p2, pythagorean_frame, regular_ngon, rotated_l_prism, small_square, square,
-    stacked_cubes, two_boxes, u_and_slab, u_prism,
+    outer_points, p2, pythagorean_frame, regular_ngon, rotated_l_prism, square, stacked_cubes,
+    two_boxes, u_and_slab, u_prism,
 };
 // Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
 pub(crate) use fixtures::{
@@ -34,6 +34,7 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
 }
 use crate::arrangement::{PlaneSetup, plane_index_setup};
 use crate::combinatorics::{Canon3, NodeId};
+use crate::fixtures::{lid_square, pocketed_cube};
 use crate::tolerant::Judge;
 use crate::transform::transform;
 use crate::{assembly::*, ops::*, planes::*};
@@ -171,28 +172,6 @@ fn holed_face_rings_of(
         }
     }
     panic!("no holed face");
-}
-
-/// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
-/// is `[0.3,0.7]² × [0.5,1]` and the solid measures `1 − 0.16·0.5 = 0.92`. Its
-/// lid is the only face in the suite that carries an inner loop.
-fn pocketed_cube() -> (Model, Handle<Solid>) {
-    let (mut m, top) = cube_with_top();
-    let solid = crate::fixtures::pocket(&mut m, top, small_square(), 0.5)
-        .unwrap()
-        .solid();
-    (m, solid)
-}
-
-/// Extrude a unit cube and return `(model, top face handle)`.
-fn cube_with_top() -> (Model, Handle<Face>) {
-    let mut m = Model::new();
-    let op = extrude_op(&m, square(), 1.0);
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
-        unreachable!()
-    };
-    let top = faces[1]; // base, top, sides…
-    (m, top)
 }
 
 /// An exact world-frame `Swept` from decimal f64 points: there is no f64 fallback, so a test

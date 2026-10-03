@@ -431,7 +431,7 @@ proptest! {
             apply(&mut m, &Operation::Extrude { frame, profile: big, dist: 2.0 }).unwrap()
         else { unreachable!() };
         // An honest reject is acceptable; a panic is not (and would fail the test).
-        if let Ok(f) = crate::fixtures::pocket(&mut m, faces[1], small_square(), 0.5) {
+        if let Ok(f) = crate::fixtures::pocket(&mut m, faces[1], lid_square(), 0.5) {
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
             let vol = nacre_props::mass_props(&m, f.solid()).unwrap().volume;
