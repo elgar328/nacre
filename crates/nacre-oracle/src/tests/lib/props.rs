@@ -138,6 +138,62 @@ fn centroid_matches_occt() {
     }
 }
 
+/// **A turned cylinder, scored by a second kernel.** Turned 37° about `x` through an off-origin
+/// pivot, the cylinder has no world statement: its cache and its seam vertices are realized from
+/// the motion chain. OCCT reads the STEP those realizations write; the volume and area must
+/// match nacre's and the hand figures (`πr²h`, `2πr(r + h)`), and the box must agree.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_turned_cylinder_matches_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
+    let mut model = Model::new();
+    let c = nacre_ops::fixtures::cylinder(
+        &mut model,
+        Point3::from_array([1.0, 2.0, 0.5]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.5,
+        2.0,
+    );
+    let Ok(nacre_ops::OpOutput::Transform { solid }) = nacre_ops::apply(
+        &mut model,
+        &nacre_ops::Operation::Transform {
+            solid: c.solid,
+            isometry: Isometry::rotation(Rotation {
+                axis: Axis::X,
+                pivot: [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)],
+                angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+            }),
+        },
+    ) else {
+        panic!("the turn")
+    };
+    model.rebuild_adjacency();
+    let ours = mass_props(&model, solid).unwrap();
+    let occt = occt_props_of(&model).unwrap();
+    let (vol, area) = (PI * 1.5 * 1.5 * 2.0, 2.0 * PI * 1.5 * (1.5 + 2.0));
+    assert!(
+        approx(ours.volume, occt.volume) && approx(ours.volume, vol),
+        "volume: nacre {} occt {} hand {vol}",
+        ours.volume,
+        occt.volume
+    );
+    assert!(
+        approx(ours.area, occt.area) && approx(ours.area, area),
+        "area: nacre {} occt {} hand {area}",
+        ours.area,
+        occt.area
+    );
+    let (lo, hi) = nacre_props::bounds(&model, solid).unwrap();
+    for i in 0..3 {
+        assert!(
+            (lo[i] - occt.bbox_min[i]).abs() < 1e-5 && (hi[i] - occt.bbox_max[i]).abs() < 1e-5,
+            "axis {i}: nacre {lo:?}..{hi:?} vs occt {:?}..{:?}",
+            occt.bbox_min,
+            occt.bbox_max
+        );
+    }
+}
+
 /// **The bounding box's judge, on the shape that makes it hard.** A cylinder's
 /// barrel bulges past its seam vertices, so a vertex hull would come out too
 /// small — and OCCT knows the true extent.
