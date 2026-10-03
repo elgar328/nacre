@@ -82,9 +82,10 @@ pub enum RealizeError {
     NoMotionChain,
     /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
     ///
-    /// ⚠ **This is a bag, and saying so is the point.** It covers: a carrier that cannot be
-    /// stated in the world exactly, a cap plane that is not perpendicular to the axis (so it
-    /// bounds no rim), a `root` that does not match the kind of crossing the carriers actually
+    /// ⚠ **This is a bag, and saying so is the point.** It covers: a pierce corner whose carriers
+    /// cannot be stated in the world exactly (a seam corner is met in the world instead), a chain
+    /// a seam corner's carriers cannot replay, a cap plane parallel to the axis (so it bounds no
+    /// rim), a `root` that does not match the kind of crossing the carriers actually
     /// make (a `Double` asked of a `Pair`), and rational overflow on the way. Each deserves its
     /// own name; none of them is [`Self::NoMeet`], which is a *different* function declining —
     /// `Model::vertex_meet` is never called on this road.
@@ -925,9 +926,23 @@ fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realized, RealizeErr
 
 /// **The seam vertex is the rim's `+ref_dir` point** — `centre + r·ê`, `ê` the reference
 /// direction's unit part perpendicular to the axis. `Vertex::OnSeam`'s doc calls it *"a unique
-/// point, exactly designated"*; this realizes that designation instead of reading the cache, which
-/// is the half of migration row 3b that was recorded as missing.
+/// point, exactly designated"*; this realizes that designation instead of reading the cache.
+///
+/// Two roads, one point: where the cylinder and its cap are stated in the world the rim's centre
+/// is rational and only `r·ê` is not ([`seam_point_stated`]); where either is carried by a chain
+/// that does not fold — a cylinder turned off the quarters, a circle extruded on a frame node —
+/// the seam's line is replayed and met with the cap in the world ([`seam_point_met`]).
 fn seam_point(
+    model: &Model,
+    cyl: Handle<Surface>,
+    cap: Handle<Surface>,
+    bits: usize,
+) -> Option<[HpBounded; 3]> {
+    seam_point_stated(model, cyl, cap, bits).or_else(|| seam_point_met(model, cyl, cap, bits))
+}
+
+/// [`seam_point`] where the cylinder and the cap are stated in the world.
+fn seam_point_stated(
     model: &Model,
     cyl: Handle<Surface>,
     cap: Handle<Surface>,
@@ -942,6 +957,51 @@ fn seam_point(
         centre[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
     }
     nacre_exact::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
+}
+
+/// [`seam_point`] met in the world: the seam's line — the cylinder's origin plus `r·ê`, along the
+/// axis, both carried by the cylinder's own chain ([`world_cylinder_hp`]) — crossed with the cap's
+/// plane in the world, at `bits`.
+///
+/// ★ **The cap and the cylinder are often on different chains**, so the meet cannot be solved
+/// before the motion: a cylinder turned about its own axis takes a node while its caps, fixed by
+/// the turn, stay as stated; a circle extruded on a frame node stands on the frame's own plane.
+/// So the cap answers for itself — its world name where it has one, else the plane its witness
+/// triangle spans after its own chain ([`nacre_judge::plane_hp`]).
+///
+/// `None` where a chain cannot be read, or the line's run into the cap is not decided away from
+/// zero at `bits` (`HpBounded::div`) — the ladder climbs.
+fn seam_point_met(
+    model: &Model,
+    cyl: Handle<Surface>,
+    cap: Handle<Surface>,
+    bits: usize,
+) -> Option<[HpBounded; 3]> {
+    let Surface::Cylinder { def, motion } = model.surface(cyl) else {
+        return None;
+    };
+    let hp = world_cylinder_hp(model, def, *motion, bits)?;
+    let on_rim: [HpBounded; 3] = core::array::from_fn(|k| hp.origin[k].add(&hp.seam[k], bits));
+    let plane: [HpBounded; 4] = match crate::planes::world_plane_coeffs(model, cap) {
+        Some(c) => c.map(|r| HpBounded::of_rat(r, bits)),
+        None => {
+            let tri = crate::rotated_vertex::surface_witness_triangle(model, cap)?;
+            nacre_judge::plane_hp(&tri[0], &tri[1], &tri[2], bits)
+        }
+    };
+    let dot = |v: &[HpBounded; 3]| {
+        plane[0]
+            .mul(&v[0], bits)
+            .add(&plane[1].mul(&v[1], bits), bits)
+            .add(&plane[2].mul(&v[2], bits), bits)
+    };
+    // `on_rim − s·axis` lies on `n·x + c = 0` for `s = (n·on_rim + c) / (n·axis)`.
+    let s = dot(&on_rim)
+        .add(&plane[3], bits)
+        .div(&dot(&hp.axis), bits)?;
+    Some(core::array::from_fn(|k| {
+        on_rim[k].sub(&s.mul(&hp.axis[k], bits), bits)
+    }))
 }
 
 /// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the
@@ -1292,6 +1352,193 @@ mod tests {
                 "{axis:?}"
             );
             assert_eq!(cache.radius(), 1.5);
+            // And independently: the original cylinder's cache turned in `f64`.
+            let pv = pivot.map(|r| r.to_f64());
+            let deg = f64::from(deg as i32);
+            let at = |p: [f64; 3]| turned_f64(p, axis, deg, pv);
+            let dir = |v: [f64; 3]| {
+                let (a, o) = (at(v), at([0.0; 3]));
+                [a[0] - o[0], a[1] - o[1], a[2] - o[2]]
+            };
+            assert!(
+                near(cache.axis().origin().as_array(), at([1.0, 2.0, 0.5])),
+                "{axis:?}"
+            );
+            assert!(
+                near(cache.axis().direction().as_array(), dir([0.0, 0.0, 1.0])),
+                "{axis:?}"
+            );
+            assert!(
+                near(cache.ref_dir().as_array(), dir([1.0, 0.0, 0.0])),
+                "{axis:?}"
+            );
+        }
+    }
+
+    /// `p` turned `deg` degrees about `axis` through `pivot`, in `f64` — the independent reading the
+    /// turned-cylinder locks hold the realizations to (a derivation that shares nothing with the
+    /// chain replay it checks).
+    fn turned_f64(p: [f64; 3], axis: nacre_exact::Axis, deg: f64, pivot: [f64; 3]) -> [f64; 3] {
+        let (s, c) = deg.to_radians().sin_cos();
+        let v = [p[0] - pivot[0], p[1] - pivot[1], p[2] - pivot[2]];
+        let w = match axis {
+            nacre_exact::Axis::X => [v[0], c * v[1] - s * v[2], s * v[1] + c * v[2]],
+            nacre_exact::Axis::Y => [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]],
+            nacre_exact::Axis::Z => [c * v[0] - s * v[1], s * v[0] + c * v[1], v[2]],
+        };
+        [w[0] + pivot[0], w[1] + pivot[1], w[2] + pivot[2]]
+    }
+
+    fn near(a: [f64; 3], b: [f64; 3]) -> bool {
+        (0..3).all(|k| (a[k] - b[k]).abs() < 1e-12)
+    }
+
+    /// The seam vertices of `solid`'s faces, each with the `f64` of [`seam_point_met`] at 512 bits.
+    fn seams_met(m: &Model, solid: Handle<nacre_topo::Solid>) -> Vec<(Handle<Vertex>, [f64; 3])> {
+        let mut out = Vec::new();
+        for &fh in &m.shell(m.solid(solid).outer).faces {
+            let f = m.face(fh);
+            for he in std::iter::once(&f.outer).flat_map(|lp| lp.half_edges.iter()) {
+                for vh in m.edge(he.edge).vertices {
+                    if let Vertex::OnSeam([cyl, cap]) = *m.vertex(vh)
+                        && !out.iter().any(|&(v, _)| v == vh)
+                    {
+                        let p = seam_point_met(m, cyl, cap, 512).expect("the seam meets its cap");
+                        out.push((vh, Realized(Arm::Approached(p, 512)).to_f64().unwrap().0));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// **Two roads, one point.** Where the cylinder and its caps are stated in the world, the seam
+    /// realized on the rational road (`centre + r·ê`) and met in the world agree to the bit — an
+    /// axis-aligned cylinder off the origin and a 3-4-5 tilted one.
+    #[test]
+    fn the_seam_met_in_the_world_is_the_stated_seam() {
+        for axis in [[0.0, 0.0, 1.0], [0.0, 0.6, 0.8]] {
+            let mut m = Model::new();
+            let c = crate::fixtures::cylinder(
+                &mut m,
+                Point3::from_array([1.0, 2.0, 0.5]),
+                nacre_math::Vector3::from_array(axis),
+                1.5,
+                2.0,
+            );
+            let seams = seams_met(&m, c.solid);
+            assert!(!seams.is_empty(), "{axis:?}");
+            for (vh, met) in seams {
+                let Vertex::OnSeam([cyl, cap]) = *m.vertex(vh) else {
+                    unreachable!()
+                };
+                assert!(
+                    m.world_cylinder_def(cyl).is_some(),
+                    "{axis:?}: a stated cylinder"
+                );
+                let stated = seam_point_stated(&m, cyl, cap, 512).expect("the stated road");
+                assert_eq!(
+                    Realized(Arm::Approached(stated, 512)).to_f64().unwrap().0,
+                    met,
+                    "{axis:?}"
+                );
+            }
+        }
+    }
+
+    /// **A turned cylinder's seam is met in the world.** Three placements where the cap and the
+    /// cylinder ride different chains or none of them folds — a cylinder turned about its own axis
+    /// (its caps, fixed by the turn, stay as stated), one on an axis whose frame is a node (its
+    /// base cap is the frame's plane), and one turned twice: every seam vertex is `Bounded`, its
+    /// cache the met point at 512 bits rounded the same way.
+    #[test]
+    fn a_turned_cylinder_seam_is_realized_where_it_meets_its_cap() {
+        use nacre_exact::{Angle, Axis, Isometry, Rotation};
+        let turn = |m: &mut Model, s, axis, deg: i128, pivot: [Rat; 3]| {
+            let Ok(crate::OpOutput::Transform { solid }) = crate::apply(
+                m,
+                &crate::Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::rotation(Rotation {
+                        axis,
+                        pivot,
+                        angle: Angle::from_deg(r(deg)).unwrap(),
+                    }),
+                },
+            ) else {
+                panic!("the turn")
+            };
+            solid
+        };
+        let up = nacre_math::Vector3::from_array([0.0, 0.0, 1.0]);
+        let base = Point3::from_array([1.0, 2.0, 0.5]);
+        // The independent reading: the unturned seam points `(2.5, 2, 0.5)` and `(2.5, 2, 2.5)`
+        // turned in `f64`; for the frame node, the cylinder's own definition.
+        let seams_before = [[2.5, 2.0, 0.5], [2.5, 2.0, 2.5]];
+        type Check = Box<dyn Fn([f64; 3]) -> bool>;
+        let turned_from = |steps: Vec<(Axis, f64, [f64; 3])>| -> Check {
+            Box::new(move |p| {
+                seams_before.iter().any(|&q| {
+                    let q = steps
+                        .iter()
+                        .fold(q, |q, &(a, d, pv)| turned_f64(q, a, d, pv));
+                    near(p, q)
+                })
+            })
+        };
+        let on_the_tilted_rim: Check = Box::new(|p| {
+            let k = 1.0 / 3f64.sqrt();
+            let v = [p[0] - 1.0, p[1] - 2.0, p[2] - 0.5];
+            let h = (v[0] + v[1] + v[2]) * k;
+            let radial = (v.iter().map(|c| c * c).sum::<f64>() - h * h).sqrt();
+            (radial - 1.5).abs() < 1e-12 && (h.abs() < 1e-12 || (h - 2.0).abs() < 1e-12)
+        });
+        let cases: Vec<(&str, Model, Handle<nacre_topo::Solid>, Check)> = vec![
+            {
+                let mut m = Model::new();
+                let c = crate::fixtures::cylinder(&mut m, base, up, 1.5, 2.0);
+                let s = turn(&mut m, c.solid, Axis::Z, 37, [r(1), r(0), r(0)]);
+                let check = turned_from(vec![(Axis::Z, 37.0, [1.0, 0.0, 0.0])]);
+                ("about its own axis", m, s, check)
+            },
+            {
+                let mut m = Model::new();
+                let tilted = nacre_math::Vector3::from_array([1.0, 1.0, 1.0]);
+                let c = crate::fixtures::cylinder(&mut m, base, tilted, 1.5, 2.0);
+                ("on a frame node", m, c.solid, on_the_tilted_rim)
+            },
+            {
+                let mut m = Model::new();
+                let c = crate::fixtures::cylinder(&mut m, base, up, 1.5, 2.0);
+                let s = turn(&mut m, c.solid, Axis::X, 37, [r(0), r(1), r(0)]);
+                let s = turn(&mut m, s, Axis::Y, 30, [r(2), r(0), r(1)]);
+                let check = turned_from(vec![
+                    (Axis::X, 37.0, [0.0, 1.0, 0.0]),
+                    (Axis::Y, 30.0, [2.0, 0.0, 1.0]),
+                ]);
+                ("turned twice", m, s, check)
+            },
+        ];
+        for (what, m, solid, check) in cases {
+            let seams = seams_met(&m, solid);
+            assert!(!seams.is_empty(), "{what}");
+            for (vh, met) in seams {
+                let Vertex::OnSeam([cyl, _]) = *m.vertex(vh) else {
+                    unreachable!()
+                };
+                assert!(
+                    m.world_cylinder_def(cyl).is_none(),
+                    "{what}: no world statement"
+                );
+                let PointCache::Bounded { coord, .. } = m.vertex_cache(vh) else {
+                    panic!("{what}: {:?}", m.vertex_cache(vh))
+                };
+                assert_eq!(coord.as_array(), met, "{what}");
+                assert!(
+                    check(met),
+                    "{what}: {met:?} is not where the definition puts it"
+                );
+            }
         }
     }
 

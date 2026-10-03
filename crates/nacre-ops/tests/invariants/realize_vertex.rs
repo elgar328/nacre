@@ -795,15 +795,14 @@ fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
 /// everything would pass it.
 ///
-/// The refusing population is a cylinder turned off the quarters: its seam vertices sit on a
-/// carrier with no world statement (`NoCurvedPoint`). The tilted frame's mixed-frame corners
-/// used to be the refusals here; the mixed road answers them now, so they stand on the success
-/// side.
+/// The refusing population is a pierce corner on a cylinder turned off the quarters — a meet no
+/// road solves off the world statement (`NoCurvedPoint`). The same cylinder's seam vertices are
+/// met in the world and stand on the success side, as the tilted frame's mixed-frame corners do.
 #[test]
 fn a_refusal_is_named_and_a_success_stands_beside_it() {
     let turned_cylinder = {
-        let mut m = cylinder();
-        let s = m.live_solids()[0];
+        let mut m = Model::new();
+        let s = nacre_ops::fixtures::windowed_boss(&mut m, 0.6, -1.0);
         moved(&mut m, s, turn(Axis::X, 30));
         m.rebuild_adjacency();
         m

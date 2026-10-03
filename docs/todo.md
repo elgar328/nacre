@@ -267,8 +267,9 @@
 
 실현은 이 코너에 답한다 — 모션 이력이 갈린 담체의 교점은 담체마다의 증인 삼각형으로 실현된다
 (`nacre_judge::plane_hp` → `meet_hp`); census 결과 정점 4,972 가 전부 `Bounded` 다. 남는
-실현 거절 인구: 회전된 원통의 seam(`NoCurvedPoint` — 세계에 진술 못 하는 담체, 피연산자 12)과 증인 삼각형이 없는
-담체(이름 없는 `Through`)의 코너(`NoMeet`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
+실현 거절 인구: 증인 삼각형이 없는 담체(이름 없는 `Through`)의 코너(`NoMeet`, 스위트 push 164)와, 사분각 밖 회전
+위 원통의 관통점(`NoCurvedPoint` — 불리언은 그 원통을 게이트가 거절하므로 스위트에서 테스트가 심은 8 뿐; 같은
+원통의 seam 은 세계에서 만나 실현된다 — `seam_point_met`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
 다시 재지 않았다.
 
 ### 접히지 않는 사슬 위 평면은 세계 이름이 없다
@@ -304,10 +305,13 @@
 ### `refine_vertex_cache` 를 부르는 제품이 없다
 
 비싼 실현 문(`Ceiling` 을 사다리 끝까지 올린다)인 이 문의 호출처는 테스트뿐이다
-(`invariants/realize_vertex.rs`·`invariants/replay.rs`). kit·playground 는 부르지 않고, `nacre-step` 은
-`vertex_point` 를 그대로 읽는다. 갈림은 둘이고 결정이 필요하다: 내보내기(STEP·kit)가 불러야 하는 **빠진
-호출**인가, 소비자 없는 문인가. `Ceiling` 인구는 비용 한계(192)를 넘는 깊은 사슬 테스트에 있다 — census
-코퍼스의 수는 이 결정을 할 때 잰다.
+(`invariants/realize_vertex.rs`·`invariants/replay.rs`). `nacre-step` 은 캐시를 그대로 읽고(`vertex_point`·
+`surface_cache`·`edge_curve`) `nacre-ops` 에 의존하지 않아 스스로 실현하지 못하며, kit·playground 에는 아직 STEP
+내보내기가 없다. **빠진 호출이다** — 도착점은 내보내기 직전의 문 하나: 깊은 이력(사슬 > 192 노드)에서 미뤄진
+값을 올리고 남은 수를 보고한다. 그 인구는 셋이 같은 자리에 있다(스위트 push; census 0): 정점 `Ceiling` 35,280
+(`CostCap` 35,168 · `Undecided` 112), 평면 캐시의 생산자 값(「평면 캐시의 생산자 폴백」), 원통 캐시의 생산자 값
+(`push_cylinder_realized` 가 깊은 사슬에서 남기는 것 — 오늘 0). 이 문은 정점만 올리므로 평면·원통 판이 함께
+필요하고, 길이 없는 `Unrealized`(`NoMeet`·회전 원통의 관통점)는 올리지 못하고 수로만 보고한다.
 
 ### 정점 캐시의 «버리고 재생» 보증
 

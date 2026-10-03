@@ -408,8 +408,9 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
 /// ★ **The push funnel realizes; the fallback stands only where the realization declines** (cell
 /// 52). Pushing a realizable definition again with a fallback that is wrong by three ulp gives a
 /// `Bounded` cache holding the realization, not the fallback; a definition the road declines by
-/// name — a cylinder's seam under an irrational turn, which has no exact world statement — keeps
-/// the fallback it was handed.
+/// name — a pierce corner on a cylinder under an irrational turn, whose meet no road solves off
+/// the world statement — keeps the fallback it was handed. The same turned cylinder's seam
+/// vertices stand beside them, realized (met in the world).
 #[test]
 fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let (mut m, l) = l_prism();
@@ -436,26 +437,28 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     assert_ne!(m.vertex_point(h), wrong);
 
     let mut m = Model::new();
-    let c = crate::fixtures::cylinder_with_seam(
-        &mut m,
-        Point3::origin(),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        Vector3::from_array([0.0, -1.0, 0.0]),
-        1.0,
-        2.0,
-    )
-    .solid;
+    let c = crate::fixtures::windowed_boss(&mut m, 0.6, -1.0);
     let turned =
         transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
     m.rebuild_adjacency();
-    let mut seams = 0;
-    for &fh in &m.shell(m.solid(turned).outer).faces {
-        for he in &m.face(fh).outer.half_edges {
-            for vh in m.edge(he.edge).vertices {
-                if !matches!(*m.vertex(vh), Vertex::OnSeam(_)) {
-                    continue;
-                }
-                seams += 1;
+    let (mut pierces, mut seams) = (0, 0);
+    let vertices: std::collections::BTreeSet<_> = m
+        .shell(m.solid(turned).outer)
+        .faces
+        .iter()
+        .flat_map(|&fh| {
+            let f = m.face(fh);
+            std::iter::once(&f.outer)
+                .chain(f.inner.iter())
+                .flat_map(|lp| lp.half_edges.iter())
+                .flat_map(|he| m.edge(he.edge).vertices)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    for vh in vertices {
+        match *m.vertex(vh) {
+            Vertex::Pierce { .. } => {
+                pierces += 1;
                 assert!(
                     matches!(
                         m.vertex_cache(vh),
@@ -469,7 +472,16 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
                     Some(crate::RealizeError::NoCurvedPoint)
                 );
             }
+            Vertex::OnSeam(_) => {
+                seams += 1;
+                assert!(
+                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                    "{:?}",
+                    m.vertex_cache(vh)
+                );
+            }
+            Vertex::ThreePlane(_) => {}
         }
     }
-    assert!(seams > 0, "the turned cylinder has seam vertices");
+    assert!(pierces > 0 && seams > 0, "{pierces} pierces, {seams} seams");
 }
