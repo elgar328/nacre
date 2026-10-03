@@ -182,23 +182,6 @@ fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()
 }
 
-/// A pocket's profile lives in a frame **derived from the face**, not in world
-/// coordinates — but on the unit cube's lid the two coincide.
-///
-/// The sketch origin is the world origin projected onto the face's plane, and the arbitrary-axis
-/// convention gives `n = ẑ` the axes `u = +x̂, v = +ŷ`, so a frame point `(a, b)` is world
-/// `(a, b, 1)`. `half = 0.2` here is the `[0.3,0.7]²` void.
-fn centred_on_the_cube_lid(half: f64) -> Profile2d {
-    let (cx, cy) = (0.5, 0.5);
-    Profile2d::polygon(vec![
-        p2(cx - half, cy + half),
-        p2(cx - half, cy - half),
-        p2(cx + half, cy - half),
-        p2(cx + half, cy + half),
-    ])
-    .unwrap()
-}
-
 /// The `u_prism` of the boolean suite: prong tops at different heights so no two
 /// faces are coplanar. Its cap is **not star-shaped from `(0,0)`**.
 fn u_prism() -> (Model, Handle<Solid>) {
@@ -244,7 +227,7 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
             })
         })
         .expect("the top face");
-    let solid = nacre_ops::fixtures::pocket(&mut m, top, centred_on_the_cube_lid(0.2), 0.5)
+    let solid = nacre_ops::fixtures::pocket(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5)
         .unwrap()
         .solid();
     (m, solid)
