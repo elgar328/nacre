@@ -24,5 +24,7 @@ step-io = "0.2.4"
 nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
 # Enables topo's test-only `reversed_shell` (a cavity's shell, for the void export test).
 nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
+# The rim-centre test states its oracle in exact rationals, from the fixture's own decimals.
+nacre-exact = { workspace = true }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

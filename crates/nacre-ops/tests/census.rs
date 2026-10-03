@@ -191,12 +191,105 @@ static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::
 static SENSE: [std::sync::atomic::AtomicUsize; 4] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
 
+/// Circle edges the rim lock reads: `[stated, unstated]` — a stated rim's centre is checked
+/// against the truth; an unstated one (a cylinder without a world statement, or a cap without a
+/// narrow world name) still takes the caches' `f64` meet, and is counted so the population shows.
+static CIRCLES: [std::sync::atomic::AtomicUsize; 2] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 2];
+
+/// The centre a circle edge's truth names, as the nearest `f64` — `None` where the cylinder has no
+/// world statement or its cap no narrow world name.
+///
+/// ★ **Spelled here, not borrowed.** The axis `o + t·m` meets the cap `n·x + d = 0` at
+/// `t = −(n·o + d)/(n·m)`, written out in this test's own `Rat` arithmetic from the truth's public
+/// statements, so the kernel's meet is checked against something it did not compute.
+fn circle_centre_truth(
+    m: &Model,
+    cyl: Handle<nacre_topo::Surface>,
+    cap: Handle<nacre_topo::Surface>,
+) -> Option<[f64; 3]> {
+    let def = m.world_cylinder_def(cyl)?;
+    let k = *m.world_plane_name(cap)?.narrow()?;
+    let (o, d) = (def.origin(), def.dir());
+    let dot = |v: &[Rat; 3]| -> Option<Rat> {
+        k[0].checked_mul(v[0])?
+            .checked_add(k[1].checked_mul(v[1])?)?
+            .checked_add(k[2].checked_mul(v[2])?)
+    };
+    let nm = dot(&d)?;
+    let t = Rat::from_int(0)
+        .checked_sub(dot(&o)?.checked_add(k[3])?)?
+        .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+    let mut c = [0.0; 3];
+    for i in 0..3 {
+        c[i] = o[i].checked_add(t.checked_mul(d[i])?)?.to_f64();
+    }
+    Some(c)
+}
+
+/// Every live circle edge of `m` against its truth: the tags of the stated circles whose cached
+/// centre is not the truth's nearest `f64`, and of the circles whose frame (normal, `ref_dir`,
+/// radius) is not the cylinder cache's to the bit.
+fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
+    let (mut centre, mut frame) = (Vec::new(), Vec::new());
+    let mut edges: Vec<_> = m.reachable().edges.into_iter().collect();
+    edges.sort_by_key(|e| e.index());
+    for eh in edges {
+        let nacre_geom::Curve::Circle(c) = m.edge_curve(eh) else {
+            continue;
+        };
+        let [s0, s1] = m.edge(eh).surfaces;
+        let (cyl, cap) = match m.surface(s0) {
+            nacre_topo::Surface::Cylinder { .. } => (s0, s1),
+            nacre_topo::Surface::Plane { .. } => (s1, s0),
+        };
+        let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+            unreachable!("a circle edge has a cylinder carrier")
+        };
+        let bits = |v: nacre_math::Vector3| v.as_array().map(f64::to_bits);
+        if bits(c.normal()) != bits(cc.axis().direction())
+            || bits(c.ref_dir()) != bits(cc.ref_dir())
+            || c.radius().to_bits() != cc.radius().to_bits()
+        {
+            frame.push(format!("e{}", eh.index()));
+        }
+        match circle_centre_truth(m, cyl, cap) {
+            Some(t) => {
+                CIRCLES[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if t.map(f64::to_bits) != c.center().as_array().map(f64::to_bits) {
+                    centre.push(format!(
+                        "e{} {:?} vs {:?}",
+                        eh.index(),
+                        c.center().as_array(),
+                        t
+                    ));
+                }
+            }
+            None => {
+                CIRCLES[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+    (centre, frame)
+}
+
 fn record(
     tag: &str,
     m: &Model,
     inputs: &str,
     out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>,
 ) {
+    // ★ The rim lock: every circle edge's frame is its cylinder cache's, and every stated rim's
+    // centre is the truth's nearest `f64` — the edge cache's twin of the vertex lock below.
+    let (centre, frame) = circle_audit(m);
+    assert!(
+        centre.is_empty(),
+        "{tag}: rim centres that are not the truth's nearest f64: {centre:?}"
+    );
+    assert!(
+        frame.is_empty(),
+        "{tag}: rim frames that are not the cylinder cache's: {frame:?}"
+    );
     // ★ The plane-sense lock: every live plane's cache faces the way its truth's sense says.
     let audit = nacre_ops::audit_plane_senses(m);
     assert!(
@@ -2606,6 +2699,11 @@ fn measure_census() {
     println!("stat sense_unmeasured {unmeasured}");
     println!("stat sense_mirrored {mirrored}");
     println!("stat sense_turned {turned}");
+    let [stated, unstated] = CIRCLES
+        .each_ref()
+        .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+    println!("stat rims_stated {stated}");
+    println!("stat rims_unstated {unstated}");
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

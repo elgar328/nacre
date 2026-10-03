@@ -459,14 +459,14 @@ pub(crate) fn reconstruct(
             }
             Ok(Loop { half_edges })
         };
-        // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it as
-        // `Circle::from_center_normal(centre, axis, ref_dir, r)`, so its parameter runs **CCW
-        // about the cylinder's axis** — the cache's, which runs the same way as the statement's
-        // `def.dir()` (the cylinder door asserts it). A loop must run CCW about its own face's
-        // outward normal, so a bound on a face whose normal agrees with the axis is walked forward
-        // and one whose normal opposes it backward — exactly how a circle prism's caps walk their
-        // rims (top cap forward, base cap backward). A *hole* runs the other way again,
-        // because an inner loop keeps the material on its left by winding against the outer.
+        // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it on the
+        // cylinder cache's frame (`Circle::from_unit_frame(centre, axis, ref_dir, r)`), so its
+        // parameter runs **CCW about the cylinder's axis** — the cache's, which runs the same way
+        // as the statement's `def.dir()` (the cylinder door asserts it). A loop must run CCW about
+        // its own face's outward normal, so a bound on a face whose normal agrees with the axis is
+        // walked forward and one whose normal opposes it backward — exactly how a circle prism's
+        // caps walk their rims (top cap forward, base cap backward). A *hole* runs the other way
+        // again, because an inner loop keeps the material on its left by winding against the outer.
         //
         // The face's outward normal is the way its plane faces when the face is `Forward` and the
         // reverse when `Reversed` — the `flip` decision made below — so the sign is read off

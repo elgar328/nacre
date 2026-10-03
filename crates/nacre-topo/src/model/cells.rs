@@ -230,10 +230,12 @@ impl Model {
     ///   [`EdgeDecline::Coincident`] (a degenerate line — the check lives in the straight arms).
     /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
     ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — the endpoints' line, as
-    ///   the seam; across it, a rim or an arc of one — the circle centred where the cache's axis
-    ///   crosses the cache's plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
-    ///   `radius`); every rim's cache comes from here (`push_edge` fills it by this derivation), so
-    ///   tessellation's `θ` parameterization is the cylinder's. The endpoints are not read: a full
+    ///   the seam; across it, a rim or an arc of one — the circle centred where the truth's axis
+    ///   crosses the truth's plane, the nearest `f64` of that exact meet (the caches' `f64` meet
+    ///   where the cylinder has no world statement), with the **cylinder cache's** frame
+    ///   (`axis direction`, `ref_dir`, `radius`) stored bit for bit; every rim's cache comes from
+    ///   here (`push_edge` fills it by this derivation), so tessellation's `θ` parameterization is
+    ///   the cylinder's. The endpoints are not read: a full
     ///   rim is a closed edge (`[v, v]`), which is not a degeneracy. Oblique — an ellipse — is
     ///   [`EdgeDecline::Oblique`], and a pair whose truths cannot be placed in one frame is
     ///   [`EdgeDecline::Unstated`].
@@ -288,8 +290,15 @@ impl Model {
                     Some(nacre_exact::AxisRelation::Along) => endpoints_line(),
                     Some(nacre_exact::AxisRelation::Across) => {
                         let axis = c.axis();
-                        let center = nacre_geom::intersect::line_plane(&axis, p)
-                            .ok_or(EdgeDecline::Degenerate)?;
+                        // The centre is the truth's where the truth is stated in the world; a
+                        // cylinder on a chain that does not fold (a frame node, a turn off the
+                        // quarters) has no rational centre here — its chain needs replaying, which
+                        // this crate cannot do — and keeps the caches' meet.
+                        let center = match self.rim_centre_from_truth(cyl, plane) {
+                            Some(c) => c,
+                            None => nacre_geom::intersect::line_plane(&axis, p)
+                                .ok_or(EdgeDecline::Degenerate)?,
+                        };
                         // The frame is the cylinder cache's, bit for bit — a rim has no frame of
                         // its own, so it is as correctly rounded as that cache is, never less.
                         Ok(Curve::Circle(
@@ -308,6 +317,22 @@ impl Model {
                 Err(EdgeDecline::TwoCylinders)
             }
         }
+    }
+
+    /// **A rim's centre, realized from the truth** — the cylinder's world statement meets its
+    /// cap's world name ([`nacre_exact::axis_plane_meet`], the one spelling of that meet), each
+    /// coordinate the nearest `f64` (`Rat::to_f64`, the rounding the cylinder cache's origin takes).
+    /// `None` where either carrier has no world statement, the cap's name is `Wide`, or the
+    /// arithmetic leaves `i128`.
+    fn rim_centre_from_truth(
+        &self,
+        cyl: Handle<Surface>,
+        plane: Handle<Surface>,
+    ) -> Option<Point3> {
+        let def = self.world_cylinder_statement(cyl)?;
+        let name = self.world_plane_name(plane)?;
+        let c = nacre_exact::axis_plane_meet(name.narrow()?, &def.origin(), &def.dir())?;
+        Some(Point3::from_array(c.map(|r| r.to_f64())))
     }
 
     /// The handles reachable from the live solids — the live model.

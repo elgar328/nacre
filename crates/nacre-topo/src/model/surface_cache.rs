@@ -189,11 +189,10 @@ impl Model {
     ///   ([`Model::through_points_rat`]). Where neither stands (an overflow, a moved `Through`)
     ///   the producer's anchor is kept beside the derived normal.
     /// * **Cylinder** — the world statement ([`Model::world_cylinder_def`]'s, without its
-    ///   postcondition — this reader measures the disagreement it would assert away) realized: `origin` and
-    ///   `radius` descend exactly; the axis direction and `ref_dir` do not
-    ///   (`Cylinder::from_axis` normalizes both). ⚠ Nothing **applies** this arm today — only a
-    ///   test build's [`Model::push_cylinder_raw`] computes it, to measure it; a product build
-    ///   never reaches it.
+    ///   postcondition — this reader measures the disagreement it would assert away) realized,
+    ///   each part correctly rounded: the origin and the radius from the statement, the unit
+    ///   axis and the unit `ref_dir` across it from [`nacre_exact::cyl_unit_frame_f64`], stored
+    ///   as given ([`Cylinder::from_unit_frame`]). [`Model::push_cylinder_raw`] applies it.
     ///
     /// ★ **What the anchor buys** (measured): a producer-stated anchor on a tilted plane
     /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**

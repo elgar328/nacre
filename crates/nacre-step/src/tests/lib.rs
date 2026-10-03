@@ -179,6 +179,104 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
     assert_eq!(voids[0].len(), 6); // one cavity shell, 6 faces
 }
 
+/// ★★ **A stated rim's centre reaches the file as the truth's nearest `f64`.** The edge cache
+/// holds it (nacre-ops' `a_stated_rims_centre_is_the_truths_nearest`); this asks the next layer —
+/// what each `CIRCLE`'s placement in the written file says, read back. Stated tilted axes off the
+/// origin; the oracle is `base` and `base + h·û`, computed here in `Rat` from the fixture's
+/// decimals and a unit axis rational by hand.
+///
+/// ★ The sweep also counts the rims whose centre the caches' own `f64` meet (`line_plane` of the
+/// cylinder cache's axis and the cap cache) gets wrong, and requires one — a sweep where that
+/// meet happens to be right everywhere cannot tell the two roads apart.
+#[test]
+fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
+    use nacre_exact::Rat;
+    use step_io::generated::model::{Axis2PlacementRef, CartesianPointRef};
+    let r = |n: i128, d: i128| Rat::new(n, d).expect("a rational");
+    let axes: [([f64; 3], [Rat; 3]); 3] = [
+        ([3.0, 4.0, 0.0], [r(3, 5), r(4, 5), r(0, 1)]),
+        ([0.0, 3.0, 4.0], [r(0, 1), r(3, 5), r(4, 5)]),
+        ([12.0, 0.0, 5.0], [r(12, 13), r(0, 1), r(5, 13)]),
+    ];
+    let bases: [[f64; 3]; 2] = [[0.1, 0.7, 0.3], [1.5, -2.25, 12.75]];
+    let height = 1.1;
+    let mut caches_miss = 0;
+    for (axis, unit) in axes {
+        for base in bases {
+            let mut m = Model::new();
+            nacre_ops::fixtures::cylinder(
+                &mut m,
+                Point3::from_array(base),
+                Vector3::from_array(axis),
+                0.3,
+                height,
+            );
+            let b = base.map(|x| Rat::from_decimal(x).expect("a decimal"));
+            let h = Rat::from_decimal(height).expect("a decimal");
+            let top: [Rat; 3] = core::array::from_fn(|k| {
+                b[k].checked_add(h.checked_mul(unit[k]).unwrap()).unwrap()
+            });
+            let mut want: Vec<[u64; 3]> = [b, top]
+                .iter()
+                .map(|p| p.map(|x| x.to_f64().to_bits()))
+                .collect();
+            want.sort();
+
+            for eh in (0..m.edge_count() as u32).filter_map(|i| m.edge_handle_at(i)) {
+                let nacre_geom::Curve::Circle(c) = m.edge_curve(eh) else {
+                    continue;
+                };
+                let [s0, s1] = m.edge(eh).surfaces;
+                let (cyl, cap) = match m.surface_cache(s0) {
+                    nacre_geom::Surface::Cylinder(_) => (s0, s1),
+                    nacre_geom::Surface::Plane(_) => (s1, s0),
+                };
+                let (nacre_geom::Surface::Cylinder(cc), nacre_geom::Surface::Plane(pc)) =
+                    (m.surface_cache(cyl), m.surface_cache(cap))
+                else {
+                    unreachable!("a rim is a cylinder against a plane")
+                };
+                let meet = nacre_geom::intersect::line_plane(&cc.axis(), pc)
+                    .expect("the axis crosses the cap");
+                if meet.as_array().map(f64::to_bits) != c.center().as_array().map(f64::to_bits) {
+                    caches_miss += 1;
+                }
+            }
+
+            let text = to_step(&m).expect("export");
+            let (model, report) = read(text.as_bytes()).expect("re-read");
+            assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+            let mut got: Vec<[u64; 3]> = model
+                .circle_arena
+                .items
+                .iter()
+                .map(|c| {
+                    let Axis2PlacementRef::Axis2Placement3d(p) = c.position else {
+                        panic!("a 3-D circle has a 3-D placement")
+                    };
+                    let CartesianPointRef::CartesianPoint(o) =
+                        model.axis2_placement3d_arena.get(p.0).location
+                    else {
+                        panic!("a placement's location is a cartesian point")
+                    };
+                    let xyz = &model.cartesian_point_arena.get(o.0).coordinates;
+                    [xyz[0].to_bits(), xyz[1].to_bits(), xyz[2].to_bits()]
+                })
+                .collect();
+            got.sort();
+            got.dedup();
+            assert_eq!(
+                got, want,
+                "axis {axis:?} base {base:?}: the file's rim centres"
+            );
+        }
+    }
+    assert!(
+        caches_miss > 0,
+        "the caches' f64 meet is right on every rim here — the lock cannot tell the roads apart"
+    );
+}
+
 #[test]
 fn cylinder_round_trips_through_step_io_reader() {
     let mut m = Model::new();

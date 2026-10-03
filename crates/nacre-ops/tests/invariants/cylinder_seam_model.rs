@@ -237,6 +237,96 @@ fn a_rims_frame_is_its_cylinders_cache() {
     );
 }
 
+/// ★★ **A stated rim's centre is the truth's nearest `f64`** — the cylinder's axis met with its
+/// cap, exactly, then rounded. The oracle is this test's own: the fixture's decimals (the base and
+/// the height, read as the decimals they spell) and an axis whose unit vector is rational by hand
+/// (`3-4-0 / 5`, `0-3-4 / 5`, `12-0-5 / 13`, and `+z`), so the bottom rim's centre is the base and
+/// the top's is `base + h·û`. Each of these axes has a rational frame across it, so the cylinder is
+/// stated in the world — asserted, because a rational unit axis alone is not enough: `2-3-6 / 7`
+/// has no rational perpendicular frame and is built on a frame node, where the centre is not yet
+/// the truth's.
+///
+/// ★ The sweep also counts the rims where the caches' `f64` meet (`line_plane` of the cylinder
+/// cache's axis and the cap cache) misses the truth, and requires one — otherwise this lock could
+/// not tell the two roads apart.
+#[test]
+fn a_stated_rims_centre_is_the_truths_nearest() {
+    use nacre_exact::Rat;
+    let r = |n: i128, d: i128| Rat::new(n, d).expect("a rational");
+    let cases: [([f64; 3], [Rat; 3]); 4] = [
+        ([3.0, 4.0, 0.0], [r(3, 5), r(4, 5), r(0, 1)]),
+        ([0.0, 3.0, 4.0], [r(0, 1), r(3, 5), r(4, 5)]),
+        ([12.0, 0.0, 5.0], [r(12, 13), r(0, 1), r(5, 13)]),
+        ([0.0, 0.0, 1.0], [r(0, 1), r(0, 1), r(1, 1)]),
+    ];
+    let bases: [[f64; 3]; 2] = [[0.1, 0.7, 0.3], [1.5, -2.25, 12.75]];
+    let height = 1.1;
+    let mut caches_miss = 0;
+    for (axis, unit) in cases {
+        for base in bases {
+            let mut m = Model::new();
+            let s = cylinder(
+                &mut m,
+                Point3::from_array(base),
+                Vector3::from_array(axis),
+                0.3,
+                height,
+            )
+            .solid;
+            m.rebuild_adjacency();
+            let b = base.map(|x| Rat::from_decimal(x).expect("a decimal"));
+            let h = Rat::from_decimal(height).expect("a decimal");
+            let top: [Rat; 3] = core::array::from_fn(|k| {
+                b[k].checked_add(h.checked_mul(unit[k]).unwrap()).unwrap()
+            });
+            let mut want: Vec<[u64; 3]> = [b, top]
+                .iter()
+                .map(|p| p.map(|x| x.to_f64().to_bits()))
+                .collect();
+            want.sort();
+            let mut got = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            for &fh in &m.shell(m.solid(s).outer).faces {
+                for he in &m.face(fh).outer.half_edges {
+                    let Curve::Circle(c) = m.edge_curve(he.edge) else {
+                        continue;
+                    };
+                    if !seen.insert(he.edge) {
+                        continue;
+                    }
+                    let centre = c.center().as_array().map(f64::to_bits);
+                    got.push(centre);
+                    let [s0, s1] = m.edge(he.edge).surfaces;
+                    let (cyl, cap) = match m.surface(s0) {
+                        Surface::Cylinder { .. } => (s0, s1),
+                        Surface::Plane { .. } => (s1, s0),
+                    };
+                    assert!(
+                        m.world_cylinder_def(cyl).is_some(),
+                        "axis {axis:?}: the premise — this cylinder is stated in the world"
+                    );
+                    let (nacre_geom::Surface::Cylinder(cc), nacre_geom::Surface::Plane(pc)) =
+                        (m.surface_cache(cyl), m.surface_cache(cap))
+                    else {
+                        unreachable!("a rim is a cylinder against a plane")
+                    };
+                    let meet = nacre_geom::intersect::line_plane(&cc.axis(), pc)
+                        .expect("the axis crosses the cap");
+                    if meet.as_array().map(f64::to_bits) != centre {
+                        caches_miss += 1;
+                    }
+                }
+            }
+            got.sort();
+            assert_eq!(got, want, "axis {axis:?} base {base:?}: rim centres");
+        }
+    }
+    assert!(
+        caches_miss > 0,
+        "every rim here is one the caches' f64 meet already gets right — the lock cannot tell the roads apart"
+    );
+}
+
 /// A cylinder's caps state points and a name, and a cap on the plane of another producer's face
 /// **is** that face's plane — one plane, one handle, across two producers.
 #[test]
