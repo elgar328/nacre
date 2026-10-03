@@ -577,6 +577,119 @@ pub(crate) fn push_plane_realized(
     model.push_plane(cache, points, motion, sense)
 }
 
+/// Push a cylinder whose cache is **realized from its truth** where the model cannot derive one —
+/// the cylinder twin of [`push_plane_realized`], and the road every constructed cylinder takes.
+///
+/// The push door derives a cylinder's cache itself wherever the cylinder is stated in the world
+/// (unmoved, or carried by a chain that folds). What it cannot state is a cylinder under a turn
+/// off the quarters or a frame, and there `figure` — the construction's own `f64` — would stand.
+/// This realizes that cache instead from the chain ([`world_cylinder_hp`]): the origin, the unit
+/// axis and the unit `ref_dir` replayed at 128 or 256 bits and each rounded once; the radius is
+/// the statement's (the chain is an isometry). The same guard as the plane's: a chain deeper than
+/// [`CACHE_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided.
+pub(crate) fn push_cylinder_realized(
+    model: &mut Model,
+    figure: nacre_geom::Cylinder,
+    def: nacre_topo::CylinderDef,
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+) -> Handle<Surface> {
+    let zero = [nacre_exact::Rat::from_int(0); 3];
+    let realized = motion
+        .filter(|&leaf| {
+            model.chain_point_rat(leaf, zero).is_none()
+                && !model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP)
+        })
+        .and_then(|_| realize_cylinder_cache(model, &def, motion));
+    model.push_cylinder(realized.unwrap_or(figure), def, motion)
+}
+
+/// The cache [`push_cylinder_realized`] describes, on the cache road's two rungs — `None` where
+/// the chain does not answer or neither rung decides every component.
+fn realize_cylinder_cache(
+    model: &Model,
+    def: &nacre_topo::CylinderDef,
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+) -> Option<nacre_geom::Cylinder> {
+    let read = |v: [HpBounded; 3], bits: usize| {
+        Realized(Arm::Approached(v, bits)).to_f64().map(|(v, _)| v)
+    };
+    [LADDER[0], LADDER[1]].into_iter().find_map(|bits| {
+        let hp = world_cylinder_hp(model, def, motion, bits)?;
+        let origin = read(hp.origin, bits)?;
+        let axis = read(unit(hp.axis, bits)?, bits)?;
+        let ref_dir = read(unit(hp.seam, bits)?, bits)?;
+        nacre_geom::Cylinder::from_unit_frame(
+            Point3::from_array(origin),
+            nacre_math::Vector3::from_array(axis),
+            nacre_math::Vector3::from_array(ref_dir),
+            def.radius_f64(),
+        )
+    })
+}
+
+/// **A cylinder in the world, carried by its motion chain at `bits`** — what both the cylinder
+/// cache ([`push_cylinder_realized`]) and the seam vertex of a moved cylinder read.
+#[derive(Clone)]
+pub(crate) struct CylinderHp {
+    /// The statement's origin, replayed.
+    pub(crate) origin: [HpBounded; 3],
+    /// The axis as replayed: `R(o + dir) − R(o)`, of the statement's length `|dir|`.
+    pub(crate) axis: [HpBounded; 3],
+    /// The seam direction scaled to the radius: `r·ê` for `ê` the unit part of `ref_dir` across
+    /// the axis — so `origin + seam` is the seam's point on the rim through the origin.
+    pub(crate) seam: [HpBounded; 3],
+}
+
+/// [`CylinderHp`] for the statement `def` under `motion` (`None`: the statement is the world).
+///
+/// ★ **A direction is the difference of two replayed points.** The chain is affine — turns,
+/// translations, reflections, frames — so the image of a direction `v` is `R(o + v) − R(o)`: the
+/// translation cancels, which is how the plane funnel carries a name's normal
+/// ([`carried_name_normal`]). Replaying `v` as if it were a point would carry the translation
+/// into the direction.
+///
+/// `None` where the chain cannot be read, the statement's arithmetic leaves `Rat` (the part of
+/// `ref_dir` across the axis, `e₁ = (dir·dir)·ref_dir − (ref_dir·dir)·dir`), or `r²` is wider than
+/// `Rat` — the caller keeps what it had.
+pub(crate) fn world_cylinder_hp(
+    model: &Model,
+    def: &nacre_topo::CylinderDef,
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+    bits: usize,
+) -> Option<CylinderHp> {
+    use nacre_exact::{Rat, dot3_rat};
+    let chain = match motion {
+        Some(leaf) => motion_chain(model, leaf)?,
+        None => Vec::new(),
+    };
+    let (o, m) = (def.origin(), def.dir());
+    let e1 = perp_component(&def.ref_dir(), &m)?;
+    let plus = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            o[0].checked_add(v[0])?,
+            o[1].checked_add(v[1])?,
+            o[2].checked_add(v[2])?,
+        ])
+    };
+    let at = |p: [Rat; 3]| replay(WitnessPoint::at(p), &chain).map(|w| w.realize(bits));
+    let origin = at(o)?;
+    let towards = |p: [HpBounded; 3]| -> [HpBounded; 3] {
+        core::array::from_fn(|k| p[k].sub(&origin[k], bits))
+    };
+    let axis = towards(at(plus(&m)?)?);
+    let across = towards(at(plus(&e1)?)?);
+    // `r / |e₁|` read as `√(r² / e₁·e₁)` — one rational under one root.
+    let ee = dot3_rat(&e1, &e1)?;
+    let q = def
+        .r2()
+        .narrow()?
+        .checked_mul(Rat::new(ee.denom(), ee.numer())?)?;
+    let q = HpBounded::of_rat(q, bits);
+    let k = q.mul(&q.inv_sqrt(bits)?, bits);
+    let seam = core::array::from_fn(|i| across[i].mul(&k, bits));
+    Some(CylinderHp { origin, axis, seam })
+}
+
 /// The anchor and normal [`push_plane_realized`] describes, each `None` where it does not answer.
 fn realize_plane_cache(
     model: &Model,
@@ -1109,6 +1222,77 @@ mod tests {
 
     fn r(n: i128) -> Rat {
         Rat::from_int(n)
+    }
+
+    /// **A turned cylinder's cache is its chain realized and rounded once — the same `f64` at twice
+    /// the precision.** A cylinder turned 37° about `x` and one turned 30° about `y`, both about
+    /// pivots off the origin (so a direction replayed as a point would carry the pivot's
+    /// translation and miss), have no world statement; the cache their push left is read against
+    /// [`world_cylinder_hp`] at 512 bits, rounded the same way.
+    #[test]
+    fn a_turned_cylinder_cache_is_its_chain_rounded_once() {
+        use nacre_exact::{Angle, Axis, Isometry, Rotation};
+        for (axis, deg, pivot) in [
+            (Axis::X, 37, [r(1), r(0), r(0)]),
+            (Axis::Y, 30, [r(0), r(1), r(2)]),
+        ] {
+            let mut m = Model::new();
+            let c = crate::fixtures::cylinder(
+                &mut m,
+                Point3::from_array([1.0, 2.0, 0.5]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                1.5,
+                2.0,
+            );
+            let Ok(crate::OpOutput::Transform { solid }) = crate::apply(
+                &mut m,
+                &crate::Operation::Transform {
+                    solid: c.solid,
+                    isometry: Isometry::rotation(Rotation {
+                        axis,
+                        pivot,
+                        angle: Angle::from_deg(r(deg)).unwrap(),
+                    }),
+                },
+            ) else {
+                panic!("the turn")
+            };
+            let lateral = m
+                .shell(m.solid(solid).outer)
+                .faces
+                .iter()
+                .map(|&f| m.face(f).surface)
+                .find(|&s| matches!(m.surface(s), Surface::Cylinder { .. }))
+                .expect("a lateral face");
+            let Surface::Cylinder { def, motion } = m.surface(lateral).clone() else {
+                unreachable!()
+            };
+            assert!(
+                motion.is_some() && m.world_cylinder_def(lateral).is_none(),
+                "{axis:?}"
+            );
+            let hp = world_cylinder_hp(&m, &def, motion, 512).expect("the chain");
+            let read = |v: [HpBounded; 3]| Realized(Arm::Approached(v, 512)).to_f64().unwrap().0;
+            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(lateral) else {
+                unreachable!()
+            };
+            assert_eq!(
+                cache.axis().origin().as_array(),
+                read(hp.origin),
+                "{axis:?}"
+            );
+            assert_eq!(
+                cache.axis().direction().as_array(),
+                read(unit(hp.axis, 512).unwrap()),
+                "{axis:?}"
+            );
+            assert_eq!(
+                cache.ref_dir().as_array(),
+                read(unit(hp.seam, 512).unwrap()),
+                "{axis:?}"
+            );
+            assert_eq!(cache.radius(), 1.5);
+        }
     }
 
     /// A reference direction that leans along the axis must lose exactly that lean.

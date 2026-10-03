@@ -722,7 +722,10 @@ fn transform_solid(
                         Carry::None => def.clone(),
                     }
                 };
-                (model.push_cylinder(cy, carried, new_motion), false)
+                (
+                    crate::realize::push_cylinder_realized(model, cy, carried, new_motion),
+                    false,
+                )
             }
             (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Cylinder { .. })
             | (nacre_geom::Surface::Cylinder(_), nacre_topo::Surface::Plane { .. }) => {

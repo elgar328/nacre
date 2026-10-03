@@ -554,7 +554,15 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                         nacre_exact::BigRat::from(*r2),
                     )
                     .ok_or(OpError::DegenerateGeometry)?;
-                    Ok((model.push_cylinder(*cache, def, ring.exact.motion), false))
+                    Ok((
+                        crate::realize::push_cylinder_realized(
+                            model,
+                            *cache,
+                            def,
+                            ring.exact.motion,
+                        ),
+                        false,
+                    ))
                 }
             }
         })
