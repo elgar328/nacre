@@ -147,6 +147,96 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
     );
 }
 
+/// ★★ **A rim's frame is its cylinder's, to the bit** — normal, `ref_dir` and radius are the
+/// cylinder cache's, which is the truth's correctly rounded frame. Asked where re-deriving it in
+/// `f64` moves it: a cylinder on a tilted frame node (axis `(1,1,1)`) turned 37° about `z` — its
+/// seam direction has a component whose truth is exactly `0`, which a renormalization brings back
+/// as a residue — and a `+z` cylinder turned 37° about `y` then 11° about `x`.
+///
+/// ★ The sweep also counts the rims whose frame a renormalization *would* move, and requires one:
+/// a fixture whose frame survives `Circle::from_center_normal` bit for bit cannot tell the two
+/// constructors apart, and this lock would pass with either.
+#[test]
+fn a_rims_frame_is_its_cylinders_cache() {
+    use crate::fixtures::rot_iso;
+    use nacre_exact::Axis;
+    let cases: [(&str, [f64; 3], Vec<nacre_exact::Isometry>); 2] = [
+        (
+            "frame node (1,1,1), turned 37 about z",
+            [1.0, 1.0, 1.0],
+            vec![rot_iso(Axis::Z, 37)],
+        ),
+        (
+            "turned 37 about y, 11 about x",
+            [0.0, 0.0, 1.0],
+            vec![rot_iso(Axis::Y, 37), rot_iso(Axis::X, 11)],
+        ),
+    ];
+    let mut would_move = 0;
+    for (name, axis, turns) in cases {
+        let mut m = Model::new();
+        let mut s = cylinder(
+            &mut m,
+            Point3::origin(),
+            Vector3::from_array(axis),
+            0.3,
+            1.1,
+        )
+        .solid;
+        for iso in turns {
+            s = crate::fixtures::xf(&mut m, s, iso);
+        }
+        m.rebuild_adjacency();
+        let bits = |v: Vector3| v.as_array().map(f64::to_bits);
+        let mut rims = 0;
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            for he in &m.face(fh).outer.half_edges {
+                let Curve::Circle(c) = m.edge_curve(he.edge) else {
+                    continue;
+                };
+                let cyl = m
+                    .edge(he.edge)
+                    .surfaces
+                    .into_iter()
+                    .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
+                    .expect("a rim has a cylinder carrier");
+                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+                    unreachable!("a cylinder truth has a cylinder cache")
+                };
+                assert_eq!(
+                    bits(c.normal()),
+                    bits(cc.axis().direction()),
+                    "{name}: normal"
+                );
+                assert_eq!(bits(c.ref_dir()), bits(cc.ref_dir()), "{name}: ref_dir");
+                assert_eq!(
+                    c.radius().to_bits(),
+                    cc.radius().to_bits(),
+                    "{name}: radius"
+                );
+                let again = nacre_geom::Circle::from_center_normal(
+                    c.center(),
+                    cc.axis().direction(),
+                    cc.ref_dir(),
+                    cc.radius(),
+                )
+                .expect("a nondegenerate frame");
+                if bits(again.normal()) != bits(c.normal())
+                    || bits(again.ref_dir()) != bits(c.ref_dir())
+                {
+                    would_move += 1;
+                }
+                rims += 1;
+            }
+        }
+        assert!(rims >= 2, "{name}: the sweep met {rims} rim uses");
+    }
+    assert!(
+        would_move > 0,
+        "no rim here has a frame a renormalization moves — the lock cannot tell the constructors apart"
+    );
+}
+
 /// A cylinder's caps state points and a name, and a cap on the plane of another producer's face
 /// **is** that face's plane — one plane, one handle, across two producers.
 #[test]

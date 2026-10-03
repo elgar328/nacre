@@ -290,8 +290,10 @@ impl Model {
                         let axis = c.axis();
                         let center = nacre_geom::intersect::line_plane(&axis, p)
                             .ok_or(EdgeDecline::Degenerate)?;
+                        // The frame is the cylinder cache's, bit for bit — a rim has no frame of
+                        // its own, so it is as correctly rounded as that cache is, never less.
                         Ok(Curve::Circle(
-                            Circle::from_center_normal(
+                            Circle::from_unit_frame(
                                 center,
                                 axis.direction(),
                                 c.ref_dir(),

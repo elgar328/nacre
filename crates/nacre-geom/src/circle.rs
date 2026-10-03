@@ -7,8 +7,8 @@ use nacre_math::{Point3, Vector3};
 /// positive `radius`.
 ///
 /// Invariant: `normal` and `ref_dir` are unit and mutually orthogonal, and
-/// `radius > 0` — the constructor normalizes, orthogonalizes, and rejects a zero
-/// axis or non-positive radius. Only `(center, normal, ref_dir, radius)` are
+/// `radius > 0` — [`Circle::from_center_normal`] normalizes, orthogonalizes, and rejects a zero
+/// axis or non-positive radius; [`Circle::from_unit_frame`] takes a frame that already is one. Only `(center, normal, ref_dir, radius)` are
 /// stored; the second in-plane axis (`normal × ref_dir`) is derived on demand so
 /// there is one fewer orthonormality invariant to keep.
 ///
@@ -38,7 +38,9 @@ impl Circle {
     /// Returns `None` if `normal` is zero, `ref_dir` is parallel to `normal`
     /// (no in-plane component), or `radius` is not positive (rejects `0`,
     /// negatives, and `NaN`). Named `from_*` (not `new`) as a fallible
-    /// constructor, mirroring [`Plane::from_point_normal`](crate::Plane).
+    /// constructor, mirroring [`Plane::from_point_normal`](crate::Plane). A frame that is
+    /// already a correctly rounded unit pair takes [`Circle::from_unit_frame`] — normalizing it
+    /// again moves its bits.
     pub fn from_center_normal(
         center: Point3,
         normal: Vector3,
@@ -48,6 +50,34 @@ impl Circle {
         let normal = normal.normalize()?;
         // Strip the normal component so the angle-0 axis lies in the plane.
         let ref_dir = (ref_dir - normal * ref_dir.dot(normal)).normalize()?;
+        (radius > 0.0).then_some(Circle {
+            center,
+            normal,
+            ref_dir,
+            radius,
+        })
+    }
+
+    /// A circle whose `normal` and `ref_dir` **are already** the unit, mutually perpendicular
+    /// vectors to keep, stored bit for bit — the frame a realization rounded correctly (a
+    /// cylinder cache's axis and seam direction), which [`Circle::from_center_normal`] would round
+    /// again: it normalizes the one and strips the other in `f64`, and a component whose truth is
+    /// `0` comes back as a residue. The mirror of
+    /// [`Cylinder::from_unit_frame`](crate::Cylinder::from_unit_frame). `None` for a radius that is
+    /// not positive.
+    #[inline]
+    pub fn from_unit_frame(
+        center: Point3,
+        normal: Vector3,
+        ref_dir: Vector3,
+        radius: f64,
+    ) -> Option<Circle> {
+        debug_assert!(
+            (normal.dot(normal) - 1.0).abs() < 1e-12
+                && (ref_dir.dot(ref_dir) - 1.0).abs() < 1e-12
+                && normal.dot(ref_dir).abs() < 1e-12,
+            "a unit ref_dir across a unit normal: {normal:?} {ref_dir:?}"
+        );
         (radius > 0.0).then_some(Circle {
             center,
             normal,
