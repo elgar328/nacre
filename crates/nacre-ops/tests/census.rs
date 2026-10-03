@@ -912,6 +912,13 @@ fn measure_census() {
     {
         use nacre_math::Vector3;
         let solo = |m: &Model, s: Handle<Solid>| {
+            // The rim lock, asked of each row as it stands: a transform retires its input, so the
+            // model's live solid is this row's alone.
+            let (centre, frame) = circle_audit(m);
+            assert!(
+                centre.is_empty() && frame.is_empty(),
+                "cyl solo/turn: rims off the truth: {centre:?} {frame:?}"
+            );
             let (vn, vh) = coord_digest(m, s);
             let (pn, ph) = plane_digest(m, s);
             format!("v{vn}h{vh:016x}p{pn}h{ph:016x}")
@@ -948,13 +955,6 @@ fn measure_census() {
             }),
         );
         println!("c cyl turn31 {}", solo(&m, leaned));
-        // The rim lock over the three, once: they share this model, and their rims are the
-        // corpus's only standalone (and only turned-off-the-quarters) cylinders.
-        let (centre, frame) = circle_audit(&m);
-        assert!(
-            centre.is_empty() && frame.is_empty(),
-            "cyl solo/turn: rims off the truth: {centre:?} {frame:?}"
-        );
 
         for (kn, k) in KINDS {
             let mut m = Model::new();
