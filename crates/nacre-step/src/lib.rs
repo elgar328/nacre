@@ -46,6 +46,13 @@ impl From<step_io::AuthorError> for StepError {
 /// (`vertices: [v, v]`, start == end) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit).
+///
+/// Every value is written from the model's caches as they stand. An operation realizes them as it
+/// builds — each the nearest `f64` of the exact geometry — except behind a history longer than the
+/// caches pay for at build time (a chain of more than 192 recorded motions, or a coordinate two
+/// rungs do not decide), where the construction's own figure stands. `nacre_ops::refine_caches`
+/// (`nacre::ops::refine_caches`) pays for those and reports what it could not settle; call it
+/// before exporting such a model. It takes `&mut Model`, which an export does not.
 pub fn to_step(model: &Model) -> Result<String, StepError> {
     build_step(model, model.live_solids())
 }

@@ -191,7 +191,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
     };
     let before = snapshot(&m);
     nacre_ops::rebuild_edge_cache(&mut m);
-    // ⚠ True of a model nothing has refined. `Model::refine_vertex_cache` moves coordinates,
+    // ⚠ True of a model nothing has refined. `nacre_ops::refine_caches` moves coordinates,
     // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
     // re-derives. This asserts the derivation is stable, not that rebuilding is always free.
     assert_eq!(

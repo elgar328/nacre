@@ -850,7 +850,7 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///   answer. Two walls stop it and they say the same thing to a reader: the ladder's first two
 ///   rungs did not decide the coordinate, or a chain the road would have to replay ran past what the cache
 ///   road pays for (`nacre_ops`'s cost cap — a chain whose fold answers is read at any depth).
-///   `nacre_ops::refine_vertex_cache` is what lifts these.
+///   `nacre_ops::refine_caches` is what lifts these.
 /// - [`Self::Unrealized`] — **no realization stands behind the coordinate**: the kernel has no road
 ///   to it (the realization declines by name), or nobody asked (a hand-built fixture). The figure
 ///   is the construction's own, and a checker applies its construction epsilon.

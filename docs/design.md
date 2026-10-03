@@ -240,7 +240,7 @@ pub enum Curve {
 
 `realize_vertex` 가 **호출자가 고른** 정밀도에서 사다리를 오른다(`Precision` 은 *"always stated, never defaulted"*). 판정 층의 정밀도는 모델이 정하고(정밀도 인프라 절), 실현은 호출자가 정한다 — **둘은 다른 손잡이다.**
 
-**정점의 캐시는 태어날 때부터 실현값이다.** 연산이 정점을 push 하는 자리 다섯(불리언 셋·압출·이동)은 전부 ops 의 깔때기 `push_vertex_realized(model, def, fallback)` 를 지난다: 정의를 사다리의 첫 두 단(128비트, 못 정하면 256비트)에서 실현해 `PointCache::Bounded { coord, bound }` 로 넣는다. 못 넣었을 때 서는 것은 «구성의 폴백»이 아니라 «이름 붙은 이유»다: 깔때기는 `realize_cache` 의 `Err` 를 망라적으로 갈라 `Ceiling`(첫 단의 비트가 모자랐거나, 재생할 이력이 **비용 한계** `CACHE_REPLAY_COST_CAP` 을 넘어 아예 안 걸었거나 — 둘 다 «더 물으면 답이 있다») 과 `Unrealized`(도로가 없다)로 나누고, 좌표만 구성 자리의 값에서 가져온다. 그래서 «실현 통로는 하나»가 구조다 — 표시·tess·STEP·물성·validate 가 읽는 f64 는 realize 의 메모다. **쓰기 문은 둘**이다: 짓는 `push_vertex` 와, `Ceiling` 만 올리는 `refine_vertex_cache`(내보내기 직전에 부르는 «비싼 문» — 뒤이은 연산은 캐시를 읽어 진실이 되는 것을 정하므로 그 뒤로는 연산하지 않는다). 계약은 census 가 행마다 단언한다: 답 ⇔ 변종, 값은 비트 동일. 거절 인구는 이름을 든다(`NoMeet` 등).
+**정점의 캐시는 태어날 때부터 실현값이다.** 연산이 정점을 push 하는 자리 다섯(불리언 셋·압출·이동)은 전부 ops 의 깔때기 `push_vertex_realized(model, def, fallback)` 를 지난다: 정의를 사다리의 첫 두 단(128비트, 못 정하면 256비트)에서 실현해 `PointCache::Bounded { coord, bound }` 로 넣는다. 못 넣었을 때 서는 것은 «구성의 폴백»이 아니라 «이름 붙은 이유»다: 깔때기는 `realize_cache` 의 `Err` 를 망라적으로 갈라 `Ceiling`(첫 단의 비트가 모자랐거나, 재생할 이력이 **비용 한계** `CACHE_REPLAY_COST_CAP` 을 넘어 아예 안 걸었거나 — 둘 다 «더 물으면 답이 있다») 과 `Unrealized`(도로가 없다)로 나누고, 좌표만 구성 자리의 값에서 가져온다. 그래서 «실현 통로는 하나»가 구조다 — 표시·tess·STEP·물성·validate 가 읽는 f64 는 realize 의 메모다. **쓰기 문은 둘**이다: 짓는 `push_vertex` 와, `Ceiling` 만 올리는 `Model::refine_vertex_cache` — 그것을 부르는 것은 내보내기 직전의 «비싼 문» `nacre_ops::refine_caches` 하나다(정점·곡면·간선을 차례로 올리고 남은 것을 이유별로 보고한다; 로그 끝의 문이다 — 정점 캐시는 뒤 연산의 진실을 정하지 않지만, 평면 캐시는 뒤 불리언의 seam 표가 `Ceiling` 정점에 쓰는 구성 수치라 그 표의 거절이 달라질 수 있다). 계약은 census 가 행마다 단언한다: 답 ⇔ 변종, 값은 비트 동일. 거절 인구는 이름을 든다(`NoMeet` 등).
 
 판정 술어는 다시 둘로 나뉜다: **명시 좌표점(f64 격자 위)은 direct 술어**(orient3d 등, 좌표를 직접 받음)로, **교차로 정의된 점은 indirect 술어**(implicit point = "어느 원시 요소들의 교차인지"라는 정의를 받아 좌표를 만들지 않고 부호를 정확히 계산 — Attene 2020)로 판정한다. 이유: 교차점을 f64 좌표로 만드는 순간 오차가 끼고, "정확한 direct 술어 × 부정확한 입력 = 부정확한 답"이 되기 때문. indirect 술어는 그 구멍을 닫는다(정의째 받으므로 부정확한 중간 좌표가 없음). 둘은 같은 확장 산술 바닥(`geometry-predicates`)을 공유하며, indirect 층은 `nacre-predicates`가 그 위에 쌓는다 — `indirect_cmp_coord`·`indirect_plane_side` 가 그것이다. indirect predicate가 작동하려면 점이 "정의를 보유"해야 하므로, **점이 정의를 갖는다**는 결정(위상 층 절)이 그 전제다 — 판정이 필요하면 indirect 술어, 좌표가 필요하면 **정의에서 실현한다**(위 `realize_vertex`; 둘은 대체가 아니라 역할 분담).
 
@@ -1005,7 +1005,7 @@ pub enum PointCache {
 //   37° 왕복 픽스처에서 60번은 결정·80번은 못 함),
 //   (b) 재생해야 할 이력이 비용 한계(`CACHE_REPLAY_COST_CAP` = 192)보다 깊어 싼 도로가 아예 안 걸었다(접기가
 //   답하는 사슬은 깊이와 무관하게 읽는다). 읽는 쪽에도
-//   되찾는 문(`refine_vertex_cache`)에도 뜻이 같다: «더 물으면 답이 있다» ⇒ 한 변종이 맞다.
+//   되찾는 문(`nacre_ops::refine_caches`)에도 뜻이 같다: «더 물으면 답이 있다» ⇒ 한 변종이 맞다.
 //   `Unrealized` 는 그 반대 — 도로가 없다(증인 삼각형이 없는 담체 `NoMeet`, 회전된 원통 위 관통점 `NoCurvedPoint`). 그 갈림은 사람이 읽을 것을
 //   위해 있다: «이 모델이 비싸다»와 «커널에 구멍이 있다»는 다른 보고다. 변종을 고르는 것은 호출자가
 //   아니라 깔때기(`push_vertex_realized`)이고, 철저한 `match` 라 새 이유가 옛 이름에 조용히 접히지 않는다.

@@ -35,7 +35,7 @@ impl Model {
     /// (*"238 of 1,992 differ from a naive re-solve"*) compared against a naive re-solve; the
     /// exact-rounding realization is not one, and the census says so vertex by vertex.
     ///
-    /// ⚠ **A second writer does exist, and it only ever raises**: `nacre_ops::refine_vertex_cache`
+    /// ⚠ **A second writer does exist, and it only ever raises**: `nacre_ops::refine_caches`
     /// lifts a `Ceiling` to `Bounded` by paying for the realization this road would not. It cannot
     /// reach the other variants and cannot move a coordinate anywhere but closer to the truth, so
     /// what stays true of the cache behind this door is *append-only in accuracy*, not in bytes.
@@ -68,7 +68,7 @@ impl Model {
     /// ★ Deliberately not `set_vertex_cache`. It cannot reach the other two variants: an
     /// `Unrealized` coordinate has no realization behind it (raising it would be inventing one) and
     /// a `Bounded` one is already the realization. The debug assert is the type saying so out loud
-    /// — the caller that pays for the realization is `nacre_ops::refine_vertex_cache`, and its own
+    /// — the caller that pays for the realization is `nacre_ops::refine_caches`, and its own
     /// contract is that it looks at nothing else.
     ///
     /// ⚠ **Anything derived from this coordinate is now stale**, starting with the edge curves the

@@ -189,6 +189,13 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
+### 앱에 STEP 내보내기가 없다
+
+kit·playground 에 STEP 내보내기가 없다(wasm 에 STEP 함수 0). 커널은 둘을 갖는다: `nacre_step::to_step(&Model)` 과
+그 앞의 문 `nacre_ops::refine_caches(&mut Model)` — 깊은 이력에서 미뤄진 캐시를 올리고 남은 것을 이유별로
+보고한다. 앱의 내보내기는 둘을 이어 부른다. 문은 로그 끝의 문이라(평면 캐시가 뒤 불리언의 구성 수치가 된다)
+편집을 이어 갈 모델이면 내보낼 복사본에서 부른다.
+
 ## 다음 — 출력 정밀도: f64 는 실현 통로 하나로
 
 숫자 규칙 「실현 통로는 하나다」를 코드가 아직 다 지키지 않는 자리들. 내보내는 수(STEP·OBJ)의 마지막 비트이지
@@ -218,10 +225,11 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 |---|---|---|
 | 온전한 림의 tess 샘플점(`360·i/n` 도의 참값 대비) | **36,895 / 80,371** | 1,106 ulp(참값 0 근처 성분) |
 | 원 간선 중심 — 진술된 원통 | 0 / 914 — 원통 진술 × 캡 세계 이름의 정확한 만남(`nacre_exact::axis_plane_meet`)을 성분마다 반올림; census 가 원마다 단언 | — |
-| 원 간선 중심 — 진술 없는 원통(프레임 노드·사분각 밖 회전) | 0 — ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현해 넘긴다(`EdgeGiven::centre`). census 가 원마다 단언한다(14 — 512비트 실현과 비트 동일, 캐시된 중심이 반 ulp 안에서 캡 위·축 위; 정해지지 않은 것 0). 남는 것은 사슬이 비용 한계를 넘는 원통의 원(캐시끼리의 f64 만남) — 문 몫 | 깊은 사슬의 원(안 잼) |
+| 원 간선 중심 — 진술 없는 원통(프레임 노드·사분각 밖 회전) | 0 — ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현해 넘긴다(`EdgeGiven::centre`). census 가 원마다 단언한다(14 — 512비트 실현과 비트 동일, 캐시된 중심이 반 ulp 안에서 캡 위·축 위; 정해지지 않은 것 0). 남는 것은 사슬이 비용 한계를 넘는 원통의 원(캐시끼리의 f64 만남) — `nacre_ops::refine_caches` 가 올린다 | 깊은 사슬의 원(안 잼) |
 | 원 간선 반지름·법선·`ref_dir` | 0 — 원통 캐시의 프레임을 비트 그대로(`Circle::from_unit_frame`); 위 모음의 진술 없는 원 756 에서도 0 | — |
-| 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(step-io 0.2.5 — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `CurveInput::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), seam·룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,523 · 축을 따르는 640 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 남는 것은 사슬이 비용 한계를 넘는 직선(끝점의 차) — 「`refine_vertex_cache` 를 부르는 제품이 없다」의 문 몫. 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | 깊은 사슬의 직선(안 잼) |
+| 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(step-io 0.2.5 — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `CurveInput::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), seam·룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,523 · 축을 따르는 640 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 남는 것은 사슬이 비용 한계를 넘는 직선(끝점의 차) — `nacre_ops::refine_caches` 가 올린다. 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | 깊은 사슬의 직선(안 잼) |
 | 원통의 원점·축·`ref_dir`·반지름 | 0 — 문이 진술에서, 진술이 없으면 깔때기가 사슬에서 정확 반올림한다(스위트에서 생산자 값과 다르던 진술된 원통 81: 기울어진 축 31·옮긴 원통 원점 50; 사슬로 실현한 회전 원통 1,319, census 7) | — |
+| 깊은 이력의 정점·평면·원통 캐시(사슬 > 192 노드, 두 단에서 미결정) | census 0. 스위트 push: 정점 `Ceiling` 35,280(`CostCap` 35,168 · `Undecided` 112) · 평면 생산자 값 17,556(깊은 사슬) + 256 에서 미결정인 법선 392 — 캐시가 그것을 말하고(`PointCache::Ceiling` · `CacheStanding::Ceiling`) 내보내기 직전의 문 `nacre_ops::refine_caches` 가 사다리 끝까지 올린다(7° 회전 + 300 이동 픽스처: 정점 8 · 곡면 4 · 간선 12, 남김 0, release 17 ms). 길이 없는 것은 `Unrealized` 로 남고 문이 수로 보고한다: 정점 `NoMeet`(스위트 push 164) · 회전 원통의 관통점, 혼합 프레임 `Through` 평면 8. 제품에서 그 문을 부르는 쪽은 아직 없다(「앱에 STEP 내보내기가 없다」) | — |
 
 - **첫 칸은 림의 샘플점이다.** 샘플의 정의를 «`fl(τ·i/n)` 라디안의 libm 평가»에서 «`360·i/n` 도(유리수
   `Angle`)의 림 점»으로 옮기고 정의에서 실현한다. 36,895 에는 그 재정의의 몫과 libm 의 몫이 섞여 있다 —
@@ -255,18 +263,6 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 실현은 일치 정밀도 안이 증명된 좌표를 `+0.0` 으로 읽는다(`Realized::to_f64`, design 「숫자 규칙」 4). 림 샘플점은
 아직 이 도로를 타지 않는다 — 60° 같은 각에서 참값 0 인 좌표가 구간으로 남는다(「곡면의 실현과 내보내기의 수치
 정밀도」 — 샘플의 각도를 유리수 `Angle` 로 재정의하는 것이 먼저다).
-
-### 평면 캐시의 생산자 폴백
-
-문이 유도하지 못한 평면 캐시는 ops 깔때기(`push_plane_realized`·`push_plane_through_realized`)가 push 한 뒤 진실에서
-실현해 올린다. 생산자 f64 가 남는 인구(스위트에서 잰 push 수; census 에는 없다 — census 의 곡면 3,286 은 전부
-`Realized`): 재생이 비용 한계(192)를 넘는 사슬 17,556(앵커·법선 둘 다) · 256 에서 미결정인 법선 392(그중 앵커까지
-생산자인 것 29) · 혼합 프레임 `Through` 8(증인이 없다 — `Unrealized`). 앞의 둘은 정점의 `Ceiling` 처럼 남고
-표지(`CacheStanding::Ceiling`)가 그것을 말한다. 평면 깔때기의 비용 가드는 사슬 깊이(≤192)로 재생 셋(첫 점·원점·이름
-벡터, 또는 넓은 이름이면 세 점)을 허락한다 — 정점의 혼합 도로처럼 재생 노드의 합으로 세면 오늘 실현되는 평면 5,976(깊이 65–192)이 폴백이다.
-
-**남은 것**: 값을 치르고 올리는 문(`refine_vertex_cache` 의 평면판 — 「`refine_vertex_cache` 를 부르는 제품이
-없다」).
 
 ## 알려진 결함과 절벽
 
@@ -305,7 +301,7 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
-남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_vertex_cache`) 중 제품 소비자가 있는 것은 kit 의 `realize_vertex_decimal` 한 곳이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
+남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 `realize_vertex_decimal` 한 곳이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
 
 ### 접히는 사슬 위 원통의 잠금
 
@@ -319,30 +315,17 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 출처가 둘인 행의 모서리를 세계에서 답하는 모서리 도로(2×2 격자). 그 테스트들은 이동이 옮겨 적히면서 옮겨 적는
 도로를 재게 됐고, 이 인구의 제품 도로는 `Through` 면이 섞인 원통 솔리드뿐이라 지금 잠금이 없다.
 
-### `refine_vertex_cache` 를 부르는 제품이 없다
-
-비싼 실현 문(`Ceiling` 을 사다리 끝까지 올린다)인 이 문의 호출처는 테스트뿐이다
-(`invariants/realize_vertex.rs`·`invariants/replay.rs`). `nacre-step` 은 캐시를 그대로 읽고(`vertex_point`·
-`surface_cache`·`edge_curve`) `nacre-ops` 에 의존하지 않아 스스로 실현하지 못하며, kit·playground 에는 아직 STEP
-내보내기가 없다. **빠진 호출이다** — 도착점은 내보내기 직전의 문 하나: 깊은 이력(사슬 > 192 노드)에서 미뤄진
-값을 올리고 남은 수를 보고한다. 그 인구는 셋이 같은 자리에 있다(스위트 push; census 0): 정점 `Ceiling` 35,280
-(`CostCap` 35,168 · `Undecided` 112), 평면 캐시의 생산자 값(「평면 캐시의 생산자 폴백」), 원통 캐시의 생산자 값
-(`push_cylinder_realized` 가 깊은 사슬에서 남기는 것 — 오늘 0). 이 문은 정점만 올리므로 평면·원통 판이 함께
-필요하고, 길이 없는 `Unrealized`(`NoMeet`·회전 원통의 관통점)는 올리지 못하고 수로만 보고한다. 간선 캐시에도 같은
-문을 기다리는 값이 있다 — 사슬이 비용 한계를 넘는 담체가 낀 직선의 방향과 원 중심. 둘 다 사슬 재생이 필요해
-topo 의 순수 유도로는 못 구하고(ops 가 push 때 묻는 길 — `EdgeGiven` — 이 비용 한계 안에서 답한다), 문이 올리면 «버리고 재생 비트 동일»은 정점처럼 «정련 전의
-모델»에서만 참이 된다 — 그 계약을 문과 함께 정한다.
-
 ### 정점 캐시의 «버리고 재생» 보증
 
-**무엇이 문제인가.** 간선에는 `rebuild_edge_cache` + `edge_cache_discard_and_regenerate_bit_identical` 이
-있는데 정점판이 없다. 정점 `D≠0` 의 완전한 유리수 단언도 같은 이유로 없다 — `push_vertex` 의 핸들 상이성
+**무엇이 문제인가.** 간선에는 재생(`nacre_ops::rebuild_edge_cache`, test-util) +
+`edge_cache_discard_and_regenerate_bit_identical` 이 있는데 정점판이 없다. 정점 `D≠0` 의 완전한 유리수 단언도 같은 이유로 없다 — `push_vertex` 의 핸들 상이성
 `debug_assert` 까지다.
 
 **지금 서 있는 계약.** 연산이 만든 모든 정점에 대해 `vertex_point(v)` 는 `realize_cache` 의 답과 비트
 동일이거나, 그 길이 이름으로 거절한 것이다 — census 가 매 행에서 단언한다. 캐시는 태어날 때 실현되고,
-둘째 쓰기 문은 `refine_vertex_cache` 하나다(`Ceiling` 만 `Bounded` 로 올린다; 캐시만 바꾸므로 뒤이은 연산의
-진실은 그대로다 — `refining_mid_log_leaves_every_later_truth_as_it_was`). 남은 것은
+둘째 쓰기 문은 `Model::refine_vertex_cache` 하나이고(`Ceiling` 만 `Bounded` 로 올린다) 그것을 부르는 것은
+내보내기 직전의 문 `nacre_ops::refine_caches` 다(정점 캐시는 뒤이은 연산의 진실을 정하지 않는다 —
+`refining_mid_log_leaves_every_later_truth_as_it_was`). 남은 것은
 **캐시를 통째로 버리고 정의에서 다시 세워도 비트 동일**이라는 보증이다. 실현값↔담체 캐시 거리는 최대
 1.07e-14 로 validate ε 의 다섯 자릿수 아래다.
 

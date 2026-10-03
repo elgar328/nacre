@@ -398,10 +398,10 @@ fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
 
     // Both sides: the door is a function of the definitions, so agreement survives it.
     let (mut a, mut b) = (replayed, scratch);
-    let ra = nacre_ops::refine_vertex_cache(&mut a);
-    let rb = nacre_ops::refine_vertex_cache(&mut b);
+    let ra = nacre_ops::refine_caches(&mut a);
+    let rb = nacre_ops::refine_caches(&mut b);
     assert!(
-        ra.refined > 0,
+        ra.vertices.refined > 0,
         "the fixture must carry Ceilings, or this measures nothing"
     );
     assert_eq!(ra, rb, "the door does the same work on both sides");
@@ -410,7 +410,7 @@ fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
     // One side only: the digest must notice. This is what the `vertex.cache` row is for.
     let (log, scratch) = deep_transform_log();
     let mut replayed = replay(&log).expect("a deep transform log replays");
-    assert!(nacre_ops::refine_vertex_cache(&mut replayed).refined > 0);
+    assert!(nacre_ops::refine_caches(&mut replayed).vertices.refined > 0);
     assert_ne!(
         arena_sig(&replayed),
         arena_sig(&scratch),
@@ -467,9 +467,11 @@ fn refining_mid_log_leaves_every_later_truth_as_it_was() {
     let build = |refine: bool| -> Model {
         let (_, mut m) = deep_transform_log();
         if refine {
+            let report = nacre_ops::refine_caches(&mut m);
             assert!(
-                nacre_ops::refine_vertex_cache(&mut m).refined > 0,
-                "the deep prism must carry Ceilings, or the door changes nothing"
+                report.vertices.refined > 0 && report.surfaces.refined > 0,
+                "the deep prism must carry vertex and surface Ceilings, or the door changes \
+                 nothing: {report:?}"
             );
         }
         let prism = m.live_solids()[0];

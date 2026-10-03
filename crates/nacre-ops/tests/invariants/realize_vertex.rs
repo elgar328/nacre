@@ -534,7 +534,7 @@ fn an_operations_cache_is_the_realization() {
 /// gives the direction, runs it along realized coordinates); rebuilding every edge curve afterwards
 /// changes nothing — the derivation, standing on realized endpoints.
 ///
-/// ⚠ This is a statement about a model **nothing has refined**. `refine_vertex_cache` moves
+/// ⚠ This is a statement about a model **nothing has refined**. `refine_caches` moves
 /// coordinates, and after it a rebuild is emphatically not a no-op — which is why that door
 /// re-derives the curves itself, and why `the_refine_door_carries_the_edges_with_it` asserts the
 /// rebuild is a no-op only *after* the door has already run.
@@ -1472,9 +1472,9 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
         })
         .collect();
 
-    let report = nacre_ops::refine_vertex_cache(&mut m);
+    let report = nacre_ops::refine_caches(&mut m).vertices;
     assert_eq!(report.refined, ceilings, "every Ceiling is raised");
-    assert_eq!(report.left, 0, "and none is left behind");
+    assert_eq!(report.left_undecided, 0, "and none is left behind");
     for (&vh, w) in vs.iter().zip(&want) {
         let PointCache::Bounded { coord, .. } = *m.vertex_cache(vh) else {
             panic!("a raised vertex is Bounded: {:?}", m.vertex_cache(vh));
@@ -1487,11 +1487,135 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     }
 
     // Idempotent: nothing is a `Ceiling` any more, so there is nothing to pay for.
-    assert_eq!(nacre_ops::refine_vertex_cache(&mut m).refined, 0);
+    assert_eq!(nacre_ops::refine_caches(&mut m).vertices.refined, 0);
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "and the refined model is still a valid b-rep"
     );
+}
+
+/// ★★★★ **The door raises every surface `Ceiling` too, and the planes it writes agree with the
+/// vertices it writes** — two roads to one geometry: a plane cache from the carried name of its
+/// statement, a vertex from the meet of its three carriers.
+///
+/// The fixture's walls ride the 7° turn and 300 translations — past the cache road's cost cap, so
+/// the funnel left them `Ceiling` with the producer's figure. Every corner is realized first, on
+/// the expensive road, as the oracle (asked before the door, so it is not what the door wrote).
+/// After the door each corner lies on each of its face's planes within what the two correct
+/// roundings and the `f64` residual can account for. Before the door that same bound fails
+/// somewhere — the figure is the previous cache moved in `f64`, 300 times — or the check would
+/// measure nothing. (Checked against the corners' own caches it would not: those figures moved
+/// with the planes', and two caches that drifted together agree.)
+#[test]
+fn the_refine_door_raises_every_surface_ceiling_onto_its_corners() {
+    let mut m = translated_chain(300);
+    let live_surfaces = |m: &Model| -> Vec<Handle<Surface>> {
+        let mut out: Vec<_> = m
+            .reachable()
+            .faces
+            .into_iter()
+            .map(|f| m.face(f).surface)
+            .collect();
+        out.sort_by_key(|h| h.index());
+        out.dedup();
+        out
+    };
+    let ceilings = live_surfaces(&m)
+        .into_iter()
+        .filter(|&h| m.surface_cache_standing(h) == nacre_topo::CacheStanding::Ceiling)
+        .count();
+    assert!(
+        ceilings > 0,
+        "the fixture must leave surface Ceilings to raise"
+    );
+
+    let truth: std::collections::HashMap<Handle<Vertex>, Point3> = live_vertices(&m)
+        .into_iter()
+        .map(|vh| {
+            let r = realize_vertex(&m, vh, Precision::NearestF64)
+                .expect("the paid road realizes a translated corner");
+            (vh, Point3::from_array(r.to_f64().expect("an f64").0))
+        })
+        .collect();
+    // The largest corner residual over every face, against what the roundings allow.
+    let worst_excess = |m: &Model| -> f64 {
+        let half_ulp = |v: f64| (f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0;
+        let mut worst = f64::NEG_INFINITY;
+        for f in m.reachable().faces {
+            let face = m.face(f);
+            let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+                continue;
+            };
+            let (o, n) = (pl.origin(), pl.normal());
+            for he in &face.outer.half_edges {
+                let v = truth[&m.edge(he.edge).vertices[0]];
+                let d = v - o;
+                let residual = n.dot(d).abs();
+                // n off by half an ulp per component, the anchor and the corner by theirs, and
+                // the dot product's own rounding.
+                let allowed = 3f64.sqrt() * f64::EPSILON / 2.0 * d.norm()
+                    + (0..3)
+                        .map(|k| half_ulp(o.as_array()[k]) + half_ulp(v.as_array()[k]))
+                        .sum::<f64>()
+                    + 4.0 * f64::EPSILON * d.norm();
+                worst = worst.max(residual - allowed);
+            }
+        }
+        worst
+    };
+    assert!(
+        worst_excess(&m) > 0.0,
+        "before the door the producer's figures must miss somewhere, or this measures nothing"
+    );
+
+    let report = nacre_ops::refine_caches(&mut m);
+    assert_eq!(
+        report.surfaces.refined, ceilings,
+        "every surface Ceiling is raised"
+    );
+    assert_eq!(report.surfaces.left_undecided, 0, "and none is left behind");
+    for h in live_surfaces(&m) {
+        assert_eq!(
+            m.surface_cache_standing(h),
+            nacre_topo::CacheStanding::Realized,
+            "surface {} after the door",
+            h.index()
+        );
+    }
+    let excess = worst_excess(&m);
+    assert!(
+        excess <= 0.0,
+        "a raised plane misses its realized corners by {excess:e} past the roundings"
+    );
+
+    // A second call raises nothing and moves no curve.
+    let again = nacre_ops::refine_caches(&mut m);
+    assert_eq!(
+        (
+            again.vertices.refined,
+            again.surfaces.refined,
+            again.edges.refined
+        ),
+        (0, 0, 0),
+        "{again:?}"
+    );
+}
+
+/// ★★ **Same log, same door, same file** — two models built by the same operations and refined
+/// export byte-identical STEP: the door is a function of the definitions, so it cannot make two
+/// agreeing models disagree on the way out.
+#[test]
+fn a_refined_model_exports_the_same_bytes_twice() {
+    let (mut a, mut b) = (translated_chain(300), translated_chain(300));
+    nacre_ops::refine_caches(&mut a);
+    nacre_ops::refine_caches(&mut b);
+    let (sa, sb) = (
+        nacre_step::to_step(&a).expect("export"),
+        nacre_step::to_step(&b).expect("export"),
+    );
+    // The header carries a timestamp; the shape is the DATA section.
+    let data = |s: &str| s[s.find("DATA;").expect("a DATA section")..].to_owned();
+    assert_eq!(data(&sa), data(&sb));
 }
 
 /// ★★★★ **The door carries the edges with it** — the order problem, back again.
@@ -1507,7 +1631,7 @@ fn the_refine_door_carries_the_edges_with_it() {
         .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
-    assert!(nacre_ops::refine_vertex_cache(&mut m).refined > 0);
+    assert!(nacre_ops::refine_caches(&mut m).vertices.refined > 0);
 
     let after: Vec<_> = (0..m.edge_count() as u32)
         .filter_map(|i| m.edge_handle_at(i))

@@ -112,7 +112,7 @@ pub enum RealizeError {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CacheDecline {
     /// The motion history is deeper than [`CACHE_REPLAY_COST_CAP`] — the road did not walk it.
-    /// A paid realization still can, which is what `refine_vertex_cache` is for.
+    /// A paid realization still can, which is what [`refine_caches`] is for.
     CostCap,
     /// The realization itself declined, by name.
     Cannot(RealizeError),
@@ -547,7 +547,7 @@ fn point_cache_tracked<E>(
 /// Both are read out by [`Realized::to_f64`] at 128 bits and then 256, so a component that is
 /// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, and the cache says
 /// so ([`CacheStanding::Ceiling`]): a replay past [`CACHE_REPLAY_COST_CAP`] (both halves),
-/// undecided at 256 (that half). The refine door ([`refine_vertex_cache`]) pays for those.
+/// undecided at 256 (that half). The refine door ([`refine_caches`]) pays for those.
 ///
 /// ★ **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
 /// the producer's anchor is more than an ulp off the true plane for 6,933 of them and up to 37 ulps
@@ -1006,68 +1006,116 @@ fn on_rungs(
     })
 }
 
-/// What [`refine_vertex_cache`] did: how many coordinates it raised, and how many it could not.
+/// What [`refine_caches`] did to one kind of cache, over the live model.
 ///
-/// ★ `left` is not an error count. A vertex stays behind when the full ladder still does not name
-/// an `f64` for it — the only honest thing to report, and the number a caller watches if it wants
-/// to know whether the model has coordinates no precision will settle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RefineReport {
+/// ★ `left_*` are not error counts. They are what the model keeps that no precision paid here
+/// settled, split by name the way the cache variants are: `left_undecided` — the paid road ran out
+/// of ladder (a `Ceiling` it could not raise) — and `left_unrealized` — there is no road (an
+/// `Unrealized` cache: a vertex `NoMeet` or `NoCurvedPoint` reaches, a mixed-frame `Through`
+/// plane). "This model is expensive" and "the kernel cannot do this" stay different reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Refined {
     pub refined: usize,
-    pub left: usize,
+    pub left_undecided: usize,
+    pub left_unrealized: usize,
 }
 
-/// **Pay for the realizations the cache road would not** — raise every [`PointCache::Ceiling`] in
-/// the live model to [`PointCache::Bounded`], climbing the whole ladder for each.
+/// What [`refine_caches`] did, per kind of cache.
 ///
-/// The cache road takes one rung and refuses a history past its cost cap, because it runs on
-/// *every* push. This door runs when a caller asks, so it can afford what that one cannot: a
-/// cost-capped chain is walked, and an undecided coordinate is climbed until it decides.
+/// For edges, `refined` counts the live curves whose bits the paid derivation moved, and
+/// `left_unrealized` the live edges whose direction or centre only the truth could give and
+/// nothing gave (an unnamed carrier with no road); an edge has no undecided slot of its own — a
+/// piece the ladder could not settle is counted there too, since an edge cache keeps no standing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RefineReport {
+    pub vertices: Refined,
+    pub surfaces: Refined,
+    pub edges: Refined,
+}
+
+/// **The door before an export: pay for the realizations the cache roads would not** — and report,
+/// per kind of cache, what is left.
 ///
-/// Only `Ceiling` is touched. `Bounded` is already the realization, and `Unrealized` means there is
-/// no road to one — re-trying those would conflate "this model is expensive" with "the kernel
-/// cannot do this", which is the distinction the two variants exist to keep.
+/// The cache roads run on every push, so they take two rungs and refuse a history past their cost
+/// cap; this door runs when a caller asks, so it climbs the whole ladder at any depth:
+/// 1. every live vertex's `Ceiling` ([`PointCache`]) is realized from its definition;
+/// 2. every live surface's `Ceiling` ([`CacheStanding`]) is realized from its truth — after the
+///    vertices, because a plane through vertices whose meets are wider than `Rat` anchors at its
+///    first vertex's realization;
+/// 3. every live edge is re-derived on the paid budget — last, because a curve reads both the
+///    vertex caches (a line's anchor) and the surface caches (a rim's frame).
 ///
-/// ★★ **It changes caches, not truths — so it may run mid-log.** An operation after it derives its
-/// own caches from the refined ones (a moved vertex's fallback figure, a datum's cache anchor), so
-/// the caches differ from the unrefined road's; what becomes truth does not, because no operation
-/// decides a truth from a vertex cache: `push_plane_through` reads the caches only to point the
-/// plane's cache (its sense is the permutation's parity), a frame's `flip` comes from the truth
-/// (`frame_toward`), and whether a motion is recorded is asked of the statements. Measured on a
-/// log that moves, fuses, states a datum through vertices and pads after the door
-/// (`refining_mid_log_leaves_every_later_truth_as_it_was`, in `tests/invariants/replay.rs`).
-/// It is an export-time door because that is where the precision is wanted.
+/// `Realized`/`Bounded` caches are already the realization, and `Unrealized` ones have no road;
+/// neither is touched — they are counted.
 ///
-/// Idempotent: a second call finds nothing to raise. Edge curves are re-derived once at the end,
-/// and only if something actually moved.
-pub fn refine_vertex_cache(model: &mut Model) -> RefineReport {
-    let todo: Vec<Handle<Vertex>> = model
-        .reachable()
-        .vertices
-        .into_iter()
-        .filter(|&vh| matches!(model.vertex_cache(vh), PointCache::Ceiling { .. }))
-        .collect();
-    let mut out = RefineReport {
-        refined: 0,
-        left: 0,
-    };
-    for vh in todo {
-        // ⚠ `Ok` is not enough on its own: `climb` returns early for an exact arm without asking
-        // whether an `f64` names it, so the answer can still be unrepresentable. That value cannot
-        // be a `Ceiling` (it is classified `Unrealized`), so this branch should not arrive — but
-        // that is an agreement between two functions, not something the types promise, and an
-        // `expect` here would turn the disagreement into a panic instead of a count.
-        match realize_vertex(model, vh, Precision::NearestF64).map(|r| r.to_f64()) {
-            Ok(Some((coord, bound))) => {
-                model.refine_vertex_cache(vh, Point3::from_array(coord), bound);
-                out.refined += 1;
+/// ★★ **It changes caches, not truths — but it is the door at the end of a log.** No operation
+/// decides a truth from a vertex cache (`refining_mid_log_leaves_every_later_truth_as_it_was`,
+/// in `tests/invariants/replay.rs`, measured on a log the door raises surfaces on too). A plane
+/// cache, though, is the construction figure a later boolean's seam table falls back on for a
+/// `Ceiling` vertex, and that table refuses two names on one figure (`SeamAlias`) — so after a
+/// mid-log refine such a boolean may answer otherwise. Export is where the precision is wanted.
+///
+/// Idempotent in effect: a second call raises nothing and moves no curve. It still walks every
+/// live edge on the paid budget — an edge cache keeps no standing to skip by — so its cost is the
+/// first call's edge pass again.
+pub fn refine_caches(model: &mut Model) -> RefineReport {
+    let reach = model.reachable();
+    let mut out = RefineReport::default();
+
+    let mut vertices: Vec<Handle<Vertex>> = reach.vertices.iter().copied().collect();
+    vertices.sort_by_key(|v| v.index());
+    for vh in vertices {
+        match model.vertex_cache(vh) {
+            PointCache::Bounded { .. } => {}
+            PointCache::Unrealized { .. } => out.vertices.left_unrealized += 1,
+            // ⚠ `Ok` is not enough on its own: `climb` returns early for an exact arm without
+            // asking whether an `f64` names it, so the answer can still be unrepresentable. That
+            // value cannot be a `Ceiling` (it is classified `Unrealized`), so this branch should
+            // not arrive — but that is an agreement between two functions, not something the
+            // types promise, and an `expect` here would turn the disagreement into a panic
+            // instead of a count.
+            PointCache::Ceiling { .. } => {
+                match realize_vertex(model, vh, Precision::NearestF64).map(|r| r.to_f64()) {
+                    Ok(Some((coord, bound))) => {
+                        model.refine_vertex_cache(vh, Point3::from_array(coord), bound);
+                        out.vertices.refined += 1;
+                    }
+                    _ => out.vertices.left_undecided += 1,
+                }
             }
-            _ => out.left += 1,
         }
     }
-    if out.refined > 0 {
-        rebuild_edges(model, Budget::Paid);
+
+    let mut surfaces: Vec<Handle<Surface>> =
+        reach.faces.iter().map(|&f| model.face(f).surface).collect();
+    surfaces.sort_by_key(|s| s.index());
+    surfaces.dedup();
+    for h in surfaces {
+        match model.surface_cache_standing(h) {
+            CacheStanding::Realized => {}
+            CacheStanding::Unrealized => out.surfaces.left_unrealized += 1,
+            CacheStanding::Ceiling => {
+                raise_surface(model, h, Budget::Paid);
+                match model.surface_cache_standing(h) {
+                    CacheStanding::Realized => out.surfaces.refined += 1,
+                    _ => out.surfaces.left_undecided += 1,
+                }
+            }
+        }
     }
+
+    let curves = |m: &Model, edges: &[Handle<Edge>]| -> Vec<String> {
+        edges
+            .iter()
+            .map(|&e| format!("{:?}", m.edge_curve(e)))
+            .collect()
+    };
+    let mut edges: Vec<Handle<Edge>> = reach.edges.iter().copied().collect();
+    edges.sort_by_key(|e| e.index());
+    let before = curves(model, &edges);
+    out.edges.left_unrealized = rebuild_edges(model, Budget::Paid);
+    let after = curves(model, &edges);
+    out.edges.refined = before.iter().zip(&after).filter(|(b, a)| b != a).count();
     out
 }
 
@@ -1229,9 +1277,25 @@ pub(crate) fn push_edge_realized(
 
 /// Re-derive every live edge's curve with what `budget` realizes — the given pieces computed first
 /// against the model as it stands, then handed to [`Model::rebuild_edge_cache`] as a table.
-pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) {
+///
+/// Returns how many edges asked for a piece nobody could give — a line on an unnamed plane with
+/// no direction, a rim on an unstated cylinder with no centre: the derivation asks only where it
+/// needs one, so an empty answer is a curve left on the caches.
+pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) -> usize {
     let mut memo = PlaneMemo::default();
-    model.rebuild_edge_cache(|m, e| edge_given(m, m.edge(e).surfaces, budget, &mut memo));
+    let mut unanswered = 0;
+    model.rebuild_edge_cache(|m, e| {
+        let s = m.edge(e).surfaces;
+        let given = edge_given(m, s, budget, &mut memo);
+        let planes = s
+            .iter()
+            .all(|&h| matches!(m.surface(h), Surface::Plane { .. }));
+        if (planes && given.direction.is_none()) || (!planes && given.centre.is_none()) {
+            unanswered += 1;
+        }
+        given
+    });
+    unanswered
 }
 
 /// **The edge cache as a push would derive it now** — every live edge re-derived on the push's own
@@ -1239,7 +1303,7 @@ pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) {
 /// bit.
 #[cfg(any(test, feature = "test-util"))]
 pub fn rebuild_edge_cache(model: &mut Model) {
-    rebuild_edges(model, Budget::Cache);
+    let _ = rebuild_edges(model, Budget::Cache);
 }
 
 /// **The edge cache as the refine door derives it** — every live edge re-derived on the door's
@@ -1248,7 +1312,7 @@ pub fn rebuild_edge_cache(model: &mut Model) {
 /// than the push pays for.
 #[cfg(any(test, feature = "test-util"))]
 pub fn rebuild_edge_cache_paid(model: &mut Model) {
-    rebuild_edges(model, Budget::Paid);
+    let _ = rebuild_edges(model, Budget::Paid);
 }
 
 /// What [`rim_centre_check`] found of a rim's cached centre against its truth.
@@ -2063,7 +2127,7 @@ mod tests {
     /// **Past the replay budget the seam waits for the paid door, and the door answers.** A cylinder
     /// turned 193 times — its chain one node past [`CACHE_REPLAY_COST_CAP`] — keeps its seam
     /// vertices `Ceiling` (the cache road declines by cost, not for want of a road), and
-    /// [`refine_vertex_cache`] raises every one of them to `Bounded` through the same meet.
+    /// [`refine_caches`] raises every one of them to `Bounded` through the same meet.
     #[test]
     fn a_seam_past_the_replay_budget_waits_for_the_paid_door() {
         use nacre_exact::{Angle, Axis, Isometry, Rotation};
@@ -2146,7 +2210,7 @@ mod tests {
                 m.vertex_cache(v)
             );
         }
-        let report = refine_vertex_cache(&mut m);
+        let report = refine_caches(&mut m).vertices;
         assert!(report.refined >= seams.len(), "{report:?}");
         for &v in &seams {
             assert!(

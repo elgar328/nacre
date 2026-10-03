@@ -59,8 +59,8 @@ pub use ops::{
     SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
 pub use realize::{
-    CacheDecline, Precision, RealizeError, Realized, RefineReport, realize_cache, realize_vertex,
-    realize_vertex_decimal, refine_vertex_cache,
+    CacheDecline, Precision, RealizeError, Realized, RefineReport, Refined, realize_cache,
+    realize_vertex, realize_vertex_decimal, refine_caches,
 };
 /// The edge-cache doors the census and the invariant tests hold the push to.
 #[cfg(any(test, feature = "test-util"))]
