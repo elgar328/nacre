@@ -76,6 +76,37 @@ pub fn cyl_unit_frame_f64(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([f64; 3
     Some((unit_vector_f64(&m)?, unit_vector_f64(&e1)?))
 }
 
+/// **Where a plane meets the line `o + t·m`, as the parameter `t`** — `t = −(n·o + d)/(n·m)` for
+/// the plane `n·x + d = 0`, in checked `Rat`. The one spelling of a cylinder axis meeting a cap:
+/// every question of where a plane crosses an axis is this, and [`axis_plane_meet`] is the point
+/// it names.
+///
+/// `None` when the plane is parallel to the line (`n·m = 0`, no meeting point) or the arithmetic
+/// leaves `i128`.
+pub fn axis_param_of_plane(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<Rat> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let nm = dot3_rat(&n, m)?;
+    if nm == Rat::from_int(0) {
+        return None;
+    }
+    let no_d = dot3_rat(&n, o)?.checked_add(coeffs[3])?;
+    Rat::from_int(0)
+        .checked_sub(no_d)?
+        .checked_mul(Rat::new(nm.denom(), nm.numer())?)
+}
+
+/// **The point where a plane meets the line `o + t·m`** — `o + t·m` at [`axis_param_of_plane`]'s
+/// `t`, exact: a cap's circle centre on a cylinder's axis. `None` where that `t` is, or where a
+/// coordinate leaves `i128`.
+pub fn axis_plane_meet(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<[Rat; 3]> {
+    let t = axis_param_of_plane(coeffs, o, m)?;
+    let mut p = *o;
+    for k in 0..3 {
+        p[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
+    }
+    Some(p)
+}
+
 /// **How a point's distance from a plane compares with `r`**, the radius stated as its square
 /// `r2` — [`Orient::Negative`] inside the slab of half-width `r` about the plane, [`Orient::Zero`]
 /// exactly at distance `r`, [`Orient::Positive`] clear of it. Exact and total.

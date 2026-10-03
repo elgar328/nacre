@@ -16,21 +16,6 @@ pub(crate) fn world_plane_coeffs(
     model.world_plane_name(surf)?.narrow().copied()
 }
 
-/// A lateral face's axis-parameter span, read off its rim carrier planes.
-///
-/// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
-/// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
-/// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
-/// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
-/// and the consumer declines the face.
-/// **Where a plane meets a cylinder's axis, as the axis parameter `t`** — the one spelling of
-/// `t = −(n·o + d)/(n·m)` for `axis(t) = o + t·m`.
-///
-/// `None` when the plane is parallel to the axis (`n·m = 0`, no meeting point) or when the
-/// checked `Rat` arithmetic overflows. ★ Three consumers ask this question — the lateral's rim
-/// span, the transversal-circle test, and the band pass — and a rule that lives inlined in one
-/// place while a second site spells a reduced version of it is this repo's dominant defect
-/// shape, so it lives here once.
 /// **Does an increasing axis parameter move toward this class's "above"?** — where "above" is the
 /// side the class's plane faces, which is the frame every cell label is written in.
 ///
@@ -55,23 +40,29 @@ pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) 
     (along == nacre_exact::Orient::Positive) == (world.sense == nacre_topo::Orientation::Forward)
 }
 
+/// **Where a plane meets a cylinder's axis, as the axis parameter `t`** —
+/// [`nacre_exact::axis_param_of_plane`] read on the statement's own origin and direction, so the
+/// formula has one spelling for every reader; the readers that want the point itself (a rim's
+/// centre) ask [`nacre_exact::axis_plane_meet`].
+///
+/// `None` when the plane is parallel to the axis (`n·m = 0`, no meeting point) or when the
+/// checked `Rat` arithmetic overflows. ★ A rule that lives inlined in one place while a second
+/// site spells a reduced version of it is this repo's dominant defect shape, so every reader asks
+/// this.
 pub(crate) fn axis_param_of_plane(
     coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
 ) -> Option<nacre_exact::Rat> {
-    use nacre_exact::Rat;
-    let (o, m) = (def.origin(), def.dir());
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let nm = nacre_exact::dot3_rat(&n, &m)?;
-    if nm == Rat::from_int(0) {
-        return None;
-    }
-    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(coeffs[3])?;
-    Rat::from_int(0)
-        .checked_sub(no_d)?
-        .checked_mul(Rat::new(nm.denom(), nm.numer())?)
+    nacre_exact::axis_param_of_plane(coeffs, &def.origin(), &def.dir())
 }
 
+/// A lateral face's axis-parameter span, read off its rim carrier planes.
+///
+/// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
+/// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
+/// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
+/// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
+/// and the consumer declines the face.
 pub(super) fn lateral_t_range(
     model: &Model,
     face: &nacre_topo::Face,
@@ -267,11 +258,7 @@ pub(super) fn rim_radial(
     use nacre_topo::{QuadRoot, Vertex};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let zero = Rat::from_int(0);
-    let t = axis_param_of_plane(cap, def)?;
-    let mut centre = o;
-    for k in 0..3 {
-        centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
-    }
+    let centre = nacre_exact::axis_plane_meet(cap, &o, &m)?;
     match *model.vertex(vh) {
         Vertex::OnSeam(_) => {
             let e = def.ref_dir();

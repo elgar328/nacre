@@ -967,11 +967,7 @@ fn seam_point_stated(
     let def = model.world_cylinder_def(cyl)?;
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
-    let t = crate::planes::axis_param_of_plane(&coeffs, &def)?;
-    let mut centre = o;
-    for k in 0..3 {
-        centre[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
-    }
+    let centre = nacre_exact::axis_plane_meet(&coeffs, &o, &m)?;
     nacre_exact::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
 }
 
