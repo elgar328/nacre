@@ -167,6 +167,22 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
         unnamed > 0,
         "the fixture holds no line on a plane without a world name"
     );
+    let unstated = m
+        .reachable()
+        .edges
+        .into_iter()
+        .filter(|&eh| {
+            matches!(m.edge_curve(eh), Curve::Circle(_))
+                && m.edge(eh).surfaces.iter().any(|&h| {
+                    matches!(m.surface(h), Surface::Cylinder { .. })
+                        && m.world_cylinder_def(h).is_none()
+                })
+        })
+        .count();
+    assert!(
+        unstated > 0,
+        "the fixture holds no rim on a cylinder without a world statement"
+    );
     let snapshot = |m: &Model| -> Vec<Curve> {
         (0..m.edge_count() as u32)
             .filter_map(|i| m.edge_handle_at(i))

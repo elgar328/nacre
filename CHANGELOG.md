@@ -21,7 +21,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
-- A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre unless the cylinder was turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame; before, these values could be a few units in the last place off.
+- A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre — including cylinders turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, these values could be a few units in the last place off.
 - A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction — including edges on faces turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, the direction and the length were recomputed from the rounded end points.
 
 ## [0.0.1] - 2026-10-02

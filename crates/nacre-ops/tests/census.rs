@@ -191,11 +191,15 @@ static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::
 static SENSE: [std::sync::atomic::AtomicUsize; 4] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
 
-/// Circle edges the rim lock reads: `[stated, unstated]` — a stated rim's centre is checked
-/// against the truth; an unstated one (a cylinder without a world statement, or a cap without a
-/// narrow world name) still takes the caches' `f64` meet, and is counted so the population shows.
-static CIRCLES: [std::sync::atomic::AtomicUsize; 2] =
-    [const { std::sync::atomic::AtomicUsize::new(0) }; 2];
+/// Circle edges the rim lock reads: `[stated, unstated, unstated undecided]` — a stated rim's
+/// centre is checked against the truth spelled below; an unstated one (a cylinder without a world
+/// statement, or a cap without a narrow world name), whose centre the push realizes by replaying
+/// the chain, is held by `nacre_ops::rim_centre_check` at 512 bits: equal to the realization there,
+/// and within its own half ulps of the cap's plane and of the axis (residuals, not the push's
+/// construction — though both replay the same chain and read the same cap). The third slot counts
+/// the unstated rims that instrument could not decide.
+static CIRCLES: [std::sync::atomic::AtomicUsize; 3] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 3];
 
 /// The centre a circle edge's truth names, as the nearest `f64` — `None` where the cylinder has no
 /// world statement or its cap no narrow world name.
@@ -365,6 +369,24 @@ fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
             }
             None => {
                 CIRCLES[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let check = nacre_ops::rim_centre_check(m, eh, 512)
+                    .expect("a circle edge on a readable cylinder");
+                let (Some(t), Some(on_cap), Some(on_axis)) =
+                    (check.realized, check.on_cap, check.on_axis)
+                else {
+                    CIRCLES[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    continue;
+                };
+                if t.map(f64::to_bits) != c.center().as_array().map(f64::to_bits)
+                    || !on_cap
+                    || !on_axis
+                {
+                    centre.push(format!(
+                        "e{} {:?} vs {t:?} (cap {on_cap}, axis {on_axis})",
+                        eh.index(),
+                        c.center().as_array(),
+                    ));
+                }
             }
         }
     }
@@ -2815,11 +2837,12 @@ fn measure_census() {
     println!("stat sense_unmeasured {unmeasured}");
     println!("stat sense_mirrored {mirrored}");
     println!("stat sense_turned {turned}");
-    let [stated, unstated] = CIRCLES
+    let [stated, unstated, undecided] = CIRCLES
         .each_ref()
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
     println!("stat rims_stated {stated}");
     println!("stat rims_unstated {unstated}");
+    println!("stat rims_unstated_undecided {undecided}");
     let [named, along_axis, unnamed, would_differ, undecided, mixed] = LINES
         .each_ref()
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));

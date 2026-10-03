@@ -186,7 +186,7 @@ impl Model {
     /// Discard every edge-curve cache and derive it afresh, asking `given` for each live edge what
     /// its pusher would realize ([`EdgeGiven`], asked as [`Model::push_edge`] asks it) — the «cache,
     /// not truth» warrant: nothing is lost, because nothing there was truth. The directions the
-    /// pushers gave are discarded with the curves (`line_directions` is the same kind of cache), so
+    /// pushers gave are discarded with the curves (`given_by_pair` is the same kind of cache), so
     /// every given piece is asked again rather than read back.
     /// ⚠★★★ **Only the reachable edges are re-derived, and a superseded one keeps what it has.**
     /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
@@ -200,7 +200,7 @@ impl Model {
     /// makes the failure structurally unreachable, because a superseded edge is never derived again.
     pub fn rebuild_edge_cache(&mut self, mut given: impl FnMut(&Model, Handle<Edge>) -> EdgeGiven) {
         let reach = self.reachable();
-        self.line_directions.clear();
+        self.given_by_pair.clear();
         let mut asked = Vec::new();
         let cache = self
             .edges
@@ -263,8 +263,10 @@ impl Model {
     /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
     ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — a line along the axis,
     ///   as the seam; across it, a rim or an arc of one — the circle centred where the truth's axis
-    ///   crosses the truth's plane, the nearest `f64` of that exact meet (the caches' `f64` meet
-    ///   where the cylinder has no world statement), with the **cylinder cache's** frame
+    ///   crosses the truth's plane, the nearest `f64` of that exact meet (where the cylinder has no
+    ///   world statement or the cap no narrow world name, the meet the pusher realizes by replaying
+    ///   the chain — `given`; the caches' `f64` meet only where nobody answers), with the
+    ///   **cylinder cache's** frame
     ///   (`axis direction`, `ref_dir`, `radius`) stored bit for bit; every rim's cache comes from
     ///   here (`push_edge` fills it by this derivation), so tessellation's `θ` parameterization is
     ///   the cylinder's. The endpoints are not read: a full rim is a closed edge (`[v, v]`), which
@@ -344,15 +346,23 @@ impl Model {
                     }
                     Some(nacre_exact::AxisRelation::Across) => {
                         let axis = c.axis();
-                        // The centre is the truth's where the truth is stated in the world; a
+                        // The centre is the truth's where the truth is stated in the world. A
                         // cylinder on a chain that does not fold (a frame node, a turn off the
                         // quarters) has no rational centre here — its chain needs replaying, which
-                        // this crate cannot do — and keeps the caches' meet.
-                        let center = match self.rim_centre_from_truth(cyl, plane) {
-                            Some(truth) => truth,
-                            None => nacre_geom::intersect::line_plane(&axis, p)
-                                .ok_or(EdgeDecline::Degenerate)?,
+                        // this crate cannot do — so the pusher is asked; only where nobody answers
+                        // does the caches' meet stand.
+                        let given_centre = || {
+                            self.kept_given(surfaces)
+                                .centre
+                                .or_else(|| given(self).centre)
+                                .map(Point3::from_array)
                         };
+                        let center =
+                            match self.rim_centre_from_truth(cyl, plane).or_else(given_centre) {
+                                Some(truth) => truth,
+                                None => nacre_geom::intersect::line_plane(&axis, p)
+                                    .ok_or(EdgeDecline::Degenerate)?,
+                            };
                         // The frame is the cylinder cache's, bit for bit — a rim has no frame of
                         // its own, so it is as correctly rounded as that cache is, never less.
                         Ok(Curve::Circle(
@@ -389,20 +399,29 @@ impl Model {
     /// names ([`Model::line_direction_from_names`]), else as a pusher realized it for an earlier
     /// edge on the same pair.
     pub fn line_direction_cache(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
-        self.line_direction_from_names(surfaces).or_else(|| {
-            self.line_directions
-                .get(&Edge::carrier_pair(surfaces[0], surfaces[1]))
-                .copied()
-        })
+        self.line_direction_from_names(surfaces)
+            .or_else(|| self.kept_given(surfaces).direction)
     }
 
-    /// File what a pusher realized under its carrier pair (canonical order).
+    /// What pushers gave for this carrier pair so far ([`EdgeGiven::NONE`] where nothing).
+    fn kept_given(&self, surfaces: [Handle<Surface>; 2]) -> EdgeGiven {
+        self.given_by_pair
+            .get(&Edge::carrier_pair(surfaces[0], surfaces[1]))
+            .copied()
+            .unwrap_or(EdgeGiven::NONE)
+    }
+
+    /// File what a pusher realized under its carrier pair (canonical order), piece by piece.
     fn keep_given(&mut self, surfaces: [Handle<Surface>; 2], given: EdgeGiven) {
-        if let Some(d) = given.direction {
-            self.line_directions
-                .entry(Edge::carrier_pair(surfaces[0], surfaces[1]))
-                .or_insert(d);
+        if given == EdgeGiven::NONE {
+            return;
         }
+        let kept = self
+            .given_by_pair
+            .entry(Edge::carrier_pair(surfaces[0], surfaces[1]))
+            .or_insert(EdgeGiven::NONE);
+        kept.direction = kept.direction.or(given.direction);
+        kept.centre = kept.centre.or(given.centre);
     }
 
     /// **A rim's centre, realized from the truth** — the cylinder's world statement meets its

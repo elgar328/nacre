@@ -666,26 +666,10 @@ pub(crate) fn world_cylinder_hp(
     bits: usize,
 ) -> Option<CylinderHp> {
     use nacre_exact::{Rat, dot3_rat};
-    let chain = match motion {
-        Some(leaf) => motion_chain(model, leaf)?,
-        None => Vec::new(),
-    };
-    let (o, m) = (def.origin(), def.dir());
-    let e1 = perp_component(&def.ref_dir(), &m)?;
-    let plus = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            o[0].checked_add(v[0])?,
-            o[1].checked_add(v[1])?,
-            o[2].checked_add(v[2])?,
-        ])
-    };
-    let at = |p: [Rat; 3]| replay(WitnessPoint::at(p), &chain).map(|w| w.realize(bits));
-    let origin = at(o)?;
-    let towards = |p: [HpBounded; 3]| -> [HpBounded; 3] {
-        core::array::from_fn(|k| p[k].sub(&origin[k], bits))
-    };
-    let axis = towards(at(plus(&m)?)?);
-    let across = towards(at(plus(&e1)?)?);
+    let chain = cylinder_chain(model, motion)?;
+    let (origin, axis) = axis_hp(def, &chain, bits)?;
+    let e1 = perp_component(&def.ref_dir(), &def.dir())?;
+    let across = replayed_offset(def, &e1, &origin, &chain, bits)?;
     // `r / |e₁|` read as `√(r² / e₁·e₁)` — one rational under one root.
     let ee = dot3_rat(&e1, &e1)?;
     let q = def
@@ -696,6 +680,71 @@ pub(crate) fn world_cylinder_hp(
     let k = q.mul(&q.inv_sqrt(bits)?, bits);
     let seam = core::array::from_fn(|i| across[i].mul(&k, bits));
     Some(CylinderHp { origin, axis, seam })
+}
+
+/// A cylinder's motion chain, root to leaf (empty for a statement in the world) — `None` where it
+/// cannot be read.
+fn cylinder_chain(
+    model: &Model,
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+) -> Option<Vec<nacre_judge::MoveNode>> {
+    match motion {
+        Some(leaf) => motion_chain(model, leaf),
+        None => Some(Vec::new()),
+    }
+}
+
+/// **A cylinder's axis in the world at `bits`** — the statement's origin replayed through `chain`,
+/// and the axis as replayed, `R(o + dir) − R(o)` ([`world_cylinder_hp`]'s rule for a direction).
+fn axis_hp(
+    def: &nacre_topo::CylinderDef,
+    chain: &[nacre_judge::MoveNode],
+    bits: usize,
+) -> Option<([HpBounded; 3], [HpBounded; 3])> {
+    let origin = replay(WitnessPoint::at(def.origin()), chain)?.realize(bits);
+    let axis = replayed_offset(def, &def.dir(), &origin, chain, bits)?;
+    Some((origin, axis))
+}
+
+/// The image of the direction `v` under `chain`, as the difference of two replayed points:
+/// `R(o + v) − R(o)`, with `R(o)` already in hand as `origin`.
+fn replayed_offset(
+    def: &nacre_topo::CylinderDef,
+    v: &[nacre_exact::Rat; 3],
+    origin: &[HpBounded; 3],
+    chain: &[nacre_judge::MoveNode],
+    bits: usize,
+) -> Option<[HpBounded; 3]> {
+    let o = def.origin();
+    let tip = [
+        o[0].checked_add(v[0])?,
+        o[1].checked_add(v[1])?,
+        o[2].checked_add(v[2])?,
+    ];
+    let p = replay(WitnessPoint::at(tip), chain)?.realize(bits);
+    Some(core::array::from_fn(|k| p[k].sub(&origin[k], bits)))
+}
+
+/// **Where the line `point + s·dir` crosses the plane `n·x + c = 0`**, at `bits` — `None` where
+/// `n·dir` is not apart from zero at these bits (a long chain spends a bit a turn, and the caller
+/// climbs). The one spelling of a seam point's and a rim centre's meet with their cap.
+fn line_meets_plane_hp(
+    point: &[HpBounded; 3],
+    dir: &[HpBounded; 3],
+    plane: &[HpBounded; 4],
+    bits: usize,
+) -> Option<[HpBounded; 3]> {
+    let dot = |v: &[HpBounded; 3]| {
+        plane[0]
+            .mul(&v[0], bits)
+            .add(&plane[1].mul(&v[1], bits), bits)
+            .add(&plane[2].mul(&v[2], bits), bits)
+    };
+    // `point − s·dir` lies on the plane for `s = (n·point + c) / (n·dir)`.
+    let s = dot(point).add(&plane[3], bits).div(&dot(dir), bits)?;
+    Some(core::array::from_fn(|k| {
+        point[k].sub(&s.mul(&dir[k], bits), bits)
+    }))
 }
 
 /// The anchor and normal [`push_plane_realized`] describes, each `None` where it does not answer.
@@ -903,7 +952,50 @@ pub(crate) fn edge_given(
 ) -> EdgeGiven {
     EdgeGiven {
         direction: line_direction(model, surfaces, budget, memo),
+        centre: rim_centre(model, surfaces, budget, memo),
     }
+}
+
+/// [`edge_given`]'s circle arm: where the cylinder's axis, replayed through its chain, crosses the
+/// cap's plane (its coefficients as the line arm reads them), at `bits` — the meet a seam point
+/// makes with the seam's line instead ([`line_meets_plane_hp`]). `None` where the pair is not a
+/// cylinder and a plane, a chain cannot be read, the budget does not walk it, or no rung decides.
+fn rim_centre(
+    model: &Model,
+    s: [Handle<Surface>; 2],
+    budget: Budget,
+    memo: &mut PlaneMemo,
+) -> Option<[f64; 3]> {
+    let (cyl, cap) = match (model.surface(s[0]), model.surface(s[1])) {
+        (Surface::Cylinder { .. }, Surface::Plane { .. }) => (s[0], s[1]),
+        (Surface::Plane { .. }, Surface::Cylinder { .. }) => (s[1], s[0]),
+        _ => return None,
+    };
+    let Surface::Cylinder { def, motion } = model.surface(cyl) else {
+        return None;
+    };
+    let deep = |leaf: Option<Handle<nacre_topo::MotionNode>>| {
+        leaf.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+    };
+    if budget == Budget::Cache
+        && (deep(*motion)
+            || (crate::planes::world_plane_coeffs(model, cap).is_none()
+                && deep(model.plane_motion(cap))))
+    {
+        return None;
+    }
+    let chain = cylinder_chain(model, *motion)?;
+    for &bits in budget.rungs() {
+        let (origin, axis) = axis_hp(def, &chain, bits)?;
+        let plane = plane_coeffs_hp(model, cap, bits, memo).ok()?;
+        let Some(c) = line_meets_plane_hp(&origin, &axis, &plane, bits) else {
+            continue;
+        };
+        if let Some((v, _)) = Realized(Arm::Approached(c, bits)).to_f64() {
+            return Some(v);
+        }
+    }
+    None
 }
 
 /// [`edge_given`]'s line arm — `None` where the names answer, a carrier is not a plane, a carrier
@@ -999,6 +1091,98 @@ pub fn rebuild_edge_cache(model: &mut Model) {
 #[cfg(any(test, feature = "test-util"))]
 pub fn rebuild_edge_cache_paid(model: &mut Model) {
     rebuild_edges(model, Budget::Paid);
+}
+
+/// What [`rim_centre_check`] found of a rim's cached centre against its truth.
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RimCentreCheck {
+    /// The centre realized at the asked bits and read out by the one rule — `None` where those bits
+    /// do not decide it.
+    pub realized: Option<[f64; 3]>,
+    /// Whether the cached centre lies within half an ulp per coordinate of the cap's plane:
+    /// `(n·c + d)² ≤ (n·n)(h·h)`, `h` the cached centre's half ulps — `None` where undecided.
+    pub on_cap: Option<bool>,
+    /// The same of the cylinder's axis: `|(c − o) × a|² ≤ (a·a)(h·h)`.
+    pub on_axis: Option<bool>,
+}
+
+/// **A rim's cached centre held to its truth** — the instrument for the centres
+/// [`edge_given`] realizes. Two questions at `bits`: the realization itself (the edge road at more
+/// bits — the rung it stopped on must agree with every higher one), and, by other arithmetic,
+/// whether the **cached** point is where a nearest `f64` must be: within its half ulps of both the
+/// cap's plane and the axis (a necessary condition, by Cauchy–Schwarz — a point off by more than an
+/// ulp fails it unless the miss runs along the very line it is held to). `None` where the edge is
+/// not a circle or a carrier cannot be read.
+#[cfg(any(test, feature = "test-util"))]
+pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<RimCentreCheck> {
+    let nacre_geom::Curve::Circle(circle) = model.edge_curve(e) else {
+        return None;
+    };
+    let s = model.edge(e).surfaces;
+    let (cyl, cap) = match model.surface(s[0]) {
+        Surface::Cylinder { .. } => (s[0], s[1]),
+        Surface::Plane { .. } => (s[1], s[0]),
+    };
+    let Surface::Cylinder { def, motion } = model.surface(cyl) else {
+        return None;
+    };
+    let chain = cylinder_chain(model, *motion)?;
+    let (o, a) = axis_hp(def, &chain, bits)?;
+    let n = plane_coeffs_hp(model, cap, bits, &mut PlaneMemo::default()).ok()?;
+    let realized = line_meets_plane_hp(&o, &a, &n, bits)
+        .and_then(|c| Realized(Arm::Approached(c, bits)).to_f64())
+        .map(|(v, _)| v);
+    // The cached `f64`s, exactly: a dyadic `m·2⁻ᵏ` is `m / 2ᵏ`.
+    let exact = |v: f64| -> Option<HpBounded> {
+        if v == 0.0 {
+            return Some(HpBounded::of_rat(nacre_exact::Rat::from_int(0), bits));
+        }
+        let (mut m, mut k) = (v, 0u32);
+        while m.fract() != 0.0 {
+            m *= 2.0;
+            k += 1;
+        }
+        let num = num_bigint::BigInt::from(m as i128);
+        let den = num_bigint::BigInt::from(1) << k;
+        HpBounded::of_bigint(&num, bits).div(&HpBounded::of_bigint(&den, bits), bits)
+    };
+    let c = circle.center().as_array();
+    let ch: [HpBounded; 3] = [exact(c[0])?, exact(c[1])?, exact(c[2])?];
+    // Half an ulp per coordinate; a coordinate read as `+0.0` stands within the coincidence limit
+    // instead (`Realized::to_f64`: `max(1, the point's largest |coordinate|)·2⁻¹⁸⁰`).
+    let scale = c.iter().fold(1f64, |m, v| m.max(v.abs()));
+    let half = |v: f64| -> f64 {
+        if v == 0.0 {
+            scale * 2f64.powi(-180)
+        } else {
+            (f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0
+        }
+    };
+    let h: [HpBounded; 3] = [exact(half(c[0]))?, exact(half(c[1]))?, exact(half(c[2]))?];
+    let dot = |x: &[HpBounded], y: &[HpBounded]| {
+        x[0].mul(&y[0], bits)
+            .add(&x[1].mul(&y[1], bits), bits)
+            .add(&x[2].mul(&y[2], bits), bits)
+    };
+    let hh = dot(&h, &h);
+    let r = dot(&n[..3], &ch).add(&n[3], bits);
+    let on_cap = dot(&n[..3], &n[..3])
+        .mul(&hh, bits)
+        .sub(&r.mul(&r, bits), bits)
+        .sign();
+    let d: [HpBounded; 3] = core::array::from_fn(|k| ch[k].sub(&o[k], bits));
+    let x = |i: usize, j: usize| d[i].mul(&a[j], bits).sub(&d[j].mul(&a[i], bits), bits);
+    let cross = [x(1, 2), x(2, 0), x(0, 1)];
+    let on_axis = dot(&a, &a)
+        .mul(&hh, bits)
+        .sub(&dot(&cross, &cross), bits)
+        .sign();
+    Some(RimCentreCheck {
+        realized,
+        on_cap,
+        on_axis,
+    })
 }
 
 /// **A line edge's direction from its two endpoints' definitions** — the instrument's independent
@@ -1174,28 +1358,9 @@ fn seam_point_met(
     };
     let hp = world_cylinder_hp(model, def, *motion, bits).ok_or(RealizeError::NoCurvedPoint)?;
     let on_rim: [HpBounded; 3] = core::array::from_fn(|k| hp.origin[k].add(&hp.seam[k], bits));
-    let plane: [HpBounded; 4] = match crate::planes::world_plane_coeffs(model, cap) {
-        Some(c) => c.map(|r| HpBounded::of_rat(r, bits)),
-        None => {
-            let tri = crate::rotated_vertex::surface_witness_triangle(model, cap)
-                .ok_or(RealizeError::NoCurvedPoint)?;
-            nacre_judge::plane_hp(&tri[0], &tri[1], &tri[2], bits)
-        }
-    };
-    let dot = |v: &[HpBounded; 3]| {
-        plane[0]
-            .mul(&v[0], bits)
-            .add(&plane[1].mul(&v[1], bits), bits)
-            .add(&plane[2].mul(&v[2], bits), bits)
-    };
-    // `on_rim − s·axis` lies on `n·x + c = 0` for `s = (n·on_rim + c) / (n·axis)`.
-    let s = dot(&on_rim)
-        .add(&plane[3], bits)
-        .div(&dot(&hp.axis), bits)
-        .ok_or(RealizeError::Undecided)?;
-    Ok(core::array::from_fn(|k| {
-        on_rim[k].sub(&s.mul(&hp.axis[k], bits), bits)
-    }))
+    let plane = plane_coeffs_hp(model, cap, bits, &mut PlaneMemo::default())
+        .map_err(|_| RealizeError::NoCurvedPoint)?;
+    line_meets_plane_hp(&on_rim, &hp.axis, &plane, bits).ok_or(RealizeError::Undecided)
 }
 
 /// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the

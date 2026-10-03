@@ -738,20 +738,21 @@ pub struct Model {
     /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
     /// is quadratic in the history.
     motion_folds: Vec<Option<nacre_exact::AxisAffine>>,
-    /// **The direction two planes meet in, realized, by carrier pair** ([`Edge::carrier_pair`]'s
-    /// order) — every [`EdgeGiven::direction`] a pusher handed in, kept so the next edge on the
-    /// same two planes reads it instead of realizing it again. Read through
-    /// [`Model::line_direction_cache`].
+    /// **What pushers realized of an edge's truth, by carrier pair** ([`Edge::carrier_pair`]'s
+    /// order) — every piece of [`EdgeGiven`] a pusher answered, kept so the next edge on the same
+    /// two carriers reads it instead of realizing it again: the direction two planes meet in, the
+    /// centre where a cylinder's axis crosses a plane. Read through [`Model::line_direction_cache`]
+    /// and the derivation's circle arm.
     ///
-    /// A cache: a function of the two planes' truths alone (correctly rounded, so whoever realized
-    /// it, at whatever budget, wrote the same bits), and the truths are append-only, so an entry
-    /// cannot go stale.
+    /// A cache: each piece is a function of the two carriers' truths alone (correctly rounded, so
+    /// whoever realized it, at whatever budget, wrote the same bits), and the truths are
+    /// append-only, so an entry cannot go stale.
     ///
     /// ★ **Measured**: a boolean re-mints every edge of its result, and a fold re-mints the
     /// accumulated body's edges each step — 45,888 edges with an unnamed plane over a fold of 80
     /// turned fins, on about a dozen new carrier pairs a step. Realizing each anew took the fold
     /// from 1.33 s to 1.94 s.
-    line_directions: HashMap<[Handle<Surface>; 2], [f64; 3]>,
+    given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>,
     /// Each surface's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points —
     /// present for every surface whose producer had a rational description to record.
     ///
@@ -921,12 +922,18 @@ pub struct EdgeGiven {
     /// The unit direction two planes meet in, for a line one of whose planes has no world name —
     /// the nearest `f64` of the truth's, unsigned.
     pub direction: Option<[f64; 3]>,
+    /// Where a cylinder's axis crosses a plane across it — a rim's centre, the nearest `f64` of the
+    /// truth's — for a cylinder without a world statement or a cap without a narrow world name.
+    pub centre: Option<[f64; 3]>,
 }
 
 impl EdgeGiven {
     /// Nothing given: the derivation answers from what this crate can read, and where it cannot,
     /// from the caches.
-    pub const NONE: EdgeGiven = EdgeGiven { direction: None };
+    pub const NONE: EdgeGiven = EdgeGiven {
+        direction: None,
+        centre: None,
+    };
 }
 
 /// One surface's realized geometry — a **cache** beside the surface store (index-parallel),
