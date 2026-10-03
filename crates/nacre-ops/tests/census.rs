@@ -948,6 +948,13 @@ fn measure_census() {
             }),
         );
         println!("c cyl turn31 {}", solo(&m, leaned));
+        // The rim lock over the three, once: they share this model, and their rims are the
+        // corpus's only standalone (and only turned-off-the-quarters) cylinders.
+        let (centre, frame) = circle_audit(&m);
+        assert!(
+            centre.is_empty() && frame.is_empty(),
+            "cyl solo/turn: rims off the truth: {centre:?} {frame:?}"
+        );
 
         for (kn, k) in KINDS {
             let mut m = Model::new();

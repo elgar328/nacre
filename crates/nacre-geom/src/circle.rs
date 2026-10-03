@@ -6,11 +6,11 @@ use nacre_math::{Point3, Vector3};
 /// in), a **unit** `ref_dir` in that plane (the angle-0 direction), and a
 /// positive `radius`.
 ///
-/// Invariant: `normal` and `ref_dir` are unit and mutually orthogonal, and
-/// `radius > 0` — [`Circle::from_center_normal`] normalizes, orthogonalizes, and rejects a zero
-/// axis or non-positive radius; [`Circle::from_unit_frame`] takes a frame that already is one. Only `(center, normal, ref_dir, radius)` are
-/// stored; the second in-plane axis (`normal × ref_dir`) is derived on demand so
-/// there is one fewer orthonormality invariant to keep.
+/// Invariant: `normal` and `ref_dir` are unit and mutually orthogonal, and `radius > 0` —
+/// [`Circle::from_center_normal`] normalizes, orthogonalizes, and rejects a zero axis or
+/// non-positive radius; [`Circle::from_unit_frame`] takes a frame that already is one. Only
+/// `(center, normal, ref_dir, radius)` are stored; the second in-plane axis (`normal × ref_dir`)
+/// is derived on demand so there is one fewer orthonormality invariant to keep.
 ///
 /// A `Circle` is the *full, unbounded* curve, parameterized by angle θ (radians)
 /// from `ref_dir`. An edge trims it to an arc via its endpoint vertices — a

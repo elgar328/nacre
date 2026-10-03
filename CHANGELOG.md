@@ -18,6 +18,10 @@ While the version is `0.0.z`, every release may break anything.
 - `LogCell::Face`, which only the removed operations used.
 - `topo::Model::make_live`, whose only callers were the removed operations.
 
+### Fixed
+
+- A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre unless the cylinder was turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame; before, these values could be a few units in the last place off.
+
 ## [0.0.1] - 2026-10-02
 
 ### Added

@@ -235,10 +235,9 @@ impl Model {
     ///   where the cylinder has no world statement), with the **cylinder cache's** frame
     ///   (`axis direction`, `ref_dir`, `radius`) stored bit for bit; every rim's cache comes from
     ///   here (`push_edge` fills it by this derivation), so tessellation's `θ` parameterization is
-    ///   the cylinder's. The endpoints are not read: a full
-    ///   rim is a closed edge (`[v, v]`), which is not a degeneracy. Oblique — an ellipse — is
-    ///   [`EdgeDecline::Oblique`], and a pair whose truths cannot be placed in one frame is
-    ///   [`EdgeDecline::Unstated`].
+    ///   the cylinder's. The endpoints are not read: a full rim is a closed edge (`[v, v]`), which
+    ///   is not a degeneracy. Oblique — an ellipse — is [`EdgeDecline::Oblique`], and a pair whose
+    ///   truths cannot be placed in one frame is [`EdgeDecline::Unstated`].
     ///
     ///   ★★ **The kind is the truth's, so the «discard and regenerate» warrant holds for it
     ///   too**: a regenerated cache is the same kind of curve, and every reader that dispatches
@@ -295,7 +294,7 @@ impl Model {
                         // quarters) has no rational centre here — its chain needs replaying, which
                         // this crate cannot do — and keeps the caches' meet.
                         let center = match self.rim_centre_from_truth(cyl, plane) {
-                            Some(c) => c,
+                            Some(truth) => truth,
                             None => nacre_geom::intersect::line_plane(&axis, p)
                                 .ok_or(EdgeDecline::Degenerate)?,
                         };
