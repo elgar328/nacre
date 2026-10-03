@@ -188,6 +188,57 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
 /// without a counter in the product.
 static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+/// Live surfaces by what their cache knows — `[realized, ceiling, unrealized]`.
+static SURFACES: [std::sync::atomic::AtomicUsize; 3] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 3];
+
+/// **The surface lock**: every live surface's cache and its standing are what the push funnel
+/// answers when asked again (`nacre_ops::realize_surface_cache`) — the vertex lock's shape, for
+/// surfaces. A surface with no road must say `Unrealized`. Returns the tags of those that differ.
+fn surface_audit(m: &Model) -> Vec<String> {
+    // Bit for bit — `f64`'s `==` takes `-0.0` for `+0.0`.
+    let bits = |s: &nacre_geom::Surface| -> Vec<u64> {
+        let v = |x: nacre_math::Vector3| x.as_array().map(f64::to_bits);
+        let p = |x: nacre_math::Point3| x.as_array().map(f64::to_bits);
+        match s {
+            nacre_geom::Surface::Plane(pl) => [p(pl.origin()), v(pl.normal())].concat(),
+            nacre_geom::Surface::Cylinder(c) => [
+                p(c.axis().origin()).to_vec(),
+                v(c.axis().direction()).to_vec(),
+                v(c.ref_dir()).to_vec(),
+                vec![c.radius().to_bits()],
+            ]
+            .concat(),
+        }
+    };
+    let mut off = Vec::new();
+    let mut seen: Vec<_> = m
+        .reachable()
+        .faces
+        .into_iter()
+        .map(|f| m.face(f).surface)
+        .collect();
+    seen.sort_by_key(|h| h.index());
+    seen.dedup();
+    for h in seen {
+        let standing = m.surface_cache_standing(h);
+        let slot = match standing {
+            nacre_topo::CacheStanding::Realized => 0,
+            nacre_topo::CacheStanding::Ceiling => 1,
+            nacre_topo::CacheStanding::Unrealized => 2,
+        };
+        SURFACES[slot].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let agrees = match nacre_ops::realize_surface_cache(m, h) {
+            Some((cache, want)) => want == standing && bits(&cache) == bits(m.surface_cache(h)),
+            None => standing == nacre_topo::CacheStanding::Unrealized,
+        };
+        if !agrees {
+            off.push(format!("s{} {standing:?}", h.index()));
+        }
+    }
+    off
+}
+
 static SENSE: [std::sync::atomic::AtomicUsize; 4] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
 
@@ -406,6 +457,11 @@ fn record(
     assert!(
         lines.is_empty(),
         "{tag}: line directions that are not the truth's nearest f64: {lines:?}"
+    );
+    let surfaces = surface_audit(m);
+    assert!(
+        surfaces.is_empty(),
+        "{tag}: surface caches the funnel would not leave as they are: {surfaces:?}"
     );
     let (centre, frame) = circle_audit(m);
     assert!(
@@ -1049,6 +1105,11 @@ fn measure_census() {
             assert!(
                 lines.is_empty(),
                 "cyl solo/turn: lines off the truth: {lines:?}"
+            );
+            let surfaces = surface_audit(m);
+            assert!(
+                surfaces.is_empty(),
+                "cyl solo/turn: surface caches off the funnel: {surfaces:?}"
             );
             let (vn, vh) = coord_digest(m, s);
             let (pn, ph) = plane_digest(m, s);
@@ -2840,6 +2901,12 @@ fn measure_census() {
     let [stated, unstated, undecided] = CIRCLES
         .each_ref()
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+    let [realized, ceiling, unrealized] = SURFACES
+        .each_ref()
+        .map(|a| a.load(std::sync::atomic::Ordering::Relaxed));
+    println!("stat surfaces_realized {realized}");
+    println!("stat surfaces_ceiling {ceiling}");
+    println!("stat surfaces_unrealized {unrealized}");
     println!("stat rims_stated {stated}");
     println!("stat rims_unstated {unstated}");
     println!("stat rims_unstated_undecided {undecided}");

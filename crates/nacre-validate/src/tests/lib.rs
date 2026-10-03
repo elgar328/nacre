@@ -273,6 +273,7 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
             };
             let (h, _) = m.push_plane(
                 Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
+                nacre_topo::CacheStanding::Unrealized,
                 [
                     lift(corner(tri[0])),
                     lift(corner(tri[1])),
@@ -499,6 +500,7 @@ fn edge_carrier_mismatch_is_flagged() {
                  sense: nacre_topo::Orientation| {
         m.push_plane(
             Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
+            nacre_topo::CacheStanding::Unrealized,
             pts.map(|p| p.map(r)),
             None,
             sense,
@@ -607,6 +609,7 @@ fn same_surface_users_check_membership_not_equality() {
                      sense: nacre_topo::Orientation| {
             m.push_plane(
                 Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
+                nacre_topo::CacheStanding::Unrealized,
                 pts.map(|p| p.map(r)),
                 None,
                 sense,

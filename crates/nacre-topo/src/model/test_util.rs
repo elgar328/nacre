@@ -19,7 +19,14 @@ impl Model {
         points: [[nacre_exact::Rat; 3]; 3],
         sense: Orientation,
     ) -> Handle<Surface> {
-        self.push_plane_raw(PlanePoints::Known(points), None, sense, None, cache)
+        self.push_plane_raw(
+            PlanePoints::Known(points),
+            None,
+            sense,
+            None,
+            cache,
+            CacheStanding::Unrealized,
+        )
     }
 
     /// Push a cylinder whose cache is **not** derived from its statement, and not interned —
@@ -33,7 +40,7 @@ impl Model {
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
     ) -> Handle<Surface> {
-        self.push_cylinder_raw(def, motion, cache, false)
+        self.push_cylinder_raw(def, motion, cache, CacheStanding::Unrealized, false)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals

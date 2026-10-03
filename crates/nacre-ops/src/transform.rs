@@ -698,7 +698,13 @@ fn transform_solid(
                 // The same chaining keeps the door's assertion — a named statement's motion
                 // carries the frame its vertices meet in — true of the image whenever it was true
                 // of the source.
-                let out = model.push_plane_through(pl, *vs, new_motion, image_sense(*sense));
+                let out = crate::realize::push_plane_through_realized(
+                    model,
+                    pl,
+                    *vs,
+                    new_motion,
+                    image_sense(*sense),
+                );
                 debug_assert!(
                     new_motion.is_some() || out.0 == s,
                     "a Through plane gained no node yet changed handle — its truth would be \

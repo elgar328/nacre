@@ -542,7 +542,13 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     )
     .unwrap();
     let before = m.surface_count();
-    let (h, flipped) = m.push_plane_through(cache, triple, None, Orientation::Forward);
+    let (h, flipped) = m.push_plane_through(
+        cache,
+        nacre_topo::CacheStanding::Unrealized,
+        triple,
+        None,
+        Orientation::Forward,
+    );
     assert!(!flipped);
     assert!(
         !m.surface_name.contains_key(&h),
@@ -550,7 +556,13 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     );
     assert_eq!(m.surface_count(), before + 1, "stored once");
 
-    let (again, flipped_same) = m.push_plane_through(cache, triple, None, Orientation::Forward);
+    let (again, flipped_same) = m.push_plane_through(
+        cache,
+        nacre_topo::CacheStanding::Unrealized,
+        triple,
+        None,
+        Orientation::Forward,
+    );
     assert_eq!(h, again, "one statement, one handle");
     assert!(!flipped_same);
     let reversed = nacre_geom::Plane::from_point_normal(
@@ -558,7 +570,13 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .unwrap();
-    let (still, flipped_now) = m.push_plane_through(reversed, triple, None, Orientation::Reversed);
+    let (still, flipped_now) = m.push_plane_through(
+        reversed,
+        nacre_topo::CacheStanding::Unrealized,
+        triple,
+        None,
+        Orientation::Reversed,
+    );
     assert_eq!(h, still, "direction is not part of the statement");
     assert!(
         flipped_now,
@@ -577,7 +595,13 @@ fn a_nameless_through_statement_interns_by_its_statement() {
         },
         None,
     );
-    let (moved, _) = m.push_plane_through(cache, triple, Some(node), Orientation::Forward);
+    let (moved, _) = m.push_plane_through(
+        cache,
+        nacre_topo::CacheStanding::Unrealized,
+        triple,
+        Some(node),
+        Orientation::Forward,
+    );
     assert_ne!(h, moved, "the motion belongs in the statement key");
 }
 

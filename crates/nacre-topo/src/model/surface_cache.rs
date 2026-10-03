@@ -12,10 +12,10 @@ impl Model {
     /// here**: this door calls [`Model::apply_derivation`], so wherever the plane has a world name
     /// its cache is the truth's realization — anchor and unit normal — and `fallback`, the cache the
     /// pusher brought, stands only where the derivation declines (no world name: a chain that does
-    /// not fold, a mixed-frame `Through`). `nacre-ops` realizes that cache from the truth where it
-    /// can and hands over the producer's figure where it cannot. Unlike a vertex's cache, a plane's
-    /// does not say which it holds: a test build's `surface_derive_counts` counts this door's
-    /// declines, not what the pusher brought.
+    /// not fold, a mixed-frame `Through`), with what the pusher says it knows (`standing`).
+    /// `nacre-ops` pushes the producer's figure as not yet asked and then raises what the truth
+    /// answers ([`Model::refine_surface_cache`]); a test build's `surface_derive_counts` counts
+    /// this door's declines, not what the pusher brought.
     ///
     /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
@@ -40,6 +40,7 @@ impl Model {
         sense: Orientation,
         name: Option<nacre_exact::PlaneName>,
         fallback: nacre_geom::Plane,
+        standing: CacheStanding,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Plane {
             points,
@@ -48,6 +49,7 @@ impl Model {
         });
         self.surface_cache.push(SurfaceCache {
             realized: nacre_geom::Surface::Plane(fallback),
+            standing,
         });
         if let Some(n) = name {
             self.surface_name.insert(h, n);
@@ -88,6 +90,7 @@ impl Model {
         let nacre_geom::Surface::Plane(cache) = *self.surface_cache(h) else {
             return false;
         };
+        let standing = self.surface_cache_standing(h);
         let n = cache.normal().as_array();
         let Some(w) = self.points_world_direction(&points, motion) else {
             return false;
@@ -96,6 +99,7 @@ impl Model {
         if turn {
             self.surface_cache[h.index() as usize] = SurfaceCache {
                 realized: nacre_geom::Surface::Plane(cache.reversed()),
+                standing,
             };
         }
         turn
@@ -115,10 +119,16 @@ impl Model {
     fn apply_derivation(&mut self, h: Handle<Surface>) -> bool {
         let derived = self.derive_surface_cache(h);
         #[cfg(any(test, feature = "test-util"))]
-        self.count_derivation(h, derived.as_ref());
+        self.count_derivation(h, derived.as_ref().map(|(s, _)| s));
         match derived {
-            Some(realized) => {
-                self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+            Some((realized, whole)) => {
+                // A plane whose anchor the truth cannot place keeps the pusher's anchor, and with
+                // it the pusher's word on what the cache knows.
+                let standing = match whole {
+                    true => CacheStanding::Realized,
+                    false => self.surface_cache_standing(h),
+                };
+                self.surface_cache[h.index() as usize] = SurfaceCache { realized, standing };
                 true
             }
             None => false,
@@ -144,11 +154,13 @@ impl Model {
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
         cache: nacre_geom::Cylinder,
+        standing: CacheStanding,
         derive: bool,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Cylinder { def, motion });
         self.surface_cache.push(SurfaceCache {
             realized: nacre_geom::Surface::Cylinder(cache),
+            standing,
         });
         debug_assert_eq!(
             self.surface_cache.len(),
@@ -156,7 +168,7 @@ impl Model {
             "the truth and its cache enter together or not at all"
         );
         if derive {
-            let derived = self.derive_surface_cache(h);
+            let derived = self.derive_surface_cache(h).map(|(s, _)| s);
             #[cfg(any(test, feature = "test-util"))]
             self.count_derivation(h, derived.as_ref());
             if let Some(realized) = derived {
@@ -168,7 +180,10 @@ impl Model {
                     "the producer's cylinder cache strays from its statement: {cache:?} vs \
                      {realized:?}"
                 );
-                self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+                self.surface_cache[h.index() as usize] = SurfaceCache {
+                    realized,
+                    standing: CacheStanding::Realized,
+                };
             }
         }
         h
@@ -221,7 +236,12 @@ impl Model {
     /// skips the name and therefore the derivation. It is the only remaining way for a surface's
     /// truth and its cache to disagree, and it is `cfg(test)`: every call site is a fixture that
     /// wants one geometric plane held as two handles.
-    pub(crate) fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
+    ///
+    /// The `bool` says whether every part is the truth's — `false` where the anchor is the pusher's.
+    pub(crate) fn derive_surface_cache(
+        &self,
+        h: Handle<Surface>,
+    ) -> Option<(nacre_geom::Surface, bool)> {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
             Surface::Plane { points, motion, .. } => {
@@ -230,12 +250,13 @@ impl Model {
                     nacre_geom::Surface::Cylinder(_) => return None,
                 };
                 let normal = self.world_unit_normal(h)?;
-                let anchor = self
-                    .truth_anchor(points, *motion)
-                    .map_or(stated.origin(), Point3::from_array);
-                Some(nacre_geom::Surface::Plane(Plane::from_point_unit_normal(
-                    anchor, normal,
-                )))
+                let anchor = self.truth_anchor(points, *motion);
+                let whole = anchor.is_some();
+                let anchor = anchor.map_or(stated.origin(), Point3::from_array);
+                Some((
+                    nacre_geom::Surface::Plane(Plane::from_point_unit_normal(anchor, normal)),
+                    whole,
+                ))
             }
             Surface::Cylinder { .. } => {
                 let def = self.world_cylinder_statement(h)?;
@@ -246,7 +267,7 @@ impl Model {
                     Vector3::from_array(ref_dir),
                     def.radius_f64(),
                 )
-                .map(nacre_geom::Surface::Cylinder)
+                .map(|c| (nacre_geom::Surface::Cylinder(c), true))
             }
         }
     }
@@ -266,8 +287,11 @@ impl Model {
     }
 
     /// A plane statement's first point in the world, realized — `None` where the truth does not
-    /// place it rationally (a chain that does not fold or overflows, a moved `Through`, meets
-    /// wider than `Rat`).
+    /// place it rationally (a chain that does not fold or overflows, meets wider than `Rat`).
+    ///
+    /// A named `Through` statement's meets are written in the frame its vertices meet in, and its
+    /// motion continues that frame (the door asserts it — `Model::intern`), so the first meet
+    /// carried by the plane's own chain is its first point in the world, as for a `Known` one.
     fn truth_anchor(
         &self,
         points: &PlanePoints,
@@ -277,7 +301,9 @@ impl Model {
             (PlanePoints::Known(pts), None) => pts[0],
             (PlanePoints::Known(pts), Some(leaf)) => self.chain_point_rat(leaf, pts[0])?,
             (PlanePoints::Through(vs), None) => self.through_points_rat(*vs)?[0],
-            (PlanePoints::Through(_), Some(_)) => return None,
+            (PlanePoints::Through(vs), Some(leaf)) => {
+                self.chain_point_rat(leaf, self.through_points_rat(*vs)?[0])?
+            }
         };
         Some(first.map(|x| x.to_f64()))
     }

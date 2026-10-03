@@ -159,6 +159,7 @@ fn deep_topped_cube(
             Vector3::from_array([0.0, 0.0, 1.0]),
         )
         .expect("a unit normal names a plane"),
+        nacre_topo::CacheStanding::Unrealized,
         pts,
         None,
         nacre_topo::Orientation::Forward,
@@ -319,6 +320,7 @@ fn a_foreign_definition_is_rejected() {
             Vector3::from_array([0.0, 0.0, 1.0]),
         )
         .unwrap(),
+        nacre_topo::CacheStanding::Unrealized,
         [
             [Rat::from_int(0), Rat::from_int(0), Rat::from_int(9)],
             [Rat::from_int(1), Rat::from_int(0), Rat::from_int(9)],

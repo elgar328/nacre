@@ -32,6 +32,7 @@ impl Model {
     pub fn push_plane(
         &mut self,
         fallback: nacre_geom::Plane,
+        standing: CacheStanding,
         points: [[nacre_exact::Rat; 3]; 3],
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
@@ -46,6 +47,7 @@ impl Model {
             motion,
             sense,
             fallback,
+            standing,
         })
     }
 
@@ -106,6 +108,7 @@ impl Model {
                 motion,
                 sense,
                 fallback,
+                ..
             } => {
                 debug_assert!(
                     self.cache_agrees_with_sense(fallback, points, *motion, *sense) != Some(false),
@@ -165,17 +168,21 @@ impl Model {
                 motion,
                 sense,
                 fallback,
+                standing,
             } => {
                 // One clone per push — the name is derived once here, never on a judging loop.
                 let name = match &key {
                     Some(SurfaceKey::Name(n, _)) => Some(n.clone()),
                     _ => None,
                 };
-                self.push_plane_raw(points, motion, sense, name, fallback)
+                self.push_plane_raw(points, motion, sense, name, fallback, standing)
             }
-            Stated::Cylinder { def, motion, cache } => {
-                self.push_cylinder_raw(def, motion, cache, true)
-            }
+            Stated::Cylinder {
+                def,
+                motion,
+                cache,
+                standing,
+            } => self.push_cylinder_raw(def, motion, cache, standing, true),
         };
         if let Some(k) = key {
             self.interned.insert(k, h);
@@ -324,6 +331,7 @@ impl Model {
     pub fn push_plane_through(
         &mut self,
         fallback: nacre_geom::Plane,
+        standing: CacheStanding,
         vertices: [Handle<Vertex>; 3],
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
@@ -337,6 +345,7 @@ impl Model {
             motion,
             sense,
             fallback,
+            standing,
         })
     }
 
@@ -524,10 +533,17 @@ impl Model {
     pub fn push_cylinder(
         &mut self,
         cache: nacre_geom::Cylinder,
+        standing: CacheStanding,
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
     ) -> Handle<Surface> {
-        self.intern(Stated::Cylinder { def, motion, cache }).0
+        self.intern(Stated::Cylinder {
+            def,
+            motion,
+            cache,
+            standing,
+        })
+        .0
     }
 }
 
@@ -540,10 +556,12 @@ enum Stated {
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
         fallback: nacre_geom::Plane,
+        standing: CacheStanding,
     },
     Cylinder {
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
         cache: nacre_geom::Cylinder,
+        standing: CacheStanding,
     },
 }

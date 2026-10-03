@@ -83,6 +83,43 @@ impl Model {
         &self.surface_cache[h.index() as usize].realized
     }
 
+    /// What a surface's cache knows about its value ([`CacheStanding`]) — the cache's other piece.
+    #[inline]
+    pub fn surface_cache_standing(&self, h: Handle<Surface>) -> CacheStanding {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.surfaces, h);
+        self.surface_cache[h.index() as usize].standing
+    }
+
+    /// **Raise a surface's cache** — the second writer of the surface cache, the twin of
+    /// [`Model::refine_vertex_cache`]: the cache can only come to know more ([`CacheStanding`]'s
+    /// order), and a `Realized` cache is never written — it is already the truth's realization.
+    /// The new value must be the same kind of surface.
+    ///
+    /// ⚠ **Anything derived from this surface's cache is now stale** — a rim's frame is its
+    /// cylinder cache's — so the caller re-derives the edges ([`Model::rebuild_edge_cache`]).
+    pub fn refine_surface_cache(
+        &mut self,
+        h: Handle<Surface>,
+        realized: nacre_geom::Surface,
+        standing: CacheStanding,
+    ) {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.surfaces, h);
+        let slot = &mut self.surface_cache[h.index() as usize];
+        debug_assert!(
+            slot.standing < CacheStanding::Realized && standing >= slot.standing,
+            "a surface cache only comes to know more: {:?} -> {standing:?}",
+            slot.standing
+        );
+        debug_assert_eq!(
+            std::mem::discriminant(&slot.realized),
+            std::mem::discriminant(&realized),
+            "a surface's cache keeps its kind"
+        );
+        *slot = SurfaceCache { realized, standing };
+    }
+
     /// How many surfaces the arena holds — live and superseded alike. Handle-validity checks
     /// and the `a_boolean_mints_no_surface` lock read this; nothing iterates the store
     /// (superseded surfaces are still in it — consumers walk the live faces).

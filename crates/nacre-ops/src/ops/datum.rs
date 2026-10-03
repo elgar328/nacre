@@ -322,7 +322,13 @@ pub(super) fn datum_plane(
                     Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-                let (plane, flipped) = model.push_plane_through(cache, sorted, None, through_sense);
+                let (plane, flipped) = crate::realize::push_plane_through_realized(
+                    model,
+                    cache,
+                    sorted,
+                    None,
+                    through_sense,
+                );
                 let frame = frame_toward(
                     model,
                     plane,
@@ -365,7 +371,13 @@ pub(super) fn datum_plane(
             };
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
-            let (plane, flipped) = model.push_plane_through(cache, sorted, motion, through_sense);
+            let (plane, flipped) = crate::realize::push_plane_through_realized(
+                model,
+                cache,
+                sorted,
+                motion,
+                through_sense,
+            );
             let frame = frame_toward(
                 model,
                 plane,

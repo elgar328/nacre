@@ -32,7 +32,7 @@ use nacre_exact::{HpBounded, Mag, MeetPoint};
 use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{Edge, EdgeGiven, Model, PointCache, PrefixKey, Surface, Vertex};
+use nacre_topo::{CacheStanding, Edge, EdgeGiven, Model, PointCache, PrefixKey, Surface, Vertex};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -528,9 +528,12 @@ fn point_cache_tracked<E>(
 /// plane twin of [`push_vertex_realized`], and the road every constructed plane takes.
 ///
 /// The push door derives a plane's cache itself wherever the plane has a world name (unmoved, or
-/// carried by a chain that folds). What it cannot name is a plane under a turn off the quarters or
-/// a frame, and there `figure` — the construction's own `f64` — would stand. This realizes that
-/// plane's cache instead, each half on its own:
+/// carried by a chain that folds) and its truth places its first point. What it cannot name is a
+/// plane under a turn off the quarters or a frame, and there `figure` — the construction's own
+/// `f64` — stands. So the figure is pushed as **not yet asked** ([`CacheStanding::Unrealized`]),
+/// and whatever the door did not derive is realized from the pushed truth and raised
+/// ([`raise_surface`]) — the door decides what it can first, so «the truth answers here» is spelled
+/// in `nacre-topo` alone. Each half on its own ([`plane_realization`]):
 /// * **Anchor** — the truth's first point replayed through the chain: the same point the door
 ///   anchors a named plane at, so the two kinds of plane agree about where a cache is pinned.
 /// * **Normal** — the pre-motion name's normal carried by the chain (the difference of the
@@ -542,11 +545,9 @@ fn point_cache_tracked<E>(
 ///   leaves undecided 226 normals the name road decides.
 ///
 /// Both are read out by [`Realized::to_f64`] at 128 bits and then 256, so a component that is
-/// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, as a vertex's
-/// construction figure does: a replay past [`CACHE_REPLAY_COST_CAP`] (both halves), undecided at
-/// 256 (that half). The door does the same for a
-/// named plane whose truth cannot place its first point — a derived normal beside the producer's
-/// anchor — so a cache with one realized half is not a new shape.
+/// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, and the cache says
+/// so ([`CacheStanding::Ceiling`]): a replay past [`CACHE_REPLAY_COST_CAP`] (both halves),
+/// undecided at 256 (that half). The refine door ([`refine_vertex_cache`]) pays for those.
 ///
 /// ★ **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
 /// the producer's anchor is more than an ulp off the true plane for 6,933 of them and up to 37 ulps
@@ -563,10 +564,6 @@ fn point_cache_tracked<E>(
 /// replays — where the vertex road's mixed arm counts the sum against the same cap
 /// ([`meet_road_over_cap`]). Counting the sum here would send the 5,976 planes the suite realizes
 /// at depths 65–192 back to `figure` (measured).
-///
-/// ⚠ «Has a world name» is asked before the push, so without a handle: no motion, or a chain whose
-/// fold answers. A `Wide` pre-motion name under a folding chain is named by neither side and keeps
-/// `figure`.
 pub(crate) fn push_plane_realized(
     model: &mut Model,
     figure: nacre_geom::Plane,
@@ -574,15 +571,24 @@ pub(crate) fn push_plane_realized(
     motion: Option<Handle<nacre_topo::MotionNode>>,
     sense: nacre_topo::Orientation,
 ) -> (Handle<Surface>, bool) {
-    let (anchor, normal) = match motion {
-        Some(leaf) => realize_plane_cache(model, &points, leaf, sense),
-        None => (None, None),
-    };
-    let cache = nacre_geom::Plane::from_point_unit_normal(
-        anchor.map_or(figure.origin(), Point3::from_array),
-        normal.map_or(figure.normal(), nacre_math::Vector3::from_array),
-    );
-    model.push_plane(cache, points, motion, sense)
+    let out = model.push_plane(figure, CacheStanding::Unrealized, points, motion, sense);
+    raise_surface(model, out.0, Budget::Cache);
+    out
+}
+
+/// [`push_plane_realized`] for a plane stated through three vertices: the door derives what the
+/// vertices' rational meets let it; the rest is realized from the same meets (or, where they are
+/// wider than `Rat`, from the first vertex's own realization and the plane's witness triangle).
+pub(crate) fn push_plane_through_realized(
+    model: &mut Model,
+    figure: nacre_geom::Plane,
+    vertices: [Handle<Vertex>; 3],
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+    sense: nacre_topo::Orientation,
+) -> (Handle<Surface>, bool) {
+    let out = model.push_plane_through(figure, CacheStanding::Unrealized, vertices, motion, sense);
+    raise_surface(model, out.0, Budget::Cache);
+    out
 }
 
 /// Push a cylinder whose cache is **realized from its truth** where the model cannot derive one —
@@ -590,49 +596,152 @@ pub(crate) fn push_plane_realized(
 ///
 /// The push door derives a cylinder's cache itself wherever the cylinder is stated in the world
 /// (unmoved, or carried by a chain that folds). What it cannot state is a cylinder under a turn
-/// off the quarters or a frame, and there `figure` — the construction's own `f64` — would stand.
-/// This realizes that cache instead from the chain ([`world_cylinder_hp`]): the origin, the unit
-/// axis and the unit `ref_dir` replayed at 128 or 256 bits and each rounded once; the radius is
-/// the statement's (the chain is an isometry). The same guard as the plane's: a chain deeper than
-/// [`CACHE_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided.
+/// off the quarters or a frame; that cache is realized from the chain ([`world_cylinder_hp`]): the
+/// origin, the unit axis and the unit `ref_dir` replayed at 128 or 256 bits and each rounded once;
+/// the radius is the statement's (the chain is an isometry). The same guard as the plane's: a chain
+/// deeper than [`CACHE_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided,
+/// and the cache says so.
 pub(crate) fn push_cylinder_realized(
     model: &mut Model,
     figure: nacre_geom::Cylinder,
     def: nacre_topo::CylinderDef,
     motion: Option<Handle<nacre_topo::MotionNode>>,
 ) -> Handle<Surface> {
-    let zero = [nacre_exact::Rat::from_int(0); 3];
-    let realized = motion
-        .filter(|&leaf| {
-            model.chain_point_rat(leaf, zero).is_none()
-                && !model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP)
-        })
-        .and_then(|_| realize_cylinder_cache(model, &def, motion));
-    model.push_cylinder(realized.unwrap_or(figure), def, motion)
+    let h = model.push_cylinder(figure, CacheStanding::Unrealized, def, motion);
+    raise_surface(model, h, Budget::Cache);
+    h
 }
 
-/// The cache [`push_cylinder_realized`] describes, on the cache road's two rungs — `None` where
-/// the chain does not answer or neither rung decides every component.
-fn realize_cylinder_cache(
+/// **Realize what a surface's cache does not know yet, on `budget`, and raise it** — at birth (a
+/// funnel's `Unrealized`, not yet asked) and at the refine door (`Ceiling`). A `Realized` cache is
+/// left as it is; a cache only comes to know more ([`Model::refine_surface_cache`]).
+pub(crate) fn raise_surface(model: &mut Model, h: Handle<Surface>, budget: Budget) {
+    let now = model.surface_cache_standing(h);
+    if now == CacheStanding::Realized {
+        return;
+    }
+    if let Some((cache, standing)) = surface_realization(model, h, budget)
+        && (standing > now || cache != *model.surface_cache(h))
+    {
+        model.refine_surface_cache(h, cache, standing.max(now));
+    }
+}
+
+/// What one half of a surface's realization came to.
+enum Half<T> {
+    Got(T),
+    /// The road stopped — cost or undecided — and a paid realization can still answer.
+    Stopped,
+    /// There is no road to it.
+    NoRoad,
+}
+
+impl<T> Half<T> {
+    fn from_stopped(v: Option<T>) -> Self {
+        v.map_or(Half::Stopped, Half::Got)
+    }
+}
+
+/// The standing a set of halves earns: `Realized` when every half answered, `Unrealized` when one
+/// has no road, `Ceiling` otherwise.
+fn standing_of(halves: &[bool; 2], no_road: bool) -> CacheStanding {
+    match (no_road, halves.iter().all(|&g| g)) {
+        (true, _) => CacheStanding::Unrealized,
+        (false, true) => CacheStanding::Realized,
+        (false, false) => CacheStanding::Ceiling,
+    }
+}
+
+/// **A surface's cache realized from its truth on `budget`**, the parts that do not answer kept
+/// from the cache as it stands — with the standing that earns. `None` where nothing can be
+/// realized at all (no road: a mixed-frame `Through` plane, an unreadable chain).
+pub(crate) fn surface_realization(
+    model: &Model,
+    h: Handle<Surface>,
+    budget: Budget,
+) -> Option<(nacre_geom::Surface, CacheStanding)> {
+    match (model.surface(h), model.surface_cache(h)) {
+        (Surface::Plane { .. }, nacre_geom::Surface::Plane(now)) => {
+            let (anchor, normal) = plane_realization(model, h, budget)?;
+            let no_road = matches!(anchor, Half::NoRoad) || matches!(normal, Half::NoRoad);
+            let got = [
+                matches!(anchor, Half::Got(_)),
+                matches!(normal, Half::Got(_)),
+            ];
+            let anchor = match anchor {
+                Half::Got(a) => Point3::from_array(a),
+                _ => now.origin(),
+            };
+            let normal = match normal {
+                Half::Got(n) => nacre_math::Vector3::from_array(n),
+                _ => now.normal(),
+            };
+            Some((
+                nacre_geom::Surface::Plane(nacre_geom::Plane::from_point_unit_normal(
+                    anchor, normal,
+                )),
+                standing_of(&got, no_road),
+            ))
+        }
+        (Surface::Cylinder { def, motion }, nacre_geom::Surface::Cylinder(now)) => {
+            match cylinder_realization(model, def, *motion, budget) {
+                Half::Got(c) => Some((nacre_geom::Surface::Cylinder(c), CacheStanding::Realized)),
+                Half::Stopped => {
+                    Some((nacre_geom::Surface::Cylinder(*now), CacheStanding::Ceiling))
+                }
+                Half::NoRoad => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// **A surface's cache as the push funnel would leave it now** — the question the census asks of
+/// every surface to hold the cache and its standing to the funnel's answer (the twin of
+/// [`realize_cache`] for vertices). `None` where there is no road.
+#[cfg(any(test, feature = "test-util"))]
+pub fn realize_surface_cache(
+    model: &Model,
+    h: Handle<Surface>,
+) -> Option<(nacre_geom::Surface, CacheStanding)> {
+    surface_realization(model, h, Budget::Cache)
+}
+
+/// The cache [`push_cylinder_realized`] describes, on `budget`'s rungs.
+fn cylinder_realization(
     model: &Model,
     def: &nacre_topo::CylinderDef,
     motion: Option<Handle<nacre_topo::MotionNode>>,
-) -> Option<nacre_geom::Cylinder> {
+    budget: Budget,
+) -> Half<nacre_geom::Cylinder> {
+    if budget == Budget::Cache
+        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+    {
+        return Half::Stopped;
+    }
     let read = |v: [HpBounded; 3], bits: usize| {
         Realized(Arm::Approached(v, bits)).to_f64().map(|(v, _)| v)
     };
-    [LADDER[0], LADDER[1]].into_iter().find_map(|bits| {
-        let hp = world_cylinder_hp(model, def, motion, bits)?;
-        let origin = read(hp.origin, bits)?;
-        let axis = read(unit(hp.axis, bits)?, bits)?;
-        let ref_dir = read(unit(hp.seam, bits)?, bits)?;
-        nacre_geom::Cylinder::from_unit_frame(
-            Point3::from_array(origin),
-            nacre_math::Vector3::from_array(axis),
-            nacre_math::Vector3::from_array(ref_dir),
-            def.radius_f64(),
-        )
-    })
+    for &bits in budget.rungs() {
+        let Some(hp) = world_cylinder_hp(model, def, motion, bits) else {
+            return Half::NoRoad;
+        };
+        let frame = (|| {
+            let origin = read(hp.origin, bits)?;
+            let axis = read(unit(hp.axis, bits)?, bits)?;
+            let ref_dir = read(unit(hp.seam, bits)?, bits)?;
+            nacre_geom::Cylinder::from_unit_frame(
+                Point3::from_array(origin),
+                nacre_math::Vector3::from_array(axis),
+                nacre_math::Vector3::from_array(ref_dir),
+                def.radius_f64(),
+            )
+        })();
+        if let Some(c) = frame {
+            return Half::Got(c);
+        }
+    }
+    Half::Stopped
 }
 
 /// **A cylinder in the world, carried by its motion chain at `bits`** — what both the cylinder
@@ -747,81 +856,127 @@ fn line_meets_plane_hp(
     }))
 }
 
-/// The anchor and normal [`push_plane_realized`] describes, each `None` where it does not answer.
-fn realize_plane_cache(
-    model: &Model,
-    points: &[[nacre_exact::Rat; 3]; 3],
-    leaf: Handle<nacre_topo::MotionNode>,
-    sense: nacre_topo::Orientation,
-) -> (Option<[f64; 3]>, Option<[f64; 3]>) {
-    let zero = [nacre_exact::Rat::from_int(0); 3];
-    if model.chain_point_rat(leaf, zero).is_some()
-        || model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP)
+/// A plane cache's two halves, realized on their own: the anchor, then the unit normal.
+type PlaneHalves = (Half<[f64; 3]>, Half<[f64; 3]>);
+
+/// The anchor and normal [`push_plane_realized`] describes, each half on its own — `None` where the
+/// plane has no road at all (its points span nothing, or its chain cannot be read).
+fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Option<PlaneHalves> {
+    let Surface::Plane {
+        points,
+        motion,
+        sense,
+    } = model.surface(h)
+    else {
+        return None;
+    };
+    let (motion, sense) = (*motion, *sense);
+    if budget == Budget::Cache
+        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     {
-        return (None, None);
+        return Some((Half::Stopped, Half::Stopped));
     }
-    let Some(chain) = motion_chain(model, leaf) else {
-        return (None, None);
+    let chain = match motion {
+        Some(leaf) => motion_chain(model, leaf)?,
+        None => Vec::new(),
     };
-    let realize_point = |p: &WitnessPoint| on_the_cache_rungs(|bits| Some(p.realize(bits)));
-    let Some(name) = nacre_exact::plane_name_exact(points[0], points[1], points[2]) else {
-        return (None, None); // collinear: the points state no plane
+    let rungs = budget.rungs();
+    let realize_point = |p: &WitnessPoint| on_rungs(rungs, |bits| Some(p.realize(bits)));
+    // The statement's points: a `Known` plane's own, a `Through` plane's vertex meets in the frame
+    // they meet in (which the plane's motion continues). A mixed-frame `Through` has none, and no
+    // name: there is no road.
+    let meets: [MeetPoint; 3] = match points {
+        nacre_topo::PlanePoints::Known(p) => p.map(MeetPoint::Narrow),
+        nacre_topo::PlanePoints::Through(vs) => match model.through_meets(*vs) {
+            Some((m, _)) => m,
+            None => return Some((Half::NoRoad, Half::NoRoad)),
+        },
     };
-    let Some(&n) = name.narrow() else {
-        let Some(tri) = crate::rotated_vertex::replayed_triangle(*points, &chain) else {
-            return (None, None);
-        };
-        return (realize_point(&tri[0]), spanned_normal(&tri, sense));
+    let anchor = match (meets[0].narrow(), points) {
+        (Some(p0), _) => match replay(WitnessPoint::at(*p0), &chain) {
+            Some(p) => Half::from_stopped(realize_point(&p)),
+            None => Half::NoRoad,
+        },
+        // A meet wider than `Rat` has no point to replay; where nothing moved the plane since,
+        // the first vertex's own realization is that point.
+        (None, nacre_topo::PlanePoints::Through(vs)) if motion.is_none() => {
+            match model.vertex_cache(vs[0]) {
+                PointCache::Bounded { coord, .. } => Half::Got(coord.as_array()),
+                PointCache::Ceiling { .. } => Half::Stopped,
+                PointCache::Unrealized { .. } => Half::NoRoad,
+            }
+        }
+        (None, _) => Half::NoRoad,
     };
-    let anchor = replay(WitnessPoint::at(points[0]), &chain).and_then(|p| realize_point(&p));
-    (
-        anchor,
-        carried_name_normal(model, &name, n, points, leaf, sense, &chain),
-    )
+    // ★ The normal is the name's, carried — never a judging witness's span: a named plane's
+    // witness may be its frame's probes, whose turn is the frame's and not the statement's.
+    let Some(name) = model.surface_name.get(&h) else {
+        return Some((anchor, Half::NoRoad));
+    };
+    let normal = match name.narrow() {
+        Some(&n) => carried_name_normal(name, n, &meets, sense, &chain, rungs),
+        // A name wider than `Rat` has no vector to replay: the statement's own three points span
+        // the normal, in their order, where they fit a witness base.
+        None => match meets.each_ref().map(|m| m.narrow().copied()) {
+            [Some(a), Some(b), Some(c)] => {
+                match crate::rotated_vertex::replayed_triangle([a, b, c], &chain) {
+                    Some(tri) => Half::from_stopped(spanned_normal(&tri, sense, rungs)),
+                    None => Half::NoRoad,
+                }
+            }
+            _ => Half::NoRoad,
+        },
+    };
+    Some((anchor, normal))
 }
 
-/// The plane's unit normal from its (narrow) pre-motion name `n`, carried by `chain` — `None`
-/// where undecided at 256 bits.
+/// The plane's unit normal from its (narrow) pre-motion name `n`, carried by `chain`.
 fn carried_name_normal(
-    model: &Model,
     name: &nacre_exact::PlaneName,
     n: [nacre_exact::Rat; 4],
-    points: &[[nacre_exact::Rat; 3]; 3],
-    leaf: Handle<nacre_topo::MotionNode>,
+    points: &[MeetPoint; 3],
     sense: nacre_topo::Orientation,
     chain: &[nacre_judge::MoveNode],
-) -> Option<[f64; 3]> {
+    rungs: &[usize],
+) -> Half<[f64; 3]> {
     let zero = [nacre_exact::Rat::from_int(0); 3];
-    let along = nacre_exact::name_along_points(
-        name,
-        points.each_ref().map(|p| MeetPoint::Narrow(*p)).each_ref(),
-    )?;
+    let Some(along) = nacre_exact::name_along_points(name, points.each_ref()) else {
+        return Half::NoRoad;
+    };
     // The way the plane faces, in the frame its points are written in: the name's normal when it
     // runs with the points' turn times the sense, and a reflection in the chain turns it again.
     let facing = if along { sense.sign() } else { -sense.sign() };
-    let turned = facing * crate::rotated_vertex::motion_parity(model, Some(leaf))? < 0;
+    let turned = facing * nacre_judge::chain_parity(chain) < 0;
     let tip = [n[0], n[1], n[2]];
     // `tail → head` is the carried normal; swapping them negates it exactly.
     let (tail, head) = if turned { (tip, zero) } else { (zero, tip) };
-    let tail = replay(WitnessPoint::at(tail), chain)?;
-    let head = replay(WitnessPoint::at(head), chain)?;
-    on_the_cache_rungs(|bits| {
+    let (Some(tail), Some(head)) = (
+        replay(WitnessPoint::at(tail), chain),
+        replay(WitnessPoint::at(head), chain),
+    ) else {
+        return Half::NoRoad;
+    };
+    Half::from_stopped(on_rungs(rungs, |bits| {
         let (t, h) = (tail.realize(bits), head.realize(bits));
         unit(core::array::from_fn(|k| h[k].sub(&t[k], bits)), bits)
-    })
+    }))
 }
 
 /// The unit normal three replayed points span, facing the way `sense` says: the truth's sense is
 /// against the points' world turn `(p₁−p₀)×(p₂−p₀)` — a reflection in the chain is already in the
 /// replayed points — and swapping the two edges negates it exactly (multiplying the `f64` by `−1`
 /// would turn a `+0.0` into `−0.0`).
-fn spanned_normal(tri: &[WitnessPoint; 3], sense: nacre_topo::Orientation) -> Option<[f64; 3]> {
+fn spanned_normal(
+    tri: &[WitnessPoint; 3],
+    sense: nacre_topo::Orientation,
+    rungs: &[usize],
+) -> Option<[f64; 3]> {
     let (p1, p2) = if sense.sign() < 0 {
         (&tri[2], &tri[1])
     } else {
         (&tri[1], &tri[2])
     };
-    on_the_cache_rungs(|bits| {
+    on_rungs(rungs, |bits| {
         let [a, b, c, _] = nacre_judge::plane_hp(&tri[0], p1, p2, bits);
         unit([a, b, c], bits)
     })
@@ -837,11 +992,14 @@ fn unit(d: [HpBounded; 3], bits: usize) -> Option<[HpBounded; 3]> {
     Some(core::array::from_fn(|k| d[k].mul(&inv, bits)))
 }
 
-/// Read a realization out on the cache road's two rungs — `LADDER[0]`, then `LADDER[1]` only where
-/// the first does not name an `f64` ([`Realized::to_f64`]) — the plane cache's copy of the rule
-/// [`realize_cache_tracked`] keeps for vertices.
-fn on_the_cache_rungs(realize: impl Fn(usize) -> Option<[HpBounded; 3]>) -> Option<[f64; 3]> {
-    [LADDER[0], LADDER[1]].into_iter().find_map(|bits| {
+/// Read a realization out on `rungs` — each only where the one before does not name an `f64`
+/// ([`Realized::to_f64`]) — the surface cache's copy of the rule [`realize_cache_tracked`] keeps
+/// for vertices ([`Budget::rungs`]).
+fn on_rungs(
+    rungs: &[usize],
+    realize: impl Fn(usize) -> Option<[HpBounded; 3]>,
+) -> Option<[f64; 3]> {
+    rungs.iter().find_map(|&bits| {
         Realized(Arm::Approached(realize(bits)?, bits))
             .to_f64()
             .map(|(v, _)| v)

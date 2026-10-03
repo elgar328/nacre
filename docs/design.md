@@ -1030,22 +1030,26 @@ pub enum PointCache {
 //   그래서 이것은 캐시로 접지 않는다(접으면 경계가 지워진다). 정의는 「판정」 절.
 
 // ── 곡면의 캐시 — geom 의 실현을 감싼 구조체. `EdgeCache` 의 거울이다. ──
-pub struct SurfaceCache { realized: nacre_geom::Surface }         // Plane(..) | Cylinder(..) 는 geom 의 enum
+pub struct SurfaceCache { realized: nacre_geom::Surface, standing: CacheStanding } // Plane(..) | Cylinder(..) 는 geom 의 enum
+pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 값에 대해 아는 것 — 순서가 앎이고, 오르기만 한다
 //   topo 는 감싸기만 하고 기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에
 //   남는다 — 다형 질의는 geom 의 enum 이 안에서 가른다. 감싸는 이유는 캐시가 자랄 자리가 있는 이름 붙은
-//   것이 되게 하려는 것이다.
+//   것이 되게 하려는 것이었고, 거기서 `PointCache` 의 세 변종과 같은 말이 자랐다(경계를 들 것이 없어 표지만):
+//   `Unrealized` 는 아무도 실현하지 않았다(안 물었거나 도로가 없다 — 혼합 프레임 `Through` 는 증인 삼각형이
+//   없다), `Ceiling` 은 싼 도로가 멈췄다(비용 한계를 넘는 사슬·두 단에서 미결정 — 값을 치르는 문이 올린다),
+//   `Realized` 는 모든 부분이 진실의 최근접 f64 다. 둘째 쓰기 문 `refine_surface_cache` 는 표지를 내리지 못한다.
 //   평면의 f64 실현은 문이 진실에서 유도한다(`derive_surface_cache`) — 세계 이름이 있으면 단위 법선은 이름 ×
-//   향의 정확 반올림(`nacre_exact::unit_vector_f64`, 참 0 성분은 `+0.0`), 앵커는 진실의 첫 점(진실이 그 점을
-//   유리수로 못 놓는 옮긴 `Through`·넘침은 받은 앵커). 문이 받는
-//   `push_plane(fallback, …)` 는 세계 이름이 없는 평면에서만 선다. 사슬이 안 접히는 평면은 ops 깔때기
-//   (`push_plane_realized`)가 앵커와 법선을 **따로** 진실에서 실현해 넘긴다 — 앵커는 첫 점을 사슬로 재생해,
-//   법선은 모션 전 이름 법선을 사슬로 옮겨(이름이 `Rat` 보다 넓으면 옮길 벡터가 없으므로 세 점을 재생해 그들이
-//   펼치는 법선으로), 둘 다 같은 읽기 규칙으로. 답하지 않는 반쪽은 생산자 값이다: 재생이 비용 한계를 넘는
-//   사슬(둘 다)·256 에서 미결정(그 반쪽), 그리고 혼합 프레임 `Through`(깔때기를 안 거친다)와 접히는 사슬 아래 넓은
-//   이름(깔때기도 문도 이름 짓지 않는다)은 생산자 f64 그대로다. 정점과 달리 캐시가 어느 쪽인지 말하지 않고 그 인구를 세는 계수기도
-//   없다 — 스위트에서 잰 수는 todo 「평면 캐시의 생산자 폴백」. 원통도 같은 두 단이다 — 세계에 진술되면 문이 원점·단위 축·단위 `ref_dir`·반지름을
+//   향의 정확 반올림(`nacre_exact::unit_vector_f64`, 참 0 성분은 `+0.0`), 앵커는 진실의 첫 점(`Through` 는
+//   꼭짓점들이 만나는 프레임의 첫 만남을 평면의 사슬로 옮긴 점; 진실이 그 점을 유리수로 못 놓는 넘침·넓은 만남은
+//   받은 앵커). 문이 유도하지 못한 것은 ops 깔때기(`push_plane_realized`·`push_plane_through_realized`)가 push 한
+//   뒤 진실에서 실현해 올린다(`raise_surface` → `Model::refine_surface_cache`) — 문이 먼저 정하므로 «진실이 여기서
+//   답하나»는 topo 한 곳에 있다. 앵커는 첫 점을 사슬로 재생해(넓은 만남이면 첫 꼭짓점 자신의 실현), 법선은 모션
+//   전 이름 법선을 사슬로 옮겨(이름이 `Rat` 보다 넓으면 진술의 세 점을 재생해 그들이 펼치는 법선으로 — 판정의
+//   증인이 프레임 탐침이면 그 순서는 진술의 것이 아니라 쓰지 않는다), 둘 다 같은 읽기 규칙으로. 답하지 않는 반쪽은
+//   생산자 값이고 표지가 그것을 말한다: 재생이 비용 한계를 넘는 사슬·256 에서 미결정은 `Ceiling`, 혼합 프레임
+//   `Through` 는 `Unrealized`. 원통도 같은 두 단이다 — 세계에 진술되면 문이 원점·단위 축·단위 `ref_dir`·반지름을
 //   정확 반올림하고(`cyl_unit_frame_f64`), 아니면 깔때기(`push_cylinder_realized`)가 사슬을 재생해 같은 넷을 실현하며,
-//   남는 생산자 값은 비용 한계를 넘는 사슬뿐이다. 사설
+//   비용 한계를 넘는 사슬은 생산자 값에 `Ceiling` 이다. 사설
 //   `push_plane_raw`·`push_cylinder_raw` 가 진실과 캐시를 같은 자리에서 채운다.
 //   **평면의 향은 진실이다**(`Surface::Plane.sense`): 면의 바깥 = 평면의 향 × `Face.orientation`, 둘 다
 //   진실이다. 생산자는 향을 정확히 진술하고(캐시에서 읽지 않는다 — `f64 → 진실` 이다), `flipped` 는 두
@@ -1094,7 +1098,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 
 | | 모델 캐시 (`PointCache`·`SurfaceCache`·`EdgeCache`) | 실현 (`WitnessPoint.realized`·`WorkingCyl.realized`) |
 |---|---|---|
-| 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 사슬이 안 접히면 ops 깔때기가 앵커와 단위 법선을 따로 실현한다. 답하지 않는 반쪽과 그 밖엔 생산자가 계산한 f64 가 선다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현한 것(그 길이 답하지 않을 때만 캐시끼리의 f64 만남); 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 평면 하나라도 세계 이름이 없으면 ops 깔때기가 두 평면의 계수(세계 이름, 아니면 증인 삼각형 — `PlaneMemo`)의 외적을 실현한 최근접 단위를 따르고, 그 길이 답하지 않을 때만(비용 한계를 넘는 사슬·증인 없는 평면) 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
+| 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 문이 유도하지 못한 반쪽은 ops 깔때기가 push 한 뒤 진실에서 실현해 올린다. 답하지 않는 반쪽엔 생산자가 계산한 f64 가 서고, 표지(`CacheStanding`)가 그것을 말한다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값에 `Ceiling`). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현한 것(그 길이 답하지 않을 때만 캐시끼리의 f64 만남); 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 평면 하나라도 세계 이름이 없으면 ops 깔때기가 두 평면의 계수(세계 이름, 아니면 증인 삼각형 — `PlaneMemo`)의 외적을 실현한 최근접 단위를 따르고, 그 길이 답하지 않을 때만(비용 한계를 넘는 사슬·증인 없는 평면) 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
 | 오차 | 정점만 축별 경계 셋(`Bounded` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
 | 누가 읽나 | 테셀레이션·STEP·물성·validate · ops 판정 표의 seam 표 — 실현 도로가 없는 점의 구성 수치 | 판정 1단(f64 필터) → 2단 정수 → 3단 상승 |
 | 수명 | 모델과 함께 | **연산 하나** |
@@ -1136,6 +1140,7 @@ m.surface_handle_at(i) · m.vertex_handle_at(i) · m.edge_handle_at(i) · m.face
 
 // ── 캐시 ─────────────────────────────────────────────────────────────
 m.surface_cache(h) -> &nacre_geom::Surface                 // 포장을 벗긴 실현 — `match` 로 바로 가른다
+m.surface_cache_standing(h) -> CacheStanding               // 그 캐시가 값에 대해 아는 것
 m.vertex_cache(v)  -> &PointCache                          // 변종(Bounded | Ceiling | Unrealized)
 m.vertex_cache(v).coord() -> Point3                        // 세 변종이 모두 드는 좌표
 m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Bounded 만 — 실현의 축별 경계
@@ -1149,10 +1154,11 @@ m.world_plane_name(h) -> Option<PlaneName>                 // 평면의 세계 �
 m.chain_plane_coeffs(leaf, c) · m.chain_point_rat(leaf, p) · m.chain_dir_rat(leaf, d)   // 접은 사슬의 세 얼굴
 
 // ── 쓰기 문 ──────────────────────────────────────────────────────────
-m.push_plane(..) · m.push_plane_through(..) · m.push_cylinder(..)   // 곡면은 진실을 진술하며 들어온다
+m.push_plane(fig, standing, ..) · m.push_plane_through(..) · m.push_cylinder(..)   // 곡면은 진실을 진술하며 들어온다 — 그림과 그것이 아는 것을 함께
 m.push_vertex(def, cache) · m.push_edge(.., given) · m.push_face(..) · m.push_shell(..) · m.push_solid(..)
 m.push_motion(..)                                          // interned
 m.refine_vertex_cache(v, coord, bound)                     // 캐시의 둘째 쓰기 문 — `Ceiling` 만 «올린다»
+m.refine_surface_cache(h, s, standing)                     // 곡면 캐시의 둘째 쓰기 문 — 표지는 오르기만 한다
 m.rebuild_edge_cache(given) · m.rebuild_adjacency()        // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
 ```
 

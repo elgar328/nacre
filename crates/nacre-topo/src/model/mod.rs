@@ -68,7 +68,13 @@ impl Model {
                 .expect("a unit axis");
                 let points = [[r(0); 3], u.map(r), v.map(r)];
                 // The cache faces `−axis` (a base cap's outward) while `(0, u, v)` spans `+axis`.
-                let (h, flipped) = m.push_plane(cache, points, None, Orientation::Reversed);
+                let (h, flipped) = m.push_plane(
+                    cache,
+                    CacheStanding::Unrealized,
+                    points,
+                    None,
+                    Orientation::Reversed,
+                );
                 debug_assert!(!flipped, "an empty model cannot intern a seed");
                 h
             })

@@ -291,7 +291,13 @@ fn push_consistent(m: &mut Model, pts: [[R; 3]; 3]) -> Handle<Surface> {
     let f = |p: [R; 3]| Point3::from_array(p.map(|r| r.to_f64()));
     let pl = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
         .expect("a non-degenerate triple");
-    let (h, _) = m.push_plane(pl, pts, None, nacre_topo::Orientation::Forward);
+    let (h, _) = m.push_plane(
+        pl,
+        nacre_topo::CacheStanding::Unrealized,
+        pts,
+        None,
+        nacre_topo::Orientation::Forward,
+    );
     h
 }
 

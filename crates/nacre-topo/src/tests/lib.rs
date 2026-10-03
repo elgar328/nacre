@@ -61,6 +61,7 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
                 nacre_math::Vector3::from_array(n),
             )
             .expect("unit normal"),
+            crate::CacheStanding::Unrealized,
             pts.map(|p| p.map(r)),
             None,
             sense,
@@ -113,7 +114,14 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
             nacre_math::Vector3::from_array(n),
         )
         .expect("unit normal");
-        m.push_plane(world, pts, Some(leaf), sense).0
+        m.push_plane(
+            world,
+            crate::CacheStanding::Unrealized,
+            pts,
+            Some(leaf),
+            sense,
+        )
+        .0
     };
     // x = 0 moved by (2,0,0) → the world plane x = 2; y = 0 moved by (0,3,0) → y = 3.
     let mx = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], fwd);
@@ -256,6 +264,7 @@ fn the_surface_cache_is_writable_and_the_truth_is_not() {
     );
     m.surface_cache[h.index() as usize] = SurfaceCache {
         realized: refined.clone(),
+        standing: crate::CacheStanding::Realized,
     };
 
     assert_eq!(
@@ -316,7 +325,13 @@ fn a_plane_is_named_by_its_points() {
 
     let mut m = Model::new();
     let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
-    let (ok, _) = m.push_plane(pl(0.0), pts, None, Orientation::Forward);
+    let (ok, _) = m.push_plane(
+        pl(0.0),
+        crate::CacheStanding::Unrealized,
+        pts,
+        None,
+        Orientation::Forward,
+    );
     assert_eq!(
         m.surface_name.get(&ok),
         Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
@@ -341,7 +356,13 @@ fn a_plane_is_named_by_its_points() {
         None,
         "the narrow route was expected to overflow here — the case has stopped being the case"
     );
-    let (wide, _) = m.push_plane(pl(2.0), wide_pts, None, Orientation::Forward);
+    let (wide, _) = m.push_plane(
+        pl(2.0),
+        crate::CacheStanding::Unrealized,
+        wide_pts,
+        None,
+        Orientation::Forward,
+    );
     // ★ The stored value carries the proposition — `Narrow` says "fits i128" directly.
     // (This used to compare the global counter before/after, which races against other
     // tests pushing wide planes in parallel; the value cannot.)
@@ -411,7 +432,13 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     .unwrap();
     let mut m = Model::new();
     let before = WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed);
-    let (first, _) = m.push_plane(pl, [a, b, c], None, Orientation::Forward);
+    let (first, _) = m.push_plane(
+        pl,
+        crate::CacheStanding::Unrealized,
+        [a, b, c],
+        None,
+        Orientation::Forward,
+    );
     assert!(
         WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed) > before,
         "an answer past i128 must be counted as wide"
@@ -426,9 +453,21 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     );
 
     // ★ The same plane stated again — permuted, even — is the same handle now.
-    let (second, _) = m.push_plane(pl, [a, b, c], None, Orientation::Forward);
+    let (second, _) = m.push_plane(
+        pl,
+        crate::CacheStanding::Unrealized,
+        [a, b, c],
+        None,
+        Orientation::Forward,
+    );
     assert_eq!(first, second, "one wide plane, one handle");
-    let (permuted, _) = m.push_plane(pl, [b, c, a], None, Orientation::Forward);
+    let (permuted, _) = m.push_plane(
+        pl,
+        crate::CacheStanding::Unrealized,
+        [b, c, a],
+        None,
+        Orientation::Forward,
+    );
     assert_eq!(
         first, permuted,
         "two spellings of one wide plane must intern"
@@ -515,7 +554,13 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
     for a in anchors {
         let mut m = Model::new();
         let cache = nacre_geom::Plane::from_point_normal(a, normal).expect("a nonzero normal");
-        let (h, _) = m.push_plane(cache, pts, None, Orientation::Forward);
+        let (h, _) = m.push_plane(
+            cache,
+            crate::CacheStanding::Unrealized,
+            pts,
+            None,
+            Orientation::Forward,
+        );
         stated.push(cache);
         held.push(m.surface_cache(h).clone());
     }
@@ -597,6 +642,7 @@ fn a_derived_cylinder_restates_its_own_axis_and_radius() {
             2.0,
         )
         .expect("a cylinder"),
+        crate::CacheStanding::Unrealized,
         CylinderDef::new(
             [r(0), r(0), r(0)],
             [r(0), r(0), r(1)],
@@ -614,7 +660,7 @@ fn a_derived_cylinder_restates_its_own_axis_and_radius() {
             continue;
         }
         seen += 1;
-        let derived = m
+        let (derived, _) = m
             .derive_surface_cache(sh)
             .expect("an unmoved cylinder derives");
         assert_eq!(
@@ -670,7 +716,13 @@ fn a_plane_stated_through_vertices_is_named_like_any_other() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        cache,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     let name = m
         .surface_name
         .get(&h)
@@ -700,10 +752,17 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (through, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    let (through, _) = m.push_plane_through(
+        cache,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     let r = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let (known, _) = m.push_plane(
         cache,
+        crate::CacheStanding::Unrealized,
         [
             [r(1, 1), r(0, 1), r(0, 1)],
             [r(0, 1), r(1, 1), r(0, 1)],
@@ -735,7 +794,13 @@ fn a_through_plane_points_only_at_older_cells() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        cache,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     let Surface::Plane {
         points: PlanePoints::Through(named),
         ..
@@ -763,7 +828,13 @@ fn plane_through(m: &mut Model, pts: [[f64; 3]; 3]) -> (Handle<Surface>, bool) {
     let p = pts.map(Point3::from_array);
     let cache = Plane::through_points(p[0], p[1], p[2]).expect("three points span a plane");
     let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
-    m.push_plane(cache, pts.map(|c| c.map(r)), None, Orientation::Forward)
+    m.push_plane(
+        cache,
+        crate::CacheStanding::Unrealized,
+        pts.map(|c| c.map(r)),
+        None,
+        Orientation::Forward,
+    )
 }
 
 /// The corners of the unit box at `at` (each coordinate `0` or `1`), each the meeting of three
@@ -817,7 +888,13 @@ fn a_through_plane_is_counted_by_both_bridges() {
     )
     .unwrap();
     let seeded_before = SEEDED_HITS.load(Relaxed);
-    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        cache,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     assert!(
         (h.index() as usize) < 3,
         "three corners of the box's z = 0 face are the world XY seed"
@@ -837,7 +914,13 @@ fn a_through_plane_is_counted_by_both_bridges() {
         nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h2, _) = m2.push_plane_through(cache2, vs2, None, Orientation::Forward);
+    let (h2, _) = m2.push_plane_through(
+        cache2,
+        crate::CacheStanding::Unrealized,
+        vs2,
+        None,
+        Orientation::Forward,
+    );
     assert!(
         m2.surface_name
             .get(&h2)
@@ -911,7 +994,14 @@ fn axis_plane_at(m: &mut Model, axis: usize, value: nacre_exact::Rat) -> Handle<
         nacre_math::Vector3::from_array(n),
     )
     .unwrap();
-    m.push_plane(cache, pts, None, Orientation::Forward).0
+    m.push_plane(
+        cache,
+        crate::CacheStanding::Unrealized,
+        pts,
+        None,
+        Orientation::Forward,
+    )
+    .0
 }
 
 /// **A swap renames the root, because it renames the line.**
@@ -1125,7 +1215,7 @@ fn a_planes_name_sense_is_read_from_its_truth() {
     ] {
         let z = pts[0][2].to_f64();
         let handed = cache(z, nz);
-        let (h, flipped) = m.push_plane(handed, pts, None, sense);
+        let (h, flipped) = m.push_plane(handed, crate::CacheStanding::Unrealized, pts, None, sense);
         assert!(!flipped);
         assert_eq!(m.plane_name_sense(h), Some(want), "z = {z}");
         assert_eq!(
@@ -1145,7 +1235,13 @@ fn a_planes_name_sense_is_read_from_its_truth() {
     let f = |p: [Rat; 3]| Point3::from_array(p.map(|x| x.to_f64()));
     let wide_cache =
         nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2])).expect("a plane");
-    let (h, _) = m.push_plane(wide_cache, pts, None, Orientation::Forward);
+    let (h, _) = m.push_plane(
+        wide_cache,
+        crate::CacheStanding::Unrealized,
+        pts,
+        None,
+        Orientation::Forward,
+    );
     assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
     assert_eq!(
         m.plane_name_sense(h),
@@ -1159,7 +1255,13 @@ fn a_planes_name_sense_is_read_from_its_truth() {
         Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .unwrap();
-    let (h, _) = m.push_plane_through(cache, vs, None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        cache,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     assert_eq!(
         m.plane_name_sense(h),
         Some(expected(&m, h, cache.normal())),
@@ -1224,7 +1326,13 @@ fn a_planes_world_name_sense_follows_its_chain() {
                 let facing = turn * f64::from(sense.sign());
                 let cache =
                     nacre_geom::Plane::from_point_normal(world[0], facing).expect("a plane");
-                let (h, flipped) = m.push_plane(cache, pts, Some(leaf), sense);
+                let (h, flipped) = m.push_plane(
+                    cache,
+                    crate::CacheStanding::Unrealized,
+                    pts,
+                    Some(leaf),
+                    sense,
+                );
                 let name = m
                     .world_plane_name(h)
                     .expect("a folding chain names the world");
@@ -1255,6 +1363,7 @@ fn a_planes_world_name_sense_follows_its_chain() {
             Vector3::from_array([0.0, 0.0, 1.0]),
         )
         .unwrap(),
+        crate::CacheStanding::Unrealized,
         [[r(0), r(0), r(5)], [r(1), r(0), r(5)], [r(0), r(1), r(5)]],
         None,
         Orientation::Forward,
@@ -1368,6 +1477,7 @@ fn a_plane_a_hair_off_either_relation_is_oblique() {
             1.0,
         )
         .expect("a cylinder"),
+        crate::CacheStanding::Unrealized,
         CylinderDef::new(
             [r(0), r(0), r(0)],
             [r(0), r(0), r(1)],
@@ -1397,7 +1507,13 @@ fn a_plane_a_hair_off_either_relation_is_oblique() {
     ] {
         let f = |p: [Rat; 3]| Point3::from_array(p.map(|x| x.to_f64()));
         let cache = Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2])).expect("a plane");
-        let (plane, _) = m.push_plane(cache, pts, None, Orientation::Forward);
+        let (plane, _) = m.push_plane(
+            cache,
+            crate::CacheStanding::Unrealized,
+            pts,
+            None,
+            Orientation::Forward,
+        );
         let v = m.push_vertex(
             Vertex::OnSeam([cyl, plane]),
             PointCache::Unrealized {
@@ -1438,6 +1554,7 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
             1.0,
         )
         .expect("a cylinder"),
+        crate::CacheStanding::Unrealized,
         CylinderDef::new(
             [r(0), r(0), r(0)],
             [r(1), r(0), r(0)],
@@ -1453,7 +1570,13 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .expect("a plane");
-    let (plane, _) = m.push_plane(cache, plane_pts, None, Orientation::Forward);
+    let (plane, _) = m.push_plane(
+        cache,
+        crate::CacheStanding::Unrealized,
+        plane_pts,
+        None,
+        Orientation::Forward,
+    );
     let mut at = |x: f64| {
         m.push_vertex(
             Vertex::OnSeam([cyl, plane]),
@@ -1498,7 +1621,13 @@ fn a_named_through_planes_cache_follows_the_truth_not_the_vertex_caches() {
         Vector3::from_array([-1.0, -1.0, -1.0]),
     )
     .expect("a plane");
-    let (h, _) = m.push_plane_through(away, [pa, pb, pc], None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        away,
+        crate::CacheStanding::Unrealized,
+        [pa, pb, pc],
+        None,
+        Orientation::Forward,
+    );
     let nacre_geom::Surface::Plane(cache) = m.surface_cache(h) else {
         panic!("a plane")
     };
@@ -1559,7 +1688,13 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
     let pts = [[r(6), r(0), r(0)], [r(0), r(3), r(0)], [r(0), r(0), r(2)]];
     let mut m = Model::new();
     let handed = nudged([1.0, 2.0, 3.0]);
-    let (h, _) = m.push_plane(handed, pts, None, Orientation::Forward);
+    let (h, _) = m.push_plane(
+        handed,
+        crate::CacheStanding::Unrealized,
+        pts,
+        None,
+        Orientation::Forward,
+    );
     check(&m, h, &handed, "unmoved");
 
     let quarter = m.push_motion(
@@ -1571,7 +1706,13 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
         None,
     );
     let turned = nudged([-2.0, 1.0, 3.0]);
-    let (h, _) = m.push_plane(turned, pts, Some(quarter), Orientation::Forward);
+    let (h, _) = m.push_plane(
+        turned,
+        crate::CacheStanding::Unrealized,
+        pts,
+        Some(quarter),
+        Orientation::Forward,
+    );
     assert!(
         m.plane_motion(h).is_some(),
         "the turn is recorded, not carried"
@@ -1591,12 +1732,24 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
         .normal()
         .as_array();
     let handed = nudged(across);
-    let (h, _) = m.push_plane(handed, wide, None, Orientation::Forward);
+    let (h, _) = m.push_plane(
+        handed,
+        crate::CacheStanding::Unrealized,
+        wide,
+        None,
+        Orientation::Forward,
+    );
     assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
     check(&m, h, &handed, "wide");
 
     let (mut m, vs) = box_corner_vertices();
     let handed = nudged([1.0, 1.0, 1.0]);
-    let (h, _) = m.push_plane_through(handed, vs, None, Orientation::Forward);
+    let (h, _) = m.push_plane_through(
+        handed,
+        crate::CacheStanding::Unrealized,
+        vs,
+        None,
+        Orientation::Forward,
+    );
     check(&m, h, &handed, "through");
 }

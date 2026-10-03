@@ -345,6 +345,7 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
     if let Some(anchor) = pre_state_at {
         let (_h, flipped) = m.push_plane(
             Plane::from_point_normal(anchor, -sp.normal()).expect("nonzero normal"),
+            nacre_topo::CacheStanding::Unrealized,
             wf_points(),
             None,
             // The datum convention: points span `+normal`, the cache faces `−normal`.

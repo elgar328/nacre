@@ -37,8 +37,13 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         nacre_exact::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
-    let a = m.push_cylinder(cache, def.clone(), None);
-    let b = m.push_cylinder(cache, def, None);
+    let a = m.push_cylinder(
+        cache,
+        nacre_topo::CacheStanding::Unrealized,
+        def.clone(),
+        None,
+    );
+    let b = m.push_cylinder(cache, nacre_topo::CacheStanding::Unrealized, def, None);
     assert_eq!(a, b, "one statement, one handle");
     // Same axis and radius, different ref_dir: a merge would split the seam, so the
     // conservative key deliberately keeps two handles (geometric identity is decided
@@ -58,7 +63,12 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         1.0,
     )
     .expect("non-degenerate");
-    let c = m.push_cylinder(other_cache, other, None);
+    let c = m.push_cylinder(
+        other_cache,
+        nacre_topo::CacheStanding::Unrealized,
+        other,
+        None,
+    );
     assert_ne!(a, c, "a different seam statement is a different surface");
 }
 
@@ -184,7 +194,7 @@ fn the_door_realizes_a_cylinder_cache_from_its_statement() {
         1.5,
     )
     .unwrap();
-    let h = m.push_cylinder(figure, def, None);
+    let h = m.push_cylinder(figure, nacre_topo::CacheStanding::Unrealized, def, None);
     let nacre_geom::Surface::Cylinder(c) = m.surface_cache(h) else {
         panic!("a cylinder")
     };

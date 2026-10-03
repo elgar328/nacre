@@ -190,6 +190,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
     // faces the other way from this statement, so a face on it facing `+z` is `Reversed`.
     let (sf, flipped) = m.push_plane(
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0])).unwrap(),
+        nacre_topo::CacheStanding::Unrealized,
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         None,
         nacre_topo::Orientation::Forward,

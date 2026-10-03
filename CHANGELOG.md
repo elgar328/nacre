@@ -12,6 +12,7 @@ While the version is `0.0.z`, every release may break anything.
 
 - `Operation::Extrude` takes a signed distance: a negative one sweeps against the frame's normal, in the same frame, with the base cap still on the frame's plane. A distance of zero is `OpError::ZeroDistance`.
 - **Breaking:** `topo::Model::push_edge`, `topo::Model::derive_edge_curve` and `topo::Model::rebuild_edge_cache` take a closure that gives, when asked, what the caller realized of the edge's truth (`topo::EdgeGiven`) — pass `|_| EdgeGiven::NONE` to give nothing.
+- **Breaking:** `topo::Model::push_plane`, `topo::Model::push_plane_through` and `topo::Model::push_cylinder` take, after the figure, what that figure knows about itself (`topo::CacheStanding`) — pass `CacheStanding::Unrealized` for a figure nobody realized; a surface's cache now says whether it is the truth's realization (`topo::Model::surface_cache_standing`).
 
 ### Removed
 
@@ -21,6 +22,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A plane through three vertices that a transform moved (a datum plane, or a face built on one) is now exported at the nearest `f64` of its true position and orientation, unless it was turned by an angle that is not a multiple of 90° more than 192 times; before, it carried the previous position moved in floating point.
 - A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre — including cylinders turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, these values could be a few units in the last place off.
 - A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction — including edges on faces turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, the direction and the length were recomputed from the rounded end points.
 

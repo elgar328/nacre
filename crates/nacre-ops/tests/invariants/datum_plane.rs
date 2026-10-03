@@ -221,7 +221,13 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
 
     // ★★ The control: same cache, same points, and the name recorded.
     let mut named = Model::new();
-    let (h, _) = named.push_plane(cache, pts, None, nacre_topo::Orientation::Reversed);
+    let (h, _) = named.push_plane(
+        cache,
+        nacre_topo::CacheStanding::Unrealized,
+        pts,
+        None,
+        nacre_topo::Orientation::Reversed,
+    );
     assert!(
         named.surface_name.contains_key(&h),
         "push_plane derives the name from the points"
@@ -2106,7 +2112,13 @@ fn a_through_statement_whose_motion_omits_its_frame_is_refused() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .expect("a plane");
-    m.push_plane_through(fallback, sorted, None, nacre_topo::Orientation::Forward);
+    m.push_plane_through(
+        fallback,
+        nacre_topo::CacheStanding::Unrealized,
+        sorted,
+        None,
+        nacre_topo::Orientation::Forward,
+    );
 }
 
 /// **A datum on a moved frame keeps its name when it is moved again** — the door's frame check on
@@ -2261,8 +2273,14 @@ fn wide_meet_vertex(
         let f = |q: [Rat; 3]| Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()]);
         let cache = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
             .expect("a fixture plane spans");
-        m.push_plane(cache, pts, motion, nacre_topo::Orientation::Forward)
-            .0
+        m.push_plane(
+            cache,
+            nacre_topo::CacheStanding::Unrealized,
+            pts,
+            motion,
+            nacre_topo::Orientation::Forward,
+        )
+        .0
     };
     let a = push(
         m,
@@ -2457,7 +2475,13 @@ fn a_wide_meet_datum_interns_onto_the_plane_it_lies_on() {
     ];
     let cache = nacre_geom::Plane::through_points(f(t_pts[0]), f(t_pts[1]), f(t_pts[2])).unwrap();
     let t_handle = m
-        .push_plane(cache, t_pts, None, nacre_topo::Orientation::Forward)
+        .push_plane(
+            cache,
+            nacre_topo::CacheStanding::Unrealized,
+            t_pts,
+            None,
+            nacre_topo::Orientation::Forward,
+        )
         .0;
 
     let vs = wide_meet_triple(&mut m, t, None, Some(t_handle), &|c| c);

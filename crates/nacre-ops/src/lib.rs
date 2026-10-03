@@ -65,8 +65,8 @@ pub use realize::{
 /// The edge-cache doors the census and the invariant tests hold the push to.
 #[cfg(any(test, feature = "test-util"))]
 pub use realize::{
-    RimCentreCheck, line_direction_from_endpoints, rebuild_edge_cache, rebuild_edge_cache_paid,
-    rim_centre_check,
+    RimCentreCheck, line_direction_from_endpoints, realize_surface_cache, rebuild_edge_cache,
+    rebuild_edge_cache_paid, rim_centre_check,
 };
 /// The plane-sense lock, for the measurements that live in other crates' tests.
 #[cfg(any(test, feature = "test-util"))]

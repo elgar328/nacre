@@ -942,11 +942,28 @@ impl EdgeGiven {
 /// ★ **[`EdgeCache`]'s mirror**: topo wraps, and the geometry's own methods stay in
 /// `nacre-geom` — `distance`, `normal_at`, `translated` and the rest dispatch on
 /// [`nacre_geom::Surface`], which is geom's vocabulary and stays there. The wrapper exists so
-/// the cache is a named thing with room to grow: a measured `tol` (the surface analogue of
-/// [`PointCache`]'s) arrives with the refinement pass that can produce it.
+/// the cache is a named thing with room to grow, and it grew a [`CacheStanding`] — what the
+/// cache knows about its value, as [`PointCache`]'s variants say it of a point.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SurfaceCache {
     realized: nacre_geom::Surface,
+    standing: CacheStanding,
+}
+
+/// **What a surface's cache knows about its value** — [`PointCache`]'s three variants, for a cache
+/// that has no bound to carry. Read through [`Model::surface_cache_standing`].
+///
+/// ★ The order is knowledge, and a cache only moves up it ([`Model::refine_surface_cache`]):
+/// `Unrealized` — nothing has realized it, the pusher's own figure stands (the road was not asked,
+/// or there is none: a mixed-frame `Through` plane spans no witness triangle); `Ceiling` — the
+/// cheap road stopped (a history deeper than the cache's cost cap, or undecided on its rungs) and
+/// a paid realization can still answer, so part or all of it is the figure; `Realized` — every
+/// part is the truth's nearest `f64`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CacheStanding {
+    Unrealized,
+    Ceiling,
+    Realized,
 }
 
 /// The handles reachable from a model's live solids — the live model.
