@@ -800,7 +800,8 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
 /// ★★★★ **A cut on a whole rim's closing step goes at the end of its polyline.** A closed edge's
 /// polyline does not repeat its first sample, so the ring of a loop that is one closed edge has no
 /// position the closing step arrives through. The plain cylinder, cut at the middle of its first rim's closing step — where the generator can land when every candidate is
-/// as clear as the next.
+/// as clear as the next. The other rim, walked against its edge, meets that generator on its
+/// polyline's last step back to the first too — the same append, reached from the other side.
 #[test]
 fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
     let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 4.0);
@@ -826,17 +827,30 @@ fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
         .collect();
     let (p, q) = *ring_steps(&turns[0]).last().unwrap();
     let rim = face.outer.half_edges[0].edge;
-    let before = t.by_edge[&rim].len();
+    let other = face.inner[0].half_edges[0].edge;
+    assert!(
+        !face.inner[0].half_edges[0].forward,
+        "the premise: the other rim is walked against its edge"
+    );
+    let before = [t.by_edge[&rim].len(), t.by_edge[&other].len()];
     let cut = band_cut(&mut t, &m, cyl, &traced, &turns, [0, 1], (p + q) / 2.0)
         .expect("a cut on the closing step");
-    assert_eq!(t.by_edge[&rim].len(), before + 1);
+    assert_eq!(t.by_edge[&rim].len(), before[0] + 1);
     assert_eq!(*t.by_edge[&rim].last().unwrap(), cut.rims[0], "appended");
+    assert_eq!(t.by_edge[&other].len(), before[1] + 1);
+    assert_eq!(
+        *t.by_edge[&other].last().unwrap(),
+        cut.rims[1],
+        "appended on the other rim"
+    );
 }
 
 /// ★★★★ **The generator crosses the fewest holes it can, and none it cannot splice.** Synthetic
 /// turns, as [`a_band_generator_keeps_out_of_holes_and_passes_each_rim_once`]: two holes whose
 /// spans overlap and together cover the circle — every generator crosses one, and the cut must
-/// cross exactly one, twice; and a hole that folds back over the whole circle, which every
+/// cross exactly one, twice, though the first candidate (5°) lies where both overlap and every
+/// candidate stands 5° from its nearest sample; and a hole that folds back over the whole circle,
+/// which every
 /// generator crosses four times — no cut, because severing it so would leave more than one outer
 /// polygon.
 #[test]
@@ -849,13 +863,16 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
         (up.clone(), tau),
         (down.clone(), -tau),
         (vec![deg(-100.0), deg(100.0)], 0.0),
-        (vec![deg(80.0), deg(280.0)], 0.0),
+        (vec![deg(-10.0), deg(270.0)], 0.0),
     ];
     let c = band_generator(&covering, [0, 1]).expect("a generator through one hole");
     let c = c.to_degrees().rem_euclid(360.0);
+    // The holes' spans, read off the fixture: −100°..100° and −10°..270°.
+    let in_first = !(100.0..260.0).contains(&c);
+    let in_second = !(270.0..350.0).contains(&c);
     assert!(
-        !(80.0..=100.0).contains(&c),
-        "the generator {c}° crosses both holes"
+        in_first != in_second,
+        "the generator {c}° crosses both holes or neither"
     );
     let folded = vec![
         (up, tau),
