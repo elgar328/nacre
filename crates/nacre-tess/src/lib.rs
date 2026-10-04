@@ -984,7 +984,14 @@ fn cut_seamless_bands(
         }
         let cut = match wrapping[..] {
             [a, b] => whole_rims_cut(t, model, face).or_else(|| {
-                band_generator(&turns, [a, b])
+                // Step `k` arrives through the next position, the closing step through the
+                // closing position, or the first where the ring has none.
+                let (ring, closing) = &traced[a];
+                let arc = |k: usize| {
+                    let arriving = ring.get(k + 1).or(closing.as_ref()).unwrap_or(&ring[0]);
+                    matches!(model.edge_curve(arriving.edge), Curve::Circle(_))
+                };
+                band_generator(&turns, [a, b], arc)
                     .and_then(|c| band_cut(t, model, cyl, &traced, &turns, [a, b], c))
             }),
             _ => None,
@@ -1035,13 +1042,19 @@ fn passes((p, q): (f64, f64), c: f64) -> i64 {
 /// the first wrapping ring's arc steps, in ring order, one that each wrapping ring passes exactly
 /// once and each other ring (a hole) zero or two times, crossing **the fewest holes**, and of those
 /// **farthest from every sample** (the first of equal clearance). `turns` is every ring's
-/// [`unwrapped_thetas`]; `None` when no candidate passes.
+/// [`unwrapped_thetas`]; `arc(k)` says whether step `k` of the first wrapping ring runs along an
+/// arc — a ruling's step is never a candidate, whatever its two ends' angles round to (a ruling on
+/// a tilted axis can have ends whose `f64` angles differ). `None` when no candidate passes.
 ///
 /// A hole passed twice is severed into two runs the chart splices into the outer ring
 /// ([`joined_band`]); one passed four or more times would sever the face into more than one outer
 /// polygon. Fewest holes first, because a hole the cut avoids keeps its polylines and its ring as
 /// they are — and so a face with a hole-free generator is cut exactly where it always was.
-fn band_generator(turns: &[(Vec<f64>, f64)], wrapping: [usize; 2]) -> Option<f64> {
+fn band_generator(
+    turns: &[(Vec<f64>, f64)],
+    wrapping: [usize; 2],
+    arc: impl Fn(usize) -> bool,
+) -> Option<f64> {
     use std::f64::consts::TAU;
     let clearance = |c: f64| -> f64 {
         turns
@@ -1055,9 +1068,9 @@ fn band_generator(turns: &[(Vec<f64>, f64)], wrapping: [usize; 2]) -> Option<f64
     };
     let steps: Vec<Vec<(f64, f64)>> = turns.iter().map(ring_steps).collect();
     let mut best: Option<(usize, f64, f64)> = None; // (holes crossed, clearance, c)
-    for &(p, q) in &steps[wrapping[0]] {
-        if p == q {
-            continue; // a ruling: it never crosses a generator
+    for (k, &(p, q)) in steps[wrapping[0]].iter().enumerate() {
+        if !arc(k) {
+            continue;
         }
         let c = (p + q) / 2.0;
         let mut holes = 0usize;

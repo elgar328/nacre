@@ -553,6 +553,12 @@ pub(crate) fn walk(
                 }
             }
             let w = winding(cyc)?;
+            // An uncut rim is a cycle by itself: anything else on its cycle meets the rim, and
+            // a rim something meets is cut — the stages disagree, and the other runs would be
+            // dropped with the rim kept whole.
+            if whole_rim.is_some() && runs.len() > 1 {
+                return Err(split_disagrees());
+            }
             if let Some((c, ccw)) = whole_rim {
                 bounds.push((Bound::Rim { plane: c, ccw }, w));
                 continue;

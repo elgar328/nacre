@@ -583,7 +583,7 @@ fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
     let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
     let hole = vec![deg(-100.0), deg(100.0)];
     let turns = vec![(up.clone(), tau), (down.clone(), -tau), (hole, 0.0)];
-    let c = band_generator(&turns, [0, 1]).expect("a generator outside the hole");
+    let c = band_generator(&turns, [0, 1], |_| true).expect("a generator outside the hole");
     let c = c.to_degrees().rem_euclid(360.0);
     assert!(
         c > 100.0 && c < 260.0,
@@ -597,7 +597,7 @@ fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
     let mut doubled: Vec<f64> = [10.0, 20.0, 30.0, 20.0, 10.0].map(deg).to_vec();
     doubled.extend((4..=36).map(|k| deg(10.0 * f64::from(k)))); // 40° .. 360°
     let turns = vec![(from_ten, tau), (doubled, tau)];
-    let c = band_generator(&turns, [0, 1]).expect("a generator off the fold");
+    let c = band_generator(&turns, [0, 1], |_| true).expect("a generator off the fold");
     let c = c.to_degrees().rem_euclid(360.0);
     assert!(
         !(10.0..=30.0).contains(&c),
@@ -797,6 +797,62 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
+/// ★★★★★ **A cut through two windows splices both, in order up the generator.** A boss `r = 1`
+/// over `z ∈ [0, 4]` with four half-cylinder windows, each `0.5` tall at its own height and a
+/// quarter turn from the last (`x > 0`, `y > 0`, `x < 0`, `y < 0`): every angle lies in two of
+/// them, so every generator crosses two windows and the cut severs both, joining their runs to the
+/// outer ring by their height ([`joined_band`]). Area `8π − 4·(π·0.5)`.
+#[test]
+fn a_seamless_lateral_cut_through_two_windows_splices_both() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let pi = std::f64::consts::PI;
+    let mut m = Model::new();
+    let mut s = fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    )
+    .solid;
+    let windows: [([f64; 3], [f64; 3]); 4] = [
+        ([0.0, -2.0, 0.5], [2.0, 2.0, 1.0]),
+        ([-2.0, 0.0, 1.3], [2.0, 2.0, 1.8]),
+        ([-2.0, -2.0, 2.1], [0.0, 2.0, 2.6]),
+        ([-2.0, -2.0, 2.9], [2.0, 0.0, 3.4]),
+    ];
+    for (lo, hi) in windows {
+        let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Cut, s, w).expect("a window");
+        assert_eq!(out.len(), 1, "a window leaves one body");
+        s = out[0];
+        m.rebuild_adjacency();
+    }
+    let [new] = laterals(&m, s)[..] else {
+        panic!("one lateral");
+    };
+    assert_eq!(m.face(new).inner.len(), 5, "a rim and four windows");
+    let cfg = TessConfig::default();
+    let mut pre = Tessellation::default();
+    sample_live_edges(&mut pre, &m, &cfg, &m.reachable());
+    let face = m.face(new).clone();
+    let cuts = cut_seamless_bands(&mut pre, &m, &[(new, &face)]);
+    let Some(Some(cut)) = cuts.get(&new) else {
+        panic!("the lateral is cut");
+    };
+    assert_eq!(
+        cut.holes.len(),
+        2,
+        "the premise: the cut crosses two windows"
+    );
+    let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
+    assert_eq!(non_watertight_edges(&t), 0);
+    let want = 8.0 * pi - 4.0 * pi * 0.5;
+    let area = face_area(&t, new);
+    assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
+}
+
 /// ★★★★ **A cut on a whole rim's closing step goes at the end of its polyline.** A closed edge's
 /// polyline does not repeat its first sample, so the ring of a loop that is one closed edge has no
 /// position the closing step arrives through. The plain cylinder, cut at the middle of its first rim's closing step — where the generator can land when every candidate is
@@ -845,6 +901,39 @@ fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
     );
 }
 
+/// ★★★ **A ruling's step is never a candidate, whatever its ends' angles.** The edge says what a
+/// step is: a ruling on a tilted axis can have ends whose `f64` angles differ by an ulp, and its
+/// middle would stand as a candidate the cut then refuses (`band_cut` crosses only arcs). Synthetic
+/// turns as [`a_band_generator_keeps_out_of_holes_and_passes_each_rim_once`]: with the hole on
+/// `[−100°, 100°]` the generator is the middle of the step from 100° — and with that step a ruling,
+/// the next one.
+#[test]
+fn a_band_generator_takes_no_rulings_step() {
+    let deg = |d: f64| d.to_radians();
+    let tau = std::f64::consts::TAU;
+    let up: Vec<f64> = (0..36).map(|k| deg(10.0 * f64::from(k))).collect();
+    let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
+    let turns = vec![
+        (up, tau),
+        (down, -tau),
+        (vec![deg(-100.0), deg(100.0)], 0.0),
+    ];
+    let at = |arc: &dyn Fn(usize) -> bool| {
+        band_generator(&turns, [0, 1], arc)
+            .expect("a generator")
+            .to_degrees()
+            .rem_euclid(360.0)
+    };
+    assert!(
+        (at(&|_| true) - 105.0).abs() < 1e-9,
+        "the premise: the step from 100°"
+    );
+    assert!(
+        (at(&|k| k != 10) - 115.0).abs() < 1e-9,
+        "the step from 100° is a ruling"
+    );
+}
+
 /// ★★★★ **The generator crosses the fewest holes it can, and none it cannot splice.** Synthetic
 /// turns, as [`a_band_generator_keeps_out_of_holes_and_passes_each_rim_once`]: two holes whose
 /// spans overlap and together cover the circle — every generator crosses one, and the cut must
@@ -865,7 +954,7 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
         (vec![deg(-100.0), deg(100.0)], 0.0),
         (vec![deg(-10.0), deg(270.0)], 0.0),
     ];
-    let c = band_generator(&covering, [0, 1]).expect("a generator through one hole");
+    let c = band_generator(&covering, [0, 1], |_| true).expect("a generator through one hole");
     let c = c.to_degrees().rem_euclid(360.0);
     // The holes' spans, read off the fixture: −100°..100° and −10°..270°.
     let in_first = !(100.0..260.0).contains(&c);
@@ -879,5 +968,5 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
         (down, -tau),
         (vec![deg(1.0), deg(359.0), deg(3.0), deg(357.0)], 0.0),
     ];
-    assert_eq!(band_generator(&folded, [0, 1]), None);
+    assert_eq!(band_generator(&folded, [0, 1], |_| true), None);
 }
