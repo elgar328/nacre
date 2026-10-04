@@ -460,8 +460,9 @@ pub(crate) fn walk(
                             continue;
                         };
                         // ★ A cut rim's pieces are the arcs between its consecutive nodes
-                        // — the held table, which the assembly's arc join reads too; neither the
-                        // split nor the arc labels is consulted for the edges.
+                        // — the held table, as the cleaned caps hold them; neither the split nor
+                        // the arc labels is consulted for the edges. Each piece carries the rim's
+                        // plane `c`, which the assembly checks against the cap's.
                         let m = rim.nodes.len();
                         // One node cannot state a rim as arcs, and the cut-rim table keeps such a rim
                         // on purpose (`draft::held_rims`). No node at all is a rim the split never cut.

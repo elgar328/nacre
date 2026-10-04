@@ -419,7 +419,7 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
 /// **The result's cut rims — the split's nodes that the cleaned faces still hold.** Presence here
 /// is the one source of "this rim is cut" for everything that builds the result (the lateral's
-/// rim pieces, the assembly's rim skip, arc join and seam predicate). A type of its own because
+/// rim pieces and the assembly's rim skip). A type of its own because
 /// the defect it closes was one of two same-typed tables read in the wrong place: a Cut whose
 /// tool rests on a cap across its rim merged the cap back into one arc while the lateral, reading
 /// the split, still cut its rim at the tool's planes — one arc on the cap, three on the lateral,

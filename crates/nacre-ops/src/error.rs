@@ -683,7 +683,8 @@ pub enum RejectReason {
     ///   (`draft::held_rims`), and one node cannot state a rim as arcs.
     ///
     /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
-    /// spelled whole, an arc with no rim — the name is [`Self::CylinderStagesDisagree`].
+    /// spelled whole, an arc two faces put on different rims — the name is
+    /// [`Self::CylinderStagesDisagree`].
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///
@@ -845,17 +846,18 @@ pub enum RejectReason {
     /// face rows (a cylinder or plane class no face row names, or rows of both solids on one
     /// cylinder class), the split and the chart (a rim station the run cannot place, a ruling the
     /// wall's pieces do not tile, a cycle whose pieces do not chain or whose arc units are not
-    /// whole turns), the chart and the assembly (a cut circle spelled whole, an arc whose ends lie
-    /// on no held rim, or on two), the split and the chart's cell reader (a present cell with no circle at an end, a
+    /// whole turns), the chart and the assembly (a cut circle spelled whole), the planar
+    /// arrangement and the chart (an arc whose cap and lateral name different rim planes), the
+    /// split and the chart's cell reader (a present cell with no circle at an end, a
     /// station the split placed that is no crossing of its wall, two chart lines on one rim node),
     /// and a stored pierce definition and its own re-solved meet. Each guard stands where an
     /// earlier stage already settled the fact, so what reaches one is an engine defect, never an
     /// input this kernel does not build.
     ///
-    /// ★ One name for the class rather than one per guard: each of these used to wear a
-    /// coverage name (`CylinderGateUndecided`, `RulingBoundNotYet`, `ArcBoundNotYet`) whose
-    /// sentence was false of it, and none of the existing defect names says it — they state the
-    /// planar machine's own invariants. None has fired in the suite, the ignored sweep or the
+    /// ★ One name for the class rather than one per guard: a coverage name
+    /// (`CylinderGateUndecided`, `RulingBoundNotYet`, `ArcBoundNotYet`) would say something false
+    /// of each, and none of the existing defect names says it — they state the planar machine's
+    /// own invariants. None has fired in the suite, the ignored sweep or the
     /// census; a planted class with no face row does (`bands`' tests).
     CylinderStagesDisagree,
     /// **The coplanar merge could not fold a group of same-class faces** — one of its defensive
