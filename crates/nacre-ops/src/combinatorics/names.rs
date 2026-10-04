@@ -279,7 +279,9 @@ pub(crate) enum Carrier {
 
 /// **A ring edge's carrier** — the type half of "a line is unordered, a circle is ordered".
 ///
-/// A plane-carried edge rides one wall class, as `Ring.walls` always said. An arc rides a
+/// A plane-carried edge rides one wall class, as `Ring.walls` always said — a straight edge
+/// between two planes, so a lateral's ring has none. A curved wall carries both its carriers, the
+/// cylinder and a plane. An arc rides a
 /// cylinder **and** the plane of the rim it lies on, and it carries both, whichever face states
 /// it: `plane` is that rim's plane class — on a cap the cap's own, on a result's lateral the class
 /// its chart read the rim from, on an operand's lateral the cap across the edge — so the assembly
@@ -302,15 +304,21 @@ pub(crate) enum Wall {
         plane: usize,
     },
     /// A ruling piece: straight on the lateral, so like a line its ends
-    /// order it — but its carrier is the cylinder, and `(cyl, side)` names which of the two
-    /// parallel rulings ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's
-    /// single ruling). `up` restates
+    /// order it — but its carriers are the cylinder and `plane`, the plane class that holds the
+    /// ruling, and `side` names which of that plane's two rulings it is
+    /// ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's single ruling).
+    /// ★ `side` is measured against `plane` and means nothing without it: one line held by a
+    /// tangent plane and a plane through the axis is `0` against the first and `±1` against the
+    /// second. Every producer states the plane it measured against — on a plane face the face's
+    /// own class, on a result's lateral the chart station's wall, on an operand's lateral the
+    /// plane across the edge. `up` restates
     /// `ClassEdges::edge_at`'s convention (`MergedRuling::end` ascends the axis; the even
     /// half-edge travels up, its twin down), carried like `Arc::ccw`.
     Ruling {
         cyl: usize,
         side: i8,
         up: bool,
+        plane: usize,
     },
 }
 
@@ -327,7 +335,17 @@ impl Wall {
                 ccw: !ccw,
                 plane,
             },
-            Wall::Ruling { cyl, side, up } => Wall::Ruling { cyl, side, up: !up },
+            Wall::Ruling {
+                cyl,
+                side,
+                up,
+                plane,
+            } => Wall::Ruling {
+                cyl,
+                side,
+                up: !up,
+                plane,
+            },
         }
     }
 }

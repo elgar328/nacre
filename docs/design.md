@@ -1847,7 +1847,8 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 ### 결정은 `def`, 측정은 `cache`
 
 - 규칙은 `WorkingCyl::realized` 의 doc 이 든다(「the f64 twin … while **every decision reads `def`**」).
-  축 방향 **결정**은 정확 서술로 내린다: `Wall::Ruling` 의 `up` 은 양 끝을 **끊는** 캡들의 축 매개변수를
+  축 방향 **결정**은 정확 서술로 내린다(`Wall::Ruling` 의 `side` 는 그 벽이 싣는 `plane` 에 대해 잰 값이다 — 한 직선도
+  접선 평면에 대해선 0, 축을 지나는 평면에 대해선 ±1): `Wall::Ruling` 의 `up` 은 양 끝을 **끊는** 캡들의 축 매개변수를
   비교하고, 밴드 루프의 station 은 접점이 앉은 **cut circle 의 평면**이 축을 가로지르는 자리를 읽는다.
   `cache` 를 읽어도 되는 것은 **측정**뿐이다(공차·rim 의 중심).
   - **밴드 조립의 `axis_sign` 은 「어디서」가 아니라 「어느 쪽」을 묻는다**: 클래스 **프레임**이 축에 대해

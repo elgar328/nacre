@@ -20,6 +20,7 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
         cyl: 0,
         side: 1,
         up: true,
+        plane: 0,
     };
     // A curved carrier rides through, carried as itself.
     let curved_carrier = combinatorics::NamedRing {

@@ -231,9 +231,9 @@ fn ruling_sweep(
         let _ = inner;
         // Which edges lie on this ruling. Two shapes, one rule — **the line's carrier says who
         // states it**:
-        // - a straight edge carried by `wc` itself (its far face is *seated* on the class): the
+        // - a ruling held by `wc` itself (its far face is *seated* on the class): the
         //   line is the cylinder's alone, and this sweep states it as a run (`on`);
-        // - a straight edge carried by another plane `t` whose two ends are this ruling's cap
+        // - a ruling held by another plane `t` whose two ends are this ruling's cap
         //   crossings (by name, through the table): the line is the plane pair `wc ∩ t`, and
         //   `t`'s own trace states it as a graze run on this class — this sweep stays **silent**
         //   there (`quiet`), and only remembers the ends so an arc ending on them is "an arc that
@@ -241,12 +241,11 @@ fn ruling_sweep(
         let mut on = vec![false; n];
         let mut quiet_nodes: Vec<NodeId> = Vec::new();
         for (i, slot) in on.iter_mut().enumerate() {
-            if matches!(nr.walls[i], Wall::Arc { .. }) {
-                continue;
-            }
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
             match nr.walls[i] {
-                Wall::Plane(t) if t == wc => {
+                // The two ends are asked again rather than the carried `side` read: that is one
+                // end's, and an edge whose ends answer differently is no ruling.
+                Wall::Ruling { plane: t, .. } if t == wc => {
                     let (Some(sa), Some(sb)) = (
                         node_ruling_side(jd, def, w, a),
                         node_ruling_side(jd, def, w, b),
@@ -261,7 +260,7 @@ fn ruling_sweep(
                     }
                     *slot = sa == side;
                 }
-                Wall::Plane(t) => {
+                Wall::Ruling { plane: t, .. } => {
                     // Both ends this ruling's crossings with the caps the ends name? Then the edge
                     // lies on the ruling and `wc ∩ t` carries it.
                     let on_ruling_end = |x: NodeId| -> bool {

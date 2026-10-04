@@ -267,7 +267,7 @@ impl Ring {
                             ccw: *ccw,
                         }))
                     }
-                    Wall::Ruling { cyl, side, up } => {
+                    Wall::Ruling { cyl, side, up, .. } => {
                         combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
                             cyl: *cyl,
                             def: def_of(*cyl)?,

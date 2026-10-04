@@ -835,7 +835,10 @@ pub(super) fn trace_one(
                 // seated face is the only face on this class with that line as an edge, and it
                 // states the piece itself, `Seated` like its straight edges. `up` says which end
                 // is the lower one along the axis (`MergedRuling::end` ascends).
-                if let crate::combinatorics::Wall::Ruling { cyl, side: 0, up } = ws[i] {
+                if let crate::combinatorics::Wall::Ruling {
+                    cyl, side: 0, up, ..
+                } = ws[i]
+                {
                     let (a, b) = (ns[i], ns[(i + 1) % n]);
                     // The axis side, in the label frame (`W`'s stored normal): the one bit a
                     // tangent edge flips ([`SegKind::Tangent`]).

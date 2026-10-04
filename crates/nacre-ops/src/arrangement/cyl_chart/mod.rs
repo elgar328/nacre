@@ -162,9 +162,9 @@ pub(crate) struct Chart {
 type RulingName = (usize, i8);
 
 /// **Which of a wall's two rulings a pierce node lies on** — `arrangement::node_ruling_side`, the
-/// one spelling (`ruling_side` asked of a name) the assembly's `Wall::Ruling { side }` reads.
-/// ★ This used to be a second copy of that function's body: the same `pierce_meet` +
-/// `ruling_side`, spelled twice one module apart.
+/// one spelling (`ruling_side` asked of a name) the chart's `Wall::Ruling { side, plane }` states,
+/// `plane` the wall it was asked against. A copy of that function's body here (the same
+/// `pierce_meet` + `ruling_side`) would be a second spelling one module apart.
 ///
 /// ★★★★★ **Not the node's `QuadRoot`.** A `Pierce` name's root is `Lo`/`Hi` along
 /// `ℓ = n₁ × n₂` of *its own* plane pair, so the same physical ruling reads `Hi` where its node

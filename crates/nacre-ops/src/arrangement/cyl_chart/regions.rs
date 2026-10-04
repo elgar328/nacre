@@ -550,6 +550,7 @@ pub(crate) fn walk(
                                     cyl: k,
                                     side: sd,
                                     up,
+                                    plane: wall,
                                 },
                                 ends: if up { (e0, e1) } else { (e1, e0) },
                             });

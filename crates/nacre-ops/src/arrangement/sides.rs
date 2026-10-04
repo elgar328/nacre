@@ -85,8 +85,9 @@ pub(super) fn chord_nodes(
 /// reaches here), so the pair `{wc, fc}` cuts the cylinder in two
 /// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
 /// [`crate::combinatorics::Wall::Ruling`] carries, measured by
-/// [`crate::combinatorics::ruling_side`] against `fc` when the
-/// ring was named — says which. The same predicate asked of each root picks it. `wc` must be ⊥
+/// [`crate::combinatorics::ruling_side`] against its `plane` when the ring was named (on a plane
+/// face's ring, `fc` itself; on a lateral's, the plane across the edge, which the caller passes
+/// as `fc`) — says which. The same predicate asked of each root picks it. `wc` must be ⊥
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).
 ///

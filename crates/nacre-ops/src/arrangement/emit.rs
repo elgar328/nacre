@@ -67,6 +67,7 @@ pub(super) fn emit_faces(
                             cyl: r.cyl,
                             side: r.side,
                             up: he % 2 == 0,
+                            plane: wc,
                         }
                     }
                     // Mirrors `origin`'s statement: the nodes map above already refused it.

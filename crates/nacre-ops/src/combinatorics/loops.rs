@@ -52,8 +52,8 @@ pub(crate) fn lateral_cycles(
 /// of the edge `triples[i] → triples[i+1]` — read off `inc` and the edge where the triples are
 /// produced ([`loop_triples`]), never re-derived from the endpoint names: the far face's plane
 /// class for a straight edge between two planes, and the curved wall [`curved_wall`] states for an
-/// edge on a cylinder — an arc as `Wall::Arc` on a plane face and a lateral alike, its direction
-/// and its rim's plane carried; a lateral's ruling as the plane class that holds it. The
+/// edge on a cylinder — an arc as `Wall::Arc` and a ruling as `Wall::Ruling`, on a plane face and
+/// a lateral alike, each with its direction and the plane it was measured against. The
 /// same trust model as the merge's `Ring { nodes, walls }`: deriving a wall from two names is
 /// sound only while every vertex lies on exactly three planes, and the carried value is total
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
@@ -342,15 +342,15 @@ fn loop_triples(
                 _ => return Err(reject(RejectReason::CurvedOperandBoundary)),
             },
         };
-        // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
-        // vertex *names* below have to fall back or decline (see [`NamedRing`]).
+        // Edge `i`'s carried wall, read off `inc` and the edge — total even where the vertex
+        // *names* below have to fall back or decline (see [`NamedRing`]).
         walls.push(match (plane_ix[b], plane_ix[p]) {
-            // ★ A lateral's own arc: the curved wall a plane face's arc gets, with the far cap as
-            // `near` — its direction about the axis (`he.forward`, the producer's convention) and
-            // its rim's plane. Ahead of the plane arm, which would take it as a straight edge.
-            (ClassIx::Plane(far), ClassIx::Cyl(k))
-                if matches!(model.edge_curve(hes[i].edge), nacre_geom::Curve::Circle(_)) =>
-            {
+            // ★ A lateral's own edge: the curved wall a plane face's curved edge gets, with the
+            // plane across it as `near` — an arc with its direction about the axis (`he.forward`,
+            // the producer's convention) and its rim's plane, a ruling with its side and travel
+            // measured against the plane that holds it. Ahead of the plane arm, which would take
+            // either as a straight edge between two planes.
+            (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
                 let end = pierce.expect("a lateral's corner is a pierce point");
                 curved_wall(model, jd, cyls, &hes[i], k, far, end)?
             }
@@ -585,6 +585,7 @@ fn curved_wall(
                 cyl,
                 side,
                 up: ascends == he.forward,
+                plane: near,
             })
         }
     }

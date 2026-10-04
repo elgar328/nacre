@@ -653,7 +653,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         if matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
-            continue; // the tracer skips a lateral face; its loops are the rims
+            continue; // a lateral's loops are read below, every one of them
         }
         let ring = combinatorics::face_vertex_triples(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
             .unwrap_or_else(|e| panic!("face {:?}: {e:?}", fh.index()));
@@ -682,10 +682,16 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             let straight = matches!(m.edge_curve(hes[i].edge), nacre_geom::Curve::Line(_));
             match nr.walls[i] {
                 crate::combinatorics::Wall::Plane(_) => {}
-                crate::combinatorics::Wall::Arc { .. } => {
+                crate::combinatorics::Wall::Arc { plane, .. } => {
                     assert!(
                         !straight,
                         "face {:?} edge {i}: an arc carrier on a straight curve",
+                        fh.index()
+                    );
+                    assert_eq!(
+                        plane,
+                        plane_ix[fp].plane(),
+                        "face {:?} edge {i}: a cap's arc rides the cap's own plane",
                         fh.index()
                     );
                     curved_walls += 1;
@@ -697,7 +703,12 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 // realized coordinates on purpose — the code derives them without any (`side`
                 // exactly through `quad::plane_side`, `up` from the cutting planes' axial
                 // parameters), so the coordinate is a genuinely second road to the same bit.
-                crate::combinatorics::Wall::Ruling { cyl: k, side, up } => {
+                crate::combinatorics::Wall::Ruling {
+                    cyl: k,
+                    side,
+                    up,
+                    plane,
+                } => {
                     assert!(
                         straight,
                         "face {:?} edge {i}: a ruling carrier on a curved curve",
@@ -706,6 +717,12 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     let crate::planes::ClassIx::Plane(near) = plane_ix[fp] else {
                         unreachable!("a lateral face was skipped above")
                     };
+                    assert_eq!(
+                        plane,
+                        near,
+                        "face {:?} edge {i}: a plane face's ruling is measured against the face",
+                        fh.index()
+                    );
                     let axis = cyls[k].realized.axis();
                     let axial = |p: Point3| (p - axis.origin()).dot(axis.direction());
                     assert_eq!(
@@ -765,6 +782,107 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             );
         }
     }
+    // ★★★★★ **A lateral's own curved walls, against the geometry** — every loop, for a lateral's
+    // rulings sit in whichever loop meets the wall (here the hole the plate leaves). Nothing on the
+    // operand side reads a lateral ruling's `up`, so this is the one lock on it; `side` is checked
+    // against the plane the wall carries, and both ends of an arc or a ruling must be corners whose
+    // names name that plane — exact, and what a wrong `plane` breaks however its sign falls.
+    let mut lateral_rulings = 0usize;
+    for &fh in &m.shell(m.solid(r).outer).faces {
+        let fp = surf_ix[&fh];
+        let crate::planes::ClassIx::Cyl(k) = plane_ix[fp] else {
+            continue;
+        };
+        let rings = combinatorics::lateral_cycles(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
+            .unwrap_or_else(|e| panic!("lateral {:?}: {e:?}", fh.index()));
+        let face = m.face(fh);
+        for (lp, ring) in std::iter::once(&face.outer).chain(&face.inner).zip(&rings) {
+            let Some(nr) = ring.poly() else { continue };
+            let hes = &lp.half_edges;
+            let n = hes.len();
+            let ends = |j: usize| m.edge(hes[j].edge).vertices;
+            let corner = |j: usize| {
+                let (a, b) = (ends((j + n - 1) % n), ends(j));
+                *a.iter()
+                    .find(|x| b.contains(x))
+                    .expect("consecutive edges share a corner")
+            };
+            let names = |j: usize, c: usize| {
+                combinatorics::pierce_name(nr.triples[j]).is_some_and(|(pl, _, _)| pl.contains(&c))
+            };
+            for (i, he) in hes.iter().enumerate() {
+                let straight = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Line(_));
+                let (cyl, plane) = match nr.walls[i] {
+                    crate::combinatorics::Wall::Plane(_) => {
+                        panic!(
+                            "lateral {:?} edge {i}: a lateral's ring has no plane wall",
+                            fh.index()
+                        )
+                    }
+                    crate::combinatorics::Wall::Arc { cyl, plane, .. } => {
+                        assert!(
+                            !straight,
+                            "lateral {:?} edge {i}: an arc on a line",
+                            fh.index()
+                        );
+                        (cyl, plane)
+                    }
+                    crate::combinatorics::Wall::Ruling {
+                        cyl,
+                        side,
+                        up,
+                        plane,
+                    } => {
+                        assert!(
+                            straight,
+                            "lateral {:?} edge {i}: a ruling on a curve",
+                            fh.index()
+                        );
+                        let axis = cyls[cyl].realized.axis();
+                        let axial = |p: Point3| (p - axis.origin()).dot(axis.direction());
+                        assert_eq!(
+                            up,
+                            axial(m.vertex_point(corner((i + 1) % n)))
+                                > axial(m.vertex_point(corner(i))),
+                            "lateral {:?} edge {i}: `up` disagrees with the walk",
+                            fh.index()
+                        );
+                        let wr =
+                            combinatorics::class_coeffs_rat(&jd, plane).expect("a named class");
+                        let n_hat =
+                            Vector3::from_array([wr[0].to_f64(), wr[1].to_f64(), wr[2].to_f64()]);
+                        let s = (m.vertex_point(corner(i)) - axis.origin())
+                            .dot(axis.direction().cross(n_hat));
+                        assert_eq!(
+                            side,
+                            if s > 0.0 { 1 } else { -1 },
+                            "lateral {:?} edge {i}: `side` disagrees with the geometry ({s})",
+                            fh.index()
+                        );
+                        ups.push(up);
+                        sides.push(side);
+                        lateral_rulings += 1;
+                        (cyl, plane)
+                    }
+                };
+                assert_eq!(
+                    cyl,
+                    k,
+                    "lateral {:?} edge {i}: its own cylinder",
+                    fh.index()
+                );
+                assert!(
+                    names(i, plane) && names((i + 1) % n, plane),
+                    "lateral {:?} edge {i}: both ends lie on the carried plane {plane}",
+                    fh.index()
+                );
+            }
+        }
+    }
+    assert!(
+        lateral_rulings > 0,
+        "the fixture puts a ruling on the boss's lateral"
+    );
     // Four faces run along the boss — the two plate caps it bit an arc out of, and the two halves
     // its rulings split the wall into — and each contributes two curved edges and two pierce
     // corners. The boss's own caps are full circles (the one curved loop this road already spoke)
