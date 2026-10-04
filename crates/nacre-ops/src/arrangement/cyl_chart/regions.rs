@@ -498,7 +498,11 @@ pub(crate) fn walk(
                                 (rim.nodes[q], rim.nodes[p])
                             };
                             pieces.push(Piece {
-                                wall: Wall::Arc { cyl: k, ccw },
+                                wall: Wall::Arc {
+                                    cyl: k,
+                                    ccw,
+                                    plane: c,
+                                },
                                 ends: if ccw { (from, to) } else { (to, from) },
                             });
                             p = q;

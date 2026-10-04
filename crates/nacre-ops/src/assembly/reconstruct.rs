@@ -253,27 +253,36 @@ pub(crate) fn reconstruct(
         let wall_surf = match wall {
             Wall::Plane(w) => planes[w].surf,
             Wall::Ruling { cyl, .. } => cyls[cyl].surf,
-            Wall::Arc { cyl, ccw } => {
+            Wall::Arc { cyl, ccw, plane } => {
                 // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
                 // B counter-clockwise about the axis, so the two complementary arcs between one
                 // pierce pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
-                // endpoints alone cannot give (`EdgeKey`'s note). The carriers are stated
-                // directly — the cylinder and the plane of the rim the arc lies on, which the
-                // caller passes as `face_surf` (`arc_plane`) — so there is nothing for the scan to
-                // read, which also keeps the chord's line key clean (`pair_surfs` skips arc edges
-                // for the same reason).
+                // endpoints alone cannot give (`EdgeKey`'s note). The carriers are the wall's own
+                // — the cylinder and the plane of the rim the arc lies on — so there is nothing for
+                // the scan to read, which also keeps the chord's line key clean (`pair_surfs`
+                // skips arc edges for the same reason).
+                //
+                // ★★ **Not the face's surface**: a lateral's is its cylinder, and an arc stated off
+                // it would be `[cyl, cyl]`. The wall names the rim's plane on a cap and a lateral
+                // alike, so whichever face mints the arc states one pair — and the second face to
+                // walk it must name the plane the edge already carries, or the planar arrangement
+                // and the cylinder chart disagree about which rim the arc lies on.
                 let (from, to) = if ccw { (va, vb) } else { (vb, va) };
                 let key = EdgeKey::Arc {
                     cyl,
                     from: from.index() as usize,
                     to: to.index() as usize,
                 };
+                let rim_plane = planes[plane].surf;
                 if let Some(&e) = edge_of.get(&key) {
+                    if !model.edge(e).surfaces.contains(&rim_plane) {
+                        return Err(reject(RejectReason::CylinderStagesDisagree));
+                    }
                     return Ok(e);
                 }
                 let e = crate::realize::push_edge_realized(
                     model,
-                    [cyls[cyl].surf, face_surf],
+                    [cyls[cyl].surf, rim_plane],
                     [from, to],
                     memo,
                 )
@@ -287,7 +296,7 @@ pub(crate) fn reconstruct(
         // expression for a plane-pair line and a ruling alike, so which face mints it first
         // cannot change what it says. Two faces on one plane state `(P, P)`, which the result
         // check refuses as the merge that did not happen (`CoplanarMerge`); two on one cylinder
-        // state `(C, C)`, the seam's spelling. Manifold edges (everything a green result
+        // state `(C, C)`, which `push_edge` refuses. Manifold edges (everything a green result
         // contains) have exactly two uses; any other count is on its way to the shell guard's
         // reject, and the fallback — this face's wall and its own surface — only keeps
         // construction deterministic until then.
@@ -306,28 +315,6 @@ pub(crate) fn reconstruct(
         Ok(e)
     };
 
-    // ★★ **An arc's carriers are its cylinder and the plane of the rim it lies on — read off the
-    // held rims by its ends, not off the face that mints it.** A cap's own plane is that plane, but
-    // a lateral's is its cylinder, and an arc a lateral minted first would state `[cyl, cyl]` — a
-    // line, by `derive_edge_curve`'s seam arm (measured: minting the laterals' arcs first sent 64
-    // census rows to `EdgeCarrierMismatch`; the face order, planes before laterals, hid it). A point
-    // of cylinder `k` lies on one plane perpendicular to its axis, so the held rim holding either end
-    // names the plane; either, because the table is blind to groups and the per-solid pass may have
-    // pruned a node a lateral still walks. No rim, or two, is the chart and the assembly
-    // disagreeing.
-    let arc_plane = |k: usize, a: NodeId, b: NodeId| -> Result<usize, BoolError> {
-        let mut on: Vec<usize> = rims
-            .iter()
-            .filter(|((kk, _), cr)| *kk == k && (cr.nodes.contains(&a) || cr.nodes.contains(&b)))
-            .map(|(&(_, c), _)| c)
-            .collect();
-        on.sort_unstable();
-        on.dedup();
-        match on[..] {
-            [c] => Ok(c),
-            _ => Err(reject(RejectReason::CylinderStagesDisagree)),
-        }
-    };
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
     'faces: for (fi, lf) in faces.iter().enumerate() {
@@ -345,19 +332,7 @@ pub(crate) fn reconstruct(
             let mut half_edges: Vec<HalfEdge> = Vec::with_capacity(k);
             for t in 0..k {
                 let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                // The second carrier: the face's own surface for a straight step, the rim's plane
-                // for an arc (`arc_plane`) — on a cap, its own plane.
-                let carrier = match r.walls[t] {
-                    Wall::Arc { cyl, .. } => {
-                        let c = arc_plane(cyl, r.nodes[t], r.nodes[(t + 1) % k])?;
-                        if matches!(lf.surf, ClassIx::Plane(fc) if fc != c) {
-                            return Err(reject(RejectReason::CylinderStagesDisagree));
-                        }
-                        planes[c].surf
-                    }
-                    Wall::Plane(_) | Wall::Ruling { .. } => face_surf,
-                };
-                let e = edge_for(model, memo, va, vb, r.walls[t], carrier)?;
+                let e = edge_for(model, memo, va, vb, r.walls[t], face_surf)?;
                 // For an arc edge the stored order is CCW, so this reads back exactly the `ccw`
                 // bit the wall carried in.
                 let forward = model.edge(e).vertices[0] == va;

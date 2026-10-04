@@ -186,7 +186,7 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
                 // points bound one straight segment whichever vocabulary a face states it in.
                 let key = match ring.walls[t] {
                     Wall::Plane(_) | Wall::Ruling { .. } => JoinKey::Line(norm_edge(a, b)),
-                    Wall::Arc { cyl, ccw } => {
+                    Wall::Arc { cyl, ccw, .. } => {
                         let (from, to) = if ccw { (a, b) } else { (b, a) };
                         JoinKey::Arc { cyl, from, to }
                     }

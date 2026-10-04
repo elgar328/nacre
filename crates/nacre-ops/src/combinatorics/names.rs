@@ -280,11 +280,14 @@ pub(crate) enum Carrier {
 /// **A ring edge's carrier** — the type half of "a line is unordered, a circle is ordered".
 ///
 /// A plane-carried edge rides one wall class, as `Ring.walls` always said. An arc rides a
-/// cylinder, and for it the ring additionally remembers **which way around the axis this edge
-/// runs**: `ccw` restates `ClassEdges::edge_at`'s own convention (*"`MergedArc::end` runs
-/// counter-clockwise about the axis"* — the even half-edge travels that way, its twin the other),
-/// carried rather than re-derived. That bit is what will let `edge_for` tell the two
-/// complementary arcs between one pair of pierce vertices apart.
+/// cylinder **and** the plane of the rim it lies on, and it carries both, whichever face states
+/// it: `plane` is that rim's plane class — on a cap the cap's own, on a lateral the class its chart
+/// read the rim from — so the assembly states an arc's carriers off the wall alone, and the second
+/// face that states one is checked against the first. For it the ring additionally remembers
+/// **which way around the axis this edge runs**: `ccw` restates `ClassEdges::edge_at`'s own
+/// convention (*"`MergedArc::end` runs counter-clockwise about the axis"* — the even half-edge
+/// travels that way, its twin the other), carried rather than re-derived. That bit is what lets
+/// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.
 ///
 /// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
 /// `dissolve_straight_angles` folds on wall *equality*, and two arcs of different circles — or
@@ -295,6 +298,7 @@ pub(crate) enum Wall {
     Arc {
         cyl: usize,
         ccw: bool,
+        plane: usize,
     },
     /// A ruling piece: straight on the lateral, so like a line its ends
     /// order it — but its carrier is the cylinder, and `(cyl, side)` names which of the two
@@ -317,7 +321,11 @@ impl Wall {
     pub(crate) fn reversed(self) -> Self {
         match self {
             Wall::Plane(p) => Wall::Plane(p),
-            Wall::Arc { cyl, ccw } => Wall::Arc { cyl, ccw: !ccw },
+            Wall::Arc { cyl, ccw, plane } => Wall::Arc {
+                cyl,
+                ccw: !ccw,
+                plane,
+            },
             Wall::Ruling { cyl, side, up } => Wall::Ruling { cyl, side, up: !up },
         }
     }

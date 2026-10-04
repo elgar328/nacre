@@ -299,7 +299,7 @@ fn trace_transversal_face(
         // An arc between two on-line nodes leaves the line to the side its tangent points
         // ([`combinatorics::arc_departure_side`]); a straight edge stays on it.
         let on_meet = |i: usize| match walls[i] {
-            crate::combinatorics::Wall::Arc { cyl, ccw } => {
+            crate::combinatorics::Wall::Arc { cyl, ccw, .. } => {
                 combinatorics::arc_departure_side(jd, cyls, ring[i], wc, cyl, ccw)
                     .map(combinatorics::EdgeMeet::Departs)
             }
@@ -317,7 +317,7 @@ fn trace_transversal_face(
                 return got.clone();
             }
             let got = match walls[i] {
-                crate::combinatorics::Wall::Arc { cyl, ccw } => match cyls.get(cyl) {
+                crate::combinatorics::Wall::Arc { cyl, ccw, .. } => match cyls.get(cyl) {
                     Some(wcy) => arc_crossings(
                         jd,
                         &wcy.def,

@@ -203,9 +203,10 @@ impl Ring {
     /// carries, in the engine's own vocabulary.
     ///
     /// A wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the class
-    /// table's def - the same clone convention every producer follows), a pierce end on a plane
-    /// edge by `pin_for` (its cylinder when its pair is the edge's line) and elsewhere by its
-    /// cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
+    /// table's def - the same clone convention every producer follows; its `plane` stays behind,
+    /// the predicates reading the circle off the cylinder and the ring's own plane), a pierce end
+    /// on a plane edge by `pin_for` (its cylinder when its pair is the edge's line) and elsewhere
+    /// by its cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
     /// consumers fork on (`ring_is_mixed`). Flattening walls to plane indices for a plane-only
     /// derivation would refuse every mixed ring here, before any consumer could abstain.
     ///
@@ -259,7 +260,7 @@ impl Ring {
                 let wall = &self.walls[i];
                 let carrier = match wall {
                     Wall::Plane(c) => combinatorics::Carrier::plane(*c),
-                    Wall::Arc { cyl, ccw } => {
+                    Wall::Arc { cyl, ccw, .. } => {
                         combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
                             cyl: *cyl,
                             def: def_of(*cyl)?,
@@ -433,10 +434,6 @@ impl HeldRims {
 
     pub(crate) fn contains_key(&self, key: &(usize, usize)) -> bool {
         self.0.contains_key(key)
-    }
-
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&(usize, usize), &CutRim)> {
-        self.0.iter()
     }
 
     /// This table re-read against a later face list — for the readers after the per-solid

@@ -57,6 +57,7 @@ pub(super) fn emit_faces(
                     HalfEdgeKind::Arc(i) => crate::combinatorics::Wall::Arc {
                         cyl: edges.arcs[i].cyl,
                         ccw: he % 2 == 0,
+                        plane: wc,
                     },
                     // Same shape for a ruling: `MergedRuling::end` ascends the axis, the even
                     // half-edge travels up.

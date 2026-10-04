@@ -507,7 +507,9 @@ pub(crate) fn arc_departure_side(
 ///
 /// * an **arc** has a stated convention — `derive_edge_curve`'s (Plane, Cylinder) arm: "on a circle
 ///   carrier the vertex *order* says which arc; `[A, B]` is A to B **counter-clockwise about the
-///   axis**". So walking the edge `forward` is walking it CCW.
+///   axis**". So walking the edge `forward` is walking it CCW. Its `plane` is the cap's own
+///   class (`near`) — what the assembly states an arc's carriers from; the tracer that reads
+///   operand rings reads only `cyl` and `ccw`.
 /// * a **ruling** has none — the same arm says a plane parallel to the axis meets the lateral along
 ///   rulings and "the endpoints decide". `MergedRuling::end` ascending the axis is the
 ///   *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
@@ -515,8 +517,8 @@ pub(crate) fn arc_departure_side(
 ///
 /// `side` is [`ruling_side`]'s one spelling, and it needs a point on the ruling
 /// *exactly* — which is why the pierce name comes in: [`pierce_meet`] realizes it as the `(line, s)`
-/// that function takes. A ruling whose end is not a pierce point (a seam end) has no such point and
-/// is refused rather than guessed.
+/// that function takes. A ruling whose end is not a pierce point has no such point and is refused
+/// rather than guessed.
 fn curved_wall(
     model: &Model,
     jd: &Judge<'_, WorkingPlane>,
@@ -531,6 +533,7 @@ fn curved_wall(
         nacre_geom::Curve::Circle(_) => Ok(crate::combinatorics::Wall::Arc {
             cyl,
             ccw: he.forward,
+            plane: near,
         }),
         nacre_geom::Curve::Line(_) => {
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
