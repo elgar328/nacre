@@ -131,6 +131,73 @@ pub fn windowed_boss(m: &mut Model, half_width: f64, seam_x: f64) -> Handle<Soli
     out[0]
 }
 
+/// **A cylinder whose two rims are both cut** — the lateral face with no seam edge. The cylinder
+/// `r = 1` on the `z` axis over `z ∈ [0, 4]` (seam toward `+x̂`), combined by `kind` with the box
+/// `x ∈ [0.5, 3]`, `y ∈ [y_min, 2]` over each end — `z ∈ [−1, 0.5]` and `z ∈ [3.5, 5]`. Each box
+/// bites one rim, so the middle of the lateral wraps the axis between two **cut** rims; the region
+/// walk emits it with no whole rim, and the face comes out bounded by those two rims alone — one
+/// the outer loop, the other an inner one. `y_min = 0` stands the boxes' walls on the plane through
+/// the axis, so each rim's `θ = 0` point is a box corner's pierce rather than a seam vertex.
+///
+/// Volumes for `y_min = −2`: Fuse `4π + 30 − s`, Cut `4π − s`, with `s = acos 0.5 − 0.5·√0.75` the
+/// area of the disk past `x = 0.5` — each bite is that segment `0.5` tall, and there are two.
+///
+/// Asserted here, because every test built on it measures this shape: one lateral face, no
+/// self-adjacent edge on it, and exactly two loops.
+pub fn cut_at_both_rims(m: &mut Model, kind: BoolKind, y_min: f64) -> Handle<Solid> {
+    let c = cylinder(
+        m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    )
+    .solid;
+    let lo = cuboid(
+        m,
+        Point3::from_array([0.5, y_min, -1.0]),
+        Point3::from_array([3.0, 2.0, 0.5]),
+    );
+    m.rebuild_adjacency();
+    let a = boolean(m, kind, c, lo).expect("the lower bite");
+    assert_eq!(a.len(), 1, "the lower bite leaves one body");
+    m.rebuild_adjacency();
+    let hi = cuboid(
+        m,
+        Point3::from_array([0.5, y_min, 3.5]),
+        Point3::from_array([3.0, 2.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let out = boolean(m, kind, a[0], hi).expect("the upper bite");
+    assert_eq!(out.len(), 1, "the upper bite leaves one body");
+    m.rebuild_adjacency();
+    let laterals: Vec<&Face> = m
+        .shell(m.solid(out[0]).outer)
+        .faces
+        .iter()
+        .map(|&f| m.face(f))
+        .filter(|f| matches!(m.surface(f.surface), Surface::Cylinder { .. }))
+        .collect();
+    assert_eq!(laterals.len(), 1, "one lateral face");
+    let face = laterals[0];
+    assert_eq!(
+        face.inner.len(),
+        1,
+        "two loops: one rim outer, the other inner"
+    );
+    assert!(
+        std::iter::once(&face.outer)
+            .chain(&face.inner)
+            .flat_map(|l| &l.half_edges)
+            .all(|he| {
+                let [a, b] = m.edge(he.edge).surfaces;
+                a != b
+            }),
+        "no seam edge"
+    );
+    out[0]
+}
+
 /// An axis-aligned box from `min` to `max` — [`cuboid_on`] with the floor at `min.z` and the
 /// height `max.z − min.z`, **exactly**: the height is the difference of the two corners'
 /// decimals, and it must be a decimal an `f64` carries (its shortest decimal), or the far cap

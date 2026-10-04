@@ -2870,6 +2870,57 @@ fn measure_census() {
             }
         }
     }
+    // ── **A cylinder cut at both rims** (`bothrims`): a boss `r = 1` over `z ∈ [0, 4]` bitten at
+    // each end by a box over `x ∈ [0.5, 3]` — fused on, or cut away — so the middle of its lateral
+    // wraps the axis between two cut rims and comes out with no seam edge, one rim the outer loop
+    // and the other an inner one. That shape is then sliced through the middle by a box. Every row
+    // meshes (the mesher cuts such a band along one generator) and the slicing box's gates read the
+    // band's span from both rims.
+    {
+        let bitten = |m: &mut Model, k: BoolKind| -> Handle<Solid> {
+            let c = cylinder(
+                m,
+                Point3::from_array([0.0, 0.0, 0.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                1.0,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            let lo = nacre_ops::fixtures::cuboid(
+                m,
+                Point3::from_array([0.5, -2.0, -1.0]),
+                Point3::from_array([3.0, 2.0, 0.5]),
+            );
+            m.rebuild_adjacency();
+            let a = boolean(m, k, c, lo).expect("the lower bite")[0];
+            m.rebuild_adjacency();
+            let hi = nacre_ops::fixtures::cuboid(
+                m,
+                Point3::from_array([0.5, -2.0, 3.5]),
+                Point3::from_array([3.0, 2.0, 5.0]),
+            );
+            m.rebuild_adjacency();
+            let out = boolean(m, k, a, hi).expect("the upper bite")[0];
+            m.rebuild_adjacency();
+            out
+        };
+        for (bn, built) in [("fused", BoolKind::Fuse), ("cut", BoolKind::Cut)] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let band = bitten(&mut m, built);
+                let slab = nacre_ops::fixtures::cuboid(
+                    &mut m,
+                    Point3::from_array([-0.5, -2.0, 1.5]),
+                    Point3::from_array([3.0, 2.0, 2.5]),
+                );
+                m.rebuild_adjacency();
+                let inputs = operands(&m, band, slab);
+                let out = boolean(&mut m, k, band, slab);
+                m.rebuild_adjacency();
+                record(&format!("bothrims {bn} slab {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 
     // ★★★★ **The realization road for surfaces, measured.** These
     // counters cover *every* surface this process pushed (they are process-global and the

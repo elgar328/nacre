@@ -485,3 +485,111 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     }
     assert!(pierces > 0 && seams > 0, "{pierces} pierces, {seams} seams");
 }
+
+/// The slanted wall `z = 2 + x/6` over `x ∈ [−3, 3]`, `y ∈ [0, 4]`, everything above it to `z = 6`:
+/// a trapezoid on the world `ZX` plane (`(u, v) = (z, x)`) extruded along `+y`. It cuts a lateral
+/// on the `z` axis obliquely at about `z = 2`.
+fn slanted_wedge(m: &mut Model) -> Handle<Solid> {
+    let pts = [(1.5, -3.0), (2.5, 3.0), (6.0, 3.0), (6.0, -3.0)]
+        .map(|(u, v)| nacre_math::Point2::from_array([u, v]));
+    let ring = crate::Ring2d::polygon_decimal(pts.to_vec()).expect("a trapezoid");
+    let profile = crate::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let frame = SketchFrame::world(m, Axis::Y);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 4.0,
+        },
+    )
+    .expect("the wedge extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// ★★★★ **A lateral bounded by two cut rims states its axis span from both.**
+///
+/// [`crate::fixtures::cut_at_both_rims`]'s lateral wraps the axis between two cut rims and has no
+/// seam edge, so its upper rim is an **inner** loop. Its span is `[0, 4]`; read off the outer loop
+/// alone it is `[0, 0.5]` — the lower rim's two stations — and the gates then prove a cylinder
+/// crossing the lateral at `z = 2`, and a slanted wall at that height, clear of a face they cut:
+/// the arrangement refuses them by the wrong names (`LabelConflict`, `CylinderStagesDisagree`),
+/// and a debug build stops at `cyl_trace`'s span assertion. The crossing at `z = 0.25`, inside the
+/// lower rim's stations, is the control the outer loop alone answers too.
+#[test]
+fn a_lateral_cut_at_both_rims_reads_its_span_from_both() {
+    let refused_by = |out: Result<Vec<Handle<Solid>>, BoolError>, want: RejectReason| matches!(out, Err(BoolError::Rejected { reason, .. }) if reason == want);
+    for built in [BoolKind::Fuse, BoolKind::Cut] {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for z in [2.0, 0.25] {
+                let mut m = Model::new();
+                let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
+                let across = turned_cylinder(&mut m, 0.2, 6.0, [-3.0, 0.0, z]);
+                m.rebuild_adjacency();
+                let out = boolean(&mut m, kind, band, across);
+                assert!(
+                    refused_by(out.clone(), RejectReason::CylinderPairContact),
+                    "built by {built:?}, {kind:?} with a cylinder across at z = {z}: {out:?}"
+                );
+            }
+            let mut m = Model::new();
+            let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
+            let wall = slanted_wedge(&mut m);
+            let out = boolean(&mut m, kind, band, wall);
+            assert!(
+                refused_by(out.clone(), RejectReason::ObliqueCylinderCut),
+                "built by {built:?}, {kind:?} with a slanted wall: {out:?}"
+            );
+        }
+    }
+}
+
+/// ★★★ **A lateral bounded by two cut rims is an operand like any other.** Fed back to a boolean
+/// with a box slicing it through the middle (`x ∈ [−0.5, 3]`, `|y| ≤ 2`, `z ∈ [1.5, 2.5]`), every
+/// kind builds a clean model of the analytic volume — the disk part with `x > −0.5`, one tall,
+/// is `π − s` for `s` the segment past `|x| = 0.5`.
+#[test]
+fn a_lateral_cut_at_both_rims_is_an_operand_like_any_other() {
+    let s = 0.5f64.acos() - 0.5 * 0.75f64.sqrt();
+    let pi = std::f64::consts::PI;
+    let slice = pi - s;
+    for (built, body) in [
+        (BoolKind::Fuse, 4.0 * pi + 30.0 - s),
+        (BoolKind::Cut, 4.0 * pi - s),
+    ] {
+        for (kind, want) in [
+            (BoolKind::Fuse, body + 14.0 - slice),
+            (BoolKind::Cut, body - slice),
+            (BoolKind::Common, slice),
+        ] {
+            let mut m = Model::new();
+            let band = crate::fixtures::cut_at_both_rims(&mut m, built, -2.0);
+            let tool = crate::fixtures::cuboid(
+                &mut m,
+                nacre_math::Point3::from_array([-0.5, -2.0, 1.5]),
+                nacre_math::Point3::from_array([3.0, 2.0, 2.5]),
+            );
+            m.rebuild_adjacency();
+            let out = boolean(&mut m, kind, band, tool)
+                .unwrap_or_else(|e| panic!("built by {built:?}, {kind:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{built:?} {kind:?}"
+            );
+            let v: f64 = out
+                .iter()
+                .map(|&b| nacre_props::mass_props(&m, b).unwrap().volume)
+                .sum();
+            assert!(
+                (v - want).abs() < 1e-6,
+                "built by {built:?}, {kind:?}: {v} vs {want}"
+            );
+        }
+    }
+}

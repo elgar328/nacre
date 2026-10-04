@@ -63,6 +63,11 @@ pub(crate) fn axis_param_of_plane(
 /// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
 /// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
 /// and the consumer declines the face.
+///
+/// ★ **Every loop, not the outer one.** A band whose rims are both cut has no seam edge, and its
+/// upper rim is an inner loop: read off the outer loop alone, the span of a lateral over `[0, 4]`
+/// bitten at both ends is `[0, 0.5]`, and the gates prove a cylinder or a slanted wall crossing it
+/// at `z = 2` clear of it. A hole's stations lie inside the span, so they never move its ends.
 pub(super) fn lateral_t_range(
     model: &Model,
     face: &nacre_topo::Face,
@@ -71,7 +76,10 @@ pub(super) fn lateral_t_range(
     use nacre_exact::Rat;
     let m = def.dir();
     let mut ts: Vec<Rat> = Vec::new();
-    for he in &face.outer.half_edges {
+    for he in std::iter::once(&face.outer)
+        .chain(&face.inner)
+        .flat_map(|l| &l.half_edges)
+    {
         let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
@@ -106,7 +114,8 @@ pub(super) fn lateral_t_range(
 /// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
 /// B counter-clockwise about the axis). A whole rim (`[v, v]`), an irrational corner, a carrier
 /// this road cannot translate into the world, or rims that do not chain into one arc give `None`
-/// — the whole circle, the reading before this existed.
+/// — the whole circle, the reading before this existed. The outer loop is enough: a band with no
+/// seam edge has a wrapping rim for its outer loop, and that rim's arcs alone close the circle.
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a seam vertex is
 /// `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm is), a

@@ -278,7 +278,7 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     let face = m.face(fh);
     match m.surface_cache(face.surface) {
         Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
-        Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c).unwrap(),
+        Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c, None).unwrap(),
     }
 }
 
@@ -484,4 +484,121 @@ proptest! {
         prop_assert_eq!(t.triangles.len(), 4 * n - 4);
         prop_assert_eq!(non_watertight_edges(&t), 0);
     }
+}
+
+/// ★★★★★ **A band whose rims are both cut meshes, and its mesh is the surface.**
+///
+/// [`nacre_ops::fixtures::cut_at_both_rims`] builds a lateral that wraps the axis between two cut
+/// rims with no seam edge — one rim the outer loop, the other an inner one. Its two rings unroll to
+/// two open lines, not a polygon, so the chart cuts the band along one generator
+/// ([`cut_seamless_bands`]). Three placements of that generator are asked for: an ordinary one
+/// (`y_min = −2`), boxes standing on the plane through the axis (`y_min = 0` — each rim's `θ = 0`
+/// point is a box corner's pierce, not a seam vertex), and a band with a hole cut where its seam
+/// would be (`θ = 0`), which the generator must step around. Each must mesh watertight with the
+/// lateral's mesh area equal to the analytic area (design 「메시로 재기」: `validate`, watertightness
+/// and the volume all stay green when a curved face's mesh is wrong — the area is the oracle).
+#[test]
+fn a_band_cut_at_both_rims_meshes_as_its_surface() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let pi = std::f64::consts::PI;
+    for built in [BoolKind::Fuse, BoolKind::Cut] {
+        for (y_min, holed) in [(-2.0, false), (0.0, false), (-2.0, true)] {
+            let mut m = Model::new();
+            let mut band = fixtures::cut_at_both_rims(&mut m, built, y_min);
+            // Each bite takes the rim's arc with `x > 0.5` and `y ≥ y_min`, half a unit tall.
+            let bite = if y_min < 0.0 {
+                2.0 * pi / 3.0
+            } else {
+                pi / 3.0
+            };
+            let mut want = 2.0 * pi * 4.0 - 2.0 * bite * 0.5;
+            if holed {
+                let window = fixtures::cuboid(
+                    &mut m,
+                    Point3::from_array([0.8, -0.2, 1.5]),
+                    Point3::from_array([1.2, 0.2, 2.5]),
+                );
+                m.rebuild_adjacency();
+                band = boolean(&mut m, BoolKind::Cut, band, window).expect("the window")[0];
+                m.rebuild_adjacency();
+                want -= 2.0 * 0.2f64.asin();
+            }
+            let lateral = m
+                .shell(m.solid(band).outer)
+                .faces
+                .iter()
+                .copied()
+                .find(|&f| matches!(m.surface_cache(m.face(f).surface), Surface::Cylinder(_)))
+                .expect("one lateral face");
+            let face = m.face(lateral);
+            // The premise: the shape this lock is about — two wrapping rims (and the hole) as
+            // loops, no seam edge anywhere on the face.
+            assert_eq!(
+                face.inner.len(),
+                if holed { 2 } else { 1 },
+                "{built:?} {y_min} {holed}"
+            );
+            assert!(
+                std::iter::once(&face.outer)
+                    .chain(&face.inner)
+                    .flat_map(|l| &l.half_edges)
+                    .all(|he| {
+                        let [a, b] = m.edge(he.edge).surfaces;
+                        a != b
+                    }),
+                "no seam edge"
+            );
+            let t = tessellate(&m, &TessConfig::default())
+                .unwrap_or_else(|e| panic!("{built:?} y_min {y_min} holed {holed}: {e:?}"));
+            assert_eq!(non_watertight_edges(&t), 0, "{built:?} {y_min} {holed}");
+            let area: f64 = t.by_face[&lateral]
+                .iter()
+                .map(|&th| {
+                    let [a, b, c] = t.triangles.get(th).vertices.map(|v| t.vertices.get(v).pos);
+                    (b - a).cross(c - a).norm() / 2.0
+                })
+                .sum();
+            assert!(
+                (area - want).abs() < 1e-3 * want,
+                "{built:?} y_min {y_min} holed {holed}: mesh {area} vs {want}"
+            );
+        }
+    }
+}
+
+/// ★★★★ **The band's generator stays out of a hole, and passes each rim once.** Synthetic turns,
+/// where the choice is decided by the rule and not by where samples fall: both wrapping rings
+/// sampled every 10°, so every candidate (the middle of a step, 5° off the grid) is equally far
+/// from every sample; a hole spanning `[−100°, 100°]` with vertices only at its ends. The first
+/// candidate (5°) lies inside the hole, and the rule must pass it over — a cut through a hole
+/// crosses its boundary. Then a second ring that doubles back over `[40°, 60°]` passes those
+/// generators three times, and the rule must skip them too.
+#[test]
+fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
+    let deg = |d: f64| d.to_radians();
+    let tau = std::f64::consts::TAU;
+    let up: Vec<f64> = (0..36).map(|k| deg(10.0 * f64::from(k))).collect();
+    let down: Vec<f64> = (0..36).map(|k| deg(360.0 - 10.0 * f64::from(k))).collect();
+    let hole = vec![deg(-100.0), deg(100.0)];
+    let turns = vec![(up.clone(), tau), (down.clone(), -tau), (hole, 0.0)];
+    let c = band_generator(&turns, [0, 1]).expect("a generator outside the hole");
+    let c = c.to_degrees().rem_euclid(360.0);
+    assert!(
+        c > 100.0 && c < 260.0,
+        "the generator {c}° lies in the hole"
+    );
+
+    // The second ring doubles back: 10° up to 30°, back to 10°, on to 360° — every θ in (10°, 30°)
+    // is passed three times. The first ring starts at 10°, so its first candidates (15°, 25°) lie
+    // in the fold and the rule must skip them.
+    let from_ten: Vec<f64> = (1..=36).map(|k| deg(10.0 * f64::from(k))).collect();
+    let mut doubled: Vec<f64> = [10.0, 20.0, 30.0, 20.0, 10.0].map(deg).to_vec();
+    doubled.extend((4..=36).map(|k| deg(10.0 * f64::from(k)))); // 40° .. 360°
+    let turns = vec![(from_ten, tau), (doubled, tau)];
+    let c = band_generator(&turns, [0, 1]).expect("a generator off the fold");
+    let c = c.to_degrees().rem_euclid(360.0);
+    assert!(
+        !(10.0..=30.0).contains(&c),
+        "the generator {c}° is passed three times"
+    );
 }
