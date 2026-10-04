@@ -31,7 +31,8 @@ pub enum TessError {
     /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
     /// **by index** or repeated within one, a spike, or **two segments passing through each
     /// other**. On a cylinder also a face whose loops wrap the axis other than as two rims, or a
-    /// band of two that no generator cuts apart (`cut_seamless_bands`).
+    /// band no generator cuts so that it stays one polygon — every generator crosses some hole
+    /// other than twice (`cut_seamless_bands`).
     ///
     /// ★ **The cases where two vertices meet in *coordinates* are not here** but
     /// [`Self::SelfTouchingBoundary`] — a different proposition: those rings are exactly what the
@@ -236,7 +237,7 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
     let _report = bridge_shared_edges(&mut t, model, &live);
     // 2. Triangulate each live face, reusing the shared edge polylines.
     for &(fh, face) in &live {
-        triangulate_face(&mut t, model, cfg, fh, face, cuts.get(&fh).copied())?;
+        triangulate_face(&mut t, model, cfg, fh, face, cuts.get(&fh).cloned())?;
     }
 
     Ok(t)
@@ -514,13 +515,18 @@ fn sample_edge(
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Circle(c) => {
             if v0 == v1 {
-                // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
-                // angle 0 (= centre + r·ref_dir), the rest are interior edge points.
+                // A full circle: point 0 is its vertex, the rest are interior edge points going
+                // round from it. A rim's vertex is its seam point (`OnSeam`), at angle 0
+                // (= centre + r·ref_dir) by definition; any other vertex is read off the curve.
                 let n = circle_segments(cfg, c.radius());
+                let t0 = match model.vertex(v0) {
+                    Vertex::OnSeam(_) => 0.0,
+                    _ => c.angle_of(model.vertex_point(v0)),
+                };
                 let mut ring = Vec::with_capacity(n);
                 ring.push(vertex_of(t, vmap, model, v0));
                 for i in 1..n {
-                    let theta = std::f64::consts::TAU * (i as f64) / (n as f64);
+                    let theta = t0 + std::f64::consts::TAU * (i as f64) / (n as f64);
                     let h = t.vertices.push(TessVertex {
                         pos: c.point_at(theta),
                         origin: TessOrigin::OnEdge { edge: eh, t: theta },
@@ -779,8 +785,9 @@ fn planar_chart(
 /// the unrolled band a rectangle rather than a degenerate line. A band with no seam edge is
 /// bounded by its two rims alone, each turning once around the axis; `cut` joins them at the
 /// generator [`cut_seamless_bands`] chose into the same rectangle — first rim, its cut point again,
-/// the second rim, its cut point again ([`joined_band`]). Holes are then shifted by whole turns
-/// into the outer ring's range so they lie inside it.
+/// up the generator through any hole it crosses, the second rim, its cut point again, and back
+/// down ([`joined_band`]). The other holes are then shifted by whole turns into the outer ring's
+/// range so they lie inside it.
 fn cylinder_chart(
     t: &Tessellation,
     model: &Model,
@@ -791,8 +798,8 @@ fn cylinder_chart(
 ) -> Result<Chart, TessError> {
     let (mut handles, mut rings) = face_rings(t, face);
     if let Some(cut) = cut {
-        let [a, b] = cut.ok_or(TessError::DegenerateRing)?;
-        (handles, rings) = joined_band(&handles, &rings, a, b).ok_or(TessError::DegenerateRing)?;
+        let cut = cut.ok_or(TessError::DegenerateRing)?;
+        (handles, rings) = joined_band(&handles, &rings, &cut).ok_or(TessError::DegenerateRing)?;
     }
     let axis = cyl.axis();
     let (o, w_dir) = (axis.origin(), axis.direction());
@@ -842,11 +849,6 @@ fn cylinder_chart(
         interior,
     })
 }
-
-/// What the band-cut pre-pass decided for a cylindrical face whose boundary wraps the axis: the
-/// two cut points, one on each wrapping ring, or `None` when no generator cuts the band (the
-/// chart then refuses the face as [`TessError::DegenerateRing`]).
-type BandCut = Option<[Handle<TessVertex>; 2]>;
 
 /// One position of a loop's boundary ring and where in a polyline it came from — what a cut needs
 /// to put a new sample into the edge the ring walks there.
@@ -928,24 +930,32 @@ fn unwrapped_thetas(
     (out, total)
 }
 
-/// ★★★★★ **The band-cut pre-pass — a band with no seam edge gets one generator to be cut along.**
+/// ★★★★★ **The band-cut pre-pass — a lateral face that wraps the axis gets one generator to be cut
+/// along.**
 ///
-/// A lateral face that wraps the axis has two rims that each turn once around it. With a seam edge
-/// the boundary walks the seam twice and unrolls to a rectangle ([`cylinder_chart`]); without one
-/// (a band whose rims are both cut — the boolean emits it bounded by the two rims alone) the two
-/// rings unroll to two open lines and no polygon. So the band is cut along one generator: a `θ`
-/// where **each wrapping ring passes exactly once** (a cut rim can double back), **no hole lies**
-/// (the cut would cross it), and **farthest from every existing sample** — a new point a few ulps
-/// beside an old one is a coincident pair the sweep cannot order, and two existing samples at
-/// "the same" `θ` on the two rims are the same generator only up to rounding (a box wall through
-/// the axis puts two different pierce vertices there). Candidates are the middles of the first
-/// ring's arc steps, taken in ring order, the first of equal clearance kept — the same model meshes
-/// the same way. The two cut points go into the rims' **shared** polylines (`by_edge`) at that
-/// `θ`, as samples of their arcs, so the cap on the other side of each rim sees them too and the
-/// mesh stays crack-free — the face does not change its boundary alone.
+/// A lateral face that wraps the axis is bounded by two rims that each turn once around it, and
+/// those two rings unroll to two open lines, not a polygon. So the face is cut along one generator
+/// and the cut is joined back into the rectangle the chart can sweep ([`joined_band`]) — the
+/// seamless modelers' faceting (Stallings, *Reduced Topology B-Reps*, §10), with the cut placed
+/// by the face rather than fixed at the surface's `θ = 0`.
 ///
-/// A face whose boundary wraps but not as exactly two rings, or that no candidate cuts, is
-/// recorded with `None`.
+/// **One rule places it: the cut crosses as few loops as it can.** Each loop it crosses gets a new
+/// sample in a polyline it shares with the face across that loop, and is severed and spliced into
+/// the outer ring; a cut that needs neither is the cheapest and the safest. So, in order:
+///
+/// 1. **Two loops, each one closed rim edge** (a plain cylinder or bore): each rim is cut at its
+///    own vertex — the first sample of its polyline, so nothing is inserted at all.
+/// 2. Otherwise a generator from [`band_generator`]: it passes each wrapping ring exactly once and
+///    each hole zero or two times, crosses as few holes as any such generator, and lies farthest
+///    from every existing sample (a new point a few ulps beside an old one is a coincident pair the
+///    sweep cannot order, and two existing samples at "the same" `θ` on two rings are one generator
+///    only up to rounding). Its points go into the crossed loops' **shared** polylines (`by_edge`),
+///    as samples of their arcs, so the face across each loop sees them too and the mesh stays
+///    crack-free.
+///
+/// A face whose boundary wraps but not as exactly two rings, or that no generator cuts so — a
+/// hole the generator would cross four times severs the face into more than one outer polygon,
+/// and the sweep takes one — is recorded with `None`.
 fn cut_seamless_bands(
     t: &mut Tessellation,
     model: &Model,
@@ -957,10 +967,9 @@ fn cut_seamless_bands(
         let Surface::Cylinder(cyl) = model.surface_cache(face.surface) else {
             continue;
         };
-        let traced: Vec<(Vec<Traced>, Option<Traced>)> = std::iter::once(&face.outer)
-            .chain(&face.inner)
-            .map(|lp| traced_ring(t, lp))
-            .collect();
+        let loops: Vec<&Loop> = std::iter::once(&face.outer).chain(&face.inner).collect();
+        let traced: Vec<(Vec<Traced>, Option<Traced>)> =
+            loops.iter().map(|lp| traced_ring(t, lp)).collect();
         let turns: Vec<(Vec<f64>, f64)> = traced
             .iter()
             .map(|(ring, _)| {
@@ -975,12 +984,33 @@ fn cut_seamless_bands(
             continue;
         }
         let cut = match wrapping[..] {
-            [a, b] => band_cut(t, model, cyl, &traced, &turns, [a, b]),
+            [a, b] => match (
+                loops.len(),
+                closed_rim(t, model, loops[a]),
+                closed_rim(t, model, loops[b]),
+            ) {
+                (2, Some(va), Some(vb)) => Some(Cut {
+                    rims: [va, vb],
+                    holes: Vec::new(),
+                }),
+                _ => band_generator(&turns, [a, b])
+                    .and_then(|c| band_cut(t, model, cyl, &traced, &turns, [a, b], c)),
+            },
             _ => None,
         };
         cuts.insert(fh, cut);
     }
     cuts
+}
+
+/// The vertex sample of a loop that is **one closed rim edge** — the first sample of its polyline
+/// ([`sample_edge`] starts a closed circle there) — and `None` for any other loop.
+fn closed_rim(t: &Tessellation, model: &Model, lp: &Loop) -> Option<Handle<TessVertex>> {
+    let [he] = lp.half_edges[..] else {
+        return None;
+    };
+    let [v0, v1] = model.edge(he.edge).vertices;
+    (v0 == v1).then(|| t.by_edge[&he.edge][0])
 }
 
 /// A ring's steps as `(from, to)` in its unwrapped angle, the closing step last.
@@ -1000,19 +1030,18 @@ fn passes((p, q): (f64, f64), c: f64) -> i64 {
     (last - first + 1).max(0)
 }
 
-/// The generator a band is cut along ([`cut_seamless_bands`]): among the middles of the first
-/// wrapping ring's arc steps, in ring order, one that each wrapping ring passes exactly once and no
-/// hole's span holds, farthest from every sample (the first of equal clearance). `turns` is every
-/// ring's [`unwrapped_thetas`]; `None` when no candidate passes.
+/// The generator a band is cut along ([`cut_seamless_bands`]'s second rule): among the middles of
+/// the first wrapping ring's arc steps, in ring order, one that each wrapping ring passes exactly
+/// once and each other ring (a hole) zero or two times, crossing **the fewest holes**, and of those
+/// **farthest from every sample** (the first of equal clearance). `turns` is every ring's
+/// [`unwrapped_thetas`]; `None` when no candidate passes.
+///
+/// A hole passed twice is severed into two runs the chart splices into the outer ring
+/// ([`joined_band`]); one passed four or more times would sever the face into more than one outer
+/// polygon. Fewest holes first, because a hole the cut avoids keeps its polylines and its ring as
+/// they are — and so a face with a hole-free generator is cut exactly where it always was.
 fn band_generator(turns: &[(Vec<f64>, f64)], wrapping: [usize; 2]) -> Option<f64> {
     use std::f64::consts::TAU;
-    let holes: Vec<usize> = (0..turns.len()).filter(|i| !wrapping.contains(i)).collect();
-    let covers = |hole: usize, c: f64| -> bool {
-        let th = &turns[hole].0;
-        let lo = th.iter().copied().fold(f64::INFINITY, f64::min);
-        let hi = th.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        ((hi - c) / TAU).floor() >= ((lo - c) / TAU).ceil()
-    };
     let clearance = |c: f64| -> f64 {
         turns
             .iter()
@@ -1023,29 +1052,58 @@ fn band_generator(turns: &[(Vec<f64>, f64)], wrapping: [usize; 2]) -> Option<f64
             })
             .fold(f64::INFINITY, f64::min)
     };
-    let [a, b] = wrapping;
-    let (steps_a, steps_b) = (ring_steps(&turns[a]), ring_steps(&turns[b]));
-    let mut best: Option<(f64, f64)> = None; // (clearance, c)
-    for &(p, q) in &steps_a {
+    let steps: Vec<Vec<(f64, f64)>> = turns.iter().map(ring_steps).collect();
+    let mut best: Option<(usize, f64, f64)> = None; // (holes crossed, clearance, c)
+    for &(p, q) in &steps[wrapping[0]] {
         if p == q {
             continue; // a ruling: it never crosses a generator
         }
         let c = (p + q) / 2.0;
-        let once = |s: &[(f64, f64)]| s.iter().map(|&st| passes(st, c)).sum::<i64>() == 1;
-        if !once(&steps_a) || !once(&steps_b) || holes.iter().any(|&h| covers(h, c)) {
+        let mut holes = 0usize;
+        let mut admissible = true;
+        for (i, s) in steps.iter().enumerate() {
+            let n: i64 = s.iter().map(|&st| passes(st, c)).sum();
+            match (wrapping.contains(&i), n) {
+                (true, 1) | (false, 0) => {}
+                (false, 2) => holes += 1,
+                _ => admissible = false,
+            }
+        }
+        if !admissible {
             continue;
         }
         let gap = clearance(c);
-        if best.is_none_or(|(g, _)| gap > g) {
-            best = Some((gap, c));
+        if best.is_none_or(|(h, g, _)| holes < h || (holes == h && gap > g)) {
+            best = Some((holes, gap, c));
         }
     }
-    best.map(|(_, c)| c)
+    best.map(|(_, _, c)| c)
 }
 
-/// The cut of one band ([`cut_seamless_bands`]): the generator ([`band_generator`]), then its point
-/// put into each wrapping ring's polyline. `None` when no generator passes, or the step a cut lands
-/// on is not an arc.
+/// What the band-cut pre-pass decided for a cylindrical face whose boundary wraps the axis, or
+/// `None` when no generator cuts it (the chart then refuses the face as
+/// [`TessError::DegenerateRing`]).
+type BandCut = Option<Cut>;
+
+/// Where the generator cuts a band: one point on each wrapping ring (loop order), and each hole it
+/// crosses as its two points, ordered along the generator **from the first rim toward the second**.
+#[derive(Clone, Debug)]
+struct Cut {
+    rims: [Handle<TessVertex>; 2],
+    holes: Vec<[Handle<TessVertex>; 2]>,
+}
+
+/// The cut of one band at the generator `c` ([`cut_seamless_bands`]'s second rule): a sample put
+/// into the polyline of every loop step that passes `c`. `None` when a ring passes `c` other than
+/// as [`band_generator`] admits, a crossed step is not an arc, or two points on the generator do
+/// not lie strictly in order along the axis.
+///
+/// ★ **Along the axis, by the circle's centre.** Every crossing lies on an arc (a ruling is
+/// parallel to the generator, and `c` lies off every sample), and an arc's axial place is its
+/// circle's — read from the curve, where every arc of one circle agrees bitwise, rather than from
+/// the computed point, which carries rounding. Two points at one place would be two loops touching
+/// on the cut.
+#[allow(clippy::too_many_arguments)]
 fn band_cut(
     t: &mut Tessellation,
     model: &Model,
@@ -1053,21 +1111,39 @@ fn band_cut(
     traced: &[(Vec<Traced>, Option<Traced>)],
     turns: &[(Vec<f64>, f64)],
     wrapping: [usize; 2],
+    c: f64,
 ) -> BandCut {
-    let c = band_generator(turns, wrapping)?;
-    let [a, b] = wrapping;
-    let (steps_a, steps_b) = (ring_steps(&turns[a]), ring_steps(&turns[b]));
     let axis = cyl.axis();
     let (x, y) = (cyl.ref_dir(), axis.direction().cross(cyl.ref_dir()));
-    let mut cut = [None, None];
-    for (slot, (ring, st)) in [(a, &steps_a), (b, &steps_b)].into_iter().enumerate() {
-        let k = st.iter().position(|&s| passes(s, c) == 1)?;
-        let (positions, closing) = &traced[ring];
-        let arriving = if k + 1 < positions.len() {
-            positions[k + 1]
+    // Every crossing is found before any insertion moves a polyline index (`Traced::at`).
+    let mut found: Vec<(usize, Traced, bool)> = Vec::new(); // (ring, arriving, through the closing wrap)
+    for (ring, (positions, closing)) in traced.iter().enumerate() {
+        let steps = ring_steps(&turns[ring]);
+        let n: i64 = steps.iter().map(|&s| passes(s, c)).sum();
+        let at: Vec<usize> = (0..steps.len())
+            .filter(|&k| passes(steps[k], c) == 1)
+            .collect();
+        let admitted = if wrapping.contains(&ring) {
+            n == 1
         } else {
-            (*closing)?
+            n == 0 || n == 2
         };
+        if !admitted || at.len() as i64 != n {
+            return None;
+        }
+        for k in at {
+            found.push(match (k + 1 < positions.len(), closing) {
+                (true, _) => (ring, positions[k + 1], false),
+                (false, Some(cl)) => (ring, *cl, false),
+                // ★ **The closing step of a ring with no closing position** — one closed edge,
+                // whose polyline does not repeat its first sample: the step from its last sample
+                // back to the first. A new sample there goes at the polyline's end.
+                (false, None) => (ring, positions[0], true),
+            });
+        }
+    }
+    let mut points: Vec<(usize, Handle<TessVertex>, f64)> = Vec::with_capacity(found.len());
+    for (ring, arriving, wraps) in found {
         let Curve::Circle(circle) = model.edge_curve(arriving.edge) else {
             return None;
         };
@@ -1079,31 +1155,80 @@ fn band_cut(
                 t: circle.angle_of(pos),
             },
         });
+        let poly = t.by_edge.get_mut(&arriving.edge)?;
         // The step runs `poly[at − 1] → poly[at]` walked forward, `poly[at + 1] → poly[at]`
         // walked backward; the new sample goes between the two.
-        let at = if arriving.forward {
+        let at = if wraps {
+            poly.len()
+        } else if arriving.forward {
             arriving.at
         } else {
             arriving.at + 1
         };
-        t.by_edge.get_mut(&arriving.edge)?.insert(at, h);
-        cut[slot] = Some(h);
+        poly.insert(at, h);
+        let place = (circle.center() - axis.origin()).dot(axis.direction());
+        points.push((ring, h, place));
     }
-    Some([cut[0]?, cut[1]?])
+    let place_of = |ring: usize| points.iter().find(|p| p.0 == ring).map(|p| p.2);
+    let (pa, pb) = (place_of(wrapping[0])?, place_of(wrapping[1])?);
+    let up = pa < pb;
+    let mut holes: Vec<([Handle<TessVertex>; 2], [f64; 2])> = Vec::new();
+    for ring in (0..traced.len()).filter(|r| !wrapping.contains(r)) {
+        let mut on: Vec<(Handle<TessVertex>, f64)> = points
+            .iter()
+            .filter(|p| p.0 == ring)
+            .map(|p| (p.1, p.2))
+            .collect();
+        if on.is_empty() {
+            continue;
+        }
+        on.sort_by(|p, q| p.1.total_cmp(&q.1));
+        if !up {
+            on.reverse();
+        }
+        holes.push(([on[0].0, on[1].0], [on[0].1, on[1].1]));
+    }
+    holes.sort_by(|p, q| p.1[0].total_cmp(&q.1[0]));
+    if !up {
+        holes.reverse();
+    }
+    let along: Vec<f64> = std::iter::once(pa)
+        .chain(holes.iter().flat_map(|(_, k)| *k))
+        .chain(std::iter::once(pb))
+        .collect();
+    let ordered = along
+        .windows(2)
+        .all(|w| if up { w[0] < w[1] } else { w[0] > w[1] });
+    if !ordered {
+        return None;
+    }
+    let a = points.iter().find(|p| p.0 == wrapping[0])?.1;
+    let b = points.iter().find(|p| p.0 == wrapping[1])?.1;
+    Some(Cut {
+        rims: [a, b],
+        holes: holes.into_iter().map(|(h, _)| h).collect(),
+    })
 }
 
 /// A chart's boundary positions and its rings over them — [`face_rings`]'s shape.
 type ChartRings = (Vec<Handle<TessVertex>>, Vec<Vec<usize>>);
 
 /// A cut band's boundary as one ring: the first wrapping ring from its cut point round to that
-/// point again, across to the second ring's cut point, round it, and back — the same positions a
-/// seam edge walked twice gives ([`cylinder_chart`]), each cut point at both of its `θ`s. The
-/// other rings (holes) follow unchanged.
+/// point again; then up the generator through each crossed hole — from the hole's point nearer the
+/// first ring, along the hole **in its own direction**, to its other point; the second ring from
+/// its cut point round to that point again; then back down the generator through the holes in
+/// reverse, each from its farther point along its own direction to the nearer. Each cut point thus
+/// appears at both of its `θ`s, as a seam edge walked twice would put it ([`cylinder_chart`]).
+/// Uncrossed rings (holes) follow unchanged.
+///
+/// ★ **Which run of a hole the climb takes is forced, not chosen.** The material lies on the left
+/// of every loop, the hole's included, so leaving the generator at the hole's nearer point the walk
+/// must follow the hole's own direction; the descent takes the other run the same way. A hole wound
+/// against that would make the ring cross itself, which the sweep refuses.
 fn joined_band(
     handles: &[Handle<TessVertex>],
     rings: &[Vec<usize>],
-    a: Handle<TessVertex>,
-    b: Handle<TessVertex>,
+    cut: &Cut,
 ) -> Option<ChartRings> {
     let find = |c: Handle<TessVertex>| {
         rings
@@ -1111,6 +1236,7 @@ fn joined_band(
             .enumerate()
             .find_map(|(ri, r)| r.iter().position(|&i| handles[i] == c).map(|k| (ri, k)))
     };
+    let [a, b] = cut.rims;
     let ((ra, ka), (rb, kb)) = (find(a)?, find(b)?);
     if ra == rb {
         return None;
@@ -1122,13 +1248,35 @@ fn joined_band(
             .map(|&i| handles[i])
             .collect()
     };
+    // The run of ring `ri` from position `from` to `to`, both included, in the ring's direction.
+    let run = |ri: usize, from: usize, to: usize| -> Vec<Handle<TessVertex>> {
+        let n = rings[ri].len();
+        let len = (to + n - from) % n + 1;
+        (0..len)
+            .map(|s| handles[rings[ri][(from + s) % n]])
+            .collect()
+    };
+    let mut crossed: Vec<(usize, usize, usize)> = Vec::with_capacity(cut.holes.len());
+    for &[p, q] in &cut.holes {
+        let ((rp, kp), (rq, kq)) = (find(p)?, find(q)?);
+        if rp != rq || rp == ra || rp == rb {
+            return None;
+        }
+        crossed.push((rp, kp, kq));
+    }
     let mut out = rotated(ra, ka);
     out.push(a);
+    for &(r, kp, kq) in &crossed {
+        out.extend(run(r, kp, kq));
+    }
     out.extend(rotated(rb, kb));
     out.push(b);
+    for &(r, kp, kq) in crossed.iter().rev() {
+        out.extend(run(r, kq, kp));
+    }
     let mut joined = vec![(0..out.len()).collect::<Vec<usize>>()];
     for (ri, r) in rings.iter().enumerate() {
-        if ri == ra || ri == rb {
+        if ri == ra || ri == rb || crossed.iter().any(|&(c, _, _)| c == ri) {
             continue;
         }
         let start = out.len();
