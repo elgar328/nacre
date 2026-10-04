@@ -281,10 +281,11 @@ pub(crate) enum Carrier {
 ///
 /// A plane-carried edge rides one wall class, as `Ring.walls` always said. An arc rides a
 /// cylinder **and** the plane of the rim it lies on, and it carries both, whichever face states
-/// it: `plane` is that rim's plane class — on a cap the cap's own, on a lateral the class its chart
-/// read the rim from — so the assembly states an arc's carriers off the wall alone, and the second
-/// face that states one is checked against the first. For it the ring additionally remembers
-/// **which way around the axis this edge runs**: `ccw` restates `ClassEdges::edge_at`'s own
+/// it: `plane` is that rim's plane class — on a cap the cap's own, on a result's lateral the class
+/// its chart read the rim from, on an operand's lateral the cap across the edge — so the assembly
+/// states an arc's carriers off the wall alone, and the second face that states one is checked
+/// against the first. For it the ring additionally remembers **which way around the axis this
+/// edge runs**: `ccw` restates `ClassEdges::edge_at`'s own
 /// convention (*"`MergedArc::end` runs counter-clockwise about the axis"* — the even half-edge
 /// travels that way, its twin the other), carried rather than re-derived. That bit is what lets
 /// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.

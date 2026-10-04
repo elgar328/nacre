@@ -25,7 +25,6 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let curved_carrier = combinatorics::NamedRing {
         triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
         walls: vec![plane(1), ruling, plane(3)],
-        arc_ccw: vec![None; 3],
         concurrencies: vec![],
     };
     let (_, walls) = plane_ring(&curved_carrier).expect("a curved carrier is describable");
@@ -37,7 +36,6 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let curved_corner = combinatorics::NamedRing {
         triples: vec![three(0, 1, 2), pierce, three(0, 1, 3)],
         walls: vec![plane(1), ruling, plane(3)],
-        arc_ccw: vec![None; 3],
         concurrencies: vec![],
     };
     let (ts, _) = plane_ring(&curved_corner).expect("a pierce corner is describable");
@@ -46,7 +44,6 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let collapsed = combinatorics::NamedRing {
         triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
         walls: vec![plane(1), plane(2), plane(3)],
-        arc_ccw: vec![None; 3],
         concurrencies: vec![],
     };
     assert!(matches!(plane_ring(&collapsed), Err(RingFail::Collapsed)));
@@ -54,7 +51,6 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let plain = combinatorics::NamedRing {
         triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
         walls: vec![plane(1), plane(2), plane(3)],
-        arc_ccw: vec![None; 3],
         concurrencies: vec![],
     };
     let (ts, walls) = plane_ring(&plain).expect("a plane ring");

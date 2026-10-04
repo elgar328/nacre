@@ -163,17 +163,13 @@ pub(super) fn lateral_shape(
                 rims.push((t, *plane));
             }
             ring => {
-                // The cycle's arcs (an edge with a stated sense) each lie on a ⊥ class; its
-                // rulings have no station of their own.
+                // The cycle's arcs each lie on their rim's ⊥ class; its rulings have no station of
+                // their own.
                 if let Some(nr) = ring.poly() {
-                    for (i, w) in nr.walls.iter().enumerate() {
-                        if nr.arc_ccw[i].is_none() {
-                            continue;
+                    for w in &nr.walls {
+                        if let crate::combinatorics::Wall::Arc { plane, .. } = *w {
+                            widen(station(plane)?);
                         }
-                        let crate::combinatorics::Wall::Plane(c) = *w else {
-                            return Err(DeclineKind::CylSpan);
-                        };
-                        widen(station(c)?);
                     }
                 }
                 rest.push((i > 0, ring.clone()));
@@ -384,8 +380,8 @@ fn cycle_on_class(
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
     // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
     // No edge of a lateral's ring crosses a ⊥ class strictly inside: its arcs lie in ⊥ planes
-    // parallel to `wc` and its rulings are straight — so every edge answers `0` (the ring's arcs
-    // carry `Wall::Plane`, so the wall could not tell them apart anyway).
+    // parallel to `wc` and its rulings are straight — so every edge answers `0`, whichever the
+    // wall says it is.
     let features = match combinatorics::ring_against_plane(
         jd,
         cyls,
@@ -432,7 +428,7 @@ fn cycle_on_class(
                 // off-class neighbours sit on) gives the ring's *interior* side — right for a
                 // convex hole and wrong for a wrapping rim, whose highest arc has both
                 // neighbours below it and the face below too. The arc's own direction about the
-                // axis (`NamedRing::arc_ccw`, the
+                // axis (`Wall::Arc`'s `ccw`, the
                 // producer's convention) settles both: walked with sense `ν`, material lies
                 // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
                 // the class's stored normal (`up`), and the carved extent is the arc as walked.
@@ -446,17 +442,17 @@ fn cycle_on_class(
                     // lateral in an ellipse, which can cross this class at both ends without
                     // lying on it. Taking that for a rim arc would state an extent along a curve
                     // that is not there. The carrier says it directly: an edge on the circle
-                    // `wc ∩ cylinder` lies in `wc`, so its far face is of that class.
+                    // `wc ∩ cylinder` is an arc whose rim's plane is that class.
                     // ★ The check belongs here, per edge, where the answer is used — not on the
                     // row ("neither ⊥ nor ∥: an ellipse, outside this vocabulary").
                     let edge = (first + k) % n;
-                    if nr.walls[edge] != crate::combinatorics::Wall::Plane(wc) {
-                        return Err(DeclineKind::CylHoleFeature);
-                    }
-                    // An arc on the class with no stated sense is not a lateral's arc at all.
-                    let Some(nu) = nr.arc_ccw[edge] else {
+                    let crate::combinatorics::Wall::Arc { ccw: nu, plane, .. } = nr.walls[edge]
+                    else {
                         return Err(DeclineKind::CylHoleFeature);
                     };
+                    if plane != wc {
+                        return Err(DeclineKind::CylHoleFeature);
+                    }
                     let body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
                     let a = ring[edge];
                     let b = ring[(edge + 1) % n];

@@ -92,8 +92,8 @@ pub(super) fn rulings_on_class(
 
 /// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
 /// counter-clockwise came from smaller θ (`−1`), one departing counter-clockwise goes to larger θ
-/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`arc_ccw`) rather than
-/// from a coordinate, because a global "side" does not exist on a cylinder.
+/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`Wall::Arc`'s `ccw`)
+/// rather than from a coordinate, because a global "side" does not exist on a cylinder.
 fn arc_flank(ccw: bool, arriving: bool) -> i8 {
     if ccw == arriving { -1 } else { 1 }
 }
@@ -241,7 +241,7 @@ fn ruling_sweep(
         let mut on = vec![false; n];
         let mut quiet_nodes: Vec<NodeId> = Vec::new();
         for (i, slot) in on.iter_mut().enumerate() {
-            if nr.arc_ccw[i].is_some() {
+            if matches!(nr.walls[i], Wall::Arc { .. }) {
                 continue;
             }
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
@@ -306,7 +306,9 @@ fn ruling_sweep(
             }
             let (start, end) = (nr.triples[i0], nr.triples[(i1 + 1) % n]);
             let (prev, next) = ((i0 + n - 1) % n, (i1 + 1) % n);
-            let (Some(nu_in), Some(nu_out)) = (nr.arc_ccw[prev], nr.arc_ccw[next]) else {
+            let (Wall::Arc { ccw: nu_in, .. }, Wall::Arc { ccw: nu_out, .. }) =
+                (nr.walls[prev], nr.walls[next])
+            else {
                 return Err(DeclineKind::Ruling); // a run's neighbours are arcs
             };
             let (ta, tb, tau, body_above) = body_side(start, end)?;
@@ -331,9 +333,11 @@ fn ruling_sweep(
         }
         // Arcs strictly containing the ruling's θ: crossings of the line.
         for i in 0..n {
-            let Some(nu) = nr.arc_ccw[i] else { continue };
-            let Wall::Plane(c) = nr.walls[i] else {
-                return Err(DeclineKind::Ruling);
+            let Wall::Arc {
+                ccw: nu, plane: c, ..
+            } = nr.walls[i]
+            else {
+                continue;
             };
             let node = on_ruling(c)?;
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);

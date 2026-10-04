@@ -48,9 +48,12 @@ pub(crate) fn lateral_cycles(
         .collect()
 }
 
-/// One loop in class form with each edge's **carried wall** beside it: `walls[i]` is the plane
-/// class the edge `triples[i] → triples[i+1]` rides — the far face's class, read off `inc` where
-/// the triples are produced ([`loop_triples`]), never re-derived from the endpoint names. The
+/// One loop in class form with each edge's **carried wall** beside it: `walls[i]` is the carrier
+/// of the edge `triples[i] → triples[i+1]` — read off `inc` and the edge where the triples are
+/// produced ([`loop_triples`]), never re-derived from the endpoint names: the far face's plane
+/// class for a straight edge between two planes, and the curved wall [`curved_wall`] states for an
+/// edge on a cylinder — an arc as `Wall::Arc` on a plane face and a lateral alike, its direction
+/// and its rim's plane carried; a lateral's ruling as the plane class that holds it. The
 /// same trust model as the merge's `Ring { nodes, walls }`: deriving a wall from two names is
 /// sound only while every vertex lies on exactly three planes, and the carried value is total
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
@@ -64,15 +67,6 @@ pub(crate) fn lateral_cycles(
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
     pub walls: Vec<crate::combinatorics::Wall>,
-    /// For an arc edge of a **lateral** face's ring, which way it runs about the axis — the
-    /// producer's own convention (`derive_edge_curve`: a circle carrier's `[A, B]` is A to B
-    /// counter-clockwise, so walking the edge `forward` is walking it CCW), read off the
-    /// half-edge as `curved_wall` reads it for a plane face's arc. `None` on a plane face's ring
-    /// and on a ruling. ★ Carried because the flank of an on-class run says which side the ring's
-    /// *interior* is, which is the arc's direction only for a convex hole; a wrapping rim has no
-    /// interior side. `cycle_on_class`'s Run arm reads this (measured equal to the flank's
-    /// reading on every on-class arc of today's holes).
-    pub arc_ccw: Vec<Option<bool>>,
     /// ★ Every **concurrency** this loop's corners revealed — a corner with four or more
     /// plane classes incident, as the full sorted class set. Its name in `triples` is
     /// [`canonical_triple`] of that set; the set itself goes to the arrangement's alias table
@@ -283,7 +277,6 @@ fn loop_triples(
     }
     let mut out = Vec::with_capacity(n);
     let mut walls = Vec::with_capacity(n);
-    let mut arc_ccw = Vec::with_capacity(n);
     let mut concurrencies: Vec<Vec<usize>> = Vec::new();
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
@@ -352,6 +345,15 @@ fn loop_triples(
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
         walls.push(match (plane_ix[b], plane_ix[p]) {
+            // ★ A lateral's own arc: the curved wall a plane face's arc gets, with the far cap as
+            // `near` — its direction about the axis (`he.forward`, the producer's convention) and
+            // its rim's plane. Ahead of the plane arm, which would take it as a straight edge.
+            (ClassIx::Plane(far), ClassIx::Cyl(k))
+                if matches!(model.edge_curve(hes[i].edge), nacre_geom::Curve::Circle(_)) =>
+            {
+                let end = pierce.expect("a lateral's corner is a pierce point");
+                curved_wall(model, jd, cyls, &hes[i], k, far, end)?
+            }
             (ClassIx::Plane(w), _) => crate::combinatorics::Wall::Plane(w),
             (ClassIx::Cyl(k), ClassIx::Plane(near)) => {
                 let end = pierce.expect("a curved edge's corner is a pierce point");
@@ -360,16 +362,6 @@ fn loop_triples(
             (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
                 unreachable!("a lateral face beside a lateral neighbour was rejected above")
             }
-        });
-        // A lateral face's own arc: its direction about the axis is the producer's (see
-        // [`NamedRing::arc_ccw`]).
-        arc_ccw.push(match (plane_ix[p], plane_ix[b]) {
-            (ClassIx::Cyl(_), ClassIx::Plane(_))
-                if matches!(model.edge_curve(hes[i].edge), nacre_geom::Curve::Circle(_)) =>
-            {
-                Some(hes[i].forward)
-            }
-            _ => None,
         });
         if let Some(n) = pierce {
             out.push(n);
@@ -437,7 +429,6 @@ fn loop_triples(
     Ok(LoopRing::Poly(NamedRing {
         triples: out,
         walls,
-        arc_ccw,
         concurrencies,
     }))
 }
@@ -507,9 +498,9 @@ pub(crate) fn arc_departure_side(
 ///
 /// * an **arc** has a stated convention — `derive_edge_curve`'s (Plane, Cylinder) arm: "on a circle
 ///   carrier the vertex *order* says which arc; `[A, B]` is A to B **counter-clockwise about the
-///   axis**". So walking the edge `forward` is walking it CCW. Its `plane` is the cap's own
-///   class (`near`) — what the assembly states an arc's carriers from; the tracer that reads
-///   operand rings reads only `cyl` and `ccw`.
+///   axis**". So walking the edge `forward` is walking it CCW. Its `plane` is `near`: on a cap
+///   the cap's own class, on a lateral the cap across the edge — the class the lateral roads
+///   read the arc's station from.
 /// * a **ruling** has none — the same arm says a plane parallel to the axis meets the lateral along
 ///   rulings and "the endpoints decide". `MergedRuling::end` ascending the axis is the
 ///   *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
