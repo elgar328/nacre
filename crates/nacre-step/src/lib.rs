@@ -7,8 +7,8 @@
 //! helper protocol.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
-//! `Curve::{Line, Circle}` (a cylinder is the seam model: two seam vertices, two full-circle
-//! rims, one seam line the lateral uses twice). The
+//! `Curve::{Line, Circle}` (a whole cylinder: two seam vertices, two full-circle rims, and a
+//! lateral bounded by those two rims — one its outer bound, the other an inner one). The
 //! surface/curve `match`es stay exhaustive, so future variants (sphere, NURBS)
 //! force a compile error here. AP242 Ed2 is stamped by the backend.
 
@@ -42,8 +42,8 @@ impl From<step_io::AuthorError> for StepError {
 /// Export every live solid in `model` to AP242 (Ed2) STEP text.
 ///
 /// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
-/// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a seam edge
-/// (`vertices: [v, v]`, start == end) that emits a closed STEP circle. A
+/// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a closed edge
+/// (`vertices: [v, v]`, start == end, `v` its seam vertex) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit).
 ///

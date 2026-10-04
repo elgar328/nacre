@@ -121,8 +121,15 @@ pub(crate) fn lateral_cycles(
         let joined: Vec<HalfEdge> = a.into_iter().chain(b).collect();
         out.push((CycleKind::Hole, name(&joined)?));
     }
+    // An inner loop that is one closed rim edge is a rim — the top of a band written with no seam
+    // edge — and any other is a hole.
     for l in &face.inner {
-        out.push((CycleKind::Hole, name(&l.half_edges)?));
+        let ring = name(&l.half_edges)?;
+        let kind = match ring {
+            LoopRing::Rim { .. } => CycleKind::Rim,
+            _ => CycleKind::Hole,
+        };
+        out.push((kind, ring));
     }
     Ok(out)
 }

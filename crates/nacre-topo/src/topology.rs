@@ -35,7 +35,7 @@ pub struct Edge {
     /// Endpoint vertices — the boundary (never optional).
     ///
     /// A closed **solid**'s circular rim carries a seam vertex and is `[v, v]` (start == end),
-    /// so the b-rep stays a valid CW-complex (the seam model). A standalone full circle
+    /// so the b-rep stays a valid CW-complex. A standalone full circle
     /// with no seam would be a wireframe/open-shell element, which is a v1 non-goal, so the
     /// type has no spelling for it: it says what the kernel requires.
     pub vertices: [Handle<Vertex>; 2],

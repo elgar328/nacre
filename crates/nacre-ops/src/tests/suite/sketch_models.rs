@@ -2,7 +2,7 @@
 
 use super::*;
 
-// ─── A whole circle extrudes into the seam model ─────────────────────────────────────────────
+// ─── A whole circle extrudes into a lateral bounded by two rims ─────────────────────────────
 
 /// **A solid's b-rep, position-canonically.** What two builders must agree on when they claim to
 /// state one solid, with handle numbering left out — the two push their arenas in different
@@ -114,14 +114,14 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     }
 }
 
-/// ★★★★★ **A whole circle extrudes into the seam model** — the one b-rep a closed cylinder has
-/// in this kernel: two seam vertices (`OnSeam`, each the `θ = 0` point of its rim), two
-/// full-circle rims each closing on its own seam vertex, one straight seam the lateral uses
-/// twice (`[rim, seam, rim⁻, seam⁻]`), and two caps of one rim each. Read position-canonically
-/// (the digest leaves handle numbering out) and on the seam's own coordinates: the circle's seam
-/// is `center + (r, 0)` on both rims.
+/// ★★★★★ **A whole circle extrudes into a lateral bounded by its two rims** — the one b-rep a
+/// closed cylinder has in this kernel: two seam vertices (`OnSeam`, each the `θ = 0` point of its
+/// rim), two full-circle rims each closing on its own seam vertex, a lateral whose outer loop is
+/// one rim and whose inner loop is the other — no seam edge — and two caps of one rim each. Read
+/// position-canonically (the digest leaves handle numbering out) and on the seam's own
+/// coordinates: the circle's seam is `center + (r, 0)` on both rims.
 #[test]
-fn a_circle_profile_extrudes_into_the_seam_model() {
+fn a_circle_profile_extrudes_into_two_rims() {
     let (center, radius, dist) = ([0.5, 0.25], 0.1, 2.0);
     let mut b = Model::new();
     let frame = SketchFrame::world(&b, Axis::Z);
@@ -154,19 +154,18 @@ fn a_circle_profile_extrudes_into_the_seam_model() {
     assert_eq!(
         d.edges,
         vec![
-            ("cylinder+cylinder".to_string(), "line", false),
             ("cylinder+plane".to_string(), "circle", true),
             ("cylinder+plane".to_string(), "circle", true),
         ],
-        "one seam line, two rims each closing on one vertex"
+        "two rims each closing on one vertex, and no seam line"
     );
     assert_eq!(
         d.faces
             .iter()
             .map(|&(k, _, outer, inner)| (k, outer, inner))
             .collect::<Vec<_>>(),
-        vec![("cylinder", 4, 0), ("plane", 1, 0), ("plane", 1, 0)],
-        "the lateral walks `[rim, seam, rim⁻, seam⁻]`; each cap is one rim"
+        vec![("cylinder", 1, 1), ("plane", 1, 0), ("plane", 1, 0)],
+        "the lateral is one rim outside and the other inside; each cap is one rim"
     );
 }
 
@@ -223,9 +222,16 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         Orientation::Forward.flipped(),
         "the material is outside the bore"
     );
+    // Planar faces only: the bore's own lateral has an inner loop too — its second rim.
     let caps_with_a_hole = faces
         .iter()
-        .filter(|&&f| m.face(f).inner.len() == 1)
+        .filter(|&&f| {
+            m.face(f).inner.len() == 1
+                && matches!(
+                    m.surface_cache(m.face(f).surface),
+                    nacre_geom::Surface::Plane(_)
+                )
+        })
         .count();
     assert_eq!(caps_with_a_hole, 2);
     mesh_covers_faces("a plate with a round hole", &m, &[solid]);

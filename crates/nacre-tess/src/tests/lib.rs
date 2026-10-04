@@ -278,7 +278,9 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     let face = m.face(fh);
     match m.surface_cache(face.surface) {
         Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
-        Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c, None).unwrap(),
+        Surface::Cylinder(c) => {
+            cylinder_chart(t, m, cfg, face, c, whole_rims_cut(t, m, face).map(Some)).unwrap()
+        }
     }
 }
 
@@ -608,7 +610,8 @@ fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
 /// the pieces that close on themselves read as its two rims (the first the outer loop, the second
 /// an inner one) and the open pieces joined end to start back into the holes they were. Pushed as
 /// new faces, shells and a solid that supersedes the old one, so [`tessellate`] meshes the seamless
-/// twin. Returns, per rewritten face, `(seamed, seamless)`.
+/// twin. Returns, per cylindrical face, `(as it was, seamless)` — a face that already has no seam
+/// edge (every lateral a prism builds) is kept and paired with itself.
 fn as_seamless(
     m: &mut Model,
     solid: Handle<nacre_topo::Solid>,
@@ -627,9 +630,12 @@ fn as_seamless(
                 let face = m.face(fh).clone();
                 let lat = face.surface;
                 let is_seam = |m: &Model, he: &HalfEdge| m.edge(he.edge).surfaces == [lat, lat];
-                if !matches!(m.surface(lat), nacre_topo::Surface::Cylinder { .. })
-                    || !face.outer.half_edges.iter().any(|he| is_seam(m, he))
-                {
+                if !matches!(m.surface(lat), nacre_topo::Surface::Cylinder { .. }) {
+                    out.push(fh);
+                    continue;
+                }
+                if !face.outer.half_edges.iter().any(|he| is_seam(m, he)) {
+                    pairs.push((fh, fh)); // already seamless
                     out.push(fh);
                     continue;
                 }
@@ -725,76 +731,53 @@ fn face_bits(t: &Tessellation, fh: Handle<Face>) -> Vec<[[u64; 3]; 3]> {
 
 /// ★★★★★ **A lateral bounded by two whole rims and nothing else meshes exactly as its seamed twin.**
 ///
-/// A plain cylinder and a bore through a plate, each rewritten with no seam edge ([`as_seamless`]):
-/// both rims are one closed edge, so the band is cut at their own vertices
-/// ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the joined ring is the seamed
-/// ring position for position, and the mesh is the same bit for bit. Before that rule a plain
-/// cylinder went to the generator, whose cut could land on a rim's closing step (a closed edge's
-/// polyline does not repeat its first sample) and fail the whole model's mesh.
+/// A bore through a plate — a boolean's result, which still writes its lateral with a seam edge —
+/// rewritten with no seam edge ([`as_seamless`]): both rims are one closed edge, so the band is cut
+/// at their own vertices ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the joined
+/// ring is the seamed ring position for position, and the mesh is the same bit for bit. (A plain
+/// cylinder is built with no seam edge; its mesh is `cylinder_tessellates_watertight`'s.) Before
+/// that rule such a band went to the generator, whose cut could land on a rim's closing step (a
+/// closed edge's polyline does not repeat its first sample) and fail the whole model's mesh.
 #[test]
-fn a_seamless_lateral_with_two_whole_rims_meshes_as_its_seamed_twin() {
+fn a_seamless_bore_meshes_as_its_seamed_twin() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let pi = std::f64::consts::PI;
-    for bore in [false, true] {
-        let mut m = Model::new();
-        let solid = if bore {
-            let plate = fixtures::cuboid(
-                &mut m,
-                Point3::from_array([-2.0, -2.0, 0.0]),
-                Point3::from_array([2.0, 2.0, 1.0]),
-            );
-            let pin = fixtures::cylinder(
-                &mut m,
-                Point3::from_array([0.0, 0.0, -1.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
-                1.0,
-                3.0,
-            )
-            .solid;
-            m.rebuild_adjacency();
-            boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0]
-        } else {
-            fixtures::cylinder(
-                &mut m,
-                Point3::from_array([0.0, 0.0, 0.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
-                1.0,
-                4.0,
-            )
-            .solid
-        };
-        m.rebuild_adjacency();
-        let cfg = TessConfig::default();
-        let seamed = tessellate(&m, &cfg).unwrap();
-        let pairs = as_seamless(&mut m, solid);
-        let [(old, new)] = pairs[..] else {
-            panic!("one lateral, got {}", pairs.len());
-        };
-        assert_eq!(m.face(new).inner.len(), 1, "bore {bore}: two loops");
-        let seamless = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("bore {bore}: {e:?}"));
-        assert_eq!(non_watertight_edges(&seamless), 0, "bore {bore}");
-        assert_eq!(
-            seamless.vertices.len(),
-            seamed.vertices.len(),
-            "bore {bore}"
-        );
-        assert_eq!(
-            seamless.triangles.len(),
-            seamed.triangles.len(),
-            "bore {bore}"
-        );
-        assert_eq!(
-            face_bits(&seamless, new),
-            face_bits(&seamed, old),
-            "bore {bore}"
-        );
-        let want = 2.0 * pi * if bore { 1.0 } else { 4.0 };
-        let area = face_area(&seamless, new);
-        assert!(
-            (area - want).abs() < 1e-3 * want,
-            "bore {bore}: {area} vs {want}"
-        );
-    }
+    let mut m = Model::new();
+    let plate = fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-2.0, -2.0, 0.0]),
+        Point3::from_array([2.0, 2.0, 1.0]),
+    );
+    let pin = fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        3.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let solid = boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0];
+    m.rebuild_adjacency();
+    let cfg = TessConfig::default();
+    let seamed = tessellate(&m, &cfg).unwrap();
+    let pairs = as_seamless(&mut m, solid);
+    let [(old, new)] = pairs[..] else {
+        panic!("one lateral, got {}", pairs.len());
+    };
+    assert_ne!(
+        old, new,
+        "the premise: the bore was written with a seam edge"
+    );
+    assert_eq!(m.face(new).inner.len(), 1, "two loops");
+    let seamless = tessellate(&m, &cfg).unwrap();
+    assert_eq!(non_watertight_edges(&seamless), 0);
+    assert_eq!(seamless.vertices.len(), seamed.vertices.len());
+    assert_eq!(seamless.triangles.len(), seamed.triangles.len());
+    assert_eq!(face_bits(&seamless, new), face_bits(&seamed, old));
+    let want = 2.0 * pi;
+    let area = face_area(&seamless, new);
+    assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
 /// ★★★★ **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**

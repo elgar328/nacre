@@ -8,26 +8,23 @@
 ### seam 모서리 없는 원통으로 옮기기
 
 원통 옆면을 seam 엣지 방식(design 「seam 엣지 방식」 A — 띠가 세로 seam 모서리 `[c, c]` 를 두 번 쓴다)에서 위·아래
-림 두 루프로 닫는 표현(B)으로 옮긴다. 쟀다:
-- B 는 이미 한 모양에서 나온다 — 양 끝 림이 둘 다 잘린 띠(`nacre_ops::fixtures::cut_at_both_rims`). 그 모양의 B-rep 은
-  옳고(부피 해석값, `validate` 0), 재료로 다시 넣은 불리언 18/18 이 해석값으로 빌드되며, tess 는 띠를 한 생성선에서
-  잘라 펼친다(`cut_seamless_bands`), 옆면의 축 범위는 모든 루프에서 읽는다(`lateral_t_range`).
-- OCCT 는 seam 없는 옆면의 STEP 을 읽는다 — 위·아래 림 정점을 어긋나게 둔 것까지 checkshape 유효, 부피·불리언 결과가
-  seam 있는 파일과 같다. 내보내기 어댑터에 seam 을 다시 넣을 일은 없다.
-- 크기(조사): 지울 줄 ~700(조립의 slit·seam 이음 장치 — `reconstruct.rs` 의 `band_loop`·`contacts_of`·`walk_of`·
-  감는 호를 seam 에서 쪼개기 · `draft.rs` 의 `wrapping_rim`·`CutRim::seam_is_node` · `assembly/cycles.rs` 의
-  접촉 셈 · `loops.rs`·`cyl_geom.rs` 의 slit 건너뛰기), 고치거나 새로 쓸 줄 ~250–300. 캡의 호를 seam 에서 쪼개는 이음은
-  census 154 · 스위트 1,980 번이다.
+림 두 루프로 닫는 표현(B)으로 옮긴다. 프리즘(원 프로파일의 돌출)과 양 끝 림이 다 잘린 띠는 B 로 나오고, tess 는 B 옆면을
+절단선이 가능한 한 적은 루프를 지나게 잘라 펼친다(`cut_seamless_bands`). OCCT 는 seam 없는 옆면의 STEP 을 읽는다 — 위·아래
+림 정점을 어긋나게 둔 것까지 checkshape 유효, 부피·불리언 결과가 seam 있는 파일과 같다.
+
+쟀다: 오늘의 집힘 그물(`pinched` → `ArcBoundNotYet`)은 θ = 0 의 집힘만 보고, 차트 걸음에 위치와 무관한 탐침을 넣어 센 집힌
+고리는 스위트 16(전부 쐐기 점수판 칸, 전부 껍질 가드의 `NonManifoldResultEdge`)·census 0·무시된 스윕 0 이다 — B 에서 새 검사를
+세우지 않는다. census Ok 386 가운데 123 결과가 잘린 림 위의 θ = 0 정점을 든다.
 
 남은 단계:
-1. **생산자가 모든 띠를 B 로 짓는다** — 프리즘의 온전한 원(`prism.rs` 의 `n == 1` 세로 간선), 조립의 띠
-   (`classify_cycles` 를 지나는 띠도 slit 없이 `outer = lo`, `inner = [hi] + 구멍`). 그러면 위 장치가 지워진다. tess 는
-   이미 받는다(이음이 남긴 θ = 0 정점에 기대지 않는다).
-2. **집힘 검사를 새로 세운다** — 오늘은 slit 이 «구멍이나 다른 림이 림에 한 점으로 닿는» 모양을 잡는다(`pinched` →
-   `ArcBoundNotYet`). slit 이 없어지면 그 모양을 볼 눈이 없다(`nonmanifold_vertices` 는 곡면 코너를 건너뛴다).
-3. `lateral_cycles` 가 고리의 종류(사슬·패널·구멍)를 slit 이 아니라 감김으로 가른다; `[c, c]` 는 원통 seam 의 철자가
-   아니게 된다(validate·조립의 자기-인접 규칙).
-4. design 「seam 엣지 방식」을 B 로 고쳐 쓴다.
+1. **호 간선의 담체를 표에서** — 조립의 호 간선은 어느 면이 먼저 짓든 `[원통, 그 림의 평면]`(HeldRims 에서 끝점으로 찾는다);
+   오늘은 옆면 면이 먼저 지으면 `[원통, 원통]` 이 된다(면 순서가 가린다).
+2. **조립의 띠를 B 로** — `Bound::Band`·`Rim` 을 `Bound::Rim` 으로, 바깥 루프는 차트 고리의 감김(ccw − cw 호 단위 / units)이
+   고르고, slit·seam 이음·잘린 림의 seam 정점·`pinched`·`classify_cycles`·`seam_step`·`wrapping_rim` 을 지운다.
+3. **피연산자 읽기의 slit 은퇴** — `lateral_cycles` 는 루프마다 한 고리, `CycleKind` 은퇴.
+4. **자기-인접 철자 은퇴** — validate·조립 결과 검사가 진술된 self-pair 를 무엇이든 거절, topo 의 `[cyl, cyl]` 유도 팔·
+   `cyl_geom` 의 seam 건너뛰기 삭제.
+5. design 「seam 엣지 방식」을 B 로 고쳐 쓴다.
 
 원통의 정체에서 seam 을 빼는 일(「곡면 둘 이상이 만나는 점과 seam 담체」)과는 다른 물음이다 — 그쪽은 seam 의 «자리»,
 이쪽은 seam 모서리의 «존재».

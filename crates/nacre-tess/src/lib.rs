@@ -984,18 +984,10 @@ fn cut_seamless_bands(
             continue;
         }
         let cut = match wrapping[..] {
-            [a, b] => match (
-                loops.len(),
-                closed_rim(t, model, loops[a]),
-                closed_rim(t, model, loops[b]),
-            ) {
-                (2, Some(va), Some(vb)) => Some(Cut {
-                    rims: [va, vb],
-                    holes: Vec::new(),
-                }),
-                _ => band_generator(&turns, [a, b])
-                    .and_then(|c| band_cut(t, model, cyl, &traced, &turns, [a, b], c)),
-            },
+            [a, b] => whole_rims_cut(t, model, face).or_else(|| {
+                band_generator(&turns, [a, b])
+                    .and_then(|c| band_cut(t, model, cyl, &traced, &turns, [a, b], c))
+            }),
             _ => None,
         };
         cuts.insert(fh, cut);
@@ -1003,14 +995,24 @@ fn cut_seamless_bands(
     cuts
 }
 
-/// The vertex sample of a loop that is **one closed rim edge** — the first sample of its polyline
-/// ([`sample_edge`] starts a closed circle there) — and `None` for any other loop.
-fn closed_rim(t: &Tessellation, model: &Model, lp: &Loop) -> Option<Handle<TessVertex>> {
-    let [he] = lp.half_edges[..] else {
+/// [`cut_seamless_bands`]'s first rule: a face whose two loops are each **one closed rim edge** is
+/// cut at their vertices — the first sample of each polyline ([`sample_edge`] starts a closed
+/// circle there). `None` for any other face.
+fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face) -> Option<Cut> {
+    let [ref inner] = face.inner[..] else {
         return None;
     };
-    let [v0, v1] = model.edge(he.edge).vertices;
-    (v0 == v1).then(|| t.by_edge[&he.edge][0])
+    let vertex = |lp: &Loop| {
+        let [he] = lp.half_edges[..] else {
+            return None;
+        };
+        let [v0, v1] = model.edge(he.edge).vertices;
+        (v0 == v1).then(|| t.by_edge[&he.edge][0])
+    };
+    Some(Cut {
+        rims: [vertex(&face.outer)?, vertex(inner)?],
+        holes: Vec::new(),
+    })
 }
 
 /// A ring's steps as `(from, to)` in its unwrapped angle, the closing step last.

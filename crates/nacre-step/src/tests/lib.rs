@@ -277,99 +277,6 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
     );
 }
 
-/// ★★ **A seam's direction reaches the file as its cylinder's axis.** The edge cache holds it
-/// (nacre-ops' `a_seam_runs_along_its_cylinders_axis`); this asks the written `LINE`, read back:
-/// its `DIRECTION` is the cached direction bit for bit and its `VECTOR` magnitude is 1. On a 3-4-0
-/// axis, a (1,1,1) frame node and a `+z` cylinder turned 37° about `y`, requiring one seam whose
-/// endpoint-derived direction differs — the road this replaced.
-#[test]
-fn a_seams_direction_reaches_the_file_as_its_cylinders_axis() {
-    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
-    use step_io::generated::model::{DirectionRef, VectorRef};
-    let turn = Isometry::rotation(Rotation {
-        axis: Axis::Y,
-        pivot: [Rat::from_int(0); 3],
-        angle: Angle::from_deg(Rat::from_int(37)).expect("a whole-degree angle"),
-    });
-    let bits = |v: [f64; 3]| v.map(f64::to_bits);
-    let mut endpoints_differ = 0;
-    for (name, axis, turned) in [
-        ("3-4-0 axis", [3.0, 4.0, 0.0], false),
-        ("frame node (1,1,1)", [1.0, 1.0, 1.0], false),
-        ("turned 37 about y", [0.0, 0.0, 1.0], true),
-    ] {
-        let mut m = Model::new();
-        let mut s = nacre_ops::fixtures::cylinder(
-            &mut m,
-            Point3::from_array([0.1, 0.7, 0.3]),
-            Vector3::from_array(axis),
-            0.3,
-            1.1,
-        )
-        .solid;
-        if turned {
-            let Ok(nacre_ops::OpOutput::Transform { solid }) = nacre_ops::apply(
-                &mut m,
-                &nacre_ops::Operation::Transform {
-                    solid: s,
-                    isometry: turn,
-                },
-            ) else {
-                panic!("{name}: the turn applies")
-            };
-            s = solid;
-        }
-        m.rebuild_adjacency();
-        let seam = (0..m.edge_count() as u32)
-            .filter_map(|i| m.edge_handle_at(i))
-            .find(|&e| {
-                let [a, b] = m.edge(e).surfaces;
-                a == b && m.reachable().edges.contains(&e)
-            })
-            .expect("a cylinder has a seam");
-        let nacre_geom::Curve::Line(l) = m.edge_curve(seam) else {
-            panic!("{name}: a seam is a line")
-        };
-        let cached = l.direction().as_array();
-        let [v0, v1] = m.edge(seam).vertices;
-        let d = m.vertex_point(v1) - m.vertex_point(v0);
-        if bits(d.normalize().expect("a seam has length").as_array()) != bits(cached) {
-            endpoints_differ += 1;
-        }
-
-        let text = to_step_solid(&m, s).expect("export");
-        let (model, report) = read(text.as_bytes()).expect("re-read");
-        assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
-        assert_eq!(
-            model.line_arena.items.len(),
-            1,
-            "{name}: the seam is the one LINE"
-        );
-        let VectorRef::Vector(v) = &model.line_arena.items[0].dir else {
-            panic!("a plain VECTOR")
-        };
-        let vector = model.vector_arena.get(v.0);
-        let DirectionRef::Direction(dr) = &vector.orientation else {
-            panic!("a plain DIRECTION")
-        };
-        let r = &model.direction_arena.get(dr.0).direction_ratios;
-        assert_eq!(
-            bits([r[0], r[1], r[2]]),
-            bits(cached),
-            "{name}: the file's direction"
-        );
-        assert_eq!(
-            vector.magnitude.to_bits(),
-            1.0_f64.to_bits(),
-            "{name}: magnitude"
-        );
-    }
-    assert!(
-        endpoints_differ > 0,
-        "every seam here has endpoints that already give its axis — the lock cannot tell the roads apart"
-    );
-}
-
 #[test]
 fn cylinder_round_trips_through_step_io_reader() {
     let mut m = Model::new();
@@ -414,11 +321,15 @@ fn cylinder_round_trips_through_step_io_reader() {
     }
     assert_eq!((cylindrical, planes), (1, 2));
 
-    // The lateral (cylindrical) face's loop reuses the seam edge → 4 oriented edges.
+    // The lateral (cylindrical) face is bounded by its two rims and no seam: two bounds of one
+    // circle each.
     let lateral = faces
         .iter()
         .find(|f| matches!(f.surface().kind(), SurfaceKind::Cylindrical(_)))
         .unwrap();
-    let edges: Vec<_> = lateral.bounds().next().unwrap().oriented_edges().collect();
-    assert_eq!(edges.len(), 4);
+    let bounds: Vec<usize> = lateral
+        .bounds()
+        .map(|b| b.oriented_edges().count())
+        .collect();
+    assert_eq!(bounds, vec![1, 1]);
 }

@@ -53,9 +53,8 @@ pub enum PropsError {
     /// A planar face bounded by something other than a straight polygon or a
     /// single full circle (e.g. a future line+arc mix). None occur today.
     UnsupportedBoundary,
-    /// A **curved** face carries an inner loop (a hole). Planar holes are
-    /// supported; a hole in a cylindrical face has no producer yet, so it is
-    /// rejected rather than mis-integrated.
+    /// Not returned: a curved face's inner loops — holes, and a lateral's second rim — are
+    /// integrated like every other boundary (`lateral_moments`).
     UnsupportedInnerLoop,
     /// [`centroid`] met a **curved** face. Volume and area handle those
     /// analytically, but the cone argument the centroid rests on needs a planar

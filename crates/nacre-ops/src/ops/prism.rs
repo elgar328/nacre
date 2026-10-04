@@ -420,7 +420,9 @@ struct RingCells {
     base_pts: Vec<Point3>,
     be: Vec<Handle<Edge>>, // base  B_i -> B_{i+1}
     te: Vec<Handle<Edge>>, // top   T_i -> T_{i+1}
-    ve: Vec<Handle<Edge>>, // riser B_i -> T_i
+    /// Riser `B_i → T_i`; none for a whole circle, whose lateral is bounded by its two rims
+    /// alone (`push_walls`).
+    ve: Vec<Handle<Edge>>,
     /// Whether step `i`'s edge, walked in its own direction, follows the ring. A straight edge is
     /// pushed in ring order; a circle edge's own direction is fixed by the kernel's convention
     /// (`[A, B]` counter-clockwise about the axis — for a whole circle `A == B`, so the vertex
@@ -482,6 +484,34 @@ impl RingCells {
                 Seg3::Arc { ccw, .. } => *ccw != sweep_up,
             };
             let j = (i + 1) % n;
+            // ★ **A whole circle's lateral is bounded by its two rims and nothing else** — the
+            // base rim the outer loop, the top rim an inner one, each walked the way the quad
+            // below walks it. A riser here would join a vertex to its own twin across the face,
+            // an edge whose two sides are the one lateral: a seam is where the surface's
+            // parametrization closes, not where the face has a boundary.
+            if n == 1 {
+                faces.push(model.push_face(Face {
+                    surface,
+                    outer: Loop {
+                        half_edges: vec![HalfEdge {
+                            edge: self.be[0],
+                            forward: self.along[0],
+                        }],
+                    },
+                    inner: vec![Loop {
+                        half_edges: vec![HalfEdge {
+                            edge: self.te[0],
+                            forward: !self.along[0],
+                        }],
+                    }],
+                    orientation: if flipped {
+                        Orientation::Forward.flipped()
+                    } else {
+                        Orientation::Forward
+                    },
+                }));
+                continue;
+            }
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {
@@ -726,13 +756,16 @@ fn sweep_ring(
             [walls[i].0, caps.1],
             &mut memo,
         )?);
-        ve.push(push_line_edge(
-            model,
-            bv[i],
-            tv[i],
-            [walls[(i + n - 1) % n].0, walls[i].0],
-            &mut memo,
-        )?);
+        // A whole circle has no riser: corner `0` is between its one wall and itself.
+        if n > 1 {
+            ve.push(push_line_edge(
+                model,
+                bv[i],
+                tv[i],
+                [walls[(i + n - 1) % n].0, walls[i].0],
+                &mut memo,
+            )?);
+        }
     }
     Ok(RingCells {
         base_pts,

@@ -1,8 +1,8 @@
-//! The closed cylinder's b-rep — the seam model — as the product builds it: a whole circle
-//! sketched and extruded (`nacre_ops::fixtures`). Two seam vertices, two full-circle rims, one
-//! straight seam the lateral uses twice, two caps; and what the kernel keeps true of it (the
-//! adjacency, the caps' names, the edge cache's regeneration). Validate-clean lives in
-//! `nacre-validate`.
+//! The closed cylinder's b-rep as the product builds it: a whole circle sketched and extruded
+//! (`nacre_ops::fixtures`). Two seam vertices, two full-circle rims, a lateral bounded by those two
+//! rims alone (one its outer loop, the other an inner one — no seam edge), two caps; and what the
+//! kernel keeps true of it (the adjacency, the caps' names, the edge cache's regeneration).
+//! Validate-clean lives in `nacre-validate`.
 
 use nacre_geom::Curve;
 use nacre_math::{Point3, Vector3};
@@ -24,7 +24,7 @@ fn z_cylinder(r: f64, h: f64) -> (Model, CylinderSolid) {
     (m, c)
 }
 
-/// Every edge used exactly twice, in opposite senses — the seam included, by one face.
+/// Every edge used exactly twice, in opposite senses.
 fn every_edge_used_twice_opposite(m: &Model) -> Result<(), String> {
     let adj = Adjacency::rebuild(m);
     for (e, uses) in &adj.edge_uses {
@@ -37,15 +37,21 @@ fn every_edge_used_twice_opposite(m: &Model) -> Result<(), String> {
 
 #[test]
 fn cylinder_counts_and_euler() {
-    let (m, _) = z_cylinder(2.0, 5.0);
+    let (m, c) = z_cylinder(2.0, 5.0);
     assert_eq!(m.vertex_count(), 2);
-    assert_eq!(m.edge_count(), 3);
+    assert_eq!(m.edge_count(), 2);
     assert_eq!(m.face_count(), 3);
     assert_eq!(m.shell_count(), 1);
     assert_eq!(m.solid_count(), 1);
-    // Euler χ = V − E + F = 2 (one shell, genus 0, no inner loops).
+    // Euler–Poincaré V − E + F − L_i = 2 (one shell, genus 0): the lateral's second rim is its one
+    // inner loop.
+    let inner: i64 = [c.base, c.top, c.lateral]
+        .iter()
+        .map(|&f| m.face(f).inner.len() as i64)
+        .sum();
+    assert_eq!(inner, 1);
     assert_eq!(
-        m.vertex_count() as i64 - m.edge_count() as i64 + m.face_count() as i64,
+        m.vertex_count() as i64 - m.edge_count() as i64 + m.face_count() as i64 - inner,
         2
     );
 }
@@ -95,26 +101,44 @@ fn a_seam_vertex_states_its_rim_carriers() {
     }
 }
 
-/// The novel topology: the seam edge is used twice by the **same** lateral face with opposite
-/// orientation. Every edge is still used exactly twice, opposite.
+/// **The lateral is bounded by its two rims and nothing else**: its outer loop is one rim, its one
+/// inner loop the other, and each rim is used by the lateral and by its own cap, in opposite
+/// senses. No edge separates a surface from itself.
 #[test]
-fn cylinder_seam_edge_is_self_adjacent() {
+fn a_cylinders_lateral_is_bounded_by_its_two_rims() {
     let (m, c) = z_cylinder(2.0, 5.0);
     every_edge_used_twice_opposite(&m).unwrap();
     let adj = Adjacency::rebuild(&m);
-    let seam = (0..m.edge_count() as u32)
-        .filter_map(|i| m.edge_handle_at(i))
-        .find(|&eh| m.edge(eh).surfaces[0] == m.edge(eh).surfaces[1])
-        .expect("a seam line edge exists");
-    let uses = &adj.edge_uses[&seam];
-    assert_eq!(uses[0].0, uses[1].0, "both uses are the same face");
-    assert_eq!(uses[0].0, c.lateral, "and it is the lateral");
+    let lateral = m.face(c.lateral);
+    let [outer] = lateral.outer.half_edges[..] else {
+        panic!("the outer loop is one rim")
+    };
+    let [ref inner] = lateral.inner[..] else {
+        panic!("one inner loop")
+    };
+    let [inner] = inner.half_edges[..] else {
+        panic!("the inner loop is one rim")
+    };
+    assert_ne!(outer.edge, inner.edge, "two rims");
+    for (he, cap) in [(outer, c.base), (inner, c.top)] {
+        let [v0, v1] = m.edge(he.edge).vertices;
+        assert_eq!(v0, v1, "a rim closes on its seam vertex");
+        let faces: Vec<_> = adj.edge_uses[&he.edge].iter().map(|u| u.0).collect();
+        assert!(
+            faces.contains(&c.lateral) && faces.contains(&cap),
+            "{faces:?}"
+        );
+    }
+    for eh in (0..m.edge_count() as u32).filter_map(|i| m.edge_handle_at(i)) {
+        let [a, b] = m.edge(eh).surfaces;
+        assert_ne!(a, b, "no edge separates a surface from itself");
+    }
 }
 
 /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
 /// endpoints — on the push's own budget (`nacre_ops::rebuild_edge_cache`) — is bit-identical to the
 /// one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
-/// box and a box turned 37°, so circles, a seam, straight edges on named planes and straight edges
+/// box and a box turned 37°, so circles, straight edges on named planes and straight edges
 /// whose direction only a chain replay realizes all regenerate.
 #[test]
 fn edge_cache_discard_and_regenerate_bit_identical() {
@@ -381,77 +405,6 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
     );
 }
 
-/// ★★ **A seam runs along its cylinder's axis, to the bit** — the line's direction is the cylinder
-/// cache's axis (the truth's correctly rounded direction), turned to run from the start vertex to
-/// the end, not the difference of the two rounded endpoints. On a 3-4-0 axis, a (1,1,1) frame node
-/// and a `+z` cylinder turned 37° about `y`.
-///
-/// ★ The sweep also counts the seams whose endpoint-derived direction has other bits, and requires
-/// one — a fixture where the two agree cannot tell the roads apart.
-#[test]
-fn a_seam_runs_along_its_cylinders_axis() {
-    use crate::fixtures::rot_iso;
-    use nacre_exact::Axis;
-    let cases: [(&str, [f64; 3], Vec<nacre_exact::Isometry>); 3] = [
-        ("3-4-0 axis", [3.0, 4.0, 0.0], vec![]),
-        ("frame node (1,1,1)", [1.0, 1.0, 1.0], vec![]),
-        (
-            "turned 37 about y",
-            [0.0, 0.0, 1.0],
-            vec![rot_iso(Axis::Y, 37)],
-        ),
-    ];
-    let bits = |v: Vector3| v.as_array().map(f64::to_bits);
-    let mut endpoints_differ = 0;
-    for (name, axis, turns) in cases {
-        let mut m = Model::new();
-        let mut s = cylinder(
-            &mut m,
-            Point3::from_array([0.1, 0.7, 0.3]),
-            Vector3::from_array(axis),
-            0.3,
-            1.1,
-        )
-        .solid;
-        for iso in turns {
-            s = crate::fixtures::xf(&mut m, s, iso);
-        }
-        m.rebuild_adjacency();
-        let mut seams = 0;
-        for &fh in &m.shell(m.solid(s).outer).faces {
-            for he in &m.face(fh).outer.half_edges {
-                let e = m.edge(he.edge);
-                if e.surfaces[0] != e.surfaces[1] {
-                    continue;
-                }
-                let Curve::Line(l) = m.edge_curve(he.edge) else {
-                    panic!("{name}: a seam is a line")
-                };
-                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(e.surfaces[0]) else {
-                    unreachable!("a seam's carrier is a cylinder")
-                };
-                let d = m.vertex_point(e.vertices[1]) - m.vertex_point(e.vertices[0]);
-                let ax = cc.axis().direction();
-                let want = if ax.dot(d) < 0.0 {
-                    Vector3::from_array(ax.as_array().map(|c| 0.0 - c))
-                } else {
-                    ax
-                };
-                assert_eq!(bits(l.direction()), bits(want), "{name}: seam direction");
-                if bits(d.normalize().expect("a seam has length")) != bits(want) {
-                    endpoints_differ += 1;
-                }
-                seams += 1;
-            }
-        }
-        assert!(seams >= 1, "{name}: the sweep met no seam");
-    }
-    assert!(
-        endpoints_differ > 0,
-        "every seam here has endpoints that already give its axis — the lock cannot tell the roads apart"
-    );
-}
-
 /// A cylinder's caps state points and a name, and a cap on the plane of another producer's face
 /// **is** that face's plane — one plane, one handle, across two producers.
 #[test]
@@ -610,7 +563,11 @@ fn edge_kinds(m: &Model, s: Handle<nacre_topo::Solid>) -> (usize, usize) {
     let mut seen = std::collections::HashSet::new();
     let (mut circles, mut lines) = (0, 0);
     for &fh in &m.shell(m.solid(s).outer).faces {
-        for he in &m.face(fh).outer.half_edges {
+        let face = m.face(fh);
+        for he in std::iter::once(&face.outer)
+            .chain(&face.inner)
+            .flat_map(|l| &l.half_edges)
+        {
             if seen.insert(he.edge) {
                 match m.edge_curve(he.edge) {
                     Curve::Circle(_) => circles += 1,
@@ -669,7 +626,7 @@ fn a_moved_cylinder_keeps_its_edges_kinds() {
             "{name}: {:?}",
             nacre_validate::validate(&m)
         );
-        assert_eq!(edge_kinds(&m, s), (2, 1), "{name}: two rims and a seam");
+        assert_eq!(edge_kinds(&m, s), (2, 0), "{name}: two rims and no line");
         let v = nacre_props::mass_props(&m, s).unwrap().volume;
         assert!((v - v0).abs() < 1e-9, "{name}: {v0} → {v}");
     }
@@ -692,7 +649,7 @@ proptest! {
         cylinder(&mut m, Point3::from_array(base), axis, r, h);
         m.rebuild_adjacency();
         prop_assert_eq!(m.vertex_count(), 2);
-        prop_assert_eq!(m.edge_count(), 3);
+        prop_assert_eq!(m.edge_count(), 2);
         prop_assert_eq!(m.face_count(), 3);
         prop_assert!(every_edge_used_twice_opposite(&m).is_ok());
     }
@@ -719,7 +676,7 @@ proptest! {
         cylinder(&mut m, Point3::origin(), axis, r, h);
         m.rebuild_adjacency();
         prop_assert_eq!(m.vertex_count(), 2);
-        prop_assert_eq!(m.edge_count(), 3);
+        prop_assert_eq!(m.edge_count(), 2);
         prop_assert_eq!(m.face_count(), 3);
         prop_assert!(every_edge_used_twice_opposite(&m).is_ok());
     }

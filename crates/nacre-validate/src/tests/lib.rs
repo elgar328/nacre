@@ -65,8 +65,8 @@ fn asymmetric_cuboid_is_clean() {
 
 #[test]
 fn cylinder_is_clean() {
-    // The seam b-rep (V2/E3/F3 with a self-adjacent seam edge, single-half-edge
-    // cap loops, and start==end circle edges) validates clean unmodified.
+    // The whole cylinder (V2/E2/F3, a lateral bounded by its two rims as outer and inner loop,
+    // single-half-edge cap loops, and start==end circle edges) validates clean unmodified.
     let v = validate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0));
     assert!(v.is_empty(), "{v:?}");
 }
