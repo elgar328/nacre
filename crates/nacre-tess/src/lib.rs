@@ -796,31 +796,15 @@ fn cylinder_chart(
     }
     let axis = cyl.axis();
     let (o, w_dir) = (axis.origin(), axis.direction());
-    let x_dir = cyl.ref_dir();
-    let y_dir = w_dir.cross(x_dir);
     let r = cyl.radius();
     let mut uv: Vec<polygon::P2> = vec![[0.0, 0.0]; handles.len()];
     let mut spans: Vec<(f64, f64)> = Vec::new();
     for ring in &rings {
-        let mut prev_raw = 0.0;
-        let mut theta = 0.0;
+        let ring_handles: Vec<Handle<TessVertex>> = ring.iter().map(|&i| handles[i]).collect();
+        let (thetas, _) = unwrapped_thetas(t, cyl, &ring_handles);
         let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-        for (k, &i) in ring.iter().enumerate() {
+        for (&i, &theta) in ring.iter().zip(&thetas) {
             let w = t.vertices.get(handles[i]).pos - o;
-            let raw = w.dot(y_dir).atan2(w.dot(x_dir));
-            if k == 0 {
-                theta = raw;
-            } else {
-                let mut step = raw - prev_raw;
-                while step > std::f64::consts::PI {
-                    step -= std::f64::consts::TAU;
-                }
-                while step <= -std::f64::consts::PI {
-                    step += std::f64::consts::TAU;
-                }
-                theta += step;
-            }
-            prev_raw = raw;
             uv[i] = [w.dot(w_dir), r * theta];
             lo = lo.min(uv[i][1]);
             hi = hi.max(uv[i][1]);
@@ -902,9 +886,11 @@ fn traced_ring(t: &Tessellation, lp: &Loop) -> (Vec<Traced>, Option<Traced>) {
     (ring, closing)
 }
 
-/// The cylinder chart's angle at each position of `ring`, unwrapped along it exactly as
-/// [`cylinder_chart`] unwraps, and the ring's whole turn **including its closing step** — `±2π`
-/// for a ring that wraps the axis, `0` for one that does not.
+/// The cylinder chart's angle at each position of `ring`, unwrapped along it — every step taken the
+/// short way round — and the ring's whole turn **including its closing step**: `±2π` for a ring
+/// that wraps the axis, `0` for one that does not. The one spelling of `θ` on a cylinder's chart:
+/// [`cylinder_chart`] lays its rings out with it and [`cut_seamless_bands`] counts their turns with
+/// it, so the two cannot disagree about which rings wrap.
 fn unwrapped_thetas(
     t: &Tessellation,
     cyl: &Cylinder,
