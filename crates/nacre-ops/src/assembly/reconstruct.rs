@@ -307,9 +307,10 @@ pub(crate) fn reconstruct(
                 // B counter-clockwise about the axis, so the two complementary arcs between one
                 // pierce pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
                 // endpoints alone cannot give (`EdgeKey`'s note). The carriers are stated
-                // directly — the two faces using an arc edge are this cap and the cylinder's
-                // side, so there is nothing for the scan to read — which also keeps the chord's
-                // line key clean (`pair_surfs` skips arc edges for the same reason).
+                // directly — the cylinder and the plane of the rim the arc lies on, which the
+                // caller passes as `face_surf` (`arc_plane`) — so there is nothing for the scan to
+                // read, which also keeps the chord's line key clean (`pair_surfs` skips arc edges
+                // for the same reason).
                 let (from, to) = if ccw { (va, vb) } else { (vb, va) };
                 let key = EdgeKey::Arc {
                     cyl,
@@ -416,6 +417,28 @@ pub(crate) fn reconstruct(
         }
     }
 
+    // ★★ **An arc's carriers are its cylinder and the plane of the rim it lies on — read off the
+    // held rims by its ends, not off the face that mints it.** A cap's own plane is that plane, but
+    // a lateral's is its cylinder, and an arc a lateral minted first would state `[cyl, cyl]` — a
+    // line, by `derive_edge_curve`'s seam arm (measured: minting the laterals' arcs first sends 64
+    // census rows to `EdgeCarrierMismatch`; the face order, planes before laterals, hid it). A point
+    // of cylinder `k` lies on one plane perpendicular to its axis, so the held rim holding either end
+    // names the plane; either, because the table is blind to groups and the per-solid pass may have
+    // pruned a node a lateral still walks. No rim, or two, is the chart and the assembly
+    // disagreeing.
+    let arc_plane = |k: usize, a: NodeId, b: NodeId| -> Result<usize, BoolError> {
+        let mut on: Vec<usize> = rims
+            .iter()
+            .filter(|((kk, _), cr)| *kk == k && (cr.nodes.contains(&a) || cr.nodes.contains(&b)))
+            .map(|(&(_, c), _)| c)
+            .collect();
+        on.sort_unstable();
+        on.dedup();
+        match on[..] {
+            [c] => Ok(c),
+            _ => Err(reject(RejectReason::CylinderStagesDisagree)),
+        }
+    };
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
     // Whether a lateral's outer walk passed a contact twice: without a slit (`band_loop`'s zero
@@ -465,8 +488,20 @@ pub(crate) fn reconstruct(
                     Some(s) => vec![[va, s], [s, vb]],
                     None => vec![[va, vb]],
                 };
+                // The second carrier: the face's own surface for a straight step, the rim's plane
+                // for an arc (`arc_plane`) — on a cap, its own plane.
+                let carrier = match r.walls[t] {
+                    Wall::Arc { cyl, .. } => {
+                        let c = arc_plane(cyl, r.nodes[t], r.nodes[(t + 1) % k])?;
+                        if matches!(lf.surf, ClassIx::Plane(fc) if fc != c) {
+                            return Err(reject(RejectReason::CylinderStagesDisagree));
+                        }
+                        planes[c].surf
+                    }
+                    Wall::Plane(_) | Wall::Ruling { .. } => face_surf,
+                };
                 for [u, v] in legs {
-                    let e = edge_for(model, memo, u, v, r.walls[t], face_surf)?;
+                    let e = edge_for(model, memo, u, v, r.walls[t], carrier)?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
                     let forward = model.edge(e).vertices[0] == u;
