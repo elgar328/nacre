@@ -64,8 +64,8 @@ pub(crate) fn axis_param_of_plane(
 /// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
 /// and the consumer declines the face.
 ///
-/// ★ **Every loop, not the outer one.** A band whose rims are both cut has no seam edge, and its
-/// upper rim is an inner loop: read off the outer loop alone, the span of a lateral over `[0, 4]`
+/// ★ **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
+/// loop alone, the span of a lateral over `[0, 4]`
 /// bitten at both ends is `[0, 0.5]`, and the gates prove a cylinder or a slanted wall crossing it
 /// at `z = 2` clear of it. A hole's stations lie inside the span, so they never move its ends.
 pub(super) fn lateral_t_range(
@@ -83,9 +83,6 @@ pub(super) fn lateral_t_range(
         let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
-        if cap == face.surface {
-            continue; // a slit edge is self-adjacent — not a carrier
-        }
         // ★ **The cap's world coefficients** — a plane's name is stated in the frame its own
         // motion names, and this parameter is read against a *world* axis. One whose chain does
         // not fold has no world description and the face declines (`None`), which is the same
@@ -114,12 +111,11 @@ pub(super) fn lateral_t_range(
 /// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
 /// B counter-clockwise about the axis). A whole rim (`[v, v]`), an irrational corner, a carrier
 /// this road cannot translate into the world, or rims that do not chain into one arc give `None`
-/// — the whole circle, the reading before this existed. The outer loop is enough: a band with no
-/// seam edge has a wrapping rim for its outer loop, and that rim's arcs alone close the circle.
+/// — the whole circle, the reading before this existed. The outer loop is enough: a band's outer
+/// loop is a wrapping rim, and that rim's arcs alone close the circle.
 ///
-/// A corner's radial vector is its point minus the axis point on the cap: a seam vertex is
-/// `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm is), a
-/// pierce corner is the meet line's point at its root ([`nacre_exact::quad::QuadVal::as_rat`] —
+/// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the
+/// meet line's point at its root ([`nacre_exact::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 pub(super) fn lateral_theta_extent(
@@ -140,9 +136,6 @@ pub(super) fn lateral_theta_extent(
         let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
-        if cap == face.surface {
-            continue; // the seam
-        }
         let coeffs = world_coeffs(cap)?;
         if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
             continue; // a ruling on a wall, not a rim
@@ -250,11 +243,10 @@ impl QuadVec {
     }
 }
 
-/// **A rim corner's radial vector** — the corner minus the axis point on its cap `cap`. A seam
-/// vertex is `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm
-/// is, `None` otherwise); a pierce corner is the meet line's point at its root, held with its
-/// radical. One rule for both readers: [`lateral_theta_extent`] folds it to a rational vector,
-/// [`lateral_cover_on_ruling`] reads it as it is.
+/// **A rim corner's radial vector** — the corner minus the axis point on its cap `cap`: a pierce
+/// corner is the meet line's point at its root, held with its radical. One rule for both readers:
+/// [`lateral_theta_extent`] folds it to a rational vector, [`lateral_cover_on_ruling`] reads it as
+/// it is.
 pub(super) fn rim_radial(
     model: &Model,
     face: &nacre_topo::Face,
@@ -269,31 +261,9 @@ pub(super) fn rim_radial(
     let zero = Rat::from_int(0);
     let centre = nacre_exact::axis_plane_meet(cap, &o, &m)?;
     match *model.vertex(vh) {
-        Vertex::OnSeam(_) => {
-            let e = def.ref_dir();
-            let (mm, em) = (
-                nacre_exact::dot3_rat(&m, &m)?,
-                nacre_exact::dot3_rat(&e, &m)?,
-            );
-            let mut e1 = [zero; 3];
-            for k in 0..3 {
-                e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
-            }
-            // `r/|e₁|` read as `√(r²/|e₁|²)`: the same rational when both roots are, and a
-            // rational where neither is alone (`r = √2` on `|e₁| = √2`).
-            let ee = nacre_exact::dot3_rat(&e1, &e1)?;
-            let k =
-                nacre_exact::rat_sqrt_exact_big(&r2.mul_rat(Rat::new(ee.denom(), ee.numer())?))?;
-            let mut r0 = [zero; 3];
-            for i in 0..3 {
-                r0[i] = e1[i].checked_mul(k)?;
-            }
-            Some(QuadVec {
-                r0,
-                r1: [zero; 3],
-                c: zero,
-            })
-        }
+        // A seam vertex ends only a whole rim (`[v, v]`), which both readers answer as the whole
+        // circle before asking for a corner.
+        Vertex::OnSeam(_) => None,
         Vertex::Pierce {
             planes,
             cylinder,
@@ -410,9 +380,6 @@ pub(super) fn lateral_cover_on_ruling(
             let e = model.edge(he.edge);
             let [a, b] = e.surfaces;
             let other = if a == face.surface { b } else { a };
-            if other == face.surface {
-                continue; // the seam: a parametrization's edge, not the face's boundary
-            }
             let coeffs = world_plane_coeffs(model, other)?;
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             if nacre_exact::parallel_rat(&n, &m) {

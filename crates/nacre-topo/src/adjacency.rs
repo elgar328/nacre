@@ -108,8 +108,8 @@ fn uf_union(parent: &mut [usize], a: usize, b: usize) {
 ///
 /// **Scope — planar (polyhedral) topology.** A polyhedral corner uses exactly two of its vertex's
 /// edges per face; the function **abstains** (treats the vertex as manifold) at any vertex where a
-/// face uses a different number — a cylinder's circular cap (one closed edge), its seam edge (used
-/// twice by the lateral face), or a self-loop rim edge (`[v, v]`). These are parametric artifacts
+/// face uses a different number — a cylinder's circular cap or lateral rim (one closed edge,
+/// `[v, v]`). These are parametric artifacts
 /// this link analysis cannot classify (M6 quadrics), never a *planar* pinch, so real planar pinches
 /// are unaffected. (A genuinely pinched *face* — a loop through `V` twice — is thus not flagged
 /// here; the M5 boolean never emits one, and the edge check covers non-manifold edges.)

@@ -310,8 +310,8 @@ pub enum SurfaceKey {
     Through([Handle<Vertex>; 3], Option<Handle<MotionNode>>),
     /// A cylinder — **deliberately conservative**: the whole exact statement, `ref_dir`
     /// included. Two statements of one geometric cylinder with different `ref_dir`s stay two
-    /// handles, because merging them would split the seam (seam vertices and the seam edge cite
-    /// the surface as their carrier). A key this literal cannot merge wrongly; geometric identity
+    /// handles, because merging them would split the seam (seam vertices cite the surface as their
+    /// carrier, at its `ref_dir`). A key this literal cannot merge wrongly; geometric identity
     /// across different statements is the predicates' to answer per question. No `flipped`
     /// report either — a literal-identical statement realizes to a literal-identical cache.
     ///

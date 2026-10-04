@@ -96,7 +96,7 @@ pub enum Violation {
 
     /// An edge's stated carriers disagree with adjacency: the multiset of the two face
     /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
-    /// self-adjacent (`[s, s]`) on a *plane*, a spelling reserved for a cylinder seam. The
+    /// self-adjacent (`[s, s]`): no edge separates a surface from itself. The
     /// carriers are stated, never derived, so a mismatch is a producer bug, and the curve
     /// cache derived from wrong carriers would be silently wrong geometry.
     EdgeCarrierMismatch {
@@ -577,20 +577,20 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             // carrier pair between them: the shared surface must be one of the stated two,
             // and the *other* stated carrier is what the curve derivation crosses it with —
             // which is the whole purpose of the check (wrong carriers ⇒ a silently wrong
-            // curve cache). `[s, s]` on a plane stays reserved for cylinder seams.
+            // curve cache). And no edge separates a surface from itself: `[s, s]` is never a
+            // carrier pair, on a plane or a cylinder (a lateral is bounded by its rims).
             let stated = _edge.surfaces;
             let mut observed = [m.face(uses[0].0).surface, m.face(uses[1].0).surface];
             if observed[1].index() < observed[0].index() {
                 observed.swap(0, 1);
             }
-            let plane_self_pair =
-                stated[0] == stated[1] && matches!(m.surface(stated[0]), Surface::Plane { .. });
+            let self_pair = stated[0] == stated[1];
             let agrees = if observed[0] == observed[1] {
                 stated.contains(&observed[0])
             } else {
                 stated == observed
             };
-            if !agrees || plane_self_pair {
+            if !agrees || self_pair {
                 out.push(Violation::EdgeCarrierMismatch {
                     edge: eh,
                     stated: [stated[0].index(), stated[1].index()],

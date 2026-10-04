@@ -62,12 +62,11 @@ pub(crate) fn check_result_topology(
         // obliged to erase. When the merge abstains instead — a 2-node cap's chord and its
         // arcs collide in the node-pair key, so the group ships as-is — the pair would sail
         // through without this, and `validate` names the spelling a producer bug
-        // (`EdgeCarrierMismatch`: a self-adjacent pair is reserved for cylinder seams).
-        // Measured on the straddling flush boss (`rul flush` Fuse). The proposition is
-        // exactly validate's, no wider: an *arc*-carried boundary between two coplanar faces
-        // states a cylinder in its pair and ships today by design (the spliced band), and a
-        // cylinder seam is the reservation itself — both exempt because only a stated
-        // plane-self pair is asked. The reject is the cleaning's own name: an abstention that
+        // (`EdgeCarrierMismatch`: no edge separates a surface from itself). Measured on the
+        // straddling flush boss (`rul flush` Fuse). An *arc*-carried boundary between two
+        // coplanar faces states a cylinder in its pair and ships by design, so only a stated
+        // plane-self pair is asked here — a cylinder-self pair is refused one door earlier, by
+        // the edge push (`TwoCylinders`). The reject is the cleaning's own name: an abstention that
         // leaves this shape is a merge that was mandatory and did not happen. Witness: the
         // offending edge's first vertex, smallest edge handle for replay determinism.
         let mut same_plane: Vec<Handle<Edge>> = Vec::new();
@@ -87,8 +86,8 @@ pub(crate) fn check_result_topology(
         }
         // ★ **And the other half of that proposition: the stated pair is the pair of surfaces
         // the two using faces lie on** — `validate`'s rule, read the same way: two faces on two
-        // surfaces must *be* the stated pair; two faces on one surface (a panel and the band
-        // beside it sharing an arc, a cylinder seam) must have that surface among the two. The
+        // surfaces must *be* the stated pair; two faces on one surface (two laterals of one
+        // cylinder sharing an arc) must have that surface among the two. The
         // edge's curve derives from the stated pair, so a pair the faces do not keep is a wrong
         // curve on a shell every count above calls closed, and only `validate` would say so — the
         // shape is a straight edge on a cylinder's ruling stated `(cylinder, wall)` between two

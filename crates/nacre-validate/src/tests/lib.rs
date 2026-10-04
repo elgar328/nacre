@@ -487,8 +487,8 @@ fn vertex_off_surface_when_nudged() {
 }
 
 /// ★ Negative control: an edge whose stated carriers disagree with the two faces
-/// actually using it is flagged — and so is a self-adjacent *plane* pair (a spelling
-/// reserved for cylinder seams). Hand-built open surface: other violations fire too; the
+/// actually using it is flagged — and so is a self-adjacent pair (no edge separates a surface
+/// from itself). Hand-built open surface: other violations fire too; the
 /// assertion is only that the carrier one is among them.
 #[test]
 fn edge_carrier_mismatch_is_flagged() {

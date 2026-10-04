@@ -250,11 +250,11 @@ impl Model {
     /// is a cache that can be discarded and regenerated.
     ///
     /// Dispatch by carrier type:
-    /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the start
+    /// * **Plane × Plane**: the line through the start
     ///   vertex, along the truth's direction where the truth names one — the two planes' world
     ///   names meet in the direction of their normals' exact cross product
-    ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector), and a seam or a
-    ///   ruling runs along the cylinder cache's axis — turned to run from the start vertex to the
+    ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector), and a ruling runs
+    ///   along the cylinder cache's axis — turned to run from the start vertex to the
     ///   end. Where a plane has no world name the direction is the one `given` carries — the same
     ///   meet, realized by whoever can replay the plane's chain — and only where nothing gives
     ///   one, the two endpoint coordinates' difference.
@@ -288,7 +288,8 @@ impl Model {
     ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
     ///   `outer_tri`.
-    /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, no edge carries it.
+    /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, or one cylinder twice
+    ///   (no edge separates a surface from itself); no edge carries either.
     pub fn derive_edge_curve(
         &self,
         surfaces: [Handle<Surface>; 2],
@@ -326,12 +327,6 @@ impl Model {
                 self.line_direction_cache(surfaces)
                     .or_else(|| given(self).direction),
             ),
-            (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Cylinder(_))
-                if surfaces[0] == surfaces[1] =>
-            {
-                // The seam — a parameterization joint, straight along the axis.
-                line(Some(c.axis().direction().as_array()))
-            }
             (nacre_geom::Surface::Plane(p), nacre_geom::Surface::Cylinder(c))
             | (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Plane(p)) => {
                 let (plane, cyl) = match self.surface_cache(surfaces[0]) {

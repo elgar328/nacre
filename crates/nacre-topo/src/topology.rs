@@ -26,11 +26,11 @@ pub struct Edge {
     /// bounding it here — measured, each side's arrangement named that third plane as its wall.
     /// The pair is the *adjacency* answer: the two faces that use the edge.
     ///
-    /// Stored in ascending handle-index order — the pair is a set, not a sequence.
-    /// A cylinder seam is self-adjacent: both entries are the lateral surface (its loop already
-    /// uses the seam edge twice) — the **confirmed** spelling: a seam is a
-    /// parameterization joint of one surface, and the self-pair is that sentence's honest
-    /// carrier form, guarded by validate's "self-adjacent ⇔ cylinder" rule.
+    /// Stored in ascending handle-index order — the pair is a set, not a sequence. The two entries
+    /// are two surfaces: an edge separates two faces' surfaces, and no edge separates a surface from
+    /// itself — a cylinder's lateral is bounded by its rims, with no seam edge
+    /// ([`crate::Model::push_edge`] refuses a pair that is one cylinder, `validate` flags any
+    /// self-pair).
     pub surfaces: [Handle<Surface>; 2],
     /// Endpoint vertices — the boundary (never optional).
     ///
@@ -52,7 +52,8 @@ pub enum EdgeDecline {
     /// A plane and a cylinder whose truths cannot be placed in one frame, so their relation is
     /// not stated.
     Unstated,
-    /// Two distinct cylinders — their meet is a quartic, which no edge carries.
+    /// Two cylinders — two distinct ones meet in a quartic, and one stated twice is a surface
+    /// separated from itself; no edge carries either.
     TwoCylinders,
     /// The truth states a circle, but the cache could not build it (no centre, no radius).
     Degenerate,

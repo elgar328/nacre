@@ -135,6 +135,24 @@ fn a_cylinders_lateral_is_bounded_by_its_two_rims() {
     }
 }
 
+/// **No edge separates a cylinder from itself.** The door that pushes edges refuses a carrier
+/// pair that is one cylinder twice — the seam edge a lateral bounded by its two rims has no use
+/// for — as it refuses two distinct cylinders.
+#[test]
+fn an_edge_on_one_cylinder_twice_is_refused() {
+    let (mut m, c) = z_cylinder(2.0, 5.0);
+    let lat = m.face(c.lateral).surface;
+    let rim = |m: &Model, f| {
+        let he = m.face(f).outer.half_edges[0];
+        m.edge(he.edge).vertices[0]
+    };
+    let (vb, vt) = (rim(&m, c.base), rim(&m, c.top));
+    assert_eq!(
+        m.push_edge([lat, lat], [vb, vt], |_| nacre_topo::EdgeGiven::NONE),
+        Err(nacre_topo::EdgeDecline::TwoCylinders)
+    );
+}
+
 /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
 /// endpoints — on the push's own budget (`nacre_ops::rebuild_edge_cache`) — is bit-identical to the
 /// one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
