@@ -320,6 +320,22 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 
 잠금 공백·API·성능·구조. 순서는 없다.
 
+### seam 모서리 없는 원통 옆면 — 원 두 개로 닫기
+
+옆면은 seam 엣지 방식(design 「seam 엣지 방식」 A)이다 — 한 바퀴 도는 띠가 세로 seam 모서리(`[c, c]`)를 두 번 쓴다.
+B(위·아래 원 두 루프, seam 모서리 없음)도 유효한 AP242 이고 seam 없는 STEP 파일은 흔하다(Parasolid 는 B 가 기본).
+A 를 고른 근거 가운데 불리언(«모든 면은 실제 모서리로 둘러싸인 영역»)과 순서 비교는 지금의 옆면 도로에서 약해졌다:
+옆면은 자기 차트 위에서 주기 띠로 답하고(`cyl_chart` — 환면이라 평면 감김수가 없다), 각도 비교는 끊는 자리와
+무관하며(`SeamOrder::seam_first`), 옆면의 루프는 이미 바깥/구멍 없이 전부 동등하게 읽힌다. 재 보지는 않았다.
+
+B 로 바꾸면 없어질 것: 캡의 호를 seam 에서 쪼개는 이음(census 154 · 스위트 1,980 번 — 띠의 seam 모서리가 끝날
+점을 만들려고만 한다)과 그 장치(`wrapping_rim`·`seam_step`·`CutRim::seam_is_node`), 띠의 slit 민팅, 자기-인접
+담체 규칙(validate 의 «자기-인접 ⇔ 원통»), 루프를 slit 에서 끊어 읽는 자리(`lateral_cycles`·`cyl_geom`). 남는 것:
+닫힌 원 간선의 정점 하나(오일러 — 위·아래를 한 세로선에 맞출 필요는 없어진다). 새로 생길 것: 메시가 띠를 펼칠
+안쪽 절단(모델에 남지 않는 것), 옆면 루프를 하나로 가정하는 소비자(validate·props·tess·루프 읽기)의 손질.
+먼저 잴 것: 없어질 줄과 새로 생길 줄의 수, OCCT 오라클이 seam 없는 STEP 을 읽는가. 원통의 정체에서 seam 을 빼는 일
+(「곡면 둘 이상이 만나는 점과 seam 담체」)과는 다른 물음이다 — 그쪽은 seam 의 «자리», 이쪽은 seam 모서리의 «존재».
+
 ### 실현 문의 발행 범위와 잠금
 
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
