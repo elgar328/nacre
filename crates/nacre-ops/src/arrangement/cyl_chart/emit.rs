@@ -10,7 +10,7 @@ use super::*;
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
 /// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
 /// ones the cleaned plane faces hold (`rims` — the labels are still read against the split,
-/// `Curved::split_rims`), and the winding is `seam_step`'s (`classify_cycles`).
+/// `Curved::split_rims`), and the winding is the cycle's arc units (`regions`).
 pub(crate) fn emit_lateral(
     kind: crate::BoolKind,
     jd: &Judge<'_, WorkingPlane>,

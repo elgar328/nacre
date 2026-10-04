@@ -17,7 +17,6 @@ use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, S
 use std::collections::{HashMap, HashSet};
 
 mod coplanar;
-mod cycles;
 mod grouping;
 mod naming;
 #[cfg(test)]
@@ -31,7 +30,6 @@ pub(crate) mod tess_census;
 mod topology;
 
 pub(crate) use coplanar::*;
-pub(crate) use cycles::*;
 pub(crate) use grouping::*;
 pub(crate) use naming::*;
 pub(crate) use reconstruct::*;

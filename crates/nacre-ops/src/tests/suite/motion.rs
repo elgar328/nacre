@@ -467,9 +467,8 @@ fn a_boss_on_any_wall_weighs_the_same() {
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
     let mut fuse_faces: Vec<usize> = Vec::new();
-    // ★★ **All four walls, all three kinds.** On `+y` the cap's wrap arc is split at its rim's
-    // seam vertex and no *band* claims that rim; the rim is registered from the arc that needs
-    // it (`wrapping_rim`), so those rows are exact against the same closed forms as the others.
+    // ★★ **All four walls, all three kinds** — each a different relation to the seam's `θ = 0`,
+    // and every row exact against the same closed forms.
     for base in [
         [0.0, 2.0, -1.0], // -x wall
         [4.0, 2.0, -1.0], // +x
@@ -665,7 +664,14 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
                 let f = m.face(fh);
                 if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)) {
                     lateral += 1;
-                    holes.push(f.inner.len());
+                    // Holes only: an inner loop that is one closed edge is the upper rim.
+                    let rim = |l: &nacre_topo::Loop| {
+                        matches!(l.half_edges[..], [he] if {
+                            let [a, b] = m.edge(he.edge).vertices;
+                            a == b
+                        })
+                    };
+                    holes.push(f.inner.iter().filter(|l| !rim(l)).count());
                 }
             }
         }
@@ -679,17 +685,15 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
     // The plate is 32; the boss (r = 0.5, h = 4) runs clear through it with half its section
     // buried, so a wall boss weighs `32 + π/4·4 − ½·π/4·2` and a corner one buries a quarter.
     let quarter = std::f64::consts::PI * 0.25;
-    // ★★ **The notch is spelled one of two ways, and which one is not a choice.** Where it meets
-    // the seam generator the outer walk bridges it in (`band_loop`) and the face carries **no**
-    // inner loop; where it misses the seam it stays an honest hole. `ref_dir` is a function of the
-    // axis alone, so four congruent walls stand in four different relations to θ = 0 — and that
-    // asymmetry has to show up **nowhere else**, which is what the rest of this loop pins: one
-    // lateral face and exactly two faces fewer, on every one of them.
+    // ★★ **The four congruent walls come out alike.** `ref_dir` is a function of the axis alone,
+    // so the four walls stand in four different relations to θ = 0; with no seam edge that
+    // relation reaches nothing — the notch is a hole in the one lateral face, and there are
+    // exactly two faces fewer, on every one of them.
     for (name, base, faces, notch_holes) in [
-        ("-x", [0.0, 2.0, -1.0], 10, 0),
-        ("+x", [4.0, 2.0, -1.0], 10, 0),
+        ("-x", [0.0, 2.0, -1.0], 10, 1),
+        ("+x", [4.0, 2.0, -1.0], 10, 1),
         ("-y", [2.0, 0.0, -1.0], 10, 1),
-        ("+y", [2.0, 4.0, -1.0], 10, 0),
+        ("+y", [2.0, 4.0, -1.0], 10, 1),
     ] {
         let (v, total, lateral, holes) = run(base, 4.0, BoolKind::Fuse);
         assert!(
@@ -697,20 +701,20 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
             "{name}: {v}"
         );
         assert_eq!(lateral, 1, "{name}: one lateral face");
-        assert_eq!(holes, vec![notch_holes], "{name}: the notch's spelling");
+        assert_eq!(holes, vec![notch_holes], "{name}: the notch is a hole");
         assert_eq!(
             total, faces,
             "{name}: exactly two faces fewer than the three pieces"
         );
     }
-    // The corner: two walls cut the cylinder, so the surviving panel's four corners name **two
-    // different** wall classes — and the merge is the same one.
+    // The corner: two walls cut the cylinder, so the notch's four corners name **two different**
+    // wall classes — and the merge is the same one, the notch again a hole.
     let (v, total, lateral, holes) = run([4.0, 4.0, -1.0], 4.0, BoolKind::Fuse);
     assert!(
         (v - (32.0 + quarter * 4.0 - 0.25 * quarter * 2.0)).abs() < 1e-12,
         "corner: {v}"
     );
-    assert_eq!((lateral, holes, total), (1, vec![0], 9), "corner");
+    assert_eq!((lateral, holes, total), (1, vec![1], 9), "corner");
     // ★★ **The negative controls — seams that are real must survive untouched.**
     for (name, base, h, kind, lateral, total) in [
         // The plate genuinely interrupts this one: two lateral faces, and neither has a hole.

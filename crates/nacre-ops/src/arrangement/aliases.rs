@@ -42,7 +42,7 @@ pub(super) fn seed_from_operands(
                 .outer
                 .iter()
                 .chain(loops.holes.iter().flatten())
-                .chain(loops.cycles.iter().flatten().map(|(_, r)| r));
+                .chain(loops.cycles.iter().flatten());
             for lr in rings {
                 if let Some(nr) = lr.poly() {
                     for s in &nr.concurrencies {

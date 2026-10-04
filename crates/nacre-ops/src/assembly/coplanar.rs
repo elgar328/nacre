@@ -115,8 +115,8 @@ pub(crate) fn unify_coplanar_faces(
         // circle (a boss's cap that a pin's disk fills at its hole — left unmerged, the cut of a
         // stacked pin has the pin's seam vertex naming a cylinder
         // the result has no face on, `VertexNamesAbsentSurface`, measured). What still cannot be
-        // threaded is a band (no producer today); spelling it keeps "a band never merges" an
-        // *invariant* rather than an accident of which producer exists.
+        // threaded is a lateral's whole rim (no plane face carries one); spelling it keeps "a rim
+        // never merges" an *invariant* rather than an accident of which producer exists.
         //
         // Merging is a **correctness** matter, not the tidiness this pass once claimed: unmerged,
         // the corners on the erased boundary stay corners, keep naming a surface the result drops,
@@ -125,7 +125,7 @@ pub(crate) fn unify_coplanar_faces(
         if mem.iter().any(|&fi| {
             kept[fi]
                 .as_ref()
-                .is_some_and(|lf| matches!(lf.outer, Bound::Band { .. }))
+                .is_some_and(|lf| matches!(lf.outer, Bound::Rim { .. }))
         }) {
             continue;
         }
@@ -436,7 +436,7 @@ fn merge_component(
                     }
                     continue;
                 }
-                Bound::Band { .. } => return Ok(None),
+                Bound::Rim { .. } => return Ok(None),
             };
             let ring = outer.edges(jd, cyls, Some(wc))?;
             // A mixed outer takes the rational road - the (None, None) arm of the
@@ -528,7 +528,7 @@ fn merge_component(
                 Bound::Circle { cyl: oc } => {
                     crate::nesting::disk_in_disk(jd, wc, def, &cyls[*oc].def)?
                 }
-                Bound::Band { .. } => return Ok(None),
+                Bound::Rim { .. } => return Ok(None),
             };
             if inside {
                 if owner.is_some() {
@@ -664,7 +664,7 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
         for &fi in which {
             let lf = &out[fi];
             for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
-                for ring in b.rings() {
+                if let Some(ring) = b.ring() {
                     if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
                         continue;
                     }

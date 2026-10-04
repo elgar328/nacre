@@ -85,13 +85,32 @@ fn bands(
     (out, ts)
 }
 
-/// A band's two ends as world `z` — the assertion vocabulary.
+/// A band's two ends as world `z` — the assertion vocabulary: its lower whole rim (the outer
+/// bound) and its upper one (an inner bound).
 fn ends(lf: &LocalFace, ts: &[(usize, f64)]) -> (f64, f64) {
-    let Bound::Band { lo, hi } = &lf.outer else {
-        panic!("a band face bounds a band");
+    let Bound::Rim {
+        plane: lo,
+        ccw: true,
+    } = lf.outer
+    else {
+        panic!(
+            "a band's lower rim is a whole circle here, got {:?}",
+            lf.outer
+        );
     };
-    let (Some(lo), Some(hi)) = (lo.circle(), hi.circle()) else {
-        panic!("a band's rims are whole circles here");
+    let [hi] = lf
+        .inner
+        .iter()
+        .filter_map(|b| match b {
+            Bound::Rim { plane, ccw: false } => Some(*plane),
+            _ => None,
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!(
+            "a band's upper rim is a whole circle here, got {:?}",
+            lf.inner
+        );
     };
     let at = |c: usize| ts.iter().find(|(k, _)| *k == c).expect("a ⊥ class").1;
     (at(lo), at(hi))

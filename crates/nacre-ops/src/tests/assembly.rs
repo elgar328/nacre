@@ -45,12 +45,17 @@ mod region_tests {
             1,
             "one lateral face for the half-height boss"
         );
-        let outer = &m.face(laterals[0]).outer;
+        let face = m.face(laterals[0]);
+        assert_eq!(face.inner.len(), 1, "two loops: one rim each");
         let (mut closed, mut arcs) = (0usize, 0usize);
-        for he in &outer.half_edges {
+        for he in std::iter::once(&face.outer)
+            .chain(&face.inner)
+            .flat_map(|l| &l.half_edges)
+        {
+            let e = m.edge(he.edge);
+            assert_ne!(e.surfaces[0], e.surfaces[1], "no seam edge");
             let circular = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Circle(_));
-            let [a, b] = m.edge(he.edge).vertices;
-            match (circular, a == b) {
+            match (circular, e.vertices[0] == e.vertices[1]) {
                 (true, true) => closed += 1,
                 (true, false) => arcs += 1,
                 _ => {}

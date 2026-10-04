@@ -5,9 +5,9 @@
 //! with it. The cylinder side does the same on its own grid: the lateral has an **isometric
 //! chart** `(z, r·θ)` where the seam is only the chart's cut line, so notches, holes and
 //! θ-panels all become cells. This module runs the whole arm — the two axes, the cells
-//! (`read_cell`), the regions walk (`regions`) and the emit (`emit`) — and the merge
-//! reads one rule (a cycle's winding, `seam_step`); of the hand-written walks only the
-//! `band_loop` slit-leg remains, generalized to a chain rim.
+//! (`read_cell`), the regions walk (`regions`) and the emit (`emit`) — and a region's bounds are
+//! its cycles as they stand, the outer one picked by its winding (its arc units), with no seam
+//! edge written anywhere.
 //!
 //! ★ **Same stages, not same code.** The chart is an annulus and rectilinear where the plane
 //! side is an unbounded DCEL ordered by angle, so it runs the stages on its own grid rather
@@ -260,7 +260,7 @@ impl Chart {
             // of the *segment*, and one endpoint states it.
             let nodes: Vec<combinatorics::NodeId> =
                 alive.iter().map(|&j| self.theta[j].end[0]).collect();
-            let (order, _) = crate::arrangement::circular_order(jd, k, def, &nodes)
+            let order = crate::arrangement::circular_order(jd, k, def, &nodes)
                 .map_err(crate::arrangement::CircleOrderFail::reason)?;
             let n = order.len();
             for s in 0..n {

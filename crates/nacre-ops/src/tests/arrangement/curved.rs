@@ -692,23 +692,21 @@ fn a_cut_circle_bounds_the_bands() {
         }
         panic!("no arc on the lower cut rim");
     };
-    let crate::draft::Bound::Band { lo, hi } = &fuse[0].outer else {
-        panic!("fuse: a band between the caps, got {:?}", fuse[0].outer);
-    };
     assert!(
-        matches!(
-            (lo, hi),
-            (crate::draft::Rim::Circle(_), crate::draft::Rim::Circle(_))
-        ),
-        "the caps' whole circles are the band's rims"
+        matches!(fuse[0].outer, crate::draft::Bound::Rim { ccw: true, .. }),
+        "fuse: a band between the caps, its lower whole rim outside, got {:?}",
+        fuse[0].outer
     );
-    assert_eq!(
-        fuse[0].inner.len(),
-        1,
-        "the unkept sector is the band's one hole"
+    let (rims, holes): (Vec<_>, Vec<_>) = fuse[0]
+        .inner
+        .iter()
+        .partition(|b| matches!(b, crate::draft::Bound::Rim { .. }));
+    assert!(
+        matches!(rims[..], [crate::draft::Bound::Rim { ccw: false, .. }]),
+        "the upper whole rim inside: {rims:?}"
     );
-    let crate::draft::Bound::Ring(hole) = &fuse[0].inner[0] else {
-        panic!("a hole is a ring");
+    let [crate::draft::Bound::Ring(hole)] = holes[..] else {
+        panic!("the unkept sector is the band's one hole, a ring: {holes:?}");
     };
     let crate::draft::Bound::Ring(panel) = &cut[0].outer else {
         panic!("cut: the kept sector is a ring, got {:?}", cut[0].outer);

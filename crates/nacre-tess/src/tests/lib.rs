@@ -605,104 +605,14 @@ fn a_band_generator_keeps_out_of_holes_and_passes_each_rim_once() {
     );
 }
 
-/// **The same solid with its cylindrical faces written with no seam edge** — each lateral's outer
-/// loop cut at its self-adjacent edges (the seam, or the slits that splice a hole into the walk),
-/// the pieces that close on themselves read as its two rims (the first the outer loop, the second
-/// an inner one) and the open pieces joined end to start back into the holes they were. Pushed as
-/// new faces, shells and a solid that supersedes the old one, so [`tessellate`] meshes the seamless
-/// twin. Returns, per cylindrical face, `(as it was, seamless)` — a face that already has no seam
-/// edge (every lateral a prism builds) is kept and paired with itself.
-fn as_seamless(
-    m: &mut Model,
-    solid: Handle<nacre_topo::Solid>,
-) -> Vec<(Handle<Face>, Handle<Face>)> {
-    use nacre_topo::{HalfEdge, Shell, Solid};
-    let ends = |m: &Model, he: &HalfEdge| {
-        let [a, b] = m.edge(he.edge).vertices;
-        if he.forward { (a, b) } else { (b, a) }
-    };
-    let mut pairs = Vec::new();
-    let shell_of =
-        |m: &mut Model, sh: Handle<Shell>, pairs: &mut Vec<(Handle<Face>, Handle<Face>)>| {
-            let faces = m.shell(sh).faces.clone();
-            let mut out = Vec::with_capacity(faces.len());
-            for fh in faces {
-                let face = m.face(fh).clone();
-                let lat = face.surface;
-                let is_seam = |m: &Model, he: &HalfEdge| m.edge(he.edge).surfaces == [lat, lat];
-                if !matches!(m.surface(lat), nacre_topo::Surface::Cylinder { .. }) {
-                    out.push(fh);
-                    continue;
-                }
-                if !face.outer.half_edges.iter().any(|he| is_seam(m, he)) {
-                    pairs.push((fh, fh)); // already seamless
-                    out.push(fh);
-                    continue;
-                }
-                let hes = &face.outer.half_edges;
-                let first = hes.iter().position(|he| is_seam(m, he)).unwrap();
-                let mut pieces: Vec<Vec<HalfEdge>> = Vec::new();
-                let mut cur = Vec::new();
-                for k in 0..hes.len() {
-                    let he = hes[(first + k) % hes.len()];
-                    if is_seam(m, &he) {
-                        if !cur.is_empty() {
-                            pieces.push(std::mem::take(&mut cur));
-                        }
-                    } else {
-                        cur.push(he);
-                    }
-                }
-                if !cur.is_empty() {
-                    pieces.push(cur);
-                }
-                let start = |m: &Model, p: &[HalfEdge]| ends(m, &p[0]).0;
-                let end = |m: &Model, p: &[HalfEdge]| ends(m, &p[p.len() - 1]).1;
-                let (mut rims, mut open): (Vec<_>, Vec<_>) =
-                    pieces.into_iter().partition(|p| start(m, p) == end(m, p));
-                // The walk is lo rim, …, hi rim, …: from the first seam edge on, the hi rim comes first.
-                assert_eq!(rims.len(), 2, "a seamed band has two rims");
-                rims.reverse();
-                let mut holes = Vec::new();
-                while let Some(a) = open.pop() {
-                    let j = open
-                        .iter()
-                        .position(|b| start(m, b) == end(m, &a) && end(m, b) == start(m, &a))
-                        .expect("a spliced hole's two runs");
-                    let b = open.remove(j);
-                    holes.push(nacre_topo::Loop {
-                        half_edges: a.into_iter().chain(b).collect(),
-                    });
-                }
-                let mut inner = vec![nacre_topo::Loop {
-                    half_edges: rims.pop().unwrap(),
-                }];
-                inner.extend(holes);
-                inner.extend(face.inner.iter().cloned());
-                let nf = m.push_face(Face {
-                    surface: lat,
-                    outer: nacre_topo::Loop {
-                        half_edges: rims.pop().unwrap(),
-                    },
-                    inner,
-                    orientation: face.orientation,
-                });
-                pairs.push((fh, nf));
-                out.push(nf);
-            }
-            m.push_shell(Shell { faces: out })
-        };
-    let s = m.solid(solid).clone();
-    let outer = shell_of(m, s.outer, &mut pairs);
-    let cavities = s
-        .cavities
-        .iter()
-        .map(|&c| shell_of(m, c, &mut pairs))
-        .collect();
-    m.push_solid(Solid { outer, cavities });
-    m.supersede_live(&[solid]);
-    m.rebuild_adjacency();
-    pairs
+/// A solid's cylindrical faces, in shell order.
+fn laterals(m: &Model, solid: Handle<nacre_topo::Solid>) -> Vec<Handle<Face>> {
+    let s = m.solid(solid);
+    std::iter::once(s.outer)
+        .chain(s.cavities.iter().copied())
+        .flat_map(|sh| m.shell(sh).faces.clone())
+        .filter(|&f| matches!(m.surface_cache(m.face(f).surface), Surface::Cylinder(_)))
+        .collect()
 }
 
 /// The mesh area of one face.
@@ -716,30 +626,15 @@ fn face_area(t: &Tessellation, fh: Handle<Face>) -> f64 {
         .sum()
 }
 
-/// One face's triangles as the bits of their corners, in mesh order.
-fn face_bits(t: &Tessellation, fh: Handle<Face>) -> Vec<[[u64; 3]; 3]> {
-    t.by_face[&fh]
-        .iter()
-        .map(|&th| {
-            t.triangles
-                .get(th)
-                .vertices
-                .map(|v| t.vertices.get(v).pos.as_array().map(f64::to_bits))
-        })
-        .collect()
-}
-
-/// ★★★★★ **A lateral bounded by two whole rims and nothing else meshes exactly as its seamed twin.**
+/// ★★★★★ **A lateral bounded by two whole rims and nothing else is cut at their own vertices.**
 ///
-/// A bore through a plate — a boolean's result, which still writes its lateral with a seam edge —
-/// rewritten with no seam edge ([`as_seamless`]): both rims are one closed edge, so the band is cut
-/// at their own vertices ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the joined
-/// ring is the seamed ring position for position, and the mesh is the same bit for bit. (A plain
-/// cylinder is built with no seam edge; its mesh is `cylinder_tessellates_watertight`'s.) Before
-/// that rule such a band went to the generator, whose cut could land on a rim's closing step (a
-/// closed edge's polyline does not repeat its first sample) and fail the whole model's mesh.
+/// A bore through a plate: both rims are one closed edge, so the band is cut at their vertices
+/// ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the mesh has exactly the rims'
+/// samples, as a plain cylinder's (`cylinder_tessellates_watertight`). Before that rule such a band
+/// went to the generator, whose cut could land on a rim's closing step (a closed edge's polyline
+/// does not repeat its first sample) and fail the whole model's mesh.
 #[test]
-fn a_seamless_bore_meshes_as_its_seamed_twin() {
+fn a_bore_is_cut_at_its_rims_vertices() {
     use nacre_ops::{BoolKind, boolean, fixtures};
     let pi = std::f64::consts::PI;
     let mut m = Model::new();
@@ -759,31 +654,38 @@ fn a_seamless_bore_meshes_as_its_seamed_twin() {
     m.rebuild_adjacency();
     let solid = boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0];
     m.rebuild_adjacency();
-    let cfg = TessConfig::default();
-    let seamed = tessellate(&m, &cfg).unwrap();
-    let pairs = as_seamless(&mut m, solid);
-    let [(old, new)] = pairs[..] else {
-        panic!("one lateral, got {}", pairs.len());
+    let [bore] = laterals(&m, solid)[..] else {
+        panic!("one lateral");
     };
-    assert_ne!(
-        old, new,
-        "the premise: the bore was written with a seam edge"
+    let face = m.face(bore);
+    assert!(
+        face.inner.len() == 1
+            && std::iter::once(&face.outer)
+                .chain(&face.inner)
+                .all(|l| l.half_edges.len() == 1),
+        "the premise: two loops, each one closed rim"
     );
-    assert_eq!(m.face(new).inner.len(), 1, "two loops");
-    let seamless = tessellate(&m, &cfg).unwrap();
-    assert_eq!(non_watertight_edges(&seamless), 0);
-    assert_eq!(seamless.vertices.len(), seamed.vertices.len());
-    assert_eq!(seamless.triangles.len(), seamed.triangles.len());
-    assert_eq!(face_bits(&seamless, new), face_bits(&seamed, old));
+    let cfg = TessConfig::default();
+    let t = tessellate(&m, &cfg).unwrap();
+    assert_eq!(non_watertight_edges(&t), 0);
+    let n = circle_segments(&cfg, 1.0);
+    let on_lateral: HashSet<_> = t.by_face[&bore]
+        .iter()
+        .flat_map(|&th| t.triangles.get(th).vertices)
+        .collect();
+    assert_eq!(
+        on_lateral.len(),
+        2 * n,
+        "the rims' samples and nothing else"
+    );
     let want = 2.0 * pi;
-    let area = face_area(&seamless, new);
+    let area = face_area(&t, bore);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
 /// ★★★★ **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**
 ///
-/// The windowed boss with its window on the seam and off it, rewritten with no seam edge: three
-/// loops, so [`cut_seamless_bands`]'s first rule does not apply — where the window covers `θ = 0`,
+/// The windowed boss with its window on the seam and off it: three loops, so [`cut_seamless_bands`]'s first rule does not apply — where the window covers `θ = 0`,
 /// a cut at the rims' own vertices would run through it. The generator steps around the window.
 #[test]
 fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
@@ -792,9 +694,8 @@ fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
     for seam_x in [1.0, -1.0] {
         let mut m = Model::new();
         let boss = fixtures::windowed_boss(&mut m, 0.6, seam_x);
-        let pairs = as_seamless(&mut m, boss);
-        let [(_, new)] = pairs[..] else {
-            panic!("one lateral, got {}", pairs.len());
+        let [new] = laterals(&m, boss)[..] else {
+            panic!("one lateral");
         };
         assert_eq!(m.face(new).inner.len(), 2, "seam {seam_x}: rim and window");
         let t = tessellate(&m, &TessConfig::default())
@@ -835,9 +736,8 @@ fn a_seamless_lateral_with_a_chain_rim_on_the_seam_is_cut_off_its_corner() {
     m.rebuild_adjacency();
     let fused = boolean(&mut m, BoolKind::Fuse, boss, plate).expect("the boss on the edge")[0];
     m.rebuild_adjacency();
-    let pairs = as_seamless(&mut m, fused);
-    let [(_, new)] = pairs[..] else {
-        panic!("one lateral, got {}", pairs.len());
+    let [new] = laterals(&m, fused)[..] else {
+        panic!("one lateral");
     };
     let t = tessellate(&m, &TessConfig::default()).unwrap();
     assert_eq!(non_watertight_edges(&t), 0);
@@ -876,21 +776,18 @@ fn windows_round_a_boss(m: &mut Model) -> Handle<nacre_topo::Solid> {
     s
 }
 
-/// ★★★★★ **Windows that cover every angle between them are cut through.** [`windows_round_a_boss`]
-/// with no seam edge: every generator crosses a window, so the cut crosses one — twice, its two
-/// runs spliced into the outer ring ([`joined_band`]) — rather than refusing the face, which would
-/// fail the whole model's mesh. The seamed twin meshes too (its slit splices the window on the
-/// seam), so the seamless representation must not lose it.
+/// ★★★★★ **Windows that cover every angle between them are cut through.** [`windows_round_a_boss`]:
+/// every generator crosses a window, so the cut crosses one — twice, its two runs spliced into the
+/// outer ring ([`joined_band`]) — rather than refusing the face, which would fail the whole model's
+/// mesh.
 #[test]
 fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
     let pi = std::f64::consts::PI;
     let mut m = Model::new();
     let boss = windows_round_a_boss(&mut m);
     let cfg = TessConfig::default();
-    tessellate(&m, &cfg).expect("the seamed twin meshes");
-    let pairs = as_seamless(&mut m, boss);
-    let [(_, new)] = pairs[..] else {
-        panic!("one lateral, got {}", pairs.len());
+    let [new] = laterals(&m, boss)[..] else {
+        panic!("one lateral");
     };
     assert_eq!(m.face(new).inner.len(), 5, "a rim and four windows");
     let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
@@ -902,15 +799,12 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
 
 /// ★★★★ **A cut on a whole rim's closing step goes at the end of its polyline.** A closed edge's
 /// polyline does not repeat its first sample, so the ring of a loop that is one closed edge has no
-/// position the closing step arrives through. The plain cylinder with no seam edge, cut at the
-/// middle of its first rim's closing step — where the generator can land when every candidate is
+/// position the closing step arrives through. The plain cylinder, cut at the middle of its first rim's closing step — where the generator can land when every candidate is
 /// as clear as the next.
 #[test]
 fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
-    let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 4.0);
-    let solid = m.live_solids()[0];
-    let pairs = as_seamless(&mut m, solid);
-    let [(_, fh)] = pairs[..] else {
+    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 4.0);
+    let [fh] = laterals(&m, m.live_solids()[0])[..] else {
         panic!("one lateral");
     };
     let cfg = TessConfig::default();

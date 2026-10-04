@@ -2,10 +2,11 @@
 
 use super::*;
 
-/// A result's lateral faces' boundary cycles by kind — (rims, chains, panels, holes) summed
-/// over the laterals; an unnamed cycle panics (the census locks that none is). The tracer's
-/// inputs are set up as `pinned_ends_ordered` does.
-fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
+/// A result's lateral faces' loops — (whole rims, other outer loops, other inner loops) summed
+/// over the laterals, as the tracer names them ([`combinatorics::lateral_cycles`]); an unnamed
+/// loop panics (the census locks that none is). The tracer's inputs are set up as
+/// `pinned_ends_ordered` does.
+fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 3] {
     let faces_tab = collect_planes(m, r).expect("the result's face table");
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in faces_tab.iter().enumerate() {
@@ -33,7 +34,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
         })
         .collect();
     let jd = crate::planes::test_judge(&planes);
-    let mut tally = [0usize; 4];
+    let mut tally = [0usize; 3];
     for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         if !matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
@@ -41,12 +42,11 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
         }
         let cycles = combinatorics::lateral_cycles(m, fh, fp, &inc, &jd, &plane_ix, &cyls)
             .unwrap_or_else(|e| panic!("a lateral's cycles could not be named: {e:?}"));
-        for (kind, _) in cycles {
-            tally[match kind {
-                combinatorics::CycleKind::Rim => 0,
-                combinatorics::CycleKind::Chain => 1,
-                combinatorics::CycleKind::Panel => 2,
-                combinatorics::CycleKind::Hole => 3,
+        for (i, ring) in cycles.iter().enumerate() {
+            tally[match (ring, i) {
+                (combinatorics::LoopRing::Rim { .. }, _) => 0,
+                (_, 0) => 1,
+                _ => 2,
             }] += 1;
         }
     }
@@ -64,10 +64,9 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 /// outcome beside the boundary cycles its result's laterals carry — and the distribution asserted
 /// at the end reads it as a whole, so a moved cell is seen beside its neighbours.
 ///
-/// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
-/// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
-/// construction, so it is not counted). Its hole count is the zero that says a hole never carries
-/// one: a hole touching the seam is spliced into the outer walk.
+/// ★ The probe beside it counts the loops carrying an `OnSeam` vertex at a joint between two
+/// edges — outer loops of plane faces and holes of every face. Both counts are zero: a seam vertex
+/// is a whole rim's, on a loop of that one closed edge, and a cut circle has none.
 #[test]
 fn reop_census_families_reoperate_or_decline_by_name() {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -79,19 +78,21 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         Declined(DeclineKind),
     }
     use Reop::*;
-    // A lateral's boundary cycles per kind, summed over the result's lateral faces:
-    // (rims, chains, panels, holes).
-    type Cyc = [usize; 4];
-    const RIMS: Cyc = [2, 0, 0, 0];
-    const RIMS_HOLE: Cyc = [2, 0, 0, 1];
-    const CHAIN: Cyc = [1, 1, 0, 0];
-    const PANEL: Cyc = [0, 0, 1, 0];
-    const NONE: Cyc = [0; 4];
+    // A lateral's loops, summed over the result's lateral faces: (whole rims, other outer loops,
+    // other inner loops). A chain rim is the outer loop when it is the lower rim, an inner one
+    // when it is the upper.
+    type Cyc = [usize; 3];
+    const RIMS: Cyc = [2, 0, 0];
+    const RIMS_HOLE: Cyc = [2, 0, 1];
+    const CHAIN_ABOVE: Cyc = [1, 0, 1];
+    const CHAIN_BELOW: Cyc = [1, 1, 0];
+    const PANEL: Cyc = [0, 1, 0];
+    const NONE: Cyc = [0; 3];
     // (name, [Fuse, Cut, Common], the cycles each result's laterals carry) — one row per
     // `BOSS_FAMILIES` entry, in its order.
     type Family = (&'static str, [Reop; 3], [Cyc; 3]);
     let families: [Family; 17] = [
-        ("through", [Ok, Ok, Ok], [[4, 0, 0, 0], RIMS, RIMS]),
+        ("through", [Ok, Ok, Ok], [[4, 0, 0], RIMS, RIMS]),
         // A boss standing on the plate: the cut removes nothing and leaves no lateral at all.
         ("on top", [Ok, Ok, Empty], [RIMS, NONE, NONE]),
         ("flush", [Ok, Ok, Ok], [RIMS, RIMS, RIMS]),
@@ -102,10 +103,18 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ("corner", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("corner-lo", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("offmid", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
-        ("half wall", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
-        ("half wall, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
-        ("half +x", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
-        ("half +x, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
+        ("half wall", [Ok, Ok, Ok], [CHAIN_ABOVE, PANEL, PANEL]),
+        (
+            "half wall, cap below",
+            [Ok, Ok, Ok],
+            [CHAIN_BELOW, PANEL, PANEL],
+        ),
+        ("half +x", [Ok, Ok, Ok], [CHAIN_ABOVE, PANEL, PANEL]),
+        (
+            "half +x, cap below",
+            [Ok, Ok, Ok],
+            [CHAIN_BELOW, PANEL, PANEL],
+        ),
         // The offset wall: a notch hole in the band, a panel for the cut and the common
         // — the wall families' shape, with the chord off the diameter.
         ("offset-out", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
@@ -154,8 +163,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                             seam_joints.1 += face.inner.iter().filter(|lp| joint(lp)).count();
                         }
                     }
-                    // The lateral faces' boundary cycles, named as the tracer will read
-                    // them — the outer loop cut at its slits, the spliced hole recovered.
+                    // The lateral faces' loops, named as the tracer will read them.
                     let got_cyc = lateral_cycle_census(&m, out[0]);
                     if got_cyc != want_cyc {
                         cycle_mismatches
@@ -235,10 +243,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "every ring of a result face has a name"
     );
-    // Six of the outer loops are the offset families' Fuse rows — two whole-circle rims each
-    // that pass the seam vertex. The wall families' seam sits on the wall itself (a chord end, a
-    // pierce vertex), which is why their Fuse rows add none of these.
-    assert_eq!(seam_joints, (14, 0), "seam-joint loops (outer, holes)");
+    assert_eq!(seam_joints, (0, 0), "seam-joint loops (outer, holes)");
 }
 
 /// **A radius-`0.5` disk centred on `base`'s `xy`, clipped by an axis-aligned rectangle — the
@@ -795,10 +800,10 @@ fn a_cycle_is_carved_on_its_classes() {
     // ★ This test's own records: the two traces above and nothing else, so a station's rows
     // are its fixture's and can be counted rather than merely found.
     let hits = crate::arrangement::cycle_probe::HITS.mine();
-    // `kinds = [rims, chains, panels, holes]`; every recorded entry of the shape at the station
+    // `kinds = [whole rims, other outer, other inner]`; every recorded entry of the shape at the station
     // must read the same, and the station must have been reached. A graze's `body_above` is
     // written in the class's stored frame, so the rim check asks only for the kind of answer.
-    let check = |kinds: [usize; 4],
+    let check = |kinds: [usize; 3],
                  t: f64,
                  outer: fn(Option<CylOnClass>) -> bool,
                  carved: usize,
@@ -820,10 +825,10 @@ fn a_cycle_is_carved_on_its_classes() {
     let crosses = |o: Option<CylOnClass>| o == Some(CylOnClass::Crosses);
     let grazes = |o: Option<CylOnClass>| matches!(o, Some(CylOnClass::Grazes { .. }));
     let absent = |o: Option<CylOnClass>| o.is_none();
-    let panel = [0, 0, 1, 0];
+    let panel = [0, 1, 0];
     check(panel, 1.5, crosses, 1, 1);
     check(panel, 1.0, absent, 1, 1);
-    let chain = [1, 1, 0, 0];
+    let chain = [1, 0, 1];
     check(chain, 0.0, grazes, 0, 1);
     check(chain, 1.0, crosses, 1, 2);
     check(chain, 2.0, absent, 1, 1);

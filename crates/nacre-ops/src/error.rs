@@ -318,9 +318,8 @@ pub enum RejectReason {
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is what
     /// `Model::push_edge` refusing a zero-length line (`EdgeDecline::Coincident`) becomes, so a
-    /// degenerate one is reported rather than built. A lateral's seam slit whose two ends are one
-    /// vertex is not asked for at all (no edge — the contact is shared), so what is left is two
-    /// handles at one point, the cause `SeamAlias` catches earlier; this has no firing test.
+    /// degenerate one is reported rather than built. What is left is two handles at one point, the
+    /// cause `SeamAlias` catches earlier; this has no firing test.
     ZeroLengthEdge,
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
     /// vertex, which the substrate cannot express.
@@ -677,23 +676,14 @@ pub enum RejectReason {
     /// carries this name. What it names are the shapes the lateral's walk and assembly do not
     /// arrange:
     ///
-    /// * cycles whose winding does not classify into one lower and one upper rim with holes the
-    ///   assembly can bridge (`classify_cycles`' abstentions — a chain with more than two seam
-    ///   contact vertices, a hole meeting the seam at other than zero or two, two bridging holes;
-    ///   ☑ all measured 0 across the suite);
+    /// * a region whose cycles wrap the axis other than as one lower and one upper rim, or more
+    ///   than once (`cyl_chart::regions`) — ☑ measured 0 across the suite, the census and the
+    ///   ignored sweep;
     /// * a cut rim left with **one** node — the cut-rim table keeps such a rim on purpose
-    ///   (`draft::held_rims`), and one node cannot state a rim as arcs;
-    /// * a **lateral whose outer walk is pinched at a seam contact** — a hole or the other rim
-    ///   sharing the rim's contact, so the slit between them has no length and is no edge, or a
-    ///   chain rim visiting one contact twice. Every
-    ///   other refusal of the assembly speaks first (a result touching itself along that ruling
-    ///   is `NonManifoldResultEdge`); what passes them all is a walk the lateral's reader
-    ///   (`combinatorics::lateral_cycles`) would cut wrong, so it does not leave. No boolean in
-    ///   the suite or the census reaches it.
+    ///   (`draft::held_rims`), and one node cannot state a rim as arcs.
     ///
     /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
-    /// spelled whole, a hole whose contacts are not the two the merge kept, a chain with no
-    /// contact — the name is [`Self::CylinderStagesDisagree`].
+    /// spelled whole, an arc with no rim — the name is [`Self::CylinderStagesDisagree`].
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///
@@ -800,8 +790,7 @@ pub enum RejectReason {
     /// line through a wall face's hole, recorded with a far secant face that holds it:
     /// `a_tangent_line_through_a_hole_held_by_a_far_step_is_refused_today`; none in the census. A
     /// tangent wall across a half cylinder's flat edge, which reached it too, is
-    /// [`Self::TangentLineInAnotherPlane`] at the gate); and a panel arc
-    /// whose two ends share no cut circle's plane, or two (`draft::seam_step`). And a lateral
+    /// [`Self::TangentLineInAnotherPlane`] at the gate). And a lateral
     /// cell that straddles a θ the chart has no vertical line for — the arcs of one rim end
     /// disagreeing, a sector opened at one ruling of a cut rim, a sector holding every rim node
     /// (`cyl_chart::read_cell`): the chart's vertical lines come from the ruling sweep, which
@@ -857,10 +846,9 @@ pub enum RejectReason {
     /// **Two stages of the cylinder road state one fact differently** — the class table and the
     /// face rows (a cylinder or plane class no face row names, or rows of both solids on one
     /// cylinder class), the split and the chart (a rim station the run cannot place, a ruling the
-    /// wall's pieces do not tile, a cycle whose pieces do not chain), the chart and the assembly
-    /// (a cut circle spelled whole, a hole whose seam contacts are not the two the merge kept, a
-    /// chain rim with no contact, a seam contact with no station the chart already gave its
-    /// circle), the split and the chart's cell reader (a present cell with no circle at an end, a
+    /// wall's pieces do not tile, a cycle whose pieces do not chain or whose arc units are not
+    /// whole turns), the chart and the assembly (a cut circle spelled whole, an arc whose ends lie
+    /// on no held rim, or on two), the split and the chart's cell reader (a present cell with no circle at an end, a
     /// station the split placed that is no crossing of its wall, two chart lines on one rim node),
     /// and a stored pierce definition and its own re-solved meet. Each guard stands where an
     /// earlier stage already settled the fact, so what reaches one is an engine defect, never an
@@ -975,8 +963,8 @@ pub enum DeclineKind {
     /// calls where the lone off-line class fails the cut test; and the seated road's, by
     /// `unreachable!()` with the whole suite and the ignored sweep green.
     NoPinOnLine,
-    /// A cylinder face could not state its shape exactly — its outer loop could not be cut at
-    /// its slits or named, a class has no exact station, or its whole rims are more than two or
+    /// A cylinder face could not state its shape exactly — a loop could not be named, a class has
+    /// no exact station, or its whole rims are more than two or
     /// not at the ends of its range (a panel and a chain rim are stated, not
     /// declined).
     CylSpan,

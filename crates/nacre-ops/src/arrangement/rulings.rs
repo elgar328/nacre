@@ -110,7 +110,7 @@ pub(super) fn theta_between(
     node: NodeId,
 ) -> Result<bool, DeclineKind> {
     let nodes = [lo, hi, node];
-    let (order, _) = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
+    let order = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
     let pos = |x: usize| {
         order
             .iter()
@@ -158,7 +158,7 @@ fn ruling_sweep(
     k: usize,
     side: i8,
     rims: &[(Rat, usize)],
-    cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],
+    cycles: &[(bool, combinatorics::LoopRing)],
     mat: SegKind,
     which: SolidSide,
     aliases: &Aliases,
@@ -221,14 +221,14 @@ fn ruling_sweep(
             i32::from(material_theta_sign(cf.orient_sign, tau)) * i32::from(theta_dot_stored) > 0;
         Ok((ta, tb, tau, body_above))
     };
-    for (kind, ring) in cycles {
+    for (inner, ring) in cycles {
         // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair.
         let Some(nr) = ring.poly() else {
             return Err(DeclineKind::CylFaceHole);
         };
         let n = nr.triples.len();
         #[cfg(not(test))]
-        let _ = kind;
+        let _ = inner;
         // Which edges lie on this ruling. Two shapes, one rule — **the line's carrier says who
         // states it**:
         // - a straight edge carried by `wc` itself (its far face is *seated* on the class): the
@@ -318,7 +318,7 @@ fn ruling_sweep(
             };
             #[cfg(test)]
             ruling_probe::GRAZE_SIDE.push(ruling_probe::GrazeSide {
-                kind: *kind,
+                inner: *inner,
                 body_above,
                 ny: jd.planes[wc].plane.normal().as_array()[1],
                 origin: def.origin().map(|x| x.to_f64()),

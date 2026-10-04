@@ -310,18 +310,9 @@ impl VertexClasses {
 /// ★ **The vessel is wide rather than refusing.** The differential's job is to *separate*
 /// faces the two routes could disagree about, so a pierce node needs a spelling here — declining
 /// would silently stop covering every face that contains one.
-/// Being an enum also means **no `usize::MAX` sentinels** for a circle and a band:
+/// Being an enum also means **no `usize::MAX` sentinels** for a circle and a rim:
 /// those exist only when the vessel is a triple, which is the same
-/// defect one layer down. It separates strictly more than sentinels would — a band with
-/// `lo == hi` would collide with that class's circle.
-/// A band's rim in the canonical key: its plane class, or a chain (whose nodes follow).
-#[cfg(any(debug_assertions, test))]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub(crate) enum CanonRim {
-    Circle(usize),
-    Chain,
-}
-
+/// defect one layer down.
 #[cfg(any(debug_assertions, test))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) enum CanonNode {
@@ -335,8 +326,8 @@ pub(crate) enum CanonNode {
     },
     /// A whole circle, by its cylinder class.
     Circle(usize),
-    /// A band, by its two rim classes.
-    Band(CanonRim, CanonRim),
+    /// A lateral's whole rim, by its plane class and the way it is walked.
+    Rim(usize, bool),
 }
 
 /// `(plane, flip, outer ring, hole rings)` — every field of a [`LocalFace`] but those freedoms.
@@ -370,24 +361,12 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
         .map(|f| {
             // ★ A **curved** bound canonicalizes by its classes rather than by nodes, because it
             // has none. The key still has to *separate* faces the two routes could disagree
-            // about, so a circle contributes its cylinder class and a band its two rims —
-            // spelled as one-element triples so they share the vessel with the node lists.
-            let canon_rim = |r: &crate::draft::Rim| match r {
-                crate::draft::Rim::Circle(c) => CanonRim::Circle(*c),
-                crate::draft::Rim::Chain(_) => CanonRim::Chain,
-            };
+            // about, so a circle contributes its cylinder class and a rim its plane class and
+            // sense — spelled as one-element lists so they share the vessel with the node lists.
             let ring_b = |b: &crate::draft::Bound| match b {
                 crate::draft::Bound::Ring(r) => ring(r),
                 crate::draft::Bound::Circle { cyl } => vec![CanonNode::Circle(*cyl)],
-                // A chain rim's nodes follow the marker, so two bands differing only in a
-                // chain still separate.
-                crate::draft::Bound::Band { lo, hi } => {
-                    let mut v = vec![CanonNode::Band(canon_rim(lo), canon_rim(hi))];
-                    for r in [lo, hi].into_iter().filter_map(crate::draft::Rim::ring) {
-                        v.extend(ring(r));
-                    }
-                    v
-                }
+                crate::draft::Bound::Rim { plane, ccw } => vec![CanonNode::Rim(*plane, *ccw)],
             };
             let mut inner: Vec<Vec<CanonNode>> = f.inner.iter().map(ring_b).collect();
             inner.sort();

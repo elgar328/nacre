@@ -17,14 +17,15 @@ use crate::ledger::Ledger;
 /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
 /// arc** — one entry per extent a cycle has carved out of a circle in this binary, whether the
 /// face grazes there (the cycle's own arc) or is absent (a hole's interior, a panel's outside).
-/// Beside it the cycle's kind and the cylinder's origin, so a reader can pick **its own**
+/// Beside it whether the cycle is an inner loop and the cylinder's origin, so a reader can pick
+/// **its own**
 /// fixture's holes out of a ledger every test in the binary writes to.
 pub(crate) static MIDS: Ledger<Mid> = Ledger::new();
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Mid {
     pub dir: [f64; 3],
-    pub kind: combinatorics::CycleKind,
+    pub inner: bool,
     pub origin: [f64; 3],
 }
 
@@ -32,7 +33,7 @@ pub(crate) fn record(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
-    kind: combinatorics::CycleKind,
+    inner: bool,
     arc: [NodeId; 2],
 ) {
     let (Some(pa), Some(pb)) = (
@@ -74,7 +75,7 @@ pub(crate) fn record(
     let (c, s) = ((phi / 2.0).cos(), (phi / 2.0).sin());
     MIDS.push(Mid {
         dir: core::array::from_fn(|i| c * u[i] + s * w[i]),
-        kind,
+        inner,
         origin: o,
     });
 }

@@ -24,7 +24,6 @@ pub(crate) fn name_result_vertices(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    rims: &crate::draft::HeldRims,
 ) -> Result<Named, BoolError> {
     // ★★★ **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
     // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring
@@ -134,7 +133,7 @@ pub(crate) fn name_result_vertices(
     // ★★ **Held, not raised.** A failed grouping is reported further down, and until then every
     // face is one group (`replay::a_late_reject_is_not_index_neutral` measures the arena a
     // declining boolean leaves).
-    let grouping = group_faces(jd, faces, cyls, rims);
+    let grouping = group_faces(jd, faces, cyls);
     let group_of: Vec<usize> = match &grouping {
         Ok(g) => g.group_of.clone(),
         Err(_) => vec![0; faces.len()],

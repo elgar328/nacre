@@ -756,14 +756,8 @@ fn every_result_vertex_of_the_arc_population_is_named() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("seam");
-        let named = crate::assembly::name_result_vertices(
-            &jd,
-            &seam,
-            &faces,
-            cyls,
-            &crate::draft::held_rims(&faces, &curved.split_rims),
-        )
-        .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
+            .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         // Completeness: every ring node has a definition.
         let mut missing = Vec::new();
@@ -911,14 +905,8 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("seam");
-        let named = crate::assembly::name_result_vertices(
-            &jd,
-            &seam,
-            &faces,
-            cyls,
-            &crate::draft::held_rims(&faces, &curved.split_rims),
-        )
-        .expect("the naming stages run");
+        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
+            .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         let mut uses: std::collections::HashMap<
             (crate::combinatorics::NodeId, crate::combinatorics::NodeId),
@@ -1046,18 +1034,15 @@ fn a_pierce_vertex_is_minted_and_measured() {
 #[test]
 fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
     let s = 2.0 - 3.0f64.sqrt() / 4.0;
-    // `seam_split`: where θ = 0 sits. `None` = a pierce vertex lies on the seam generator
-    // (the straddling boss — the split's own `SeamIncident` case), so no piece splits;
-    // `Some(p)` = the seam vertex S is minted at `p` (centre + ref_dir·r, derived) and the
-    // wrap arc is cut there into two pieces.
-    for (origin, axis, height, crossings, chord_edges, seam_split) in [
+    // The straddling boss puts a pierce vertex on its seam generator, the turned boss does not;
+    // neither cut circle gets a seam vertex.
+    for (origin, axis, height, crossings, chord_edges) in [
         (
             [4.0, 2.0, 2.0],
             [0.0, 0.0, 1.0],
             1.0,
             [[4.0, 1.5, 2.0], [4.0, 2.5, 2.0]],
             1usize,
-            None,
         ),
         (
             [4.0, 0.25, 2.0],
@@ -1065,7 +1050,6 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
             1.0,
             [[4.0, 0.75, 2.0], [4.0, 0.0, s]],
             0usize,
-            Some([4.0, 0.25, 1.5]),
         ),
     ] {
         let mut m = Model::new();
@@ -1096,20 +1080,17 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
             .map(|h| (h, m.edge(h)))
             .collect();
         let is_cyl = |sh| matches!(m.surface_cache(sh), nacre_geom::Surface::Cylinder(_));
-        // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral); the
-        // band's seam edge is `[lat, lat]` — both carriers the cylinder — and is not a
-        // piece of any circle.
+        // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral).
         let on_circle = |e: &nacre_topo::Edge| is_cyl(e.surfaces[0]) != is_cyl(e.surfaces[1]);
 
         // The cut circle's pieces: their directed vertex pairs chain into **one** cycle —
         // the observable of the `[A, B]`-CCW convention (for two pieces the cycle *is* the
-        // mutually-reversed pair the first version of this fence asserted), and of the seam
-        // split (three pieces when S stands, still one circle).
+        // mutually-reversed pair the first version of this fence asserted).
         let arcs: Vec<_> = minted
             .iter()
             .filter(|(_, e)| on_circle(e) && e.vertices[0] != e.vertices[1])
             .collect();
-        let expect_pieces = 2 + usize::from(seam_split.is_some());
+        let expect_pieces = 2;
         assert_eq!(
             arcs.len(),
             expect_pieces,
@@ -1130,9 +1111,8 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
             }
         }
         assert_eq!(steps, expect_pieces, "the pieces close one circle");
-        // Endpoints: exactly two pierce vertices on the derived crossings, plus — when the
-        // seam splits an arc — one OnSeam vertex at the derived seam point, with its
-        // tolerance measured.
+        // Endpoints: exactly the two pierce vertices on the derived crossings — a cut circle
+        // has no seam vertex.
         let (mut pierce, mut on_seam) = (Vec::new(), Vec::new());
         for &v in succ.keys() {
             match *m.vertex(v) {
@@ -1151,31 +1131,15 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
                 "an arc endpoint sits on a derived crossing: {p:?}"
             );
         }
-        match seam_split {
-            None => assert!(on_seam.is_empty(), "the seam is the pierce vertex itself"),
-            Some(sp) => {
-                assert_eq!(on_seam.len(), 1, "one seam vertex on the cut circle");
-                let p = m.vertex_point(on_seam[0]);
-                assert!(
-                    (0..3).all(|i| (p.as_array()[i] - sp[i]).abs() < 1e-12),
-                    "S sits on the derived seam point: {p:?}"
-                );
-                knowledge_is_tight(&m, on_seam[0]);
-            }
-        }
-        // The minted OnSeam census: the uncut far rim's vertex, plus S when it stands —
-        // and nothing else (a duplicate S at a seam-incident pierce vertex would show here).
+        assert!(on_seam.is_empty(), "no seam vertex on the cut circle");
+        // The minted OnSeam census: the uncut far rim's vertex and nothing else.
         let minted_on_seam = (0..m.vertex_count() as u32)
             .filter_map(|i| m.vertex_handle_at(i))
             .map(|h| (h, m.vertex(h)))
             .skip(vertices_from)
             .filter(|(_, v)| matches!(**v, nacre_topo::Vertex::OnSeam(_)))
             .count();
-        assert_eq!(
-            minted_on_seam,
-            1 + on_seam.len(),
-            "far rim + S, nothing else"
-        );
+        assert_eq!(minted_on_seam, 1, "the far rim's, nothing else");
 
         // The rim skip's two sides: no closed edge on the cut circle, exactly one on the
         // uncut far rim (its axis coordinate is the far cap's, derived from the fixture).
@@ -1209,21 +1173,18 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
 ///
 /// ★★★ The band assembles its cut rim from the arc chain; this fence counts the closure
 /// directly on the store beside the production guard: every edge the boolean minted is used
-/// exactly twice across its faces, and the band face's outer loop is one vertex-continuous
-/// cycle of the derived length, with the seam edge traversed once in each sense.
+/// exactly twice across its faces, and the band face is bounded by its two rims — each loop one
+/// vertex-continuous cycle, the derived number of half-edges between them, no edge walked twice.
 ///
-/// ★ Three fixtures: the straddling boss (lo rim cut, seam ≡ pierce), the turned boss
-/// (lo rim cut, seam splits the wrap arc — six half-edges), and the **hung** boss (the
-/// straddling boss mirrored under the plate — the cut circle is the band's **hi** end, so
-/// the chain is walked reversed; measured to pass the gate before this fence was written).
-/// The hi-cut *and* seam-split combination has no fixture yet — the chain logic is shared,
-/// and its population brings one when it arrives.
+/// ★ Three fixtures: the straddling boss (lo rim cut through the seam point), the turned boss
+/// (lo rim cut elsewhere), and the **hung** boss (the straddling boss mirrored under the plate —
+/// the cut circle is the band's **hi** end, so the chain is walked against the axis).
 #[test]
 fn the_bands_loop_is_one_continuous_cycle() {
     for (origin, axis, band_len) in [
-        ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0], 5usize),
-        ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], 6usize),
-        ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0], 5usize),
+        ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0], 3usize),
+        ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], 3usize),
+        ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0], 3usize),
     ] {
         let mut m = Model::new();
         let plate = crate::fixtures::cuboid(
@@ -1271,31 +1232,32 @@ fn the_bands_loop_is_one_continuous_cycle() {
             "a closed shell uses every edge twice: {odd:?}"
         );
 
-        // The band face: one, on the cylinder, its outer loop a continuous cycle of the
-        // derived length, the seam edge once in each sense.
+        // The band face: one, on the cylinder, two loops each a continuous cycle, the derived
+        // number of half-edges, no edge walked twice.
         let bands: Vec<_> = garbage
             .iter()
             .filter(|(_, f)| matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)))
             .collect();
         assert_eq!(bands.len(), 1, "one band face");
-        let lp = &bands[0].1.outer;
-        assert_eq!(lp.half_edges.len(), band_len, "the derived loop length");
+        let band = bands[0].1;
+        assert_eq!(band.inner.len(), 1, "two loops: one rim each");
         let ends = |he: &nacre_topo::HalfEdge| {
             let [a, b] = m.edge(he.edge).vertices;
             if he.forward { (a, b) } else { (b, a) }
         };
-        for w in 0..lp.half_edges.len() {
-            let (_, e0) = ends(&lp.half_edges[w]);
-            let (s1, _) = ends(&lp.half_edges[(w + 1) % lp.half_edges.len()]);
-            assert_eq!(e0, s1, "the loop chains vertex to vertex at step {w}");
+        let mut seen = std::collections::HashSet::new();
+        let mut total = 0;
+        for lp in std::iter::once(&band.outer).chain(&band.inner) {
+            let n = lp.half_edges.len();
+            total += n;
+            for w in 0..n {
+                let (_, e0) = ends(&lp.half_edges[w]);
+                let (s1, _) = ends(&lp.half_edges[(w + 1) % n]);
+                assert_eq!(e0, s1, "the loop chains vertex to vertex at step {w}");
+                assert!(seen.insert(lp.half_edges[w].edge), "no edge walked twice");
+            }
         }
-        let mut seen: std::collections::HashMap<_, Vec<bool>> = std::collections::HashMap::new();
-        for he in &lp.half_edges {
-            seen.entry(he.edge).or_default().push(he.forward);
-        }
-        let twice: Vec<_> = seen.values().filter(|v| v.len() == 2).collect();
-        assert_eq!(twice.len(), 1, "exactly one edge is walked twice: the seam");
-        assert_ne!(twice[0][0], twice[0][1], "once in each sense");
+        assert_eq!(total, band_len, "the derived number of half-edges");
     }
 }
 
@@ -1399,14 +1361,8 @@ fn the_grouping_joins_across_a_cut_rim() {
             &mut crate::realize::PlaneMemo::default(),
         )
         .expect("the seam realizes pierce nodes");
-        let named = crate::assembly::name_result_vertices(
-            &jd,
-            &seam,
-            &faces,
-            cyls,
-            &crate::draft::held_rims(&faces, &curved.split_rims),
-        )
-        .expect("the naming runs");
+        let named = crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls)
+            .expect("the naming runs");
         let g = named
             .grouping
             .as_ref()

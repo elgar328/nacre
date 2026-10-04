@@ -26,9 +26,9 @@ pub(crate) fn comp_face(
                         combinatorics::BoundEdges::Ring(r.edges(jd, cyls, Some(c))?)
                     }
                     Bound::Circle { cyl } => circle(*cyl),
-                    // Rims bound a cylinder, never a plane — a producer error the ray
-                    // abstains on by name.
-                    Bound::Band { .. } => combinatorics::BoundEdges::Lateral(Vec::new()),
+                    // A lateral's rim bounds a cylinder, never a plane — a producer error the
+                    // ray abstains on by name.
+                    Bound::Rim { .. } => combinatorics::BoundEdges::Lateral(Vec::new()),
                 })
             };
             Ok(combinatorics::CompFace {
@@ -45,19 +45,12 @@ pub(crate) fn comp_face(
             let ring_loop = |r: &Ring| -> Result<combinatorics::LateralLoop, BoolError> {
                 Ok(combinatorics::LateralLoop::Ring(r.edges(jd, cyls, None)?))
             };
-            let rim_loop = |rim: &Rim| -> Result<combinatorics::LateralLoop, BoolError> {
-                Ok(match rim {
-                    Rim::Circle(c) => combinatorics::LateralLoop::Circle(*c),
-                    Rim::Chain(r) => ring_loop(r)?,
-                })
-            };
             let mut loops = Vec::new();
             for b in core::iter::once(&lf.outer).chain(lf.inner.iter()) {
                 match b {
                     Bound::Ring(r) => loops.push(ring_loop(r)?),
-                    Bound::Band { lo, hi } => {
-                        loops.push(rim_loop(lo)?);
-                        loops.push(rim_loop(hi)?);
+                    Bound::Rim { plane, .. } => {
+                        loops.push(combinatorics::LateralLoop::Circle(*plane))
                     }
                     // A circle bound on a cylinder face has no producer; the ray abstains on
                     // it by name rather than guess.
@@ -92,9 +85,8 @@ pub(super) fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    rims: &crate::draft::HeldRims,
 ) -> Result<Grouping, BoolError> {
-    let (labels, n) = face_components(faces, rims);
+    let (labels, n) = face_components(faces);
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);

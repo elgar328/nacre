@@ -186,7 +186,6 @@ pub(super) fn split_circles(
     struct Ordered {
         nodes: Vec<NodeId>,
         order: Vec<usize>,
-        seam_is_node: bool,
     }
     let mut ordered: Vec<Option<Ordered>> = Vec::with_capacity(circles.len());
     for (ci, circ) in circles.iter().enumerate() {
@@ -214,7 +213,7 @@ pub(super) fn split_circles(
             }
         }
         nodes.sort_unstable();
-        let (order, seam_is_node) =
+        let order =
             circular_order(jd, circ.cyl, &circ.def, &nodes).map_err(|e| reject(e.reason()))?;
         let len = order.len();
         let mut at = vec![0usize; len];
@@ -245,11 +244,7 @@ pub(super) fn split_circles(
             .map(|k| is_end(nodes[order[k]]) || covers(k) || covers((k + len - 1) % len))
             .collect();
         if keep.iter().all(|&b| b) {
-            ordered.push(Some(Ordered {
-                nodes,
-                order,
-                seam_is_node,
-            }));
+            ordered.push(Some(Ordered { nodes, order }));
             continue;
         }
         // The crossings on no arc leave — the circle and every segment they were put on.
@@ -273,30 +268,19 @@ pub(super) fn split_circles(
             ordered.push(None);
             continue;
         }
-        // The reduced order is the full one filtered: the relative θ order is unchanged, and it
-        // still runs from the seam — which is a node only if it was one and stayed.
-        let seam_is_node = seam_is_node && keep[0];
+        // The reduced order is the full one filtered: the relative θ order is unchanged.
         let order: Vec<usize> = order
             .iter()
             .filter(|&&i| keep[at[i]])
             .map(|&i| kept.iter().position(|&m| m == nodes[i]).expect("kept"))
             .collect();
-        ordered.push(Some(Ordered {
-            nodes: kept,
-            order,
-            seam_is_node,
-        }));
+        ordered.push(Some(Ordered { nodes: kept, order }));
     }
     // ---- segments → sub-segments, in line order ----
     let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg, aliases)?;
     // ---- circles → arcs, in θ order about the seam ----
     for (ci, circ) in circles.iter().cloned().enumerate() {
-        let Some(Ordered {
-            nodes,
-            order,
-            seam_is_node,
-        }) = ordered[ci].take()
-        else {
+        let Some(Ordered { nodes, order }) = ordered[ci].take() else {
             out_circles.push(circ);
             continue;
         };
@@ -355,7 +339,6 @@ pub(super) fn split_circles(
             circ.cyl,
             CutRim {
                 nodes: order.iter().map(|&k| nodes[k]).collect(),
-                seam_is_node,
             },
         ));
     }
@@ -390,8 +373,7 @@ impl CircleOrderFail {
 ///
 /// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
 /// very first fixture puts a crossing there — a boss on a plate's edge cuts its own rim exactly on
-/// the seam generator, so this is the common case, not an exotic one.) Callers read `order[0]` as
-/// that point when the flag says it is a node.
+/// the seam generator, so this is the common case, not an exotic one.)
 ///
 /// ★ At most one node can be seam-incident: two would be the same point, which the adjacency check
 /// below refuses as the two-names-for-one-point it is.
@@ -401,14 +383,13 @@ impl CircleOrderFail {
 /// length would follow. The segment side asks this question already; asking it here too is what
 /// keeps the two sides from disagreeing about what "one point" means.
 ///
-/// Returns the permutation of `nodes` in θ order and whether the first of them is the seam point.
-/// `nodes` must already be deduped by name.
+/// Returns the permutation of `nodes` in θ order. `nodes` must already be deduped by name.
 pub(crate) fn circular_order(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     nodes: &[NodeId],
-) -> Result<(Vec<usize>, bool), CircleOrderFail> {
+) -> Result<Vec<usize>, CircleOrderFail> {
     use nacre_exact::quad::{SeamOrder, circular_order_about_seam};
     let meets = nodes
         .iter()
@@ -448,7 +429,6 @@ pub(crate) fn circular_order(
     if bad_theta {
         return Err(CircleOrderFail::Undecided);
     }
-    let seam_is_node = seam_nodes == 1;
     for w in order.windows(2) {
         if matches!(
             cmp(w[0], w[1]),
@@ -457,7 +437,7 @@ pub(crate) fn circular_order(
             return Err(CircleOrderFail::Coincident);
         }
     }
-    Ok((order, seam_is_node))
+    Ok(order)
 }
 
 /// **Cut every segment at the points collected on it** — the one emitter the arc split and the

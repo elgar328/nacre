@@ -9,7 +9,7 @@
 //! [`crate::arrangement`] mounts it with `#[path]` as `ruling_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
-use super::{SegKind, combinatorics};
+use super::SegKind;
 use crate::ledger::Ledger;
 
 /// The sentence the ruling label's postcondition panics with — one spelling, so the
@@ -63,9 +63,9 @@ pub(crate) static GRAZE_SIDE: Ledger<GrazeSide> = Ledger::new();
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GrazeSide {
-    /// The cycle whose run this is — a hole's face lies on one side of the wall, a panel's on
-    /// the other, so a reader must say which it is asking about.
-    pub kind: combinatorics::CycleKind,
+    /// Whether the cycle whose run this is is an inner loop — a hole's face lies on one side of
+    /// the wall, a panel's on the other, so a reader must say which it is asking about.
+    pub inner: bool,
     pub body_above: bool,
     /// The realized stored normal's `y` component of the wall class.
     pub ny: f64,

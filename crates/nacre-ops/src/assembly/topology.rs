@@ -151,10 +151,7 @@ pub(crate) fn check_result_topology(
 /// faces that merely lie on the same plane without touching must each survive on their own".
 ///
 /// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
-pub(super) fn face_components(
-    faces: &[LocalFace],
-    rims: &crate::draft::HeldRims,
-) -> (Vec<usize>, usize) {
+pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {
             p[x] = p[p[x]];
@@ -199,37 +196,7 @@ pub(super) fn face_components(
             }
         }
     }
-    // ★★ **A band whose rim is cut joins by its arcs, not by a rim key.** The cut circle bounds
-    // no whole disk, so the second rule below cannot see it — and the cap side of each arc is a
-    // *ring step*, so the join lands in the node rule instead: the band registers the same CCW
-    // pairs its chain is assembled from (`CutRim.nodes` in [`HeldRims`], cyclic — the one source
-    // the emitter cut the chain from too), and every arc meets exactly its cap face there. The wrap arc is one node pair
-    // here even where the seam vertex splits it into two edges — S is a handle, not a node.
-    for (i, lf) in faces.iter().enumerate() {
-        let ClassIx::Cyl(k) = lf.surf else { continue };
-        for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
-            let Bound::Band { lo, hi } = b else { continue };
-            // A chain rim joins through the node rule above like any ring; only a whole circle
-            // has no node of its own to register.
-            for c in [lo, hi].into_iter().filter_map(Rim::circle) {
-                let Some(cr) = rims.get(&(k, c)) else {
-                    continue;
-                };
-                let m = cr.nodes.len();
-                for j in 0..m {
-                    users
-                        .entry(JoinKey::Arc {
-                            cyl: k,
-                            from: cr.nodes[j],
-                            to: cr.nodes[(j + 1) % m],
-                        })
-                        .or_default()
-                        .push(i);
-                }
-            }
-        }
-    }
-    // ★ **The second joining rule**: a cap face and the band that meets it on a rim
+    // ★ **The second joining rule**: a cap face and the lateral that meets it on a whole rim
     // share **no node at all** — a circle has none — so the node rule above would leave a drilled
     // box's wall in its own component and send the result down the cavity/containment branch.
     // They do share the rim, keyed exactly as `reconstruct` keys it.
@@ -244,10 +211,8 @@ pub(super) fn face_components(
                 (Bound::Circle { cyl }, ClassIx::Plane(c)) => {
                     rim_users.entry((*cyl, c)).or_default().push(i)
                 }
-                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => {
-                    for c in [lo, hi].into_iter().filter_map(Rim::circle) {
-                        rim_users.entry((k, c)).or_default().push(i);
-                    }
+                (Bound::Rim { plane, .. }, ClassIx::Cyl(k)) => {
+                    rim_users.entry((k, *plane)).or_default().push(i)
                 }
                 _ => {}
             }

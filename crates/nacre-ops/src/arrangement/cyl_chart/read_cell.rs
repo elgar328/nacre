@@ -257,7 +257,7 @@ impl Chart {
         } else {
             index_of(y).map_err(other)?
         };
-        let (order, _) =
+        let order =
             crate::arrangement::circular_order(jd, k, def, &list).map_err(|e| other(e.reason()))?;
         let n = order.len();
         // `order` is a permutation of `list`'s indices.

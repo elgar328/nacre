@@ -379,9 +379,8 @@ fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
 /// cuts `A` through (past both caps) it is two solids. **It is never one body** — the lateral run
 /// through the line as one face would hide the touch under a closed shell. Common, `B − A` and
 /// the Fuse build one body; the volumes add up. The apex on the seam names the touch as it does
-/// off it — with `B`'s base on `A`'s cap, where the lateral's slit from the base rim to the hole
-/// has no length (both end at the apex), and past the top, where the top rim's chain visits the
-/// apex twice; the shell guard speaks in both. No placement answers `SuspectedDefect`.
+/// off it — the lateral's chart meets the apex as a corner its region walk passes twice, wherever
+/// `θ = 0` falls, and the shell guard speaks. No placement answers `SuspectedDefect`.
 #[test]
 fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     let on_the_seam: &[[f64; 2]] = &[[1.0, 0.0], [-3.0, 3.0], [-3.0, -3.0]];

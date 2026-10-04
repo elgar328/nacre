@@ -287,95 +287,43 @@ impl Ring {
     }
 }
 
-/// One boundary of a result face: a polygon of seam nodes, a **full circle** of a
-/// cylinder class, or a lateral **band** between two rims. A circle has no nodes or walls and is
-/// assembled through the rim machinery (`push_edge([lateral, plane], [v, v])` + an `OnSeam`
-/// vertex), never through the seam-vertex table; so is a band's rim while it is a whole circle —
-/// a band's **chain** rim is a node ring like a polygon, and goes through both.
+/// One boundary of a result face: a polygon of seam nodes, or a **whole circle** — on a plane
+/// face, the circle a cylinder class cuts in it (`Circle`); on a lateral, the rim a plane class
+/// cuts on it (`Rim`). A whole circle has no nodes or walls and is assembled through the rim
+/// machinery (`push_edge([lateral, plane], [v, v])` + an `OnSeam` vertex), never through the
+/// seam-vertex table. A lateral that wraps the axis is bounded by two of its own rims — each a
+/// `Rim`, or a ring of arcs and rulings where the rim is cut (a chain) — and no seam edge.
 #[derive(Clone, Debug)]
 pub(crate) enum Bound {
     Ring(Ring),
     Circle {
         cyl: usize,
     },
-    /// A lateral band's whole boundary: its two rims, `lo` the one walked forward (winding `+1`
-    /// about the axis) and `hi` the one walked backward (`−1`) — for two whole circles, the one
-    /// with the smaller axis parameter and the larger. The face it bounds is the cylinder
-    /// itself, so the class is on [`LocalFace::surf`] rather than repeated here.
-    Band {
-        lo: Rim,
-        hi: Rim,
+    /// A lateral's whole rim on plane class `plane`; `ccw` when the face lies above it on the
+    /// chart — walked counter-clockwise about the axis (the lower rim), against it for the upper.
+    /// The face it bounds is the cylinder itself, so the class is on [`LocalFace::surf`].
+    Rim {
+        plane: usize,
+        ccw: bool,
     },
 }
 
-/// One rim of a lateral band: the **whole circle** of a plane class, or a **wrapping chain** —
-/// a closed ring of arcs and rulings going once around the cylinder, the boundary a lateral
-/// region takes where it runs along a cut rim around the axis (`classify_cycles`; a boss whose
-/// cap sits inside the other body). A
-/// chain is stored in the direction it is walked (a `lo` chain forward, a `hi` chain backward)
-/// and unflipped, like every bound; its nodes are polygon nodes ([`Bound::rings`]), so the seam
-/// table, the vertex minting and the node join all read it as they read a panel ring.
-#[derive(Clone, Debug)]
-pub(crate) enum Rim {
-    Circle(usize),
-    Chain(Ring),
-}
-
-impl Rim {
-    /// The plane class, `None` for a chain.
-    pub(crate) fn circle(&self) -> Option<usize> {
-        match self {
-            Rim::Circle(c) => Some(*c),
-            Rim::Chain(_) => None,
-        }
-    }
-
-    /// The chain's ring, `None` for a whole circle.
-    pub(crate) fn ring(&self) -> Option<&Ring> {
-        match self {
-            Rim::Circle(_) => None,
-            Rim::Chain(r) => Some(r),
-        }
-    }
-
-    fn ring_mut(&mut self) -> Option<&mut Ring> {
-        match self {
-            Rim::Circle(_) => None,
-            Rim::Chain(r) => Some(r),
-        }
-    }
-}
-
 impl Bound {
-    /// The polygon ring, `None` for a curved bound — the consumers that want a *polygon
-    /// boundary* (not merely nodes) filter on this; a band's chain rims are not one.
+    /// The polygon ring, `None` for a whole circle — the consumers that want a *polygon
+    /// boundary* filter on this, and the node-level ones (the seam table, vertex minting, the
+    /// node join, the naming tables) read every bound's through it.
     pub(crate) fn ring(&self) -> Option<&Ring> {
         match self {
             Bound::Ring(r) => Some(r),
-            Bound::Circle { .. } | Bound::Band { .. } => None,
+            Bound::Circle { .. } | Bound::Rim { .. } => None,
         }
     }
 
-    /// Every **node ring** this bound carries: the polygon itself, or a band's chain rims (a
-    /// whole circle carries none). The node-level consumers — the seam table, vertex minting,
-    /// the node join, the naming tables — read this, so a chain's nodes exist wherever a panel
-    /// ring's do.
-    pub(crate) fn rings(&self) -> impl Iterator<Item = &Ring> {
-        let (a, b) = match self {
-            Bound::Ring(r) => (Some(r), None),
-            Bound::Band { lo, hi } => (lo.ring(), hi.ring()),
-            Bound::Circle { .. } => (None, None),
-        };
-        a.into_iter().chain(b)
-    }
-
-    pub(crate) fn rings_mut(&mut self) -> impl Iterator<Item = &mut Ring> {
-        let (a, b) = match self {
-            Bound::Ring(r) => (Some(r), None),
-            Bound::Band { lo, hi } => (lo.ring_mut(), hi.ring_mut()),
-            Bound::Circle { .. } => (None, None),
-        };
-        a.into_iter().chain(b)
+    pub(crate) fn ring_mut(&mut self) -> Option<&mut Ring> {
+        match self {
+            Bound::Ring(r) => Some(r),
+            Bound::Circle { .. } | Bound::Rim { .. } => None,
+        }
     }
 
     /// The polygon ring, asserted — for consumers whose population cannot carry curved bounds
@@ -386,20 +334,19 @@ impl Bound {
         match self {
             Bound::Ring(r) => r,
             Bound::Circle { cyl } => panic!("a polygon-only path got a circle bound (cyl {cyl})"),
-            Bound::Band { lo, hi } => {
-                panic!("a polygon-only path got a band bound ({lo:?}..{hi:?})")
+            Bound::Rim { plane, .. } => {
+                panic!("a polygon-only path got a lateral's rim (plane {plane})")
             }
         }
     }
 }
 
-/// The rim a curved bound is assembled on: `(group, cylinder class, plane class) → (seam vertex,
-/// rim edge)`. The group is in the key for the reason it is in the seam vertices' — two result
-/// solids never share a handle — and the rest is what makes a cap face and the band that meets it
-/// pick up the *same* edge. A **cut** circle's entry carries its seam vertex and `None`: the
-/// closed `[v, v]` edge spelling is false for it, and its boundary is assembled from arc pieces
-/// instead.
-pub(super) type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Option<Handle<Edge>>)>;
+/// The whole circle a curved bound is assembled on: `(group, cylinder class, plane class) →
+/// (seam vertex, closed rim edge)`. The group is in the key for the reason it is in the seam
+/// vertices' — two result solids never share a handle — and the rest is what makes a cap face and
+/// the lateral that meets it pick up the *same* edge. Only an uncut circle has one: a cut circle's
+/// boundary is its arcs between nodes, minted by the rings that walk them.
+pub(super) type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Handle<Edge>)>;
 
 /// A reconstructed result face: which combined plane it is on, its boundaries, and whether to
 /// flip it (cut's inside-A B-pieces).
@@ -423,94 +370,14 @@ impl LocalFace {
     pub(crate) fn poly_rings(&self) -> impl Iterator<Item = &Ring> {
         std::iter::once(&self.outer)
             .chain(self.inner.iter())
-            .flat_map(Bound::rings)
+            .filter_map(Bound::ring)
     }
 
     pub(crate) fn poly_rings_mut(&mut self) -> impl Iterator<Item = &mut Ring> {
         std::iter::once(&mut self.outer)
             .chain(self.inner.iter_mut())
-            .flat_map(Bound::rings_mut)
+            .filter_map(Bound::ring_mut)
     }
-}
-
-/// **A ring step's passage of θ = 0, signed** — the one seam predicate, from which both the
-/// loop builder's split rule ([`wrapping_rim`]) and the cleaning pass's winding count derive.
-///
-/// `Some((cyl, plane, sign))` when the step is an arc on a **cut** rim whose CCW parametrization
-/// passes θ = 0 — `sign` is `+1` walked CCW, `−1` walked CW — and `None` for a ruling, a plane
-/// wall, or an arc that stays clear of the seam. Two facts, neither re-derived by a caller:
-///
-/// - **which circle's plane the arc rides** — a *plane* face's own class (a cap), or, for a face
-///   on the cylinder class (a panel), the plane its two end names share. A panel arc's ends may
-///   share **both** planes (one wall cuts a circle twice, so each end is named
-///   {wall, circle-plane}), so «the one plane both ends share» cannot answer: the circle's
-///   plane is the shared candidate that carries a cut-rim record. Two such candidates is a naming
-///   this ladder does not arrange (`RulingBoundNotYet`).
-/// - **the directed passage test** — with two pierce nodes the two complementary arcs share one
-///   unordered endpoint pair, so the step is oriented by the `ccw` bit the wall carries and
-///   compared against the rim's θ order ([`HeldRims`] — the split's order, carried): the CCW arc
-///   `nodes.last() → nodes[0]` is the one holding θ = 0. ★ **Half-open.** When the seam *is* a
-///   node (`CutRim::seam_is_node`), that arc
-///   is the one **ending** at the seam node, and it passes θ = 0; the arc leaving the seam node
-///   does not. So a loop that runs *along* the seam ruling counts its arrival and its departure
-///   once between them, never twice — which is what makes Σ sign over a cycle its winding number
-///   about the axis (`+1` a lower boundary walked forward, `−1` an upper one walked backward, `0`
-///   a hole), read off the order table and no coordinate.
-pub(super) fn seam_step(
-    surf: ClassIx,
-    a: NodeId,
-    b: NodeId,
-    wall: Wall,
-    rims: &HeldRims,
-) -> Result<Option<(usize, usize, i8)>, BoolError> {
-    let Wall::Arc { cyl, ccw } = wall else {
-        return Ok(None);
-    };
-    let c = match surf {
-        ClassIx::Plane(c) => c,
-        ClassIx::Cyl(_) => {
-            let shared = |x| {
-                let (pa, _, _) = combinatorics::pierce_name(a)?;
-                let (pb, _, _) = combinatorics::pierce_name(b)?;
-                (pa.contains(&x) && pb.contains(&x)).then_some(x)
-            };
-            let mut hits = combinatorics::pierce_name(a)
-                .map(|(pa, _, _)| pa)
-                .into_iter()
-                .flatten()
-                .filter_map(shared)
-                .filter(|&c| rims.contains_key(&(cyl, c)));
-            let c = hits
-                .next()
-                .ok_or_else(|| reject(RejectReason::RulingBoundNotYet))?;
-            if hits.next().is_some() {
-                return Err(reject(RejectReason::RulingBoundNotYet));
-            }
-            c
-        }
-    };
-    let Some(cr) = rims.get(&(cyl, c)) else {
-        return Ok(None);
-    };
-    let ccw_pair = if ccw { (a, b) } else { (b, a) };
-    let last = *cr.nodes.last().expect("a cut circle has pierce nodes");
-    Ok((ccw_pair == (last, cr.nodes[0])).then_some((cyl, c, if ccw { 1 } else { -1 })))
-}
-
-/// **The cut rim a ring edge wraps past θ = 0 on**, `None` if it does not — [`seam_step`] for
-/// the loop builder, which splits such an edge at the rim's seam vertex (and the rim table has to
-/// have minted that vertex first). A rim whose seam **is** a node splits nothing, so it answers
-/// `None` here even though the step passes the seam.
-pub(super) fn wrapping_rim(
-    surf: ClassIx,
-    a: NodeId,
-    b: NodeId,
-    wall: Wall,
-    rims: &HeldRims,
-) -> Result<Option<(usize, usize)>, BoolError> {
-    Ok(seam_step(surf, a, b, wall, rims)?
-        .filter(|&(cyl, c, _)| rims.get(&(cyl, c)).is_some_and(|cr| !cr.seam_is_node))
-        .map(|(cyl, c, _)| (cyl, c)))
 }
 
 /// Which boolean to compute.
@@ -533,17 +400,14 @@ pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
     }
 }
 
-/// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
-/// already orders a cut circle's pierce nodes by θ about the seam and classifies a seam-incident
-/// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
-/// cheaply — *where θ = 0 sits among the arcs* — travels from the place that computed it.
+/// **A cut circle's nodes in their order round it — carried from the split, never re-derived.**
+/// `split_circles` orders a cut circle's pierce nodes by θ (`circular_order_about_seam`), so the
+/// arcs between consecutive nodes — the circle's pieces — travel from the place that computed
+/// them.
 #[derive(Clone, Debug)]
 pub(crate) struct CutRim {
-    /// The circle's pierce nodes in θ order (CCW about the axis). When `seam_is_node`, the
-    /// seam-incident node is first; otherwise θ = 0 lies inside the wrap arc
-    /// `nodes.last() → nodes[0]`.
+    /// The circle's pierce nodes in θ order (CCW about the axis).
     pub(crate) nodes: Vec<combinatorics::NodeId>,
-    pub(crate) seam_is_node: bool,
 }
 
 /// Per `(cylinder class, plane class)`, how the arrangement **split** each circle it cut — the
@@ -586,8 +450,8 @@ impl HeldRims {
 }
 
 /// [`HeldRims`] from the faces as they stand: for each split circle `(cyl, c)`, the nodes some
-/// face on plane class `c` still has in a ring, in the split's θ order. `seam_is_node` survives
-/// only with the node it was about. A circle none of whose nodes survive is **whole** again and
+/// face on plane class `c` still has in a ring, in the split's θ order. A circle none of whose
+/// nodes survive is **whole** again and
 /// leaves the table — the lateral emits its rim as the closed edge, the cap holds it as a circle.
 ///
 /// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the
@@ -623,10 +487,7 @@ pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
         let rim = match nodes.len() {
             0 => continue,
             1 => cr.clone(),
-            _ => CutRim {
-                seam_is_node: cr.seam_is_node && nodes[0] == cr.nodes[0],
-                nodes,
-            },
+            _ => CutRim { nodes },
         };
         out.insert((cyl, c), rim);
     }

@@ -2,7 +2,7 @@
 //! `cycle_on_class` produced, station by station.
 //!
 //! ★ **A ledger, not a check.** Each row states the class's axis station, whether the face's
-//! outer answer grazed or crossed, how the face's cycles broke down by kind, and how many
+//! outer answer grazed or crossed, how the face's loops broke down, and how many
 //! carved runs became spans. A fixture reads the distribution to see which arms of the lateral
 //! road its models actually exercise — a zero here means *unexercised*, never *verified*.
 //!
@@ -21,8 +21,9 @@ pub(crate) struct Hit {
     /// The class's axis station, realized.
     pub t: f64,
     pub outer: Option<CylOnClass>,
-    /// `[rims, chains, panels, holes]` among the face's cycles (rims are not carved).
-    pub kinds: [usize; 4],
+    /// `[whole rims, other outer loops, other inner loops]` among the face's loops (whole rims are
+    /// not carved).
+    pub kinds: [usize; 3],
     pub carved: usize,
     pub spans: usize,
 }
@@ -33,18 +34,13 @@ pub(crate) fn record(
     t: nacre_exact::Rat,
     outer: Option<CylOnClass>,
     rims: usize,
-    cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],
+    cycles: &[(bool, combinatorics::LoopRing)],
     carved: usize,
     spans: usize,
 ) {
-    let mut kinds = [rims, 0, 0, 0];
-    for (k, _) in cycles {
-        kinds[match k {
-            combinatorics::CycleKind::Rim => 0,
-            combinatorics::CycleKind::Chain => 1,
-            combinatorics::CycleKind::Panel => 2,
-            combinatorics::CycleKind::Hole => 3,
-        }] += 1;
+    let mut kinds = [rims, 0, 0];
+    for &(inner, _) in cycles {
+        kinds[if inner { 2 } else { 1 }] += 1;
     }
     HITS.push(Hit {
         t: t.to_f64(),

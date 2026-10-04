@@ -261,19 +261,21 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 /// one: the caller's points sit on the lines where the face's shape changes, and a triangulation
 /// naturally already has edges running along those lines.
 ///
-/// **Both roads are live in production**, and the split is not gradual — measured over the five
-/// merged lateral faces (a boss on each of four congruent walls, and on the corner):
+/// **Both roads are live in production, on every face of one family** — measured over the five
+/// laterals of a boss on each of four congruent walls and on the corner, each a band with its
+/// notch a hole:
 ///
 /// | face | inside | on an edge | dropped |
 /// |---|---|---|---|
-/// | `−x`, `+x`, `+y` walls | **0** | 180 | 180 |
-/// | corner | **0** | 270 | 90 |
-/// | `−y` wall | **102** | 76 | 182 |
+/// | `−x` wall | 37 | 141 | 182 |
+/// | `+x` wall | 162 | 16 | 182 |
+/// | `−y` wall | 32 | 148 | 180 |
+/// | `+y` wall | 82 | 96 | 182 |
+/// | corner | 147 | 121 | 92 |
 ///
-/// The odd one out is the wall where `ref_dir` puts θ = 0 *inside* the notch, so the notch stays an
-/// honest **hole** instead of being bridged into the outer walk — and a hole's neighbourhood has no
-/// long diagonal for the points to land on. So neither branch may be deleted as unreachable: which
-/// one runs is decided by the seam's accident, not by the shape the user drew.
+/// The split moves with where the band was cut open (`cut_seamless_bands`' generator, placed
+/// relative to the face's own samples), not with the shape the user drew — so neither branch may
+/// be deleted as unreachable.
 ///
 /// ★★ **A constrained edge is never split.** A point the neighbouring face does not know about is
 /// a T-vertex, and a T-vertex is a crack — the one thing this layer may not produce. A candidate

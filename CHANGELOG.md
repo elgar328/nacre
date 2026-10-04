@@ -10,7 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
-- An extruded circle's side face has no seam line: it is bounded by its two rims, one its outer loop and the other an inner loop. The solid has two edges instead of three, and its STEP output has no seam `LINE`.
+- A cylindrical side face has no seam line, whether an extruded circle's or a boolean's result: it is bounded by its two rims (each a whole circle, or a chain of arcs and lines where the rim is cut), one its outer loop and the other an inner loop, with its holes. An extruded circle has two edges instead of three, a cut rim no vertex at its seam point, and STEP output no seam `LINE`.
 - `Operation::Extrude` takes a signed distance: a negative one sweeps against the frame's normal, in the same frame, with the base cap still on the frame's plane. A distance of zero is `OpError::ZeroDistance`.
 - **Breaking:** `topo::Model::push_edge`, `topo::Model::derive_edge_curve` and `topo::Model::rebuild_edge_cache` take a closure that gives, when asked, what the caller realized of the edge's truth (`topo::EdgeGiven`) — pass `|_| EdgeGiven::NONE` to give nothing.
 - **Breaking:** `topo::Model::push_plane`, `topo::Model::push_plane_through` and `topo::Model::push_cylinder` take, after the figure, what that figure knows about itself (`topo::CacheStanding`) — pass `CacheStanding::Unrealized` for a figure nobody realized; a surface's cache now says whether it is the truth's realization (`topo::Model::surface_cache_standing`).

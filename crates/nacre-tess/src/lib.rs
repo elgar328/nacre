@@ -225,8 +225,8 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
     // 1. Sample every live edge into a shared polyline (the crack-free contract).
     let live = sample_live_edges(&mut t, model, cfg, &reach);
 
-    // 1¼. A cylindrical face whose boundary wraps the axis twice — a band with no seam edge —
-    // gets one generator to be cut along, its two points put into the rims' shared polylines.
+    // 1¼. A cylindrical face whose boundary wraps the axis — a band, bounded by its two rims —
+    // gets one generator to be cut along, its points put into the crossed loops' polylines.
     // Before the bridge pre-pass, which reads the polylines as final. See [`cut_seamless_bands`].
     let cuts = cut_seamless_bands(&mut t, model, &live);
 
@@ -780,14 +780,13 @@ fn planar_chart(
 /// then span wide arcs — chords that leave the surface. Negating `u` mirrors the frame just as
 /// well and leaves the sweep going around.
 ///
-/// ★ **θ is unwrapped along each loop, never taken absolutely.** A band's boundary walks its seam
-/// **twice** — the same mesh vertices at `θ = 0` and at `θ = 2π` — and that is exactly what makes
-/// the unrolled band a rectangle rather than a degenerate line. A band with no seam edge is
-/// bounded by its two rims alone, each turning once around the axis; `cut` joins them at the
-/// generator [`cut_seamless_bands`] chose into the same rectangle — first rim, its cut point again,
-/// up the generator through any hole it crosses, the second rim, its cut point again, and back
-/// down ([`joined_band`]). The other holes are then shifted by whole turns into the outer ring's
-/// range so they lie inside it.
+/// ★ **θ is unwrapped along each loop, never taken absolutely.** A band is bounded by its two rims,
+/// each turning once around the axis, and unrolled alone they are two open lines; `cut` joins
+/// them at the generator [`cut_seamless_bands`] chose — first rim, its cut point again, up the
+/// generator through any hole it crosses, the second rim, its cut point again, and back down
+/// ([`joined_band`]) — so each cut point stands at `θ` and at `θ + 2π` and the unrolled band is a
+/// rectangle rather than a degenerate line. The other holes are then shifted by whole turns into
+/// the outer ring's range so they lie inside it.
 fn cylinder_chart(
     t: &Tessellation,
     model: &Model,
@@ -1220,7 +1219,7 @@ type ChartRings = (Vec<Handle<TessVertex>>, Vec<Vec<usize>>);
 /// first ring, along the hole **in its own direction**, to its other point; the second ring from
 /// its cut point round to that point again; then back down the generator through the holes in
 /// reverse, each from its farther point along its own direction to the nearer. Each cut point thus
-/// appears at both of its `θ`s, as a seam edge walked twice would put it ([`cylinder_chart`]).
+/// appears at both of its `θ`s ([`cylinder_chart`]).
 /// Uncrossed rings (holes) follow unchanged.
 ///
 /// ★ **Which run of a hole the climb takes is forced, not chosen.** The material lies on the left
@@ -1384,7 +1383,7 @@ fn triangulate_face(
     // into the straight edge it touches).
     let bridges = match surface {
         Surface::Plane(_) => shared_vertices(&handles, &rings),
-        // Only on a plane is a shared handle one point in the chart — a cylinder's seam is the
+        // Only on a plane is a shared handle one point in the chart — a band's cut point is the
         // same handle at two `θ`s. An arm rather than a boolean, so a third surface kind is a
         // compile error here rather than a silent "no bridges".
         Surface::Cylinder(_) => Vec::new(),
@@ -1453,8 +1452,8 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// compile error rather than a missing case.
 ///
 /// ★★ **A boundary edge cannot fail, so it is not asked.** An arc is cut into `circle_segments`
-/// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, the seam,
-/// a plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
+/// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, a
+/// plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
 /// there — which is why this checks only what the sweep chose, never what the sampler laid down.
 ///
 /// A violation is an error, not a repair: this layer's charter (see [`TessError`]) is that a wrong

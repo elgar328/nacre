@@ -72,10 +72,9 @@ pub(crate) struct Walked {
 /// The walk's refusal where the split's own record is broken — the trace and the split disagree
 /// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
-/// with no outer cycle, a run along an uncut rim that is not the whole circle. What the walk
-/// cannot spell is named where it fires: a cut rim of one node and the cycles' winding not
-/// classifying (`ArcBoundNotYet` — the assembly's own limits on chains and holes, which
-/// `classify_cycles` states).
+/// with no outer cycle, a run along an uncut rim that is not the whole circle, a cycle whose arc
+/// units are not a whole number of turns. What the walk cannot spell is named where it fires: a cut
+/// rim of one node and wrapping cycles other than one lower and one upper (`ArcBoundNotYet`).
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
 }
@@ -115,7 +114,7 @@ pub(crate) fn walk(
     let ns = names.len();
     let mut station_of_name = vec![0usize; ns];
     if ns > 0 {
-        let (order, _) = crate::arrangement::circular_order(jd, k, def, &reps)
+        let order = crate::arrangement::circular_order(jd, k, def, &reps)
             .map_err(|e| reject(e.reason()))?;
         for (p, &ni) in order.iter().enumerate() {
             station_of_name[ni] = p;
@@ -406,10 +405,29 @@ pub(crate) fn walk(
         }
 
         // ── runs → pieces → rings ──
-        let mut rings: Vec<Ring> = Vec::new();
-        let mut rims_lo: Vec<usize> = Vec::new();
-        let mut rims_hi: Vec<usize> = Vec::new();
-        let mut outer: Option<usize> = None;
+        // ★★ **Each cycle's winding about the axis, by its arc units.** An arc edge covers one unit
+        // sector, `+1` walked counter-clockwise (`ccw` — the face above it) and `−1` against, and
+        // a ruling covers none; a closed cycle returns to its station, so the sum is a whole
+        // number of turns — `+1` for the lower boundary of a face that wraps the axis, `−1` for
+        // its upper one, `0` for a cycle that does not wrap. No seam is read: the count is the
+        // chart's own, wherever `θ = 0` falls.
+        let winding = |cyc: &[Edge]| -> Result<i64, BoolError> {
+            let units_walked: i64 = cyc
+                .iter()
+                .map(|e| match *e {
+                    Edge::Arc { ccw: true, .. } => 1,
+                    Edge::Arc { ccw: false, .. } => -1,
+                    Edge::Ruling { .. } => 0,
+                })
+                .sum();
+            let per_turn = units as i64;
+            if units_walked % per_turn != 0 {
+                return Err(split_disagrees());
+            }
+            Ok(units_walked / per_turn)
+        };
+        let mut bounds: Vec<(Bound, i64)> = Vec::new();
+        let mut lowest_bottom: Option<usize> = None;
         let lowest = cells[members[0]].interval;
         for cyc in &cycles {
             let mut runs: Vec<Vec<Edge>> = Vec::new();
@@ -534,12 +552,9 @@ pub(crate) fn walk(
                     }
                 }
             }
+            let w = winding(cyc)?;
             if let Some((c, ccw)) = whole_rim {
-                if ccw {
-                    rims_lo.push(c)
-                } else {
-                    rims_hi.push(c)
-                }
+                bounds.push((Bound::Rim { plane: c, ccw }, w));
                 continue;
             }
             let n = pieces.len();
@@ -555,33 +570,41 @@ pub(crate) fn walk(
                 nodes.push(piece.ends.0);
                 walls.push(piece.wall);
             }
-            // The outer cycle of a component with no wrapping rim is the one holding the
+            // The outer cycle of a component that does not wrap the axis is the one holding the
             // lowest interval's bottom side — always a boundary, never a hole's.
             let holds_lowest_bottom = cyc
                 .iter()
                 .any(|e| matches!(e, Edge::Arc { line, ccw: true, .. } if *line == lowest));
-            if holds_lowest_bottom && outer.is_none() {
-                outer = Some(rings.len());
+            if holds_lowest_bottom && lowest_bottom.is_none() {
+                lowest_bottom = Some(bounds.len());
             }
-            rings.push(Ring::new(nodes, walls));
+            bounds.push((Bound::Ring(Ring::new(nodes, walls)), w));
         }
         let (own, other) = reads[members[0]]
             .chamber
             .expect("an emitted cell has a chamber");
         let flip = !super::read_cell::keep_for(kind, side, own, other);
-        let face = if rims_lo.is_empty() && rims_hi.is_empty() {
-            let o = outer.ok_or_else(split_disagrees)?;
-            let mut rings = rings;
-            let outer = rings.remove(o);
-            LocalFace {
-                surf: ClassIx::Cyl(k),
-                outer: Bound::Ring(outer),
-                inner: rings.into_iter().map(Bound::Ring).collect(),
-                flip,
-            }
-        } else {
-            crate::assembly::classify_cycles(k, flip, rings, rims_lo, rims_hi, rims)
-                .map_err(|_| reject(RejectReason::ArcBoundNotYet))?
+        // ★ **The outer bound: the lower rim of a face that wraps, or the lowest-bottom cycle of
+        // one that does not.** A connected region of the band has either no wrapping boundary or
+        // exactly one of each sense — a second lower rim would cut the region in two — so
+        // anything else is a walk this chart does not arrange.
+        let up: Vec<usize> = (0..bounds.len()).filter(|&i| bounds[i].1 == 1).collect();
+        let down = bounds.iter().filter(|b| b.1 == -1).count();
+        if bounds.iter().any(|b| b.1.abs() > 1) {
+            return Err(reject(RejectReason::ArcBoundNotYet));
+        }
+        let o = match (&up[..], down) {
+            ([o], 1) => *o,
+            ([], 0) => lowest_bottom.ok_or_else(split_disagrees)?,
+            _ => return Err(reject(RejectReason::ArcBoundNotYet)),
+        };
+        let mut bounds: Vec<Bound> = bounds.into_iter().map(|(b, _)| b).collect();
+        let outer = bounds.remove(o);
+        let face = LocalFace {
+            surf: ClassIx::Cyl(k),
+            outer,
+            inner: bounds,
+            flip,
         };
         faces.push(face);
         cells_of.push(members.clone());

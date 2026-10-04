@@ -21,7 +21,7 @@ pub(crate) fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
-    let named = name_result_vertices(jd, seam, faces, cyls, rims);
+    let named = name_result_vertices(jd, seam, faces, cyls);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
     // itself now stands at the assembly's very end below.
     let Named {
@@ -111,11 +111,13 @@ pub(crate) fn reconstruct(
         return Err(deferred.unwrap_or(e));
     }
 
-    // ★★ **The rim table**: a curved bound has no node and no triple, so it is not
-    // welded through the seam table at all — it is minted here, once per `(group, cylinder class,
-    // plane class)`, and every face that meets that rim asks for the same pair back. That sharing
-    // is what makes the rim edge's use count two (the cap face once, the band once) rather than
-    // two separate edges the closed-shell guard would call dangling.
+    // ★★ **The rim table**: a whole circle has no node and no triple, so it is not welded through
+    // the seam table at all — it is minted here, once per `(group, cylinder class, plane class)`,
+    // with its `OnSeam` vertex, and every face that meets that rim asks for the same pair back.
+    // That sharing is what makes the rim edge's use count two (the cap face once, the lateral
+    // once) rather than two separate edges the closed-shell guard would call dangling. A cut
+    // circle has no entry: its boundary is its arcs between nodes, minted by the rings that walk
+    // them.
     //
     // The group is in the key for the reason it is in `vh`'s: two result solids must not share a
     // handle.
@@ -123,57 +125,24 @@ pub(crate) fn reconstruct(
     let rims_built = (|| -> Result<(), BoolError> {
         for (fi, lf) in faces.iter().enumerate() {
             let g = group_of[fi];
-            let mut keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
+            let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
                 .chain(lf.inner.iter())
-                .flat_map(|b| match (b, lf.surf) {
-                    (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
-                    (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => [lo, hi]
-                        .into_iter()
-                        .filter_map(Rim::circle)
-                        .map(|c| (k, c))
-                        .collect(),
-                    _ => Vec::new(),
+                .filter_map(|b| match (b, lf.surf) {
+                    (Bound::Circle { cyl }, ClassIx::Plane(c)) => Some((*cyl, c)),
+                    (Bound::Rim { plane, .. }, ClassIx::Cyl(k)) => Some((k, *plane)),
+                    _ => None,
                 })
                 .collect();
-            // ★★ **And every rim some ring's *wrap arc* rides.** The loop builder splits such an
-            // arc at that rim's seam vertex, so the vertex has to exist — and a **band** claiming
-            // the same rim is a coupling, not a rule: a cap's arc is split for the cap's own
-            // reason, and a lateral face that keeps only its outermost rims registers no cut ones
-            // (measured: without this, the notch's wrap arc dies `MissingSeam`).
-            //
-            // ★ **Only a wrap arc**, never every arc: a rim nothing splits would gain an orphan
-            // seam vertex. And **appended**, never prepended, so a key a band also names is minted
-            // in the band's order — the values are identical either way, but the vertex
-            // handles are not, and a renumbering is exactly what the census cannot see.
-            //
-            // The ambiguous-naming decline is swallowed here on purpose: this table *offers*
-            // keys, it does not judge. `ring` runs the same derivation and raises the same name
-            // when it reaches that face, which keeps the honest reject where its witness is.
-            for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
-                // ★ `rings()`, so a band's chain rims offer their wrap arcs too — stated for
-                // totality rather than need: a chain's arc is where the lateral meets a plane
-                // face, so that face's ring offers the same rim (☑ dropping this arm changed
-                // nothing on the chain population; the control is vacuous by construction).
-                for r in b.rings() {
-                    let n = r.nodes.len();
-                    for t in 0..n {
-                        if let Ok(Some(key)) = wrapping_rim(
-                            lf.surf,
-                            r.nodes[t],
-                            r.nodes[(t + 1) % n],
-                            r.walls[t],
-                            rims,
-                        ) {
-                            keys.push(key);
-                        }
-                    }
-                }
-            }
             for (k, c) in keys {
                 if rim.contains_key(&(g, k, c)) {
                     continue;
                 }
-                let cut = rims.get(&(k, c));
+                // ★ A circle the result still cuts cannot bound as a whole — a face on its plane
+                // holds one of its nodes ([`HeldRims`]) — so reaching here with one is the split
+                // and the faces disagreeing, named as that.
+                if rims.contains_key(&(k, c)) {
+                    return Err(reject(RejectReason::CylinderStagesDisagree));
+                }
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
                 // The seam point of this rim, spelled as a circle prism spells one: the axis meets
                 // the plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
@@ -203,32 +172,14 @@ pub(crate) fn reconstruct(
                 )
                 .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
                 let point = centre + realized.ref_dir() * realized.radius();
-                // ★★ **A cut circle mints no closed rim edge — but its seam vertex stands.**
-                // The `[v, v]` spelling is false for a cut circle (measured: both arc fixtures
-                // minted one that only the reject then discarded), while θ = 0 is still where the
-                // band's joint must sit (a `[lat, lat]` seam edge derives a line from its
-                // endpoints, so both must share one θ — and the seam is model geometry, fixed at
-                // `+ref_dir`). Degenerate case first: when a pierce vertex lies **on** the seam
-                // generator — the split's own `SeamIncident` classification, carried in
-                // `CutRim::seam_is_node`, never re-derived from coordinates — that vertex *is*
-                // the seam point and minting another would stand a second handle on the same
-                // point (a zero-length arc piece nothing downstream could see).
-                let v = match cut {
-                    Some(cr) if cr.seam_is_node => vh[&(g, cr.nodes[0])],
-                    _ => crate::realize::push_vertex_realized(
-                        model,
-                        Vertex::OnSeam([lat, plane]),
-                        PointCache::Unrealized { coord: point },
-                        crate::realize::ChainLink::Fresh,
-                    ),
-                };
-                let e = match cut {
-                    Some(_) => None,
-                    None => Some(
-                        crate::realize::push_edge_realized(model, [lat, plane], [v, v], memo)
-                            .map_err(edge_refused)?,
-                    ),
-                };
+                let v = crate::realize::push_vertex_realized(
+                    model,
+                    Vertex::OnSeam([lat, plane]),
+                    PointCache::Unrealized { coord: point },
+                    crate::realize::ChainLink::Fresh,
+                );
+                let e = crate::realize::push_edge_realized(model, [lat, plane], [v, v], memo)
+                    .map_err(edge_refused)?;
                 rim.insert((g, k, c), (v, e));
             }
         }
@@ -259,9 +210,9 @@ pub(crate) fn reconstruct(
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        // A band's own bounds contribute no node edge — its rims and seam are minted with their
-        // carriers stated (`[lateral, plane]`, `[lateral, lateral]`); what a curved face does
-        // walk as a ring (a panel's chain) is read here like any ring.
+        // A whole circle contributes no node edge — its rim is minted with its carriers stated
+        // (`[lateral, plane]`); what a curved face does walk as a ring (a chain, a panel, a hole)
+        // is read here like any ring.
         let fsurf = match lf.surf {
             ClassIx::Plane(fc) => planes[fc].surf,
             ClassIx::Cyl(k) => cyls[k].surf,
@@ -355,72 +306,10 @@ pub(crate) fn reconstruct(
         Ok(e)
     };
 
-    // ★★ **A cut rim's boundary chain, minted once per `(group, cylinder, plane)` — before the
-    // face loop, in face order.** The chain walks the circle CCW from the seam vertex through the
-    // pierce nodes and back (the wrap arc's two seam-split pieces included), so a cut rim's
-    // pieces exist under their `EdgeKey`s before either consumer asks: the cap faces' ring steps
-    // weld to these very handles by key, and `band_loop` reads the chain directly — which is
-    // also why this is not minted inside `band_loop`: two closures cannot both own `edge_for`.
-    // Iterated over the faces' curved bounds (not the map) so the minting order is
-    // deterministic, the same discipline as the rim table above.
-    let mut band_chains: HashMap<(usize, usize, usize), Vec<HalfEdge>> = HashMap::new();
-    for (fi, lf) in faces.iter().enumerate() {
-        let g = group_of[fi];
-        let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
-            .chain(lf.inner.iter())
-            .flat_map(|b| match (b, lf.surf) {
-                (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
-                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => [lo, hi]
-                    .into_iter()
-                    .filter_map(Rim::circle)
-                    .map(|c| (k, c))
-                    .collect(),
-                _ => Vec::new(),
-            })
-            .collect();
-        for (k, c) in keys {
-            if band_chains.contains_key(&(g, k, c)) {
-                continue;
-            }
-            let Some(cr) = rims.get(&(k, c)) else {
-                continue; // an uncut rim's boundary is its closed edge, no chain to build
-            };
-            // The rim table ran this very enumeration, so the entry exists whenever this loop
-            // reaches the key — the arm is a backstop, not a population (cf. the ring closure's
-            // `MissingSeam`, which *is* reachable: a cap ring's arc steps do not put the key in
-            // either enumeration, only a curved bound does).
-            let Some(&(sv, _)) = rim.get(&(g, k, c)) else {
-                continue;
-            };
-            let mut vs: Vec<Handle<Vertex>> = Vec::with_capacity(cr.nodes.len() + 1);
-            if !cr.seam_is_node {
-                vs.push(sv);
-            }
-            vs.extend(cr.nodes.iter().map(|n| vh[&(g, *n)]));
-            debug_assert_eq!(vs[0], sv, "the chain starts at the seam vertex");
-            let m = vs.len();
-            let mut chain = Vec::with_capacity(m);
-            for i in 0..m {
-                let (u, v) = (vs[i], vs[(i + 1) % m]);
-                let e = edge_for(
-                    model,
-                    memo,
-                    u,
-                    v,
-                    Wall::Arc { cyl: k, ccw: true },
-                    planes[c].surf,
-                )?;
-                let forward = model.edge(e).vertices[0] == u;
-                chain.push(HalfEdge { edge: e, forward });
-            }
-            band_chains.insert((g, k, c), chain);
-        }
-    }
-
     // ★★ **An arc's carriers are its cylinder and the plane of the rim it lies on — read off the
     // held rims by its ends, not off the face that mints it.** A cap's own plane is that plane, but
     // a lateral's is its cylinder, and an arc a lateral minted first would state `[cyl, cyl]` — a
-    // line, by `derive_edge_curve`'s seam arm (measured: minting the laterals' arcs first sends 64
+    // line, by `derive_edge_curve`'s seam arm (measured: minting the laterals' arcs first sent 64
     // census rows to `EdgeCarrierMismatch`; the face order, planes before laterals, hid it). A point
     // of cylinder `k` lies on one plane perpendicular to its axis, so the held rim holding either end
     // names the plane; either, because the table is blind to groups and the per-solid pass may have
@@ -441,9 +330,6 @@ pub(crate) fn reconstruct(
     };
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
-    // Whether a lateral's outer walk passed a contact twice: without a slit (`band_loop`'s zero
-    // slit), or along a chain rim that visits the contact twice (`walk_of`).
-    let pinched = std::cell::Cell::new(false);
     'faces: for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         let face_surf = match lf.surf {
@@ -459,35 +345,6 @@ pub(crate) fn reconstruct(
             let mut half_edges: Vec<HalfEdge> = Vec::with_capacity(k);
             for t in 0..k {
                 let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                // ★★ **The wrap arc is minted as two pieces, split at the seam vertex.** θ = 0
-                // lies inside exactly one arc of a cut circle (unless a pierce vertex sits on the
-                // seam — `CutRim::seam_is_node`, in which case nothing splits), and the band's
-                // seam edge must end there; splitting on the *cap* side is what hands the band
-                // the same two edges and keeps the shell guard's use count at two.
-                //
-                // ★ The wrap test is **directed**: with two pierce nodes the two complementary
-                // arcs share one unordered endpoint pair, so the match orients the ring step by
-                // the `ccw` bit the wall carries and compares against the rim's θ order
-                // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
-                let split_at = match wrapping_rim(
-                    lf.surf,
-                    r.nodes[t],
-                    r.nodes[(t + 1) % k],
-                    r.walls[t],
-                    rims,
-                )? {
-                    Some(key) => {
-                        let &(v, _) = rim
-                            .get(&(g, key.0, key.1))
-                            .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                        Some(v)
-                    }
-                    None => None,
-                };
-                let legs = match split_at {
-                    Some(s) => vec![[va, s], [s, vb]],
-                    None => vec![[va, vb]],
-                };
                 // The second carrier: the face's own surface for a straight step, the rim's plane
                 // for an arc (`arc_plane`) — on a cap, its own plane.
                 let carrier = match r.walls[t] {
@@ -500,13 +357,11 @@ pub(crate) fn reconstruct(
                     }
                     Wall::Plane(_) | Wall::Ruling { .. } => face_surf,
                 };
-                for [u, v] in legs {
-                    let e = edge_for(model, memo, u, v, r.walls[t], carrier)?;
-                    // For an arc edge the stored order is CCW, so this reads back exactly the
-                    // `ccw` bit the wall carried in.
-                    let forward = model.edge(e).vertices[0] == u;
-                    half_edges.push(HalfEdge { edge: e, forward });
-                }
+                let e = edge_for(model, memo, va, vb, r.walls[t], carrier)?;
+                // For an arc edge the stored order is CCW, so this reads back exactly the `ccw`
+                // bit the wall carried in.
+                let forward = model.edge(e).vertices[0] == va;
+                half_edges.push(HalfEdge { edge: e, forward });
             }
             Ok(Loop { half_edges })
         };
@@ -544,19 +399,9 @@ pub(crate) fn reconstruct(
         };
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
-                // ★★ **The cut check comes before the rim lookup.** A circle the result still
-                // cuts cannot bound a whole disk — a face on its plane holds one of its nodes
-                // ([`HeldRims`]) — so reaching here with one is the split and the faces
-                // disagreeing, named as that rather than as a dropped seam (`MissingSeam`).
-                if rims.contains_key(&(cyl, cls)) {
-                    return Err(reject(RejectReason::CylinderStagesDisagree));
-                }
                 let (_, e) = *rim
                     .get(&(g, cyl, cls))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                // An uncut circle's rim always carries its closed edge; the cut arm was refused
-                // one line above, so `None` here is the same dropped-crossing shape.
-                let e = e.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let _ = model;
                 let mut forward = axis_up(cyl)?;
                 if hole {
@@ -566,306 +411,34 @@ pub(crate) fn reconstruct(
                     half_edges: vec![HalfEdge { edge: e, forward }],
                 })
             };
-        // **A periodic face's outer boundary: its loops, joined along the seam generator.**
-        //
-        // The four-half-edge spelling a circle prism's lateral has — two rims and the seam used twice in
-        // opposite senses — is the case where **nothing is in the seam's way**. When a hole meets
-        // the seam, that same generator is *interrupted* by it: the slit runs from the `lo` rim up
-        // to the hole, the hole's own boundary carries the walk across, and a second slit finishes
-        // the climb to the `hi` rim; coming back down uses each piece the other way. One rule,
-        // whose no-hole case is exactly today's four half-edges.
-        //
-        // ★★★★★ **Which of the hole's two runs the climb takes is forced, not chosen.** Arriving
-        // at the lower contact the walk must leave along an edge that keeps material on its left,
-        // and the hole is *already* wound that way (it is this face's hole) — so the climb takes
-        // the run leaving that contact **in the hole's own direction**, and the descent takes the
-        // other. No side test, no sign. It is also what keeps the `seam_is_node` shape honest:
-        // there the seam segment *is* the hole's own ruling, and it lands in the climb as a single
-        // hole edge used **once**, rather than being minted again as a slit and used a third time.
-        // And where the hole's contact *is* the rim's, there is no slit to mint at all (`slit`).
-        //
-        // The hole is **consumed** — it stops being an inner loop, because it is now part of the
-        // outer walk. A hole that does not meet the seam is left alone.
-        // ★★ **Where the seam generator meets a cylinder's cut circles** — the only points a
-        // hole or a chain rim can touch it at. One rule, two spellings, both carried rather
-        // than re-derived: a pierce vertex sitting **on** the seam *is* the contact
-        // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is the
-        // `OnSeam` vertex the rim table minted for that circle.
-        let contacts_of = |k: usize| -> Vec<(Handle<Vertex>, usize)> {
-            rims.iter()
-                .filter(|((kk, _), _)| *kk == k)
-                .filter_map(|(&(_, c), cr)| {
-                    let v = if cr.seam_is_node {
-                        cr.nodes.first().and_then(|n| vh.get(&(g, *n)).copied())
-                    } else {
-                        rim.get(&(g, k, c)).map(|&(v, _)| v)
-                    };
-                    v.map(|v| (v, c))
-                })
-                .collect()
-        };
-        // ★★ A contact's **station**: the axial parameter of the cut circle it sits on. A cut
-        // circle's plane is perpendicular to the axis, so equal stations would be the same
-        // plane, hence one class — two contacts on distinct circles never tie. A rational
-        // question, asked of the class the contact table carries beside the vertex.
-        // [`crate::planes::WorkingCyl::cache`] states the rule this follows: the f64 twin is
-        // what a measurement reads, and every decision reads `def`.
-        //
-        // ★ `None` is never an input. The contact's class keys a cut rim (`HeldRims` ⊆ the split's
-        // rims), so it is a z-line of this cylinder's chart, and the chart asked this very
-        // question of it — `bands::param_opt` is these two calls — with the same `jd` and `def`
-        // before any of this ran (`cyl_chart::emit_lateral`, which refuses a width there by
-        // name); the vertex is one picked from these same contacts. So `None` here is the
-        // chart and the assembly disagreeing — an argument across stages, so a name rather than
-        // a panic.
-        let station_of = |k: usize,
-                          contacts: &[(Handle<Vertex>, usize)],
-                          v: Handle<Vertex>|
-         -> Option<nacre_exact::Rat> {
-            let c = contacts.iter().find(|&&(x, _)| x == v).map(|&(_, c)| c)?;
-            crate::planes::axis_param_of_plane(
-                &crate::combinatorics::class_coeffs_rat(jd, c)?,
-                &cyls[k].def,
-            )
-        };
-        // ★★ **A whole rim's traversal: the closed edge, or the pre-minted chain.** Both walk
-        // the circle CCW from the seam vertex, which is where the slit attaches.
-        let rim_walk = |k: usize, c: usize| -> Result<(Vec<HalfEdge>, Handle<Vertex>), BoolError> {
-            let (v, closed) = *rim
-                .get(&(g, k, c))
-                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-            let hes = match closed {
-                Some(e) => vec![HalfEdge {
-                    edge: e,
-                    forward: true,
-                }],
-                None => band_chains
-                    .get(&(g, k, c))
-                    .cloned()
-                    .ok_or_else(|| reject(RejectReason::MissingSeam))?,
-            };
-            Ok((hes, v))
-        };
-        // **A periodic face's outer boundary from its two rim walks**, each already in walk
-        // order and starting at the vertex the slit attaches to: `lo` walked forward, `hi`
-        // backward — a whole circle's closed edge or chain, or a wrapping chain's ring
-        // rotated to its contact (`build` makes both).
-        let band_loop = |model: &mut Model,
-                         memo: &mut crate::realize::PlaneMemo,
-                         k: usize,
-                         (lo_hes, v_lo): (Vec<HalfEdge>, Handle<Vertex>),
-                         (hi_hes, v_hi): (Vec<HalfEdge>, Handle<Vertex>),
-                         holes: &mut Vec<Loop>|
-         -> Result<Loop, BoolError> {
-            let lat = cyls[k].surf;
-            let contacts = contacts_of(k);
-            let is_contact = |v: Handle<Vertex>| contacts.iter().any(|&(x, _)| x == v);
-            let taken = holes.iter().position(|lp| {
-                lp.half_edges
-                    .iter()
-                    .any(|&he| is_contact(model.he_start(he)))
-            });
-            let cut = match taken {
-                None => None,
-                Some(idx) => {
-                    let lp = holes.remove(idx);
-                    let hits: Vec<usize> = (0..lp.half_edges.len())
-                        .filter(|&i| is_contact(model.he_start(lp.half_edges[i])))
-                        .collect();
-                    // Two contacts: the merge that produces such a hole abstains on any other
-                    // count, so a face reaching here with one is the merge and this walk
-                    // disagreeing, not an input.
-                    let [i, j] = hits[..] else {
-                        return Err(reject(RejectReason::CylinderStagesDisagree));
-                    };
-                    let (pi, pj) = (
-                        model.he_start(lp.half_edges[i]),
-                        model.he_start(lp.half_edges[j]),
-                    );
-                    let run_i = lp.half_edges[i..j].to_vec();
-                    let mut run_j = lp.half_edges[j..].to_vec();
-                    run_j.extend_from_slice(&lp.half_edges[..i]);
-                    // ★★ Which contact the **lower** slit reaches: the one nearer the `lo` rim
-                    // along the axis. A contact sits on a cut circle, and a cut circle's station
-                    // *is* the axial parameter of the plane that cut it — a rational question,
-                    // asked of the class the contact table is already carrying beside it.
-                    // [`crate::planes::WorkingCyl::cache`] states the rule this follows: the f64
-                    // twin is what a measurement reads, and every decision reads `def`.
-                    //
-                    // ☑ **The two stations cannot tie**, so the `<=` restates the comparison it
-                    // replaces rather than growing a case: the rims are keyed by `(k, c)`, so a
-                    // circle offers at most one contact and two contacts are two distinct
-                    // circles — and a cut circle's plane is perpendicular to the axis, so equal
-                    // stations would be the same plane, hence one class and one `c`.
-                    let station = |v: Handle<Vertex>| station_of(k, &contacts, v);
-                    let (si, sj) = match (station(pi), station(pj)) {
-                        (Some(a), Some(b)) => (a, b),
-                        // `station_of`'s note: the chart already formed both.
-                        _ => return Err(reject(RejectReason::CylinderStagesDisagree)),
-                    };
-                    Some(if si <= sj {
-                        (run_i, run_j, pi, pj)
-                    } else {
-                        (run_j, run_i, pj, pi)
-                    })
-                }
-            };
-            // ★ **A slit whose two ends are one vertex is no edge.** The rim's contact *is* the
-            // hole's (or the other rim's): the walk passes from one to the other at that vertex
-            // and visits it twice — the face is pinched there. The ends compare as handles, not
-            // points: two handles at one point are the `SeamAlias` defect and stay a refused
-            // edge. Nothing is minted and the pinch is recorded (`pinched` — the refusal at the
-            // end of this function).
-            let slit = |model: &mut Model,
-                        memo: &mut crate::realize::PlaneMemo,
-                        a: Handle<Vertex>,
-                        b: Handle<Vertex>|
-             -> Result<Option<Handle<Edge>>, BoolError> {
-                if a == b {
-                    pinched.set(true);
-                    return Ok(None);
-                }
-                crate::realize::push_edge_realized(model, [lat, lat], [a, b], memo)
-                    .map(Some)
-                    .map_err(edge_refused)
-            };
-            let (lower_slit, upper_slit, up, down) = match cut {
-                None => (slit(model, memo, v_lo, v_hi)?, None, Vec::new(), Vec::new()),
-                Some((up, down, lower, upper)) => (
-                    slit(model, memo, v_lo, lower)?,
-                    slit(model, memo, upper, v_hi)?,
-                    up,
-                    down,
-                ),
-            };
-            let pass =
-                |e: Option<Handle<Edge>>, forward: bool| e.map(|edge| HalfEdge { edge, forward });
-            let mut half_edges = lo_hes;
-            half_edges.extend(pass(lower_slit, true));
-            half_edges.extend(up);
-            half_edges.extend(pass(upper_slit, true));
-            half_edges.extend(hi_hes);
-            half_edges.extend(pass(upper_slit, false));
-            half_edges.extend(down);
-            half_edges.extend(pass(lower_slit, false));
-            Ok(Loop { half_edges })
-        };
-        // ★★★★★ **The inner loops are built first, and `flip` is applied to none of them yet.**
-        // A band whose hole meets the seam splices that hole's *own half-edges* into its outer
-        // walk, so it has to be handed them in the sense every bound is written in — the
-        // unflipped one. Reversing per bound as they were built would splice a
-        // reversed run into an unreversed walk, and the result is a closed loop that is quietly
-        // wound wrong: watertight, right triangle count, wrong solid.
-        let mut build = |model: &mut Model,
-                         holes: &mut Vec<Loop>,
-                         b: &Bound,
-                         hole: bool|
-         -> Result<Loop, BoolError> {
+        // One bound's loop, unflipped (`flip` is applied once to every kind of bound below). A
+        // lateral's whole rim is its closed edge walked the way the chart walked it: `ccw` — the
+        // face above it, the lower rim — runs with the edge's own CCW parametrization.
+        let mut build = |model: &mut Model, b: &Bound, hole: bool| -> Result<Loop, BoolError> {
             match b {
                 Bound::Ring(r) => ring(model, memo, r),
                 Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole),
-                Bound::Band { lo, hi } => {
+                Bound::Rim { plane, ccw } => {
                     let k = lf
                         .surf
                         .cyl()
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                    // ★ A cut rim never arrives as `Rim::Circle`: the emitter spells it
-                    // once, as the chain of its arcs (`cyl_chart::regions`, reading the same
-                    // [`HeldRims`]), so a whole-circle rim this table cuts is a producer
-                    // inconsistency — named, not walked.
-                    for rim in [lo, hi] {
-                        if let Some(c) = rim.circle()
-                            && rims.contains_key(&(k, c))
-                        {
-                            return Err(reject(RejectReason::CylinderStagesDisagree));
-                        }
-                    }
-                    let contacts = contacts_of(k);
-                    // ★★ **A rim's walk, and where the slit attaches to it.** A whole circle:
-                    // the closed edge or the pre-minted chain, `lo` forward and `hi` backward
-                    // (reverse the pieces and flip each sense), from its seam vertex. A
-                    // wrapping chain: its own ring as the loop builder spells it (wrap arcs
-                    // split at the seam vertex), **rotated to start at its contact** and walked
-                    // as stored — the cleaning pass kept it in walk order. With several
-                    // contacts the slit takes the one nearest the other rim along the axis:
-                    // a `lo` chain's **highest** station, a `hi` chain's **lowest** — the
-                    // stretch of θ = 0 between them is then interior to the face, as a
-                    // spliced hole's contacts are ordered. ☑ Both senses measured (a boss
-                    // whose cap sits inside the other body, and its mirror).
-                    let mut walk_of = |model: &mut Model,
-                                       rim: &Rim,
-                                       forward: bool|
-                     -> Result<(Vec<HalfEdge>, Handle<Vertex>), BoolError> {
-                        match rim {
-                            Rim::Circle(c) => {
-                                let (mut hes, v) = rim_walk(k, *c)?;
-                                if !forward {
-                                    hes.reverse();
-                                    for he in &mut hes {
-                                        he.forward = !he.forward;
-                                    }
-                                }
-                                Ok((hes, v))
-                            }
-                            Rim::Chain(r) => {
-                                let mut hes = ring(model, memo, r)?.half_edges;
-                                let mut best: Option<(usize, nacre_exact::Rat)> = None;
-                                // ★ **A chain that visits a contact twice is pinched there.** A
-                                // valid chain starts one half-edge at each contact: a wrap arc
-                                // split at the seam vertex starts there once, the two spellings
-                                // of a contact are exclusive, and two wraps would be two passages
-                                // of θ = 0, which `classify_cycles` refuses. So a repeat is a
-                                // pinch (the inward wedge on the seam, its apex ruling used on
-                                // both sides), and it joins the zero slit's record.
-                                let mut visited: Vec<Handle<Vertex>> = Vec::new();
-                                for (i, &he) in hes.iter().enumerate() {
-                                    let v = model.he_start(he);
-                                    if !contacts.iter().any(|&(x, _)| x == v) {
-                                        continue;
-                                    }
-                                    if visited.contains(&v) {
-                                        pinched.set(true);
-                                    } else {
-                                        visited.push(v);
-                                    }
-                                    let s = station_of(k, &contacts, v).ok_or_else(|| {
-                                        reject(RejectReason::CylinderStagesDisagree)
-                                    })?;
-                                    let better = match &best {
-                                        None => true,
-                                        Some((_, b)) => {
-                                            if forward {
-                                                s > *b
-                                            } else {
-                                                s < *b
-                                            }
-                                        }
-                                    };
-                                    if better {
-                                        best = Some((i, s));
-                                    }
-                                }
-                                // A chain winds once, so it passes the seam somewhere: a chain
-                                // with no contact is a producer inconsistency, named.
-                                let (i, _) = best
-                                    .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))?;
-                                hes.rotate_left(i);
-                                let v = model.he_start(hes[0]);
-                                Ok((hes, v))
-                            }
-                        }
-                    };
-                    let lo_walk = walk_of(model, lo, true)?;
-                    let hi_walk = walk_of(model, hi, false)?;
-                    band_loop(model, memo, k, lo_walk, hi_walk, holes)
+                    let &(_, edge) = rim
+                        .get(&(g, k, *plane))
+                        .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                    Ok(Loop {
+                        half_edges: vec![HalfEdge {
+                            edge,
+                            forward: *ccw,
+                        }],
+                    })
                 }
             }
         };
-        let mut none: Vec<Loop> = Vec::new();
         let mut inner: Vec<Loop> = match lf
             .inner
             .iter()
-            .map(|b| build(model, &mut none, b, true))
+            .map(|b| build(model, b, true))
             .collect::<Result<Vec<_>, BoolError>>()
         {
             Ok(v) => v,
@@ -874,7 +447,7 @@ pub(crate) fn reconstruct(
                 break 'faces;
             }
         };
-        let mut outer = match build(model, &mut inner, &lf.outer, false) {
+        let mut outer = match build(model, &lf.outer, false) {
             Ok(lp) => lp,
             Err(e) => {
                 assembled = Err(e);
@@ -894,10 +467,6 @@ pub(crate) fn reconstruct(
                 }
             }
         }
-        debug_assert!(
-            none.is_empty(),
-            "only the outer bound bridges, and only a band does"
-        );
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
         // `Forward`/`Reversed` as a sign (read off the stored flag) — not a face field indexed by
         // a plane (`planes[plane_idx].orient`), the shape of every bug this split exists to
@@ -1069,21 +638,6 @@ pub(crate) fn reconstruct(
                 ));
             }
         }
-    }
-    // ★★ **A pinched lateral does not leave — and it is the last thing asked.** A zero slit
-    // (`band_loop`), or a chain rim visiting a contact twice (`walk_of`), left a lateral whose outer
-    // walk visits a seam contact twice. Every other
-    // refusal speaks first, because each names more truly: the shell guard calls a result that
-    // touches itself along the contact's ruling `NonManifoldResultEdge`, with the line as its
-    // witness — the inward wedge with its apex on the seam, the same answer as off it — and the
-    // grouping, the stopper and the naming fence say theirs. What passes them all is a walk this
-    // assembly does not arrange, refused by the walk's own name. Skipping the slit and letting the
-    // face out is the alternative refused here: `combinatorics::lateral_cycles` reads a lateral
-    // back by cutting its outer loop at the slits, so a pinch with no slit would read as one
-    // cycle of rim and hole. No boolean in the suite or the census reaches this line: the chain's
-    // pinch — the wedge with its apex on the seam past the top cap — is the shell guard's too.
-    if pinched.get() {
-        return Err(reject(RejectReason::ArcBoundNotYet));
     }
     out
 }

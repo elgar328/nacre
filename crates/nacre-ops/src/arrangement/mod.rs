@@ -156,12 +156,12 @@ struct Node {
 }
 
 /// A lateral face as its cycles state it: its axial range `[lo, hi]`, its whole rims `(station,
-/// plane class)` in station order (0, 1 or 2 of them), and every other boundary cycle with its
-/// kind.
+/// plane class)` in station order (0, 1 or 2 of them), and every other boundary cycle with whether
+/// it is an inner loop.
 struct LateralShape {
     range: [Rat; 2],
     rims: Vec<(Rat, usize)>,
-    cycles: Vec<(combinatorics::CycleKind, combinatorics::LoopRing)>,
+    cycles: Vec<(bool, combinatorics::LoopRing)>,
 }
 
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
