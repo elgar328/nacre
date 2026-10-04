@@ -1327,12 +1327,13 @@ fn measure_census() {
             record(&format!("ct2 chain {kn}"), &m, &inputs, &out);
         }
     }
-    // ── **Translated cylinders** (`trc`): cylinders moved by a non-dyadic offset, carried into
-    // their statements — world cylinders where they land. Four placements: a
-    // tool cutting, a boss fusing, a bored body fused onto its twin (the plane side), and a
-    // bore translated **onto** another bore — whose axes then coincide, which the cylinder-pair
-    // rule refuses by name (`CylinderPairContact`); before the road opened it never got that
-    // far and said `CylinderGateUndecided` instead.
+    // ── **Translated cylinders** (`trc`): cylinders moved by an offset written as a decimal and
+    // lifted as its binary double (`Rat::try_from_f64` — `10.7` is not `107/10`), carried into
+    // their statements — world cylinders where they land. Four placements: a tool cutting, a
+    // boss fusing, a bored body fused onto its twin (the plane side), and a twin moved toward
+    // another bore's axis — which it misses by the offset's binary error (its origin's `x` is
+    // `18 − 7.1e-16`), so the two laterals are parallel, distinct and meet on two rulings, and
+    // the cylinder-pair rule refuses that contact by name (`CylinderPairContact`).
     {
         let off = |x: f64, y: f64, z: f64| {
             Isometry::translation([x, y, z].map(|c| Rat::try_from_f64(c).expect("rational")))
@@ -1432,7 +1433,7 @@ fn measure_census() {
                 30.0,
             );
             m.rebuild_adjacency();
-            let twin = xf(&mut m, twin, off(10.7, 0.0, 0.0)); // lands on the bore's own axis
+            let twin = xf(&mut m, twin, off(10.7, 0.0, 0.0)); // 7.1e-16 short of the bore's axis
             let inputs = operands(&m, holed, twin);
             let out = boolean(&mut m, k, holed, twin);
             m.rebuild_adjacency();
