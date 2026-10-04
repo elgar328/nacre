@@ -300,8 +300,8 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 룰링을 접선 평면과 축을 지나는 평면이 함께 품으면 두 평면이 갈린다: 스위트의 `a_wide_boss_in_a_wall_gap_common_builds` 에서
 결과 룰링 2개가 `plane` 8·10 에 `side 1` 인데 이름의 ∥ 평면은 5·7, 그 평면에 대한 `side` 는 0(결과 룰링 372 중 2; census·스윕 0).
 그 점에서 «룰링 위」를 놓치면 광선 홀짝이 그 룰링을 교차로 읽을 수 있다 — 답이 바뀌는지는 아직 안 쟀다. 길: `RulingCarrier`
-가 `plane` 을 싣고 `in_faces` 가 `corner_wall_class` 대신 그것을 읽는다(`trace_plane` 의 `crossing_on_ruling(wc, fc, ..)` 도
-`fc` 를 가정하는 같은 부류).
+가 `plane` 을 싣고 `in_faces` 가 `corner_wall_class` 대신 그것을 읽는다. (`trace_plane` 의 `crossing_on_ruling(wc, fc, ..)` 는
+같은 위험이 아니다 — 평면 면의 룰링은 그 면 `fc` 에 대해 재므로 실린 `plane` 이 늘 `fc` 다.)
 
 ### 혼합 프레임 정점은 reuse 가 답하지 못한다
 
