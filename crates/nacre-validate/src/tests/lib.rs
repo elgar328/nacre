@@ -572,8 +572,38 @@ fn edge_carrier_mismatch_is_flagged() {
         sb,
         vec![he(e_shared, false), he(eb2, false), he(eb1, false)],
     );
+    // A self-pair: two faces on `sa` share an edge stated `[sa, sa]`. Membership agrees — `sa`
+    // is among the stated — so only the self-pair rule flags it.
+    let v4 = v(&mut m, [2.0, 0.0, 0.0]);
+    let v5 = v(&mut m, [2.0, 1.0, 0.0]);
+    let v6 = v(&mut m, [2.0, -1.0, 0.0]);
+    let e_self = m
+        .push_edge([sa, sa], [v1, v4], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ec1 = m
+        .push_edge([sa, sb], [v4, v5], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ec2 = m
+        .push_edge([sa, sb], [v5, v1], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ed1 = m
+        .push_edge([sa, sb], [v4, v6], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let ed2 = m
+        .push_edge([sa, sb], [v6, v1], |_| nacre_topo::EdgeGiven::NONE)
+        .unwrap();
+    let fc = face(
+        &mut m,
+        sa,
+        vec![he(e_self, true), he(ec1, true), he(ec2, true)],
+    );
+    let fd = face(
+        &mut m,
+        sa,
+        vec![he(e_self, false), he(ed2, false), he(ed1, false)],
+    );
     let shell = m.push_shell(Shell {
-        faces: vec![fa, fb],
+        faces: vec![fa, fb, fc, fd],
     });
     m.push_solid(Solid {
         outer: shell,
@@ -584,6 +614,11 @@ fn edge_carrier_mismatch_is_flagged() {
         vs.iter()
             .any(|x| matches!(x, Violation::EdgeCarrierMismatch { edge, .. } if *edge == e_shared)),
         "stated [sa, sc] vs observed [sa, sb] must be flagged: {vs:?}"
+    );
+    assert!(
+        vs.iter()
+            .any(|x| matches!(x, Violation::EdgeCarrierMismatch { edge, .. } if *edge == e_self)),
+        "a stated [sa, sa] must be flagged: {vs:?}"
     );
     // The other shared-plane edges (1 use each) are non-manifold, not carrier mismatches.
     assert!(

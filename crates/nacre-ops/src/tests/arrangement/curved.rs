@@ -879,15 +879,15 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
 /// `reconstruct` — comes back one solid with a clean `validate`. The ruling edges are
 /// pinned structurally: exactly two straight lateral edges (the kept outer panel's), each
 /// used exactly twice, carriers stated as **the edge's own fact** — the cylinder and the
-/// wall plane — and the outer panel's seam-holding arc is split at an `OnSeam` vertex
-/// (the panel road runs the wrap-arc split the Band road already had).
+/// wall plane — and only a whole rim holds an `OnSeam` vertex: the outer panel's cut rims are
+/// arcs between their pierces, with none at θ = 0.
 #[test]
 fn the_armed_assembly_welds_the_panels() {
     let (m, setup, wc) = armed_assembled_through_boss();
     let issues = nacre_validate::validate(&m);
     assert!(issues.is_empty(), "{issues:?}");
     // The ruling edges, structurally: straight lateral edges = carriers {cylinder, a plane}
-    // with a Line curve (the seam's [cyl, cyl] spelling is excluded by the mixed pair).
+    // with a Line curve.
     let cyl_surf = setup.cyls[0].surf;
     let wall_surf = setup.geom[wc].surf;
     let reach = m.reachable();
@@ -916,13 +916,25 @@ fn the_armed_assembly_welds_the_panels() {
         }
     }
     assert_eq!(rulings, 2, "the kept outer panel's two rulings");
-    // The seam split ran on the panel: an OnSeam vertex is reachable.
-    let on_seam = reach
+    // The boss's two disks keep their whole rims, each a closed edge at its `OnSeam` vertex;
+    // the panel's cut rims have no vertex at θ = 0.
+    let closed: std::collections::HashSet<_> = reach
+        .edges
+        .iter()
+        .map(|&e| m.edge(e).vertices)
+        .filter(|[a, b]| a == b)
+        .map(|[a, _]| a)
+        .collect();
+    let on_seam: Vec<_> = reach
         .vertices
         .iter()
         .filter(|&&v| matches!(*m.vertex(v), nacre_topo::Vertex::OnSeam(_)))
-        .count();
-    assert!(on_seam >= 1, "the outer panel's wrap arc split at the seam");
+        .collect();
+    assert_eq!(on_seam.len(), 2, "the two whole rims' vertices");
+    assert!(
+        on_seam.iter().all(|v| closed.contains(*v)),
+        "an OnSeam vertex ends only a whole rim"
+    );
 }
 
 /// ★ **The armed solid's mass properties are exact** (the props
@@ -953,8 +965,9 @@ fn the_armed_solids_mass_properties_are_exact() {
 
 /// ★ **The armed solid tessellates watertight** (the tess
 /// instrument): the open-rim merge triangulates the θ-panels of the assembled through-boss
-/// fuse — the outer panel's rims are two arcs split at the seam vertex, so this one solid
-/// exercises the multi-polyline open chain *and* the seam-crossing unwrap — and every
+/// fuse — the outer panel's rims are arcs from θ = 0 to π, one ruling on θ = 0 (the boss's
+/// reference direction is `−y`, along the wall), so this one solid exercises the multi-polyline
+/// open chain *and* an unwrap that starts on θ = 0 — and every
 /// undirected triangle edge is used exactly twice.
 #[test]
 fn the_armed_solid_tessellates_watertight() {

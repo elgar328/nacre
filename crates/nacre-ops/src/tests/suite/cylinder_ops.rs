@@ -1267,8 +1267,8 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 
 /// ★★★★★ **A tool that reaches the recovered band — the lock the far cube cannot be.** The
 /// re-operation census cuts each result with a cube far outside it, so a wrong band would pass
-/// it unseen. Here the wall +x boss's result (a band whose notch met the seam and was spliced
-/// into the outer walk; read back as a hole) is cut by a cuboid whose walls clear the
+/// it unseen. Here the wall +x boss's result (a band with the wall's notch as a hole) is cut by a
+/// cuboid whose walls clear the
 /// boss's strip and whose ⊥ caps meet the lateral. Volumes derived, not copied: the plate is
 /// 4·4·2 = 32; the boss `r = 0.5` on the wall `x = 4` adds its outer half over its height 4
 /// (`½·π/4·4 = π/2`) and its inner half outside the plate, below and above (`½·π/4·2 = π/4`) —

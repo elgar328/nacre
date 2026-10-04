@@ -137,7 +137,7 @@ pub fn windowed_boss(m: &mut Model, half_width: f64, seam_x: f64) -> Handle<Soli
 /// bites one rim, so the middle of the lateral wraps the axis between two **cut** rims; the region
 /// walk emits it with no whole rim, and the face comes out bounded by those two rims alone — one
 /// the outer loop, the other an inner one. `y_min = 0` stands the boxes' walls on the plane through
-/// the axis, so each rim's `θ = 0` point is a box corner's pierce rather than a seam vertex.
+/// the axis, so each rim's `θ = 0` point — the chart's excluded point — is a box corner's pierce.
 ///
 /// Volumes for `y_min = −2`: Fuse `4π + 30 − s`, Cut `4π − s`, with `s = acos 0.5 − 0.5·√0.75` the
 /// area of the disk past `x = 0.5` — each bite is that segment `0.5` tall, and there are two.

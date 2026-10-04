@@ -45,7 +45,7 @@ pub struct Edge {
 /// cause, so a caller can say which promise broke.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeDecline {
-    /// A straight edge (two planes, a seam, a ruling) whose endpoints are one point: zero length.
+    /// A straight edge (two planes, or a ruling) whose endpoints are one point: zero length.
     Coincident,
     /// A plane oblique to a cylinder's axis — the section is an ellipse, which no edge carries.
     Oblique,

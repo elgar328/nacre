@@ -426,9 +426,7 @@ struct LateralMoments {
 ///
 /// - **Inner loops are not a special case.** The identity sums over *every* boundary component in
 ///   the sense it is wound, so a hole subtracts itself. No `UnsupportedInnerLoop`.
-/// - **A straight edge contributes nothing**: a ruling and the seam both sit at one θ, so
-///   `dθ = 0`. An outer walk that bridges a hole along the seam therefore reads the same as if
-///   the hole were a separate loop — the bridge is traversed twice, and each traversal is zero.
+/// - **A straight edge contributes nothing**: a ruling sits at one θ, so `dθ = 0`.
 /// - **The sign is the walk's.** `θ̂ × ẑ = r̂`, so the chart is right-handed about the *surface's*
 ///   normal; a loop is CCW about its *face's* outward normal, which is `sign · r̂`. Hence every
 ///   moment carries `sign`, and the area's `sign · j1` must come out **positive** — it is not
@@ -468,7 +466,7 @@ fn lateral_moments(
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for &he in &lp.half_edges {
             let Curve::Circle(c) = edge_curve(model, he) else {
-                continue; // straight: a ruling or a seam piece, at one θ ⇒ dθ = 0
+                continue; // straight: a ruling, at one θ ⇒ dθ = 0
             };
             let z = axial_of(c.center()) - z0;
             let [va, vb] = model.edge(he.edge).vertices;

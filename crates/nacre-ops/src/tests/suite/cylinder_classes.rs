@@ -808,9 +808,9 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
         pins += pinned_ends_ordered(at, dir, kind);
     }
     // ★ The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
-    // ends and every assertion below would pass vacuously. **48**, which counts the rings split at
-    // a seam joint — the `[6, 4, −1]` boss sits on the +y wall, so
-    // its bite on the plate's caps wraps the seam (θ = 0 is at −y), and those rings' ends join.
+    // ends and every assertion below would pass vacuously. **48** — the `[6, 4, −1]` boss sits on
+    // the +y wall, so its bite on the plate's caps runs across θ = 0 (at −y): one arc there, with
+    // no vertex at θ = 0.
     assert_eq!(pins, 48, "cylinder-pinned ring ends exercised");
 }
 

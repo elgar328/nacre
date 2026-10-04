@@ -306,9 +306,9 @@ pub(super) fn rim_radial(
 }
 
 /// Whether the rim arc `from → to` (counter-clockwise about `m`) holds the rational radial
-/// direction `x`, **half-open**: `from` in, `to` out. Half-open so that where the arcs of one rim
-/// meet on the line — at a seam vertex, which splits a cut circle into two arcs there — the rim
-/// is counted once. [`arc_contains`]'s three-way reading, over [`QuadVec`] ends.
+/// direction `x`, **half-open**: `from` in, `to` out. Half-open so that where two arcs of one rim
+/// meet on the line — at the node between them — the rim is counted once. [`arc_contains`]'s
+/// three-way reading, over [`QuadVec`] ends.
 fn arc_holds_half_open(
     from: &QuadVec,
     to: &QuadVec,
@@ -346,9 +346,9 @@ fn arc_holds_half_open(
 /// On its chart a lateral face is bounded by arcs (a rim on a cap ⊥ the axis, `t` fixed) and
 /// rulings (`θ` fixed), so the vertical line `θ = θ₀` meets its boundary only where an arc's
 /// angular range holds `θ₀`: those stations, sorted, alternate in and out, and paired they are
-/// the face's stretches of the line. Every loop counts — a window is an inner loop, or a notch in
-/// the outer one where the seam runs through it — which is what the face's angular extent and
-/// axial span, a bounding rectangle, cannot say.
+/// the face's stretches of the line. Every loop counts — a window is an inner loop, as the rim
+/// opposite the outer loop is — which is what the face's angular extent and axial span, a
+/// bounding rectangle, cannot say.
 ///
 /// `None` is a face this cannot read, and the caller keeps its conservative answer: a corner off
 /// the rational seam, a carrier neither ⊥ nor ∥ the axis, a ruling edge on the line itself (its

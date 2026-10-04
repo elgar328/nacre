@@ -277,6 +277,93 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
     );
 }
 
+/// ★★ **A straight edge's direction reaches the file as its edge cache's.** The cache holds the
+/// truth's direction (nacre-ops' census line lock); this asks the written `LINE`s, read back: each
+/// `DIRECTION` is a cached direction bit for bit and each `VECTOR` magnitude is 1. Boxes turned by
+/// whole degrees that are not quarters, requiring one edge whose endpoint-derived direction
+/// differs from its cache — the road this replaced.
+#[test]
+fn a_straight_edges_direction_reaches_the_file_as_its_cache() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
+    use step_io::generated::model::{DirectionRef, VectorRef};
+    let bits = |v: [f64; 3]| v.map(f64::to_bits);
+    let mut endpoints_differ = 0;
+    for (name, axis, deg) in [("37° about y", Axis::Y, 37), ("23° about x", Axis::X, 23)] {
+        let mut m = Model::new();
+        let s = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.1, 0.7, 0.3]),
+            Point3::from_array([1.2, 1.5, 2.4]),
+        );
+        let turn = Isometry::rotation(Rotation {
+            axis,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(deg)).expect("a whole-degree angle"),
+        });
+        let Ok(nacre_ops::OpOutput::Transform { solid: s }) = nacre_ops::apply(
+            &mut m,
+            &nacre_ops::Operation::Transform {
+                solid: s,
+                isometry: turn,
+            },
+        ) else {
+            panic!("{name}: the turn applies")
+        };
+        m.rebuild_adjacency();
+        let reach = m.reachable();
+        let mut want: Vec<[u64; 3]> = Vec::new();
+        for e in (0..m.edge_count() as u32).filter_map(|i| m.edge_handle_at(i)) {
+            if !reach.edges.contains(&e) {
+                continue;
+            }
+            let nacre_geom::Curve::Line(l) = m.edge_curve(e) else {
+                panic!("{name}: a box's edges are straight")
+            };
+            let cached = l.direction().as_array();
+            let [v0, v1] = m.edge(e).vertices;
+            let d = m.vertex_point(v1) - m.vertex_point(v0);
+            if bits(d.normalize().expect("an edge has length").as_array()) != bits(cached) {
+                endpoints_differ += 1;
+            }
+            want.push(bits(cached));
+        }
+        want.sort();
+
+        let text = to_step_solid(&m, s).expect("export");
+        let (model, report) = read(text.as_bytes()).expect("re-read");
+        assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+        let mut got: Vec<[u64; 3]> = model
+            .line_arena
+            .items
+            .iter()
+            .map(|line| {
+                let VectorRef::Vector(v) = &line.dir else {
+                    panic!("a plain VECTOR")
+                };
+                let vector = model.vector_arena.get(v.0);
+                assert_eq!(
+                    vector.magnitude.to_bits(),
+                    1.0_f64.to_bits(),
+                    "{name}: magnitude"
+                );
+                let DirectionRef::Direction(dr) = &vector.orientation else {
+                    panic!("a plain DIRECTION")
+                };
+                let r = &model.direction_arena.get(dr.0).direction_ratios;
+                bits([r[0], r[1], r[2]])
+            })
+            .collect();
+        got.sort();
+        assert_eq!(got.len(), 12, "{name}: a box's twelve LINEs");
+        assert_eq!(got, want, "{name}: the file's directions");
+    }
+    assert!(
+        endpoints_differ > 0,
+        "every edge here has endpoints that already give its direction — the lock cannot tell the \
+         roads apart"
+    );
+}
+
 #[test]
 fn cylinder_round_trips_through_step_io_reader() {
     let mut m = Model::new();

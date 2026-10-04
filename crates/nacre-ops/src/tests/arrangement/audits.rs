@@ -500,7 +500,8 @@ pub(crate) fn operand_vertex_audit(
             }
         }
         // Names: per face loop, the ring road's triples, position `i` being the start of
-        // half-edge `i` (a seam joint pushes no name, so a loop whose lengths differ is skipped).
+        // half-edge `i` (a whole rim's loop pushes no name, so a loop whose lengths differ is
+        // skipped).
         let mut names: HashMap<Handle<Vertex>, Vec<(usize, NodeId)>> = HashMap::new();
         let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
             .into_iter()

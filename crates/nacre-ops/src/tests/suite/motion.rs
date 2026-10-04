@@ -577,8 +577,8 @@ fn the_mesh_covers_the_faces_it_approximates() {
         ("flush", [2.0, 2.0, 0.0], 3.0),
         // The half-height wall boss: its upper cap sits inside the plate, and
         // its mirror with the lower cap inside — one lateral face each, whose chain
-        // rim passes the seam on a **wrap arc** here (the seam is at −y, outside the plate),
-        // where the boss on the x = 40 wall in `bands` runs *along* the seam ruling.
+        // rim's arc runs **across** θ = 0 here (the reference direction is −y, outside the
+        // plate), where the boss on the x = 40 wall in `bands` has a ruling *on* θ = 0.
         ("half wall", [2.0, 0.0, -1.0], 2.0),
         ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
     ] {

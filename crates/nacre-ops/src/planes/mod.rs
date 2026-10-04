@@ -120,8 +120,8 @@ pub(crate) struct CylFaceInfo {
     /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
     /// once the tracer has cut every circle the face covers only partly.
     ///
-    /// ★★ It is read from the ⊥ carriers' stations, not from "the two rims of the outer loop":
-    /// a hole spliced into the outer walk, a panel or a chain rim has no such pair.
+    /// ★★ It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
+    /// or a chain rim has no such pair.
     ///
     /// ★ This range is the first axis of the face's [`Footprint`] on its own chart; the
     /// second, θ, joins with the angular extent.

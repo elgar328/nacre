@@ -287,7 +287,7 @@ fn circle_centre_truth(
 /// radius) is not the cylinder cache's to the bit.
 /// Line edges the line lock reads: `[named, along an axis, unnamed, endpoints would differ,
 /// unnamed undecided, unnamed through a mixed meet]` — a line between two world-named planes is
-/// checked against the truth's direction, a seam or a ruling against its cylinder cache's axis,
+/// checked against the truth's direction, a ruling against its cylinder cache's axis,
 /// and a line on a plane without a world name against the direction its two endpoints' own
 /// definitions realize at 512 bits (`nacre_ops::line_direction_from_endpoints` — the vertex road,
 /// not the plane coefficients the edge road reads). The fourth slot counts the checked lines whose
@@ -1169,8 +1169,8 @@ fn measure_census() {
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
         // ── **Cut rims**: a boss whose circle a boundary segment cuts — the arc
-        // population. Three placements: straddling the plate's top edge (seam ≡ pierce), turned
-        // over the corner (the seam splits the wrap arc), and hung under the bottom edge (the
+        // population. Three placements: straddling the plate's top edge (a pierce at θ = 0),
+        // turned over the corner (an arc across θ = 0), and hung under the bottom edge (the
         // cut circle is the band's hi end).
         for (pn, origin, axis) in [
             ("straddle", [4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),

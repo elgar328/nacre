@@ -725,12 +725,10 @@ pub enum RejectReason {
     ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
     ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
     ///   declined — measured, zero raises from this site across the whole suite. What can still
-    ///   reach it: a corner whose def is not
-    ///   `Pierce` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
-    ///   arc is read as one step, not as a corner), a plane with no *narrow* world
+    ///   reach it: a corner whose def is not `Pierce`, a plane with no *narrow* world
     ///   description (a wide or rotated chain), a handle that answers to both candidate classes
-    ///   or to neither, two laterals meeting at one corner (M6b's), and a loop whose every joint
-    ///   is a seam. ★ Measured with the restatement switched off: the ring
+    ///   or to neither, and two laterals meeting at one corner (M6b's). ★ Measured with the
+    ///   restatement switched off: the ring
     ///   **declines by this name** and nothing panics, which is the whole reason the backstop is
     ///   under the road rather than trusted away.
     ///

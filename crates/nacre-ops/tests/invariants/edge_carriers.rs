@@ -1,7 +1,6 @@
 //! Lock: **an edge's carriers agree with adjacency** — on every production path, for every live
 //! edge, `edge.surfaces` (the pair its producer stated) equals the multiset of surfaces of the two
-//! faces that use the edge (the pair adjacency observes). A seam is used twice by one face, so it
-//! agrees as `[cyl, cyl]`.
+//! faces that use the edge (the pair adjacency observes).
 //!
 //! Carriers are a statement, not a derivation (four-plane concurrency — see `Ring.walls`' doc),
 //! so this lock is the falsifier that catches, per production path, the moment statement and
