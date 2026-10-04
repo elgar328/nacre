@@ -411,6 +411,7 @@ impl<'a> ClassEdges<'a> {
             rulings: rulings2,
             circles: circles2,
             cut_rims,
+            wc,
         })
     }
 
@@ -477,6 +478,7 @@ impl<'a> ClassEdges<'a> {
                     def: r.def.clone(),
                     side: r.side,
                     up: he % 2 == 0,
+                    plane: self.wc,
                 }))
             }
             HalfEdgeKind::Circle(_) => {

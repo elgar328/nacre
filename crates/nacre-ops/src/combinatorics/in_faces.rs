@@ -267,23 +267,6 @@ fn corner_axis_param(
         .find_map(|&c| crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, c)?, def))
 }
 
-/// The ∥ class among a pierce corner's naming planes — the wall a ruling piece ending there
-/// rides: the one whose normal is ⊥ to the axis (`n · m = 0`), through the axis or offset from
-/// it; the other name is the ⊥ class the arc rides.
-fn corner_wall_class(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    n: NodeId,
-) -> Option<usize> {
-    let (planes, _, _) = pierce_name(n)?;
-    let m = def.dir();
-    planes.iter().copied().find(|&c| {
-        class_coeffs_rat(jd, c).is_some_and(|w| {
-            nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_exact::Rat::from_int(0))
-        })
-    })
-}
-
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
 /// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
@@ -295,8 +278,8 @@ fn corner_wall_class(
 /// runs along the ray and never counts. A **ruling** piece is crossed by nothing; `x` on it is
 /// the boundary. Every comparison is one the arrangement already owns: `z` by
 /// [`nacre_exact::quad::plane_side`] against [`rim_plane`], `θ` by [`arc_span`], a ruling by
-/// its own name (`plane_side(wall) == 0 ∧ ruling_side == side`, the predicate
-/// `crossing_on_ruling` names stations with).
+/// its own carrier (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the
+/// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
 ///
 /// `None` = `x` on the boundary (a rim, an arc, a ruling — `tie_probe` says which), a zero-span
 /// arc inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
@@ -383,14 +366,13 @@ pub(crate) fn loop_parity(
                             if above(lo)? == Orient::Negative || above(hi)? == Orient::Positive {
                                 continue;
                             }
-                            let Some(fc) = corner_wall_class(jd, def, e.node) else {
-                                #[cfg(test)]
-                                tie_probe::push(tie_probe::Tie::Producer);
-                                return None;
-                            };
-                            let w = class_coeffs_rat(jd, fc)?;
+                            // The plane the ruling's `side` was measured against, carried — not
+                            // the corner name's ∥ class, which can be another plane through the
+                            // same line — and the signed side, which answers `0` for a tangent
+                            // one; arithmetic out abstains like everywhere here.
+                            let w = class_coeffs_rat(jd, rl.plane)?;
                             if plane_side(&w, meet, s) == Orient::Zero
-                                && ruling_side(&w, def, (meet, s)) == Some(rl.side)
+                                && ruling_side_signed(&w, def, (meet, s))? == rl.side
                             {
                                 #[cfg(test)]
                                 tie_probe::push(tie_probe::Tie::OnRuling);

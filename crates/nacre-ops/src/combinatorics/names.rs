@@ -380,6 +380,10 @@ pub(crate) struct RulingCarrier {
     /// `true` when travel runs along `+m` — the sense the ruling split builds every
     /// `MergedRuling` in (`end[0] → end[1]` ascends the axis), inverted for the twin half-edge.
     pub up: bool,
+    /// The plane class `side` was measured against — `Wall::Ruling`'s, carried on. A ruling is
+    /// held by every plane through its line, and its side differs between them (`0` against a
+    /// tangent one, `±1` against one through the axis), so `side` reads only against this one.
+    pub plane: usize,
 }
 
 /// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,

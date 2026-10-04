@@ -346,6 +346,120 @@ fn armed_class_edges<'a>(
         rulings: std::borrow::Cow::Owned(e.rulings.into_owned()),
         circles: std::borrow::Cow::Owned(e.circles.into_owned()),
         cut_rims: e.cut_rims,
+        wc: e.wc,
+    }
+}
+
+/// ★★★★ **A ruling is asked against the plane its side was measured on, and a tangent one too.**
+/// The line `x = 1, y = 0` beside a cylinder `r = 1` about `z` is held by two planes: `T: x = 1`,
+/// tangent there, and `P: y = 0`, through the axis. A lateral ring runs up that line and back
+/// (`z = 1 → 3`), its corners named on `T` (the cap with the tangent wall, `QuadRoot::Double`) —
+/// so the corner name's ∥ class is `T` whatever the wall says. Two walls: (i) the chart's spelling
+/// of a station on `P`, `side` the sign of `(x − o)·(m × n̂_P)` read off coordinates; (ii) the
+/// tangent wall's own, `side 0`. The face goes through `comp_face`, as a component face does, so
+/// `Ring::edges` carries the plane on. The point of the line at `z = 2` is on the boundary
+/// (`None`) under both; the point of `P`'s other ruling at `z = 2` is not, which keeps the reading
+/// from widening into "any line of `P`".
+#[test]
+fn a_lateral_ruling_is_asked_against_its_own_plane() {
+    use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder, plane_side};
+    use nacre_exact::{Orient, Rat};
+    let mut m = Model::new();
+    let block = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 1.0]),
+        Point3::from_array([1.0, 2.0, 3.0]),
+    );
+    let boss = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    );
+    let surf = m.face(boss.lateral).surface;
+    let def = m.world_cylinder_def(surf).expect("a world cylinder");
+    let nacre_geom::Surface::Cylinder(realized) = m.surface_cache(surf) else {
+        panic!("a cylinder")
+    };
+    let cyls = vec![crate::planes::WorkingCyl {
+        surf,
+        def: def.clone(),
+        realized: *realized,
+        owner: crate::planes::SolidSide::A,
+        shared: Vec::new(),
+    }];
+    let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
+    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));
+    let (planes, _, _) = crate::planes::dense_planes(&rows, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let ri = Rat::from_int;
+    // The class whose plane is `n · x = d` — read off its own coefficients.
+    let class = |n: [i128; 3], d: i128| -> usize {
+        (0..planes.len())
+            .find(|&c| {
+                let w = combinatorics::class_coeffs_rat(&jd, c).expect("a named class");
+                let k = (0..3).find(|&i| n[i] != 0).expect("a normal");
+                (0..3).all(|i| w[i].checked_mul(ri(n[k])) == w[k].checked_mul(ri(n[i])))
+                    && w[3].checked_mul(ri(n[k])) == w[k].checked_mul(ri(-d))
+            })
+            .expect("the block holds that plane")
+    };
+    let (t, p, z1, z3) = (
+        class([1, 0, 0], 1),
+        class([0, 1, 0], 0),
+        class([0, 0, 1], 1),
+        class([0, 0, 1], 3),
+    );
+    let n1 = NodeId::pierce(z1, t, 0, nacre_topo::QuadRoot::Double);
+    let n3 = NodeId::pierce(z3, t, 0, nacre_topo::QuadRoot::Double);
+    // `side` against `P`, from coordinates: the sign of `(x − o) · (m × n̂)` at `(1, 0, 2)`.
+    let wp = combinatorics::class_coeffs_rat(&jd, p).unwrap();
+    let n_hat = Vector3::from_array([wp[0].to_f64(), wp[1].to_f64(), wp[2].to_f64()]);
+    let s =
+        Vector3::from_array([1.0, 0.0, 0.0]).dot(Vector3::from_array([0.0, 0.0, 1.0]).cross(n_hat));
+    let side_p: i8 = if s > 0.0 { 1 } else { -1 };
+    let zero = ri(0);
+    let (pz, py, px) = (
+        [zero, zero, ri(1), ri(-2)],
+        [zero, ri(1), zero, zero],
+        [ri(1), zero, zero, zero],
+    );
+    let CylinderMeet::Pair { line, s: roots } =
+        plane_plane_cylinder(&pz, &py, &def.origin(), &def.dir(), def.r2()).unwrap()
+    else {
+        panic!("the line `y = 0, z = 2` crosses the cylinder twice")
+    };
+    for (name, plane, side) in [("P", p, side_p), ("T", t, 0)] {
+        let wall = |up| crate::combinatorics::Wall::Ruling {
+            cyl: 0,
+            side,
+            up,
+            plane,
+        };
+        let face = LocalFace {
+            surf: crate::planes::ClassIx::Cyl(0),
+            outer: crate::draft::Bound::Ring(crate::draft::Ring::new(
+                vec![n1, n3],
+                vec![wall(true), wall(false)],
+            )),
+            inner: Vec::new(),
+            flip: false,
+        };
+        let cf = crate::assembly::comp_face(&jd, &cyls, &face).expect("a component face");
+        let combinatorics::BoundEdges::Lateral(loops) = &cf.outer else {
+            panic!("a lateral's loops, got {:?}", cf.outer)
+        };
+        for root in &roots {
+            let got = combinatorics::loop_parity(&jd, &def, loops, &line, root);
+            match plane_side(&px, &line, root) {
+                Orient::Positive => assert_eq!(got, None, "{name}: (1, 0, 2) is on the ruling"),
+                _ => assert!(
+                    got.is_some(),
+                    "{name}: (−1, 0, 2) is no ruling of this face: {got:?}"
+                ),
+            }
+        }
     }
 }
 

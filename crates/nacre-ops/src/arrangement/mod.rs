@@ -274,6 +274,9 @@ struct ClassEdges<'a> {
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
     cut_rims: Vec<(usize, CutRim)>,
+    /// The class arranged — the plane every ruling here lies in, and so the one its side was
+    /// measured against.
+    wc: usize,
 }
 
 /// Which of the four ranges a half-edge is in, and its index within that range.
