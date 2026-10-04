@@ -34,7 +34,7 @@
 
 ## 다음 — 사용자가 만나는 한계
 
-순서는 잰 인구다: census 코퍼스(불리언 396, 그중 거절 21)와 kit 문법이 막히는 자리. census 는 우리가 지은
+순서는 잰 인구다: census 코퍼스(불리언 402, 그중 거절 21)와 kit 문법이 막히는 자리. census 는 우리가 지은
 코퍼스이고 거의 축정렬이다 — 거기서 0 이라는 것은 사용자가 만나지 않는다는 뜻이 아니다. census 거절 가운데
 `SelfTouchingResult` 2·`NonManifoldResultEdge` 1 은 결과가 스스로 닿는다는 진단(Impossible)이라 여기에 없다.
 
