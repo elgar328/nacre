@@ -56,10 +56,6 @@ pub(crate) fn reconstruct(
             // A face references a seam node that was not welded into `seam` — a reconstruction
             // dropped a crossing. Reject (never panic): an unmodeled flush topology must decline
             // honestly, not abort the kernel (DNA).
-            //
-            // ★ This used to `match` the node to compare its triple against `SeamVertex.triple`.
-            // Both are identities now, so the comparison is the identity's own `==` and the
-            // destructure that existed only to reach the payload is gone.
             let handle = {
                 let sv = seam
                     .iter()

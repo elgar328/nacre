@@ -253,16 +253,15 @@ impl Model {
     /// * **Plane × Plane**: the line through the start
     ///   vertex, along the truth's direction where the truth names one — the two planes' world
     ///   names meet in the direction of their normals' exact cross product
-    ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector), and a ruling runs
-    ///   along the cylinder cache's axis — turned to run from the start vertex to the
-    ///   end. Where a plane has no world name the direction is the one `given` carries — the same
+    ///   ([`nacre_exact::meet_direction_f64`], the nearest `f64` unit vector) — turned to run
+    ///   from the start vertex to the end. Where a plane has no world name the direction is the one `given` carries — the same
     ///   meet, realized by whoever can replay the plane's chain — and only where nothing gives
     ///   one, the two endpoint coordinates' difference.
     ///   An endpoint pair that coincides is [`EdgeDecline::Coincident`] (a degenerate line — the
     ///   check lives in the straight arms).
     /// * **Plane × Cylinder**: **which** curve is the truth's — how the plane stands to the axis
-    ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — a line along the axis,
-    ///   as the seam; across it, a rim or an arc of one — the circle centred where the truth's axis
+    ///   ([`Model::plane_cylinder_relation`], exact): along it, a ruling — a line along the cylinder
+    ///   cache's axis; across it, a rim or an arc of one — the circle centred where the truth's axis
     ///   crosses the truth's plane, the nearest `f64` of that exact meet (where the cylinder has no
     ///   world statement or the cap no narrow world name, the meet the pusher realizes by replaying
     ///   the chain — `given`; the caches' `f64` meet only where nobody answers), with the

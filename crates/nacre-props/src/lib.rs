@@ -453,9 +453,10 @@ fn lateral_moments(
     };
     let axial_of = |p: Point3| (p - a0).dot(axis);
     // ★ `z` is measured from the face's first vertex, to keep the magnitudes small wherever the
-    // solid sits. It is legal because `∮dθ`, `∮cos θ
-    // dθ` and `∮sin θ dθ` all vanish over a closed loop, so `z → z + c` moves neither `j1` nor
-    // `jn`; only `jz` shifts, and `z0` travels with it to the one place it is read.
+    // solid sits. It is legal because `∮cos θ dθ` and `∮sin θ dθ` vanish over every closed loop
+    // and `∮dθ` over the face's loops together (a rim loop alone turns ±2π; the two rims turn
+    // opposite ways), so `z → z + c` moves neither `j1` nor `jn`; only `jz` shifts, and `z0`
+    // travels with it to the one place it is read.
     let first = *face
         .outer
         .half_edges

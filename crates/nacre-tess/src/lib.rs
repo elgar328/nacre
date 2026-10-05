@@ -38,10 +38,9 @@ pub enum TessError {
     /// [`Self::SelfTouchingBoundary`] — a different proposition: those rings are exactly what the
     /// b-rep asked for, and it is this decomposition that has no answer for them.
     ///
-    /// ☑ **The crossing clause is now true, and was not.** This doc has always claimed "a boundary
-    /// that crosses itself", and for a single self-crossing ring the sweep did catch it. A **hole
-    /// crossing its outer ring** did not: it came back `Ok` with eight confident, wrong triangles,
-    /// measured. `monotone`'s `self_touch` closes that.
+    /// ☑ **The crossing clause covers a hole crossing its outer ring**, not only a ring crossing
+    /// itself: without `monotone`'s `self_touch` that input comes back `Ok` with eight confident,
+    /// wrong triangles (measured).
     ///
     /// **The sweep detects these** — ear clipping would notice them only by accident, as a
     /// stall. It is checked rather than
@@ -132,9 +131,8 @@ pub struct TessTriangle {
 /// vertices, and repeating a handle would give the face a degenerate triangle. So a consumer
 /// that walks a polyline **pairwise** gets `n − 1` steps for a ring of `n`, and must add the
 /// closing step itself; `edge.vertices[0] == edge.vertices[1]` is the fact to branch on — the
-/// very test `sample_edge` uses. ⚠ Written here because a consumer that did not know it drew
-/// every uncut rim with a gap in it (the playground's viewport), and the contract
-/// was nowhere in this type's own words.
+/// very test `sample_edge` uses. ⚠ Written here because a consumer that does not know it draws
+/// every uncut rim with a gap in it (measured in the playground's viewport).
 #[derive(Debug, Default)]
 pub struct Tessellation {
     pub vertices: Store<TessVertex>,
@@ -983,7 +981,7 @@ fn cut_seamless_bands(
             continue;
         }
         let cut = match wrapping[..] {
-            [a, b] => whole_rims_cut(t, model, face).or_else(|| {
+            [a, b] => whole_rims_cut(t, model, face, cyl).or_else(|| {
                 // Step `k` arrives through the next position, the closing step through the
                 // closing position, or the first where the ring has none.
                 let (ring, closing) = &traced[a];
@@ -1003,8 +1001,12 @@ fn cut_seamless_bands(
 
 /// [`cut_seamless_bands`]'s first rule: a face whose two loops are each **one closed rim edge** is
 /// cut at their vertices — the first sample of each polyline ([`sample_edge`] starts a closed
-/// circle there). `None` for any other face.
-fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face) -> Option<Cut> {
+/// circle there). `None` for any other face, and for two vertices at different angles: the cut is
+/// the segment between them, which lies on the surface only as a ruling, and the joined ring's
+/// consecutive pairs are the one place the interior budget does not look. Every producer puts a
+/// whole rim's vertex at `θ = 0`; the guard keeps a producer that does not from shipping a chord
+/// through the solid — such a face goes to the generator instead.
+fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face, cyl: &Cylinder) -> Option<Cut> {
     let [ref inner] = face.inner[..] else {
         return None;
     };
@@ -1015,8 +1017,19 @@ fn whole_rims_cut(t: &Tessellation, model: &Model, face: &Face) -> Option<Cut> {
         let [v0, v1] = model.edge(he.edge).vertices;
         (v0 == v1).then(|| t.by_edge[&he.edge][0])
     };
-    Some(Cut {
-        rims: [vertex(&face.outer)?, vertex(inner)?],
+    let rims = [vertex(&face.outer)?, vertex(inner)?];
+    // One angle up to the noise of two realizations of `θ = 0` (a few ulps); anything wider is
+    // another generator.
+    let (o, x, y) = (
+        cyl.axis().origin(),
+        cyl.ref_dir(),
+        cyl.axis().direction().cross(cyl.ref_dir()),
+    );
+    let [p, q] = rims.map(|h| t.vertices.get(h).pos - o);
+    let turn = (p.dot(x) * q.dot(y) - p.dot(y) * q.dot(x))
+        .atan2(p.dot(x) * q.dot(x) + p.dot(y) * q.dot(y));
+    (turn.abs() < 1e-9).then_some(Cut {
+        rims,
         holes: Vec::new(),
     })
 }
@@ -1303,10 +1316,9 @@ fn joined_band(
 /// ★★★★★ **The points a cylindrical face's boundary does not supply, and the mesh needs.**
 ///
 /// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
-/// closely-sampled arc, so the interior was fine for free. It stops being free the moment a face's
-/// boundary stops covering its θ range with arcs — a merged lateral face, whose erased phantom
-/// seams had been the only arcs over one stretch, was meshed with chords spanning half a turn.
-/// Nothing about the sweep was wrong there; it had no points to work with.
+/// closely-sampled arc, so the interior is fine for free. It stops being free where a face's
+/// boundary leaves part of its θ range without arcs: the sweep then has only chords across that
+/// stretch (measured on a lateral merged across erased seams: chords spanning half a turn).
 ///
 /// So the chart — the layer that knows the surface — supplies them, on a **lattice with no free
 /// parameter in it**:
@@ -1449,12 +1461,12 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// ★★★★★ **The mesh's one rule, asked of the face's *interior* — where it was never asked.**
 ///
 /// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
-/// polyline. Nothing enforced them inside a face, which simply inherited whatever sampling its
-/// boundary happened to supply: fine while the boundary samples the curvature (a band's rims do),
-/// and silently wrong when it does not. A merged lateral face — whose erased phantom seams had
-/// been the only thing sampling θ over one stretch — came out with four triangles spanning half a
-/// turn as flat chords, losing a sixth of its area while `validate`, watertightness, the exact
-/// volume and the face counts were all green.
+/// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
+/// while the boundary samples the curvature (a band's rims do), and silently wrong when it does
+/// not — a lateral whose boundary leaves a θ stretch unsampled meshes as flat chords across it
+/// (measured on one merged across erased seams: four triangles spanning half a turn, a sixth of
+/// its area lost, while `validate`, watertightness, the exact volume and the face counts stay
+/// green).
 ///
 /// So the same two questions are asked of every interior edge:
 /// * **linear** — how far the surface strays from the chord, measured at its midpoint;

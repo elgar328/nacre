@@ -141,7 +141,7 @@ fn cylinder_tessellates_watertight() {
     let cfg = TessConfig::default();
     let n = circle_segments(&cfg, 2.0);
     let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg).unwrap();
-    assert_eq!(t.vertices.len(), 2 * n); // two rim rings, seam vertices shared
+    assert_eq!(t.vertices.len(), 2 * n); // two rim rings, each rim's vertex shared
     assert_eq!(t.triangles.len(), 4 * n - 4); // 2 caps (n−2) + band (2n)
     assert_eq!(non_watertight_edges(&t), 0);
 }
@@ -279,7 +279,7 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     match m.surface_cache(face.surface) {
         Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
         Surface::Cylinder(c) => {
-            cylinder_chart(t, m, cfg, face, c, whole_rims_cut(t, m, face).map(Some)).unwrap()
+            cylinder_chart(t, m, cfg, face, c, whole_rims_cut(t, m, face, c).map(Some)).unwrap()
         }
     }
 }
@@ -550,6 +550,17 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
                     }),
                 "no seam edge"
             );
+            // The generator steps around the window rather than through it.
+            let mut pre = Tessellation::default();
+            sample_live_edges(&mut pre, &m, &TessConfig::default(), &m.reachable());
+            let cuts = cut_seamless_bands(&mut pre, &m, &[(lateral, face)]);
+            let Some(Some(cut)) = cuts.get(&lateral) else {
+                panic!("{built:?} {y_min} {holed}: the lateral is cut");
+            };
+            assert!(
+                cut.holes.is_empty(),
+                "{built:?} {y_min} {holed}: the cut crosses no hole"
+            );
             let t = tessellate(&m, &TessConfig::default())
                 .unwrap_or_else(|e| panic!("{built:?} y_min {y_min} holed {holed}: {e:?}"));
             assert_eq!(non_watertight_edges(&t), 0, "{built:?} {y_min} {holed}");
@@ -693,6 +704,46 @@ fn a_bore_is_cut_at_its_rims_vertices() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
+/// ★★★ **Two whole rims are cut at their vertices only when the vertices share an angle.** The
+/// cut between them is a ruling only then; a vertex turned off `θ = 0` would make it a chord
+/// through the solid, and the joined ring's consecutive pairs are where the interior budget does
+/// not look. No producer builds that today, so the plain cylinder's sampled rims stand in: one
+/// rim's first sample swapped for a point a tenth of a radian round.
+#[test]
+fn whole_rims_are_cut_at_their_vertices_only_on_one_generator() {
+    let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 4.0);
+    let [fh] = laterals(&m, m.live_solids()[0])[..] else {
+        panic!("one lateral");
+    };
+    let face = m.face(fh);
+    let Surface::Cylinder(c) = m.surface_cache(face.surface) else {
+        panic!("a cylinder");
+    };
+    let mut pre = Tessellation::default();
+    sample_live_edges(&mut pre, &m, &TessConfig::default(), &m.reachable());
+    assert!(
+        whole_rims_cut(&pre, &m, face, c).is_some(),
+        "the producer's rims: one generator"
+    );
+    let rim = face.outer.half_edges[0].edge;
+    let first = pre.by_edge[&rim][0];
+    let p = pre.vertices.get(first).pos;
+    let (s, co) = 0.1f64.sin_cos();
+    let turned = pre.vertices.push(TessVertex {
+        pos: Point3::from_array([
+            p.as_array()[0] * co - p.as_array()[1] * s,
+            p.as_array()[0] * s + p.as_array()[1] * co,
+            p.as_array()[2],
+        ]),
+        origin: pre.vertices.get(first).origin,
+    });
+    pre.by_edge.get_mut(&rim).expect("the rim's polyline")[0] = turned;
+    assert!(
+        whole_rims_cut(&pre, &m, face, c).is_none(),
+        "a vertex turned off the other's angle goes to the generator"
+    );
+}
+
 /// ★★★★ **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**
 ///
 /// The windowed boss with its window on the rims' vertices and off them: three loops, so
@@ -720,6 +771,18 @@ fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
                 );
             }
         }
+        // The generator steps around the window rather than through it.
+        let mut pre = Tessellation::default();
+        sample_live_edges(&mut pre, &m, &TessConfig::default(), &m.reachable());
+        let face = m.face(new).clone();
+        let cuts = cut_seamless_bands(&mut pre, &m, &[(new, &face)]);
+        let Some(Some(cut)) = cuts.get(&new) else {
+            panic!("seam {seam_x}: the lateral is cut");
+        };
+        assert!(
+            cut.holes.is_empty(),
+            "seam {seam_x}: the cut crosses no hole"
+        );
         let t = tessellate(&m, &TessConfig::default())
             .unwrap_or_else(|e| panic!("seam {seam_x}: {e:?}"));
         assert_eq!(non_watertight_edges(&t), 0, "seam {seam_x}");
@@ -938,6 +1001,77 @@ fn a_seamless_lateral_cut_through_two_windows_splices_both() {
     assert_eq!(non_watertight_edges(&t), 0);
     let want = 8.0 * pi - 4.0 * pi * 0.5;
     let area = face_area(&t, new);
+    assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
+}
+
+/// ★★★★ **A reversed lateral is cut and spliced the same way.** A bore `r = 1` through the plate
+/// `[−2, 2]² × [0, 4]`, then four slots from the bore out through the plate's sides — `±x`, `±y`,
+/// each `|·| < 0.8` across and half a unit tall, at four heights, the windows of
+/// [`windows_round_a_boss`] carried through to the outside. The bore's lateral faces the axis
+/// (`Reversed`), its four windows cover every angle, so the generator crosses one and splices it
+/// ([`joined_band`]) on a face whose loops run the other way round. Area `8π − 4·2·asin 0.8·0.5`.
+#[test]
+fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let pi = std::f64::consts::PI;
+    let mut m = Model::new();
+    let plate = fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-2.0, -2.0, 0.0]),
+        Point3::from_array([2.0, 2.0, 4.0]),
+    );
+    let pin = fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        6.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let mut s = boolean(&mut m, BoolKind::Cut, plate, pin).expect("the bore")[0];
+    m.rebuild_adjacency();
+    let slots: [([f64; 3], [f64; 3]); 4] = [
+        ([0.5, -0.8, 0.5], [3.0, 0.8, 1.0]),
+        ([-0.8, 0.5, 1.3], [0.8, 3.0, 1.8]),
+        ([-3.0, -0.8, 2.1], [-0.5, 0.8, 2.6]),
+        ([-0.8, -3.0, 2.9], [0.8, -0.5, 3.4]),
+    ];
+    for (lo, hi) in slots {
+        let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Cut, s, w).expect("a slot");
+        assert_eq!(out.len(), 1, "a slot leaves one body");
+        s = out[0];
+        m.rebuild_adjacency();
+    }
+    let [bore] = laterals(&m, s)[..] else {
+        panic!("one lateral");
+    };
+    // The premise: a reversed lateral with a rim and four windows, cut through one of them.
+    assert_eq!(
+        m.face(bore).orientation,
+        nacre_topo::Orientation::Reversed,
+        "the bore faces its axis"
+    );
+    assert_eq!(m.face(bore).inner.len(), 5, "a rim and four windows");
+    let cfg = TessConfig::default();
+    let mut pre = Tessellation::default();
+    sample_live_edges(&mut pre, &m, &cfg, &m.reachable());
+    let face = m.face(bore).clone();
+    let cuts = cut_seamless_bands(&mut pre, &m, &[(bore, &face)]);
+    let Some(Some(cut)) = cuts.get(&bore) else {
+        panic!("the lateral is cut");
+    };
+    assert_eq!(
+        cut.holes.len(),
+        1,
+        "the premise: the cut crosses one window"
+    );
+    let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
+    assert_eq!(non_watertight_edges(&t), 0);
+    let want = 2.0 * pi * 4.0 - 4.0 * 2.0 * 0.8f64.asin() * 0.5;
+    let area = face_area(&t, bore);
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 

@@ -49,9 +49,7 @@ pub(crate) fn comp_face(
             for b in core::iter::once(&lf.outer).chain(lf.inner.iter()) {
                 match b {
                     Bound::Ring(r) => loops.push(ring_loop(r)?),
-                    Bound::Rim { plane, .. } => {
-                        loops.push(combinatorics::LateralLoop::Circle(*plane))
-                    }
+                    Bound::Rim { plane, .. } => loops.push(combinatorics::LateralLoop::Rim(*plane)),
                     // A circle bound on a cylinder face has no producer; the ray abstains on
                     // it by name rather than guess.
                     Bound::Circle { cyl } => {

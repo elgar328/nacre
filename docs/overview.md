@@ -35,7 +35,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 ## OCCT / 외부 코드 규칙
 
-- **OCCT는 오라클(dev 테스트 채점자) 전용.** 제품 경로에 위임·링크 없음. 연동은 out-of-process(STEP 왕복), macOS는 `brew install opencascade` 1순위 / uv+OCP 폴백. 헬퍼는 `tools/occt-helper/`, 프로토콜 `helper <fuse|cut|common> <a> <b> <out>` + exit 0/1/2 + stdout JSON.
+- **OCCT는 오라클(dev 테스트 채점자) 전용.** 제품 경로에 위임·링크 없음. 연동은 out-of-process(STEP 왕복), macOS는 `brew install opencascade` 1순위 / uv+OCP 폴백. 헬퍼는 `tools/occt-helper/`, 프로토콜 `helper <fuse|cut|common> <a> <b> <out>` + exit 0/1/2 + stdout key-value 줄(design 「OCCT 오라클(`nacre-oracle`)」).
 - **OCCT 코드는 읽되 베끼지 않는다** — LGPL-2.1이라 번역·차용은 라이선스 오염이고, OCCT 아키텍처가 딸려와 우리 설계와 충돌한다.
 - **알고리즘 차용 가능 소스:** Manifold(Apache-2.0), 문헌(Piegl & Tiller *The NURBS Book*, Hoffmann).
 - **제품 경로의 의존성은 순수 Rust다 — 성능을 이유로도 예외를 두지 않는다.** 목표 환경이 브라우저(`wasm32-unknown-unknown`)이고, C 의존은 거기서 빌드되지 않는다.

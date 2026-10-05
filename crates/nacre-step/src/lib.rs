@@ -41,8 +41,8 @@ impl From<step_io::AuthorError> for StepError {
 
 /// Export every live solid in `model` to AP242 (Ed2) STEP text.
 ///
-/// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
-/// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a closed edge
+/// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines,
+/// arcs and full circles (`Curve::{Line, Circle}`); a full-circle rim is a closed edge
 /// (`vertices: [v, v]`, start == end, `v` its seam vertex) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit).
@@ -195,7 +195,7 @@ fn build_edge(
     let [v0, v1] = edge.vertices;
     // A line carries its cached direction — the truth's where the truth names one
     // (`Model::derive_edge_curve`) — written bit for bit; a circle carries its own frame.
-    // A seam rim has v0 == v1, giving a closed STEP circle.
+    // A whole rim has v0 == v1, giving a closed STEP circle.
     let curve = match model.edge_curve(eh) {
         Curve::Line(l) => CurveInput::LineAlong(l.direction().as_array()),
         Curve::Circle(c) => {

@@ -3,7 +3,7 @@
 //! The arrangement decides a face's boundary long before a `Handle` exists for any of it, and the
 //! assembly turns that description into b-rep. Both halves speak this vocabulary, so it belongs to
 //! neither: [`LocalFace`] with its [`Bound`]s, a [`Ring`] of [`NodeId`]s and the [`Wall`] each edge
-//! rides, a [`Rim`], a [`SeamVertex`] and the [`Def`] a node's vertex is minted from, and the
+//! rides, a [`RimTable`], a [`SeamVertex`] and the [`Def`] a node's vertex is minted from, and the
 //! record a cut circle carries out of the split ([`CutRim`]) with the part of it the result's
 //! faces keep ([`HeldRims`]). Alongside them the two terms that decide whether a draft face survives at all --
 //! [`BoolKind`] and [`keep`], one predicate on one chamber's `(inA, inB)`.
@@ -188,9 +188,8 @@ impl Ring {
     }
 
     /// The carrier-level reading of [`combinatorics::ring_is_mixed`], asked of the
-    /// **walls and nodes** rather than of derived edges - the legacy `edges()` below dies
-    /// on a mixed ring before any `RingEdge` exists, so a consumer that must pass such a
-    /// ring over has to ask the `Ring` itself.
+    /// **walls** rather than of derived edges — for a consumer that holds the `Ring` and has
+    /// no `RingEdge`s to ask (the self-touch sieve, which passes such a ring over).
     pub(crate) fn is_mixed(&self) -> bool {
         self.walls.iter().any(|w| !matches!(w, Wall::Plane(_)))
             || self
@@ -481,9 +480,9 @@ impl HeldRims {
 /// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
 /// — the lateral's corner there — and moved that `A − B`'s refusal to `ArcBoundNotYet` (measured).
 ///
-/// ★ A circle left with **one** node keeps the split's nodes — the record as it was before this
-/// derivation, so an input it cannot improve answers as it did rather than by a new refusal (one
-/// node cannot state a rim as arcs, and the rim may be one no lateral reaches). No suite or census
+/// ★ A circle left with **one** node keeps the split's nodes — the split's own record, so such an
+/// input is answered by the split's cut rather than by a new refusal here (one node cannot state a
+/// rim as arcs, and the rim may be one no lateral reaches). No suite or census
 /// boolean reaches it: the rims this derivation shortens go from three or four nodes to two.
 pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
     if split.is_empty() {

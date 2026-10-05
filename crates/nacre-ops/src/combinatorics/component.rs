@@ -46,8 +46,8 @@ pub(crate) enum BoundEdges {
 /// One boundary loop of a lateral face on the cylinder's chart `(θ, z)`.
 #[derive(Clone, Debug)]
 pub(crate) enum LateralLoop {
-    /// A whole-circle rim: the plane class it rides (⊥ to the axis).
-    Circle(usize),
+    /// A whole rim: the plane class it rides (⊥ to the axis) — `draft::Bound::Rim`'s plane.
+    Rim(usize),
     /// A ring of arcs (on ⊥ classes) and rulings (on ∥ classes), its corners pierce names.
     Ring(Vec<RingEdge>),
 }

@@ -528,7 +528,7 @@ fn lateral_lattice(staircase: bool) {
     let rims: Vec<usize> = loops
         .iter()
         .filter_map(|l| match l {
-            combinatorics::LateralLoop::Circle(c) => Some(*c),
+            combinatorics::LateralLoop::Rim(c) => Some(*c),
             combinatorics::LateralLoop::Ring(_) => None,
         })
         .collect();

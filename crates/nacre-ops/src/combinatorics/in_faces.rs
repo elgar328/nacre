@@ -298,7 +298,7 @@ pub(crate) fn loop_parity(
     let mut crossings = 0usize;
     for lp in loops {
         match lp {
-            LateralLoop::Circle(c) => {
+            LateralLoop::Rim(c) => {
                 let t = crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, *c)?, def)?;
                 match above(t)? {
                     // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.

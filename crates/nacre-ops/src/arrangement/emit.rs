@@ -13,8 +13,7 @@ use super::*;
 ///
 /// **Output contract:** every ring vertex is a [`combinatorics::NodeId`] triple, including triples that coincide
 /// with an original A/B vertex (a cap corner); the weld table canonicalizes such a W-triple onto
-/// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects. This brick emits
-/// all-`Seam`; the reconciliation and assembly are later.
+/// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_faces(
     kind: BoolKind,
@@ -41,10 +40,9 @@ pub(super) fn emit_faces(
                 cyl: edges.circles[i].cyl,
             };
         }
-        // ★★ `Ring.walls` is a carrier now (`combinatorics::Wall`), so an arc half-edge has something
-        // true to put here at last: its cylinder class and which way this side travels. What is
-        // still missing is downstream — `edge_for` refuses an arc carrier by the population's
-        // name until the arc-casting cell teaches it the ordered circle key.
+        // ★★ `Ring.walls` is a carrier (`combinatorics::Wall`), so an arc half-edge states its
+        // cylinder class, its rim's plane and which way this side travels — what the assembly
+        // mints it by (`EdgeKey::Arc`, the ordered circle key).
         crate::draft::Bound::Ring(crate::draft::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges

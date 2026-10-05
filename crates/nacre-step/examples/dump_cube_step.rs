@@ -2,7 +2,7 @@
 //!
 //! `cargo run -p nacre-step --example dump_cube_step [path]`
 //! then open the file in step-loupe (its report flags dropped/orphan entities)
-//! or FreeCAD (an independent OCCT reader — cross-check face orientation).
+//! or FreeCAD (a reader outside this repo, though OCCT underneath — cross-check face orientation).
 
 use nacre_math::Point3;
 use nacre_step::to_step;

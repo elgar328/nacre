@@ -2,8 +2,9 @@
 //!
 //! `cargo run -p nacre-step --example dump_cylinder_step [path]`
 //! then open the file in step-loupe (its report flags dropped/orphan entities)
-//! or FreeCAD (an independent OCCT reader — cross-check the seam and outward
-//! face orientation, which the step-io round-trip test cannot verify).
+//! or FreeCAD (a reader outside this repo, though OCCT underneath — cross-check the
+//! two-rim lateral and outward face orientation, which the step-io round-trip test
+//! cannot verify).
 
 use nacre_math::Point2;
 use nacre_ops::{DatumDef, OpOutput, Operation, Ring2d, SketchPlane, apply, from_paths};
