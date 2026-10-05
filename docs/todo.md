@@ -210,13 +210,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
-### 앱에 STEP 내보내기가 없다
-
-kit·playground 에 STEP 내보내기가 없다(wasm 에 STEP 함수 0). 커널은 둘을 갖는다: `nacre_step::to_step(&Model)` 과
-그 앞의 문 `nacre_ops::refine_caches(&mut Model)` — 깊은 이력에서 미뤄진 캐시를 올리고 남은 것을 이유별로
-보고한다. 앱의 내보내기는 둘을 이어 부른다. 문은 로그 끝의 문이라(평면 캐시가 뒤 불리언의 구성 수치가 된다)
-편집을 이어 갈 모델이면 내보낼 복사본에서 부른다.
-
 ## 다음 — 출력 정밀도: STEP 의 f64 는 실현 통로 하나로
 
 숫자 규칙 「실현 통로는 하나다」를 코드가 아직 다 지키지 않는 자리들. STEP 이 내보내는 수의 마지막 비트이지
@@ -253,7 +246,7 @@ kit·playground 에 STEP 내보내기가 없다(wasm 에 STEP 함수 0). 커널�
 | 원 간선 반지름·법선·`ref_dir` | 0 — 원통 캐시의 프레임을 비트 그대로(`Circle::from_unit_frame`); 위 모음의 진술 없는 원 756 에서도 0 | — |
 | 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(step-io 0.2.5 — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `CurveInput::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), 룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,623 · 축을 따르는 420 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 남는 것은 사슬이 비용 한계를 넘는 직선(끝점의 차) — `nacre_ops::refine_caches` 가 올린다. 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | 깊은 사슬의 직선(안 잼) |
 | 원통의 원점·축·`ref_dir`·반지름 | 0 — 문이 진술에서, 진술이 없으면 깔때기가 사슬에서 정확 반올림한다(스위트에서 생산자 값과 다르던 진술된 원통 81: 기울어진 축 31·옮긴 원통 원점 50; 사슬로 실현한 회전 원통 1,319, census 7) | — |
-| 깊은 이력의 정점·평면·원통 캐시(사슬 > 192 노드, 두 단에서 미결정) | census 0. 스위트 push: 정점 `Ceiling` 35,280(`CostCap` 35,168 · `Undecided` 112) · 평면 생산자 값 17,556(깊은 사슬) + 256 에서 미결정인 법선 392 — 캐시가 그것을 말하고(`PointCache::Ceiling` · `CacheStanding::Ceiling`) 내보내기 직전의 문 `nacre_ops::refine_caches` 가 사다리 끝까지 올린다(7° 회전 + 300 이동 픽스처: 정점 8 · 곡면 4 · 간선 12, 남김 0, release 17 ms). 길이 없는 것은 `Unrealized` 로 남고 문이 수로 보고한다: 정점 `NoMeet`(스위트 push 164) · 회전 원통의 관통점, 혼합 프레임 `Through` 평면 8. 제품에서 그 문을 부르는 쪽은 아직 없다(「앱에 STEP 내보내기가 없다」) | — |
+| 깊은 이력의 정점·평면·원통 캐시(사슬 > 192 노드, 두 단에서 미결정) | census 0. 스위트 push: 정점 `Ceiling` 35,280(`CostCap` 35,168 · `Undecided` 112) · 평면 생산자 값 17,556(깊은 사슬) + 256 에서 미결정인 법선 392 — 캐시가 그것을 말하고(`PointCache::Ceiling` · `CacheStanding::Ceiling`) 내보내기 직전의 문 `nacre_ops::refine_caches` 가 사다리 끝까지 올린다(7° 회전 + 300 이동 픽스처: 정점 8 · 곡면 4 · 간선 12, 남김 0, release 17 ms). 길이 없는 것은 `Unrealized` 로 남고 문이 수로 보고한다: 정점 `NoMeet`(스위트 push 164) · 회전 원통의 관통점, 혼합 프레임 `Through` 평면 8. 제품에서 그 문을 부르는 것은 kit 의 `BuildOutput::export_step` 이다(playground 의 내보내기 단추) | — |
 
 - **평면 단위 법선.** 면의 스케치 프레임은 진실에서 고르므로(`face_sketch_frame`) 법선 비트가 바뀌어도 도로가 뒤집히지
   않는다. 세계 이름이 있는 평면은 문이 이름 × 향에서 정확 반올림한다(`nacre_exact::unit_vector_f64`).
@@ -328,7 +321,7 @@ kit·playground 에 STEP 내보내기가 없다(wasm 에 STEP 함수 0). 커널�
 
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
-남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 `realize_vertex_decimal` 한 곳이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
+남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
 
 ### 접히는 사슬 위 원통의 잠금
 
