@@ -1234,55 +1234,64 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
     assert_eq!(band_generator(&folded, [0, 1], |_| true), None);
 }
 
-/// ★★ **`to_obj_solids` writes the solids given and nothing else.** The mesh covers every
-/// reachable face, and an application's model holds solids it does not show; the door is the
-/// choice. Two boxes far apart: one of them comes back with exactly its own triangles, numbered
-/// from 1 over only its own corners, and none of the other's; both together are the whole mesh.
+/// ★★ **`tessellate_solids` meshes the solids given and nothing else — and each of their faces
+/// exactly as the whole mesh does.** An application's model holds solids it does not show, and
+/// meshing them is paid on every run. A box and a cylinder: meshing the cylinder alone gives
+/// the cylinder's faces only, each with the same triangles (count and corner coordinates) as in
+/// the mesh of everything; meshing both is the whole mesh; and its OBJ writes only what it holds.
 #[test]
-fn obj_of_chosen_solids_writes_only_theirs() {
+fn a_mesh_of_chosen_solids_holds_theirs_as_the_whole_mesh_does() {
     let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
+    let boxed = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([5.0; 3]),
         Point3::from_array([6.0; 3]),
     );
-    let t = tessellate(&m, &TessConfig::default()).unwrap();
-    let triangles_of = |s: Handle<Solid>| -> usize {
-        let shell = m.solid(s).outer;
-        m.shell(shell)
-            .faces
-            .iter()
-            .map(|f| t.by_face[f].len())
-            .sum()
+    let cyl = nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let cfg = TessConfig::default();
+    let whole = tessellate(&m, &cfg).unwrap();
+    let alone = tessellate_solids(&m, &[cyl], &cfg).unwrap();
+
+    let faces_of = |s: Handle<Solid>| -> HashSet<Handle<Face>> {
+        m.shell(m.solid(s).outer).faces.iter().copied().collect()
     };
-
-    let obj = read_obj(&t.to_obj_solids(&m, &[a]));
-    assert_eq!(obj.corners.len(), 3 * triangles_of(a));
-    assert_eq!(obj.v.len(), 8);
-    let used: HashSet<usize> = obj.corners.iter().map(|&(v, _)| v).collect();
+    let meshed: HashSet<Handle<Face>> = alone.by_face.keys().copied().collect();
     assert_eq!(
-        used.len(),
-        obj.v.len(),
-        "every written vertex is used, every used one written"
+        meshed,
+        faces_of(cyl),
+        "only the chosen solid's faces are meshed"
     );
-    assert!(
-        obj.v
+    let corners = |t: &Tessellation, f: &Handle<Face>| -> Vec<[u64; 3]> {
+        let mut c: Vec<[u64; 3]> = t.by_face[f]
             .iter()
-            .all(|p| p.iter().all(|&c| (0.0..=1.0).contains(&c))),
-        "a corner of the other box was written: {:?}",
-        obj.v
-    );
+            .flat_map(|&th| t.triangles.get(th).vertices)
+            .map(|vh| t.vertices.get(vh).pos.as_array().map(f64::to_bits))
+            .collect();
+        c.sort();
+        c
+    };
+    for f in &meshed {
+        assert_eq!(alone.by_face[f].len(), whole.by_face[f].len(), "{f:?}");
+        assert_eq!(corners(&alone, f), corners(&whole, f), "{f:?}");
+    }
 
-    let both = read_obj(&t.to_obj_solids(&m, &[a, b]));
-    let whole = read_obj(&t.to_obj(&m));
-    assert_eq!(both.corners.len(), 3 * (triangles_of(a) + triangles_of(b)));
-    assert_eq!(both.corners.len(), whole.corners.len());
-    assert_eq!(both.v.len(), whole.v.len());
+    let both = tessellate_solids(&m, &[boxed, cyl], &cfg).unwrap();
+    assert_eq!(both.triangles.len(), whole.triangles.len());
+
+    let obj = read_obj(&alone.to_obj(&m));
+    assert_eq!(obj.corners.len(), 3 * alone.triangles.len());
+    assert!(
+        obj.v.iter().all(|p| p.iter().all(|&c| c <= 2.0)),
+        "a corner of the box was written"
+    );
 }
 
 /// ★★★ **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims

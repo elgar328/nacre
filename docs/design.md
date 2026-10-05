@@ -65,7 +65,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 **공개 표면 — 밖에서 무엇이 되는가.**
 - **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·interning 표가 전부 비공개이며, 공개 필드는 `surface_name` 하나다(「문의 이름」 절이 캐시 조각으로 접을 몫). 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
 - **위상 순회는 밖에서 된다.** 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개다(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)`).
-- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`Tessellation::to_obj`·`to_obj_solids`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
+- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`tessellate_solids`·`Tessellation::to_obj`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
 - **파생 값과 에러 표면.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 계획.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -406,7 +406,8 @@ pub struct Adjacency {
 ## Tessellation 층 (`nacre-tess`) — 출처 태그 파생물
 
 메시는 진실이 아니라 파생물이고, 모든 요소가 출처를 안다. **길은 하나다**: `tessellate(model, cfg)` →
-`Tessellation`. 간선을 한 번 샘플해 공유 폴리라인으로 두고, 모든 면을 자기 곡면의 차트에서 삼각분할한다.
+`Tessellation`. 고른 솔리드만 지을 때는 `tessellate_solids(model, solids, cfg)` — 같은 길이고 걷는 범위만 다르다
+(간선 표본과 면 삼각분할은 하나씩이고 두 솔리드는 간선을 나누지 않으므로, 면의 삼각형은 곁에 무엇을 짓든 같다). 간선을 한 번 샘플해 공유 폴리라인으로 두고, 모든 면을 자기 곡면의 차트에서 삼각분할한다.
 `Adjacency` 처럼 **처음부터 통째로** 짓는다.
 
 ```rust
@@ -451,7 +452,7 @@ pub struct Tessellation {
 정점, 스파이크, 서로 지나가는 두 선분, 한 점을 두 번 지나며 그 점을 가로지르는 링; 구멍이 외곽 링을
 가로지르는 것도 잡는다), `SelfTouchingBoundary`
 (아래), `HoleWinding`(구멍이 외곽과 같은 방향으로 감겼다 — 고칠 메시가 아니라 깨진 솔리드), `OverBudget`
-(아래). `tessellate` 는 모델 전체를 걷다 첫 거절에서 멈춘다.
+(아래). `tessellate`·`tessellate_solids` 는 받은 범위를 걷다 첫 거절에서 멈춘다.
 
 **삼각분할 알고리즘 — 브리징 없는 스윕.** 구멍 있는 면은 **y-단조 분해 + 단조 삼각분할**(de Berg §3)로 자른다. 구멍을 외곽 링에 브리지(폭 0 슬릿)로 꿰매 귀 자르기를 하지 않는 이유는 하나다: 브리지가 정점을 **반복**시키고, 반복 정점이 있는 링은 단순 다각형이 아니며, Meisters 의 two-ears 정리는 단순 다각형에만 성립하므로 그런 링에는 **귀가 아예 없을 수 있다**. 스윕은 **링을 절대 합치지 않으므로** 퇴화 링 자체가 안 생긴다 — 구멍 간선이 보통 간선이고, 구멍의 최상단이 split·최하단이 merge 정점이 되어 대각선이 자동으로 구멍을 잇는다. 판정은 전부 부호이고 **tolerance가 없다**: 전부 exact `orient2d`(`nacre-predicates`)이고, 이것은 **어떤 f64 입력에도 정확**하다. (평면의 차트는 축 드롭이라 `uv`가 원본 f64 그대로지만, 원통의 차트는 `atan2`로 **계산된** 값이다 — 그래도 술어가 정확하므로 알고리즘은 같다. 면 사이에서 `uv`를 비교하는 일이 없으므로 — 면끼리 만나는 자리는 **엣지 폴리라인**이 이미 정한다 — 차트가 면마다 달라도 무방하다.) 경계 정점을 추가하지 않으므로 삼각형 수는 `V + 2H − 2`로 불변이고 crack-free 규칙도 그대로다. 스윕은 자기 전제를 **가정하지 않고 검사한다**: b-rep 이 보장하지만 이 층은 보장할 수 없는 것이라, 자기 교차 링을 받은 분해는 그러지 않으면 확신에 찬 틀린 메시를 낸다.
 

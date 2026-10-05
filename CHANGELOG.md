@@ -11,7 +11,7 @@ While the version is `0.0.z`, every release may break anything.
 ### Added
 
 - `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.
-- `tess::Tessellation::to_obj_solids` writes the OBJ of the solids given, as `step::to_step_solids` does for STEP.
+- `tess::tessellate_solids` meshes the solids given only — an application meshing what it shows, while its model keeps more live solids; `Tessellation::to_obj` writes whatever the mesh holds.
 
 ### Changed
 

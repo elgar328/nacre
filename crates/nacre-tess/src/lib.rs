@@ -1,10 +1,10 @@
 //! Mesh export for the nacre kernel.
 //!
-//! **One path**: [`tessellate`] → [`Tessellation`]. Edges are sampled once into shared
+//! **One path**: [`tessellate`] (every live solid) or [`tessellate_solids`] (the solids given) →
+//! [`Tessellation`]. Edges are sampled once into shared
 //! polylines and every face is triangulated in a chart of its own surface — a plane drops an axis,
 //! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
-//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`] (the whole mesh)
-//! or [`Tessellation::to_obj_solids`] (the solids given).
+//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
 //!
 //! ★★★★★ **One, and only one.** A second writer that fan-triangulates planar faces **from
 //! half-edge start vertices** silently turns an arc into a chord. The projection rule
@@ -184,26 +184,9 @@ impl Default for TessConfig {
 }
 
 impl Tessellation {
-    /// Wavefront OBJ text of the whole tessellation: vertices in store order, triangles in store
-    /// order, each corner with its face's outward normal (see [`Tessellation::to_obj_solids`]).
-    ///
-    /// `model` must be the model this tessellation was built from — the mesh holds only face
-    /// handles, so another model would answer for other faces (or none, and panic).
-    pub fn to_obj(&self, model: &Model) -> String {
-        let vertices: Vec<Handle<TessVertex>> = self.vertices.iter().map(|(h, _)| h).collect();
-        let triangles: Vec<Handle<TessTriangle>> = self.triangles.iter().map(|(h, _)| h).collect();
-        self.write_obj(model, &vertices, &triangles)
-    }
-
-    /// Wavefront OBJ text of the given solids only, in the order given — what an application
-    /// writes when the model also holds solids it does not show (copies, unconsumed
-    /// intermediates); [`tessellate`] covers every reachable face.
-    ///
-    /// Triangles come body by body, shell by shell (outer, then cavities), face by face in shell
-    /// order, each face's triangles in `by_face` order — never in the order of the `by_face` map,
-    /// which is not deterministic. A face the mesh holds no triangles for is skipped. Vertices are
-    /// numbered by first use, so only the ones written appear. Same `model` precondition as
-    /// [`Tessellation::to_obj`].
+    /// Wavefront OBJ text of the tessellation: vertices in store order, triangles in store order.
+    /// What it holds is decided when it is built — every live solid ([`tessellate`]) or the ones
+    /// given ([`tessellate_solids`]).
     ///
     /// ★ **Each corner carries its face's outward normal** (`vn`, `f a//na b//nb c//nc`) —
     /// [`nacre_props::face_normal_at`], the one the playground's viewport lights with. Without it a
@@ -211,24 +194,12 @@ impl Tessellation {
     /// normals of a shared vertex — and a rim's points *are* shared, cap and side meeting on the
     /// one polyline the edge was sampled into, so the sharp rim would be rounded off. With it a
     /// rim point is written once and paired with two normals: the cap's axis and the side's radius.
-    pub fn to_obj_solids(&self, model: &Model, solids: &[Handle<Solid>]) -> String {
-        let mut triangles = Vec::new();
-        for &body in solids {
-            let solid = model.solid(body);
-            for shell in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
-                for face in &model.shell(shell).faces {
-                    if let Some(tris) = self.by_face.get(face) {
-                        triangles.extend_from_slice(tris);
-                    }
-                }
-            }
-        }
-        let mut seen = std::collections::HashSet::new();
-        let vertices: Vec<Handle<TessVertex>> = triangles
-            .iter()
-            .flat_map(|&t| self.triangles.get(t).vertices)
-            .filter(|&v| seen.insert(v))
-            .collect();
+    ///
+    /// `model` must be the model this tessellation was built from — the mesh holds only face
+    /// handles, so another model would answer for other faces (or none, and panic).
+    pub fn to_obj(&self, model: &Model) -> String {
+        let vertices: Vec<Handle<TessVertex>> = self.vertices.iter().map(|(h, _)| h).collect();
+        let triangles: Vec<Handle<TessTriangle>> = self.triangles.iter().map(|(h, _)| h).collect();
         self.write_obj(model, &vertices, &triangles)
     }
 
@@ -291,10 +262,28 @@ fn facet_normal(p: [Point3; 3]) -> [f64; 3] {
 /// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the
 /// stores would mesh the operands alongside the result.
 pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessError> {
+    tessellate_solids(model, model.live_solids(), cfg)
+}
+
+/// [`tessellate`] over the cells `solids` (live solids) reach — **what is shown, and nothing else.**
+///
+/// An application's model holds more live solids than it draws: a script's every intermediate
+/// value stays live when the layer above copies before each consumption. Measured, a cylinder moved
+/// 300 times keeps 301 live solids and shows one — meshing all of them took 529 ms (native release)
+/// for one cylinder's triangles.
+///
+/// The same road, walked over less: edges are sampled and faces triangulated one by one, two
+/// solids share no edge, and the bridge pre-pass pairs only faces on one edge — so a face's
+/// triangles are the same whichever other solids are meshed beside it.
+pub fn tessellate_solids(
+    model: &Model,
+    solids: &[Handle<Solid>],
+    cfg: &TessConfig,
+) -> Result<Tessellation, TessError> {
     let mut t = Tessellation::default();
     // `Reachable` is a `HashSet`; walk the stores in their own order and merely ask
     // membership, so the mesh stays reproducible (replay).
-    let reach = model.reachable();
+    let reach = model.reachable_from(solids);
 
     // 1. Sample every live edge into a shared polyline (the crack-free contract).
     let live = sample_live_edges(&mut t, model, cfg, &reach);
