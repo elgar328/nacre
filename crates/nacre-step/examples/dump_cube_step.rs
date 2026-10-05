@@ -16,7 +16,8 @@ fn main() {
         Point3::from_array([1.0, 1.0, 1.0]),
     );
 
-    let step = to_step(&model).expect("export cube to STEP");
+    // The header time stamp is the caller's to give (the kernel reads no clock).
+    let step = to_step(&model, "2026-10-05T00:00:00Z").expect("export cube to STEP");
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/cube.step".to_string());

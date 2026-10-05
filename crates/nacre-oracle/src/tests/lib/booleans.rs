@@ -448,7 +448,7 @@ fn translated_solid_cut_matches_occt() {
 /// invariant, so OCCT must agree with nacre's `mass_props` — proving the
 /// rotation rewrite produced a valid solid, not merely a volume-preserving
 /// vertex shuffle. The same check on a rotated `Cut` result exercises the
-/// rotation of arrangement-named vertices. Single-solid export (`to_step_solid`)
+/// rotation of arrangement-named vertices. Single-solid export (`to_step_solids` of one)
 /// avoids summing the superseded input still resident in the arena.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -479,7 +479,7 @@ fn rotated_solid_props_match_occt() {
     let nacre_ops::OpOutput::Transform { solid: c2 } = out else {
         panic!("expected Transform output");
     };
-    let occt = occt_props(&nacre_step::to_step_solid(&m, c2).unwrap()).unwrap();
+    let occt = occt_props(&nacre_step::to_step_solids(&m, &[c2], crate::STAMP).unwrap()).unwrap();
     let nacre = mass_props(&m, c2).unwrap();
     assert!(
         approx(nacre.volume, occt.volume),
@@ -518,7 +518,7 @@ fn rotated_solid_props_match_occt() {
     let nacre_ops::OpOutput::Transform { solid: cut2 } = out else {
         panic!("expected Transform output");
     };
-    let occt = occt_props(&nacre_step::to_step_solid(&m, cut2).unwrap()).unwrap();
+    let occt = occt_props(&nacre_step::to_step_solids(&m, &[cut2], crate::STAMP).unwrap()).unwrap();
     let nacre = mass_props(&m, cut2).unwrap();
     assert!(
         approx(nacre.volume, occt.volume),

@@ -137,7 +137,7 @@ fn a_donut_prism_tessellates_and_exports() {
         nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok(),
         "caps triangulate with holes"
     );
-    let step = nacre_step::to_step(&m).unwrap();
+    let step = nacre_step::to_step(&m, STAMP).unwrap();
     assert!(step.contains("MANIFOLD_SOLID_BREP"));
     assert!(step.contains("FACE_BOUND"), "the hole is an inner bound");
 }
@@ -686,7 +686,7 @@ fn a_slot_prism_tessellates_and_exports() {
     )
     .expect("the slot extrudes");
     assert!(nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok());
-    let step = nacre_step::to_step(&m).unwrap();
+    let step = nacre_step::to_step(&m, STAMP).unwrap();
     for needle in ["MANIFOLD_SOLID_BREP", "CYLINDRICAL_SURFACE", "CIRCLE"] {
         assert!(step.contains(needle), "missing {needle}");
     }

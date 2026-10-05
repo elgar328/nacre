@@ -78,7 +78,7 @@ fn the_whole_pipeline_runs_through_the_facade_alone() {
     );
     assert!((centroid(&model, joined[0]).unwrap()[0] - 3.0).abs() < 1e-9);
 
-    let step = nacre::step::to_step(&model).unwrap();
+    let step = nacre::step::to_step(&model, "2026-10-05T00:00:00Z").unwrap();
     assert!(
         step.starts_with("ISO-10303-21;"),
         "{}",

@@ -767,7 +767,7 @@ fn transform_translate_cuboid() {
         "moved solid tessellates"
     );
     assert!(
-        nacre_step::to_step(&m)
+        nacre_step::to_step(&m, fixtures::STAMP)
             .unwrap()
             .contains("MANIFOLD_SOLID_BREP"),
         "moved solid exports to STEP"
@@ -999,7 +999,7 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
         "rotated solid tessellates"
     );
     assert!(
-        nacre_step::to_step(&m)
+        nacre_step::to_step(&m, fixtures::STAMP)
             .unwrap()
             .contains("MANIFOLD_SOLID_BREP"),
         "rotated solid exports to STEP"
@@ -1539,7 +1539,7 @@ fn rerotate_same_axis_chains() {
     assert!((after.area - before.area).abs() < 1e-9, "area invariant");
     assert!(nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok());
     assert!(
-        nacre_step::to_step(&m)
+        nacre_step::to_step(&m, fixtures::STAMP)
             .unwrap()
             .contains("MANIFOLD_SOLID_BREP")
     );

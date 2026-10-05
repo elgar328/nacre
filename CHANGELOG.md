@@ -16,6 +16,7 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `topo::Model::push_edge`, `topo::Model::derive_edge_curve` and `topo::Model::rebuild_edge_cache` take a closure that gives, when asked, what the caller realized of the edge's truth (`topo::EdgeGiven`) — pass `|_| EdgeGiven::NONE` to give nothing.
 - **Breaking:** `topo::Model::push_plane`, `topo::Model::push_plane_through` and `topo::Model::push_cylinder` take, after the figure, what that figure knows about itself (`topo::CacheStanding`) — pass `CacheStanding::Unrealized` for a figure nobody realized; a surface's cache now says whether it is the truth's realization (`topo::Model::surface_cache_standing`).
 - **Breaking:** `ops::refine_vertex_cache` is now `ops::refine_caches`, the door to call before exporting a model with a long history: it also raises surface caches and re-derives edges, and its `RefineReport` counts, for vertices, surfaces and edges, what it raised and what it left — undecided at the top of the ladder, or with no way to realize it.
+- **Breaking:** `step::to_step` takes the header's time stamp (`to_step(&model, "2026-10-05T12:00:00Z")`), written verbatim; the kernel no longer reads the clock. `step::to_step_solid` is now `step::to_step_solids`, which writes the solids given, in that order — pass `&[solid]` for one.
 
 ### Removed
 
@@ -25,6 +26,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- STEP export no longer panics when built for `wasm32-unknown-unknown`. It asked the system for the time to stamp the file's header, which that target cannot answer; the caller now gives the stamp.
 - A cylinder bitten at both ends — a box over part of each rim, fused on or cut away — now tessellates. Its side face comes out with no seam line, bounded by its two cut rims, and the mesher refused it, so the whole model failed to mesh; the mesher now cuts such a face open along one line of the cylinder.
 - Such a side face with windows whose spans together go all the way round the axis now tessellates too: the mesher cuts it open through one window rather than refusing the face.
 - A cylinder crossing the side of such a cylinder, or a slanted wall cutting it, is now refused as `CylinderPairContact` or `ObliqueCylinderCut`; the side face's height was read from its lower rim alone, the contact was judged clear, and a later stage refused it as `LabelConflict` or `CylinderStagesDisagree`.

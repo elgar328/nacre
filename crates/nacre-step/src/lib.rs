@@ -53,26 +53,41 @@ impl From<step_io::AuthorError> for StepError {
 /// rungs do not decide), where the construction's own figure stands. `nacre_ops::refine_caches`
 /// (`nacre::ops::refine_caches`) pays for those and reports what it could not settle; call it
 /// before exporting such a model. It takes `&mut Model`, which an export does not.
-pub fn to_step(model: &Model) -> Result<String, StepError> {
-    build_step(model, model.live_solids())
-}
-
-/// Export a single solid to AP242 (Ed2) STEP text — the solid's live closure
-/// only, as one STEP part. Same coverage and errors as [`to_step`].
 ///
-/// Needed by the M5 boolean oracle: OCCT's binary `fuse`/`cut`/`common` take two
-/// separate single-solid STEP files, whereas [`to_step`] emits the whole live set
-/// as one file.
-pub fn to_step_solid(model: &Model, solid: Handle<Solid>) -> Result<String, StepError> {
-    build_step(model, &[solid])
+/// ★ **`timestamp` is the header's `FILE_NAME` time stamp, written verbatim** (an ISO 8601 string
+/// such as `2026-10-05T12:00:00Z`; `""` leaves the field blank). The caller gives it because the
+/// kernel reads no clock: the same model and the same time stamp give the same bytes, and
+/// `wasm32-unknown-unknown` has no clock to read — asking the system for the time there panics.
+pub fn to_step(model: &Model, timestamp: &str) -> Result<String, StepError> {
+    build_step(model, model.live_solids(), timestamp)
 }
 
-/// Export the given solids to AP242 (Ed2) STEP text, one STEP part each. The
-/// shared body of [`to_step`] and [`to_step_solid`].
-fn build_step(model: &Model, solids: &[Handle<Solid>]) -> Result<String, StepError> {
+/// Export the given solids to AP242 (Ed2) STEP text, one STEP part each, in the order given.
+/// Same coverage, time stamp and errors as [`to_step`].
+///
+/// For a caller that holds more live solids than it means to write — an application exporting
+/// what it shows, while copies and unconsumed intermediates stay live in the model — and for the
+/// boolean oracle, whose OCCT `fuse`/`cut`/`common` take single-solid files (`&[solid]`). Each
+/// solid must be live; a superseded one would be written as if it were still there.
+pub fn to_step_solids(
+    model: &Model,
+    solids: &[Handle<Solid>],
+    timestamp: &str,
+) -> Result<String, StepError> {
+    build_step(model, solids, timestamp)
+}
+
+/// The shared body of [`to_step`] and [`to_step_solids`].
+fn build_step(
+    model: &Model,
+    solids: &[Handle<Solid>],
+    timestamp: &str,
+) -> Result<String, StepError> {
     let mut b = StepBuilder::new()?;
     b.header(&HeaderInput {
         originating_system: Some("nacre".to_owned()),
+        // Always `Some`: `None` asks step-io to stamp the current time from the system clock.
+        timestamp: Some(timestamp.to_owned()),
         ..Default::default()
     });
 

@@ -246,7 +246,7 @@ fn pad_step_exports() {
     // The boss (holed outer face + walls + cap) exports without error.
     let (mut m, top) = cube_with_top();
     nacre_ops::fixtures::pad(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5).unwrap();
-    let step = nacre_step::to_step(&m).expect("boss exports");
+    let step = nacre_step::to_step(&m, STAMP).expect("boss exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
 
@@ -331,7 +331,7 @@ fn a_pad_on_a_slanted_face() {
 fn pocket_step_exports() {
     let (mut m, top) = cube_with_top();
     nacre_ops::fixtures::pocket(&mut m, top, nacre_ops::fixtures::lid_square(), 0.5).unwrap();
-    let step = nacre_step::to_step(&m).expect("pocket exports");
+    let step = nacre_step::to_step(&m, STAMP).expect("pocket exports");
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
 

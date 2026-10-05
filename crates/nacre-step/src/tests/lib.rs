@@ -4,6 +4,9 @@ use nacre_topo::Solid;
 use step_io::read;
 use step_io::scene::geometry::{CurveKind, SurfaceKind};
 
+/// The header time stamp these tests write — fixed, so a file is a function of its model.
+const STAMP: &str = "2026-10-05T00:00:00Z";
+
 fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
     let mut m = Model::new();
     nacre_ops::fixtures::cuboid(&mut m, Point3::from_array(min), Point3::from_array(max));
@@ -12,7 +15,7 @@ fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
 
 #[test]
 fn cube_round_trips_through_step_io_reader() {
-    let text = to_step(&cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])).expect("export");
+    let text = to_step(&cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), STAMP).expect("export");
     let (model, report) = read(text.as_bytes()).expect("re-read");
 
     // No dropped/orphan entities — the structural lint (step-loupe's report).
@@ -43,7 +46,7 @@ fn cube_round_trips_through_step_io_reader() {
 
 #[test]
 fn output_has_expected_entities_and_ap242e2_schema() {
-    let text = to_step(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).expect("export");
+    let text = to_step(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]), STAMP).expect("export");
     for needle in [
         "MANIFOLD_SOLID_BREP",
         "CLOSED_SHELL",
@@ -60,7 +63,7 @@ fn output_has_expected_entities_and_ap242e2_schema() {
 
 #[test]
 fn asymmetric_box_round_trips() {
-    let text = to_step(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).expect("export");
+    let text = to_step(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]), STAMP).expect("export");
     let (_, report) = read(text.as_bytes()).expect("re-read");
     assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
 }
@@ -80,13 +83,13 @@ fn single_solid_export_isolates_one_solid() {
     );
 
     // The whole live model exports both solids.
-    let both = to_step(&m).expect("export both");
+    let both = to_step(&m, STAMP).expect("export both");
     let (model_both, _) = read(both.as_bytes()).expect("re-read");
     assert_eq!(model_both.scene().all_solids().count(), 2);
 
     // A single-solid export isolates exactly one solid with its six faces.
     for h in [a, b] {
-        let text = to_step_solid(&m, h).expect("export one");
+        let text = to_step_solids(&m, &[h], STAMP).expect("export one");
         let (model, report) = read(text.as_bytes()).expect("re-read");
         assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
         let scene = model.scene();
@@ -94,6 +97,39 @@ fn single_solid_export_isolates_one_solid() {
         assert_eq!(solids.len(), 1);
         assert_eq!(solids[0].faces().count(), 6);
     }
+
+    // A chosen pair is both, and an empty choice is a file with no solid in it.
+    let pair = to_step_solids(&m, &[a, b], STAMP).expect("export the pair");
+    let (model_pair, _) = read(pair.as_bytes()).expect("re-read");
+    assert_eq!(model_pair.scene().all_solids().count(), 2);
+    let none = to_step_solids(&m, &[], STAMP).expect("export nothing");
+    let (model_none, report) = read(none.as_bytes()).expect("re-read");
+    assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+    assert_eq!(model_none.scene().all_solids().count(), 0);
+}
+
+/// ★★ **The header's time stamp is the caller's, verbatim — so a file is a function of its model
+/// and that stamp.** The kernel reads no clock: `wasm32-unknown-unknown` has none (asking the
+/// system for the time there panics), and a stamp taken from the clock would make two exports of
+/// one model differ. Two stamps prove the field is the argument rather than a coincidence of the
+/// moment, and two models built the same way give the same bytes, header included.
+#[test]
+fn the_time_stamp_is_the_callers_and_the_file_repeats() {
+    let lo = [-2.0, 1.0, 0.0];
+    let hi = [3.0, 4.0, 10.0];
+    let m = cuboid(lo, hi);
+    let text = to_step(&m, STAMP).expect("export");
+    assert!(
+        text.contains(&format!("'{STAMP}'")),
+        "the stamp is not in the header"
+    );
+    let other = "1999-12-31T23:59:59Z";
+    let text_other = to_step(&m, other).expect("export");
+    assert!(
+        text_other.contains(&format!("'{other}'")),
+        "the stamp is not the argument"
+    );
+    assert_eq!(text, to_step(&cuboid(lo, hi), STAMP).expect("export"));
 }
 
 /// ★★★★ **The live set's order reaches the exported file, so superseding may not permute it.**
@@ -126,7 +162,7 @@ fn superseding_a_solid_leaves_the_export_order_alone() {
     );
 
     m.supersede_live(&[middle]);
-    let text = to_step(&m).expect("export the two survivors");
+    let text = to_step(&m, STAMP).expect("export the two survivors");
 
     assert!(
         !text.contains("777."),
@@ -165,7 +201,7 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
     });
     m.restore_live(vec![hollow]); // supersede the two source cubes
 
-    let text = to_step(&m).expect("export hollow");
+    let text = to_step(&m, STAMP).expect("export hollow");
     assert!(text.contains("BREP_WITH_VOIDS"), "no void entity in output");
 
     let (model, report) = read(text.as_bytes()).expect("re-read");
@@ -243,7 +279,7 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
                 }
             }
 
-            let text = to_step(&m).expect("export");
+            let text = to_step(&m, STAMP).expect("export");
             let (model, report) = read(text.as_bytes()).expect("re-read");
             assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
             let mut got: Vec<[u64; 3]> = model
@@ -330,7 +366,7 @@ fn a_straight_edges_direction_reaches_the_file_as_its_cache() {
         }
         want.sort();
 
-        let text = to_step_solid(&m, s).expect("export");
+        let text = to_step_solids(&m, &[s], STAMP).expect("export");
         let (model, report) = read(text.as_bytes()).expect("re-read");
         assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
         let mut got: Vec<[u64; 3]> = model
@@ -376,7 +412,7 @@ fn cylinder_round_trips_through_step_io_reader() {
         2.0,
         5.0,
     );
-    let text = to_step(&m).expect("export cylinder");
+    let text = to_step(&m, STAMP).expect("export cylinder");
 
     for needle in ["CYLINDRICAL_SURFACE", "CIRCLE", "442 3 1 4"] {
         assert!(text.contains(needle), "missing {needle}");

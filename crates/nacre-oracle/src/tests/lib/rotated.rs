@@ -221,7 +221,7 @@ fn rerotated_solid_props_match_occt() {
     let c1 = step(&mut m, c, rot(Axis::Z, 30));
     let c2 = step(&mut m, c1, rot(Axis::X, 45));
 
-    let occt = occt_props(&nacre_step::to_step_solid(&m, c2).unwrap()).unwrap();
+    let occt = occt_props(&nacre_step::to_step_solids(&m, &[c2], crate::STAMP).unwrap()).unwrap();
     let nacre = mass_props(&m, c2).unwrap();
     assert!(
         approx(nacre.volume, occt.volume),

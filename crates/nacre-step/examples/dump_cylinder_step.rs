@@ -35,7 +35,8 @@ fn main() {
     )
     .expect("the circle extrudes");
 
-    let step = to_step(&model).expect("export cylinder to STEP");
+    // The header time stamp is the caller's to give (the kernel reads no clock).
+    let step = to_step(&model, "2026-10-05T00:00:00Z").expect("export cylinder to STEP");
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/cylinder.step".to_string());

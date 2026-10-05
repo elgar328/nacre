@@ -19,6 +19,10 @@ use nacre_topo::{Model, Solid};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// The STEP header time stamp the oracle writes. The kernel reads no clock, so the exporter takes
+/// one; a fixed stamp keeps an exported file a function of its model.
+const STAMP: &str = "2026-10-05T00:00:00Z";
+
 /// Mass properties of a solid, as computed by OCCT.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OcctProps {
@@ -172,7 +176,8 @@ pub fn occt_props(step: &str) -> Result<OcctProps, OracleError> {
 
 /// Convenience: export a [`Model`] to STEP, then score it with [`occt_props`].
 pub fn occt_props_of(model: &Model) -> Result<OcctProps, OracleError> {
-    let step = nacre_step::to_step(model).map_err(|e| OracleError::Export(format!("{e:?}")))?;
+    let step =
+        nacre_step::to_step(model, STAMP).map_err(|e| OracleError::Export(format!("{e:?}")))?;
     occt_props(&step)
 }
 
@@ -203,7 +208,7 @@ impl OcctBool {
 /// Score the OCCT boolean of two single-solid STEP texts: write each to a unique
 /// temp file, run `occt-helper <fuse|cut|common>`, and parse the result's props.
 ///
-/// Each input must be a single-solid STEP ([`nacre_step::to_step_solid`]); a
+/// Each input must be a single-solid STEP ([`nacre_step::to_step_solids`] of one solid); a
 /// multi-root STEP would have OCCT operate on only its first shape. This is the
 /// Boolean ground truth — the answer key for nacre's boolean.
 pub fn occt_boolean(kind: OcctBool, a_step: &str, b_step: &str) -> Result<OcctProps, OracleError> {
@@ -261,8 +266,10 @@ pub fn occt_boolean_of(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<OcctProps, OracleError> {
-    let export =
-        |h| nacre_step::to_step_solid(model, h).map_err(|e| OracleError::Export(format!("{e:?}")));
+    let export = |h| {
+        nacre_step::to_step_solids(model, &[h], STAMP)
+            .map_err(|e| OracleError::Export(format!("{e:?}")))
+    };
     occt_boolean(kind, &export(a)?, &export(b)?)
 }
 

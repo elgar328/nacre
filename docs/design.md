@@ -65,7 +65,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 **공개 표면 — 밖에서 무엇이 되는가.**
 - **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·interning 표가 전부 비공개이며, 공개 필드는 `surface_name` 하나다(「문의 이름」 절이 캐시 조각으로 접을 몫). 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
 - **위상 순회는 밖에서 된다.** 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개다(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)`).
-- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개.
+- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
 - **파생 값과 에러 표면.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 계획.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -2573,7 +2573,7 @@ occt-helper <fuse|cut|common> <a.step> <b.step> [out.step]
 - `props` 는 솔리드 하나를, 불리언 명령은 **결과**의 성질을 보고한다. `cut` 은 `A − B`. `out` 을 주면 결과를 STEP 으로도 쓴다.
 - stdout 은 모든 명령이 같은 key-value 7줄이다: `volume <v>` · `area <a>` · `faces <n>` · `bbox_min <x> <y> <z>` · `bbox_max <x> <y> <z>` · `centroid <x> <y> <z>`(부피 중심) · `valid <1|0>`(재는 형상에 대한 DRAWEXE `checkshape`). 값은 헬퍼 쪽에서 계산한다. 고정 스키마라 파싱 의존성이 0 이고 Rust 쪽 파서는 하나다.
 - exit code: `0` 성공 · `1` 기하 실패(파일 없음·읽기 불가·빈 형상) · `2` 크래시.
-- 입력은 **단일 솔리드** STEP 이어야 한다(`to_step_solid`). 전송 가능한 루트가 여럿이면 OCCT 가 `x_1, x_2, …` 로 읽고 불리언은 `x_1` 만 쓴다.
+- 입력은 **단일 솔리드** STEP 이어야 한다(솔리드 하나의 `to_step_solids`). 전송 가능한 루트가 여럿이면 OCCT 가 `x_1, x_2, …` 로 읽고 불리언은 `x_1` 만 쓴다.
 
 구현은 Homebrew OCCT(`brew install opencascade`)의 `DRAWEXE` Tcl 셸 배치 실행이다(`stepread → [bfuse/bcut/bcommon →] vprops/sprops/nbshapes/bounding`, 콘솔 출력 파싱). 콘솔 긁기가 버전 차이로 취약해지면 같은 줄을 내는 얇은 C++ 헬퍼(`STEPControl_Reader` + `BRepGProp` + `BRepBndLib`)나 uv 관리 Python 환경 + OCP 휠로 갈아탄다 — 프로토콜만 지키면 nacre 쪽 코드는 무변경이다.
 
@@ -2591,7 +2591,7 @@ nacre 가 쓴 STEP 을 step-io **리더로 되읽어** 구조를 비교한다. �
 
 **M1 — 뼈대.** `nacre-math`, Store/Handle, 평면·직선만으로 정육면체를 손으로 조립하고 `validate` 를 세운다. 시각 확인은 **기존 뷰어에 위임**한다(전용 뷰어 크레이트를 만들지 않는다): 정상 결과는 STEP 출력 → step-loupe(구조+검증), 중간·깨진 상태는 Tessellation 을 OBJ/STL 로 덤프 → 맥 미리보기(또는 MeshLab·f3d). 커널 내부까지 보는 인터랙티브 디버그 뷰어(면 클릭 → Handle·정의, 법선 화살표, 엣지 polyline·tolerance 공, validate 위반 하이라이트, 로그 스텝별 재생)는 워크스페이스 밖 별도 앱이다 — **발견된 점**과 tolerance 처럼 STEP 에 담기지 않는 내부 정보가 생기는 불리언 단계의 디버깅 생명줄이다.
 
-**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 step-io 백엔드에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정해, 나중에 경량 라이터가 감당할 범위를 붙박는다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 독립 OCCT 기반 뷰어**(step-io 를 공유하지 않는 교차검증). STEP 출력은 오라클의 수송 계층이기도 하다. 최종 경량 라이터로 교체할 때는 «step-io 출력 vs 경량 출력»을 step-io 리더로 비교해 교체 안전성을 자동 검증한다.
+**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 step-io 백엔드에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 머리말의 시각은 호출자가 준다 — 커널은 시계를 읽지 않는다(같은 모델과 같은 시각이면 같은 바이트이고, wasm 에는 시계가 없어 시스템 시각을 물으면 패닉한다). 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정해, 나중에 경량 라이터가 감당할 범위를 붙박는다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 독립 OCCT 기반 뷰어**(step-io 를 공유하지 않는 교차검증). STEP 출력은 오라클의 수송 계층이기도 하다. 최종 경량 라이터로 교체할 때는 «step-io 출력 vs 경량 출력»을 step-io 리더로 비교해 교체 안전성을 자동 검증한다.
 
 **M3 — 곡선 기하.** Arc, Cylinder, NurbsCurve/Surface 평가(The NURBS Book 기준 구현 + 수치 미분 대조 테스트). tess 출처 태그, tolerance 재계산(같은 모델, tol 3단). proptest.
 

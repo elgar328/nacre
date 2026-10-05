@@ -1609,11 +1609,8 @@ fn the_refine_door_raises_every_surface_ceiling_onto_its_corners() {
 #[test]
 fn a_refined_model_exports_the_same_bytes_twice() {
     let (mut a, mut b) = (translated_chain(300), translated_chain(300));
-    // The header carries a timestamp; the shape is the DATA section.
-    let data = |m: &Model| {
-        let s = nacre_step::to_step(m).expect("export");
-        s[s.find("DATA;").expect("a DATA section")..].to_owned()
-    };
+    // The whole file, header included: its time stamp is the caller's, so it cannot differ.
+    let data = |m: &Model| nacre_step::to_step(m, crate::fixtures::STAMP).expect("export");
     let unrefined = data(&a);
     nacre_ops::refine_caches(&mut a);
     nacre_ops::refine_caches(&mut b);

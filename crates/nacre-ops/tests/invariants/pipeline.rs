@@ -37,7 +37,7 @@ fn hexagon_extrude_exports_to_step_and_obj() {
     assert!(nacre_validate::validate(&model).is_empty());
 
     // ops model → a real STEP solid.
-    let step = nacre_step::to_step(&model).expect("export to STEP");
+    let step = nacre_step::to_step(&model, crate::fixtures::STAMP).expect("export to STEP");
     assert!(step.contains("MANIFOLD_SOLID_BREP"));
 
     // ops model → an OBJ mesh: 12 vertices (2n for a hexagon prism) plus faces.
@@ -63,7 +63,7 @@ fn multi_op_log_composes_through_export() {
 
     assert_eq!(model.solid_count(), 2);
     assert!(nacre_validate::validate(&model).is_empty());
-    assert!(nacre_step::to_step(&model).is_ok());
+    assert!(nacre_step::to_step(&model, crate::fixtures::STAMP).is_ok());
 }
 
 // ---------------------------------------------------------------------------

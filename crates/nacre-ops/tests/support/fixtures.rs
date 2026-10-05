@@ -18,6 +18,10 @@ use nacre_ops::{
 use nacre_store::Handle;
 use nacre_topo::{Face, Model, Solid, Vertex};
 
+/// The STEP header time stamp the tests write. The kernel reads no clock, so an export takes one;
+/// a fixed stamp keeps a file a function of its model.
+pub const STAMP: &str = "2026-10-05T00:00:00Z";
+
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
 pub fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {

@@ -50,7 +50,8 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "target/hex_prism".to_string());
 
-    let step = nacre_step::to_step(&model).expect("export to STEP");
+    // The header time stamp is the caller's to give (the kernel reads no clock).
+    let step = nacre_step::to_step(&model, "2026-10-05T00:00:00Z").expect("export to STEP");
     let step_path = format!("{prefix}.step");
     std::fs::write(&step_path, step).expect("write STEP file");
 
