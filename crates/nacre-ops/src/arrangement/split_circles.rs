@@ -105,9 +105,9 @@ pub(super) fn split_circles(
                 // let that shape through, and cutting there would make a zero-length arc.
                 //
                 // ★★★★★ **That question is answered: the skip is right, and a tangency mints no
-                // vertex**. The note 60 lines down reads
-                // *"a circle cut at exactly one point is **slit**, not divided"* and the two
-                // agree. Three reasons: measured,
+                // vertex** — the circle it grazes stays whole, so a circle the split leaves with
+                // one node is always one a vertex lies on (`combinatorics::ring_floor`). Three
+                // reasons the skip is right: measured,
                 // the link at such a touch is a *single* circle and that OCCT returns the same
                 // body, so minting a vertex would invent structure that is not there; the
                 // `UnorderedEdges` this skip's lifting once reached is the **rulings** vocabulary

@@ -410,6 +410,57 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
+/// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The triangle's corner
+/// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
+/// seam and off it) or from outside with one side tangent there — so the circle is cut at exactly
+/// that one node: one arc from the node back to itself. The planar arrangement takes that ring
+/// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge); what
+/// stops these booleans is the next stage, the lateral's chart reading a rim opened at one point
+/// (`ArcBoundNotYet`), and a wedge on `A`'s base the coplanar merge (`CoplanarMerge`). None is
+/// refused as a suspected defect, and none builds yet — the answers are the cylinder for the
+/// union, the wedge for the common, a self-touching groove for `A − B` (todo «다각형 꼭짓점이 캡의
+/// 원 위에 놓이면»). The tally is pinned, so a refusal that moves is news.
+#[test]
+fn a_vertex_on_a_cap_circle_is_refused_by_name_today() {
+    use std::collections::BTreeMap;
+    let shapes: &[(&str, &[[f64; 2]])] = &[
+        ("wedge on the seam", &[[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]]),
+        (
+            "wedge off the seam",
+            &[[0.8, -0.6], [0.5, -0.5], [0.4, -0.1]],
+        ),
+        ("tangent side", &[[1.0, 0.0], [1.0, -1.0], [2.0, -0.5]]),
+    ];
+    let mut tally: BTreeMap<(&str, String), usize> = BTreeMap::new();
+    for (p, six) in every_six(unit_disk, shapes) {
+        for r in six {
+            match r {
+                Err(reason) => {
+                    assert_eq!(
+                        reason.class(),
+                        RejectClass::NotSupported,
+                        "{p}: refused as {reason:?}"
+                    );
+                    *tally.entry((p.family, format!("{reason:?}"))).or_default() += 1;
+                }
+                Ok(built) => panic!("{p}: the wall moved — {built:?}"),
+            }
+        }
+    }
+    let want: BTreeMap<(&str, String), usize> = [
+        ("tangent side", "ArcBoundNotYet", 48),
+        ("tangent side", "CoincidentNodes", 48),
+        ("wedge off the seam", "ArcBoundNotYet", 88),
+        ("wedge off the seam", "CoplanarMerge", 8),
+        ("wedge on the seam", "ArcBoundNotYet", 88),
+        ("wedge on the seam", "CoplanarMerge", 8),
+    ]
+    .into_iter()
+    .map(|(f, r, n)| ((f, r.to_string()), n))
+    .collect();
+    assert_eq!(tally, want);
+}
+
 /// ★ **The corner touching `A` from outside — a line contact.** Common would be empty, Cut the
 /// operand, Fuse two bodies touching along the line. Refused today.
 #[test]

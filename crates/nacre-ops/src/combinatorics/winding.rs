@@ -328,6 +328,27 @@ fn arc_extremum_winding(
     Ok(best.map(|(_, w)| w))
 }
 
+/// **The fewest edges a ring can have and still bound a cell** — the one rule the walk's orbit
+/// length (`arrangement::walk_cells`) and [`loop_winding`] both read, so the two cannot part.
+///
+/// Two straight edges between two points are one edge traced twice, so a straight ring needs
+/// three. Two arcs between two points are a lens, and an arc with its chord a circular segment —
+/// honest cells at two. One arc whose two ends are the **same node** is a circle cut at exactly
+/// that point — a polygon's vertex lying on it — and is a cell boundary on its own: the closed
+/// edge with one vertex that OCCT (`BOPDS_DS::InitPaveBlocks`), Parasolid and ACIS all keep as a
+/// self-loop, and Euler counts it as one vertex and one edge. A tangency never arrives here as
+/// that ring: `split_circles` mints no vertex for a `Double` root, so the circle it grazes stays
+/// whole.
+pub(crate) fn ring_floor(any_arc: bool, self_loop_arc: bool) -> usize {
+    if self_loop_arc {
+        1
+    } else if any_arc {
+        2
+    } else {
+        3
+    }
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
@@ -363,16 +384,10 @@ pub(crate) fn loop_winding(
     p: usize,
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
-    // ★ **The floor reads the carriers.** Two straight edges between two points are one edge traced
-    // twice; two arcs are a lens and an arc with its chord is a circular segment. See the same rule
-    // at the walk's orbit length (`arrangement::walk_cells`).
-    if ring.len()
-        < if ring.iter().any(|e| matches!(e.carrier, Carrier::Arc(_))) {
-            2
-        } else {
-            3
-        }
-    {
+    let self_loop =
+        ring.len() == 1 && matches!(ring[0].carrier, Carrier::Arc(_)) && ring[0].node == ring[0].to;
+    let any_arc = ring.iter().any(|e| matches!(e.carrier, Carrier::Arc(_)));
+    if ring.len() < ring_floor(any_arc, self_loop) {
         return Err(reject(RejectReason::DegenerateRing));
     }
     // ★ **The comparator, in one place, reading the identity directly.** This is the second of the

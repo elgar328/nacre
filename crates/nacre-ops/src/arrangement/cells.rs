@@ -89,12 +89,14 @@ pub(super) fn walk_cells(
                     break;
                 }
             }
-            // ★★ **Three half-edges is the *straight* floor, and it is a fact about lines.** Two
-            // straight edges between two points are one edge traced twice; two *arcs* between two
-            // points are a lens, and an arc and a chord are a circular segment — both are honest
-            // cells. So the floor reads the carriers, and a one-half-edge orbit (a circle a
-            // segment only grazed, slit but not divided) is refused in either.
-            let floor = if cyc.iter().any(|&h| is_arc(h)) { 2 } else { 3 };
+            // ★★ **The floor reads the carriers** ([`combinatorics::ring_floor`], the rule
+            // `loop_winding` reads too): three straight half-edges, two where an arc is one, and
+            // one where the orbit is a single arc from a node back to itself — a circle a polygon
+            // vertex cuts at exactly that point, whose outside (or inside) is bounded by that arc
+            // alone.
+            let self_loop =
+                cyc.len() == 1 && is_arc(cyc[0]) && origin(cyc[0]) == origin(cyc[0] ^ 1);
+            let floor = combinatorics::ring_floor(cyc.iter().any(|&h| is_arc(h)), self_loop);
             if !ok || cyc.len() < floor {
                 ok = false;
                 break;
