@@ -60,7 +60,7 @@ pub use ops::{
 };
 pub use realize::{
     CacheDecline, Precision, RealizeError, Realized, RefineReport, Refined, realize_cache,
-    realize_vertex, realize_vertex_decimal, refine_caches,
+    realize_vertex, realize_vertex_decimal, refine_caches, refine_caches_of,
 };
 /// The edge-cache doors the census and the invariant tests hold the push to.
 #[cfg(any(test, feature = "test-util"))]

@@ -32,7 +32,9 @@ use nacre_exact::{HpBounded, Mag, MeetPoint};
 use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{CacheStanding, Edge, EdgeGiven, Model, PointCache, PrefixKey, Surface, Vertex};
+use nacre_topo::{
+    CacheStanding, Edge, EdgeGiven, Model, PointCache, PrefixKey, Solid, Surface, Vertex,
+};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -1059,7 +1061,7 @@ fn on_rungs(
     })
 }
 
-/// What [`refine_caches`] did to one kind of cache, over the live model.
+/// What [`refine_caches`] did to one kind of cache, over the solids it was given.
 ///
 /// ★ `left_*` are not error counts. They are what the model keeps that no precision paid here
 /// settled, split by name the way the cache variants are: `left_undecided` — the paid road ran out
@@ -1113,8 +1115,27 @@ pub struct RefineReport {
 /// Idempotent in effect: a second call raises nothing and moves no curve. It still walks every
 /// live edge on the paid budget — an edge cache keeps no standing to skip by — so its cost is the
 /// first call's edge pass again.
+///
+/// Every live solid; [`refine_caches_of`] pays for the ones about to be written only.
 pub fn refine_caches(model: &mut Model) -> RefineReport {
-    let reach = model.reachable();
+    let live = model.live_solids().to_vec();
+    refine_caches_of(model, &live)
+}
+
+/// [`refine_caches`] over the cells `solids` (live solids) reach — **what an export writes, and
+/// nothing else.**
+///
+/// An application's model holds more live solids than it shows: a script's every intermediate
+/// value stays live when the layer above copies before each consumption. Measured, a box turned 7°
+/// and moved 300 times keeps 302 live solids and shows one — the whole door raised 872 vertices
+/// for the shown box's 8. The door is paid by depth, so its cost is the cells it is given.
+///
+/// Cells are not shared between solids, so a vertex or an edge outside `solids` keeps its cache.
+/// Surfaces are — a copy restates its source's — and a surface any face of `solids` carries is
+/// raised for every solid that carries it: the same truth, a closer `f64`. The report counts the
+/// cells of `solids` only.
+pub fn refine_caches_of(model: &mut Model, solids: &[Handle<Solid>]) -> RefineReport {
+    let reach = model.reachable_from(solids);
     let mut out = RefineReport::default();
 
     let mut vertices: Vec<Handle<Vertex>> = reach.vertices.iter().copied().collect();
@@ -1168,7 +1189,7 @@ pub fn refine_caches(model: &mut Model) -> RefineReport {
     let mut edges: Vec<Handle<Edge>> = reach.edges.iter().copied().collect();
     edges.sort_by_key(|e| e.index());
     let before = curves(model, &edges);
-    out.edges.left_unrealized = rebuild_edges(model, Budget::Paid);
+    out.edges.left_unrealized = rebuild_edges(model, solids, Budget::Paid);
     let after = curves(model, &edges);
     out.edges.refined = before.iter().zip(&after).filter(|(b, a)| b != a).count();
     out
@@ -1331,16 +1352,16 @@ pub(crate) fn push_edge_realized(
     })
 }
 
-/// Re-derive every live edge's curve with what `budget` realizes — the given pieces computed first
+/// Re-derive the curve of every edge `solids` reach with what `budget` realizes — the given pieces computed first
 /// against the model as it stands, then handed to [`Model::rebuild_edge_cache`] as a table.
 ///
 /// Returns how many edges asked for a piece nobody could give — a line on an unnamed plane with
 /// no direction, a rim on an unstated cylinder with no centre: the derivation asks only where it
 /// needs one, so an empty answer is a curve left on the caches.
-pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) -> usize {
+pub(crate) fn rebuild_edges(model: &mut Model, solids: &[Handle<Solid>], budget: Budget) -> usize {
     let mut memo = PlaneMemo::default();
     let mut unanswered = 0;
-    model.rebuild_edge_cache(|m, e| {
+    model.rebuild_edge_cache(solids, |m, e| {
         let s = m.edge(e).surfaces;
         let given = edge_given(m, s, budget, &mut memo);
         let planes = s
@@ -1359,7 +1380,8 @@ pub(crate) fn rebuild_edges(model: &mut Model, budget: Budget) -> usize {
 /// bit.
 #[cfg(any(test, feature = "test-util"))]
 pub fn rebuild_edge_cache(model: &mut Model) {
-    let _ = rebuild_edges(model, Budget::Cache);
+    let live = model.live_solids().to_vec();
+    let _ = rebuild_edges(model, &live, Budget::Cache);
 }
 
 /// **The edge cache as the refine door derives it** — every live edge re-derived on the door's
@@ -1368,7 +1390,8 @@ pub fn rebuild_edge_cache(model: &mut Model) {
 /// than the push pays for.
 #[cfg(any(test, feature = "test-util"))]
 pub fn rebuild_edge_cache_paid(model: &mut Model) {
-    let _ = rebuild_edges(model, Budget::Paid);
+    let live = model.live_solids().to_vec();
+    let _ = rebuild_edges(model, &live, Budget::Paid);
 }
 
 /// What [`rim_centre_check`] found of a rim's cached centre against its truth.

@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.
 - `tess::Tessellation::to_obj_solids` writes the OBJ of the solids given, as `step::to_step_solids` does for STEP.
 
 ### Changed
@@ -22,6 +23,7 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `ops::refine_vertex_cache` is now `ops::refine_caches`, the door to call before exporting a model with a long history: it also raises surface caches and re-derives edges, and its `RefineReport` counts, for vertices, surfaces and edges, what it raised and what it left — undecided at the top of the ladder, or with no way to realize it.
 - **Breaking:** `step::to_step` takes the header's time stamp (`to_step(&model, "2026-10-05T12:00:00Z")`), written verbatim; the kernel no longer reads the clock. `step::to_step_solid` is now `step::to_step_solids`, which writes the solids given, in that order — pass `&[solid]` for one.
 - **Breaking:** `tess::Tessellation::to_obj` takes the model the mesh was built from, and every corner of the OBJ now carries its face's outward normal (`vn`, `f a//na b//nb c//nc`): a cylinder shades round and its rims stay sharp.
+- **Breaking:** `topo::Model::rebuild_edge_cache` takes the solids whose edges it re-derives; pass `model.live_solids()` for all of them.
 
 ### Removed
 

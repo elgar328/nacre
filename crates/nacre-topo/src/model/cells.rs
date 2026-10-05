@@ -183,12 +183,14 @@ impl Model {
         self.shells.push(shell)
     }
 
-    /// Discard every edge-curve cache and derive it afresh, asking `given` for each live edge what
-    /// its pusher would realize ([`EdgeGiven`], asked as [`Model::push_edge`] asks it) — the «cache,
-    /// not truth» warrant: nothing is lost, because nothing there was truth. The directions the
-    /// pushers gave are discarded with the curves (`given_by_pair` is the same kind of cache), so
-    /// every given piece is asked again rather than read back.
-    /// ⚠★★★ **Only the reachable edges are re-derived, and a superseded one keeps what it has.**
+    /// Discard the edge-curve caches of `solids` (live solids) and derive them afresh, asking
+    /// `given` for each edge what its pusher would realize ([`EdgeGiven`], asked as
+    /// [`Model::push_edge`] asks it) — the «cache, not truth» warrant: nothing is lost, because
+    /// nothing there was truth. The directions the pushers gave are discarded with the curves
+    /// (`given_by_pair` is the same kind of cache — all of it, a pair outside `solids` is asked
+    /// again by the next push that needs it), so every given piece is asked again rather than read
+    /// back.
+    /// ⚠★★★ **Only reachable edges are re-derived, and a superseded one keeps what it has.**
     /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
     /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
     /// those costs the work twice over and — once a caller can *move* a coordinate
@@ -198,8 +200,17 @@ impl Model {
     /// ☑ That refusal does not happen today: measured over the same fixtures, **zero** stored edges
     /// fail to derive, dead or live. The filter is not a workaround for a live failure — it is what
     /// makes the failure structurally unreachable, because a superseded edge is never derived again.
-    pub fn rebuild_edge_cache(&mut self, mut given: impl FnMut(&Model, Handle<Edge>) -> EdgeGiven) {
-        let reach = self.reachable();
+    ///
+    /// **Only `solids`' edges are re-derived** — the live set, or the part of it a caller is about to
+    /// write. An edge outside keeps its curve, so a hidden edge on a surface the caller refined first
+    /// (surfaces are shared: a copy restates its source's) keeps the bits it was derived with — the
+    /// same truth, rounded from the cache that stood then.
+    pub fn rebuild_edge_cache(
+        &mut self,
+        solids: &[Handle<Solid>],
+        mut given: impl FnMut(&Model, Handle<Edge>) -> EdgeGiven,
+    ) {
+        let reach = self.reachable_from(solids);
         self.given_by_pair.clear();
         let mut asked = Vec::new();
         let cache = self
@@ -444,8 +455,18 @@ impl Model {
     /// corrupt or partially-built model (a dangling handle simply prunes that
     /// branch; `validate`'s reference-integrity check reports it separately).
     pub fn reachable(&self) -> Reachable {
+        self.reachable_from(&self.live_solids)
+    }
+
+    /// The handles reachable from `solids` — [`Model::reachable`]'s walk over the solids given.
+    ///
+    /// For a caller that works on part of the model: an application's model holds more live
+    /// solids than it shows (copies, values a script keeps), and a walk over all of them pays for
+    /// what nobody sees. Two solids share no cell, so the closure of a subset is exactly those
+    /// solids' cells; surfaces are not cells and can be shared ([`Reachable`] holds none).
+    pub fn reachable_from(&self, solids: &[Handle<Solid>]) -> Reachable {
         let mut r = Reachable::default();
-        for &solid_h in &self.live_solids {
+        for &solid_h in solids {
             if !in_bounds(solid_h, &self.solids) {
                 continue;
             }

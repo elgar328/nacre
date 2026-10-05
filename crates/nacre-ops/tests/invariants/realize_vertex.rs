@@ -1494,6 +1494,70 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     );
 }
 
+/// ★★★ **`refine_caches_of` pays for the solids it is given, and leaves the others' cells alone.**
+///
+/// The shape an application makes: a solid and a copy of it (a script layer copies before every
+/// consumption, so its intermediates stay live). The copy restates its source's surfaces — so the
+/// two share surface handles — but owns its own vertices and edges, which the copy re-realized on
+/// the cache road and so stand at `Ceiling` past the 300-motion chain. Refining the source must
+/// raise its own vertices and leave the copy's vertex caches and edge curves exactly as they were;
+/// refining the whole model afterwards then raises the copy's and none of the source's.
+#[test]
+fn the_refine_door_pays_for_the_solids_it_is_given() {
+    let mut m = translated_chain(300);
+    let a = m.live_solids()[0];
+    let b = match apply(&mut m, &Operation::Copy { solid: a }).expect("copy") {
+        OpOutput::Copy { solid } => solid,
+        other => panic!("{other:?}"),
+    };
+    let (ra, rb) = (m.reachable_from(&[a]), m.reachable_from(&[b]));
+
+    // The two premises the rest stands on.
+    assert!(
+        rb.vertices
+            .iter()
+            .all(|&v| matches!(m.vertex_cache(v), PointCache::Ceiling { .. })),
+        "the copy's vertices stand at Ceiling"
+    );
+    let surfaces = |r: &nacre_topo::Reachable| -> std::collections::HashSet<_> {
+        r.faces.iter().map(|&f| m.face(f).surface).collect()
+    };
+    assert!(
+        surfaces(&rb).is_subset(&surfaces(&ra)),
+        "the copy carries its source's surfaces"
+    );
+
+    let curves = |m: &Model| -> Vec<String> {
+        let mut es: Vec<_> = rb.edges.iter().copied().collect();
+        es.sort_by_key(|e| e.index());
+        es.iter()
+            .map(|&e| format!("{:?}", m.edge_curve(e)))
+            .collect()
+    };
+    let b_curves = curves(&m);
+
+    let first = nacre_ops::refine_caches_of(&mut m, &[a]);
+    assert_eq!(first.vertices.refined, ra.vertices.len(), "{first:?}");
+    assert!(
+        rb.vertices
+            .iter()
+            .all(|&v| matches!(m.vertex_cache(v), PointCache::Ceiling { .. })),
+        "the copy's vertices were left alone"
+    );
+    assert_eq!(
+        curves(&m),
+        b_curves,
+        "the copy's edge curves were left alone"
+    );
+
+    let rest = nacre_ops::refine_caches(&mut m);
+    assert_eq!(rest.vertices.refined, rb.vertices.len(), "{rest:?}");
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "and the refined model is still a valid b-rep"
+    );
+}
+
 /// ★★★★ **The door raises every surface `Ceiling` too, and the planes it writes agree with the
 /// vertices it writes** — two roads to one geometry: a plane cache from the carried name of its
 /// statement, a vertex from the meet of its three carriers.
