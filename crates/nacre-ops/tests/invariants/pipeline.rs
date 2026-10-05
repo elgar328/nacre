@@ -98,47 +98,10 @@ fn multi_op_log_composes_through_export() {
 use nacre_ops::DatumDef;
 use nacre_ops::{BoolKind, OpOutput, apply};
 use nacre_store::Handle;
-use nacre_tess::{TessConfig, Tessellation, tessellate};
+use nacre_tess::{TessConfig, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
 
-use crate::fixtures::{boolean_one, datum_frame, p2};
-
-/// Σ |triangle area| — unsigned on purpose.
-fn mesh_area(t: &Tessellation) -> f64 {
-    t.triangles
-        .iter()
-        .map(|(_, tri)| {
-            let p = tri.vertices.map(|h| t.vertices.get(h).pos);
-            0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm()
-        })
-        .sum()
-}
-
-/// Σ ⅙ p₀·(p₁ × p₂) — the divergence theorem on a closed triangle soup. Signed on
-/// purpose: a face whose triangles wind the other way subtracts where it should add.
-fn mesh_volume(t: &Tessellation) -> f64 {
-    t.triangles
-        .iter()
-        .map(|(_, tri)| {
-            let p = tri
-                .vertices
-                .map(|h| t.vertices.get(h).pos - Point3::origin());
-            p[0].dot(p[1].cross(p[2])) / 6.0
-        })
-        .sum()
-}
-
-/// Undirected triangle edges not shared by exactly two triangles.
-fn non_watertight(t: &Tessellation) -> usize {
-    let mut counts: std::collections::HashMap<(u32, u32), usize> = Default::default();
-    for (_, tri) in t.triangles.iter() {
-        let [a, b, c] = tri.vertices.map(|h| h.index());
-        for (x, y) in [(a, b), (b, c), (c, a)] {
-            *counts.entry((x.min(y), x.max(y))).or_default() += 1;
-        }
-    }
-    counts.values().filter(|&&n| n != 2).count()
-}
+use crate::fixtures::{boolean_one, datum_frame, mesh_area, mesh_volume, non_watertight, p2};
 
 /// What the gate measured. Named fields: four numbers read positionally is one
 /// transposition away from a test that passes for the wrong reason.

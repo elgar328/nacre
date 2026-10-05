@@ -72,9 +72,10 @@ pub(crate) struct Walked {
 /// The walk's refusal where the split's own record is broken — the trace and the split disagree
 /// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
-/// with no outer cycle, a run along an uncut rim that is not the whole circle, a cycle whose arc
-/// units are not a whole number of turns. What the walk cannot spell is named where it fires: a cut
-/// rim of one node and wrapping cycles other than one lower and one upper (`ArcBoundNotYet`).
+/// with no outer cycle, a run along an uncut rim that is not the whole circle, a run along a rim cut
+/// at one node that is not either, a cycle whose arc units are not a whole number of turns. What the
+/// walk cannot spell is named where it fires: wrapping cycles other than one lower and one upper
+/// (`ArcBoundNotYet`).
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
 }
@@ -464,14 +465,12 @@ pub(crate) fn walk(
                         // the arc labels is consulted for the edges. Each piece carries the rim's
                         // plane `c`, which the assembly checks against the cap's.
                         let m = rim.nodes.len();
-                        // One node cannot state a rim as arcs, and the cut-rim table keeps such a rim
-                        // on purpose (`draft::held_rims`). No node at all is a rim the split never cut.
-                        if m < 2 {
-                            return Err(if m == 1 {
-                                reject(RejectReason::ArcBoundNotYet)
-                            } else {
-                                split_disagrees()
-                            });
+                        // No node at all is a rim the split never cut. A rim cut at **one** node — a
+                        // vertex alone on its circle — is one piece, the arc from that node back to
+                        // itself, and only a run the whole way round reaches it: the run's two ends
+                        // are that node, so a run ending part way round is the stages disagreeing.
+                        if m == 0 || (m == 1 && !full) {
+                            return Err(split_disagrees());
                         }
                         let (pa, pb) = if full {
                             (0, 0)
@@ -569,8 +568,15 @@ pub(crate) fn walk(
                 bounds.push((Bound::Rim { plane: c, ccw }, w));
                 continue;
             }
+            // Two pieces close a cycle here, straight or not — a slit's two sides are a digon of
+            // rulings, which the assembly's shell guard then names — and one piece does only as the
+            // arc from a node back to itself. (Not `combinatorics::ring_floor`: its three for a
+            // straight ring is the plane's fact, and would call the slit's digon a broken split.)
             let n = pieces.len();
-            if n < 2 {
+            let self_loop = n == 1
+                && matches!(pieces[0].wall, Wall::Arc { .. })
+                && pieces[0].ends.0 == pieces[0].ends.1;
+            if n < 2 && !self_loop {
                 return Err(split_disagrees());
             }
             let mut nodes = Vec::with_capacity(n);

@@ -692,7 +692,8 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
 /// side), so every circle half-edge contributes its **circular segment**'s area vector —
 /// `Circle::segment_area` about the circle's own normal, signed by traversal, with Δθ read from
 /// the edge's stored `[from, to]` order (CCW about the axis, the arc convention;
-/// `Circle::angle_of` is the one spelling). A digon (chord + arc, two points) has an empty
+/// `Circle::angle_of` is the one spelling) — and a closed edge `[v, v]` in a loop of several, the
+/// circle a groove's tip touches, is the whole turn. A digon (chord + arc, two points) has an empty
 /// Newell sum and one segment — which is why the too-few-points refusal only applies to
 /// all-line loops.
 fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
@@ -727,8 +728,13 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
             unreachable!("filtered above");
         };
         let [va, vb] = m.edge(he.edge).vertices;
-        let dt = (c.angle_of(m.vertex_point(vb)) - c.angle_of(m.vertex_point(va)))
-            .rem_euclid(std::f64::consts::TAU);
+        // A closed edge `[v, v]` is the whole turn — its ends cannot say so.
+        let dt = if va == vb {
+            std::f64::consts::TAU
+        } else {
+            (c.angle_of(m.vertex_point(vb)) - c.angle_of(m.vertex_point(va)))
+                .rem_euclid(std::f64::consts::TAU)
+        };
         let sign = if he.forward { 1.0 } else { -1.0 };
         // The Newell fold above is twice the area vector; scale the segment to match.
         acc + c.normal() * (2.0 * sign * c.segment_area(dt))

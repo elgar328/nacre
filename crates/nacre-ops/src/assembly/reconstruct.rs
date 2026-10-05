@@ -330,9 +330,14 @@ pub(crate) fn reconstruct(
             for t in 0..k {
                 let (va, vb) = (handles[t], handles[(t + 1) % k]);
                 let e = edge_for(model, memo, va, vb, r.walls[t], face_surf)?;
-                // For an arc edge the stored order is CCW, so this reads back exactly the `ccw`
-                // bit the wall carried in.
-                let forward = model.edge(e).vertices[0] == va;
+                // ★ An arc runs the way its wall says — `ccw`, against the edge's CCW-stored
+                // order. For two distinct ends that is the same as asking which end the edge starts
+                // at (`edge_for` minted it `[from, to]` by that bit); for a rim cut at one point,
+                // the arc from the node back to itself, the ends are one vertex and say neither.
+                let forward = match r.walls[t] {
+                    Wall::Arc { ccw, .. } => ccw,
+                    Wall::Plane(_) | Wall::Ruling { .. } => model.edge(e).vertices[0] == va,
+                };
                 half_edges.push(HalfEdge { edge: e, forward });
             }
             Ok(Loop { half_edges })

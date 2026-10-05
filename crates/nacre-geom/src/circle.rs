@@ -145,7 +145,8 @@ impl Circle {
     ///
     /// ★ This is what turns the arc convention (an edge's stored `[from, to]` order is
     /// CCW about the axis) into numbers: consumers take `Δθ = (θ_to − θ_from).rem_euclid(τ)`
-    /// and never re-derive direction from anything else.
+    /// for two distinct ends — a closed edge is the whole turn, `τ` (`Model::derive_edge_curve`)
+    /// — and never re-derive direction from anything else.
     #[inline]
     pub fn angle_of(self, p: Point3) -> f64 {
         let w = p - self.center;

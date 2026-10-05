@@ -286,7 +286,10 @@ impl Model {
     ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
     ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
-    ///   `outer_tri`.
+    ///   `outer_tri`. ★ **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
+    ///   runs is its half-edge's `forward` — its ends, being one vertex, say neither. Every one of
+    ///   those readers branches on `v0 == v1` for it (a groove's tip touching a cap's rim puts such
+    ///   an edge in a loop of several).
     /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, or one cylinder twice
     ///   (no edge separates a surface from itself); no edge carries either.
     pub fn derive_edge_curve(

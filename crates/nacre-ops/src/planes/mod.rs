@@ -408,8 +408,13 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
             return acc;
         };
         let [from, to] = model.edge(he.edge).vertices;
-        let dt = (c.angle_of(model.vertex_point(to)) - c.angle_of(model.vertex_point(from)))
-            .rem_euclid(std::f64::consts::TAU);
+        // A closed edge `[v, v]` is the whole turn — its ends cannot say so.
+        let dt = if from == to {
+            std::f64::consts::TAU
+        } else {
+            (c.angle_of(model.vertex_point(to)) - c.angle_of(model.vertex_point(from)))
+                .rem_euclid(std::f64::consts::TAU)
+        };
         let sign = if he.forward { 1.0 } else { -1.0 };
         // The Newell fold is twice the area vector; the segment is scaled to match.
         acc + c.normal() * (2.0 * sign * c.segment_area(dt))

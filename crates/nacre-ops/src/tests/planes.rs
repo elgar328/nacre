@@ -244,6 +244,49 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     }
 }
 
+/// ★ **A pinched cap's outer triangle faces out.** The wedge fused onto the cylinder past its top
+/// leaves the top cap one loop: the closed rim from the groove's tip back to itself, then the
+/// groove's three sides ([`crate::fixtures::wedge_on_a_rim`]). Its chords alone are the groove's
+/// triangle, wound against the cap; only the rim's whole turn (`Δθ = τ` for a closed edge) turns
+/// the Newell sum the cap's way. Read with the closed edge's ends instead (`Δθ = 0`), the
+/// triangle comes back facing in — what a later boolean's plane table would be built on.
+#[test]
+fn a_pinched_caps_outer_triangle_faces_out() {
+    let mut m = Model::new();
+    let s =
+        crate::fixtures::wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
+    let pinched: Vec<Handle<Face>> = m
+        .shell(m.solid(s).outer)
+        .faces
+        .iter()
+        .copied()
+        .filter(|&f| {
+            let hes = &m.face(f).outer.half_edges;
+            hes.len() > 1
+                && hes.iter().any(|he| {
+                    let [a, b] = m.edge(he.edge).vertices;
+                    a == b
+                })
+        })
+        .collect();
+    assert_eq!(pinched.len(), 1, "the top cap, pinched at the groove's tip");
+    let face = m.face(pinched[0]);
+    let nacre_geom::Surface::Plane(plane) = m.surface_cache(face.surface) else {
+        panic!("a cap is planar");
+    };
+    let out = plane.normal() * f64::from(face.orientation.sign());
+    let (tri, _) = outer_tri(&m, face).expect("a corner");
+    let cos = (tri[1] - tri[0])
+        .cross(tri[2] - tri[0])
+        .normalize()
+        .expect("a corner spans area")
+        .dot(out);
+    assert!(
+        cos > 0.5,
+        "the pinched cap's outer triangle faces {cos:.3} of out"
+    );
+}
+
 /// **A judgement's headroom is relative to its model, not carved out of a shared ceiling.**
 ///
 /// The two budgets answer different questions — how deep the model is, and how thin a witness

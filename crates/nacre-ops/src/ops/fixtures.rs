@@ -198,6 +198,60 @@ pub fn cut_at_both_rims(m: &mut Model, kind: BoolKind, y_min: f64) -> Handle<Sol
     out[0]
 }
 
+/// **A wedge fused onto a cylinder with its apex on the rim** — the cylinder `r = 1` on the `z`
+/// axis over `z ∈ [0, 2]` and the prism over `triangle` standing on the plane `z` for `height`.
+/// With the triangle's first corner on the unit circle, the other two inside it and the prism
+/// reaching past `z = 2`, the union's top cap is **pinched**: the groove the wedge leaves in it
+/// reaches the rim at the apex alone, so the cap's one loop passes that vertex twice and holds the
+/// rim as a closed edge cut at it. Past `z = 0` too, the base cap is the same.
+pub fn wedge_on_a_rim(
+    m: &mut Model,
+    triangle: [[f64; 2]; 3],
+    z: f64,
+    height: f64,
+) -> Handle<Solid> {
+    let c = cylinder(
+        m,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    )
+    .solid;
+    let plane = SketchPlane::from_axes(
+        Point3::from_array([0.0, 0.0, z]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    );
+    let frame = match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating the wedge's floor plane: {other:?}"),
+    };
+    let profile = Profile2d::polygon(triangle.iter().map(|&q| Point2::from_array(q)).collect())
+        .expect("a triangle inside the decimal window");
+    let wedge = match apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: height,
+        },
+    ) {
+        Ok(OpOutput::Extrude { solid, .. }) => solid,
+        other => panic!("extruding the wedge: {other:?}"),
+    };
+    m.rebuild_adjacency();
+    let out = boolean(m, BoolKind::Fuse, c, wedge).expect("the union");
+    assert_eq!(out.len(), 1, "the wedge and the cylinder fuse to one body");
+    m.rebuild_adjacency();
+    out[0]
+}
+
 /// An axis-aligned box from `min` to `max` — [`cuboid_on`] with the floor at `min.z` and the
 /// height `max.z − min.z`, **exactly**: the height is the difference of the two corners'
 /// decimals, and it must be a decimal an `f64` carries (its shortest decimal), or the far cap

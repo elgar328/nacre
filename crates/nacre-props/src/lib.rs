@@ -340,8 +340,8 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // **circular segment** — area `r²(Δθ − sin Δθ)/2`, centroid `4r·sin³(Δθ/2) /
         // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
         // `[from, to]` order (**CCW about the axis**, the arc convention;
-        // [`Circle::angle_of`] is the one spelling of the angle) and the sign from which way
-        // this traversal walks it. A digon (chord + arc) is the degenerate case the fan
+        // [`Circle::angle_of`] is the one spelling of the angle; a closed edge `[v, v]` is the
+        // whole turn) and the sign from which way this traversal walks it. A digon (chord + arc) is the degenerate case the fan
         // contributes nothing to: one segment is the whole answer.
         //
         // Every contribution is scalarized on one reference normal — the first arc's circle
@@ -374,10 +374,15 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             let [va, vb] = model.edge(he.edge).vertices;
             let t0 = c.angle_of(model.vertex_point(va));
             let t1 = c.angle_of(model.vertex_point(vb));
-            let dt = (t1 - t0).rem_euclid(std::f64::consts::TAU);
+            // A closed edge `[v, v]` is the whole turn — its ends cannot say so.
+            let dt = if va == vb {
+                std::f64::consts::TAU
+            } else {
+                (t1 - t0).rem_euclid(std::f64::consts::TAU)
+            };
             let seg = c.segment_area(dt);
             if seg <= 0.0 {
-                continue; // a degenerate (closed or zero) span contributes nothing
+                continue; // a zero span contributes nothing
             }
             let sign = if he.forward { 1.0 } else { -1.0 } * c.normal().dot(n_ref).signum();
             let c_seg = c.segment_centroid(t0, dt);

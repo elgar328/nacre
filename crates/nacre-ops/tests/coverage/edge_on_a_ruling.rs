@@ -208,7 +208,9 @@ fn every_six<'q>(
                 m.rebuild_adjacency();
                 let vs = nacre_validate::validate(m);
                 assert!(vs.is_empty(), "{c}: {vs:?}");
-                Ok((solids.len(), solids.iter().map(|&s| volume(m, s)).sum()))
+                let v = solids.iter().map(|&s| volume(m, s)).sum();
+                drawn(c, m, &solids, v);
+                Ok((solids.len(), v))
             }
             Err(BoolError::Rejected { reason, .. }) => Err(reason),
             Err(e) => panic!("{c}: {e:?}"),
@@ -219,6 +221,42 @@ fn every_six<'q>(
         }
     });
     out
+}
+
+/// ★ **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
+/// (`tess_census`), which these front-door tests do not pass through. The mesh exists, is
+/// watertight, and its signed volume is the solids' own up to what sampling cuts off a curved face:
+/// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
+/// and `r(1 − cos(max_angle / 2))` — the two budgets `TessConfig` states. The slack comes from the
+/// budget, not from the fixture: `tol` alone would allow `0.126` on the unit cylinder's lateral,
+/// more than a groove filled in on a cap costs (`0.1`).
+fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
+    let cfg = nacre_tess::TessConfig::default();
+    let t = nacre_tess::tessellate(m, &cfg)
+        .unwrap_or_else(|e| panic!("{c}: the mesher refuses it: {e:?}"));
+    assert_eq!(non_watertight(&t), 0, "{c}: the mesh leaks");
+    let mut slack = 0.0;
+    for &s in solids {
+        let solid = m.solid(s);
+        for &shell in std::iter::once(&solid.outer).chain(&solid.cavities) {
+            for &f in &m.shell(shell).faces {
+                if let nacre_geom::Surface::Cylinder(cyl) = m.surface_cache(m.face(f).surface) {
+                    let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
+                    let sagitta = cfg.tol.min(cyl.radius() * (1.0 - turn));
+                    let area = nacre_props::face_props(m, f)
+                        .expect("a lateral's area")
+                        .area
+                        .abs();
+                    slack += area * sagitta;
+                }
+            }
+        }
+    }
+    let got = mesh_volume(&t);
+    assert!(
+        (got - volume).abs() <= slack + 1e-9,
+        "{c}: mesh volume {got}, solids {volume}, slack {slack}"
+    );
 }
 
 /// The volume identities a wrong answer `validate` cannot see would break, wherever the booleans
@@ -414,20 +452,25 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
 /// seam and off it) or from outside with one side tangent there — so the circle is cut at exactly
 /// that one node: one arc from the node back to itself. The planar arrangement takes that ring
-/// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge), and the
+/// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge), the
 /// lateral's chart reads a rim of one node through that arc for every sector
-/// (`Chart::arc_around`).
+/// (`Chart::arc_around`), and the region walk spells it as that one arc (`cyl_chart::regions`).
+/// The wedge's union past `A`'s top leaves the cap **pinched** — the groove's tip on the rim —
+/// and the closed edge sits in a loop of several: its half-edge runs the way its wall says, not
+/// the way its one vertex could (`assembly::reconstruct`), and every reader takes it as the whole
+/// turn (`Model::derive_edge_curve`); the mesher draws the pinch (`every_six`'s [`drawn`]).
 ///
 /// What builds is checked against the input: `A ∩ B` is the wedge's section over the height the
 /// two share (the tangent triangle meets `A` in a line only — empty), and [`identities`] carries
 /// that to the union and the differences; the body counts are asserted beside. Two answers are
 /// fixed whatever builds: the wedge's `A − B` never builds — the groove touches the lateral along
-/// a line, a solid touching itself (`NonManifoldResultEdge` where it is decided) — and no refusal
-/// is a suspected defect. What does not build yet is pinned by family, boolean and height (todo
-/// «다각형 꼭짓점이 캡의 원 위에 놓이면»): the union past `A`'s caps and the wedge's `A − B` beyond
-/// `Inside` stop at the region walk's one-node rim (`ArcBoundNotYet`), a wedge standing on `A`'s
-/// base at the coplanar merge (`CoplanarMerge`), and the tangent family's touch at its least node
-/// (`CoincidentNodes`, as before the planar arrangement took the ring).
+/// a line, a solid touching itself, `NonManifoldResultEdge` at every height — and no refusal is a
+/// suspected defect. What does not build yet is pinned by family, boolean and height (todo
+/// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): a wedge standing on `A`'s base at the coplanar
+/// merge (`CoplanarMerge`); the tangent family's touch at its least node (`CoincidentNodes`, as
+/// before the planar arrangement took the ring), and past `A`'s top a corner one body keeps named
+/// by the other's walls (`VertexNamesAbsentSurface`) and, past both caps, a union whose cylinder
+/// has every corner on the line of contact (`NoClearRay`).
 #[test]
 fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     use std::collections::BTreeMap;
@@ -499,15 +542,7 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     use Height::*;
     for wedge in ["wedge on the seam", "wedge off the seam"] {
         pin(wedge, &[0, 1], &[OnBase], "CoplanarMerge", 4);
-        pin(wedge, &[0, 1], &[PastTop, PastBoth], "ArcBoundNotYet", 4);
-        pin(wedge, &[2], &[Inside], "NonManifoldResultEdge", 4);
-        pin(
-            wedge,
-            &[2],
-            &[OnBase, PastTop, PastBoth],
-            "ArcBoundNotYet",
-            4,
-        );
+        pin(wedge, &[2], &Height::ALL, "NonManifoldResultEdge", 4);
     }
     pin(
         "tangent side",
@@ -519,10 +554,11 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     pin(
         "tangent side",
         &[0, 1],
-        &[OnBase, PastTop, PastBoth],
-        "ArcBoundNotYet",
+        &[PastTop],
+        "VertexNamesAbsentSurface",
         2,
     );
+    pin("tangent side", &[0, 1], &[PastBoth], "NoClearRay", 2);
     pin(
         "tangent side",
         &[3],

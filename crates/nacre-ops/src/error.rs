@@ -376,10 +376,13 @@ pub enum RejectReason {
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
-    /// and replay stand on (`defs_are_remappable`). Not raised in the whole-suite or census
-    /// `reject-trace` sweeps: the coplanar merge dissolves the corners that sat on a surface the
-    /// result drops (two bodies meeting on a full wall, a contact-cut whose boss only touches the
-    /// plate), so the names the result keeps are its own. A shipped check rather than a
+    /// and replay stand on (`defs_are_remappable`). The coplanar merge dissolves the corners that
+    /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose boss
+    /// only touches the plate), so the names the result keeps are mostly its own; the suite raises
+    /// it for one family — a triangle whose side is tangent to a cylinder at a corner on its rim
+    /// (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`: `B − A` and the union, `B` past
+    /// the cylinder's top), where a body touching the other along that line keeps a corner named
+    /// by the other's walls. A shipped check rather than a
     /// debug_assert all the same: a definition naming a surface the result has **no face on at
     /// all** is a model that cannot describe itself, and in a release build it would ship
     /// silently — right volume, wrong names.
@@ -600,8 +603,11 @@ pub enum RejectReason {
     /// ([`Self::SelfTouchingResult`]). The thin circular segments a wide boss shares with a
     /// slotted block decide too — their probes' rays run through the boss's seam plane, and a
     /// root there is the cyclic order's first point, not a tie
-    /// (`a_wide_boss_in_a_wall_gap_common_builds`). What is left under this name raises **0
-    /// times** over the nacre-ops suite and the census — a backstop with no population.
+    /// (`a_wide_boss_in_a_wall_gap_common_builds`). What is left under this name is one family in
+    /// the suite: the union of a cylinder and a prism whose side is tangent to it along a whole
+    /// ruling, the prism past both caps (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`)
+    /// — every corner of the cylinder's body lies on that line of contact, and its caps are whole
+    /// circles, which offer no edge point.
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
@@ -678,9 +684,11 @@ pub enum RejectReason {
     ///
     /// * a region whose cycles wrap the axis other than as one lower and one upper rim, or more
     ///   than once (`cyl_chart::regions`) — ☑ measured 0 across the suite, the census and the
-    ///   ignored sweep;
-    /// * a cut rim left with **one** node — the cut-rim table keeps such a rim on purpose
-    ///   (`draft::held_rims`), and one node cannot state a rim as arcs.
+    ///   ignored sweep.
+    ///
+    /// A rim cut at **one** node — a vertex alone on its circle — is not among them: the chart and
+    /// the walk read it as the arc from that node back to itself (`Chart::arc_around`,
+    /// `cyl_chart::regions`).
     ///
     /// Where the walk and the assembly find an earlier stage's record broken — a cut circle
     /// spelled whole, an arc two faces put on different rims — the name is

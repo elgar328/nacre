@@ -1109,3 +1109,43 @@ pub fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
     }
     out
 }
+
+// Mesh gate helpers — what each check catches is written beside the gate that uses them all
+// (`invariants/pipeline.rs`).
+
+/// Σ |triangle area| — unsigned on purpose.
+pub fn mesh_area(t: &nacre_tess::Tessellation) -> f64 {
+    t.triangles
+        .iter()
+        .map(|(_, tri)| {
+            let p = tri.vertices.map(|h| t.vertices.get(h).pos);
+            0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm()
+        })
+        .sum()
+}
+
+/// Σ ⅙ p₀·(p₁ × p₂) — the divergence theorem on a closed triangle soup. Signed on
+/// purpose: a face whose triangles wind the other way subtracts where it should add.
+pub fn mesh_volume(t: &nacre_tess::Tessellation) -> f64 {
+    t.triangles
+        .iter()
+        .map(|(_, tri)| {
+            let p = tri
+                .vertices
+                .map(|h| t.vertices.get(h).pos - Point3::origin());
+            p[0].dot(p[1].cross(p[2])) / 6.0
+        })
+        .sum()
+}
+
+/// Undirected triangle edges not shared by exactly two triangles.
+pub fn non_watertight(t: &nacre_tess::Tessellation) -> usize {
+    let mut counts: std::collections::HashMap<(u32, u32), usize> = Default::default();
+    for (_, tri) in t.triangles.iter() {
+        let [a, b, c] = tri.vertices.map(|h| h.index());
+        for (x, y) in [(a, b), (b, c), (c, a)] {
+            *counts.entry((x.min(y), x.max(y))).or_default() += 1;
+        }
+    }
+    counts.values().filter(|&&n| n != 2).count()
+}

@@ -647,7 +647,8 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     }
     // ★ **A ring never keeps exactly one node, and loses them all only to close as its circle.** A
     // rim crossed four times dissolves to nothing; one node left is an arc from a point back to
-    // itself, which no reader spells. So the drops that would do either are taken back — to a
+    // itself — the readers take that ring where the *split* cut the circle at one node, but the
+    // cleaning does not make one of its own. So the drops that would do either are taken back — to a
     // fixpoint, because a node taken back for one ring is kept in every ring (one set), and taking
     // back only ever shrinks the set — and **then** the rings that lose every node close.
     // Converting inside the loop could leave a disk on one face while another keeps a node on the
