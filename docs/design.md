@@ -2146,7 +2146,7 @@ A 를 받치던 다섯 근거가 이 커널에서 서지 않는 까닭:
 4. **위상 균일.** 옆면은 구멍 있는 평면 면과 같은 틀 — 바깥 루프 하나와 안쪽 루프들 — 이고, validate 의 오일러는 `L_i` 항을 이미 든다. 어떤 간선도 한 곡면을 자기 자신과 가르지 않는다 — 원통의 자기 쌍은 `push_edge` 가 거절하고(`TwoCylinders`), 평면의 자기 쌍 `(P, P)` 는 조립이 못 한 병합으로 거절하며(`CoplanarMerge`), validate 가 둘 다 잡는다. 한 점에서 고리가 집히는 차트 모양은 위치와 무관하게 세어 스위트 16(전부 쐐기 점수판)·census 0 이고 전부 껍질 가드가 거절한다(`NonManifoldResultEdge`) — 3-D 에서 선으로 닿는 모양이기 때문이다.
 5. **유리수 차트.** 원통 위 점의 각도 매개변수는 단위원의 유리수 반각(Weierstrass) 매개변수 t 이고, 그 차트는 원에서 **정확히 한 점을 못 덮는다**(t=∞). 그 배제점은 그대로 θ = 0 이다 — `ref_dir` 은 모델 기하이고 통째 림의 정점이 거기 있다. 각도 순서는 그 점을 첫째로 읽어(`seam_first`) 앞/뒤 어느 쪽에 끊어도 답이 같다; 사라지는 것은 그 점을 지나던 «간선»뿐이다.
 
-**어댑터 분리.** 내부 표현 ≠ 교환 표현이다. nacre-step 은 내부 표현을 그대로 내보내고, OCCT 는 seam 없는 옆면(위·아래 림 정점이 한 생성선에 있지 않은 것까지)을 checkshape 유효로 읽으며 부피·불리언 결과가 seam 있는 파일과 같다(DRAWEXE 로 잰 것). 그래서 내보낼 때 seam 을 넣거나 빼는 어댑터는 없다.
+**어댑터 분리.** 내부 표현 ≠ 교환 표현이다. nacre-step 은 내부 표현을 그대로 내보내고, OCCT 는 seam 없는 옆면을 읽으며 필요한 seam 을 스스로 넣고(`ShapeFix_Face::FixMissingSeam`, STEP 읽기의 기본값) checkshape 유효로 읽는다 — 위·아래 림 정점이 한 생성선에 있지 않은 것, 축을 향한 보어, 구멍이 모든 각을 덮는 옆면까지, 면 수와 부피가 nacre 의 것과 같다(`nacre-oracle` 의 `seamless_laterals_read_as_valid_solids`, 헬퍼의 `valid` 는 양쪽으로 보정). 그래서 내보낼 때 seam 을 넣거나 빼는 어댑터는 없다.
 
 ### 원통의 진실
 
@@ -2552,7 +2552,7 @@ occt-helper <fuse|cut|common> <a.step> <b.step> [out.step]
 ```
 
 - `props` 는 솔리드 하나를, 불리언 명령은 **결과**의 성질을 보고한다. `cut` 은 `A − B`. `out` 을 주면 결과를 STEP 으로도 쓴다.
-- stdout 은 모든 명령이 같은 key-value 5줄이다: `volume <v>` · `area <a>` · `faces <n>` · `bbox_min <x> <y> <z>` · `bbox_max <x> <y> <z>`. 값은 헬퍼 쪽에서 계산한다. 고정 스키마라 파싱 의존성이 0 이고 Rust 쪽 파서는 하나다.
+- stdout 은 모든 명령이 같은 key-value 7줄이다: `volume <v>` · `area <a>` · `faces <n>` · `bbox_min <x> <y> <z>` · `bbox_max <x> <y> <z>` · `centroid <x> <y> <z>`(부피 중심) · `valid <1|0>`(재는 형상에 대한 DRAWEXE `checkshape`). 값은 헬퍼 쪽에서 계산한다. 고정 스키마라 파싱 의존성이 0 이고 Rust 쪽 파서는 하나다.
 - exit code: `0` 성공 · `1` 기하 실패(파일 없음·읽기 불가·빈 형상) · `2` 크래시.
 - 입력은 **단일 솔리드** STEP 이어야 한다(`to_step_solid`). 전송 가능한 루트가 여럿이면 OCCT 가 `x_1, x_2, …` 로 읽고 불리언은 `x_1` 만 쓴다.
 

@@ -12,6 +12,7 @@
 #       bbox_min <x> <y> <z>
 #       bbox_max <x> <y> <z>
 #       centroid <x> <y> <z>
+#       valid <1|0>        (checkshape: the measured shape's own topology and geometry)
 #     exit: 0 success / 1 geometry failure (unreadable, no/empty shape) / 2 DRAWEXE crash
 #
 # The boolean commands run DRAWEXE's bfuse/bcut/bcommon on two STEP solids and
@@ -21,10 +22,11 @@
 set -uo pipefail
 
 # Parse a DRAWEXE run's console output (vprops → "Mass :", sprops → "Mass :",
-# nbshapes → "FACE", bounding → the lone six-number line) and print the schema.
+# nbshapes → "FACE", bounding → the lone six-number line, checkshape → "seems to be
+# valid", or "Faulty shapes …" with its BRepCheck_ codes) and print the schema.
 # Returns 1 if any field is missing (empty/failed shape).
 emit_props() {
-    local out="$1" clean volume area faces bbox cx cy cz
+    local out="$1" clean volume area faces bbox cx cy cz valid
     clean=$(echo "$out" | sed 's/^Draw\[[0-9]*\]> *//')
     volume=$(echo "$clean" | grep "Mass :" | sed -n '1p' | awk '{print $NF}')
     area=$(echo "$clean" | grep "Mass :" | sed -n '2p' | awk '{print $NF}')
@@ -37,9 +39,16 @@ emit_props() {
     faces=$(echo "$clean" | awk '/^ *FACE/ {print $NF}')
     # The bounding output is the only line of six numeric fields.
     bbox=$(echo "$clean" | awk 'NF==6 && $1+0==$1 && $6+0==$6 {print; exit}')
+    if echo "$clean" | grep -q "This shape seems to be valid"; then
+        valid=1
+    elif echo "$clean" | grep -q -e "Faulty shapes" -e "has problems"; then
+        valid=0
+    else
+        valid=""
+    fi
 
     if [ -z "$volume" ] || [ -z "$area" ] || [ -z "$faces" ] || [ -z "$bbox" ] ||
-        [ -z "$cx" ] || [ -z "$cy" ] || [ -z "$cz" ]; then
+        [ -z "$cx" ] || [ -z "$cy" ] || [ -z "$cz" ] || [ -z "$valid" ]; then
         echo "error: could not parse OCCT output" >&2
         echo "$out" >&2
         return 1
@@ -53,6 +62,7 @@ emit_props() {
     echo "bbox_min $x0 $y0 $z0"
     echo "bbox_max $x1 $y1 $z1"
     echo "centroid $cx $cy $cz"
+    echo "valid $valid"
 }
 
 case "${1:-}" in
@@ -63,7 +73,7 @@ props)
         exit 1
     }
 
-    out=$(printf 'pload ALL\nstepread %s a *\nvprops a_1\nsprops a_1\nnbshapes a_1\nbounding a_1\nexit\n' "$step" | DRAWEXE -b 2>&1)
+    out=$(printf 'pload ALL\nstepread %s a *\nvprops a_1\nsprops a_1\nnbshapes a_1\nbounding a_1\ncheckshape a_1\nexit\n' "$step" | DRAWEXE -b 2>&1)
     status=$?
     [ "$status" -eq 0 ] || {
         echo "error: DRAWEXE exited $status" >&2
@@ -95,7 +105,7 @@ fuse | cut | common)
     # numbered `_1` — bfuse names its result directly).
     script="pload ALL\nstepread $a a *\nstepread $b b *\n$op r a_1 b_1\n"
     [ -n "$outfile" ] && script="${script}stepwrite a r $outfile\n"
-    script="${script}vprops r\nsprops r\nnbshapes r\nbounding r\nexit\n"
+    script="${script}vprops r\nsprops r\nnbshapes r\nbounding r\ncheckshape r\nexit\n"
 
     out=$(printf '%b' "$script" | DRAWEXE -b 2>&1)
     status=$?

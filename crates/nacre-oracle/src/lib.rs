@@ -29,6 +29,9 @@ pub struct OcctProps {
     pub bbox_max: [f64; 3],
     /// OCCT's **volume** centre of mass (`vprops`), not the surface's.
     pub centroid: [f64; 3],
+    /// OCCT's `checkshape` verdict on the measured shape — topology and geometry as OCCT reads
+    /// them after its own healing on import.
+    pub valid: bool,
 }
 
 /// A failure while scoring a model against the OCCT oracle.
@@ -52,8 +55,8 @@ pub enum OracleError {
 impl OcctProps {
     /// Parse the helper's `props` stdout — key-value lines, one per field:
     /// `volume <v>` / `area <a>` / `faces <n>` / `bbox_min <x y z>` /
-    /// `bbox_max <x y z>` / `centroid <x y z>`. Order-independent; every field
-    /// is required.
+    /// `bbox_max <x y z>` / `centroid <x y z>` / `valid <1|0>`. Order-independent; every
+    /// field is required.
     fn parse(stdout: &str) -> Result<OcctProps, OracleError> {
         let mut volume = None;
         let mut area = None;
@@ -61,6 +64,7 @@ impl OcctProps {
         let mut bbox_min = None;
         let mut bbox_max = None;
         let mut centroid = None;
+        let mut valid = None;
 
         for line in stdout.lines() {
             let mut it = line.split_whitespace();
@@ -78,6 +82,13 @@ impl OcctProps {
                 "bbox_min" => bbox_min = Some(parse_triple(&mut it, "bbox_min")?),
                 "bbox_max" => bbox_max = Some(parse_triple(&mut it, "bbox_max")?),
                 "centroid" => centroid = Some(parse_triple(&mut it, "centroid")?),
+                "valid" => {
+                    valid = Some(match it.next() {
+                        Some("1") => true,
+                        Some("0") => false,
+                        other => return Err(OracleError::Parse(format!("valid: {other:?}"))),
+                    })
+                }
                 _ => {} // ignore unknown keys — forward-compatible with new fields
             }
         }
@@ -89,6 +100,7 @@ impl OcctProps {
             bbox_min: bbox_min.ok_or_else(|| miss("bbox_min"))?,
             bbox_max: bbox_max.ok_or_else(|| miss("bbox_max"))?,
             centroid: centroid.ok_or_else(|| miss("centroid"))?,
+            valid: valid.ok_or_else(|| miss("valid"))?,
         })
     }
 }

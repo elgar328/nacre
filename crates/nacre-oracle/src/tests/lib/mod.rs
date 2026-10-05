@@ -45,6 +45,11 @@ fn boolean_one(
     Ok(solids[0])
 }
 
+/// Combined relative-or-absolute float comparison, sized to DRAWEXE's output
+/// precision — it prints ~6 significant figures, so an exact value can land
+/// ~5e-7 relative away (e.g. 20π → `62.8319`). A 1e-4 relative band clears
+/// that rounding noise by 100× while still catching any real geometry error
+/// (those miss by percents, not parts-per-thousand).
 fn approx(a: f64, b: f64) -> bool {
     let diff = (a - b).abs();
     diff <= 1e-6 || diff <= 1e-4 * a.abs().max(b.abs())

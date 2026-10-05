@@ -3,11 +3,6 @@
 
 use super::*;
 
-/// Combined relative-or-absolute float comparison, sized to DRAWEXE's output
-/// precision — it prints ~6 significant figures, so an exact value can land
-/// ~5e-7 relative away (e.g. 20π → `62.8319`). A 1e-4 relative band clears
-/// that rounding noise by 100× while still catching any real geometry error
-/// (those miss by percents, not parts-per-thousand).
 /// Faces of one live solid, outer shell and cavities — the figure `OcctProps::faces` is
 /// compared against.
 fn face_count(model: &Model, s: Handle<Solid>) -> usize {
@@ -27,6 +22,7 @@ area 52
 bbox_max 2 3 4
 bbox_min 0 0 0
 centroid 1 1.5 2
+valid 0
 ";
     let p = OcctProps::parse(stdout).unwrap();
     assert_eq!(p.volume, 24.0);
@@ -35,6 +31,12 @@ centroid 1 1.5 2
     assert_eq!(p.bbox_min, [0.0, 0.0, 0.0]);
     assert_eq!(p.bbox_max, [2.0, 3.0, 4.0]);
     assert_eq!(p.centroid, [1.0, 1.5, 2.0]);
+    assert!(!p.valid);
+    let malformed = stdout.replace("valid 0", "valid yes");
+    assert!(matches!(
+        OcctProps::parse(&malformed),
+        Err(OracleError::Parse(_))
+    ));
 }
 
 #[test]
@@ -971,4 +973,120 @@ fn overhang_pocket_matches_occt() {
         nacre.volume,
         nacre.area
     );
+}
+
+/// ★★★★ **A seamless lateral is a valid shape to OCCT, in every shape the two-rim form takes.**
+/// nacre writes a cylinder's lateral as its two rims and no seam edge; OCCT reads it, inserts the
+/// seam it needs on import (`ShapeFix_Face::FixMissingSeam`) and must find the solid valid
+/// (`checkshape`), with nacre's own face count and volume. The shapes: whole rims (a plain
+/// cylinder, and a bore, which faces its axis); both rims cut, so the two rims' vertices stand on
+/// different generators (`cut_at_both_rims`, both ways, the boxes off and on the plane through the
+/// axis); a window on and off the rims' vertices (`windowed_boss`); a chain rim with a corner at
+/// the whole rim's angle (a boss on a plate's edge); and a bore whose four slots cover every
+/// angle. The helper's `valid` is calibrated both ways: this file's cylinder reads `1`, the same
+/// file with the lateral's inner bound deleted reads `0` (`BRepCheck_NotClosed`).
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn seamless_laterals_read_as_valid_solids() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let z = Vector3::from_array([0.0, 0.0, 1.0]);
+    let mut shapes: Vec<(&str, Model)> = Vec::new();
+    {
+        let mut m = Model::new();
+        fixtures::cylinder(&mut m, Point3::origin(), z, 2.0, 5.0);
+        shapes.push(("a plain cylinder", m));
+    }
+    let bore = |m: &mut Model| {
+        let plate = fixtures::cuboid(
+            m,
+            Point3::from_array([-2.0, -2.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let pin = fixtures::cylinder(m, Point3::from_array([0.0, 0.0, -1.0]), z, 1.0, 6.0).solid;
+        m.rebuild_adjacency();
+        let s = boolean(m, BoolKind::Cut, plate, pin).expect("the bore")[0];
+        m.rebuild_adjacency();
+        s
+    };
+    {
+        let mut m = Model::new();
+        bore(&mut m);
+        shapes.push(("a bore", m));
+    }
+    {
+        let mut m = Model::new();
+        let mut s = bore(&mut m);
+        for (lo, hi) in [
+            ([0.5, -0.8, 0.5], [3.0, 0.8, 1.0]),
+            ([-0.8, 0.5, 1.3], [0.8, 3.0, 1.8]),
+            ([-3.0, -0.8, 2.1], [-0.5, 0.8, 2.6]),
+            ([-0.8, -3.0, 2.9], [0.8, -0.5, 3.4]),
+        ] {
+            let w = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            s = boolean(&mut m, BoolKind::Cut, s, w).expect("a slot")[0];
+            m.rebuild_adjacency();
+        }
+        shapes.push(("a bore with four slots", m));
+    }
+    for kind in [BoolKind::Fuse, BoolKind::Cut] {
+        for y_min in [-2.0, 0.0] {
+            let mut m = Model::new();
+            fixtures::cut_at_both_rims(&mut m, kind, y_min);
+            m.rebuild_adjacency();
+            shapes.push((
+                match (kind, y_min < 0.0) {
+                    (BoolKind::Fuse, true) => "both rims cut, fused",
+                    (BoolKind::Fuse, false) => "both rims cut on the axis plane, fused",
+                    (_, true) => "both rims cut, cut",
+                    (_, false) => "both rims cut on the axis plane, cut",
+                },
+                m,
+            ));
+        }
+    }
+    for seam_x in [1.0, -1.0] {
+        let mut m = Model::new();
+        fixtures::windowed_boss(&mut m, 0.6, seam_x);
+        m.rebuild_adjacency();
+        shapes.push((
+            if seam_x > 0.0 {
+                "a window on the rims' vertices"
+            } else {
+                "a window off the rims' vertices"
+            },
+            m,
+        ));
+    }
+    {
+        let mut m = Model::new();
+        let boss = fixtures::cylinder(&mut m, Point3::origin(), z, 1.0, 4.0).solid;
+        let plate = fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-2.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        boolean(&mut m, BoolKind::Fuse, boss, plate).expect("the boss on the edge");
+        m.rebuild_adjacency();
+        shapes.push(("a chain rim with a corner at the whole rim's angle", m));
+    }
+    assert_eq!(shapes.len(), 10, "the shapes");
+    for (name, m) in &shapes {
+        let [solid] = m.live_solids()[..] else {
+            panic!("{name}: one solid");
+        };
+        let p = occt_props_of(m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert!(p.valid, "{name}: OCCT's checkshape refuses it");
+        let faces = m.shell(m.solid(solid).outer).faces.len();
+        assert_eq!(p.faces, faces, "{name}: face count");
+        let ours = nacre_props::mass_props(m, solid)
+            .expect("mass props")
+            .volume;
+        assert!(
+            approx(p.volume, ours),
+            "{name}: OCCT {} vs nacre {ours}",
+            p.volume
+        );
+    }
 }

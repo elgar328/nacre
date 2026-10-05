@@ -22,7 +22,11 @@ area <a>
 faces <n>
 bbox_min <x> <y> <z>
 bbox_max <x> <y> <z>
+centroid <x> <y> <z>
+valid <1|0>
 ```
+`centroid` is the volume's centre of mass; `valid` is DRAWEXE's `checkshape` on the measured
+shape (`1` for "seems to be valid", `0` for faulty sub-shapes).
 Exit code: `0` success · `1` geometry failure (file missing, unreadable, no/empty
 shape) · `2` DRAWEXE crash. The schema and exit codes are identical across
 commands, so the Rust side (`nacre-oracle`) shares one parser.
