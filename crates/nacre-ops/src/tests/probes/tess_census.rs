@@ -15,7 +15,11 @@
 //! ★ **Scope, plainly**: `#[cfg(test)]` is this crate's *unit* tests. `tests/*.rs` do **not** carry
 //! this hook, so "2129 booleans" is the lib suite's number and not the workspace's. The frozen census
 //! corpus asserts the same of its own rows (`tests/census.rs`'s `record`); `perf` and
-//! `invariants/pipeline` do not.
+//! `invariants/pipeline` do not. The rest was measured once, with this hook put on every build:
+//! every boolean result the workspace's integration tests build meshes (5,071; 2,009 more in the
+//! ignored sweep), and nacre-kit's (48). It cannot stay there — the product does not depend on
+//! `nacre-tess` — so a front-door family that needs the claim asserts it itself
+//! (`edge_on_a_ruling`'s `drawn`).
 //!
 //! ★ A panic inside `tessellate` is left to escape. Swallowing it would make the census say
 //! "meshed" about a model that killed the mesher.
