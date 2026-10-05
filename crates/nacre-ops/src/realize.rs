@@ -1075,10 +1075,10 @@ pub struct Refined {
     pub left_unrealized: usize,
 }
 
-/// What [`refine_caches`] did, per kind of cache.
+/// What [`refine_caches`] or [`refine_caches_of`] did, per kind of cache, over the cells it walked.
 ///
-/// For edges, `refined` counts the live curves whose bits the paid derivation moved, and
-/// `left_unrealized` the live edges whose direction or centre only the truth could give and
+/// For edges, `refined` counts the walked curves whose bits the paid derivation moved, and
+/// `left_unrealized` the walked edges whose direction or centre only the truth could give and
 /// nothing gave (an unnamed carrier with no road); an edge has no undecided slot of its own — a
 /// piece the ladder could not settle is counted there too, since an edge cache keeps no standing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
