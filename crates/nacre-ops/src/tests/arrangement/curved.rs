@@ -764,8 +764,8 @@ fn a_cut_circle_bounds_the_bands() {
     );
     // ★ **The emitter answers with regions.** Under `keep` the wall splits the middle
     // interval into two sectors, one kept and one not, and the kept one joins the whole
-    // bands above and below it: **fuse** emits one face — a `Band` between the two cap
-    // circles with the unkept sector as its one **hole** (a 4-node ring: two arcs on the
+    // bands above and below it: **fuse** emits one face — a band bounded by its two whole rims
+    // (`Bound::Rim`) with the unkept sector as its one **hole** (a 4-node ring: two arcs on the
     // cut rims' own nodes, two rulings); **cut** keeps the other sector alone — one 4-node
     // `Ring` face. Which sector is the outer one is the assembly's and the volume oracle's to
     // measure (the gate-opening cell), not this harness's to re-derive.

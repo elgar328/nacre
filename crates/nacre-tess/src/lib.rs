@@ -1049,7 +1049,7 @@ fn passes((p, q): (f64, f64), c: f64) -> i64 {
 /// A hole passed twice is severed into two runs the chart splices into the outer ring
 /// ([`joined_band`]); one passed four or more times would sever the face into more than one outer
 /// polygon. Fewest holes first, because a hole the cut avoids keeps its polylines and its ring as
-/// they are — and so a face with a hole-free generator is cut exactly where it always was.
+/// they are — and so a face with a hole-free generator is cut where a face without holes would be.
 fn band_generator(
     turns: &[(Vec<f64>, f64)],
     wrapping: [usize; 2],

@@ -796,6 +796,13 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         let rings = combinatorics::lateral_cycles(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
             .unwrap_or_else(|e| panic!("lateral {:?}: {e:?}", fh.index()));
         let face = m.face(fh);
+        // One ring per loop, or the `zip` below drops the loops past the shorter side unread.
+        assert_eq!(
+            rings.len(),
+            1 + face.inner.len(),
+            "lateral {:?}: a ring per loop",
+            fh.index()
+        );
         for (lp, ring) in std::iter::once(&face.outer).chain(&face.inner).zip(&rings) {
             let Some(nr) = ring.poly() else { continue };
             let hes = &lp.half_edges;
@@ -879,9 +886,11 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             }
         }
     }
-    assert!(
-        lateral_rulings > 0,
-        "the fixture puts a ruling on the boss's lateral"
+    // The plate's wall crosses the boss in two rulings, both in the lateral's one cut loop (the
+    // other two are its whole rims).
+    assert_eq!(
+        lateral_rulings, 2,
+        "the wall's two rulings on the boss's lateral"
     );
     // Four faces run along the boss — the two plate caps it bit an arc out of, and the two halves
     // its rulings split the wall into — and each contributes two curved edges and two pierce
@@ -895,7 +904,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 /// ★★★★★ **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
 ///
 /// `edge_dir` is the one place a direction is made. A pierce point has no third plane, and the
-/// integer predicate wants one, so its cylinder arm orders through the `a + b√c` tower; the 40
+/// integer predicate wants one, so its cylinder arm orders through the `a + b√c` tower; the 48
 /// pins below fix what the answer must be (an arm that refuses by `RingNaming` refuses every one
 /// of them, measured).
 ///
@@ -907,7 +916,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 /// against a pierce root, or two roots against each other), the oracle realizes both points in
 /// `f64` and subtracts. Measured `|t|` from 1.5 to 456, so nothing here is decided in the noise.
 ///
-/// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 40 order
+/// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 48 order
 /// `-1`: a face's outer ring travels counter-clockwise about that face's own outward normal, which
 /// is the direction `order_along` sorts by, so agreement is structural — two boss positions, one
 /// of them with its axis reversed, and three `Cut` notches do not move it. What moves is **swapping the two ends**,
@@ -926,9 +935,8 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
         pins += pinned_ends_ordered(at, dir, kind);
     }
     // ★ The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
-    // ends and every assertion below would pass vacuously. **48** — the `[6, 4, −1]` boss sits on
-    // the +y wall, so its bite on the plate's caps runs across θ = 0 (at −y): one arc there, with
-    // no vertex at θ = 0.
+    // ends and every assertion below would pass vacuously. **48** — eight from each of the six
+    // fixtures (measured), so any one of them going quiet moves the sum.
     assert_eq!(pins, 48, "cylinder-pinned ring ends exercised");
 }
 

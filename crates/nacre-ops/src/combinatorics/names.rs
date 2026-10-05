@@ -364,13 +364,14 @@ pub(crate) struct ArcCarrier {
 
 /// The **ruling** a straight lateral edge rides: a wall plane parallel
 /// to a cylinder's axis meets the lateral surface in up to two axis-parallel lines, and
-/// `(cyl, side)` names which of the two this is.
+/// `(cyl, plane, side)` names which of the two this is — `side` is read against `plane`, so the
+/// pair without it names nothing.
 ///
 /// `side` is what [`ruling_side_signed`] answers of any point `x` on the ruling — the one
 /// spelling, and the sign convention lives on it rather than being restated here.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingCarrier {
-    /// The cylinder class — the ruling's identity, with `side`.
+    /// The cylinder class — the ruling's identity, with `plane` and `side`.
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     /// Which of the two parallel rulings, by the convention [`ruling_side_signed`] states — or

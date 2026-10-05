@@ -445,8 +445,8 @@ fn a_u_face_writes_a_row_only_over_the_span_it_crosses() {
 /// - the slab over `z ∈ [1, 3]` meets it where the face is, `z ∈ (1, 1.5) ∪ (2.5, 3)`: one row,
 ///   the line through the wall face's interior.
 ///
-/// Both window widths (corners at `x = √0.91` and at `x = 4/5`) and both seams (through the
-/// window, where it is a notch in the outer loop; opposite, where it is an inner loop).
+/// Both window widths (corners at `x = √0.91` and at `x = 4/5`) and both `seam` sides (the rims'
+/// vertices at the window's angle, or opposite it; the window is an inner loop either way).
 #[test]
 fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
     let rows = |w: f64, seam: f64, z: [f64; 2]| {

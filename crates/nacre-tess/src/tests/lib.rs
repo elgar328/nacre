@@ -630,9 +630,11 @@ fn face_area(t: &Tessellation, fh: Handle<Face>) -> f64 {
 ///
 /// A bore through a plate: both rims are one closed edge, so the band is cut at their vertices
 /// ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the mesh has exactly the rims'
-/// samples, as a plain cylinder's (`cylinder_tessellates_watertight`). Before that rule such a band
-/// went to the generator, whose cut could land on a rim's closing step (a closed edge's polyline
-/// does not repeat its first sample) and fail the whole model's mesh.
+/// samples, as a plain cylinder's (`cylinder_tessellates_watertight`). Sent to the generator
+/// instead, its cut could land on a rim's closing step (a closed edge's polyline does not repeat
+/// its first sample) and fail the whole model's mesh. The rule rests on the two vertices standing
+/// at one angle — every producer puts a whole rim's vertex at `θ = 0` — so the cut between them is
+/// a ruling; asserted here, since a cut across angles would leave the surface.
 #[test]
 fn a_bore_is_cut_at_its_rims_vertices() {
     use nacre_ops::{BoolKind, boolean, fixtures};
@@ -665,6 +667,14 @@ fn a_bore_is_cut_at_its_rims_vertices() {
                 .all(|l| l.half_edges.len() == 1),
         "the premise: two loops, each one closed rim"
     );
+    let rim_vertex =
+        |l: &nacre_topo::Loop| m.vertex_point(m.edge(l.half_edges[0].edge).vertices[0]);
+    let (lo, hi) = (rim_vertex(&face.outer), rim_vertex(&face.inner[0]));
+    assert!(
+        (lo.as_array()[0] - hi.as_array()[0]).abs() < 1e-12
+            && (lo.as_array()[1] - hi.as_array()[1]).abs() < 1e-12,
+        "the premise: both rim vertices at one angle, {lo:?} and {hi:?}"
+    );
     let cfg = TessConfig::default();
     let t = tessellate(&m, &cfg).unwrap();
     assert_eq!(non_watertight_edges(&t), 0);
@@ -685,8 +695,9 @@ fn a_bore_is_cut_at_its_rims_vertices() {
 
 /// ★★★★ **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**
 ///
-/// The windowed boss with its window on the seam and off it: three loops, so [`cut_seamless_bands`]'s first rule does not apply — where the window covers `θ = 0`,
-/// a cut at the rims' own vertices would run through it. The generator steps around the window.
+/// The windowed boss with its window on the rims' vertices and off them: three loops, so
+/// [`cut_seamless_bands`]'s first rule does not apply — where the window covers `θ = 0`, a cut at
+/// the rims' own vertices would run through it. The generator steps around the window.
 #[test]
 fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
     use nacre_ops::fixtures;
@@ -698,6 +709,17 @@ fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
             panic!("one lateral");
         };
         assert_eq!(m.face(new).inner.len(), 2, "seam {seam_x}: rim and window");
+        // The premise: the rims' vertices stand at `x = seam_x` — inside the window's span
+        // (`x ≥ 0.5`, `|y| < 0.6`) for `+1`, opposite it for `−1`.
+        for l in std::iter::once(&m.face(new).outer).chain(&m.face(new).inner) {
+            if let [he] = l.half_edges[..] {
+                let p = m.vertex_point(m.edge(he.edge).vertices[0]);
+                assert!(
+                    (p.as_array()[0] - seam_x).abs() < 1e-12 && p.as_array()[1].abs() < 1e-12,
+                    "seam {seam_x}: a rim's vertex at {p:?}"
+                );
+            }
+        }
         let t = tessellate(&m, &TessConfig::default())
             .unwrap_or_else(|e| panic!("seam {seam_x}: {e:?}"));
         assert_eq!(non_watertight_edges(&t), 0, "seam {seam_x}");
@@ -739,6 +761,33 @@ fn a_seamless_lateral_with_a_chain_rim_on_the_seam_is_cut_off_its_corner() {
     let [new] = laterals(&m, fused)[..] else {
         panic!("one lateral");
     };
+    // The premise: two loops, one a whole rim and the other a chain with a corner at the whole
+    // rim's own angle.
+    let face = m.face(new);
+    assert_eq!(face.inner.len(), 1, "two loops");
+    let loops: Vec<_> = std::iter::once(&face.outer).chain(&face.inner).collect();
+    let [whole] = loops
+        .iter()
+        .filter(|l| l.half_edges.len() == 1)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one whole rim");
+    };
+    let at = m.vertex_point(m.edge(whole.half_edges[0].edge).vertices[0]);
+    let chain = loops
+        .iter()
+        .find(|l| l.half_edges.len() > 1)
+        .expect("a chain rim");
+    assert!(
+        chain.half_edges.iter().any(|he| {
+            m.edge(he.edge).vertices.iter().any(|&v| {
+                let p = m.vertex_point(v);
+                (p.as_array()[0] - at.as_array()[0]).abs() < 1e-12
+                    && (p.as_array()[1] - at.as_array()[1]).abs() < 1e-12
+            })
+        }),
+        "a chain corner at the whole rim's angle ({at:?})"
+    );
     let t = tessellate(&m, &TessConfig::default()).unwrap();
     assert_eq!(non_watertight_edges(&t), 0);
     let want = 6.0 * pi;
@@ -790,6 +839,45 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
         panic!("one lateral");
     };
     assert_eq!(m.face(new).inner.len(), 5, "a rim and four windows");
+    // The premise, measured on the model: every angle falls inside some window's span. A window
+    // is a loop of more than one edge; its span is the arc between its two extreme corners.
+    let spans: Vec<(f64, f64)> = std::iter::once(&m.face(new).outer)
+        .chain(&m.face(new).inner)
+        .filter(|l| l.half_edges.len() > 1)
+        .map(|l| {
+            let pts: Vec<_> = l
+                .half_edges
+                .iter()
+                .map(|he| {
+                    let [a, b] = m.edge(he.edge).vertices;
+                    m.vertex_point(if he.forward { a } else { b })
+                })
+                .collect();
+            let (cx, cy) = pts.iter().fold((0.0, 0.0), |(x, y), p| {
+                (x + p.as_array()[0], y + p.as_array()[1])
+            });
+            let mid = f64::atan2(cy, cx);
+            let half = pts
+                .iter()
+                .map(|p| {
+                    let d = p.as_array()[1].atan2(p.as_array()[0]) - mid;
+                    d.sin().atan2(d.cos()).abs()
+                })
+                .fold(0.0, f64::max);
+            (mid, half)
+        })
+        .collect();
+    assert_eq!(spans.len(), 4, "four windows");
+    for k in 0..360 {
+        let th = f64::from(k).to_radians();
+        assert!(
+            spans.iter().any(|&(mid, half)| {
+                let d = th - mid;
+                d.sin().atan2(d.cos()).abs() < half
+            }),
+            "{k}° lies in no window"
+        );
+    }
     let t = tessellate(&m, &cfg).unwrap_or_else(|e| panic!("{e:?}"));
     assert_eq!(non_watertight_edges(&t), 0);
     let want = 2.0 * pi * 4.0 - 4.0 * 2.0 * 0.8f64.asin() * 0.5;

@@ -249,7 +249,7 @@ f64 산술(libm `sin_cos`)로 나온다(평면의 앵커·법선과 원통의 �
 | 인구 | 최근접 아님 | 최대 |
 |---|---|---|
 | 온전한 림의 tess 샘플점(`360·i/n` 도의 참값 대비) | **36,895 / 80,371** | 1,106 ulp(참값 0 근처 성분) |
-| 원 간선 중심 — 진술된 원통 | 0 / 914 — 원통 진술 × 캡 세계 이름의 정확한 만남(`nacre_exact::axis_plane_meet`)을 성분마다 반올림; census 가 원마다 단언 | — |
+| 원 간선 중심 — 진술된 원통 | 0 / 883 — 원통 진술 × 캡 세계 이름의 정확한 만남(`nacre_exact::axis_plane_meet`)을 성분마다 반올림; census 가 원마다 단언 | — |
 | 원 간선 중심 — 진술 없는 원통(프레임 노드·사분각 밖 회전) | 0 — ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현해 넘긴다(`EdgeGiven::centre`). census 가 원마다 단언한다(14 — 512비트 실현과 비트 동일, 캐시된 중심이 반 ulp 안에서 캡 위·축 위; 정해지지 않은 것 0). 남는 것은 사슬이 비용 한계를 넘는 원통의 원(캐시끼리의 f64 만남) — `nacre_ops::refine_caches` 가 올린다 | 깊은 사슬의 원(안 잼) |
 | 원 간선 반지름·법선·`ref_dir` | 0 — 원통 캐시의 프레임을 비트 그대로(`Circle::from_unit_frame`); 위 모음의 진술 없는 원 756 에서도 0 | — |
 | 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(step-io 0.2.5 — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `CurveInput::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), 룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,623 · 축을 따르는 420 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 남는 것은 사슬이 비용 한계를 넘는 직선(끝점의 차) — `nacre_ops::refine_caches` 가 올린다. 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | 깊은 사슬의 직선(안 잼) |
@@ -611,4 +611,4 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 
 ### v2 로 미룬 것
 
-로그 중간 편집을 위한 계보 참조(`OpRef { op, output_slot }`)와 op 로그의 소유자(`Document`), `Store` 스냅샷·직렬화 포맷, 세션 메모리 관리(compact 보다 재구축 우선), 경량 STEP 라이터와 export 시 unseam 옵션, M7 SSI 의 방법 선택.
+로그 중간 편집을 위한 계보 참조(`OpRef { op, output_slot }`)와 op 로그의 소유자(`Document`), `Store` 스냅샷·직렬화 포맷, 세션 메모리 관리(compact 보다 재구축 우선), 경량 STEP 라이터, M7 SSI 의 방법 선택.

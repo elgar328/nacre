@@ -281,7 +281,8 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
 /// truth's direction (nacre-ops' census line lock); this asks the written `LINE`s, read back: each
 /// `DIRECTION` is a cached direction bit for bit and each `VECTOR` magnitude is 1. Boxes turned by
 /// whole degrees that are not quarters, requiring one edge whose endpoint-derived direction
-/// differs from its cache — the road this replaced.
+/// differs from its cache — where writing the endpoints' difference would put another direction
+/// in the file.
 #[test]
 fn a_straight_edges_direction_reaches_the_file_as_its_cache() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
