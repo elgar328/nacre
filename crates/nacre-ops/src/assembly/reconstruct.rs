@@ -34,9 +34,10 @@ pub(crate) fn reconstruct(
         Err(e) => return Err(deferred.unwrap_or(e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
-    // The per-solid straight-angle pass may have dropped nodes of its own; everything below reads
-    // the rims as these faces hold them.
-    let rims = &rims.prune(faces);
+    // The per-solid straight-angle pass may have dropped nodes of its own — per solid, so a rim
+    // can be whole for one body and cut for another it touches; everything below asks the rims
+    // as these faces hold them, with the group.
+    let cut = rims.cut_per_group(faces, &group_of);
     // ★ **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
@@ -137,10 +138,10 @@ pub(crate) fn reconstruct(
                 if rim.contains_key(&(g, k, c)) {
                     continue;
                 }
-                // ★ A circle the result still cuts cannot bound as a whole — a face on its plane
-                // holds one of its nodes ([`HeldRims`]) — so reaching here with one is the split
-                // and the faces disagreeing, named as that.
-                if rims.contains_key(&(k, c)) {
+                // ★ A circle this solid still cuts cannot bound it as a whole — one of its faces
+                // on that plane holds one of its nodes ([`HeldRims::cut_per_group`]) — so reaching
+                // here with one is the split and the faces disagreeing, named as that.
+                if cut.contains(&(g, k, c)) {
                     return Err(reject(RejectReason::CylinderStagesDisagree));
                 }
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
@@ -392,12 +393,25 @@ pub(crate) fn reconstruct(
         let mut build = |model: &mut Model, b: &Bound, hole: bool| -> Result<Loop, BoolError> {
             match b {
                 Bound::Ring(r) => ring(model, memo, r),
-                Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole),
+                // ★ **Each whole circle is spelled by its face** — the cap's on a plane, the rim
+                // on a lateral (`dissolve_straight_angles`'s `closed`). On the other face kind it
+                // is an earlier stage stating the wrong fact, and is named as that.
+                Bound::Circle { cyl } => {
+                    let c = match lf.surf {
+                        ClassIx::Plane(c) => c,
+                        ClassIx::Cyl(_) => {
+                            return Err(reject(RejectReason::CylinderStagesDisagree));
+                        }
+                    };
+                    circle_loop(model, *cyl, c, hole)
+                }
                 Bound::Rim { plane, ccw } => {
-                    let k = lf
-                        .surf
-                        .cyl()
-                        .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                    let k = match lf.surf {
+                        ClassIx::Cyl(k) => k,
+                        ClassIx::Plane(_) => {
+                            return Err(reject(RejectReason::CylinderStagesDisagree));
+                        }
+                    };
                     let &(_, edge) = rim
                         .get(&(g, k, *plane))
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;

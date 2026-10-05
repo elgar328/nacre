@@ -594,11 +594,11 @@ fn merge_component(
 /// on one wall are collinear exactly as two plane edges are, two same-direction arcs of one
 /// circle are smooth continuation, and a cusp (the `ccw` flip) lands in `bent`. A rim circle
 /// divided only by another solid's T-nodes dissolves whole — a box standing across a cylinder's
-/// cap, cut away, leaves the cap a disk again — and becomes the circle it is (below). One risk is
-/// *recorded*: a merged arc can exceed a half circle, which the edge key's CCW twin rule, the seam
-/// predicate and `mass_props` all read — the crossing census's exact-volume assertions are the
-/// standing measurement of that contract. (The whole-circle arms merge no arc: a ring either
-/// keeps two nodes or more, or becomes a circle.)
+/// cap, cut away, leaves the cap a disk again — and closes as the whole circle it is (below). One
+/// risk is *recorded*: a merged arc can exceed a half circle, which the edge key's CCW twin rule
+/// and `mass_props` read — the crossing census's exact-volume assertions are the standing
+/// measurement of that contract. (The whole-circle arms merge no arc: a ring either keeps two
+/// nodes or more, or closes.)
 pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
@@ -645,18 +645,33 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     if drop.is_empty() {
         return;
     }
-    // ★ **A ring never keeps exactly one node, and loses them all only to become its circle.** A
+    // ★ **A ring never keeps exactly one node, and loses them all only to close as its circle.** A
     // rim crossed four times dissolves to nothing; one node left is an arc from a point back to
     // itself, which no reader spells. So the drops that would do either are taken back — to a
     // fixpoint, because a node taken back for one ring is kept in every ring (one set), and taking
-    // back only ever shrinks the set — and **then** the rings that lose every node become
-    // `Bound::Circle`. Converting inside the loop could leave a disk on one face while another
-    // keeps a node on the same circle. What cannot be a circle (a band's chain rim, a ring of
-    // other walls) keeps its nodes. No suite or census boolean takes a drop back.
-    let one_arc = |ring: &Ring| -> Option<usize> {
-        match *ring.walls.first()? {
-            Wall::Arc { cyl, .. } if ring.walls.iter().all(|&w| w == ring.walls[0]) => Some(cyl),
-            _ => None,
+    // back only ever shrinks the set — and **then** the rings that lose every node close.
+    // Converting inside the loop could leave a disk on one face while another keeps a node on the
+    // same circle. What cannot close (a ring of other walls) keeps its nodes. No suite or census
+    // boolean takes a drop back.
+    //
+    // ★★ **The closed circle is spelled by the face, not by the ring** — one edge, `(cylinder k,
+    // plane c)`, bounds a cap as `Bound::Circle { cyl: k }` and a lateral as `Bound::Rim { plane:
+    // c, ccw }`; the lateral's `ccw` is its arcs' own, which the chart gives a whole rim too. The
+    // cap's spelling on a lateral says nothing (the face *is* that cylinder; which plane it ends on
+    // is lost) and the assembly cannot build it. `closed` is the one place both the take-back and
+    // the conversion read, so "can it close" and "how" cannot part. An arc wall that disagrees with
+    // its face — the cap's plane, the lateral's cylinder — closes nothing: the ring stays as its
+    // producer wrote it, for the assembly's arc check to judge.
+    let closed = |ring: &Ring, surf: ClassIx| -> Option<Bound> {
+        let Wall::Arc { cyl, ccw, plane } = *ring.walls.first()? else {
+            return None;
+        };
+        if !ring.walls.iter().all(|&w| w == ring.walls[0]) {
+            return None;
+        }
+        match surf {
+            ClassIx::Plane(c) => (plane == c).then_some(Bound::Circle { cyl }),
+            ClassIx::Cyl(k) => (cyl == k).then_some(Bound::Rim { plane, ccw }),
         }
     };
     loop {
@@ -669,8 +684,7 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                         continue;
                     }
                     let kept = ring.nodes.iter().filter(|nd| !drop.contains(nd)).count();
-                    let circle = matches!(b, Bound::Ring(_)) && one_arc(ring).is_some();
-                    if kept == 1 || (kept == 0 && !circle) {
+                    if kept == 1 || (kept == 0 && closed(ring, lf.surf).is_none()) {
                         back.extend(ring.nodes.iter().copied());
                     }
                 }
@@ -688,12 +702,13 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     }
     for &fi in which {
         let lf = &mut out[fi];
+        let surf = lf.surf;
         for b in std::iter::once(&mut lf.outer).chain(lf.inner.iter_mut()) {
             if let Bound::Ring(ring) = b
                 && ring.nodes.iter().all(|nd| drop.contains(nd))
-                && let Some(cyl) = one_arc(ring)
+                && let Some(whole) = closed(ring, surf)
             {
-                *b = Bound::Circle { cyl };
+                *b = whole;
             }
         }
         for ring in lf.poly_rings_mut() {

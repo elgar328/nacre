@@ -424,11 +424,11 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
 /// **The result's cut rims — the split's nodes that the cleaned faces still hold.** Presence here
 /// is the one source of "this rim is cut" for everything that builds the result (the lateral's
-/// rim pieces and the assembly's rim skip). A type of its own because
-/// the defect it closes was one of two same-typed tables read in the wrong place: a Cut whose
-/// tool rests on a cap across its rim merged the cap back into one arc while the lateral, reading
-/// the split, still cut its rim at the tool's planes — one arc on the cap, three on the lateral,
-/// an edge used once.
+/// rim pieces, and per solid the assembly's rim skip — [`HeldRims::cut_per_group`]). A type of
+/// its own because the defect it closes was one of two same-typed tables read in the wrong place:
+/// a Cut whose tool rests on a cap across its rim merged the cap back into one arc while the
+/// lateral, reading the split, still cut its rim at the tool's planes — one arc on the cap, three
+/// on the lateral, an edge used once.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HeldRims(CutRims);
 
@@ -437,17 +437,38 @@ impl HeldRims {
         self.0.get(key)
     }
 
-    pub(crate) fn contains_key(&self, key: &(usize, usize)) -> bool {
-        self.0.contains_key(key)
-    }
-
-    /// This table re-read against a later face list — for the readers after the per-solid
-    /// straight-angle pass, which can drop nodes of its own. Only removes: a node the later list
-    /// adds is not a rim node this table knew. Blind to groups (the key is `(cyl, plane)`), so a
-    /// node one body dropped and another kept stays for both — no per-solid pass drops a rim node
-    /// in the suite or the census (the two pierce nodes it drops there are ruling points).
-    pub(crate) fn prune(&self, faces: &[LocalFace]) -> HeldRims {
-        held_rims(faces, &self.0)
+    /// **Which result solid still cuts which rim** — `(group, cyl, plane)` for every rim of this
+    /// table some face of that group on the rim's plane still holds a node of, read off a later
+    /// face list. For the assembly, after the per-solid straight-angle pass: that pass decides
+    /// per solid, so one body can dissolve a rim to its whole circle while another, touching it,
+    /// keeps a node of it as a corner of its own. Each body's handles are its own, so the rim is
+    /// whole for the first and cut for the second, and asking with the group is what lets the
+    /// two answers stand side by side. One held node is enough, as in [`held_rims`].
+    pub(crate) fn cut_per_group(
+        &self,
+        faces: &[LocalFace],
+        group_of: &[usize],
+    ) -> std::collections::HashSet<(usize, usize, usize)> {
+        let mut held: std::collections::HashSet<(usize, usize, NodeId)> =
+            std::collections::HashSet::new();
+        for (lf, &g) in faces.iter().zip(group_of) {
+            let ClassIx::Plane(c) = lf.surf else {
+                continue;
+            };
+            for ring in lf.poly_rings() {
+                held.extend(ring.nodes.iter().map(|&n| (g, c, n)));
+            }
+        }
+        let groups: std::collections::BTreeSet<usize> = group_of.iter().copied().collect();
+        let mut out = std::collections::HashSet::new();
+        for (&(cyl, c), cr) in &self.0 {
+            for &g in &groups {
+                if cr.nodes.iter().any(|&n| held.contains(&(g, c, n))) {
+                    out.insert((g, cyl, c));
+                }
+            }
+        }
+        out
     }
 }
 

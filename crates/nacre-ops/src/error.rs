@@ -846,7 +846,9 @@ pub enum RejectReason {
     /// face rows (a cylinder or plane class no face row names, or rows of both solids on one
     /// cylinder class), the split and the chart (a rim station the run cannot place, a ruling the
     /// wall's pieces do not tile, a cycle whose pieces do not chain or whose arc units are not
-    /// whole turns), the chart and the assembly (a cut circle spelled whole), the planar
+    /// whole turns), the chart and the assembly (a cut circle spelled whole), the cleaning pass
+    /// and the assembly (a whole circle spelled for the other face kind — a cap's circle on a
+    /// lateral, a lateral's rim on a plane face), the planar
     /// arrangement and the chart (an arc whose cap and lateral name different rim planes), the
     /// split and the chart's cell reader (a present cell with no circle at an end, a
     /// station the split placed that is no crossing of its wall, two chart lines on one rim node),

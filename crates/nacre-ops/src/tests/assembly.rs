@@ -142,3 +142,198 @@ fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
         "{got:?}"
     );
 }
+
+/// The two pierce nodes where plane classes 4 and 5 meet plane class 3 on cylinder class 0's
+/// lateral — a rim `(0, 3)` cut at two points, and a face of either kind walking it as two arcs.
+fn two_arc_rim() -> (
+    crate::combinatorics::NodeId,
+    crate::combinatorics::NodeId,
+    impl Fn(crate::planes::ClassIx, crate::combinatorics::Wall) -> crate::draft::LocalFace,
+) {
+    use crate::combinatorics::NodeId;
+    use crate::draft::{Bound, LocalFace, Ring};
+    use nacre_topo::QuadRoot;
+    let n1 = NodeId::pierce(3, 4, 0, QuadRoot::Lo);
+    let n2 = NodeId::pierce(3, 5, 0, QuadRoot::Lo);
+    let face = move |surf, wall| LocalFace {
+        surf,
+        outer: Bound::Ring(Ring::new(vec![n1, n2], vec![wall, wall])),
+        inner: Vec::new(),
+        flip: false,
+    };
+    (n1, n2, face)
+}
+
+/// **A ring that dissolves to its whole circle closes in its face's own spelling**
+/// (`dissolve_straight_angles`'s `closed`). The rim `(cylinder 0, plane 3)` is one edge: the cap
+/// bounds it as `Circle { cyl: 0 }`, the lateral as `Rim { plane: 3, ccw }` — the cap's spelling
+/// on a lateral names no plane and the assembly cannot build it. Both faces together is the
+/// per-solid pass's real call; each alone separates "the face kind decides" from "a cap is there
+/// too". An arc wall of another cylinder on the lateral closes nothing: the ring stays as its
+/// producer wrote it.
+#[test]
+fn a_dissolved_rim_closes_in_its_faces_spelling() {
+    use crate::combinatorics::Wall;
+    use crate::draft::{Bound, LocalFace};
+    use crate::planes::ClassIx;
+    let (n1, n2, face) = two_arc_rim();
+    let arc = |cyl, ccw| Wall::Arc { cyl, ccw, plane: 3 };
+    let lateral = face(ClassIx::Cyl(0), arc(0, true));
+    let cap = face(ClassIx::Plane(3), arc(0, false));
+    let run = |mut v: Vec<LocalFace>| -> Vec<LocalFace> {
+        let which: Vec<usize> = (0..v.len()).collect();
+        super::coplanar::dissolve_straight_angles(&mut v, &which);
+        v
+    };
+    let both = run(vec![lateral.clone(), cap.clone()]);
+    assert!(
+        matches!(
+            both[0].outer,
+            Bound::Rim {
+                plane: 3,
+                ccw: true
+            }
+        ),
+        "the lateral closes as its rim: {:?}",
+        both[0].outer
+    );
+    assert!(
+        matches!(both[1].outer, Bound::Circle { cyl: 0 }),
+        "the cap closes as its circle: {:?}",
+        both[1].outer
+    );
+    let alone = run(vec![lateral]);
+    assert!(
+        matches!(
+            alone[0].outer,
+            Bound::Rim {
+                plane: 3,
+                ccw: true
+            }
+        ),
+        "{:?}",
+        alone[0].outer
+    );
+    let alone = run(vec![cap]);
+    assert!(
+        matches!(alone[0].outer, Bound::Circle { cyl: 0 }),
+        "{:?}",
+        alone[0].outer
+    );
+    let foreign = run(vec![face(ClassIx::Cyl(0), arc(1, true))]);
+    assert!(
+        matches!(&foreign[0].outer, Bound::Ring(r) if r.nodes == vec![n1, n2]),
+        "another cylinder's arcs keep their nodes: {:?}",
+        foreign[0].outer
+    );
+}
+
+/// **A rim is cut for the solid that holds its node, and only for it**
+/// (`HeldRims::cut_per_group`). Two result solids meet the rim `(0, 3)`: solid 0's face on plane 3
+/// still holds both nodes, solid 1's per-solid pass dissolved them and closed its cap to the
+/// circle. The table the chart reads, blind to solids, calls the rim cut; the assembly asks per
+/// solid, so solid 1's whole circle is not refused for solid 0's corners.
+#[test]
+fn a_rim_is_cut_only_for_the_solid_that_holds_its_node() {
+    use crate::combinatorics::Wall;
+    use crate::draft::{Bound, CutRim, LocalFace, held_rims};
+    use crate::planes::ClassIx;
+    let (n1, n2, face) = two_arc_rim();
+    let holds = face(ClassIx::Plane(3), Wall::Plane(4));
+    let whole = LocalFace {
+        surf: ClassIx::Plane(3),
+        outer: Bound::Circle { cyl: 0 },
+        inner: Vec::new(),
+        flip: false,
+    };
+    let faces = vec![holds, whole];
+    let split = std::collections::HashMap::from([(
+        (0, 3),
+        CutRim {
+            nodes: vec![n1, n2],
+        },
+    )]);
+    let held = held_rims(&faces, &split);
+    assert!(
+        held.get(&(0, 3)).is_some(),
+        "premise: blind to solids, the rim is cut"
+    );
+    let cut = held.cut_per_group(&faces, &[0, 1]);
+    assert_eq!(
+        cut,
+        std::collections::HashSet::from([(0, 0, 3)]),
+        "cut for solid 0 only"
+    );
+}
+
+/// **An arch standing on a cylinder's cap, touching its rim at two corners, fused** — two
+/// result solids, and the cylinder's per-solid straight-angle pass dissolves both rim nodes:
+/// for the cylinder they are straight runs of its rim, for the arch they are corners. The
+/// cylinder's cap closes as its circle and its lateral as its rim, and the assembly asks per
+/// solid whether that rim is cut, so the cylinder builds — `validate`-clean, volume `250π`, every
+/// vertex named by its own faces. Asked of the whole result, the arch's corners on the cap's plane
+/// make the rim cut for the cylinder too, which `CylinderStagesDisagree` refuses; the plant of a
+/// group-blind check measures that.
+///
+/// ⚠ **The boolean is still refused, one gap later**: the arch names its corner `(7, 4, 0)` by
+/// the node's pierce name — two of its planes and the *cylinder*, which the arch has no face on
+/// — and the shipped fence refuses that vertex (`VertexNamesAbsentSurface`). The naming keeps a
+/// pierce name whenever both its planes bound the solid, without asking for the cylinder (todo
+/// 「불리언이 이름 붙여 거절하는 인구」). When that closes, this becomes two solids of volume
+/// `250π` and `1040`.
+#[test]
+fn an_arch_on_a_cylinders_rim_gets_past_the_rim_and_stops_at_its_own_corner() {
+    use crate::{BoolError, BoolKind, OpOutput, Operation, Profile2d, RejectReason, RejectWhere};
+    use crate::{SketchFrame, apply};
+    use nacre_exact::Axis;
+    use nacre_math::{Point2, Point3, Vector3};
+    use nacre_topo::Model;
+    let mut m = Model::new();
+    // Axis `x = 4, y = 0`, radius 5, `z ∈ [−10, 0]`: the top rim passes through `(7, 4)` and
+    // `(1, 4)` (`3² + 4² = 5²`).
+    let cylinder = crate::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([4.0, 0.0, -10.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        5.0,
+        10.0,
+    )
+    .solid;
+    // `z ∈ [0, 10]` over an arch whose two inner corners are those rim points. Near each, the
+    // arch is a quadrant pointing away from the disk (`x ≥ 7, y ≥ 4` and `x ≤ 1, y ≥ 4`), and the
+    // notch `[1, 7] × [4, 8]` keeps it off the disk everywhere else: the two solids touch at the
+    // two corners only.
+    let arch = Profile2d::polygon(
+        [
+            [7.0, 4.0],
+            [12.0, 4.0],
+            [12.0, 12.0],
+            [-4.0, 12.0],
+            [-4.0, 4.0],
+            [1.0, 4.0],
+            [1.0, 8.0],
+            [7.0, 8.0],
+        ]
+        .iter()
+        .map(|&[x, y]| Point2::from_array([x, y]))
+        .collect(),
+    )
+    .expect("the arch");
+    let op = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile: arch,
+        dist: 10.0,
+    };
+    let Ok(OpOutput::Extrude { solid: arch, .. }) = apply(&mut m, &op) else {
+        panic!("the arch extrudes")
+    };
+    m.rebuild_adjacency();
+    let got = crate::boolean(&mut m, BoolKind::Fuse, cylinder, arch);
+    match got {
+        Err(BoolError::Rejected {
+            reason: RejectReason::VertexNamesAbsentSurface,
+            at: Some(RejectWhere::Point(p)),
+        }) => assert_eq!(p, Point3::from_array([7.0, 4.0, 0.0]), "the arch's corner"),
+        other => panic!("past the rim, stopped at the arch's corner: {other:?}"),
+    }
+}

@@ -486,16 +486,6 @@ impl ClassIx {
             ClassIx::Cyl(k) => panic!("a plane-only path got cylinder class {k}"),
         }
     }
-
-    /// The cylinder-class index, `None` on a plane — the curved paths' filter (they are the ones
-    /// that *choose* per kind rather than assuming one).
-    #[inline]
-    pub(crate) fn cyl(self) -> Option<usize> {
-        match self {
-            ClassIx::Cyl(k) => Some(k),
-            ClassIx::Plane(_) => None,
-        }
-    }
 }
 
 /// A cylinder class of one boolean: the exact statement the population gate reasons
