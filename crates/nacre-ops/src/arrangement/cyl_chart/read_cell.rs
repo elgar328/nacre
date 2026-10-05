@@ -205,12 +205,14 @@ impl Chart {
     /// is searched by name equality, so no point is handed to the order twice. The run is the
     /// rim nodes from the nearest one at or before `x` to the nearest at or after `y`, walked
     /// CCW — one arc when no rim node lies strictly inside the sector, and every arc it spans
-    /// when some do. `Err` when that walk yields no arc to read, naming why where the cause is
+    /// when some do. ★ A rim of **one** node has one arc, from that node back to itself (a
+    /// polygon vertex cut the circle there and nothing else did — `combinatorics::ring_floor`),
+    /// and it covers every sector, so it is the run whatever `x` and `y` are and neither station
+    /// is asked for. `Err` when the walk yields no arc to read, naming why where the cause is
     /// known: a sector the chart has no line for (the whole circle less one ruling, or a sector
-    /// holding every rim node) is the rulings ladder's (`RulingBoundNotYet`), a rim of one node
-    /// the assembly's (`ArcBoundNotYet`), a station or an order that cannot be formed its own
-    /// cause, and a run of covered and missing pieces or two lines on one rim node the stages
-    /// disagreeing. A run of nothing but missing pieces is the face not being over this sector
+    /// holding every rim node) is the rulings ladder's (`RulingBoundNotYet`), a station or an
+    /// order that cannot be formed its own cause, and a run of covered and missing pieces or two
+    /// lines on one rim node the stages disagreeing. A run of nothing but missing pieces is the face not being over this sector
     /// ([`RunFail::AllMissing`]) — at the adjacent-pair site the same missing row reads
     /// [`End::Uncovered`].
     #[allow(clippy::too_many_arguments)]
@@ -229,6 +231,12 @@ impl Chart {
     ) -> Result<Vec<&'a ArcLabel>, RunFail> {
         let other = |r: RejectReason| RunFail::Other(r);
         let m = rim.nodes.len();
+        if let [n] = rim.nodes[..] {
+            return match arcs.iter().find(|arc| arc.ends == [n, n]) {
+                Some(arc) => Ok(vec![arc]),
+                None => Err(RunFail::AllMissing),
+            };
+        }
         if x == y && m >= 2 {
             return Err(other(RejectReason::RulingBoundNotYet));
         }
@@ -314,13 +322,11 @@ impl Chart {
                 Err(other(RejectReason::CylinderStagesDisagree))
             };
         }
-        // `a == b`: no arc separates the run's ends. A rim of one node states no arcs; two
-        // chart lines on one rim node are two stations under one name; otherwise every rim node
-        // lies inside the sector, a θ the chart has no line for.
+        // `a == b`: no arc separates the run's ends. Two chart lines on one rim node are two
+        // stations under one name; otherwise every rim node lies inside the sector, a θ the chart
+        // has no line for.
         if run.is_empty() {
-            return Err(other(if m == 1 {
-                RejectReason::ArcBoundNotYet
-            } else if ix == iy && x != y {
+            return Err(other(if ix == iy && x != y {
                 RejectReason::CylinderStagesDisagree
             } else {
                 RejectReason::RulingBoundNotYet

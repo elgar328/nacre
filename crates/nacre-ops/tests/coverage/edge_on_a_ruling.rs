@@ -414,14 +414,22 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
 /// seam and off it) or from outside with one side tangent there — so the circle is cut at exactly
 /// that one node: one arc from the node back to itself. The planar arrangement takes that ring
-/// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge); what
-/// stops these booleans is the next stage, the lateral's chart reading a rim opened at one point
-/// (`ArcBoundNotYet`), and a wedge on `A`'s base the coplanar merge (`CoplanarMerge`). None is
-/// refused as a suspected defect, and none builds yet — the answers are the cylinder for the
-/// union, the wedge for the common, a self-touching groove for `A − B` (todo «다각형 꼭짓점이 캡의
-/// 원 위에 놓이면»). The tally is pinned, so a refusal that moves is news.
+/// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge), and the
+/// lateral's chart reads a rim of one node through that arc for every sector
+/// (`Chart::arc_around`).
+///
+/// What builds is checked against the input: `A ∩ B` is the wedge's section over the height the
+/// two share (the tangent triangle meets `A` in a line only — empty), and [`identities`] carries
+/// that to the union and the differences; the body counts are asserted beside. Two answers are
+/// fixed whatever builds: the wedge's `A − B` never builds — the groove touches the lateral along
+/// a line, a solid touching itself (`NonManifoldResultEdge` where it is decided) — and no refusal
+/// is a suspected defect. What does not build yet is pinned by family, boolean and height (todo
+/// «다각형 꼭짓점이 캡의 원 위에 놓이면»): the union past `A`'s caps and the wedge's `A − B` beyond
+/// `Inside` stop at the region walk's one-node rim (`ArcBoundNotYet`), a wedge standing on `A`'s
+/// base at the coplanar merge (`CoplanarMerge`), and the tangent family's touch at its least node
+/// (`CoincidentNodes`, as before the planar arrangement took the ring).
 #[test]
-fn a_vertex_on_a_cap_circle_is_refused_by_name_today() {
+fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     use std::collections::BTreeMap;
     let shapes: &[(&str, &[[f64; 2]])] = &[
         ("wedge on the seam", &[[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]]),
@@ -431,33 +439,97 @@ fn a_vertex_on_a_cap_circle_is_refused_by_name_today() {
         ),
         ("tangent side", &[[1.0, 0.0], [1.0, -1.0], [2.0, -0.5]]),
     ];
-    let mut tally: BTreeMap<(&str, String), usize> = BTreeMap::new();
+    let tau = 2.0 * std::f64::consts::PI;
+    let close = |got: f64, want: f64| (got - want).abs() < 1e-9;
+    let mut tally: BTreeMap<(&str, usize, String, String), usize> = BTreeMap::new();
     for (p, six) in every_six(unit_disk, shapes) {
-        for r in six {
+        identities(&p, &six);
+        let (_, h) = p.height.span();
+        let shared = p.height.shared();
+        let section = p.b_volume() / h;
+        let wedge = p.family.starts_with("wedge");
+        // The pieces of the wedge outside `A`: none, the part above its top, or both ends.
+        let outside = match p.height {
+            Height::OnBase | Height::Inside => 0,
+            Height::PastTop => 1,
+            Height::PastBoth => 2,
+        };
+        for (i, r) in six.iter().enumerate() {
             match r {
-                Err(reason) => {
-                    assert_eq!(
-                        reason.class(),
-                        RejectClass::NotSupported,
-                        "{p}: refused as {reason:?}"
-                    );
-                    *tally.entry((p.family, format!("{reason:?}"))).or_default() += 1;
+                Ok((n, v)) => {
+                    let (bodies, volume) = match (i, wedge) {
+                        (0 | 1, true) => (1, tau + section * (h - shared)),
+                        (0 | 1, false) => (2, tau + section * h),
+                        (2, true) => panic!("{p}: [2] the wedge's `A − B` touches itself, built"),
+                        (2, false) => (1, tau),
+                        (3, true) => (outside, section * (h - shared)),
+                        (3, false) => (1, section * h),
+                        (_, true) => (1, section * shared),
+                        (_, false) => (0, 0.0),
+                    };
+                    assert_eq!(*n, bodies, "{p}: [{i}] bodies");
+                    assert!(close(*v, volume), "{p}: [{i}] volume {v}, want {volume}");
                 }
-                Ok(built) => panic!("{p}: the wall moved — {built:?}"),
+                Err(reason) => {
+                    assert_ne!(
+                        reason.class(),
+                        RejectClass::SuspectedDefect,
+                        "{p}: [{i}] {reason:?}"
+                    );
+                    *tally
+                        .entry((
+                            p.family,
+                            i,
+                            format!("{:?}", p.height),
+                            format!("{reason:?}"),
+                        ))
+                        .or_default() += 1;
+                }
             }
         }
     }
-    let want: BTreeMap<(&str, String), usize> = [
-        ("tangent side", "ArcBoundNotYet", 48),
-        ("tangent side", "CoincidentNodes", 48),
-        ("wedge off the seam", "ArcBoundNotYet", 88),
-        ("wedge off the seam", "CoplanarMerge", 8),
-        ("wedge on the seam", "ArcBoundNotYet", 88),
-        ("wedge on the seam", "CoplanarMerge", 8),
-    ]
-    .into_iter()
-    .map(|(f, r, n)| ((f, r.to_string()), n))
-    .collect();
+    let mut want: BTreeMap<(&str, usize, String, String), usize> = BTreeMap::new();
+    let mut pin = |family, ops: &[usize], heights: &[Height], reason: &str, each: usize| {
+        for &i in ops {
+            for h in heights {
+                want.insert((family, i, format!("{h:?}"), reason.to_string()), each);
+            }
+        }
+    };
+    use Height::*;
+    for wedge in ["wedge on the seam", "wedge off the seam"] {
+        pin(wedge, &[0, 1], &[OnBase], "CoplanarMerge", 4);
+        pin(wedge, &[0, 1], &[PastTop, PastBoth], "ArcBoundNotYet", 4);
+        pin(wedge, &[2], &[Inside], "NonManifoldResultEdge", 4);
+        pin(
+            wedge,
+            &[2],
+            &[OnBase, PastTop, PastBoth],
+            "ArcBoundNotYet",
+            4,
+        );
+    }
+    pin(
+        "tangent side",
+        &[0, 1, 2, 3, 4, 5],
+        &Height::ALL,
+        "CoincidentNodes",
+        2,
+    );
+    pin(
+        "tangent side",
+        &[0, 1],
+        &[OnBase, PastTop, PastBoth],
+        "ArcBoundNotYet",
+        2,
+    );
+    pin(
+        "tangent side",
+        &[3],
+        &[PastTop, PastBoth],
+        "VertexNamesAbsentSurface",
+        2,
+    );
     assert_eq!(tally, want);
 }
 
