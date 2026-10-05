@@ -77,8 +77,9 @@ pub enum TessError {
     /// capability that owes an answer is **not** the non-manifold test (it was right) but this
     /// layer's own: a consistent symbolic order for coincident vertices in the sweep — which
     /// `polygon::sos` supplies. ★ For what is still refused, the
-    /// loss is larger than one face: [`tessellate`] walks the whole model and stops at the first
-    /// refusal, so one pinched face erases every body in that session.
+    /// loss is larger than one face: a mesh stops at the first refusal in its range ([`tessellate`]
+    /// — every live solid — or [`tessellate_solids`]), and the playground's drawing stops at the
+    /// first value whose mesh is refused, so one pinched face erases every body of that run.
     ///
     /// ★ The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
     /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been

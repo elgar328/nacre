@@ -967,10 +967,12 @@ pub enum CacheStanding {
     Realized,
 }
 
-/// The handles reachable from a model's live solids — the live model.
+/// The handles reachable from a model's live solids — the live model ([`Model::reachable`]) — or
+/// from the solids a caller names ([`Model::reachable_from`]).
 ///
 /// Only the sets consumers need today: `validate`'s Euler counts vertices/edges/
-/// faces/shells, and `Adjacency`/loop/incidence walk faces/edges. Surfaces and
+/// faces/shells, `Adjacency`/loop/incidence walk faces/edges, and the refine door and the mesher
+/// walk the cells of the solids they are given. Surfaces and
 /// curves are not tracked: the M4 face ops never orphan a *used* one, and the three
 /// seeded world planes are deliberately face-less — traversal through
 /// definitions (world planes, datum references) is not built.
