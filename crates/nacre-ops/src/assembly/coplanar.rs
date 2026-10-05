@@ -645,15 +645,14 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     if drop.is_empty() {
         return;
     }
-    // ★ **A ring never keeps exactly one node, and loses them all only to close as its circle.** A
-    // rim crossed four times dissolves to nothing; one node left is an arc from a point back to
-    // itself — the readers take that ring where the *split* cut the circle at one node, but the
-    // cleaning does not make one of its own. So the drops that would do either are taken back — to a
-    // fixpoint, because a node taken back for one ring is kept in every ring (one set), and taking
-    // back only ever shrinks the set — and **then** the rings that lose every node close.
-    // Converting inside the loop could leave a disk on one face while another keeps a node on the
-    // same circle. What cannot close (a ring of other walls) keeps its nodes. No suite or census
-    // boolean takes a drop back.
+    // ★ **A ring keeps one node or none only as its own circle's arcs.** A rim crossed four times
+    // dissolves to nothing and closes as that circle; one node left is the arc from that node back to
+    // itself — the spelling of a circle the split cut at one point, which every later stage reads.
+    // Any other ring the drops would leave so (another circle's arcs, the walls of a line) has no
+    // such spelling, so its drops are taken back — to a fixpoint, because a node taken back for one
+    // ring is kept in every ring (one set), and taking back only ever shrinks the set — and **then**
+    // the rings that lose every node close. Converting inside the loop could leave a disk on one face
+    // while another keeps a node on the same circle. No suite or census boolean takes a drop back.
     //
     // ★★ **The closed circle is spelled by the face, not by the ring** — one edge, `(cylinder k,
     // plane c)`, bounds a cap as `Bound::Circle { cyl: k }` and a lateral as `Bound::Rim { plane:
@@ -685,7 +684,7 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                         continue;
                     }
                     let kept = ring.nodes.iter().filter(|nd| !drop.contains(nd)).count();
-                    if kept == 1 || (kept == 0 && closed(ring, lf.surf).is_none()) {
+                    if kept <= 1 && closed(ring, lf.surf).is_none() {
                         back.extend(ring.nodes.iter().copied());
                     }
                 }

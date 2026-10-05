@@ -480,11 +480,9 @@ impl HeldRims {
 /// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
 /// — the lateral's corner there — and moved that `A − B`'s refusal to `ArcBoundNotYet` (measured).
 ///
-/// ★ A circle the cleaning left with **one** node keeps the split's nodes — the split's own record,
-/// so such an input is answered by the split's cut rather than by a new spelling here (the rim may
-/// be one no lateral reaches). No suite or census boolean reaches it: the rims this derivation
-/// shortens go from three or four nodes to two. A circle the *split* cut at one node — a vertex
-/// alone on it — holds that node, and the lateral reads the rim as the arc from it back to itself.
+/// ★ A circle left **one** node — the split cut it at one point, or the cleaning dissolved all its
+/// others — is cut at that one node: the cap holds it as the arc from it back to itself
+/// (`dissolve_straight_angles`), and the lateral reads the rim the same way.
 pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
     if split.is_empty() {
         return HeldRims::default();
@@ -507,12 +505,10 @@ pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {
             .copied()
             .filter(|&n| held.contains(&(c, n)))
             .collect();
-        let rim = match nodes.len() {
-            0 => continue,
-            1 => cr.clone(),
-            _ => CutRim { nodes },
-        };
-        out.insert((cyl, c), rim);
+        if nodes.is_empty() {
+            continue;
+        }
+        out.insert((cyl, c), CutRim { nodes });
     }
     HeldRims(out)
 }

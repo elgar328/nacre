@@ -266,6 +266,169 @@ fn a_rim_is_cut_only_for_the_solid_that_holds_its_node() {
     );
 }
 
+/// A rim `(0, 3)` cut at three points — planes 4, 5 and 6 meeting plane 3 on cylinder 0 — walked
+/// as three arcs of one wall by a face of either kind, and a wall on plane 7 with a corner at the
+/// third: the face that keeps that one node where the other two run straight.
+fn three_arc_rim() -> (
+    [crate::combinatorics::NodeId; 3],
+    impl Fn(crate::planes::ClassIx, crate::combinatorics::Wall) -> crate::draft::LocalFace,
+    crate::draft::LocalFace,
+) {
+    use crate::combinatorics::{Canon3, NodeId, Wall};
+    use crate::draft::{Bound, LocalFace, Ring};
+    use crate::planes::ClassIx;
+    use nacre_topo::QuadRoot;
+    let [n1, n2, n3] = [4, 5, 6].map(|w| NodeId::pierce(3, w, 0, QuadRoot::Lo));
+    let face = move |surf, wall| LocalFace {
+        surf,
+        outer: Bound::Ring(Ring::new(vec![n1, n2, n3], vec![wall, wall, wall])),
+        inner: Vec::new(),
+        flip: false,
+    };
+    let a = NodeId::three_planes(Canon3::three([7, 8, 9]));
+    let b = NodeId::three_planes(Canon3::three([7, 9, 10]));
+    let corner = LocalFace {
+        surf: ClassIx::Plane(7),
+        outer: Bound::Ring(Ring::new(
+            vec![n3, a, b],
+            vec![Wall::Plane(8), Wall::Plane(9), Wall::Plane(10)],
+        )),
+        inner: Vec::new(),
+        flip: false,
+    };
+    ([n1, n2, n3], face, corner)
+}
+
+/// **A ring the cleaning leaves one node is the arc from that node back to itself**
+/// (`dissolve_straight_angles`). Of the rim's three nodes two run straight on every face that has
+/// them and dissolve; the third is a corner of another face and stays. The cap's ring, and the
+/// lateral's alike, is that one node and one arc — the spelling a circle the split cut at one point
+/// has, which every later stage reads. Run again — the cleaning's second, per-solid pass — the ring
+/// holds while the corner is beside it, and closes as its circle where it is alone.
+#[test]
+fn a_ring_left_one_node_is_its_arc_back_to_it() {
+    use crate::combinatorics::Wall;
+    use crate::draft::{Bound, LocalFace};
+    use crate::planes::ClassIx;
+    let ([_, _, n3], face, corner) = three_arc_rim();
+    let run = |mut v: Vec<LocalFace>| -> Vec<LocalFace> {
+        let which: Vec<usize> = (0..v.len()).collect();
+        super::coplanar::dissolve_straight_angles(&mut v, &which);
+        v
+    };
+    let one = |b: &Bound, wall: Wall| matches!(b, Bound::Ring(r) if r.nodes == vec![n3] && r.walls == vec![wall]);
+    for (surf, wall) in [
+        (
+            ClassIx::Plane(3),
+            Wall::Arc {
+                cyl: 0,
+                ccw: false,
+                plane: 3,
+            },
+        ),
+        (
+            ClassIx::Cyl(0),
+            Wall::Arc {
+                cyl: 0,
+                ccw: true,
+                plane: 3,
+            },
+        ),
+    ] {
+        let out = run(vec![face(surf, wall), corner.clone()]);
+        assert!(one(&out[0].outer, wall), "{surf:?}: {:?}", out[0].outer);
+        assert_eq!(
+            format!("{:?}", out[1].outer),
+            format!("{:?}", corner.outer),
+            "the corner's face is untouched"
+        );
+        let again = run(out.clone());
+        assert!(
+            one(&again[0].outer, wall),
+            "{surf:?}, beside its corner: {:?}",
+            again[0].outer
+        );
+        let alone = run(vec![out[0].clone()]);
+        let closed = match surf {
+            ClassIx::Plane(_) => matches!(alone[0].outer, Bound::Circle { cyl: 0 }),
+            ClassIx::Cyl(_) => matches!(alone[0].outer, Bound::Rim { plane: 3, .. }),
+        };
+        assert!(closed, "{surf:?}, alone: {:?}", alone[0].outer);
+    }
+}
+
+/// **…but only a ring of its own circle's arcs.** The same rim spelled by a wall that is not the
+/// face's own circle — on a cap an arc lying on another plane, on a lateral an arc of another
+/// cylinder (the pair `closed` tells apart by face kind) — has no arc to become: the drops are
+/// taken back and the ring keeps its three nodes, as one that cannot close keeps all of them.
+#[test]
+fn a_ring_not_of_its_own_circle_keeps_its_nodes() {
+    use crate::combinatorics::Wall;
+    use crate::draft::{Bound, LocalFace};
+    use crate::planes::ClassIx;
+    let (nodes, face, corner) = three_arc_rim();
+    for (surf, wall) in [
+        (
+            ClassIx::Plane(3),
+            Wall::Arc {
+                cyl: 0,
+                ccw: false,
+                plane: 4,
+            },
+        ),
+        (
+            ClassIx::Cyl(0),
+            Wall::Arc {
+                cyl: 1,
+                ccw: true,
+                plane: 3,
+            },
+        ),
+    ] {
+        let mut v: Vec<LocalFace> = vec![face(surf, wall), corner.clone()];
+        super::coplanar::dissolve_straight_angles(&mut v, &[0, 1]);
+        assert!(
+            matches!(&v[0].outer, Bound::Ring(r) if r.nodes == nodes.to_vec()),
+            "{surf:?}: {:?}",
+            v[0].outer
+        );
+    }
+}
+
+/// **The rim table holds the nodes the faces hold** (`draft::held_rims`) — one node when one is
+/// held, not the split's three: the lateral's edges meet the cap's there, and a cap left one node
+/// has the arc from it back to itself.
+#[test]
+fn a_rim_held_at_one_node_is_cut_there_alone() {
+    use crate::combinatorics::Wall;
+    use crate::draft::{Bound, CutRim, LocalFace, Ring, held_rims};
+    use crate::planes::ClassIx;
+    let ([n1, n2, n3], _, _) = three_arc_rim();
+    let arc = Wall::Arc {
+        cyl: 0,
+        ccw: false,
+        plane: 3,
+    };
+    let cap = LocalFace {
+        surf: ClassIx::Plane(3),
+        outer: Bound::Ring(Ring::new(vec![n3], vec![arc])),
+        inner: Vec::new(),
+        flip: false,
+    };
+    let split = std::collections::HashMap::from([(
+        (0, 3),
+        CutRim {
+            nodes: vec![n1, n2, n3],
+        },
+    )]);
+    let held = held_rims(&[cap], &split);
+    assert_eq!(
+        held.get(&(0, 3)).map(|r| r.nodes.clone()),
+        Some(vec![n3]),
+        "the rim is cut where the cap holds it"
+    );
+}
+
 /// **An arch standing on a cylinder's cap, touching its rim at two corners, fused** — two
 /// result solids, and the cylinder's per-solid straight-angle pass dissolves both rim nodes:
 /// for the cylinder they are straight runs of its rim, for the arch they are corners. The
