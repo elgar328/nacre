@@ -30,7 +30,7 @@ fn tri_bridged(
     let refs: Vec<&[usize]> = std::iter::once(outer)
         .chain(holes.iter().copied())
         .collect();
-    triangulate_uv(&mut v, &refs, &[], &[bridge])
+    triangulate_uv(&mut v, &refs, &[], &[Revisit::Bridge(bridge)])
 }
 
 /// The checks every golden gets, each catching a different fault: the count pins
@@ -527,6 +527,101 @@ fn a_bridged_touch_meshes_the_pinched_face() {
     check(&p, &tris2, 6, 16.0 - 2.0);
     // And without the bridge the same rings are what they always were: a touch.
     let r = tri(&p, &[0, 1, 2, 3, 4], &[&[5, 6, 7]]);
+    assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
+}
+
+/// The same road with one ring passing a point twice, at positions `x < y`.
+fn tri_pinched(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Triangulated, TessError> {
+    let mut v = uv.to_vec();
+    triangulate_uv(&mut v, &[ring], &[], &[Revisit::Pinch { ring: 0, x, y }])
+}
+
+/// ★★★★★ **A pinched ring meshes without a bridge.** The square's bottom is touched at `(2, 0)`
+/// by the tip of a triangular groove, so the one ring passes that point twice (indices 0 and 5).
+/// Six triangles for the eight-vertex ring, all CCW, covering exactly the square less the groove,
+/// whose once-used edges are the ring.
+///
+/// Both spellings of the ring are asked, because they slide the twins differently. Starting at
+/// the point, the earlier visit slides up the groove's right side and the later up its left — a
+/// slide with a `v` component while `(0, 0)` and `(4, 0)` sit at the twins' own `v`, the tie the
+/// sweep breaks by `u` (`sos`: the sweep's tie-break is a turn `δ`, the twins' slide `ε ≪ δ`).
+/// Starting one vertex on, both slide along the bottom.
+#[test]
+fn a_pinched_ring_meshes_without_a_bridge() {
+    let p = pts(&[
+        [2.0, 0.0],
+        [4.0, 0.0],
+        [4.0, 4.0],
+        [0.0, 4.0],
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [1.5, 1.0],
+        [2.5, 1.0],
+    ]);
+    let ring: Vec<usize> = (0..8).collect();
+    let (tris, rings) = tri_pinched(&p, &ring, 0, 5).expect("the pinched ring meshes");
+    check(&p, &tris, 6, 16.0 - 0.5);
+    assert_eq!(rings, vec![ring.clone()], "nothing spliced");
+    check_partition(&tris, &ring, &[]);
+    let mut turned = ring.clone();
+    turned.rotate_left(1);
+    let (tris, _) = tri_pinched(&p, &turned, 4, 7).expect("the turned ring meshes");
+    check(&p, &tris, 6, 16.0 - 0.5);
+    check_partition(&tris, &turned, &[]);
+}
+
+/// What a pinch the sweep cannot order comes back as. The boundary passing *through* the point —
+/// one visit's ray inside the other's wedge — is a crossing every triangulation gets wrong
+/// (`DegenerateRing`); without `pinch`'s check the sweep is handed it and builds a piece whose
+/// chains do not descend. A visit whose wedge is reflex, and a ray of one visit along the
+/// other's, are this decomposition having no answer (`SelfTouchingBoundary`): a convex wedge slid
+/// along its own ray stays inside itself, a reflex one need not, and two rays along each other
+/// overlap — `self_touch`'s touch.
+#[test]
+fn a_pinch_the_sweep_cannot_order_is_named() {
+    // The later visit leaves the point into the earlier one's wedge.
+    let through = pts(&[
+        [2.0, 0.0],
+        [4.0, 0.0],
+        [4.0, 4.0],
+        [0.0, 4.0],
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [3.7, 1.5],
+        [1.5, 0.1],
+    ]);
+    let ring: Vec<usize> = (0..8).collect();
+    let r = tri_pinched(&through, &ring, 0, 5);
+    assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
+    // An L whose reflex corner a triangle touches: each visit's wedge spans both lobes.
+    let reflex = pts(&[
+        [0.0, 0.0],
+        [2.0, 1.0],
+        [1.0, 2.0],
+        [0.0, 0.0],
+        [0.0, 2.0],
+        [-2.0, 2.0],
+        [-2.0, -2.0],
+        [2.0, -2.0],
+        [2.0, 0.0],
+    ]);
+    let ring: Vec<usize> = (0..9).collect();
+    let r = tri_pinched(&reflex, &ring, 0, 3);
+    assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
+    // The later visit leaves along the line the earlier one arrived on.
+    let along = pts(&[
+        [2.0, 0.0],
+        [4.0, 0.0],
+        [4.0, 4.0],
+        [0.0, 4.0],
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [1.0, 2.0],
+        [3.0, 3.0],
+        [1.5, 1.0],
+    ]);
+    let ring: Vec<usize> = (0..9).collect();
+    let r = tri_pinched(&along, &ring, 0, 5);
     assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
 }
 

@@ -77,9 +77,9 @@ pub(super) fn decompose(
     if meets.crossing.is_some() {
         return Err(TessError::DegenerateRing);
     }
-    // The bridge's twins touch each other's outgoing segment at their shared point — exactly
-    // two `AtEnd` records, `(o on h→…)` and `(h on o→…)` — and those two are the boundary this
-    // decomposition *was* given an order for. Any other touch is what it always was.
+    // The twins — a bridge's or a pinch's — touch each other's outgoing segment at their shared
+    // point: exactly two `AtEnd` records, `(o on h→…)` and `(h on o→…)`, and those two are the
+    // boundary this decomposition *was* given an order for. Any other touch is what it always was.
     let sanctioned = |tc: &Touch| {
         twins.is_some_and(|tw| {
             tc.kind == TouchKind::AtEnd

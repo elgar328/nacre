@@ -1,23 +1,30 @@
-//! **A symbolic order for one sanctioned coincident pair — the twins a bridge makes.**
+//! **A symbolic order for one sanctioned coincident pair — the twins a bridge or a pinch makes.**
 //!
-//! When a hole's ring is spliced into the ring it touches, the touching vertex appears twice in
-//! the merged ring: once as the split ring's vertex, once as the hole's, at the same coordinate.
-//! Every exact predicate the sweep asks about that pair answers zero, and the sweep has no
-//! order for a zero. The classic answer (Edelsbrunner–Mücke) is to *simulate* a displacement:
-//! decide every tie as if each twin had moved by an infinitesimal `ε` in a direction of its
-//! own, and read the sign off the first-order term. No coordinate moves — the triangles come
-//! out on the exact points — only the ties are decided, consistently, as one actual small
-//! displacement would decide them.
+//! A face's boundary can pass one point twice. When a hole's ring is spliced into the ring it
+//! touches, the touching vertex appears twice in the merged ring: once as the split ring's
+//! vertex, once as the hole's, at the same coordinate. When one ring passes a point twice — a
+//! pinch, a groove whose tip touches the face's own rim — it already does. Every exact predicate
+//! the sweep asks about that pair answers zero, and the sweep has no order for a zero. The
+//! classic answer (Edelsbrunner–Mücke) is to *simulate* a displacement: decide every tie as if
+//! each twin had moved by an infinitesimal `ε` in a direction of its own, and read the sign off
+//! the first-order term. No coordinate moves — the triangles come out on the exact points — only
+//! the ties are decided, consistently, as one actual small displacement would decide them.
 //!
-//! ★★★★★ **The direction is tangential, and that is what makes the order realizable.** Each
-//! twin slides along the straight segment it sits on, toward its own on-line ring neighbour:
-//! `d_o = uv[prev[o]] − T` for the split ring's copy, `d_h = uv[next[h]] − T` for the hole's.
-//! Both twins stay *on* the line for every `ε`, so every collinearity they had with the rest of
-//! the ring is kept, and "a non-twin is compared exactly" agrees with the displaced picture. A
-//! direction with a normal component does not have that property: on a segment that is
-//! horizontal in the chart the twins share the sweep coordinate with the segment's ends, the
-//! displacement would put them *after* those ends, and the exact comparison would still put
-//! them before — an order no `ε` produces.
+//! ★★★★★ **Each twin slides along one of its own edges**: `d_o = uv[o_along] − T`, `d_h =
+//! uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
+//! split ring's copy slides toward its predecessor, the hole's toward its successor — so both
+//! twins stay *on* that line for every `ε` and keep every collinearity they had with the rest of
+//! the ring. On a pinch the earlier visit slides along its incoming edge and the later along its
+//! outgoing one, each into its own material wedge, which is what separates them
+//! (`polygon::pinch` checks the wedges allow it).
+//!
+//! ★★ **The order needs nothing more — the sweep's own tie-break carries the rest.** The sweep's
+//! order (`v` descending, then `u` ascending) is itself a perturbation: the sweep line turned by
+//! an infinitesimal `δ`. The twins' displacement is taken infinitely smaller still, `ε ≪ δ`, so
+//! a twin against a non-twin at the same `v` is decided by `u` exactly as any two points are, and
+//! only the twins' own tie needs `ε`. `orient2d` does not turn with the sweep, so `δ` never enters
+//! a side test. A displacement with a normal component is therefore no harm to the order; what
+//! the tangential slide buys a bridge is the kept collinearity.
 //!
 //! ★ **Twin-only.** Two facts keep this from touching anything else. Every zero the sweep can
 //! meet without the twins is already a refusal (`self_touch`: a vertex on another edge's open
@@ -29,8 +36,9 @@
 //! **The first-order term.** `orient2d` is affine in each argument, so
 //! `orient2d(a+εd_a, b+εd_b, c+εd_c) = orient2d(a,b,c) + ε·[(b−a)×(d_c−d_a) + (d_b−d_a)×(c−a)] + O(ε²)`.
 //! It is evaluated with Shewchuk expansions, exactly. The lexicographic tie is simpler still:
-//! the twins share `T`, so `d_o − d_h = uv[prev[o]] − uv[next[h]]`, a difference of two stored
-//! points that is never zero — the twins' order is `lex_less` of their two on-line neighbours.
+//! the twins share `T`, so `d_o − d_h = uv[o_along] − uv[h_along]`, a difference of two stored
+//! points that is never zero — the twins' order is `lex_less` of the two neighbours they slide
+//! toward.
 //!
 //! What is *not* symbolic: `classify`'s turn (a zero there is a real spike), the touch
 //! detector and its witness (a zero there *is* the touch), the crossing scan, `emit`'s
@@ -41,12 +49,13 @@ use super::{P2, lex_less};
 use nacre_predicates::{Expansion, orient2d};
 
 /// The sanctioned pair: two indices at one coordinate, each with the index of the ring
-/// neighbour it slides toward (the two ends of the split segment).
+/// neighbour it slides toward (on a bridge the two ends of the split segment).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Twins {
-    /// The split ring's copy of the touching vertex; slides toward `o_along` (its `prev`).
+    /// The split ring's copy of the touching vertex, or a pinch's earlier visit; slides toward
+    /// `o_along` (its `prev`).
     pub(super) o: usize,
-    /// The hole's copy; slides toward `h_along` (its `next`).
+    /// The hole's copy, or a pinch's later visit; slides toward `h_along` (its `next`).
     pub(super) h: usize,
     pub(super) o_along: usize,
     pub(super) h_along: usize,
@@ -87,10 +96,10 @@ impl Twins {
 
 /// `lex_less(uv[a], uv[b])`, with the twins ordered as their displacement orders them.
 ///
-/// Distinct coordinates are compared exactly, as today. The twins' tie is decided by where
-/// they slide: `T + ε(u − T)` precedes `T + ε(v − T)` exactly when `u` precedes `v`, so the
-/// answer is `lex_less` of the two on-line neighbours — a comparison of stored coordinates,
-/// never a tie, because they are the two distinct ends of one segment. `None` is a coincident
+/// Distinct coordinates are compared exactly, as any two points are. The twins' tie is decided by
+/// where they slide: `T + ε(u − T)` precedes `T + ε(v − T)` exactly when `u` precedes `v`, so the
+/// answer is `lex_less` of the two neighbours they slide toward — a comparison of stored
+/// coordinates, never a tie, because only the twins share a coordinate. `None` is a coincident
 /// pair that is not the sanctioned one.
 pub(super) fn lex_less_idx(a: usize, b: usize, uv: &[P2], twins: Option<&Twins>) -> Option<bool> {
     if a == b {

@@ -29,8 +29,8 @@ use std::fmt::Write;
 pub enum TessError {
     /// The rings are not a polygon with sibling holes, so no triangulation of them
     /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
-    /// **by index** or repeated within one, a spike, or **two segments passing through each
-    /// other**. On a cylinder also a face whose loops wrap the axis other than as two rims, or a
+    /// **by index** or repeated within one, a spike, **two segments passing through each
+    /// other**, or a ring passing **through** a point it visits twice (`polygon::pinch`). On a cylinder also a face whose loops wrap the axis other than as two rims, or a
     /// band no generator cuts so that it stays one polygon — every generator crosses some hole
     /// other than twice (`cut_seamless_bands`).
     ///
@@ -56,11 +56,13 @@ pub enum TessError {
     /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
     /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
     /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
-    /// resulting coincident pair symbolically (`polygon::sos`). What still comes back under this
-    /// name is what that road does not cover, each counted by the pre-pass: a vertex on another
-    /// ring's *vertex* (`AtEnd`), a neighbour exactly on the touched line, a touch on a curved
-    /// edge or beside a curved face, two touches on one segment or at one point, and a face
-    /// with more than one bridge.
+    /// resulting coincident pair symbolically (`polygon::sos`). **One ring passing one mesh vertex
+    /// twice** — a groove whose tip touches the face's own rim — is drawn the same way, its two
+    /// visits the twins, when both visits' wedges are convex (`polygon::pinch`). What still comes
+    /// back under this name is what those roads do not cover, the bridge's each counted by the
+    /// pre-pass: a vertex on another ring's *vertex* (`AtEnd`), a neighbour exactly on the touched
+    /// line, a touch on a curved edge or beside a curved face, two touches on one segment or at
+    /// one point, a pinch with a reflex wedge, and a face with more than one bridge or pinch.
     ///
     /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
@@ -1405,15 +1407,15 @@ fn triangulate_face(
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let boundary = handles.len();
     // A vertex shared by two rings is the bridge pre-pass's doing (a curved ring's sample put
-    // into the straight edge it touches).
-    let bridges = match surface {
+    // into the straight edge it touches); one ring passing a vertex twice is a pinched face.
+    let revisits = match surface {
         Surface::Plane(_) => shared_vertices(&handles, &rings),
         // Only on a plane is a shared handle one point in the chart — a band's cut point is the
         // same handle at two `θ`s. An arm rather than a boolean, so a third surface kind is a
         // compile error here rather than a silent "no bridges".
         Surface::Cylinder(_) => Vec::new(),
     };
-    let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &bridges)?;
+    let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
     // first minted vertices. Everything before it was already a shared boundary vertex.
     for &p in &uv[boundary..] {
@@ -1433,22 +1435,28 @@ fn triangulate_face(
     Ok(())
 }
 
-/// The mesh vertices that appear in two different rings of one face, as the bridges the sweep
-/// should lay there. Handles only — which ring's straight edge was split is `polygon`'s to read
-/// off the geometry.
-fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<polygon::Bridge> {
+/// The mesh vertices the face's boundary passes twice: in two different rings, the bridges the
+/// sweep should lay there; twice in one ring, a pinch. Handles only — which ring's straight edge
+/// was split, and whether a pinch can be ordered, is `polygon`'s to read off the geometry.
+fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<polygon::Revisit> {
     let mut seen: HashMap<Handle<TessVertex>, (usize, usize)> = HashMap::new();
     let mut out = Vec::new();
     for (ri, ring) in rings.iter().enumerate() {
         for (k, &i) in ring.iter().enumerate() {
             match seen.get(&handles[i]) {
-                Some(&(rj, kj)) if rj != ri => out.push(polygon::Bridge {
-                    ring_x: rj,
+                Some(&(rj, kj)) if rj != ri => {
+                    out.push(polygon::Revisit::Bridge(polygon::Bridge {
+                        ring_x: rj,
+                        x: kj,
+                        ring_y: ri,
+                        y: k,
+                    }))
+                }
+                Some(&(_, kj)) => out.push(polygon::Revisit::Pinch {
+                    ring: ri,
                     x: kj,
-                    ring_y: ri,
                     y: k,
                 }),
-                Some(_) => {}
                 None => {
                     seen.insert(handles[i], (ri, k));
                 }
