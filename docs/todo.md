@@ -209,10 +209,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 옆면 구멍에 자국이 닿으면 `DeclineKind::CylFaceHole` 로 거절한다.
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
-- 두 덩어리 결과에서 원통이 없는 덩어리의 꼭짓점이 다른 덩어리의 림 위에 놓이면 `VertexNamesAbsentSurface` 로
-  거절한다. 그 점의 이름은 관통점(평면 둘 + 원통)이고, 이름 규칙(`assembly::naming` 의 정의 고르기)은 두 평면이 그
-  덩어리의 면이면 그 이름을 지킨다 — 덩어리가 그 원통을 가졌는지는 묻지 않는다. 원통 쪽 덩어리는 짓는다. 픽스처:
-  `an_arch_on_a_cylinders_rim_gets_past_the_rim_and_stops_at_its_own_corner`(원통 캡의 림에 두 모서리로 닿는 아치).
 
 ### 앱에 STEP 내보내기가 없다
 

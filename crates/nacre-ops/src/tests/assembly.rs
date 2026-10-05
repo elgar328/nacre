@@ -270,21 +270,21 @@ fn a_rim_is_cut_only_for_the_solid_that_holds_its_node() {
 /// result solids, and the cylinder's per-solid straight-angle pass dissolves both rim nodes:
 /// for the cylinder they are straight runs of its rim, for the arch they are corners. The
 /// cylinder's cap closes as its circle and its lateral as its rim, and the assembly asks per
-/// solid whether that rim is cut, so the cylinder builds — `validate`-clean, volume `250π`, every
-/// vertex named by its own faces. Asked of the whole result, the arch's corners on the cap's plane
-/// make the rim cut for the cylinder too, which `CylinderStagesDisagree` refuses; the plant of a
-/// group-blind check measures that.
+/// solid whether that rim is cut, so the cylinder builds. Asked of the whole result, the arch's
+/// corners on the cap's plane make the rim cut for the cylinder too, which
+/// `CylinderStagesDisagree` refuses; the plant of a group-blind check measures that.
 ///
-/// ⚠ **The boolean is still refused, one gap later**: the arch names its corner `(7, 4, 0)` by
-/// the node's pierce name — two of its planes and the *cylinder*, which the arch has no face on
-/// — and the shipped fence refuses that vertex (`VertexNamesAbsentSurface`). The naming keeps a
-/// pierce name whenever both its planes bound the solid, without asking for the cylinder (todo
-/// 「불리언이 이름 붙여 거절하는 인구」). When that closes, this becomes two solids of volume
-/// `250π` and `1040`.
+/// ★ **The arch's corner is named by the arch's planes.** The rim node is a pierce point — two
+/// planes and the cylinder — and the arch has no face on the cylinder, so the naming takes the
+/// canonical triple of the arch's own three planes there (`x = 7`, `y = 4`, `z = 0`); kept, the
+/// pierce name would name a surface the arch lacks and the shipped fence would refuse the vertex
+/// (`VertexNamesAbsentSurface`).
+///
+/// Two solids, `validate`-clean, every vertex named by its own solid's faces, volumes `1040` and
+/// `250π`.
 #[test]
-fn an_arch_on_a_cylinders_rim_gets_past_the_rim_and_stops_at_its_own_corner() {
-    use crate::{BoolError, BoolKind, OpOutput, Operation, Profile2d, RejectReason, RejectWhere};
-    use crate::{SketchFrame, apply};
+fn an_arch_on_a_cylinders_rim_fuses_to_two_solids() {
+    use crate::{BoolKind, OpOutput, Operation, Profile2d, SketchFrame, apply};
     use nacre_exact::Axis;
     use nacre_math::{Point2, Point3, Vector3};
     use nacre_topo::Model;
@@ -328,12 +328,25 @@ fn an_arch_on_a_cylinders_rim_gets_past_the_rim_and_stops_at_its_own_corner() {
         panic!("the arch extrudes")
     };
     m.rebuild_adjacency();
-    let got = crate::boolean(&mut m, BoolKind::Fuse, cylinder, arch);
-    match got {
-        Err(BoolError::Rejected {
-            reason: RejectReason::VertexNamesAbsentSurface,
-            at: Some(RejectWhere::Point(p)),
-        }) => assert_eq!(p, Point3::from_array([7.0, 4.0, 0.0]), "the arch's corner"),
-        other => panic!("past the rim, stopped at the arch's corner: {other:?}"),
+    let out = crate::boolean(&mut m, BoolKind::Fuse, cylinder, arch)
+        .unwrap_or_else(|e| panic!("the arch and the cylinder fuse: {e:?}"));
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 2, "two solids touching at two points");
+    assert_eq!(nacre_validate::validate(&m), vec![], "a valid model");
+    let mut volumes: Vec<f64> = out
+        .iter()
+        .map(|&s| {
+            assert_eq!(
+                crate::transform::foreign_named_vertex(&m, s),
+                None,
+                "every vertex named by its own solid's faces"
+            );
+            nacre_props::mass_props(&m, s).expect("mass props").volume
+        })
+        .collect();
+    volumes.sort_by(f64::total_cmp);
+    let want = [250.0 * std::f64::consts::PI, 1040.0];
+    for (got, want) in volumes.iter().zip(want) {
+        assert!((got - want).abs() < 1e-9 * want, "{got} vs {want}");
     }
 }
