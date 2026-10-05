@@ -46,6 +46,54 @@ fn parse3(rest: &str) -> Vec<f64> {
         .map(|t| t.parse().unwrap())
         .collect()
 }
+/// The vertex numbers of an `f` line — each corner is `v//vn`.
+fn f_vertices(f: &str) -> Vec<f64> {
+    f[2..]
+        .split_whitespace()
+        .map(|c| c.split("//").next().unwrap().parse().unwrap())
+        .collect()
+}
+
+/// An OBJ text read back: positions, normals, and each corner as 0-based `(v, vn)`.
+struct ObjText {
+    v: Vec<[f64; 3]>,
+    vn: Vec<[f64; 3]>,
+    corners: Vec<(usize, usize)>,
+}
+
+fn read_obj(text: &str) -> ObjText {
+    let three = |rest: &str| -> [f64; 3] {
+        let c = parse3(rest);
+        assert_eq!(c.len(), 3, "{rest}");
+        [c[0], c[1], c[2]]
+    };
+    let mut out = ObjText {
+        v: Vec::new(),
+        vn: Vec::new(),
+        corners: Vec::new(),
+    };
+    for l in text.lines() {
+        if let Some(rest) = l.strip_prefix("v ") {
+            out.v.push(three(rest));
+        } else if let Some(rest) = l.strip_prefix("vn ") {
+            out.vn.push(three(rest));
+        } else if let Some(rest) = l.strip_prefix("f ") {
+            let corners: Vec<(usize, usize)> = rest
+                .split_whitespace()
+                .map(|c| {
+                    let (v, n) = c.split_once("//").expect("every corner carries a normal");
+                    (
+                        v.parse::<usize>().unwrap() - 1,
+                        n.parse::<usize>().unwrap() - 1,
+                    )
+                })
+                .collect();
+            assert_eq!(corners.len(), 3, "{l}");
+            out.corners.extend(corners);
+        }
+    }
+    out
+}
 
 /// **What the OBJ writer owes, now that it is the only one.**
 ///
@@ -57,12 +105,9 @@ fn parse3(rest: &str) -> Vec<f64> {
 /// 1-based, and nothing referenced that was not written.
 #[test]
 fn unit_cube_obj_shape() {
-    let t = tessellate(
-        &cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-        &TessConfig::default(),
-    )
-    .unwrap();
-    let obj = t.to_obj();
+    let m = cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let t = tessellate(&m, &TessConfig::default()).unwrap();
+    let obj = t.to_obj(&m);
     assert_eq!(v_lines(&obj).len(), t.vertices.len());
     assert_eq!(f_lines(&obj).len(), t.triangles.len());
     assert!(obj.lines().next().unwrap().starts_with('#'));
@@ -72,7 +117,7 @@ fn unit_cube_obj_shape() {
     assert_eq!(faces.len(), 12); // 6 quads × 2 triangles
     let mut used = HashSet::new();
     for f in faces {
-        let idx = parse3(&f[2..]);
+        let idx = f_vertices(f);
         assert_eq!(idx.len(), 3);
         for &i in &idx {
             assert!((1.0..=8.0).contains(&i));
@@ -90,12 +135,8 @@ fn unit_cube_obj_shape() {
 /// would pin an artifact.
 #[test]
 fn vertices_round_trip() {
-    let obj = tessellate(
-        &cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]),
-        &TessConfig::default(),
-    )
-    .unwrap()
-    .to_obj();
+    let m = cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
+    let obj = tessellate(&m, &TessConfig::default()).unwrap().to_obj(&m);
     let got: Vec<[f64; 3]> = v_lines(&obj)
         .into_iter()
         .map(|l| {
@@ -450,12 +491,12 @@ proptest! {
         // Floor and height, as drawn: two random corners differ by no decimal an f64 carries.
         let mut m = Model::new();
         nacre_ops::fixtures::cuboid_on(&mut m, [min[0], min[1]], [min[0] + ext[0], min[1] + ext[1]], min[2], ext[2]);
-        let obj = tessellate(&m, &TessConfig::default()).unwrap().to_obj();
+        let obj = tessellate(&m, &TessConfig::default()).unwrap().to_obj(&m);
         prop_assert_eq!(v_lines(&obj).len(), 8);
         let faces = f_lines(&obj);
         prop_assert_eq!(faces.len(), 12);
         for f in faces {
-            let idx = parse3(&f[2..]);
+            let idx = f_vertices(f);
             prop_assert_eq!(idx.len(), 3);
             for &i in &idx {
                 prop_assert!((1.0..=8.0).contains(&i));
@@ -1191,4 +1232,130 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
         (vec![deg(1.0), deg(359.0), deg(3.0), deg(357.0)], 0.0),
     ];
     assert_eq!(band_generator(&folded, [0, 1], |_| true), None);
+}
+
+/// ★★ **`to_obj_solids` writes the solids given and nothing else.** The mesh covers every
+/// reachable face, and an application's model holds solids it does not show; the door is the
+/// choice. Two boxes far apart: one of them comes back with exactly its own triangles, numbered
+/// from 1 over only its own corners, and none of the other's; both together are the whole mesh.
+#[test]
+fn obj_of_chosen_solids_writes_only_theirs() {
+    let mut m = Model::new();
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0; 3]),
+        Point3::from_array([6.0; 3]),
+    );
+    let t = tessellate(&m, &TessConfig::default()).unwrap();
+    let triangles_of = |s: Handle<Solid>| -> usize {
+        let shell = m.solid(s).outer;
+        m.shell(shell)
+            .faces
+            .iter()
+            .map(|f| t.by_face[f].len())
+            .sum()
+    };
+
+    let obj = read_obj(&t.to_obj_solids(&m, &[a]));
+    assert_eq!(obj.corners.len(), 3 * triangles_of(a));
+    assert_eq!(obj.v.len(), 8);
+    let used: HashSet<usize> = obj.corners.iter().map(|&(v, _)| v).collect();
+    assert_eq!(
+        used.len(),
+        obj.v.len(),
+        "every written vertex is used, every used one written"
+    );
+    assert!(
+        obj.v
+            .iter()
+            .all(|p| p.iter().all(|&c| (0.0..=1.0).contains(&c))),
+        "a corner of the other box was written: {:?}",
+        obj.v
+    );
+
+    let both = read_obj(&t.to_obj_solids(&m, &[a, b]));
+    let whole = read_obj(&t.to_obj(&m));
+    assert_eq!(both.corners.len(), 3 * (triangles_of(a) + triangles_of(b)));
+    assert_eq!(both.corners.len(), whole.corners.len());
+    assert_eq!(both.v.len(), whole.v.len());
+}
+
+/// ★★★ **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims
+/// are sharp.** Without `vn` a viewer shades each facet flat (a cylinder reads as bands) or
+/// averages a shared vertex's normals — and the mesh shares every rim point between cap and side,
+/// so the rim would be rounded off. Checked on a boss and on a bore:
+///
+/// * a side corner's normal is the radial direction at that point exactly (away from the axis on
+///   the boss, toward it in the bore, where the material is outside the wall);
+/// * a cap corner's normal is the axis, facing out of the material (`−z` at the bottom of the boss,
+///   `+z` at its top; the plate's faces likewise);
+/// * some rim vertex is written once and paired with two normals — the cap's and the side's.
+///
+/// A triangle's own plane is not enough: at a vertex it is off the radius by half a segment.
+#[test]
+fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let boss = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
+    let mut plate = Model::new();
+    let block = fixtures::cuboid(
+        &mut plate,
+        Point3::from_array([-2.0, -2.0, 0.0]),
+        Point3::from_array([2.0, 2.0, 2.0]),
+    );
+    let pin = fixtures::cylinder(
+        &mut plate,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        4.0,
+    )
+    .solid;
+    plate.rebuild_adjacency();
+    boolean(&mut plate, BoolKind::Cut, block, pin).expect("the bore");
+    plate.rebuild_adjacency();
+
+    for (model, outward) in [(&boss, 1.0), (&plate, -1.0)] {
+        let t = tessellate(model, &TessConfig::default()).unwrap();
+        let obj = read_obj(&t.to_obj(model));
+        let mut pairs: std::collections::HashMap<usize, HashSet<usize>> =
+            std::collections::HashMap::new();
+        let (mut sides, mut caps) = (0, 0);
+        for &(v, n) in &obj.corners {
+            let p = obj.v[v];
+            let nv = obj.vn[n];
+            pairs.entry(v).or_default().insert(n);
+            let on_side = (p[0] * p[0] + p[1] * p[1] - 1.0).abs() < 1e-9 && nv[2].abs() < 1e-9;
+            if on_side {
+                sides += 1;
+                let r = (p[0] * p[0] + p[1] * p[1]).sqrt();
+                let radial = nv[0] * p[0] / r + nv[1] * p[1] / r;
+                assert!(
+                    (radial - outward).abs() < 1e-12,
+                    "a side corner at {p:?} has normal {nv:?}"
+                );
+            } else if nv[2].abs() > 1.0 - 1e-12 {
+                caps += 1;
+                let want = if p[2] == 0.0 { -1.0 } else { 1.0 };
+                if p[2] == 0.0 || p[2] == 2.0 {
+                    assert_eq!(nv[2], want, "a cap corner at {p:?} faces {nv:?}");
+                }
+            }
+        }
+        assert!(
+            sides > 0 && caps > 0,
+            "both kinds were read: {sides} {caps}"
+        );
+        let sharp = pairs.iter().any(|(&v, ns)| {
+            let p = obj.v[v];
+            (p[0] * p[0] + p[1] * p[1] - 1.0).abs() < 1e-9
+                && ns.iter().any(|&n| obj.vn[n][2].abs() > 1.0 - 1e-12)
+                && ns.iter().any(|&n| obj.vn[n][2].abs() < 1e-9)
+        });
+        assert!(sharp, "no rim vertex carries both a cap and a side normal");
+    }
 }

@@ -14,6 +14,8 @@ nacre-topo = { workspace = true }
 nacre-geom = { workspace = true }
 nacre-math = { workspace = true }
 nacre-predicates = { workspace = true }
+# The outward normal at a mesh corner (`face_normal_at`) for OBJ's `vn` — the rule lives there once.
+nacre-props = { workspace = true }
 
 [features]
 # Exposes the bridge pre-pass on its own (`bridge_report`) so a crate that can build a boolean

@@ -20,7 +20,7 @@ fn main() {
         .unwrap_or_else(|| "target/cube.obj".to_string());
     let obj = tessellate(&model, &TessConfig::default())
         .expect("the model meshes")
-        .to_obj();
+        .to_obj(&model);
     std::fs::write(&path, obj).expect("write OBJ file");
     println!("wrote {path} — open in MeshLab / f3d / any OBJ viewer");
 }

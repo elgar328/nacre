@@ -52,7 +52,7 @@ fn main() {
             },
         )
         .expect("cylinder meshes")
-        .to_obj();
+        .to_obj(&model);
         let path = format!("{prefix}_{label}.obj");
         std::fs::write(&path, obj).expect("write OBJ file");
         println!("wrote {path} (tol {tol}, angle {angle}°) — open in Quick Look");

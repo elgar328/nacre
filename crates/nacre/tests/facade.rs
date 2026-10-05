@@ -159,7 +159,7 @@ fn the_test_util_primitive_is_forwarded() {
     let mesh = tessellate(&model, &TessConfig::default()).unwrap();
     assert!(!mesh.triangles.is_empty());
     let _: Tessellation = mesh;
-    assert!(mesh.to_obj().contains("v "));
+    assert!(mesh.to_obj(&model).contains("v "));
 }
 
 /// **A manifest invariant, guarded where it can actually be checked.**

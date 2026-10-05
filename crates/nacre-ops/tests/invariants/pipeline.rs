@@ -43,7 +43,7 @@ fn hexagon_extrude_exports_to_step_and_obj() {
     // ops model → an OBJ mesh: 12 vertices (2n for a hexagon prism) plus faces.
     let obj = tessellate(&model, &TessConfig::default())
         .expect("the model meshes")
-        .to_obj();
+        .to_obj(&model);
     let v_lines = obj.lines().filter(|l| l.starts_with("v ")).count();
     let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
     assert_eq!(v_lines, 12);

@@ -3,7 +3,8 @@
 //! **One path**: [`tessellate`] → [`Tessellation`]. Edges are sampled once into shared
 //! polylines and every face is triangulated in a chart of its own surface — a plane drops an axis,
 //! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
-//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
+//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`] (the whole mesh)
+//! or [`Tessellation::to_obj_solids`] (the solids given).
 //!
 //! ★★★★★ **One, and only one.** A second writer that fan-triangulates planar faces **from
 //! half-edge start vertices** silently turns an arc into a chord. The projection rule
@@ -16,7 +17,7 @@ mod polygon;
 use nacre_geom::{Curve, Cylinder, Surface};
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Edge, Face, Loop, Model, Vertex};
+use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -183,27 +184,99 @@ impl Default for TessConfig {
 }
 
 impl Tessellation {
-    /// Wavefront OBJ text (vertices in store order, 1-based triangle indices).
-    pub fn to_obj(&self) -> String {
+    /// Wavefront OBJ text of the whole tessellation: vertices in store order, triangles in store
+    /// order, each corner with its face's outward normal (see [`Tessellation::to_obj_solids`]).
+    ///
+    /// `model` must be the model this tessellation was built from — the mesh holds only face
+    /// handles, so another model would answer for other faces (or none, and panic).
+    pub fn to_obj(&self, model: &Model) -> String {
+        let vertices: Vec<Handle<TessVertex>> = self.vertices.iter().map(|(h, _)| h).collect();
+        let triangles: Vec<Handle<TessTriangle>> = self.triangles.iter().map(|(h, _)| h).collect();
+        self.write_obj(model, &vertices, &triangles)
+    }
+
+    /// Wavefront OBJ text of the given solids only, in the order given — what an application
+    /// writes when the model also holds solids it does not show (copies, unconsumed
+    /// intermediates); [`tessellate`] covers every reachable face.
+    ///
+    /// Triangles come body by body, shell by shell (outer, then cavities), face by face in shell
+    /// order, each face's triangles in `by_face` order — never in the order of the `by_face` map,
+    /// which is not deterministic. A face the mesh holds no triangles for is skipped. Vertices are
+    /// numbered by first use, so only the ones written appear. Same `model` precondition as
+    /// [`Tessellation::to_obj`].
+    ///
+    /// ★ **Each corner carries its face's outward normal** (`vn`, `f a//na b//nb c//nc`) —
+    /// [`nacre_props::face_normal_at`], the one the playground's viewport lights with. Without it a
+    /// viewer either shades each triangle flat, and a cylinder reads as bands, or averages the
+    /// normals of a shared vertex — and a rim's points *are* shared, cap and side meeting on the
+    /// one polyline the edge was sampled into, so the sharp rim would be rounded off. With it a
+    /// rim point is written once and paired with two normals: the cap's axis and the side's radius.
+    pub fn to_obj_solids(&self, model: &Model, solids: &[Handle<Solid>]) -> String {
+        let mut triangles = Vec::new();
+        for &body in solids {
+            let solid = model.solid(body);
+            for shell in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
+                for face in &model.shell(shell).faces {
+                    if let Some(tris) = self.by_face.get(face) {
+                        triangles.extend_from_slice(tris);
+                    }
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        let vertices: Vec<Handle<TessVertex>> = triangles
+            .iter()
+            .flat_map(|&t| self.triangles.get(t).vertices)
+            .filter(|&v| seen.insert(v))
+            .collect();
+        self.write_obj(model, &vertices, &triangles)
+    }
+
+    /// The one OBJ writer: `v` lines for `vertices` (numbered 1.. in that order), then for each
+    /// triangle one `vn` per corner not written before (equal bits, one line) and its `f` line.
+    /// Every triangle's corners must be among `vertices`.
+    fn write_obj(
+        &self,
+        model: &Model,
+        vertices: &[Handle<TessVertex>],
+        triangles: &[Handle<TessTriangle>],
+    ) -> String {
         let mut out = String::new();
         writeln!(out, "# nacre OBJ export (provenance tessellation)").unwrap();
-        for (_, v) in self.vertices.iter() {
-            let [x, y, z] = v.pos.as_array();
+        let mut number: HashMap<Handle<TessVertex>, usize> = HashMap::new();
+        for (i, &vh) in vertices.iter().enumerate() {
+            let [x, y, z] = self.vertices.get(vh).pos.as_array();
             writeln!(out, "v {} {} {}", x, y, z).unwrap();
+            number.insert(vh, i + 1);
         }
-        for (_, tri) in self.triangles.iter() {
-            let [a, b, c] = tri.vertices;
-            writeln!(
-                out,
-                "f {} {} {}",
-                a.index() + 1,
-                b.index() + 1,
-                c.index() + 1
-            )
-            .unwrap();
+        let mut normals: HashMap<[u64; 3], usize> = HashMap::new();
+        for &th in triangles {
+            let tri = self.triangles.get(th);
+            let p = tri.vertices.map(|vh| self.vertices.get(vh).pos);
+            let mut corners = [(0, 0); 3];
+            for (k, &vh) in tri.vertices.iter().enumerate() {
+                let n = nacre_props::face_normal_at(model, tri.face, p[k])
+                    .map(|v| v.as_array())
+                    .unwrap_or_else(|| facet_normal(p));
+                let next = normals.len() + 1;
+                let ni = *normals.entry(n.map(f64::to_bits)).or_insert_with(|| {
+                    writeln!(out, "vn {} {} {}", n[0], n[1], n[2]).unwrap();
+                    next
+                });
+                corners[k] = (number[&vh], ni);
+            }
+            let [(a, na), (b, nb), (c, nc)] = corners;
+            writeln!(out, "f {a}//{na} {b}//{nb} {c}//{nc}").unwrap();
         }
         out
     }
+}
+
+/// The plane of a triangle, unit — the normal for a corner whose face names no direction there (a
+/// point on a cylinder's own axis, which the mesh does not produce); `+z` for a degenerate one.
+fn facet_normal(p: [Point3; 3]) -> [f64; 3] {
+    let n = (p[1] - p[0]).cross(p[2] - p[0]);
+    n.normalize().map_or([0.0, 0.0, 1.0], |u| u.as_array())
 }
 
 /// Tessellate a model into a provenance-tagged, crack-free triangle mesh.

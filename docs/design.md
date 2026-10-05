@@ -29,7 +29,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 │                    #   ← math · predicates · exact(Rat 링 술어 쌍둥이)
 │                    #   곡면의 진실은 topo 의 Surface — 맨이름은 진실, 실현은 nacre_geom::Surface
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model   ← store · geom · math · exact
-├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates
+├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates · props(OBJ 의 면 법선)
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom
 ├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)   ← topo · geom · math · store
@@ -65,7 +65,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 **공개 표면 — 밖에서 무엇이 되는가.**
 - **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·interning 표가 전부 비공개이며, 공개 필드는 `surface_name` 하나다(「문의 이름」 절이 캐시 조각으로 접을 몫). 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
 - **위상 순회는 밖에서 된다.** 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개다(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)`).
-- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
+- **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`Tessellation::to_obj`·`to_obj_solids`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
 - **파생 값과 에러 표면.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 계획.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).

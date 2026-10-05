@@ -1500,7 +1500,7 @@ fn measure_dump_straddling_boss_obj() {
     m.rebuild_adjacency();
     let obj = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
         .expect("tessellates")
-        .to_obj();
+        .to_obj(&m);
     // Written only on request — the `--ignored` sweep runs this test too, and a test that
     // writes outside the workspace on every sweep is a side effect nobody asked for.
     match std::env::var("OBJ_OUT") {

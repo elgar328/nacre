@@ -384,6 +384,7 @@ dependencies = [
  "nacre-math",
  "nacre-ops",
  "nacre-predicates",
+ "nacre-props",
  "nacre-store",
  "nacre-topo",
  "proptest",

@@ -57,7 +57,7 @@ fn main() {
 
     let obj = nacre_tess::tessellate(&model, &nacre_tess::TessConfig::default())
         .expect("the model meshes")
-        .to_obj();
+        .to_obj(&model);
     let obj_path = format!("{prefix}.obj");
     std::fs::write(&obj_path, obj).expect("write OBJ file");
 
