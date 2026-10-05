@@ -985,8 +985,9 @@ fn overhang_pocket_matches_occt() {
 /// the whole rim's angle (a boss on a plate's edge); a bore whose four slots cover every angle;
 /// and a cap pinched at a rim cut at one point — a wedge fused on past the top, the groove's tip
 /// on the rim, on and off the rims' vertex and past both caps (`wedge_on_a_rim`), so the closed
-/// rim sits in a loop of several. The helper's `valid` is calibrated both ways: this file's cylinder reads `1`, the same
-/// file with the lateral's inner bound deleted reads `0` (`BRepCheck_NotClosed`).
+/// rim sits in a loop of several. The helper's `valid` is calibrated both ways: this file's
+/// cylinder reads `1`, the same file with the lateral's inner bound deleted reads `0`
+/// (`BRepCheck_NotClosed`).
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn seamless_laterals_read_as_valid_solids() {

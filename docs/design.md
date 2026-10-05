@@ -448,7 +448,8 @@ pub struct Tessellation {
 
 **틀린 메시는 없느니만 못하다 — 못 그리는 면은 거절한다.** `TessError` 에는 일부러 폴백 변종이 없다:
 `DegenerateRing`(링이 「형제 구멍을 가진 다각형」이 아니다 — 세 정점 미만, 넓이 0, 인덱스로 공유·반복된
-정점, 스파이크, 서로 지나가는 두 선분; 구멍이 외곽 링을 가로지르는 것도 잡는다), `SelfTouchingBoundary`
+정점, 스파이크, 서로 지나가는 두 선분, 한 점을 두 번 지나며 그 점을 가로지르는 링; 구멍이 외곽 링을
+가로지르는 것도 잡는다), `SelfTouchingBoundary`
 (아래), `HoleWinding`(구멍이 외곽과 같은 방향으로 감겼다 — 고칠 메시가 아니라 깨진 솔리드), `OverBudget`
 (아래). `tessellate` 는 모델 전체를 걷다 첫 거절에서 멈춘다.
 

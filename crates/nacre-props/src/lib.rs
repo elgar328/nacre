@@ -341,8 +341,8 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
         // `[from, to]` order (**CCW about the axis**, the arc convention;
         // [`Circle::angle_of`] is the one spelling of the angle; a closed edge `[v, v]` is the
-        // whole turn) and the sign from which way this traversal walks it. A digon (chord + arc) is the degenerate case the fan
-        // contributes nothing to: one segment is the whole answer.
+        // whole turn) and the sign from which way this traversal walks it. A digon (chord + arc)
+        // is the degenerate case the fan contributes nothing to: one segment is the whole answer.
         //
         // Every contribution is scalarized on one reference normal — the first arc's circle
         // normal, which is the cylinder axis and so collinear with the cap plane's normal

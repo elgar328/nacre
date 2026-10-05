@@ -72,10 +72,9 @@ pub(crate) struct Walked {
 /// The walk's refusal where the split's own record is broken — the trace and the split disagree
 /// about where a boundary runs: a run along a rim whose end is not one of the rim's nodes, a run
 /// along a ruling the wall's pieces do not tile, a cycle whose pieces do not chain, a component
-/// with no outer cycle, a run along an uncut rim that is not the whole circle, a run along a rim cut
-/// at one node that is not either, a cycle whose arc units are not a whole number of turns. What the
-/// walk cannot spell is named where it fires: wrapping cycles other than one lower and one upper
-/// (`ArcBoundNotYet`).
+/// with no outer cycle, a run along an uncut rim — or a rim cut at one node — that is not the whole
+/// circle, a cycle whose arc units are not a whole number of turns. What the walk cannot spell is
+/// named where it fires: wrapping cycles other than one lower and one upper (`ArcBoundNotYet`).
 fn split_disagrees() -> BoolError {
     reject(RejectReason::CylinderStagesDisagree)
 }

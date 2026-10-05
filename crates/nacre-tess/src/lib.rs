@@ -30,7 +30,8 @@ pub enum TessError {
     /// The rings are not a polygon with sibling holes, so no triangulation of them
     /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
     /// **by index** or repeated within one, a spike, **two segments passing through each
-    /// other**, or a ring passing **through** a point it visits twice (`polygon::pinch`). On a cylinder also a face whose loops wrap the axis other than as two rims, or a
+    /// other**, or a ring passing **through** a point it visits twice (`polygon::pinch`). On a
+    /// cylinder also a face whose loops wrap the axis other than as two rims, or a
     /// band no generator cuts so that it stays one polygon — every generator crosses some hole
     /// other than twice (`cut_seamless_bands`).
     ///

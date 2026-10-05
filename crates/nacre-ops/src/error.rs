@@ -380,9 +380,9 @@ pub enum RejectReason {
     /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose boss
     /// only touches the plate), so the names the result keeps are mostly its own; the suite raises
     /// it for one family — a triangle whose side is tangent to a cylinder at a corner on its rim
-    /// (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`: `B − A` and the union, `B` past
-    /// the cylinder's top), where a body touching the other along that line keeps a corner named
-    /// by the other's walls. A shipped check rather than a
+    /// (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`: `B − A` with `B` past the
+    /// cylinder's top, and the union with `B` past the top alone), where a body touching the other
+    /// along that line keeps a corner named by the other's walls. A shipped check rather than a
     /// debug_assert all the same: a definition naming a surface the result has **no face on at
     /// all** is a model that cannot describe itself, and in a release build it would ship
     /// silently — right volume, wrong names.
