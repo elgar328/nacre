@@ -9,9 +9,11 @@
 //! crash on adversarial input kills the helper subprocess, not the kernel.
 //!
 //! Scoring one solid's `props` (volume/area/faces/bbox) validates that (1) our STEP is
-//! OCCT-valid, (2) a whole closed oriented solid was read (OCCT reports a positive analytic
-//! volume only then), and (3) the transport works. The nacre-side volume/area (`nacre-props`) is
-//! diffed directly against OCCT here, and the boolean `fuse|cut|common` oracle sits beside it.
+//! OCCT-valid — `checkshape` on what OCCT read, with its read's orientation repair off, so a face,
+//! edge, shell or void written the wrong way round is refused as [`OracleError::Faulty`] (the
+//! volume cannot say so: a cube with a face turned over still measures 1) — and (2) the transport
+//! works. The nacre-side volume/area (`nacre-props`) is diffed directly against OCCT here, and the
+//! boolean `fuse|cut|common` oracle sits beside it; a boolean checks both inputs and its result.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_store::Handle;
@@ -33,9 +35,14 @@ pub struct OcctProps {
     pub bbox_max: [f64; 3],
     /// OCCT's **volume** centre of mass (`vprops`), not the surface's.
     pub centroid: [f64; 3],
-    /// OCCT's `checkshape` verdict on the measured shape — topology and geometry as OCCT reads
-    /// them after its own healing on import.
-    pub valid: bool,
+}
+
+/// One `checkshape` complaint: which shape — `a` or `b`, as read from the STEP, or `r`, a
+/// boolean's result — and OCCT's `BRepCheck_` code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fault {
+    pub shape: String,
+    pub code: String,
 }
 
 /// A failure while scoring a model against the OCCT oracle.
@@ -48,6 +55,10 @@ pub enum OracleError {
     GeometryFailed,
     /// DRAWEXE crashed on the input — helper exit 2. Carries stderr for triage.
     Crashed(String),
+    /// OCCT's `checkshape` refused a shape it read, or a boolean's result. Its STEP read keeps
+    /// orientation as written, so this is where a wrongly oriented export lands. The faults may
+    /// be empty when OCCT named no code.
+    Faulty(Vec<Fault>),
     /// [`nacre_step::to_step`] rejected the model (its `StepError`, stringified).
     Export(String),
     /// Filesystem or subprocess I/O failed.
@@ -59,8 +70,10 @@ pub enum OracleError {
 impl OcctProps {
     /// Parse the helper's `props` stdout — key-value lines, one per field:
     /// `volume <v>` / `area <a>` / `faces <n>` / `bbox_min <x y z>` /
-    /// `bbox_max <x y z>` / `centroid <x y z>` / `valid <1|0>`. Order-independent; every
-    /// field is required.
+    /// `bbox_max <x y z>` / `centroid <x y z>` / `valid <1|0>`, and a `fault <shape> <code>`
+    /// line per complaint. Order-independent. `valid 0` is [`OracleError::Faulty`] whatever
+    /// else is there (the helper prints only what it could measure); otherwise every field is
+    /// required.
     fn parse(stdout: &str) -> Result<OcctProps, OracleError> {
         let mut volume = None;
         let mut area = None;
@@ -69,6 +82,7 @@ impl OcctProps {
         let mut bbox_max = None;
         let mut centroid = None;
         let mut valid = None;
+        let mut faults = Vec::new();
 
         for line in stdout.lines() {
             let mut it = line.split_whitespace();
@@ -93,19 +107,32 @@ impl OcctProps {
                         other => return Err(OracleError::Parse(format!("valid: {other:?}"))),
                     })
                 }
+                "fault" => {
+                    let (Some(shape), Some(code)) = (it.next(), it.next()) else {
+                        return Err(OracleError::Parse(format!("fault: {line:?}")));
+                    };
+                    faults.push(Fault {
+                        shape: shape.to_owned(),
+                        code: code.to_owned(),
+                    });
+                }
                 _ => {} // ignore unknown keys — forward-compatible with new fields
             }
         }
 
-        Ok(OcctProps {
+        if valid == Some(false) {
+            return Err(OracleError::Faulty(faults));
+        }
+        let props = OcctProps {
             volume: volume.ok_or_else(|| miss("volume"))?,
             area: area.ok_or_else(|| miss("area"))?,
             faces: faces.ok_or_else(|| miss("faces"))?,
             bbox_min: bbox_min.ok_or_else(|| miss("bbox_min"))?,
             bbox_max: bbox_max.ok_or_else(|| miss("bbox_max"))?,
             centroid: centroid.ok_or_else(|| miss("centroid"))?,
-            valid: valid.ok_or_else(|| miss("valid"))?,
-        })
+        };
+        valid.ok_or_else(|| miss("valid"))?;
+        Ok(props)
     }
 }
 

@@ -12,7 +12,10 @@
 #       bbox_min <x> <y> <z>
 #       bbox_max <x> <y> <z>
 #       centroid <x> <y> <z>
-#       valid <1|0>        (checkshape: the measured shape's own topology and geometry)
+#       valid <1|0>        (checkshape of every shape read — a_1, and b_1 for a boolean —
+#                           and of the boolean's result)
+#       fault <a|b|r> <BRepCheck_code>   (zero or more; one per code of each faulty shape)
+#     With `valid 0` the measurement keys appear only as far as they were measured.
 #     exit: 0 success / 1 geometry failure (unreadable, no/empty shape) / 2 DRAWEXE crash
 #
 # The boolean commands run DRAWEXE's bfuse/bcut/bcommon on two STEP solids and
@@ -21,34 +24,84 @@
 # result as STEP (unused by the props oracle).
 set -uo pipefail
 
+# OCCT's STEP read repairs what it reads (`FromSTEP.exec.op : FixShape`), and the repair silently
+# turns a wrongly oriented face, edge, shell or void the right way round: a mis-oriented file
+# would score valid with the right volume. Only the three orientation fixes are turned off. The
+# rest of FixShape builds the 2D parameter curves the files do not carry and inserts the seam a
+# seamless lateral needs (`FixMissingSeam`) — without them every face on a cylinder reads invalid.
+# A caller whose `CSF_STEPDefaults` empties `exec.op` runs no FixShape at all, and these lines then
+# change nothing.
+READ_PARAMS='param FromSTEP.FixShape.FixOrientationMode 0
+param FromSTEP.FixShape.FixShellOrientationMode 0
+param FromSTEP.FixShape.FixFaceOrientationMode 0'
+
+# DRAWEXE lines that checkshape `$2` inside a section tagged `$1`. Each verdict has to be read
+# in its own section: one grep over the whole output would read "a valid, r faulty" as valid.
+check() {
+    printf 'puts "@@check %s"\ncheckshape %s\nputs "@@end"\n' "$1" "$2"
+}
+
+# DRAWEXE lines that measure `$1`. vprops runs before sprops: emit_props reads the volume
+# centroid as the first "Center of gravity" block.
+measure() {
+    printf 'vprops %s\nsprops %s\nnbshapes %s\nbounding %s\n' "$1" "$1" "$1" "$1"
+}
+
 # Parse a DRAWEXE run's console output (vprops → "Mass :", sprops → "Mass :",
-# nbshapes → "FACE", bounding → the lone six-number line, checkshape → "seems to be
-# valid", or "Faulty shapes …" with its BRepCheck_ codes) and print the schema.
-# Returns 1 if any field is missing (empty/failed shape).
+# nbshapes → "FACE", bounding → the lone six-number line; each checkshape section →
+# "seems to be valid", or "Faulty shapes …" with its BRepCheck_ codes) and print the
+# schema. `$2` names the checkshape sections the run must hold. Returns 1 if a verdict
+# is missing, or a field of a run whose shapes are all valid (empty/failed shape).
 emit_props() {
-    local out="$1" clean volume area faces bbox cx cy cz valid
+    local out="$1" sections="$2" clean props volume area faces bbox cx cy cz
+    local valid=1 faults="" s section code
     clean=$(echo "$out" | sed 's/^Draw\[[0-9]*\]> *//')
-    volume=$(echo "$clean" | grep "Mass :" | sed -n '1p' | awk '{print $NF}')
-    area=$(echo "$clean" | grep "Mass :" | sed -n '2p' | awk '{print $NF}')
+    # The measurements are read with the checkshape sections taken out, so nothing a
+    # checkshape prints can pass for one of them.
+    props=$(echo "$clean" | awk '/^@@check /{skip=1; next} /^@@end/{skip=0; next} !skip')
+    volume=$(echo "$props" | grep "Mass :" | sed -n '1p' | awk '{print $NF}')
+    area=$(echo "$props" | grep "Mass :" | sed -n '2p' | awk '{print $NF}')
     # vprops runs before sprops, so the FIRST "Center of gravity" block is the
     # volume centroid (the second one is the surface's). "Moments" prints IX/IY/IZ,
     # so anchoring on a bare X/Y/Z cannot pick those up by mistake.
-    cx=$(echo "$clean" | grep -E '^X =' | sed -n '1p' | awk '{print $NF}')
-    cy=$(echo "$clean" | grep -E '^Y =' | sed -n '1p' | awk '{print $NF}')
-    cz=$(echo "$clean" | grep -E '^Z =' | sed -n '1p' | awk '{print $NF}')
-    faces=$(echo "$clean" | awk '/^ *FACE/ {print $NF}')
+    cx=$(echo "$props" | grep -E '^X =' | sed -n '1p' | awk '{print $NF}')
+    cy=$(echo "$props" | grep -E '^Y =' | sed -n '1p' | awk '{print $NF}')
+    cz=$(echo "$props" | grep -E '^Z =' | sed -n '1p' | awk '{print $NF}')
+    faces=$(echo "$props" | awk '/^ *FACE/ {print $NF}')
     # The bounding output is the only line of six numeric fields.
-    bbox=$(echo "$clean" | awk 'NF==6 && $1+0==$1 && $6+0==$6 {print; exit}')
-    if echo "$clean" | grep -q "This shape seems to be valid"; then
-        valid=1
-    elif echo "$clean" | grep -q -e "Faulty shapes" -e "has problems"; then
-        valid=0
-    else
-        valid=""
+    bbox=$(echo "$props" | awk 'NF==6 && $1+0==$1 && $6+0==$6 {print; exit}')
+
+    for s in $sections; do
+        section=$(echo "$clean" | awk -v s="$s" \
+            '$0 ~ "^@@check " s " *$" {on=1; next} /^@@end/{on=0} on')
+        if echo "$section" | grep -q "This shape seems to be valid"; then
+            continue
+        elif echo "$section" | grep -q -e "Faulty shapes" -e "has problems"; then
+            valid=0
+            for code in $(echo "$section" | grep -o 'BRepCheck_[A-Za-z0-9]*' | sort -u); do
+                faults="${faults}fault $s $code"$'\n'
+            done
+        else
+            echo "error: no checkshape verdict for $s" >&2
+            echo "$out" >&2
+            return 1
+        fi
+    done
+
+    # A faulty shape is the answer whatever else was measured: a wrongly oriented input can leave
+    # the boolean empty, and "could not parse" would hide why. Its fields are printed as far as
+    # they were measured.
+    if [ "$valid" -eq 0 ]; then
+        [ -n "$volume" ] && echo "volume $volume"
+        [ -n "$area" ] && echo "area $area"
+        [ -n "$faces" ] && echo "faces $faces"
+        echo "valid 0"
+        printf '%s' "$faults"
+        return 0
     fi
 
     if [ -z "$volume" ] || [ -z "$area" ] || [ -z "$faces" ] || [ -z "$bbox" ] ||
-        [ -z "$cx" ] || [ -z "$cy" ] || [ -z "$cz" ] || [ -z "$valid" ]; then
+        [ -z "$cx" ] || [ -z "$cy" ] || [ -z "$cz" ]; then
         echo "error: could not parse OCCT output" >&2
         echo "$out" >&2
         return 1
@@ -62,7 +115,7 @@ emit_props() {
     echo "bbox_min $x0 $y0 $z0"
     echo "bbox_max $x1 $y1 $z1"
     echo "centroid $cx $cy $cz"
-    echo "valid $valid"
+    echo "valid 1"
 }
 
 case "${1:-}" in
@@ -73,7 +126,14 @@ props)
         exit 1
     }
 
-    out=$(printf 'pload ALL\nstepread %s a *\nvprops a_1\nsprops a_1\nnbshapes a_1\nbounding a_1\ncheckshape a_1\nexit\n' "$step" | DRAWEXE -b 2>&1)
+    out=$({
+        echo "pload ALL"
+        echo "$READ_PARAMS"
+        echo "stepread $step a *"
+        check a a_1
+        measure a_1
+        echo "exit"
+    } | DRAWEXE -b 2>&1)
     status=$?
     [ "$status" -eq 0 ] || {
         echo "error: DRAWEXE exited $status" >&2
@@ -85,7 +145,7 @@ props)
         echo "$out" >&2
         exit 1
     }
-    emit_props "$out" || exit 1
+    emit_props "$out" "a" || exit 1
     ;;
 fuse | cut | common)
     a="${2:-}"
@@ -101,13 +161,22 @@ fuse | cut | common)
     common) op=bcommon ;;
     esac
 
-    # Read both solids, run the boolean into `r`, then measure `r` (not a
-    # numbered `_1` — bfuse names its result directly).
-    script="pload ALL\nstepread $a a *\nstepread $b b *\n$op r a_1 b_1\n"
-    [ -n "$outfile" ] && script="${script}stepwrite a r $outfile\n"
-    script="${script}vprops r\nsprops r\nnbshapes r\nbounding r\ncheckshape r\nexit\n"
-
-    out=$(printf '%b' "$script" | DRAWEXE -b 2>&1)
+    # Read both solids and check them — they are the exports under test — then run the
+    # boolean into `r` and measure `r` (not a numbered `_1` — bfuse names its result
+    # directly).
+    out=$({
+        echo "pload ALL"
+        echo "$READ_PARAMS"
+        echo "stepread $a a *"
+        echo "stepread $b b *"
+        check a a_1
+        check b b_1
+        echo "$op r a_1 b_1"
+        if [ -n "$outfile" ]; then echo "stepwrite a r $outfile"; fi
+        measure r
+        check r r
+        echo "exit"
+    } | DRAWEXE -b 2>&1)
     status=$?
     [ "$status" -eq 0 ] || {
         echo "error: DRAWEXE exited $status" >&2
@@ -120,7 +189,7 @@ fuse | cut | common)
         echo "$out" >&2
         exit 1
     }
-    emit_props "$out" || exit 1
+    emit_props "$out" "a b r" || exit 1
     ;;
 *)
     echo "usage: occt-helper props <in.step>" >&2

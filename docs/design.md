@@ -2554,7 +2554,7 @@ pub fn validate(model: &Model) -> Vec<Violation>;   // 빈 벡터 = 유효
 
 ### OCCT 오라클(`nacre-oracle`)
 
-nacre 의 결과를 STEP 으로 내보내 OCCT 가 채점한다: 부피·면적·면 개수·바운딩박스. 불리언은 두 입력 솔리드의 STEP 을 OCCT 가 직접 `bfuse`/`bcut`/`bcommon` 한 결과의 값과 nacre 결과의 값을 diff 한다. 정답지를 든 채 개발하는 장치이며, AI 가 생성한 코드의 «그럴듯하지만 틀림»을 잡는 주 방어선이다. **nacre 쪽 부피·면적은 `nacre-props`(정확 기하 발산정리, 해석적)가 계산하고, 오라클은 그 값을 OCCT 가 같은 STEP 에서 독립 계산한 값과 diff 한다** — 완전히 별개인 두 구현의 일치가 양쪽을 교차검증한다. `props` 가 양의 해석적 부피를 돌려준다는 것 자체가 «우리 STEP 이 OCCT 에 유효하고, 닫힌 방향 있는 솔리드 하나가 통째로 읽혔다»는 검사다. **일치는 형상이 설명한 그것인지 말하지 않는다** — 두 커널이 같은 STEP 을 재므로 픽스처가 어디에 놓이든 맞는다. 그래서 오라클 픽스처는 자기 손 계산 값도 단언하고, 공용 형상(`nacre_ops::fixtures::pocketed_cube`)은 자기 전제를 단언한다.
+nacre 의 결과를 STEP 으로 내보내 OCCT 가 채점한다: 부피·면적·면 개수·바운딩박스. 불리언은 두 입력 솔리드의 STEP 을 OCCT 가 직접 `bfuse`/`bcut`/`bcommon` 한 결과의 값과 nacre 결과의 값을 diff 한다. 정답지를 든 채 개발하는 장치이며, AI 가 생성한 코드의 «그럴듯하지만 틀림»을 잡는 주 방어선이다. **nacre 쪽 부피·면적은 `nacre-props`(정확 기하 발산정리, 해석적)가 계산하고, 오라클은 그 값을 OCCT 가 같은 STEP 에서 독립 계산한 값과 diff 한다** — 완전히 별개인 두 구현의 일치가 양쪽을 교차검증한다. **일치는 형상이 설명한 그것인지 말하지 않는다** — 두 커널이 같은 STEP 을 재므로 픽스처가 어디에 놓이든 맞는다. 그래서 오라클 픽스처는 자기 손 계산 값도 단언하고, 공용 형상(`nacre_ops::fixtures::pocketed_cube`)은 자기 전제를 단언한다.
 
 계획: 허용 편차를 넘은 연산열을 최소화(shrink)해 리포트한다.
 
@@ -2568,7 +2568,9 @@ occt-helper <fuse|cut|common> <a.step> <b.step> [out.step]
 ```
 
 - `props` 는 솔리드 하나를, 불리언 명령은 **결과**의 성질을 보고한다. `cut` 은 `A − B`. `out` 을 주면 결과를 STEP 으로도 쓴다.
-- stdout 은 모든 명령이 같은 key-value 7줄이다: `volume <v>` · `area <a>` · `faces <n>` · `bbox_min <x> <y> <z>` · `bbox_max <x> <y> <z>` · `centroid <x> <y> <z>`(부피 중심) · `valid <1|0>`(재는 형상에 대한 DRAWEXE `checkshape`). 값은 헬퍼 쪽에서 계산한다. 고정 스키마라 파싱 의존성이 0 이고 Rust 쪽 파서는 하나다.
+- stdout 은 모든 명령이 같은 key-value 7줄이다: `volume <v>` · `area <a>` · `faces <n>` · `bbox_min <x> <y> <z>` · `bbox_max <x> <y> <z>` · `centroid <x> <y> <z>`(부피 중심) · `valid <1|0>`. `valid` 는 DRAWEXE `checkshape` 를 읽은 형상(`a_1`, 불리언이면 `b_1` 도)과 불리언 결과 하나하나에 돌린 판정이고, 무효인 형상마다 `fault <a|b|r> <BRepCheck_코드>` 줄이 붙는다(`valid 0` 이면 재는 줄은 잰 만큼만 나온다). 판정은 `checkshape` 마다 표지로 감싼 구획에서 읽는다 — 출력 전체를 한 번 grep 하면 «입력 무효 + 결과 유효»가 유효로 읽힌다. 값은 헬퍼 쪽에서 계산한다. 고정 스키마라 파싱 의존성이 0 이고 Rust 쪽 파서는 하나다.
+- **무효는 오라클의 문이 거절한다**(`OracleError::Faulty`, 불평마다 `Fault { shape, code }`). 형상의 방향을 단언하는 테스트는 따로 없다 — 면 하나를 뒤집어도 부피는 그대로(정육면체 1)이므로, 문이 거절하지 않으면 부피만 보는 오라클 테스트는 방향 오류를 통과시킨다. OCCT 의 불리언 결과가 무효여도 거절이다: 무효인 정답지로는 채점하지 않는다. 문이 거절함을 `a_wrong_orientation_reads_as_faulty` 가 잠근다(면·간선·경계·원통 옆면·void 를 텍스트에서 뒤집은 파일과 불리언의 두 입력).
+- **읽기는 방향 수리만 끈다.** OCCT 의 STEP 읽기는 기본으로 형상을 수리하고(`FromSTEP.exec.op : FixShape`), 그 수리가 면·간선·껍질·void 의 방향 오류를 조용히 고친다. 헬퍼는 세션 안 `param` 으로 `FixOrientationMode`·`FixShellOrientationMode`·`FixFaceOrientationMode` 셋만 0 으로 둔다. 나머지 수리는 파일에 없는 PCURVE 를 짓고 seam 없는 옆면에 seam 을 넣으므로(`FixMissingSeam` — 「seam 엣지 방식」) 남긴다 — 수리를 통째로 끄면 곡면 위 면이 늘 무효다(「가지 말 것」). 호출자가 `CSF_STEPDefaults` 로 `exec.op` 를 비우면 FixShape 가 통째로 안 돌고 세 `param` 은 쓰이지 않는다. 어떤 설정으로도 안 보이는 것은 직선 `EDGE_CURVE` 의 `same_sense` 하나이고, brep-to-step 이 직선 방향을 끝점에서 정하므로 nacre 가 틀리게 쓸 수 없다.
 - exit code: `0` 성공 · `1` 기하 실패(파일 없음·읽기 불가·빈 형상) · `2` 크래시.
 - 입력은 **단일 솔리드** STEP 이어야 한다(솔리드 하나의 `to_step_solids`). 전송 가능한 루트가 여럿이면 OCCT 가 `x_1, x_2, …` 로 읽고 불리언은 `x_1` 만 쓴다.
 
@@ -2714,3 +2716,9 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 45° 폴드를 위한 figure-8 재봉합 기계 | 지역-한계 사슬의 깊이는 정확히 2겹이었다. 병합은 기권하고 전역 판정(`SelfTouchingResult`)이 발행 전에 말한다 | — |
 | 면 위 직접 구성(`ImprintSketch`·`raise_region`) | 소비자 0 이었고 커널 유일의 동일평면 인접면 생산자였다. pad = extrude + Fuse, pocket = extrude + Cut. Split Face 의 소비자(구역별 재질·FEA 경계조건·파팅라인)가 생기면 두 제거 커밋의 revert 가 출발점이다 | — |
 | pad/pocket 을 커널 연산(`PadOnFace`·`PocketOnFace`)으로 | 새 정확 술어 없는 «면 프레임 + 돌출 + 불리언» 래퍼였다(설탕 판별 기준). 커널에 남은 이유는 «면에서 안쪽으로»를 기본 어휘가 말하지 못해서였다 — 돌출이 부호 있는 거리를 받자 사라졌다. 바닥 면을 돌려주려는 캡 회수가 **모든** 불리언에 입력 평면 면마다 클래스·향 표(`ClassOf`, 면마다 `face_facing`)를 계산하게 했고, 깊은 pocket 을 `PocketNotBlind` 로 거절하게 했다. kit 은 캡을 읽지 않았고, 가른 몸의 나머지 조각을 값에서 잃었다 | — |
+
+### 검증·오라클
+
+| 하지 말 것 | 이유 | 커밋 |
+|---|---|---|
+| OCCT 의 STEP 읽기 수리를 통째로 끄고(`FromSTEP.exec.op` 비우기) 방향을 검사하기 | 곡면 위 면이 늘 무효로 읽힌다 — 파일에 PCURVE 가 없다(원통 r=2.5·h=7: 부피 137.445 → 68.72, valid 0; seam 을 넣은 원통도 같다). seam 없는 옆면은 그 위에 수리의 `FixMissingSeam` 에도 기댄다. 그래서 평면 형상만 검사할 수 있었다. 방향 수리 셋만 끄면 같은 카나리(면·모든 면·간선·경계·void)를 평면과 곡면 모두에서 잡고, 정상 형상은 곡면까지 유효하다 | — |

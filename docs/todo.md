@@ -313,41 +313,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 원통의 seam 은 세계에서 만나 실현된다 — `seam_point_met`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
 다시 재지 않았다.
 
-### OCCT 오라클은 방향 오류를 보지 못한다
-
-`occt-helper` 는 OCCT 기본 설정대로 STEP 을 읽는다 — 읽기가 형상 수리를 거치고(`XSTEPResource/STEP` 의
-`FromSTEP.exec.op : FixShape`, `FixOrientationMode`·`FixShellOrientationMode`·`FixFaceOrientationMode` 등이 켜짐),
-수리는 방향 오류를 조용히 고친다. 정상 정육면체를 망가뜨려 잰 것: 면 하나의 `same_sense` 반전, 모든 면의 반전,
-`ORIENTED_EDGE` 하나의 반전은 기본 설정에서 셋 다 volume 1·valid 1 이고 수리를 끄면 valid 0 이다. 속 빈 상자의
-`ORIENTED_CLOSED_SHELL` 을 `.T.` → `.F.` 로 바꾸면 기본 volume 936·valid 1, 수리를 끄면 valid 0·volume 1064 다.
-같은 OCCT 읽기를 쓰는 FreeCAD 도 경고 0 이다. 그래서 nacre 가 면·간선·껍질·void 의 방향을 틀리게 내보내도 `props`
-와 불리언 오라클(`fuse`·`cut`·`common`)은 통과할 수 있고, 불리언 비교는 «둘 다 수리된 입력 기준»으로 맞는 것일 수
-있다. `nacre-step` 의 void 출력(`VoidShellNormals::AwayFromMaterial` → `.T.`)의 방향도 이 검사로는 서지 않는다.
-
-수리를 끄는 법(시스템 설정은 그대로 둔다):
-
-```sh
-R=$(mktemp -d)
-sed 's/^FromSTEP\.exec\.op[[:space:]]*:.*/FromSTEP.exec.op : /' \
-    "$(brew --prefix opencascade)/share/opencascade/resources/XSTEPResource/STEP" > "$R/STEP"
-CSF_STEPDefaults="$R" tools/occt-helper/occt-helper props <file.step>
-```
-
-수리를 끄면 곡면 위 면은 형상이 맞아도 늘 무효다(원기둥 r=2.5, h=7: 기대 부피 137.445 → 68.72, valid 0). 파일에
-PCURVE 가 없어서다 — OCCT 는 수리 단계에서 3D 곡선으로부터 PCURVE 를 짓고, 평면은 수리 없이도 즉석에서 구한다.
-seam 을 넣은 원기둥도 똑같이 무효이므로 seam 없는 옆면(design 「seam 엣지 방식」)이 원인은 아니다. 수리를 끈 검사는
-평면 면만으로 된 형상에서만 뜻이 있다.
-
-할 일:
-
-- occt-helper 의 `props`·불리언에 기대는 테스트와 오라클의 목록, 그중 방향 오류가 숨을 수 있는 경로(void 껍질 포함).
-- helper 에 엄격 모드(환경 변수나 플래그)를 둘지, 어느 테스트(평면 형상)에 걸지. brep-to-step 의 `verify.sh` 는
-  OCCT 를 두 번 돈다 — 수리를 켜고 모든 형상의 유효·부피·면 수를, 수리를 끄고 평면 형상의 방향을.
-- 자체 시험: 매 실행 void 플래그를 뒤집은 파일이 엄격 검사에서 거부되는지 보고, 거부되지 않으면 수리가 꺼지지
-  않은 것이므로 실행을 실패시킨다.
-- 곡면 형상의 방향 검증 공백을 어떻게 다룰지.
-- 평면 형상에 한해 엄격 모드로 한 번 돌려, 지금 숨은 방향 오류가 있는지 잰다.
-
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.

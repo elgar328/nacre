@@ -22,7 +22,7 @@ area 52
 bbox_max 2 3 4
 bbox_min 0 0 0
 centroid 1 1.5 2
-valid 0
+valid 1
 ";
     let p = OcctProps::parse(stdout).unwrap();
     assert_eq!(p.volume, 24.0);
@@ -31,10 +31,50 @@ valid 0
     assert_eq!(p.bbox_min, [0.0, 0.0, 0.0]);
     assert_eq!(p.bbox_max, [2.0, 3.0, 4.0]);
     assert_eq!(p.centroid, [1.0, 1.5, 2.0]);
-    assert!(!p.valid);
-    let malformed = stdout.replace("valid 0", "valid yes");
+    let malformed = stdout.replace("valid 1", "valid yes");
     assert!(matches!(
         OcctProps::parse(&malformed),
+        Err(OracleError::Parse(_))
+    ));
+    let unjudged = stdout.replace("valid 1\n", "");
+    match OcctProps::parse(&unjudged) {
+        Err(OracleError::Parse(msg)) => assert!(msg.contains("valid")),
+        other => panic!("expected Parse error, got {other:?}"),
+    }
+}
+
+/// `valid 0` is a refusal with every complaint, whatever was measured beside it — the helper
+/// prints a faulty run's fields only as far as it measured them.
+#[test]
+fn parse_refuses_a_faulty_shape_with_its_faults() {
+    let stdout = "\
+volume 0
+valid 0
+fault a BRepCheck_BadOrientationOfSubshape
+fault r BRepCheck_NotClosed
+";
+    match OcctProps::parse(stdout) {
+        Err(OracleError::Faulty(faults)) => assert_eq!(
+            faults,
+            [
+                Fault {
+                    shape: "a".into(),
+                    code: "BRepCheck_BadOrientationOfSubshape".into(),
+                },
+                Fault {
+                    shape: "r".into(),
+                    code: "BRepCheck_NotClosed".into(),
+                },
+            ]
+        ),
+        other => panic!("expected Faulty, got {other:?}"),
+    }
+    assert!(matches!(
+        OcctProps::parse("valid 0\n"),
+        Err(OracleError::Faulty(faults)) if faults.is_empty()
+    ));
+    assert!(matches!(
+        OcctProps::parse("valid 0\nfault a\n"),
         Err(OracleError::Parse(_))
     ));
 }
@@ -653,9 +693,9 @@ fn cylinder_matches_occt() {
     );
     let p = occt_props_of(&model).unwrap();
     // OCCT computes these analytically from the CYLINDRICAL_SURFACE, so a
-    // match confirms our curved STEP really is a cylinder — and, since a
-    // positive volume needs a closed outward-oriented solid, this automates
-    // the orientation/validity check M3 deferred to manual FreeCAD.
+    // match confirms our curved STEP really is a cylinder. Orientation is
+    // the oracle's `checkshape`, not the volume's sign: a face turned over
+    // leaves the volume as it was.
     assert!(approx(p.volume, 20.0 * PI), "volume {}", p.volume); // π·r²·h
     assert!(approx(p.area, 28.0 * PI), "area {}", p.area); // 2πr² + 2πr·h
     assert_eq!(p.faces, 3); // lateral + 2 caps
@@ -985,9 +1025,9 @@ fn overhang_pocket_matches_occt() {
 /// the whole rim's angle (a boss on a plate's edge); a bore whose four slots cover every angle;
 /// and a cap pinched at a rim cut at one point — a wedge fused on past the top, the groove's tip
 /// on the rim, on and off the rims' vertex and past both caps (`wedge_on_a_rim`), so the closed
-/// rim sits in a loop of several. The helper's `valid` is calibrated both ways: this file's
-/// cylinder reads `1`, the same file with the lateral's inner bound deleted reads `0`
-/// (`BRepCheck_NotClosed`).
+/// rim sits in a loop of several. The oracle refuses a shape `checkshape` finds faulty
+/// (`OracleError::Faulty`), so reading each one is that check; that the refusal bites — a face or
+/// a void written the wrong way round — is `a_wrong_orientation_reads_as_faulty`'s to show.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn seamless_laterals_read_as_valid_solids() {
@@ -1104,7 +1144,6 @@ fn seamless_laterals_read_as_valid_solids() {
             panic!("{name}: one solid");
         };
         let p = occt_props_of(m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
-        assert!(p.valid, "{name}: OCCT's checkshape refuses it");
         let faces = m.shell(m.solid(solid).outer).faces.len();
         assert_eq!(p.faces, faces, "{name}: face count");
         let ours = nacre_props::mass_props(m, solid)

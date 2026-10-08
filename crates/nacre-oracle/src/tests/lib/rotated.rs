@@ -395,30 +395,10 @@ fn containment_cut_cavity_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn hollow_solid_step_volume_matches_occt() {
-    // A = [0,4]³ (64) with a concentric B = [1,3]³ (8) void ⇒ material 56.
-    // OCCT reads nacre's BREP_WITH_VOIDS export and computes the material
-    // volume — the true gate on the exported void orientation. A flipped
-    // void would read as 72 (= V_A + V_B), which the face-count round-trip
-    // in nacre-step cannot catch.
-    let mut m = Model::new();
-    let a = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([4.0; 3]),
-    );
-    let b = nacre_ops::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([1.0; 3]),
-        Point3::from_array([3.0; 3]),
-    );
-    let b_outer = m.solid(b).outer;
-    let void = m.reversed_shell(b_outer);
-    let a_outer = m.solid(a).outer;
-    let hollow = m.push_solid(Solid {
-        outer: a_outer,
-        cavities: vec![void],
-    });
-    m.restore_live(vec![hollow]);
+    // OCCT reads nacre's BREP_WITH_VOIDS export and computes the material volume, 56. A void
+    // written the wrong way round is refused by the oracle's `checkshape`
+    // (`a_wrong_orientation_reads_as_faulty`); nacre-step's face-count round-trip cannot see it.
+    let (m, hollow) = hollow_box();
 
     let occt = occt_props_of(&m).unwrap();
     let nacre = mass_props(&m, hollow).unwrap();

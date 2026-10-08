@@ -81,6 +81,31 @@ fn l_prism() -> (Model, Handle<Solid>) {
     (m, l)
 }
 
+/// A = [0,4]³ (64) with a concentric B = [1,3]³ (8) void ⇒ material 56: one live solid whose
+/// cavity is B's shell turned inside out.
+fn hollow_box() -> (Model, Handle<Solid>) {
+    let mut m = Model::new();
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0; 3]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0; 3]),
+        Point3::from_array([3.0; 3]),
+    );
+    let b_outer = m.solid(b).outer;
+    let void = m.reversed_shell(b_outer);
+    let a_outer = m.solid(a).outer;
+    let hollow = m.push_solid(Solid {
+        outer: a_outer,
+        cavities: vec![void],
+    });
+    m.restore_live(vec![hollow]);
+    (m, hollow)
+}
+
 /// Extrude a closed profile 1.0 along `plane`'s normal.
 fn extrude(m: &mut Model, plane: SketchPlane, pts: &[[f64; 2]]) -> Handle<Solid> {
     extrude_dist(m, plane, pts, 1.0)
@@ -108,6 +133,7 @@ fn extrude_dist(m: &mut Model, plane: SketchPlane, pts: &[[f64; 2]], dist: f64) 
 
 mod booleans;
 mod nonconvex;
+mod orientation;
 mod pockets_and_sweeps;
 mod props;
 mod rotated;
