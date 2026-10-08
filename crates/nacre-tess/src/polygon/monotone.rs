@@ -74,7 +74,7 @@ pub(super) fn decompose(
     // a touch only that this decomposition has no answer for them. Neither says a word about
     // the solid — that is `validate`'s business, one crate over.
     let meets = self_touch(uv, &prev, &next);
-    if meets.crossing.is_some() {
+    if !meets.crossings.is_empty() {
         return Err(TessError::DegenerateRing);
     }
     // The twins — a bridge's or a pinch's — touch each other's outgoing segment at their shared
@@ -180,7 +180,7 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
     };
     let mut meets = Meets {
         touches: Vec::new(),
-        crossing: None,
+        crossings: Vec::new(),
     };
     // 1. A vertex sitting on a segment it does not belong to — the touch, asked for its witness.
     for (i, &p) in uv.iter().enumerate() {
@@ -219,9 +219,10 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
                     } else {
                         // The boundary passes through the segment here: a crossing that landed
                         // on a vertex. It is not a touch at all.
-                        if meets.crossing.is_none() {
-                            meets.crossing = Some((i, a));
-                        }
+                        meets.crossings.push(Crossing::Through {
+                            vertex: i,
+                            segment: a,
+                        });
                         continue;
                     }
                 }
@@ -258,10 +259,7 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
                 x != 0.0 && y != 0.0 && ((x > 0.0) != (y > 0.0))
             };
             if straddles(c_lo, c_hi, e, f) && straddles(e, f, c_lo, c_hi) {
-                if meets.crossing.is_none() {
-                    meets.crossing = Some((a, c));
-                }
-                return meets;
+                meets.crossings.push(Crossing::Segments(a, c));
             }
         }
     }
@@ -302,14 +300,25 @@ pub(crate) struct Touch {
     pub(crate) witness: Witness,
 }
 
+/// Where the boundary passes through itself — see [`self_touch`]. Segments are named by the
+/// index of their first vertex (`a → next[a]`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Crossing {
+    /// Two segments passing through each other, the crossing on neither's vertex.
+    Segments(usize, usize),
+    /// The boundary passing through `segment` at `vertex`, which lies strictly inside it — the
+    /// touch scan's witness saw `vertex`'s two ring neighbours on opposite sides.
+    Through { vertex: usize, segment: usize },
+}
+
 /// Everything [`self_touch`] found. `touches` holds one record per touch — a vertex on a shared
-/// endpoint is recorded for the segment that *starts* there only. A crossing, whether found by
-/// the segment scan or by a touch whose witness said the boundary passes through, outranks every
-/// touch.
+/// endpoint is recorded for the segment that *starts* there only. `crossings` holds **every**
+/// crossing, so a caller that separates them can take them all in one pass; any crossing outranks
+/// every touch.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Meets {
     pub(crate) touches: Vec<Touch>,
-    pub(crate) crossing: Option<(usize, usize)>,
+    pub(crate) crossings: Vec<Crossing>,
 }
 
 fn classify(uv: &[P2], prev: &[usize], next: &[usize]) -> Result<Vec<Kind>, TessError> {
@@ -730,7 +739,7 @@ mod touch_tests {
             [3.0, 2.0],
         ];
         let m = meets(&uv, &[&[0, 1, 2, 3], &[4, 5, 6]]);
-        assert_eq!(m.crossing, None);
+        assert!(m.crossings.is_empty());
         assert_eq!(
             m.touches,
             vec![Touch {
@@ -758,7 +767,13 @@ mod touch_tests {
             [4.0, 1.0],
         ];
         let m = meets(&uv, &[&[0, 1, 2, 3], &[4, 5, 6, 7]]);
-        assert!(m.crossing.is_some(), "{m:?}");
+        assert!(
+            m.crossings
+                .iter()
+                .all(|c| matches!(c, Crossing::Through { .. })),
+            "{m:?}"
+        );
+        assert!(!m.crossings.is_empty(), "{m:?}");
         assert!(m.touches.is_empty(), "{m:?}");
     }
 
@@ -777,7 +792,7 @@ mod touch_tests {
             [3.0, 2.0],
         ];
         let m = meets(&uv, &[&[0, 1, 2, 3], &[4, 5, 6]]);
-        assert_eq!(m.crossing, None, "{m:?}");
+        assert!(m.crossings.is_empty(), "{m:?}");
         assert_eq!(m.touches.len(), 2, "{m:?}");
         for t in &m.touches {
             assert_eq!(t.kind, TouchKind::AtEnd, "{t:?}");
@@ -809,7 +824,7 @@ mod touch_tests {
             [3.0, 0.0],
         ];
         let m = meets(&uv, &[&[0, 1, 2, 3], &[4, 5, 6]]);
-        assert_eq!(m.crossing, None, "{m:?}");
+        assert!(m.crossings.is_empty(), "{m:?}");
         assert_eq!(m.touches.len(), 2, "{m:?}");
         for t in &m.touches {
             assert_eq!(t.kind, TouchKind::Interior, "{t:?}");

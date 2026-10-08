@@ -1478,3 +1478,174 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
         lateral_mesh(&m, "the census's bothrims slab");
     }
 }
+
+/// A mesh of every live solid in `m` that is drawn right: it exists, it is watertight, no lateral
+/// triangle leans off its cylinder, no planar triangle faces against its face, and it holds the
+/// solids' volume up to what the budget lets sampling cut off a curved face. Returns it.
+fn drawn_right(m: &Model, name: &str) -> Tessellation {
+    let cfg = TessConfig::default();
+    let t = tessellate(m, &cfg).unwrap_or_else(|e| panic!("{name}: the mesher refuses it: {e:?}"));
+    assert_eq!(non_watertight_edges(&t), 0, "{name}: the mesh leaks");
+    let leaning = leaning_laterals(m, &t, cfg.max_angle_deg);
+    assert!(leaning.is_empty(), "{name}: {leaning:?}");
+    let mut slack = 0.0;
+    for (&fh, tris) in &t.by_face {
+        let props = nacre_props::face_props(m, fh).expect("a face's props");
+        match (m.surface_cache(m.face(fh).surface), props.normal) {
+            (Surface::Plane(_), Some(n)) => {
+                for &h in tris {
+                    let p = t.triangles.get(h).vertices.map(|v| t.vertices.get(v).pos);
+                    let facing = (p[1] - p[0]).cross(p[2] - p[0]).dot(n);
+                    assert!(
+                        facing > 0.0,
+                        "{name}: a planar triangle faces away ({facing})"
+                    );
+                }
+            }
+            (Surface::Cylinder(cyl), _) => {
+                let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
+                slack += props.area.abs() * cfg.tol.min(cyl.radius() * (1.0 - turn));
+            }
+            (Surface::Plane(_), None) => panic!("{name}: a planar face without a normal"),
+        }
+    }
+    let solids: f64 = m
+        .live_solids()
+        .iter()
+        .map(|&s| {
+            nacre_props::mass_props(m, s)
+                .expect("a solid's props")
+                .volume
+        })
+        .sum();
+    let mesh: f64 = t
+        .triangles
+        .iter()
+        .map(|(_, tri)| {
+            let p = tri
+                .vertices
+                .map(|h| t.vertices.get(h).pos - Point3::origin());
+            p[0].dot(p[1].cross(p[2])) / 6.0
+        })
+        .sum();
+    assert!(
+        (mesh - solids).abs() <= slack + 1e-9,
+        "{name}: mesh volume {mesh}, solids {solids}, slack {slack}"
+    );
+    t
+}
+
+/// How many samples the edge polylines of `m` hold before any chord is cut apart — sampled, and
+/// the bands cut (which puts samples into arcs of its own).
+fn before_cutting(m: &Model) -> usize {
+    let mut t = Tessellation::default();
+    let live = sample_live_edges(&mut t, m, &TessConfig::default(), &m.reachable());
+    cut_seamless_bands(&mut t, m, &live);
+    t.by_edge.values().map(Vec::len).sum()
+}
+
+/// ★★★★ **A boundary nearer another than a chord sags is drawn** ([`separate_crossing_chords`]).
+/// Each of these is a valid solid whose cap the sweep refused before the arcs there were cut
+/// finer — the chords of two curves `1e-8` to `5e-4` apart passing through each other:
+///
+/// * the playground's `d: 9.999` hole at `(3, 4)` in a disk of radius 10, its rim `0.0005` from the
+///   disk's — cut, and fused with a column standing past both caps;
+/// * a hole of the unit disk at `(0.3, 0.4)`, its rim `1e-8` from the disk's;
+/// * a groove's tip `1e-8` inside the rim (`wedge_on_a_rim` with its apex off the circle);
+/// * a groove's tip on the rim at `(0.6, 0.8)`, one side leaving it `0.1°` inside the tangent —
+///   inside the half segment's turn (1°) the rim's first chord leaves at.
+///
+/// Each finished boundary holds more samples than sampling and the band cut laid: the arcs were
+/// cut, not the shape spared.
+#[test]
+fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let z = Vector3::from_array([0.0, 0.0, 1.0]);
+    let disk_and_column = |kind: BoolKind, r: f64, centre: [f64; 2], rho: f64| -> Model {
+        let mut m = Model::new();
+        let disk = fixtures::cylinder(&mut m, Point3::origin(), z, r, 2.0).solid;
+        let column = fixtures::cylinder(
+            &mut m,
+            Point3::from_array([centre[0], centre[1], -1.0]),
+            z,
+            rho,
+            4.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        boolean(&mut m, kind, disk, column).expect("the column's boolean");
+        m.rebuild_adjacency();
+        m
+    };
+    let wedge = |triangle: [[f64; 2]; 3]| -> Model {
+        let mut m = Model::new();
+        fixtures::wedge_on_a_rim(&mut m, triangle, 1.0, 2.0);
+        m
+    };
+    let shapes = [
+        (
+            "the playground's hole, cut",
+            disk_and_column(BoolKind::Cut, 10.0, [3.0, 4.0], 4.9995),
+        ),
+        (
+            "the playground's hole, fused",
+            disk_and_column(BoolKind::Fuse, 10.0, [3.0, 4.0], 4.9995),
+        ),
+        (
+            "a hole 1e-8 from the rim",
+            disk_and_column(BoolKind::Cut, 1.0, [0.3, 0.4], 0.49999999),
+        ),
+        (
+            "a groove tip 1e-8 inside the rim",
+            wedge([[0.79999999, 0.6], [0.4, 0.5], [0.4, 0.1]]),
+        ),
+        (
+            "a groove side 0.1° off the tangent",
+            wedge([[0.6, 0.8], [0.598601912, 0.801044758], [0.2, 0.3]]),
+        ),
+    ];
+    for (name, m) in shapes {
+        let t = drawn_right(&m, name);
+        let finished: usize = t.by_edge.values().map(Vec::len).sum();
+        assert!(
+            finished > before_cutting(&m),
+            "{name}: no arc was cut finer"
+        );
+    }
+}
+
+/// ★ **Past the finest sampling it is refused by name.** A hole near-concentric with the unit
+/// disk, its seam turned off the disk's (`(0.6, 0.8)`) so the two circles' samples do not line up:
+/// the chords cross all the way round, and every arc must be cut until its sagitta is under the
+/// gap. At `1e-6` that is about 2,300 samples a circle and the cap is drawn; at `1e-8` it would be
+/// over 20,000, past [`FINEST_CIRCLE`], and the face comes back [`TessError::DegenerateRing`] as it
+/// did before any arc was cut — in about 0.9 s (release), where cutting on draws it in about 20.
+#[test]
+fn near_contact_past_the_finest_sampling_is_refused_by_name() {
+    use nacre_ops::{BoolKind, boolean, fixtures};
+    let z = Vector3::from_array([0.0, 0.0, 1.0]);
+    let turned = Vector3::from_array([0.6, 0.8, 0.0]);
+    let bored = |centre: [f64; 2], rho: f64| -> Model {
+        let mut m = Model::new();
+        let disk = fixtures::cylinder(&mut m, Point3::origin(), z, 1.0, 2.0).solid;
+        let bore = fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([centre[0], centre[1], -1.0]),
+            z,
+            turned,
+            rho,
+            4.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        boolean(&mut m, BoolKind::Cut, disk, bore).expect("the bore cuts");
+        m.rebuild_adjacency();
+        m
+    };
+    drawn_right(&bored([0.0000006, 0.0000008], 0.999998), "a gap of 1e-6");
+    assert_eq!(
+        tessellate(&bored([0.0, 0.0], 0.99999999), &TessConfig::default()).map(|_| ()),
+        Err(TessError::DegenerateRing),
+        "a gap of 1e-8"
+    );
+}

@@ -12,7 +12,7 @@ mod delaunay;
 mod monotone;
 mod sos;
 
-pub(crate) use monotone::{Meets, Touch, TouchKind, Witness};
+pub(crate) use monotone::{Crossing, Meets, Touch, TouchKind, Witness};
 use sos::Twins;
 
 /// What [`triangulate_uv`] hands back: the triangles, and the rings it actually triangulated —

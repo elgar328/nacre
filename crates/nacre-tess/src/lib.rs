@@ -44,6 +44,11 @@ pub enum TessError {
     /// itself: without `monotone`'s `self_touch` that input comes back `Ok` with eight confident,
     /// wrong triangles (measured).
     ///
+    /// ★ **A crossing that is only the chords' doing is not here**: where an arc's chords sag past
+    /// a curve near it, the arcs there are cut finer before the sweep sees the rings
+    /// (`separate_crossing_chords`). What comes back under this name is a crossing of straight
+    /// segments, or one that arcs cut as finely as `FINEST_CIRCLE` lets them still have.
+    ///
     /// **The sweep detects these** — ear clipping would notice them only by accident, as a
     /// stall. It is checked rather than
     /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
@@ -286,25 +291,40 @@ pub fn tessellate_solids(
     // membership, so the mesh stays reproducible (replay).
     let reach = model.reachable_from(solids);
 
-    // 1. Sample every live edge into a shared polyline (the crack-free contract).
+    // 1. Sample every live edge into a shared polyline (the crack-free contract), then finish
+    // the polylines before any face reads them.
     let live = sample_live_edges(&mut t, model, cfg, &reach);
-
-    // 1¼. A cylindrical face whose boundary wraps the axis — a band, bounded by its two rims —
-    // gets one generator to be cut along, its points put into the crossed loops' polylines.
-    // Before the bridge pre-pass, which reads the polylines as final. See [`cut_seamless_bands`].
-    let cuts = cut_seamless_bands(&mut t, model, &live);
-
-    // 1½. Where a hole's sample lands exactly on a straight shared edge (an exact tangency, the
-    // one boundary the sweep cannot decompose), put that sample into the edge's polyline so
-    // every face on the edge sees it. Nothing is minted and no coordinate moves: an existing
-    // vertex becomes a sample of a second edge it lies on. See [`bridge_shared_edges`].
-    let _report = bridge_shared_edges(&mut t, model, &live);
+    let (cuts, _report) = finish_polylines(&mut t, model, &live);
     // 2. Triangulate each live face, reusing the shared edge polylines.
     for &(fh, face) in &live {
         triangulate_face(&mut t, model, cfg, fh, face, cuts.get(&fh).cloned())?;
     }
 
     Ok(t)
+}
+
+/// The passes that change the shared polylines after sampling, **in the one order they must run**
+/// — each adds samples every face on the edge sees, and none may run after a face has read them.
+///
+/// 1. A cylindrical face whose boundary wraps the axis — a band, bounded by its two rims — gets
+///    one generator to be cut along, its points put into the crossed loops' polylines
+///    ([`cut_seamless_bands`]).
+/// 2. Each planar face's boundary is asked where it meets itself: where two chords pass through
+///    each other the arcs there are cut finer ([`separate_crossing_chords`]), and where a hole's
+///    sample lands exactly on a straight shared edge (an exact tangency, the one boundary the
+///    sweep cannot decompose) that sample goes into the edge's polyline so every face on the edge
+///    sees it ([`bridge_shared_edges`]). **After the band cut**: a sample put into an arc pushes
+///    its chord out toward the curve, so it can make a crossing that was not there. The bridge
+///    reads the touches of the boundary the cutting leaves, and what it inserts lies exactly on a
+///    straight edge, so it changes no polyline's shape.
+fn finish_polylines(
+    t: &mut Tessellation,
+    model: &Model,
+    live: &[(Handle<Face>, &Face)],
+) -> (HashMap<Handle<Face>, BandCut>, BridgeReport) {
+    let cuts = cut_seamless_bands(t, model, live);
+    let report = bridge_shared_edges(t, model, live);
+    (cuts, report)
 }
 
 /// Phase 1 of [`tessellate`]: sample every live edge into `by_edge`, and hand back the live
@@ -331,6 +351,165 @@ fn sample_live_edges<'m>(
         .map(|h| (h, model.face(h)))
         .filter(|(fh, _)| reach.faces.contains(fh))
         .collect()
+}
+
+/// ★★★★ **Where two chords of a planar face pass through each other, cut the arcs there finer** —
+/// and hand back the face's chart and how its boundary meets itself once nothing more is cut.
+///
+/// A face's boundary curves do not meet — the b-rep says so — but each is drawn as chords, and an
+/// arc's chords stand inside it by up to its sagitta. Two curves closer than that can have chords
+/// that pass through each other: a hole whose rim comes within a sagitta of the outer rim, a groove
+/// whose tip does, or a groove side leaving a rim point closer to the tangent than half a segment's
+/// turn. The face is valid, and the sweep refuses its rings ([`TessError::DegenerateRing`]).
+///
+/// So the boundary is asked, with the sweep's own exact scan ([`polygon::meets`]), where it passes
+/// through itself, and **every** arc chord in a crossing gets its arc midpoint as a new sample — in
+/// the shared polyline, so the face across the edge sees it too. Again until nothing crosses. A
+/// chord cut in two moves toward its curve, and the curves are apart, so the crossings go; a
+/// crossing between two straight segments has nothing to cut and is the sweep's to refuse.
+///
+/// **It stops when a round inserts nothing**: every crossing arc is already cut as finely as
+/// [`FINEST_CIRCLE`] lets its edge be, or its midpoint is one of its ends in `f64`. Each round
+/// inserts or stops, so the rounds are bounded by the samples the cap leaves room for. Measured:
+/// at most 8 rounds and 16 samples where a hole or a groove tip comes within `1e-8` of a rim, or a
+/// groove side leaves a rim point `0.01°` off the tangent; a hole near-concentric with its rim all
+/// the way round wants whole circles cut finely — twice as fine at a gap of `1e-4`, about 2,300
+/// samples a circle at `1e-6` — and at `1e-8` the cap is reached and the face refused by name.
+///
+/// ★ **One scan, two readers.** The last round's answer is the boundary as it now stands, which is
+/// what the bridge pre-pass reads its touches off ([`bridge_shared_edges`] calls this) — asked once,
+/// not again by a second pass over the same polylines. Measured as a separate pass, the second ask
+/// was 7.7% of the census's meshing time.
+///
+/// ★ **Faces that cannot cross are scanned once and not cut**: one with no circle edge (straight
+/// segments do not sag), and one bounded by one whole circle alone — its samples lie on the circle
+/// in angular order, a convex polygon.
+///
+/// ★ **Nothing that meshes today is touched** — a boundary with no crossing gets no sample.
+/// Measured over the workspace suite, the census, the ignored sweep, nacre-kit and the
+/// playground's suite: no face.
+///
+/// ★ A crossing that lands on a vertex (`Crossing::Through`) cuts the chord it passes through and
+/// both chords at the vertex. Every crossing measured was `Segments` — that arm is argued, its
+/// population zero.
+fn separate_crossing_chords(
+    t: &mut Tessellation,
+    model: &Model,
+    face: &Face,
+    plane: &nacre_geom::Plane,
+) -> Option<(Chart, polygon::Meets)> {
+    use polygon::Crossing;
+    let loops: Vec<&Loop> = std::iter::once(&face.outer).chain(&face.inner).collect();
+    let curved = loops
+        .iter()
+        .flat_map(|lp| &lp.half_edges)
+        .any(|he| matches!(model.edge_curve(he.edge), Curve::Circle(_)));
+    let one_circle = loops.len() == 1 && face.outer.half_edges.len() == 1;
+    loop {
+        // A face whose chart or rings are refused is left for its own triangulation to name.
+        let chart = planar_chart(t, face, plane).ok()?;
+        let meets = {
+            let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
+            polygon::meets(&chart.uv, &refs).ok()?
+        };
+        if !curved || one_circle || meets.crossings.is_empty() {
+            return Some((chart, meets));
+        }
+        // A chart position is `(ring, k)` of the same walk (`boundary_ring` is `traced_ring`'s
+        // handles), the rings numbered in loop order over consecutive positions.
+        let traced: Vec<(Vec<Traced>, Option<Traced>)> =
+            loops.iter().map(|lp| traced_ring(t, lp)).collect();
+        let place = |i: usize| -> (usize, usize) {
+            let ring = chart
+                .rings
+                .iter()
+                .position(|r| r[0] <= i && i < r[0] + r.len())
+                .expect("a chart position lies in one ring");
+            (ring, i - chart.rings[ring][0])
+        };
+        let before = |i: usize| {
+            let (ring, k) = place(i);
+            let r = &chart.rings[ring];
+            r[(k + r.len() - 1) % r.len()]
+        };
+        // Each chord in a crossing, named by its first position.
+        let mut chords: Vec<usize> = Vec::new();
+        for c in &meets.crossings {
+            match *c {
+                Crossing::Segments(a, b) => chords.extend([a, b]),
+                Crossing::Through { vertex, segment } => {
+                    chords.extend([segment, before(vertex), vertex])
+                }
+            }
+        }
+        chords.sort_unstable();
+        chords.dedup();
+        let mut cuts: Vec<(Handle<Edge>, usize, Point3, f64)> = Vec::new();
+        for i in chords {
+            let (ring, k) = place(i);
+            let (positions, closing) = &traced[ring];
+            if let Some(cut) =
+                arc_midpoint(t, model, positions[k], arriving(positions, *closing, k))
+            {
+                cuts.push(cut);
+            }
+        }
+        if cuts.is_empty() {
+            return Some((chart, meets));
+        }
+        // Later places first on each edge, so the earlier ones stay where they were found.
+        cuts.sort_by_key(|&(edge, at, ..)| std::cmp::Reverse((edge.index(), at)));
+        for (edge, at, pos, theta) in cuts {
+            let h = t.vertices.push(TessVertex {
+                pos,
+                origin: TessOrigin::OnEdge { edge, t: theta },
+            });
+            t.by_edge
+                .get_mut(&edge)
+                .expect("the edge was sampled")
+                .insert(at, h);
+        }
+    }
+}
+
+/// The new sample that cuts the chord from `from` to the step's arrival in two — `(edge, place in
+/// its polyline, position, θ)` — or `None` when the chord is not an arc's, its edge is already cut
+/// as finely as [`FINEST_CIRCLE`] lets it be, or the midpoint is one of its ends in `f64`.
+///
+/// The polyline runs CCW about the circle ([`circle_span`]), so the chord's earlier end is `from`
+/// walked forward and the arrival walked backward; θ is read off both ends with
+/// `Circle::angle_of`, the one spelling of θ, and the new sample stands halfway round between.
+fn arc_midpoint(
+    t: &Tessellation,
+    model: &Model,
+    from: Traced,
+    (step, wraps): (Traced, bool),
+) -> Option<(Handle<Edge>, usize, Point3, f64)> {
+    let Curve::Circle(c) = model.edge_curve(step.edge) else {
+        return None;
+    };
+    let edge = model.edge(step.edge);
+    let poly = &t.by_edge[&step.edge];
+    let chords = if edge.vertices[0] == edge.vertices[1] {
+        poly.len()
+    } else {
+        poly.len() - 1
+    };
+    if chords >= segments_over(FINEST_CIRCLE, edge, circle_span(model, edge, c).1) {
+        return None;
+    }
+    let (a, b) = (
+        t.vertices.get(from.handle).pos,
+        t.vertices.get(step.handle).pos,
+    );
+    let (early, late) = if step.forward { (a, b) } else { (b, a) };
+    let t0 = c.angle_of(early);
+    let theta = t0 + (c.angle_of(late) - t0).rem_euclid(std::f64::consts::TAU) / 2.0;
+    let pos = c.point_at(theta);
+    if pos == a || pos == b {
+        return None;
+    }
+    Some((step.edge, between(poly, step, wraps), pos, theta))
 }
 
 /// One insertion the bridge pre-pass made: `vertex` now sits at `at` in `by_edge[edge]`.
@@ -414,11 +593,9 @@ fn bridge_shared_edges(
             // surface kind is a compile error here and its author decides whether it bridges.
             Surface::Cylinder(_) => continue,
         };
-        let Ok(chart) = planar_chart(t, face, plane) else {
-            continue; // the face's own triangulation will name this error
-        };
-        let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
-        let Ok(m) = polygon::meets(&chart.uv, &refs) else {
+        // The boundary as it stands once its crossing chords are cut apart — the touches are read
+        // off that, and the face's own triangulation will name a chart it refuses.
+        let Some((chart, m)) = separate_crossing_chords(t, model, face, plane) else {
             continue;
         };
         let bridgeable =
@@ -534,15 +711,15 @@ fn bridge_shared_edges(
     report
 }
 
-/// The bridge pre-pass alone, for a test that wants to see what it did before any face is
-/// triangulated (the returned `Tessellation` holds the sampled, split edge polylines and no
-/// triangles). Test-only (`test-util`).
+/// What the bridge pre-pass did, for a test that wants to see it before any face is triangulated
+/// (the returned `Tessellation` holds the finished edge polylines and no triangles) — the same
+/// passes [`tessellate`] runs, in its order. Test-only (`test-util`).
 #[cfg(feature = "test-util")]
 pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessellation) {
     let mut t = Tessellation::default();
     let reach = model.reachable();
     let live = sample_live_edges(&mut t, model, cfg, &reach);
-    let report = bridge_shared_edges(&mut t, model, &live);
+    let (_, report) = finish_polylines(&mut t, model, &live);
     (report, t)
 }
 
@@ -632,54 +809,66 @@ fn sample_edge(
     match model.edge_curve(eh) {
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Circle(c) => {
-            if v0 == v1 {
-                // A full circle: point 0 is its vertex, the rest are interior edge points going
-                // round from it. A rim's vertex is its seam point (`OnSeam`), at angle 0
-                // (= centre + r·ref_dir) by definition; any other vertex is read off the curve.
-                let n = circle_segments(cfg, c.radius());
-                let t0 = match model.vertex(v0) {
-                    Vertex::OnSeam(_) => 0.0,
-                    _ => c.angle_of(model.vertex_point(v0)),
-                };
-                let mut ring = Vec::with_capacity(n);
-                ring.push(vertex_of(t, vmap, model, v0));
-                for i in 1..n {
-                    let theta = t0 + std::f64::consts::TAU * (i as f64) / (n as f64);
-                    let h = t.vertices.push(TessVertex {
-                        pos: c.point_at(theta),
-                        origin: TessOrigin::OnEdge { edge: eh, t: theta },
-                    });
-                    ring.push(h);
-                }
-                ring
-            } else {
-                // ★ **An arc**: the stored `[v0, v1]` order is CCW about the axis — the
-                // convention `derive_edge_curve`'s circle arm states — so the polyline walks
-                // θ(v0) → θ(v0) + Δθ with `Circle::angle_of` as the one spelling of θ. The
-                // segment count is the full circle's budget scaled by the arc's fraction (at
-                // least one), and both endpoints are shared mesh vertices (crack-free with the
-                // neighbouring faces' rings).
-                let t0 = c.angle_of(model.vertex_point(v0));
-                let dt =
-                    (c.angle_of(model.vertex_point(v1)) - t0).rem_euclid(std::f64::consts::TAU);
-                let n_full = circle_segments(cfg, c.radius()) as f64;
-                let n = ((n_full * dt / std::f64::consts::TAU).ceil() as usize).max(1);
-                let mut poly = Vec::with_capacity(n + 1);
-                poly.push(vertex_of(t, vmap, model, v0));
-                for i in 1..n {
-                    let theta = t0 + dt * (i as f64) / (n as f64);
-                    let h = t.vertices.push(TessVertex {
-                        pos: c.point_at(theta),
-                        origin: TessOrigin::OnEdge { edge: eh, t: theta },
-                    });
-                    poly.push(h);
-                }
-                poly.push(vertex_of(t, vmap, model, v1));
-                poly
+            let (t0, dt) = circle_span(model, edge, c);
+            let n = segments_over(circle_segments(cfg, c.radius()), edge, dt);
+            // Point 0 is the edge's first vertex and the rest are interior edge points going round
+            // from it; an arc ends on its second vertex, a full circle closes on its first without
+            // repeating it. Both endpoints are shared mesh vertices (crack-free with the
+            // neighbouring faces' rings).
+            let mut poly = Vec::with_capacity(n + 1);
+            poly.push(vertex_of(t, vmap, model, v0));
+            for i in 1..n {
+                let theta = t0 + dt * (i as f64) / (n as f64);
+                let h = t.vertices.push(TessVertex {
+                    pos: c.point_at(theta),
+                    origin: TessOrigin::OnEdge { edge: eh, t: theta },
+                });
+                poly.push(h);
             }
+            if v1 != v0 {
+                poly.push(vertex_of(t, vmap, model, v1));
+            }
+            poly
         }
     }
 }
+
+/// Where a circle edge's polyline starts and how far it turns, CCW: `(θ₀, Δθ)`.
+///
+/// A full circle turns `2π` from its vertex — a rim's vertex is its seam point (`OnSeam`), at
+/// angle 0 (= centre + r·ref_dir) by definition; any other vertex is read off the curve. An arc's
+/// stored `[v0, v1]` order is CCW about the axis — the convention `derive_edge_curve`'s circle arm
+/// states — so it turns from θ(v0) to θ(v1), with `Circle::angle_of` as the one spelling of θ.
+fn circle_span(model: &Model, edge: &Edge, c: &Circle) -> (f64, f64) {
+    let [v0, v1] = edge.vertices;
+    if v0 == v1 {
+        let t0 = match model.vertex(v0) {
+            Vertex::OnSeam(_) => 0.0,
+            _ => c.angle_of(model.vertex_point(v0)),
+        };
+        return (t0, std::f64::consts::TAU);
+    }
+    let t0 = c.angle_of(model.vertex_point(v0));
+    let dt = (c.angle_of(model.vertex_point(v1)) - t0).rem_euclid(std::f64::consts::TAU);
+    (t0, dt)
+}
+
+/// The segments a circle edge turning `dt` gets out of `per_turn` for the whole circle: all of
+/// them for a full circle, the arc's fraction (at least one) otherwise. One spelling for the two
+/// readers — how finely an edge is sampled ([`sample_edge`]), and how finely it may ever be cut
+/// ([`separate_crossing_chords`]).
+fn segments_over(per_turn: usize, edge: &Edge, dt: f64) -> usize {
+    if edge.vertices[0] == edge.vertices[1] {
+        per_turn
+    } else {
+        ((per_turn as f64 * dt / std::f64::consts::TAU).ceil() as usize).max(1)
+    }
+}
+
+/// The most segments a whole circle is ever cut into. [`circle_segments`] clamps a pathological
+/// budget to it, and [`separate_crossing_chords`] stops cutting an edge at it — one statement, the
+/// finest this mesher samples a circle, read in two places.
+const FINEST_CIRCLE: usize = 4096;
 
 /// Segments for a circle of `radius`: **whichever of the two budgets asks for more**
 /// ([`TessConfig`] says why there are two).
@@ -697,7 +886,7 @@ fn sample_edge(
 /// the `[MIN, MAX]` clamp. The mesh is a cache; it answers rather than argues.
 fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
     const MIN: usize = 8;
-    const MAX: usize = 4096;
+    const MAX: usize = FINEST_CIRCLE;
     let by_sagitta = {
         let ratio = cfg.tol / radius;
         if ratio <= 0.0 {
@@ -720,29 +909,10 @@ fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
     by_sagitta.max(by_angle)
 }
 
-/// Gather a loop's boundary as an ordered ring of shared mesh vertices,
-/// concatenating each half-edge's oriented polyline and dropping consecutive
-/// duplicates (shared endpoints) and the wrap-around duplicate.
+/// A loop's boundary as an ordered ring of shared mesh vertices — [`traced_ring`]'s walk, so a
+/// chart position and the polyline place it came from are one numbering.
 fn boundary_ring(t: &Tessellation, lp: &Loop) -> Vec<Handle<TessVertex>> {
-    let mut ring: Vec<Handle<TessVertex>> = Vec::new();
-    for he in &lp.half_edges {
-        let poly = &t.by_edge[&he.edge];
-        // Append the oriented polyline, skipping a repeat of the previous vertex.
-        let oriented: Box<dyn Iterator<Item = &Handle<TessVertex>>> = if he.forward {
-            Box::new(poly.iter())
-        } else {
-            Box::new(poly.iter().rev())
-        };
-        for &h in oriented {
-            if ring.last() != Some(&h) {
-                ring.push(h);
-            }
-        }
-    }
-    if ring.len() > 1 && ring.first() == ring.last() {
-        ring.pop();
-    }
-    ring
+    traced_ring(t, lp).0.into_iter().map(|p| p.handle).collect()
 }
 
 fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex>; 3]) {
@@ -1001,9 +1171,11 @@ struct Traced {
     at: usize,
 }
 
-/// [`boundary_ring`] with each position's polyline place, and the place the ring's closing step
-/// arrives through (the repeat of the first sample that `boundary_ring` drops). The step from
-/// position `k` to `k + 1` lies on the edge position `k + 1` was taken from.
+/// A loop's boundary walked as a ring — each half-edge's oriented polyline in turn, a sample
+/// shared by two consecutive edges taken once — with each position's polyline place, and the place
+/// the ring's closing step arrives through (the repeat of the first sample, which the ring drops).
+/// The step from position `k` to `k + 1` lies on the edge position `k + 1` was taken from;
+/// [`arriving`] reads it.
 fn traced_ring(t: &Tessellation, lp: &Loop) -> (Vec<Traced>, Option<Traced>) {
     let mut ring: Vec<Traced> = Vec::new();
     for he in &lp.half_edges {
@@ -1026,6 +1198,33 @@ fn traced_ring(t: &Tessellation, lp: &Loop) -> (Vec<Traced>, Option<Traced>) {
     .then(|| ring.pop())
     .flatten();
     (ring, closing)
+}
+
+/// Where the step from position `k` of a [`traced_ring`] arrives: the next position, the closing
+/// one, or — `true` — the first, through the closing step of a ring with no closing position.
+///
+/// ★ **That last is one closed edge**, whose polyline does not repeat its first sample: the step
+/// from its last sample back to the first. A new sample there goes at the polyline's end
+/// ([`between`]).
+fn arriving(positions: &[Traced], closing: Option<Traced>, k: usize) -> (Traced, bool) {
+    match (k + 1 < positions.len(), closing) {
+        (true, _) => (positions[k + 1], false),
+        (false, Some(cl)) => (cl, false),
+        (false, None) => (positions[0], true),
+    }
+}
+
+/// Where in `poly` a new sample goes to lie on the step arriving at `step` ([`arriving`]): the step
+/// runs `poly[at − 1] → poly[at]` walked forward, `poly[at + 1] → poly[at]` walked backward, and
+/// a closing step from the last sample back to the first.
+fn between(poly: &[Handle<TessVertex>], step: Traced, wraps: bool) -> usize {
+    if wraps {
+        poly.len()
+    } else if step.forward {
+        step.at
+    } else {
+        step.at + 1
+    }
 }
 
 /// The cylinder chart's angle at each position of `ring`, unwrapped along it — every step taken the
@@ -1286,7 +1485,7 @@ fn band_cut(
     let axis = cyl.axis();
     let (x, y) = (cyl.ref_dir(), axis.direction().cross(cyl.ref_dir()));
     // Every crossing is found before any insertion moves a polyline index (`Traced::at`).
-    let mut found: Vec<(usize, Traced, bool)> = Vec::new(); // (ring, arriving, through the closing wrap)
+    let mut found: Vec<(usize, Traced, bool)> = Vec::new(); // (ring, where the step arrives, closing wrap)
     for (ring, (positions, closing)) in traced.iter().enumerate() {
         let steps = ring_steps(&turns[ring]);
         let n: i64 = steps.iter().map(|&s| passes(s, c)).sum();
@@ -1302,40 +1501,25 @@ fn band_cut(
             return None;
         }
         for k in at {
-            found.push(match (k + 1 < positions.len(), closing) {
-                (true, _) => (ring, positions[k + 1], false),
-                (false, Some(cl)) => (ring, *cl, false),
-                // ★ **The closing step of a ring with no closing position** — one closed edge,
-                // whose polyline does not repeat its first sample: the step from its last sample
-                // back to the first. A new sample there goes at the polyline's end.
-                (false, None) => (ring, positions[0], true),
-            });
+            let (step, wraps) = arriving(positions, *closing, k);
+            found.push((ring, step, wraps));
         }
     }
     let mut points: Vec<(usize, Handle<TessVertex>, f64)> = Vec::with_capacity(found.len());
-    for (ring, arriving, wraps) in found {
-        let Curve::Circle(circle) = model.edge_curve(arriving.edge) else {
+    for (ring, step, wraps) in found {
+        let Curve::Circle(circle) = model.edge_curve(step.edge) else {
             return None;
         };
         let pos = circle.center() + (x * c.cos() + y * c.sin()) * circle.radius();
         let h = t.vertices.push(TessVertex {
             pos,
             origin: TessOrigin::OnEdge {
-                edge: arriving.edge,
+                edge: step.edge,
                 t: circle.angle_of(pos),
             },
         });
-        let poly = t.by_edge.get_mut(&arriving.edge)?;
-        // The step runs `poly[at − 1] → poly[at]` walked forward, `poly[at + 1] → poly[at]`
-        // walked backward; the new sample goes between the two.
-        let at = if wraps {
-            poly.len()
-        } else if arriving.forward {
-            arriving.at
-        } else {
-            arriving.at + 1
-        };
-        poly.insert(at, h);
+        let poly = t.by_edge.get_mut(&step.edge)?;
+        poly.insert(between(poly, step, wraps), h);
         points.push((ring, h, station(cyl, circle)));
     }
     let place_of = |ring: usize| points.iter().find(|p| p.0 == ring).map(|p| p.2);
