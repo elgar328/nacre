@@ -387,6 +387,7 @@ dependencies = [
 name = "nacre-tess"
 version = "0.0.2-dev"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-math",
  "nacre-ops",

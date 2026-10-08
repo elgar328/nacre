@@ -490,12 +490,23 @@ fn record(
     if let Ok(v) = out
         && !v.is_empty()
     {
-        let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default());
+        let cfg = nacre_tess::TessConfig::default();
+        let mesh = nacre_tess::tessellate(m, &cfg);
         assert!(
             mesh.is_ok(),
             "{tag}: a boolean built a solid the mesher refuses: {:?}",
             mesh.err()
         );
+        // ★ And no lateral triangle leans off its cylinder past the budget (worst over this
+        // corpus 0.345°). The `bothrims … slab` rows were where a lattice point on a ruling made
+        // ten triangles lying in a cap plane each.
+        if let Ok(t) = &mesh {
+            let leaning = nacre_tess::leaning_laterals(m, t, cfg.max_angle_deg);
+            assert!(
+                leaning.is_empty(),
+                "{tag}: a mesh that leans off a lateral: {leaning:?}"
+            );
+        }
     }
     print!("c {tag} in:{inputs} ");
     match out {

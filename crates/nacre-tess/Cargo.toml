@@ -27,6 +27,9 @@ test-util = []
 # (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
 # too, so the library graph stays acyclic (the nacre-props shape).
 nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
+# Tilts a solid (`Isometry`) for the lattice test: a tilted axis is where a circle's place, read
+# from the curve and from a point on it, came apart by ulps.
+nacre-exact = { workspace = true }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

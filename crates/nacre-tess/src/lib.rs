@@ -14,7 +14,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
 
-use nacre_geom::{Curve, Cylinder, Surface};
+use nacre_geom::{Circle, Curve, Cylinder, Surface};
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
 use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
@@ -546,6 +546,60 @@ pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessella
     (report, t)
 }
 
+/// A triangle on a cylinder's lateral that leans off the surface, and by how much: the angle in
+/// degrees between its facet normal and the surface normal at its centroid — `None` when it has no
+/// area, so no facet normal. Test-only (`test-util`).
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Copy, Debug)]
+pub struct Leaning {
+    pub triangle: Handle<TessTriangle>,
+    pub face: Handle<Face>,
+    pub degrees: Option<f64>,
+}
+
+/// Every lateral triangle of `t` whose facet departs from its surface by more than `limit_deg`, or
+/// that has no area. Test-only (`test-util`): the mesh locks call it with the budget's
+/// `max_angle_deg`.
+///
+/// ★ **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
+/// the budget — an arc's chord by [`circle_segments`], an interior chord by `within_budget`, a
+/// ruling not at all — so its three corners lie within one budget's turn of each other, and so does
+/// its facet's normal of the surface's. A triangle the chart made out of a lattice point standing a
+/// few ulps off the boundary lies in a cap plane instead and departs by up to 90°.
+#[cfg(any(test, feature = "test-util"))]
+pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Leaning> {
+    let mut out = Vec::new();
+    for (triangle, tri) in t.triangles.iter() {
+        let surface = model.surface_cache(model.face(tri.face).surface);
+        if !matches!(surface, Surface::Cylinder(_)) {
+            continue;
+        }
+        let [a, b, c] = tri.vertices.map(|h| t.vertices.get(h).pos);
+        let facet = (b - a).cross(c - a);
+        let len = facet.norm();
+        let centroid = a + ((b - a) + (c - a)) * (1.0 / 3.0);
+        let degrees = (len > 0.0)
+            .then(|| surface.normal_at(centroid))
+            .flatten()
+            .map(|n| {
+                (facet * (1.0 / len))
+                    .dot(n)
+                    .abs()
+                    .clamp(0.0, 1.0)
+                    .acos()
+                    .to_degrees()
+            });
+        if degrees.is_none_or(|d| d > limit_deg) {
+            out.push(Leaning {
+                triangle,
+                face: tri.face,
+                degrees,
+            });
+        }
+    }
+    out
+}
+
 /// A deduped mesh vertex for a topology vertex (tagged `OnVertex`).
 fn vertex_of(
     t: &mut Tessellation,
@@ -851,6 +905,11 @@ fn planar_chart(
 /// ([`joined_band`]) — so each cut point stands at `θ` and at `θ + 2π` and the unrolled band is a
 /// rectangle rather than a degenerate line. The other holes are then shifted by whole turns into
 /// the outer ring's range so they lie inside it.
+///
+/// ★ **`u` of a circle's point is the circle's place**, [`station`], not the point's own axial
+/// coordinate — so every arc is level in the chart, at the height the lattice lays its row
+/// ([`interior_nodes`]). Only a point on no circle — measured: none, over the lib suite and the
+/// census; a ruling broken at a vertex by another face's edge would be one — reads its own.
 fn cylinder_chart(
     t: &Tessellation,
     model: &Model,
@@ -867,6 +926,21 @@ fn cylinder_chart(
     let axis = cyl.axis();
     let (o, w_dir) = (axis.origin(), axis.direction());
     let r = cyl.radius();
+    // Every point of a circle's polyline stands at that circle's place ([`station`]) — the number
+    // the lattice lays its rows at, so a row point on an arc lies on the arc's chord exactly.
+    let mut stations: Vec<f64> = Vec::new();
+    let mut place: HashMap<Handle<TessVertex>, f64> = HashMap::new();
+    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+        for he in &lp.half_edges {
+            if let Curve::Circle(c) = model.edge_curve(he.edge) {
+                let s = station(cyl, c);
+                stations.push(s);
+                for &h in &t.by_edge[&he.edge] {
+                    place.insert(h, s);
+                }
+            }
+        }
+    }
     let mut uv: Vec<polygon::P2> = vec![[0.0, 0.0]; handles.len()];
     let mut spans: Vec<(f64, f64)> = Vec::new();
     for ring in &rings {
@@ -874,8 +948,11 @@ fn cylinder_chart(
         let (thetas, _) = unwrapped_thetas(t, cyl, &ring_handles);
         let (mut lo, mut hi) = (f64::MAX, f64::MIN);
         for (&i, &theta) in ring.iter().zip(&thetas) {
-            let w = t.vertices.get(handles[i]).pos - o;
-            uv[i] = [w.dot(w_dir), r * theta];
+            let u = place
+                .get(&handles[i])
+                .copied()
+                .unwrap_or_else(|| (t.vertices.get(handles[i]).pos - o).dot(w_dir));
+            uv[i] = [u, r * theta];
             lo = lo.min(uv[i][1]);
             hi = hi.max(uv[i][1]);
         }
@@ -903,7 +980,7 @@ fn cylinder_chart(
         }
         _ => return Err(TessError::DegenerateRing),
     }
-    let interior = interior_nodes(model, cfg, face, cyl, &uv, negated);
+    let interior = interior_nodes(cfg, cyl, &uv, &rings, stations, negated);
     Ok(Chart {
         uv,
         handles,
@@ -1259,8 +1336,7 @@ fn band_cut(
             arriving.at + 1
         };
         poly.insert(at, h);
-        let place = (circle.center() - axis.origin()).dot(axis.direction());
-        points.push((ring, h, place));
+        points.push((ring, h, station(cyl, circle)));
     }
     let place_of = |ring: usize| points.iter().find(|p| p.0 == ring).map(|p| p.2);
     let (pa, pb) = (place_of(wrapping[0])?, place_of(wrapping[1])?);
@@ -1379,6 +1455,18 @@ fn joined_band(
     Some((out, joined))
 }
 
+/// The axial place of `circle` on `cyl`: its centre, measured along the axis.
+///
+/// ★★ **One spelling, three readers** — the band cut orders its points along the generator by it,
+/// the chart gives every point of a circle's polyline it as `u`, and the lattice lays its rows at
+/// it. Read from the curve, never from a point on it: every arc of one circle agrees on it bitwise
+/// (see [`interior_nodes`]), while a point's own axial coordinate carries its rounding — on a
+/// tilted axis an arc's samples sit a few ulps off their circle's place, and a lattice row computed
+/// one way next to a boundary computed the other was a sliver triangle lying in the cap plane.
+fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
+    (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
+}
+
 /// ★★★★★ **The points a cylindrical face's boundary does not supply, and the mesh needs.**
 ///
 /// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
@@ -1389,41 +1477,46 @@ fn joined_band(
 /// So the chart — the layer that knows the surface — supplies them, on a **lattice with no free
 /// parameter in it**:
 ///
-/// * **around** (`v`): the sampler's own step, `2πr / circle_segments`. Taken from that function
-///   rather than re-derived from the budget, so the lattice lines up with every arc the boundary
-///   already laid down instead of landing an ulp beside them. `i` covers the chart's whole `v`
-///   range, because a chart's θ is *unwrapped* — a hole rides whole turns from the outer ring, and
-///   a single turn's worth of lattice would miss it entirely.
-/// * **along** (`u`): the axial coordinate of each boundary **circle's centre**. Read from the
-///   curve, never from the sampled points: one rim's points agree on that coordinate mathematically
-///   and differ by ulps in `f64`, so deduplicating *those* would turn one rim into 181 stations.
+/// * **around** (`v`): the sampler's own step, `2πr / circle_segments`, so the lattice is as fine
+///   as the arcs the boundary laid down. It does **not** land on their samples: an arc is sampled
+///   from its own start ([`sample_edge`]), the lattice from `θ = 0`. `i` covers the chart's whole
+///   `v` range, because a chart's θ is *unwrapped* — a hole rides whole turns from the outer ring,
+///   and a single turn's worth of lattice would miss it entirely.
+/// * **along** (`u`): each boundary circle's place, [`station`] — the very number the chart gave
+///   that circle's points. Read from the curve, never from the sampled points: one rim's points
+///   agree on that coordinate mathematically and differ by ulps in `f64`, so deduplicating *those*
+///   would turn one rim into 181 stations.
 ///   ★ Two arcs of one circle share a centre **bitwise**, and that is a guarantee rather than luck:
 ///   [`Model::push_edge`] derives the curve from the **canonicalized carrier pair alone** — the
 ///   circle arm never reads the endpoints — so two edges cut from the same circle by the same two
 ///   surfaces are handed identical inputs. The station count is therefore the number of planes the
 ///   face actually crosses, which is why `dedup` may compare `f64` with `==` here.
 ///
-/// ★★ **The lowest and highest stations are dropped** — they are the face's own two rims (a
-/// ruling's ends lie on arcs, so the arcs bound the `u` range), and a point there is a 1-ulp
-/// duplicate of a boundary point rather than a new one. Measured: without this, an ordinary band
-/// gained vertices and its triangle count moved.
+/// ★★★ **Where the boundary already stands, nothing is offered** — a row lies at an arc's height
+/// on purpose, so part of every row is boundary, and a point offered there a few ulps into the
+/// material is a triangle lying in a cap plane. Two cases, and only one is a tolerance:
+///
+/// * **On an arc**: the row and the arc's chord are at one `u`, bit for bit, because both are
+///   [`station`] — so the point is *on* the chord and the sweep's exact predicates drop it. Nothing
+///   to tune. (Read off the points instead, the two differed by ulps on a tilted axis.)
+/// * **On a ruling**: a column `i·step` meets a ruling where the user's corner happens to stand at
+///   a multiple of the lattice's angle (a wall at `x = 0.5` against `r = 1` is 30°, the fifteenth
+///   2° column). That is not one number computed twice — it is two numbers that geometry makes
+///   equal, and no one computation gives both — so a column within [`ON_RULING`] of a rising step
+///   (a ruling, or a band's cut generator; the arcs are level) is withheld.
+///
+/// ★★ **The lowest and highest stations are not laid at all** — they are the face's own two rims,
+/// where every row point lies on a rim's chord or outside the face (a ruling's ends lie on arcs, so
+/// the arcs bound the `u` range). Laid anyway, an ordinary band is offered 358 points and the sweep
+/// drops every one (measured): the mesh is the same, the work is not.
 fn interior_nodes(
-    model: &Model,
     cfg: &TessConfig,
-    face: &Face,
     cyl: &Cylinder,
     uv: &[polygon::P2],
+    rings: &[Vec<usize>],
+    mut stations: Vec<f64>,
     negated: bool,
 ) -> Vec<polygon::P2> {
-    let (o, w_dir) = (cyl.axis().origin(), cyl.axis().direction());
-    let mut stations: Vec<f64> = Vec::new();
-    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
-        for he in &lp.half_edges {
-            if let Curve::Circle(c) = model.edge_curve(he.edge) {
-                stations.push((c.center() - o).dot(w_dir));
-            }
-        }
-    }
     stations.sort_by(f64::total_cmp);
     stations.dedup();
     if stations.len() <= 2 {
@@ -1434,16 +1527,53 @@ fn interior_nodes(
         (lo.min(p[1]), hi.max(p[1]))
     });
     let (i0, i1) = ((lo / step).ceil(), (hi / step).floor());
+    // The boundary's steps that are not level — after the chart's one place per circle, only rulings
+    // and a band's cut generator rise.
+    let rising: Vec<(polygon::P2, polygon::P2)> = rings
+        .iter()
+        .flat_map(|ring| (0..ring.len()).map(move |k| (ring[k], ring[(k + 1) % ring.len()])))
+        .map(|(a, b)| (uv[a], uv[b]))
+        .filter(|(a, b)| a[0] != b[0])
+        .collect();
+    let near = step * ON_RULING;
     let mut out = Vec::new();
     for &s in &stations[1..stations.len() - 1] {
         let u = if negated { -s } else { s };
+        let here: Vec<&(polygon::P2, polygon::P2)> = rising
+            .iter()
+            .filter(|(a, b)| a[0].min(b[0]) - near <= u && u <= a[0].max(b[0]) + near)
+            .collect();
         let mut i = i0;
         while i <= i1 {
-            out.push([u, i * step]);
+            let p = [u, i * step];
+            if !here.iter().any(|&&(a, b)| distance_to_step(p, a, b) < near) {
+                out.push(p);
+            }
             i += 1.0;
         }
     }
     out
+}
+
+/// How close to a rising boundary step (a ruling) a lattice point may stand and still be offered,
+/// in units of the lattice's own step — see [`interior_nodes`].
+///
+/// ★ **Not a knob**: over the lib suite's meshes and the census, every point withheld stands
+/// within 2.8e-13 steps of a ruling and every point kept at least 0.095 steps from one, and the
+/// census meshes are the same at `1e-12`, `1e-9`, `1e-6` and `1e-3`; at `1e-1` the kept 0.095
+/// goes too and a mesh fails its budget. `1e-6` sits in the middle of that gap.
+const ON_RULING: f64 = 1e-6;
+
+/// The chart distance from `p` to the boundary step `a → b`.
+fn distance_to_step(p: polygon::P2, a: polygon::P2, b: polygon::P2) -> f64 {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 > 0.0 {
+        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (a[0] + t * dx - p[0]).hypot(a[1] + t * dy - p[1])
 }
 
 /// Triangulate one face: lay its boundary flat in the surface's chart, then run the one sweep.

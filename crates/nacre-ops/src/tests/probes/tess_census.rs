@@ -40,8 +40,20 @@ use nacre_topo::Model;
 pub(crate) static MESHED: Ledger<Result<usize, TessError>> = Ledger::new();
 
 pub(crate) fn record(model: &Model) {
-    let r = nacre_tess::tessellate(model, &nacre_tess::TessConfig::default())
-        .map(|t| t.triangles.len());
+    let cfg = nacre_tess::TessConfig::default();
+    let mesh = nacre_tess::tessellate(model, &cfg);
+    // ★ **And it lies on its surface**: no lateral triangle leans off the cylinder by more than the
+    // budget lets an edge turn — measured 0.353° at worst over this suite's meshes and no
+    // triangle without area. A lattice point the chart offers a few ulps off the boundary made a
+    // triangle lying in a cap plane, up to 90° off, with nothing failing (`leaning_laterals`).
+    if let Ok(t) = &mesh {
+        let leaning = nacre_tess::leaning_laterals(model, t, cfg.max_angle_deg);
+        assert!(
+            leaning.is_empty(),
+            "a boolean built a solid whose mesh leans off a lateral: {leaning:?}"
+        );
+    }
+    let r = mesh.map(|t| t.triangles.len());
     // ★★★★★ **The claim is asserted here, where the fact exists — not in a later test.**
     // A `#[test]` that reads this vector sees only the booleans that ran *before* it (☑
     // measured: 764 of them, under `--test-threads=1`, because the suite runs in name order),

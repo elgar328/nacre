@@ -335,11 +335,14 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 ///
 /// | face | inside | on an edge | dropped |
 /// |---|---|---|---|
-/// | `−x` wall | 37 | 141 | 182 |
-/// | `+x` wall | 162 | 16 | 182 |
-/// | `−y` wall | 32 | 148 | 180 |
-/// | `+y` wall | 82 | 96 | 182 |
-/// | corner | 147 | 121 | 92 |
+/// | `−x` wall | 37 | 141 | 178 |
+/// | `+x` wall | 162 | 16 | 178 |
+/// | `−y` wall | 32 | 146 | 178 |
+/// | `+y` wall | 82 | 96 | 178 |
+/// | corner | 147 | 121 | 88 |
+///
+/// (The dropped ones lie on the face's own arcs. Four more per face never reach here: the chart
+/// withholds a lattice point standing on a ruling — [`crate::interior_nodes`].)
 ///
 /// The split moves with where the band was cut open (`cut_seamless_bands`' generator, placed
 /// relative to the face's own samples), not with the shape the user drew — so neither branch may

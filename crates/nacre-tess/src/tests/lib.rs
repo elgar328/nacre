@@ -1368,3 +1368,112 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
         assert!(sharp, "no rim vertex carries both a cap and a side normal");
     }
 }
+
+/// ★★★ **A lattice point the boundary already stands on is not offered — so no lateral triangle
+/// lies in a cap plane.**
+///
+/// The chart's lattice lays rows at the heights of the circles a lateral crosses, so part of every
+/// row lies on the face's own arcs, and the exact predicates drop those points as on the boundary —
+/// only if the two agree to the bit. Two shapes are where they did not:
+///
+/// * **A tilted axis**: a circle's place read off the curve and off a point on it differ by ulps.
+///   A window through a boss and a lateral cut at both rims, turned 37° and 23°, meshed with 2, 8
+///   and 50 triangles lying in a cap plane (none untilted) — gone now that a circle's points stand
+///   at the circle's own place ([`station`]), which shows here as the tilted mesh having exactly
+///   the untilted triangle count.
+/// * **A ruling on a lattice column**: a box wall at `x = 0.5` against `r = 1` meets the lateral
+///   at 30°, which is the 2° lattice's fifteenth column — the census's `bothrims … slab` rows, ten
+///   such triangles each. Not one number computed twice, so it cannot be computed once: the chart
+///   withholds the column within `ON_RULING` of a rising boundary step. Kept here although the
+///   census asserts the same, because the census is a gate-only binary and this runs with every
+///   `cargo test`.
+#[test]
+fn a_lattice_point_the_boundary_stands_on_is_not_offered() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean, fixtures};
+    let cfg = TessConfig::default();
+    let turn = |m: &mut Model, s: Handle<Solid>, axis: Axis, deg: i128| -> Handle<Solid> {
+        let isometry = Isometry::rotation(Rotation {
+            axis,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
+        });
+        match apply(m, &Operation::Transform { solid: s, isometry }).expect("a turn") {
+            OpOutput::Transform { solid } => solid,
+            other => panic!("{other:?}"),
+        }
+    };
+    // (lateral triangles, after checking that none leans)
+    let lateral_mesh = |m: &Model, name: &str| -> usize {
+        let t = tessellate(m, &cfg).expect("a mesh");
+        let leaning = leaning_laterals(m, &t, cfg.max_angle_deg);
+        assert!(leaning.is_empty(), "{name}: {leaning:?}");
+        t.triangles
+            .iter()
+            .filter(|(_, tri)| {
+                matches!(
+                    m.surface_cache(m.face(tri.face).surface),
+                    Surface::Cylinder(_)
+                )
+            })
+            .count()
+    };
+    type Build = fn(&mut Model) -> Handle<Solid>;
+    let shapes: [(&str, Build); 4] = [
+        ("a window on the rims' vertex", |m| {
+            fixtures::windowed_boss(m, 0.6, 1.0)
+        }),
+        ("a window off the rims' vertex", |m| {
+            fixtures::windowed_boss(m, 0.6, -1.0)
+        }),
+        ("both rims cut, fused", |m| {
+            fixtures::cut_at_both_rims(m, BoolKind::Fuse, -2.0)
+        }),
+        ("both rims cut, cut", |m| {
+            fixtures::cut_at_both_rims(m, BoolKind::Cut, -2.0)
+        }),
+    ];
+    for (name, build) in shapes {
+        let mut m = Model::new();
+        build(&mut m);
+        m.rebuild_adjacency();
+        let untilted = lateral_mesh(&m, name);
+        let mut m = Model::new();
+        let s = build(&mut m);
+        let s = turn(&mut m, s, Axis::X, 37);
+        turn(&mut m, s, Axis::Y, 23);
+        m.rebuild_adjacency();
+        assert_eq!(
+            lateral_mesh(&m, name),
+            untilted,
+            "{name}: turning it changed the lateral's mesh"
+        );
+    }
+    // The census's `bothrims … slab`: the rims' seam toward −ŷ puts the lateral's lattice columns
+    // on the 30° of the boxes' walls at `x = 0.5`.
+    for built in [BoolKind::Fuse, BoolKind::Cut] {
+        let mut m = Model::new();
+        let z = Vector3::from_array([0.0, 0.0, 1.0]);
+        let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+        let c = fixtures::cylinder_with_seam(&mut m, Point3::origin(), z, seam, 1.0, 4.0).solid;
+        let mut band = c;
+        for (lo, hi) in [
+            ([0.5, -2.0, -1.0], [3.0, 2.0, 0.5]),
+            ([0.5, -2.0, 3.5], [3.0, 2.0, 5.0]),
+        ] {
+            let bite = fixtures::cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            band = boolean(&mut m, built, band, bite).expect("a bite")[0];
+            m.rebuild_adjacency();
+        }
+        let slab = fixtures::cuboid(
+            &mut m,
+            Point3::from_array([-0.5, -2.0, 1.5]),
+            Point3::from_array([3.0, 2.0, 2.5]),
+        );
+        m.rebuild_adjacency();
+        boolean(&mut m, BoolKind::Fuse, band, slab).expect("the slab fuses");
+        m.rebuild_adjacency();
+        lateral_mesh(&m, "the census's bothrims slab");
+    }
+}
