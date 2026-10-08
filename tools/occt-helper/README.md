@@ -33,8 +33,10 @@ were measured. Each `checkshape` is read in its own fenced section of the consol
 grep over the whole output would read "input faulty, result valid" as valid. `nacre-oracle`
 refuses a faulty shape (`OracleError::Faulty`).
 Exit code: `0` success · `1` geometry failure (file missing, unreadable, no/empty
-shape) · `2` DRAWEXE crash. The schema and exit codes are identical across
-commands, so the Rust side (`nacre-oracle`) shares one parser.
+shape) · `2` DRAWEXE crash, or DRAWEXE did not take the three orientation settings below (a
+name it does not know prints an error and runs on with exit 0, so the helper counts what it
+took). The schema and exit codes are identical across commands, so the Rust side
+(`nacre-oracle`) shares one parser.
 
 Inputs must be **single-solid** STEP files (nacre's `to_step_solid`): a STEP with
 multiple transferable roots reads as `x_1, x_2, …` and the boolean would use only

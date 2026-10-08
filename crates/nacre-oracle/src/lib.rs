@@ -53,7 +53,8 @@ pub enum OracleError {
     /// The helper read no shape from the STEP (missing file, empty, non-solid) —
     /// helper exit 1.
     GeometryFailed,
-    /// DRAWEXE crashed on the input — helper exit 2. Carries stderr for triage.
+    /// DRAWEXE crashed on the input, or did not take the helper's reader settings — helper
+    /// exit 2. Carries stderr for triage.
     Crashed(String),
     /// OCCT's `checkshape` refused a shape it read, or a boolean's result. Its STEP read keeps
     /// orientation as written, so this is where a wrongly oriented export lands. The faults may

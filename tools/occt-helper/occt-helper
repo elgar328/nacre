@@ -16,7 +16,8 @@
 #                           and of the boolean's result)
 #       fault <a|b|r> <BRepCheck_code>   (zero or more; one per code of each faulty shape)
 #     With `valid 0` the measurement keys appear only as far as they were measured.
-#     exit: 0 success / 1 geometry failure (unreadable, no/empty shape) / 2 DRAWEXE crash
+#     exit: 0 success / 1 geometry failure (unreadable, no/empty shape) / 2 DRAWEXE crash, or
+#           DRAWEXE did not take the reader settings below
 #
 # The boolean commands run DRAWEXE's bfuse/bcut/bcommon on two STEP solids and
 # report the result's props with the same schema, so nacre-oracle's parser is
@@ -34,6 +35,18 @@ set -uo pipefail
 READ_PARAMS='param FromSTEP.FixShape.FixOrientationMode 0
 param FromSTEP.FixShape.FixShellOrientationMode 0
 param FromSTEP.FixShape.FixFaceOrientationMode 0'
+
+# Exit 2 unless DRAWEXE took all three settings. A name it does not know prints an error and
+# leaves the run going with exit 0 — the read would then repair orientation again, silently.
+settings_taken() {
+    local taken
+    taken=$(echo "$1" | grep -c 'New demanded value : 0 *OK')
+    [ "$taken" -eq 3 ] || {
+        echo "error: DRAWEXE took $taken of the 3 orientation settings" >&2
+        echo "$1" >&2
+        exit 2
+    }
+}
 
 # DRAWEXE lines that checkshape `$2` inside a section tagged `$1`. Each verdict has to be read
 # in its own section: one grep over the whole output would read "a valid, r faulty" as valid.
@@ -95,6 +108,9 @@ emit_props() {
         [ -n "$volume" ] && echo "volume $volume"
         [ -n "$area" ] && echo "area $area"
         [ -n "$faces" ] && echo "faces $faces"
+        [ -n "$bbox" ] && echo "bbox_min $(echo "$bbox" | awk '{print $1, $2, $3}')"
+        [ -n "$bbox" ] && echo "bbox_max $(echo "$bbox" | awk '{print $4, $5, $6}')"
+        [ -n "$cx" ] && [ -n "$cy" ] && [ -n "$cz" ] && echo "centroid $cx $cy $cz"
         echo "valid 0"
         printf '%s' "$faults"
         return 0
@@ -140,6 +156,7 @@ props)
         echo "$out" >&2
         exit 2
     }
+    settings_taken "$out"
     echo "$out" | grep -q "Shapes produced" || {
         echo "error: stepread produced no shape" >&2
         echo "$out" >&2
@@ -183,6 +200,7 @@ fuse | cut | common)
         echo "$out" >&2
         exit 2
     }
+    settings_taken "$out"
     # Both stepreads must have produced a shape.
     [ "$(echo "$out" | grep -c 'Shapes produced')" -ge 2 ] || {
         echo "error: stepread produced no shape" >&2
