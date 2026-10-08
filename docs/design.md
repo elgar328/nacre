@@ -39,7 +39,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 │                    #   ← topo · geom · math · store · exact · judge (+ 선택적 rayon)
 │                    #   부울 = 면당 평면 arrangement 엔진
 │                    #   reuse: 상대가 닿을 수 없다고 증명된 평면 클래스는 배열하지 않는다 (「연산 층」 절)
-├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← topo · geom · math · store (+ step-io)
+├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← topo · geom · math · store (+ brep-to-step)
 ├── nacre-oracle     # [dev] OCCT 비교 하네스   ← topo · step · math · store
 ├── nacre            # 파사드   ← exact · geom · math · ops · props · step · store · tess · topo · validate
 └── tools/occt-helper/  # 워크스페이스 밖 헬퍼: brew OCCT(1순위) 또는 uv+OCP(폴백) — 「검증·오라클 인프라」 절
@@ -220,7 +220,7 @@ pub enum Curve {
     /// 전체 원 carrier(중심/법선/**ref_dir**/반경 — `ref_dir` 이 θ=0 앵커이고, 원통의
     /// seam 은 **+ref_dir** 에 고정된다). 호 = 이 담체 + 서로 다른 두 끝점 정점,
     /// 온전한 원 = 같은 정점이 양 끝(`[v, v]`, 위상 층 절의 rim 규칙) — Line 과 같은
-    /// carrier-vs-trim. step-io CurveInput::Circle(끝점 동일 여부로 원/호 구분)과 정합.
+    /// carrier-vs-trim. brep-to-step `Curve::Circle`(끝점 동일 여부로 원/호 구분)과 정합.
     Circle(Circle),
     // 계획: `Nurbs(NurbsCurve)` 도 생산자가 붙을 때 온다(평가기 `NurbsCurve` 는 이미 있다).
 }
@@ -2476,10 +2476,6 @@ pub enum Decision {
 
 **CIP 와의 관계.** CIP 는 **부호 판정** 층이다. M7 에서 CIP 가 닿는 곳은 (a) 메시 조합 판정(내/외 분류)의 필터, (b) 뉴턴 스냅백 점의 tol 추적·정밀도 상승 — 둘 다 **정밀화·판정**이다. **SSI** 자체는 위상 존재 문제라 CIP 밖이다. 「찾은 것을 정밀하게」(CIP·스냅백)와 「못 찾은 것을 찾기」(SSI)는 다른 일이고, SSI 가 성공한 뒤라야 스냅백·판정이 의미 있으며 SSI 실패 시 `Rejected` 다.
 
-## 계획: STEP 백엔드 교체
-
-step-io 를 경량 AP242 출력 전용 크레이트로 교체한다 — 크리티컬 패스가 아니다. 커널의 STEP 출력은 좁은 슬라이스(AP242, 커널 형상 엔티티만)라 최종적으로 경량 라이터가 이상적이지만, 처음부터 만드는 것은 난이도가 높다(「동작 먼저 → 최적화 나중」). step-io 의 AP242 Ed2 스키마 지식·코드젠 타입 정의는 재활용하되 리더 로직은 배제한다. 교체 검증은 step-io 리더를 오라클로: 「step-io 출력 vs 경량 출력」을 되읽어 비교한다.
-
 ## 비목표: STEP 가져오기
 
 단순 미구현이 아니라 nacre 정체성과 맞는지부터 물어야 하는 항목이다.
@@ -2517,7 +2513,7 @@ nacre 는 solid-first 이며 always-closed(모든 결과가 닫힌 솔리드)를
 - op-log 소유자 `Document`(회전 지원의 확정 결정 4).
 - CIP 의 측정 질문: 고정밀 층의 속도, 동적 필터의 실제 성공률(입력 tol 이 있을 때 얼마나 자주 상승하는가), 실무 형상에서 회전 tol 이 판정 경계에 얼마나 근접하는가, 고차(이차곡면) 술어에서의 필터 성공률.
 - 구·원뿔, 일반 이차곡면쌍의 범위 선과 판정 방법.
-- M7 SSI 탐지 방법의 선택, STEP 경량 라이터.
+- M7 SSI 탐지 방법의 선택.
 
 ## 검증·오라클 인프라 (`nacre-validate`, `nacre-oracle`)
 
@@ -2592,7 +2588,7 @@ nacre 가 쓴 STEP 을 step-io **리더로 되읽어** 구조를 비교한다. �
 
 **M1 — 뼈대.** `nacre-math`, Store/Handle, 평면·직선만으로 정육면체를 손으로 조립하고 `validate` 를 세운다. 시각 확인은 **기존 뷰어에 위임**한다(전용 뷰어 크레이트를 만들지 않는다): 정상 결과는 STEP 출력 → step-loupe(구조+검증), 중간·깨진 상태는 Tessellation 을 OBJ/STL 로 덤프 → 맥 미리보기(또는 MeshLab·f3d). 커널 내부까지 보는 인터랙티브 디버그 뷰어(면 클릭 → Handle·정의, 법선 화살표, 엣지 polyline·tolerance 공, validate 위반 하이라이트, 로그 스텝별 재생)는 워크스페이스 밖 별도 앱이다 — **발견된 점**과 tolerance 처럼 STEP 에 담기지 않는 내부 정보가 생기는 불리언 단계의 디버깅 생명줄이다.
 
-**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 step-io 백엔드에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 머리말의 시각은 호출자가 준다 — 커널은 시계를 읽지 않는다(같은 모델과 같은 시각이면 같은 바이트이고, wasm 에는 시계가 없어 시스템 시각을 물으면 패닉한다). 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정해, 나중에 경량 라이터가 감당할 범위를 붙박는다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 독립 OCCT 기반 뷰어**(step-io 를 공유하지 않는 교차검증). STEP 출력은 오라클의 수송 계층이기도 하다. 최종 경량 라이터로 교체할 때는 «step-io 출력 vs 경량 출력»을 step-io 리더로 비교해 교체 안전성을 자동 검증한다.
+**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 형상 전용 작성기 brep-to-step 에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 머리말의 시각은 호출자가 준다 — 커널은 시계를 읽지 않는다(같은 모델과 같은 시각이면 같은 바이트이고, wasm 에는 시계가 없어 시스템 시각을 물으면 패닉한다). 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정한다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 리더 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 OCCT 기반 뷰어**(step-loupe 와 리더를 공유하지 않는 교차검증). 두 뷰어 모두 작성기와 코드를 나누지 않는다. STEP 출력은 오라클의 수송 계층이기도 하다. 작성기의 출력이 step-io 작성기의 것과 구조가 같다는 것은 brep-to-step 의 차등 테스트가 든다.
 
 **M3 — 곡선 기하.** Arc, Cylinder, NurbsCurve/Surface 평가(The NURBS Book 기준 구현 + 수치 미분 대조 테스트). tess 출처 태그, tolerance 재계산(같은 모델, tol 3단). proptest.
 

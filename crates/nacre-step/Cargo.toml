@@ -13,11 +13,14 @@ nacre-topo = { workspace = true }
 nacre-geom = { workspace = true }
 nacre-math = { workspace = true }
 nacre-store = { workspace = true }
-# Serialization backend (kernel is backend-agnostic; step-io is confined to this
-# crate). StepBuilder has existed since 0.1.0, so ^0.2 (→ 0.2.2) works.
-step-io = "0.2.5"
+# Serialization backend (kernel is backend-agnostic; the writer is confined to
+# this crate): a shape-only STEP writer with no dependencies of its own.
+brep-to-step = "0.1"
 
 [dev-dependencies]
+# The read-back oracle: the tests read every file through step-io's reader, which
+# shares no code with the writer.
+step-io = "0.2.5"
 # Test cylinders are built the way an application builds one — a datum, a circle, an extrude
 # (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
 # too, so the library graph stays acyclic (the nacre-props shape).

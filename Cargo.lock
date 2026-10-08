@@ -73,6 +73,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
+name = "brep-to-step"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bd38438fcb225d004cd5fb141193a8be2b9147061da6929e096f0196877c598"
+
+[[package]]
 name = "cargo-husky"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -359,6 +365,7 @@ dependencies = [
 name = "nacre-step"
 version = "0.0.2-dev"
 dependencies = [
+ "brep-to-step",
  "nacre-exact",
  "nacre-geom",
  "nacre-math",

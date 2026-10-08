@@ -20,7 +20,7 @@ import io,re,subprocess,glob,os,sys
 W=r'[A-Za-z0-9_]'
 STOP={'the','and','pub','fn','let','mut','vec','usize','f64','i8','bool','true','false','none',
       'some','self','str','rust','impl','match','for','if','else','type','use','mod','crate'}
-SIB=('../step-io','../nacre-kit','../nacre-playground/wasm')  # ⚠ playground 는 wasm 크레이트만:
+SIB=('../step-io','../brep-to-step','../nacre-kit','../nacre-playground/wasm')  # ⚠ playground 는 wasm 크레이트만:
 #   web/ 은 node_modules 를 들어 `Intersection` 같은 이름이 @types/three 에서 12건으로 잡힌다(잡음).
 files={os.path.basename(p).rsplit('.',1)[0]
        for r in ('crates','tools')+SIB for p in glob.glob(r+'/**/*', recursive=True)}

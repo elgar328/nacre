@@ -15,6 +15,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- STEP files are written by [brep-to-step](https://crates.io/crates/brep-to-step), a shape-only writer with no dependencies, instead of step-io, which `nacre-step` no longer depends on. The shapes are the same; the file differs in its `FILE_NAME` preprocessor (`brep-to-step 0.1.0`), its AP242 edition 2 year (2020, was 2011), and its solids, which carry no name (was `'body'`). The header's time stamp may be at most 256 characters, and a character outside ASCII is written as a `\X2\` escape. `step::StepError::Backend` holds the writer's message.
 - A cylindrical side face has no seam line, whether an extruded circle's or a boolean's result: it is bounded by its two rims (each a whole circle, or a chain of arcs and lines where the rim is cut), one its outer loop and the other an inner loop, with its holes. An extruded circle has two edges instead of three, a cut rim no vertex at its seam point, and STEP output no seam `LINE`.
 - `topo::Model::push_edge` refuses an edge whose two carriers are one cylinder (`EdgeDecline::TwoCylinders`), and `validate` reports any edge whose two carriers are one surface as `EdgeCarrierMismatch` — no edge separates a surface from itself; before, a cylinder's own pair derived a seam line.
 - `Operation::Extrude` takes a signed distance: a negative one sweeps against the frame's normal, in the same frame, with the base cap still on the frame's plane. A distance of zero is `OpError::ZeroDistance`.
