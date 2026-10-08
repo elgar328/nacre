@@ -479,6 +479,13 @@ fn separate_crossing_chords(
 /// The polyline runs CCW about the circle ([`circle_span`]), so the chord's earlier end is `from`
 /// walked forward and the arrival walked backward; θ is read off both ends with
 /// `Circle::angle_of`, the one spelling of θ, and the new sample stands halfway round between.
+///
+/// ★ **At the `f64` floor the midpoint need not lie between its ends** — for chords under about
+/// `1e-12` rad about 1% of the midpoints land outside them, whatever the formula (the angle
+/// difference here, the turn read off both ends, or the chord's midpoint pushed out to the circle;
+/// measured over random chords on three circles). Cutting reaches that only where two curves meet
+/// within `f64`, and what such a sample leaves is a crossing or a spike, which the sweep's exact
+/// checks refuse by name — not a wrong mesh.
 fn arc_midpoint(
     t: &Tessellation,
     model: &Model,
