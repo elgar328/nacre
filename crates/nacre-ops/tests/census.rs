@@ -499,7 +499,7 @@ fn record(
         );
         // ★ And no lateral triangle leans off its cylinder past the budget (worst over this
         // corpus 0.345°). The `bothrims … slab` rows were where a lattice point on a ruling made
-        // ten triangles lying in a cap plane each.
+        // ten slivers each, leaning 30° to 34°.
         if let Ok(t) = &mesh {
             let leaning = nacre_tess::leaning_laterals(m, t, cfg.max_angle_deg);
             assert!(

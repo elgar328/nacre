@@ -1369,8 +1369,8 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
     }
 }
 
-/// ★★★ **A lattice point the boundary already stands on is not offered — so no lateral triangle
-/// lies in a cap plane.**
+/// ★★★ **A lattice point on the boundary never enters the mesh — so no lateral triangle leans off
+/// its surface.**
 ///
 /// The chart's lattice lays rows at the heights of the circles a lateral crosses, so part of every
 /// row lies on the face's own arcs, and the exact predicates drop those points as on the boundary —
@@ -1378,17 +1378,18 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
 ///
 /// * **A tilted axis**: a circle's place read off the curve and off a point on it differ by ulps.
 ///   A window through a boss and a lateral cut at both rims, turned 37° and 23°, meshed with 2, 8
-///   and 50 triangles lying in a cap plane (none untilted) — gone now that a circle's points stand
+///   and 50 slivers leaning more than 25° — the worst lying in a cap plane, 90° off (none
+///   untilted) — gone now that a circle's points stand
 ///   at the circle's own place ([`station`]), which shows here as the tilted mesh having exactly
 ///   the untilted triangle count.
 /// * **A ruling on a lattice column**: a box wall at `x = 0.5` against `r = 1` meets the lateral
 ///   at 30°, which is the 2° lattice's fifteenth column — the census's `bothrims … slab` rows, ten
-///   such triangles each. Not one number computed twice, so it cannot be computed once: the chart
+///   slivers each, leaning 30° to 34°. Not one number computed twice, so it cannot be computed once: the chart
 ///   withholds the column within `ON_RULING` of a rising boundary step. Kept here although the
 ///   census asserts the same, because the census is a gate-only binary and this runs with every
 ///   `cargo test`.
 #[test]
-fn a_lattice_point_the_boundary_stands_on_is_not_offered() {
+fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean, fixtures};
     let cfg = TessConfig::default();

@@ -13,7 +13,7 @@
 //! rebuilt model too, so this is watching the result and not an artifact of when it looks.
 //!
 //! ★ **Scope, plainly**: `#[cfg(test)]` is this crate's *unit* tests. `tests/*.rs` do **not** carry
-//! this hook, so "2129 booleans" is the lib suite's number and not the workspace's. The frozen census
+//! this hook, so its count (5,196 meshes) is the lib suite's and not the workspace's. The frozen census
 //! corpus asserts the same of its own rows (`tests/census.rs`'s `record`); `perf` and
 //! `invariants/pipeline` do not. The rest was measured once, with this hook put on every build:
 //! every boolean result the workspace's integration tests build meshes (5,071; 2,009 more in the
@@ -44,8 +44,8 @@ pub(crate) fn record(model: &Model) {
     let mesh = nacre_tess::tessellate(model, &cfg);
     // ★ **And it lies on its surface**: no lateral triangle leans off the cylinder by more than the
     // budget lets an edge turn — measured 0.353° at worst over this suite's meshes and no
-    // triangle without area. A lattice point the chart offers a few ulps off the boundary made a
-    // triangle lying in a cap plane, up to 90° off, with nothing failing (`leaning_laterals`).
+    // triangle without area. A lattice point the chart placed a few ulps off the boundary made a
+    // sliver leaning up to 90° off, with nothing failing (`leaning_laterals`).
     if let Ok(t) = &mesh {
         let leaning = nacre_tess::leaning_laterals(model, t, cfg.max_angle_deg);
         assert!(

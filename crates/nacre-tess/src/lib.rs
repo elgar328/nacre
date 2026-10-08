@@ -564,8 +564,8 @@ pub struct Leaning {
 /// ★ **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
 /// the budget — an arc's chord by [`circle_segments`], an interior chord by `within_budget`, a
 /// ruling not at all — so its three corners lie within one budget's turn of each other, and so does
-/// its facet's normal of the surface's. A triangle the chart made out of a lattice point standing a
-/// few ulps off the boundary lies in a cap plane instead and departs by up to 90°.
+/// its facet's normal of the surface's. A sliver the chart made out of a lattice point standing a few
+/// ulps off the boundary leaned 2.6° to 90° (at 90° it lies in a cap plane).
 #[cfg(any(test, feature = "test-util"))]
 pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Leaning> {
     let mut out = Vec::new();
@@ -1462,7 +1462,8 @@ fn joined_band(
 /// it. Read from the curve, never from a point on it: every arc of one circle agrees on it bitwise
 /// (see [`interior_nodes`]), while a point's own axial coordinate carries its rounding — on a
 /// tilted axis an arc's samples sit a few ulps off their circle's place, and a lattice row computed
-/// one way next to a boundary computed the other was a sliver triangle lying in the cap plane.
+/// one way next to a boundary computed the other was a sliver leaning off the lateral — up to 90°,
+/// lying in the cap plane.
 fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
     (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
 }
@@ -1492,9 +1493,10 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
 ///   surfaces are handed identical inputs. The station count is therefore the number of planes the
 ///   face actually crosses, which is why `dedup` may compare `f64` with `==` here.
 ///
-/// ★★★ **Where the boundary already stands, nothing is offered** — a row lies at an arc's height
-/// on purpose, so part of every row is boundary, and a point offered there a few ulps into the
-/// material is a triangle lying in a cap plane. Two cases, and only one is a tolerance:
+/// ★★★ **Where the boundary already stands, no lattice point enters the mesh** — a row lies at an
+/// arc's height on purpose, so part of every row is boundary, and a point placed there a few ulps
+/// into the material is a sliver leaning off the lateral (up to 90°). Two cases, and only one is a
+/// tolerance:
 ///
 /// * **On an arc**: the row and the arc's chord are at one `u`, bit for bit, because both are
 ///   [`station`] — so the point is *on* the chord and the sweep's exact predicates drop it. Nothing
