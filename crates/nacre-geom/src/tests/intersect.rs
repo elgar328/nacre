@@ -412,37 +412,31 @@ fn a_decimal_collinearity_the_binary_points_do_not_have() {
     assert_eq!(orient2d_rat(lift(a), lift(b), lift(c)), 0, "decimal: on it");
 }
 
-/// The dissolve pass: flat corners go, everything `check` must still see survives.
+/// A flat corner is strictly mid-run; everything `check` must still see is not one.
 #[test]
-fn dissolving_flat_corners_keeps_every_reportable_defect() {
-    // A flat corner dissolves, leaving the plain square.
-    let flat = rring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
-    let square = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
-    assert_eq!(drop_collinear_midpoints(flat), square);
-    // A clean ring is untouched.
-    assert_eq!(drop_collinear_midpoints(square.clone()), square);
-    // A repeated point is NOT a flat corner — it must survive to be reported as a
-    // zero-length edge, not silently erased as if the author had drawn it once.
-    let dup = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
-    assert_eq!(drop_collinear_midpoints(dup.clone()), dup);
-    // A spike's tip is collinear but not between its neighbours — it survives for the
-    // self-intersection report.
-    let spike = rring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
-    assert_eq!(drop_collinear_midpoints(spike.clone()), spike);
-    // Four points on one line: removing one midpoint makes the next one flat — the scan
-    // repeats to a fixpoint.
-    let run = rring(&[
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [2.0, 0.0],
-        [3.0, 0.0],
-        [3.0, 3.0],
-        [0.0, 3.0],
-    ]);
-    let clean = rring(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0]]);
-    assert_eq!(drop_collinear_midpoints(run), clean);
-    // A fully-collinear ring collapses below three points and is returned for `check` to
-    // reject as degenerate.
-    let line = rring(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
-    assert_eq!(drop_collinear_midpoints(line).len(), 2);
+fn a_flat_corner_is_strictly_mid_run() {
+    let p = |x: f64, y: f64| [d(x), d(y)];
+    assert!(
+        flat_corner(p(0.0, 0.0), p(2.0, 0.0), p(4.0, 0.0)),
+        "mid-run"
+    );
+    assert!(
+        !flat_corner(p(0.0, 0.0), p(4.0, 0.0), p(4.0, 4.0)),
+        "a real corner"
+    );
+    // A repeated point is a zero-length edge to report, not a corner to erase.
+    assert!(
+        !flat_corner(p(0.0, 0.0), p(4.0, 0.0), p(4.0, 0.0)),
+        "repeated point"
+    );
+    // A spike's tip is collinear but not between its neighbours — a self-intersection to report.
+    assert!(
+        !flat_corner(p(0.0, 0.0), p(4.0, 0.0), p(2.0, 0.0)),
+        "a spike's tip"
+    );
+    // Decided on the decimal truth, where `0.1·0.2·0.3` is a line.
+    assert!(
+        flat_corner(p(0.0, 0.1), p(0.1, 0.2), p(0.2, 0.3)),
+        "decimal collinear"
+    );
 }

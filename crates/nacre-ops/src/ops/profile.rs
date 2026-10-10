@@ -39,12 +39,6 @@ impl Ring2d {
             if n < 2 {
                 break;
             }
-            let between = |a: [Rat; 2], b: [Rat; 2], p: [Rat; 2]| {
-                p[0] >= a[0].min(b[0])
-                    && p[0] <= a[0].max(b[0])
-                    && p[1] >= a[1].min(b[1])
-                    && p[1] <= a[1].max(b[1])
-            };
             let mut dropped = false;
             // Later vertices first, the wrap-around pair last, so the ring keeps its first vertex
             // whenever it can (two half circles merge into the circle seamed at the first).
@@ -52,15 +46,8 @@ impl Ring2d {
                 let prev = (k + n - 1) % n;
                 let next = (k + 1) % n;
                 let flat = match (edges[prev], edges[k]) {
-                    // Strictly mid-run: collinear and between its neighbours, and neither of
-                    // them — a repeated point is a zero-length edge for `check` to name, not a
-                    // corner to dissolve.
                     (Edge2d::Line, Edge2d::Line) => {
-                        n >= 3
-                            && vertices[k] != vertices[prev]
-                            && vertices[k] != vertices[next]
-                            && orient2d_rat(vertices[prev], vertices[k], vertices[next]) == 0
-                            && between(vertices[prev], vertices[next], vertices[k])
+                        n >= 3 && flat_corner(vertices[prev], vertices[k], vertices[next])
                     }
                     (
                         Edge2d::Arc {

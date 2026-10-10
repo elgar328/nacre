@@ -381,3 +381,28 @@ fn an_arc_and_its_retrace_are_a_self_intersecting_ring() {
         Err(OpError::SelfIntersectingProfile { .. })
     ));
 }
+
+/// The normal form dissolves flat corners to a fixpoint and keeps everything `check` must still
+/// see: four points on one line leave its two ends; a repeated point and a spike's tip survive;
+/// a ring that is all one line comes back as its two ends, for `check` to call degenerate.
+#[test]
+fn the_normal_form_dissolves_flat_corners_and_keeps_every_reportable_defect() {
+    let ring =
+        |pts: &[[i128; 2]]| -> Vec<[Rat; 2]> { pts.iter().map(|p| [r(p[0]), r(p[1])]).collect() };
+    let normal = |pts: &[[i128; 2]]| Ring2d::polygon(ring(pts)).vertices().to_vec();
+    let square = ring(&[[0, 0], [3, 0], [3, 3], [0, 3]]);
+    assert_eq!(
+        normal(&[[0, 0], [1, 0], [2, 0], [3, 0], [3, 3], [0, 3]]),
+        square
+    );
+    assert_eq!(
+        normal(&[[0, 0], [3, 0], [3, 3], [0, 3]]),
+        square,
+        "a clean ring is untouched"
+    );
+    let dup = [[0, 0], [4, 0], [4, 0], [0, 4]];
+    assert_eq!(normal(&dup), ring(&dup), "a repeated point survives");
+    let spike = [[0, 0], [4, 0], [2, 0], [2, 4]];
+    assert_eq!(normal(&spike), ring(&spike), "a spike's tip survives");
+    assert_eq!(normal(&[[0, 0], [1, 0], [2, 0]]).len(), 2, "all one line");
+}

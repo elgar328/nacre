@@ -1502,7 +1502,7 @@ datum 일반:
 
 **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준)다. 그래서 `Extrude` 의 다중 바디 출력은 필요 없다. 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치는 코드-CAD 가 요구하는 것이다.
 
-**분류 술어는 `geom::intersect` 에 있다**(격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). 각 워커에 **Rat 쌍둥이**(`_rat` 접미 + `drop_collinear_midpoints`)가 같은 모듈에 나란히 산다 — 부호 원시는 `nacre_exact::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존)이고, geom 은 scalar 에 의존한다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 쓴다. ops 에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet` 으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
+**분류 술어는 `geom::intersect` 에 있다**(격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). 각 워커에 **Rat 쌍둥이**(`_rat` 접미)가 같은 모듈에 나란히 살고, 프로파일 정규형이 묻는 평탄 코너 판정(`flat_corner`)도 여기 있다 — 부호 원시는 `nacre_exact::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존)이고, geom 은 scalar 에 의존한다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 쓴다. ops 에는 **정책**(깊이 패리티, 정규형이 꼭짓점을 지우는 순서와 고정점)**과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet` 으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
 
 **자기교차는 중첩 분류보다 먼저 본다** — 메시지 품질이 아니라 전제조건이다: `point_in_ring_2d` 는 짝-홀 패리티로 답하고, 그건 단순한 링에서만 "안쪽"을 뜻한다. 술어는 `geom::intersect::ring_self_intersection`(인접하지 않은 변은 접촉만으로 실격, 인접한 변은 공선-겹침일 때만 = 되짚는 스파이크, 인접은 **순환**으로 판정). 스케치 층은 `RingSelfIntersects { ring, at }` 로 **점**(걸린 두 변의 현 중점)을 돌려준다 — 점은 편집기가 표식을 놓을 수 있는 것이고 이 enum 의 다른 거절도 점을 든다.
 

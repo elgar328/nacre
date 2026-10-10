@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `geom::intersect::flat_corner` says whether a ring vertex is strictly mid-run between its neighbours — the corner a profile's normal form dissolves.
 - `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.
 - `tess::tessellate_solids` meshes the solids given only — an application meshing what it shows, while its model keeps more live solids; `Tessellation::to_obj` writes whatever the mesh holds.
 
@@ -28,6 +29,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- `geom::intersect::drop_collinear_midpoints`, which nothing in the kernel called — a profile's normal form dissolves flat corners itself, and `geom::intersect::flat_corner` is the predicate it asks.
 - `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.
 - `LogCell::Face`, which only the removed operations used.
 - `topo::Model::make_live`, whose only callers were the removed operations.

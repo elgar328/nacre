@@ -438,45 +438,20 @@ pub fn ring_self_intersection_rat(ring: &[[Rat; 2]]) -> Option<(usize, usize)> {
     None
 }
 
-/// The ring with every flat corner dissolved — the profile constructor's lossless
-/// normalization pass (a collinear vertex's two walls are one plane,
-/// so the vertex has no three-plane definition; deleting it changes no geometry).
+/// **Is `p` a flat corner** between its ring neighbours `prev` and `next` — strictly mid-run on
+/// the straight segment they span: collinear, and equal to neither. Such a vertex's two walls are
+/// one plane, so it has no three-plane definition, and dissolving it changes no geometry.
 ///
-/// A vertex dissolves only when it is **strictly interior** to the segment its neighbours span:
-/// collinear, and equal to neither neighbour. That strictness is load-bearing —
-/// - a **repeated point** (`p == prev`) must survive, so `check` can still name it
-///   `ZeroLengthProfileEdge` ("you typed the same point twice" is an author's mistake to report,
-///   not to erase);
-/// - a **spike** (collinear but past the far neighbour) must survive, so `check` still reports
-///   the self-intersection.
+/// The strictness is load-bearing — what fails it must survive to be reported:
+/// - a **repeated point** (`p == prev`) is a zero-length edge, an author's mistake to name rather
+///   than to erase (a bounding-box test alone would accept it: it includes the ends);
+/// - a **spike** (collinear but past the far neighbour) is a self-intersection, which
+///   [`ring_self_intersection_rat`] names.
 ///
-/// Removal can make the two ex-neighbours' own corners newly flat (four points on one line), so
-/// the scan repeats to a fixpoint. A ring that collapses below three points is returned as-is
-/// for `check` to reject as degenerate — that a fully-collinear "ring" encloses nothing is the
-/// honest report.
-pub fn drop_collinear_midpoints(mut ring: Vec<[Rat; 2]>) -> Vec<[Rat; 2]> {
-    loop {
-        let n = ring.len();
-        if n < 3 {
-            return ring;
-        }
-        let flat = (0..n).find(|&i| {
-            let (prev, p, next) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
-            // Collinear + inside the neighbours' box + distinct from both = strictly between.
-            // Reusing `on_segment_2d_rat` alone would be wrong: it includes the endpoints, and
-            // an endpoint hit here is a zero-length edge that must survive to be reported.
-            p != prev
-                && p != next
-                && orient2d_rat(prev, p, next) == 0
-                && on_segment_2d_rat(prev, next, p)
-        });
-        match flat {
-            Some(i) => {
-                ring.remove(i);
-            }
-            None => return ring,
-        }
-    }
+/// Exact, on the rational truth: three points collinear in decimal are often a hair off the line
+/// in binary, and the decimal is the author's meaning.
+pub fn flat_corner(prev: [Rat; 2], p: [Rat; 2], next: [Rat; 2]) -> bool {
+    p != prev && p != next && orient2d_rat(prev, p, next) == 0 && on_segment_2d_rat(prev, next, p)
 }
 
 /// [`spike`]'s rational twin.

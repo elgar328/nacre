@@ -405,15 +405,6 @@ census 21/5,687 클래스, 스위트 모션 없는 클래스의 약 11%(10,156/8
 있으니 변환·재생은 선다) 엄격한 규칙은 그 점에서 만나는 평면 셋으로 이름 짓는다. 이름이 바뀌면 census `c` 행이
 움직일 수 있다 — 먼저 그런 정점의 인구(스위트·census·스윕)를 잰다.
 
-### 평탄 코너 규칙이 두 벌이다
-
-`Ring2d::normalized` 의 직선 갈래와 `nacre_geom::intersect::drop_collinear_midpoints` 가 같은 규칙(공선 · 두 이웃
-사이 · 이웃과 다름, 고정점까지 반복)을 따로 적는다. 뒤의 것은 `pub` 이지만 제품 호출처가 없고(geom 자기 테스트뿐),
-doc 은 자기가 «the profile constructor's normalization pass»라고 말한다 — 거짓 현재형이다. `normalized` 안의
-`between` 클로저도 geom 의 `on_segment_2d_rat`(`pub(crate)`)과 본문이 같다. 한 철자로 모은다 — geom 함수를
-은퇴시키고 그 테스트를 ops 의 정규형 잠금으로 옮기거나, geom 이 술어를 열고 ops 가 부른다. 어느 쪽이든 발행 API 가
-바뀌므로 CHANGELOG 에 적는다.
-
 ## 보류 — 인구가 생기면
 
 ### 림 표는 몸체를 가리지 않는다
