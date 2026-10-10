@@ -343,3 +343,41 @@ fn hole_containment_reads_arcs_on_either_side() {
         Err(SketchError::RingsMeet { .. })
     ));
 }
+
+/// A ring of two arcs that runs out along a circle and back is a spike of no area, and the sketch
+/// doors name it — `from_paths` as a self-intersection, and an extrude handed it anyway as
+/// `SelfIntersectingProfile`, before any solid is built.
+#[test]
+fn an_arc_and_its_retrace_are_a_self_intersecting_ring() {
+    use crate::{OpError, Operation, SketchFrame, apply};
+    let arc = |ccw| Edge2d::Arc {
+        center: [r(0), r(0)],
+        r2: r(25),
+        ccw,
+    };
+    let ring = || {
+        Ring2d::new(
+            vec![[r(5), r(0)], [r(0), r(5)]],
+            vec![arc(true), arc(false)],
+        )
+        .expect("each step is a stated arc")
+    };
+    assert!(matches!(
+        from_paths(vec![ring()]),
+        Err(SketchError::RingSelfIntersects { ring: 0, .. })
+    ));
+    let mut m = nacre_topo::Model::new();
+    let frame = SketchFrame::world(&m, nacre_exact::Axis::Z);
+    let profile = Profile2d::from_normalized_rings(ring(), vec![]);
+    assert!(matches!(
+        apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 1.0
+            }
+        ),
+        Err(OpError::SelfIntersectingProfile { .. })
+    ));
+}

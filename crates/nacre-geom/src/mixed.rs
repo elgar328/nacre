@@ -314,7 +314,6 @@ fn skipped(x: &QPt, skip: &[[Rat; 2]]) -> Option<bool> {
     Some(false)
 }
 
-/// Do two arcs meet anywhere except at the points in `skip`? Touching counts.
 /// One circular arc of the plane, stated for [`arcs_share_a_point`]: `start → end` runs
 /// counter-clockwise on the circle `(centre, √r2)` — the radius stated as its square, the form
 /// the truth holds — and `start == end` is the whole circle. The points are on the circle — the
@@ -341,13 +340,19 @@ pub fn arcs_share_a_point(a: &ArcSpec, b: &ArcSpec) -> Option<bool> {
     arcs_meet(&arc(a), &arc(b), &[])
 }
 
+/// Do two arcs meet anywhere except at the points in `skip`? Touching counts.
 fn arcs_meet(a: &Arc, b: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
     if a.c == b.c {
         if a.r2 != b.r2 {
             return Some(false); // concentric, distinct radii: disjoint circles
         }
         // One circle: the arcs overlap iff an end of one lies on the other (a full circle
-        // contains every point). Shared vertices are exactly what `skip` excludes.
+        // contains every point) — except when they are **one arc** whose two ends are both
+        // skipped (a ring of two steps running out along a circle and back), where no end is
+        // left to witness an overlap that covers the whole arc.
+        if !a.is_full() && a.s == b.s && a.e == b.e {
+            return Some(true);
+        }
         for (x, y) in [(a, b), (b, a)] {
             for v in [x.s, x.e] {
                 if skip.contains(&v) {

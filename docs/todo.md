@@ -302,15 +302,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 원통의 seam 은 세계에서 만나 실현된다 — `seam_point_met`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
 다시 재지 않았다.
 
-### `Profile2d::check` 가 한 원을 되짚는 두 호를 받는다
-
-한 원 위에서 A→B 를 ccw 로, B→A 를 cw 로 되짚는 두 스텝 링(넓이 0 의 스파이크)을
-`mixed_ring_self_intersection` 이 못 잡는다 — `arcs_meet` 의 같은 원 갈래는 «한 호의 끝점이 다른 호 위인가»만
-묻는데, 두 끝점이 다 공유 정점이라 `skip` 된다. 그래서 `Ring2d::new`·`from_paths`·`Profile2d::check` 가 모두
-받고(공개 `check` 의 «simple ring» 계약과 어긋난다), extrude 에서야 `oriented_ring` 이 winding 0 을
-`DegenerateProfile` 로 거절한다 — 조용한 오답은 아니다. `Ring2d::normalized` 가 같은 원·같은 방향의 인접 호를
-합치므로, 정규형에서 «같은 원 위 두 스텝, 반대 방향»은 언제나 이 스파이크다 — 그 갈래 하나로 닫힌다.
-
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.

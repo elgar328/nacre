@@ -218,6 +218,16 @@ fn a_ring_that_doubles_back_or_crosses_its_own_arc_is_named() {
         Edge2d::Line,
     ];
     assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 2))));
+    // Two steps, the second running back along the first: one arc, out and back. Both ends are
+    // the vertices the pair shares, so no end can witness the overlap — the arcs are one arc.
+    let v = vec![pt(5, 0), pt(0, 5)];
+    let s = vec![arc(0, 0, 5, true), arc(0, 0, 5, false)];
+    assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 1))));
+    // The control: two half circles the same way round share both ends too, and are the
+    // circle — they meet at their ends and nowhere else.
+    let v = vec![pt(5, 0), pt(-5, 0)];
+    let s = vec![arc(0, 0, 5, true), arc(0, 0, 5, true)];
+    assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(None));
 }
 
 #[test]

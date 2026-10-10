@@ -34,6 +34,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A sketch ring of two arcs running out along one circle and back — a spike of no area — is refused as a self-intersection: `ops::from_paths` returns `SketchError::RingSelfIntersects` and `ops::Profile2d::check` (and every operation that runs it) `OpError::SelfIntersectingProfile`. `geom::mixed::mixed_ring_self_intersection` reported no intersection, so the ring was accepted, and an extrude refused it later as `DegenerateProfile`.
 - A boolean could refuse, as `NoClearRay`, a cylinder extruded from a whole circle whose radius is written to f64's last digit, when the other solid meets its cap inside the disk. `exact::rat_sqrt_exact` reported the root of a large perfect square as irrational — for about one in a hundred such radii; it, `exact::inv_sqrt_exact` and `exact::quad::QuadVal::as_rat` now find every root that fits.
 - STEP export no longer panics when built for `wasm32-unknown-unknown`. It asked the system for the time to stamp the file's header, which that target cannot answer; the caller now gives the stamp.
 - A cylinder bitten at both ends — a box over part of each rim, fused on or cut away — now tessellates. Its side face comes out with no seam line, bounded by its two cut rims, and the mesher refused it, so the whole model failed to mesh; the mesher now cuts such a face open along one line of the cylinder.
