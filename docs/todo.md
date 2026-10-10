@@ -302,6 +302,26 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 원통의 seam 은 세계에서 만나 실현된다 — `seam_point_met`). 피연산자 정점의 `NoMeet`(한 번 잰 6,988 중 192)은 도로를 넓힌 뒤
 다시 재지 않았다.
 
+### `rat_sqrt_exact` 가 큰 완전제곱을 무리수로 답한다
+
+`nacre_exact::rat_sqrt_exact` 는 분자·분모의 근을 f64 `sqrt` 로 어림하고 ±2 안에서 찾는다. 근이 2⁵⁵ 근처를
+넘으면 f64 의 오차가 그 창보다 커서 완전제곱을 놓친다(`None` = «무리수»). 사용자 입력에 닿는다: 유효숫자 17자리
+십진 반지름(0.001–50 에서 고른 20,000)의 r² 가운데 168(0.84%, 예 `2.7848112834336347`)에서 근을 놓치고,
+`Ring2d::circle` 은 그 전부를 받는다. 그 `None` 을 읽는 자리: `construct.rs` 의 통째 원 `ref_dir`(현을 유리
+반지름으로 나누지 못해 날것으로 둔다 — 원통 원시체 도로와 intern 이 갈릴 수 있다), `QuadVal::as_rat`(완전제곱
+판별식이 근호로 남아 `combinatorics::mixed_ring` 에서 다른 근호와 섞이면 `debug_assert`·`None`), `plane_offset`
+(다른 도로로 간다). 무엇이 실제로 바뀌는지는 안 쟀다. 넓은 쌍둥이 `rat_sqrt_exact_big` 은 BigInt 정수 제곱근이라
+이 결함이 없다 — 좁은 쪽도 f64 를 거치지 않는 정수 제곱근(`i128::isqrt`)으로 바꾸고 census 를 비교한다.
+
+### `Profile2d::check` 가 한 원을 되짚는 두 호를 받는다
+
+한 원 위에서 A→B 를 ccw 로, B→A 를 cw 로 되짚는 두 스텝 링(넓이 0 의 스파이크)을
+`mixed_ring_self_intersection` 이 못 잡는다 — `arcs_meet` 의 같은 원 갈래는 «한 호의 끝점이 다른 호 위인가»만
+묻는데, 두 끝점이 다 공유 정점이라 `skip` 된다. 그래서 `Ring2d::new`·`from_paths`·`Profile2d::check` 가 모두
+받고(공개 `check` 의 «simple ring» 계약과 어긋난다), extrude 에서야 `oriented_ring` 이 winding 0 을
+`DegenerateProfile` 로 거절한다 — 조용한 오답은 아니다. `Ring2d::normalized` 가 같은 원·같은 방향의 인접 호를
+합치므로, 정규형에서 «같은 원 위 두 스텝, 반대 방향»은 언제나 이 스파이크다 — 그 갈래 하나로 닫힌다.
+
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
 잠금 공백·API·성능·구조. 순서는 없다.
@@ -404,6 +424,15 @@ census 21/5,687 클래스, 스위트 모션 없는 클래스의 약 11%(10,156/8
 떨어진 자리에서 원통 클래스의 무한 곡면 위에 우연히 놓이면, 지금은 관통점 이름을 지키고(정확하고 그 곡면이 덩어리에
 있으니 변환·재생은 선다) 엄격한 규칙은 그 점에서 만나는 평면 셋으로 이름 짓는다. 이름이 바뀌면 census `c` 행이
 움직일 수 있다 — 먼저 그런 정점의 인구(스위트·census·스윕)를 잰다.
+
+### 평탄 코너 규칙이 두 벌이다
+
+`Ring2d::normalized` 의 직선 갈래와 `nacre_geom::intersect::drop_collinear_midpoints` 가 같은 규칙(공선 · 두 이웃
+사이 · 이웃과 다름, 고정점까지 반복)을 따로 적는다. 뒤의 것은 `pub` 이지만 제품 호출처가 없고(geom 자기 테스트뿐),
+doc 은 자기가 «the profile constructor's normalization pass»라고 말한다 — 거짓 현재형이다. `normalized` 안의
+`between` 클로저도 geom 의 `on_segment_2d_rat`(`pub(crate)`)과 본문이 같다. 한 철자로 모은다 — geom 함수를
+은퇴시키고 그 테스트를 ops 의 정규형 잠금으로 옮기거나, geom 이 술어를 열고 ops 가 부른다. 어느 쪽이든 발행 API 가
+바뀌므로 CHANGELOG 에 적는다.
 
 ## 보류 — 인구가 생기면
 
@@ -636,6 +665,12 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 그리고 접지 않은 둘째 이유는 비용이 아니라 **부과 지점이 다르기** 때문이다 — drop 과 명시
 지점을 합치면 시간이 어디에 실리는지가 움직인다. 계측을 고치려면 그 계측이 무엇을 재는지 먼저
 물어야 한다.
+
+### NURBS 생성자가 길이 0 의 정의역을 받는다
+
+`NurbsCurve::new`·`NurbsSurface::new` 는 매듭이 줄지 않는지만 본다 — `knots[degree] == knots[n + 1]`(예: 매듭이
+전부 0)도 통과하고, 그 곡선의 `point_at` 은 `NaN` 을 돌려준다. doc 의 «validating all invariants» 와 어긋난다.
+제품 생산자가 0 이라(geom 과 그 테스트뿐) 보류한다. 고칠 것은 생성자의 조건 하나(정의역 길이 > 0)다.
 
 ### v2 로 미룬 것
 
