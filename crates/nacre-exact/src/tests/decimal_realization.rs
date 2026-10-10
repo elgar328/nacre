@@ -110,6 +110,30 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
     );
 }
 
+/// A perfect square has its root found at **any** width `Rat` holds — the roots past `2⁵⁵` an
+/// `f64` estimate lands too far from to search back to: four radii a user writes to f64's last
+/// digit, and `2^k + 3` up to the top of `i128`. `inv_sqrt_exact` reads the same answer.
+#[test]
+fn a_perfect_square_has_its_root_at_any_width() {
+    let decimals = [
+        2.7848112834336347,
+        0.36681130224225267,
+        26.288485480848863,
+        27.644747522971063,
+    ]
+    .map(|x| Rat::from_decimal(x).expect("in the window"));
+    let ints = (56..=63).map(|k| Rat::from_int((1i128 << k) + 3));
+    for r in decimals.into_iter().chain(ints) {
+        let r2 = r.checked_mul(r).expect("the square fits i128");
+        assert_eq!(rat_sqrt_exact(r2), Some(r), "{r:?}");
+        assert_eq!(
+            inv_sqrt_exact(r2),
+            Some(Rat::new(r.denom(), r.numer()).unwrap()),
+            "{r:?}"
+        );
+    }
+}
+
 /// A sweep for the carry and tie cases the hand-picked table cannot reach.
 #[test]
 fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {

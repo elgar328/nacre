@@ -1537,11 +1537,18 @@ fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
 /// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
 /// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes
 /// back as the statement itself and `centre + r·û₁` is that circle's seam point — not new
-/// geometry, just the point the arrangement's uncut circle drops the node for.
+/// geometry, just the point the arrangement's uncut circle drops the node for. The second radius
+/// is written to f64's last digit, whose root lies past `2⁵⁵`.
 #[test]
 fn a_rim_witness_is_the_statements_own_seam_point() {
+    for radius in [2.5, 26.288485480848863] {
+        a_rim_witness_is_the_seam_point_at(radius);
+    }
+}
+
+fn a_rim_witness_is_the_seam_point_at(radius: f64) {
     let mut m = Model::new();
-    let op = cylinder_op(&m, [3.0, -4.0], 2.5, 6.0);
+    let op = cylinder_op(&m, [3.0, -4.0], radius, 6.0);
     apply(&mut m, &op).expect("the cylinder extrudes");
     let def = lone_cylinder_def(&m);
     let (u1, u2) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())
@@ -1565,6 +1572,58 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
             nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
             nacre_exact::Orient::Zero,
         );
+    }
+}
+
+/// ★ **A box poking out through a cylinder's cap, inside its disk, builds at a full-digit
+/// radius.** The cap's nesting question needs the disk's rim witnesses — the centre alone cannot
+/// answer the converse — and a radius written to f64's last digit has a root past `2⁵⁵`. Every
+/// operation, both orders, against the volumes: the box's far corner is `√200 < r` from the axis,
+/// so the box lies inside the disk and its top pokes through the cap at `z = 5`.
+#[test]
+fn a_box_through_a_cap_builds_at_a_full_digit_radius() {
+    for r in [26.288485480848863, 26.25] {
+        let disk = 5.0 * std::f64::consts::PI * r * r;
+        for (kind, flip, want) in [
+            (BoolKind::Common, false, 800.0),
+            (BoolKind::Common, true, 800.0),
+            (BoolKind::Cut, false, disk - 800.0),
+            (BoolKind::Cut, true, 400.0),
+            (BoolKind::Fuse, false, disk + 400.0),
+            (BoolKind::Fuse, true, disk + 400.0),
+        ] {
+            let mut m = Model::new();
+            let cyl = crate::fixtures::cylinder(
+                &mut m,
+                Point3::from_array([0.0; 3]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                r,
+                5.0,
+            )
+            .solid;
+            let block = crate::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([0.0, -10.0, 1.0]),
+                Point3::from_array([10.0, 10.0, 7.0]),
+            );
+            m.rebuild_adjacency();
+            let (a, b) = if flip { (block, cyl) } else { (cyl, block) };
+            let out = boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("r = {r}, {kind:?}, flip {flip}: {e:?}"));
+            assert_eq!(out.len(), 1, "r = {r}, {kind:?}, flip {flip}: one body");
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "r = {r}, {kind:?}, flip {flip}: {:?}",
+                nacre_validate::validate(&m)
+            );
+            let vol = nacre_props::mass_props(&m, out[0])
+                .expect("mass props")
+                .volume;
+            assert!(
+                (vol - want).abs() <= 1e-9 * want,
+                "r = {r}, {kind:?}, flip {flip}: volume {vol} against {want}"
+            );
+        }
     }
 }
 

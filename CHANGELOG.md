@@ -34,6 +34,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A boolean could refuse, as `NoClearRay`, a cylinder extruded from a whole circle whose radius is written to f64's last digit, when the other solid meets its cap inside the disk. `exact::rat_sqrt_exact` reported the root of a large perfect square as irrational — for about one in a hundred such radii; it, `exact::inv_sqrt_exact` and `exact::quad::QuadVal::as_rat` now find every root that fits.
 - STEP export no longer panics when built for `wasm32-unknown-unknown`. It asked the system for the time to stamp the file's header, which that target cannot answer; the caller now gives the stamp.
 - A cylinder bitten at both ends — a box over part of each rim, fused on or cut away — now tessellates. Its side face comes out with no seam line, bounded by its two cut rims, and the mesher refused it, so the whole model failed to mesh; the mesher now cuts such a face open along one line of the cylinder.
 - Such a side face with windows whose spans together go all the way round the axis now tessellates too: the mesher cuts it open through one window rather than refusing the face.
