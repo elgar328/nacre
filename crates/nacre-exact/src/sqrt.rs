@@ -76,9 +76,9 @@ pub fn rat_sqrt_exact_big(v: &BigRat) -> Option<Rat> {
 /// The exact `√v` of a rational, or `None` when it is irrational (or `v < 0`).
 ///
 /// An integer square root, as [`rat_sqrt_exact_big`] takes one — the same question at `Rat`'s
-/// width. An `f64` estimate searched over a few neighbours is the rejected alternative: past a
-/// root of `2⁵⁵` its error leaves any small window, and it answered «irrational» for 168 of 20,000
-/// radii written to f64's last digit.
+/// width. An `f64` estimate searched over a few neighbours is the rejected alternative: its error
+/// grows with the root, past `2⁵⁵` it left the ±2 window that was searched, and it answered
+/// «irrational» for 168 of 20,000 radii written to f64's last digit.
 pub fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
     let (num, den) = (*v.0.numer(), *v.0.denom());
     if num < 0 {
