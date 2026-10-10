@@ -22,8 +22,14 @@ STOP={'the','and','pub','fn','let','mut','vec','usize','f64','i8','bool','true',
       'some','self','str','rust','impl','match','for','if','else','type','use','mod','crate'}
 SIB=('../step-io','../brep-to-step','../nacre-kit','../nacre-playground/wasm')  # ⚠ playground 는 wasm 크레이트만:
 #   web/ 은 node_modules 를 들어 `Intersection` 같은 이름이 @types/three 에서 12건으로 잡힌다(잡음).
+# `target/` is build output, not source: the sibling repos' come to gigabytes (a sweep of the three
+# documents went past half an hour walking them), and a name met only there is no use of it.
+def walk(root):
+    for dirpath, dirs, names in os.walk(root):
+        dirs[:] = [x for x in dirs if x != 'target']
+        yield from (os.path.join(dirpath, n) for n in dirs + names)
 files={os.path.basename(p).rsplit('.',1)[0]
-       for r in ('crates','tools')+SIB for p in glob.glob(r+'/**/*', recursive=True)}
+       for r in ('crates','tools')+SIB for p in walk(r)}
 toml=''.join(io.open(p,encoding='utf-8').read()
              for p in glob.glob('crates/*/Cargo.toml')+['Cargo.toml'])
 def uses(name, roots, exts=('*.rs',)):
@@ -31,7 +37,7 @@ def uses(name, roots, exts=('*.rs',)):
     pat=re.compile(r'(?<!'+W+r')'+re.escape(name)+r'(?!'+W+r')')
     # `--no-ignore`/`--hidden`: search what grep -r would, not what the ignore files admit (the
     # repo's `.ignore` re-admits `graft/`). `-F`: a name is an identifier; `pat` checks the boundary.
-    args=['rg','-n','--no-heading','--no-ignore','--hidden','-F']+sum([['-g',e] for e in exts],[])+['--',name]+list(roots)
+    args=['rg','-n','--no-heading','--no-ignore','--hidden','-F']+sum([['-g',e] for e in exts],[])+['-g','!target/','--',name]+list(roots)
     out=subprocess.run(args,capture_output=True,text=True).stdout
     live=cmt=0
     for x in out.splitlines():
