@@ -34,10 +34,16 @@ pub(crate) fn side_of(
         NodeKind::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
         // ★★ **A pierce point's side of a plane is one `a + b√c` sign.** The point is
         // `line.base() + s·line.dir()`, the plane's coefficients are rational, and
-        // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. `None` is a
-        // missing description (a class with no world name, a cylinder with no world statement),
-        // never a shape this cannot answer.
+        // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. A class the
+        // gate passed as silent about the cylinder answers from its record. `None` is a missing
+        // description (a class with no world name and no such record, a cylinder with no world
+        // statement), never a shape this cannot answer.
         NodeKind::Pierce { cyl, .. } => {
+            // A class the gate proved the whole cylinder clear of has the point on the side it
+            // recorded — in this function's convention already, so no bridge applies.
+            if let Some(side) = cyls.get(cyl).and_then(|cy| cy.beside(q)) {
+                return Some(side);
+            }
             let (line, sv) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
             let co = class_coeffs_rat(jd, q)?;
             let fix = outward_fix(jd, q)?;
@@ -352,11 +358,12 @@ pub(crate) fn ring_against_plane(
 /// `X == v` strictly inside an edge is the `PointOnRing` reject.
 pub(crate) fn point_in_ring(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
 ) -> Result<bool, BoolError> {
-    every_ray(jd, p, v, ring)?
+    every_ray(jd, cyls, p, v, ring)?
         .first()
         .copied()
         .ok_or_else(|| reject(RejectReason::NoClearRay))

@@ -514,21 +514,39 @@ pub(crate) struct WorkingCyl {
     /// the table reads it rather than deciding it again.
     pub(crate) shared: Vec<SharedRuling>,
     /// **The plane classes with no world statement this cylinder is silent about** — the gate's
-    /// record ([`cylinder_gate`]): each was proved to stand clear of every lateral face, so
-    /// nothing of this cylinder (rim, ruling, chord, pierce point, arc) reaches its plane, and the
-    /// roads that would ask the class's coefficients about this cylinder answer from the record
-    /// instead. Every nameless class of the boolean is here, or the gate refused.
-    pub(crate) silent: Vec<usize>,
+    /// record ([`cylinder_gate`]), with what the gate proved of each ([`Silence`]). Nothing of this
+    /// cylinder (rim, ruling, chord, pierce point, arc) reaches such a class's plane, and the roads
+    /// that would ask the class's coefficients about this cylinder answer from the record instead.
+    /// Every nameless class of the boolean is here, or the gate refused.
+    pub(crate) silent: Vec<(usize, Silence)>,
     /// **The lateral faces' boxes**, one per face — `[low, high]` corners, rational and outward
     /// ([`lateral_box`]). The gate's silence is proved against them and a ray proves its miss
     /// against the same ones. Built only when a nameless class asks; empty otherwise.
     pub(crate) boxes: Vec<[[nacre_exact::Rat; 3]; 2]>,
 }
 
+/// **What the gate proved of a nameless class it passed as silent about a cylinder.**
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Silence {
+    /// Every lateral face of the cylinder lies strictly on this side of the class's plane — in
+    /// [`crate::combinatorics::side_of`]'s convention ([`WorkingPlane::misses`] mints it). A pierce
+    /// point or an arc of the cylinder is on that side too, so the roads that side such a point
+    /// against the class read it here.
+    Beside(i8),
+}
+
 impl WorkingCyl {
     /// Whether the gate proved class `wc` silent about this cylinder.
     pub(crate) fn is_silent(&self, wc: usize) -> bool {
-        self.silent.contains(&wc)
+        self.silent.iter().any(|&(c, _)| c == wc)
+    }
+
+    /// The side of class `wc`'s plane this whole cylinder lies on, when the gate proved one.
+    pub(crate) fn beside(&self, wc: usize) -> Option<i8> {
+        self.silent.iter().find_map(|&(c, s)| match s {
+            Silence::Beside(side) if c == wc => Some(side),
+            _ => None,
+        })
     }
 }
 

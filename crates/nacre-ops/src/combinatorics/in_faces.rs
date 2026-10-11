@@ -575,7 +575,7 @@ pub(crate) fn point_in_component(
                             if point_on_ring(jd, q, x, r)? {
                                 return Ok(None);
                             }
-                            Ok(every_ray(jd, q, x, r)?.first().copied())
+                            Ok(every_ray(jd, cyls, q, x, r)?.first().copied())
                         }
                         BoundEdges::Circle(def) => {
                             Ok(node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)))

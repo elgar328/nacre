@@ -160,13 +160,24 @@ pub(super) fn split_at_crossings(
     // pair `(wc, s.wall)` it will be asked
     // about. Building it here rather than per question is the hoist the containment loop below
     // rests on — measured, that loop runs 1.4–3.2M times per 60-fin fold.
+    // ★ **What a failure here is called depends on whose description failed.** A class the gate
+    // passed as silent about the cylinders has no world statement, and a question this pass cannot
+    // answer without one refuses by the gate's name — the cause is the gate's; anything else is
+    // the arithmetic's.
+    let silent = |c: usize| cyls.iter().any(|cy| cy.is_silent(c));
+    let cause = |classes: &[usize]| {
+        reject(if classes.iter().any(|&c| silent(c)) {
+            RejectReason::CylinderGateUndecided
+        } else {
+            RejectReason::WitnessNotRational
+        })
+    };
     let end_l: Vec<[combinatorics::OnLine; 2]> = segs
         .iter()
         .map(|s| {
             let mut it = (0..2).map(|k| {
                 let on = Split::of(s.end[k], s.end_h[k]).on(wc, s.wall);
-                combinatorics::on_line(jd, cyls, wc, s.wall, on)
-                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+                combinatorics::on_line(jd, cyls, wc, s.wall, on).ok_or_else(|| cause(&[s.wall]))
             });
             Ok([it.next().unwrap()?, it.next().unwrap()?])
         })
@@ -237,7 +248,7 @@ pub(super) fn split_at_crossings(
                 // ★ One handle per wall pair — `r`'s segments all ask about this same crossing,
                 // and they all ride `r`'s line, which is the pair this point is located for.
                 let at = combinatorics::locate(jd, cyls, wc, r, combinatorics::PointOn::Class(w))
-                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+                    .ok_or_else(|| cause(&[w, r]))?;
                 let mut reaches = false;
                 for &i in &other.segs {
                     match closed_contains(i, &at, r) {
@@ -246,6 +257,24 @@ pub(super) fn split_at_crossings(
                             break;
                         }
                         Some(false) => {}
+                        // ★ **Where a silent class is in the question, the ends' sides answer it.**
+                        // The point is `w`'s crossing of `r`'s line, so it lies on the segment iff
+                        // the segment's two ends are not strictly on one side of `w` — the reading
+                        // the ray walk makes of a straight edge. A pierce end's side of a silent
+                        // class is the gate's record (`side_of`), which order along the line has no
+                        // spelling for.
+                        None if silent(w) || silent(r) => {
+                            let side =
+                                |k: usize| combinatorics::side_of(jd, cyls, segs[i].end[k], w);
+                            match (side(0), side(1)) {
+                                (Some(a), Some(b)) if a * b <= 0 => {
+                                    reaches = true;
+                                    break;
+                                }
+                                (Some(_), Some(_)) => {}
+                                _ => return Err(cause(&[w, r])),
+                            }
+                        }
                         None => return Err(reject(RejectReason::WitnessNotRational)),
                     }
                 }
@@ -279,7 +308,13 @@ pub(super) fn split_at_crossings(
                 }
             });
             if bad {
-                return Err(reject(RejectReason::WitnessNotRational));
+                let classes: Vec<usize> = std::iter::once(w)
+                    .chain(pts.iter().filter_map(|x| match x {
+                        Split::Class(r) => Some(*r),
+                        _ => None,
+                    }))
+                    .collect();
+                return Err(cause(&classes));
             }
             // ★ Two DISTINCT points ordering equal are one point wearing two names — a four-plane
             // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:

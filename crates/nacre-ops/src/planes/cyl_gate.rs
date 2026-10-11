@@ -159,7 +159,7 @@ pub(crate) fn cylinder_gate(
                 .unwrap_or_default();
         }
     }
-    let mut silent: Vec<Vec<usize>> = vec![Vec::new(); cyls.len()];
+    let mut silent: Vec<Vec<(usize, Silence)>> = vec![Vec::new(); cyls.len()];
     for (ci, cyl) in cyls.iter().enumerate() {
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
@@ -180,10 +180,10 @@ pub(crate) fn cylinder_gate(
                 if wp.world.is_some() {
                     return Err(reject(RejectReason::WitnessNotRational));
                 }
-                if cyl.clear_of(wp).is_none() {
+                let Some(side) = cyl.clear_of(wp) else {
                     return Err(undecided());
-                }
-                silent[ci].push(c);
+                };
+                silent[ci].push((c, Silence::Beside(side)));
                 continue;
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];

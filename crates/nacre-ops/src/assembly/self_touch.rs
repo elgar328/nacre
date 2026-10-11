@@ -365,7 +365,15 @@ pub(super) fn self_touch_reject(
                     else {
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
-                    if combinatorics::segment_meets_face(jd, q, w2, up, vp, &rings_of_face[&j])? {
+                    if combinatorics::segment_meets_face(
+                        jd,
+                        cyls,
+                        q,
+                        w2,
+                        up,
+                        vp,
+                        &rings_of_face[&j],
+                    )? {
                         // The offending edge itself, as the witness: both endpoints are in `pt`
                         // (the `in_box` guard above already looked them up).
                         return Err(crate::reject_at(

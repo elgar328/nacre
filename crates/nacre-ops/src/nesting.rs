@@ -501,18 +501,20 @@ fn ask(
         }
     };
     Ok(match (w, target) {
-        (Where::Named(t), Cell::Ring(rb)) => match combinatorics::point_in_ring(jd, wc, *t, rb) {
-            Ok(true) => Said::In,
-            Ok(false) => Said::Out,
-            // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
-            // this witness's circumstance is an abstention.
-            Err(e) => Said::of_ray_error(
-                e,
-                rb.iter()
-                    .any(|x| combinatorics::pierce_name(x.node).is_some()),
-                combinatorics::ring_is_mixed(rb),
-            )?,
-        },
+        (Where::Named(t), Cell::Ring(rb)) => {
+            match combinatorics::point_in_ring(jd, cyls, wc, *t, rb) {
+                Ok(true) => Said::In,
+                Ok(false) => Said::Out,
+                // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
+                // this witness's circumstance is an abstention.
+                Err(e) => Said::of_ray_error(
+                    e,
+                    rb.iter()
+                        .any(|x| combinatorics::pierce_name(x.node).is_some()),
+                    combinatorics::ring_is_mixed(rb),
+                )?,
+            }
+        }
         (Where::Coord(p), Cell::Ring(rb)) => match rational_point_in_ring(jd, cyls, wc, p, rb) {
             Ok(Some(true)) => Said::In,
             Ok(Some(false)) => Said::Out,

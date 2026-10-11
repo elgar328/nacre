@@ -3,6 +3,7 @@ use super::*;
 /// says so, which is a second machine for free.
 pub(crate) fn every_ray(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
@@ -36,8 +37,9 @@ pub(crate) fn every_ray(
         // `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a`, which the walk already
         // knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        // ★ No cylinder table on this road: a pierce node in a **result** cell's ring
-        // declines here, and threading one is the arc road's business.
+        // ★ No cylinder table on this road for a class with a world statement: a pierce node in a
+        // **result** cell's ring declines here, and threading one is the arc road's business. A
+        // class the gate passed as silent reads the gate's record instead ([`silent_reading`]).
         // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
@@ -45,12 +47,12 @@ pub(crate) fn every_ray(
         // (`arc_departure_side`), and so would an arc whose ends do not settle how often it
         // crosses (both on one side, or one on the line) to count them — this road carries
         // none, so `None` is the honest answer to both, and the walk's `Unnameable` is the same
-        // refusal a pierce node already meets here.
+        // refusal a pierce node already meets here. (Against a silent class an arc crosses
+        // nowhere — the gate's record, [`silent_reading`].)
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let crossings =
-            |i: usize, _: Option<usize>| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(0);
-        let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet, crossings) {
+        let (table, crossings) = silent_reading(cyls, qa, ring);
+        let features = match ring_against_plane(jd, table, &nodes, qa, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
@@ -148,6 +150,7 @@ pub(crate) fn every_ray(
 /// which is the rule the tracer and the ray caster already read a ring with.
 pub(crate) fn segment_meets_face(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     w: usize,
     u: [usize; 3],
@@ -172,12 +175,11 @@ pub(crate) fn segment_meets_face(
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
         // No cylinder table on this road either (see `every_ray`): an arc answers `None`, to both
-        // questions.
+        // questions — but against a silent class, which reads the gate's record.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let crossings =
-            |i: usize, _: Option<usize>| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(0);
-        let features = match ring_against_plane(jd, &[], &nodes, w, on_meet, crossings) {
+        let (table, crossings) = silent_reading(cyls, w, ring);
+        let features = match ring_against_plane(jd, table, &nodes, w, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
@@ -295,4 +297,33 @@ pub(super) fn point_on_ring(
         }
     }
     Ok(false)
+}
+
+/// **What a ray road reads of a ring against plane `q`** — the cylinder table and the arcs'
+/// crossing counts. This road carries no cylinder table for a class with a world statement: a
+/// pierce corner there has no side here and the walk declines, as an arc's crossings do — the
+/// coordinate road answers instead. A class the gate passed as silent about the cylinders is the
+/// exception the gate's record makes: every pierce corner and every arc of a cylinder that
+/// lies beside it is on the recorded side ([`crate::planes::WorkingCyl::beside`]), so the table
+/// is handed over for [`side_of`] to read, and such an arc crosses `q` nowhere.
+fn silent_reading<'c>(
+    cyls: &'c [crate::planes::WorkingCyl],
+    q: usize,
+    ring: &[RingEdge],
+) -> (
+    &'c [crate::planes::WorkingCyl],
+    impl Fn(usize, Option<usize>) -> Option<u8>,
+) {
+    let silent = cyls.iter().any(|cy| cy.is_silent(q));
+    let table: &[crate::planes::WorkingCyl] = if silent { cyls } else { &[] };
+    let arcs: Vec<bool> = ring
+        .iter()
+        .map(|e| match &e.carrier {
+            Carrier::Arc(a) => table.get(a.cyl).is_some_and(|cy| cy.beside(q).is_some()),
+            _ => true,
+        })
+        .collect();
+    (table, move |i: usize, _: Option<usize>| {
+        arcs[i].then_some(0)
+    })
 }

@@ -88,6 +88,14 @@ fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle
     shift(m, b, [c[0], c[1], 0])
 }
 
+/// The fillet plate's top area: `90×50` less the corners its fillets of radius 5 round off, less
+/// its bores of radius 3.5. The plate is 12 thick; a `5×5` box standing on `z = 6` overlaps it by
+/// `25·6 = 150`.
+fn rounded_area(fillets: usize, bores: usize) -> f64 {
+    let pi = std::f64::consts::PI;
+    90.0 * 50.0 - fillets as f64 * (25.0 - 25.0 * pi / 4.0) - bores as f64 * pi * 3.5 * 3.5
+}
+
 /// What one kind answers.
 #[derive(Clone, Copy, Debug)]
 enum Want {
@@ -95,11 +103,8 @@ enum Want {
     Built(usize, f64),
     /// Refused by this name.
     Refused(RejectReason),
-    /// Refused, by a name the scoreboard does not pin yet: the gate passes the family and a road
-    /// that reads the gate's recorded side has not been opened.
-    RefusedUnpinned,
 }
-use Want::{Built, Refused, RefusedUnpinned};
+use Want::{Built, Refused};
 
 struct Family {
     name: &'static str,
@@ -116,7 +121,6 @@ fn nameless_classes_beside_world_cylinders() {
     let pi = std::f64::consts::PI;
     let bored = 16000.0 - 40.0 * pi;
     let refused = [Refused(Undecided); 3];
-    let unpinned = [RefusedUnpinned; 3];
     let fams = [
         // The control: a quarter turn keeps every name, and the box sits on the plate far from
         // the bore — it overlaps the plate over `z ∈ [5, 10]`, 125.
@@ -241,14 +245,22 @@ fn nameless_classes_beside_world_cylinders() {
                 )
             },
             gate: Ok(4),
-            want: unpinned,
+            want: [
+                Built(1, rounded_area(1, 0) * 12.0 + 100.0),
+                Built(1, rounded_area(1, 0) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
         },
         // The playground's example 003 shape: four fillets, four bores, the box in the middle.
         Family {
             name: "F16 four fillets and four bores, box turned 37 in the middle",
             build: |m| (rounded_plate(m, 4, 4), turned_box(m, 37, [0, 0], 6.0, 10.0)),
             gate: Ok(4),
-            want: unpinned,
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
         },
         // Four bores and no fillet.
         Family {
@@ -296,7 +308,7 @@ fn nameless_classes_beside_world_cylinders() {
                 (a, turned_box(m, 37, [10, 25], 5.0, 10.0))
             },
             gate: Ok(4),
-            want: unpinned,
+            want: refused,
         },
         // A world wall crossing the bore, fused with a turned box: the wall's face carries the
         // box's irrational corners.
@@ -371,7 +383,6 @@ fn nameless_classes_beside_world_cylinders() {
                 (Err(BoolError::Rejected { reason, .. }), Refused(r)) => {
                     assert_eq!(&reason, r, "{} {kind:?}: the refusal's name", f.name);
                 }
-                (Err(BoolError::Rejected { .. }), RefusedUnpinned) => {}
                 (got, _) => panic!("{} {kind:?}: {got:?}, wanted {want:?}", f.name),
             }
         }

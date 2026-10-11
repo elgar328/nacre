@@ -414,8 +414,8 @@ fn engine_sources() -> Vec<String> {
 /// ★ **The exceptions are listed, not implied.** The retry's value is picking *another witness*
 /// when one grazes, so the rule binds anything asking "is this ring inside that one". A caller
 /// asking about **one named vertex** has no other node to offer, and the retry would have nothing
-/// to retry with — the self-touch check is that (`point_in_ring(jd, wc, *t, rb)`), and it is
-/// spelled out below rather than left to a loose pattern.
+/// to retry with — the self-touch check is that (`point_in_ring(jd, cyls, wc, *t, rb)`), and it
+/// is spelled out below rather than left to a loose pattern.
 #[test]
 fn no_production_caller_reaches_past_the_shared_predicate() {
     let src = engine_sources();
@@ -445,7 +445,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
     // The engine's own per-witness door is the one ring-vs-ring caller (`nesting::ask`,
     // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
     // rays in 3D. The self-touch check asks about a single vertex — see this test's note.
-    offenders.retain(|o| !o.contains("point_in_ring(jd, wc, *t, rb)"));
+    offenders.retain(|o| !o.contains("point_in_ring(jd, cyls, wc, *t, rb)"));
     assert_eq!(
         offenders,
         Vec::<String>::new(),
@@ -495,10 +495,11 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             }
         }
     }
-    // The walk itself, plus the four places that ask about a **single point** rather than a ring:
+    // The walk itself, plus the five places that ask about a **single point** rather than a ring:
     // `point_on_ring` ("is `v` on this edge's line"), the ray probe's parallel arm ("is the query on
-    // the plane the ray lies in"), the alias seed ("does this vertex lie on that class"), and the
-    // result's subdivision ("is this pierce point on the other class of a shared ruling").
+    // the plane the ray lies in"), the alias seed ("does this vertex lie on that class"), the
+    // result's subdivision ("is this pierce point on the other class of a shared ruling"), and the
+    // split's containment against a silent class ("which side of `w` is this segment's end").
     // None reads a sign sequence, so none is a walk.
     //
     // ★ A three-plane name is minted through `Canon3`
@@ -516,6 +517,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             && !o.contains("side_of(jd, cyls, corner, c)")
             && !o.contains("side_of(jd, cyls, n, b)")
             && !o.contains("side_of(jd, cyls, n, a)")
+            && !o.contains("side_of(jd, cyls, segs[i].end[k], w)")
     });
     assert_eq!(
         offenders,

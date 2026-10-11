@@ -318,6 +318,13 @@ fn trace_transversal_face(
                 return got.clone();
             }
             let got = match walls[i] {
+                // An arc of a cylinder the gate proved clear of this class lies wholly on one side
+                // of it: no crossing, and nothing to ask of a class with no world statement.
+                crate::combinatorics::Wall::Arc { cyl, .. }
+                    if cyls.get(cyl).is_some_and(|wcy| wcy.beside(wc).is_some()) =>
+                {
+                    Ok(Vec::new())
+                }
                 crate::combinatorics::Wall::Arc { cyl, ccw, .. } => match cyls.get(cyl) {
                     Some(wcy) => arc_crossings(
                         jd,

@@ -226,6 +226,7 @@ fn a_loop_is_inside_the_face_it_was_found_on() {
         assert!(
             combinatorics::point_in_ring(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -245,6 +246,7 @@ fn the_older_loops_are_inside_their_faces_too() {
         for t in &hole {
             let rays = combinatorics::every_ray(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &outer).unwrap(),
@@ -272,6 +274,7 @@ fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
         assert!(
             combinatorics::point_in_ring(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -281,6 +284,7 @@ fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
         assert!(
             combinatorics::point_in_ring(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &rev_outer).unwrap()
@@ -293,6 +297,7 @@ fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
         assert!(
             !combinatorics::point_in_ring(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &hole).unwrap()
@@ -302,6 +307,7 @@ fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
         assert!(
             !combinatorics::point_in_ring(
                 &crate::planes::test_judge(&planes),
+                &[],
                 p,
                 *t,
                 &combinatorics::ring_from_names(p, &rev_hole).unwrap()
@@ -320,6 +326,7 @@ fn every_clear_ray_agrees() {
     let (planes, p, outer, hole) = holed_face_rings("dimple");
     let rays = combinatorics::every_ray(
         &crate::planes::test_judge(&planes),
+        &[],
         p,
         hole[0],
         &combinatorics::ring_from_names(p, &outer).unwrap(),
@@ -340,6 +347,7 @@ fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
     assert!(
         combinatorics::point_in_ring(
             &crate::planes::test_judge(&planes),
+            &[],
             p,
             hole[0],
             &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -349,6 +357,7 @@ fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
     assert!(
         !combinatorics::point_in_ring(
             &crate::planes::test_judge(&planes),
+            &[],
             p,
             outer[0],
             &combinatorics::ring_from_names(p, &hole).unwrap()
@@ -428,10 +437,10 @@ fn a_ray_that_grazes_a_corner_still_answers() {
     // Run-crossing and isolated-crossing, both saying "inside".
     let v = node_at(&planes, &hole, 20.0, 10.0);
     assert!(
-        combinatorics::point_in_ring(&jd, p, v, &outer_edges).unwrap(),
+        combinatorics::point_in_ring(&jd, &[], p, v, &outer_edges).unwrap(),
         "the pocket's corner is inside the plate"
     );
-    let rays = combinatorics::every_ray(&jd, p, v, &outer_edges).unwrap();
+    let rays = combinatorics::every_ray(&jd, &[], p, v, &outer_edges).unwrap();
     assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
     assert!(rays.iter().all(|&x| x), "and unanimous — {rays:?}");
 
@@ -441,10 +450,10 @@ fn a_ray_that_grazes_a_corner_still_answers() {
     // and counting that touch as a crossing would make this ray disagree with the `x=0` one.
     let w = node_at(&planes, &outer, 0.0, 10.0);
     assert!(
-        !combinatorics::point_in_ring(&jd, p, w, &hole_edges).unwrap(),
+        !combinatorics::point_in_ring(&jd, &[], p, w, &hole_edges).unwrap(),
         "a plate corner is not inside the pocket"
     );
-    let rays = combinatorics::every_ray(&jd, p, w, &hole_edges).unwrap();
+    let rays = combinatorics::every_ray(&jd, &[], p, w, &hole_edges).unwrap();
     assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
     assert!(!rays.iter().any(|&x| x), "and unanimous — {rays:?}");
 }
@@ -476,10 +485,10 @@ fn a_ring_that_touches_the_ray_and_turns_back_crossed_nothing() {
     let outer_edges = combinatorics::ring_from_names(p, &outer).unwrap();
     let v = node_at(&planes, &hole, 20.0, 10.0);
     assert!(
-        combinatorics::point_in_ring(&jd, p, v, &outer_edges).unwrap(),
+        combinatorics::point_in_ring(&jd, &[], p, v, &outer_edges).unwrap(),
         "the pocket's corner is inside the plate"
     );
-    let rays = combinatorics::every_ray(&jd, p, v, &outer_edges).unwrap();
+    let rays = combinatorics::every_ray(&jd, &[], p, v, &outer_edges).unwrap();
     assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
     assert!(rays.iter().all(|&x| x), "and unanimous — {rays:?}");
 }

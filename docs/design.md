@@ -1246,7 +1246,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) realized: nacre_geom::Cylinder,        // 모델의 캐시가 아니다 — 연산 하나를 산다
     pub(crate) owner: SolidSide,                      // 쌍 루프는 주인이 다른 쌍만 묻는다
     pub(crate) shared: Vec<SharedRuling>,             // 옆면 위에 놓인 두 클래스의 교선 — 게이트의 기록
-    pub(crate) silent: Vec<usize>,                    // 이 원통에 대해 말이 없다고 증명된 이름 없는 클래스
+    pub(crate) silent: Vec<(usize, Silence)>,         // 이 원통에 대해 말이 없다고 증명된 이름 없는 클래스와 그 쪽
     pub(crate) boxes: Vec<[[Rat; 3]; 2]>,             // 옆면마다 호를 아는 상자 — 이름 없는 클래스가 있을 때만
 }
 ```
@@ -1708,6 +1708,12 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   자리는 기록(`WorkingCyl::silent`)을 읽는다 — 원 싣기(`circle_on_class`), 현(`chord_nodes`), 선분과 원·룰링의
   교차(`split_circles`·`split_rulings`), 원판과 꼭짓점의 포함(`nesting`), 광선(`curved_count`·좌표 도로). 상자는 그런
   클래스가 있을 때만 짓는다.
+- **기록은 «어느 쪽»까지 든다**(`Silence::Beside`). 필렛·슬롯처럼 관통 꼭짓점과 호를 남기는 원통 곁의 말 없는
+  클래스에서는, 그 점과 호를 그 평면에 대해 세우는 자리가 계수 없이 기록된 쪽을 읽는다 — 관통점의 쪽(`side_of`),
+  호의 교차(없음), `split.rs` 의 선분 포함(두 끝의 쪽이 갈리는가), 광선 도로(말 없는 클래스의 평면일 때만 원통 표를
+  넘긴다 — 이름 있는 클래스는 오늘처럼 관통 꼭짓점에서 기권한다). **쪽은 `side_of` 의 관례로 한 곳에서
+  만든다**(`WorkingPlane::misses` — `orient3d_filter(t₀, t₁, t₂, v)` 는 판정의 그것과 부호가 반대다): 관통 꼭짓점과 세
+  평면 꼭짓점이 섞인 링(필렛 하나인 판)은 뒤집힌 쪽을 «없는 교차»로 읽어 여러 덩어리로 갈라진다.
 - **게이트의 «기록»이 열고 배열은 기록만 믿는다.** `point_plane_clearance_rat` **한 호출**의
   삼분법이 그대로 세 기록이다: `Positive` 무기록 · `Negative` → `crossings`(룰링 둘) · `Zero`(접선) →
   `tangencies`(스치는 선 하나 — 그 선 위에 놓인 옆면 **면**마다, 그 선 위에서 옆면이 있는 구간 안에서 선에 닿는 벽 면만; 구간은 옆면의 모든 루프의 림 원호에서 읽는다 — `lateral_cover_on_ruling`, 창이나 홈이 남긴 틈은 구간 밖이다). 기록 집합은 「평면이 r 안이고 면이 띠를
