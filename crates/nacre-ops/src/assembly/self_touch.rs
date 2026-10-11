@@ -182,40 +182,6 @@ pub(crate) fn assemble_fuse_cut(
     Ok(out)
 }
 
-/// Per axis, the low and high ends of where a vertex's truth can be.
-type Reach = ([f64; 3], [f64; 3]);
-
-/// **Where a seam vertex's truth can be** — per axis, the interval its cache proves.
-///
-/// A `Bounded` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
-/// of both operands (and the smallest normal), since `coord − bound` computed in `f64` may round
-/// inward by half an ulp of the result — which the widening outgrows on either side of a binade.
-/// Widening only over-keeps. Any other
-/// variant proves nothing, and the answer is the whole line: the sieve then keeps every candidate
-/// the vertex takes part in and leaves it to the exact test, which is the only safe reading of
-/// "no bound". Measured: every seam point in the census and the perf folds is `Bounded`; the
-/// suite's 72 others (a history past the cost cap, a carrier with no witness) are where this
-/// arm runs.
-fn reach(cache: &PointCache) -> Reach {
-    match *cache {
-        PointCache::Bounded { coord, bound } => {
-            let c = coord.as_array();
-            let w: [f64; 3] = core::array::from_fn(|k| {
-                bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON)
-                    + c[k].abs() * (4.0 * f64::EPSILON)
-                    + f64::MIN_POSITIVE
-            });
-            (
-                core::array::from_fn(|k| c[k] - w[k]),
-                core::array::from_fn(|k| c[k] + w[k]),
-            )
-        }
-        PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => {
-            ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3])
-        }
-    }
-}
-
 /// **A solid whose surface touches itself is not a solid.**
 ///
 /// The proposition: *an edge of this solid lies in the interior of one of this same solid's faces.*
@@ -265,9 +231,14 @@ pub(super) fn self_touch_reject(
     by_comp_lf: &[Vec<&LocalFace>],
 ) -> Result<(), BoolError> {
     // Per node: the coordinate a reject names as its witness, and the reach the sieve reads.
-    let pt: HashMap<NodeId, (Point3, Reach)> = seam
+    let pt: HashMap<NodeId, (Point3, crate::planes::CacheReach)> = seam
         .iter()
-        .map(|sv| (sv.triple, (sv.cache.coord(), reach(&sv.cache))))
+        .map(|sv| {
+            (
+                sv.triple,
+                (sv.cache.coord(), crate::planes::cache_reach(&sv.cache)),
+            )
+        })
         .collect();
     for g in groups {
         // ★ **Planar faces only.** The proposition this sieve tests — "an edge of
@@ -391,54 +362,4 @@ pub(super) fn self_touch_reject(
 /// A face's rings, outer first.
 pub(super) fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
     lf.poly_rings()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nacre_exact::Mag;
-
-    /// **A vertex's reach holds its proven interval, and only a proven one is finite.**
-    ///
-    /// The sieve drops a candidate before the exact test whenever reaches miss a box, so a reach
-    /// narrower than the truth's interval drops a real contact in silence. A `Bounded` reach must
-    /// contain `coord ± bound` on every axis — an ordinary half-ulp, a zero bound (an exact
-    /// coordinate), and a radius far below an `f64`'s — and a cache that proves nothing must
-    /// keep every candidate.
-    #[test]
-    fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
-        let coord = Point3::from_array([0.1, -3.0, 1.0e10]);
-        let bound = [
-            Mag::of(0.1).times(Mag::pow2(-53)),
-            Mag::ZERO,
-            Mag::pow2(-2000),
-        ];
-        let (lo, hi) = reach(&PointCache::Bounded { coord, bound });
-        for k in 0..3 {
-            let (c, r) = (coord.as_array()[k], bound[k].upper_f64());
-            assert!(
-                lo[k] < c && c < hi[k],
-                "axis {k}: the coordinate itself is inside"
-            );
-            assert!(
-                c - lo[k] >= r && hi[k] - c >= r,
-                "axis {k}: the bound {r:e} is inside"
-            );
-            assert!(
-                lo[k].is_finite() && hi[k].is_finite(),
-                "axis {k}: a proven reach is finite"
-            );
-        }
-        for cache in [
-            PointCache::Ceiling { coord },
-            PointCache::Unrealized { coord },
-        ] {
-            let (lo, hi) = reach(&cache);
-            assert!(
-                lo.iter().all(|x| *x == f64::NEG_INFINITY)
-                    && hi.iter().all(|x| *x == f64::INFINITY),
-                "{cache:?} proves no bound, so its reach is the whole line"
-            );
-        }
-    }
 }

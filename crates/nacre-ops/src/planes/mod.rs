@@ -533,6 +533,11 @@ pub(crate) enum Silence {
     /// point or an arc of the cylinder is on that side too, so the roads that side such a point
     /// against the class read it here.
     Beside(i8),
+    /// The class's plane may cut the cylinder, but every face on it stands apart from every
+    /// lateral face's box, the cylinder leaves only whole rims, and it writes no other record. On
+    /// that class the cylinder's solid is sectioned as if the bore were filled or the boss removed;
+    /// the cylinder has no pierce point or arc anywhere, so no road asks for a side.
+    Apart,
 }
 
 impl WorkingCyl {

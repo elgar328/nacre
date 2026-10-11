@@ -149,15 +149,19 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1 box turned 37, a wall plane through the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 5.0, 10.0)),
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(1, bored + 125.0),
+                Built(1, bored - 125.0),
+                Built(1, 125.0),
+            ],
         },
         // The same box lifted off the plate: two bodies under Fuse, the plate under Cut.
         Family {
             name: "F1b box turned 37, above the plate",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 20.0, 5.0)),
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [Built(2, bored + 125.0), Built(1, bored), Built(0, 0.0)],
         },
         // A cube turned 37° about `x`, centred on the plate's top: by its point symmetry half of
         // it, 62.5, lies in the plate. Its walls are oblique to the bore and clear it.
@@ -184,8 +188,12 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 5.0, 10.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(1, 16000.0 + 12.0 * pi + 125.0),
+                Built(1, 16000.0 + 12.0 * pi - 125.0),
+                Built(1, 125.0),
+            ],
         },
         // The box encloses a pin of radius 1: Common is `25·2 + 3π`, which a road that guessed
         // "outside" for the pin's disk answered as 50.
@@ -231,8 +239,12 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 20.0, 5.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(2, 40.0 * pi + 125.0),
+                Built(1, 40.0 * pi),
+                Built(0, 0.0),
+            ],
         },
         // The fillet plate with one fillet, the box in the open: its rings mix pierce corners
         // and three-plane corners, which is what sees a side recorded with the wrong sign.
@@ -271,8 +283,12 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(1, rounded_area(0, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(0, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
         },
         // A wall plane of the box cuts a fillet, whose lateral has ruling edges.
         Family {

@@ -149,17 +149,22 @@ pub(crate) fn cylinder_gate(
     // cylinder; the roads that would ask read the record ([`WorkingCyl::silent`]). The boxes are
     // built only when such a class is present — the common boolean pays nothing.
     let unstated = geom.iter().any(|wp| wp.world.is_none());
+    let mut whole_rims = vec![false; cyls.len()];
     if unstated {
-        for cyl in &mut cyls {
+        for (cyl, whole) in cyls.iter_mut().zip(&mut whole_rims) {
             let fps = lateral_footprints(faces, cyl.surf);
             cyl.boxes = fps
                 .iter()
                 .map(|fp| lateral_box(&cyl.def, fp))
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_default();
+            *whole = only_whole_rims(model, faces, cyl.surf);
         }
     }
     let mut silent: Vec<Vec<(usize, Silence)>> = vec![Vec::new(); cyls.len()];
+    // Classes whose faces stand apart from a cylinder their plane may cut — silent once the
+    // cylinder is shown to leave no record either, which only the end of the loop knows.
+    let mut apart: Vec<(usize, usize)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
@@ -180,11 +185,15 @@ pub(crate) fn cylinder_gate(
                 if wp.world.is_some() {
                     return Err(reject(RejectReason::WitnessNotRational));
                 }
-                let Some(side) = cyl.clear_of(wp) else {
-                    return Err(undecided());
-                };
-                silent[ci].push((c, Silence::Beside(side)));
-                continue;
+                if let Some(side) = cyl.clear_of(wp) {
+                    silent[ci].push((c, Silence::Beside(side)));
+                    continue;
+                }
+                if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
+                    apart.push((c, ci));
+                    continue;
+                }
+                return Err(undecided());
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             // A perpendicular cut is the circle population, and it passes — **including a cap
@@ -350,6 +359,23 @@ pub(crate) fn cylinder_gate(
         }
     }
 
+    // ★ **A face apart from a cylinder its plane cuts is silent only while the cylinder writes
+    // nothing anywhere.** On that class the arrangement then sees the cylinder's solid as if the
+    // bore were filled or the boss removed — the faces carrying the rims close without the strip —
+    // and every label that changes lies in the lateral's box, which no face of the class reaches.
+    // A recorded crossing or tangency of that cylinder puts its pierce points on other classes'
+    // lines, where a point of this class would have to be ordered against them, and that has no
+    // spelling; so such a pair is refused here, before the oblique record's reader below, as
+    // every nameless refusal is.
+    for (c, ci) in apart {
+        let recorded = crossings.iter().any(|&(_, k)| k == ci)
+            || tangencies.iter().any(|t| t.cyl == ci)
+            || tangent_walls.iter().any(|&(_, k, _)| k == ci);
+        if recorded {
+            return Err(undecided());
+        }
+        silent[ci].push((c, Silence::Apart));
+    }
     for (cyl, s) in cyls.iter_mut().zip(silent) {
         cyl.silent = s;
     }
@@ -1502,6 +1528,138 @@ fn lateral_reach(
         hi: hi.checked_add(hi_off)?,
         rho2_lo,
         rho2_hi,
+    })
+}
+
+/// Per axis, the low and high ends of where a vertex's truth can be.
+pub(crate) type CacheReach = ([f64; 3], [f64; 3]);
+
+/// **Where a vertex's truth can be** — per axis, the interval its cache proves. The self-touch
+/// sieve reads it for seam vertices, the gate for the corners of a face it asks to stand apart.
+///
+/// A `Bounded` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
+/// of both operands (and the smallest normal), since `coord − bound` computed in `f64` may round
+/// inward by half an ulp of the result — which the widening outgrows on either side of a binade.
+/// Widening only over-keeps. Any other
+/// variant proves nothing, and the answer is the whole line: the sieve then keeps every candidate
+/// the vertex takes part in and leaves it to the exact test, which is the only safe reading of
+/// "no bound". Measured: every seam point in the census and the perf folds is `Bounded`; the
+/// suite's 72 others (a history past the cost cap, a carrier with no witness) are where this
+/// arm runs.
+pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
+    match *cache {
+        nacre_topo::PointCache::Bounded { coord, bound } => {
+            let c = coord.as_array();
+            let w: [f64; 3] = core::array::from_fn(|k| {
+                bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON)
+                    + c[k].abs() * (4.0 * f64::EPSILON)
+                    + f64::MIN_POSITIVE
+            });
+            (
+                core::array::from_fn(|k| c[k] - w[k]),
+                core::array::from_fn(|k| c[k] + w[k]),
+            )
+        }
+        nacre_topo::PointCache::Ceiling { .. } | nacre_topo::PointCache::Unrealized { .. } => {
+            ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3])
+        }
+    }
+}
+
+/// **Does this cylinder leave only whole rims?** — every loop of every lateral face is one edge
+/// that closes on itself (a whole circle, the spelling [`lateral_spans`] reads a rim by), and
+/// every planar face whose outer loop is such a circle (a cap's disk, a blind bore's floor) holds
+/// only such circles. Then the cylinder puts no ruling edge, no pierce corner and no arc on any
+/// other face, and a class that cuts its lateral cuts only circles of it: on that class the
+/// cylinder's solid is sectioned as if the bore were filled or the boss removed, and every
+/// traced boundary still closes. A disk with a polygon in it would not — the disk's own trace
+/// stops before its holes are read.
+fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> bool {
+    let whole = |lp: &nacre_topo::Loop| {
+        lp.half_edges.len() == 1 && {
+            let [a, b] = model.edge(lp.half_edges[0].edge).vertices;
+            a == b
+        }
+    };
+    let loops = |f: &nacre_topo::Face| {
+        std::iter::once(&f.outer)
+            .chain(f.inner.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mut rims = Vec::new();
+    for row in faces {
+        let FaceRow::Cylinder(cf) = row else { continue };
+        if cf.surf != surf {
+            continue;
+        }
+        let Some(fh) = cf.face else { return false };
+        for lp in loops(model.face(fh)) {
+            if !whole(&lp) {
+                return false;
+            }
+            rims.push(lp.half_edges[0].edge);
+        }
+    }
+    faces.iter().all(|row| {
+        let FaceRow::Plane(fi) = row else { return true };
+        let Some(fh) = fi.face else { return true };
+        let f = model.face(fh);
+        let disk = f.outer.half_edges.len() == 1 && rims.contains(&f.outer.half_edges[0].edge);
+        !disk || loops(f).iter().all(whole)
+    })
+}
+
+/// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are
+/// straight (a curved edge bulges past its corners) and the box of its corners' proven reaches
+/// ([`cache_reach`]; a corner whose cache proves no bound makes the box the whole space) lies
+/// strictly beyond each box on some axis. A planar face lies in the hull of its own corners, so
+/// a face apart by its corners' box is apart. `false` when there are no lateral boxes.
+fn faces_apart(
+    model: &Model,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    c: usize,
+    boxes: &[[[nacre_exact::Rat; 3]; 2]],
+) -> bool {
+    if boxes.is_empty() {
+        return false;
+    }
+    faces.iter().zip(plane_ix).all(|(row, ix)| {
+        let (FaceRow::Plane(fi), ClassIx::Plane(k)) = (row, ix) else {
+            return true;
+        };
+        if *k != c {
+            return true;
+        }
+        let Some(fh) = fi.face else { return false };
+        let f = model.face(fh);
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+            for he in &lp.half_edges {
+                let e = model.edge(he.edge);
+                let straight = e
+                    .surfaces
+                    .iter()
+                    .all(|&s| matches!(model.surface(s), Surface::Plane { .. }));
+                if !straight {
+                    return false;
+                }
+                for &v in &e.vertices {
+                    let (rl, rh) = cache_reach(model.vertex_cache(v));
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(rl[k]);
+                        hi[k] = hi[k].max(rh[k]);
+                    }
+                }
+            }
+        }
+        let beyond = |a: f64, b: nacre_exact::Rat, below: bool| {
+            nacre_exact::Rat::try_from_f64(a).is_some_and(|a| if below { a < b } else { a > b })
+        };
+        boxes.iter().all(|[blo, bhi]| {
+            (0..3).any(|k| beyond(hi[k], blo[k], true) || beyond(lo[k], bhi[k], false))
+        })
     })
 }
 

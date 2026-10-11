@@ -472,3 +472,46 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
         }
     }
 }
+
+/// **A vertex's reach holds its proven interval, and only a proven one is finite.**
+///
+/// The sieve drops a candidate before the exact test whenever reaches miss a box, so a reach
+/// narrower than the truth's interval drops a real contact in silence. A `Bounded` reach must
+/// contain `coord ± bound` on every axis — an ordinary half-ulp, a zero bound (an exact
+/// coordinate), and a radius far below an `f64`'s — and a cache that proves nothing must
+/// keep every candidate.
+#[test]
+fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
+    let coord = nacre_math::Point3::from_array([0.1, -3.0, 1.0e10]);
+    let bound = [
+        nacre_exact::Mag::of(0.1).times(nacre_exact::Mag::pow2(-53)),
+        nacre_exact::Mag::ZERO,
+        nacre_exact::Mag::pow2(-2000),
+    ];
+    let (lo, hi) = cache_reach(&nacre_topo::PointCache::Bounded { coord, bound });
+    for k in 0..3 {
+        let (c, r) = (coord.as_array()[k], bound[k].upper_f64());
+        assert!(
+            lo[k] < c && c < hi[k],
+            "axis {k}: the coordinate itself is inside"
+        );
+        assert!(
+            c - lo[k] >= r && hi[k] - c >= r,
+            "axis {k}: the bound {r:e} is inside"
+        );
+        assert!(
+            lo[k].is_finite() && hi[k].is_finite(),
+            "axis {k}: a proven reach is finite"
+        );
+    }
+    for cache in [
+        nacre_topo::PointCache::Ceiling { coord },
+        nacre_topo::PointCache::Unrealized { coord },
+    ] {
+        let (lo, hi) = cache_reach(&cache);
+        assert!(
+            lo.iter().all(|x| *x == f64::NEG_INFINITY) && hi.iter().all(|x| *x == f64::INFINITY),
+            "{cache:?} proves no bound, so its reach is the whole line"
+        );
+    }
+}
