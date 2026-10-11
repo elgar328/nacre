@@ -80,7 +80,8 @@ fn plate_with_pin(m: &mut Model, x: f64, y: f64, r: f64) -> Handle<Solid> {
     op(m, BoolKind::Fuse, plate, pin)
 }
 
-/// A `5×5` box over `z0..z0+h`, turned `deg` about `z` around its own centre, centred on `(cx, cy)`.
+/// A `5×5` box over `z0..z0+h`, turned `deg` about `z` around its own centre, centred on
+/// `(cx, cy)`.
 fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle<Solid> {
     let b = cuboid(m, [-2.5, -2.5, z0], [2.5, 2.5, z0 + h]);
     let b = turn(m, b, Axis::Z, deg, [0, 0, 0]);

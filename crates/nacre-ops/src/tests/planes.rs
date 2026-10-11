@@ -437,3 +437,95 @@ fn a_faces_facing_reads_no_plane_cache() {
         "the plane caches take no part"
     );
 }
+
+/// ★★ **A side [`WorkingPlane::misses`] proves is the side the judge gives** — for a corner named
+/// by three planes against a class with no world name, `misses` on the corner's exact point
+/// answers what `Judge::orient3d` answers for the three planes. The two read opposite
+/// determinants (the filter's `det[t₀ − v, t₁ − v, t₂ − v]` is the judge's with the point moved
+/// from the first row to the last), so a side recorded by the one and read by the other would be
+/// flipped — which is what a ring mixing pierce corners and three-plane corners walks into.
+///
+/// A unit cube at the origin against a `5×5` box turned 37° about `z` and moved to `(10, 10)`:
+/// every wall of the box is a nameless class, and each of the cube's eight corners is asked
+/// against each of them.
+#[test]
+fn a_proved_side_is_the_judges_side() {
+    use nacre_exact::{Isometry, Rotation};
+    let mut m = Model::new();
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    let boxed = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-2.5, -2.5, 0.0]),
+        Point3::from_array([2.5, 2.5, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let turned = crate::transform::transform(
+        &mut m,
+        boxed,
+        &Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+        }),
+    )
+    .unwrap();
+    let moved = crate::transform::transform(
+        &mut m,
+        turned,
+        &Isometry::translation([Rat::from_int(10), Rat::from_int(10), Rat::from_int(0)]),
+    )
+    .unwrap();
+    m.rebuild_adjacency();
+    let setup =
+        crate::arrangement::plane_index_setup(&m, cube, moved).expect("no cylinder, no gate");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    // The cube's planes by their world names: `x = k`, `y = k`, `z = k` for k ∈ {0, 1}.
+    let class_at = |axis: usize, k: i128| {
+        setup
+            .geom
+            .iter()
+            .position(|w| {
+                w.world_rat().is_some_and(|c| {
+                    let lead = c[axis];
+                    (0..3).all(|j| j == axis || c[j] == Rat::from_int(0))
+                        && lead != Rat::from_int(0)
+                        && lead.checked_mul(Rat::from_int(-k)) == Some(c[3])
+                })
+            })
+            .expect("the cube's plane is a class")
+    };
+    let nameless: Vec<usize> = (0..setup.geom.len())
+        .filter(|&c| setup.geom[c].world.is_none())
+        .collect();
+    assert_eq!(nameless.len(), 4, "the turned box's four walls");
+    let mut asked = 0;
+    for [i, j, k] in [
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [1, 1, 0],
+        [0, 0, 1],
+        [1, 0, 1],
+        [0, 1, 1],
+        [1, 1, 1],
+    ] {
+        let (p, q, r) = (class_at(0, i), class_at(1, j), class_at(2, k));
+        let corner = nacre_judge::WitnessPoint::at([i, j, k].map(Rat::from_int));
+        for &w in &nameless {
+            let judged = jd.orient3d(p, q, r, w);
+            assert_ne!(judged, 0, "a corner of the cube is off the box's walls");
+            assert_eq!(
+                setup.geom[w].misses(std::slice::from_ref(&corner)),
+                Some(judged),
+                "corner {:?} against wall class {w}",
+                [i, j, k]
+            );
+            asked += 1;
+        }
+    }
+    assert_eq!(asked, 32);
+}

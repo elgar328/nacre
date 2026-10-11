@@ -1,15 +1,7 @@
 use super::*;
-/// Why a circle's chord on a class could not be stated — [`chord_nodes`]' two refusals, which its
-/// two callers read differently: a **circular outer** falls silent on missing coefficients (the
-/// disk's old silence for a class it cannot read) and declines the rest, a **circular hole**
-/// declines both.
-pub(super) enum ChordFail {
-    /// The class `wc` has no rational world coefficients (a rotated class).
-    NoCoefficients,
-    /// No cylinder statement, no coefficients for the face's own class, or the meet is not a pair
-    /// of roots — a piece this road cannot state.
-    Unstatable,
-}
+/// A recorded chord [`chord_nodes`] cannot state: no cylinder statement, no coefficients for the
+/// face's own class, or a meet that is not a pair of roots.
+pub(super) struct ChordUnstatable;
 
 /// **The two ends of the chord a recorded wall class `wc` cuts on a circle of a planar face** (the
 /// face lies in class `fc`, the circle rides cylinder `cyl`), as flip nodes of
@@ -17,6 +9,10 @@ pub(super) enum ChordFail {
 /// any chord within the radius otherwise. `Ok(None)` for a pair the gate did not record:
 /// the wall clears the circle (the gate's plane test), or cuts an **irrational** chord this road
 /// cannot state yet — today's silence, and the same trigger the rulings road reads.
+///
+/// ★ **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
+/// unrecorded pair says nothing whatever the wall's description, and a recorded one always has a
+/// world name — the gate records only classes it could state.
 ///
 /// ★ **Written once because a disk's outer and a bored face's hole are the same circle asked the
 /// same question.**
@@ -31,12 +27,12 @@ pub(super) fn chord_nodes(
     fc: usize,
     cyl: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
-) -> Result<Option<[Node; 2]>, ChordFail> {
+) -> Result<Option<[Node; 2]>, ChordUnstatable> {
     use nacre_exact::quad::CylinderMeet;
-    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(ChordFail::NoCoefficients)?;
     if !crossings.contains(&(wc, cyl)) {
         return Ok(None);
     }
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(ChordUnstatable)?;
     let def = faces
         .iter()
         .zip(plane_ix)
@@ -44,7 +40,7 @@ pub(super) fn chord_nodes(
             (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => cf.def.as_ref(),
             _ => None,
         })
-        .ok_or(ChordFail::Unstatable)?;
+        .ok_or(ChordUnstatable)?;
     // ★ The record is the crossing statement: a listed pair's plane runs within the
     // radius, so `L` enters the circle at one root and leaves at the other. The premise is the
     // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
@@ -54,12 +50,12 @@ pub(super) fn chord_nodes(
         nacre_exact::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
-    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordFail::Unstatable)?;
+    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordUnstatable)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let Some(CylinderMeet::Pair { .. }) =
         nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
     else {
-        return Err(ChordFail::Unstatable);
+        return Err(ChordUnstatable);
     };
     let node = |root| Node {
         id: NodeId::pierce(wc, fc, cyl, root),

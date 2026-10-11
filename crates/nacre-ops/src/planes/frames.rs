@@ -231,6 +231,34 @@ impl WorkingPlane {
     pub(crate) fn stored_world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.world.as_ref()?.oriented_rat()
     }
+
+    /// **The side of this class every point of `q` provably lies on**, strictly — `None` when a
+    /// point is on the plane or not proved off it, when the points straddle it, and for an empty
+    /// `q`. A signed distance to a plane is affine, so all of `q` on one side puts its whole convex
+    /// hull there.
+    ///
+    /// ★ **It never escalates**: it reads `nacre_judge::orient3d_filter`, which answers only where
+    /// its error bound certifies the sign. A missed proof sends the caller back to the work it
+    /// hoped to skip; it never changes an answer.
+    ///
+    /// ★★ **The side is spelled as [`crate::combinatorics::side_of`] spells it** — the side
+    /// `Judge::orient3d` gives a point named by three planes, about this class's witness
+    /// triangle. `orient3d_filter(t₀, t₁, t₂, v)` is `det[t₀ − v, t₁ − v, t₂ − v]`; the judge's
+    /// sign for the same point is that of `(v − t₂)·((t₀ − t₂) × (t₁ − t₂))`, the same
+    /// determinant with `v` carried from the last row to the first — a 4-cycle, odd — so the two
+    /// are opposite and the filter's sign is turned here, the one place a side is minted.
+    pub(crate) fn misses(&self, q: &[WitnessPoint]) -> Option<i8> {
+        use nacre_exact::Orient;
+        let t = &self.tri_pt3;
+        let mut side: Option<Orient> = None;
+        for v in q {
+            match nacre_judge::orient3d_filter(&t[0], &t[1], &t[2], v) {
+                Some(o) if o != Orient::Zero && side.is_none_or(|s| s == o) => side = Some(o),
+                _ => return None,
+            }
+        }
+        side.map(|o| if o == Orient::Positive { -1 } else { 1 })
+    }
 }
 
 /// **Which way a face's outward runs against its plane class's root's** — `+1` when they agree.

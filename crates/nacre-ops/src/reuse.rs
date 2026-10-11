@@ -11,10 +11,11 @@
 //! nothing downstream can tell which route a face came by.
 //!
 //! **The proof is the whole design.** Separation is established with
-//! [`nacre_judge::orient3d_filter`], which returns a sign only when its error bound clears zero and
-//! `None` otherwise; `None` means "arrange it after all", which is what the engine did before this
-//! module existed. **So a missed proof costs time and nothing else, and no tolerance enters** —
-//! the same reason the kernel is allowed to have a fast path at all.
+//! [`WorkingPlane::misses`] — `nacre_judge::orient3d_filter`, which returns a sign only when its
+//! error bound clears zero and `None` otherwise; `None` means "arrange it after all", which is
+//! what the engine did before this module existed. **So a missed proof costs time and nothing
+//! else, and no tolerance enters** — the same reason the kernel is allowed to have a fast path at
+//! all.
 
 use crate::combinatorics::{Canon3, NodeId};
 // `NodeKind` is read by `CanonNode::of` alone, and that impl is `cfg(any(debug_assertions,
@@ -25,8 +26,7 @@ use crate::combinatorics::NodeKind;
 use crate::draft::LocalFace;
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
-use nacre_exact::Orient;
-use nacre_judge::{WitnessPoint, orient3d_filter};
+use nacre_judge::WitnessPoint;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid, Vertex};
 use std::collections::HashMap;
@@ -147,34 +147,6 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     Some(out)
 }
 
-/// Is every point of `q` **provably** strictly on one side of plane class `wc`?
-///
-/// A signed distance to a plane is affine, so all vertices on one side puts their whole convex
-/// hull there; a planar polygon lies inside the hull of its own vertices even when it is not
-/// convex, so the solid's whole boundary is on that side, and a bounded solid whose boundary a
-/// plane misses is one the plane misses entirely.
-///
-/// **That argument needs every face to be planar.** It is: `collect_planes` rejects a non-planar
-/// face before any of this runs. A curved face would bulge outside its vertices' hull, so if
-/// curved surfaces ever arrive here this must test their bounds, not their corners.
-fn plane_misses(geom: &WorkingPlane, q: &[WitnessPoint]) -> bool {
-    let t = &geom.tri_pt3;
-    let mut side: Option<Orient> = None;
-    for v in q {
-        // Whichever way the witness triangle is wound, "all the same sign" reads the same — so no
-        // orientation convention is consulted here, and none can be got wrong.
-        match orient3d_filter(&t[0], &t[1], &t[2], v) {
-            Some(o) if o != Orient::Zero => match side {
-                None => side = Some(o),
-                Some(s) if s == o => {}
-                _ => return false, // the plane has points on both sides: it cuts the solid
-            },
-            _ => return false, // on the plane, or not proved off it
-        }
-    }
-    side.is_some()
-}
-
 /// The per-class plan for one boolean.
 ///
 /// The rule table has no geometry left in it, because a plane the other solid misses is a plane
@@ -215,7 +187,12 @@ pub(crate) fn class_plans(
         let pts =
             q[other].get_or_insert_with(|| solid_points(model, if other == 0 { a } else { b }));
         let Some(pts) = pts.as_deref() else { continue };
-        if !plane_misses(&geom[wc], pts) {
+        // ★ A plane that misses every vertex of a solid misses the solid — **while every face is
+        // planar**: a planar polygon lies inside the hull of its own vertices even when it is not
+        // convex. It is: `collect_planes` rejects a non-planar face before any of this runs, and a
+        // curved face would bulge outside its vertices' hull, so curved surfaces arriving here
+        // would have to be asked by their bounds, not their corners.
+        if geom[wc].misses(pts).is_none() {
             continue;
         }
         *plan = match (kind, side) {

@@ -124,8 +124,8 @@ fn trace_transversal_face(
                 };
                 match chord_nodes(jd, faces, plane_ix, wc, fc, cyl, crossings) {
                     Ok(Some(pair)) => circle_nodes.extend(pair),
-                    Ok(None) | Err(ChordFail::NoCoefficients) => return,
-                    Err(ChordFail::Unstatable) => {
+                    Ok(None) => return,
+                    Err(ChordUnstatable) => {
                         out.declined.push((fp, DeclineKind::Ruling));
                         return;
                     }
