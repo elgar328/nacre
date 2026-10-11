@@ -1042,4 +1042,5 @@ mod parallel;
 mod plane_sense;
 mod rotation;
 mod sketch_models;
+mod unstated_classes;
 mod user_models;
