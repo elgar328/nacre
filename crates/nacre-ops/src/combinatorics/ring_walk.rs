@@ -41,21 +41,34 @@ pub(crate) fn side_of(
         NodeKind::Pierce { cyl, .. } => {
             // A class the gate proved the whole cylinder clear of has the point on the side it
             // recorded — in this function's convention already, so no bridge applies.
-            if let Some(side) = cyls.get(cyl).and_then(|cy| cy.beside(q)) {
+            let cy = cyls.get(cyl)?;
+            if let Some(side) = cy.beside(q) {
                 return Some(side);
             }
-            let (line, sv) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
-            let co = class_coeffs_rat(jd, q)?;
-            let fix = outward_fix(jd, q)?;
-            Some(
-                fix * match nacre_exact::quad::plane_side(&co, &line, &sv) {
-                    nacre_exact::Orient::Positive => 1,
-                    nacre_exact::Orient::Negative => -1,
-                    nacre_exact::Orient::Zero => 0,
-                },
-            )
+            pierce_side(jd, &pierce_meet(jd, cyl, &cy.def, n)?, q)
         }
     }
+}
+
+/// **The side of plane `q` a pierce point lies on, from `q`'s statement** — [`side_of`]'s pierce
+/// arm, for a point already solved to its `(line, s)`, so a caller holding the solve does not
+/// repeat it. One `a + b√c` sign ([`nacre_exact::quad::plane_side`]) against `q`'s world
+/// coefficients, bridged from the name's facing to the outward one ([`outward_fix`]). `None` for a
+/// class with no narrow rational description.
+pub(crate) fn pierce_side(
+    jd: &Judge<'_, WorkingPlane>,
+    (line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    q: usize,
+) -> Option<i8> {
+    let co = class_coeffs_rat(jd, q)?;
+    let fix = outward_fix(jd, q)?;
+    Some(
+        fix * match nacre_exact::quad::plane_side(&co, line, s) {
+            nacre_exact::Orient::Positive => 1,
+            nacre_exact::Orient::Negative => -1,
+            nacre_exact::Orient::Zero => 0,
+        },
+    )
 }
 
 /// **What [`ring_against_plane`] found** — three outcomes, and they are three because collapsing

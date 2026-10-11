@@ -105,10 +105,11 @@ pub(crate) fn order_along(
 /// canonical and may oppose the stored ones per plane, which flips the direction (measured on a
 /// `world_rat` cross: 80 of 160 comparisons against `order_along` came out reversed).
 ///
-/// **Two roads, one rule.** Plane-pinned pairs keep the integer predicates; anything a cylinder
-/// pinned has no third plane to be ordered by, and goes through the `a + b√c` tower on one
-/// coordinate axis. `None` is a missing description (a rational endpoint with no exact coordinates,
-/// a cylinder with no world statement), never a shape this cannot order.
+/// **One rule, two numbers.** A pair with a plane pin is ordered by that formula — the plane-pinned
+/// point's side through the integer predicates, a pierce point's through one `a + b√c` sign
+/// ([`pierce_side`]); only two pierce points, neither with a pin, go through the `a + b√c` tower on
+/// one coordinate axis. `None` is a missing description (a pin with no exact description, a
+/// cylinder with no world statement), never a shape this cannot order.
 #[inline]
 pub(crate) fn order_pinned(
     jd: &Judge<'_, WorkingPlane>,
@@ -198,9 +199,9 @@ pub(crate) enum OnLine {
     /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
     /// ★ **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
     /// derivable and storing it put a 32-byte `NodeId` in a `Vec` the containment loop reads
-    /// millions of times. What it was for — the cold road's coordinates, and identity against the
-    /// other side — needs neither: coordinates come from the derived triple, and a plane-pinned
-    /// point can never *equal* a cylinder-pinned one, so cross-variant identity is `false` by type.
+    /// millions of times. What it was for — identity against the other side — needs none: a
+    /// plane-pinned point can never *equal* a cylinder-pinned one, so cross-variant identity is
+    /// `false` by type, and a pierce point is ordered against this one by its side of `pin`.
     Class { pin: usize, ds: i8 },
     /// A point a cylinder pins: the meet line of its two planes and the root along it.
     ///
@@ -240,26 +241,6 @@ pub(crate) enum Located<'a> {
         name: NodeId,
         meet: Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
     },
-}
-
-impl Located<'_> {
-    /// The name this point is known by, given the line it sits on — derived for a plane pin.
-    pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
-        match self {
-            Located::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
-            Located::Pierce { name, .. } => *name,
-        }
-    }
-}
-
-impl OnLine {
-    /// The name this point is known by, given the line it sits on — derived for a plane pin.
-    pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
-        match self {
-            OnLine::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
-            OnLine::Pierce { name, .. } => *name,
-        }
-    }
 }
 
 /// Whether two located points are **the same point by identity**, without asking a predicate.
@@ -363,9 +344,9 @@ pub(crate) fn on_line(
 ///
 /// ★ **A producer's invariant, asserted rather than trusted.** Every site that makes a pierce name
 /// writes the very pair its consumer later locates the point on, and the quadratic road leans on
-/// it twice: the point's meet line is solved from the name's planes, and the axis it is compared
-/// on from the line's (`stored_line_dir`). A pair that disagreed would compare a point against a
-/// line it does not lie on. `false` for a three-plane name, which no pierce arm hands in.
+/// it: the point's meet line is solved from the name's planes, and the axis two pierce points are
+/// compared on comes from the line's (`stored_line_dir`). A pair that disagreed would compare a
+/// point against a line it does not lie on. `false` for a three-plane name, which no pierce arm hands in.
 fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
     pierce_name(name).is_some_and(|(mut planes, ..)| {
         planes.sort_unstable();
@@ -435,8 +416,16 @@ pub(crate) fn order_located(
     order_located_quad(jd, p, q, a, b)
 }
 
-/// [`order_located`]'s other road: anything a cylinder pins, compared on one coordinate axis
-/// through the `a + b√c` tower. Kept out of line so the plane road above stays small enough to be.
+/// [`order_located`]'s other road: anything a cylinder pins. Kept out of line so the plane road
+/// above stays small enough to be.
+///
+/// ★ **A pierce point against a plane pin is the plane road's own formula.** The plane road's
+/// `at.orient3d(j) · ds` is «the side of the first point against `j`, times `dir_sign(p, q, j)`»
+/// ([`order_pinned`]'s derivation — `j`'s orientation cancels as a square), and a pierce point has a
+/// side of a plane too ([`pierce_side`]). So the mixed pair reads no coordinate of the plane-pinned
+/// point and no direction of the line: `(X, j) ↦ side_X(j) · ds_j` and `(i, X) ↦ −side_X(i) · ds_i`.
+/// `None` where `side_X` has no description to read. Only two pierce points compare on a
+/// coordinate axis through the `a + b√c` tower, below.
 #[inline(never)]
 fn order_located_quad(
     jd: &Judge<'_, WorkingPlane>,
@@ -446,7 +435,19 @@ fn order_located_quad(
     b: &OnLine,
 ) -> Option<i8> {
     use nacre_exact::Orient;
-    use nacre_exact::quad::{cmp_coord_branch, cmp_coord_meet_branch};
+    use nacre_exact::quad::cmp_coord_branch;
+    let (m1, m2) = match (a, b) {
+        // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
+        // as a decline rather than a panic or a second rational comparison nobody would exercise.
+        (Located::Class { .. }, OnLine::Class { .. }) => return None,
+        (Located::Pierce { meet, .. }, OnLine::Class { pin, ds }) => {
+            return Some(pierce_side(jd, meet, *pin)? * ds);
+        }
+        (Located::Class { pin, .. }, OnLine::Pierce { meet, .. }) => {
+            return Some(-pierce_side(jd, meet, *pin)? * dir_sign(jd, p, q, *pin));
+        }
+        (Located::Pierce { meet: m1, .. }, OnLine::Pierce { meet: m2, .. }) => (m1, m2),
+    };
     let sign = |o: Orient| -> i8 {
         match o {
             Orient::Positive => 1,
@@ -470,28 +471,5 @@ fn order_located_quad(
         };
         (s != 0).then_some((k, s))
     })?;
-    let rat = |n: NodeId| -> Option<nacre_exact::MeetPoint> {
-        node_coords_rat(jd, n).map(nacre_exact::MeetPoint::Narrow)
-    };
-    let cmp = match (a, b) {
-        // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
-        // as a decline rather than a panic or a second rational comparison nobody would exercise.
-        (Located::Class { .. }, OnLine::Class { .. }) => return None,
-        (Located::Class { .. }, OnLine::Pierce { meet, .. }) => sign(cmp_coord_meet_branch(
-            &rat(a.name(p, q))?,
-            &meet.0,
-            &meet.1,
-            k,
-        )),
-        (Located::Pierce { meet, .. }, OnLine::Class { .. }) => -sign(cmp_coord_meet_branch(
-            &rat(b.name(p, q))?,
-            &meet.0,
-            &meet.1,
-            k,
-        )),
-        (Located::Pierce { meet: m1, .. }, OnLine::Pierce { meet: m2, .. }) => {
-            sign(cmp_coord_branch((&m1.0, &m1.1), (&m2.0, &m2.1), k))
-        }
-    };
-    Some(cmp * dsign)
+    Some(sign(cmp_coord_branch((&m1.0, &m1.1), (&m2.0, &m2.1), k)) * dsign)
 }
