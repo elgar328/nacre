@@ -165,13 +165,7 @@ pub(super) fn split_at_crossings(
     // answer without one refuses by the gate's name — the cause is the gate's; anything else is
     // the arithmetic's.
     let silent = |c: usize| cyls.iter().any(|cy| cy.is_silent(c));
-    let cause = |classes: &[usize]| {
-        reject(if classes.iter().any(|&c| silent(c)) {
-            RejectReason::CylinderGateUndecided
-        } else {
-            RejectReason::WitnessNotRational
-        })
-    };
+    let cause = |classes: &[usize]| reject(combinatorics::undecided_reason(cyls, classes));
     let end_l: Vec<[combinatorics::OnLine; 2]> = segs
         .iter()
         .map(|s| {

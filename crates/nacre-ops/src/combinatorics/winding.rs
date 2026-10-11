@@ -50,44 +50,96 @@ fn coord_key(
     Ok(CoordKey::Pierce(Box::new((line, s))))
 }
 
-/// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
+/// **What ordering two ring nodes on one world axis needs besides the two keys.**
 ///
-/// The mixed pair is `nacre_exact::quad::cmp_coord_meet_branch`, which is exact and **total**:
-/// both coordinates lift to one first-storey sign. It wants the three-plane side as a `MeetPoint`,
-/// and this crate builds one directly — `MeetPoint::Narrow` is a public variant, so no door has to
-/// be opened in `nacre-exact` for it.
-fn cmp_key(
-    jd: &Judge<'_, WorkingPlane>,
-    a: &CoordKey,
-    b: &CoordKey,
-    axis: usize,
-) -> Result<i8, BoolError> {
-    use nacre_exact::{Orient, quad};
-    let sign = |o: Orient| match o {
-        Orient::Positive => 1i8,
-        Orient::Negative => -1,
-        Orient::Zero => 0,
-    };
-    // ★ Through [`node_coords_rat`], not a second copy of the three-plane solve — the rational
-    // meet is stated once. The round-trip through the name is free: the solve is symmetric in its
-    // three planes, so canonical order changes nothing.
-    let meet = |t: [usize; 3]| {
-        node_coords_rat(jd, NodeId::three_planes(Canon3::three(t)))
-            .map(nacre_exact::MeetPoint::Narrow)
-            .ok_or_else(|| reject(RejectReason::WitnessNotRational))
-    };
-    Ok(match (a, b) {
-        (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
-        (CoordKey::Three(x), CoordKey::Pierce(b)) => {
-            sign(quad::cmp_coord_meet_branch(&meet(*x)?, &b.0, &b.1, axis))
+/// ★ `flat` is the world axis on which **every** point of the ring's class has one coordinate — the
+/// class's world normal is that axis ([`flat_axis`]). The ring's nodes all lie on the class, so
+/// their order on that axis is `0` **by the name of the class they share**, not by arithmetic: an
+/// interval can prove two coordinates apart and never prove them equal, and on the wall `x = 9`
+/// every node's `x` is `9`. The exact arms answer `0` there by computing it, which is asserted.
+struct KeyCmp<'a> {
+    jd: &'a Judge<'a, WorkingPlane>,
+    cyls: &'a [crate::planes::WorkingCyl],
+    flat: Option<usize>,
+}
+
+/// The world axis a class's plane holds constant — the one nonzero component of its world normal.
+/// `None` for a plane no world axis is normal to, or one with no world statement.
+fn flat_axis(jd: &Judge<'_, WorkingPlane>, p: usize) -> Option<usize> {
+    let w = class_coeffs_rat(jd, p)?;
+    let zero = nacre_exact::Rat::from_int(0);
+    let mut nonzero = (0..3).filter(|&k| w[k] != zero);
+    let k = nonzero.next()?;
+    nonzero.next().is_none().then_some(k)
+}
+
+impl KeyCmp<'_> {
+    /// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
+    ///
+    /// The mixed pair is `nacre_exact::quad::cmp_coord_meet_branch`, which is exact and **total**:
+    /// both coordinates lift to one first-storey sign. It wants the three-plane side as a
+    /// `MeetPoint`, and this crate builds one directly — `MeetPoint::Narrow` is a public variant, so
+    /// no door has to be opened in `nacre-exact` for it. A three-plane node with no rational meet
+    /// (a class with no world statement among its three) is ordered by intervals instead
+    /// ([`Self::unstated`]).
+    fn cmp(&self, a: &CoordKey, b: &CoordKey, axis: usize) -> Result<i8, BoolError> {
+        use nacre_exact::{Orient, quad};
+        let jd = self.jd;
+        let sign = |o: Orient| match o {
+            Orient::Positive => 1i8,
+            Orient::Negative => -1,
+            Orient::Zero => 0,
+        };
+        // ★ Through [`node_coords_rat`], not a second copy of the three-plane solve — the rational
+        // meet is stated once. The round-trip through the name is free: the solve is symmetric in
+        // its three planes, so canonical order changes nothing.
+        let meet = |t: [usize; 3]| {
+            node_coords_rat(jd, NodeId::three_planes(Canon3::three(t)))
+                .map(nacre_exact::MeetPoint::Narrow)
+        };
+        let order = match (a, b) {
+            (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
+            (CoordKey::Three(x), CoordKey::Pierce(m)) => match meet(*x) {
+                Some(p) => sign(quad::cmp_coord_meet_branch(&p, &m.0, &m.1, axis)),
+                None => self.unstated(*x, m, axis)?,
+            },
+            (CoordKey::Pierce(m), CoordKey::Three(y)) => match meet(*y) {
+                Some(p) => -sign(quad::cmp_coord_meet_branch(&p, &m.0, &m.1, axis)),
+                None => -self.unstated(*y, m, axis)?,
+            },
+            (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
+                sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
+            }
+        };
+        debug_assert!(
+            self.flat != Some(axis) || order == 0,
+            "two nodes of one class differ on the axis its plane holds constant"
+        );
+        Ok(order)
+    }
+
+    /// A three-plane node no rational meet states, against a pierce point: `0` on the class's flat
+    /// axis by name, else the two as intervals ([`three_point_hp`], [`pierce_point_hp`]) — two
+    /// distinct names, so a comparison the intervals cannot separate is refused, never read as a
+    /// tie ([`undecided_reason`] names it).
+    fn unstated(
+        &self,
+        t: [usize; 3],
+        m: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+        axis: usize,
+    ) -> Result<i8, BoolError> {
+        if self.flat == Some(axis) {
+            return Ok(0);
         }
-        (CoordKey::Pierce(b), CoordKey::Three(y)) => {
-            -sign(quad::cmp_coord_meet_branch(&meet(*y)?, &b.0, &b.1, axis))
+        let refuse = || reject(undecided_reason(self.cyls, &t));
+        let x = three_point_hp(self.jd, t).ok_or_else(refuse)?;
+        let y = pierce_point_hp(self.jd, m).ok_or_else(refuse)?;
+        match x[axis].sub(&y[axis], self.jd.standard.prec).sign() {
+            Some(true) => Ok(1),
+            Some(false) => Ok(-1),
+            None => Err(refuse()),
         }
-        (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
-            sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
-        }
-    })
+    }
 }
 
 /// **The pierce nodes lying strictly between two ring nodes, in ring order** — the exact half of
@@ -98,7 +150,7 @@ fn cmp_key(
 /// ★ **The axis is "wherever the endpoints differ", not the line's direction.** Two distinct
 /// points of one line differ on some axis, the line is strictly monotone on that axis, and
 /// betweenness is direction-blind — so no direction vector is read at all, and the choice is
-/// deterministic (first differing axis). This is [`cmp_key`]'s vocabulary end to end; nothing new
+/// deterministic (first differing axis). This is [`KeyCmp::cmp`]'s vocabulary end to end; nothing new
 /// is exact here.
 ///
 /// `None` when an order cannot be formed (a coordinate outside the rational vessel, an
@@ -121,26 +173,32 @@ pub(crate) fn pierce_between(
             }
         }
     };
+    // No class: these nodes are an edge's, ordered along it, and nothing here is held constant.
+    let kc = KeyCmp {
+        jd,
+        cyls,
+        flat: None,
+    };
     let (ka, kb) = (key(a)?, key(b)?);
-    let axis = (0..3).find(|&ax| matches!(cmp_key(jd, &ka, &kb, ax), Ok(s) if s != 0))?;
-    // `+1` = "the first is larger" (`cmp_key`), so `dir` is the a→b slope's sign on this axis and
+    let axis = (0..3).find(|&ax| matches!(kc.cmp(&ka, &kb, ax), Ok(s) if s != 0))?;
+    // `+1` = "the first is larger" (`KeyCmp::cmp`), so `dir` is the a→b slope's sign on this axis and
     // "strictly between" is both hops running the same way.
-    let dir = cmp_key(jd, &ka, &kb, axis).ok()?;
+    let dir = kc.cmp(&ka, &kb, axis).ok()?;
     let mut mid: Vec<(NodeId, CoordKey)> = Vec::new();
     for &c in candidates {
         if c == a || c == b {
             continue;
         }
-        let kc = key(c)?;
-        if cmp_key(jd, &ka, &kc, axis).ok()? == dir && cmp_key(jd, &kc, &kb, axis).ok()? == dir {
-            mid.push((c, kc));
+        let kx = key(c)?;
+        if kc.cmp(&ka, &kx, axis).ok()? == dir && kc.cmp(&kx, &kb, axis).ok()? == dir {
+            mid.push((c, kx));
         }
     }
     // Ring order: nearer to `a` first — along `dir`, the larger-toward-`a` side leads. A pair
     // this cannot strictly order (an escalation, or two distinct nodes at one coordinate — which
     // on a shared line would be two names for one point) makes the whole edge unsplittable.
     let mut sortable = true;
-    mid.sort_by(|(_, x), (_, y)| match cmp_key(jd, x, y, axis) {
+    mid.sort_by(|(_, x), (_, y)| match kc.cmp(x, y, axis) {
         Ok(s) if s == dir => std::cmp::Ordering::Less,
         Ok(s) if s == -dir => std::cmp::Ordering::Greater,
         _ => {
@@ -178,7 +236,7 @@ pub(crate) fn pierce_between(
 /// `n_h = m × ê_a` (it is `c − s·p` for `p = ê_a − (m_a/|m|²)·m`, which lies in the span of `m` and
 /// `ê_a`), so it is one of the two points the cap plane, `H` and the cylinder share — the
 /// [`plane_plane_cylinder`](nacre_exact::quad::plane_plane_cylinder) meet every pierce node is
-/// solved by, and a [`CoordKey::Pierce`] that [`cmp_key`] orders against the ring's nodes and
+/// solved by, and a [`CoordKey::Pierce`] that [`KeyCmp::cmp`] orders against the ring's nodes and
 /// against another arc's minimum. The point is irrational whenever the axis tilts toward `ê_a` or
 /// the radius is a surd (`c_x − 3√41/25` on a Pythagorean frame; `−√2` for a sector of `r² = 2` on
 /// the world frame); a road that answered only for a rational `c − r·ê_a` left both to the node's
@@ -199,12 +257,17 @@ fn arc_extremum_winding(
     use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
     use nacre_exact::{Orient, Rat};
     let width = || reject(RejectReason::WitnessNotRational);
+    let kc = KeyCmp {
+        jd,
+        cyls,
+        flat: flat_axis(jd, p),
+    };
     let key = |i: usize| &keys[i];
     // `x` against `y`, axis by axis — `-1` when `x` is lexicographically the smaller, `0` when
     // they are the same point.
     let lex = |x: &CoordKey, y: &CoordKey| -> Result<i8, BoolError> {
         for ax in 0..3 {
-            let o = cmp_key(jd, x, y, ax)?;
+            let o = kc.cmp(x, y, ax)?;
             if o != 0 {
                 return Ok(o);
             }
@@ -302,7 +365,7 @@ fn arc_extremum_winding(
         // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
         // wraps the whole way round inside one half — and θ's order inside a half is read off
         // coordinate `a`: falling in the upper half, rising in the lower.
-        let x_cmp = cmp_key(jd, ka, kb, a)?;
+        let x_cmp = kc.cmp(ka, kb, a)?;
         let hit = match (ha, hb) {
             (true, false) => true,
             (false, true) => false,
@@ -407,13 +470,18 @@ pub(crate) fn loop_winding(
         .map(|i| coord_key(jd, cyls, ring, i))
         .collect::<Result<_, BoolError>>()?;
     let key = |i: usize| &keys[i];
+    let kc = KeyCmp {
+        jd,
+        cyls,
+        flat: flat_axis(jd, p),
+    };
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;
     for i in 1..ring.len() {
         let mut order = 0i8;
         for axis in 0..3 {
-            order = cmp_key(jd, key(i), key(lo), axis)?;
+            order = kc.cmp(key(i), key(lo), axis)?;
             if order != 0 {
                 break;
             }
@@ -437,7 +505,7 @@ pub(crate) fn loop_winding(
     // "says nothing" here, not "equal".
     let lex = |i: usize, j: usize| -> i8 {
         (0..3)
-            .map(|axis| cmp_key(jd, key(i), key(j), axis).unwrap_or(0))
+            .map(|axis| kc.cmp(key(i), key(j), axis).unwrap_or(0))
             .find(|&c| c != 0)
             .unwrap_or(0)
     };
@@ -452,7 +520,7 @@ pub(crate) fn loop_winding(
     for i in 0..ring.len() {
         let mut same = i != lo;
         for axis in 0..3 {
-            same = same && cmp_key(jd, key(i), key(lo), axis)? == 0;
+            same = same && kc.cmp(key(i), key(lo), axis)? == 0;
         }
         if same {
             return Err(reject(RejectReason::CoincidentNodes));

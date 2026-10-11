@@ -223,6 +223,53 @@ pub(crate) fn ring_corners_hp(
         .collect()
 }
 
+/// **A three-plane point as an interval** — its three classes' witness triangles
+/// ([`nacre_judge::plane_hp`]) met at the model's precision ([`nacre_judge::meet_hp`]): a box that
+/// holds the true point whether or not the classes have a world statement. `None` for a meet the
+/// precision could not separate.
+pub(crate) fn three_point_hp(
+    jd: &Judge<'_, WorkingPlane>,
+    t: [usize; 3],
+) -> Option<[nacre_exact::HpBounded; 3]> {
+    let prec = jd.standard.prec;
+    let plane = |k: usize| {
+        let w = &jd.planes[k].tri_pt3;
+        nacre_judge::plane_hp(&w[0], &w[1], &w[2], prec)
+    };
+    nacre_judge::meet_hp(&[plane(t[0]), plane(t[1]), plane(t[2])], prec)
+}
+
+/// **A pierce point as an interval** — `base + s·dir` along its exact meet line, the root realized
+/// at the model's precision ([`nacre_exact::realize_quad`]).
+pub(crate) fn pierce_point_hp(
+    jd: &Judge<'_, WorkingPlane>,
+    (line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+) -> Option<[nacre_exact::HpBounded; 3]> {
+    let prec = jd.standard.prec;
+    let sb = nacre_exact::realize_quad(s, prec)?;
+    let (b, d) = (line.base(), line.dir());
+    let at = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, prec);
+    Some([at(0)?, at(1)?, at(2)?])
+}
+
+/// **What a question that could not be stated exactly is refused as**, given the classes it read:
+/// one the gate passed as silent about the cylinders has no world statement, so the cause is the
+/// gate's ([`RejectReason::CylinderGateUndecided`]); otherwise the world holds the classes and the
+/// rational vessel does not ([`RejectReason::WitnessNotRational`] — a `Wide` name, an overflow).
+pub(crate) fn undecided_reason(
+    cyls: &[crate::planes::WorkingCyl],
+    classes: &[usize],
+) -> RejectReason {
+    if classes
+        .iter()
+        .any(|&c| cyls.iter().any(|cy| cy.is_silent(c)))
+    {
+        RejectReason::CylinderGateUndecided
+    } else {
+        RejectReason::WitnessNotRational
+    }
+}
+
 /// **The sign of a rational plane `a·x + b·y + c·z + d` at an interval point** — `Some(true)` when
 /// positive, `None` when the interval straddles zero.
 pub(crate) fn plane_sign_hp(
