@@ -515,24 +515,28 @@ fn ask(
             match combinatorics::point_in_ring(jd, cyls, wc, *t, rb) {
                 Ok(true) => Said::In,
                 Ok(false) => Said::Out,
-                // ★ A corner on a class with no world statement has no rational coordinates, so no
-                // coordinate witness stands behind it when the ray road cannot read this ring. The
-                // one question its interval answers is whether it stands outside the ring's box —
-                // the coordinate arm's own question below, asked of the same box.
-                Err(_) if t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))) => {
-                    match combinatorics::three_point_hp(jd, *t) {
-                        Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
-                        _ => Said::Silent,
-                    }
-                }
                 // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
-                // this witness's circumstance is an abstention.
-                Err(e) => Said::of_ray_error(
+                // this witness's circumstance is an abstention, and anything else is raised.
+                Err(e) => match Said::of_ray_error(
                     e,
                     rb.iter()
                         .any(|x| combinatorics::pierce_name(x.node).is_some()),
                     combinatorics::ring_is_mixed(rb),
-                )?,
+                )? {
+                    // ★ A corner on a class with no world statement has no rational coordinates,
+                    // so no coordinate witness stands behind it when the ray road cannot place it.
+                    // The one question its interval answers is whether it stands outside the
+                    // ring's box — the coordinate arm's own question below, asked of the same box.
+                    Said::Declines | Said::Abstain
+                        if t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))) =>
+                    {
+                        match combinatorics::three_point_hp(jd, *t) {
+                            Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
+                            _ => Said::Silent,
+                        }
+                    }
+                    said => said,
+                },
             }
         }
         (Where::Coord(p), Cell::Ring(rb)) => match rational_point_in_ring(jd, cyls, wc, p, rb) {
