@@ -112,8 +112,8 @@ impl NodeId {
 /// each does about it, and that splits in two — see [`three_plane_probes`] for the split.
 ///
 /// Sites that *dispatch* instead of declining stay out of it deliberately — [`node_coords_rat`],
-/// [`pierce_point`] and [`loop_winding`]'s lexicographic scan, each with its own answer for the
-/// other variant. ★ And one is **not** in the ring-and-segment world at all: `reuse::canonical`
+/// [`pierce_point`], [`node_point_hp`] and [`loop_winding`]'s lexicographic scan, each with its own
+/// answer for the other variant. ★ And one is **not** in the ring-and-segment world at all: `reuse::canonical`
 /// builds a comparison key, and its answer is that the key's vessel widens (`CanonNode`), not that
 /// the question is refused.
 ///

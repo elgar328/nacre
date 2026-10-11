@@ -195,32 +195,63 @@ pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[Rin
     })
 }
 
-/// **A straight ring's corners, met in the judge's own interval arithmetic** — for the rings whose
-/// corners [`node_coords_rat`] cannot give: a turned wall names them, and its class has no world
-/// statement. Each corner's three classes are taken through their witness triangles
-/// (`nacre_judge::plane_hp`) and met (`nacre_judge::meet_hp`) at the model's precision, so a corner
-/// is an interval that holds the true point; a judging question reads it the way it reads every
-/// other — in the judge's vocabulary, not through a realization door. `None` for a ring with an arc
-/// or a pierce corner (an arc bulges past its ends, so its corners do not bound it) and for a meet
-/// the precision could not separate.
-pub(crate) fn ring_corners_hp(
+/// **Points whose box holds a ring**, in the judge's interval arithmetic — every corner, whatever
+/// names it ([`node_point_hp`]), and for every arc the corners of its circle's box (an arc lies in
+/// its circle, and the circle in its centre ± `r` on every axis, `r` rounded up to a rational by
+/// [`crate::planes::sqrt_at_least`]). A straight edge lies in its two corners' hull and an arc in
+/// its circle's box, so the ring lies in the hull of these points, and a point outside their box
+/// on some axis is outside the ring. `wc` is the ring's class — an arc's circle centre is where its
+/// axis meets that plane. `None` for a point the precision could not separate, or a class or
+/// circle with no exact description.
+pub(crate) fn ring_box_points_hp(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
     rb: &[RingEdge],
 ) -> Option<Vec<[nacre_exact::HpBounded; 3]>> {
-    if ring_is_mixed(rb) {
-        return None;
-    }
     let prec = jd.standard.prec;
-    let plane = |k: usize| {
-        let w = &jd.planes[k].tri_pt3;
-        nacre_judge::plane_hp(&w[0], &w[1], &w[2], prec)
-    };
-    rb.iter()
-        .map(|e| {
-            let t = three_plane_name(e.node)?;
-            nacre_judge::meet_hp(&[plane(t[0]), plane(t[1]), plane(t[2])], prec)
-        })
-        .collect()
+    let mut out = Vec::with_capacity(rb.len());
+    for e in rb {
+        out.push(node_point_hp(jd, cyls, e.node)?);
+        if let Carrier::Arc(ac) = &e.carrier {
+            let c = circle_centre_rat(jd, wc, &ac.def)?;
+            let r = crate::planes::sqrt_at_least(ac.def.r2().narrow()?)?;
+            let lo = [
+                c[0].checked_sub(r)?,
+                c[1].checked_sub(r)?,
+                c[2].checked_sub(r)?,
+            ];
+            let hi = [
+                c[0].checked_add(r)?,
+                c[1].checked_add(r)?,
+                c[2].checked_add(r)?,
+            ];
+            for bits in 0..8usize {
+                out.push(std::array::from_fn(|k| {
+                    let v = if bits >> k & 1 == 0 { lo[k] } else { hi[k] };
+                    nacre_exact::HpBounded::of_rat(v, prec)
+                }));
+            }
+        }
+    }
+    Some(out)
+}
+
+/// **A node as an interval, whichever kind of name it is** — [`three_point_hp`] for three planes,
+/// [`pierce_point_hp`] at the pierce point's exact `(line, s)`. `None` for a meet the precision
+/// could not separate or a pierce point with no exact description (a plane with no world
+/// statement among its two, a cylinder missing from the table).
+pub(crate) fn node_point_hp(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+) -> Option<[nacre_exact::HpBounded; 3]> {
+    match n.kind() {
+        NodeKind::ThreePlane(t) => three_point_hp(jd, t),
+        NodeKind::Pierce { cyl, .. } => {
+            pierce_point_hp(jd, &pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?)
+        }
+    }
 }
 
 /// **A three-plane point as an interval** — its three classes' witness triangles

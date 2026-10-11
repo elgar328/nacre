@@ -109,6 +109,16 @@ fn rational_point_in_ring(
     // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the chart road
     // can name still take it — the mixed arm runs on exactly the population the chart road
     // cannot name.
+    // A three-plane corner with no rational meet (a class with no world statement among its
+    // three) is a value this road cannot form, not this witness's circumstance — the mixed walk
+    // below would abstain on it, and an abstention sends the caller to its next witness, which
+    // meets the same corner.
+    if ring.iter().any(|e| {
+        combinatorics::three_plane_name(e.node).is_some()
+            && combinatorics::node_coords_rat(jd, e.node).is_none()
+    }) {
+        return Err(undecided());
+    }
     if combinatorics::ring_is_mixed(ring) {
         return Ok(combinatorics::point_in_mixed_ring(
             jd, cyls, &coeffs, &center, ring,
@@ -505,6 +515,16 @@ fn ask(
             match combinatorics::point_in_ring(jd, cyls, wc, *t, rb) {
                 Ok(true) => Said::In,
                 Ok(false) => Said::Out,
+                // ★ A corner on a class with no world statement has no rational coordinates, so no
+                // coordinate witness stands behind it when the ray road cannot read this ring. The
+                // one question its interval answers is whether it stands outside the ring's box —
+                // the coordinate arm's own question below, asked of the same box.
+                Err(_) if t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))) => {
+                    match combinatorics::three_point_hp(jd, *t) {
+                        Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
+                        _ => Said::Silent,
+                    }
+                }
                 // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only
                 // this witness's circumstance is an abstention.
                 Err(e) => Said::of_ray_error(
@@ -522,10 +542,16 @@ fn ask(
             // A **value** that could not be formed — the class has no rational description. Not
             // an abstention: no coordinate witness will do better on this class. A ring whose
             // corners a silent class names has no rational corners, and is still asked whether
-            // the point stands outside its corners' reach — the one question its corners'
-            // intervals answer.
+            // the point stands outside the ring's box — the one question intervals answer.
             Err(_) if combinatorics::names_a_silent_class(cyls, rb) => {
-                if outside_ring_hull(jd, p, rb) {
+                let prec = jd.standard.prec;
+                if outside_ring_box(
+                    jd,
+                    cyls,
+                    wc,
+                    &p.map(|x| nacre_exact::HpBounded::of_rat(x, prec)),
+                    rb,
+                ) {
                     Said::Out
                 } else {
                     Said::Silent
@@ -556,22 +582,27 @@ fn ask(
     })
 }
 
-/// **Is `p` outside the box of a straight ring's corners?** — then it is outside the ring, whose
-/// every point lies in its corners' convex hull. The corners come in the judge's interval
-/// arithmetic ([`combinatorics::ring_corners_hp`]) and are compared with `p` axis by axis; a
-/// comparison whose interval straddles zero proves nothing, and the answer is then `false`.
-fn outside_ring_hull(
+/// **Is `p` outside the box that holds the ring?** — then it is outside the ring. The box is
+/// [`combinatorics::ring_box_points_hp`]'s — every corner whatever names it, and every arc's circle
+/// — in the judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly,
+/// a corner on a class with no world statement as its witness triangles' meet). A comparison whose
+/// interval straddles zero proves nothing, and the answer is then `false`.
+fn outside_ring_box(
     jd: &Judge<'_, WorkingPlane>,
-    p: &[nacre_exact::Rat; 3],
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_exact::HpBounded; 3],
     rb: &[combinatorics::RingEdge],
 ) -> bool {
-    let Some(corners) = combinatorics::ring_corners_hp(jd, rb) else {
+    let Some(points) = combinatorics::ring_box_points_hp(jd, cyls, wc, rb) else {
         return false;
     };
     let prec = jd.standard.prec;
     (0..3).any(|k| {
-        let pk = nacre_exact::HpBounded::of_rat(p[k], prec);
-        let signs: Vec<Option<bool>> = corners.iter().map(|x| pk.sub(&x[k], prec).sign()).collect();
+        let signs: Vec<Option<bool>> = points
+            .iter()
+            .map(|x| p[k].sub(&x[k], prec).sign())
+            .collect();
         signs.iter().all(|s| *s == Some(true)) || signs.iter().all(|s| *s == Some(false))
     })
 }

@@ -89,7 +89,7 @@ pub(crate) fn point_in_faces_rat(
                 .chain(&f.inner)
                 .any(|b| matches!(b, BoundEdges::Ring(r) if names_a_silent_class(cyls, r)));
         if unstated {
-            if ray_misses_face(jd, &line, &ahead, f) {
+            if ray_misses_face(jd, cyls, q, &line, &ahead, f) {
                 continue;
             }
             return Err(reject(RejectReason::CylinderGateUndecided));
@@ -193,14 +193,16 @@ pub(crate) fn point_in_faces_rat(
     Ok(Some(count % 2 == 1))
 }
 
-/// **Does the ray miss this face, provably?** — the face's outline corners, in the judge's
-/// interval arithmetic ([`ring_corners_hp`]), all strictly on one side of either plane through the
-/// ray (`line`: the ray's line misses the face's convex hull), or all strictly on the positive side
-/// of `ahead` (behind the origin, the half this road does not count). `false` — not shown, not
-/// "crossed" — for an outline that is not a straight ring or a corner the precision could not
-/// separate.
+/// **Does the ray miss this face, provably?** — the points whose box holds the face's outline, in
+/// the judge's interval arithmetic ([`ring_box_points_hp`]), all strictly on one side of either
+/// plane through the ray (`line`: the ray's line misses the outline's hull), or all strictly on the
+/// positive side of `ahead` (behind the origin, the half this road does not count). `false` — not
+/// shown, not "crossed" — for an outline that is not a ring or a point the precision could not
+/// separate. `q` is the face's class.
 fn ray_misses_face(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    q: usize,
     line: &[[nacre_exact::Rat; 4]; 2],
     ahead: &[nacre_exact::Rat; 4],
     f: &CompFace,
@@ -208,7 +210,7 @@ fn ray_misses_face(
     let BoundEdges::Ring(r) = &f.outer else {
         return false;
     };
-    let Some(corners) = ring_corners_hp(jd, r) else {
+    let Some(corners) = ring_box_points_hp(jd, cyls, q, r) else {
         return false;
     };
     let prec = jd.standard.prec;

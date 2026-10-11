@@ -320,3 +320,112 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
         assert_eq!(decided, 12 * 11 * 12, "seam {seam:?}");
     }
 }
+
+/// **A node's interval holds the node, whichever kind of name it is** — [`node_point_hp`] against
+/// [`node_point_f64`], over every ring node of every face a boolean emits. The fixture is a plate
+/// with a bore fused with a wall whose plane runs inside the bore's radius, so the wall class's
+/// rings carry the bore's pierce points beside three-plane corners, and the caps carry arcs.
+///
+/// ★ Bracketed, not contained: the `f64` is a rounding of the true point, and the interval is far
+/// narrower than an ulp, so the true point is inside the interval while the `f64` may sit an ulp
+/// outside it. The assertion reads both bounds of a window around the `f64`.
+#[test]
+fn a_nodes_interval_holds_it_for_either_kind_of_name() {
+    use crate::arrangement::{PlaneSetup, plane_index_setup};
+    use nacre_math::{Point3, Vector3};
+    let mut m = Model::new();
+    let plate = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    let bore = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([10.0, 10.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        2.0,
+        12.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let plate =
+        crate::boolean(&mut m, crate::BoolKind::Cut, plate, bore).expect("the bored plate")[0];
+    let wall = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([9.0, 0.0, 5.0]),
+        Point3::from_array([11.0, 40.0, 15.0]),
+    );
+    m.rebuild_adjacency();
+    let setup = plane_index_setup(&m, plate, wall).expect("the gate passes");
+    let PlaneSetup {
+        planes: faces_tab,
+        geom,
+        surf_ix,
+        inc_a,
+        inc_b,
+        plane_ix,
+        class_owner,
+        n_a,
+        standard,
+        notes,
+        cyls,
+        ..
+    } = &setup;
+    let jd = Judge::new(geom, *standard, notes);
+    let trace_in = trace_input(
+        &m,
+        [(plate, inc_a), (wall, inc_b)],
+        surf_ix,
+        faces_tab.len(),
+        &jd,
+        plane_ix,
+        cyls,
+        Default::default(),
+    );
+    let (faces, _, _) = crate::arrangement::trace_result_faces_full_for_test(
+        &m,
+        crate::BoolKind::Fuse,
+        plate,
+        wall,
+        &jd,
+        faces_tab,
+        plane_ix,
+        cyls,
+        *n_a,
+        class_owner,
+        &trace_in,
+    )
+    .expect("the fuse traces");
+    let prec = jd.standard.prec;
+    let mut kinds = [0usize; 2];
+    for f in &faces {
+        for &n in f.outer.ring().into_iter().flat_map(|r| &r.nodes) {
+            let x = node_point_hp(&jd, cyls, n).expect("an interval for every emitted node");
+            let p = node_point_f64(&jd, cyls, n).expect("a realized point");
+            for k in 0..3 {
+                let at = |d: f64| {
+                    nacre_exact::HpBounded::of_rat(
+                        nacre_exact::Rat::try_from_f64(p[k] + d).unwrap(),
+                        prec,
+                    )
+                };
+                assert_eq!(
+                    x[k].sub(&at(1e-9), prec).sign(),
+                    Some(false),
+                    "{n:?} axis {k}"
+                );
+                assert_eq!(
+                    x[k].sub(&at(-1e-9), prec).sign(),
+                    Some(true),
+                    "{n:?} axis {k}"
+                );
+            }
+            kinds[usize::from(pierce_name(n).is_some())] += 1;
+        }
+    }
+    assert!(
+        kinds[0] > 0 && kinds[1] > 0,
+        "both kinds of name are read: {kinds:?}"
+    );
+}

@@ -1692,7 +1692,7 @@ pub(crate) fn lateral_box(
 
 /// A rational `u ≥ √x`, near it — the `f64` root, then checked exactly (`u² ≥ x`) and widened
 /// until the check holds. `None` for a negative `x` or an overflow.
-fn sqrt_at_least(x: nacre_exact::Rat) -> Option<nacre_exact::Rat> {
+pub(crate) fn sqrt_at_least(x: nacre_exact::Rat) -> Option<nacre_exact::Rat> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     if x == zero {
