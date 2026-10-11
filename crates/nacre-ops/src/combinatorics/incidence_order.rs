@@ -211,10 +211,43 @@ pub(crate) enum OnLine {
     /// path is a plane pin. Unboxed it moved `split_at_crossings` from 23.2% of a rotated fold to
     /// 28.2%, and 12.1% of an axis-aligned one to 19.0% — with the *same trip counts*, so the cost
     /// was the width and nothing else. One allocation on the cold road buys that back.
-    Pierce {
+    Pierce { name: NodeId, at: Box<PierceAt> },
+}
+
+/// **What a pierce point carries to be ordered** — the cold payload of [`OnLine::Pierce`] and
+/// [`Located::Pierce`].
+pub(crate) struct PierceAt {
+    /// The meet line of the name's two planes and the root along it.
+    pub(crate) meet: (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    /// The classes the gate proved the point's whole cylinder beside, with the side
+    /// ([`crate::planes::WorkingCyl::beside`]) — the side of such a class this point lies on, which
+    /// its coefficients cannot say: the class has no world statement. Empty, and unallocated,
+    /// unless the boolean has one.
+    pub(crate) beside: Vec<(usize, i8)>,
+}
+
+impl PierceAt {
+    fn of(
+        jd: &Judge<'_, WorkingPlane>,
+        cy: &crate::planes::WorkingCyl,
+        cyl: usize,
         name: NodeId,
-        meet: Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
-    },
+    ) -> Option<Box<PierceAt>> {
+        Some(Box::new(PierceAt {
+            meet: pierce_meet(jd, cyl, &cy.def, name)?,
+            beside: cy.beside_all().collect(),
+        }))
+    }
+
+    /// The side of plane `q` this point lies on, in [`side_of`]'s convention — the gate's record
+    /// where it holds one, else `q`'s statement ([`pierce_side`]); one reading, as `side_of`'s
+    /// pierce arm makes it.
+    fn side(&self, jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
+        match self.beside.iter().find(|&&(c, _)| c == q) {
+            Some(&(_, side)) => Some(side),
+            None => pierce_side(jd, &self.meet, q),
+        }
+    }
 }
 
 /// A point in the form a comparison's **first** argument needs: an [`OnLine`] plus the Cramer
@@ -239,7 +272,7 @@ pub(crate) enum Located<'a> {
     },
     Pierce {
         name: NodeId,
-        meet: Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
+        at: Box<PierceAt>,
     },
 }
 
@@ -331,10 +364,9 @@ pub(crate) fn on_line(
                 NodeKind::ThreePlane(_) => return None,
             };
             debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
-            let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(OnLine::Pierce {
                 name,
-                meet: Box::new(meet),
+                at: PierceAt::of(jd, cyls.get(cyl)?, cyl, name)?,
             })
         }
     }
@@ -379,10 +411,9 @@ pub(crate) fn locate<'j>(
                 NodeKind::ThreePlane(_) => return None,
             };
             debug_assert!(names_the_line(name, p, q), "{name:?} is not on {p} ∩ {q}");
-            let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(Located::Pierce {
                 name,
-                meet: Box::new(meet),
+                at: PierceAt::of(jd, cyls.get(cyl)?, cyl, name)?,
             })
         }
     }
@@ -440,13 +471,13 @@ fn order_located_quad(
         // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
         (Located::Class { .. }, OnLine::Class { .. }) => return None,
-        (Located::Pierce { meet, .. }, OnLine::Class { pin, ds }) => {
-            return Some(pierce_side(jd, meet, *pin)? * ds);
+        (Located::Pierce { at, .. }, OnLine::Class { pin, ds }) => {
+            return Some(at.side(jd, *pin)? * ds);
         }
-        (Located::Class { pin, .. }, OnLine::Pierce { meet, .. }) => {
-            return Some(-pierce_side(jd, meet, *pin)? * dir_sign(jd, p, q, *pin));
+        (Located::Class { pin, .. }, OnLine::Pierce { at, .. }) => {
+            return Some(-at.side(jd, *pin)? * dir_sign(jd, p, q, *pin));
         }
-        (Located::Pierce { meet: m1, .. }, OnLine::Pierce { meet: m2, .. }) => (m1, m2),
+        (Located::Pierce { at: a1, .. }, OnLine::Pierce { at: a2, .. }) => (&a1.meet, &a2.meet),
     };
     let sign = |o: Orient| -> i8 {
         match o {

@@ -164,7 +164,6 @@ pub(super) fn split_at_crossings(
     // passed as silent about the cylinders has no world statement, and a question this pass cannot
     // answer without one refuses by the gate's name — the cause is the gate's; anything else is
     // the arithmetic's.
-    let silent = |c: usize| cyls.iter().any(|cy| cy.is_silent(c));
     let cause = |classes: &[usize]| reject(combinatorics::undecided_reason(cyls, classes));
     let end_l: Vec<[combinatorics::OnLine; 2]> = segs
         .iter()
@@ -251,25 +250,10 @@ pub(super) fn split_at_crossings(
                             break;
                         }
                         Some(false) => {}
-                        // ★ **Where a silent class is in the question, the ends' sides answer it.**
-                        // The point is `w`'s crossing of `r`'s line, so it lies on the segment iff
-                        // the segment's two ends are not strictly on one side of `w` — the reading
-                        // the ray walk makes of a straight edge. A pierce end's side of a silent
-                        // class is the gate's record (`side_of`), which order along the line has no
-                        // spelling for.
-                        None if silent(w) || silent(r) => {
-                            let side =
-                                |k: usize| combinatorics::side_of(jd, cyls, segs[i].end[k], w);
-                            match (side(0), side(1)) {
-                                (Some(a), Some(b)) if a * b <= 0 => {
-                                    reaches = true;
-                                    break;
-                                }
-                                (Some(_), Some(_)) => {}
-                                _ => return Err(cause(&[w, r])),
-                            }
-                        }
-                        None => return Err(reject(RejectReason::WitnessNotRational)),
+                        // A pierce end against a class the gate passed as silent is ordered by the
+                        // side it recorded ([`combinatorics::closed_contains`]), so what is left is
+                        // a description that could not be formed.
+                        None => return Err(cause(&[w, r])),
                     }
                 }
                 if reaches {

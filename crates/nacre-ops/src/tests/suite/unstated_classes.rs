@@ -72,6 +72,14 @@ fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
     op(m, BoolKind::Cut, plate, bore)
 }
 
+/// The bored plate with the wall `[9,11]×[0,40]×[5,15]` fused on — its plane `x = 9` runs within
+/// the bore's radius, and its face across the bore.
+fn walled_bore(m: &mut Model) -> Handle<Solid> {
+    let p = plate_with_bore(m);
+    let wall = cuboid(m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
+    op(m, BoolKind::Fuse, p, wall)
+}
+
 /// The plate with a pin of radius `r`, height 3, standing on its top at `(x, y)` — volume
 /// `16000 + 3πr²`.
 fn plate_with_pin(m: &mut Model, x: f64, y: f64, r: f64) -> Handle<Solid> {
@@ -123,6 +131,21 @@ fn nameless_classes_beside_world_cylinders() {
     use RejectReason::CylinderGateUndecided as Undecided;
     let pi = std::f64::consts::PI;
     let bored = 16000.0 - 40.0 * pi;
+    // The bored plate fused with the wall `[9,11]×[0,40]×[5,15]`: the wall's upper half stands
+    // clear, and its lower half is inside the plate except where it fills the bore's strip
+    // `|x − 10| ≤ 1` — `∫ 2√(4 − u²) du` over `[−1, 1]` = `2√3 + 4π/3`.
+    let walled = bored + 800.0 - (400.0 - 5.0 * (2.0 * 3f64.sqrt() + 4.0 * pi / 3.0));
+    // The turned box standing on `z0`: what it shares with the walled plate — `25` per unit of
+    // depth inside the plate (`z` up to 10), and above it the box's section inside the wall's strip
+    // `9 ≤ x ≤ 11`. The box's width across a line `x = 10 + u` is `5/cos θ` while the line passes
+    // between its two near corners (`|u| ≤ a = 2.5(cos θ − sin θ)`) and falls linearly to `0` at
+    // the far ones (`b = 2.5(cos θ + sin θ)`).
+    let sunk = |z0: f64| {
+        let (c, s) = (37f64.to_radians().cos(), 37f64.to_radians().sin());
+        let (a, b) = (2.5 * (c - s), 2.5 * (c + s));
+        let strip = 2.0 * (5.0 / c) * (a + ((b - a).powi(2) - (b - 1.0).powi(2)) / (2.0 * (b - a)));
+        25.0 * (10.0 - z0) + strip * (15.0 - 10.0)
+    };
     let refused = [Refused(Undecided); 3];
     let fams = [
         // The control: a quarter turn keeps every name, and the box sits on the plate far from
@@ -317,7 +340,11 @@ fn nameless_classes_beside_world_cylinders() {
             want: refused,
         },
         // A rib on the plate whose wall `x = 9` runs within the bore's radius (recorded), and a
-        // turned box straddling that wall's plane far from the bore.
+        // turned box straddling that wall's plane far from the bore. On the wall's class the
+        // bore's pierce points and the box's corners share lines and rings. The plate with the
+        // rib is `bored + 200 − 100`; the box, `y` 21.5..28.5, misses the rib and the bore and
+        // sinks `25·5` into the plate. ★ Its rib face covers none of the cells the order between
+        // those points shapes, so this family cannot see that order's sign — F14c and F14d can.
         Family {
             name: "F14 recorded rib wall, box turned 37 across its plane",
             build: |m| {
@@ -327,7 +354,49 @@ fn nameless_classes_beside_world_cylinders() {
                 (a, turned_box(m, 37, [10, 25], 5.0, 10.0))
             },
             gate: Ok((4, 0)),
-            want: refused,
+            want: [
+                Built(1, bored + 225.0),
+                Built(1, bored - 25.0),
+                Built(1, 125.0),
+            ],
+        },
+        // The wall runs the plate's length, across the bore, so its face holds both the bore's
+        // pierce points and the box's crossings — the order between them is what shapes it.
+        Family {
+            name: "F14c wall across the bore, box turned 37 across its plane",
+            build: |m| (walled_bore(m), turned_box(m, 37, [10, 25], 5.0, 10.0)),
+            gate: Ok((4, 0)),
+            want: [
+                Built(1, walled + 250.0 - sunk(5.0)),
+                Built(1, walled - sunk(5.0)),
+                Built(1, sunk(5.0)),
+            ],
+        },
+        // The same, operands swapped: the class roots and their frames are the box's now. The box
+        // less the walled plate is two solids — the wall's strip runs across the box's top half.
+        Family {
+            name: "F14c' the same, operands swapped",
+            build: |m| {
+                let b = turned_box(m, 37, [10, 25], 5.0, 10.0);
+                (b, walled_bore(m))
+            },
+            gate: Ok((4, 0)),
+            want: [
+                Built(1, walled + 250.0 - sunk(5.0)),
+                Built(2, 250.0 - sunk(5.0)),
+                Built(1, sunk(5.0)),
+            ],
+        },
+        // The box raised to stand on `z = 8`, so less of it sinks into the plate.
+        Family {
+            name: "F14d wall across the bore, box turned 37 standing higher",
+            build: |m| (walled_bore(m), turned_box(m, 37, [10, 25], 8.0, 10.0)),
+            gate: Ok((4, 0)),
+            want: [
+                Built(1, walled + 250.0 - sunk(8.0)),
+                Built(1, walled - sunk(8.0)),
+                Built(1, sunk(8.0)),
+            ],
         },
         // A world wall crossing the bore, fused with a turned box: the wall's face carries the
         // box's irrational corners.

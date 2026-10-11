@@ -50,17 +50,11 @@ fn coord_key(
     Ok(CoordKey::Pierce(Box::new((line, s))))
 }
 
-/// **What ordering two ring nodes on one world axis needs besides the two keys.**
-///
-/// ★ `flat` is the world axis on which **every** point of the ring's class has one coordinate — the
-/// class's world normal is that axis ([`flat_axis`]). The ring's nodes all lie on the class, so
-/// their order on that axis is `0` **by the name of the class they share**, not by arithmetic: an
-/// interval can prove two coordinates apart and never prove them equal, and on the wall `x = 9`
-/// every node's `x` is `9`. The exact arms answer `0` there by computing it, which is asserted.
+/// **What ordering two ring nodes on one world axis needs besides the two keys** — the judge, and
+/// the cylinder table a refusal reads its name from ([`undecided_reason`]).
 struct KeyCmp<'a> {
     jd: &'a Judge<'a, WorkingPlane>,
     cyls: &'a [crate::planes::WorkingCyl],
-    flat: Option<usize>,
 }
 
 /// The world axis a class's plane holds constant — the one nonzero component of its world normal.
@@ -111,25 +105,21 @@ impl KeyCmp<'_> {
                 sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
             }
         };
-        debug_assert!(
-            self.flat != Some(axis) || order == 0,
-            "two nodes of one class differ on the axis its plane holds constant"
-        );
         Ok(order)
     }
 
-    /// A three-plane node no rational meet states, against a pierce point: `0` on the class's flat
-    /// axis by name, else the two as intervals ([`three_point_hp`], [`pierce_point_hp`]) — two
-    /// distinct names, so a comparison the intervals cannot separate is refused, never read as a
-    /// tie ([`undecided_reason`] names it).
+    /// A three-plane node no rational meet states, against a pierce point: exactly where both
+    /// state the coordinate ([`Self::both_stated`]), else the two as intervals ([`three_point_hp`],
+    /// [`pierce_point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
+    /// refused, never read as a tie ([`undecided_reason`] names it).
     fn unstated(
         &self,
         t: [usize; 3],
         m: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
         axis: usize,
     ) -> Result<i8, BoolError> {
-        if self.flat == Some(axis) {
-            return Ok(0);
+        if let Some(order) = self.both_stated(t, m, axis) {
+            return Ok(order);
         }
         let refuse = || reject(undecided_reason(self.cyls, &t));
         let x = three_point_hp(self.jd, t).ok_or_else(refuse)?;
@@ -139,6 +129,35 @@ impl KeyCmp<'_> {
             Some(false) => Ok(-1),
             None => Err(refuse()),
         }
+    }
+
+    /// **A coordinate both points state exactly, compared exactly.** The three-plane node states
+    /// its coordinate on `axis` when one of its classes is a plane that axis is normal to
+    /// (`n·x + d = 0`, so `x = −d/n`); the pierce point states it when its line runs flat along
+    /// that axis (`x = base`). ★ This is where **equality comes from**: two such points can share
+    /// the coordinate exactly — every node of a ring on the wall `x = 9`, or a box's corner on that
+    /// wall against a bore's pierce point on it while the ring lies on a cap — and an interval can
+    /// prove two coordinates apart, never equal. `None` where either side does not state it, or on
+    /// overflow.
+    fn both_stated(
+        &self,
+        t: [usize; 3],
+        (line, _): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+        axis: usize,
+    ) -> Option<i8> {
+        let zero = nacre_exact::Rat::from_int(0);
+        if line.dir()[axis] != zero {
+            return None;
+        }
+        let w = t.iter().find_map(|&c| {
+            (flat_axis(self.jd, c) == Some(axis))
+                .then(|| class_coeffs_rat(self.jd, c))
+                .flatten()
+        })?;
+        // `−d/n − base` has the sign of `−(n·base + d)·n`.
+        let v = w[axis].checked_mul(line.base()[axis])?.checked_add(w[3])?;
+        let sign = |r: nacre_exact::Rat| i8::from(r > zero) - i8::from(r < zero);
+        Some(-sign(v) * sign(w[axis]))
     }
 }
 
@@ -173,12 +192,7 @@ pub(crate) fn pierce_between(
             }
         }
     };
-    // No class: these nodes are an edge's, ordered along it, and nothing here is held constant.
-    let kc = KeyCmp {
-        jd,
-        cyls,
-        flat: None,
-    };
+    let kc = KeyCmp { jd, cyls };
     let (ka, kb) = (key(a)?, key(b)?);
     let axis = (0..3).find(|&ax| matches!(kc.cmp(&ka, &kb, ax), Ok(s) if s != 0))?;
     // `+1` = "the first is larger" (`KeyCmp::cmp`), so `dir` is the a→b slope's sign on this axis and
@@ -257,11 +271,7 @@ fn arc_extremum_winding(
     use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
     use nacre_exact::{Orient, Rat};
     let width = || reject(RejectReason::WitnessNotRational);
-    let kc = KeyCmp {
-        jd,
-        cyls,
-        flat: flat_axis(jd, p),
-    };
+    let kc = KeyCmp { jd, cyls };
     let key = |i: usize| &keys[i];
     // `x` against `y`, axis by axis — `-1` when `x` is lexicographically the smaller, `0` when
     // they are the same point.
@@ -470,11 +480,7 @@ pub(crate) fn loop_winding(
         .map(|i| coord_key(jd, cyls, ring, i))
         .collect::<Result<_, BoolError>>()?;
     let key = |i: usize| &keys[i];
-    let kc = KeyCmp {
-        jd,
-        cyls,
-        flat: flat_axis(jd, p),
-    };
+    let kc = KeyCmp { jd, cyls };
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;

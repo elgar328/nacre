@@ -546,12 +546,18 @@ impl WorkingCyl {
         self.silent.iter().any(|&(c, _)| c == wc)
     }
 
+    /// Every class the gate proved this whole cylinder beside, with the side.
+    pub(crate) fn beside_all(&self) -> impl Iterator<Item = (usize, i8)> + '_ {
+        self.silent.iter().filter_map(|&(c, s)| match s {
+            Silence::Beside(side) => Some((c, side)),
+            Silence::Apart => None,
+        })
+    }
+
     /// The side of class `wc`'s plane this whole cylinder lies on, when the gate proved one.
     pub(crate) fn beside(&self, wc: usize) -> Option<i8> {
-        self.silent.iter().find_map(|&(c, s)| match s {
-            Silence::Beside(side) if c == wc => Some(side),
-            _ => None,
-        })
+        self.beside_all()
+            .find_map(|(c, side)| (c == wc).then_some(side))
     }
 }
 
