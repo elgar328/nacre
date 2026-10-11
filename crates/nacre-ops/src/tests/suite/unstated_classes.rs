@@ -109,8 +109,11 @@ use Want::{Built, Refused};
 struct Family {
     name: &'static str,
     build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
-    /// The gate passes, with this many nameless classes silent about every cylinder, or refuses.
-    gate: Result<usize, RejectReason>,
+    /// The gate passes, with this many (cylinder, nameless class) pairs silent by each arm —
+    /// `(beside, apart)`: the plane clears the cylinder, or only the class's faces stand apart —
+    /// or refuses. The counts are derived from the geometry, family by family, in the comments;
+    /// a family both arms could open is pinned to the arm that does, so either arm breaking shows.
+    gate: Result<(usize, usize), RejectReason>,
     /// Fuse, Cut, Common.
     want: [Want; 3],
 }
@@ -127,7 +130,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F0 box turned 90",
             build: |m| (plate_with_bore(m), turned_box(m, 90, [30, 30], 5.0, 10.0)),
-            gate: Ok(0),
+            gate: Ok((0, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -138,7 +141,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1d box turned 37, every wall plane clear of the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 10], 5.0, 10.0)),
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -149,7 +152,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1 box turned 37, a wall plane through the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 5.0, 10.0)),
-            gate: Ok(4),
+            gate: Ok((3, 1)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -160,7 +163,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1b box turned 37, above the plate",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 20.0, 5.0)),
-            gate: Ok(4),
+            gate: Ok((3, 1)),
             want: [Built(2, bored + 125.0), Built(1, bored), Built(0, 0.0)],
         },
         // A cube turned 37° about `x`, centred on the plate's top: by its point symmetry half of
@@ -172,7 +175,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let c = turn(m, c, Axis::X, 37, [0, 0, 0]);
                 (plate_with_bore(m), shift(m, c, [30, 30, 10]))
             },
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: [
                 Built(1, bored + 62.5),
                 Built(1, bored - 62.5),
@@ -188,7 +191,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 5.0, 10.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((3, 1)),
             want: [
                 Built(1, 16000.0 + 12.0 * pi + 125.0),
                 Built(1, 16000.0 + 12.0 * pi - 125.0),
@@ -205,7 +208,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 8.0, 10.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: refused,
         },
         // The box crosses the bore: a true irrational meet.
@@ -224,7 +227,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 10], 20.0, 5.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: [
                 Built(2, 40.0 * pi + 125.0),
                 Built(1, 40.0 * pi),
@@ -239,7 +242,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 20.0, 5.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((3, 1)),
             want: [
                 Built(2, 40.0 * pi + 125.0),
                 Built(1, 40.0 * pi),
@@ -256,7 +259,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: [
                 Built(1, rounded_area(1, 0) * 12.0 + 100.0),
                 Built(1, rounded_area(1, 0) * 12.0 - 150.0),
@@ -267,7 +270,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F16 four fillets and four bores, box turned 37 in the middle",
             build: |m| (rounded_plate(m, 4, 4), turned_box(m, 37, [0, 0], 6.0, 10.0)),
-            gate: Ok(4),
+            gate: Ok((32, 0)),
             want: [
                 Built(1, rounded_area(4, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(4, 4) * 12.0 - 150.0),
@@ -283,7 +286,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok(4),
+            gate: Ok((14, 2)),
             want: [
                 Built(1, rounded_area(0, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(0, 4) * 12.0 - 150.0),
@@ -323,7 +326,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let a = op(m, BoolKind::Fuse, p, rib);
                 (a, turned_box(m, 37, [10, 25], 5.0, 10.0))
             },
-            gate: Ok(4),
+            gate: Ok((4, 0)),
             want: refused,
         },
         // A world wall crossing the bore, fused with a turned box: the wall's face carries the
@@ -357,13 +360,16 @@ fn nameless_classes_beside_world_cylinders() {
             let (a, b) = (f.build)(&mut m);
             let gate = plane_index_setup(&m, a, b)
                 .map(|setup| {
-                    let n = setup.cyls.first().map_or(0, |cy| cy.silent.len());
-                    assert!(
-                        setup.cyls.iter().all(|cy| cy.silent.len() == n),
-                        "{}: every cylinder hears the same silence",
-                        f.name
-                    );
-                    n
+                    let mut by_arm = (0, 0);
+                    for cy in &setup.cyls {
+                        for &(_, s) in &cy.silent {
+                            match s {
+                                crate::planes::Silence::Beside(_) => by_arm.0 += 1,
+                                crate::planes::Silence::Apart => by_arm.1 += 1,
+                            }
+                        }
+                    }
+                    by_arm
                 })
                 .map_err(|e| match e {
                     BoolError::Rejected { reason, .. } => reason,

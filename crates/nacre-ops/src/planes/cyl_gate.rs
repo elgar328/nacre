@@ -1666,10 +1666,10 @@ fn faces_apart(
 /// **A box the lateral face lies in** — `[low, high]` on each world axis, rational and outward.
 ///
 /// The face's reach along each axis is [`lateral_reach`]'s, which knows the face's **arc**, not
-/// only its circle: a fillet is a quarter of its cylinder, and the circle's box around it is four
-/// times as wide — wide enough that a plane passing the quarter at a distance cuts the box (a
-/// 37° rib beside the fillet plate's corner: measured by hand, the circle's box reached past the
-/// rib's wall where the quarter's box cleared it by 1.6). A reach end carries one radical,
+/// only its circle: a fillet is a quarter of its cylinder, and the circle's box around it is twice
+/// as wide on each axis — wide enough that a plane passing the quarter at a distance cuts the box
+/// (a 37° rib beside the fillet plate's corner, worked by hand: the circle's box reached 1.4 past
+/// the rib's wall plane where the quarter's box cleared it by 1.6). A reach end carries one radical,
 /// `lo − √ρ²` or `hi + √ρ²`; it is rounded outward to a rational by [`sqrt_at_least`], so the box
 /// can only be wider than the face, never narrower. `None` is an overflow or a face with no span.
 pub(crate) fn lateral_box(

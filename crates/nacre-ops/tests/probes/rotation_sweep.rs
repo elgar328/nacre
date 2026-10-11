@@ -414,8 +414,9 @@ fn engine_sources() -> Vec<String> {
 /// ★ **The exceptions are listed, not implied.** The retry's value is picking *another witness*
 /// when one grazes, so the rule binds anything asking "is this ring inside that one". A caller
 /// asking about **one named vertex** has no other node to offer, and the retry would have nothing
-/// to retry with — the self-touch check is that (`point_in_ring(jd, cyls, wc, *t, rb)`), and it
-/// is spelled out below rather than left to a loose pattern.
+/// to retry with — the engine's own per-witness door (`nesting::ask`,
+/// `point_in_ring(jd, cyls, wc, *t, rb)`) is that, and it is spelled out below rather than left
+/// to a loose pattern.
 #[test]
 fn no_production_caller_reaches_past_the_shared_predicate() {
     let src = engine_sources();
@@ -444,7 +445,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
     }
     // The engine's own per-witness door is the one ring-vs-ring caller (`nesting::ask`,
     // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
-    // rays in 3D. The self-touch check asks about a single vertex — see this test's note.
+    // rays in 3D. That door asks about a single named vertex — see this test's note.
     offenders.retain(|o| !o.contains("point_in_ring(jd, cyls, wc, *t, rb)"));
     assert_eq!(
         offenders,
