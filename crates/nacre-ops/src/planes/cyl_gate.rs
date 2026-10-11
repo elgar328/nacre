@@ -125,6 +125,8 @@ pub(crate) fn cylinder_gate(
             realized: *cache,
             owner,
             shared: Vec::new(),
+            silent: Vec::new(),
+            boxes: Vec::new(),
         });
     }
 
@@ -137,6 +139,27 @@ pub(crate) fn cylinder_gate(
         "the cylinder class table is index-aligned with the class numbering"
     );
 
+    // ★ **A class with no world statement is asked only whether it stands clear** — the question
+    // every other arm below asks needs the class's rational coefficients, and this one needs none:
+    // the cylinder's lateral faces sit inside boxes the gate can state exactly
+    // ([`lateral_box`]), and a box whose corners all lie strictly on one side of the class's
+    // plane ([`WorkingPlane::misses`], the judge's filter, which needs only the class's witness
+    // triangle) puts every rim, ruling, chord, pierce point and arc of that cylinder on that side.
+    // The cylinder then has nothing to say on that class, and the class nothing to say about the
+    // cylinder; the roads that would ask read the record ([`WorkingCyl::silent`]). The boxes are
+    // built only when such a class is present — the common boolean pays nothing.
+    let unstated = geom.iter().any(|wp| wp.world.is_none());
+    if unstated {
+        for cyl in &mut cyls {
+            let fps = lateral_footprints(faces, cyl.surf);
+            cyl.boxes = fps
+                .iter()
+                .map(|fp| lateral_box(&cyl.def, fp))
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default();
+        }
+    }
+    let mut silent: Vec<Vec<usize>> = vec![Vec::new(); cyls.len()];
     for (ci, cyl) in cyls.iter().enumerate() {
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
@@ -146,19 +169,22 @@ pub(crate) fn cylinder_gate(
         // shape `wall_faces_clear` warns about two doc comments below.
         let mut footprints: Option<Vec<Footprint>> = None;
         for (c, wp) in geom.iter().enumerate() {
-            // ★ **A world description or nothing** — the question this loop asks is geometric
-            // (does this class's plane clear that cylinder), and both sides have to speak about
-            // the world. `rotated` is not that question: a plane whose truth carries a
-            // translation is *judged* through its chain and still has exact world coefficients,
-            // and that is the population the rulings road serves.
-            // A class with no world name is geometry; a `Wide` one is width — the world holds it,
-            // `Rat` does not.
+            // ★ **A world description, or the proof that none is needed** — the question this loop
+            // asks is geometric (does this class's plane clear that cylinder), and both sides have
+            // to speak about the world. `rotated` is not that question: a plane whose truth carries
+            // a translation is *judged* through its chain and still has exact world coefficients,
+            // and that is the population the rulings road serves. A class with no world name
+            // passes only as silent ([`WorkingCyl::clear_of`] — the whole cylinder on one side of
+            // it), else it is geometry; a `Wide` one is width — the world holds it, `Rat` does not.
             let Some(coeffs) = wp.world_rat() else {
-                return Err(if wp.world.is_none() {
-                    undecided()
-                } else {
-                    reject(RejectReason::WitnessNotRational)
-                });
+                if wp.world.is_some() {
+                    return Err(reject(RejectReason::WitnessNotRational));
+                }
+                if cyl.clear_of(wp).is_none() {
+                    return Err(undecided());
+                }
+                silent[ci].push(c);
+                continue;
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             // A perpendicular cut is the circle population, and it passes — **including a cap
@@ -323,6 +349,16 @@ pub(crate) fn cylinder_gate(
             }
         }
     }
+
+    for (cyl, s) in cyls.iter_mut().zip(silent) {
+        cyl.silent = s;
+    }
+    debug_assert!(
+        cyls.iter().all(|cyl| (0..geom.len())
+            .filter(|&c| geom[c].world.is_none())
+            .all(|c| cyl.is_silent(c))),
+        "every nameless class is silent about every cylinder, or the gate refused"
+    );
 
     // The oblique record's one reader today (see the arm above).
     if !oblique.is_empty() {
@@ -1467,6 +1503,81 @@ fn lateral_reach(
         rho2_lo,
         rho2_hi,
     })
+}
+
+/// **A box the lateral face lies in** — `[low, high]` on each world axis, rational and outward.
+///
+/// The face's reach along each axis is [`lateral_reach`]'s, which knows the face's **arc**, not
+/// only its circle: a fillet is a quarter of its cylinder, and the circle's box around it is four
+/// times as wide — wide enough that a plane passing the quarter at a distance cuts the box (a
+/// 37° rib beside the fillet plate's corner: measured by hand, the circle's box reached past the
+/// rib's wall where the quarter's box cleared it by 1.6). A reach end carries one radical,
+/// `lo − √ρ²` or `hi + √ρ²`; it is rounded outward to a rational by [`sqrt_at_least`], so the box
+/// can only be wider than the face, never narrower. `None` is an overflow or a face with no span.
+pub(crate) fn lateral_box(
+    def: &nacre_topo::CylinderDef,
+    fp: &Footprint,
+) -> Option<[[nacre_exact::Rat; 3]; 2]> {
+    use nacre_exact::Rat;
+    let zero = Rat::from_int(0);
+    let mut lo = [zero; 3];
+    let mut hi = [zero; 3];
+    for k in 0..3 {
+        let mut d = [zero; 3];
+        d[k] = Rat::from_int(1);
+        let reach = lateral_reach(def, fp, &d)?;
+        lo[k] = reach.lo.checked_sub(sqrt_at_least(reach.rho2_lo)?)?;
+        hi[k] = reach.hi.checked_add(sqrt_at_least(reach.rho2_hi)?)?;
+    }
+    Some([lo, hi])
+}
+
+/// A rational `u ≥ √x`, near it — the `f64` root, then checked exactly (`u² ≥ x`) and widened
+/// until the check holds. `None` for a negative `x` or an overflow.
+fn sqrt_at_least(x: nacre_exact::Rat) -> Option<nacre_exact::Rat> {
+    use nacre_exact::Rat;
+    let zero = Rat::from_int(0);
+    if x == zero {
+        return Some(zero);
+    }
+    if x < zero {
+        return None;
+    }
+    let mut u = Rat::try_from_f64(x.to_f64().sqrt())?;
+    // One part in 2³⁰ above: the `f64` root is within an ulp, so one widening settles it, and the
+    // loop is only the proof.
+    let widen = Rat::new((1 << 30) + 1, 1 << 30)?;
+    for _ in 0..8 {
+        if u.checked_mul(u)? >= x {
+            return Some(u);
+        }
+        u = u.checked_mul(widen)?;
+    }
+    None
+}
+
+impl WorkingCyl {
+    /// **The side of `wp`'s plane every lateral face of this cylinder lies on**, strictly —
+    /// [`WorkingPlane::misses`] over the corners of all the faces' boxes at once (one cylinder can
+    /// hold two faces apart along its axis, and a plane between them has no one side). `None`
+    /// when there are no boxes, a corner is not proved off the plane, or the corners straddle it.
+    pub(crate) fn clear_of(&self, wp: &WorkingPlane) -> Option<i8> {
+        if self.boxes.is_empty() {
+            return None;
+        }
+        let corners: Vec<nacre_judge::WitnessPoint> = self
+            .boxes
+            .iter()
+            .flat_map(|[lo, hi]| {
+                (0..8).map(move |bits: usize| {
+                    nacre_judge::WitnessPoint::at(std::array::from_fn(|k| {
+                        if bits >> k & 1 == 0 { lo[k] } else { hi[k] }
+                    }))
+                })
+            })
+            .collect();
+        wp.misses(&corners)
+    }
 }
 
 /// **Do two reaches provably miss each other?** — one lies wholly beyond the other, at either end.

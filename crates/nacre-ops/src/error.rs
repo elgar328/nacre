@@ -441,15 +441,18 @@ pub enum RejectReason {
     CylinderPairContact,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** because a
     /// description cannot be put in the world in one frame — a class with no world name (a
-    /// rotated one), a cylinder on a chain that does not fold (its def is pre-motion) — or because
-    /// a class's coefficients miss its own face. **Geometry, not width**: a description the world
-    /// holds and `Rat` does not is [`Self::WitnessNotRational`]. Conservative honest refusal, never
-    /// a guess.
+    /// rotated one) the gate could not prove clear of the cylinder, a cylinder on a chain that
+    /// does not fold (its def is pre-motion) — or because a class's coefficients miss its own face.
+    /// **Geometry, not width**: a description the world holds and `Rat` does not is
+    /// [`Self::WitnessNotRational`]. Conservative honest refusal, never a guess.
     ///
-    /// ★ The gate's own name, raised nowhere past it: what the chart cannot read it names by
-    /// cause — two sides that disagree are [`Self::LabelConflict`], a silent cell takes why its
-    /// ends are silent (`cyl_chart::read_cell`), and a class table and face rows that disagree
-    /// are [`Self::CylinderStagesDisagree`].
+    /// ★ The gate's own name, and past the gate only where its record reaches: a class with no
+    /// world name that the gate passed as silent about the cylinders (`WorkingCyl::silent`) and
+    /// that a later road meets without the description it needs — the circle nesting, the
+    /// coordinate ray — refuses there by this name, because the cause is the gate's. What the chart
+    /// cannot read it names by cause — two sides that disagree are [`Self::LabelConflict`], a
+    /// silent cell takes why its ends are silent (`cyl_chart::read_cell`), and a class table and
+    /// face rows that disagree are [`Self::CylinderStagesDisagree`].
     CylinderGateUndecided,
     /// **A tangent line another plane holds, and not as an edge** — the population gate wrote a
     /// tangency row (a wall plane exactly `r` from a cylinder's axis, a wall face touching the line
@@ -643,7 +646,8 @@ pub enum RejectReason {
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class whose world name is `Wide`, or a
     /// coordinate or coefficient past `Rat`'s ceiling. (A class with no world statement at all is
-    /// geometry, [`Self::CylinderGateUndecided`], refused at the gate before these roads run.)
+    /// geometry, [`Self::CylinderGateUndecided`]: refused at the gate unless proved clear of every
+    /// cylinder, and named so where a road meets such a class it cannot answer without one.)
     ///
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the

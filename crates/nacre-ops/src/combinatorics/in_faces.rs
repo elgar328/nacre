@@ -78,6 +78,22 @@ pub(crate) fn point_in_faces_rat(
             }
             CompSurf::Plane(q) => *q,
         };
+        // ★ **A face this road cannot state is asked only whether the ray misses it** — its class,
+        // or a corner of its outline, is one the gate proved silent about the cylinders: a class
+        // with no world statement, whose coefficients and corners have no rational spelling. The
+        // ray misses the face when every corner lies strictly to one side of a plane through the
+        // ray, or strictly behind its origin ([`ray_misses_face`]); what that cannot show, this
+        // road cannot answer, and the reason is the gate's.
+        let unstated = cyls.iter().any(|cy| cy.is_silent(q))
+            || std::iter::once(&f.outer)
+                .chain(&f.inner)
+                .any(|b| matches!(b, BoundEdges::Ring(r) if names_a_silent_class(cyls, r)));
+        if unstated {
+            if ray_misses_face(jd, &line, &ahead, f) {
+                continue;
+            }
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        }
         let coeffs = class_coeffs_rat(jd, q).ok_or_else(not_rational)?;
         let n = [coeffs[0], coeffs[1], coeffs[2]];
         let nd = nacre_exact::dot3_rat(&n, dir).ok_or_else(not_rational)?;
@@ -177,6 +193,39 @@ pub(crate) fn point_in_faces_rat(
     Ok(Some(count % 2 == 1))
 }
 
+/// **Does the ray miss this face, provably?** — the face's outline corners, in the judge's
+/// interval arithmetic ([`ring_corners_hp`]), all strictly on one side of either plane through the
+/// ray (`line`: the ray's line misses the face's convex hull), or all strictly on the positive side
+/// of `ahead` (behind the origin, the half this road does not count). `false` — not shown, not
+/// "crossed" — for an outline that is not a straight ring or a corner the precision could not
+/// separate.
+fn ray_misses_face(
+    jd: &Judge<'_, WorkingPlane>,
+    line: &[[nacre_exact::Rat; 4]; 2],
+    ahead: &[nacre_exact::Rat; 4],
+    f: &CompFace,
+) -> bool {
+    let BoundEdges::Ring(r) = &f.outer else {
+        return false;
+    };
+    let Some(corners) = ring_corners_hp(jd, r) else {
+        return false;
+    };
+    let prec = jd.standard.prec;
+    let one_side = |plane: &[nacre_exact::Rat; 4]| {
+        let signs: Vec<Option<bool>> = corners
+            .iter()
+            .map(|x| plane_sign_hp(plane, x, prec))
+            .collect();
+        signs.iter().all(|s| *s == Some(true)) || signs.iter().all(|s| *s == Some(false))
+    };
+    one_side(&line[0])
+        || one_side(&line[1])
+        || corners
+            .iter()
+            .all(|x| plane_sign_hp(ahead, x, prec) == Some(true))
+}
+
 /// **Is `p` strictly inside this circle?** — `None` when it lies *on* the circle (non-generic,
 /// abandon) or when the arithmetic could not answer.
 ///
@@ -200,23 +249,29 @@ fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> Op
 /// every failure this can meet is arithmetic, and arithmetic that cannot answer is an abstention.
 fn curved_count(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     a: usize,
     b: usize,
     c: usize,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
 ) -> Result<Option<usize>, BoolError> {
-    // ★ The cylinder gate refuses any class that is rotated or has no narrow rational name
-    // (`planes`), so in a boolean that has a cylinder these are always `Some`. A `None` here
-    // would mean that gate let something through — assert it, then abstain rather than guess.
+    // ★ **A ray on a plane the whole cylinder stands clear of crosses none of it.** The ray lies in
+    // both `a` and `b`; if every lateral face of this cylinder is strictly on one side of either
+    // ([`crate::planes::WorkingCyl::clear_of`] — the boxes the gate proved its silence against),
+    // the count is zero, whatever the planes' descriptions. A class with no world statement
+    // reaches here only that way: the gate passed it as silent, and nothing below can state it.
+    if let Some(cy) = cyls.iter().find(|cy| cy.def == *def)
+        && (cy.clear_of(&jd.planes[a]).is_some() || cy.clear_of(&jd.planes[b]).is_some())
+    {
+        return Ok(Some(0));
+    }
+    // A class with no rational description and no such proof: this ray cannot be counted, and the
+    // caller casts the next one.
     let Some(((ca, cb), cc)) = class_coeffs_rat(jd, a)
         .zip(class_coeffs_rat(jd, b))
         .zip(class_coeffs_rat(jd, c))
     else {
-        debug_assert!(
-            false,
-            "the cylinder gate is supposed to make these rational"
-        );
         return Ok(None);
     };
     // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
@@ -480,7 +535,7 @@ pub(crate) fn point_in_component(
                 let BoundEdges::Lateral(loops) = &f.outer else {
                     return Ok(None);
                 };
-                match curved_count(jd, a, b, c, def, loops)? {
+                match curved_count(jd, cyls, a, b, c, def, loops)? {
                     Some(k) => {
                         count += k;
                         continue;

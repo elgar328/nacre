@@ -108,10 +108,11 @@ fn trace_transversal_face(
             // annulus × box rows). One road for both.
             //
             // Any other class misses or is left silent: another ⊥ class is parallel to the disk's
-            // own and meets it nowhere, and a ∥-axis wall the gate did not record either clears
-            // the disk (the gate's plane test) or cuts an **irrational** chord this road cannot
-            // state yet (the face-cleared family — its wrongly-silent trace lands in cells no
-            // face reaches, today's recorded state). A disk the wall clears has holes the wall
+            // own and meets it nowhere, a ∥-axis wall the gate did not record either clears the
+            // disk (the gate's plane test) or cuts an **irrational** chord this road cannot state
+            // yet (the face-cleared family — its wrongly-silent trace lands in cells no face
+            // reaches, today's recorded state), and a class with no world statement is one the
+            // gate proved clear of the whole cylinder. A disk the wall clears has holes the wall
             // clears too, so the silence covers the holes as well.
             //
             // `None` is also how an *unnamed* ring arrives, but not for a face the tracer

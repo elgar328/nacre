@@ -88,14 +88,26 @@ fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle
     shift(m, b, [c[0], c[1], 0])
 }
 
-/// What the gate says, and what each kind answers: `(solids, total volume)` or the refusal.
-type Answer = Result<(usize, f64), RejectReason>;
+/// What one kind answers.
+#[derive(Clone, Copy, Debug)]
+enum Want {
+    /// This many solids of this total volume, `validate` clean.
+    Built(usize, f64),
+    /// Refused by this name.
+    Refused(RejectReason),
+    /// Refused, by a name the scoreboard does not pin yet: the gate passes the family and a road
+    /// that reads the gate's recorded side has not been opened.
+    RefusedUnpinned,
+}
+use Want::{Built, Refused, RefusedUnpinned};
+
 struct Family {
     name: &'static str,
     build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
-    gate: Result<(), RejectReason>,
+    /// The gate passes, with this many nameless classes silent about every cylinder, or refuses.
+    gate: Result<usize, RejectReason>,
     /// Fuse, Cut, Common.
-    want: [Answer; 3],
+    want: [Want; 3],
 }
 
 #[test]
@@ -103,26 +115,31 @@ fn nameless_classes_beside_world_cylinders() {
     use RejectReason::CylinderGateUndecided as Undecided;
     let pi = std::f64::consts::PI;
     let bored = 16000.0 - 40.0 * pi;
-    let refused = [Err(Undecided), Err(Undecided), Err(Undecided)];
+    let refused = [Refused(Undecided); 3];
+    let unpinned = [RefusedUnpinned; 3];
     let fams = [
         // The control: a quarter turn keeps every name, and the box sits on the plate far from
         // the bore — it overlaps the plate over `z ∈ [5, 10]`, 125.
         Family {
             name: "F0 box turned 90",
             build: |m| (plate_with_bore(m), turned_box(m, 90, [30, 30], 5.0, 10.0)),
-            gate: Ok(()),
+            gate: Ok(0),
             want: [
-                Ok((1, bored + 125.0)),
-                Ok((1, bored - 125.0)),
-                Ok((1, 125.0)),
+                Built(1, bored + 125.0),
+                Built(1, bored - 125.0),
+                Built(1, 125.0),
             ],
         },
         // Far from the bore, and every wall plane clears it as well.
         Family {
             name: "F1d box turned 37, every wall plane clear of the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 10], 5.0, 10.0)),
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(1, bored + 125.0),
+                Built(1, bored - 125.0),
+                Built(1, 125.0),
+            ],
         },
         // Far from the bore, but one wall's plane, extended, runs through it (1.43 from the axis).
         Family {
@@ -147,8 +164,12 @@ fn nameless_classes_beside_world_cylinders() {
                 let c = turn(m, c, Axis::X, 37, [0, 0, 0]);
                 (plate_with_bore(m), shift(m, c, [30, 30, 10]))
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(1, bored + 62.5),
+                Built(1, bored - 62.5),
+                Built(1, 62.5),
+            ],
         },
         // A pin of radius 2 on the plate; one wall plane of the far box cuts it.
         Family {
@@ -172,7 +193,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 8.0, 10.0),
                 )
             },
-            gate: Err(Undecided),
+            gate: Ok(4),
             want: refused,
         },
         // The box crosses the bore: a true irrational meet.
@@ -191,8 +212,12 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 10], 20.0, 5.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: [
+                Built(2, 40.0 * pi + 125.0),
+                Built(1, 40.0 * pi),
+                Built(0, 0.0),
+            ],
         },
         Family {
             name: "F11b lone cylinder, box turned 37 above, a wall plane through it",
@@ -215,15 +240,15 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: unpinned,
         },
         // The playground's example 003 shape: four fillets, four bores, the box in the middle.
         Family {
             name: "F16 four fillets and four bores, box turned 37 in the middle",
             build: |m| (rounded_plate(m, 4, 4), turned_box(m, 37, [0, 0], 6.0, 10.0)),
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: unpinned,
         },
         // Four bores and no fillet.
         Family {
@@ -270,8 +295,8 @@ fn nameless_classes_beside_world_cylinders() {
                 let a = op(m, BoolKind::Fuse, p, rib);
                 (a, turned_box(m, 37, [10, 25], 5.0, 10.0))
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok(4),
+            want: unpinned,
         },
         // A world wall crossing the bore, fused with a turned box: the wall's face carries the
         // box's irrational corners.
@@ -303,7 +328,15 @@ fn nameless_classes_beside_world_cylinders() {
             let mut m = Model::new();
             let (a, b) = (f.build)(&mut m);
             let gate = plane_index_setup(&m, a, b)
-                .map(|_| ())
+                .map(|setup| {
+                    let n = setup.cyls.first().map_or(0, |cy| cy.silent.len());
+                    assert!(
+                        setup.cyls.iter().all(|cy| cy.silent.len() == n),
+                        "{}: every cylinder hears the same silence",
+                        f.name
+                    );
+                    n
+                })
                 .map_err(|e| match e {
                     BoolError::Rejected { reason, .. } => reason,
                     other => panic!(
@@ -320,7 +353,7 @@ fn nameless_classes_beside_world_cylinders() {
             let mut m = Model::new();
             let (a, b) = (f.build)(&mut m);
             match (boolean(&mut m, kind, a, b), want) {
-                (Ok(out), Ok((n, v))) => {
+                (Ok(out), Built(n, v)) => {
                     assert_eq!(out.len(), *n, "{} {kind:?}: solids", f.name);
                     m.rebuild_adjacency();
                     let issues = nacre_validate::validate(&m);
@@ -335,9 +368,10 @@ fn nameless_classes_beside_world_cylinders() {
                         f.name
                     );
                 }
-                (Err(BoolError::Rejected { reason, .. }), Err(r)) => {
+                (Err(BoolError::Rejected { reason, .. }), Refused(r)) => {
                     assert_eq!(&reason, r, "{} {kind:?}: the refusal's name", f.name);
                 }
+                (Err(BoolError::Rejected { .. }), RefusedUnpinned) => {}
                 (got, _) => panic!("{} {kind:?}: {got:?}, wanted {want:?}", f.name),
             }
         }

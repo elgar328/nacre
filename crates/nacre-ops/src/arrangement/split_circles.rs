@@ -34,26 +34,27 @@ pub(super) fn split_circles(
     if circles.is_empty() {
         return Ok(None);
     }
-    // ★★ **Both ends of every segment, located on that segment's own line, once** — the hoist
+    // ★★ **Both ends of a segment, located on that segment's own line, once** — the hoist
     // `split_at_crossings` makes, for the same reason and with the same obligation: each pair is
     // located for `(wc, sg.wall)`, which is the pair [`combinatorics::closed_contains`] must be
-    // called with below.
-    let seg_ends: Vec<[combinatorics::OnLine; 2]> = segs
-        .iter()
-        .map(|s| {
-            let mut it = (0..2).map(|k| {
-                combinatorics::on_line(
-                    jd,
-                    cyls,
-                    wc,
-                    s.wall,
-                    Split::of(s.end[k], s.end_h[k]).on(wc, s.wall),
-                )
-                .ok_or_else(undecided)
-            });
-            Ok([it.next().unwrap()?, it.next().unwrap()?])
-        })
-        .collect::<Result<_, BoolError>>()?;
+    // called with below. Located when a crossing first asks, not for every segment: a segment on a
+    // class the gate proved silent about the circle's cylinder is never asked, and its class may
+    // have no description to locate it by.
+    let locate_ends = |s: &MergedSeg| -> Result<[combinatorics::OnLine; 2], BoolError> {
+        let mut it = (0..2).map(|k| {
+            combinatorics::on_line(
+                jd,
+                cyls,
+                wc,
+                s.wall,
+                Split::of(s.end[k], s.end_h[k]).on(wc, s.wall),
+            )
+            .ok_or_else(undecided)
+        });
+        Ok([it.next().unwrap()?, it.next().unwrap()?])
+    };
+    let mut seg_ends: Vec<Option<[combinatorics::OnLine; 2]>> =
+        (0..segs.len()).map(|_| None).collect();
     // Which nodes land on each circle, and which on each segment. Collected together because one
     // crossing is a point of both — splitting only one of them would leave the other's edge running
     // through a vertex it does not have.
@@ -86,6 +87,11 @@ pub(super) fn split_circles(
             // identity: two spellings of one point are refused upstream, not tolerated here.
             // ☑ Measured unexercised.
             if sg.end[0] == sg.end[1] {
+                continue;
+            }
+            // A segment on a class the gate proved clear of this cylinder misses its circle — the
+            // gate's record, asked before anything the segment's class would have to describe.
+            if cyls.get(circ.cyl).is_some_and(|cy| cy.is_silent(sg.wall)) {
                 continue;
             }
             // ★★★★★ **The cheap rejection runs where it can be formed, and skipping it asks
@@ -129,20 +135,15 @@ pub(super) fn split_circles(
                 let at =
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;
+                if seg_ends[si].is_none() {
+                    seg_ends[si] = Some(locate_ends(sg)?);
+                }
+                let ends = seg_ends[si].as_ref().expect("located just above");
                 #[cfg(test)]
                 if let [Some(p0), Some(p1)] = &seg_coords[si] {
-                    extent_probe::against_the_fences(
-                        jd,
-                        sg,
-                        [p0, p1],
-                        n,
-                        &circ.def,
-                        &at,
-                        &seg_ends[si],
-                        wc,
-                    );
+                    extent_probe::against_the_fences(jd, sg, [p0, p1], n, &circ.def, &at, ends, wc);
                 }
-                if !combinatorics::closed_contains(jd, wc, sg.wall, &at, &seg_ends[si])
+                if !combinatorics::closed_contains(jd, wc, sg.wall, &at, ends)
                     .ok_or_else(undecided)?
                 {
                     continue;

@@ -3,9 +3,9 @@ use super::*;
 /// **per angular extent** ([`CircleSpan`]) rather than once for the whole circle.
 ///
 /// The empty answer is "this class leaves nothing here": a non-⊥ class carries no circle at all,
-/// and a ⊥ class beyond both rims never meets the face. `Err` is "the face cannot answer" (no rim
-/// span, or a class with no exact description the gate would already have refused) — declining
-/// beats a silently missing circle, which would corrupt every label on the class.
+/// a ⊥ class beyond both rims never meets the face, and a class the gate proved silent about the
+/// cylinder stands clear of it. `Err` is "the face cannot answer" (no rim span) — declining beats a
+/// silently missing circle, which would corrupt every label on the class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CylOnClass {
     /// The class cuts the face in two: the solid straddles it here.
@@ -24,6 +24,11 @@ pub(super) fn circle_on_class(
     wc: usize,
     cyl: usize,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
+    // A class the gate proved clear of this cylinder carries none of it — the gate's record, not a
+    // question this road could ask of a class with no world statement.
+    if cyls.get(cyl).is_some_and(|cy| cy.is_silent(wc)) {
+        return Ok(Vec::new());
+    }
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
     let Some(world) = jd.planes[wc].world.as_ref() else {

@@ -643,6 +643,8 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 realized: *cache,
                 owner: crate::planes::SolidSide::A,
                 shared: Vec::new(),
+                silent: Vec::new(),
+                boxes: Vec::new(),
             }
         })
         .collect();

@@ -513,6 +513,23 @@ pub(crate) struct WorkingCyl {
     /// record ([`SharedRuling`]), carried with the class like `owner` so every road that holds
     /// the table reads it rather than deciding it again.
     pub(crate) shared: Vec<SharedRuling>,
+    /// **The plane classes with no world statement this cylinder is silent about** — the gate's
+    /// record ([`cylinder_gate`]): each was proved to stand clear of every lateral face, so
+    /// nothing of this cylinder (rim, ruling, chord, pierce point, arc) reaches its plane, and the
+    /// roads that would ask the class's coefficients about this cylinder answer from the record
+    /// instead. Every nameless class of the boolean is here, or the gate refused.
+    pub(crate) silent: Vec<usize>,
+    /// **The lateral faces' boxes**, one per face — `[low, high]` corners, rational and outward
+    /// ([`lateral_box`]). The gate's silence is proved against them and a ray proves its miss
+    /// against the same ones. Built only when a nameless class asks; empty otherwise.
+    pub(crate) boxes: Vec<[[nacre_exact::Rat; 3]; 2]>,
+}
+
+impl WorkingCyl {
+    /// Whether the gate proved class `wc` silent about this cylinder.
+    pub(crate) fn is_silent(&self, wc: usize) -> bool {
+        self.silent.contains(&wc)
+    }
 }
 
 /// **The interval a lateral face reaches along a direction `d`**, in `d·p` units.

@@ -142,6 +142,8 @@ fn armed_through_boss_z(
             realized: *cache,
             owner: crate::planes::SolidSide::A,
             shared: Vec::new(),
+            silent: Vec::new(),
+            boxes: Vec::new(),
         });
     }
     let wc = setup
@@ -388,6 +390,8 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         realized: *realized,
         owner: crate::planes::SolidSide::A,
         shared: Vec::new(),
+        silent: Vec::new(),
+        boxes: Vec::new(),
     }];
     let rows = crate::planes::collect_planes(&m, block).expect("the block's face table");
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&rows));

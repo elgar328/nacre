@@ -229,6 +229,12 @@ enum Said {
     /// The value needed to ask could not be formed. The next witness may still answer, but if
     /// none does, the honest name is the arithmetic one and not "no clear ray".
     Unformed,
+    /// The question reads a plane class the gate proved silent about the cylinders
+    /// ([`crate::planes::WorkingCyl::silent`]) — a class with no world statement — and nothing
+    /// here could answer it without one. Not [`Said::Unformed`]: the same arithmetic also fails on
+    /// a `Wide` name or an overflow, and those are width, where this is the gate's own
+    /// undecidedness carried to the place that met it.
+    Silent,
     /// **The road cannot read the target**, whichever of its witnesses asks — the ray road against
     /// a ring with a pierce corner, or a two-edge lens. Not [`Said::Abstain`]: that is one
     /// witness's circumstance and the next witness of the same road is its remedy; here every
@@ -329,9 +335,10 @@ fn rim_and_centre<'a>(
     // ☑ The guard is total ([`combinatorics::class_carries_circle`]) and fires nowhere today; the
     // gate is what empties its population, and this is what says so where the point is made.
     // ⚠ `is_some_and` folds a *second* cause in — a class with no rational description also loses
-    // its rim. That population is empty for the same reason (the gate refuses such a class outright,
-    // `RejectReason::CylinderGateUndecided`), and if it ever stops being empty the cell falls to
-    // `RingHasNoWitness` rather than to a wrong answer, which is the direction this kernel takes.
+    // its rim. That population is empty too: such a class passes the gate only as silent about
+    // every cylinder (`WorkingCyl::silent`), and a silent class carries no circle. If it ever stops
+    // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer, which is the
+    // direction this kernel takes.
     let carries = combinatorics::class_coeffs_rat(jd, wc)
         .is_some_and(|c| combinatorics::class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
     // Rim witnesses at `centre + r·u` need the radius itself; a cell whose squared radius has no
@@ -511,10 +518,30 @@ fn ask(
             Ok(Some(false)) => Said::Out,
             Ok(None) => Said::Abstain,
             // A **value** that could not be formed — the class has no rational description. Not
-            // an abstention: no coordinate witness will do better on this class.
+            // an abstention: no coordinate witness will do better on this class. A ring whose
+            // corners a silent class names has no rational corners, and is still asked whether
+            // the point stands outside its corners' reach — the one question its corners'
+            // intervals answer.
+            Err(_) if combinatorics::names_a_silent_class(cyls, rb) => {
+                if outside_ring_hull(jd, p, rb) {
+                    Said::Out
+                } else {
+                    Said::Silent
+                }
+            }
             Err(_) => Said::Unformed,
         },
         (Where::Named(t), Cell::Disk(def)) => {
+            // ★ **A corner on a plane the gate proved clear of this disk's cylinder is outside the
+            // disk, exactly**: the corner lies on that plane, and the whole cylinder — this disk
+            // among its sections — lies strictly to one side of it.
+            let silent = cyls
+                .iter()
+                .find(|cy| cy.def == *def)
+                .is_some_and(|cy| t.iter().any(|&k| cy.is_silent(k)));
+            if silent {
+                return Ok(Said::Out);
+            }
             match combinatorics::node_coords_rat(
                 jd,
                 NodeId::three_planes(combinatorics::Canon3::three(*t)),
@@ -524,6 +551,26 @@ fn ask(
             }
         }
         (Where::Coord(p), Cell::Disk(def)) => radial(p, def),
+    })
+}
+
+/// **Is `p` outside the box of a straight ring's corners?** — then it is outside the ring, whose
+/// every point lies in its corners' convex hull. The corners come in the judge's interval
+/// arithmetic ([`combinatorics::ring_corners_hp`]) and are compared with `p` axis by axis; a
+/// comparison whose interval straddles zero proves nothing, and the answer is then `false`.
+fn outside_ring_hull(
+    jd: &Judge<'_, WorkingPlane>,
+    p: &[nacre_exact::Rat; 3],
+    rb: &[combinatorics::RingEdge],
+) -> bool {
+    let Some(corners) = combinatorics::ring_corners_hp(jd, rb) else {
+        return false;
+    };
+    let prec = jd.standard.prec;
+    (0..3).any(|k| {
+        let pk = nacre_exact::HpBounded::of_rat(p[k], prec);
+        let signs: Vec<Option<bool>> = corners.iter().map(|x| pk.sub(&x[k], prec).sign()).collect();
+        signs.iter().all(|s| *s == Some(true)) || signs.iter().all(|s| *s == Some(false))
     })
 }
 
@@ -562,7 +609,7 @@ fn inside(
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
     // measured, not assumed: where both roads can answer they agree
     // (`the_two_roads_never_disagree`).
-    let (mut asked, mut unformed, mut declined) = (false, false, false);
+    let (mut asked, mut unformed, mut declined, mut silent) = (false, false, false, false);
     #[cfg(test)]
     let mut tally = nesting_probe::DeclineTally::default();
     for w in witnesses(jd, cyls, wc, a) {
@@ -588,6 +635,7 @@ fn inside(
         }
         match ask(jd, cyls, wc, &p, b)? {
             Said::Unformed => unformed = true,
+            Said::Silent => silent = true,
             Said::Abstain => asked = true,
             Said::Declines => {
                 asked = true;
@@ -604,7 +652,9 @@ fn inside(
             Said::In => return Ok(!inside(jd, cyls, wc, b, a, false)?),
         }
     }
-    Err(reject(if unformed {
+    Err(reject(if silent {
+        RejectReason::CylinderGateUndecided
+    } else if unformed {
         RejectReason::WitnessNotRational
     } else if asked {
         RejectReason::NoClearRay
@@ -717,7 +767,7 @@ pub(crate) fn cell_in_cell(
             let decided = |w: Where| match ask(jd, cyls, wc, &w, Cell::Ring(rb)) {
                 Ok(Said::In) => Some(true),
                 Ok(Said::Out) => Some(false),
-                Ok(Said::Abstain | Said::Unformed | Said::Declines) | Err(_) => None,
+                Ok(Said::Abstain | Said::Unformed | Said::Silent | Said::Declines) | Err(_) => None,
             };
             let by_name = ra
                 .iter()

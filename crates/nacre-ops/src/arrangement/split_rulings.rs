@@ -183,6 +183,16 @@ pub(super) fn split_rulings(
         if sg.end[0] == sg.end[1] {
             continue;
         }
+        // A segment on a class the gate proved clear of a cylinder cannot reach its rulings — the
+        // gate's record, asked before anything this segment's class would have to describe.
+        let here: Vec<(usize, &nacre_topo::CylinderDef)> = cyl_list
+            .iter()
+            .copied()
+            .filter(|&(cyl, _)| !cyls.get(cyl).is_some_and(|cy| cy.is_silent(sg.wall)))
+            .collect();
+        if here.is_empty() {
+            continue;
+        }
         // Both ends on this segment's own line, once — the pair `closed_contains` is asked with.
         let mut it = (0..2).map(|k| {
             combinatorics::on_line(
@@ -195,7 +205,7 @@ pub(super) fn split_rulings(
             .ok_or_else(undecided)
         });
         let seg_ends = [it.next().unwrap()?, it.next().unwrap()?];
-        for &(cyl, def) in &cyl_list {
+        for &(cyl, def) in &here {
             let shared = shared_here
                 .iter()
                 .any(|&(t, c, _)| t == sg.wall && c == cyl);

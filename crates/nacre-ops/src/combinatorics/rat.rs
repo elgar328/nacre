@@ -185,6 +185,59 @@ pub(crate) fn node_coords_rat(
     }
 }
 
+/// Whether a ring's corners name a class the gate proved silent about some cylinder — the rings
+/// whose corners have no rational coordinates for the gate's own reason
+/// ([`crate::planes::WorkingCyl::silent`]).
+pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[RingEdge]) -> bool {
+    rb.iter().any(|e| {
+        three_plane_name(e.node)
+            .is_some_and(|t| t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))))
+    })
+}
+
+/// **A straight ring's corners, met in the judge's own interval arithmetic** — for the rings whose
+/// corners [`node_coords_rat`] cannot give: a turned wall names them, and its class has no world
+/// statement. Each corner's three classes are taken through their witness triangles
+/// (`nacre_judge::plane_hp`) and met (`nacre_judge::meet_hp`) at the model's precision, so a corner
+/// is an interval that holds the true point; a judging question reads it the way it reads every
+/// other — in the judge's vocabulary, not through a realization door. `None` for a ring with an arc
+/// or a pierce corner (an arc bulges past its ends, so its corners do not bound it) and for a meet
+/// the precision could not separate.
+pub(crate) fn ring_corners_hp(
+    jd: &Judge<'_, WorkingPlane>,
+    rb: &[RingEdge],
+) -> Option<Vec<[nacre_exact::HpBounded; 3]>> {
+    if ring_is_mixed(rb) {
+        return None;
+    }
+    let prec = jd.standard.prec;
+    let plane = |k: usize| {
+        let w = &jd.planes[k].tri_pt3;
+        nacre_judge::plane_hp(&w[0], &w[1], &w[2], prec)
+    };
+    rb.iter()
+        .map(|e| {
+            let t = three_plane_name(e.node)?;
+            nacre_judge::meet_hp(&[plane(t[0]), plane(t[1]), plane(t[2])], prec)
+        })
+        .collect()
+}
+
+/// **The sign of a rational plane `a·x + b·y + c·z + d` at an interval point** — `Some(true)` when
+/// positive, `None` when the interval straddles zero.
+pub(crate) fn plane_sign_hp(
+    plane: &[nacre_exact::Rat; 4],
+    x: &[nacre_exact::HpBounded; 3],
+    prec: usize,
+) -> Option<bool> {
+    use nacre_exact::HpBounded;
+    let mut v = HpBounded::of_rat(plane[3], prec);
+    for k in 0..3 {
+        v = v.add(&HpBounded::of_rat(plane[k], prec).mul(&x[k], prec), prec);
+    }
+    v.sign()
+}
+
 /// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of
 /// [`node_coords_rat`] and [`pierce_point`], which each answer for one variant only.
 ///
