@@ -394,7 +394,11 @@ pub(crate) fn circular_order(
     use nacre_exact::quad::{SeamOrder, circular_order_about_seam};
     let meets = nodes
         .iter()
-        .map(|&n| combinatorics::pierce_meet(jd, cyl, def, n).ok_or(CircleOrderFail::Undecided))
+        .map(|&n| {
+            combinatorics::pierce_meet(jd, cyl, def, n)
+                .and_then(combinatorics::PierceMeet::into_exact)
+                .ok_or(CircleOrderFail::Undecided)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let cmp = |i: usize, j: usize| {
         circular_order_about_seam(

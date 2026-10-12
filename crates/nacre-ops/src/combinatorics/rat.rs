@@ -238,7 +238,7 @@ pub(crate) fn ring_box_points_hp(
 }
 
 /// **A node as an interval, whichever kind of name it is** — [`three_point_hp`] for three planes,
-/// [`pierce_point_hp`] at the pierce point's exact `(line, s)`. `None` for a meet the precision
+/// [`PierceMeet::point_hp`] for a pierce point. `None` for a meet the precision
 /// could not separate or a pierce point with no exact description (a plane with no world
 /// statement among its two, a cylinder missing from the table).
 pub(crate) fn node_point_hp(
@@ -248,9 +248,7 @@ pub(crate) fn node_point_hp(
 ) -> Option<[nacre_exact::HpBounded; 3]> {
     match n.kind() {
         NodeKind::ThreePlane(t) => three_point_hp(jd, t),
-        NodeKind::Pierce { cyl, .. } => {
-            pierce_point_hp(jd, &pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?)
-        }
+        NodeKind::Pierce { cyl, .. } => pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?.point_hp(jd),
     }
 }
 
@@ -268,19 +266,6 @@ pub(crate) fn three_point_hp(
         nacre_judge::plane_hp(&w[0], &w[1], &w[2], prec)
     };
     nacre_judge::meet_hp(&[plane(t[0]), plane(t[1]), plane(t[2])], prec)
-}
-
-/// **A pierce point as an interval** — `base + s·dir` along its exact meet line, the root realized
-/// at the model's precision ([`nacre_exact::realize_quad`]).
-pub(crate) fn pierce_point_hp(
-    jd: &Judge<'_, WorkingPlane>,
-    (line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-) -> Option<[nacre_exact::HpBounded; 3]> {
-    let prec = jd.standard.prec;
-    let sb = nacre_exact::realize_quad(s, prec)?;
-    let (b, d) = (line.base(), line.dir());
-    let at = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, prec);
-    Some([at(0)?, at(1)?, at(2)?])
 }
 
 /// **What a question that could not be stated exactly is refused as**, given the classes it read:
@@ -370,7 +355,7 @@ pub(crate) fn pierce_point(
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<[f64; 3]> {
-    let (line, s) = pierce_meet(jd, cyl, def, n)?;
+    let (line, s) = pierce_meet(jd, cyl, def, n)?.into_exact()?;
     Some(nacre_exact::quad::branch_point_f64(&line, &s))
 }
 
@@ -398,7 +383,7 @@ pub(crate) fn pierce_coords_rat(
     n: NodeId,
 ) -> Option<[nacre_exact::Rat; 3]> {
     let (_, cyl, _) = pierce_name(n)?;
-    let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+    let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?.into_exact()?;
     let sv = s.as_rat()?;
     let (b, d) = (line.base(), line.dir());
     let mut p = b;
@@ -480,8 +465,8 @@ pub(crate) fn pierce_ends_between(
     if pa != pb {
         return None;
     }
-    let (la, sa) = pierce_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
-    let (lb, sb) = pierce_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
+    let (la, sa) = pierce_meet(jd, ca, &cyls.get(ca)?.def, e.node)?.into_exact()?;
+    let (lb, sb) = pierce_meet(jd, cb, &cyls.get(cb)?.def, e.to)?.into_exact()?;
     if la.base() != lb.base() || la.dir() != lb.dir() {
         return None;
     }
@@ -590,7 +575,7 @@ pub(crate) fn conjugate_midpoint(
         return None;
     }
     let def = &cyls.get(ca)?.def;
-    let (line, s) = pierce_meet(jd, ca, def, e.node)?;
+    let (line, s) = pierce_meet(jd, ca, def, e.node)?.into_exact()?;
     let (b, d) = (line.base(), line.dir());
     let t = s.a();
     let mut p = [b[0], b[1], b[2]];
@@ -666,7 +651,7 @@ fn rational_ends_midpoint(
     Some(p)
 }
 
-/// **A pierce node's exact `(line, s)`, re-solved from its name** — the two classes' world
+/// **A pierce node's meet, re-solved from its name** ([`PierceMeet`]) — the two classes' world
 /// coefficients and the cylinder, never a producer's coordinate.
 ///
 /// `None` folds four causes, and only one of them reaches here on the product road:
@@ -694,7 +679,7 @@ pub(crate) fn pierce_meet(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+) -> Option<PierceMeet> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let (planes, root) = match n.kind() {
@@ -725,7 +710,77 @@ pub(crate) fn pierce_meet(
         (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
         _ => return None,
     };
-    Some((line, s))
+    Some(PierceMeet::Exact(line, s))
+}
+
+/// **Where a pierce point is** — what [`pierce_meet`] solves a pierce name to, and the one vessel
+/// every question about the point reads.
+///
+/// ★ The questions are this type's methods, so a caller asks *what it wants to know* (a side, an
+/// interval) and never which number answers it. A caller that needs the exact pair itself — an
+/// `a + b√c` comparison, a rational root — takes [`PierceMeet::into_exact`] or
+/// [`PierceMeet::exact`] and declines where there is none.
+pub(crate) enum PierceMeet {
+    /// The meet line of the name's two planes and the root along it: `base + s·dir` with
+    /// `s = a + b√c`, both planes stated in the world.
+    Exact(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+}
+
+impl PierceMeet {
+    /// The exact pair, borrowed.
+    pub(crate) fn exact(
+        &self,
+    ) -> Option<(&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal)> {
+        match self {
+            Self::Exact(line, s) => Some((line, s)),
+        }
+    }
+
+    /// The exact pair, moved out.
+    pub(crate) fn into_exact(
+        self,
+    ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+        match self {
+            Self::Exact(line, s) => Some((line, s)),
+        }
+    }
+
+    /// **The side of plane `q` this point lies on, from `q`'s statement** — one `a + b√c` sign
+    /// ([`nacre_exact::quad::plane_side`]) against `q`'s world coefficients, bridged from the name's
+    /// facing to the outward one ([`outward_fix`]), so it answers in [`side_of`]'s convention.
+    /// `None` for a class with no narrow rational description.
+    pub(crate) fn side(&self, jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
+        match self {
+            Self::Exact(line, s) => {
+                let co = class_coeffs_rat(jd, q)?;
+                let fix = outward_fix(jd, q)?;
+                Some(
+                    fix * match nacre_exact::quad::plane_side(&co, line, s) {
+                        nacre_exact::Orient::Positive => 1,
+                        nacre_exact::Orient::Negative => -1,
+                        nacre_exact::Orient::Zero => 0,
+                    },
+                )
+            }
+        }
+    }
+
+    /// **This point as an interval** — `base + s·dir` along its exact meet line, the root realized
+    /// at the model's precision ([`nacre_exact::realize_quad`]).
+    pub(crate) fn point_hp(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+    ) -> Option<[nacre_exact::HpBounded; 3]> {
+        match self {
+            Self::Exact(line, s) => {
+                let prec = jd.standard.prec;
+                let sb = nacre_exact::realize_quad(s, prec)?;
+                let (b, d) = (line.base(), line.dir());
+                let at = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, prec);
+                Some([at(0)?, at(1)?, at(2)?])
+            }
+        }
+    }
 }
 
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.

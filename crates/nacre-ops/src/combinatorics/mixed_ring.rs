@@ -155,7 +155,7 @@ fn point_in_mixed_ring_inner(
     let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
         if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
-            let (line, s) = pierce_meet(jd, cyl, def, nd)?;
+            let (line, s) = pierce_meet(jd, cyl, def, nd)?.into_exact()?;
             // ★ **A rational root is used as the rational it is.** A step's two corners share one
             // radical because they are the two meets of one line with the cylinder — unless a
             // corner arrives under another pair's name: a point on a line two classes share
@@ -261,8 +261,8 @@ fn point_in_mixed_ring_inner(
                 // same convention every arc consumer reads (membership is direction-agnostic,
                 // so the *set* is what the CCW pair names).
                 let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
-                let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?;
-                let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?.into_exact()?;
+                let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?.into_exact()?;
                 for root in s {
                     // Right of the probe along the ray: chart-x of the root.
                     let (bse, dir) = (line.base(), line.dir());

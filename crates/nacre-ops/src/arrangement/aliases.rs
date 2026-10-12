@@ -198,10 +198,12 @@ impl Aliases {
         let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
             return;
         };
-        let Some(meet) = combinatorics::pierce_meet(jd, cyl, def, corner) else {
+        let Some((line, s)) =
+            combinatorics::pierce_meet(jd, cyl, def, corner).and_then(|m| m.into_exact())
+        else {
             return;
         };
-        let Some(side) = combinatorics::ruling_side(&w, def, (&meet.0, &meet.1)) else {
+        let Some(side) = combinatorics::ruling_side(&w, def, (&line, &s)) else {
             return; // the corner sits on `wc`'s axis plane's own line: no ruling to name
         };
         for fc in planes {

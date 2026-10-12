@@ -386,8 +386,8 @@ pub(crate) fn loop_parity(
                             } else {
                                 (e.to, e.node)
                             };
-                            let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?;
-                            let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                            let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?.into_exact()?;
+                            let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?.into_exact()?;
                             let Some(span) = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))
                             else {
                                 // A zero-span arc (two ends at one place) or arithmetic out —

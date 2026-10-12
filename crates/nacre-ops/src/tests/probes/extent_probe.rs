@@ -64,7 +64,9 @@ pub(super) fn against_the_fences(
     let Some((_, cyl, _)) = combinatorics::pierce_name(n) else {
         return;
     };
-    let Some(meet) = combinatorics::pierce_meet(jd, cyl, def, n) else {
+    let Some(meet) =
+        combinatorics::pierce_meet(jd, cyl, def, n).and_then(combinatorics::PierceMeet::into_exact)
+    else {
         return;
     };
     let (a, b) = (

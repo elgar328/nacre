@@ -67,7 +67,7 @@ fn ruler_keys(
             continue;
         };
         let def = &cyls.get(cyl)?.def;
-        let (l, s) = combinatorics::pierce_meet(jd, cyl, def, k.1)?;
+        let (l, s) = combinatorics::pierce_meet(jd, cyl, def, k.1)?.into_exact()?;
         line = Some(l);
         out[i] = Some(s);
     }

@@ -15,7 +15,7 @@ enum CoordKey {
     /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
     /// common case.
-    Pierce(Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>),
+    Pierce(Box<PierceMeet>),
 }
 
 /// Build one ring node's key.
@@ -45,9 +45,9 @@ fn coord_key(
         .get(cyl)
         .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
         .def;
-    let (line, s) =
+    let meet =
         pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-    Ok(CoordKey::Pierce(Box::new((line, s))))
+    Ok(CoordKey::Pierce(Box::new(meet)))
 }
 
 /// **What ordering two ring nodes on one world axis needs besides the two keys** — the judge, and
@@ -65,6 +65,14 @@ fn flat_axis(jd: &Judge<'_, WorkingPlane>, p: usize) -> Option<usize> {
     let mut nonzero = (0..3).filter(|&k| w[k] != zero);
     let k = nonzero.next()?;
     nonzero.next().is_none().then_some(k)
+}
+
+/// The exact pair the `a + b√c` comparators read — a meet without one has no road in [`KeyCmp`].
+fn exact(
+    m: &PierceMeet,
+) -> Result<(&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal), BoolError> {
+    m.exact()
+        .ok_or_else(|| reject(RejectReason::WitnessNotRational))
 }
 
 impl KeyCmp<'_> {
@@ -94,15 +102,21 @@ impl KeyCmp<'_> {
         let order = match (a, b) {
             (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
             (CoordKey::Three(x), CoordKey::Pierce(m)) => match meet(*x) {
-                Some(p) => sign(quad::cmp_coord_meet_branch(&p, &m.0, &m.1, axis)),
+                Some(p) => {
+                    let (line, s) = exact(m)?;
+                    sign(quad::cmp_coord_meet_branch(&p, line, s, axis))
+                }
                 None => self.unstated(*x, m, axis)?,
             },
             (CoordKey::Pierce(m), CoordKey::Three(y)) => match meet(*y) {
-                Some(p) => -sign(quad::cmp_coord_meet_branch(&p, &m.0, &m.1, axis)),
+                Some(p) => {
+                    let (line, s) = exact(m)?;
+                    -sign(quad::cmp_coord_meet_branch(&p, line, s, axis))
+                }
                 None => -self.unstated(*y, m, axis)?,
             },
             (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
-                sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
+                sign(quad::cmp_coord_branch(exact(a)?, exact(b)?, axis))
             }
         };
         Ok(order)
@@ -110,20 +124,18 @@ impl KeyCmp<'_> {
 
     /// A three-plane node no rational meet states, against a pierce point: exactly where both
     /// state the coordinate ([`Self::both_stated`]), else the two as intervals ([`three_point_hp`],
-    /// [`pierce_point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
+    /// [`PierceMeet::point_hp`]) — two distinct names, so a comparison the intervals cannot separate is
     /// refused, never read as a tie ([`undecided_reason`] names it).
-    fn unstated(
-        &self,
-        t: [usize; 3],
-        m: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-        axis: usize,
-    ) -> Result<i8, BoolError> {
-        if let Some(order) = self.both_stated(t, m, axis) {
+    fn unstated(&self, t: [usize; 3], m: &PierceMeet, axis: usize) -> Result<i8, BoolError> {
+        if let Some(order) = m
+            .exact()
+            .and_then(|(line, _)| self.both_stated(t, line, axis))
+        {
             return Ok(order);
         }
         let refuse = || reject(undecided_reason(self.cyls, &t));
         let x = three_point_hp(self.jd, t).ok_or_else(refuse)?;
-        let y = pierce_point_hp(self.jd, m).ok_or_else(refuse)?;
+        let y = m.point_hp(self.jd).ok_or_else(refuse)?;
         match x[axis].sub(&y[axis], self.jd.standard.prec).sign() {
             Some(true) => Ok(1),
             Some(false) => Ok(-1),
@@ -142,7 +154,7 @@ impl KeyCmp<'_> {
     fn both_stated(
         &self,
         t: [usize; 3],
-        (line, _): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+        line: &nacre_exact::quad::MeetLine,
         axis: usize,
     ) -> Option<i8> {
         let zero = nacre_exact::Rat::from_int(0);
@@ -186,10 +198,12 @@ pub(crate) fn pierce_between(
     let key = |n: NodeId| -> Option<CoordKey> {
         match n.kind() {
             NodeKind::ThreePlane(t) => Some(CoordKey::Three(t)),
-            NodeKind::Pierce { cyl, .. } => {
-                let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
-                Some(CoordKey::Pierce(Box::new((line, s))))
-            }
+            NodeKind::Pierce { cyl, .. } => Some(CoordKey::Pierce(Box::new(pierce_meet(
+                jd,
+                cyl,
+                &cyls.get(cyl)?.def,
+                n,
+            )?))),
         }
     };
     let kc = KeyCmp { jd, cyls };
@@ -313,7 +327,7 @@ fn arc_extremum_winding(
             // two roots differ in `a` and the smaller one is read off that one sign.
             CylinderMeet::Pair { line, s: [s0, s1] } => {
                 let s = if line.dir()[a] > zero { s0 } else { s1 };
-                CoordKey::Pierce(Box::new((line, s)))
+                CoordKey::Pierce(Box::new(PierceMeet::Exact(line, s)))
             }
             // `H` holds the axis, which the cap plane crosses at the centre — inside the cylinder,
             // so the line through it meets the surface twice; and the cap plane is ⊥ `m` while `H`
@@ -363,7 +377,10 @@ fn arc_extremum_winding(
                         std::cmp::Ordering::Equal => Orient::Zero,
                     }
                 }
-                CoordKey::Pierce(b) => nacre_exact::quad::plane_side(&h_plane, &b.0, &b.1),
+                CoordKey::Pierce(b) => {
+                    let (line, s) = b.exact().ok_or_else(width)?;
+                    nacre_exact::quad::plane_side(&h_plane, line, s)
+                }
             };
             Ok(match o {
                 Orient::Positive => true,

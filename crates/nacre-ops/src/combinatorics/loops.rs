@@ -471,7 +471,7 @@ pub(crate) fn arc_departure_side(
 ) -> Option<i8> {
     let def = &cyls.get(cyl)?.def;
     let w = class_coeffs_rat(jd, q)?;
-    let (line, sv) = pierce_meet(jd, cyl, def, node)?;
+    let (line, sv) = pierce_meet(jd, cyl, def, node)?.into_exact()?;
     let rs = ruling_side(&w, def, (&line, &sv))?;
     Some(outward_fix(jd, q)? * if ccw { -rs } else { rs })
 }
@@ -528,7 +528,9 @@ fn curved_wall(
         }),
         nacre_geom::Curve::Line(_) => {
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
-            let at = pierce_meet(jd, cyl, &def, end).ok_or_else(curved)?;
+            let at = pierce_meet(jd, cyl, &def, end)
+                .and_then(PierceMeet::into_exact)
+                .ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
             // ★ **A tangent wall has one ruling, and its side is `0`.** A fillet's
             // or a slot's own walls are tangent to their cylinder, so without this every such

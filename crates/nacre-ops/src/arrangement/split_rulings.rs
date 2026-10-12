@@ -127,7 +127,7 @@ pub(super) fn split_rulings(
         .iter()
         .map(|r| {
             let coord = |n| {
-                let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)?;
+                let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)?.into_exact()?;
                 coord_at(&r.def, &line, &s)
             };
             match (coord(r.end[0]), coord(r.end[1])) {
@@ -289,8 +289,9 @@ pub(super) fn split_rulings(
         nodes.dedup();
         let mut keyed: Vec<(QuadVal, combinatorics::NodeId)> = Vec::new();
         for &n in &nodes {
-            let (line, s) =
-                combinatorics::pierce_meet(jd, r.cyl, &r.def, n).ok_or_else(undecided)?;
+            let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)
+                .and_then(combinatorics::PierceMeet::into_exact)
+                .ok_or_else(undecided)?;
             keyed.push((coord_at(&r.def, &line, &s).ok_or_else(undecided)?, n));
         }
         let [lo, hi] = ruling_ends[ri];
@@ -379,7 +380,8 @@ fn fold_onto_rulings(
             return Some(QuadVal::from_rat(dot(&p, &m)?));
         }
         let (_, own, _) = combinatorics::pierce_name(n)?;
-        let (line, s) = combinatorics::pierce_meet(jd, own, &cyls.get(own)?.def, n)?;
+        let (line, s) =
+            combinatorics::pierce_meet(jd, own, &cyls.get(own)?.def, n)?.into_exact()?;
         QuadVal::from_rat(dot(&line.base(), &m)?)
             .checked_add(&s.checked_mul_rat(dot(&line.dir(), &m)?)?)
     };

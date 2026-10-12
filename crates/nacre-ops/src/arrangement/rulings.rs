@@ -433,7 +433,7 @@ pub(crate) fn node_ruling_side(
     n: NodeId,
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
-    let (line, s) = combinatorics::pierce_meet(jd, cyl, def, n)?;
+    let (line, s) = combinatorics::pierce_meet(jd, cyl, def, n)?.into_exact()?;
     combinatorics::ruling_side_signed(w, def, (&line, &s))
 }
 

@@ -45,30 +45,9 @@ pub(crate) fn side_of(
             if let Some(side) = cy.beside(q) {
                 return Some(side);
             }
-            pierce_side(jd, &pierce_meet(jd, cyl, &cy.def, n)?, q)
+            pierce_meet(jd, cyl, &cy.def, n)?.side(jd, q)
         }
     }
-}
-
-/// **The side of plane `q` a pierce point lies on, from `q`'s statement** — [`side_of`]'s pierce
-/// arm, for a point already solved to its `(line, s)`, so a caller holding the solve does not
-/// repeat it. One `a + b√c` sign ([`nacre_exact::quad::plane_side`]) against `q`'s world
-/// coefficients, bridged from the name's facing to the outward one ([`outward_fix`]). `None` for a
-/// class with no narrow rational description.
-pub(crate) fn pierce_side(
-    jd: &Judge<'_, WorkingPlane>,
-    (line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    q: usize,
-) -> Option<i8> {
-    let co = class_coeffs_rat(jd, q)?;
-    let fix = outward_fix(jd, q)?;
-    Some(
-        fix * match nacre_exact::quad::plane_side(&co, line, s) {
-            nacre_exact::Orient::Positive => 1,
-            nacre_exact::Orient::Negative => -1,
-            nacre_exact::Orient::Zero => 0,
-        },
-    )
 }
 
 /// **What [`ring_against_plane`] found** — three outcomes, and they are three because collapsing
