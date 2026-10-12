@@ -258,13 +258,15 @@ fn curved_count(
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
 ) -> Result<Option<usize>, BoolError> {
-    // ★ **A ray on a plane the whole cylinder stands clear of crosses none of it.** The ray lies in
-    // both `a` and `b`; if every lateral face of this cylinder is strictly on one side of either
-    // ([`crate::planes::WorkingCyl::clear_of`] — the boxes the gate proved its silence against),
-    // the count is zero, whatever the planes' descriptions. A class with no world statement
-    // reaches here only that way: the gate passed it as silent, and nothing below can state it.
+    // ★ **A ray on a plane the gate proved the whole cylinder beside crosses none of it.** The ray
+    // lies in both `a` and `b`; if the gate recorded this cylinder beside either
+    // ([`crate::planes::WorkingCyl::beside`] — by its boxes or by the axis's distance), the count is
+    // zero. A class with no world statement reaches here only that way: nothing below can state
+    // it. The record and not a second asking of the boxes: those exist only when the boolean has a
+    // nameless class, so a shortcut on them would answer for a named ray depending on an unrelated
+    // class, and would miss the axis-distance proof.
     if let Some(cy) = cyls.iter().find(|cy| cy.def == *def)
-        && (cy.clear_of(&jd.planes[a]).is_some() || cy.clear_of(&jd.planes[b]).is_some())
+        && (cy.beside(a).is_some() || cy.beside(b).is_some())
     {
         return Ok(Some(0));
     }

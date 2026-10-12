@@ -140,17 +140,14 @@ pub(crate) fn cylinder_gate(
         "the cylinder class table is index-aligned with the class numbering"
     );
 
-    // ★ **A class with no world statement is asked first whether it stands clear** — the question
-    // every other arm below asks needs the class's rational coefficients, and this one needs none:
-    // the cylinder's lateral faces sit inside boxes the gate can state exactly
-    // ([`lateral_box`]), and a box whose corners all lie strictly on one side of the class's
-    // plane ([`WorkingPlane::misses`], the judge's filter, which needs only the class's witness
-    // triangle) puts every rim, ruling, chord, pierce point and arc of that cylinder on that side.
-    // The cylinder then has nothing to say on that class, and the class nothing to say about the
-    // cylinder; the roads that would ask read the record ([`WorkingCyl::silent`]). Failing that, the
-    // class may still pass with its faces apart from the lateral — the bore filled (`Apart`) or the
-    // section drawn on its own arrangement (`Sectioned`). The boxes are built only when such a class
-    // is present — the common boolean pays nothing.
+    // ★ **A class with no world statement is asked first whether the whole cylinder stands on one
+    // side of it** ([`nameless_stance`]) — the question every other arm below asks needs the
+    // class's rational coefficients, and this one needs none. Then the cylinder has nothing to say
+    // on that class, and the class nothing to say about the cylinder; the roads that would ask read
+    // the record ([`WorkingCyl::silent`]). Failing that, the class may still pass with its faces
+    // apart from the lateral — the bore filled (`Apart`) or the section drawn on its own arrangement
+    // (`Sectioned`). The boxes are built only when such a class is present — the common boolean
+    // pays nothing.
     let unstated = geom.iter().any(|wp| wp.world.is_none());
     let mut whole_rims = vec![false; cyls.len()];
     if unstated {
@@ -185,13 +182,14 @@ pub(crate) fn cylinder_gate(
             // to speak about the world. `rotated` is not that question: a plane whose truth carries
             // a translation is *judged* through its chain and still has exact world coefficients,
             // and that is the population the rulings road serves. A class with no world name
-            // passes only as silent ([`WorkingCyl::clear_of`] — the whole cylinder on one side of
-            // it), else it is geometry; a `Wide` one is width — the world holds it, `Rat` does not.
+            // passes only as silent ([`Silence`] — beside, apart or sectioned), else it is
+            // geometry; a `Wide` one is width — the world holds it, `Rat` does not.
             let Some(coeffs) = wp.world_rat() else {
                 if wp.world.is_some() {
                     return Err(reject(RejectReason::WitnessNotRational));
                 }
-                if let Some(side) = cyl.clear_of(wp) {
+                let stance = nameless_stance(model, wp, cyl, prec);
+                if let Stance::Beside(side) = stance {
                     silent[ci].push((c, Silence::Beside(side)));
                     continue;
                 }
@@ -199,38 +197,17 @@ pub(crate) fn cylinder_gate(
                     apart.push((c, ci));
                     continue;
                 }
-                // ★ **A plane along the axis is asked where it runs, exactly and then by intervals.**
-                // Its relation to the axis is exact through the two motions
-                // (`Model::plane_cylinder_relation` — a turn about the axis leaves the axis alone);
-                // only `Along` cuts in rulings, the one shape the ruling road draws. Then the axis's
-                // distance from the plane against the radius ([`plane_cuts_lateral`]): beyond it the
-                // whole cylinder is on one side, within it the plane cuts the lateral in two
-                // rulings, and with every face of the class apart from the lateral boxes the class
-                // draws them on its own arrangement only ([`Silence::Sectioned`]). A cylinder with
-                // a whole rim is not sectioned: a planar face carries that rim as a circle loop, and
-                // the chord such a plane cuts from it is read only on a recorded pair.
-                if model.plane_cylinder_relation(wp.surf, cyl.surf)
-                    == Some(nacre_exact::AxisRelation::Along)
+                // With every face of the class apart from the lateral boxes, a plane cutting the
+                // lateral in rulings draws them on its own arrangement only ([`Silence::Sectioned`]).
+                // A cylinder with a whole rim is not sectioned: a planar face carries that rim as a
+                // circle loop, and the chord such a plane cuts from it is read only on a recorded
+                // pair.
+                if stance == Stance::Rulings
+                    && !any_whole_rim(model, faces, cyl.surf)
+                    && faces_apart(model, faces, plane_ix, c, &cyl.boxes)
                 {
-                    match plane_cuts_lateral(wp, &cyl.def, prec) {
-                        // Beyond the radius the whole cylinder is on one side, the side of any
-                        // point of its axis — minted where every side is ([`WorkingPlane::misses`]).
-                        Some(false) => {
-                            let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
-                            if let Some(side) = wp.misses(std::slice::from_ref(&axis_point)) {
-                                silent[ci].push((c, Silence::Beside(side)));
-                                continue;
-                            }
-                        }
-                        Some(true)
-                            if !any_whole_rim(model, faces, cyl.surf)
-                                && faces_apart(model, faces, plane_ix, c, &cyl.boxes) =>
-                        {
-                            sectioned.push((c, ci));
-                            continue;
-                        }
-                        _ => {}
-                    }
+                    sectioned.push((c, ci));
+                    continue;
                 }
                 return Err(undecided());
             };
@@ -1714,6 +1691,53 @@ fn any_whole_rim(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> boo
     })
 }
 
+/// **Where a plane with no world statement stands against a cylinder** — what the gate's nameless
+/// arm reads before anything else.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stance {
+    /// The whole cylinder lies strictly on this side of the plane, in
+    /// [`crate::combinatorics::side_of`]'s convention.
+    Beside(i8),
+    /// The plane runs along the axis within the radius: it cuts the lateral in two rulings.
+    Rulings,
+    /// Neither is proved.
+    Unknown,
+}
+
+/// **Whether the whole cylinder stands on one side of a nameless class's plane, and if not, whether
+/// the plane cuts it in rulings** ([`Stance`]). `Beside` is one question with two witnesses, asked
+/// in this order, and both sides are minted where every side is ([`WorkingPlane::misses`], the
+/// judge's filter, which needs only the class's witness triangle):
+/// * every corner of the lateral faces' boxes ([`lateral_box`], stated exactly) strictly on one side
+///   ([`WorkingCyl::clear_of`]) — every rim, ruling, chord, pierce point and arc of the cylinder is
+///   then on that side;
+/// * a plane along the axis — exact through the two motions (`Model::plane_cylinder_relation`; a
+///   turn about the axis leaves the axis alone) — whose distance from the axis is beyond the radius
+///   ([`plane_cuts_lateral`]): the whole infinite cylinder is on the side of any point of its axis.
+///   This is what a box cannot say when the plane passes a quarter's box beside its arc (a slot
+///   end, concave from the material).
+///
+/// Within the radius such a plane cuts the lateral in two rulings, the one shape the ruling road
+/// draws. Asked before the class's faces are: a cylinder beside the class has nothing on it,
+/// whatever else that cylinder records.
+fn nameless_stance(model: &Model, wp: &WorkingPlane, cyl: &WorkingCyl, prec: usize) -> Stance {
+    if let Some(side) = cyl.clear_of(wp) {
+        return Stance::Beside(side);
+    }
+    if model.plane_cylinder_relation(wp.surf, cyl.surf) != Some(nacre_exact::AxisRelation::Along) {
+        return Stance::Unknown;
+    }
+    match plane_cuts_lateral(wp, &cyl.def, prec) {
+        Some(false) => {
+            let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
+            wp.misses(std::slice::from_ref(&axis_point))
+                .map_or(Stance::Unknown, Stance::Beside)
+        }
+        Some(true) => Stance::Rulings,
+        None => Stance::Unknown,
+    }
+}
+
 /// **Does a plane along the axis cut the lateral?** — for a class with no world statement: the
 /// axis's offset from the plane `n·o + d`, squared, against `r²|n|²`, on the class's interval plane
 /// ([`WorkingPlane::outward_hp`]). `Some(true)` within the radius (two rulings), `Some(false)`
@@ -1880,7 +1904,9 @@ impl WorkingCyl {
     /// [`WorkingPlane::misses`] over the corners of all the faces' boxes at once (one cylinder can
     /// hold two faces apart along its axis, and a plane between them has no one side). `None`
     /// when there are no boxes, a corner is not proved off the plane, or the corners straddle it.
-    pub(crate) fn clear_of(&self, wp: &WorkingPlane) -> Option<i8> {
+    /// The gate's first witness for [`Silence::Beside`] ([`nameless_stance`]); a road past the gate
+    /// reads the record ([`WorkingCyl::beside`]) instead.
+    fn clear_of(&self, wp: &WorkingPlane) -> Option<i8> {
         if self.boxes.is_empty() {
             return None;
         }
