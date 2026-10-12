@@ -13,8 +13,9 @@
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use brep_to_step::{
-    Bound, Curve as StepCurve, Edge as StepEdge, Face, Frame, Header, StepWriter,
-    Surface as StepSurface, Units, Vertex as StepVertex, VoidShellNormals,
+    Bound, Curve as StepCurve, Edge as StepEdge, Face, Frame, Header,
+    Orientation as StepOrientation, StepWriter, Surface as StepSurface, Units,
+    Vertex as StepVertex, VoidShellNormals,
 };
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
@@ -82,7 +83,12 @@ fn build_step(
     solids: &[Handle<Solid>],
     timestamp: &str,
 ) -> Result<String, StepError> {
-    let mut b = StepWriter::new(Units::default())?;
+    let header = Header {
+        timestamp: timestamp.to_owned(),
+        originating_system: "nacre".to_owned(),
+        ..Header::default()
+    };
+    let mut b = StepWriter::new(Vec::new(), &header, Units::default())?;
 
     // Export the given (live) solids, not the whole append-only store:
     // superseded solids linger in the arena but must not reach the file.
@@ -113,12 +119,7 @@ fn build_step(
         }
     }
 
-    b.finish(&Header {
-        timestamp: timestamp.to_owned(),
-        originating_system: "nacre".to_owned(),
-        ..Header::default()
-    })
-    .map_err(StepError::from)
+    b.finish_to_string().map_err(StepError::from)
 }
 
 /// Build every face of one shell as STEP faces, deduping shared
@@ -126,7 +127,7 @@ fn build_step(
 /// cavity shell of a solid (a cavity is emitted identically — its faces already
 /// carry the correct inward orientation).
 fn build_shell_faces(
-    b: &mut StepWriter,
+    b: &mut StepWriter<Vec<u8>>,
     model: &Model,
     shell: Handle<Shell>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -152,7 +153,7 @@ fn build_shell_faces(
                 radius: c.radius(),
             },
         };
-        let same_sense = matches!(face.orientation, Orientation::Forward);
+        let orientation = step_orientation(face.orientation);
 
         let mut bounds = Vec::with_capacity(1 + face.inner.len());
         bounds.push(Bound::outer(build_loop(b, model, &face.outer, vmap, emap)?));
@@ -160,28 +161,33 @@ fn build_shell_faces(
             bounds.push(Bound::inner(build_loop(b, model, inner, vmap, emap)?));
         }
 
-        face_ids.push(b.face(surface, same_sense, &bounds)?);
+        face_ids.push(b.face(surface, orientation, &bounds)?);
     }
     Ok(face_ids)
 }
 
-/// Build a loop's edges as `(edge, forward)` for a [`Bound`].
+/// Build a loop's edges, each with the way the loop runs along it, for a [`Bound`].
 fn build_loop(
-    b: &mut StepWriter,
+    b: &mut StepWriter<Vec<u8>>,
     model: &Model,
     lp: &nacre_topo::Loop,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
     emap: &mut HashMap<Handle<Edge>, StepEdge>,
-) -> Result<Vec<(StepEdge, bool)>, StepError> {
+) -> Result<Vec<(StepEdge, StepOrientation)>, StepError> {
     let mut edges = Vec::with_capacity(lp.half_edges.len());
     for he in &lp.half_edges {
-        edges.push((build_edge(b, model, he.edge, vmap, emap)?, he.forward));
+        let along = if he.forward {
+            StepOrientation::Forward
+        } else {
+            StepOrientation::Reversed
+        };
+        edges.push((build_edge(b, model, he.edge, vmap, emap)?, along));
     }
     Ok(edges)
 }
 
 fn build_edge(
-    b: &mut StepWriter,
+    b: &mut StepWriter<Vec<u8>>,
     model: &Model,
     eh: Handle<Edge>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -210,7 +216,7 @@ fn build_edge(
 }
 
 fn build_vertex(
-    b: &mut StepWriter,
+    b: &mut StepWriter<Vec<u8>>,
     model: &Model,
     vh: Handle<Vertex>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -221,6 +227,14 @@ fn build_vertex(
     let v = b.vertex(model.vertex_point(vh).as_array())?;
     vmap.insert(vh, v);
     Ok(v)
+}
+
+/// A face's orientation in the writer's terms: `Forward` when its outward normal is its surface's.
+fn step_orientation(o: Orientation) -> StepOrientation {
+    match o {
+        Orientation::Forward => StepOrientation::Forward,
+        Orientation::Reversed => StepOrientation::Reversed,
+    }
 }
 
 /// The writer's [`Frame`] (an `AXIS2_PLACEMENT_3D`) from kernel vectors.

@@ -74,9 +74,9 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "brep-to-step"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd38438fcb225d004cd5fb141193a8be2b9147061da6929e096f0196877c598"
+checksum = "d76fbb093b7bace510a1e075e72c2776789df8303358302e02ac0425f118d8e7"
 
 [[package]]
 name = "cargo-husky"

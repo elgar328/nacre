@@ -15,7 +15,7 @@ nacre-math = { workspace = true }
 nacre-store = { workspace = true }
 # Serialization backend (kernel is backend-agnostic; the writer is confined to
 # this crate): a shape-only STEP writer with no dependencies of its own.
-brep-to-step = "0.1"
+brep-to-step = "0.2"
 
 [dev-dependencies]
 # The read-back oracle: the tests read every file through step-io's reader, which
