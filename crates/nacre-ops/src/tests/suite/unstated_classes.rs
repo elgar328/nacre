@@ -497,9 +497,11 @@ fn nameless_classes_beside_world_cylinders() {
         // radius (the axis is `5·sin 37° ≈ 3.0` from it), and every face of the class stands far
         // from the plate — sectioned; the other three walls clear the fillet's box. The plate's own
         // wall `y = −25` ends on that ruling, but a cylinder's own solid writes no record of its
-        // tangent walls, so the gate has no other record to meet. Downstream the split pass must
-        // order the class's pierce point on that ruling against the plate's corner there — one
-        // point, two names, which intervals cannot order — and refuses by the gate's name.
+        // tangent walls, so the gate has no other record to meet. Downstream, on the plate's top
+        // and bottom, the split pass asks whether the class's line reaches the wall's segment
+        // there: the crossing `{cap, class, y = −25}` against the segment's end, the fillet's
+        // tangent point (a pierce name, root `Double`) — one point, two names, which the interval
+        // containment cannot order — and refuses by the gate's name.
         Family {
             name: "F8t one-fillet plate, a wall plane holding the fillet's tangent ruling",
             build: |m| {

@@ -1714,8 +1714,8 @@ enum Stance {
 /// * a plane along the axis — exact through the two motions (`Model::plane_cylinder_relation`; a
 ///   turn about the axis leaves the axis alone) — whose distance from the axis is beyond the radius
 ///   ([`plane_cuts_lateral`]): the whole infinite cylinder is on the side of any point of its axis.
-///   This is what a box cannot say when the plane passes a quarter's box beside its arc (a slot
-///   end, concave from the material).
+///   This is what a box cannot say when the plane passes through the box beside the arc — a
+///   bore's box at its corner, a slot end concave from the material.
 ///
 /// Within the radius such a plane cuts the lateral in two rulings, the one shape the ruling road
 /// draws. Asked before the class's faces are: a cylinder beside the class has nothing on it,
