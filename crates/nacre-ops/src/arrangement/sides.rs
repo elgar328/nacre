@@ -108,8 +108,30 @@ pub(crate) fn crossing_on_ruling(
     cyl: usize,
     side: i8,
 ) -> Result<NodeId, RulingNameFail> {
-    use RulingNameFail::{NoCrossing, Width};
+    use RulingNameFail::{NoCrossing, Undecided, Width};
     use nacre_exact::quad::CylinderMeet;
+    // ★ **A wall with no world statement picks its root by the same predicate, read off boxes.**
+    // The class `wc` crossing the ruling is ⊥ the axis and named; the wall sections the cylinder,
+    // so its two rulings are two distinct lines and each root is on one of them
+    // ([`combinatorics::PierceMeet::ruling_side`]).
+    if jd.planes[fc].world.is_none() {
+        let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
+        if side == 0 || !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &def.dir()) {
+            return Err(NoCrossing);
+        }
+        let mut found = None;
+        for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+            let node = NodeId::pierce(wc, fc, cyl, root);
+            let meet = combinatorics::pierce_meet(jd, cyl, def, node).ok_or(Undecided)?;
+            if meet.ruling_side(jd, fc, def).ok_or(Undecided)? == side {
+                if found.is_some() {
+                    return Err(NoCrossing);
+                }
+                found = Some(node);
+            }
+        }
+        return found.ok_or(NoCrossing);
+    }
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(NoCrossing)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
@@ -163,8 +185,11 @@ pub(crate) enum RulingNameFail {
     /// of the wall, overflowed.
     Width,
     /// The classes name no crossing of that wall's ruling — or a class has no narrow world
-    /// statement, which the cylinder gate demands of every class before anything here runs.
+    /// statement, which the cylinder gate demands of every class it does not section.
     NoCrossing,
+    /// A wall with no world statement (one that sections the cylinder): the roots' boxes could not
+    /// say which ruling each is on.
+    Undecided,
 }
 
 impl RulingNameFail {
@@ -174,6 +199,7 @@ impl RulingNameFail {
         match self {
             Self::Width => crate::RejectReason::WitnessNotRational,
             Self::NoCrossing => crate::RejectReason::CylinderStagesDisagree,
+            Self::Undecided => crate::RejectReason::CylinderGateUndecided,
         }
     }
 }

@@ -412,7 +412,9 @@ fn trace_transversal_face(
                             // ★ The gate records the pairs it could not prove clear, so a pair it
                             // proved clear has no root inside any arc — a crossing named here on
                             // an unrecorded pair would meet no ruling on the lateral's side.
-                            if !crossings.contains(&(wc, cyl)) {
+                            if !crossings.contains(&(wc, cyl))
+                                && !cyls.get(cyl).is_some_and(|cy| cy.sections(wc))
+                            {
                                 declined = Some(DeclineKind::CurvedRingWall);
                                 break 'rings;
                             }
@@ -726,7 +728,8 @@ pub(super) fn trace_one(
                 // No circle: a wall class **within the radius** leaves two rulings instead (the
                 // rulings road, through the axis or offset from it); any other non-⊥ class still
                 // leaves nothing, silently — the population gate names those interactions.
-                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, crossings, aliases) {
+                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, crossings, aliases)
+                {
                     Ok((v, grazes)) => {
                         out.rulings.extend(v);
                         // The lateral's side of a plane-pair line it touches.

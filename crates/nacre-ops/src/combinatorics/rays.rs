@@ -48,10 +48,11 @@ pub(crate) fn every_ray(
         // crosses (both on one side, or one on the line) to count them — this road carries
         // none, so `None` is the honest answer to both, and the walk's `Unnameable` is the same
         // refusal a pierce node already meets here. (Against a silent class an arc crosses
-        // nowhere — the gate's record, [`silent_reading`].)
+        // nowhere — the gate's record, [`silent_reading`] — or, where the class sections the arc's
+        // cylinder, as often as the boxes count.)
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let (table, crossings) = silent_reading(cyls, qa, ring);
+        let (table, crossings) = silent_reading(jd, cyls, p, qa, ring);
         let features = match ring_against_plane(jd, table, &nodes, qa, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
@@ -103,15 +104,43 @@ pub(crate) fn every_ray(
         for dir in [1i8, -1] {
             let mut crossings = run_hits.iter().filter(|&&o| o == dir).count();
             for f in &features {
-                let Feature::Crossing { edge, .. } = *f else {
+                let Feature::Crossing { edge, nth, .. } = *f else {
                     continue; // runs are counted above
                 };
-                // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
-                let carrier = ring[edge]
-                    .carrier
-                    .wall()
-                    .ok_or_else(|| reject(RejectReason::RingNaming))?;
-                match order_along(jd, p, qa, carrier, qb) {
+                // Strictly ahead of `v` along `dir · (n_P × n_Qa)`? A straight edge's crossing is
+                // the point `{P, Q_a, carrier}`; an arc's, on a cylinder `Q_a` sections, is the
+                // pierce point the arc road names in travel order ([`arc_crossings_hp`]) — ordered
+                // against `v` by its side of `Q_b`, the pierce-against-pin rule of `order_located`.
+                let ahead = match &ring[edge].carrier {
+                    Carrier::Arc(a) if cyls.get(a.cyl).is_some_and(|cy| cy.sections(qa)) => {
+                        let naming = || reject(RejectReason::RingNaming);
+                        let x = *arc_crossings_hp(
+                            jd,
+                            &a.def,
+                            p,
+                            qa,
+                            a.cyl,
+                            a.ccw,
+                            [ring[edge].node, ring[edge].to],
+                            None,
+                        )
+                        .ok_or_else(naming)?
+                        .get(usize::from(nth))
+                        .ok_or_else(naming)?;
+                        pierce_meet(jd, a.cyl, &a.def, x)
+                            .and_then(|m| m.side(jd, qb))
+                            .ok_or_else(naming)?
+                            * dir_sign(jd, p, qa, qb)
+                    }
+                    c => order_along(
+                        jd,
+                        p,
+                        qa,
+                        c.wall().ok_or_else(|| reject(RejectReason::RingNaming))?,
+                        qb,
+                    ),
+                };
+                match ahead {
                     0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
                     o if o == dir => crossings += 1,
                     _ => {}
@@ -178,7 +207,7 @@ pub(crate) fn segment_meets_face(
         // questions — but against a silent class, which reads the gate's record.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let (table, crossings) = silent_reading(cyls, w, ring);
+        let (table, crossings) = silent_reading(jd, cyls, p, w, ring);
         let features = match ring_against_plane(jd, table, &nodes, w, on_meet, crossings) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
@@ -305,25 +334,44 @@ pub(super) fn point_on_ring(
 /// coordinate road answers instead. A class the gate passed as silent about the cylinders is the
 /// exception the gate's record makes: every pierce corner and every arc of a cylinder that
 /// lies beside it is on the recorded side ([`crate::planes::WorkingCyl::beside`]), so the table
-/// is handed over for [`side_of`] to read, and such an arc crosses `q` nowhere.
-fn silent_reading<'c>(
-    cyls: &'c [crate::planes::WorkingCyl],
+/// is handed over for [`side_of`] to read, and such an arc crosses `q` nowhere. A class that
+/// **sections** a cylinder (its plane cuts the lateral, its faces stand apart —
+/// `Silence::Sectioned`) has no recorded side for that cylinder's arcs: how often one crosses the
+/// line `p ∩ q` is read off interval boxes ([`arc_crossings_hp`]), the count the arrangement's own
+/// arc road gives the same arc.
+fn silent_reading<'a>(
+    jd: &'a Judge<'_, WorkingPlane>,
+    cyls: &'a [crate::planes::WorkingCyl],
+    p: usize,
     q: usize,
-    ring: &[RingEdge],
+    ring: &'a [RingEdge],
 ) -> (
-    &'c [crate::planes::WorkingCyl],
-    impl Fn(usize, Option<usize>) -> Option<u8>,
+    &'a [crate::planes::WorkingCyl],
+    impl Fn(usize, Option<usize>) -> Option<u8> + 'a,
 ) {
     let silent = cyls.iter().any(|cy| cy.is_silent(q));
     let table: &[crate::planes::WorkingCyl] = if silent { cyls } else { &[] };
-    let arcs: Vec<bool> = ring
-        .iter()
-        .map(|e| match &e.carrier {
-            Carrier::Arc(a) => table.get(a.cyl).is_some_and(|cy| cy.beside(q).is_some()),
-            _ => true,
-        })
-        .collect();
-    (table, move |i: usize, _: Option<usize>| {
-        arcs[i].then_some(0)
+    (table, move |i: usize, on_end: Option<usize>| {
+        let Carrier::Arc(a) = &ring[i].carrier else {
+            return Some(0);
+        };
+        let cy = table.get(a.cyl)?;
+        if cy.beside(q).is_some() {
+            return Some(0);
+        }
+        if !cy.sections(q) {
+            return None;
+        }
+        let found = arc_crossings_hp(
+            jd,
+            &a.def,
+            p,
+            q,
+            a.cyl,
+            a.ccw,
+            [ring[i].node, ring[i].to],
+            on_end.map(|k| ring[k].node),
+        )?;
+        u8::try_from(found.len()).ok()
     })
 }

@@ -68,6 +68,7 @@ pub(crate) fn plane_index_setup(
             &setup.planes,
             &setup.plane_ix,
             setup.n_a,
+            setup.standard.prec,
         )?;
         setup.cyls = cyls;
         setup.crossings = crossings;

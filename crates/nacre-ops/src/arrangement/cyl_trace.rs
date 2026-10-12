@@ -331,7 +331,9 @@ pub(crate) fn plus_theta_is_above(
     // A tangent ruling (`side == 0`) is never a recorded crossing, so nothing labelled by this
     // sign reaches it; the day one does, the answer is a measurement, not a sign.
     debug_assert_ne!(side, 0, "a tangent ruling has no +θ side to be above");
-    let kappa = jd.planes[wc].world.as_ref()?.sense.sign();
+    // A class with no world statement has no name whose sense could differ from its stored facing:
+    // its canonical direction is the stored one (`WorkingPlane::stored_hp`), so `κ = +1`.
+    let kappa = jd.planes[wc].world.as_ref().map_or(1, |w| w.sense.sign());
     Some(-(kappa * side) == 1)
 }
 

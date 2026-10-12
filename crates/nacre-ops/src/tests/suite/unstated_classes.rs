@@ -118,10 +118,11 @@ struct Family {
     name: &'static str,
     build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
     /// The gate passes, with this many (cylinder, nameless class) pairs silent by each arm —
-    /// `(beside, apart)`: the plane clears the cylinder, or only the class's faces stand apart —
-    /// or refuses. The counts are derived from the geometry, family by family, in the comments;
+    /// `(beside, apart, sectioned)`: the plane clears the cylinder; only the class's faces stand
+    /// apart from a cylinder with whole rims; or the plane cuts the lateral in rulings with every
+    /// face apart, and the class draws them on its own arrangement — or refuses. The counts are derived from the geometry, family by family, in the comments;
     /// a family both arms could open is pinned to the arm that does, so either arm breaking shows.
-    gate: Result<(usize, usize), RejectReason>,
+    gate: Result<(usize, usize, usize), RejectReason>,
     /// Fuse, Cut, Common.
     want: [Want; 3],
 }
@@ -153,7 +154,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F0 box turned 90",
             build: |m| (plate_with_bore(m), turned_box(m, 90, [30, 30], 5.0, 10.0)),
-            gate: Ok((0, 0)),
+            gate: Ok((0, 0, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -164,7 +165,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1d box turned 37, every wall plane clear of the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 10], 5.0, 10.0)),
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -175,7 +176,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1 box turned 37, a wall plane through the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 5.0, 10.0)),
-            gate: Ok((3, 1)),
+            gate: Ok((3, 1, 0)),
             want: [
                 Built(1, bored + 125.0),
                 Built(1, bored - 125.0),
@@ -186,7 +187,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F1b box turned 37, above the plate",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [30, 30], 20.0, 5.0)),
-            gate: Ok((3, 1)),
+            gate: Ok((3, 1, 0)),
             want: [Built(2, bored + 125.0), Built(1, bored), Built(0, 0.0)],
         },
         // A cube turned 37° about `x`, centred on the plate's top: by its point symmetry half of
@@ -198,7 +199,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let c = turn(m, c, Axis::X, 37, [0, 0, 0]);
                 (plate_with_bore(m), shift(m, c, [30, 30, 10]))
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, bored + 62.5),
                 Built(1, bored - 62.5),
@@ -214,7 +215,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 5.0, 10.0),
                 )
             },
-            gate: Ok((3, 1)),
+            gate: Ok((3, 1, 0)),
             want: [
                 Built(1, 16000.0 + 12.0 * pi + 125.0),
                 Built(1, 16000.0 + 12.0 * pi - 125.0),
@@ -231,14 +232,17 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 8.0, 10.0),
                 )
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: refused,
         },
-        // The box crosses the bore: a true irrational meet.
+        // The box encloses the bore: each wall stands 2.5 from the axis, beyond the radius 2, which
+        // the gate shows from the axis's distance to the plane once the box test cannot (the box of
+        // the bore's lateral straddles every wall) — four beside. What refuses is the nesting, as
+        // around the pin (F1e).
         Family {
             name: "F1c box turned 37 across the bore",
             build: |m| (plate_with_bore(m), turned_box(m, 37, [10, 10], 5.0, 10.0)),
-            gate: Err(Undecided),
+            gate: Ok((4, 0, 0)),
             want: refused,
         },
         // A lone cylinder and a box above its top, apart.
@@ -250,7 +254,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 10], 20.0, 5.0),
                 )
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(2, 40.0 * pi + 125.0),
                 Built(1, 40.0 * pi),
@@ -265,7 +269,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [30, 30], 20.0, 5.0),
                 )
             },
-            gate: Ok((3, 1)),
+            gate: Ok((3, 1, 0)),
             want: [
                 Built(2, 40.0 * pi + 125.0),
                 Built(1, 40.0 * pi),
@@ -282,7 +286,7 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, rounded_area(1, 0) * 12.0 + 100.0),
                 Built(1, rounded_area(1, 0) * 12.0 - 150.0),
@@ -293,7 +297,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F16 four fillets and four bores, box turned 37 in the middle",
             build: |m| (rounded_plate(m, 4, 4), turned_box(m, 37, [0, 0], 6.0, 10.0)),
-            gate: Ok((32, 0)),
+            gate: Ok((32, 0, 0)),
             want: [
                 Built(1, rounded_area(4, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(4, 4) * 12.0 - 150.0),
@@ -309,14 +313,17 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
-            gate: Ok((14, 2)),
+            gate: Ok((14, 2, 0)),
             want: [
                 Built(1, rounded_area(0, 4) * 12.0 + 100.0),
                 Built(1, rounded_area(0, 4) * 12.0 - 150.0),
                 Built(1, 150.0),
             ],
         },
-        // A wall plane of the box cuts a fillet, whose lateral has ruling edges.
+        // A wall plane of the box cuts a fillet, whose lateral has ruling edges: the wall's class
+        // sections the fillet (its plane runs along the axis within the radius, every face of it
+        // apart) and closes the plate's section on its own arrangement; the other three walls clear
+        // it. The box stands on `z = 5`, so it overlaps the 12-thick plate by `25·7 = 175`.
         Family {
             name: "F8 one-fillet plate, a wall plane through the fillet",
             build: |m| {
@@ -325,9 +332,14 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [10, 16], 5.0, 10.0),
                 )
             },
-            gate: Err(Undecided),
-            want: refused,
+            gate: Ok((3, 0, 1)),
+            want: [
+                Built(1, rounded_area(1, 0) * 12.0 + 75.0),
+                Built(1, rounded_area(1, 0) * 12.0 - 175.0),
+                Built(1, 175.0),
+            ],
         },
+        // Two wall planes, each through one fillet: two sectioned pairs of the sixteen.
         Family {
             name: "V1 four fillets, a wall plane through a fillet",
             build: |m| {
@@ -336,8 +348,121 @@ fn nameless_classes_beside_world_cylinders() {
                     turned_box(m, 37, [-20, 0], 6.0, 10.0),
                 )
             },
+            gate: Ok((14, 0, 2)),
+            want: [
+                Built(1, rounded_area(4, 0) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 0) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
+        },
+        // The playground's example 003 shape (four fillets, four bores) with the box off the middle,
+        // where wall planes run through fillets. Eight cylinders, four walls: thirty-two pairs,
+        // counted the gate's way — a pair whose lateral box lies on one side of the wall is beside;
+        // else a bore (whole rims) with the class's faces apart is apart, whether or not the plane
+        // reaches its radius; else a fillet whose axis lies within the radius of the plane is
+        // sectioned (beyond it, beside).
+        Family {
+            name: "P1 example-003 plate, box off the middle, a wall through one fillet",
+            build: |m| {
+                (
+                    rounded_plate(m, 4, 4),
+                    turned_box(m, 37, [-12, -6], 6.0, 10.0),
+                )
+            },
+            gate: Ok((29, 2, 1)),
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
+        },
+        Family {
+            name: "P2 example-003 plate, walls through two fillets",
+            build: |m| {
+                (
+                    rounded_plate(m, 4, 4),
+                    turned_box(m, 37, [-22, -14], 6.0, 10.0),
+                )
+            },
+            gate: Ok((28, 2, 2)),
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
+        },
+        Family {
+            name: "P3 example-003 plate, walls through two fillets and three bores' boxes",
+            build: |m| {
+                (
+                    rounded_plate(m, 4, 4),
+                    turned_box(m, 37, [-16, -10], 6.0, 10.0),
+                )
+            },
+            gate: Ok((27, 3, 2)),
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
+        },
+        Family {
+            name: "P4 example-003 plate, walls through two fillets and two bores' boxes",
+            build: |m| {
+                (
+                    rounded_plate(m, 4, 4),
+                    turned_box(m, 37, [-20, 0], 6.0, 10.0),
+                )
+            },
+            gate: Ok((28, 2, 2)),
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, rounded_area(4, 4) * 12.0 - 150.0),
+                Built(1, 150.0),
+            ],
+        },
+        // A pin standing over the plate's edge keeps its top rim whole (a disk cap) while its bottom
+        // rim is cut at the edge. A wall plane through it, every face apart: the class would cut the
+        // disk in a chord, which is drawn only for a recorded pair, so the gate does not section a
+        // cylinder with a whole rim — refused as before.
+        Family {
+            name: "D1 a pin over the plate's edge, a wall plane through it",
+            build: |m| {
+                (
+                    plate_with_pin(m, 39.0, 20.0, 2.0),
+                    turned_box(m, 37, [30, 28], 5.0, 10.0),
+                )
+            },
             gate: Err(Undecided),
             want: refused,
+        },
+        // The operands the other way round: the box first. `B − A` is now the box less the plate,
+        // `250 − 150`.
+        Family {
+            name: "P2r box first, walls through two fillets",
+            build: |m| {
+                let plate = rounded_plate(m, 4, 4);
+                (turned_box(m, 37, [-22, -14], 6.0, 10.0), plate)
+            },
+            gate: Ok((28, 2, 2)),
+            want: [
+                Built(1, rounded_area(4, 4) * 12.0 + 100.0),
+                Built(1, 100.0),
+                Built(1, 150.0),
+            ],
+        },
+        Family {
+            name: "F8r box first, a wall plane through the fillet",
+            build: |m| {
+                let plate = rounded_plate(m, 1, 0);
+                (turned_box(m, 37, [10, 16], 5.0, 10.0), plate)
+            },
+            gate: Ok((3, 0, 1)),
+            want: [
+                Built(1, rounded_area(1, 0) * 12.0 + 75.0),
+                Built(1, 75.0),
+                Built(1, 175.0),
+            ],
         },
         // A rib on the plate whose wall `x = 9` runs within the bore's radius (recorded), and a
         // turned box straddling that wall's plane far from the bore. On the wall's class the
@@ -353,7 +478,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let a = op(m, BoolKind::Fuse, p, rib);
                 (a, turned_box(m, 37, [10, 25], 5.0, 10.0))
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, bored + 225.0),
                 Built(1, bored - 25.0),
@@ -365,7 +490,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F14c wall across the bore, box turned 37 across its plane",
             build: |m| (walled_bore(m), turned_box(m, 37, [10, 25], 5.0, 10.0)),
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, walled + 250.0 - sunk(5.0)),
                 Built(1, walled - sunk(5.0)),
@@ -380,7 +505,7 @@ fn nameless_classes_beside_world_cylinders() {
                 let b = turned_box(m, 37, [10, 25], 5.0, 10.0);
                 (b, walled_bore(m))
             },
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, walled + 250.0 - sunk(5.0)),
                 Built(2, 250.0 - sunk(5.0)),
@@ -391,7 +516,7 @@ fn nameless_classes_beside_world_cylinders() {
         Family {
             name: "F14d wall across the bore, box turned 37 standing higher",
             build: |m| (walled_bore(m), turned_box(m, 37, [10, 25], 8.0, 10.0)),
-            gate: Ok((4, 0)),
+            gate: Ok((4, 0, 0)),
             want: [
                 Built(1, walled + 250.0 - sunk(8.0)),
                 Built(1, walled - sunk(8.0)),
@@ -429,12 +554,13 @@ fn nameless_classes_beside_world_cylinders() {
             let (a, b) = (f.build)(&mut m);
             let gate = plane_index_setup(&m, a, b)
                 .map(|setup| {
-                    let mut by_arm = (0, 0);
+                    let mut by_arm = (0, 0, 0);
                     for cy in &setup.cyls {
                         for &(_, s) in &cy.silent {
                             match s {
                                 crate::planes::Silence::Beside(_) => by_arm.0 += 1,
                                 crate::planes::Silence::Apart => by_arm.1 += 1,
+                                crate::planes::Silence::Sectioned => by_arm.2 += 1,
                             }
                         }
                     }

@@ -189,8 +189,8 @@ fn ruling_side_of(
     if cyl != k {
         return Err(stages);
     }
-    let w = combinatorics::class_coeffs_rat(jd, wall).ok_or(stages)?;
-    crate::arrangement::node_ruling_side(jd, def, &w, n).ok_or(RejectReason::WitnessNotRational)
+    combinatorics::class_coeffs_rat(jd, wall).ok_or(stages)?;
+    crate::arrangement::node_ruling_side(jd, def, wall, n).ok_or(RejectReason::WitnessNotRational)
 }
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.

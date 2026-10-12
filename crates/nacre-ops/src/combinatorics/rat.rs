@@ -834,24 +834,32 @@ impl PierceMeet {
     /// **The side of plane `q` this point lies on, from `q`'s statement** — one `a + b√c` sign
     /// ([`nacre_exact::quad::plane_side`]) against `q`'s world coefficients, bridged from the name's
     /// facing to the outward one ([`outward_fix`]), so it answers in [`side_of`]'s convention.
-    /// `None` for a class with no narrow rational description. A bounded point is on its own two
-    /// planes by name, and otherwise reads the sign of `q`'s outward plane
-    /// ([`WorkingPlane::outward_hp`]) at its box — `None` where the box straddles `q`.
+    /// `None` for a named class with no narrow rational description. Where the point or `q` has no
+    /// world statement the sign is read off interval boxes — `q`'s outward plane
+    /// ([`WorkingPlane::outward_hp`]) at the point's box, `None` where the box straddles `q` — and a
+    /// bounded point is on its own two planes by name.
     pub(crate) fn side(&self, jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
+        let by_box = |at: &[nacre_exact::HpBounded; 3]| {
+            let prec = jd.standard.prec;
+            let pl = jd.planes[q].outward_hp(prec);
+            pl[0]
+                .mul(&at[0], prec)
+                .add(&pl[1].mul(&at[1], prec), prec)
+                .add(&pl[2].mul(&at[2], prec), prec)
+                .add(&pl[3], prec)
+                .sign()
+                .map(|pos| if pos { 1 } else { -1 })
+        };
         match self {
             Self::Bounded { at, planes, .. } => {
                 if planes.contains(&q) {
                     return Some(0);
                 }
-                let prec = jd.standard.prec;
-                let pl = jd.planes[q].outward_hp(prec);
-                let v = pl[0]
-                    .mul(&at[0], prec)
-                    .add(&pl[1].mul(&at[1], prec), prec)
-                    .add(&pl[2].mul(&at[2], prec), prec)
-                    .add(&pl[3], prec);
-                v.sign().map(|pos| if pos { 1 } else { -1 })
+                by_box(at)
             }
+            // A plane with no world statement has no coefficients for the exact sign; the point's
+            // own box is read against its interval plane instead.
+            Self::Exact(..) if jd.planes[q].world.is_none() => by_box(&self.point_hp(jd)?),
             Self::Exact(line, s) => {
                 let co = class_coeffs_rat(jd, q)?;
                 let fix = outward_fix(jd, q)?;

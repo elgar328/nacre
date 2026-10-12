@@ -11,7 +11,6 @@ use super::*;
 fn lateral_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
-    w: &[Rat; 4],
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
@@ -23,7 +22,48 @@ fn lateral_crossings(
         return Ok(None);
     };
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (line, roots) = match nacre_exact::quad::plane_plane_cylinder(w, &v, &o, &m, r2) {
+    // ★ **A class with no world statement here sections the cylinder** — it carries rulings, so the
+    // gate found it along the axis (`Silence::Sectioned`). Against a wall along the axis too, the
+    // line between them is exactly parallel to it (both normals are perpendicular to it) and
+    // crosses no ruling: it misses the surface, which `C ≠ 0` shows, or lies on it, which no record
+    // states here. Against any other wall the meet's shape is read off the boxes.
+    if jd.planes[wc].world.is_none() {
+        let prec = jd.standard.prec;
+        let undecided = || reject(RejectReason::CylinderGateUndecided);
+        let line = nacre_exact::quad::plane_plane_cylinder_hp(
+            &jd.planes[wc].canon_hp(prec),
+            &jd.planes[sg.wall].canon_hp(prec),
+            &o,
+            &m,
+            r2,
+            prec,
+        )
+        .ok_or_else(undecided)?;
+        if nacre_exact::dot_sign_rat(&[v[0], v[1], v[2]], &m) == nacre_exact::Orient::Zero {
+            return match line.c.sign() {
+                Some(_) => Ok(Some(Vec::new())),
+                None => Err(undecided()),
+            };
+        }
+        if line.a.sign() != Some(true) || !line.disc(prec).sign().ok_or_else(undecided)? {
+            return match line.a.sign() {
+                Some(true) => Ok(Some(Vec::new())), // the discriminant is negative: a miss
+                _ => Err(undecided()),
+            };
+        }
+        let mut out = Vec::with_capacity(2);
+        for root in [QuadRoot::Lo, QuadRoot::Hi] {
+            let n = combinatorics::NodeId::pierce(wc, sg.wall, cyl, root);
+            out.push((
+                n,
+                combinatorics::pierce_meet(jd, cyl, def, n).ok_or_else(undecided)?,
+            ));
+        }
+        return Ok(Some(out));
+    }
+    let w = combinatorics::class_coeffs_rat(jd, wc)
+        .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+    let (line, roots) = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2) {
         Some(CylinderMeet::Pair { line, s }) => {
             (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])])
         }
@@ -59,8 +99,7 @@ fn lateral_crossings(
             .map(|(root, s)| {
                 (
                     combinatorics::NodeId::pierce(wc, sg.wall, cyl, root),
-                    line.clone(),
-                    s,
+                    combinatorics::PierceMeet::Exact(line.clone(), s),
                 )
             })
             .collect(),
@@ -69,11 +108,88 @@ fn lateral_crossings(
 
 /// One crossing [`lateral_crossings`] found: its Pierce name, and the exact `(line, s)` it was
 /// solved at (the side and extent tests read it without re-solving).
-type LateralCrossing = (
-    combinatorics::NodeId,
-    nacre_exact::quad::MeetLine,
-    nacre_exact::quad::QuadVal,
-);
+type LateralCrossing = (combinatorics::NodeId, combinatorics::PierceMeet);
+
+/// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has
+/// an exact meet or lies on a plane across the axis, else an interval. Two exact ones compare
+/// exactly ([`cmp_along`]); a pair with an interval compares by the boxes and is never a tie:
+/// `None` where they cannot be separated.
+#[derive(Clone)]
+enum AxisCoord {
+    Exact(nacre_exact::quad::QuadVal),
+    Bounded(nacre_exact::HpBounded),
+}
+
+impl AxisCoord {
+    /// The coordinate of pierce point `n` of cylinder `cyl`.
+    fn of(
+        jd: &Judge<'_, WorkingPlane>,
+        cyl: usize,
+        def: &nacre_topo::CylinderDef,
+        n: combinatorics::NodeId,
+    ) -> Option<Self> {
+        Self::of_meet(jd, def, n, &combinatorics::pierce_meet(jd, cyl, def, n)?)
+    }
+
+    fn of_meet(
+        jd: &Judge<'_, WorkingPlane>,
+        def: &nacre_topo::CylinderDef,
+        n: combinatorics::NodeId,
+        meet: &combinatorics::PierceMeet,
+    ) -> Option<Self> {
+        use nacre_exact::quad::QuadVal;
+        let m = def.dir();
+        let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+            x[0].checked_mul(y[0])?
+                .checked_add(x[1].checked_mul(y[1])?)?
+                .checked_add(x[2].checked_mul(y[2])?)
+        };
+        if let Some((line, s)) = meet.exact() {
+            let (b, d) = (line.base(), line.dir());
+            return Some(Self::Exact(
+                QuadVal::from_rat(dot(&b, &m)?).checked_add(&s.checked_mul_rat(dot(&d, &m)?)?)?,
+            ));
+        }
+        // A plane of the name across the axis holds every point of it at one axis coordinate,
+        // `m·o + t·|m|²` with `t` where the axis meets it — stated exactly, so two points on one
+        // cap compare as equal.
+        let (planes, _, _) = combinatorics::pierce_name(n)?;
+        for c in planes {
+            if let Some(w) = combinatorics::class_coeffs_rat(jd, c)
+                && nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m)
+            {
+                let t = crate::planes::axis_param_of_plane(&w, def)?;
+                return Some(Self::Exact(QuadVal::from_rat(
+                    dot(&def.origin(), &m)?.checked_add(t.checked_mul(dot(&m, &m)?)?)?,
+                )));
+            }
+        }
+        let prec = jd.standard.prec;
+        let at = meet.point_hp(jd)?;
+        let mh = m.map(|x| nacre_exact::HpBounded::of_rat(x, prec));
+        Some(Self::Bounded(
+            at[0]
+                .mul(&mh[0], prec)
+                .add(&at[1].mul(&mh[1], prec), prec)
+                .add(&at[2].mul(&mh[2], prec), prec),
+        ))
+    }
+
+    fn cmp(&self, other: &Self, prec: usize) -> Option<core::cmp::Ordering> {
+        use core::cmp::Ordering;
+        let hp = |c: &Self| match c {
+            Self::Exact(q) => nacre_exact::realize_quad(q, prec),
+            Self::Bounded(b) => Some(b.clone()),
+        };
+        match (self, other) {
+            (Self::Exact(a), Self::Exact(b)) => cmp_along(a, b),
+            _ => match hp(self)?.sub(&hp(other)?, prec).sign()? {
+                true => Some(Ordering::Greater),
+                false => Some(Ordering::Less),
+            },
+        }
+    }
+}
 
 /// `split_rulings`' product — `None` when nothing crossed.
 type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
@@ -103,33 +219,18 @@ pub(super) fn split_rulings(
     aliases: &Aliases,
 ) -> Result<SplitRulings, BoolError> {
     use nacre_exact::quad::QuadVal;
-    let undecided = || reject(RejectReason::WitnessNotRational);
+    // A class with no world statement (it sections the cylinder) refuses by the gate's name.
+    let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
     if rulings.is_empty() {
         return Ok(None);
     }
-    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    // A point's axis coordinate, from the exact `(line, s)` it was solved at.
-    let coord_at = |def: &nacre_topo::CylinderDef,
-                    line: &nacre_exact::quad::MeetLine,
-                    s: &QuadVal|
-     -> Option<QuadVal> {
-        let m = def.dir();
-        let (b, d) = (line.base(), line.dir());
-        QuadVal::from_rat(dot(&b, &m)?).checked_add(&s.checked_mul_rat(dot(&d, &m)?)?)
-    };
+    let prec = jd.standard.prec;
+    let w = combinatorics::class_coeffs_rat(jd, wc);
     // Each ruling's end coordinates, re-solved from the names once.
-    let ruling_ends: Vec<[QuadVal; 2]> = rulings
+    let ruling_ends: Vec<[AxisCoord; 2]> = rulings
         .iter()
         .map(|r| {
-            let coord = |n| {
-                let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)?.into_exact()?;
-                coord_at(&r.def, &line, &s)
-            };
+            let coord = |n| AxisCoord::of(jd, r.cyl, &r.def, n);
             match (coord(r.end[0]), coord(r.end[1])) {
                 (Some(a), Some(b)) => Ok([a, b]),
                 _ => Err(undecided()),
@@ -153,6 +254,7 @@ pub(super) fn split_rulings(
             let (a, b) = sr.line;
             let other = if a == wc { b } else { a };
             let v = combinatorics::class_coeffs_rat(jd, other).ok_or_else(undecided)?;
+            let w = w.ok_or_else(undecided)?; // the gate records a shared line only from world coefficients
             let (o, m, r2) = (cy.def.origin(), cy.def.dir(), cy.def.r2());
             let Some(nacre_exact::quad::CylinderMeet::OnRuling(line)) =
                 nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
@@ -209,10 +311,10 @@ pub(super) fn split_rulings(
             let shared = shared_here
                 .iter()
                 .any(|&(t, c, _)| t == sg.wall && c == cyl);
-            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg, shared)? else {
+            let Some(xs) = lateral_crossings(jd, wc, cyl, def, sg, shared)? else {
                 return Err(undecided());
             };
-            for (n, line, s) in xs {
+            for (n, meet) in xs {
                 // ★ On this segment? The caller's question since the fences went — same rule, same
                 // vocabulary as the circle side.
                 let at =
@@ -229,9 +331,8 @@ pub(super) fn split_rulings(
                 // cylinder), which is the same statement only while `wc` is the wall that
                 // touches: a line tangent to the cylinder can cross a `wc` that cuts it, and
                 // then the root's `0` matches no ruling of `wc` at all.
-                let side = combinatorics::ruling_side_signed(&w, def, (&line, &s))
-                    .ok_or_else(undecided)?;
-                let Some(c) = coord_at(def, &line, &s) else {
+                let side = meet.ruling_side(jd, wc, def).ok_or_else(undecided)?;
+                let Some(c) = AxisCoord::of_meet(jd, def, n, &meet) else {
                     return Err(undecided());
                 };
                 // Which piece of that ruling (several faces of one solid can put several
@@ -242,8 +343,8 @@ pub(super) fn split_rulings(
                     }
                     let [lo, hi] = &ruling_ends[ri];
                     let (a, b) = (
-                        cmp_along(&c, lo).ok_or_else(undecided)?,
-                        cmp_along(&c, hi).ok_or_else(undecided)?,
+                        c.cmp(lo, prec).ok_or_else(undecided)?,
+                        c.cmp(hi, prec).ok_or_else(undecided)?,
                     );
                     use core::cmp::Ordering::*;
                     match (a, b) {
@@ -287,19 +388,19 @@ pub(super) fn split_rulings(
         }
         nodes.sort_unstable();
         nodes.dedup();
-        let mut keyed: Vec<(QuadVal, combinatorics::NodeId)> = Vec::new();
+        let mut keyed: Vec<(AxisCoord, combinatorics::NodeId)> = Vec::new();
         for &n in &nodes {
-            let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)
-                .and_then(combinatorics::PierceMeet::into_exact)
-                .ok_or_else(undecided)?;
-            keyed.push((coord_at(&r.def, &line, &s).ok_or_else(undecided)?, n));
+            keyed.push((
+                AxisCoord::of(jd, r.cyl, &r.def, n).ok_or_else(undecided)?,
+                n,
+            ));
         }
-        let [lo, hi] = ruling_ends[ri];
+        let [lo, hi] = ruling_ends[ri].clone();
         keyed.push((lo, r.end[0]));
         keyed.push((hi, r.end[1]));
         let mut order: Vec<usize> = (0..keyed.len()).collect();
         let mut bad = false;
-        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
+        order.sort_by(|&i, &j| match keyed[i].0.cmp(&keyed[j].0, prec) {
             Some(o) => o,
             None => {
                 bad = true;
@@ -310,7 +411,7 @@ pub(super) fn split_rulings(
             return Err(undecided());
         }
         for pair in order.windows(2) {
-            if cmp_along(&keyed[pair[0]].0, &keyed[pair[1]].0) == Some(core::cmp::Ordering::Equal) {
+            if keyed[pair[0]].0.cmp(&keyed[pair[1]].0, prec) == Some(core::cmp::Ordering::Equal) {
                 return Err(reject(RejectReason::CoincidentNodes));
             }
         }

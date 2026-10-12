@@ -56,6 +56,7 @@ pub(crate) fn cylinder_gate(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     n_a: usize,
+    prec: usize,
 ) -> Result<
     (
         Vec<WorkingCyl>,
@@ -139,15 +140,17 @@ pub(crate) fn cylinder_gate(
         "the cylinder class table is index-aligned with the class numbering"
     );
 
-    // ★ **A class with no world statement is asked only whether it stands clear** — the question
+    // ★ **A class with no world statement is asked first whether it stands clear** — the question
     // every other arm below asks needs the class's rational coefficients, and this one needs none:
     // the cylinder's lateral faces sit inside boxes the gate can state exactly
     // ([`lateral_box`]), and a box whose corners all lie strictly on one side of the class's
     // plane ([`WorkingPlane::misses`], the judge's filter, which needs only the class's witness
     // triangle) puts every rim, ruling, chord, pierce point and arc of that cylinder on that side.
     // The cylinder then has nothing to say on that class, and the class nothing to say about the
-    // cylinder; the roads that would ask read the record ([`WorkingCyl::silent`]). The boxes are
-    // built only when such a class is present — the common boolean pays nothing.
+    // cylinder; the roads that would ask read the record ([`WorkingCyl::silent`]). Failing that, the
+    // class may still pass with its faces apart from the lateral — the bore filled (`Apart`) or the
+    // section drawn on its own arrangement (`Sectioned`). The boxes are built only when such a class
+    // is present — the common boolean pays nothing.
     let unstated = geom.iter().any(|wp| wp.world.is_none());
     let mut whole_rims = vec![false; cyls.len()];
     if unstated {
@@ -165,6 +168,9 @@ pub(crate) fn cylinder_gate(
     // Classes whose faces stand apart from a cylinder their plane may cut — silent once the
     // cylinder is shown to leave no record either, which only the end of the loop knows.
     let mut apart: Vec<(usize, usize)> = Vec::new();
+    // Classes that cut a cylinder along its rulings with every face apart — sectioned once no other
+    // record of that cylinder shares a line with them, which only the end of the loop knows.
+    let mut sectioned: Vec<(usize, usize)> = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
@@ -192,6 +198,34 @@ pub(crate) fn cylinder_gate(
                 if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
                     apart.push((c, ci));
                     continue;
+                }
+                // ★ **A plane along the axis is asked where it runs, exactly and then by intervals.**
+                // Its relation to the axis is exact through the two motions
+                // (`Model::plane_cylinder_relation` — a turn about the axis leaves the axis alone);
+                // only `Along` cuts in rulings, the one shape the ruling road draws. Then the axis's
+                // distance from the plane against the radius ([`nameless_section`]): beyond it the
+                // whole cylinder is on one side, within it the plane cuts the lateral in two
+                // rulings, and with every face of the class apart from the lateral boxes the class
+                // draws them on its own arrangement only ([`Silence::Sectioned`]). A cylinder with
+                // a whole rim is not sectioned: a planar face carries that rim as a circle loop, and
+                // the chord such a plane cuts from it is read only on a recorded pair.
+                if model.plane_cylinder_relation(wp.surf, cyl.surf)
+                    == Some(nacre_exact::AxisRelation::Along)
+                {
+                    match nameless_section(wp, &cyl.def, prec) {
+                        Some(Some(side)) => {
+                            silent[ci].push((c, Silence::Beside(side)));
+                            continue;
+                        }
+                        Some(None)
+                            if !any_whole_rim(model, faces, cyl.surf)
+                                && faces_apart(model, faces, plane_ix, c, &cyl.boxes) =>
+                        {
+                            sectioned.push((c, ci));
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
                 return Err(undecided());
             };
@@ -363,18 +397,50 @@ pub(crate) fn cylinder_gate(
     // nothing anywhere.** On that class the arrangement then sees the cylinder's solid as if the
     // bore were filled or the boss removed — the faces carrying the rims close without the strip —
     // and every label that changes lies in the lateral's box, which no face of the class reaches.
-    // A recorded crossing or tangency of that cylinder puts its pierce points on other classes'
-    // lines, where a point of this class would have to be ordered against them, and that has no
-    // spelling; so such a pair is refused here, before the oblique record's reader below, as
-    // every nameless refusal is.
+    // A record of that cylinder (a crossing, a tangency, a class that sections it) puts it on other
+    // classes' arrangements as it is, while this class reads it filled, and the two would meet on
+    // their shared lines disagreeing; so such a pair is refused here, before the oblique record's
+    // reader below, as every nameless refusal is.
     for (c, ci) in apart {
         let recorded = crossings.iter().any(|&(_, k)| k == ci)
             || tangencies.iter().any(|t| t.cyl == ci)
-            || tangent_walls.iter().any(|&(_, k, _)| k == ci);
+            || tangent_walls.iter().any(|&(_, k, _)| k == ci)
+            || sectioned.iter().any(|&(_, k)| k == ci);
         if recorded {
             return Err(undecided());
         }
         silent[ci].push((c, Silence::Apart));
+    }
+    // ★ **A sectioned class shares no line of the lateral with another record of that cylinder.**
+    // `shared_rulings` reads only the recorded pairs, so a line this class meets another recorded
+    // class in, lying on the lateral, would be a ruling no record states. Every such pair is shown
+    // off the surface ([`line_off_lateral`]) or refused.
+    for &(c, ci) in &sectioned {
+        let others = crossings
+            .iter()
+            .filter(|&&(_, k)| k == ci)
+            .map(|&(x, _)| x)
+            .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
+            .chain(
+                tangent_walls
+                    .iter()
+                    .filter(|&&(_, k, _)| k == ci)
+                    .map(|&(x, _, _)| x),
+            )
+            .chain(
+                sectioned
+                    .iter()
+                    .filter(|&&(x, k)| k == ci && x != c)
+                    .map(|&(x, _)| x),
+            );
+        for x in others {
+            if !line_off_lateral(geom, c, x, &cyls[ci].def, prec) {
+                return Err(undecided());
+            }
+        }
+    }
+    for &(c, ci) in &sectioned {
+        silent[ci].push((c, Silence::Sectioned));
     }
     for (cyl, s) in cyls.iter_mut().zip(silent) {
         cyl.silent = s;
@@ -686,7 +752,9 @@ fn wall_faces_clear(
 /// ★★★★★ **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
 /// *divides nothing*, so it earns no [`crate::arrangement::PlaneSetup::crossings`] record — that set's proposition is
 /// "the plane runs **within** the radius", and the three roads gated on it assert exactly that
-/// (☑ `crossings.contains` has three readers, each with the matching `debug_assert`). The
+/// (☑ `crossings.contains` has three readers, each with the matching `debug_assert`; the ruling road
+/// and the arc arm also take a class that sections the cylinder, `Silence::Sectioned`, whose
+/// premise is the gate's interval reading of the same inequality). The
 /// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement
 /// change at all (measured: of 21 cells, the 15 outside the third-plane population assemble with
 /// `validate` clean and exact volumes).
@@ -1608,6 +1676,89 @@ fn only_whole_rims(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> b
         let disk = f.outer.half_edges.len() == 1 && rims.contains(&f.outer.half_edges[0].edge);
         !disk || loops(f).iter().all(whole)
     })
+}
+
+/// Whether some lateral loop of the cylinder is a whole circle — a rim a planar face then carries
+/// as a circle loop (a disk's outer, a round hole). A lateral row with no face cannot say, and
+/// answers `true`.
+fn any_whole_rim(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> bool {
+    faces.iter().any(|row| {
+        let FaceRow::Cylinder(cf) = row else {
+            return false;
+        };
+        if cf.surf != surf {
+            return false;
+        }
+        let Some(fh) = cf.face else { return true };
+        let f = model.face(fh);
+        std::iter::once(&f.outer).chain(f.inner.iter()).any(|lp| {
+            lp.half_edges.len() == 1 && {
+                let [a, b] = model.edge(lp.half_edges[0].edge).vertices;
+                a == b
+            }
+        })
+    })
+}
+
+/// **Where a plane along the axis runs against the cylinder**, for a class with no world statement:
+/// the axis's offset from the plane `n·o + d` squared against `r²|n|²`, on the class's outward
+/// plane ([`WorkingPlane::outward_hp`]) as intervals. `Some(None)` — within the radius, the plane
+/// cuts the lateral in two rulings; `Some(Some(side))` — beyond it, the whole cylinder on `side`
+/// (the outward convention [`Silence::Beside`] records); `None` where the intervals cannot say.
+fn nameless_section(
+    wp: &WorkingPlane,
+    def: &nacre_topo::CylinderDef,
+    prec: usize,
+) -> Option<Option<i8>> {
+    use nacre_exact::HpBounded;
+    let pl = wp.outward_hp(prec);
+    let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
+    let off = pl[0]
+        .mul(&o[0], prec)
+        .add(&pl[1].mul(&o[1], prec), prec)
+        .add(&pl[2].mul(&o[2], prec), prec)
+        .add(&pl[3], prec);
+    let nn = pl[0]
+        .mul(&pl[0], prec)
+        .add(&pl[1].mul(&pl[1], prec), prec)
+        .add(&pl[2].mul(&pl[2], prec), prec);
+    let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
+        .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
+    match off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()? {
+        false => Some(None),
+        true => Some(Some(if off.sign()? { 1 } else { -1 })),
+    }
+}
+
+/// **Is the line `p ∩ x` off the lateral surface of `def`?** — `p` a sectioned class (along the
+/// axis), `x` another class recorded on the same cylinder. A named `x` not along the axis meets `p`
+/// in a line that crosses the axis direction, which no ruling does. A named `x` along it meets `p`
+/// in a line exactly parallel to the axis (both normals are perpendicular to it), and the line is
+/// off the surface when its constant term `C ≠ 0` is proved
+/// ([`nacre_exact::quad::plane_plane_cylinder_hp`]). Two classes with no world statement are not
+/// asked: `false`.
+fn line_off_lateral(
+    geom: &[WorkingPlane],
+    p: usize,
+    x: usize,
+    def: &nacre_topo::CylinderDef,
+    prec: usize,
+) -> bool {
+    let Some(w) = geom[x].world_rat() else {
+        return false;
+    };
+    if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) != nacre_exact::Orient::Zero {
+        return true;
+    }
+    nacre_exact::quad::plane_plane_cylinder_hp(
+        &geom[p].canon_hp(prec),
+        &geom[x].canon_hp(prec),
+        &def.origin(),
+        &def.dir(),
+        def.r2(),
+        prec,
+    )
+    .is_some_and(|line| line.c.sign().is_some())
 }
 
 /// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are

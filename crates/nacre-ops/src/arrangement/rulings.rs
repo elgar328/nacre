@@ -23,6 +23,7 @@ pub(super) fn rulings_on_class(
     wc: usize,
     k: usize,
     which: SolidSide,
+    cyls: &[crate::planes::WorkingCyl],
     crossings: &std::collections::HashSet<(usize, usize)>,
     aliases: &Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
@@ -31,12 +32,12 @@ pub(super) fn rulings_on_class(
     // anyway breaks the straddling family: the boss's own wall class is a d=0 pair, and its
     // coplanar bottom cap's chord lands on a line the plate already traces. Unlisted pairs are
     // silent; the gate lists exactly the pairs that need the rectangle.
-    if !crossings.contains(&(wc, k)) {
+    // A class with no world statement that sections the cylinder ([`Silence::Sectioned`]) draws
+    // the rulings too, on this its own arrangement only.
+    let sections = cyls.get(k).is_some_and(|cy| cy.sections(wc));
+    if !crossings.contains(&(wc, k)) && !sections {
         return Ok((Vec::new(), Vec::new()));
     }
-    let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
-        return Ok((Vec::new(), Vec::new())); // no exact description: the circle road's decline covers ⊥ classes
-    };
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
@@ -44,10 +45,15 @@ pub(super) fn rulings_on_class(
     // radius, so the wall meets the lateral in two rulings; the sweep reads the face's cycles
     // and says where. The premise is the gate's, asserted rather than re-derived — and it survived
     // the tangent wall opening precisely because a tangency is written to `tangencies`
-    // and **not** to `crossings`: "within" still means within.
-    debug_assert_eq!(
-        nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
-        nacre_exact::Orient::Negative,
+    // and **not** to `crossings`: "within" still means within. A recorded pair's class has world
+    // coefficients (the gate records a crossing only from them); a sectioned class's premise is
+    // the gate's interval reading of the same inequality.
+    debug_assert!(
+        sections
+            || combinatorics::class_coeffs_rat(jd, wc).is_some_and(|w| {
+                nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2())
+                    == nacre_exact::Orient::Negative
+            }),
         "a recorded pair's plane runs within the radius"
     );
     // The face's shape from its cycles — the same reading the ⊥ road makes.
@@ -59,7 +65,7 @@ pub(super) fn rulings_on_class(
     let mut grazes = Vec::new();
     for side in [1i8, -1i8] {
         let (pieces, g) = ruling_sweep(
-            jd, cf, def, &w, wc, k, side, &rims, &cycles, mat, which, aliases,
+            jd, cf, def, wc, k, side, &rims, &cycles, mat, which, aliases,
         )?;
         grazes.extend(g);
         #[cfg(test)]
@@ -168,7 +174,6 @@ fn ruling_sweep(
     jd: &Judge<'_, WorkingPlane>,
     cf: &crate::planes::CylFaceInfo,
     def: &nacre_topo::CylinderDef,
-    w: &[Rat; 4],
     wc: usize,
     k: usize,
     side: i8,
@@ -262,8 +267,8 @@ fn ruling_sweep(
                 // end's, and an edge whose ends answer differently is no ruling.
                 Wall::Ruling { plane: t, .. } if t == wc => {
                     let (Some(sa), Some(sb)) = (
-                        node_ruling_side(jd, def, w, a),
-                        node_ruling_side(jd, def, w, b),
+                        node_ruling_side(jd, def, wc, a),
+                        node_ruling_side(jd, def, wc, b),
                     ) else {
                         return Err(DeclineKind::Ruling);
                     };
@@ -434,7 +439,7 @@ fn ruling_sweep(
     Ok((pieces, grazes))
 }
 
-/// Which of the two rulings of `w` this pierce node sits on, `0` being a **tangent** wall's
+/// Which of the two rulings of `wall` this pierce node sits on, `0` being a **tangent** wall's
 /// single ruling — [`crate::combinatorics::ruling_side_signed`] asked of the point the name
 /// denotes. The one spelling:
 /// the chart's `ruling_name` reads it too.
@@ -444,12 +449,11 @@ fn ruling_sweep(
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
-    w: &[nacre_exact::Rat; 4],
+    wall: usize,
     n: NodeId,
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
-    let (line, s) = combinatorics::pierce_meet(jd, cyl, def, n)?.into_exact()?;
-    combinatorics::ruling_side_signed(w, def, (&line, &s))
+    combinatorics::pierce_meet(jd, cyl, def, n)?.ruling_side(jd, wall, def)
 }
 
 /// A pierce point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a

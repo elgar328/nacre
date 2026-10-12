@@ -38,6 +38,20 @@ pub(super) fn per_class(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
+    // ★ **A sectioned class's rulings close its own section and nothing else.** The gate proved
+    // every face on the class apart from the lateral boxes (`Silence::Sectioned`), so no face this
+    // class emits borders one of those rulings — and the lateral chart is not told of them below,
+    // so a face that did would have no lateral partner. Checked here, where the stage can refuse.
+    let sectioned = |cyl: usize| cyls.get(cyl).is_some_and(|cy| cy.sections(wc));
+    if faces.iter().any(|f| {
+        f.poly_rings().any(|r| {
+            r.walls.iter().any(
+                |w| matches!(*w, crate::combinatorics::Wall::Ruling { cyl, .. } if sectioned(cyl)),
+            )
+        })
+    }) {
+        return Err(reject(RejectReason::CylinderStagesDisagree));
+    }
     // The cylinder chart's **vertical** lines, read off the pieces this class already made. Both
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
@@ -48,6 +62,11 @@ pub(super) fn per_class(
     let ruling_extents: Vec<(usize, RulingExtent)> = (0..edges.rulings.len())
         .filter_map(|i| {
             let r = &edges.rulings[i];
+            // A sectioned class's ruling is not a line of the lateral's chart: no face of the class
+            // reaches the lateral, so it splits no cell there (see the check above).
+            if sectioned(r.cyl) {
+                return None;
+            }
             let z = [
                 node_axis_param(jd, &r.def, r.end[0])?,
                 node_axis_param(jd, &r.def, r.end[1])?,

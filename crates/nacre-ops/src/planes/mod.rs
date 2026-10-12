@@ -538,9 +538,24 @@ pub(crate) enum Silence {
     /// that class the cylinder's solid is sectioned as if the bore were filled or the boss removed;
     /// the cylinder has no pierce point or arc anywhere, so no road asks for a side.
     Apart,
+    /// The class's plane runs along the axis and cuts the lateral in two rulings, every face on it
+    /// stands apart from every lateral face's box, and the cylinder has no whole rim. On that
+    /// class's own arrangement the solid is sectioned truly — the rulings are drawn there and close
+    /// the section (their pierce points are interval boxes, [`crate::combinatorics::PierceMeet`]) —
+    /// and nowhere else: the lateral chart takes no ruling of it, since no face of the class reaches
+    /// the lateral, and the other classes see the class's faces apart from the cylinder.
+    Sectioned,
 }
 
 impl WorkingCyl {
+    /// Whether class `wc` sections this cylinder ([`Silence::Sectioned`]) — its own arrangement
+    /// draws the cylinder's rulings.
+    pub(crate) fn sections(&self, wc: usize) -> bool {
+        self.silent
+            .iter()
+            .any(|&(c, s)| c == wc && matches!(s, Silence::Sectioned))
+    }
+
     /// Whether the gate proved class `wc` silent about this cylinder.
     pub(crate) fn is_silent(&self, wc: usize) -> bool {
         self.silent.iter().any(|&(c, _)| c == wc)
@@ -550,7 +565,7 @@ impl WorkingCyl {
     pub(crate) fn beside_all(&self) -> impl Iterator<Item = (usize, i8)> + '_ {
         self.silent.iter().filter_map(|&(c, s)| match s {
             Silence::Beside(side) => Some((c, side)),
-            Silence::Apart => None,
+            Silence::Apart | Silence::Sectioned => None,
         })
     }
 
