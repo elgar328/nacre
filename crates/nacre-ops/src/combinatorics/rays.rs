@@ -53,7 +53,9 @@ pub(crate) fn every_ray(
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let table = silent_table(cyls, qa);
-        let arcs = silent_crossings(jd, table, p, qa, ring);
+        let arcs = EdgeCrossings::new(ring.len(), |i, e| {
+            silent_crossings(jd, table, (p, qa), ring, i, e)
+        });
         let features =
             match ring_against_plane(jd, table, &nodes, qa, on_meet, |i, e| arcs.count(i, e)) {
                 RingWalk::Met(f) => f,
@@ -203,7 +205,9 @@ pub(crate) fn segment_meets_face(
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let table = silent_table(cyls, w);
-        let arcs = silent_crossings(jd, table, p, w, ring);
+        let arcs = EdgeCrossings::new(ring.len(), |i, e| {
+            silent_crossings(jd, table, (p, w), ring, i, e)
+        });
         let features =
             match ring_against_plane(jd, table, &nodes, w, on_meet, |i, e| arcs.count(i, e)) {
                 RingWalk::Met(f) => f,
@@ -326,8 +330,8 @@ pub(super) fn point_on_ring(
 }
 
 /// **What a ray road reads of a ring against plane `q`** — the cylinder table ([`silent_table`])
-/// and the arcs' crossings ([`silent_crossings`]). This road carries no cylinder table for a class with a world statement: a
-/// pierce corner there has no side here and the walk declines, as an arc's crossings do — the
+/// and the arcs' crossings ([`silent_crossings`]). This road carries no cylinder table for a class
+/// with a world statement: a pierce corner there has no side here and the walk declines, as an arc's crossings do — the
 /// coordinate road answers instead. A class the gate passed as silent about the cylinders is the
 /// exception the gate's record makes: every pierce corner and every arc of a cylinder that
 /// lies beside it is on the recorded side ([`crate::planes::WorkingCyl::beside`]), so the table
@@ -345,35 +349,35 @@ fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes
     }
 }
 
-/// The arcs' crossings of the line `p ∩ q` against the table [`silent_table`] handed over, per
-/// edge — `None` where they cannot be stated.
-fn silent_crossings<'a>(
-    jd: &'a Judge<'_, WorkingPlane>,
-    table: &'a [crate::planes::WorkingCyl],
-    p: usize,
-    q: usize,
-    ring: &'a [RingEdge],
-) -> EdgeCrossings<'a, Option<Vec<NodeId>>> {
-    EdgeCrossings::new(ring.len(), move |i: usize, on_end: Option<usize>| {
-        let Carrier::Arc(a) = &ring[i].carrier else {
-            return Some(Vec::new());
-        };
-        let cy = table.get(a.cyl)?;
-        if cy.beside(q).is_some() {
-            return Some(Vec::new());
-        }
-        if !cy.sections(q) {
-            return None;
-        }
-        arc_crossings_hp(
-            jd,
-            &a.def,
-            p,
-            q,
-            a.cyl,
-            a.ccw,
-            [ring[i].node, ring[i].to],
-            on_end.map(|k| ring[k].node),
-        )
-    })
+/// Where edge `i` of `ring` crosses the line `p ∩ q` strictly inside it, against the table
+/// [`silent_table`] handed over — `None` where it cannot be stated. What each ray road's
+/// [`EdgeCrossings`] solves.
+fn silent_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    table: &[crate::planes::WorkingCyl],
+    (p, q): (usize, usize),
+    ring: &[RingEdge],
+    i: usize,
+    on_end: Option<usize>,
+) -> Option<Vec<NodeId>> {
+    let Carrier::Arc(a) = &ring[i].carrier else {
+        return Some(Vec::new());
+    };
+    let cy = table.get(a.cyl)?;
+    if cy.beside(q).is_some() {
+        return Some(Vec::new());
+    }
+    if !cy.sections(q) {
+        return None;
+    }
+    arc_crossings_hp(
+        jd,
+        &a.def,
+        p,
+        q,
+        a.cyl,
+        a.ccw,
+        [ring[i].node, ring[i].to],
+        on_end.map(|k| ring[k].node),
+    )
 }

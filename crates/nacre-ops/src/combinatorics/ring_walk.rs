@@ -149,32 +149,41 @@ pub(crate) enum EdgeMeet {
 /// point the caller names cannot disagree. The walk asks an edge only where its ends cannot say,
 /// with `on_end` where one end is on the line, and that end's own root is not counted; an edge the
 /// walk did not ask (ends on opposite sides) is solved on naming, with no end on the line.
-pub(crate) struct EdgeCrossings<'a, T> {
+///
+/// ★ Nothing is allocated until an edge is asked: most rings a ray road walks carry no arc, and the
+/// ray caster builds one memo per cast.
+pub(crate) struct EdgeCrossings<T, F> {
+    n: usize,
     got: std::cell::RefCell<Vec<Option<T>>>,
-    solve: Box<dyn Fn(usize, Option<usize>) -> T + 'a>,
+    solve: F,
 }
 
-impl<'a, T: Clone> EdgeCrossings<'a, T> {
+impl<T: Clone, F: Fn(usize, Option<usize>) -> T> EdgeCrossings<T, F> {
     /// A memo for a ring of `n` edges, `solve(i, on_end)` answering edge `i`.
-    pub(crate) fn new(n: usize, solve: impl Fn(usize, Option<usize>) -> T + 'a) -> Self {
+    pub(crate) fn new(n: usize, solve: F) -> Self {
         Self {
-            got: std::cell::RefCell::new(vec![None; n]),
-            solve: Box::new(solve),
+            n,
+            got: std::cell::RefCell::new(Vec::new()),
+            solve,
         }
     }
 
     /// Edge `i`'s answer — the first ask's, whatever `on_end` a later ask passes.
     pub(crate) fn at(&self, i: usize, on_end: Option<usize>) -> T {
-        if let Some(got) = &self.got.borrow()[i] {
+        if let Some(Some(got)) = self.got.borrow().get(i) {
             return got.clone();
         }
         let got = (self.solve)(i, on_end);
-        self.got.borrow_mut()[i] = Some(got.clone());
+        let mut memo = self.got.borrow_mut();
+        if memo.is_empty() {
+            memo.resize(self.n, None);
+        }
+        memo[i] = Some(got.clone());
         got
     }
 }
 
-impl<N: Clone> EdgeCrossings<'_, Option<Vec<N>>> {
+impl<N: Clone, F: Fn(usize, Option<usize>) -> Option<Vec<N>>> EdgeCrossings<Option<Vec<N>>, F> {
     /// How many — the walk's `crossings`.
     pub(crate) fn count(&self, i: usize, on_end: Option<usize>) -> Option<u8> {
         self.at(i, on_end)
