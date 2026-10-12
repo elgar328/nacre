@@ -96,6 +96,43 @@ fn turned_box(m: &mut Model, deg: i128, c: [i128; 2], z0: f64, h: f64) -> Handle
     shift(m, b, [c[0], c[1], 0])
 }
 
+/// The plate `[0,40]²×[0,10]` with a slot through it: the stadium of half-width 3 about the segment
+/// `y = 20`, `x ∈ [15, 25]` — two half-cylinder ends whose lateral faces have no whole rim, joined
+/// by walls tangent to them.
+fn slotted_plate(m: &mut Model) -> Handle<Solid> {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let edges = vec![
+        line(p2(0.0, 0.0), p2(40.0, 0.0)),
+        line(p2(40.0, 0.0), p2(40.0, 40.0)),
+        line(p2(40.0, 40.0), p2(0.0, 40.0)),
+        line(p2(0.0, 40.0), p2(0.0, 0.0)),
+        line(p2(15.0, 17.0), p2(25.0, 17.0)),
+        arc_turns(p2(25.0, 20.0), p2(25.0, 17.0), 2),
+        line(p2(25.0, 23.0), p2(15.0, 23.0)),
+        arc_turns(p2(15.0, 20.0), p2(15.0, 23.0), 2),
+    ];
+    let profile = stated(edges).unwrap().remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 10.0,
+        },
+    )
+    .expect("the slotted plate extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// [`slotted_plate`]'s volume: `(1600 − (10·6 + 9π))·10`.
+fn slotted_plate_volume() -> f64 {
+    (1600.0 - (60.0 + 9.0 * std::f64::consts::PI)) * 10.0
+}
+
 /// The fillet plate's top area: `90×50` less the corners its fillets of radius 5 round off, less
 /// its bores of radius 3.5. The plate is 12 thick; a `5×5` box standing on `z = 6` overlaps it by
 /// `25·6 = 150`.
@@ -337,6 +374,22 @@ fn nameless_classes_beside_world_cylinders() {
                 Built(1, rounded_area(1, 0) * 12.0 + 75.0),
                 Built(1, rounded_area(1, 0) * 12.0 - 175.0),
                 Built(1, 175.0),
+            ],
+        },
+        // A slot's half-cylinder end is concave from the material, so a plane can pass through its
+        // lateral box beyond the arc and still cut the plate. One wall does (the axis ≈ 3.47 from its
+        // plane, beyond the radius 3): the box test cannot say, the axis's distance can — beside,
+        // its side asked of an axis point where every side is minted. The opposite wall cuts the
+        // same end (≈ 1.53): sectioned. The other six pairs clear by their boxes. The box stands on
+        // `z = 5`, overlapping the plate by `25·5 = 125`.
+        Family {
+            name: "S1 slotted plate, one wall beside a slot end by its distance, one sectioning it",
+            build: |m| (slotted_plate(m), turned_box(m, 37, [33, 11], 5.0, 10.0)),
+            gate: Ok((7, 0, 1)),
+            want: [
+                Built(1, slotted_plate_volume() + 125.0),
+                Built(1, slotted_plate_volume() - 125.0),
+                Built(1, 125.0),
             ],
         },
         // Two wall planes, each through one fillet: two sectioned pairs of the sixteen.

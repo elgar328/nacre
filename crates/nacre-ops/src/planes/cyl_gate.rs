@@ -203,7 +203,7 @@ pub(crate) fn cylinder_gate(
                 // Its relation to the axis is exact through the two motions
                 // (`Model::plane_cylinder_relation` — a turn about the axis leaves the axis alone);
                 // only `Along` cuts in rulings, the one shape the ruling road draws. Then the axis's
-                // distance from the plane against the radius ([`nameless_section`]): beyond it the
+                // distance from the plane against the radius ([`plane_cuts_lateral`]): beyond it the
                 // whole cylinder is on one side, within it the plane cuts the lateral in two
                 // rulings, and with every face of the class apart from the lateral boxes the class
                 // draws them on its own arrangement only ([`Silence::Sectioned`]). A cylinder with
@@ -212,12 +212,17 @@ pub(crate) fn cylinder_gate(
                 if model.plane_cylinder_relation(wp.surf, cyl.surf)
                     == Some(nacre_exact::AxisRelation::Along)
                 {
-                    match nameless_section(wp, &cyl.def, prec) {
-                        Some(Some(side)) => {
-                            silent[ci].push((c, Silence::Beside(side)));
-                            continue;
+                    match plane_cuts_lateral(wp, &cyl.def, prec) {
+                        // Beyond the radius the whole cylinder is on one side, the side of any
+                        // point of its axis — minted where every side is ([`WorkingPlane::misses`]).
+                        Some(false) => {
+                            let axis_point = nacre_judge::WitnessPoint::at(cyl.def.origin());
+                            if let Some(side) = wp.misses(std::slice::from_ref(&axis_point)) {
+                                silent[ci].push((c, Silence::Beside(side)));
+                                continue;
+                            }
                         }
-                        Some(None)
+                        Some(true)
                             if !any_whole_rim(model, faces, cyl.surf)
                                 && faces_apart(model, faces, plane_ix, c, &cyl.boxes) =>
                         {
@@ -1700,16 +1705,15 @@ fn any_whole_rim(model: &Model, faces: &[FaceRow], surf: Handle<Surface>) -> boo
     })
 }
 
-/// **Where a plane along the axis runs against the cylinder**, for a class with no world statement:
-/// the axis's offset from the plane `n·o + d` squared against `r²|n|²`, on the class's outward
-/// plane ([`WorkingPlane::outward_hp`]) as intervals. `Some(None)` — within the radius, the plane
-/// cuts the lateral in two rulings; `Some(Some(side))` — beyond it, the whole cylinder on `side`
-/// (the outward convention [`Silence::Beside`] records); `None` where the intervals cannot say.
-fn nameless_section(
+/// **Does a plane along the axis cut the lateral?** — for a class with no world statement: the
+/// axis's offset from the plane `n·o + d`, squared, against `r²|n|²`, on the class's interval plane
+/// ([`WorkingPlane::outward_hp`]). `Some(true)` within the radius (two rulings), `Some(false)`
+/// beyond it (the whole cylinder on one side), `None` where the intervals cannot say.
+fn plane_cuts_lateral(
     wp: &WorkingPlane,
     def: &nacre_topo::CylinderDef,
     prec: usize,
-) -> Option<Option<i8>> {
+) -> Option<bool> {
     use nacre_exact::HpBounded;
     let pl = wp.outward_hp(prec);
     let o = def.origin().map(|x| HpBounded::of_rat(x, prec));
@@ -1724,10 +1728,7 @@ fn nameless_section(
         .add(&pl[2].mul(&pl[2], prec), prec);
     let r2 = HpBounded::of_bigint(def.r2().numer(), prec)
         .div(&HpBounded::of_bigint(def.r2().denom(), prec), prec)?;
-    match off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()? {
-        false => Some(None),
-        true => Some(Some(if off.sign()? { 1 } else { -1 })),
-    }
+    Some(!off.mul(&off, prec).sub(&r2.mul(&nn, prec), prec).sign()?)
 }
 
 /// **Is the line `p ∩ x` off the lateral surface of `def`?** — `p` a sectioned class (along the
