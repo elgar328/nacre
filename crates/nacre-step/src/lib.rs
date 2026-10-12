@@ -52,7 +52,9 @@ impl From<brep_to_step::Error> for StepError {
 /// arcs and full circles (`Curve::{Line, Circle}`); a full-circle rim is a closed edge
 /// (`vertices: [v, v]`, start == end, `v` its seam vertex) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
-/// emitted in millimetres (nacre is unitless; STEP needs a unit).
+/// emitted in millimetres (nacre is unitless; STEP needs a unit). Each solid is one STEP part,
+/// named `Part 1`, `Part 2`, … in order, and the header's originating system is `nacre` and the
+/// kernel's version.
 ///
 /// Every value is written from the model's caches as they stand. An operation realizes them as it
 /// builds — each the nearest `f64` of the exact geometry — except behind a history longer than the
@@ -117,16 +119,16 @@ fn build_step<W: Write>(
 ) -> Result<StepWriter<W>, StepError> {
     let header = Header {
         timestamp: timestamp.to_owned(),
-        originating_system: "nacre".to_owned(),
+        originating_system: concat!("nacre ", env!("CARGO_PKG_VERSION")).to_owned(),
         ..Header::default()
     };
     let mut b = StepWriter::new(out, &header, Units::default())?;
 
     // Export the given (live) solids, not the whole append-only store:
     // superseded solids linger in the arena but must not reach the file.
-    for &solid_h in solids {
+    for (i, &solid_h) in solids.iter().enumerate() {
         let solid = model.solid(solid_h);
-        let part = b.part("nacre_solid");
+        let part = b.part(&format!("Part {}", i + 1));
 
         // Deduped per export: a shared vertex/edge becomes one STEP entity.
         let mut vmap: HashMap<Handle<Vertex>, StepVertex> = HashMap::new();

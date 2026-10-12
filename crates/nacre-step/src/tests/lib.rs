@@ -536,3 +536,39 @@ fn a_failing_output_is_an_io_error() {
         other => panic!("not an io error: {other:?}"),
     }
 }
+
+/// ★ **Parts are named `Part 1`, `Part 2`, … in the order given, and the header names the kernel
+/// and its version.** A name a viewer shows as it is: with no name, FreeCAD shows `Shapes`,
+/// step-loupe the definition's id and OCCT nothing, and several parts cannot be told apart. The
+/// kernel holds no names, so a single solid written alone is always `Part 1`.
+#[test]
+fn parts_are_numbered_and_the_header_names_the_kernel() {
+    let mut m = Model::new();
+    let a = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([2.0, 0.0, 0.0]),
+        Point3::from_array([3.0, 1.0, 1.0]),
+    );
+
+    let both = to_step(&m, STAMP).expect("export both");
+    let first = both
+        .find("PRODUCT('Part 1','Part 1'")
+        .expect("the first part's name");
+    let second = both
+        .find("PRODUCT('Part 2','Part 2'")
+        .expect("the second part's name");
+    assert!(first < second);
+    let system = format!("'nacre {}'", env!("CARGO_PKG_VERSION"));
+    assert!(both.contains(&system), "the header does not name {system}");
+
+    for h in [a, b] {
+        let one = to_step_solids(&m, &[h], STAMP).expect("export one");
+        assert!(one.contains("PRODUCT('Part 1','Part 1'"));
+        assert!(!one.contains("'Part 2'"));
+    }
+}
