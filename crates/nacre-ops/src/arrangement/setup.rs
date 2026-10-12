@@ -113,6 +113,16 @@ pub(crate) fn plane_index_setup_inner(
     t.charge(Sub::Classes);
     let t = Watch::new();
     let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
+    // ★ The premise a class with no world statement is read by (`WorkingPlane::stored_hp`): the
+    // witness triangle turned by `frame_sign` faces the way the stored normal does. Checked on
+    // every class that can be checked — the ones whose world statement says it independently.
+    #[cfg(debug_assertions)]
+    for wp in &geom {
+        debug_assert!(
+            wp.witness_agrees_with_world(standard.prec),
+            "a class's witness triangle, turned by frame_sign, opposes its stored world normal"
+        );
+    }
     let class_owner = class_owners(&plane_ix, n_a, geom.len());
     t.charge(Sub::Dense);
     Ok((

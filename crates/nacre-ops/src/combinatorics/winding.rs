@@ -87,6 +87,10 @@ impl KeyCmp<'_> {
     fn cmp(&self, a: &CoordKey, b: &CoordKey, axis: usize) -> Result<i8, BoolError> {
         use nacre_exact::{Orient, quad};
         let jd = self.jd;
+        let bounded = |k: &CoordKey| matches!(k, CoordKey::Pierce(m) if m.exact().is_none());
+        if bounded(a) || bounded(b) {
+            return self.bounded(a, b, axis);
+        }
         let sign = |o: Orient| match o {
             Orient::Positive => 1i8,
             Orient::Negative => -1,
@@ -120,6 +124,76 @@ impl KeyCmp<'_> {
             }
         };
         Ok(order)
+    }
+
+    /// **A pair one of which is a pierce point with no exact meet** (a plane of its name has no
+    /// world statement), in three rules and this order:
+    /// * **stated**: both points state the coordinate exactly — a plane of the name (three-plane or
+    ///   pierce) the axis is normal to, or an exact meet line running flat along the axis — and
+    ///   they are compared exactly;
+    /// * **one ruling**: two such pierce points on one nameless plane, one cylinder and one ruling of
+    ///   it share every coordinate the ruling holds constant (the axis's component is `0`) — equal by
+    ///   name, which no interval could prove;
+    /// * otherwise their interval boxes, and a pair the boxes cannot separate is refused, never
+    ///   read as a tie ([`undecided_reason`] names it).
+    fn bounded(&self, a: &CoordKey, b: &CoordKey, axis: usize) -> Result<i8, BoolError> {
+        let jd = self.jd;
+        let zero = nacre_exact::Rat::from_int(0);
+        let flat_value = |c: usize| -> Option<nacre_exact::Rat> {
+            if flat_axis(jd, c) != Some(axis) {
+                return None;
+            }
+            let w = class_coeffs_rat(jd, c)?;
+            zero.checked_sub(w[3])?
+                .checked_mul(nacre_exact::Rat::new(w[axis].denom(), w[axis].numer())?)
+        };
+        let stated = |k: &CoordKey| -> Option<nacre_exact::Rat> {
+            match k {
+                CoordKey::Three(t) => t.iter().find_map(|&c| flat_value(c)),
+                CoordKey::Pierce(m) => match m.exact() {
+                    Some((line, _)) => (line.dir()[axis] == zero).then(|| line.base()[axis]),
+                    None => m.name_planes()?.iter().find_map(|&c| flat_value(c)),
+                },
+            }
+        };
+        if let (Some(x), Some(y)) = (stated(a), stated(b)) {
+            return Ok(i8::from(x > y) - i8::from(x < y));
+        }
+        if let (CoordKey::Pierce(x), CoordKey::Pierce(y)) = (a, b)
+            && let (Some((px, cx)), Some((py, cy))) =
+                (x.name_planes_and_cyl(), y.name_planes_and_cyl())
+            && cx == cy
+            && let Some(cyl) = self.cyls.get(cx)
+            && cyl.def.dir()[axis] == zero
+            && let Some(&w) = px
+                .iter()
+                .find(|&&c| py.contains(&c) && jd.planes[c].world.is_none())
+            && let (Some(sx), Some(sy)) = (
+                x.ruling_side(jd, w, &cyl.def),
+                y.ruling_side(jd, w, &cyl.def),
+            )
+            && sx == sy
+        {
+            return Ok(0);
+        }
+        let classes: Vec<usize> = [a, b]
+            .iter()
+            .flat_map(|k| match k {
+                CoordKey::Three(t) => t.to_vec(),
+                CoordKey::Pierce(m) => m.name_planes().map_or(Vec::new(), |p| p.to_vec()),
+            })
+            .collect();
+        let refuse = || reject(undecided_reason(self.cyls, &classes));
+        let point = |k: &CoordKey| match k {
+            CoordKey::Three(t) => three_point_hp(jd, *t),
+            CoordKey::Pierce(m) => m.point_hp(jd),
+        };
+        let (x, y) = (point(a).ok_or_else(refuse)?, point(b).ok_or_else(refuse)?);
+        match x[axis].sub(&y[axis], jd.standard.prec).sign() {
+            Some(true) => Ok(1),
+            Some(false) => Ok(-1),
+            None => Err(refuse()),
+        }
     }
 
     /// A three-plane node no rational meet states, against a pierce point: exactly where both

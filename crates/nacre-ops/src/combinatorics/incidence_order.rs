@@ -478,7 +478,12 @@ fn order_located_quad(
             return Some(-at.side(jd, *pin)? * dir_sign(jd, p, q, *pin));
         }
         (Located::Pierce { at: a1, .. }, OnLine::Pierce { at: a2, .. }) => {
-            (a1.meet.exact()?, a2.meet.exact()?)
+            match (a1.meet.exact(), a2.meet.exact()) {
+                (Some(m1), Some(m2)) => (m1, m2),
+                // A point with no exact meet is ordered by its interval box along the line's
+                // stored direction — the same `sign((a − b)·d)` the exact arm reads per axis.
+                _ => return order_by_boxes(jd, p, q, &a1.meet, &a2.meet),
+            }
         }
     };
     let sign = |o: Orient| -> i8 {
@@ -505,4 +510,29 @@ fn order_located_quad(
         (s != 0).then_some((k, s))
     })?;
     Some(sign(cmp_coord_branch(m1, m2, k)) * dsign)
+}
+
+/// `sign((a − b) · d)` for two points on the line `p ∩ q`, `d` its stored direction
+/// (`n_p × n_q`, [`crate::planes::WorkingPlane::stored_hp`]) — read off interval boxes. `None`
+/// where they cannot separate the two: distinct names, so never a tie.
+fn order_by_boxes(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+    a: &PierceMeet,
+    b: &PierceMeet,
+) -> Option<i8> {
+    let prec = jd.standard.prec;
+    let (x, y) = (a.point_hp(jd)?, b.point_hp(jd)?);
+    let (np, nq) = (jd.planes[p].stored_hp(prec), jd.planes[q].stored_hp(prec));
+    let d = [
+        np[1].mul(&nq[2], prec).sub(&np[2].mul(&nq[1], prec), prec),
+        np[2].mul(&nq[0], prec).sub(&np[0].mul(&nq[2], prec), prec),
+        np[0].mul(&nq[1], prec).sub(&np[1].mul(&nq[0], prec), prec),
+    ];
+    (0..3)
+        .map(|k| x[k].sub(&y[k], prec).mul(&d[k], prec))
+        .reduce(|s, t| s.add(&t, prec))?
+        .sign()
+        .map(|pos| if pos { 1 } else { -1 })
 }

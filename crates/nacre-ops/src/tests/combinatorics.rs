@@ -429,3 +429,125 @@ fn a_nodes_interval_holds_it_for_either_kind_of_name() {
         "both kinds of name are read: {kinds:?}"
     );
 }
+
+/// **A pierce point on a plane with no world statement is an interval box, and the questions read
+/// it.** A `5×5` box turned 37° about `z` at the axis of a radius-5 cylinder: every wall plane cuts
+/// the cylinder, and none has a world name. The wall `n·x = 2.5` (`n = (cos 37°, sin 37°, 0)`) meets
+/// the top cap `z = 11` in two points `2.5·n ± √18.75·n⊥`; the meet of that pair is
+/// [`PierceMeet::Bounded`], its two roots are those two points (in some order), the point is on its
+/// own planes by name, and three points of the top circle are in one cyclic order.
+#[test]
+fn a_pierce_point_on_a_nameless_plane_is_a_box_the_questions_read() {
+    use crate::arrangement::plane_index_setup_inner;
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
+    use nacre_math::{Point3, Vector3};
+    let mut m = Model::new();
+    let cyl = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        5.0,
+        12.0,
+    )
+    .solid;
+    let block = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([-2.5, -2.5, 0.0]),
+        Point3::from_array([2.5, 2.5, 10.0]),
+    );
+    m.rebuild_adjacency();
+    let block = crate::transform::transform(
+        &mut m,
+        block,
+        &Isometry::rotation(Rotation {
+            axis: nacre_exact::Axis::Z,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(37)).expect("an angle"),
+        }),
+    )
+    .expect("the block turns");
+    m.rebuild_adjacency();
+    let (setup, cyl_surfs) = plane_index_setup_inner(&m, cyl, block).expect("the table builds");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let nacre_topo::Surface::Cylinder { def, .. } = m.surface(cyl_surfs[0]) else {
+        panic!("the cylinder's surface");
+    };
+    let k = 0; // the one cylinder class
+    let (c, s) = 37f64.to_radians().sin_cos();
+    let (n, nt) = ([s, c, 0.0], [-c, s, 0.0]);
+    let on = |wc: usize, p: [f64; 3]| {
+        setup.geom[wc]
+            .plane
+            .signed_distance(Point3::from_array(p))
+            .abs()
+            < 1e-9
+    };
+    let foot = [2.5 * n[0], 2.5 * n[1], 11.0];
+    let wall = (0..setup.geom.len())
+        .find(|&wc| {
+            setup.geom[wc].world.is_none()
+                && on(wc, foot)
+                && on(wc, [foot[0] + nt[0], foot[1] + nt[1], 3.0])
+        })
+        .expect("the wall n·x = 2.5 is a class with no world name");
+    let top = (0..setup.geom.len())
+        .find(|&wc| {
+            setup.geom[wc].world.is_some() && on(wc, [0.0, 0.0, 11.0]) && on(wc, [1.0, 2.0, 11.0])
+        })
+        .expect("the top cap z = 11");
+    let t = 18.75f64.sqrt();
+    let want = [
+        [foot[0] + t * nt[0], foot[1] + t * nt[1], 11.0],
+        [foot[0] - t * nt[0], foot[1] - t * nt[1], 11.0],
+    ];
+    let holds = |b: &[nacre_exact::HpBounded; 3], p: [f64; 3]| {
+        (0..3).all(|i| {
+            let lo = nacre_exact::HpBounded::of_rat(
+                Rat::try_from_f64(p[i] - 1e-9).expect("finite"),
+                128,
+            );
+            let hi = nacre_exact::HpBounded::of_rat(
+                Rat::try_from_f64(p[i] + 1e-9).expect("finite"),
+                128,
+            );
+            b[i].sub(&lo, 128).sign() == Some(true) && hi.sub(&b[i], 128).sign() == Some(true)
+        })
+    };
+    let mut seen = [false; 2];
+    let mut names = Vec::new();
+    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+        let name = NodeId::pierce(wall, top, k, root);
+        let meet = pierce_meet(&jd, k, def, name).expect("a bounded meet");
+        assert!(meet.exact().is_none(), "no exact meet without a world name");
+        let at = meet.point_hp(&jd).expect("its box");
+        let hit: Vec<usize> = (0..2).filter(|&i| holds(&at, want[i])).collect();
+        assert_eq!(
+            hit.len(),
+            1,
+            "{root:?}'s box holds exactly one of the two points"
+        );
+        seen[hit[0]] = true;
+        assert_eq!(meet.side(&jd, wall), Some(0), "on its own wall by name");
+        assert_eq!(meet.side(&jd, top), Some(0), "on its own cap by name");
+        names.push(name);
+    }
+    assert!(seen[0] && seen[1], "the two roots are the two points");
+    // A third point of the top circle — the opposite wall's root — sits in exactly one of the two
+    // arcs the first two cut the circle into.
+    let far = [-2.5 * n[0], -2.5 * n[1], 11.0];
+    let opposite = (0..setup.geom.len())
+        .find(|&wc| {
+            setup.geom[wc].world.is_none()
+                && on(wc, far)
+                && on(wc, [far[0] + nt[0], far[1] + nt[1], 3.0])
+        })
+        .expect("the opposite wall");
+    let third = NodeId::pierce(opposite, top, k, nacre_topo::QuadRoot::Lo);
+    let one = between_on_circle_hp(&jd, k, def, names[0], names[1], third).expect("decided");
+    let other = between_on_circle_hp(&jd, k, def, names[1], names[0], third).expect("decided");
+    assert_ne!(
+        one, other,
+        "a point of the circle is in exactly one of the two arcs"
+    );
+}

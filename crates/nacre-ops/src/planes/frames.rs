@@ -232,6 +232,80 @@ impl WorkingPlane {
         self.world.as_ref()?.oriented_rat()
     }
 
+    /// **The class's plane facing the way it does, as an interval** — [`Self::stored_world_rat`]
+    /// exactly when the class has a world statement, else the witness triangle's plane
+    /// ([`nacre_judge::plane_hp`]) turned by `frame_sign`: the triangle runs outward
+    /// (`n_out = frame_sign · n_P`), so `frame_sign` carries it back to the stored normal.
+    ///
+    /// ★ For a class with no world statement this **is** its canonical direction too: such a class
+    /// has no name whose sign could disagree, so the one direction it has — the stored one — is the
+    /// one a pierce name's roots are ordered along (`n₁ × n₂`). A named class orders them along its
+    /// name instead ([`Self::world_rat`]), which is why [`Self::canon_hp`] is a separate door.
+    pub(crate) fn stored_hp(&self, prec: usize) -> [nacre_exact::HpBounded; 4] {
+        if let Some(w) = self.stored_world_rat() {
+            return w.map(|x| nacre_exact::HpBounded::of_rat(x, prec));
+        }
+        self.witness_hp(prec).map(|x| {
+            if self.frame_sign < 0 {
+                negate(&x, prec)
+            } else {
+                x
+            }
+        })
+    }
+
+    /// The class's plane facing **outward** (`n_out = frame_sign · n_P`, the frame `orient3d`
+    /// answers in) as an interval — exactly from the world statement where there is one, else the
+    /// witness triangle, which runs outward by construction.
+    pub(crate) fn outward_hp(&self, prec: usize) -> [nacre_exact::HpBounded; 4] {
+        if self.world.is_some() {
+            return self.stored_hp(prec).map(|x| {
+                if self.frame_sign < 0 {
+                    negate(&x, prec)
+                } else {
+                    x
+                }
+            });
+        }
+        self.witness_hp(prec)
+    }
+
+    /// The witness triangle's plane ([`nacre_judge::plane_hp`]) — outward.
+    fn witness_hp(&self, prec: usize) -> [nacre_exact::HpBounded; 4] {
+        let t = &self.tri_pt3;
+        nacre_judge::plane_hp(&t[0], &t[1], &t[2], prec)
+    }
+
+    /// Whether the witness triangle and the world statement agree in sign on every component the
+    /// interval decides — the premise [`Self::stored_hp`] stands on for a class with no world
+    /// statement, checked where both exist. `true` when there is no world statement to check.
+    #[cfg(debug_assertions)]
+    pub(crate) fn witness_agrees_with_world(&self, prec: usize) -> bool {
+        let Some(w) = self.stored_world_rat() else {
+            return true;
+        };
+        let t = self.witness_hp(prec);
+        let zero = nacre_exact::Rat::from_int(0);
+        (0..3).all(|k| {
+            let stored = if self.frame_sign < 0 {
+                negate(&t[k], prec)
+            } else {
+                t[k].clone()
+            };
+            w[k] == zero || stored.sign().is_none_or(|pos| pos == (w[k] > zero))
+        })
+    }
+
+    /// The coefficients a pierce name's roots are ordered by — the world name exactly where there is
+    /// one (what [`crate::combinatorics::class_coeffs_rat`] hands the exact solve), else the stored
+    /// facing ([`Self::stored_hp`]).
+    pub(crate) fn canon_hp(&self, prec: usize) -> [nacre_exact::HpBounded; 4] {
+        match self.world_rat() {
+            Some(w) => w.map(|x| nacre_exact::HpBounded::of_rat(x, prec)),
+            None => self.stored_hp(prec),
+        }
+    }
+
     /// **The side of this class every point of `q` provably lies on**, strictly — `None` when a
     /// point is on the plane or not proved off it, when the points straddle it, and for an empty
     /// `q`. A signed distance to a plane is affine, so all of `q` on one side puts its whole convex
@@ -317,4 +391,9 @@ pub(crate) fn face_facing_noted(
             })
         })
         .ok()
+}
+
+/// `−x` as an interval.
+fn negate(x: &nacre_exact::HpBounded, prec: usize) -> nacre_exact::HpBounded {
+    nacre_exact::HpBounded::of_rat(nacre_exact::Rat::from_int(0), prec).sub(x, prec)
 }

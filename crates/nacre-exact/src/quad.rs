@@ -21,7 +21,7 @@
 //! Value equality is the sign tower's job (`x.checked_sub(y)?.sign() == Orient::Zero`);
 //! structural equality is deliberately not offered until a consumer needs it by name.
 
-use crate::{BigRat, MeetPoint, Orient, Rat};
+use crate::{BigRat, HpBounded, MeetPoint, Orient, Rat};
 use num_bigint::BigInt;
 
 /// A quadratic algebraic scalar `a + b·√c`, exact.
@@ -713,6 +713,128 @@ pub fn plane_plane_cylinder(
     let lo = QuadVal::new(mid, zero.checked_sub(half)?, disc)?;
     let hi = QuadVal::new(mid, half, disc)?;
     Some(CylinderMeet::Pair { line, s: [lo, hi] })
+}
+
+/// **[`plane_plane_cylinder`] with interval planes** — the line `p₁ ∩ p₂` and its quadratic against
+/// the cylinder, for a plane whose coefficients are known only to an interval (one with no world
+/// statement, met through its witness triangle).
+///
+/// ★ **The same conventions, so a name means the same point under either number**: the line runs
+/// along `n₁ × n₂`, its base is the Cramer solution with `ℓ·x = 0`, and the roots are ordered along
+/// that direction (`Lo` = `mid − √disc / 2A`). The caller passes the coefficients in the order the
+/// name's canonical pair takes, exactly as it does for the exact solve.
+///
+/// `None` where the line cannot be formed — `|ℓ|²` not proved positive (the planes may be
+/// parallel), or a divisor the precision cannot keep from zero. An interval proves `≠`, never `=`,
+/// so there is no `OnRuling`/`Tangent` answer here: the caller asks [`LineQuadHp::root`], which
+/// declines unless the line provably crosses the surface twice.
+pub fn plane_plane_cylinder_hp(
+    p1: &[HpBounded; 4],
+    p2: &[HpBounded; 4],
+    origin: &V3,
+    dir: &V3,
+    r2: &BigRat,
+    prec: usize,
+) -> Option<LineQuadHp> {
+    let dot = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
+        a[0].mul(&b[0], prec)
+            .add(&a[1].mul(&b[1], prec), prec)
+            .add(&a[2].mul(&b[2], prec), prec)
+    };
+    let cross = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
+        [
+            a[1].mul(&b[2], prec).sub(&a[2].mul(&b[1], prec), prec),
+            a[2].mul(&b[0], prec).sub(&a[0].mul(&b[2], prec), prec),
+            a[0].mul(&b[1], prec).sub(&a[1].mul(&b[0], prec), prec),
+        ]
+    };
+    let rat = |r: Rat| HpBounded::of_rat(r, prec);
+    let zero = rat(Rat::from_int(0));
+    let n1 = [p1[0].clone(), p1[1].clone(), p1[2].clone()];
+    let n2 = [p2[0].clone(), p2[1].clone(), p2[2].clone()];
+    let l = cross(&n1, &n2);
+    let det = dot(&l, &l);
+    if det.sign() != Some(true) {
+        return None;
+    }
+    let rhs = [zero.sub(&p1[3], prec), zero.sub(&p2[3], prec), zero.clone()];
+    let col = |k: usize| [n1[k].clone(), n2[k].clone(), l[k].clone()];
+    let mut base = [zero.clone(), zero.clone(), zero.clone()];
+    for (k, out) in base.iter_mut().enumerate() {
+        // Replace column k by the rhs (columns here are the rows' k-th entries).
+        let cols: [[HpBounded; 3]; 3] =
+            core::array::from_fn(|j| if j == k { rhs.clone() } else { col(j) });
+        *out = dot(&cols[0], &cross(&cols[1], &cols[2])).div(&det, prec)?;
+    }
+    let m = dir.map(rat);
+    let o = origin.map(rat);
+    let r2 = HpBounded::of_bigint(r2.numer(), prec)
+        .div(&HpBounded::of_bigint(r2.denom(), prec), prec)?;
+    let w0 = [
+        base[0].sub(&o[0], prec),
+        base[1].sub(&o[1], prec),
+        base[2].sub(&o[2], prec),
+    ];
+    let (mm, ll, lm) = (dot(&m, &m), dot(&l, &l), dot(&l, &m));
+    let (w0m, w0l, w0w0) = (dot(&w0, &m), dot(&w0, &l), dot(&w0, &w0));
+    let a = ll.mul(&mm, prec).sub(&lm.mul(&lm, prec), prec);
+    let b = rat(Rat::from_int(2)).mul(&w0l.mul(&mm, prec).sub(&w0m.mul(&lm, prec), prec), prec);
+    let c = w0w0
+        .mul(&mm, prec)
+        .sub(&w0m.mul(&w0m, prec), prec)
+        .sub(&r2.mul(&mm, prec), prec);
+    Some(LineQuadHp {
+        base,
+        dir: l,
+        a,
+        b,
+        c,
+    })
+}
+
+/// The line and quadratic [`plane_plane_cylinder_hp`] forms: `base + s·dir` meets the cylinder where
+/// `A·s² + B·s + C = 0`.
+#[derive(Clone, Debug)]
+pub struct LineQuadHp {
+    pub base: [HpBounded; 3],
+    pub dir: [HpBounded; 3],
+    pub a: HpBounded,
+    pub b: HpBounded,
+    pub c: HpBounded,
+}
+
+impl LineQuadHp {
+    /// The discriminant `B² − 4AC`.
+    pub fn disc(&self, prec: usize) -> HpBounded {
+        let four = HpBounded::of_rat(Rat::from_int(4), prec);
+        self.b
+            .mul(&self.b, prec)
+            .sub(&four.mul(&self.a, prec).mul(&self.c, prec), prec)
+    }
+
+    /// **The point at one root** — `hi` the larger along `dir` (`Hi`), else `Lo`. `None` unless
+    /// `A > 0` and the discriminant `> 0` are both proved: a tangency or an axis-parallel line is a
+    /// statement an interval cannot make.
+    pub fn root(&self, hi: bool, prec: usize) -> Option<[HpBounded; 3]> {
+        if self.a.sign() != Some(true) {
+            return None;
+        }
+        let disc = self.disc(prec);
+        if disc.sign() != Some(true) {
+            return None;
+        }
+        let two_a = HpBounded::of_rat(Rat::from_int(2), prec).mul(&self.a, prec);
+        let zero = HpBounded::of_rat(Rat::from_int(0), prec);
+        let mid = zero.sub(&self.b, prec).div(&two_a, prec)?;
+        let half = disc.mul(&disc.inv_sqrt(prec)?, prec).div(&two_a, prec)?;
+        let s = if hi {
+            mid.add(&half, prec)
+        } else {
+            mid.sub(&half, prec)
+        };
+        let at = |k: usize| self.base[k].add(&self.dir[k].mul(&s, prec), prec);
+        Some([at(0), at(1), at(2)])
+    }
 }
 
 /// The **radial side** of a cylinder's lateral surface a rational point lies on — negative

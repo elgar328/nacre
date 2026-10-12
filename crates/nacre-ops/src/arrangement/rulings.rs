@@ -110,6 +110,15 @@ pub(super) fn theta_between(
     node: NodeId,
 ) -> Result<bool, DeclineKind> {
     let nodes = [lo, hi, node];
+    // A point with no exact meet is placed by its interval box — and only such a point: a named
+    // trio keeps the name road, whose «one point, two names» answer an interval has no twin for.
+    if nodes
+        .iter()
+        .any(|&n| combinatorics::names_a_nameless_plane(jd, n))
+    {
+        return combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node)
+            .ok_or(DeclineKind::Ruling);
+    }
     let order = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
     let pos = |x: usize| {
         order
@@ -118,7 +127,13 @@ pub(super) fn theta_between(
             .expect("a permutation of the three")
     };
     let (p_lo, p_hi, p_n) = (pos(0), pos(1), pos(2));
-    Ok((p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3)
+    let inside = (p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3;
+    // ★ The interval reading's turn convention, checked against the name road wherever both answer.
+    debug_assert!(
+        combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node).is_none_or(|b| b == inside),
+        "the interval turn about the axis disagrees with the circular order"
+    );
+    Ok(inside)
 }
 
 /// What one side's sweep states: the ruling's pieces (its own vocabulary) and, for a plane-pair

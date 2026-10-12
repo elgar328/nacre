@@ -216,6 +216,12 @@ pub(crate) fn arc_crossings(
 ) -> Result<Vec<NodeId>, DeclineKind> {
     use nacre_exact::quad::CylinderMeet;
     let no = DeclineKind::CurvedRingWall;
+    // A plane with no world statement has no exact meet to read; its crossings are read off
+    // interval boxes by the same contract ([`combinatorics::arc_crossings_hp`]).
+    if jd.planes[wc].world.is_none() || jd.planes[fc].world.is_none() {
+        return combinatorics::arc_crossings_hp(jd, def, wc, fc, cyl, ccw, [a, b], on_end)
+            .ok_or(no);
+    }
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
