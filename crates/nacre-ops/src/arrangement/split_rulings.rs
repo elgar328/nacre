@@ -6,8 +6,9 @@ use super::*;
 /// there would make a zero-length piece — or lie on it, which the ladder refuses by name rather
 /// than reasoning it unreachable.
 ///
-/// Returns each crossing with the exact point it was solved at (`(line, s)` — the side and
-/// extent tests below read it without re-solving). `None` is overflow.
+/// Returns each crossing with the meet it was solved as ([`combinatorics::PierceMeet`] — exact, or
+/// an interval box where a class has no world statement; the side and extent tests below read it
+/// without re-solving). `None` is overflow.
 fn lateral_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -106,8 +107,8 @@ fn lateral_crossings(
     ))
 }
 
-/// One crossing [`lateral_crossings`] found: its Pierce name, and the exact `(line, s)` it was
-/// solved at (the side and extent tests read it without re-solving).
+/// One crossing [`lateral_crossings`] found: its Pierce name, and the meet it was solved as (the
+/// side and extent tests read it without re-solving).
 type LateralCrossing = (combinatorics::NodeId, combinatorics::PierceMeet);
 
 /// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has

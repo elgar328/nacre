@@ -238,9 +238,10 @@ pub(crate) fn ring_box_points_hp(
 }
 
 /// **A node as an interval, whichever kind of name it is** — [`three_point_hp`] for three planes,
-/// [`PierceMeet::point_hp`] for a pierce point. `None` for a meet the precision
-/// could not separate or a pierce point with no exact description (a plane with no world
-/// statement among its two, a cylinder missing from the table).
+/// [`PierceMeet::point_hp`] for a pierce point — exact or, with a plane of no world statement
+/// among its two, an interval box ([`PierceMeet::Bounded`]). `None` for a meet the precision could
+/// not separate, a pierce point no box states (a tangency on the interval road, a named meet that
+/// fails its exact solve), or a cylinder missing from the table.
 pub(crate) fn node_point_hp(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -909,7 +910,9 @@ impl PierceMeet {
     /// **Which of wall `wall`'s two rulings of `def` this point lies on** — the sign of
     /// `(x − o) · (m × n_wall)`, the convention [`ruling_side_signed`] states, with `n_wall` the
     /// wall's coefficients as a pierce name orders them ([`WorkingPlane::canon_hp`]). Exact for an
-    /// exact point against a named wall; otherwise read off the interval box, `None` where it
+    /// exact point against a named wall, `None` there for a wall with no narrow rational description
+    /// (a `Wide` name — the exact road's population, which the interval road does not answer for, as
+    /// [`pierce_meet`] and [`Self::side`] rule); otherwise read off the interval box, `None` where it
     /// straddles the plane through the axis.
     pub(crate) fn ruling_side(
         &self,
@@ -917,8 +920,10 @@ impl PierceMeet {
         wall: usize,
         def: &nacre_topo::CylinderDef,
     ) -> Option<i8> {
-        if let (Some((line, s)), Some(w)) = (self.exact(), class_coeffs_rat(jd, wall)) {
-            return ruling_side_signed(&w, def, (line, s));
+        if let Some((line, s)) = self.exact()
+            && jd.planes[wall].world.is_some()
+        {
+            return ruling_side_signed(&class_coeffs_rat(jd, wall)?, def, (line, s));
         }
         let prec = jd.standard.prec;
         let at = self.point_hp(jd)?;

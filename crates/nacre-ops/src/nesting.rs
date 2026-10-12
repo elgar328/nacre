@@ -564,9 +564,15 @@ fn ask(
             Err(_) => Said::Unformed,
         },
         (Where::Named(t), Cell::Disk(def)) => {
-            // ★ **A corner on a plane the gate proved clear of this disk's cylinder is outside the
-            // disk, exactly**: the corner lies on that plane, and the whole cylinder — this disk
-            // among its sections — lies strictly to one side of it.
+            // ★ **A corner on a class the gate proved silent about this disk's cylinder is outside
+            // the disk, exactly.** Where the class is `Beside` the cylinder, the corner lies on its
+            // plane and the whole cylinder — this disk among its sections — strictly to one side.
+            // Where the class is `Apart`, the corner lies on a face of that class (a class's
+            // segments are its faces met by the cell's plane), those faces stand apart from the
+            // lateral boxes, and the disk lies in the box its rim does. A `Sectioned` class never
+            // gets here: its cylinder has no whole rim, so no disk. ⚠ The `Apart` argument reads
+            // «a corner named by the class lies on one of its faces»; an alias that put the class
+            // into the name of a point off its faces would break it unseen.
             let silent = cyls
                 .iter()
                 .find(|cy| cy.def == *def)

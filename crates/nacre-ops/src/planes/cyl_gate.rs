@@ -402,15 +402,24 @@ pub(crate) fn cylinder_gate(
     // nothing anywhere.** On that class the arrangement then sees the cylinder's solid as if the
     // bore were filled or the boss removed — the faces carrying the rims close without the strip —
     // and every label that changes lies in the lateral's box, which no face of the class reaches.
-    // A record of that cylinder (a crossing, a tangency, a class that sections it) puts it on other
-    // classes' arrangements as it is, while this class reads it filled, and the two would meet on
-    // their shared lines disagreeing; so such a pair is refused here, before the oblique record's
-    // reader below, as every nameless refusal is.
+    // A record of that cylinder (a crossing, a tangency) puts it on other classes' arrangements as
+    // it is, while this class reads it filled, and the two would meet on their shared lines
+    // disagreeing; so such a pair is refused here, before the oblique record's reader below, as
+    // every nameless refusal is.
+    //
+    // A class that sections the cylinder would be such a record too, and cannot be one today:
+    // `Apart` asks for only whole rims and `Sectioned` for none, and every cylinder of the table
+    // has a lateral row (the table refuses a class with none), so only whole rims means some. The
+    // day a cylinder with a whole rim can be sectioned (the chord a nameless plane cuts from a
+    // disk), the assertion lights and the pair is refused here like the others.
     for (c, ci) in apart {
+        debug_assert!(
+            !sectioned.iter().any(|&(_, k)| k == ci),
+            "a cylinder with only whole rims is sectioned by another class"
+        );
         let recorded = crossings.iter().any(|&(_, k)| k == ci)
             || tangencies.iter().any(|t| t.cyl == ci)
-            || tangent_walls.iter().any(|&(_, k, _)| k == ci)
-            || sectioned.iter().any(|&(_, k)| k == ci);
+            || tangent_walls.iter().any(|&(_, k, _)| k == ci);
         if recorded {
             return Err(undecided());
         }
