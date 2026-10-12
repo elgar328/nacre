@@ -489,6 +489,49 @@ fn nameless_classes_beside_world_cylinders() {
             gate: Err(Undecided),
             want: refused,
         },
+        // A wall plane that holds the fillet's tangent ruling `(40, −25, z)`: the box's wall
+        // `x = 40` turned 37° about that ruling still holds it, runs along the axis within the
+        // radius (the axis is `5·sin 37° ≈ 3.0` from it), and every face of the class stands far
+        // from the plate — sectioned; the other three walls clear the fillet's box. The plate's own
+        // wall `y = −25` ends on that ruling, but a cylinder's own solid writes no record of its
+        // tangent walls, so the gate has no other record to meet. Downstream the split pass must
+        // order the class's pierce point on that ruling against the plate's corner there — one
+        // point, two names, which intervals cannot order — and refuses by the gate's name.
+        Family {
+            name: "F8t one-fillet plate, a wall plane holding the fillet's tangent ruling",
+            build: |m| {
+                let plate = rounded_plate(m, 1, 0);
+                let b = cuboid(m, [35.0, -80.0, 0.0], [40.0, -75.0, 10.0]);
+                (plate, turn(m, b, Axis::Z, 37, [40, -25, 0]))
+            },
+            gate: Ok((3, 0, 1)),
+            want: refused,
+        },
+        // A sectioned class meeting another record of the fillet on one of its rulings. The other
+        // operand is one solid: the box `[41,60]×[−40,−24]×[2,8]`, whose walls `x = 41` and
+        // `y = −24` cut the fillet (crossings; `y = −24` meets it at `(43, −24)`), fused with a box
+        // whose wall `x = 43` is turned 37° about that ruling, overlapping the first far from the
+        // plate. The turned wall's class runs along the axis within the radius (`≈ 0.011` from it)
+        // with every face apart — a sectioned candidate — and it meets `x = 41` off the lateral
+        // (at `y ≈ −21.35`), but meets `y = −24` on the ruling `(43, −24)` itself (`C = 0`): a line
+        // on the lateral no record states, which the gate refuses. The three other turned walls
+        // clear the fillet's box. With that check planted away the gate passes `(3, 0, 1)` and the
+        // three operations refuse downstream as `WitnessNotRational`: the check names the refusal,
+        // it does not stand between the scoreboard and a wrong volume.
+        Family {
+            name: "F8u a sectioned class meets a recorded wall on a fillet ruling",
+            build: |m| {
+                let plate = rounded_plate(m, 1, 0);
+                let a0 = cuboid(m, [41.0, -40.0, 2.0], [60.0, -24.0, 8.0]);
+                let t = cuboid(m, [38.0, -46.0, 0.0], [43.0, -41.0, 10.0]);
+                let t = turn(m, t, Axis::Z, 37, [43, -24, 0]);
+                let b = boolean(m, BoolKind::Fuse, a0, t).expect("the two boxes fuse");
+                assert_eq!(b.len(), 1, "the two boxes overlap into one solid");
+                (plate, b[0])
+            },
+            gate: Err(Undecided),
+            want: refused,
+        },
         // The operands the other way round: the box first. `B − A` is now the box less the plate,
         // `250 − 150`.
         Family {

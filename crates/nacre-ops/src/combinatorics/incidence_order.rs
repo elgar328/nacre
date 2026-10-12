@@ -467,7 +467,7 @@ fn order_located_quad(
 ) -> Option<i8> {
     use nacre_exact::Orient;
     use nacre_exact::quad::cmp_coord_branch;
-    let (m1, m2) = match (a, b) {
+    let (m1, m2, meets) = match (a, b) {
         // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
         (Located::Class { .. }, OnLine::Class { .. }) => return None,
@@ -479,7 +479,7 @@ fn order_located_quad(
         }
         (Located::Pierce { at: a1, .. }, OnLine::Pierce { at: a2, .. }) => {
             match (a1.meet.exact(), a2.meet.exact()) {
-                (Some(m1), Some(m2)) => (m1, m2),
+                (Some(m1), Some(m2)) => (m1, m2, (&a1.meet, &a2.meet)),
                 // A point with no exact meet is ordered by its interval box along the line's
                 // stored direction — the same `sign((a − b)·d)` the exact arm reads per axis.
                 _ => return order_by_boxes(jd, p, q, &a1.meet, &a2.meet),
@@ -509,7 +509,15 @@ fn order_located_quad(
         };
         (s != 0).then_some((k, s))
     })?;
-    Some(sign(cmp_coord_branch(m1, m2, k)) * dsign)
+    let order = sign(cmp_coord_branch(m1, m2, k)) * dsign;
+    // ★ The box road's convention (`sign((a − b)·d)` along the stored direction), checked against
+    // the exact one wherever both answer — the road a pair with a nameless point takes, so a
+    // difference between the two would order such a point against its named neighbours wrongly.
+    debug_assert!(
+        order_by_boxes(jd, p, q, meets.0, meets.1).is_none_or(|b| b == order),
+        "the interval order along a line disagrees with the exact one"
+    );
+    Some(order)
 }
 
 /// `sign((a − b) · d)` for two points on the line `p ∩ q`, `d` its stored direction

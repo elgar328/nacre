@@ -291,6 +291,13 @@ pub(crate) fn arc_crossings(
             inside.swap(0, 1);
         }
     }
+    // ★ The interval road's contract (which roots, in what travel order), checked against the
+    // exact one wherever both answer — the road a class with no world statement takes.
+    debug_assert!(
+        combinatorics::arc_crossings_hp(jd, def, wc, fc, cyl, ccw, [a, b], on_end)
+            .is_none_or(|hp| hp == inside),
+        "the interval arc crossings disagree with the exact ones"
+    );
     Ok(inside)
 }
 
