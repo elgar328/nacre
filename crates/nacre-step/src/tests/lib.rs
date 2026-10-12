@@ -176,6 +176,39 @@ fn superseding_a_solid_leaves_the_export_order_alone() {
     );
 }
 
+/// ★ **A superseded solid named to `to_step_solids` is written as the stores hold it.** The live set
+/// is the current model — `to_step` leaves the superseded box out (the test above) — but the arena
+/// never edits a cell, so the box is still a whole shape of the model's history, and a caller who
+/// names it gets that shape: its coordinate, its six faces, a file that reads back clean.
+#[test]
+fn a_superseded_solid_named_to_the_export_is_written_whole() {
+    let mut m = Model::new();
+    nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([111.0; 3]),
+        Point3::from_array([112.0; 3]),
+    );
+    let gone = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([777.0; 3]),
+        Point3::from_array([778.0; 3]),
+    );
+    m.supersede_live(&[gone]);
+
+    let text = to_step_solids(&m, &[gone], STAMP).expect("export the superseded box");
+    assert!(
+        text.contains("777."),
+        "the superseded box's coordinate is missing"
+    );
+    assert!(!text.contains("111."), "the live box was written too");
+    let (model, report) = read(text.as_bytes()).expect("re-read");
+    assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+    let scene = model.scene();
+    let solids: Vec<_> = scene.all_solids().collect();
+    assert_eq!(solids.len(), 1);
+    assert_eq!(solids[0].faces().count(), 6);
+}
+
 #[test]
 fn hollow_solid_round_trips_as_brep_with_voids() {
     // A 4-cube with a concentric 2-cube void, built with the cavity

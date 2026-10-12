@@ -79,7 +79,8 @@ pub fn to_step(model: &Model, timestamp: &str) -> Result<String, StepError> {
 /// For a caller that holds more live solids than it means to write — an application exporting
 /// what it shows, while copies and unconsumed intermediates stay live in the model — and for the
 /// boolean oracle, whose OCCT `fuse`/`cut`/`common` take single-solid files (`&[solid]`). Each
-/// solid must be live; a superseded one would be written as if it were still there.
+/// solid is written as the stores hold it: the live set is the current model, and a superseded
+/// solid, whose cells are never edited, is a shape of its history.
 pub fn to_step_solids(
     model: &Model,
     solids: &[Handle<Solid>],
@@ -124,13 +125,14 @@ fn build_step<W: Write>(
     };
     let mut b = StepWriter::new(out, &header, Units::default())?;
 
-    // Export the given (live) solids, not the whole append-only store:
-    // superseded solids linger in the arena but must not reach the file.
+    // Only the solids given, never the whole append-only store: the arena keeps
+    // every superseded solid (`to_step` passes the live set).
     for (i, &solid_h) in solids.iter().enumerate() {
         let solid = model.solid(solid_h);
         let part = b.part(&format!("Part {}", i + 1));
 
-        // Deduped per export: a shared vertex/edge becomes one STEP entity.
+        // Deduped per solid: a vertex/edge its faces share becomes one STEP entity
+        // (two solids share no topology in the file).
         let mut vmap: HashMap<Handle<Vertex>, StepVertex> = HashMap::new();
         let mut emap: HashMap<Handle<Edge>, StepEdge> = HashMap::new();
 
