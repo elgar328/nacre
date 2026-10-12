@@ -33,7 +33,7 @@ fn coord_key(
     i: usize,
 ) -> Result<CoordKey, BoolError> {
     let node = ring[i].node;
-    let NodeKind::Pierce { cyl, .. } = node.kind() else {
+    let NodeKind::Pierce { planes, cyl, .. } = node.kind() else {
         // A `match` and not a fallback: a third variant must light this up rather than fall in
         // here (`let`-`else` is what hid a new variant once already).
         return match node.kind() {
@@ -45,8 +45,11 @@ fn coord_key(
         .get(cyl)
         .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
         .def;
+    // A meet that cannot be formed is the width limit for a named pair, and for one with a plane of
+    // no world statement a box the precision cannot form or a tangency — that refusal is the
+    // gate's ([`undecided_reason`]).
     let meet =
-        pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+        pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(undecided_reason(cyls, &planes)))?;
     Ok(CoordKey::Pierce(Box::new(meet)))
 }
 
@@ -68,6 +71,8 @@ fn flat_axis(jd: &Judge<'_, WorkingPlane>, p: usize) -> Option<usize> {
 }
 
 /// The exact pair the `a + b√c` comparators read — a meet without one has no road in [`KeyCmp`].
+/// Never handed an interval box: [`KeyCmp::cmp`] sends any pair with one to [`KeyCmp::bounded`]
+/// first, so the refusal here is the width of a named meet.
 fn exact(
     m: &PierceMeet,
 ) -> Result<(&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal), BoolError> {
@@ -348,7 +353,10 @@ pub(crate) fn pierce_between(
 /// ★ **What it cannot decide it refuses by name.** A minimum this cannot place or order is a ring
 /// whose winding has no proof; reading the node's turn there would be the confident wrong sign
 /// this function exists to catch. The meet's width limit is `WitnessNotRational`, as
-/// [`coord_key`] names the same meet failing for a node.
+/// [`coord_key`] names the same meet failing for a node. A class with no world statement never
+/// asks: its own arrangement carries no arc (a class that sections a cylinder cuts it in rulings,
+/// and a cylinder beside or apart from it leaves none on its plane), so `p` and every arc end here
+/// are stated.
 fn arc_extremum_winding(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

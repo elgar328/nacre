@@ -143,6 +143,45 @@ pub(crate) enum EdgeMeet {
     Departs(i8),
 }
 
+/// **Where each ring edge crosses the meet strictly inside it, solved once per edge** — what a
+/// [`ring_against_plane`] caller hands the walk as `crossings` (the count) and then names a
+/// [`Feature::Crossing`]'s `nth` from (the point). One answer, so the count the walk read and the
+/// point the caller names cannot disagree. The walk asks an edge only where its ends cannot say,
+/// with `on_end` where one end is on the line, and that end's own root is not counted; an edge the
+/// walk did not ask (ends on opposite sides) is solved on naming, with no end on the line.
+pub(crate) struct EdgeCrossings<'a, T> {
+    got: std::cell::RefCell<Vec<Option<T>>>,
+    solve: Box<dyn Fn(usize, Option<usize>) -> T + 'a>,
+}
+
+impl<'a, T: Clone> EdgeCrossings<'a, T> {
+    /// A memo for a ring of `n` edges, `solve(i, on_end)` answering edge `i`.
+    pub(crate) fn new(n: usize, solve: impl Fn(usize, Option<usize>) -> T + 'a) -> Self {
+        Self {
+            got: std::cell::RefCell::new(vec![None; n]),
+            solve: Box::new(solve),
+        }
+    }
+
+    /// Edge `i`'s answer — the first ask's, whatever `on_end` a later ask passes.
+    pub(crate) fn at(&self, i: usize, on_end: Option<usize>) -> T {
+        if let Some(got) = &self.got.borrow()[i] {
+            return got.clone();
+        }
+        let got = (self.solve)(i, on_end);
+        self.got.borrow_mut()[i] = Some(got.clone());
+        got
+    }
+}
+
+impl<N: Clone> EdgeCrossings<'_, Option<Vec<N>>> {
+    /// How many — the walk's `crossings`.
+    pub(crate) fn count(&self, i: usize, on_end: Option<usize>) -> Option<u8> {
+        self.at(i, on_end)
+            .and_then(|found| u8::try_from(found.len()).ok())
+    }
+}
+
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
 /// ★ **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring

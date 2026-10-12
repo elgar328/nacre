@@ -309,15 +309,10 @@ fn trace_transversal_face(
             }
         };
         // Where `L` crosses an arc strictly inside it, per edge, asked once
-        // ([`arc_crossings`]): the walk reads the count where the arc's ends cannot say, and the
-        // Crossing arm below names the `nth` — one answer, so the two cannot disagree. An arc
-        // whose ends are on opposite sides is not asked by the walk and is filled on naming.
-        let arcs = std::cell::RefCell::new(vec![None::<Result<Vec<NodeId>, DeclineKind>>; n]);
-        let arc_at = |i: usize, on_end: Option<usize>| -> Result<Vec<NodeId>, DeclineKind> {
-            if let Some(got) = &arcs.borrow()[i] {
-                return got.clone();
-            }
-            let got = match walls[i] {
+        // ([`arc_crossings`], [`combinatorics::EdgeCrossings`]): the walk reads the count, and the
+        // Crossing arm below names the `nth`.
+        let arcs = combinatorics::EdgeCrossings::new(n, |i: usize, on_end: Option<usize>| {
+            match walls[i] {
                 // An arc of a cylinder the gate proved clear of this class lies wholly on one side
                 // of it: no crossing, and nothing to ask of a class with no world statement.
                 crate::combinatorics::Wall::Arc { cyl, .. }
@@ -340,10 +335,9 @@ fn trace_transversal_face(
                 },
                 crate::combinatorics::Wall::Plane(_)
                 | crate::combinatorics::Wall::Ruling { .. } => Ok(Vec::new()),
-            };
-            arcs.borrow_mut()[i] = Some(got.clone());
-            got
-        };
+            }
+        });
+        let arc_at = |i: usize, on_end: Option<usize>| arcs.at(i, on_end);
         let arc_count = |i: usize, on_end: Option<usize>| {
             arc_at(i, on_end)
                 .ok()
