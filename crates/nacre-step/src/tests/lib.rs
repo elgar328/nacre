@@ -457,3 +457,82 @@ fn cylinder_round_trips_through_step_io_reader() {
         .collect();
     assert_eq!(bounds, vec![1, 1]);
 }
+
+/// An output that records the length of every write it receives.
+struct Recording {
+    bytes: Vec<u8>,
+    writes: Vec<usize>,
+}
+
+impl std::io::Write for Recording {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.bytes.extend_from_slice(buf);
+        self.writes.push(buf.len());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// ★★ **`write_step` streams: the file reaches the output in pieces, not as one text at the end.**
+/// That is what it is for — a caller writing to a file never holds the whole file. Thirty boxes make
+/// a file of 185 KB, past the writer's 64 KiB chunk twice, so it arrives in at least three writes
+/// (two chunks and the close); an adapter that gathered the text and handed it over once would show
+/// one. Joined, the pieces are the file [`to_step`] returns.
+#[test]
+fn write_step_streams_the_file_in_pieces() {
+    let mut m = Model::new();
+    for i in 0..30 {
+        let x = f64::from(2 * i);
+        nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([x, 0.0, 0.0]),
+            Point3::from_array([x + 1.0, 1.0, 1.0]),
+        );
+    }
+    let out = Recording {
+        bytes: Vec::new(),
+        writes: Vec::new(),
+    };
+    let out = write_step(out, &m, m.live_solids(), STAMP).expect("export");
+    let text = to_step(&m, STAMP).expect("export as text");
+
+    assert!(
+        text.len() > 2 * 64 * 1024,
+        "the file is {} bytes",
+        text.len()
+    );
+    assert!(out.writes.len() >= 3, "writes: {:?}", out.writes);
+    let largest = out.writes.iter().max().copied().unwrap_or(0);
+    assert!(largest < text.len(), "one write of the whole file");
+    assert_eq!(out.bytes, text.as_bytes());
+}
+
+/// An output that refuses every write.
+#[derive(Debug)]
+struct Refusing;
+
+impl std::io::Write for Refusing {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("refused"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// ★ **A failing output is `StepError::Io`, carrying the output's own error** — not the writer's
+/// message flattened into `Backend`, so the caller can ask what went wrong (a full disk, a closed
+/// pipe). A small file reaches the output only when it is finished, so that is where it fails.
+#[test]
+fn a_failing_output_is_an_io_error() {
+    let m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let err = write_step(Refusing, &m, m.live_solids(), STAMP).expect_err("the output refuses");
+    match err {
+        StepError::Io(e) => assert_eq!(e.to_string(), "refused"),
+        other => panic!("not an io error: {other:?}"),
+    }
+}

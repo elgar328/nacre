@@ -12,6 +12,7 @@ While the version is `0.0.z`, every release may break anything.
 
 - `geom::intersect::flat_corner` says whether a ring vertex is strictly mid-run between its neighbours — the corner a profile's normal form dissolves.
 - `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.
+- `step::write_step` writes the solids given to any `std::io::Write`, such as a file, sending the file on in 64 KiB chunks instead of holding it in memory; `step::to_step` and `step::to_step_solids` return the same file as text.
 - `tess::tessellate_solids` meshes the solids given only — an application meshing what it shows, while its model keeps more live solids; `Tessellation::to_obj` writes whatever the mesh holds.
 
 ### Changed
@@ -24,6 +25,7 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `topo::Model::push_plane`, `topo::Model::push_plane_through` and `topo::Model::push_cylinder` take, after the figure, what that figure knows about itself (`topo::CacheStanding`) — pass `CacheStanding::Unrealized` for a figure nobody realized; a surface's cache now says whether it is the truth's realization (`topo::Model::surface_cache_standing`).
 - **Breaking:** `ops::refine_vertex_cache` is now `ops::refine_caches`, the door to call before exporting a model with a long history: it also raises surface caches and re-derives edges, and its `RefineReport` counts, for vertices, surfaces and edges, what it raised and what it left — undecided at the top of the ladder, or with no way to realize it.
 - **Breaking:** `step::to_step` takes the header's time stamp (`to_step(&model, "2026-10-05T12:00:00Z")`), written verbatim; the kernel no longer reads the clock. `step::to_step_solid` is now `step::to_step_solids`, which writes the solids given, in that order — pass `&[solid]` for one.
+- **Breaking:** `step::StepError` is `#[non_exhaustive]` and has an `Io` variant, holding the output's `std::io::Error` when `step::write_step` cannot write; an exhaustive `match` on it needs a `_` arm.
 - **Breaking:** `tess::Tessellation::to_obj` takes the model the mesh was built from, and every corner of the OBJ now carries its face's outward normal (`vn`, `f a//na b//nb c//nc`): a cylinder shades round and its rims stay sharp.
 - **Breaking:** `topo::Model::rebuild_edge_cache` takes the solids whose edges it re-derives; pass `model.live_solids()` for all of them.
 

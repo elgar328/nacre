@@ -1,9 +1,11 @@
 //! STEP (AP242 Edition 2) export for the nacre kernel.
 //!
-//! [`to_step`] is a thin **adapter**: it translates a kernel [`Model`] into
+//! [`write_step`] is a thin **adapter**: it translates a kernel [`Model`] into
 //! AP242 entities and delegates serialization to `brep-to-step`, a shape-only
-//! STEP writer. The rest of the kernel is backend-agnostic — the writer is
-//! confined to this crate, the same isolation used for the OCCT helper protocol.
+//! STEP writer that streams the file to any [`std::io::Write`]; [`to_step`] and
+//! [`to_step_solids`] return the file as text. The rest of the kernel is
+//! backend-agnostic — the writer is confined to this crate, the same isolation
+//! used for the OCCT helper protocol.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
 //! `Curve::{Line, Circle}` (a whole cylinder: two seam vertices, two full-circle rims, and a
@@ -22,18 +24,25 @@ use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Model, Orientation, Shell, Solid, Vertex};
 use std::collections::HashMap;
+use std::io::{self, Write};
 
 /// A failure while translating a [`Model`] to STEP.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum StepError {
     /// The writer refused an input (its `brep_to_step::Error`, as its message,
     /// so the writer's type does not leak into the public API).
     Backend(String),
+    /// Writing to the output of [`write_step`] failed. The output holds an incomplete file.
+    Io(io::Error),
 }
 
 impl From<brep_to_step::Error> for StepError {
     fn from(e: brep_to_step::Error) -> Self {
-        StepError::Backend(e.to_string())
+        match e {
+            brep_to_step::Error::Io(e) => StepError::Io(e),
+            e => StepError::Backend(e.to_string()),
+        }
     }
 }
 
@@ -59,7 +68,7 @@ impl From<brep_to_step::Error> for StepError {
 /// Part 21 caps a header string at 256 characters — a longer stamp is [`StepError::Backend`] —
 /// and writes a character outside ASCII as an `\X2\` escape, so verbatim means verbatim ASCII.
 pub fn to_step(model: &Model, timestamp: &str) -> Result<String, StepError> {
-    build_step(model, model.live_solids(), timestamp)
+    to_step_solids(model, model.live_solids(), timestamp)
 }
 
 /// Export the given solids to AP242 (Ed2) STEP text, one STEP part each, in the order given.
@@ -74,21 +83,44 @@ pub fn to_step_solids(
     solids: &[Handle<Solid>],
     timestamp: &str,
 ) -> Result<String, StepError> {
-    build_step(model, solids, timestamp)
+    Ok(build_step(Vec::new(), model, solids, timestamp)?.finish_to_string()?)
 }
 
-/// The shared body of [`to_step`] and [`to_step_solids`].
-fn build_step(
+/// Write the given solids to `out` as an AP242 (Ed2) STEP file, one STEP part each, in the order
+/// given, and return `out`. Same coverage, time stamp and errors as [`to_step`], which returns the
+/// same file as text.
+///
+/// The file goes to `out` as it is written, in chunks of 64 KiB, so it is never held in memory
+/// whole — for a caller writing to a file or a socket. A `File` needs no `BufWriter`.
+///
+/// # Errors
+///
+/// [`StepError::Backend`] for an input the writer refuses, and [`StepError::Io`] if writing to
+/// `out` fails. Either way `out` may already hold the start of the file, and it is not returned;
+/// to keep the handle, pass `&mut out`.
+pub fn write_step<W: Write>(
+    out: W,
     model: &Model,
     solids: &[Handle<Solid>],
     timestamp: &str,
-) -> Result<String, StepError> {
+) -> Result<W, StepError> {
+    Ok(build_step(out, model, solids, timestamp)?.finish()?)
+}
+
+/// The shared body of [`write_step`], [`to_step`] and [`to_step_solids`]: every entity written,
+/// the file not yet closed.
+fn build_step<W: Write>(
+    out: W,
+    model: &Model,
+    solids: &[Handle<Solid>],
+    timestamp: &str,
+) -> Result<StepWriter<W>, StepError> {
     let header = Header {
         timestamp: timestamp.to_owned(),
         originating_system: "nacre".to_owned(),
         ..Header::default()
     };
-    let mut b = StepWriter::new(Vec::new(), &header, Units::default())?;
+    let mut b = StepWriter::new(out, &header, Units::default())?;
 
     // Export the given (live) solids, not the whole append-only store:
     // superseded solids linger in the arena but must not reach the file.
@@ -119,15 +151,15 @@ fn build_step(
         }
     }
 
-    b.finish_to_string().map_err(StepError::from)
+    Ok(b)
 }
 
 /// Build every face of one shell as STEP faces, deduping shared
 /// vertices/edges through `vmap`/`emap`. Used for both the outer shell and each
 /// cavity shell of a solid (a cavity is emitted identically — its faces already
 /// carry the correct inward orientation).
-fn build_shell_faces(
-    b: &mut StepWriter<Vec<u8>>,
+fn build_shell_faces<W: Write>(
+    b: &mut StepWriter<W>,
     model: &Model,
     shell: Handle<Shell>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -167,8 +199,8 @@ fn build_shell_faces(
 }
 
 /// Build a loop's edges, each with the way the loop runs along it, for a [`Bound`].
-fn build_loop(
-    b: &mut StepWriter<Vec<u8>>,
+fn build_loop<W: Write>(
+    b: &mut StepWriter<W>,
     model: &Model,
     lp: &nacre_topo::Loop,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -186,8 +218,8 @@ fn build_loop(
     Ok(edges)
 }
 
-fn build_edge(
-    b: &mut StepWriter<Vec<u8>>,
+fn build_edge<W: Write>(
+    b: &mut StepWriter<W>,
     model: &Model,
     eh: Handle<Edge>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
@@ -215,8 +247,8 @@ fn build_edge(
     Ok(id)
 }
 
-fn build_vertex(
-    b: &mut StepWriter<Vec<u8>>,
+fn build_vertex<W: Write>(
+    b: &mut StepWriter<W>,
     model: &Model,
     vh: Handle<Vertex>,
     vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
