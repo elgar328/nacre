@@ -11,8 +11,9 @@
 //! Both families build.
 //!
 //! Plus the shapes whose honest answer is partly a refusal by name: both walls entering `A` (an
-//! inward wedge — its `A − B` touches itself along the line), and the corner touching `A` from
-//! outside (a line contact).
+//! inward wedge — its `A − B` touches itself along the line), and a corner touching `A` from
+//! outside (a line contact, a tangent side) — see
+//! [`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as
 //! written and rotated by one vertex (which reorders the plane classes), and four placements
@@ -448,10 +449,11 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
-/// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The triangle's corner
+/// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The prism's corner
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
-/// seam and off it) or from outside with one side tangent there — so the circle is cut at exactly
-/// that one node: one arc from the node back to itself. The planar arrangement takes that ring
+/// seam and off it) or from outside, with one side tangent there or with both sides leaving it (a
+/// line contact) — so the circle is cut at exactly that one node: one arc from the node back to
+/// itself. The planar arrangement takes that ring
 /// (`combinatorics::ring_floor`, the self-loop OCCT and Parasolid keep for a closed edge), the
 /// lateral's chart reads a rim of one node through that arc for every sector
 /// (`Chart::arc_around`), and the region walk spells it as that one arc (`cyl_chart::regions`).
@@ -460,17 +462,20 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// the way its one vertex could (`assembly::reconstruct`), and every reader takes it as the whole
 /// turn (`Model::derive_edge_curve`); the mesher draws the pinch (`every_six`'s [`drawn`]).
 ///
+/// The cap ring an outside corner leaves is pinched at the node on the rim — the circle and the
+/// prism's section meet there alone — and on either frame its winding is read where the circle
+/// bulges past that node, so it is no refusal (`combinatorics::loop_winding`).
+///
 /// What builds is checked against the input: `A ∩ B` is the wedge's section over the height the
-/// two share (the tangent triangle meets `A` in a line only — empty), and [`identities`] carries
+/// two share (an outside corner meets `A` in a line only — empty), and [`identities`] carries
 /// that to the union and the differences; the body counts are asserted beside. Two answers are
 /// fixed whatever builds: the wedge's `A − B` never builds — the groove touches the lateral along
 /// a line, a solid touching itself, `NonManifoldResultEdge` at every height — and no refusal is a
 /// suspected defect. What does not build yet is pinned by family, boolean and height (todo
 /// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): a wedge standing on `A`'s base at the coplanar
-/// merge (`CoplanarMerge`); the tangent family's touch at its least node (`CoincidentNodes`, as
-/// before the planar arrangement took the ring), and past `A`'s top a corner one body keeps named
-/// by the other's walls (`VertexNamesAbsentSurface`) and, past both caps, a union whose cylinder
-/// has every corner on the line of contact (`NoClearRay`).
+/// merge (`CoplanarMerge`); and an outside corner past `A`'s top, whose touch leaves a vertex named
+/// by `A`'s cap and cylinder on `B`'s edge (`VertexNamesAbsentSurface`) and, past both caps, a union
+/// whose cylinder has every corner on the line of contact (`NoClearRay`).
 #[test]
 fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     use std::collections::BTreeMap;
@@ -481,6 +486,10 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
             &[[0.8, -0.6], [0.5, -0.5], [0.4, -0.1]],
         ),
         ("tangent side", &[[1.0, 0.0], [1.0, -1.0], [2.0, -0.5]]),
+        (
+            "line contact",
+            &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]],
+        ),
     ];
     let tau = 2.0 * std::f64::consts::PI;
     let close = |got: f64, want: f64| (got - want).abs() < 1e-9;
@@ -544,38 +553,18 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
         pin(wedge, &[0, 1], &[OnBase], "CoplanarMerge", 4);
         pin(wedge, &[2], &Height::ALL, "NonManifoldResultEdge", 4);
     }
-    pin(
-        "tangent side",
-        &[0, 1, 2, 3, 4, 5],
-        &Height::ALL,
-        "CoincidentNodes",
-        2,
-    );
-    pin(
-        "tangent side",
-        &[0, 1],
-        &[PastTop],
-        "VertexNamesAbsentSurface",
-        2,
-    );
-    pin("tangent side", &[0, 1], &[PastBoth], "NoClearRay", 2);
-    pin(
-        "tangent side",
-        &[3],
-        &[PastTop, PastBoth],
-        "VertexNamesAbsentSurface",
-        2,
-    );
+    for outside in ["tangent side", "line contact"] {
+        pin(outside, &[0, 1], &[PastTop], "VertexNamesAbsentSurface", 4);
+        pin(outside, &[0, 1], &[PastBoth], "NoClearRay", 4);
+        pin(
+            outside,
+            &[3],
+            &[PastTop, PastBoth],
+            "VertexNamesAbsentSurface",
+            4,
+        );
+    }
     assert_eq!(tally, want);
-}
-
-/// ★ **The corner touching `A` from outside — a line contact.** Common would be empty, Cut the
-/// operand, Fuse two bodies touching along the line. Refused today.
-#[test]
-fn a_line_contact_on_a_lateral_is_refused_today() {
-    let touching: &[[f64; 2]] = &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]];
-    let ran = every_placement(unit_disk, &[("a line contact", touching)], refused_today);
-    assert_eq!(ran, 2 * 2 * 4 * 6, "the family");
 }
 
 /// ★ **A tangent face that ends on the line at one height and crosses it at another.** `B` is

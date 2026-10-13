@@ -223,8 +223,7 @@ pub(crate) fn stored_line_dir(
 /// point exists there only if the three normals are independent — so with two genuinely different
 /// planes the determinant cannot vanish. Two edges through one node whose lines are parallel are
 /// two edges on **one** line, and that is the straight stretch a ring can arrive as (the
-/// arrangement names a point wherever a feature crosses an edge); [`loop_winding`] walks back past
-/// exactly that.
+/// arrangement names a point wherever a feature crosses an edge).
 ///
 /// ★★ **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
 /// `angular_order` folds them (`Aliases::union_wall`) and still keeps an honest `UnorderedEdges`
@@ -233,9 +232,8 @@ pub(crate) fn stored_line_dir(
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
-// Production reads the turn through `turn_between`, which lets a caller skip a straight
-// stretch, so this per-node spelling has no product caller at all -- `loop_winding`'s tests
-// are the only ones, and they ask it at a hull vertex where the turn and the winding agree.
+// No product caller: `loop_winding` orders the extreme node's departures instead. Its tests ask
+// this at a hull vertex, where the turn and the winding agree.
 #[cfg(test)]
 pub(crate) fn turn_at(
     jd: &Judge<'_, WorkingPlane>,
@@ -249,17 +247,18 @@ pub(crate) fn turn_at(
     // answer either way; naming it is what makes an arc's two ends tellable apart.
     let arriving = dir_at(jd, cyls, p, &ring[(i + n - 1) % n], ring[i].node)?;
     let leaving = dir_at(jd, cyls, p, &ring[i], ring[i].node)?;
-    turn_between(jd, p, &arriving, &leaving)
+    match turn(jd, p, &arriving, &leaving)? {
+        0 => Err(reject(RejectReason::StraightAngle)),
+        t => Ok(t),
+    }
 }
 
 /// **Do two carriers give one direction on `P`?** — `P ∩ a` and `P ∩ b` are parallel.
 ///
 /// ★ **`parallel`, not `collinear`, and the difference is the caller's.** Two parallel lines are
-/// the same line only when they share a point. [`loop_winding`]'s walk-back has that extra premise
-/// (its two edges are chained through a ring), so there parallel *does* mean collinear;
-/// `arrangement`'s wall direction families do not — its own comment says so: *"Same family ⇒ the
-/// two lines are parallel and meet in no point."* One predicate, two premises, and the premise
-/// belongs to whoever has it.
+/// the same line only when they share a point; `arrangement`'s wall direction families ask it of
+/// walls that share none — their own comment says so: *"Same family ⇒ the two lines are parallel
+/// and meet in no point."* The premise belongs to whoever has it.
 ///
 /// ★★ **The same primitive answers a different question elsewhere and that is left alone.**
 /// `plane_pair_dir_sign(p, wall, c) != 0` also spells "does this third plane *cut* the line" — a
@@ -280,7 +279,10 @@ pub(crate) fn parallel_carriers(
 /// [`angular_order`] asks this only inside the bucket where the turn already came
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
-/// reach), and those belong in the `0` bucket rather than the `π` one.
+/// reach), and those belong in the `0` bucket rather than the `π` one. ★ For two directions at one
+/// node it needs no guard to be true when it says yes — one carrier through a shared point is one
+/// line or one circle — which is how [`loop_winding`] reads it: a ring passage whose departure is
+/// the reverse of its arrival on one carrier is an antenna.
 pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
     match (a, b) {
         (
@@ -316,137 +318,6 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
     }
 }
 
-/// What an earlier ring edge does relative to `later` — the three answers [`loop_winding`]'s
-/// walk-back needs, as one word each instead of two inline tests.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Continuation {
-    /// Not parallel: the loop turns here, so this is the edge the turn is read against.
-    Turns,
-    /// Parallel and the same way: one straight run, keep walking back.
-    Straight,
-    /// Parallel and the *opposite* way: the ring doubles back along the line it came in on — an
-    /// antenna, whose tip has no turn and whose neighbours' turn belongs to a different vertex.
-    DoublesBack,
-}
-
-/// [`Continuation`] of `earlier` with respect to `later`, both on `P`.
-///
-/// ★★★ **`later` is the *fixed* reference, never the previous candidate.** The walk-back compares
-/// every candidate with the edge the turn will be read at, not with its neighbour — chaining it
-/// would weaken "the whole run goes one way" into "each neighbouring pair does", and those differ
-/// on a run that reverses twice.
-///
-/// ★★ **Measured: nothing in the suite reaches `DoublesBack`** — `straight_angle` is
-/// raised nowhere at all (`--features reject-trace` over the workspace: 13 reasons, 48 raises, this
-/// one zero), and it is not in the reject census's frozen corpus either. It is an unfired backstop
-/// like `angular_order`'s `UnorderedEdges`, kept because upstream is *supposed* to make it
-/// impossible (`merge_coincident`, `split_at_crossings`) and that is an argument rather than a
-/// check. So this extraction is defended by derivation, not by a test — recorded, not hidden.
-pub(crate) fn continuation(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    earlier: &EdgeDir,
-    later: &EdgeDir,
-) -> Result<Continuation, BoolError> {
-    Ok(match (earlier, later) {
-        (
-            EdgeDir::Line {
-                carrier: ce,
-                sense: se,
-            },
-            EdgeDir::Line {
-                carrier: cl,
-                sense: sl,
-            },
-        ) => {
-            if !parallel_carriers(jd, p, *ce, *cl) {
-                Continuation::Turns
-            } else if se == sl {
-                Continuation::Straight
-            } else {
-                Continuation::DoublesBack
-            }
-        }
-        // Two arcs of one circle share a tangent at the node they meet at — the curved reading of
-        // "parallel carriers". Same travel is a straight stretch; opposite is the antenna the
-        // caller refuses.
-        (EdgeDir::Arc(e), EdgeDir::Arc(l)) if e.cyl == l.cyl => {
-            if e.ccw == l.ccw {
-                Continuation::Straight
-            } else {
-                Continuation::DoublesBack
-            }
-        }
-        // One ruling continuing through a node — the straight reading again, keyed like
-        // `antiparallel`'s arm: `(cyl, side)` is the line's identity.
-        (EdgeDir::Ruling(e), EdgeDir::Ruling(l)) if e.cyl == l.cyl && e.side == l.side => {
-            if e.up == l.up {
-                Continuation::Straight
-            } else {
-                Continuation::DoublesBack
-            }
-        }
-        // ★ A line and an arc **tangent** at the shared node (a fillet's smooth
-        // corner): the turn is `0`, and whether the ring runs on or doubles back is the travel
-        // directions' agreement ([`tangent_travel_agrees`]).
-        (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc))
-        | (EdgeDir::Arc(arc), EdgeDir::Line { carrier, sense })
-            if turn(jd, p, earlier, later)? == 0 =>
-        {
-            match tangent_travel_agrees(jd, p, *carrier, *sense, arc) {
-                Some(true) => Continuation::Straight,
-                Some(false) => Continuation::DoublesBack,
-                None => return Err(reject(RejectReason::WitnessNotRational)),
-            }
-        }
-        // ★ A line and a ruling that are **one** line (a prism's edge running on past the
-        // cylinder's cap along a ruling): the straight reading once more, by the travel
-        // directions ([`line_along_ruling`]).
-        (EdgeDir::Line { .. }, EdgeDir::Ruling(_)) | (EdgeDir::Ruling(_), EdgeDir::Line { .. })
-            if turn(jd, p, earlier, later)? == 0 =>
-        {
-            match line_along_ruling(jd, p, earlier, later)? {
-                Some(true) => Continuation::Straight,
-                Some(false) => Continuation::DoublesBack,
-                None => return Err(reject(RejectReason::WitnessNotRational)),
-            }
-        }
-        // A line and an arc at a **transversal** crossing turn — that is what transversal means.
-        _ => Continuation::Turns,
-    })
-}
-
-/// The turn from the direction a loop **arrives on** to the one it **leaves on** — [`turn`] with
-/// the straight-angle policy its ring callers share.
-///
-/// ★★ **It takes two directions, not two edges, and the point they meet at is the caller's.**
-/// [`loop_winding`] reads this at `ring[lo].node`, and the arriving direction may come from an edge
-/// that is *not* adjacent to it: the walk-back hands the edge on the far side of a straight run,
-/// licensed by [`Continuation::Straight`] — the run is parallel and travelled the same way, so its
-/// direction *is* the one the loop arrives on. That premise belongs to the caller that established
-/// it, the same way [`antiparallel`]'s guard does.
-///
-/// ★ **Which end each direction was read at is [`dir_at`]'s to say** — a line's tangent does not
-/// change along it, an arc's does, and that is why the direction is built from `(edge, node)`
-/// rather than from an edge alone.
-///
-/// ★★ **The `0` refused here is the *straight* angle, and that is a plane sentence.** Two arcs of
-/// one circle meeting at a node are tangent-continuous, so [`turn`] answers `0` there without
-/// anything being wrong — the caller's walk-back reads that node as
-/// [`Continuation::Straight`] and steps past it, which is why the `0` that reaches here is the
-/// one where a loop doubles back on itself.
-pub(super) fn turn_between(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    arriving: &EdgeDir,
-    leaving: &EdgeDir,
-) -> Result<i8, BoolError> {
-    match turn(jd, p, arriving, leaving)? {
-        0 => Err(reject(RejectReason::StraightAngle)),
-        t => Ok(t),
-    }
-}
-
 /// **The signed turn between two directions at a point of plane `p`**, about that face's outward
 /// normal — `+1` left, `-1` right, `0` collinear. The one place the sign is made.
 ///
@@ -462,10 +333,10 @@ pub(super) fn turn_between(
 /// where `sign(det[…])` is `plane_pair_dir_sign`, already exact. ★ The derivation is spelled
 /// **here and nowhere else**, and this function is the one place the product computes it.
 ///
-/// ★★ **`0` comes back as `0`, on purpose.** Its two consumers want different things from it:
-/// `turn_between` calls it a [`RejectReason::StraightAngle`], and [`angular_order`]
-/// buckets it as the `0`/π pole and only rejects a *pair* of them. Deciding here would hand one
-/// caller a rule that is not its own. By the same test, [`edge_dir`]'s zero *does* live in the
+/// ★★ **`0` comes back as `0`, on purpose.** [`angular_order`] (through [`departure_turn`])
+/// buckets it as the `0`/π pole and only rejects a *pair* of them; the test-only `turn_at` calls it
+/// a [`RejectReason::StraightAngle`]. Deciding here would hand one caller a rule that is not its
+/// own. By the same test, [`edge_dir`]'s zero *does* live in the
 /// atom — both of its callers answer it identically.
 ///
 /// ★★ **What arcs will widen, and what they will not.** A circle's tangent rides no plane, so an
@@ -491,12 +362,8 @@ pub(super) fn turn_between(
 /// rather than a list a reader has to trust:
 /// - [`antiparallel`] — the π pole in `angular_order` ("same wall, opposite sign"), which for arcs
 ///   becomes "same circle, opposite tangent";
-/// - [`parallel_carriers`] — [`loop_winding`]'s walk-back, which becomes "are the tangents
-///   parallel";
-/// - [`parallel_carriers`] again — `arrangement::split_at_crossings`' **wall direction families**
-///   (`Wall.dir`). It sits in a different file and asks the same
-///   question with a weaker premise (its two walls share no point), which is why one predicate
-///   serves both and the premise stays with the caller.
+/// - [`parallel_carriers`] — `arrangement::split_at_crossings`' **wall direction families**
+///   (`Wall.dir`), asked of walls that share no point.
 ///
 /// ★ **All three now answer for arcs, and the arity question is settled where it belonged.** For a
 /// straight edge the tangent is the same at both ends, so "the edge's direction" and "the direction

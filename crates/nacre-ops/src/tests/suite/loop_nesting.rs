@@ -128,6 +128,155 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
     }
 }
 
+/// ★★ **A ring pinched at its extreme node winds by its outermost passage.** Two rings on the plane
+/// `z = 1`, each passing `P = (2, 2)` — their lexicographically smallest point, no arc anywhere —
+/// twice, built straight from names so the shape is exactly this:
+///
+/// - two clockwise lobes touching at `P` (the triangles `P (4,4) (4,3)` and `P (4,1) (4,0)`) — two
+///   holes meeting at a point, the contour of the face around them: `−1`;
+/// - a counter-clockwise triangle `P (4,0) (4,4)` with a clockwise hole `P (3,2.5) (3,1.5)` inside
+///   it, touching its outer boundary at `P` — one ring of an outer boundary and a hole: `+1`.
+///
+/// Each is asked from all six starting nodes and reversed, so neither the start index nor which of
+/// the two passages comes first decides it. ★ The arrangement does not deliver such a ring today —
+/// it keeps the two corners at `P` as two names, so each lobe arrives as its own ring — so this is
+/// where the rule's many-passage reading is held.
+#[test]
+fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
+    let mut m = Model::new();
+    let at = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
+    let wall = |m: &mut Model, a: (f64, f64), b: (f64, f64)| {
+        plane_through(m, [at(a.0, a.1, 0.0), at(b.0, b.1, 0.0), at(a.0, a.1, 1.0)])
+    };
+    let top = plane_through(
+        &mut m,
+        [at(0.0, 0.0, 1.0), at(1.0, 0.0, 1.0), at(0.0, 1.0, 1.0)],
+    );
+    let planes = vec![
+        top,                                  // 0: z = 1
+        wall(&mut m, (2.0, 2.0), (4.0, 3.0)), // 1: through P along (2, 1)
+        wall(&mut m, (2.0, 2.0), (4.0, 4.0)), // 2: through P along (1, 1)
+        wall(&mut m, (2.0, 2.0), (4.0, 1.0)), // 3: through P along (2, −1)
+        wall(&mut m, (2.0, 2.0), (4.0, 0.0)), // 4: through P along (1, −1)
+        wall(&mut m, (4.0, 0.0), (4.0, 1.0)), // 5: x = 4
+        wall(&mut m, (3.0, 0.0), (3.0, 1.0)), // 6: x = 3
+    ];
+    let jd = crate::planes::test_judge(&planes);
+    let named = |ring: [[usize; 3]; 6]| -> Vec<[usize; 3]> {
+        ring.map(|mut t| {
+            t.sort_unstable();
+            t
+        })
+        .to_vec()
+    };
+    // `P` is named by the two walls the ring arrives and leaves along at each passage.
+    let two_holes = named([
+        [0, 4, 2],
+        [0, 2, 5],
+        [0, 5, 1],
+        [0, 1, 3],
+        [0, 3, 5],
+        [0, 5, 4],
+    ]);
+    let outer_and_hole = named([
+        [0, 3, 4],
+        [0, 4, 5],
+        [0, 5, 2],
+        [0, 2, 1],
+        [0, 1, 6],
+        [0, 6, 3],
+    ]);
+    for (name, ring, want) in [
+        ("two holes", two_holes, -1i8),
+        ("outer and hole", outer_and_hole, 1),
+    ] {
+        for reversed in [false, true] {
+            for start in 0..ring.len() {
+                let mut r = ring.clone();
+                if reversed {
+                    r.reverse();
+                }
+                r.rotate_left(start);
+                let edges = combinatorics::ring_from_names(0, &r).expect("the names chain");
+                let got = combinatorics::loop_winding(&jd, NO_CYLS, 0, &edges);
+                let want = if reversed { -want } else { want };
+                assert_eq!(
+                    got.ok(),
+                    Some(want),
+                    "{name}, reversed = {reversed}, start = {start}"
+                );
+            }
+        }
+    }
+}
+
+/// ★ **An antenna at the extreme node cancels — its tip or its base.** Same plane table as
+/// [`a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage`]: a clockwise triangle
+/// `P (4,4) (4,3)` with an antenna out of `P` to `(4,1)` and back — the antenna's two departures
+/// at `P` come on different passages (out on one, back on the next), and once they cancel the
+/// triangle's corner reads `−1`. A ring that is nothing but antennas — `(4,0) → (4,1) → P → (4,1)
+/// → (4,0)` — leaves no departure at `P` at all: no side, `StraightAngle`.
+#[test]
+fn an_antenna_at_the_extreme_node_cancels() {
+    let mut m = Model::new();
+    let at = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
+    let wall = |m: &mut Model, a: (f64, f64), b: (f64, f64)| {
+        plane_through(m, [at(a.0, a.1, 0.0), at(b.0, b.1, 0.0), at(a.0, a.1, 1.0)])
+    };
+    let top = plane_through(
+        &mut m,
+        [at(0.0, 0.0, 1.0), at(1.0, 0.0, 1.0), at(0.0, 1.0, 1.0)],
+    );
+    let planes = vec![
+        top,                                  // 0: z = 1
+        wall(&mut m, (2.0, 2.0), (4.0, 3.0)), // 1: through P along (2, 1)
+        wall(&mut m, (2.0, 2.0), (4.0, 4.0)), // 2: through P along (1, 1)
+        wall(&mut m, (2.0, 2.0), (4.0, 1.0)), // 3: through P along (2, −1)
+        wall(&mut m, (2.0, 2.0), (4.0, 0.0)), // 4: through P along (1, −1)
+        wall(&mut m, (4.0, 0.0), (4.0, 1.0)), // 5: x = 4
+    ];
+    let jd = crate::planes::test_judge(&planes);
+    let sorted = |ring: &[[usize; 3]]| -> Vec<[usize; 3]> {
+        ring.iter()
+            .map(|t| {
+                let mut t = *t;
+                t.sort_unstable();
+                t
+            })
+            .collect()
+    };
+    let wind = |r: &[[usize; 3]]| {
+        let edges = combinatorics::ring_from_names(0, r).expect("the names chain");
+        combinatorics::loop_winding(&jd, NO_CYLS, 0, &edges)
+    };
+    let based = sorted(&[[0, 3, 2], [0, 2, 5], [0, 5, 1], [0, 1, 3], [0, 3, 5]]);
+    for start in 0..based.len() {
+        let mut r = based.clone();
+        r.rotate_left(start);
+        assert_eq!(
+            wind(&r).ok(),
+            Some(-1),
+            "antenna based at P, start = {start}"
+        );
+    }
+    let only = sorted(&[[0, 5, 4], [0, 5, 3], [0, 3, 1], [0, 3, 5]]);
+    for start in 0..only.len() {
+        let mut r = only.clone();
+        r.rotate_left(start);
+        assert!(
+            matches!(
+                wind(&r),
+                Err(BoolError::Rejected {
+                    reason: RejectReason::StraightAngle,
+                    ..
+                })
+            ),
+            "antennas only, start = {start}: {:?}",
+            wind(&r)
+        );
+    }
+}
+
 #[test]
 fn a_reflex_node_turns_against_its_ring() {
     // The L cap's outer ring is a hexagon with exactly one reflex corner, at `(1, 1)`. A

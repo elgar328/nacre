@@ -178,7 +178,7 @@ pub enum RejectReason {
     // causes apart. Each name below is one question, asked at one kind of place.
     /// **Two distinct plane triples name the same point.** A vertex is named by the three planes
     /// meeting there, so two names for one point means a **fourth** plane passes through it — the
-    /// arrangement then holds an edge with no direction, or a loop whose extreme vertex recurs.
+    /// arrangement then holds an edge with no direction.
     ///
     /// The same substrate limit [`Self::FourPlane`] names; this is where it surfaces on the
     /// paths that do not run that check.
@@ -188,18 +188,18 @@ pub enum RejectReason {
     RingNaming,
     /// A ring is shorter than a triangle, so it bounds nothing and has no winding to read.
     DegenerateRing,
-    /// **A corner with no turn**: the two edges meeting at a ring node run along one line
-    /// (their wall planes' determinant vanishes, or both edges name the same wall), so the loop
-    /// has no left or right there.
+    /// **A ring node with no side**: the edges meeting there run along one line, so the loop has
+    /// no left or right at it. Two places ask.
     ///
-    /// ★ **No fixture in the suite, and the reason is worth keeping.** Its one subject was a pair of
-    /// overlapping unit boxes with one turned 60° about Z, whose `Fuse` stopped in the assembly's
-    /// vertex naming — a node that is a corner of one body and a straight run of the other, named
-    /// by borrowing the other body's plane. Scoping the naming per solid removed the borrowing, and
-    /// the pair (which only *touches* at 60°) now comes back as two bodies. The sweep was re-run
-    /// over that family — three axes, seventeen angles, four overlaps, all three kinds, **612
-    /// booleans, none declining**. Like [`Self::DegenerateWitness`] the check stays wired: it is the
-    /// honest answer if a ring ever does run straight through a node, and a corpus is not a proof.
+    /// * `combinatorics::loop_winding` — every passage of the ring through its extreme node is an
+    ///   antenna (out and back along one carrier), so the region has no side there to read the
+    ///   winding from. The half-cylinder family of `tests/coverage/edge_on_a_ruling.rs` meets it
+    ///   (a wall ending on the flat's edge, inside `A`'s span and past its top).
+    /// * The assembly's vertex naming — a node that is a corner of one body and a straight run of
+    ///   the other. ★ No fixture: its one subject (two overlapping unit boxes, one turned 60° about
+    ///   Z) went away when the naming was scoped per solid, and the sweep over that family — three
+    ///   axes, seventeen angles, four overlaps, all three kinds, 612 booleans — declines nowhere.
+    ///   The check stays wired: a corpus is not a proof.
     StraightAngle,
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
@@ -714,12 +714,7 @@ pub enum RejectReason {
     /// limit under an output-side name, and the census keys on these.
     ///
     /// ★★★★★ **Two sites, and neither of them fires** — measured over the whole suite
-    /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). A chained
-    /// operand is read, and what it meets is [`Self::CurvedStraightRun`] at the arrangement's
-    /// *cell* stage: the split passes all take a cylinder-pinned end, and `arrangement::walk_cells`
-    /// asks `combinatorics::loop_winding` for a ring's winding, whose extreme-node walk steps past
-    /// two tangent arcs of one circle. ☑ Measured by backtrace, not inferred: the raise arrives
-    /// through `walk_cells`/`per_class`.
+    /// (`--features reject-trace`, this one **absent**): a chained operand is read.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. A corner a cylinder makes is
     ///   **read exactly** (a pierce point carries one radicand and everything it is measured
@@ -817,22 +812,6 @@ pub enum RejectReason {
     RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///
-    /// `loop_winding` reads the turn at the ring's extreme node, walking back past nodes the loop
-    /// runs straight through. The direction it carries out of that walk is the far edge's direction
-    /// **at its own start**, which is the extreme node's arriving direction only because a line's
-    /// tangent does not change along it. Two arcs of one circle are tangent-continuous too — so the
-    /// walk steps past them just the same — but their tangents differ, and the winding read there
-    /// would be the turn at some *other* point of the ring, confidently wrong.
-    ///
-    /// ★★★★★ **Not an unfired guard.** Where every extreme node is a
-    /// real corner — a disk cut by chords is convex, a polygon minus disks turns at every arc end —
-    /// the walk never takes a step. The arc split also cuts circles on a population that
-    /// produces the other shape (a **chained** cylinder operand), and all four chained fixtures
-    /// stop here. ☑ Measured.
-    ///
-    /// ★ The answer it named still stands, and it is not a wider version of this walk: read the
-    /// winding at the extremum of the **region**, which may lie in an arc's interior.
-    CurvedStraightRun,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -1115,7 +1094,6 @@ impl RejectReason {
             Self::CurvedOperandBoundary => "curved_operand_boundary",
             Self::CircleCrossesRuling => "circle_crosses_ruling",
             Self::RulingBoundNotYet => "ruling_bound_not_yet",
-            Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
             Self::HoleRoots => "hole_roots",
@@ -1181,7 +1159,6 @@ impl RejectReason {
             | Self::RulingBoundNotYet
             | Self::CurvedOperandBoundary
             | Self::CircleCrossesRuling
-            | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,

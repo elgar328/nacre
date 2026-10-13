@@ -194,26 +194,23 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
         Point3::from_array([12.0, 17.0, 8.0]),
     );
     m.rebuild_adjacency();
-    let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
-    // ★★ **One point, several names — folded; then a pinched ring.** `(8,13,5)` is the boss's
-    // corner, a three-plane vertex; the rim crossings name the same point as pierce points of
-    // `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line `x = 8, y = 13` lies
-    // on the bore, so the gate records it and the alias seed folds the names into one
-    // (`Aliases::record_shared_ruling`), and the rim's arc and the wall `y = 13`, leaving the
-    // corner tangent and the same way, are ordered by the arc's bending. What stops it now is the
-    // plate's top: the bore's rim and the boss's footprint are two holes of it meeting at that
-    // corner, a ring pinched at its least node — `loop_winding` refuses the ambiguous turn by
-    // name, the wall a line contact meets (the `todo` item on edges on a ruling).
-    assert!(
-        matches!(
-            err,
-            BoolError::Rejected {
-                reason: RejectReason::CoincidentNodes,
-                ..
-            }
-        ),
-        "{err:?}"
-    );
+    let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("corner on rim");
+    // ★★ **One point, several names — folded; then a pinched ring, read where it is extreme.**
+    // `(8,13,5)` is the boss's corner, a three-plane vertex; the rim crossings name the same point
+    // as pierce points of `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line
+    // `x = 8, y = 13` lies on the bore, so the gate records it and the alias seed folds the names
+    // into one (`Aliases::record_shared_ruling`), and the rim's arc and the wall `y = 13`, leaving
+    // the corner tangent and the same way, are ordered by the arc's bending. On the plate's top the
+    // bore's rim and the boss's footprint are two holes meeting at that corner — one ring pinched
+    // there — and `loop_winding` reads its winding where the rim bulges past every node.
+    assert_eq!(out.len(), 1, "one body");
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    let want = 40.0 * 20.0 * 5.0 - std::f64::consts::PI * 9.0 * 5.0 + 4.0 * 4.0 * 3.0;
+    assert!((v - want).abs() < 1e-9, "volume {v}, want {want}");
+    crate::tests::mesh_covers_faces("corner on the rim", &m, &out);
 }
 
 /// ★★★ **The population where the naming rule actually fires — and the first non-`+Z`

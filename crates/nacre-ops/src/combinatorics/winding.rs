@@ -332,11 +332,10 @@ pub(crate) fn pierce_between(
 /// **confident**: a 270° sector's cap, whose smallest node is the reflex centre, winds its two
 /// orbits the wrong way round, and the walk's `−1`-cell count cannot see it (both orbits flip).
 ///
-/// ★ **The answer was named three milestones ago** and is not a wider walk:
-/// [`RejectReason::CurvedStraightRun`](crate::RejectReason::CurvedStraightRun)'s doc says *"read
-/// the winding at the extremum of the **region**, which may lie in an arc's interior"*. This is
-/// that reading, and the winding there is [`smooth_extremum_winding`]'s product — the ring is
-/// smooth at an arc's interior point, so no turn is needed.
+/// ★ **This is where the region's extremum is found when it is not a node**, and the reading there
+/// is [`loop_winding`]'s own: the ring is smooth at an arc's interior point, so its two departures
+/// are exactly opposite and the outside half turn is the side the arc curves away from —
+/// [`smooth_extremum_winding`]'s product.
 ///
 /// **The circle's minimum is a pierce point.** Let `ê_a` be the first world axis the circle
 /// **spans** (`ê₀`, unless the axis *is* `ê₀` — then every point shares `x` and the minimum is taken
@@ -525,10 +524,32 @@ pub(crate) fn ring_floor(any_arc: bool, self_loop_arc: bool) -> usize {
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
-/// The turn at a convex-hull vertex is the winding, and the lexicographically smallest node
-/// is one: it is an extreme point of the node set, which is planar, so it is a vertex of the
-/// ring's hull. Finding it is the **only** thing here that needs two implicit points in one
-/// decision, and [`Judge::cmp_coord`] is that predicate.
+/// **One rule, read at the ring's extreme point.** Let `P` be the lexicographically smallest point
+/// of the ring — the smallest node `lo`, or a point inside an arc that bulges past every node
+/// ([`arc_extremum_winding`]). The whole ring lies on one side of a line through `P`, so every
+/// direction the ring leaves `P` along lies in one half-plane. Gather, for each passage of the ring
+/// through `P`, the direction it leaves on and the reverse of the one it arrives on; order them
+/// counter-clockwise ([`angular_order`]); `c1` is the first after the gap that faces outside. The
+/// ring winds `+1` if `c1` leaves `P` and `−1` if it arrives — the winding of the sector beside
+/// `c1`, fixed by the sector outside the hull (winding `0`) whatever the number of passages and
+/// however they pair.
+///
+/// - A corner is two departures. A pinch — the ring passing `P` twice, as the contour of two cells
+///   touching at a point does, or an outer boundary and a hole meeting there — is four or more,
+///   and `c1` belongs to the outermost passage.
+/// - An outgoing and an incoming departure along one ray (an antenna, its tip or its base at `P`)
+///   add two equal and opposite contributions and cancel; if every departure cancels, the ring has
+///   no side there ([`RejectReason::StraightAngle`]).
+/// - Ties are the comparator's ([`departure_turn`]): a line and an arc leaving tangent the same way
+///   (a cusp) are ordered by the arc's bending. Two departures exactly opposite — the ring smooth
+///   at `P` — leave two half-turn gaps, and the outside one is the side the boundary curves away
+///   from ([`smooth_extremum_winding`]).
+///
+/// This is the reading exact-arithmetic arrangement libraries use for curved boundaries (an extreme
+/// vertex and the curves incident to it, ties broken by curvature); a signed area would need the
+/// arcs' transcendental segments. Finding `P` is the **only** thing here that needs two implicit
+/// points in one decision, and [`KeyCmp`] is that predicate. It is one rule rather than an arm per
+/// local shape (design 「가지 말 것」: casework per failing configuration).
 ///
 /// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
 /// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
@@ -536,21 +557,10 @@ pub(crate) fn ring_floor(any_arc: bool, self_loop_arc: bool) -> usize {
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///
-/// ★★ **Where arcs touch this**: the turn is read at **one** node, so a curved edge
-/// needs no angle sum — only its tangent's direction at that node. The other two sites that read
-/// the direction's *representation* each got their own answer: the walk-back below asks
-/// [`continuation`], which has a curved arm ("are the tangents parallel" is "same circle, same
-/// travel"), and the lexicographic minimum above runs on [`CoordKey`], which holds a pierce node's
-/// `a + b√c` coordinate beside a name and compares across the two through the quad tower.
-///
-/// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
-/// unbounded contour of two cells that meet at a single point pinches through that point, tracing
-/// a figure-8. The winding is read from the turn at the lexicographically smallest node, and a
-/// coincidence elsewhere in the ring does not affect that turn, so a repeated node is not by itself
-/// an error. (Rejecting on the first coincidence with the running minimum would make the verdict
-/// depend on the ring's arbitrary start index — one operand order rejecting a pinch the other
-/// accepts.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that is
-/// `CoincidentNodes`, decided by exact equality rather than by a tolerance.
+/// ★★ **Where arcs touch this**: the departures are read at **one** point, so a curved edge needs
+/// no angle sum — only its tangent there. The lexicographic minimum runs on [`CoordKey`], which
+/// holds a pierce node's `a + b√c` coordinate beside a name and compares across the two through
+/// the quad tower.
 pub(crate) fn loop_winding(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -619,136 +629,113 @@ pub(crate) fn loop_winding(
         !(0..ring.len()).any(|i| i != lo && lex(i, lo) == -1),
         "the lexicographic scan did not find a minimum — the comparison is not an order here"
     );
-    // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
-    // ambiguous — honest-reject rather than guess.
-    // ★ Stops at the first pinch. Running on would ask more comparisons, and one of those could
-    // *decline* — turning a `CoincidentNodes` that is already decided into a width reject.
-    for i in 0..ring.len() {
-        let mut same = i != lo;
-        for axis in 0..3 {
-            same = same && kc.cmp(key(i), key(lo), axis)? == 0;
-        }
-        if same {
-            return Err(reject(RejectReason::CoincidentNodes));
-        }
-    }
-    // ★★★★★ **The ring's minimum may not be a node at all.** The scan above found the smallest
-    // **node**; an arc can bulge past it, and then `lo` is not a hull vertex and the turn read
-    // there is not the winding. [`arc_extremum_winding`] answers where that happens, from the arc
-    // itself — the reading `CurvedStraightRun`'s doc named.
+    // ★ The region's extremum may lie inside an arc rather than at `lo`; the ring is smooth there
+    // and the arc's rotation is the winding.
     if let Some(w) = arc_extremum_winding(jd, cyls, p, ring, &keys, lo)? {
         return Ok(w);
     }
-    // **A ring node need not be a corner.** The arrangement names a point wherever another feature
-    // crosses an edge, and `loop_triples` keeps such a vertex even when the loop runs straight
-    // through it — so one edge of the polygon can arrive as several collinear ring edges. Reading
-    // the turn at `lo` against its immediate predecessor then asks about two halves of one
-    // straight edge, which has no turn to give.
-    //
-    // The turn to read is the one between the directions the loop **actually** arrives and leaves
-    // on: walk back past the edges the loop runs straight through. `lo` stays a hull vertex — the
-    // stretch lies on one **line** through it, so the region is still on one side of that line.
-    // ★ That argument is the straight one, and the guard below is where it stops: two arcs of one
-    // circle are also "straight through", and a *circle* through `lo` does not put the region on
-    // one side of anything.
-    //
-    // **Only while the stretch keeps going the same way.** A collinear edge traversed the *other*
-    // way means the ring doubles back along the line it came in on — an antenna, whose tip has no
-    // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
-    // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
-    //
-    // ★★★ **The comparison is between neighbours, at the node they share** — not between the
-    // candidate and `ring[lo]`, which is the same answer for straight edges (parallel and
-    // same-sense are both transitive along a chain of shared points) and **meaningless** once an
-    // edge is curved: a far arc's tangent is not `lo`'s tangent, so comparing them asks about two
-    // different places. Transitivity is also why neighbour-only does not weaken "the whole
-    // stretch runs one way".
-    //
-    // ★★★★ **And the value carried out is the one already read at a shared node** — never an
-    // edge's direction at its own far start. For a straight edge the two agree; on a **diameter**
-    // chord they are exactly opposite, and that is what a boss straddling a plate edge measured
-    // (both half-disks are `+1`; the half whose arc *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
-    // all fails, and the walk refuses by name rather than reading a winding from the wrong place.
+    // `P` is `lo`. Every passage of the ring through it gives two departures: the direction it
+    // leaves on, and the reverse of the one it arrives on. ★ Every node is compared — a pinch is
+    // one more passage, not a refusal.
     let n = ring.len();
-    let leaving = dir_at(jd, cyls, p, &ring[lo], ring[lo].node)?;
-    let mut back = (lo + n - 1) % n;
-    // ★ The direction the loop arrives on, carried out of the walk — the edge that ends it is the
-    // one the turn is read against, and its direction is already in hand.
-    let arriving = loop {
-        let ahead = (back + 1) % n;
-        let shared = ring[ahead].node;
-        let earlier = dir_at(jd, cyls, p, &ring[back], shared)?;
-        let later = dir_at(jd, cyls, p, &ring[ahead], shared)?;
-        match continuation(jd, p, &earlier, &later)? {
-            // ★★★★ **`earlier`, and not `ring[back]`'s direction at its own start.** The two are
-            // the same value for a straight edge — a line's tangent does not change along it — and
-            // that equality is what let the older spelling stand. On an arc they differ by the
-            // whole turn of the arc, and on a *diameter* chord they are exactly opposite: measured,
-            // the two half-disks of a boss straddling a plate edge came back `+1` and `−1` where
-            // both are `+1`, because the half whose arc **arrives** read its tangent at the far
-            // end. This one is read at the node the loop actually passes through.
-            Continuation::Turns => break earlier,
-            // ★ **A cusp at the extremum**: a line and an arc tangent at `lo`, the ring arriving
-            // on one and leaving back along the other (a keyhole's cap less its bore: the box's
-            // wall and the rim meet at the corner with no angle between them). The region is the
-            // sliver between the two, on the arc's **convex** side — outside its circle — so the
-            // winding is the opposite of a smooth join's ([`smooth_extremum_winding`]). Deeper in
-            // the walk a doubling back is an antenna and stays refused.
-            Continuation::DoublesBack
-                if ahead == lo
-                    && let (EdgeDir::Line { .. }, EdgeDir::Arc(a))
-                    | (EdgeDir::Arc(a), EdgeDir::Line { .. }) = (&earlier, &later) =>
-            {
-                return Ok(-smooth_extremum_winding(jd, p, a));
-            }
-            Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
-            // ★★★ **The step is licensed by the stretch being a *line*.** What the walk carries out
-            // is `ring[back]`'s direction at its own start, and that equals `lo`'s arriving
-            // direction only because a line's tangent is the same everywhere on it. Two arcs of one
-            // circle are tangent-continuous, so `continuation` answers `Straight` for them too —
-            // and stepping there would read the winding from a different point of the ring.
-            // ★★★★★ **At `lo` itself a smooth boundary still states a winding — by curvature.**
-            // The step past a straight run is licensed by the stretch being a *line*, and two arcs
-            // of one circle are tangent-continuous without being one; stepping there would read the
-            // winding from a different point of the ring. But at `lo` there is nothing to step
-            // past: the loop **is** smooth at the extreme node, and a smooth extremum's winding is
-            // the arc's own rotation. See [`smooth_extremum_winding`].
-            // Not curved here: an ordinary straight run through `lo`, walked back as before.
-            Continuation::Straight
-                if ahead == lo
-                    && let (EdgeDir::Arc(e), EdgeDir::Arc(l)) = (&earlier, &later) =>
-            {
-                if e.cyl != l.cyl || e.ccw != l.ccw || e.axis_up != l.axis_up {
-                    return Err(reject(RejectReason::CurvedStraightRun));
-                }
-                return Ok(smooth_extremum_winding(jd, p, l));
-            }
-            // ★ A smooth **line–arc** join at the extremum (a fillet's corner is
-            // the rounded rectangle's extreme node): the ring turns there only at second order,
-            // and the arc's bending is that turn.
-            Continuation::Straight
-                if ahead == lo
-                    && let (EdgeDir::Line { .. }, EdgeDir::Arc(a))
-                    | (EdgeDir::Arc(a), EdgeDir::Line { .. }) = (&earlier, &later) =>
-            {
-                return Ok(smooth_extremum_winding(jd, p, a));
-            }
-            Continuation::Straight
-                if matches!(earlier, EdgeDir::Arc(_)) || matches!(later, EdgeDir::Arc(_)) =>
-            {
-                return Err(reject(RejectReason::CurvedStraightRun));
-            }
-            Continuation::Straight => {}
+    let mut found: Vec<(EdgeDir, bool)> = Vec::new();
+    for i in 0..n {
+        let mut at_p = true;
+        for axis in 0..3 {
+            at_p = at_p && kc.cmp(key(i), key(lo), axis)? == 0;
         }
-        back = (back + n - 1) % n;
-        if back == lo {
-            // Every edge of the ring lies on one line: it bounds nothing. ★ This is the *loop's*
-            // termination, not one of `continuation`'s answers — it is about having walked the
-            // whole ring, not about what any one edge does.
-            return Err(reject(RejectReason::DegenerateRing));
+        if !at_p {
+            continue;
+        }
+        let node = ring[i].node;
+        let arriving = dir_at(jd, cyls, p, &ring[(i + n - 1) % n], node)?;
+        found.push((arriving.reversed(), false));
+        found.push((dir_at(jd, cyls, p, &ring[i], node)?, true));
+    }
+    // ★ An outgoing and an incoming departure that are **one ray** — one carrier, one way — add two
+    // equal and opposite contributions and cancel: an antenna, whether its tip is `P` (one passage
+    // in and back out) or its base (out on one passage, back on another). A line and an arc leaving
+    // tangent (a cusp) are two curves, not one, and stay: the comparator orders them by the arc's
+    // bending. Read as travel, one ray out and the same ray in are one carrier run both ways.
+    let mut gone = vec![false; found.len()];
+    for i in 0..found.len() {
+        if gone[i] || !found[i].1 {
+            continue;
+        }
+        for j in 0..found.len() {
+            if gone[j] || found[j].1 {
+                continue;
+            }
+            let back = found[j].0.reversed();
+            if antiparallel(&found[i].0, &back) || ruling_pole(jd, p, &found[i].0, &back)? {
+                gone[i] = true;
+                gone[j] = true;
+                break;
+            }
+        }
+    }
+    let (dirs, leaves): (Vec<EdgeDir>, Vec<bool>) = found
+        .into_iter()
+        .zip(gone)
+        .filter(|(_, g)| !g)
+        .map(|(d, _)| d)
+        .unzip();
+    // Every departure at `P` cancelled: the ring has no side there.
+    if dirs.is_empty() {
+        return Err(reject(RejectReason::StraightAngle));
+    }
+    let order = angular_order(jd, p, &dirs)?;
+    let m = order.len();
+    // ★ The gap that faces outside: the one counter-clockwise step between neighbours that turns
+    // back — more than a half turn — and failing that, the half turn between the two departures on
+    // the half-plane's edge.
+    let mut first = None;
+    for k in 0..m {
+        let (a, b) = (order[k], order[(k + 1) % m]);
+        if departure_turn(jd, p, &dirs[a], &dirs[b])? < 0 {
+            first = Some(b);
+            break;
+        }
+    }
+    let c1 = match first {
+        Some(b) => b,
+        // ★ Two departures exactly opposite: the ring is smooth at `P`, both gaps are half turns,
+        // and the outside one is the side the boundary curves away from — the arc's own rotation,
+        // read on the arc as travelled.
+        None if m == 2 => {
+            let arc = (0..2).find_map(|k| {
+                let travelled = if leaves[k] {
+                    dirs[k].clone()
+                } else {
+                    dirs[k].reversed()
+                };
+                match travelled {
+                    EdgeDir::Arc(a) => Some(a),
+                    _ => None,
+                }
+            });
+            // Two straight departures exactly opposite would be a straight run through `P`,
+            // which an extreme node cannot have.
+            return match arc {
+                Some(a) => Ok(smooth_extremum_winding(jd, p, &a)),
+                None => Err(reject(RejectReason::StraightAngle)),
+            };
+        }
+        None => {
+            let mut edge = None;
+            for k in 0..m {
+                let (a, b) = (order[k], order[(k + 1) % m]);
+                if antiparallel(&dirs[a], &dirs[b])
+                    || tangent_pole(jd, p, &dirs[a], &dirs[b])?
+                    || ruling_pole(jd, p, &dirs[a], &dirs[b])?
+                {
+                    edge = Some(b);
+                }
+            }
+            edge.ok_or_else(|| reject(RejectReason::UnorderedEdges))?
         }
     };
-    turn_between(jd, p, &arriving, &leaving)
+    Ok(if leaves[c1] { 1 } else { -1 })
 }
 
 /// **The winding of a ring that runs *smooth* through its extreme node** — curvature, not a turn.
@@ -777,9 +764,10 @@ pub(crate) fn loop_winding(
 ///
 /// — no coordinate, no predicate, three signs the directions already carry.
 ///
-/// The two arcs come from [`Continuation::Straight`], which for arcs means *one cylinder and the
-/// same travel sense*, so both agree on every factor; they are re-checked here rather than assumed,
-/// because this function's answer is a sign and a wrong one is silent.
+/// Its arc is the one the ring travels at its smooth extreme point: inside an arc
+/// ([`arc_extremum_winding`]), or at a node where the two departures are exactly opposite — one
+/// circle travelled one way through the node ([`antiparallel`] of the departure and the reversed
+/// arrival), or a line running on into an arc tangent ([`tangent_pole`]).
 ///
 /// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
 /// `axis_up` each turn 60–75 of the crate's tests red, refused as

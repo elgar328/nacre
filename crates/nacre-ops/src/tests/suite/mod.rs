@@ -100,6 +100,46 @@ fn names(ring: &[combinatorics::NodeId]) -> Ring {
         .collect()
 }
 
+/// A hand-built plane-table entry through three points, its witness triangle **winding** the
+/// given way (`tri[0] → tri[1] → tri[2]` counter-clockwise about the normal it states). The plane is
+/// pushed unregistered — a fixture may push one geometric plane as two handles that interning would
+/// collapse — with its truth (the same three points, lifted) stated, so nothing point-less enters
+/// the arena. Its name is the one the push door would derive from those points, so the exact
+/// shortcuts read what a real table's do. The points must be decimals that `f64` holds exactly.
+fn plane_through(m: &mut Model, tri: [Point3; 3]) -> WorkingPlane {
+    let normal = (tri[1] - tri[0])
+        .cross(tri[2] - tri[0])
+        .normalize()
+        .expect("three points not on a line");
+    let plane = Plane::from_point_normal(tri[0], normal).unwrap();
+    let lift = |p: Point3| {
+        p.as_array()
+            .map(|x| nacre_exact::Rat::from_decimal(x).unwrap())
+    };
+    let surf = m.push_plane_unregistered(plane, tri.map(lift), nacre_topo::Orientation::Forward);
+    let tri_pt3 = tri.map(|p| {
+        WitnessPoint::at_nearest(
+            p.as_array()
+                .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
+        )
+    });
+    let name = nacre_exact::plane_name_exact(lift(tri[0]), lift(tri[1]), lift(tri[2]));
+    let frame_sign = 1; // `plane` is built from the triangle's own normal, so the two agree
+    WorkingPlane {
+        // A hand-built table has no recorded coefficients; the composed-rotation route
+        // declines and the fixture takes the same escalating path it always did.
+        base_rat: None,
+        world: None,
+        name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
+        base: crate::planes::BaseFrame::none(),
+        surf,
+        plane,
+        tri_pt3,
+        rotated: false,
+        frame_sign,
+    }
+}
+
 /// A **holed reflex face** from the live engine, as plane triples: `(planes, p, outer, hole)`.
 ///
 /// `Cut(L-prism, stub)` leaves the L's top cap carrying a hole — `"dimple"` a square one,

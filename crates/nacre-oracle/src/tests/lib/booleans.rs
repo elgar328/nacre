@@ -533,3 +533,78 @@ fn rotated_solid_props_match_occt() {
         occt.area
     );
 }
+
+/// Fuse two solids, and compare with OCCT run on the same inputs first (`boolean` supersedes
+/// them): the volume and the area, summed over every body either kernel returns.
+fn fuse_matches_occt(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, bodies: usize) {
+    let occt = occt_boolean_of(m, OcctBool::Fuse, a, b).unwrap();
+    let solids = boolean(m, BoolKind::Fuse, a, b).unwrap();
+    assert_eq!(solids.len(), bodies, "nacre's bodies");
+    let vol: f64 = solids
+        .iter()
+        .map(|&s| mass_props(m, s).unwrap().volume)
+        .sum();
+    let area: f64 = solids.iter().map(|&s| mass_props(m, s).unwrap().area).sum();
+    assert!(
+        approx(vol, occt.volume),
+        "volume {vol} vs occt {}",
+        occt.volume
+    );
+    assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
+}
+
+/// A boss whose corner stands on a bore's rim: the plate's top keeps the rim and the boss's
+/// footprint as two holes meeting at that one point — a ring pinched there, whose winding is read
+/// where the rim bulges past it. One body; OCCT agrees on volume and area.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_boss_on_a_bore_rim_matches_occt() {
+    let mut m = Model::new();
+    let plate = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 20.0, 5.0]),
+    );
+    let hole = nacre_ops::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([8.0, 10.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        3.0,
+        7.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let holed = boolean(&mut m, BoolKind::Cut, plate, hole).unwrap()[0];
+    let boss = nacre_ops::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([8.0, 13.0, 5.0]),
+        Point3::from_array([12.0, 17.0, 8.0]),
+    );
+    m.rebuild_adjacency();
+    fuse_matches_occt(&mut m, holed, boss, 1);
+}
+
+/// A prism whose corner touches a cylinder's lateral along a line from outside, standing on the
+/// cylinder's base and lower than it: the base cap's ring is pinched at the corner. Two bodies
+/// touching along the line; OCCT agrees on volume and area.
+#[test]
+#[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+fn a_line_contact_on_a_lateral_matches_occt() {
+    let mut m = Model::new();
+    let cyl = nacre_ops::fixtures::cylinder(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    )
+    .solid;
+    let prism = extrude(
+        &mut m,
+        SketchPlane::world_xy(),
+        &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]],
+    );
+    m.rebuild_adjacency();
+    fuse_matches_occt(&mut m, cyl, prism, 2);
+}

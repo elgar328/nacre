@@ -357,39 +357,10 @@ fn overhang_boss_with_a_non_convex_footprint() {
 /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
 /// dummy triangle would make those answers meaningless.
 fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingPlane {
-    let mut n = [0.0; 3];
-    n[axis] = if positive { 1.0 } else { -1.0 };
-    let normal = Vector3::from_array(n);
     let mut at = [0.0; 3];
     at[axis] = d;
     let origin = Point3::from_array(at);
-    let plane = Plane::from_point_normal(origin, normal).unwrap();
-    // Unregistered on purpose: these fixtures push one geometric plane as *two* handles
-    // (`positive` both ways), which interning would collapse. The truth (the same tri
-    // computed below, lifted) is still stated — nothing point-less enters the arena.
-    let lift = |p: Point3| {
-        p.as_array()
-            .map(|x| nacre_exact::Rat::from_decimal(x).unwrap())
-    };
-    let (ti, tj) = ((axis + 1) % 3, (axis + 2) % 3);
-    let (ti, tj) = if positive { (ti, tj) } else { (tj, ti) };
-    let stepr = |k: usize| {
-        let mut q = at;
-        q[k] += 1.0;
-        Point3::from_array(q)
-    };
-    let surf = m.push_plane_unregistered(
-        plane,
-        [lift(origin), lift(stepr(ti)), lift(stepr(tj))],
-        nacre_topo::Orientation::Forward,
-    );
-    let face = m.push_face_unchecked(Face {
-        surface: surf,
-        outer: Loop { half_edges: vec![] },
-        inner: vec![],
-        orientation: Orientation::Forward,
-    });
-    // Two in-plane directions whose cross product is `+normal`, so `tri` winds outward.
+    // Two in-plane directions whose cross product is `±axis`, so `tri` winds outward.
     let (i, j) = ((axis + 1) % 3, (axis + 2) % 3);
     let (i, j) = if positive { (i, j) } else { (j, i) };
     let step = |k: usize| {
@@ -397,31 +368,14 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         q[k] += 1.0;
         Point3::from_array(q)
     };
-    let _ = face;
-    let tri = [origin, step(i), step(j)];
-    let tri_pt3 = tri.map(|p| {
-        nacre_judge::WitnessPoint::at_nearest(
-            p.as_array()
-                .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
-        )
+    let wp = super::plane_through(m, [origin, step(i), step(j)]);
+    m.push_face_unchecked(Face {
+        surface: wp.surf,
+        outer: Loop { half_edges: vec![] },
+        inner: vec![],
+        orientation: Orientation::Forward,
     });
-    // The name the push door would have derived from these points (the push above skips it on
-    // purpose), so the fixture's exact shortcuts read what a real table's do.
-    let name = nacre_exact::plane_name_exact(lift(tri[0]), lift(tri[1]), lift(tri[2]));
-    let frame_sign = 1; // `plane` is built from `normal`, so the two agree
-    WorkingPlane {
-        // A hand-built table has no recorded coefficients; the composed-rotation route
-        // declines and the fixture takes the same escalating path it always did.
-        base_rat: None,
-        world: None,
-        name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
-        base: crate::planes::BaseFrame::none(),
-        surf,
-        plane,
-        tri_pt3,
-        rotated: false,
-        frame_sign,
-    }
+    wp
 }
 
 #[test]

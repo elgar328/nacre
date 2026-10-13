@@ -99,6 +99,27 @@ pub(crate) enum EdgeDir {
     Ruling(Box<RulingDir>),
 }
 
+impl EdgeDir {
+    /// The same direction travelled the other way — a ring's arriving edge seen from the node it
+    /// arrives at, as a departure: a line's `sense` negated, an arc's `ccw`, a ruling's `up`.
+    pub(crate) fn reversed(&self) -> EdgeDir {
+        match self {
+            EdgeDir::Line { carrier, sense } => EdgeDir::Line {
+                carrier: *carrier,
+                sense: -sense,
+            },
+            EdgeDir::Arc(a) => EdgeDir::Arc(Box::new(ArcDir {
+                ccw: !a.ccw,
+                ..(**a).clone()
+            })),
+            EdgeDir::Ruling(r) => EdgeDir::Ruling(Box::new(RulingDir {
+                up: !r.up,
+                ..(**r).clone()
+            })),
+        }
+    }
+}
+
 /// The payload of [`EdgeDir::Ruling`] — private fields like [`ArcDir`]'s, for the same reason.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingDir {
