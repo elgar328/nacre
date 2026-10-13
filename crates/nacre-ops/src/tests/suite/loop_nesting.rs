@@ -342,15 +342,20 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         Top,
         Bored,
         Under,
+        Holed,
     }
-    use Body::{Bored, Top, Under};
+    use Body::{Bored, Holed, Top, Under};
     // The plate `[0, 6]² × [0, 1]` with the triangle `(2,2) (4,0) (4,1)` of area 1 standing on it,
     // height 1 — or hanging under it (`Under`, so the pinched face faces `−z`) — and, for `P3`
-    // (`Bored`), a bore of radius ½ at `(1.5, 4)` through the plate alone.
+    // (`Bored`), a bore of radius ½ at `(1.5, 4)` through the plate alone. `Holed` pinches a hole
+    // ring instead: the boss `(2,2) (4,0.5) (4,1)` of area ½ stands inside the plate and the hole
+    // `(2,2) (4,3) (4,4)` of area 1 meets it at `(2, 2)`, so the top's one hole ring passes there
+    // twice.
     let pinched = |m: &mut Model, body: Body| -> Handle<Solid> {
         let plate = crate::fixtures::cuboid(m, pt([0.0, 0.0, 0.0]), pt([6.0, 6.0, 1.0]));
         let floor = if body == Under { -1.0 } else { 1.0 };
-        let boss = triangle_prism(m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], floor, 1.0);
+        let corner = if body == Holed { 0.5 } else { 0.0 };
+        let boss = triangle_prism(m, [[2.0, 2.0], [4.0, corner], [4.0, 1.0]], floor, 1.0);
         let mut s = crate::boolean(m, Fuse, plate, boss).expect("the boss")[0];
         m.rebuild_adjacency();
         if body == Bored {
@@ -365,10 +370,19 @@ fn a_pinched_body_is_an_operand_like_any_other() {
             s = crate::boolean(m, Cut, s, bore).expect("the bore")[0];
             m.rebuild_adjacency();
         }
-        let z = if body == Under { 0.0 } else { 1.0 };
+        if body == Holed {
+            let hole = triangle_prism(m, [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]], -1.0, 3.0);
+            s = crate::boolean(m, Cut, s, hole).expect("the hole")[0];
+            m.rebuild_adjacency();
+        }
+        let pinch = match body {
+            Under => [4.0, 0.0, 0.0],
+            Holed => [2.0, 2.0, 1.0],
+            Top | Bored => [4.0, 0.0, 1.0],
+        };
         assert!(
-            a_loop_passes_twice(m, s, [4.0, 0.0, z]),
-            "the operand's pinched face passes (4, 0, {z}) twice"
+            a_loop_passes_twice(m, s, pinch),
+            "the operand's pinched face passes {pinch:?} twice"
         );
         s
     };
@@ -459,6 +473,24 @@ fn a_pinched_body_is_an_operand_like_any_other() {
             [[4.0, 0.5, -1.0], [5.0, 1.5, 0.0]],
             37.0,
             1.0,
+            0.0,
+        ),
+        // The pinched hole ring merged back: a box standing on the top away from it, and one
+        // against the boss's face `x = 4`.
+        (
+            "holed, on the top",
+            Holed,
+            [[0.5, 0.5, 1.0], [1.5, 1.5, 2.0]],
+            35.5,
+            1.0,
+            0.0,
+        ),
+        (
+            "holed, on the boss's face",
+            Holed,
+            [[4.0, 0.5, 1.0], [5.0, 1.0, 2.0]],
+            35.5,
+            0.5,
             0.0,
         ),
     ];

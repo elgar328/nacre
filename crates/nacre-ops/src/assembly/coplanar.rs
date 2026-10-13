@@ -289,25 +289,33 @@ fn merge_component(
         // boundaries and thread below.
     }
     // 3. Re-thread what survives, keeping the material on the left. Each surviving directed edge
-    //    is collected in ring order (so the walk below is the same on every replay) with where it
-    //    came from; the wall rides with the step, so the threaded cycle never re-derives a carrier
-    //    from node names.
+    //    is collected in ring order, so the walk below is the same on every replay; the wall rides
+    //    with the step, so the threaded cycle never re-derives a carrier from node names.
     let wc = group[0].surf.plane();
     type Key = ((NodeId, NodeId), Wall);
-    let mut outs: HashMap<NodeId, Vec<Key>> = HashMap::new();
-    let mut source: HashMap<Key, (usize, usize, usize)> = HashMap::new();
-    for (fi, lf) in group.iter().enumerate() {
-        for (ri, ring) in lf.poly_rings().enumerate() {
-            for (ei, k) in ring_edges_walled(ring).enumerate() {
-                if cnt.contains_key(&k)
-                    && !erased.contains(&k.0)
-                    && source.insert(k, (fi, ri, ei)).is_none()
-                {
-                    outs.entry(k.0.0).or_default().push(k);
+    // Each node's way out, and — for the rare node left with a second — all of them, in ring
+    // order.
+    let mut next: HashMap<NodeId, Key> = HashMap::new();
+    let mut more: HashMap<NodeId, Vec<Key>> = HashMap::new();
+    for ring in group.iter().flat_map(|lf| lf.poly_rings()) {
+        for k in ring_edges_walled(ring) {
+            if cnt.contains_key(&k) && !erased.contains(&k.0) {
+                match next.entry(k.0.0) {
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(k);
+                    }
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        more.entry(k.0.0).or_insert_with(|| vec![*e.get()]).push(k);
+                    }
                 }
             }
         }
     }
+    let ways_out = |v: NodeId| -> Option<&[Key]> {
+        more.get(&v)
+            .map(Vec::as_slice)
+            .or_else(|| next.get(&v).map(std::slice::from_ref))
+    };
     // ★ **A node left with two ways out is a point the region passes twice** — a face pinched
     //    there, or a hole touching the outer at a vertex, which is the same face. The next edge is
     //    the one bounding the sector the walk arrived in: with the region on the left of travel
@@ -316,21 +324,22 @@ fn merge_component(
     //    (`dir_at`, `angular_order`). Asked only at such a node, so a group with none threads as a
     //    sequence of single steps. A node whose order cannot be read leaves the group as it is
     //    (the abstention above).
-    let mut ring_edges_of: HashMap<(usize, usize), Vec<combinatorics::RingEdge>> = HashMap::new();
-    let mut edge_of = |k: &Key| -> Option<combinatorics::RingEdge> {
-        let (fi, ri, ei) = source[k];
-        if let std::collections::hash_map::Entry::Vacant(e) = ring_edges_of.entry((fi, ri)) {
-            let ring = group[fi].poly_rings().nth(ri)?;
-            e.insert(ring.edges(jd, cyls, Some(wc)).ok()?);
-        }
-        ring_edges_of[&(fi, ri)].get(ei).cloned()
+    // The edge as the ring that carries it states it — looked up only at such a node.
+    let edge_of = |k: &Key| -> Option<combinatorics::RingEdge> {
+        group
+            .iter()
+            .flat_map(|lf| lf.poly_rings())
+            .find_map(|ring| {
+                let i = ring_edges_walled(ring).position(|e| e == *k)?;
+                ring.edges(jd, cyls, Some(wc)).ok()?.get(i).cloned()
+            })
     };
-    let mut starts: Vec<NodeId> = outs.keys().copied().collect();
+    let mut starts: Vec<NodeId> = next.keys().copied().collect();
     starts.sort_unstable();
     let mut used: HashSet<Key> = HashSet::new();
     let mut cycles: Vec<Ring> = Vec::new();
     for node in starts {
-        for &start in &outs[&node] {
+        for &start in ways_out(node).unwrap_or_default() {
             if used.contains(&start) {
                 continue;
             }
@@ -341,10 +350,8 @@ fn merge_component(
                 nodes.push(cur.0.0);
                 walls.push(cur.1);
                 let v = cur.0.1;
-                let ways = outs
-                    .get(&v)
-                    .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
-                let next = if let [only] = ways.as_slice() {
+                let ways = ways_out(v).ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
+                let step = if let [only] = ways {
                     *only
                 } else {
                     let Some(chosen) = (|| {
@@ -362,13 +369,13 @@ fn merge_component(
                     };
                     chosen
                 };
-                if next == start {
+                if step == start {
                     break;
                 }
-                if used.contains(&next) {
+                if used.contains(&step) {
                     return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
                 }
-                cur = next;
+                cur = step;
             }
             // A 2-gon closed by a curved wall is a legal ring (`loop_winding`'s own floor); a
             // two-node polygon is not.
