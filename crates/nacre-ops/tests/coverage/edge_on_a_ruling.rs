@@ -632,3 +632,84 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
     }
     assert_eq!(ran, 2 * 6, "the family");
 }
+
+/// ★ **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the
+/// cylinder's top ([`nacre_ops::fixtures::wedge_on_a_rim`]), whose top cap passes the apex twice,
+/// taken into a second boolean against a box: far from the pinch on top, across it, and apart.
+/// Every result that builds is checked as the other families are — `validate`, the mesh, the
+/// volume identities over the six booleans; what does not build yet is pinned by tool and boolean
+/// (todo «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»).
+#[test]
+fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
+    use nacre_ops::fixtures::{cuboid, wedge_on_a_rim};
+    use std::collections::BTreeMap;
+    let tools: &[(&str, [f64; 3], [f64; 3])] = &[
+        ("box far on top", [-0.5, -0.25, 1.5], [0.0, 0.25, 3.0]),
+        ("box across the pinch", [0.3, -0.5, 1.5], [1.5, 0.5, 3.0]),
+        ("box apart", [5.0, 5.0, 0.0], [6.0, 6.0, 1.0]),
+    ];
+    let name = |r: &RejectReason| match r {
+        RejectReason::TraceDeclined { kind, .. } => format!("TraceDeclined({kind:?})"),
+        other => format!("{other:?}"),
+    };
+    let mut tally: BTreeMap<(&str, usize), String> = BTreeMap::new();
+    for &(tool, lo, hi) in tools {
+        let mut six: Vec<Option<f64>> = Vec::new();
+        let (mut vw, mut vt) = (0.0, 0.0);
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for swapped in [false, true] {
+                let mut m = Model::new();
+                let w = wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
+                let t = cuboid(&mut m, Point3::from_array(lo), Point3::from_array(hi));
+                m.rebuild_adjacency();
+                (vw, vt) = (volume(&m, w), volume(&m, t));
+                let (x, y) = if swapped { (t, w) } else { (w, t) };
+                let at = format!("{tool}, {kind:?} swapped = {swapped}");
+                match boolean(&mut m, kind, x, y) {
+                    Ok(solids) => {
+                        m.rebuild_adjacency();
+                        let vs = nacre_validate::validate(&m);
+                        assert!(vs.is_empty(), "{at}: {vs:?}");
+                        let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                            .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
+                        assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                        six.push(Some(solids.iter().map(|&s| volume(&m, s)).sum()));
+                    }
+                    Err(BoolError::Rejected { reason, .. }) => {
+                        assert_ne!(
+                            reason.class(),
+                            RejectClass::SuspectedDefect,
+                            "{at}: {reason:?}"
+                        );
+                        tally.insert((tool, six.len()), name(&reason));
+                        six.push(None);
+                    }
+                    Err(e) => panic!("{at}: {e:?}"),
+                }
+            }
+        }
+        // `W ∪ T`, `T ∪ W`, `W − T`, `T − W`, `W ∩ T`, `T ∩ W`.
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        for (x, y) in [(0, 1), (4, 5)] {
+            if let (Some(a), Some(b)) = (six[x], six[y]) {
+                assert!(close(a, b), "{tool}: [{x}] {a} vs [{y}] {b}");
+            }
+        }
+        for (i, want) in [(0, vw + vt), (2, vw), (3, vt)] {
+            if let (Some(r), Some(c)) = (six[i], six[4]) {
+                assert!(
+                    close(r + c, want),
+                    "{tool}: [{i}] + Common = {}, want {want}",
+                    r + c
+                );
+            }
+        }
+    }
+    let want: BTreeMap<(&str, usize), String> = tools
+        .iter()
+        .flat_map(|&(tool, ..)| {
+            (0..6).map(move |i| ((tool, i), "TraceDeclined(OuterRing)".to_string()))
+        })
+        .collect();
+    assert_eq!(tally, want);
+}
