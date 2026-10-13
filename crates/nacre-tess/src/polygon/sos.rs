@@ -10,13 +10,14 @@
 //! the first-order term. No coordinate moves — the triangles come out on the exact points — only
 //! the ties are decided, consistently, as one actual small displacement would decide them.
 //!
-//! ★★★★★ **Each twin slides along one of its own edges**: `d_o = uv[o_along] − T`, `d_h =
-//! uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
+//! ★★★★★ **Each twin slides along one of its own edges, or stays**: `d_o = uv[o_along] − T`,
+//! `d_h = uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
 //! split ring's copy slides toward its predecessor, the hole's toward its successor — so both
 //! twins stay *on* that line for every `ε` and keep every collinearity they had with the rest of
 //! the ring. On a pinch the earlier visit slides along its incoming edge and the later along its
-//! outgoing one, each into its own material wedge, which is what separates them
-//! (`polygon::pinch` checks the wedges allow it).
+//! outgoing one, each into its own sector of material, which is what separates them; a visit
+//! whose sector is not convex names itself as its target (`d = 0`) and stays, the other's slide
+//! alone separating them (`polygon::pinch` decides which, and checks the sectors allow it).
 //!
 //! ★★ **The order needs nothing more — the sweep's own tie-break carries the rest.** The sweep's
 //! order (`v` descending, then `u` ascending) is itself a perturbation: the sweep line turned by
@@ -54,14 +55,15 @@ use super::{P2, lex_less};
 use nacre_predicates::{Expansion, orient2d};
 
 /// One sanctioned pair: two indices at one coordinate, each with the index of the ring
-/// neighbour it slides toward (on a bridge the two ends of the split segment).
+/// neighbour it slides toward (on a bridge the two ends of the split segment), or its own index
+/// if it stays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Twins {
     /// The earlier visit of the ring passing the point (on a bridge, the split ring's copy of the
-    /// touching vertex); slides toward `o_along` (its `prev`).
+    /// touching vertex); slides toward `o_along` (its `prev`, or itself).
     pub(super) o: usize,
     /// The later visit (on a bridge, the touching ring's copy); slides toward `h_along` (its
-    /// `next`).
+    /// `next`, or itself).
     pub(super) h: usize,
     pub(super) o_along: usize,
     pub(super) h_along: usize,
@@ -110,9 +112,9 @@ impl Twins {
 ///
 /// Distinct coordinates are compared exactly, as any two points are. A pair's tie is decided by
 /// where its twins slide: `T + ε(u − T)` precedes `T + ε(v − T)` exactly when `u` precedes `v`, so
-/// the answer is `lex_less` of the two neighbours they slide toward — a comparison of stored
-/// coordinates. `None` is a coincident pair that is not a sanctioned one, or a pair whose two
-/// neighbours are one point (two edges from `T` to one point lie on each other — a touch
+/// the answer is `lex_less` of the two points they slide toward (a twin that stays, its own) — a
+/// comparison of stored coordinates. `None` is a coincident pair that is not a sanctioned one, or
+/// a pair whose two targets are one point (two edges from `T` to one point lie on each other — a touch
 /// `self_touch` names; no slide along them separates the twins).
 pub(super) fn lex_less_idx(a: usize, b: usize, uv: &[P2], twins: &[Twins]) -> Option<bool> {
     if a == b {

@@ -611,13 +611,105 @@ fn a_ring_pinched_at_two_points_meshes() {
     check_partition(&tris, &ring, &[]);
 }
 
+/// ★★★★★ **A pinch whose sector is not convex meshes — that visit stays, the other slides.** The
+/// top of a `6 × 6` plate with a triangular hole `(2,2) (4,3) (4,4)` and the footprint of a
+/// triangular boss `(2,2) (4,0.5) (4,1)` meeting it at `(2, 2)`: one hole ring passing that point
+/// twice (indices 5 and 8), as the kernel builds it. One visit's sector is the 37° between the two
+/// triangles; the other's is the 278° around them, and it stays put. Ten triangles, the plate
+/// less the two triangles, whose once-used edges are the rings.
+#[test]
+fn a_pinch_with_a_reflex_sector_meshes() {
+    let p = pts(&[
+        [0.0, 0.0],
+        [6.0, 0.0],
+        [6.0, 6.0],
+        [0.0, 6.0],
+        [4.0, 3.0],
+        [2.0, 2.0],
+        [4.0, 1.0],
+        [4.0, 0.5],
+        [2.0, 2.0],
+        [4.0, 4.0],
+    ]);
+    let (outer, hole) = ([0, 1, 2, 3], [4, 5, 6, 7, 8, 9]);
+    let mut v = p.clone();
+    let revisits = [Revisit::Pinch {
+        ring: 1,
+        x: 1,
+        y: 4,
+    }];
+    let (tris, rings) =
+        triangulate_uv(&mut v, &[&outer, &hole], &[], &revisits).expect("the pinched hole meshes");
+    check(&p, &tris, 10, 36.0 - 1.0 - 0.5);
+    check_partition(&tris, &rings[0], &[&rings[1]]);
+}
+
+/// ★★ **Two pinches on one ring, one of them with a reflex sector.** The same plate with the
+/// boss's corner on the plate's edge, `(2,2) (4,0) (4,1)`: the outer ring passes `(4, 0)` twice
+/// (both sectors convex, both slide) and `(2, 2)` twice (one sector 270°, which stays) — the top
+/// face the kernel builds for that boss. Nine triangles for the eleven-vertex ring.
+#[test]
+fn a_ring_pinched_twice_with_a_reflex_sector_meshes() {
+    let p = pts(&[
+        [0.0, 0.0],
+        [4.0, 0.0],
+        [2.0, 2.0],
+        [4.0, 4.0],
+        [4.0, 3.0],
+        [2.0, 2.0],
+        [4.0, 1.0],
+        [4.0, 0.0],
+        [6.0, 0.0],
+        [6.0, 6.0],
+        [0.0, 6.0],
+    ]);
+    let ring: Vec<usize> = (0..11).collect();
+    let mut v = p.clone();
+    let revisits = [
+        Revisit::Pinch {
+            ring: 0,
+            x: 2,
+            y: 5,
+        },
+        Revisit::Pinch {
+            ring: 0,
+            x: 1,
+            y: 7,
+        },
+    ];
+    let (tris, rings) =
+        triangulate_uv(&mut v, &[&ring], &[], &revisits).expect("the twice-pinched ring meshes");
+    check(&p, &tris, 9, 36.0 - 1.0 - 1.0);
+    assert_eq!(rings, vec![ring.clone()], "nothing spliced");
+    check_partition(&tris, &ring, &[]);
+}
+
+/// ★★ **Two lobes meeting only at a point are not a face.** Two counter-clockwise triangles above
+/// `T = (0, 0)` (rays at 11°/22° and 39°/50°), one ring through `T` twice: each visit's wedge holds
+/// both of the other's rays. The visit crossing from the upper lobe to the lower turns left — a
+/// convex wedge — so «slide the convex one» alone would move it into the other lobe and hand the
+/// sweep a ring crossing itself where `self_touch` cannot see it. `pinch` names the shape first.
+#[test]
+fn two_lobes_meeting_at_a_point_are_not_a_face() {
+    let p = pts(&[
+        [0.0, 0.0],
+        [10.0, 2.0],
+        [10.0, 4.0],
+        [0.0, 0.0],
+        [10.0, 8.0],
+        [10.0, 12.0],
+    ]);
+    let ring: Vec<usize> = (0..6).collect();
+    let r = tri_pinched(&p, &ring, 0, 3);
+    assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
+}
+
 /// What a pinch the sweep cannot order comes back as. The boundary passing *through* the point —
-/// one visit's ray inside the other's wedge — is a crossing every triangulation gets wrong
-/// (`DegenerateRing`); without `pinch`'s check the sweep is handed it and builds a piece whose
-/// chains do not descend. A visit whose wedge is reflex, and a ray of one visit along the
-/// other's, are this decomposition having no answer (`SelfTouchingBoundary`): a convex wedge slid
-/// along its own ray stays inside itself, a reflex one need not, and two rays along each other
-/// overlap — `self_touch`'s touch.
+/// one visit's ray inside the other's wedge and the other outside — is a crossing every
+/// triangulation gets wrong (`DegenerateRing`); without `pinch`'s check the sweep is handed it and
+/// builds a piece whose chains do not descend. Two lobes meeting only at the point — each visit's
+/// wedge holding both of the other's rays — are not a face's interior, and a ray of one visit
+/// along the other's is a touch: both `SelfTouchingBoundary`.
 #[test]
 fn a_pinch_the_sweep_cannot_order_is_named() {
     // The later visit leaves the point into the earlier one's wedge.
@@ -634,7 +726,8 @@ fn a_pinch_the_sweep_cannot_order_is_named() {
     let ring: Vec<usize> = (0..8).collect();
     let r = tri_pinched(&through, &ring, 0, 5);
     assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
-    // An L whose reflex corner a triangle touches: each visit's wedge spans both lobes.
+    // An L whose reflex corner a triangle touches from outside: the L and the triangle meet only
+    // there, and each visit's wedge holds both of the other's rays — two lobes.
     let reflex = pts(&[
         [0.0, 0.0],
         [2.0, 1.0],
@@ -790,4 +883,289 @@ fn a_ring_pinched_at_its_extreme_point_winds_by_its_first_ray() {
             }
         }
     }
+}
+
+/// A deterministic draw in `lo..=hi` — the generator `random_rectilinear_faces_triangulate` uses.
+fn lcg(seed: u64) -> impl FnMut(i64, i64) -> i64 {
+    let mut st = seed;
+    move |lo: i64, hi: i64| {
+        st = st
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        lo + ((st >> 33) % ((hi - lo + 1) as u64)) as i64
+    }
+}
+
+/// Twice the signed area of a ring — exact here: the corpora below are small integers.
+fn area2(p: &[P2], ring: &[usize]) -> f64 {
+    (0..ring.len())
+        .map(|k| {
+            let (a, b) = (p[ring[k]], p[ring[(k + 1) % ring.len()]]);
+            a[0] * b[1] - a[1] * b[0]
+        })
+        .sum()
+}
+
+/// ★★★★ **Figure-eight holes at random angles — every one meshes.** A `20 × 20` square with one
+/// hole made of two triangular lobes meeting at `T`, their four rays drawn at random integer
+/// directions and the lobes taken as two runs of adjacent rays, so the two visits never
+/// interleave. Each visit bounds the sector of material between the lobes on its side; as often
+/// as not one of those is reflex, and it stays while the other slides. Every sample must come
+/// back a genuine triangulation of the square less the two lobes.
+#[test]
+fn random_figure_eight_holes_triangulate() {
+    let mut rng = lcg(0xD1B5_4A32_D192_ED03);
+    let cross = |a: (i64, i64), b: (i64, i64)| a.0 * b.1 - a.1 * b.0;
+    let (mut samples, mut reflex) = (0, 0);
+    for _ in 0..20_000 {
+        let t = (rng(9, 11), rng(9, 11));
+        let mut dirs: Vec<(i64, i64)> = (0..4).map(|_| (rng(-4, 4), rng(-4, 4))).collect();
+        // No zero direction, and no two rays along one direction (their edges would overlap).
+        let same_way = |a: (i64, i64), b: (i64, i64)| cross(a, b) == 0 && a.0 * b.0 + a.1 * b.1 > 0;
+        if dirs.contains(&(0, 0)) || (0..4).any(|i| (i + 1..4).any(|j| same_way(dirs[i], dirs[j])))
+        {
+            continue;
+        }
+        let half = |d: &(i64, i64)| u8::from(!(d.1 > 0 || (d.1 == 0 && d.0 > 0)));
+        dirs.sort_by(|a, b| half(a).cmp(&half(b)).then(cross(*b, *a).cmp(&0)));
+        let rot = rng(0, 1) as usize;
+        let (l1, l2) = (
+            (dirs[rot], dirs[rot + 1]),
+            (dirs[rot + 2], dirs[(rot + 3) % 4]),
+        );
+        // Each lobe strictly less than a half-turn, so it is a triangle.
+        if cross(l1.0, l1.1) <= 0 || cross(l2.0, l2.1) <= 0 {
+            continue;
+        }
+        let at = |d: (i64, i64), k: i64| [(t.0 + k * d.0) as f64, (t.1 + k * d.1) as f64];
+        let tp = [t.0 as f64, t.1 as f64];
+        let (k1, k2, k3, k4) = (rng(1, 2), rng(1, 2), rng(1, 2), rng(1, 2));
+        // The outer ring, then the hole clockwise: `T`, one lobe, `T`, the other.
+        let p = pts(&[
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 20.0],
+            [0.0, 20.0],
+            tp,
+            at(l1.1, k2),
+            at(l1.0, k1),
+            tp,
+            at(l2.1, k4),
+            at(l2.0, k3),
+        ]);
+        let (outer, hole) = ([0, 1, 2, 3], [4, 5, 6, 7, 8, 9]);
+        let lobes = (cross(l1.0, l1.1) * k1 * k2 + cross(l2.0, l2.1) * k3 * k4) as f64 / 2.0;
+        let mut v = p.clone();
+        let (tris, rings) = triangulate_uv(
+            &mut v,
+            &[&outer, &hole],
+            &[],
+            &[Revisit::Pinch {
+                ring: 1,
+                x: 0,
+                y: 3,
+            }],
+        )
+        .unwrap_or_else(|e| panic!("{e:?}: {p:?}"));
+        check(&p, &tris, 10, 400.0 - lobes);
+        check_partition(&tris, &rings[0], &[&rings[1]]);
+        samples += 1;
+        if orient2d(p[9], tp, p[5]) < 0.0 || orient2d(p[6], tp, p[8]) < 0.0 {
+            reflex += 1;
+        }
+    }
+    assert!(samples > 10_000, "only {samples} samples reached the gate");
+    assert!(reflex > 2_500, "only {reflex} samples had a reflex sector");
+}
+
+/// The boundary rings of a union of unit cells on an `n × n` grid — material on the left of every
+/// edge — with the pairing at each corner where two cells touch only diagonally chosen at random
+/// (turn left or right there), and the number of edge-connected components of the cells.
+fn grid_rings(rng: &mut impl FnMut(i64, i64) -> i64, n: i64) -> (Vec<Vec<(i64, i64)>>, usize) {
+    use std::collections::{BTreeMap, BTreeSet};
+    let fill = rng(30, 80);
+    let cells: BTreeSet<(i64, i64)> = (0..n)
+        .flat_map(|x| (0..n).map(move |y| (x, y)))
+        .filter(|_| rng(1, 100) <= fill)
+        .collect();
+    let mut sides = BTreeSet::new();
+    for &(x, y) in &cells {
+        let c = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)];
+        for k in 0..4 {
+            sides.insert((c[k], c[(k + 1) % 4]));
+        }
+    }
+    let kept: Vec<_> = sides
+        .iter()
+        .filter(|&&(a, b)| !sides.contains(&(b, a)))
+        .copied()
+        .collect();
+    let mut out: BTreeMap<(i64, i64), Vec<(i64, i64)>> = BTreeMap::new();
+    for &(a, b) in &kept {
+        out.entry(a).or_default().push(b);
+    }
+    let mut turn_left: BTreeMap<(i64, i64), bool> = BTreeMap::new();
+    let mut used = BTreeSet::new();
+    let mut rings = Vec::new();
+    for &(a0, b0) in &kept {
+        if used.contains(&(a0, b0)) {
+            continue;
+        }
+        let (mut a, mut b) = (a0, b0);
+        let mut ring = vec![a0];
+        loop {
+            used.insert((a, b));
+            let outs = &out[&b];
+            let next = if outs.len() == 1 {
+                outs[0]
+            } else {
+                let left = *turn_left.entry(b).or_insert_with(|| rng(0, 1) == 0);
+                let d = (b.0 - a.0, b.1 - a.1);
+                let turn = |o: &(i64, i64)| d.0 * (o.1 - b.1) - d.1 * (o.0 - b.0);
+                *outs
+                    .iter()
+                    .find(|o| if left { turn(o) > 0 } else { turn(o) < 0 })
+                    .expect("a diagonal touch leaves one way to each side")
+            };
+            if (b, next) == (a0, b0) {
+                break;
+            }
+            ring.push(b);
+            (a, b) = (b, next);
+        }
+        // Straight corners dissolved, as a b-rep face's loops come.
+        let m = ring.len();
+        rings.push(
+            (0..m)
+                .filter(|&i| {
+                    let (p, c, q) = (ring[(i + m - 1) % m], ring[i], ring[(i + 1) % m]);
+                    (c.0 - p.0) * (q.1 - c.1) - (c.1 - p.1) * (q.0 - c.0) != 0
+                })
+                .map(|i| ring[i])
+                .collect(),
+        );
+    }
+    // Edge-connected components of the cells.
+    let mut seen = BTreeSet::new();
+    let mut components = 0;
+    for &c in &cells {
+        if !seen.insert(c) {
+            continue;
+        }
+        components += 1;
+        let mut stack = vec![c];
+        while let Some((x, y)) = stack.pop() {
+            for nb in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+                if cells.contains(&nb) && seen.insert(nb) {
+                    stack.push(nb);
+                }
+            }
+        }
+    }
+    (rings, components)
+}
+
+/// How many random grid unions [`random_pinched_grid_faces_triangulate`] draws: at 200,000 the
+/// cell oracle agreed with every answer (3,598 pinched faces meshed, 19,393 lobe rings and 6,884
+/// corner bridges refused); a tenth keeps the commit hook quick.
+const GRID_SAMPLES: usize = 20_000;
+
+/// ★★★★ **Unions of grid cells, sheared — every pinched face meshes, and only a face is meshed.**
+/// Random unions of unit cells on a small grid, mapped by two integer shears in turn (determinant
+/// one, so orientation and every pinch survive, at angles other than right ones). Where two cells
+/// touch only at a corner the boundary passes that corner twice, and the pairing there is drawn
+/// at random. The oracle is the cells, not the rings: one outer ring over **edge-connected** cells
+/// is one face pinched where cells touch at corners — it must mesh, a genuine triangulation of
+/// the cells; one ring over cells in several pieces is lobes meeting only at points —
+/// `SelfTouchingBoundary`; and two rings sharing a corner (`AtEnd`, no straight edge to splice
+/// into) stay what they were, `SelfTouchingBoundary`.
+#[test]
+fn random_pinched_grid_faces_triangulate() {
+    let mut rng = lcg(0x9E37_79B9_7F4A_7C15);
+    let (mut pinched, mut lobes, mut corner_bridges) = (0, 0, 0);
+    for _ in 0..GRID_SAMPLES {
+        let n = rng(2, 5);
+        let (rings, components) = grid_rings(&mut rng, n);
+        let (k, m2) = (rng(-2, 2), rng(-1, 1));
+        let map = |q: (i64, i64)| {
+            let x = q.0 + k * q.1;
+            [x as f64, (q.1 + m2 * x) as f64]
+        };
+        let mut p: Vec<P2> = Vec::new();
+        let mut idx: Vec<Vec<usize>> = Vec::new();
+        for r in &rings {
+            idx.push((p.len()..p.len() + r.len()).collect());
+            p.extend(r.iter().map(|&q| map(q)));
+        }
+        let outer: Vec<usize> = (0..idx.len())
+            .filter(|&i| area2(&p, &idx[i]) > 0.0)
+            .collect();
+        if outer.len() != 1 {
+            continue;
+        }
+        let order: Vec<usize> = std::iter::once(outer[0])
+            .chain((0..idx.len()).filter(|&i| i != outer[0]))
+            .collect();
+        let idx: Vec<Vec<usize>> = order.iter().map(|&i| idx[i].clone()).collect();
+        // Revisits by coordinate, as `shared_vertices` finds them by handle.
+        let mut first: std::collections::BTreeMap<(u64, u64), (usize, usize)> =
+            std::collections::BTreeMap::new();
+        let mut revisits = Vec::new();
+        for (ri, ring) in idx.iter().enumerate() {
+            for (kk, &i) in ring.iter().enumerate() {
+                match first.get(&(p[i][0].to_bits(), p[i][1].to_bits())) {
+                    Some(&(rj, kj)) if rj != ri => revisits.push(Revisit::Bridge(Bridge {
+                        ring_x: rj,
+                        x: kj,
+                        ring_y: ri,
+                        y: kk,
+                    })),
+                    Some(&(_, kj)) => revisits.push(Revisit::Pinch {
+                        ring: ri,
+                        x: kj,
+                        y: kk,
+                    }),
+                    None => {
+                        first.insert((p[i][0].to_bits(), p[i][1].to_bits()), (ri, kk));
+                    }
+                }
+            }
+        }
+        if revisits.is_empty() {
+            continue;
+        }
+        let refs: Vec<&[usize]> = idx.iter().map(|r| r.as_slice()).collect();
+        let mut v = p.clone();
+        let r = triangulate_uv(&mut v, &refs, &[], &revisits);
+        if revisits.iter().any(|r| matches!(r, Revisit::Bridge(_))) {
+            assert!(
+                matches!(r, Err(TessError::SelfTouchingBoundary)),
+                "{r:?}: {p:?} {idx:?}"
+            );
+            corner_bridges += 1;
+        } else if components > 1 {
+            assert!(
+                matches!(r, Err(TessError::SelfTouchingBoundary)),
+                "{r:?}: {p:?} {idx:?}"
+            );
+            lobes += 1;
+        } else {
+            let (tris, used) = r.unwrap_or_else(|e| panic!("{e:?}: {p:?} {idx:?}"));
+            let area: f64 = idx.iter().map(|r| area2(&p, r)).sum::<f64>() / 2.0;
+            let holes: Vec<&[usize]> = idx[1..].iter().map(|r| r.as_slice()).collect();
+            check(&p, &tris, p.len() + 2 * holes.len() - 2, area);
+            let used_holes: Vec<&[usize]> = used[1..].iter().map(|r| r.as_slice()).collect();
+            check_partition(&tris, &used[0], &used_holes);
+            pinched += 1;
+        }
+    }
+    assert!(corner_bridges > 0, "no corner bridge reached the gate");
+    assert!(
+        pinched > GRID_SAMPLES / 100,
+        "only {pinched} pinched faces reached the gate"
+    );
+    assert!(
+        lobes > GRID_SAMPLES / 100,
+        "only {lobes} lobe rings reached the gate"
+    );
 }

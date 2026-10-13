@@ -39,8 +39,8 @@ pub(crate) enum Revisit {
     /// In two rings: they are spliced into one there ([`Bridge`]).
     Bridge(Bridge),
     /// Twice in one ring, at positions `x < y` of `rings[ring]`: the boundary is **pinched**
-    /// there — a groove whose tip touches the face's own rim. The ring is one already, so
-    /// nothing is spliced; the two visits are the twins.
+    /// there — a groove whose tip touches the face's own rim, a hole touching a boss's footprint
+    /// at a corner. The ring is one already, so nothing is spliced; the two visits are the twins.
     Pinch { ring: usize, x: usize, y: usize },
 }
 
@@ -288,25 +288,34 @@ fn splice(
 /// Name the twins of a ring that passes one point twice, at positions `x < y` — after checking
 /// that the order [`sos`] gives them is one a small displacement realizes.
 ///
-/// Each visit's material lies in the wedge on the left of its two edges. The earlier copy slides
-/// along its incoming edge (toward its predecessor), the later along its outgoing one (toward its
-/// successor) — each into its own wedge, the node expansion of Chang, Erickson and Xu
-/// («Detecting Weakly Simple Polygons», §4.2) taken to first order. That separates the two copies
-/// exactly when the wedges do, so two things are asked first, each with exact `orient2d`:
+/// Each visit's **wedge** is the sector on the left of its two edges, from the ray it leaves
+/// along counter-clockwise to the ray it arrived along. Expanding the point into a small disk,
+/// each visit becomes a chord of it — the node expansion of Chang, Erickson and Xu («Detecting
+/// Weakly Simple Polygons», arXiv:1407.3340, §3.2) — and the ring is weakly simple at the point
+/// exactly when the two chords do not cross, which the point decides alone (their Lemmas C.1 and
+/// C.2). What is asked, with exact `orient2d`, is **how many of the other visit's two rays lie
+/// strictly inside each wedge**:
 ///
-/// - **both wedges strictly convex** — a convex wedge moved along one of its own rays stays
-///   inside itself, so two wedges that met only at the point no longer meet. A reflex one does
-///   not have that property; a groove touching a circle's rim never makes one (the disk side is a
-///   half-plane there), and the shape that does is refused, as before, as
-///   [`TessError::SelfTouchingBoundary`];
-/// - **neither wedge holds the other's ray** — a ray strictly inside the other wedge is the
-///   boundary passing *through* the point, a crossing every triangulation gets wrong
-///   ([`TessError::DegenerateRing`]). Nothing downstream sees it: no two segments straddle each
-///   other there, and the sweep, handed the twins' order, builds pieces whose chains do not
-///   descend (measured — 79,840 of 200,000 random grooves).
+/// - **none, either way** — each visit bounds its own sector of material and the two sectors
+///   meet only at the point: the face is pinched there and is still one region;
+/// - **both, either way** — each wedge holds the other visit: the region meets itself *only* at
+///   this point, two lobes, so this is not a face's interior
+///   ([`TessError::SelfTouchingBoundary`]);
+/// - anything else is a ring passing *through* the point (the rays interleave) or one sector
+///   inside the other — no triangulation is right ([`TessError::DegenerateRing`]). Nothing
+///   downstream sees the crossing: no two segments straddle each other there, and the sweep,
+///   handed the twins' order, builds pieces whose chains do not descend (measured — 79,840 of
+///   200,000 random grooves without this check).
 ///
-/// A ray of one visit along the other's is left to `self_touch`: two segments leaving one point
-/// the same way overlap, a touch it already names.
+/// Then **a strictly convex sector slides, and a sector that is not stays.** A convex wedge
+/// moved along one of its own rays stays inside itself, so two sectors that met only at the
+/// point no longer meet — the earlier visit slides along its incoming edge (toward its
+/// predecessor), the later along its outgoing one (toward its successor). A sector that is not
+/// convex does not have that property and does not need it: two disjoint sectors leave at most
+/// one of them reflex, and once the other has moved off the point into itself, the point is
+/// outside it. That visit's twin slides toward itself — a displacement of zero. Two sectors that
+/// are neither (two straight half-planes) have their rays lying on each other, a touch:
+/// [`TessError::SelfTouchingBoundary`].
 fn pinch(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Twins, TessError> {
     let n = ring.len();
     let visit = |k: usize| (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);
@@ -316,22 +325,37 @@ fn pinch(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Twins, TessErr
         return Err(TessError::DegenerateRing);
     }
     let convex = |p: usize, q: usize| orient2d(uv[p], t, uv[q]) > 0.0;
-    if !convex(op, on) || !convex(hp, hn) {
-        return Err(TessError::SelfTouchingBoundary);
-    }
-    // Whether the point `z` is strictly inside the convex wedge `p → T → q`.
+    // Whether the point `z` is strictly inside the wedge `q → T → p` (counter-clockwise from the
+    // ray to `q`, the one left along, to the ray to `p`): both half-planes for a convex wedge,
+    // either one for a wedge that is not.
     let inside = |p: usize, q: usize, z: usize| {
-        orient2d(t, uv[q], uv[z]) > 0.0 && orient2d(uv[p], t, uv[z]) > 0.0
+        let (past_q, before_p) = (
+            orient2d(t, uv[q], uv[z]) > 0.0,
+            orient2d(uv[p], t, uv[z]) > 0.0,
+        );
+        if convex(p, q) {
+            past_q && before_p
+        } else {
+            past_q || before_p
+        }
     };
-    let rays = [(op, on, hp), (op, on, hn), (hp, hn, op), (hp, hn, on)];
-    if rays.iter().any(|&(p, q, z)| inside(p, q, z)) {
-        return Err(TessError::DegenerateRing);
+    let holds = |(p, q): (usize, usize), (z1, z2): (usize, usize)| {
+        u8::from(inside(p, q, z1)) + u8::from(inside(p, q, z2))
+    };
+    match (holds((op, on), (hp, hn)), holds((hp, hn), (op, on))) {
+        (0, 0) => {}
+        (2, 2) => return Err(TessError::SelfTouchingBoundary),
+        _ => return Err(TessError::DegenerateRing),
+    }
+    let (o_slides, h_slides) = (convex(op, on), convex(hp, hn));
+    if !o_slides && !h_slides {
+        return Err(TessError::SelfTouchingBoundary);
     }
     Ok(Twins {
         o,
         h,
-        o_along: op,
-        h_along: hn,
+        o_along: if o_slides { op } else { o },
+        h_along: if h_slides { hn } else { h },
     })
 }
 

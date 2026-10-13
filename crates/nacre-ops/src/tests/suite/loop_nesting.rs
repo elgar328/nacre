@@ -138,9 +138,10 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
 ///   it, touching its outer boundary at `P` — one ring of an outer boundary and a hole: `+1`.
 ///
 /// Each is asked from all six starting nodes and reversed, so neither the start index nor which of
-/// the two passages comes first decides it. ★ The arrangement does not deliver such a ring today —
-/// it keeps the two corners at `P` as two names, so each lobe arrives as its own ring — so this is
-/// where the rule's many-passage reading is held.
+/// the two passages comes first decides it. The arrangement delivers the first ring itself — a
+/// plate whose hole touches a boss's footprint at one corner
+/// ([`a_plate_pinched_where_a_hole_meets_a_boss_meshes`]); here it is built from names so the
+/// rule's many-passage reading is held on exactly this shape.
 #[test]
 fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
     let mut m = Model::new();
@@ -207,6 +208,108 @@ fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
                 );
             }
         }
+    }
+}
+
+/// ★★★★★ **A plate pinched where a hole meets a boss builds, and its top meshes.** A `6 × 6 × 1`
+/// plate, a triangular hole `(2,2) (4,3) (4,4)` through it, and a triangular boss of height 1 on
+/// its top with a corner at `(2, 2)` too. The arrangement names `(2, 2, 1)` once, and the top
+/// face's boundary passes it twice — with the boss inside the plate, one hole ring around both
+/// triangles (one of its two sectors at `(2, 2)` is 278°); with a boss corner on the plate's edge
+/// at `(4, 0)`, the outer ring, which passes `(4, 0)` twice as well. Every operation order and
+/// hole height that builds is asked; the mesh must cover each face and enclose the solid
+/// (`mesh_covers_faces`), as the boolean's own exit census also asserts. Boss first with its
+/// corner on the edge is refused by the boolean (`CoincidentFeatures`) and is not this test's.
+#[test]
+fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
+    let prism = |m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64| -> Handle<Solid> {
+        let frame = datum_frame(
+            m,
+            crate::SketchPlane::from_axes(
+                Point3::from_array([0.0, 0.0, z]),
+                nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+                nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            ),
+        );
+        let profile = Profile2d::polygon(
+            tri.iter()
+                .map(|&q| nacre_math::Point2::from_array(q))
+                .collect(),
+        )
+        .expect("a triangle");
+        let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
+            m,
+            &crate::Operation::Extrude {
+                frame,
+                profile,
+                dist: height,
+            },
+        ) else {
+            panic!("extruding a triangle")
+        };
+        m.rebuild_adjacency();
+        solid
+    };
+    let hole = [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]];
+    let inside = [[2.0, 2.0], [4.0, 0.5], [4.0, 1.0]];
+    let on_edge = [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]];
+    for (name, boss, hole_floor, hole_height, boss_first) in [
+        ("boss inside, hole through", inside, -1.0, 3.0, false),
+        ("boss inside, hole flush", inside, 0.0, 1.0, false),
+        ("boss inside, boss first", inside, -1.0, 3.0, true),
+        ("boss on the edge, hole through", on_edge, -1.0, 3.0, false),
+        ("boss on the edge, hole flush", on_edge, 0.0, 1.0, false),
+    ] {
+        let mut m = Model::new();
+        let plate = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([6.0, 6.0, 1.0]),
+        );
+        let one = |out: Vec<Handle<Solid>>| {
+            assert_eq!(out.len(), 1, "{name}: one body");
+            out[0]
+        };
+        let out = if boss_first {
+            let b = prism(&mut m, boss, 1.0, 1.0);
+            let bossed = one(crate::boolean(&mut m, crate::BoolKind::Fuse, plate, b).expect(name));
+            m.rebuild_adjacency();
+            let h = prism(&mut m, hole, hole_floor, hole_height);
+            one(crate::boolean(&mut m, crate::BoolKind::Cut, bossed, h).expect(name))
+        } else {
+            let h = prism(&mut m, hole, hole_floor, hole_height);
+            let holed = one(crate::boolean(&mut m, crate::BoolKind::Cut, plate, h).expect(name));
+            m.rebuild_adjacency();
+            let b = prism(&mut m, boss, 1.0, 1.0);
+            one(crate::boolean(&mut m, crate::BoolKind::Fuse, holed, b).expect(name))
+        };
+        m.rebuild_adjacency();
+        // Some face's boundary passes the vertex at (2, 2, 1) twice.
+        let at_p = |v: Handle<nacre_topo::Vertex>| {
+            let c = m.vertex_point(v).as_array();
+            c == [2.0, 2.0, 1.0]
+        };
+        let shell = m.solid(out).outer;
+        let pinched = m.shell(shell).faces.iter().any(|&fh| {
+            let f = m.face(fh);
+            std::iter::once(&f.outer).chain(f.inner.iter()).any(|l| {
+                let starts: Vec<_> = l
+                    .half_edges
+                    .iter()
+                    .map(|he| {
+                        let [a, b] = m.edge(he.edge).vertices;
+                        if he.forward { a } else { b }
+                    })
+                    .filter(|&v| at_p(v))
+                    .collect();
+                starts.len() == 2 && starts[0] == starts[1]
+            })
+        });
+        assert!(
+            pinched,
+            "{name}: the top's boundary passes (2, 2, 1) twice, as one vertex"
+        );
+        mesh_covers_faces(name, &m, &[out]);
     }
 }
 
