@@ -151,7 +151,7 @@ pub(crate) fn unify_coplanar_faces(
     let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
     out.extend(merged);
     let all: Vec<usize> = (0..out.len()).collect();
-    dissolve_straight_angles(&mut out, &all);
+    dissolve_straight_angles(&mut out, &all, &combinatorics::SharedLines::of(jd, cyls));
     Ok(out)
 }
 
@@ -619,7 +619,12 @@ fn merge_component(
 /// ★ **The test is the two incident edges' walls**, which the rings carry — not combinatorial on
 /// the names ("the node is on a line iff some pair of its planes is shared by both neighbours"),
 /// which is sound only while every vertex lies on exactly three planes. The walls say it
-/// outright.
+/// outright — equal walls, or one line in two spellings ([`combinatorics::SharedLines`]: a ruling
+/// piece along a lateral and a plane segment past its cap, where the gate recorded the plane pair's
+/// line on that cylinder). Measured over the `nacre-ops` suite and the census, counted per pass:
+/// the two spellings meet at a node 160 times and the node drops 40 times — every drop in one
+/// solid's own pass where that solid has no lateral at the point (the cap-circle scoreboard's
+/// outside corners); the census meets none.
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
@@ -637,8 +642,11 @@ fn merge_component(
 /// (`draft::held_rims`), not off the split.
 ///
 /// ★ **Deciding on the plane faces alone is enough for the rim**, though the laterals are emitted
-/// after this pass: a lateral turns at a rim node only where a ruling ends there, and that
-/// ruling's wall is a plane face with a corner at the node — already a bend on this side.
+/// after this pass: a lateral turns at a rim node only where a ruling ends there, and the node is
+/// then on its cap's ring too, whose arc gives it a neighbour off the ruling's line — three
+/// neighbours, so it stays whether or not the wall bends there (the ruling may run on above the
+/// cap as a plane segment, one line). ☑ Measured: no node the whole-result pass drops joins two
+/// spellings of one line, in the suite or the census.
 ///
 /// ★★ **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
 /// The per-solid caller hands over every face of a group — laterals included — and the wall
@@ -652,7 +660,11 @@ fn merge_component(
 /// and `mass_props` read — the crossing census's exact-volume assertions are the standing
 /// measurement of that contract. (The whole-circle arms merge no arc: a ring either keeps two
 /// nodes or more, or closes.)
-pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
+pub(super) fn dissolve_straight_angles(
+    out: &mut [LocalFace],
+    which: &[usize],
+    shared: &combinatorics::SharedLines,
+) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
     // that edge always sees two walls overall and would never dissolve. On each face separately it
@@ -674,7 +686,7 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                 for nd in [a, b] {
                     match first_wall.entry((nd, lf.surf)) {
                         std::collections::hash_map::Entry::Occupied(e) => {
-                            if *e.get() != ring.walls[i] {
+                            if !shared.one_line(lf.surf, *e.get(), ring.walls[i]) {
                                 bent.insert(nd);
                             }
                         }
@@ -769,14 +781,25 @@ pub(super) fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                 continue; // untouched rings keep their allocation
             }
             let k = ring.len();
-            let mut nodes = Vec::with_capacity(k);
-            let mut walls = Vec::with_capacity(k);
-            for i in 0..k {
-                if drop.contains(&ring.nodes[i]) {
-                    continue; // its two edges are one; keep the wall of the one that survives
+            let kept: Vec<usize> = (0..k).filter(|&i| !drop.contains(&ring.nodes[i])).collect();
+            let mut nodes = Vec::with_capacity(kept.len());
+            let mut walls = Vec::with_capacity(kept.len());
+            for (t, &i) in kept.iter().enumerate() {
+                // Edges `i` up to the next kept node are one edge now, on one line or one arc.
+                // ★ Where one line is spelled both ways — a ruling piece along the lateral and a
+                // plane segment past its cap — the merged edge is spelled by the plane pair: that
+                // spelling is true of the whole line, the ruling's only where the lateral is.
+                let next = kept[(t + 1) % kept.len()];
+                let mut wall = ring.walls[i];
+                let mut j = (i + 1) % k;
+                while j != next {
+                    if matches!(ring.walls[j], Wall::Plane(_)) {
+                        wall = ring.walls[j];
+                    }
+                    j = (j + 1) % k;
                 }
                 nodes.push(ring.nodes[i]);
-                walls.push(ring.walls[i]);
+                walls.push(wall);
             }
             *ring = Ring::new(nodes, walls);
         }

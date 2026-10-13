@@ -149,9 +149,10 @@ pub(crate) fn name_result_vertices(
     let per_solid: Option<Vec<LocalFace>> = match &grouping {
         Ok(g) if g.n > 1 => {
             let mut v = faces.to_vec();
+            let shared = combinatorics::SharedLines::of(jd, cyls);
             for gi in 0..g.positives.len() {
                 let which: Vec<usize> = (0..v.len()).filter(|&i| group_of[i] == gi).collect();
-                dissolve_straight_angles(&mut v, &which);
+                dissolve_straight_angles(&mut v, &which, &shared);
             }
             Some(v)
         }

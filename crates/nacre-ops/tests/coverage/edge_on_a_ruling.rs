@@ -467,7 +467,10 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 ///
 /// The cap ring an outside corner leaves is pinched at the node on the rim — the circle and the
 /// prism's section meet there alone — and on either frame its winding is read where the circle
-/// bulges past that node, so it is no refusal (`combinatorics::loop_winding`).
+/// bulges past that node, so it is no refusal (`combinatorics::loop_winding`). Past `A`'s top,
+/// `B`'s edge on the line of contact is stated as a ruling along `A`'s lateral and as a plane
+/// segment above the rim — one line spelled two ways, which the straight-angle cleaning reads as
+/// one (`combinatorics::SharedLines`), so `B` keeps no vertex at the rim point.
 ///
 /// What builds is checked against the input: `A ∩ B` is the wedge's section over the height the
 /// two share (an outside corner meets `A` in a line only — empty), and [`identities`] carries
@@ -475,9 +478,8 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// fixed whatever builds: the wedge's `A − B` never builds — the groove touches the lateral along
 /// a line, a solid touching itself, `NonManifoldResultEdge` at every height — and no refusal is a
 /// suspected defect. What does not build yet is pinned by family, boolean and height (todo
-/// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): an outside corner past `A`'s top, whose touch leaves a vertex named
-/// by `A`'s cap and cylinder on `B`'s edge (`VertexNamesAbsentSurface`) and, past both caps, a union
-/// whose cylinder has every corner on the line of contact (`NoClearRay`).
+/// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): past both caps, a union whose cylinder has
+/// every corner on the line of contact (`NoClearRay`).
 #[test]
 fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     use std::collections::BTreeMap;
@@ -555,15 +557,7 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
         pin(wedge, &[2], &Height::ALL, "NonManifoldResultEdge", 4);
     }
     for outside in ["tangent side", "line contact"] {
-        pin(outside, &[0, 1], &[PastTop], "VertexNamesAbsentSurface", 4);
         pin(outside, &[0, 1], &[PastBoth], "NoClearRay", 4);
-        pin(
-            outside,
-            &[3],
-            &[PastTop, PastBoth],
-            "VertexNamesAbsentSurface",
-            4,
-        );
     }
     assert_eq!(tally, want);
 }

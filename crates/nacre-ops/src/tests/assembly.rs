@@ -182,7 +182,7 @@ fn a_dissolved_rim_closes_in_its_faces_spelling() {
     let cap = face(ClassIx::Plane(3), arc(0, false));
     let run = |mut v: Vec<LocalFace>| -> Vec<LocalFace> {
         let which: Vec<usize> = (0..v.len()).collect();
-        super::coplanar::dissolve_straight_angles(&mut v, &which);
+        super::coplanar::dissolve_straight_angles(&mut v, &which, &Default::default());
         v
     };
     let both = run(vec![lateral.clone(), cap.clone()]);
@@ -313,7 +313,7 @@ fn a_ring_left_one_node_is_its_arc_back_to_it() {
     let ([_, _, n3], face, corner) = three_arc_rim();
     let run = |mut v: Vec<LocalFace>| -> Vec<LocalFace> {
         let which: Vec<usize> = (0..v.len()).collect();
-        super::coplanar::dissolve_straight_angles(&mut v, &which);
+        super::coplanar::dissolve_straight_angles(&mut v, &which, &Default::default());
         v
     };
     let one = |b: &Bound, wall: Wall| matches!(b, Bound::Ring(r) if r.nodes == vec![n3] && r.walls == vec![wall]);
@@ -386,12 +386,74 @@ fn a_ring_not_of_its_own_circle_keeps_its_nodes() {
         ),
     ] {
         let mut v: Vec<LocalFace> = vec![face(surf, wall), corner.clone()];
-        super::coplanar::dissolve_straight_angles(&mut v, &[0, 1]);
+        super::coplanar::dissolve_straight_angles(&mut v, &[0, 1], &Default::default());
         assert!(
             matches!(&v[0].outer, Bound::Ring(r) if r.nodes == nodes.to_vec()),
             "{surf:?}: {:?}",
             v[0].outer
         );
+    }
+}
+
+/// **One line spelled two ways is a straight run** (`dissolve_straight_angles` with
+/// `combinatorics::SharedLines`). A face on class 7 runs from `a` to `x` along a ruling of
+/// cylinder 0 (side `+1` of class 7) and on from `x` to `b` as a plane segment on class 9 — the
+/// prism's edge below and above a cylinder's rim. Where the gate recorded the line `7 ∩ 9` on that
+/// cylinder at that side, `x` dissolves and the merged edge is spelled by the plane pair; with no
+/// record, or with the line on the other ruling, the two walls are a bend and `x` stays.
+#[test]
+fn one_line_spelled_as_a_ruling_and_a_plane_segment_dissolves() {
+    use crate::combinatorics::{Canon3, NodeId, SharedLine, SharedLines, Wall};
+    use crate::draft::{Bound, LocalFace, Ring};
+    use crate::planes::ClassIx;
+    let [a, x, b, c] = [[3, 4, 7], [7, 9, 11], [3, 7, 9], [4, 7, 12]]
+        .map(|t| NodeId::three_planes(Canon3::three(t)));
+    let ruling = Wall::Ruling {
+        cyl: 0,
+        side: 1,
+        up: true,
+        plane: 7,
+    };
+    let face = LocalFace {
+        surf: ClassIx::Plane(7),
+        outer: Bound::Ring(Ring::new(
+            vec![a, x, b, c],
+            vec![ruling, Wall::Plane(9), Wall::Plane(3), Wall::Plane(4)],
+        )),
+        inner: Vec::new(),
+        flip: false,
+    };
+    let run = |shared: &SharedLines| -> Ring {
+        let mut v = vec![face.clone()];
+        super::coplanar::dissolve_straight_angles(&mut v, &[0], shared);
+        match &v[0].outer {
+            Bound::Ring(r) => r.clone(),
+            other => panic!("still a ring: {other:?}"),
+        }
+    };
+    let line = |side| {
+        SharedLines::of_class(
+            7,
+            vec![SharedLine {
+                other: 9,
+                cyl: 0,
+                side,
+                stated: true,
+            }],
+        )
+    };
+    let merged = run(&line(1));
+    assert_eq!(merged.nodes, vec![a, b, c], "the run through x is one edge");
+    assert_eq!(
+        merged.walls,
+        vec![Wall::Plane(9), Wall::Plane(3), Wall::Plane(4)],
+        "spelled by the plane pair"
+    );
+    for (why, shared) in [
+        ("no record", SharedLines::default()),
+        ("other ruling", line(-1)),
+    ] {
+        assert_eq!(run(&shared).nodes, vec![a, x, b, c], "{why}: x is a bend");
     }
 }
 

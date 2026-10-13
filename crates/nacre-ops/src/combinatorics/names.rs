@@ -293,8 +293,9 @@ pub(crate) enum Carrier {
 /// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.
 ///
 /// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
-/// `dissolve_straight_angles` folds on wall *equality*, and two arcs of different circles — or
-/// of one circle in different directions — now compare unequal instead of `MAX == MAX`.
+/// `dissolve_straight_angles` folds equal walls (and one line's two spellings,
+/// [`SharedLines`]), and two arcs of different circles — or of one circle in different directions —
+/// now compare unequal instead of `MAX == MAX`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Wall {
     Plane(usize),
@@ -320,6 +321,145 @@ pub(crate) enum Wall {
         up: bool,
         plane: usize,
     },
+}
+
+/// **A line two plane classes share on a cylinder, as one of the two reads it** — read off the
+/// gate's record ([`crate::planes::SharedRuling`]), never decided again: `other` is the second
+/// class, `cyl` the cylinder, `side` which of the reading class's two rulings the line is
+/// ([`ruling_side_signed`] against that class — `0` for a tangent class's one ruling), and
+/// `stated` whether the reading class states it as a station of the cylinder's chart (the
+/// record's `stated_by`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SharedLine {
+    pub(crate) other: usize,
+    pub(crate) cyl: usize,
+    pub(crate) side: i8,
+    pub(crate) stated: bool,
+}
+
+/// **One record of the gate, read by `own`** — `None` when `own` is not one of its two classes,
+/// or when a description is missing or the arithmetic runs out (the gate records a shared line
+/// only from world coefficients, so a reader that cannot form them has nothing to compare).
+pub(crate) fn shared_line(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cyl: usize,
+    sr: &crate::planes::SharedRuling,
+    own: usize,
+) -> Option<SharedLine> {
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
+    let (a, b) = sr.line;
+    let other = if a == own {
+        b
+    } else if b == own {
+        a
+    } else {
+        return None;
+    };
+    let def = &cyls.get(cyl)?.def;
+    let w = class_coeffs_rat(jd, own)?;
+    let v = class_coeffs_rat(jd, other)?;
+    let CylinderMeet::OnRuling(line) =
+        nacre_exact::quad::plane_plane_cylinder(&w, &v, &def.origin(), &def.dir(), def.r2())?
+    else {
+        return None;
+    };
+    let side = ruling_side_signed(
+        &w,
+        def,
+        (&line, &QuadVal::from_rat(nacre_exact::Rat::from_int(0))),
+    )?;
+    Some(SharedLine {
+        other,
+        cyl,
+        side,
+        stated: sr.stated_by.contains(&own),
+    })
+}
+
+/// **Every plane class's shared lines** — the table «do these two walls of one face run along
+/// one line?» reads ([`SharedLines::one_line`]).
+///
+/// ★ **Why a line has two spellings on one face.** A segment on a line the gate recorded is
+/// stated in the ruling vocabulary where it runs along the lateral (`split_rulings`' fold — the
+/// chart needs the station there) and stays a plane segment past the lateral's cap, so one
+/// straight edge of a prism taller than the cylinder arrives as `Wall::Ruling` below the rim and
+/// `Wall::Plane` above it. Compared as values the two are a bend, and the point between them
+/// stays a vertex that only the other solid's surfaces name.
+///
+/// A class whose lines cannot be read is left out, and a pair it would have joined reads as a
+/// bend — the vertex stays, which is today's answer, never a wrong one.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SharedLines {
+    by_class: HashMap<usize, Vec<SharedLine>>,
+}
+
+impl SharedLines {
+    /// Built from the gate's records, every class of every record reading it.
+    pub(crate) fn of(jd: &Judge<'_, WorkingPlane>, cyls: &[crate::planes::WorkingCyl]) -> Self {
+        let mut by_class: HashMap<usize, Vec<SharedLine>> = HashMap::new();
+        let mut unread: Vec<usize> = Vec::new();
+        for (ci, cy) in cyls.iter().enumerate() {
+            for sr in &cy.shared {
+                for own in [sr.line.0, sr.line.1] {
+                    match shared_line(jd, cyls, ci, sr, own) {
+                        Some(l) => by_class.entry(own).or_default().push(l),
+                        None => unread.push(own),
+                    }
+                }
+            }
+        }
+        for c in unread {
+            by_class.remove(&c);
+        }
+        Self { by_class }
+    }
+
+    /// **Do walls `a` and `b` of one face on `own` run along one line?** Equal walls do. A plane
+    /// wall and a ruling piece do when the plane pair is a line the gate recorded on that
+    /// cylinder and the ruling is that line on `own` (same cylinder, same side): the plane wall
+    /// has no direction, so the ruling's `up` is not asked. Two ruling pieces compare as values —
+    /// `up` too, so a ruling walked back is a cusp, not a straight run.
+    pub(crate) fn one_line(&self, own: ClassIx, a: Wall, b: Wall) -> bool {
+        if a == b {
+            return true;
+        }
+        let ClassIx::Plane(own) = own else {
+            return false;
+        };
+        let along = |w: usize, cyl: usize, side: i8| {
+            self.by_class.get(&own).is_some_and(|ls| {
+                ls.iter()
+                    .any(|l| l.other == w && l.cyl == cyl && l.side == side)
+            })
+        };
+        match (a, b) {
+            (
+                Wall::Plane(w),
+                Wall::Ruling {
+                    cyl, side, plane, ..
+                },
+            )
+            | (
+                Wall::Ruling {
+                    cyl, side, plane, ..
+                },
+                Wall::Plane(w),
+            ) => plane == own && along(w, cyl, side),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+impl SharedLines {
+    /// A table holding `lines` for `own` alone — for the cleaning's tests, which build rings
+    /// without a judge.
+    pub(crate) fn of_class(own: usize, lines: Vec<SharedLine>) -> Self {
+        Self {
+            by_class: HashMap::from([(own, lines)]),
+        }
+    }
 }
 
 impl Wall {

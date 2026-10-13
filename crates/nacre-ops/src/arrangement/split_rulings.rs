@@ -219,14 +219,12 @@ pub(super) fn split_rulings(
     rulings: &[MergedRuling],
     aliases: &Aliases,
 ) -> Result<SplitRulings, BoolError> {
-    use nacre_exact::quad::QuadVal;
     // A class with no world statement (it sections the cylinder) refuses by the gate's name.
     let undecided = || reject(combinatorics::undecided_reason(cyls, &[wc]));
     if rulings.is_empty() {
         return Ok(None);
     }
     let prec = jd.standard.prec;
-    let w = combinatorics::class_coeffs_rat(jd, wc);
     // Each ruling's end coordinates, re-solved from the names once.
     let ruling_ends: Vec<[AxisCoord; 2]> = rulings
         .iter()
@@ -247,28 +245,14 @@ pub(super) fn split_rulings(
     }
     // The lines on this class that lie on a cylinder and that this class states as a ruling —
     // `(the other class, cylinder, which of this class's two rulings)`, the pair read off the
-    // gate's record, never decided here, and the side asked of the line once: it is the identity
-    // a ruling piece carries (`MergedRuling::side`).
+    // gate's record, never decided here, and the side asked of the line once
+    // ([`combinatorics::shared_line`], which the straight-angle cleaning reads too): it is the
+    // identity a ruling piece carries (`MergedRuling::side`).
     let mut shared_here: Vec<(usize, usize, i8)> = Vec::new();
     for (ci, cy) in cyls.iter().enumerate() {
         for sr in cy.shared.iter().filter(|sr| sr.stated_by.contains(&wc)) {
-            let (a, b) = sr.line;
-            let other = if a == wc { b } else { a };
-            let v = combinatorics::class_coeffs_rat(jd, other).ok_or_else(undecided)?;
-            let w = w.ok_or_else(undecided)?; // the gate records a shared line only from world coefficients
-            let (o, m, r2) = (cy.def.origin(), cy.def.dir(), cy.def.r2());
-            let Some(nacre_exact::quad::CylinderMeet::OnRuling(line)) =
-                nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
-            else {
-                return Err(undecided());
-            };
-            let side = combinatorics::ruling_side_signed(
-                &w,
-                &cy.def,
-                (&line, &QuadVal::from_rat(Rat::from_int(0))),
-            )
-            .ok_or_else(undecided)?;
-            shared_here.push((other, ci, side));
+            let l = combinatorics::shared_line(jd, cyls, ci, sr, wc).ok_or_else(undecided)?;
+            shared_here.push((l.other, ci, l.side));
         }
     }
     let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
