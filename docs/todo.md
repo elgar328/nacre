@@ -325,6 +325,16 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 잠금이 없다 — lib 스위트의 `tess_census` 와 census 는 이 모양을 짓지 않는다. 한 링이 다른 링에 한 점으로 닿는 면
 (보어 테두리에 닿는 보스)은 메셔가 두 링을 그 점에서 이어 그린다(`polygon::splice`).
 
+### 메시는 첫 거절에서 그 범위 전체를 멈춘다
+
+한 면의 메시 거절이 받은 범위 전체의 메시를 막는다(`tessellate`·`tessellate_solids`). playground 는 값마다 메시를
+짓지만 그리기(`draw.ts` 의 `collect`)가 첫 거절 값에서 멈추므로, 앱에서도 한 면이 그림 전체를 막는다 — 다른 값을
+그리는 것은 앱만 바꾸면 되는 일이다. 사용자가 닿는 인구는 「꼬집힌 다각형 면을 메셔가 거절한다」의 판이다: 그 판과
+한 스크립트에 있는 다른 값도 그려지지 않는다. 그 밖에 `SelfTouchingBoundary` 로 거절되는 접촉 모양(`AtEnd`, 곡선
+간선 접촉, 다리 둘 이상)이 남아 있다. 두 잠금이 불리언 결과마다 메시가 되는지 단언하고(lib 스위트는 불리언의
+출구에서 `tess_census`, census 는 행마다 `record`) 코퍼스에서 거절은 0 이다 — 양 끝 림이 둘 다 잘린 띠는 census
+`bothrims` 행이 든다.
+
 ### 감김의 `frame_sign`·옆면 `orient_sign` 부호 잠금
 
 두 인자의 부호는 잠기지 않았다 — 잠그는 픽스처(bore 옆면에 구멍이 나는 것)가 없다(`design.md` 「감김과 방향」).
@@ -477,15 +487,6 @@ tess 는 원통 옆면(띠)을 한 생성선에서 잘라 펼친다(`cut_seamles
 인구 0(합성 입력의 단위 잠금 `a_band_generator_crosses_the_fewest_holes_and_never_one_four_times` 만). 여는 길은 seam
 없는 모델러의 패싯팅이 하는 대로 — 끊어 이은 다각형들을 포함 관계로 묶어(바깥 하나 + 그 구멍들) 묶음마다
 삼각분할한다(Stallings, *Reduced Topology B-Reps* §10 의 8단계).
-
-### 메시는 첫 거절에서 그 범위 전체를 멈춘다
-
-`SelfTouchingBoundary` 로 거절되는 접촉 모양(`AtEnd`, 곡선 간선 접촉, 다리 둘 이상)이 남아 있고, 한 면의 거절이
-받은 범위 전체의 메시를 막는다(`tessellate`·`tessellate_solids`). playground 는 값마다 메시를 짓지만 그리기
-(`draw.ts` 의 `collect`)가 첫 거절 값에서 멈추므로, 앱에서도 한 면이 그림 전체를 막는다 — 다른 값을 그리는 것은
-앱만 바꾸면 되는 일이다. 인구는 0 이다 — 두 잠금이 불리언 결과마다 메시가 되는지 단언한다: lib 스위트는 불리언의
-출구에서(`tess_census`), census 는 행마다(`record`). 그 0 은 코퍼스가 지은 모양의 것이다 — 양 끝 림이 둘 다 잘린
-띠는 census `bothrims` 행이 든다. 코퍼스 밖의 인구는 「꼬집힌 다각형 면을 메셔가 거절한다」가 든다.
 
 ### 스케치 원의 r² 는 `i128` 이다
 
