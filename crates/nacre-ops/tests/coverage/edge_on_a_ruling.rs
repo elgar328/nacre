@@ -707,9 +707,7 @@ fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
     }
     let want: BTreeMap<(&str, usize), String> = tools
         .iter()
-        .flat_map(|&(tool, ..)| {
-            (0..6).map(move |i| ((tool, i), "TraceDeclined(OuterRing)".to_string()))
-        })
+        .flat_map(|&(tool, ..)| (0..6).map(move |i| ((tool, i), "StraightAngle".to_string())))
         .collect();
     assert_eq!(tally, want);
 }

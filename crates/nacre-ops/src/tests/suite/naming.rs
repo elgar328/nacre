@@ -969,3 +969,68 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     }
     assert!(on_plane > 0, "some vertex lies on some queried plane");
 }
+
+/// **A corner a cylinder made names itself, however many times its loop passes it.** The union a
+/// wedge with its apex on a cylinder's rim leaves past the top (`fixtures::wedge_on_a_rim`) has a
+/// top cap whose one loop passes the apex twice — the closed rim from the apex back to it, then the
+/// groove's sides. The apex is a pierce point of the cap and one wall that also lies on the other
+/// wall: the two visits have different plane neighbours, and the corner is named from its own
+/// definition matched against its incident faces' classes, so both visits carry one name, a pierce
+/// name of the cap.
+#[test]
+fn a_pinched_caps_twice_passed_corner_has_one_name() {
+    let mut m = Model::new();
+    let w =
+        crate::fixtures::wedge_on_a_rim(&mut m, [[1.0, 0.0], [0.5, 0.3], [0.5, -0.3]], 0.5, 2.0);
+    let apart = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([5.0, 5.0, 0.0]),
+        Point3::from_array([6.0, 6.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let PlaneSetup {
+        geom: planes,
+        surf_ix,
+        inc_a,
+        plane_ix,
+        standard,
+        notes,
+        cyls,
+        ..
+    } = plane_index_setup(&m, w, apart).unwrap();
+    let jd = Judge::new(&planes, standard, &notes);
+    let mut pinched = 0usize;
+    for sh in solid_shell_handles(&m, w) {
+        for &fh in &m.shell(sh).faces {
+            let hes = &m.face(fh).outer.half_edges;
+            let closed = hes.iter().any(|he| {
+                let [a, b] = m.edge(he.edge).vertices;
+                a == b
+            });
+            if hes.len() < 2 || !closed {
+                continue;
+            }
+            let p = surf_ix[&fh];
+            let ring = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &cyls)
+                .expect("the pinched cap's loop is named")
+                .poly()
+                .expect("a poly outer")
+                .triples
+                .clone();
+            let apex: Vec<NodeId> = ring
+                .iter()
+                .copied()
+                .filter(|&n| combinatorics::pierce_name(n).is_some())
+                .collect();
+            assert_eq!(apex.len(), 2, "the apex, passed twice: {ring:?}");
+            assert_eq!(apex[0], apex[1], "one name for both visits");
+            let (pair, ..) = combinatorics::pierce_name(apex[0]).unwrap();
+            assert!(
+                pair.contains(&plane_ix[p].plane()),
+                "a pierce name of the cap: {pair:?}"
+            );
+            pinched += 1;
+        }
+    }
+    assert_eq!(pinched, 1, "the top cap");
+}

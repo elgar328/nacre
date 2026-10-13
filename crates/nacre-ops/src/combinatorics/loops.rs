@@ -229,12 +229,15 @@ pub(crate) fn hole_rings(
 /// A loop's vertices as names — a three-plane triple, or a pierce point where a cylinder is one of
 /// the three surfaces (the face's own, or a neighbour's).
 ///
-/// ★ **A plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
+/// ★ **A vertex names itself, not the loop.** A plane corner's name is [`canonical_triple`] of the
 /// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
 /// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
 /// corner and its name is the face's own plane with the two neighbours' (no judgement asked).
 /// Four or more is a concurrency: one name, and the
-/// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table.
+/// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table. A corner a
+/// cylinder made restates its own definition ([`pierce_name_from_def`]) against that same set, so
+/// a loop passing it twice names it once; the further classes through it reach the alias table by
+/// the arrangement's seed (`arrangement::seed_from_operands`, a pierce corner on a further class).
 ///
 /// Naming from the loop instead — the face's own plane and the two neighbours the
 /// meeting edges carry, with a fallback to every plane touching the vertex only when both
@@ -319,13 +322,26 @@ fn loop_triples(
             corner,
             "a loop's edge starts where the previous one ends (OpenLoop)"
         );
+        // ★★ **A corner a cylinder made names itself too** — by its own definition, matched
+        // against **its incident faces'** plane classes, not against this visit's two
+        // neighbours. A loop may pass the corner twice (a cap pinched where a wedge's apex
+        // touches its rim), and a corner may lie on three planes and the cylinder: the two
+        // neighbours of one visit are then not the pair its definition chose, and the two visits
+        // would name one point twice — or not at all.
+        let restated = |k: usize| {
+            pierce_name_from_def(
+                model,
+                jd,
+                corner,
+                k,
+                &incident_plane_classes(corner, inc, plane_ix),
+            )
+            .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))
+        };
         let pierce = match plane_ix[p] {
-            ClassIx::Plane(near) => match (plane_ix[a], plane_ix[b]) {
-                (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
-                    Some(
-                        pierce_name_from_def(model, jd, corner, k, [near, far])
-                            .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
-                    )
+            ClassIx::Plane(_) => match (plane_ix[a], plane_ix[b]) {
+                (ClassIx::Cyl(k), ClassIx::Plane(_)) | (ClassIx::Plane(_), ClassIx::Cyl(k)) => {
+                    Some(restated(k)?)
                 }
                 // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
                 (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
@@ -334,10 +350,7 @@ fn loop_triples(
                 (ClassIx::Plane(_), ClassIx::Plane(_)) => None,
             },
             ClassIx::Cyl(k) => match (plane_ix[a], plane_ix[b]) {
-                (ClassIx::Plane(x), ClassIx::Plane(y)) => Some(
-                    pierce_name_from_def(model, jd, corner, k, [x, y])
-                        .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
-                ),
+                (ClassIx::Plane(_), ClassIx::Plane(_)) => Some(restated(k)?),
                 // A lateral's loop running along a second lateral is M6b's cylinder pair too.
                 _ => return Err(reject(RejectReason::CurvedOperandBoundary)),
             },
@@ -384,15 +397,7 @@ fn loop_triples(
         // per face: four names, and from the face whose two edges ride the planes sharing a line
         // with its own, a triple that names no point. The judge reads that «point» as lying on
         // every class, and the alias table folds everything onto a corner elsewhere.
-        let mut classes: Vec<usize> = vertex_face_indices(corner, inc)
-            .into_iter()
-            .filter_map(|k| match plane_ix[k] {
-                ClassIx::Plane(c) => Some(c),
-                ClassIx::Cyl(_) => None,
-            })
-            .collect();
-        classes.sort_unstable();
-        classes.dedup();
+        let classes = incident_plane_classes(corner, inc, plane_ix);
         let Some(t) = canonical_triple(jd, &classes) else {
             // Fewer than three classes: the vertex lies on fewer than three planes, so no triple
             // names it — a genuine straight angle (or a coplanar seam, which no producer
@@ -431,6 +436,26 @@ fn loop_triples(
         walls,
         concurrencies,
     }))
+}
+
+/// **The plane classes of a vertex's incident faces**, sorted and without repeats — the set a
+/// vertex names itself by, whichever loop visits it: [`canonical_triple`] of it for a plane
+/// corner, the candidates [`pierce_name_from_def`] matches a corner a cylinder made against.
+fn incident_plane_classes(
+    corner: Handle<Vertex>,
+    inc: &EdgeFaces,
+    plane_ix: &[ClassIx],
+) -> Vec<usize> {
+    let mut classes: Vec<usize> = vertex_face_indices(corner, inc)
+        .into_iter()
+        .filter_map(|k| match plane_ix[k] {
+            ClassIx::Plane(c) => Some(c),
+            ClassIx::Cyl(_) => None,
+        })
+        .collect();
+    classes.sort_unstable();
+    classes.dedup();
+    classes
 }
 
 /// **Canonical → outward**: the sign that carries a class's `world_rat` name to the frame
@@ -548,10 +573,12 @@ fn curved_wall(
             // never from their realizations.** A ruling edge's stored pair carries no order:
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
-            // ends have to be compared — and each end is a pierce point of `near`, the cylinder,
-            // and **one other plane**. `near` *holds* the ruling, so it is that other plane that
-            // **cuts** it, and where it crosses the axis is a rational question
-            // ([`crate::planes::axis_param_of_plane`]).
+            // ends have to be compared — and each end is a pierce point of two planes and the
+            // cylinder, of which the one ⊥ to the axis **cuts** the ruling: where it crosses the axis
+            // is a rational question ([`crate::planes::axis_param_of_plane`], which answers nothing
+            // for a plane along the axis). Which plane of the pair holds the ruling — `near`, or
+            // another plane through the same line where the end is a corner on three planes, named
+            // by the pair its definition chose — does not enter.
             //
             // ☑ **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
             // parallel to the axis or perpendicular to it — the gate admits an oblique class only
@@ -564,18 +591,9 @@ fn curved_wall(
                 let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };
-                let mut cut = None;
-                for &h in &planes {
-                    let c = *model.world_plane_name(h)?.narrow()?;
-                    // `near`'s own class, in whichever of the two spellings this vertex carries.
-                    if plane_sense(&c, &w).is_some() {
-                        continue;
-                    }
-                    if cut.replace(c).is_some() {
-                        return None;
-                    }
-                }
-                crate::planes::axis_param_of_plane(&cut?, &def)
+                planes.iter().find_map(|&h| {
+                    crate::planes::axis_param_of_plane(model.world_plane_name(h)?.narrow()?, &def)
+                })
             };
             let [v0, v1] = model.edge(he.edge).vertices;
             let (t0, t1) = (

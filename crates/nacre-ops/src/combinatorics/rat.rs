@@ -48,7 +48,7 @@ pub(crate) fn pierce_name_from_def(
     jd: &Judge<'_, WorkingPlane>,
     v: Handle<Vertex>,
     cyl: usize,
-    candidates: [usize; 2],
+    candidates: &[usize],
 ) -> Option<NodeId> {
     let nacre_topo::Vertex::Pierce { planes, root, .. } = *model.vertex(v) else {
         return None;
@@ -60,7 +60,7 @@ pub(crate) fn pierce_name_from_def(
     for (i, &h) in planes.iter().enumerate() {
         let name = model.world_plane_name(h)?;
         let c = name.narrow()?;
-        for &k in &candidates {
+        for &k in candidates {
             let Some(sense) = plane_sense(c, &class_coeffs_rat(jd, k)?) else {
                 continue;
             };

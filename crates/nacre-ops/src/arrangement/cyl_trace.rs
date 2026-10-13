@@ -475,17 +475,18 @@ fn cycle_on_class(
             combinatorics::Feature::Crossing { edge, from, .. } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
-                let crate::combinatorics::Wall::Ruling { side, plane: j, .. } = nr.walls[edge]
+                // ★ The ruling is read off the wall alone — its cylinder, its side and the plane the
+                // side was measured against — not off the corner's name: a corner on three planes
+                // is named by the pair its definition chose, which need not hold `j`.
+                let crate::combinatorics::Wall::Ruling {
+                    cyl: ncyl,
+                    side,
+                    plane: j,
+                    ..
+                } = nr.walls[edge]
                 else {
                     return Err(DeclineKind::CylHoleFeature);
                 };
-                let start = ring[edge];
-                let Some((planes, ncyl, _)) = combinatorics::pierce_name(start) else {
-                    return Err(DeclineKind::CylHoleFeature);
-                };
-                if !planes.contains(&j) {
-                    return Err(DeclineKind::CylHoleFeature);
-                }
                 // ★★★★★ **The crossing is the *same ruling*, restated for this class — through
                 // the one door the planar scan uses** ([`crossing_on_ruling`]): the ruling's side,
                 // measured against its wall `j` at the hole's own corner — the side the wall

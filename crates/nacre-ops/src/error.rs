@@ -733,8 +733,8 @@ pub enum RejectReason {
     ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
     ///   declined — measured, zero raises from this site across the whole suite. What can still
     ///   reach it: a corner whose def is not `Pierce`, a plane with no *narrow* world
-    ///   description (a wide or rotated chain), a handle that answers to both candidate classes
-    ///   or to neither, and two laterals meeting at one corner (M6b's). ★ Measured with the
+    ///   description (a wide or rotated chain), a definition plane that is none of the corner's
+    ///   incident classes, and two laterals meeting at one corner (M6b's). ★ Measured with the
     ///   restatement switched off: the ring
     ///   **declines by this name** and nothing panics, which is the whole reason the backstop is
     ///   under the road rather than trusted away.
