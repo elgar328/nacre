@@ -222,11 +222,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   선 — 남은 가족」이 든다. 그 밖의 행은 게이트가 배열 전에 거절한다(`TangentLineInAnotherPlane`).
 - 옆면 구멍에 자국이 닿으면 `DeclineKind::CylFaceHole` 로 거절한다.
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
-- 원 위에 우연히 놓인 세 평면 정점이 든 면은 입력이 되면 거절한다: 원통 `r = 1` 에 꼭짓점 `(1,0)` 이 테두리 위인
-  삼각 쐐기를 합친 몸(`fixtures::wedge_on_a_rim`)은 어떤 공구로든 `TraceDeclined { OuterRing }` 이다 — 그 꼭짓점은 세
-  평면의 점인데, 원호와 평면이 만나는 꼭짓점의 이름을 원통의 점으로 다시 적는 `pierce_name_from_def`(`loops.rs`)가
-  `None` 을 내고(`CurvedOperandBoundary`), 바깥 링을 못 짓는다. 그래서 원통이 낀 꼬집힌 면(이 몸의 윗면)이 입력일
-  때는 재지 못했다.
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
 ## 다음 — 출력 정밀도: STEP 의 f64 는 실현 통로 하나로
@@ -305,8 +300,11 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   채 남는다(그 몸체에는 A 의 면이 없다 — «접선은 정점을 만들지 않는다»와 닿는 자리). 양쪽으로 나간 합집합과, 높이가
   같은 선 접촉의 합집합은 `NoClearRay`(원통 몸체의 꼭짓점이 모두 접촉선 위이고 캡이 온전한 원이라 간선 증인도 없다 —
   온전한 원이 점 하나를 내면 풀린다).
-- **꼬집힌 캡을 든 결과를 다음 불리언에 넣기**: `TraceDeclined { kind: OuterRing }`(입력 면의 고리가 한 점을 두 번
-  지난다).
+- **꼬집힌 캡을 든 결과를 다음 불리언에 넣기**: `TraceDeclined { kind: OuterRing }`, 공구가 어디에 있든
+  (`fixtures::wedge_on_a_rim` 몸, 공구 셋 × 연산 여섯). 원 위의 꼭짓점은 세 평면의 점이고, 원호와 평면이 만나는 꼭짓점을
+  원통의 점으로 다시 적는 `pierce_name_from_def`(`loops.rs`)가 그 점에 `None` 을 내 바깥 링을 못 짓는다
+  (`CurvedOperandBoundary` 가 `face_vertex_triples` 의 `.ok()` 에서 접힌다). 그래서 원통이 낀 꼬집힌 면이 입력일 때는
+  재지 못했다.
 - 쐐기 가족 일부에서 `PierceVertexUnnamed`(`combinatorics/rays.rs:62`)가 발생한 뒤 다른 증인으로 넘어가며 삼켜진다 —
   표면에 나오는 거절은 `NonManifoldResultEdge` 다.
 
