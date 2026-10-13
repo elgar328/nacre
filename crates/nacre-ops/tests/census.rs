@@ -1098,6 +1098,39 @@ fn measure_census() {
         m.rebuild_adjacency();
         record("ct ring-pinch fuse", &m, &inputs, &out);
     }
+    // ── A pinched face as an operand: a plate with a triangular boss whose corner sits on its edge,
+    // so the top face's one ring passes `(4, 0, 1)` twice — then the hole the user's script cut
+    // next, and a box standing on the plate against the boss's face `x = 4`, which the coplanar
+    // merge threads back around the pinch.
+    for (tag, hole) in [
+        ("pinched-operand hole cut", true),
+        ("pinched-operand contact cut", false),
+    ] {
+        let mut m = Model::new();
+        let plate = nacre_ops::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([6.0, 6.0, 1.0]),
+        );
+        let boss = tri_prism(&mut m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], 1.0, 1.0);
+        m.rebuild_adjacency();
+        let bossed = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss on the edge");
+        m.rebuild_adjacency();
+        let tool = if hole {
+            tri_prism(&mut m, [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]], -1.0, 3.0)
+        } else {
+            nacre_ops::fixtures::cuboid(
+                &mut m,
+                Point3::from_array([4.0, 0.5, 1.0]),
+                Point3::from_array([5.0, 1.5, 2.0]),
+            )
+        };
+        m.rebuild_adjacency();
+        let inputs = operands(&m, bossed[0], tool);
+        let out = boolean(&mut m, BoolKind::Cut, bossed[0], tool);
+        m.rebuild_adjacency();
+        record(tag, &m, &inputs, &out);
+    }
     // ── Cylinders: the truth rides beside the cache. Solo and moved bodies are digest
     // lines (a boolean never runs); the boolean rows record the answer, refusals included — a
     // reject string is part of the corpus, so a change in what is admitted moves these lines
@@ -3023,6 +3056,31 @@ fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> H
 }
 
 /// A rectangular prism raised from `z` by `dist` — the construction path production uses.
+/// A triangular prism over `tri` standing on the plane `z`, `height` tall.
+fn tri_prism(m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64) -> Handle<Solid> {
+    use nacre_math::Point2;
+    let frame = datum_frame(
+        m,
+        nacre_ops::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+    );
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile: nacre_ops::Profile2d::polygon(
+                tri.iter().map(|&q| Point2::from_array(q)).collect(),
+            )
+            .unwrap(),
+            dist: height,
+        },
+    )
+    .expect("extrude") else {
+        unreachable!("extrude yields Extrude output")
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
 fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<Solid> {
     use nacre_math::Point2;
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
