@@ -462,8 +462,8 @@ pub(super) fn split_at_crossings(
 /// face walk cannot close (a two-half-edge orbit), which surfaced as `RingOrientation` two layers
 /// from its cause.
 ///
-/// This is the 1D twin of `touches`: a single-point tangency is recorded as a vertex but never
-/// becomes a segment, and a tangency along a line is now an edge that never enters the DCEL.
+/// A single-point tangency on a class line becomes no segment at all, and a tangency along a
+/// line is likewise an edge that never enters the DCEL.
 /// Where a knife edge coincides with the *other* solid's real boundary, that solid's
 /// contributions make the mask non-false and the edge stays — a true boundary cannot be dropped
 /// by this filter.

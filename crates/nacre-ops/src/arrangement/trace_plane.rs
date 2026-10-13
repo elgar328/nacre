@@ -441,7 +441,6 @@ fn trace_transversal_face(
                         flip: true,
                         run: None,
                         flanks_differ: false,
-                        single_touch: false,
                         graze_above: None,
                     });
                 }
@@ -462,10 +461,9 @@ fn trace_transversal_face(
                                 flip: flanks_differ,
                                 run: None,
                                 flanks_differ,
-                                single_touch: !flanks_differ,
-                                // A single-vertex tangential touch is a point (`touches`), never a
-                                // graze segment; a flank-differing single vertex is a strict
-                                // crossing.
+                                // A single on-line vertex is a point, never a graze segment: with
+                                // equal flanks a tangential touch that toggles nothing, with
+                                // differing flanks a strict crossing.
                                 graze_above: None,
                             }),
                             Err(kind) => declined = Some(kind),
@@ -498,7 +496,6 @@ fn trace_transversal_face(
                                         flip: false,
                                         run: Some(id),
                                         flanks_differ,
-                                        single_touch: false,
                                         graze_above,
                                     });
                                 }
@@ -586,9 +583,6 @@ fn trace_transversal_face(
         });
     };
     for k in 0..nodes.len() {
-        if nodes[k].single_touch && parity == 0 {
-            out.touches.push(nodes[k].id);
-        }
         if nodes[k].flip {
             parity ^= 1;
         }

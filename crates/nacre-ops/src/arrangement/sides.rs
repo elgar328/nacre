@@ -63,7 +63,6 @@ pub(super) fn chord_nodes(
         flip: true,
         run: None,
         flanks_differ: false,
-        single_touch: false,
         graze_above: None,
     };
     Ok(Some([

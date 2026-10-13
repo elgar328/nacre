@@ -296,9 +296,6 @@ pub(crate) struct Trace {
     pub rulings: Vec<RulingTrace>,
     /// Names this trace found to denote one feature — see [`Aliases`].
     pub aliases: Aliases,
-    /// Single-point tangential contacts — real arrangement vertices, but not segments (a
-    /// zero-length chord would abort at `Line::through_points`).
-    pub touches: Vec<NodeId>,
     /// `(face index, reason)` for every face this brick could not trace.
     pub declined: Vec<(usize, DeclineKind)>,
 }

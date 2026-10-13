@@ -108,10 +108,11 @@ pub(crate) fn concurrency_audit(
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix, &aliases);
-        // Names this class used: segment endpoints, single-point touches, and — since a crossing
-        // the arrangement mints is a vertex too — the split's endpoints where it got that far.
+        // Names this class used: segment endpoints and — since a crossing the arrangement mints
+        // is a vertex too — the split's endpoints where it got that far. A ring vertex that only
+        // touches the class is no segment's end; it is among the operand vertices below.
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
-        let mut names: Vec<NodeId> = tr.touches.clone();
+        let mut names: Vec<NodeId> = Vec::new();
         for s in merged.iter().chain(
             split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default())
                 .as_deref()

@@ -146,7 +146,6 @@ fn a_seated_cap_emits_its_boundary_with_the_right_body_side() {
         tr.declined.is_empty(),
         "axis-aligned cubes decline nothing: {tr:?}"
     );
-    assert!(tr.touches.is_empty());
     for s in &seated {
         // On z=1, riding a side wall (not W itself), body on the geometrically correct side.
         for e in &s.end {

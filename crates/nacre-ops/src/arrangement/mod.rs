@@ -145,13 +145,11 @@ struct Node {
     run: Option<usize>,
     /// For run nodes: whether the flanks (the off-line neighbours) sit on opposite sides.
     flanks_differ: bool,
-    /// A single on-line vertex with equal flanks — a tangential touch, not a crossing.
-    single_touch: bool,
     /// `Some(body_above)` for **every** run — the side of `W` the face occupies along it, in the
     /// label frame, from [`run_body_above`]. A run is an edge of the face lying on `L`, so the face
     /// is on one side of it no matter what the ring does afterwards; `flanks_differ` is a parity
     /// fact, not an occupancy one, and must not gate this. `None` only for a strict crossing or a
-    /// single-vertex touch, which are points rather than intervals.
+    /// single on-line vertex, which are points rather than intervals.
     graze_above: Option<bool>,
 }
 
