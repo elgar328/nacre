@@ -123,7 +123,7 @@ fn trace_transversal_face(
                 let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
                     unreachable!("the guard just matched a circle outer");
                 };
-                match chord_nodes(jd, faces, plane_ix, wc, fc, cyl, crossings) {
+                match chord_stations(jd, faces, plane_ix, wc, fc, cyl, crossings) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => return,
                     Err(ChordUnstatable) => {
@@ -164,7 +164,7 @@ fn trace_transversal_face(
             // only, and the full-width chord then surfaces as `LabelConflict` on the
             // through-family × through-axis tool (measured). The two roots are pushed as
             // stations — the hole's own chord, named the same way a disk outer's is
-            // ([`chord_nodes`], the one spelling for both).
+            // ([`chord_stations`], the one spelling for both).
             //
             // ★ **The gate's record, the same one the rulings road reads first.** A pair the
             // gate did not list was proven clear — no emitted face reaches the hole's footprint
@@ -174,7 +174,7 @@ fn trace_transversal_face(
             // `StraightAngle`. Listed pairs get the stations; unlisted pairs are skipped, and the
             // two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
-                match chord_nodes(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
+                match chord_stations(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => {}
                     Err(_) => {

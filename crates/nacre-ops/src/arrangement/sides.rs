@@ -1,5 +1,5 @@
 use super::*;
-/// A recorded chord [`chord_nodes`] cannot state: no cylinder statement, no coefficients for the
+/// A recorded chord [`chord_stations`] cannot state: no cylinder statement, no coefficients for the
 /// face's own class, or a meet that is not a pair of roots.
 pub(super) struct ChordUnstatable;
 
@@ -19,7 +19,7 @@ pub(super) struct ChordUnstatable;
 ///
 /// The cylinder's statement comes from any face row on its class — the same table `merge_circles`
 /// indexes — so a caller that traces with no cylinder table (the test shims) is served too.
-pub(super) fn chord_nodes(
+pub(super) fn chord_stations(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
@@ -87,7 +87,7 @@ pub(super) fn chord_nodes(
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).
 ///
-/// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_nodes`]
+/// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_stations`]
 /// spell it — [`NodeId::pierce`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
 /// crosses the class ([`cycle_on_class`]'s crossing arm restates the hole corner's own root to

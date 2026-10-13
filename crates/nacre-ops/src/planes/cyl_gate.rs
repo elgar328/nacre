@@ -322,7 +322,7 @@ pub(crate) fn cylinder_gate(
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
                         // the radius", which a tangent plane does not; the three roads gated on
                         // that record assert it in a `debug_assert` (`arrangement`' circular-
-                        // hole arm, `chord_nodes`, `rulings_on_class`), and all three stay true
+                        // hole arm, `chord_stations`, `rulings_on_class`), and all three stay true
                         // because this pair never reaches them — a tangency is a double root where
                         // those roads spell two distinct ones, so recording it would put the pair
                         // on the ruling road and assemble nothing. The arrangement then sees
