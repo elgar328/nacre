@@ -31,6 +31,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- **Breaking:** `ops::RejectReason::CurvedStraightRun`, which nothing raises now that a ring's winding is read by that one rule.
 - `geom::intersect::drop_collinear_midpoints`, which nothing in the kernel called — a profile's normal form dissolves flat corners itself, and `geom::intersect::flat_corner` is the predicate it asks.
 - `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.
 - `LogCell::Face`, which only the removed operations used.
@@ -38,6 +39,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A boolean whose cap ring touches a circle at a single point builds instead of refusing as `coincident_nodes` — a prism's corner standing on a cylinder's rim from outside (with a side tangent there, or touching along a line) below the cylinder's top, on the world frame and on a rotated one, and a boss whose corner stands on a bore's rim. A ring's winding is now read by one rule at its extreme point, from the directions leaving it in angular order, so a ring pinched where a circle bulges past the pinch has an answer.
 - A sketch ring of two arcs running out along one circle and back — a spike of no area — is refused as a self-intersection: `ops::from_paths` returns `SketchError::RingSelfIntersects` and `ops::Profile2d::check` (and every operation that runs it) `OpError::SelfIntersectingProfile`. `geom::mixed::mixed_ring_self_intersection` reported no intersection, so the ring was accepted, and an extrude refused it later as `DegenerateProfile`.
 - A boolean could refuse, as `NoClearRay`, a cylinder extruded from a whole circle whose radius is written to f64's last digit, when the other solid meets its cap inside the disk. `exact::rat_sqrt_exact` reported the root of a large perfect square as irrational — for about one in a hundred such radii; it, `exact::inv_sqrt_exact` and `exact::quad::QuadVal::as_rat` now find every root that fits.
 - STEP export no longer panics when built for `wasm32-unknown-unknown`. It asked the system for the time to stamp the file's header, which that target cannot answer; the caller now gives the stamp.

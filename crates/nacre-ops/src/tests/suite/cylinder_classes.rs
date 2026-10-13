@@ -488,8 +488,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// boss's lateral in the plate, so that face comes back as a band with a **hole**, and every layer
 /// downstream had a sentence that was false about it. The wall moved six times as those were
 /// closed one at a time — `TraceDeclined { PierceNode }`, `WitnessNotRational`,
-/// `CurvedStraightRun` (the winding's walk past two tangent arcs, since replaced by one reading at
-/// the ring's extreme point), [`RejectReason::OpenResultShell`],
+/// `CurvedStraightRun`, [`RejectReason::OpenResultShell`],
 /// [`RejectReason::LabelConflict`] when one of two cancelling falsehoods was fixed, then
 /// `OpenResultShell` again with the arrangement whole — and this lock was the map of that walk.
 /// It is now the map of the far side.
