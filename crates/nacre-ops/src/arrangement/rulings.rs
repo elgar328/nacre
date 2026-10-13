@@ -107,6 +107,11 @@ fn arc_flank(ccw: bool, arriving: bool) -> i8 {
 /// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about
 /// the axis, by name ([`circular_order`]). `Err` when the order cannot be formed or two of the
 /// three are one point wearing two names — the caller's population, not a tie to shrug at.
+///
+/// ★ **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
+/// from that node back to it, so every other point of the circle is inside — and the node itself,
+/// under its own name or another (`Coincident`), is not. Read as the three-point order it would be
+/// two points, and refuse.
 pub(super) fn theta_between(
     jd: &Judge<'_, WorkingPlane>,
     k: usize,
@@ -124,6 +129,22 @@ pub(super) fn theta_between(
     {
         return combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node)
             .ok_or(DeclineKind::Ruling);
+    }
+    if lo == hi {
+        let inside = node != lo
+            && match circular_order(jd, k, def, &[lo, node]) {
+                Ok(_) => true,
+                Err(super::split_circles::CircleOrderFail::Coincident) => false,
+                Err(super::split_circles::CircleOrderFail::Undecided) => {
+                    return Err(DeclineKind::Ruling);
+                }
+            };
+        debug_assert!(
+            combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node)
+                .is_none_or(|b| b == inside),
+            "the interval reading of the closed arc disagrees with the circular order"
+        );
+        return Ok(inside);
     }
     let order = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
     let pos = |x: usize| {

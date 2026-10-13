@@ -979,6 +979,10 @@ pub(crate) fn names_a_nameless_plane(jd: &Judge<'_, WorkingPlane>, n: NodeId) ->
 /// the triangle's turn about the axis. `None` where the boxes cannot say (two names for one point
 /// among them, or too little precision); the interval twin of the name road's
 /// `circular_order`, and asked only where a point has no exact meet.
+///
+/// ★ **`lo == hi` is the closed arc** — the circle a single node cuts, its whole turn from that
+/// node back to it — and every other point of the circle is inside it: `n` is inside exactly when
+/// it is not the node, which the boxes say by being apart (`None` when they cannot prove it).
 pub(crate) fn between_on_circle_hp(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
@@ -988,11 +992,16 @@ pub(crate) fn between_on_circle_hp(
     n: NodeId,
 ) -> Option<bool> {
     let prec = jd.standard.prec;
-    let (a, b, c) = (
-        node_hp_on(jd, cyl, def, lo)?,
-        node_hp_on(jd, cyl, def, n)?,
-        node_hp_on(jd, cyl, def, hi)?,
-    );
+    let (a, b) = (node_hp_on(jd, cyl, def, lo)?, node_hp_on(jd, cyl, def, n)?);
+    if lo == hi {
+        if n == lo {
+            return Some(false);
+        }
+        return (0..3)
+            .any(|k| b[k].sub(&a[k], prec).sign().is_some())
+            .then_some(true);
+    }
+    let c = node_hp_on(jd, cyl, def, hi)?;
     let m = def.dir().map(|x| nacre_exact::HpBounded::of_rat(x, prec));
     let e1 = [
         b[0].sub(&a[0], prec),

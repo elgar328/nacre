@@ -606,11 +606,10 @@ pub enum RejectReason {
     /// ([`Self::SelfTouchingResult`]). The thin circular segments a wide boss shares with a
     /// slotted block decide too — their probes' rays run through the boss's seam plane, and a
     /// root there is the cyclic order's first point, not a tie
-    /// (`a_wide_boss_in_a_wall_gap_common_builds`). What is left under this name is one family in
-    /// the suite: the union of a cylinder and a prism whose side is tangent to it along a whole
-    /// ruling, the prism past both caps (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`)
-    /// — every corner of the cylinder's body lies on that line of contact, and its caps are whole
-    /// circles, which offer no edge point.
+    /// (`a_wide_boss_in_a_wall_gap_common_builds`). So does a cylinder's body whose every corner
+    /// lies on a line where it touches another body (a prism past both caps, tangent to it along a
+    /// ruling): its caps are each a closed arc from that corner back to itself, and the ring parity
+    /// reads a closed arc's span as the whole turn (`combinatorics::arc_span`).
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from

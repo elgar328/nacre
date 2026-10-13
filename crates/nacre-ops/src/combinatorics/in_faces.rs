@@ -390,8 +390,12 @@ pub(crate) fn loop_parity(
                             };
                             let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?.into_exact()?;
                             let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?.into_exact()?;
-                            let Some(span) = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))
-                            else {
+                            let ends = if lo_nd == hi_nd {
+                                ArcEnds::Closed(&e_lo)
+                            } else {
+                                ArcEnds::Open(&e_lo, &e_hi)
+                            };
+                            let Some(span) = arc_span(&arc.def, ends, &(meet.clone(), *s)) else {
                                 // A zero-span arc (two ends at one place) or arithmetic out —
                                 // the mark says which.
                                 #[cfg(test)]
@@ -407,7 +411,9 @@ pub(crate) fn loop_parity(
                                 tie_probe::push(tie_probe::Tie::OnArc);
                                 return None;
                             }
-                            if matches!(span, ArcSpan::Inside | ArcSpan::AtLo) {
+                            // Half-open `[lo, hi)`: a closed arc's node is its `lo`, counted once.
+                            if matches!(span, ArcSpan::Inside | ArcSpan::AtLo | ArcSpan::AtBothEnds)
+                            {
                                 crossings += 1;
                             }
                         }

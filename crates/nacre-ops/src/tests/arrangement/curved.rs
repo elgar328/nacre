@@ -159,6 +159,87 @@ fn armed_through_boss_z(
     (m, plate, boss, setup, wc, crossings)
 }
 
+/// **A closed arc holds every point of its circle but its node** (`theta_between` with
+/// `lo == hi`). On the boss's circle in the plate's top class, the wall `x = 40` through the axis
+/// meets it at two named points: the closed arc at either holds the other, and not itself — which
+/// the three-point order alone would refuse as two names for two points.
+#[test]
+fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
+    let (_m, _plate, _boss, setup, wc, _) = armed_through_boss();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let def = &setup.cyls[0].def;
+    let top = setup
+        .geom
+        .iter()
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
+        })
+        .expect("the plate's top class z = 20");
+    let at = |root| combinatorics::NodeId::pierce(wc, top, 0, root);
+    let (lo, hi) = (at(nacre_topo::QuadRoot::Lo), at(nacre_topo::QuadRoot::Hi));
+    for (node, other) in [(lo, hi), (hi, lo)] {
+        let between = |n| super::rulings::theta_between(&jd, 0, def, node, node, n);
+        assert_eq!(between(other), Ok(true), "{node:?} holds {other:?}");
+        assert_eq!(between(node), Ok(false), "{node:?} does not hold itself");
+    }
+}
+
+/// **A ray through a closed arc's node crosses it there once** (`point_in_mixed_ring`,
+/// `ArcSpan::AtBothEnds`). The ring is the boss's circle in the plate's top class, cut at one point
+/// where the wall `x = 40` meets it — the arc from that node back to it. The class's ray runs along
+/// `y` at the probe's `x`, so a probe on `x = 40` sends it through both of the wall's points: the
+/// node, where the arc both leaves and arrives, and the other point, inside the arc. From the
+/// circle's centre the ray crosses once (inside); from beyond the circle, twice (outside) —
+/// whichever of the two points is the node.
+#[test]
+fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
+    let (_m, _plate, _boss, setup, wc, _) = armed_through_boss();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let def = setup.cyls[0].def.clone();
+    let top = setup
+        .geom
+        .iter()
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
+        })
+        .expect("the plate's top class z = 20");
+    let coeffs = combinatorics::class_coeffs_rat(&jd, top).expect("a named class");
+    let ri = nacre_exact::Rat::from_int;
+    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+        let node = combinatorics::NodeId::pierce(wc, top, 0, root);
+        for ccw in [true, false] {
+            let ring = [combinatorics::RingEdge {
+                node,
+                to: node,
+                carrier: combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
+                    cyl: 0,
+                    def: def.clone(),
+                    ccw,
+                })),
+                from_h: combinatorics::EndPin::Cylinder,
+                to_h: combinatorics::EndPin::Cylinder,
+            }];
+            for (probe, want) in [([40, 20, 20], true), ([40, 30, 20], false)] {
+                assert_eq!(
+                    combinatorics::point_in_mixed_ring(
+                        &jd,
+                        &setup.cyls,
+                        &coeffs,
+                        &probe.map(ri),
+                        &ring
+                    ),
+                    Some(want),
+                    "{root:?} ccw = {ccw}, probe {probe:?}"
+                );
+            }
+        }
+    }
+}
+
 /// ★ **The gate's record arms the rulings road — and only the record.** With the
 /// through-boss pair listed, the boss's trace on the wall class is the rectangle: two
 /// rulings (one per side, Pierce-named ends, no plain segments) and two cap chords

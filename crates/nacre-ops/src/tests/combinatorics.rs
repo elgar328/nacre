@@ -235,7 +235,9 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
 /// coordinates (`(±5, 0)`, `(0, ±5)`, `(±3, ±4)`, `(±4, ±3)`) are every arc's ends and every
 /// root. The seam is put on one of them three ways — and, the fourth, between them — so ends and
 /// roots on the seam, arcs across it and arcs beside it all occur: every ordered pair of distinct
-/// ends against every point, `AtLo`/`AtHi` at the ends.
+/// ends against every point, `AtLo`/`AtHi` at the ends. And every point as a **closed** arc's one
+/// node (`ArcEnds::Closed`): every other point is inside, the node is `AtBothEnds` — while the
+/// same two ends given as an *open* arc are a zero-span arc, which is refused.
 #[test]
 fn an_arc_span_reads_the_seam_point_as_any_other() {
     use nacre_exact::quad::{CylinderMeet, QuadVal, plane_plane_cylinder};
@@ -307,7 +309,7 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
                             ArcSpan::Outside
                         }
                     };
-                    let got = arc_span(&def, &at(a), &at(b), &at(p));
+                    let got = arc_span(&def, ArcEnds::Open(&at(a), &at(b)), &at(p));
                     assert_eq!(
                         got,
                         Some(want),
@@ -317,7 +319,28 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
                 }
             }
         }
-        assert_eq!(decided, 12 * 11 * 12, "seam {seam:?}");
+        for &a in &pts {
+            assert_eq!(
+                arc_span(&def, ArcEnds::Open(&at(a), &at(a)), &at(a)),
+                None,
+                "seam {seam:?}: an open arc from {a:?} to itself spans nothing"
+            );
+            for &p in &pts {
+                let want = if p == a {
+                    ArcSpan::AtBothEnds
+                } else {
+                    ArcSpan::Inside
+                };
+                let got = arc_span(&def, ArcEnds::Closed(&at(a)), &at(p));
+                assert_eq!(
+                    got,
+                    Some(want),
+                    "seam {seam:?}: closed arc at {a:?}, point {p:?}"
+                );
+                decided += 1;
+            }
+        }
+        assert_eq!(decided, 12 * 11 * 12 + 12 * 12, "seam {seam:?}");
     }
 }
 
@@ -568,6 +591,19 @@ fn a_pierce_point_on_a_nameless_plane_is_a_box_the_questions_read() {
         one, other,
         "a point of the circle is in exactly one of the two arcs"
     );
+    // The closed arc one of them cuts — its whole turn back to it — holds every other point of
+    // the circle and not its node.
+    for (lo, n, want) in [
+        (names[0], third, true),
+        (names[0], names[1], true),
+        (names[0], names[0], false),
+    ] {
+        assert_eq!(
+            between_on_circle_hp(&jd, k, def, lo, lo, n),
+            Some(want),
+            "closed arc at {lo:?}, point {n:?}"
+        );
+    }
 }
 
 /// **An arc's crossings with a nameless plane are counted from boxes, both of them.** On the top

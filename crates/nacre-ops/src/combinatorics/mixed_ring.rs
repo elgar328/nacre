@@ -17,6 +17,26 @@ pub(crate) enum ArcSpan {
     AtLo,
     /// Exactly at the `hi` end — the end the arc leaves clockwise.
     AtHi,
+    /// At the one node of a **closed** arc ([`ArcEnds::Closed`]), which is both its ends: the arc
+    /// leaves it counter-clockwise and arrives back at it. ★ Its own answer, not `AtLo`: a reader
+    /// that counts an end by the way the arc leaves it (the planar ring parity) has to count both
+    /// here, and one folded into `AtLo` would count half and answer wrong without a refusal.
+    AtBothEnds,
+}
+
+/// The ends of an arc as [`arc_span`] reads them — by **topology**, which the caller knows: an
+/// arc whose two ends are one node is the circle that node cuts, its whole turn, while two ends
+/// that merely stand at one place under two names are a zero-span arc. Coordinates alone cannot
+/// tell the two apart.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ArcEnds<'a> {
+    /// Two nodes, `lo` then `hi` counter-clockwise.
+    Open(
+        &'a (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+        &'a (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    ),
+    /// One node, the arc running its whole turn from it back to it.
+    Closed(&'a (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)),
 }
 
 /// **Is the circle point `root` in the arc's CCW span `lo → hi`, or at one of its ends?** — the
@@ -26,13 +46,13 @@ pub(crate) enum ArcSpan {
 /// Cyclic, with the seam point first ([`nacre_exact::quad::SeamOrder::seam_first`]) — an end or
 /// a root on the seam is ordered like any other point, so a span that runs across the seam holds
 /// a root there and one that does not leaves it out. A seam-incident end is how the straddling
-/// boss's alias corner arrives. `None` for a zero-span arc (two ends at one place, the seam's
-/// two names for one point included — upstream refuses it) and for checked arithmetic running
-/// out; `tie_probe` says which.
+/// boss's alias corner arrives. A closed arc holds every point of its circle but its node, which
+/// is [`ArcSpan::AtBothEnds`]. `None` for a zero-span arc (two distinct ends at one place, the
+/// seam's two names for one point included — upstream refuses it) and for checked arithmetic
+/// running out; `tie_probe` says which.
 pub(crate) fn arc_span(
     def: &nacre_topo::CylinderDef,
-    e_lo: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
-    e_hi: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    ends: ArcEnds<'_>,
     root: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
 ) -> Option<ArcSpan> {
     use core::cmp::Ordering;
@@ -40,6 +60,16 @@ pub(crate) fn arc_span(
     let (o, m, rd) = (def.origin(), def.dir(), def.ref_dir());
     let ord = |p: &(MeetLine, QuadVal), qq: &(MeetLine, QuadVal)| -> Option<Ordering> {
         Some(circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&qq.0, &qq.1))?.seam_first())
+    };
+    let (e_lo, e_hi) = match ends {
+        ArcEnds::Closed(node) => {
+            return Some(if ord(root, node)? == Ordering::Equal {
+                ArcSpan::AtBothEnds
+            } else {
+                ArcSpan::Inside
+            });
+        }
+        ArcEnds::Open(e_lo, e_hi) => (e_lo, e_hi),
     };
     let x0 = ord(root, e_lo)?;
     let x1 = ord(root, e_hi)?;
@@ -263,6 +293,11 @@ fn point_in_mixed_ring_inner(
                 let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
                 let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?.into_exact()?;
                 let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?.into_exact()?;
+                let ends = if lo_nd == hi_nd {
+                    ArcEnds::Closed(&e_lo)
+                } else {
+                    ArcEnds::Open(&e_lo, &e_hi)
+                };
                 for root in s {
                     // Right of the probe along the ray: chart-x of the root.
                     let (bse, dir) = (line.base(), line.dir());
@@ -280,7 +315,7 @@ fn point_in_mixed_ring_inner(
                         // steps (a corner is the boundary only when the probe *is* that corner).
                         // The span is asked here alone: a root left of the probe never needs it.
                         Orient::Zero => {
-                            if arc_span(&arc.def, &e_lo, &e_hi, &rootp) == Some(ArcSpan::Outside) {
+                            if arc_span(&arc.def, ends, &rootp) == Some(ArcSpan::Outside) {
                                 continue;
                             }
                             #[cfg(test)]
@@ -321,11 +356,16 @@ fn point_in_mixed_ring_inner(
                     // own end counts nothing, silently: a confident wrong answer, not an
                     // abstention. Both ends decide it alike (`departs_across`), and the span
                     // itself is one spelling (`arc_span`) the lateral road reads too.
-                    let contained = match arc_span(&arc.def, &e_lo, &e_hi, &rootp)? {
+                    // A closed arc's node is both its ends, and each end counts as the step it
+                    // is: the arc leaving counter-clockwise and the arc arriving, walked back.
+                    let contained = match arc_span(&arc.def, ends, &rootp)? {
                         ArcSpan::Inside => true,
                         ArcSpan::Outside => false,
                         ArcSpan::AtLo => departs_across(&e_lo, true)?,
                         ArcSpan::AtHi => departs_across(&e_hi, false)?,
+                        ArcSpan::AtBothEnds => {
+                            departs_across(&e_lo, true)? != departs_across(&e_hi, false)?
+                        }
                     };
                     if contained {
                         inside = !inside;
