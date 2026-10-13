@@ -638,7 +638,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
 /// taken into a second boolean against a box: far from the pinch on top, across it, and apart.
 /// Every result that builds is checked as the other families are — `validate`, the mesh, the
 /// volume identities over the six booleans; what does not build yet is pinned by tool and boolean
-/// (todo «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»).
+/// (todo «공유 룰링이 벽 면 없는 높이에도 정거장을 세운다»).
 ///
 /// The cap's loop names the apex once, by its own definition (`combinatorics::loop_triples`);
 /// the closed rim edge is the whole turn to every reader on the way — the span on its circle
@@ -716,4 +716,71 @@ fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
     )]
     .into();
     assert_eq!(tally, want);
+}
+
+/// **An outside corner as tall as the cylinder** — the tangent side and the line contact of
+/// [`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`], `B` standing on `A`'s base and
+/// reaching exactly its top, on both frames. The touch runs the cylinder's whole height, so every
+/// corner of `A`'s body lies on the line of contact and both its caps are the closed arc from that
+/// corner back to itself. All six build: the union is two bodies touching along the line, `A ∩ B`
+/// is empty, and the differences are the operands.
+#[test]
+fn an_outside_corner_as_tall_as_the_cylinder_builds() {
+    let shapes: &[(&str, &[[f64; 2]])] = &[
+        ("tangent side", &[[1.0, 0.0], [1.0, -1.0], [2.0, -0.5]]),
+        (
+            "line contact",
+            &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]],
+        ),
+    ];
+    let tau = 2.0 * std::f64::consts::PI;
+    for tilted in [false, true] {
+        for &(family, quad) in shapes {
+            let q = quad;
+            let area = (0..q.len())
+                .map(|k| {
+                    let (p, r) = (q[k], q[(k + 1) % q.len()]);
+                    p[0] * r[1] - r[0] * p[1]
+                })
+                .sum::<f64>()
+                .abs()
+                / 2.0;
+            let b = area * 2.0;
+            let mut i = 0;
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                for swapped in [false, true] {
+                    let (mut m, x, y) = a_solid_and_a_placed_prism(
+                        |m| {
+                            if tilted {
+                                pythagorean_frame(m, Point3::from_array([0.0; 3]))
+                            } else {
+                                nacre_ops::SketchFrame::world(m, nacre_exact::Axis::Z)
+                            }
+                        },
+                        unit_disk(),
+                        quad,
+                        0.0,
+                        2.0,
+                    );
+                    let (x, y) = if swapped { (y, x) } else { (x, y) };
+                    let at = format!("{family}, tilted = {tilted}, {kind:?} swapped = {swapped}");
+                    let solids = boolean(&mut m, kind, x, y)
+                        .unwrap_or_else(|e| panic!("{at}: refused — {e:?}"));
+                    m.rebuild_adjacency();
+                    let vs = nacre_validate::validate(&m);
+                    assert!(vs.is_empty(), "{at}: {vs:?}");
+                    let v: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
+                    let (bodies, want) = match i {
+                        0 | 1 => (2, tau + b),
+                        2 => (1, tau),
+                        3 => (1, b),
+                        _ => (0, 0.0),
+                    };
+                    assert_eq!(solids.len(), bodies, "{at}: bodies");
+                    assert!((v - want).abs() < 1e-9, "{at}: volume {v}, want {want}");
+                    i += 1;
+                }
+            }
+        }
+    }
 }
