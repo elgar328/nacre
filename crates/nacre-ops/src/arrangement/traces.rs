@@ -12,8 +12,8 @@ use super::*;
 /// arcs over one stretch of `W ∩ fp` and one arc over the next — a notched or holed face does
 /// exactly that where its boundary rides the line. So a segment must be *homogeneous* in this kind:
 /// [`split_at_crossings`] subdivides segments later and every piece inherits the kind verbatim, so
-/// a mixed segment silently mislabels the pieces that disagree with it. Phase C therefore closes and
-/// reopens wherever the kind changes.
+/// a mixed segment silently mislabels the pieces that disagree with it. The line sweep
+/// ([`sweep_line`]) therefore closes and reopens wherever the kind changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SegKind {
     /// `L` runs through the face's **interior** here, so the face is on both sides of `W` and

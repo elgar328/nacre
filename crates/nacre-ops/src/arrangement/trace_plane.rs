@@ -55,9 +55,10 @@ fn plane_ring(
 
 /// Trace one **transversal or mixed** face `f` (plane `fp ≠ W`) onto plane class `wc`, as the
 /// segments where `f` meets `W`. This is 2D polygon-vs-line clipping on `L = W ∩ fp`, handling
-/// on-line edges (a run of `side == 0` vertices) instead of rejecting them. A **holed** face is
-/// handled by scanning its inner rings into the same node list: each hole's two crossings of `L` toggle the parity sweep back to void between them,
-/// carving the hole out of the emitted chord.
+/// on-line edges (a run of `side == 0` vertices) instead of rejecting them: the rings' features
+/// become stations on `L` and [`sweep_line`] reads what the face leaves there. A **holed** face's
+/// inner rings join the same station list, and each hole's two crossings of `L` toggle the face
+/// off between them, carving the hole out of the emitted chord.
 ///
 /// Every emitted segment rides `wall = fp` (its line is `W ∩ fp`); the side walls appear only as
 /// the third plane naming each endpoint. `mat = orient_sign(fp)` is a per-face constant.
@@ -81,12 +82,11 @@ fn trace_transversal_face(
     // Each ring pairs its class-form triples with the **carried walls** the producer read off
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
     // ride, never from the two endpoint names.
-    // The flip nodes a **circle** of this face leaves on `L` — its chord's two ends — for the
-    // outer and the holes alike, joined to the
-    // scan's node list below.
-    let mut circle_nodes: Vec<Node> = Vec::new();
+    // Every station this face leaves on `L`. A **circle** of the face leaves its chord's two ends
+    // here first, for the outer and the holes alike; the rings' features join them below.
+    let mut stations: Vec<ClassLineStation> = Vec::new();
     // The outer ring the scan walks — `None` for a circular outer, whose two chord ends are
-    // already in `circle_nodes` and which has no polygon to walk.
+    // already in `stations` and which has no polygon to walk.
     let outer: Option<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>)> =
         match loops.outer.as_ref().and_then(|r| r.poly()) {
             Some(nr) => match plane_ring(nr) {
@@ -98,8 +98,8 @@ fn trace_transversal_face(
             },
             // ★ A **circular outer is a disk — and a disk can have holes.** A recorded wall
             // class cuts the circle in a chord (a diameter when it runs through the axis), and
-            // the chord's two ends are flip nodes of the same parity sweep every polygon face
-            // runs, so the face's **holes carve the chord** exactly as they carve a polygon's
+            // the chord's two ends are stations of the same sweep every polygon face runs, so the
+            // face's **holes carve the chord** exactly as they carve a polygon's
             // section: a tube's annular cap sectioned by a wall is two pieces, not the whole
             // chord across the bore. ★★ Emitting the whole chord and *returning before reading
             // the holes* («a circular outer is a disk face») is wrong for any solid with two
@@ -124,7 +124,7 @@ fn trace_transversal_face(
                     unreachable!("the guard just matched a circle outer");
                 };
                 match chord_nodes(jd, faces, plane_ix, wc, fc, cyl, crossings) {
-                    Ok(Some(pair)) => circle_nodes.extend(pair),
+                    Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => return,
                     Err(ChordUnstatable) => {
                         out.declined.push((fp, DeclineKind::Ruling));
@@ -156,26 +156,26 @@ fn trace_transversal_face(
                 out.declined.push((fp, DeclineKind::HoleRing));
                 return;
             }
-            // ★ A **circular hole meets the line in a chord, and then it flips parity twice**.
+            // ★ A **circular hole meets the line in a chord, and then it toggles the face twice**.
             // The population gate admits a ∥-axis wall clear of the hole's cylinder
             // (skip: the circle cannot meet `L`) or **recorded** — within the radius, through
             // the axis or offset from it — and there the line cuts the hole in the chord's two
             // pierce points. Skipping them "by proof" is wrong: the proof covers the clear half
             // only, and the full-width chord then surfaces as `LabelConflict` on the
             // through-family × through-axis tool (measured). The two roots are pushed as
-            // flip nodes — the hole's own chord, named the same way a disk outer's is
+            // stations — the hole's own chord, named the same way a disk outer's is
             // ([`chord_nodes`], the one spelling for both).
             //
             // ★ **The gate's record, the same one the rulings road reads first.** A pair the
             // gate did not list was proven clear — no emitted face reaches the hole's footprint
-            // on this class, and the rulings road is silent for it — so planting flip nodes
+            // on this class, and the rulings road is silent for it — so planting stations
             // would break the line against rulings that are (rightly) absent: measured, the
             // d = 0 boss-and-bore fixture walked its spur out and back and refused
-            // `StraightAngle`. Listed pairs get the nodes; unlisted pairs are skipped, and the
+            // `StraightAngle`. Listed pairs get the stations; unlisted pairs are skipped, and the
             // two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
                 match chord_nodes(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
-                    Ok(Some(pair)) => circle_nodes.extend(pair),
+                    Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => {}
                     Err(_) => {
                         out.declined.push((fp, DeclineKind::HoleRing));
@@ -279,14 +279,10 @@ fn trace_transversal_face(
             }
         };
 
-    // Phase A — scan the outer ring and every hole ring, collecting feature nodes into ONE list.
-    // A hole ring keeps its stored CW winding, but the Phase-A predicates are winding-agnostic; the
-    // parity sweep (Phase C) then carves the hole because its two crossings of `L` toggle parity
-    // back to void between them. A ring that does not meet `W` (every vertex one side) yields no
-    // nodes; `run_counter` is shared so run ids stay unique across rings.
-    let mut nodes: Vec<Node> = Vec::new();
-    nodes.append(&mut circle_nodes);
-    let mut run_counter = 0usize;
+    // Phase A — scan the outer ring and every hole ring into ONE station list. A hole ring keeps
+    // its stored CW winding, but the scan is winding-agnostic: the hole is carved because its two
+    // crossings of `L` toggle the face back off between them. A ring that does not meet `W` (every
+    // vertex one side) leaves no station.
     let mut declined: Option<DeclineKind> = None;
     'rings: for (ring, walls) in outer.iter().chain(holes.iter()) {
         let n = ring.len();
@@ -434,15 +430,8 @@ fn trace_transversal_face(
                         }
                     };
                     // A crossing is one point strictly inside its edge where the boundary passes to
-                    // the other side of `L`, so parity flips — twice for an arc crossed twice.
-                    nodes.push(Node {
-                        id,
-                        pin,
-                        flip: true,
-                        run: None,
-                        flanks_differ: false,
-                        graze_above: None,
-                    });
+                    // the other side of `L` — twice for an arc crossed twice.
+                    stations.push((LineEvent::Toggle, (id, pin)));
                 }
                 combinatorics::Feature::Run {
                     first,
@@ -453,55 +442,53 @@ fn trace_transversal_face(
                     // ★ A run's end may be a corner a cylinder made (a half-disk cap's chord);
                     // `third_on_l` names that one by itself, pinned by the quadric.
                     let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
+                    // ★ Every on-line vertex is **named**, whether or not it becomes a station:
+                    // naming is where a fourth plane through the point is recorded (`third_on_l`)
+                    // and where a point that cannot be pinned is refused.
+                    let names: Result<Vec<(NodeId, combinatorics::EndPin)>, DeclineKind> =
+                        (0..m).map(|k| name(k, out)).collect();
+                    let rs = match names {
+                        Ok(rs) => rs,
+                        Err(kind) => {
+                            declined = Some(kind);
+                            break 'rings;
+                        }
+                    };
                     if m == 1 {
-                        match name(0, out) {
-                            Ok((id, pin)) => nodes.push(Node {
-                                id,
-                                pin,
-                                flip: flanks_differ,
-                                run: None,
-                                flanks_differ,
-                                // A single on-line vertex is a point, never a graze segment: with
-                                // equal flanks a tangential touch that toggles nothing, with
-                                // differing flanks a strict crossing.
-                                graze_above: None,
-                            }),
-                            Err(kind) => declined = Some(kind),
+                        // A single on-line vertex is a point: with differing flanks the boundary
+                        // crosses there, with equal flanks it touches and turns back, which changes
+                        // nothing on `L`.
+                        if flanks_differ {
+                            stations.push((LineEvent::Toggle, rs[0]));
                         }
                     } else {
-                        // m >= 2: one on-line interval. Only its two ends and the flanks decide
-                        // anything; the interior points are names the arrangement may split at.
-                        let id = run_counter;
-                        run_counter += 1;
-                        let names: Result<Vec<(NodeId, combinatorics::EndPin)>, DeclineKind> =
-                            (0..m).map(|k| name(k, out)).collect();
-                        match names {
-                            Ok(rs) => {
-                                // Every run is one-sided: it is an *edge* of `f` lying on `L`, so
-                                // `f` is on one side of it whatever the ring does afterwards.
-                                // `flanks_differ` says only whether the sweep's parity toggles here
-                                // (Phase B gives it to `flip`) — it is not an occupancy fact, and
-                                // gating the side on it left a crossing run classified as a
-                                // straddling transversal.
-                                let Some(ba) = run_body_above(jd, cyls, faces, wc, fc, fp, &rs)
-                                else {
-                                    declined = Some(DeclineKind::PierceNode);
-                                    break 'rings;
-                                };
-                                let graze_above = Some(ba);
-                                for (nid, pin) in rs {
-                                    nodes.push(Node {
-                                        id: nid,
-                                        pin,
-                                        flip: false,
-                                        run: Some(id),
-                                        flanks_differ,
-                                        graze_above,
-                                    });
-                                }
-                            }
-                            Err(kind) => declined = Some(kind),
-                        }
+                        // m >= 2: one on-line interval, an *edge* of `f` lying on `L`, so `f` is on
+                        // one side of it whatever the ring does afterwards. Only its two ends
+                        // become stations; the points between are names the arrangement may split
+                        // at. `flanks_differ` says only whether the face goes on to the far side
+                        // at the far end — not which side it occupies along the run, and gating
+                        // the side on it left a crossing run classified as a straddling
+                        // transversal.
+                        let Some((first_is_lo, body_above)) =
+                            run_body_above(jd, cyls, faces, wc, fc, fp, &rs)
+                        else {
+                            declined = Some(DeclineKind::PierceNode);
+                            break 'rings;
+                        };
+                        // In ring order, as every other station is pushed: the sort below runs
+                        // fewer comparisons on a list already in runs (lower end first costs the
+                        // rotated fold 10% more `order_pinned` calls, measured).
+                        let start = LineEvent::GrazeStart { body_above };
+                        let end = LineEvent::GrazeEnd {
+                            toggle: flanks_differ,
+                        };
+                        let (first, last) = if first_is_lo {
+                            (start, end)
+                        } else {
+                            (end, start)
+                        };
+                        stations.push((first, rs[0]));
+                        stations.push((last, rs[m - 1]));
                     }
                 }
             }
@@ -515,112 +502,51 @@ fn trace_transversal_face(
         return;
     }
 
-    // Phase B — order the nodes along L and fix run structure.
+    // Phase B — order the stations along `L`, and at one point by the order their events apply.
     // ★ A comparator cannot decline, so it raises a flag the caller reads. What can make it fire
     // has narrowed: the second road landed, so a cylinder-pinned node is *ordered* here rather
     // than refused, and the only `None` left is a description that could not be formed exactly.
     // ☑ Still unexercised in the corpus — measured through `reject_census`, which does not move.
     let mut unordered = false;
-    let order = |a: &Node, b: &Node, unordered: &mut bool| -> std::cmp::Ordering {
-        let Some(o) = combinatorics::order_pinned(jd, cyls, wc, fc, (a.id, a.pin), (b.id, b.pin))
-        else {
-            *unordered = true;
-            return std::cmp::Ordering::Equal;
-        };
-        match o {
-            -1 => std::cmp::Ordering::Less,
-            1 => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
+    let mut order = |a: (NodeId, combinatorics::EndPin), b: (NodeId, combinatorics::EndPin)| {
+        match combinatorics::order_pinned(jd, cyls, wc, fc, a, b) {
+            Some(o) => o.cmp(&0),
+            None => {
+                unordered = true;
+                std::cmp::Ordering::Equal
+            }
         }
     };
-    nodes.sort_by(|a, b| order(a, b, &mut unordered));
+    stations.sort_by(|a, b| order(a.1, b.1).then(a.0.cmp(&b.0)));
+    let same: Vec<bool> = stations
+        .windows(2)
+        .map(|w| order(w[0].1, w[1].1) == std::cmp::Ordering::Equal)
+        .collect();
     if unordered {
         out.declined.push((fp, DeclineKind::PierceNode));
         return;
     }
-    for w in nodes.windows(2) {
-        if order(&w[0], &w[1], &mut unordered) == std::cmp::Ordering::Equal {
-            out.declined.push((fp, DeclineKind::CoincidentFeatures));
-            return;
-        }
-    }
-    // Each run's two nodes must be adjacent after the sort; the hi node carries the flip.
-    for k in 0..nodes.len() {
-        if let Some(id) = nodes[k].run {
-            let prev = k > 0 && nodes[k - 1].run == Some(id);
-            let next = k + 1 < nodes.len() && nodes[k + 1].run == Some(id);
-            if !prev && !next {
-                out.declined.push((fp, DeclineKind::RunSplit));
-                return;
-            }
-            // The whole run is one interval, so its flip happens once — at the far end.
-            if prev && !next {
-                nodes[k].flip = nodes[k].flanks_differ;
-            }
-        }
-    }
-
-    // Phase C — sweep left to right; covered gaps merge into segments.
-    let mut parity = 0i8;
-    // `seg_start` also carries the graze side of the segment being built: `Some(ba)` when the
-    // segment is a pure graze gap (opened by a forced run while outside material), else `None`.
-    let mut seg_start: Option<((NodeId, combinatorics::EndPin), Option<bool>)> = None;
-    let emit = |a: (NodeId, combinatorics::EndPin),
-                b: (NodeId, combinatorics::EndPin),
-                graze: Option<bool>,
-                out: &mut Trace| {
-        out.segs.push(Seg {
-            wall: plane_ix[fp].plane(),
-            end: [a.0, b.0],
-            end_h: [a.1, b.1],
-            solid: which,
-            kind: match graze {
-                Some(body_above) => SegKind::Graze { body_above },
-                None => SegKind::Transversal {
-                    mat: faces[fp].plane().orient_sign,
-                },
-            },
-        });
+    // Phase C — the sweep both line roads share.
+    let mat = SegKind::Transversal {
+        mat: faces[fp].plane().orient_sign,
     };
-    for k in 0..nodes.len() {
-        if nodes[k].flip {
-            parity ^= 1;
-        }
-        let forced =
-            k + 1 < nodes.len() && nodes[k].run.is_some() && nodes[k].run == nodes[k + 1].run;
-        let covered = parity == 1 || forced;
-        // The kind of the gap *after* node `k`, as a fact about that gap alone: riding a run means
-        // `L` is on `f`'s boundary there, so `f` occupies one side; any other covered gap has `L`
-        // in `f`'s interior, so `f` straddles. `parity` says whether the gap is covered, not which
-        // arcs it fills — reading occupancy off it classified a hole's edge as a straddle.
-        let gap_graze = forced.then(|| {
-            nodes[k]
-                .graze_above
-                .expect("every run node carries its occupied side")
-        });
-        match (seg_start, covered) {
-            (None, true) => seg_start = Some(((nodes[k].id, nodes[k].pin), gap_graze)),
-            // The kind changes here, so close and reopen: a segment must be homogeneous, because
-            // `split_at_crossings` subdivides it later and every piece inherits its kind.
-            (Some((a, graze)), true) if graze != gap_graze => {
-                emit(a, (nodes[k].id, nodes[k].pin), graze, out);
-                seg_start = Some(((nodes[k].id, nodes[k].pin), gap_graze));
-            }
-            (Some((a, graze)), false) => {
-                emit(a, (nodes[k].id, nodes[k].pin), graze, out);
-                seg_start = None;
-            }
-            _ => {}
-        }
-    }
-    if seg_start.is_some() || parity != 0 {
-        // A line enters and leaves a bounded region equally; an unbalanced sweep is degenerate.
-        out.declined.push((fp, DeclineKind::OddParity));
+    match sweep_line(&stations, &same, |p| p.0, mat) {
+        Ok(pieces) => out
+            .segs
+            .extend(pieces.into_iter().map(|([a, b], kind)| Seg {
+                wall: plane_ix[fp].plane(),
+                end: [a.0, b.0],
+                end_h: [a.1, b.1],
+                solid: which,
+                kind,
+            })),
+        Err(kind) => out.declined.push((fp, kind)),
     }
 }
 
 /// Which side of `W` face `fp` occupies along an on-line run — **the left of the ring's travel**,
-/// stated in the label frame (`true` = above).
+/// stated in the label frame (`true` = above) — and whether the run's first name is its lower end
+/// along `L` (`t < 0` below: the one comparison answers both).
 ///
 /// A run is an *edge* of `f`'s boundary lying on `L = W ∩ fp`, so along it `f` is on exactly one
 /// side, and which side is the universal boundary convention: **material is on the left of the
@@ -655,14 +581,14 @@ fn run_body_above(
     fc: usize,
     fp: usize,
     rs: &[(NodeId, combinatorics::EndPin)],
-) -> Option<bool> {
+) -> Option<(bool, bool)> {
     let planes = jd.planes;
     // ★ The run's own direction along `L`, through the one rule both roads share — a run whose
     // ends a cylinder pinned orders by the `a + b√c` tower, and by the integer predicates
     // otherwise. `None` is a missing description, which the caller turns into its own decline.
     let t = combinatorics::order_pinned(jd, cyls, wc, fc, rs[0], rs[rs.len() - 1])?;
     let sigma = planes[fc].frame_sign * crate::planes::face_facing_noted(jd, faces, fp, fc)?;
-    Some((t < 0) == (sigma > 0))
+    Some((t < 0, (t < 0) == (sigma > 0)))
 }
 
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:

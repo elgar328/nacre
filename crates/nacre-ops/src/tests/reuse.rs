@@ -308,3 +308,16 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
         "mixed frames (a tilted prism's base ring)",
     );
 }
+
+/// **A ring that passes its smallest node twice is spelled one way whichever pass it starts at.**
+/// A face pinched at that node reaches the differential by two routes, and the two need not start
+/// its ring at the same visit; hand-built names `m < a < b` in the ring `m a m b`, asked from both
+/// visits of `m`.
+#[test]
+fn a_ring_through_its_smallest_node_twice_has_one_spelling() {
+    use crate::combinatorics::Canon3;
+    let name = |t: [usize; 3]| NodeId::three_planes(Canon3::three(t));
+    let (m, a, b) = (name([0, 1, 2]), name([0, 1, 3]), name([0, 1, 4]));
+    assert_eq!(canonical_ring(&[m, a, m, b]), canonical_ring(&[m, b, m, a]));
+    assert_eq!(canonical_ring(&[m, a, m, b])[1], CanonNode::of(a));
+}

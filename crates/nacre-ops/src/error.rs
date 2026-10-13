@@ -916,12 +916,16 @@ pub enum DeclineKind {
     /// there. Raised as [`RejectReason::FourPlane`] rather than as a `TraceDeclined`, since the
     /// substrate limit is the cause and the naming failure only the symptom.
     FourPlane,
-    /// Two arrangement features on the class line order as equal — they coincide.
+    /// Two **different** names order as one point on a line a face is traced onto — a class line
+    /// or a wall's ruling (the line sweep both roads share). One point under two names is an
+    /// identity the alias table did not learn; one name twice at one station is one point (a face
+    /// pinched there) and is read as one station. ☑ No trace in the suite or the census raises it.
     CoincidentFeatures,
-    /// A run's two nodes did not end up adjacent after ordering, so the run is not one interval.
+    /// A run of the boundary along the swept line is not one interval: a run ends with none open,
+    /// or a crossing or a second run comes while one is open.
     RunSplit,
-    /// The sweep along the class line entered and left unequally (an unbalanced parity), which a
-    /// closed boundary cannot do.
+    /// The sweep along the line ended with the face present or a run open, which a closed boundary
+    /// — leaving a line as often as it enters — cannot do.
     OddParity,
     /// **A seated edge's carrier is the face's own plane class**, so `fc ∩ wall` is not a line and
     /// the segment cannot be named on it.
@@ -988,8 +992,10 @@ pub enum DeclineKind {
     /// counter-clockwise extent that fails — a rim run the hole continues straight through
     /// (an extent and a parity toggle at once), a crossing on a carrier that is not a ruling, an
     /// odd number of crossings, two holes claiming one extent, or boundaries that do not alternate
-    /// around the circle. Every one of them is a fact about the *shape*, and none is produced by
-    /// today's population; the name is what will say so when one is.
+    /// around the circle. On a wall's ruling it says the same of a cycle's run along the ruling: the
+    /// run has no length, or one of its edges has its two ends on different rulings. Every one of
+    /// them is a fact about the *shape*, and none is produced by today's population; the name is
+    /// what will say so when one is.
     CylHoleFeature,
     /// A class runs **through a lateral's axis** and the ruling trace could not be stated
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`

@@ -4,8 +4,8 @@ use super::*;
 pub(super) struct ChordUnstatable;
 
 /// **The two ends of the chord a recorded wall class `wc` cuts on a circle of a planar face** (the
-/// face lies in class `fc`, the circle rides cylinder `cyl`), as flip nodes of
-/// [`trace_transversal_face`]'s parity sweep — a diameter when the wall runs through the axis,
+/// face lies in class `fc`, the circle rides cylinder `cyl`), as the two stations where the circle
+/// crosses the class line ([`sweep_line`]) — a diameter when the wall runs through the axis,
 /// any chord within the radius otherwise. `Ok(None)` for a pair the gate did not record:
 /// the wall clears the circle (the gate's plane test), or cuts an **irrational** chord this road
 /// cannot state yet — today's silence, and the same trigger the rulings road reads.
@@ -27,7 +27,7 @@ pub(super) fn chord_nodes(
     fc: usize,
     cyl: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
-) -> Result<Option<[Node; 2]>, ChordUnstatable> {
+) -> Result<Option<[ClassLineStation; 2]>, ChordUnstatable> {
     use nacre_exact::quad::CylinderMeet;
     if !crossings.contains(&(wc, cyl)) {
         return Ok(None);
@@ -57,13 +57,14 @@ pub(super) fn chord_nodes(
     else {
         return Err(ChordUnstatable);
     };
-    let node = |root| Node {
-        id: NodeId::pierce(wc, fc, cyl, root),
-        pin: combinatorics::EndPin::Cylinder,
-        flip: true,
-        run: None,
-        flanks_differ: false,
-        graze_above: None,
+    let node = |root| {
+        (
+            LineEvent::Toggle,
+            (
+                NodeId::pierce(wc, fc, cyl, root),
+                combinatorics::EndPin::Cylinder,
+            ),
+        )
     };
     Ok(Some([
         node(nacre_topo::QuadRoot::Lo),

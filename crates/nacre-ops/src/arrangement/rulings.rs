@@ -163,12 +163,10 @@ type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
 ///   above and below); a chain's arrive from the outer half and leave into the inner (toggle:
 ///   transversal below, absent above); a band's notch hole has both on the hole's side (no toggle).
 ///
-/// Then the sweep: absent below the first station, a piece per gap between stations — `Graze`
-/// inside a run, `Transversal` while the face is present, nothing while it is not — and adjacent
-/// equal pieces merged. Declined by name: a run whose neighbours are not arcs, an arc ending on the
-/// ruling where no run of its cycle sits (the boundary would cross at a vertex — a shape
-/// `loop_triples` does not produce), two names at one station, a run inside a run, a toggle inside
-/// a run (the successor of "a graze past a rim"), and a face still present past the last station.
+/// Then the sweep every line road shares ([`sweep_line`]) reads the stations, with its own refusals.
+/// Declined here by name: a run whose neighbours are not arcs, a run of no length, and an arc
+/// ending on the ruling where no run of its cycle sits (the boundary would cross at a vertex — a
+/// shape `loop_triples` does not produce).
 #[allow(clippy::too_many_arguments)]
 fn ruling_sweep(
     jd: &Judge<'_, WorkingPlane>,
@@ -205,18 +203,11 @@ fn ruling_sweep(
     // already told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
     // through it; the sweep never decides coincidence on its own.
     let same = |x: NodeId, y: NodeId| aliases.canon_point(x) == aliases.canon_point(y);
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-    enum Event {
-        // Ordered as they apply at one station: a run ends, the face toggles, a run starts.
-        GrazeEnd { toggle: bool },
-        Toggle,
-        GrazeStart { body_above: bool },
-    }
     let on_ruling =
         |c: usize| crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling);
-    let mut stations: Vec<(Rat, Event, NodeId)> = Vec::new();
+    let mut stations: Vec<(Rat, LineEvent, NodeId)> = Vec::new();
     for &(t, c) in rims {
-        stations.push((t, Event::Toggle, on_ruling(c)?));
+        stations.push((t, LineEvent::Toggle, on_ruling(c)?));
     }
     // The side of `wc` the face's body lies on along an edge of this cycle that runs on the
     // ruling from `start` to `end` — see [`plus_theta_is_above`], the one spelling of the product.
@@ -345,8 +336,8 @@ fn ruling_sweep(
                 origin: def.origin().map(|x| x.to_f64()),
                 span: [t_lo.to_f64(), t_hi.to_f64()],
             });
-            stations.push((t_lo, Event::GrazeStart { body_above }, n_lo));
-            stations.push((t_hi, Event::GrazeEnd { toggle }, n_hi));
+            stations.push((t_lo, LineEvent::GrazeStart { body_above }, n_lo));
+            stations.push((t_hi, LineEvent::GrazeEnd { toggle }, n_hi));
             run_nodes.push(start);
             run_nodes.push(end);
         }
@@ -377,65 +368,14 @@ fn ruling_sweep(
             let (lo, hi) = if nu { (a, b) } else { (b, a) };
             if theta_between(jd, k, def, lo, hi, node)? {
                 let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
-                stations.push((t, Event::Toggle, node));
+                stations.push((t, LineEvent::Toggle, node));
             }
         }
     }
     stations.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
-    for pair in stations.windows(2) {
-        if pair[0].0 == pair[1].0 && pair[0].2 != pair[1].2 {
-            return Err(DeclineKind::CylHoleFeature); // two names for one station
-        }
-    }
-    let mut pieces: Vec<([NodeId; 2], SegKind)> = Vec::new();
-    let (mut present, mut graze): (bool, Option<bool>) = (false, None);
-    let mut i = 0;
-    while i < stations.len() {
-        let (t, _, node) = stations[i];
-        let mut j = i;
-        while j < stations.len() && stations[j].0 == t {
-            match stations[j].1 {
-                Event::GrazeEnd { toggle } => {
-                    if graze.take().is_none() {
-                        return Err(DeclineKind::CylHoleFeature);
-                    }
-                    if toggle {
-                        present = !present;
-                    }
-                }
-                Event::Toggle => {
-                    if graze.is_some() {
-                        return Err(DeclineKind::CylHoleFeature); // a toggle inside a run
-                    }
-                    present = !present;
-                }
-                Event::GrazeStart { body_above } => {
-                    if graze.replace(body_above).is_some() {
-                        return Err(DeclineKind::CylHoleFeature); // a run inside a run
-                    }
-                }
-            }
-            j += 1;
-        }
-        if j < stations.len() {
-            let next = stations[j].2;
-            let kind = match graze {
-                Some(body_above) => Some(SegKind::Graze { body_above }),
-                None if present => Some(mat),
-                None => None,
-            };
-            if let Some(kind) = kind {
-                match pieces.last_mut() {
-                    Some((end, k)) if *k == kind && end[1] == node => end[1] = next,
-                    _ => pieces.push(([node, next], kind)),
-                }
-            }
-        }
-        i = j;
-    }
-    if present || graze.is_some() {
-        return Err(DeclineKind::CylHoleFeature); // an open boundary
-    }
+    let same: Vec<bool> = stations.windows(2).map(|w| w[0].0 == w[1].0).collect();
+    let events: Vec<(LineEvent, NodeId)> = stations.iter().map(|&(_, e, n)| (e, n)).collect();
+    let pieces = sweep_line(&events, &same, |n| n, mat)?;
     Ok((pieces, grazes))
 }
 

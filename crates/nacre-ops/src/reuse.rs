@@ -324,15 +324,24 @@ impl CanonNode {
 #[cfg(any(debug_assertions, test))]
 pub(crate) type CanonFace = (usize, bool, Vec<CanonNode>, Vec<Vec<CanonNode>>);
 
+/// A ring's spelling: its nodes from the rotation that reads lexicographically smallest.
+///
+/// ★ Not «from its smallest node»: a ring may pass one node twice (a face pinched there), and when
+/// that node is the smallest, starting at its first visit depends on where the ring happened to
+/// start — two routes holding one face would spell it two ways.
+#[cfg(any(debug_assertions, test))]
+fn canonical_ring(r: &[NodeId]) -> Vec<CanonNode> {
+    let t: Vec<CanonNode> = r.iter().map(|&n| CanonNode::of(n)).collect();
+    let rotation = |i: usize| t[i..].iter().chain(&t[..i]);
+    match (0..t.len()).min_by(|&i, &j| rotation(i).cmp(rotation(j))) {
+        Some(i) => rotation(i).copied().collect(),
+        None => t,
+    }
+}
+
 #[cfg(any(debug_assertions, test))]
 pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
-    let ring = |r: &[NodeId]| -> Vec<CanonNode> {
-        let t: Vec<CanonNode> = r.iter().map(|&n| CanonNode::of(n)).collect();
-        match t.iter().enumerate().min_by_key(|(_, v)| **v) {
-            Some((i, _)) => t[i..].iter().chain(&t[..i]).copied().collect(),
-            None => t,
-        }
-    };
+    let ring = canonical_ring;
     let mut out: Vec<_> = faces
         .iter()
         .map(|f| {

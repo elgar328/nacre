@@ -10,10 +10,9 @@
 //! Two face cases feed the trace. **Seated** — a face whose own class is the cut class — lies wholly
 //! in the plane, so its whole boundary is trace. **Transversal / mixed** — a face crossing the
 //! plane, possibly with an edge lying in it — is 2D polygon-vs-line clipping on `L = W ∩ fp`, with
-//! a three-valued (−/0/+) scan that collapses on-line edges instead of rejecting them. Faces with
-//! **holes** are declined by the trace brick (a forced-covered run inside a hole would claim its
-//! void as material, and the corpus has no case to verify it). Declining is a per-face record, never
-//! a whole-solid abort — a non-empty `declined` means "this trace is incomplete, do not conclude
+//! a three-valued (−/0/+) scan that collapses on-line edges instead of rejecting them, and a sweep
+//! along the line ([`sweep_line`]) that reads what the face leaves there. Declining is a per-face
+//! record, never a whole-solid abort — a non-empty `declined` means "this trace is incomplete, do not conclude
 //! from it".
 
 use super::*;
@@ -81,6 +80,7 @@ mod emit;
 #[cfg(test)]
 #[path = "../tests/probes/extent_probe.rs"]
 pub(crate) mod extent_probe;
+mod line_sweep;
 #[cfg(test)]
 #[path = "../tests/probes/order_probe.rs"]
 pub(crate) mod order_probe;
@@ -105,6 +105,7 @@ pub(crate) use audits::*;
 pub(crate) use cells::*;
 pub(crate) use cyl_trace::*;
 use emit::*;
+use line_sweep::sweep_line;
 // ★ Not a glob, because the two names crossing here cross for different reasons. The stage
 // entry is this module's own (`pub(super)`), so a plain `use` carries it to the children.
 // The mixed-class audit leaves `arrangement` for exactly one reader -- a test, and one that
@@ -125,33 +126,31 @@ pub(crate) use trace_class::*;
 use trace_plane::*;
 pub(crate) use traces::*;
 
-/// One feature node on the line `L = W ∩ fp` — **its own name, and what pins it there**.
+/// **What happens to a face at one station of a line it is traced onto** — the vocabulary of
+/// [`sweep_line`], spoken by both roads that trace a face onto a line: a plane face onto a class
+/// line ([`trace_transversal_face`]) and a lateral face onto one of a wall's rulings
+/// ([`rulings_on_class`]).
 ///
-/// ★★ Not a bare third plane (`r`), which is the shape a three-plane point has and no other: the
-/// name is carried whole ([`NodeId`], so a corner a cylinder made can be one) and the pin says
-/// **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends travel as.
-/// The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
-/// ring crosses the class line on a ruling ([`crossing_on_ruling`]).
-struct Node {
-    /// The point's own name — what the arrangement calls it, and what a segment's end records.
-    id: NodeId,
-    /// What pins it on `L`: the third plane class, or the cylinder whose crossing it is.
-    pin: combinatorics::EndPin,
-    /// Whether crossing this node toggles inside/outside. Strict crossings and single-vertex runs
-    /// set it in Phase A; a two-vertex run's *hi* node has it set after the sort.
-    flip: bool,
-    /// A two-vertex on-line edge's run id; the two nodes share it, and the gap between them is
-    /// forced-covered (it is boundary of `F`, hence of `F ∩ W`).
-    run: Option<usize>,
-    /// For run nodes: whether the flanks (the off-line neighbours) sit on opposite sides.
-    flanks_differ: bool,
-    /// `Some(body_above)` for **every** run — the side of `W` the face occupies along it, in the
-    /// label frame, from [`run_body_above`]. A run is an edge of the face lying on `L`, so the face
-    /// is on one side of it no matter what the ring does afterwards; `flanks_differ` is a parity
-    /// fact, not an occupancy one, and must not gate this. `None` only for a strict crossing or a
-    /// single on-line vertex, which are points rather than intervals.
-    graze_above: Option<bool>,
+/// The variant order is the order the events apply at one station — a run ends, the face toggles,
+/// a run starts — so a run that ends where another starts, a crossing at a run's end, or the two
+/// passes of a boundary through one point all read as one station, and the two roads, sorting by
+/// `(position, event)`, read the same order from this one `Ord`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LineEvent {
+    /// An on-line run of the boundary ends here. `toggle` when the boundary goes on to the far side
+    /// of the line (the run's flanks differ): the face is present on one side of the run's end and
+    /// not the other.
+    GrazeEnd { toggle: bool },
+    /// The boundary crosses the line here.
+    Toggle,
+    /// An on-line run starts here; along it the face lies on the `body_above` side of the class.
+    GrazeStart { body_above: bool },
 }
+
+/// A station on a class line `L = W ∩ fp`: its event, and the point as its own name and what pins
+/// it on `L` ([`combinatorics::EndPin`]) — the pair a segment's ends travel as, so a corner a
+/// cylinder made can be one.
+type ClassLineStation = (LineEvent, (NodeId, combinatorics::EndPin));
 
 /// A lateral face as its cycles state it: its axial range `[lo, hi]`, its whole rims `(station,
 /// plane class)` in station order (0, 1 or 2 of them), and every other boundary cycle with whether

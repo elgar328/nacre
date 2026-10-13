@@ -512,8 +512,8 @@ fn cycle_on_class(
         return Err(DeclineKind::CylHoleFeature);
     }
     // The crossings alternate in θ, so sorting them and pairing each "hole ahead" with the next
-    // boundary is the whole assignment — the circle twin of the parity sweep
-    // `trace_transversal_face` runs along a line.
+    // boundary is the whole assignment — the circle twin of the sweep along a line
+    // ([`sweep_line`]).
     if !cuts.is_empty() {
         let nodes: Vec<NodeId> = cuts.iter().map(|c| c.0).collect();
         let order = circular_order(jd, cyl, def, &nodes).map_err(|e| match e {

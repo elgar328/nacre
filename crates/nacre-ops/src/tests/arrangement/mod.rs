@@ -111,5 +111,6 @@ impl Counts {
 
 mod curved;
 mod declines_and_spikes;
+mod line_sweep;
 mod planar_cells;
 mod rotated;

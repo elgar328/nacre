@@ -267,9 +267,10 @@ fn a_loop_passes_twice(m: &Model, solid: Handle<Solid>, p: [f64; 3]) -> bool {
 /// face's boundary passes it twice — with the boss inside the plate, one hole ring around both
 /// triangles (one of its two sectors at `(2, 2)` is 278°); with a boss corner on the plate's edge
 /// at `(4, 0)`, the outer ring, which passes `(4, 0)` twice as well. Every operation order and
-/// hole height that builds is asked; the mesh must cover each face and enclose the solid
-/// (`mesh_covers_faces`), as the boolean's own exit census also asserts. Boss first with its
-/// corner on the edge is refused by the boolean (`CoincidentFeatures`) and is not this test's.
+/// hole height is asked; the mesh must cover each face and enclose the solid (`mesh_covers_faces`),
+/// as the boolean's own exit census also asserts. Boss first with its corner on the edge makes the
+/// hole's boolean take a pinched face as its input — see
+/// [`a_pinched_body_is_an_operand_like_any_other`].
 #[test]
 fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
     let hole = [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]];
@@ -281,6 +282,7 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
         ("boss inside, boss first", inside, -1.0, 3.0, true),
         ("boss on the edge, hole through", on_edge, -1.0, 3.0, false),
         ("boss on the edge, hole flush", on_edge, 0.0, 1.0, false),
+        ("boss on the edge, boss first", on_edge, -1.0, 3.0, true),
     ] {
         let mut m = Model::new();
         let plate = crate::fixtures::cuboid(
@@ -311,6 +313,139 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
             "{name}: the top's boundary passes (2, 2, 1) twice, as one vertex"
         );
         mesh_covers_faces(name, &m, &[out]);
+    }
+}
+
+/// ★★★ **A pinched body is an operand like any other.** The plate with a boss corner on its edge
+/// (`P1`: the top face's one ring passes `(4, 0, 1)` twice) and the same plate with a bore through
+/// it (`P3`, so a circle's chord stations share the top face's line with the pinch), each against
+/// boxes placed where the pinch matters: far from it, around it, with a wall `x = 4` through it,
+/// and wholly below the top (`z ≤ 0.5`) — there the top's class is out of the box's reach, so the
+/// pinched face passes through unarranged and the debug build compares the two routes' faces.
+/// Every kind, both orders: the result validates, its mesh covers it, and its volume is the one
+/// written by hand from `A`, `B` and `A ∩ B` (`Fuse = A + B − I`, `Common = I`, `A − B = A − I`,
+/// `B − A = B − I`).
+///
+/// ★ Every line through the pinch is a class here — the boss's walls `x = 4` and `x + y = 4` and
+/// the plate's `y = 0` — and on each the two passes of the ring leave one name twice at one
+/// station (a run's end and a touch, or two runs meeting end to start). That is the reading
+/// [`crate::arrangement`]'s line sweep exists for.
+#[test]
+fn a_pinched_body_is_an_operand_like_any_other() {
+    use crate::BoolKind::{Common, Cut, Fuse};
+    let pt = |a: [f64; 3]| Point3::from_array(a);
+    let quarter_bore = std::f64::consts::PI / 4.0;
+    // The plate `[0, 6]² × [0, 1]` with the triangle `(2,2) (4,0) (4,1)` of area 1 standing on it,
+    // height 1 — and, for `P3`, a bore of radius ½ at `(1.5, 4)` through the plate alone.
+    let pinched = |m: &mut Model, bored: bool| -> Handle<Solid> {
+        let plate = crate::fixtures::cuboid(m, pt([0.0, 0.0, 0.0]), pt([6.0, 6.0, 1.0]));
+        let boss = triangle_prism(m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], 1.0, 1.0);
+        let mut s = crate::boolean(m, Fuse, plate, boss).expect("the boss")[0];
+        m.rebuild_adjacency();
+        if bored {
+            let bore = crate::fixtures::cylinder(
+                m,
+                pt([1.5, 4.0, -1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                3.0,
+            )
+            .solid;
+            s = crate::boolean(m, Cut, s, bore).expect("the bore")[0];
+            m.rebuild_adjacency();
+        }
+        assert!(
+            a_loop_passes_twice(m, s, [4.0, 0.0, 1.0]),
+            "the operand's top passes (4, 0, 1) twice"
+        );
+        s
+    };
+    // (name, bored, box, A, B, A ∩ B)
+    let rows = [
+        // The box's corner of the plate: 0.25 × 1.
+        (
+            "far",
+            false,
+            [[5.0, 5.0, -1.0], [5.5, 5.5, 3.0]],
+            37.0,
+            1.0,
+            0.25,
+        ),
+        // Plate 1 × ½ × ½, and the boss over x ∈ [3.5, 4], y ≤ ½: ∫(x − 3.5) dx = 1/8, times ½.
+        (
+            "around",
+            false,
+            [[3.5, -0.5, 0.5], [4.5, 0.5, 1.5]],
+            37.0,
+            1.0,
+            0.3125,
+        ),
+        // Plate 1 × ½ × ½; the boss has no volume beyond x = 4.
+        (
+            "wall x = 4",
+            false,
+            [[4.0, -1.0, 0.5], [5.0, 0.5, 1.5]],
+            37.0,
+            1.5,
+            0.25,
+        ),
+        // Plate 0.25 × ½.
+        (
+            "below the top",
+            false,
+            [[5.0, 5.0, -1.0], [5.5, 5.5, 0.5]],
+            37.0,
+            0.375,
+            0.125,
+        ),
+        (
+            "bored, far",
+            true,
+            [[5.0, 5.0, -1.0], [5.5, 5.5, 3.0]],
+            37.0 - quarter_bore,
+            1.0,
+            0.25,
+        ),
+        (
+            "bored, around",
+            true,
+            [[3.5, -0.5, 0.5], [4.5, 0.5, 1.5]],
+            37.0 - quarter_bore,
+            1.0,
+            0.3125,
+        ),
+    ];
+    for (name, bored, [lo, hi], a_vol, b_vol, i_vol) in rows {
+        for (kind, swapped, want) in [
+            (Fuse, false, a_vol + b_vol - i_vol),
+            (Fuse, true, a_vol + b_vol - i_vol),
+            (Common, false, i_vol),
+            (Common, true, i_vol),
+            (Cut, false, a_vol - i_vol),
+            (Cut, true, b_vol - i_vol),
+        ] {
+            let what = format!("{name}, {kind:?}, swapped = {swapped}");
+            let mut m = Model::new();
+            let a = pinched(&mut m, bored);
+            let b = crate::fixtures::cuboid(&mut m, pt(lo), pt(hi));
+            m.rebuild_adjacency();
+            let (x, y) = if swapped { (b, a) } else { (a, b) };
+            let out =
+                crate::boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{what}: {vs:?}");
+            mesh_covers_faces(&what, &m, &out);
+            let v: f64 = out
+                .iter()
+                .map(|&s| {
+                    nacre_props::mass_props(&m, s)
+                        .expect("mass properties")
+                        .volume
+                })
+                .sum();
+            assert!((v - want).abs() < 1e-9, "{what}: volume {v}, want {want}");
+        }
     }
 }
 
