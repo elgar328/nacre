@@ -212,16 +212,18 @@ fn trace_transversal_face(
     // ever noticed and report every such point as `RunName`.
     let third_on_l =
         |n: NodeId, out: &mut Trace| -> Result<(NodeId, combinatorics::EndPin), DeclineKind> {
-            // ★★ **A corner a cylinder made needs no third plane, and has none.** It is already the
-            // point's own name, and what pins it on `L` is the quadric — measured, every such corner
-            // that lands on a cut line is pinned by that very cut plane (`far == wc`), so `wc` is in
-            // its name and there is no fourth-plane alias to record either.
+            // ★★ **A corner a cylinder made keeps its own name**, and `wc` in that name means
+            // there is no fourth-plane alias to record. What pins it on `L` is a function of the
+            // name and the line ([`combinatorics::pin_for`]): the quadric where its pair *is*
+            // `{wc, fc}`, and otherwise its other plane — a corner on three planes and the
+            // cylinder is named by the pair its definition chose, which need not be this line's.
             let (n, t) = match three_plane_name(n) {
                 Some(t) => (n, t),
                 None => match combinatorics::pierce_name(n) {
-                    // Pinned by the quadric: its own pair is this line's.
                     Some((planes, _, _)) if planes.contains(&wc) => {
-                        return Ok((n, combinatorics::EndPin::Cylinder));
+                        return combinatorics::pin_for(jd, wc, fc, n)
+                            .map(|pin| (n, pin))
+                            .ok_or(DeclineKind::NoPinOnLine);
                     }
                     // ★ **On `wc` by coincidence**: a wall through a fillet's axis runs
                     // through the fillet's tangent corner, so the corner is on `L` while neither of
@@ -811,18 +813,15 @@ pub(super) fn trace_one(
                     out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                     continue;
                 }
-                // ★★ **What pins each end, in the vocabulary that names it.** A three-plane
-                // corner is pinned by a plane — [`combinatorics::pin_on_line`], the same rule the
-                // scan road and the ray caster ask. A corner a cylinder made has no third plane
-                // and needs none: the quadric pins it, and [`combinatorics::EndPin::Cylinder`]
-                // says so while the name beside it says which point.
-                let pin = |k: usize| -> Option<combinatorics::EndPin> {
-                    match three_plane_name(ns[k]) {
-                        Some(t) => combinatorics::pin_on_line(jd, fc, wall, t)
-                            .map(combinatorics::EndPin::Class),
-                        None => Some(combinatorics::EndPin::Cylinder),
-                    }
-                };
+                // ★★ **What pins each end is a function of its name and this line**
+                // ([`combinatorics::pin_for`] — the rule `draft::Ring::edges` and the scan road
+                // read). A three-plane corner is pinned by a plane ([`combinatorics::pin_on_line`]).
+                // A corner a cylinder made is pinned by the quadric where its pair is `{fc, wall}`
+                // ([`combinatorics::EndPin::Cylinder`], the name beside it saying which root) —
+                // and by its other plane where it is a corner on three planes whose name's pair is
+                // another: read as the quadric there, the name's root would be taken for a root of
+                // this line, the circle's far point.
+                let pin = |k: usize| combinatorics::pin_for(jd, fc, wall, ns[k]);
                 let (Some(h0), Some(h1)) = (pin(i), pin((i + 1) % n)) else {
                     out.declined.push((fp, DeclineKind::NoPinOnLine));
                     continue;

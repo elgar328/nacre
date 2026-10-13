@@ -24,8 +24,10 @@ pub(super) enum Split {
 
 impl Split {
     /// ★ **The pierce arm keeps the root the producer wrote, not a re-canonicalized one.** A
-    /// segment on `w` in class `wc` has pierce ends whose plane pair *is* `{wc, w}`, so the stored
-    /// name is already canonical for it and [`Split::name`] can put it back verbatim. Restating it
+    /// segment on `w` in class `wc` has a pierce end pinned by the cylinder only where the name's
+    /// plane pair *is* `{wc, w}` ([`combinatorics::pin_for`] — a corner whose pair is another line
+    /// is pinned by its other plane and arrives here as [`Split::Class`]), so the stored name is
+    /// already canonical for it and [`Split::name`] can put it back verbatim. Restating it
     /// through `NodeId::pierce` would re-run the pair ordering and could flip the root.
     /// ★★★★ **A cylinder pin arrives with a pierce name, and that is a producer's invariant, so
     /// this panics rather than naming a refusal.** Every site that writes an `EndPin::Cylinder`
