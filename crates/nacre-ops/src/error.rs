@@ -857,11 +857,12 @@ pub enum RejectReason {
     /// guards spoke (`assembly::coplanar`), or a result edge still has the same plane on both
     /// sides (`assembly::topology`), which the merge should have folded.
     ///
-    /// ★ **Unfired across the suite (census).** Coplanar pieces meeting at a point during the
-    /// merge are an **abstention**, not this (the merge emits a pinching
-    /// group unmerged and the whole-result judgement, hoisted before minting, names the shape —
-    /// `SelfTouchingResult` on every input that reaches it). What remains under this name are
-    /// those guards, none with a known input.
+    /// ★ **Unfired across the suite (census).** A node the merged rings pass twice is threaded by
+    /// cyclic order, and an order the merge cannot read is an **abstention**, not this (the group
+    /// is emitted unmerged and the whole-result judgement, hoisted before minting, names the
+    /// shape); one arc from a node back to itself is a ring by the floor every ring reader shares
+    /// (`combinatorics::ring_floor`). What remains under this name are those guards, none with a
+    /// known input.
     CoplanarMerge,
 }
 

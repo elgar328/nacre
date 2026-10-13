@@ -377,13 +377,16 @@ fn merge_component(
                 }
                 cur = step;
             }
-            // A 2-gon closed by a curved wall is a legal ring (`loop_winding`'s own floor); a
-            // two-node polygon is not.
-            let floor = if walls.iter().any(|w| !matches!(w, Wall::Plane(_))) {
-                2
-            } else {
-                3
-            };
+            // ★ The floor is the one the cell walk and `loop_winding` read
+            // ([`combinatorics::ring_floor`]): a 2-gon closed by a curved wall is a ring, a
+            // two-node polygon is not, and one arc from a node back to itself is the circle a
+            // polygon corner cuts at that point — what is left of a cap when the wedge standing
+            // on it with its apex on the rim merges back in.
+            let self_loop = nodes.len() == 1 && matches!(walls[0], Wall::Arc { .. });
+            let floor = combinatorics::ring_floor(
+                walls.iter().any(|w| !matches!(w, Wall::Plane(_))),
+                self_loop,
+            );
             if nodes.len() < floor {
                 return Err(reject(RejectReason::CoplanarMerge));
             }

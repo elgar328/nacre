@@ -461,6 +461,9 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// and the closed edge sits in a loop of several: its half-edge runs the way its wall says, not
 /// the way its one vertex could (`assembly::reconstruct`), and every reader takes it as the whole
 /// turn (`Model::derive_edge_curve`); the mesher draws the pinch (`every_six`'s [`drawn`]).
+/// Standing on `A`'s base, the wedge's floor merges into the cap: the coplanar merge leaves the
+/// arc from the apex back to itself — a ring by the same floor — and the cleaning closes it as the
+/// whole circle, so the union is `A`.
 ///
 /// The cap ring an outside corner leaves is pinched at the node on the rim — the circle and the
 /// prism's section meet there alone — and on either frame its winding is read where the circle
@@ -472,8 +475,7 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
 /// fixed whatever builds: the wedge's `A − B` never builds — the groove touches the lateral along
 /// a line, a solid touching itself, `NonManifoldResultEdge` at every height — and no refusal is a
 /// suspected defect. What does not build yet is pinned by family, boolean and height (todo
-/// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): a wedge standing on `A`'s base at the coplanar
-/// merge (`CoplanarMerge`); and an outside corner past `A`'s top, whose touch leaves a vertex named
+/// «다각형 꼭짓점이 캡의 원 위에 놓일 때 남은 거절»): an outside corner past `A`'s top, whose touch leaves a vertex named
 /// by `A`'s cap and cylinder on `B`'s edge (`VertexNamesAbsentSurface`) and, past both caps, a union
 /// whose cylinder has every corner on the line of contact (`NoClearRay`).
 #[test]
@@ -550,7 +552,6 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     };
     use Height::*;
     for wedge in ["wedge on the seam", "wedge off the seam"] {
-        pin(wedge, &[0, 1], &[OnBase], "CoplanarMerge", 4);
         pin(wedge, &[2], &Height::ALL, "NonManifoldResultEdge", 4);
     }
     for outside in ["tangent side", "line contact"] {
