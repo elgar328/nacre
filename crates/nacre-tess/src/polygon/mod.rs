@@ -160,8 +160,9 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 ///
 /// Either way one pair of coincident indices is in the ring, handed to the sweep as [`Twins`],
 /// with the order [`sos`] defines. At most one per face: a second would need a second symbolic
-/// pair, and that population has not been seen — it comes back
-/// [`TessError::SelfTouchingBoundary`], as it always did.
+/// pair, and it comes back [`TessError::SelfTouchingBoundary`] — a plate's top whose outer ring
+/// passes twice through the corner of a triangular boss standing on the plate's edge, and again
+/// through the corner where that boss meets a triangular hole, is such a face.
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
