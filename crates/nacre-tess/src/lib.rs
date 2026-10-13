@@ -63,13 +63,14 @@ pub enum TessError {
     /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
     /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
     /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
-    /// resulting coincident pair symbolically (`polygon::sos`). **One ring passing one mesh vertex
+    /// resulting coincident pair symbolically (`polygon::sos`). **One ring passing a mesh vertex
     /// twice** — a groove whose tip touches the face's own rim — is drawn the same way, its two
-    /// visits the twins, when both visits' wedges are convex (`polygon::pinch`). What still comes
-    /// back under this name is what those roads do not cover, the bridge's each counted by the
-    /// pre-pass: a vertex on another ring's *vertex* (`AtEnd`), a neighbour exactly on the touched
-    /// line, a touch on a curved edge or beside a curved face, two touches on one segment or at
-    /// one point, a pinch with a reflex wedge, and a face with more than one bridge or pinch.
+    /// visits the twins, when both visits' wedges are convex (`polygon::pinch`), at as many points
+    /// as the face has. What still comes back under this name is what those roads do not cover,
+    /// the bridge's each counted by the pre-pass: a vertex on another ring's *vertex* (`AtEnd`), a
+    /// neighbour exactly on the touched line, a touch on a curved edge or beside a curved face, two
+    /// touches on one segment or at one point, a pinch with a reflex wedge, a point passed three
+    /// times, and a bridge beside any other bridge or pinch.
     ///
     /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a

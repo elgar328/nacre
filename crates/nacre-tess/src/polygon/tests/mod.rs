@@ -570,6 +570,47 @@ fn a_pinched_ring_meshes_without_a_bridge() {
     check_partition(&tris, &turned, &[]);
 }
 
+/// ★★ **A ring pinched at two points meshes — one pair of twins each.** A `6 × 4` rectangle whose
+/// bottom is touched by the tips of two triangular grooves, at `(2, 0)` and `(4, 0)`: the one ring
+/// passes each point twice (indices 1 and 4, 5 and 8). Ten triangles for the twelve-vertex ring,
+/// all CCW, covering exactly the rectangle less the grooves, whose once-used edges are the ring.
+#[test]
+fn a_ring_pinched_at_two_points_meshes() {
+    let p = pts(&[
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [1.5, 1.0],
+        [2.5, 1.0],
+        [2.0, 0.0],
+        [4.0, 0.0],
+        [3.5, 1.0],
+        [4.5, 1.0],
+        [4.0, 0.0],
+        [6.0, 0.0],
+        [6.0, 4.0],
+        [0.0, 4.0],
+    ]);
+    let ring: Vec<usize> = (0..12).collect();
+    let mut v = p.clone();
+    let revisits = [
+        Revisit::Pinch {
+            ring: 0,
+            x: 1,
+            y: 4,
+        },
+        Revisit::Pinch {
+            ring: 0,
+            x: 5,
+            y: 8,
+        },
+    ];
+    let (tris, rings) =
+        triangulate_uv(&mut v, &[&ring], &[], &revisits).expect("the twice-pinched ring meshes");
+    check(&p, &tris, 10, 24.0 - 0.5 - 0.5);
+    assert_eq!(rings, vec![ring.clone()], "nothing spliced");
+    check_partition(&tris, &ring, &[]);
+}
+
 /// What a pinch the sweep cannot order comes back as. The boundary passing *through* the point —
 /// one visit's ray inside the other's wedge — is a crossing every triangulation gets wrong
 /// (`DegenerateRing`); without `pinch`'s check the sweep is handed it and builds a piece whose

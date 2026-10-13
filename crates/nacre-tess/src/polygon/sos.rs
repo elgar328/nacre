@@ -1,4 +1,4 @@
-//! **A symbolic order for one sanctioned coincident pair — the twins a bridge or a pinch makes.**
+//! **A symbolic order for the sanctioned coincident pairs — the twins each bridge or pinch makes.**
 //!
 //! A face's boundary can pass one point twice. When a hole's ring is spliced into the ring it
 //! touches, the touching vertex appears twice in the merged ring: once as the split ring's
@@ -29,9 +29,14 @@
 //! ★ **Twin-only.** Two facts keep this from touching anything else. Every zero the sweep can
 //! meet without the twins is already a refusal (`self_touch`: a vertex on another edge's open
 //! segment), so once the duplicate-coordinate guard is kept for every pair but the sanctioned
-//! one, the *only* new zeros are those with a twin in them. And the two twins are the only
-//! points that share a coordinate, so `d` is zero for every other index and the first-order
-//! term reduces to a handful of exact products.
+//! ones, the *only* new zeros are those with a twin in them. And a pair's two twins are the only
+//! points at their coordinate, so `d` is zero for every index outside the pairs and the
+//! first-order term reduces to a handful of exact products.
+//!
+//! ★ **Several pairs, one displacement.** A face may be pinched at several points; each point is
+//! one pair, and every twin slides by the same `ε`. The first-order term is linear in the
+//! displacements, so it reads all of them at once — and pairs at different points never tie with
+//! each other, because their coordinates differ.
 //!
 //! **The first-order term.** `orient2d` is affine in each argument, so
 //! `orient2d(a+εd_a, b+εd_b, c+εd_c) = orient2d(a,b,c) + ε·[(b−a)×(d_c−d_a) + (d_b−d_a)×(c−a)] + O(ε²)`.
@@ -48,14 +53,15 @@
 use super::{P2, lex_less};
 use nacre_predicates::{Expansion, orient2d};
 
-/// The sanctioned pair: two indices at one coordinate, each with the index of the ring
+/// One sanctioned pair: two indices at one coordinate, each with the index of the ring
 /// neighbour it slides toward (on a bridge the two ends of the split segment).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Twins {
-    /// The split ring's copy of the touching vertex, or a pinch's earlier visit; slides toward
-    /// `o_along` (its `prev`).
+    /// The earlier visit of the ring passing the point (on a bridge, the split ring's copy of the
+    /// touching vertex); slides toward `o_along` (its `prev`).
     pub(super) o: usize,
-    /// The hole's copy, or a pinch's later visit; slides toward `h_along` (its `next`).
+    /// The later visit (on a bridge, the touching ring's copy); slides toward `h_along` (its
+    /// `next`).
     pub(super) h: usize,
     pub(super) o_along: usize,
     pub(super) h_along: usize,
@@ -64,6 +70,12 @@ pub(super) struct Twins {
 impl Twins {
     fn is_twin(&self, i: usize) -> bool {
         i == self.o || i == self.h
+    }
+
+    /// Whether the two pairs pass a common index — one point visited three times, which one
+    /// symbolic pair per point cannot order.
+    pub(super) fn shares_a_visit(&self, other: &Twins) -> bool {
+        self.is_twin(other.o) || self.is_twin(other.h)
     }
 
     /// Whether `a` and `b` are the two twins (in either order).
@@ -94,26 +106,40 @@ impl Twins {
     }
 }
 
-/// `lex_less(uv[a], uv[b])`, with the twins ordered as their displacement orders them.
+/// `lex_less(uv[a], uv[b])`, with each pair of twins ordered as their displacement orders them.
 ///
-/// Distinct coordinates are compared exactly, as any two points are. The twins' tie is decided by
-/// where they slide: `T + ε(u − T)` precedes `T + ε(v − T)` exactly when `u` precedes `v`, so the
-/// answer is `lex_less` of the two neighbours they slide toward — a comparison of stored
-/// coordinates, never a tie, because only the twins share a coordinate. `None` is a coincident
-/// pair that is not the sanctioned one.
-pub(super) fn lex_less_idx(a: usize, b: usize, uv: &[P2], twins: Option<&Twins>) -> Option<bool> {
+/// Distinct coordinates are compared exactly, as any two points are. A pair's tie is decided by
+/// where its twins slide: `T + ε(u − T)` precedes `T + ε(v − T)` exactly when `u` precedes `v`, so
+/// the answer is `lex_less` of the two neighbours they slide toward — a comparison of stored
+/// coordinates. `None` is a coincident pair that is not a sanctioned one, or a pair whose two
+/// neighbours are one point (two edges from `T` to one point lie on each other — a touch
+/// `self_touch` names; no slide along them separates the twins).
+pub(super) fn lex_less_idx(a: usize, b: usize, uv: &[P2], twins: &[Twins]) -> Option<bool> {
     if a == b {
         return Some(false);
     }
     if uv[a] != uv[b] {
         return Some(lex_less(uv[a], uv[b]));
     }
-    let tw = twins?;
-    if !tw.is_pair(a, b) {
+    let tw = twins.iter().find(|tw| tw.is_pair(a, b))?;
+    let (ua, ub) = (tw.along(a)?, tw.along(b)?);
+    if uv[ua] == uv[ub] {
         return None;
     }
-    let (ua, ub) = (tw.along(a)?, tw.along(b)?);
     Some(lex_less(uv[ua], uv[ub]))
+}
+
+/// Whether `a` and `b` are the two twins of one sanctioned pair.
+pub(super) fn is_pair_any(twins: &[Twins], a: usize, b: usize) -> bool {
+    twins.iter().any(|tw| tw.is_pair(a, b))
+}
+
+/// `d_i` from the pair `i` belongs to, zero outside every pair.
+fn displacement_in(twins: &[Twins], i: usize, uv: &[P2]) -> [Expansion; 2] {
+    match twins.iter().find(|tw| tw.is_twin(i)) {
+        Some(tw) => tw.displacement(i, uv),
+        None => [Expansion::two_diff(0.0, 0.0), Expansion::two_diff(0.0, 0.0)],
+    }
 }
 
 /// `side(a, b, c)` — the sign of `orient2d` — with a zero that involves a twin decided by the
@@ -124,13 +150,7 @@ pub(super) fn lex_less_idx(a: usize, b: usize, uv: &[P2], twins: Option<&Twins>)
 /// already has a rule for it. A zero with a twin in it is the structural `orient2d(p, q, p)` the
 /// twins create; its first-order term is exact, and `None` says even that vanished — the one
 /// case this order does not decide, which a caller turns into a refusal rather than a guess.
-pub(super) fn side_idx(
-    a: usize,
-    b: usize,
-    c: usize,
-    uv: &[P2],
-    twins: Option<&Twins>,
-) -> Option<i8> {
+pub(super) fn side_idx(a: usize, b: usize, c: usize, uv: &[P2], twins: &[Twins]) -> Option<i8> {
     let det = orient2d(uv[a], uv[b], uv[c]);
     if det > 0.0 {
         return Some(1);
@@ -138,17 +158,17 @@ pub(super) fn side_idx(
     if det < 0.0 {
         return Some(-1);
     }
-    let Some(tw) = twins else {
-        return Some(0);
-    };
-    if !(tw.is_twin(a) || tw.is_twin(b) || tw.is_twin(c)) {
+    if !twins
+        .iter()
+        .any(|tw| tw.is_twin(a) || tw.is_twin(b) || tw.is_twin(c))
+    {
         return Some(0);
     }
     // (b−a)×(d_c−d_a) + (d_b−d_a)×(c−a), exactly.
     let (da, db, dc) = (
-        tw.displacement(a, uv),
-        tw.displacement(b, uv),
-        tw.displacement(c, uv),
+        displacement_in(twins, a, uv),
+        displacement_in(twins, b, uv),
+        displacement_in(twins, c, uv),
     );
     let ba = [
         Expansion::two_diff(uv[b][0], uv[a][0]),
@@ -190,10 +210,10 @@ mod tests {
             for b in 0..4 {
                 if uv[a] != uv[b] {
                     assert_eq!(
-                        lex_less_idx(a, b, &uv, Some(&t)),
+                        lex_less_idx(a, b, &uv, std::slice::from_ref(&t)),
                         Some(lex_less(uv[a], uv[b]))
                     );
-                    assert_eq!(lex_less_idx(a, b, &uv, None), Some(lex_less(uv[a], uv[b])));
+                    assert_eq!(lex_less_idx(a, b, &uv, &[]), Some(lex_less(uv[a], uv[b])));
                 }
             }
         }
@@ -206,16 +226,28 @@ mod tests {
         // vertical segment u=(0,4) → v=(0,0), T=(0,2); o slides toward u, h toward v
         let uv = [[0.0, 4.0], [0.0, 0.0], [0.0, 2.0], [0.0, 2.0]];
         let t = tw(2, 3, 0, 1);
-        assert_eq!(lex_less_idx(2, 3, &uv, Some(&t)), Some(true));
-        assert_eq!(lex_less_idx(3, 2, &uv, Some(&t)), Some(false));
+        assert_eq!(
+            lex_less_idx(2, 3, &uv, std::slice::from_ref(&t)),
+            Some(true)
+        );
+        assert_eq!(
+            lex_less_idx(3, 2, &uv, std::slice::from_ref(&t)),
+            Some(false)
+        );
         // horizontal segment u=(0,0) → v=(4,0), T=(2,0); smaller x first
         let uv = [[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 0.0]];
         let t = tw(2, 3, 0, 1);
-        assert_eq!(lex_less_idx(2, 3, &uv, Some(&t)), Some(true));
-        assert_eq!(lex_less_idx(3, 2, &uv, Some(&t)), Some(false));
+        assert_eq!(
+            lex_less_idx(2, 3, &uv, std::slice::from_ref(&t)),
+            Some(true)
+        );
+        assert_eq!(
+            lex_less_idx(3, 2, &uv, std::slice::from_ref(&t)),
+            Some(false)
+        );
         // a coincident pair that is not the sanctioned one has no order
-        assert_eq!(lex_less_idx(2, 3, &uv, None), None);
-        assert_eq!(lex_less_idx(2, 3, &uv, Some(&tw(0, 1, 2, 3))), None);
+        assert_eq!(lex_less_idx(2, 3, &uv, &[]), None);
+        assert_eq!(lex_less_idx(2, 3, &uv, &[tw(0, 1, 2, 3)]), None);
     }
 
     /// The structural zero `side(T_o, h1, T_h)` — the later twin's `insert` against the earlier
@@ -229,16 +261,16 @@ mod tests {
         assert_eq!(orient2d(uv[o], uv[h1], uv[h]), 0.0, "exactly zero today");
         let t = tw(o, h, 0, 1);
         // (h1−T)×(v−u) = (0.5,−0.5)×(0,−4) = −2
-        assert_eq!(side_idx(o, h1, h, &uv, Some(&t)), Some(-1));
+        assert_eq!(side_idx(o, h1, h, &uv, std::slice::from_ref(&t)), Some(-1));
         // swapping which end each twin slides toward flips the sign
         let t = tw(o, h, 1, 0);
-        assert_eq!(side_idx(o, h1, h, &uv, Some(&t)), Some(1));
+        assert_eq!(side_idx(o, h1, h, &uv, std::slice::from_ref(&t)), Some(1));
         // a zero with no twin in it stays today's zero
         let uv2 = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [5.0, 5.0], [5.0, 5.0]];
-        assert_eq!(side_idx(0, 1, 2, &uv2, Some(&tw(3, 4, 0, 1))), Some(0));
-        assert_eq!(side_idx(0, 1, 2, &uv2, None), Some(0));
+        assert_eq!(side_idx(0, 1, 2, &uv2, &[tw(3, 4, 0, 1)]), Some(0));
+        assert_eq!(side_idx(0, 1, 2, &uv2, &[]), Some(0));
         // a non-zero determinant is untouched
-        assert_eq!(side_idx(0, 1, 3, &uv2, Some(&tw(3, 4, 0, 1))), Some(1));
+        assert_eq!(side_idx(0, 1, 3, &uv2, &[tw(3, 4, 0, 1)]), Some(1));
     }
 
     /// A twin queried against an edge lying along its own line stays collinear after sliding —
@@ -248,6 +280,6 @@ mod tests {
         // u=(0,4), v=(0,0), T twins at (0,2), w=(0,3) on the same line
         let uv = [[0.0, 4.0], [0.0, 0.0], [0.0, 2.0], [0.0, 2.0], [0.0, 3.0]];
         let t = tw(2, 3, 0, 1);
-        assert_eq!(side_idx(0, 2, 4, &uv, Some(&t)), None);
+        assert_eq!(side_idx(0, 2, 4, &uv, std::slice::from_ref(&t)), None);
     }
 }

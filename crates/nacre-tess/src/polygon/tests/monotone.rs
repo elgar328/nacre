@@ -26,7 +26,7 @@ fn assert_monotone(uv: &[P2], piece: &[usize]) {
 
 fn check(pts: &[[f64; 2]], rings: &[&[usize]]) -> Vec<Vec<usize>> {
     let uv = uv(pts);
-    let pieces = decompose(&uv, rings, None).expect("decomposes");
+    let pieces = decompose(&uv, rings, &[]).expect("decomposes");
     for p in &pieces {
         assert_monotone(&uv, p);
     }
@@ -199,7 +199,7 @@ fn a_shared_vertex_is_rejected() {
         [1.0, 2.0],
     ];
     assert!(matches!(
-        decompose(&uv(&pts), &[&[0, 1, 2, 3], &[4, 5, 0]], None),
+        decompose(&uv(&pts), &[&[0, 1, 2, 3], &[4, 5, 0]], &[]),
         Err(TessError::DegenerateRing)
     ));
 }

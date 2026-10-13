@@ -177,14 +177,16 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// stored direction, so same-winding rings merge into a ring of that winding (two holes stay a
 /// hole). The winding gate runs on the rings as given, *before* the splice, so a mis-wound hole
 /// is still named. The returned rings are the ones actually triangulated, and a caller that reads
-/// boundary edges off rings must use them. A [`Revisit::Pinch`] is one ring passing a point twice
-/// ([`pinch`]): there is nothing to splice.
+/// boundary edges off rings must use them. A [`Revisit::Pinch`] is one ring passing a point twice:
+/// there is nothing to splice.
 ///
-/// Either way one pair of coincident indices is in the ring, handed to the sweep as [`Twins`],
-/// with the order [`sos`] defines. At most one per face: a second would need a second symbolic
-/// pair, and it comes back [`TessError::SelfTouchingBoundary`] — a plate's top whose outer ring
-/// passes twice through the corner of a triangular boss standing on the plate's edge, and again
-/// through the corner where that boss meets a triangular hole, is such a face.
+/// Either way one ring passes the point twice, and [`pinch`] names its two visits the [`Twins`] —
+/// one rule for both, so a bridge's twins are a pinch's — handed to the sweep with the order
+/// [`sos`] defines. A face may be pinched at several points, one pair each, and the pairs are
+/// independent: what separates the visits at one point is decided there alone. Three things still
+/// come back [`TessError::SelfTouchingBoundary`]: a bridge beside any other revisit (a splice moves
+/// the positions the others were given), a point passed three times (two pairs sharing a visit —
+/// one symbolic pair per point cannot order three), and what [`pinch`] refuses.
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
@@ -198,20 +200,25 @@ pub(crate) fn triangulate_uv(
         return Err(TessError::HoleWinding);
     }
     let mut rings_used: Vec<Vec<usize>> = rings.iter().map(|r| r.to_vec()).collect();
-    let mut twins: Option<Twins> = None;
-    if let Some(&revisit) = revisits.first() {
-        if revisits.len() > 1 {
+    if revisits.len() > 1 && revisits.iter().any(|r| matches!(r, Revisit::Bridge(_))) {
+        return Err(TessError::SelfTouchingBoundary);
+    }
+    let mut twins: Vec<Twins> = Vec::with_capacity(revisits.len());
+    for &revisit in revisits {
+        let (ring, x, y) = match revisit {
+            Revisit::Bridge(bridge) => splice(uv, &mut rings_used, bridge)?,
+            Revisit::Pinch { ring, x, y } => (ring, x, y),
+        };
+        let pair = pinch(uv, &rings_used[ring], x, y)?;
+        if twins.iter().any(|t| t.shares_a_visit(&pair)) {
             return Err(TessError::SelfTouchingBoundary);
         }
-        twins = Some(match revisit {
-            Revisit::Bridge(bridge) => splice(uv, &mut rings_used, bridge)?,
-            Revisit::Pinch { ring, x, y } => pinch(uv, &rings_used[ring], x, y)?,
-        });
+        twins.push(pair);
     }
     let refs: Vec<&[usize]> = rings_used.iter().map(|r| r.as_slice()).collect();
     let mut out = Vec::new();
-    for piece in monotone::decompose(uv, &refs, twins.as_ref())? {
-        monotone::triangulate_monotone(uv, &piece, &mut out, twins.as_ref())?;
+    for piece in monotone::decompose(uv, &refs, &twins)? {
+        monotone::triangulate_monotone(uv, &piece, &mut out, &twins)?;
     }
     // The decomposition answers *whether* the face meshes; this answers *how well*.
     // It moves diagonals only — never the rings — so the count, the area and the
@@ -235,13 +242,23 @@ pub(crate) fn triangulate_uv(
     Ok((out, rings_used))
 }
 
-/// Join two rings at their shared point into one, and name the twins that leaves.
+/// Join two rings at their shared point into one, and say where the merged ring passes it:
+/// `(ring, x, y)`, the two visits [`pinch`] names as the twins.
 ///
 /// The split ring is the one whose two neighbours of the shared point are collinear with it —
 /// that is what a straight edge split at a sample looks like — and the other ring's neighbours
 /// are strictly off that line (the tangency witness certified as much). Both collinear or
 /// neither is not the shape this bridges and is refused by the sweep's own name for it.
-fn splice(uv: &[P2], rings: &mut Vec<Vec<usize>>, b: Bridge) -> Result<Twins, TessError> {
+///
+/// The earlier visit is the split ring's copy, entered from its on-line predecessor; the later is
+/// the touching ring's, left towards the split ring's on-line successor. Those are the two edges
+/// [`pinch`] slides them along, so a bridge's twins stay on the touched line and keep every
+/// collinearity they had with it.
+fn splice(
+    uv: &[P2],
+    rings: &mut Vec<Vec<usize>>,
+    b: Bridge,
+) -> Result<(usize, usize, usize), TessError> {
     let straight = |ring: &[usize], at: usize| -> bool {
         let n = ring.len();
         let (p, c, q) = (ring[(at + n - 1) % n], ring[at], ring[(at + 1) % n]);
@@ -257,24 +274,15 @@ fn splice(uv: &[P2], rings: &mut Vec<Vec<usize>>, b: Bridge) -> Result<Twins, Te
         _ => return Err(TessError::SelfTouchingBoundary),
     };
     let (a, hb) = (rings[ra].clone(), rings[rb].clone());
-    let (o, h) = (a[i], hb[j]);
     let mut merged: Vec<usize> = Vec::with_capacity(a.len() + hb.len());
     merged.extend_from_slice(&a[..=i]);
     merged.extend_from_slice(&hb[j + 1..]);
     merged.extend_from_slice(&hb[..=j]);
     merged.extend_from_slice(&a[i + 1..]);
-    // `o` keeps its on-line predecessor, `h` its on-line successor: the two ends of the split
-    // segment, and the directions the twins slide toward.
-    let o_along = a[(i + a.len() - 1) % a.len()];
-    let h_along = a[(i + 1) % a.len()];
     rings[ra] = merged;
     rings.remove(rb);
-    Ok(Twins {
-        o,
-        h,
-        o_along,
-        h_along,
-    })
+    let ring = if rb < ra { ra - 1 } else { ra };
+    Ok((ring, i, i + hb.len()))
 }
 
 /// Name the twins of a ring that passes one point twice, at positions `x < y` — after checking

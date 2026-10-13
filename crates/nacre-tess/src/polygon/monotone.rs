@@ -18,7 +18,7 @@
 //! ones) and which side of a line a point falls on (`orient2d`, Shewchuk adaptive).
 //! There is no tolerance anywhere in this file.
 
-use super::sos::{Twins, lex_less_idx, side_idx};
+use super::sos::{Twins, is_pair_any, lex_less_idx, side_idx};
 use super::{P2, lex_less, strictly_between};
 use crate::TessError;
 use nacre_predicates::orient2d;
@@ -66,7 +66,7 @@ enum Kind {
 pub(super) fn decompose(
     uv: &[P2],
     rings: &[&[usize]],
-    twins: Option<&Twins>,
+    twins: &[Twins],
 ) -> Result<Vec<Vec<usize>>, TessError> {
     let n = uv.len();
     let (prev, next) = link(n, rings)?;
@@ -77,16 +77,11 @@ pub(super) fn decompose(
     if !meets.crossings.is_empty() {
         return Err(TessError::DegenerateRing);
     }
-    // The twins — a bridge's or a pinch's — touch each other's outgoing segment at their shared
-    // point: exactly two `AtEnd` records, `(o on h→…)` and `(h on o→…)`, and those two are the
+    // A pair of twins — a bridge's or a pinch's — touch each other's outgoing segment at their
+    // shared point: exactly two `AtEnd` records, `(o on h→…)` and `(h on o→…)`, and those are the
     // boundary this decomposition *was* given an order for. Any other touch is what it always was.
-    let sanctioned = |tc: &Touch| {
-        twins.is_some_and(|tw| {
-            tc.kind == TouchKind::AtEnd
-                && ((tc.vertex == tw.o && tc.segment == tw.h)
-                    || (tc.vertex == tw.h && tc.segment == tw.o))
-        })
-    };
+    let sanctioned =
+        |tc: &Touch| tc.kind == TouchKind::AtEnd && is_pair_any(twins, tc.vertex, tc.segment);
     if meets.touches.iter().any(|tc| !sanctioned(tc)) {
         return Err(TessError::SelfTouchingBoundary);
     }
@@ -363,40 +358,23 @@ fn sweep(
     prev: &[usize],
     next: &[usize],
     kinds: &[Kind],
-    twins: Option<&Twins>,
+    twins: &[Twins],
 ) -> Result<Vec<[usize; 2]>, TessError> {
     let n = uv.len();
-    // The one tie the order allows is the sanctioned pair, decided once here (a comparator
-    // cannot fail) and read by the sort below.
-    let twin_first = match twins {
-        Some(tw) => Some(lex_less_idx(tw.o, tw.h, uv, twins).ok_or(TessError::DegenerateRing)?),
-        None => None,
-    };
+    // The ties the order allows are the sanctioned pairs', and `sos` decides each; a tie it
+    // cannot decide sorts as equal and is refused below (a comparator cannot fail).
     let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a, &b| {
-        if let (Some(tw), Some(first)) = (twins, twin_first) {
-            if tw.is_pair(a, b) {
-                return if (a == tw.o) == first {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Greater
-                };
-            }
-        }
-        if lex_less(uv[a], uv[b]) {
-            std::cmp::Ordering::Less
-        } else if lex_less(uv[b], uv[a]) {
-            std::cmp::Ordering::Greater
-        } else {
-            std::cmp::Ordering::Equal
-        }
+    order.sort_by(|&a, &b| match lex_less_idx(a, b, uv, twins) {
+        Some(true) => std::cmp::Ordering::Less,
+        _ if lex_less_idx(b, a, uv, twins) == Some(true) => std::cmp::Ordering::Greater,
+        _ => std::cmp::Ordering::Equal,
     });
     // Two vertices at the same point make `lex_less` a non-strict order, and every
-    // "which is above" question below would then have no answer — except the sanctioned
-    // twins, whose order `sos` supplies.
+    // "which is above" question below would then have no answer — except a sanctioned
+    // pair's twins, whose order `sos` supplies.
     if order
         .windows(2)
-        .any(|w| uv[w[0]] == uv[w[1]] && !twins.is_some_and(|tw| tw.is_pair(w[0], w[1])))
+        .any(|w| uv[w[0]] == uv[w[1]] && lex_less_idx(w[0], w[1], uv, twins).is_none())
     {
         return Err(TessError::DegenerateRing);
     }
@@ -591,7 +569,7 @@ pub(super) fn triangulate_monotone(
     uv: &[P2],
     piece: &[usize],
     out: &mut Vec<[usize; 3]>,
-    twins: Option<&Twins>,
+    twins: &[Twins],
 ) -> Result<(), TessError> {
     let m = piece.len();
     if m < 3 {
