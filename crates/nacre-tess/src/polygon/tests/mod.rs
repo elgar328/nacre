@@ -614,7 +614,7 @@ fn a_ring_pinched_at_two_points_meshes() {
 /// ★★★★★ **A pinch whose sector is not convex meshes — that visit stays, the other slides.** The
 /// top of a `6 × 6` plate with a triangular hole `(2,2) (4,3) (4,4)` and the footprint of a
 /// triangular boss `(2,2) (4,0.5) (4,1)` meeting it at `(2, 2)`: one hole ring passing that point
-/// twice (indices 5 and 8), as the kernel builds it. One visit's sector is the 37° between the two
+/// twice (indices 5 and 8), as the kernel builds it. One visit's sector is the 53° between the two
 /// triangles; the other's is the 278° around them, and it stays put. Ten triangles, the plate
 /// less the two triangles, whose once-used edges are the rings.
 #[test]
@@ -687,8 +687,10 @@ fn a_ring_pinched_twice_with_a_reflex_sector_meshes() {
 /// ★★ **Two lobes meeting only at a point are not a face.** Two counter-clockwise triangles above
 /// `T = (0, 0)` (rays at 11°/22° and 39°/50°), one ring through `T` twice: each visit's wedge holds
 /// both of the other's rays. The visit crossing from the upper lobe to the lower turns left — a
-/// convex wedge — so «slide the convex one» alone would move it into the other lobe and hand the
-/// sweep a ring crossing itself where `self_touch` cannot see it. `pinch` names the shape first.
+/// convex wedge — so «slide the convex one» alone would move it into the other lobe. That ring is
+/// not a face, and `pinch` says so; read as a valid pinch instead, the sweep refuses it as
+/// `DegenerateRing` (measured) — the shape's name is what this answer decides, not whether a
+/// wrong mesh comes out.
 #[test]
 fn two_lobes_meeting_at_a_point_are_not_a_face() {
     let p = pts(&[
@@ -909,8 +911,9 @@ fn area2(p: &[P2], ring: &[usize]) -> f64 {
 /// ★★★★ **Figure-eight holes at random angles — every one meshes.** A `20 × 20` square with one
 /// hole made of two triangular lobes meeting at `T`, their four rays drawn at random integer
 /// directions and the lobes taken as two runs of adjacent rays, so the two visits never
-/// interleave. Each visit bounds the sector of material between the lobes on its side; as often
-/// as not one of those is reflex, and it stays while the other slides. Every sample must come
+/// interleave. Each visit bounds the sector of material between the lobes on its side; in about
+/// a quarter of the samples one of those is reflex (27.5% of 119,016 in the measurement this
+/// harness was drawn from), and it stays while the other slides. Every sample must come
 /// back a genuine triangulation of the square less the two lobes.
 #[test]
 fn random_figure_eight_holes_triangulate() {

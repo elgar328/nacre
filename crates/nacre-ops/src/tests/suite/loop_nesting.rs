@@ -138,10 +138,10 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
 ///   it, touching its outer boundary at `P` — one ring of an outer boundary and a hole: `+1`.
 ///
 /// Each is asked from all six starting nodes and reversed, so neither the start index nor which of
-/// the two passages comes first decides it. The arrangement delivers the first ring itself — a
-/// plate whose hole touches a boss's footprint at one corner
-/// ([`a_plate_pinched_where_a_hole_meets_a_boss_meshes`]); here it is built from names so the
-/// rule's many-passage reading is held on exactly this shape.
+/// the two passages comes first decides it. The arrangement delivers rings of the first kind — a
+/// plate whose hole touches a boss's footprint at one corner gives one hole ring around both
+/// triangles ([`a_plate_pinched_where_a_hole_meets_a_boss_meshes`]); here the ring is built from
+/// names so the rule's many-passage reading is held on exactly this shape.
 #[test]
 fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
     let mut m = Model::new();
@@ -211,6 +211,56 @@ fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
     }
 }
 
+/// A triangular prism over `tri` standing on the plane `z`, `height` tall.
+fn triangle_prism(m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64) -> Handle<Solid> {
+    let frame = datum_frame(
+        m,
+        crate::SketchPlane::from_axes(
+            Point3::from_array([0.0, 0.0, z]),
+            nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+        ),
+    );
+    let profile = Profile2d::polygon(
+        tri.iter()
+            .map(|&q| nacre_math::Point2::from_array(q))
+            .collect(),
+    )
+    .expect("a triangle");
+    let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
+        m,
+        &crate::Operation::Extrude {
+            frame,
+            profile,
+            dist: height,
+        },
+    ) else {
+        panic!("extruding a triangle")
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// Whether some face of `solid` has a loop that passes the vertex at `p` twice.
+fn a_loop_passes_twice(m: &Model, solid: Handle<Solid>, p: [f64; 3]) -> bool {
+    let shell = m.solid(solid).outer;
+    m.shell(shell).faces.iter().any(|&fh| {
+        let f = m.face(fh);
+        std::iter::once(&f.outer).chain(f.inner.iter()).any(|l| {
+            let at_p: Vec<_> = l
+                .half_edges
+                .iter()
+                .map(|he| {
+                    let [a, b] = m.edge(he.edge).vertices;
+                    if he.forward { a } else { b }
+                })
+                .filter(|&v| m.vertex_point(v).as_array() == p)
+                .collect();
+            at_p.len() == 2 && at_p[0] == at_p[1]
+        })
+    })
+}
+
 /// ★★★★★ **A plate pinched where a hole meets a boss builds, and its top meshes.** A `6 × 6 × 1`
 /// plate, a triangular hole `(2,2) (4,3) (4,4)` through it, and a triangular boss of height 1 on
 /// its top with a corner at `(2, 2)` too. The arrangement names `(2, 2, 1)` once, and the top
@@ -222,34 +272,6 @@ fn a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage() {
 /// corner on the edge is refused by the boolean (`CoincidentFeatures`) and is not this test's.
 #[test]
 fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
-    let prism = |m: &mut Model, tri: [[f64; 2]; 3], z: f64, height: f64| -> Handle<Solid> {
-        let frame = datum_frame(
-            m,
-            crate::SketchPlane::from_axes(
-                Point3::from_array([0.0, 0.0, z]),
-                nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
-                nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
-            ),
-        );
-        let profile = Profile2d::polygon(
-            tri.iter()
-                .map(|&q| nacre_math::Point2::from_array(q))
-                .collect(),
-        )
-        .expect("a triangle");
-        let Ok(crate::OpOutput::Extrude { solid, .. }) = crate::apply(
-            m,
-            &crate::Operation::Extrude {
-                frame,
-                profile,
-                dist: height,
-            },
-        ) else {
-            panic!("extruding a triangle")
-        };
-        m.rebuild_adjacency();
-        solid
-    };
     let hole = [[2.0, 2.0], [4.0, 3.0], [4.0, 4.0]];
     let inside = [[2.0, 2.0], [4.0, 0.5], [4.0, 1.0]];
     let on_edge = [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]];
@@ -271,46 +293,54 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
             out[0]
         };
         let out = if boss_first {
-            let b = prism(&mut m, boss, 1.0, 1.0);
+            let b = triangle_prism(&mut m, boss, 1.0, 1.0);
             let bossed = one(crate::boolean(&mut m, crate::BoolKind::Fuse, plate, b).expect(name));
             m.rebuild_adjacency();
-            let h = prism(&mut m, hole, hole_floor, hole_height);
+            let h = triangle_prism(&mut m, hole, hole_floor, hole_height);
             one(crate::boolean(&mut m, crate::BoolKind::Cut, bossed, h).expect(name))
         } else {
-            let h = prism(&mut m, hole, hole_floor, hole_height);
+            let h = triangle_prism(&mut m, hole, hole_floor, hole_height);
             let holed = one(crate::boolean(&mut m, crate::BoolKind::Cut, plate, h).expect(name));
             m.rebuild_adjacency();
-            let b = prism(&mut m, boss, 1.0, 1.0);
+            let b = triangle_prism(&mut m, boss, 1.0, 1.0);
             one(crate::boolean(&mut m, crate::BoolKind::Fuse, holed, b).expect(name))
         };
         m.rebuild_adjacency();
-        // Some face's boundary passes the vertex at (2, 2, 1) twice.
-        let at_p = |v: Handle<nacre_topo::Vertex>| {
-            let c = m.vertex_point(v).as_array();
-            c == [2.0, 2.0, 1.0]
-        };
-        let shell = m.solid(out).outer;
-        let pinched = m.shell(shell).faces.iter().any(|&fh| {
-            let f = m.face(fh);
-            std::iter::once(&f.outer).chain(f.inner.iter()).any(|l| {
-                let starts: Vec<_> = l
-                    .half_edges
-                    .iter()
-                    .map(|he| {
-                        let [a, b] = m.edge(he.edge).vertices;
-                        if he.forward { a } else { b }
-                    })
-                    .filter(|&v| at_p(v))
-                    .collect();
-                starts.len() == 2 && starts[0] == starts[1]
-            })
-        });
         assert!(
-            pinched,
+            a_loop_passes_twice(&m, out, [2.0, 2.0, 1.0]),
             "{name}: the top's boundary passes (2, 2, 1) twice, as one vertex"
         );
         mesh_covers_faces(name, &m, &[out]);
     }
+}
+
+/// ★★ **A face pinched at its lowest point meshes on a mirrored chart.** A triangular plate
+/// `(0,0) (4,4) (−2,4)` over `z ∈ [0, 1]` with a triangular boss `(0,0) (1,2) (−0.5,2)` under it
+/// over `z ∈ [−1, 0]`, sharing the plate's corner: the plate's underside is the triangle less the
+/// boss's footprint, so its outer ring passes `(0, 0, 0)` twice, and that corner is the ring's
+/// lowest point. The underside faces `−z`, so its loop is clockwise in the chart the mesher
+/// projects it to and the chart must swap its axes — a decision `ring_orientation` makes at that
+/// very point. ★ Which pass comes first is not this test's to vary: the arrangement starts this
+/// loop at the pinched corner with the reflex pass first (four plate and boss shapes, measured), so
+/// a reading of the first pass alone would mesh it too. That the answer does not depend on the
+/// order is held where the rings are built by hand
+/// (`a_ring_pinched_at_its_extreme_point_winds_by_its_first_ray`, every start); this holds the
+/// chart's road. (A hole through the plate with its apex at the corner is not this shape: the two
+/// wedges of plate left on either side would meet along the corner's vertical edge, and the
+/// boolean refuses that as `NonManifoldResultEdge`.)
+#[test]
+fn a_face_pinched_at_its_lowest_point_meshes_on_a_mirrored_chart() {
+    let mut m = Model::new();
+    let plate = triangle_prism(&mut m, [[0.0, 0.0], [4.0, 4.0], [-2.0, 4.0]], 0.0, 1.0);
+    let boss = triangle_prism(&mut m, [[0.0, 0.0], [1.0, 2.0], [-0.5, 2.0]], -1.0, 1.0);
+    let out = crate::boolean(&mut m, crate::BoolKind::Fuse, plate, boss).expect("the union");
+    assert_eq!(out.len(), 1, "one body");
+    m.rebuild_adjacency();
+    assert!(
+        a_loop_passes_twice(&m, out[0], [0.0, 0.0, 0.0]),
+        "the underside passes its corner twice, as one vertex"
+    );
+    mesh_covers_faces("triangular plate pinched at its corner", &m, &out);
 }
 
 /// ★ **An antenna at the extreme node cancels — its tip or its base.** Same plane table as
