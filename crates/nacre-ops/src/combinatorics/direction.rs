@@ -281,8 +281,8 @@ pub(crate) fn parallel_carriers(
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
 /// reach), and those belong in the `0` bucket rather than the `π` one. ★ For two directions at one
 /// node it needs no guard to be true when it says yes — one carrier through a shared point is one
-/// line or one circle — which is how [`loop_winding`] reads it: a ring passage whose departure is
-/// the reverse of its arrival on one carrier is an antenna.
+/// line or one circle — which is how [`loop_winding`] reads it, through [`one_carrier_pole`]: an
+/// outgoing departure that is the reverse of an arrival on one carrier is an antenna.
 pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
     match (a, b) {
         (
@@ -582,6 +582,33 @@ pub(crate) fn tangent_pole(
     Ok(tangent_travel_agrees(jd, p, line.0, line.1, arc) == Some(false))
 }
 
+/// **Two departures along one carrier, leaving opposite ways** — one line class, one circle, one
+/// ruling ([`antiparallel`]), or a plane-pair line and the ruling it is ([`ruling_pole`]). Asked of
+/// a ring's outgoing departure against an incoming one turned back, it says the two are one ray:
+/// an antenna, whose contributions cancel.
+pub(crate) fn one_carrier_pole(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<bool, BoolError> {
+    Ok(antiparallel(a, b) || ruling_pole(jd, p, a, b)?)
+}
+
+/// **Two departures a half turn apart** — [`one_carrier_pole`], or a line and an arc tangent at
+/// the node with the arc leaving the other way ([`tangent_pole`]). The `π` end of
+/// [`angular_order`]'s buckets, asked where [`departure_turn`] already came back `0`. (The two
+/// non-structural arms read disjoint pairs — line–ruling, line–arc — so their order is no
+/// answer's.)
+pub(crate) fn departure_pole(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<bool, BoolError> {
+    Ok(one_carrier_pole(jd, p, a, b)? || tangent_pole(jd, p, a, b)?)
+}
+
 /// **The turn from one departure to another at their shared node, the curvature tie read.**
 /// [`turn`], and where that is `0` because a line and an arc leave tangent and the same way, the
 /// turn their bending makes ([`tangent_codirected_turn`]) — the arc bends off the line towards its
@@ -761,12 +788,7 @@ pub(crate) fn angular_order(
             // corner) are π apart too — the structural test cannot see it, the geometric
             // one can ([`tangent_pole`]) — and so are a line and a ruling that are
             // one line, leaving opposite ways ([`ruling_pole`]).
-            _ if antiparallel(&edges[i], &edges[0])
-                || tangent_pole(jd, w, &edges[i], &edges[0])?
-                || ruling_pole(jd, w, &edges[i], &edges[0])? =>
-            {
-                pole.push(i)
-            }
+            _ if departure_pole(jd, w, &edges[i], &edges[0])? => pole.push(i),
             _ => zero.push(i),
         }
     }

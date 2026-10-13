@@ -667,7 +667,7 @@ pub(crate) fn loop_winding(
                 continue;
             }
             let back = found[j].0.reversed();
-            if antiparallel(&found[i].0, &back) || ruling_pole(jd, p, &found[i].0, &back)? {
+            if one_carrier_pole(jd, p, &found[i].0, &back)? {
                 gone[i] = true;
                 gone[j] = true;
                 break;
@@ -725,10 +725,7 @@ pub(crate) fn loop_winding(
             let mut edge = None;
             for k in 0..m {
                 let (a, b) = (order[k], order[(k + 1) % m]);
-                if antiparallel(&dirs[a], &dirs[b])
-                    || tangent_pole(jd, p, &dirs[a], &dirs[b])?
-                    || ruling_pole(jd, p, &dirs[a], &dirs[b])?
-                {
+                if departure_pole(jd, p, &dirs[a], &dirs[b])? {
                     edge = Some(b);
                 }
             }
