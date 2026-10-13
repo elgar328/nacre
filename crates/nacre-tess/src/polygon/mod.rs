@@ -75,7 +75,7 @@ pub(crate) fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
 /// projection preserves or reverses orientation — is not consulted at all. Consulting it
 /// (`if a[k] >= 0.0 { .. } else { swap }`) would put the whole frame on an `f64` sign
 /// computed by summing `n` cross products. [`ring_orientation`] settles the same
-/// question afterwards with one exact predicate, on the ring itself.
+/// question afterwards with exact predicates at the ring's extreme point, on the ring itself.
 pub(crate) fn drop_axis(n: Vector3) -> (usize, usize) {
     let a = n.as_array();
     let k = (0..3)
@@ -98,12 +98,22 @@ fn lex_less(a: P2, b: P2) -> bool {
 
 /// `+1` CCW, `-1` CW, `0` the ring is degenerate — **exactly**.
 ///
-/// At the ring's *last* vertex in [`lex_less`] order (lowest `v`, then greatest `u`)
-/// a simple polygon's interior angle is strictly convex: both neighbours lie above, so
-/// they cannot be collinear with it unless the ring doubles back on itself. One
-/// `orient2d` there therefore decides the whole ring — where a shoelace sum would need
-/// the exact addition of `n` products to say the same thing, and `f64` addition does
-/// not give it.
+/// Read at the ring's *last* point in [`lex_less`] order (lowest `v`, then greatest `u`). Every
+/// other point of the ring comes before it, so every ray the boundary leaves or arrives along
+/// there points into one half-plane — `v > 0`, or `v = 0` towards `−u` — and the sector past the
+/// last of them, towards `+u`, is outside the ring. The **first ray counter-clockwise from that
+/// gap** decides: leaving, the region the ring encloses lies on its left (`+1`); arriving, on its
+/// right (`−1`). Inside one half-plane that order is a single `orient2d` per pair, and two rays
+/// along one direction (a ring doubling back on itself) are `0`.
+///
+/// ★ **Every pass through the point is read, not the first.** A pinched ring can pass its extreme
+/// point twice, and one pass's own turn does not say how the ring winds: a figure-eight hole whose
+/// lobes meet at its lowest point turns left at one pass, and two lobes meeting only there turn
+/// right at one pass while the ring winds left. The first ray reads the sector beside it, which
+/// the outside sector fixes, so neither the number of passes nor how they pair decides the answer
+/// — the reading `nacre_ops` makes of a loop's winding at its extreme point. On a ring that passes
+/// the point once it is the one `orient2d` of the two neighbours, where a shoelace sum would need
+/// the exact addition of `n` products to say the same thing.
 pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
     let n = ring.len();
     let mut m = 0;
@@ -112,15 +122,27 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
             m = i;
         }
     }
-    let (p, c, q) = (
-        uv[ring[(m + n - 1) % n]],
-        uv[ring[m]],
-        uv[ring[(m + 1) % n]],
-    );
-    match orient2d(p, c, q) {
-        d if d > 0.0 => 1,
-        d if d < 0.0 => -1,
-        _ => 0,
+    let t = uv[ring[m]];
+    // The first ray so far, and whether the ring leaves along it.
+    let mut first: Option<(P2, bool)> = None;
+    for k in (0..n).filter(|&k| uv[ring[k]] == t) {
+        let leave = uv[ring[(k + 1) % n]];
+        let arrive = uv[ring[(k + n - 1) % n]];
+        for (q, leaves) in [(leave, true), (arrive, false)] {
+            first = match first {
+                None => Some((q, leaves)),
+                Some((f, fl)) => match orient2d(t, q, f) {
+                    d if d > 0.0 => Some((q, leaves)),
+                    d if d < 0.0 => Some((f, fl)),
+                    _ => return 0,
+                },
+            };
+        }
+    }
+    match first {
+        Some((_, true)) => 1,
+        Some((_, false)) => -1,
+        None => 0,
     }
 }
 

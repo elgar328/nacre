@@ -688,3 +688,65 @@ fn a_hole_wound_the_wrong_way_is_an_error() {
         Err(TessError::HoleWinding)
     ));
 }
+
+/// ★★ **A ring pinched at its extreme point winds by the first ray past the outside gap.** Three
+/// rings, each passing `T = (0, 0)` — its lowest point — twice, each asked from every starting
+/// index and reversed, so neither where the ring starts nor which pass comes first decides it:
+///
+/// - a clockwise figure-eight hole, two lobes above `T`: one pass turns left there (its own sector
+///   is the 37° between the lobes), the other right — `−1`;
+/// - a counter-clockwise outer ring holding a triangular hole that touches it at `T`: `+1`;
+/// - two counter-clockwise lobes meeting only at `T` (rays at 11°/22° and 39°/50°): the pass that
+///   crosses from one lobe to the other turns right, and the ring still winds left — `+1`.
+///
+/// Reading only the first pass gets the hole wrong from half its starting indices; reading «any
+/// pass turning right means clockwise» gets the two lobes wrong.
+#[test]
+fn a_ring_pinched_at_its_extreme_point_winds_by_its_first_ray() {
+    let figure_eight_hole = [
+        [0.0, 0.0],
+        [-2.0, 3.0],
+        [-1.0, 3.0],
+        [0.0, 0.0],
+        [1.0, 3.0],
+        [2.0, 3.0],
+    ];
+    let outer_holding_a_hole = [
+        [0.0, 0.0],
+        [4.0, 4.0],
+        [-4.0, 4.0],
+        [0.0, 0.0],
+        [-1.0, 2.0],
+        [1.0, 2.0],
+    ];
+    let two_lobes = [
+        [0.0, 0.0],
+        [10.0, 2.0],
+        [10.0, 4.0],
+        [0.0, 0.0],
+        [10.0, 8.0],
+        [10.0, 12.0],
+    ];
+    for (name, ring, want) in [
+        ("figure-eight hole", figure_eight_hole, -1i8),
+        ("outer ring holding a hole", outer_holding_a_hole, 1),
+        ("two lobes", two_lobes, 1),
+    ] {
+        let p = pts(&ring);
+        for reversed in [false, true] {
+            for start in 0..ring.len() {
+                let mut r: Vec<usize> = (0..ring.len()).collect();
+                if reversed {
+                    r.reverse();
+                }
+                r.rotate_left(start);
+                let want = if reversed { -want } else { want };
+                assert_eq!(
+                    ring_orientation(&r, &p),
+                    want,
+                    "{name}, reversed = {reversed}, start = {start}"
+                );
+            }
+        }
+    }
+}
