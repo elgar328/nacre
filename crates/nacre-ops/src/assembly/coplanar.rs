@@ -20,10 +20,9 @@ use super::*;
 /// each hole its owner — the same two exact predicates `arrangement::nest_cells` uses for the same
 /// question, neither of which reads a coordinate.
 ///
-/// Rejects rather than guesses: a directed edge appearing twice the same way (two faces claiming the
-/// same side), an undirected edge on three or more rings (non-manifold in the plane), or a node with
-/// two outgoing edges after erasure (pieces meeting at a single point, where the cycle is not
-/// unique).
+/// Abstains rather than guesses — the group is emitted as it came — where two faces claim one side
+/// of an edge, where an opposed pair is ambiguous, or where the cyclic order at a node the region
+/// passes twice cannot be read ([`merge_component`]).
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
     jd: &Judge<'_, WorkingPlane>,
@@ -133,9 +132,8 @@ pub(crate) fn unify_coplanar_faces(
             .iter()
             .map(|&fi| kept[fi].as_ref().expect("member present"))
             .collect();
-        // Abstention: the group pinches at a point, so its faces are emitted as-is — the
-        // whole-result judgement (`self_touch_reject`, run before any cell is minted) owns
-        // what this shape is about to be named for.
+        // Abstention: the group's faces are emitted as-is — the whole-result judgement
+        // (`self_touch_reject`, run before any cell is minted) owns what the shape is named for.
         let Some(rings) = merge_component(&group, jd, cyls)? else {
             continue;
         };
@@ -183,10 +181,13 @@ type RegionRings = (Bound, Vec<Bound>);
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
 /// the bounds that belong to it — ring holes re-threaded, circle holes carried.
 ///
-/// `Ok(None)` is **abstention**, and two shapes take it: the group's pieces meet at a point (the
-/// merged contour would be a figure-8, so there is no cycle set to re-thread), or two of them
-/// claim the same directed edge (they overlap rather than tile). Either way the caller emits the
-/// group as-is.
+/// `Ok(None)` is **abstention**: two of the group's faces claim the same directed edge (they
+/// overlap rather than tile), an opposed pair is ambiguous, a circle has more than one owner, or
+/// the cyclic order at a node left with two ways out cannot be read. The caller emits the group
+/// as-is. A node left with two ways out is not itself a reason: the merged region passes that
+/// point twice — a face pinched there — and the walk takes the way that keeps the region on its
+/// left (step 3). A region that only *touches itself* there threads too, and is the whole-result
+/// judgement's to name: the 45° fold arrives here and leaves as `SelfTouchingResult`.
 ///
 /// ★ **Why abstaining is safe is not "merging is only tidiness"** — the contact fuse refutes
 /// that: unmerged coplanar faces leave the corners on a
@@ -196,8 +197,6 @@ type RegionRings = (Bound, Vec<Bound>);
 /// have come out without the pass at all. The whole-result judgements ([`self_touch_reject`],
 /// the closed-shell guard, the every-vertex-re-solves check) then name the shape with their own
 /// sentences — and with a witness, which a capability name raised from here has none of.
-/// (Rejecting `CoplanarPinch` here would be a capability-limit name for what is, on
-/// every input that reaches it, a self-touching result.)
 fn merge_component(
     group: &[&LocalFace],
     jd: &Judge<'_, WorkingPlane>,
@@ -245,9 +244,8 @@ fn merge_component(
             }
         }
     }
-    // ★★ **Two faces claiming one side is an abstention, not a refusal** — the same shape the
-    // figure-8 case takes, and for the same reason: this guard protects *the merge*, not the
-    // result. Emitting the group as-is leaves the pipeline exactly where it would stand without
+    // ★★ **Two faces claiming one side is an abstention, not a refusal**: this guard protects *the
+    // merge*, not the result. Emitting the group as-is leaves the pipeline exactly where it would stand without
     // this cleaning pass, and the whole-result judgements (`self_touch_reject`, the closed-shell
     // guard, `check_result_topology`'s plane-self edge guard) name the shape with their own
     // sentences — and with a witness. Asked **carrier-aware and after the exact erase**, so a
@@ -290,58 +288,103 @@ fn merge_component(
         // An opposed 1:1 with a curved wall on either side is two different edges — both stay
         // boundaries and thread below.
     }
-    // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a
-    //    point and the cycles are not determined — the merged contour would be a figure-8:
-    //    nothing to re-thread, so the merge abstains (see the function doc). The wall rides
-    //    with the step, so the threaded cycle never re-derives a carrier from node names.
-    let mut next: HashMap<NodeId, (NodeId, Wall)> = HashMap::new();
-    for k in cnt.keys() {
-        let (e, w) = (k.0, k.1);
-        if erased.contains(&e) {
-            continue;
-        }
-        if next.insert(e.0, (e.1, w)).is_some() {
-            return Ok(None);
+    // 3. Re-thread what survives, keeping the material on the left. Each surviving directed edge
+    //    is collected in ring order (so the walk below is the same on every replay) with where it
+    //    came from; the wall rides with the step, so the threaded cycle never re-derives a carrier
+    //    from node names.
+    let wc = group[0].surf.plane();
+    type Key = ((NodeId, NodeId), Wall);
+    let mut outs: HashMap<NodeId, Vec<Key>> = HashMap::new();
+    let mut source: HashMap<Key, (usize, usize, usize)> = HashMap::new();
+    for (fi, lf) in group.iter().enumerate() {
+        for (ri, ring) in lf.poly_rings().enumerate() {
+            for (ei, k) in ring_edges_walled(ring).enumerate() {
+                if cnt.contains_key(&k)
+                    && !erased.contains(&k.0)
+                    && source.insert(k, (fi, ri, ei)).is_none()
+                {
+                    outs.entry(k.0.0).or_default().push(k);
+                }
+            }
         }
     }
-    let mut starts: Vec<NodeId> = next.keys().copied().collect();
+    // ★ **A node left with two ways out is a point the region passes twice** — a face pinched
+    //    there, or a hole touching the outer at a vertex, which is the same face. The next edge is
+    //    the one bounding the sector the walk arrived in: with the region on the left of travel
+    //    (step 4 reads an outer ring as winding +1 in `wc`'s frame), the first way out clockwise
+    //    from the edge it came in on — the cyclic order the arrangement's own cell walk reads
+    //    (`dir_at`, `angular_order`). Asked only at such a node, so a group with none threads as a
+    //    sequence of single steps. A node whose order cannot be read leaves the group as it is
+    //    (the abstention above).
+    let mut ring_edges_of: HashMap<(usize, usize), Vec<combinatorics::RingEdge>> = HashMap::new();
+    let mut edge_of = |k: &Key| -> Option<combinatorics::RingEdge> {
+        let (fi, ri, ei) = source[k];
+        if let std::collections::hash_map::Entry::Vacant(e) = ring_edges_of.entry((fi, ri)) {
+            let ring = group[fi].poly_rings().nth(ri)?;
+            e.insert(ring.edges(jd, cyls, Some(wc)).ok()?);
+        }
+        ring_edges_of[&(fi, ri)].get(ei).cloned()
+    };
+    let mut starts: Vec<NodeId> = outs.keys().copied().collect();
     starts.sort_unstable();
-    let mut seen: HashSet<NodeId> = HashSet::new();
+    let mut used: HashSet<Key> = HashSet::new();
     let mut cycles: Vec<Ring> = Vec::new();
-    for start in starts {
-        if seen.contains(&start) {
-            continue;
-        }
-        let (mut cur, w0) = next[&start];
-        let mut nodes = vec![start];
-        let mut walls = vec![w0];
-        seen.insert(start);
-        while cur != start {
-            if !seen.insert(cur) {
-                return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
+    for node in starts {
+        for &start in &outs[&node] {
+            if used.contains(&start) {
+                continue;
             }
-            let &(nx, w) = next
-                .get(&cur)
-                .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
-            nodes.push(cur);
-            walls.push(w);
-            cur = nx;
+            let (mut nodes, mut walls) = (Vec::new(), Vec::new());
+            let mut cur = start;
+            loop {
+                used.insert(cur);
+                nodes.push(cur.0.0);
+                walls.push(cur.1);
+                let v = cur.0.1;
+                let ways = outs
+                    .get(&v)
+                    .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
+                let next = if let [only] = ways.as_slice() {
+                    *only
+                } else {
+                    let Some(chosen) = (|| {
+                        let back = combinatorics::dir_at(jd, cyls, wc, &edge_of(&cur)?, v)
+                            .ok()?
+                            .reversed();
+                        let mut dirs = vec![back];
+                        for w in ways {
+                            dirs.push(combinatorics::dir_at(jd, cyls, wc, &edge_of(w)?, v).ok()?);
+                        }
+                        let order = combinatorics::angular_order(jd, wc, &dirs).ok()?;
+                        Some(ways[order[order.len() - 1] - 1])
+                    })() else {
+                        return Ok(None);
+                    };
+                    chosen
+                };
+                if next == start {
+                    break;
+                }
+                if used.contains(&next) {
+                    return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
+                }
+                cur = next;
+            }
+            // A 2-gon closed by a curved wall is a legal ring (`loop_winding`'s own floor); a
+            // two-node polygon is not.
+            let floor = if walls.iter().any(|w| !matches!(w, Wall::Plane(_))) {
+                2
+            } else {
+                3
+            };
+            if nodes.len() < floor {
+                return Err(reject(RejectReason::CoplanarMerge));
+            }
+            cycles.push(Ring::new(nodes, walls));
         }
-        // A 2-gon closed by a curved wall is a legal ring (`loop_winding`'s own floor); a
-        // two-node polygon is not.
-        let floor = if walls.iter().any(|w| !matches!(w, Wall::Plane(_))) {
-            2
-        } else {
-            3
-        };
-        if nodes.len() < floor {
-            return Err(reject(RejectReason::CoplanarMerge));
-        }
-        cycles.push(Ring::new(nodes, walls));
     }
     // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in.
     // (`plane_idx` names a plane, so there is nothing to fold first.)
-    let wc = group[0].surf.plane();
     let mut outers: Vec<Ring> = Vec::new();
     let mut holes: Vec<Ring> = Vec::new();
     for cyc in cycles {

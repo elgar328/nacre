@@ -354,8 +354,8 @@ fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 /// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
 /// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
-/// `SelfTouchingResult` (`Impossible`, the touching edge as the witness): the
-/// merge abstains on a pinching group and the whole-result judgement runs before minting.
+/// `SelfTouchingResult` (`Impossible`, the touching edge as the witness): the whole-result
+/// judgement runs before minting.
 fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let plate = [
         [0.0, 0.0],
@@ -631,9 +631,9 @@ fn the_reject_census() {
             .1
     };
 
-    // ★★ Assertion 4: **the fold's truth is one site, the whole-result judgement.** The
-    // point-contact merge guard abstains — the merge emits a pinching group unmerged and
-    // `self_touch_reject`, hoisted before minting, names the shape. Distinct
+    // ★★ Assertion 4: **the fold's truth is one site, the whole-result judgement.** The merge
+    // threads the pinching group by the cyclic order at its pinch, and `self_touch_reject`,
+    // hoisted before minting, names the shape. Distinct
     // *sites*, not raise counts: counts move with the build (`debug` re-runs every traced
     // boolean, `parallel` evaluates the classes a failing input would have skipped), and the
     // claim is about how many guards speak, not how often.

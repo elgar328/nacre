@@ -255,8 +255,8 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`).
 ///
 /// ★★★ **45° says its truth**: the arm landing coplanar on its own body is a
-/// self-touch, and since the merge abstains on a pinching group (nothing to re-thread) and the
-/// whole-result judgement runs before minting, the reject is `SelfTouchingResult` — `Impossible`,
+/// self-touch, and since the whole-result judgement runs before minting, the reject is
+/// `SelfTouchingResult` — `Impossible`,
 /// with the touching edge itself as the witness — not `CoplanarPinch` (`NotSupported`, a
 /// capability-limit name raised by a site that could not see the whole result).
 #[test]

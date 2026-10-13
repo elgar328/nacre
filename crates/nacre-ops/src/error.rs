@@ -70,8 +70,8 @@ pub enum RejectClass {
     /// judged about the input itself. Epistemically the same input *may* succeed at a later
     /// milestone (the kernel cannot rule it out from where this class is assigned), but that is
     /// a possibility, not a promise: some members will only ever earn a more precise rejection.
-    /// (The 45° fold is not an example: the merge abstains and the fold reaches its
-    /// `Impossible` truth, `SelfTouchingResult`.)
+    /// (The 45° fold is not an example: the whole-result judgement gives it its `Impossible`
+    /// truth, `SelfTouchingResult`.)
     ///
     /// ★ Not `NotSupportedYet`: a "Yet" reads as a prediction that
     /// support is coming, and a

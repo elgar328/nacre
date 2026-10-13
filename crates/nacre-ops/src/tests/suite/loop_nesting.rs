@@ -320,8 +320,10 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
 /// (`P1`: the top face's one ring passes `(4, 0, 1)` twice) and the same plate with a bore through
 /// it (`P3`, so a circle's chord stations share the top face's line with the pinch), each against
 /// boxes placed where the pinch matters: far from it, around it, with a wall `x = 4` through it,
-/// and wholly below the top (`z ≤ 0.5`) — there the top's class is out of the box's reach, so the
-/// pinched face passes through unarranged and the debug build compares the two routes' faces.
+/// wholly below the top (`z ≤ 0.5`) — there the top's class is out of the box's reach, so the
+/// pinched face passes through unarranged and the debug build compares the two routes' faces —
+/// and standing on the boss's face `x = 4`, touching it, where the pinched face's cells merge back
+/// around the pinch (on the top, and on the underside of a plate whose boss hangs below it).
 /// Every kind, both orders: the result validates, its mesh covers it, and its volume is the one
 /// written by hand from `A`, `B` and `A ∩ B` (`Fuse = A + B − I`, `Common = I`, `A − B = A − I`,
 /// `B − A = B − I`).
@@ -335,14 +337,23 @@ fn a_pinched_body_is_an_operand_like_any_other() {
     use crate::BoolKind::{Common, Cut, Fuse};
     let pt = |a: [f64; 3]| Point3::from_array(a);
     let quarter_bore = std::f64::consts::PI / 4.0;
+    #[derive(Clone, Copy, PartialEq)]
+    enum Body {
+        Top,
+        Bored,
+        Under,
+    }
+    use Body::{Bored, Top, Under};
     // The plate `[0, 6]² × [0, 1]` with the triangle `(2,2) (4,0) (4,1)` of area 1 standing on it,
-    // height 1 — and, for `P3`, a bore of radius ½ at `(1.5, 4)` through the plate alone.
-    let pinched = |m: &mut Model, bored: bool| -> Handle<Solid> {
+    // height 1 — or hanging under it (`Under`, so the pinched face faces `−z`) — and, for `P3`
+    // (`Bored`), a bore of radius ½ at `(1.5, 4)` through the plate alone.
+    let pinched = |m: &mut Model, body: Body| -> Handle<Solid> {
         let plate = crate::fixtures::cuboid(m, pt([0.0, 0.0, 0.0]), pt([6.0, 6.0, 1.0]));
-        let boss = triangle_prism(m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], 1.0, 1.0);
+        let floor = if body == Under { -1.0 } else { 1.0 };
+        let boss = triangle_prism(m, [[2.0, 2.0], [4.0, 0.0], [4.0, 1.0]], floor, 1.0);
         let mut s = crate::boolean(m, Fuse, plate, boss).expect("the boss")[0];
         m.rebuild_adjacency();
-        if bored {
+        if body == Bored {
             let bore = crate::fixtures::cylinder(
                 m,
                 pt([1.5, 4.0, -1.0]),
@@ -354,18 +365,19 @@ fn a_pinched_body_is_an_operand_like_any_other() {
             s = crate::boolean(m, Cut, s, bore).expect("the bore")[0];
             m.rebuild_adjacency();
         }
+        let z = if body == Under { 0.0 } else { 1.0 };
         assert!(
-            a_loop_passes_twice(m, s, [4.0, 0.0, 1.0]),
-            "the operand's top passes (4, 0, 1) twice"
+            a_loop_passes_twice(m, s, [4.0, 0.0, z]),
+            "the operand's pinched face passes (4, 0, {z}) twice"
         );
         s
     };
-    // (name, bored, box, A, B, A ∩ B)
+    // (name, body, box, A, B, A ∩ B)
     let rows = [
         // The box's corner of the plate: 0.25 × 1.
         (
             "far",
-            false,
+            Top,
             [[5.0, 5.0, -1.0], [5.5, 5.5, 3.0]],
             37.0,
             1.0,
@@ -374,7 +386,7 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         // Plate 1 × ½ × ½, and the boss over x ∈ [3.5, 4], y ≤ ½: ∫(x − 3.5) dx = 1/8, times ½.
         (
             "around",
-            false,
+            Top,
             [[3.5, -0.5, 0.5], [4.5, 0.5, 1.5]],
             37.0,
             1.0,
@@ -383,7 +395,7 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         // Plate 1 × ½ × ½; the boss has no volume beyond x = 4.
         (
             "wall x = 4",
-            false,
+            Top,
             [[4.0, -1.0, 0.5], [5.0, 0.5, 1.5]],
             37.0,
             1.5,
@@ -392,7 +404,7 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         // Plate 0.25 × ½.
         (
             "below the top",
-            false,
+            Top,
             [[5.0, 5.0, -1.0], [5.5, 5.5, 0.5]],
             37.0,
             0.375,
@@ -400,7 +412,7 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         ),
         (
             "bored, far",
-            true,
+            Bored,
             [[5.0, 5.0, -1.0], [5.5, 5.5, 3.0]],
             37.0 - quarter_bore,
             1.0,
@@ -408,14 +420,49 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         ),
         (
             "bored, around",
-            true,
+            Bored,
             [[3.5, -0.5, 0.5], [4.5, 0.5, 1.5]],
             37.0 - quarter_bore,
             1.0,
             0.3125,
         ),
+        // A box sharing the boss's face `x = 4` and standing on the top: they touch, nothing
+        // overlaps. The top's cells on `z = 1` merge back around the pinch.
+        (
+            "on the boss's face, corner at the pinch",
+            Top,
+            [[4.0, 0.0, 1.0], [5.0, 1.0, 2.0]],
+            37.0,
+            1.0,
+            0.0,
+        ),
+        (
+            "on the boss's face, off the pinch",
+            Top,
+            [[4.0, 0.5, 1.0], [5.0, 1.5, 2.0]],
+            37.0,
+            1.0,
+            0.0,
+        ),
+        // The same under the plate, where the pinched face faces `−z`.
+        (
+            "under, on the boss's face, corner at the pinch",
+            Under,
+            [[4.0, 0.0, -1.0], [5.0, 1.0, 0.0]],
+            37.0,
+            1.0,
+            0.0,
+        ),
+        (
+            "under, on the boss's face, off the pinch",
+            Under,
+            [[4.0, 0.5, -1.0], [5.0, 1.5, 0.0]],
+            37.0,
+            1.0,
+            0.0,
+        ),
     ];
-    for (name, bored, [lo, hi], a_vol, b_vol, i_vol) in rows {
+    for (name, body, [lo, hi], a_vol, b_vol, i_vol) in rows {
         for (kind, swapped, want) in [
             (Fuse, false, a_vol + b_vol - i_vol),
             (Fuse, true, a_vol + b_vol - i_vol),
@@ -426,7 +473,7 @@ fn a_pinched_body_is_an_operand_like_any_other() {
         ] {
             let what = format!("{name}, {kind:?}, swapped = {swapped}");
             let mut m = Model::new();
-            let a = pinched(&mut m, bored);
+            let a = pinched(&mut m, body);
             let b = crate::fixtures::cuboid(&mut m, pt(lo), pt(hi));
             m.rebuild_adjacency();
             let (x, y) = if swapped { (b, a) } else { (a, b) };
