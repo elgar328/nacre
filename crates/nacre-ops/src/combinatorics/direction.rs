@@ -277,7 +277,7 @@ pub(crate) fn parallel_carriers(
 /// **Two directions along one carrier, running opposite ways** — the `π` end of the angular order.
 ///
 /// ★ **It is not "the angle is π"**, and the guard that makes it one stays with the caller:
-/// `arrangement`'s `angular_order` asks this only inside the bucket where the turn already came
+/// [`angular_order`] asks this only inside the bucket where the turn already came
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
 /// reach), and those belong in the `0` bucket rather than the `π` one.
@@ -463,7 +463,7 @@ pub(super) fn turn_between(
 /// **here and nowhere else**, and this function is the one place the product computes it.
 ///
 /// ★★ **`0` comes back as `0`, on purpose.** Its two consumers want different things from it:
-/// `turn_between` calls it a [`RejectReason::StraightAngle`], and `arrangement`'s `angular_order`
+/// `turn_between` calls it a [`RejectReason::StraightAngle`], and [`angular_order`]
 /// buckets it as the `0`/π pole and only rejects a *pair* of them. Deciding here would hand one
 /// caller a rule that is not its own. By the same test, [`edge_dir`]'s zero *does* live in the
 /// atom — both of its callers answer it identically.
@@ -715,6 +715,23 @@ pub(crate) fn tangent_pole(
     Ok(tangent_travel_agrees(jd, p, line.0, line.1, arc) == Some(false))
 }
 
+/// **The turn from one departure to another at their shared node, the curvature tie read.**
+/// [`turn`], and where that is `0` because a line and an arc leave tangent and the same way, the
+/// turn their bending makes ([`tangent_codirected_turn`]) — the arc bends off the line towards its
+/// centre. The one comparator [`angular_order`] sorts a node's departures by.
+pub(crate) fn departure_turn(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<i8, BoolError> {
+    let t = turn(jd, p, a, b)?;
+    if t != 0 {
+        return Ok(t);
+    }
+    Ok(tangent_codirected_turn(jd, p, a, b)?.unwrap_or(0))
+}
+
 /// **A line and an arc leaving one node tangent and the same way** — the turn from `a` to `b`
 /// that their curvature makes: the line runs straight on and the arc bends towards its centre, so
 /// the arc lies counter-clockwise of the line (about the face's outward normal) exactly when its
@@ -832,4 +849,128 @@ fn arc_side(
     let up = if *axis_up { 1i8 } else { -1 };
     let way = if *ccw { 1i8 } else { -1 };
     Ok(side * up * way * jd.planes[p].frame_sign)
+}
+
+/// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
+/// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
+/// given as `(fp, s)`. The signed turn between edges i and j is [`departure_turn`].
+///
+/// The turn sign is transitive only *within an open half-plane* (span < π), where it reproduces
+/// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn
+/// against a reference `r = edges[0]` into the two open half-planes, plus the `0`/`π` pole where
+/// the turn is 0 (collinear with `r`). The pole splits by same-`fp` opposite direction: same fp,
+/// opposite `s` is angle π; otherwise angle 0. Each open bucket is then a real sort. Returned
+/// indices are the CCW order starting at `r`.
+///
+/// **What it relies on, and who supplies it.** Two edges leaving one vertex with a `0` turn are on
+/// one line — parallel plus a shared point — and then they have no cyclic order to read. Upstream
+/// makes that impossible in two places: `merge_coincident` folds an edge traced twice (its own doc
+/// names this bucket as the reason), and `Aliases::union_wall` folds two walls that carry one line
+/// so they arrive under a single `fp`. Collinear same-direction overlap is resolved earlier
+/// still, by `split_at_crossings`.
+///
+/// ★ **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more
+/// planes meet at a point, and that every same-line wall pair meets such a point is not
+/// established — so a `0` turn that survives to here is an honest `UnorderedEdges` reject rather
+/// than an order picked arbitrarily. Measured: it fires nowhere in the suite, and disabling
+/// `union_wall` makes the four-plane concurrency model reject, which is what says the reliance is
+/// real and the check reaches it.
+pub(crate) fn angular_order(
+    jd: &Judge<'_, WorkingPlane>,
+    w: usize,
+    edges: &[EdgeDir],
+) -> Result<Vec<usize>, BoolError> {
+    // ★ The comparator the winding reads too ([`departure_turn`]), which is what keeps the two
+    // from drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π
+    // pole.
+    let cross = |i: usize, j: usize| departure_turn(jd, w, &edges[i], &edges[j]);
+    let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
+    for i in 0..edges.len() {
+        match cross(0, i)? {
+            c if c > 0 => pos.push(i),
+            c if c < 0 => neg.push(i),
+            // Collinear with the reference: angle 0 (same ray) or π (opposite ray). ★ A line and
+            // an arc tangent at this vertex with the arc leaving the other way (a fillet's smooth
+            // corner) are π apart too — the structural test cannot see it, the geometric
+            // one can ([`tangent_pole`]) — and so are a line and a ruling that are
+            // one line, leaving opposite ways ([`ruling_pole`]).
+            _ if antiparallel(&edges[i], &edges[0])
+                || tangent_pole(jd, w, &edges[i], &edges[0])?
+                || ruling_pole(jd, w, &edges[i], &edges[0])? =>
+            {
+                pole.push(i)
+            }
+            _ => zero.push(i),
+        }
+    }
+    // ★★ **The π pole is a question about the direction's *representation*, not about the turn**
+    // — "same wall class, opposite travel sign", and for arcs "same circle, opposite tangent".
+    // Both live in [`antiparallel`]. ★ Measured: the arc/arc arm never fires here,
+    // because segments are numbered before arcs and every crossing has one, so `edges[0]` is always
+    // a line; the two arcs at a node sit π apart and land in the two *open* buckets instead.
+    //
+    // ★★★ **The order below exists only if no two edges share an angle, and that is an
+    // assumption about *upstream*, not about this function.** Two edges leaving one vertex whose
+    // turn is zero are on one line — parallel plus a shared point — so their cyclic order has no
+    // answer, and `next` is built from exactly that order: a guess there is a wrong face, with
+    // nothing to say so.
+    //
+    // Upstream is supposed to make it impossible, in two places, and both are load-bearing:
+    // `merge_coincident` folds an edge that was traced twice (its own doc names this bucket as
+    // the reason), and `Aliases::union_wall` folds two walls that carry one line. Measured, the
+    // second fires 122 times over the coverage suite and this check never does — but ★ **"measured
+    // never" is not "cannot"**: `Aliases::record` only folds where four or more planes meet at a
+    // point (`s.len() < 4` returns early), and that every same-line wall pair meets such a point
+    // is *not* established. So the assumption is checked rather than trusted, and a failure is an
+    // honest reject.
+    //
+    // The pairs are checked before sorting rather than inside the comparator: `sort_by` does not
+    // compare every pair, so a tie it happens not to evaluate would slip through — and that is
+    // precisely the tie that reorders the result. At the degrees this sees (2-3 measured) a
+    // bucket holds at most two entries, so the check costs the one comparison the sort would
+    // have made anyway.
+    for b in [&pos, &neg] {
+        for x in 0..b.len() {
+            for y in (x + 1)..b.len() {
+                if cross(b[x], b[y])? == 0 {
+                    return Err(reject(RejectReason::UnorderedEdges));
+                }
+            }
+        }
+    }
+    // The reference's own bucket: anything else collinear with it that the pole test did not
+    // claim is the same ray, which is an overlap `split_at_crossings` should have resolved.
+    if zero.len() > 1 {
+        return Err(reject(RejectReason::UnorderedEdges));
+    }
+    // Within an open half-plane, `a` precedes `b` (smaller angle) iff `d_a × d_b > 0`.
+    // `turn` can now fail rather than answer — an arc's side is `a + b√c` arithmetic — and a
+    // comparator cannot carry that out, so the failure is caught in a flag and raised after the
+    // sort (the idiom this file already uses where an exact comparison rides a `sort_by`).
+    let by_turn = |v: &mut Vec<usize>| -> Result<(), BoolError> {
+        let mut bad = None;
+        v.sort_by(|&a, &b| match cross(a, b) {
+            Ok(c) if c > 0 => std::cmp::Ordering::Less,
+            Ok(c) if c < 0 => std::cmp::Ordering::Greater,
+            // Unreachable after the check above, and spelled anyway: a comparator that answers
+            // `Greater` both ways is a contract violation, and `sort_by` is then free to produce
+            // any permutation.
+            Ok(_) => std::cmp::Ordering::Equal,
+            Err(e) => {
+                bad = Some(e);
+                std::cmp::Ordering::Equal
+            }
+        });
+        match bad {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    };
+    by_turn(&mut pos)?;
+    by_turn(&mut neg)?;
+    let mut out = zero;
+    out.extend(pos);
+    out.extend(pole);
+    out.extend(neg);
+    Ok(out)
 }

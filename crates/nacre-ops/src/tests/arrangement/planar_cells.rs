@@ -467,7 +467,7 @@ fn angular_order_around_a_vertex_is_coordinate_free_and_ccw() {
         .map(|&(c, s)| combinatorics::EdgeDir::new(c, s))
         .collect();
 
-    let order = angular_order(&crate::planes::test_judge(&planes), w, &edges)
+    let order = combinatorics::angular_order(&crate::planes::test_judge(&planes), w, &edges)
         .expect("five distinct directions leave one vertex — nothing to refuse here");
     assert_eq!(
         order.len(),

@@ -42,7 +42,7 @@ pub(super) fn walk_cells(
                 edges.push(combinatorics::dir_at(jd, cyls, wc, &edge_of(he), v)?);
             }
         }
-        let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges))?;
+        let ord = timed!(E_ANGULAR, combinatorics::angular_order(jd, wc, &edges))?;
         cyclic.insert(v, (outs.clone(), ord));
     }
 

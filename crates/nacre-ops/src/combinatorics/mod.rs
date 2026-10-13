@@ -134,6 +134,6 @@ pub(crate) struct ArcDir {
     /// Travel runs counter-clockwise about the circle's own normal (the axis).
     ///
     /// ★ This one **is** locked: dropping it makes the two arcs at a crossing share a bucket in
-    /// `arrangement::angular_order`, and the walk comes back `UnorderedEdges`.
+    /// [`angular_order`], and the walk comes back `UnorderedEdges`.
     ccw: bool,
 }
