@@ -220,7 +220,9 @@ impl<N: Clone, F: Fn(usize, Option<usize>) -> Option<Vec<N>>> EdgeCrossings<Opti
 /// ★★ **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here, and if not, which side
 /// does it leave to?"** — edge `i` runs from `nodes[i]` to `nodes[i + 1]`, and it is asked only
 /// where both ends are on `q`. Two on-`q` nodes do **not** settle it: two points fix a straight
-/// line, so a straight edge between them is on it, and a **curved** one leaves and comes back.
+/// line, so a straight edge between them is on it, and a **curved** one leaves and comes back —
+/// without crossing between two distinct ends, and across the other root where the two ends are
+/// one node (a closed arc, asked `crossings` like the edges below).
 /// What counts as "the meet" is the caller's, because it differs by road — a plane class cuts a
 /// planar face in a **line** (so a straight edge is `On` and an arc `Departs` to the side its
 /// tangent points, [`arc_departure_side`]) and a lateral face in a **circle** (so an arc carried
@@ -281,6 +283,21 @@ pub(crate) fn ring_against_plane(
             match on_meet(i) {
                 None => return RingWalk::Unnameable,
                 Some(EdgeMeet::On) => {}
+                // ★ Two on-`q` ends settle the count only when they are two points: a circle
+                // meets a line twice, so an arc between them is wholly on one side. A **closed**
+                // arc's two ends are one node, and its whole turn meets the line again at the
+                // other root (none where the line is tangent there) — asked like any edge whose
+                // ends cannot say, the departure's side flipping at the crossing.
+                Some(EdgeMeet::Departs(s)) if nodes[i] == nodes[(i + 1) % n] => {
+                    match crossings(i, Some(i)) {
+                        Some(0) => seq.push((s, Entry::Departure)),
+                        Some(1) => {
+                            seq.push((s, Entry::Piece { edge: i, k: 0 }));
+                            seq.push((-s, Entry::Piece { edge: i, k: 1 }));
+                        }
+                        _ => return RingWalk::Unnameable,
+                    }
+                }
                 Some(EdgeMeet::Departs(s)) => seq.push((s, Entry::Departure)),
             }
         } else if sa != -sb {
