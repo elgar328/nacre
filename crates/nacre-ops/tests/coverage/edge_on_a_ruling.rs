@@ -521,6 +521,118 @@ fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
+/// ★ **A body touching itself along a ruling is refused; two bodies touching there build.** The
+/// prism's two walls meet on a ruling of `A`'s cylinder and reach it from the side `A`'s lateral
+/// does not keep — into the bore of a plate, or from outside a cylinder — so the lateral runs on
+/// across the line and the line is an edge of the walls alone. Where that edge's body is the
+/// lateral's own, joined elsewhere — a wedge across the bore into the plate beyond, a C-shaped
+/// prism round the cylinder through it — the edge lies inside the solid's own face, and the result
+/// is refused (`SelfTouchingResult`, the self-touch verdict's curved arm,
+/// `combinatorics::ruling_meets_lateral`). Where it is another body — a short wedge inside the
+/// bore, a corner touching the cylinder — the answer is the two bodies. Each refusal sits beside
+/// a twin that must build, as the self-touch propositions do (`tests/probes/self_touch.rs`): a
+/// check that refused every such touch would pass half of them.
+#[test]
+fn a_body_touching_itself_along_a_ruling_is_refused() {
+    fn bored_plate() -> Profile2d {
+        let square = nacre_ops::Ring2d::polygon_decimal(vec![
+            p2(-2.0, -2.0),
+            p2(2.0, -2.0),
+            p2(2.0, 2.0),
+            p2(-2.0, 2.0),
+        ])
+        .expect("a square");
+        let bore = nacre_ops::Ring2d::circle(p2(0.0, 0.0), 1.0).expect("a circle");
+        let mut plates = nacre_ops::from_paths(vec![square, bore]).expect("a plate with a bore");
+        assert_eq!(plates.len(), 1, "one plate");
+        plates.remove(0)
+    }
+    let tau = 2.0 * std::f64::consts::PI;
+    type Case = (
+        &'static str,
+        fn() -> Profile2d,
+        &'static [[f64; 2]],
+        Option<(usize, f64)>,
+    );
+    let cases: [Case; 4] = [
+        (
+            "a wedge across the bore into the plate",
+            bored_plate,
+            &[[1.0, 0.0], [-3.0, 1.0], [-3.0, -1.0]],
+            None,
+        ),
+        (
+            "a wedge inside the bore",
+            bored_plate,
+            &[[1.0, 0.0], [0.0, 0.3], [0.0, -0.3]],
+            Some((2, 32.0 - tau + 0.3)),
+        ),
+        (
+            "a C round the cylinder and through it",
+            unit_disk,
+            &[
+                [1.0, 0.0],
+                [3.0, -2.0],
+                [4.0, 0.0],
+                [4.0, 3.0],
+                [-0.6, 3.0],
+                [-0.6, -2.0],
+                [-0.3, -2.0],
+                [-0.3, 2.5],
+                [3.0, 2.5],
+                [3.0, 2.0],
+            ],
+            None,
+        ),
+        (
+            "a corner touching the cylinder",
+            unit_disk,
+            &[[1.0, 0.0], [3.0, -2.0], [4.0, 0.0], [3.0, 2.0]],
+            Some((2, tau + 6.0)),
+        ),
+    ];
+    for tilted in [false, true] {
+        for &(family, a, b, want) in &cases {
+            for swapped in [false, true] {
+                let (mut m, x, y) = a_solid_and_a_placed_prism(
+                    |m| {
+                        if tilted {
+                            pythagorean_frame(m, Point3::from_array([0.0; 3]))
+                        } else {
+                            nacre_ops::SketchFrame::world(m, nacre_exact::Axis::Z)
+                        }
+                    },
+                    a(),
+                    b,
+                    0.5,
+                    1.0,
+                );
+                let (x, y) = if swapped { (y, x) } else { (x, y) };
+                let at = format!("{family}, tilted = {tilted}, swapped = {swapped}");
+                match (boolean(&mut m, BoolKind::Fuse, x, y), want) {
+                    (Ok(solids), Some((bodies, v))) => {
+                        m.rebuild_adjacency();
+                        let vs = nacre_validate::validate(&m);
+                        assert!(vs.is_empty(), "{at}: {vs:?}");
+                        assert_eq!(solids.len(), bodies, "{at}: bodies");
+                        let got: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
+                        assert!((got - v).abs() < 1e-9, "{at}: volume {got}, want {v}");
+                        let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                            .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
+                        assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                    }
+                    (Err(BoolError::Rejected { reason, .. }), None) => assert_eq!(
+                        reason,
+                        RejectReason::SelfTouchingResult,
+                        "{at}: refused as {reason:?}"
+                    ),
+                    (got, _) => panic!("{at}: {got:?}"),
+                }
+            }
+        }
+    }
+}
+
 /// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The prism's corner
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
 /// seam and off it) or from outside, with one side tangent there or with both sides leaving it (a

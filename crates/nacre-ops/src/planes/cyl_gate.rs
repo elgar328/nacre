@@ -566,8 +566,9 @@ pub(crate) fn cylinder_gate(
 /// of one solid that is also the line of the other's edge (or of the same solid's flat through
 /// its own axis). Recorded once, here, and read by every road that must say so: the alias seed
 /// (one point, several names), the rulings split (one line, two vocabularies), the chart (one
-/// station), the tangency verdict and the result's edge subdivision (the pierce points on the
-/// line).
+/// station), the tangency verdict, the result's edge subdivision (the pierce points on the
+/// line), the straight-angle cleaning (a ruling piece and a plane segment, one line) and the
+/// self-touch verdict (an edge along the line inside the solid's own lateral).
 ///
 /// The population is the pairs this gate already recorded against the cylinder: a class in
 /// `crossings` (it cuts the lateral in two rulings) with another in `crossings`, or with a

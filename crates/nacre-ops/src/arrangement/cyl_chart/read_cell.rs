@@ -181,7 +181,9 @@ impl Chart {
     /// material is outside, the outside chamber kept where it is inside). The line is then an
     /// edge of those faces while the lateral runs on across it, which is right when they belong
     /// to another body touching along the line and wrong when the body is the lateral's own,
-    /// joined elsewhere; only the shells can tell, and cutting the lateral here breaks the first.
+    /// joined elsewhere. Only the shells can tell, and cutting the lateral here breaks the first;
+    /// the result's self-touch verdict asks it once the solids are known — the walls' edge inside
+    /// the solid's own lateral (`assembly::self_touch`).
     ///
     /// `Err` when a label or the side could not be read: the labels are formed for every secant
     /// ruling, so their absence is the stages disagreeing; the side carries its own cause

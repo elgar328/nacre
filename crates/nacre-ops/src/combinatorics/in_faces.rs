@@ -518,6 +518,112 @@ pub(crate) fn lateral_face_crossings(
     Some(CurvedHit::Counted(count))
 }
 
+/// **Does the open segment of the line `w[0] ∩ w[1]`, a ruling of `def`, between the points
+/// `ends` meet the interior of the lateral face `loops` bounds?** — the self-touch question for
+/// an edge two plane faces of one solid share along that solid's own lateral.
+///
+/// Along a ruling only the face's arcs and rims can change whether a point is on the face (a
+/// ruling of the face at that angle makes the whole run its boundary), so the segment is cut at
+/// their axis parameters and one point per piece — at the piece's middle height, the root of the
+/// secant wall and that height's rim plane that lies on the other wall too — is asked by
+/// [`loop_parity`]. A piece inside answers for the edge; a piece on the boundary abstains, and
+/// so does the edge unless another piece is inside.
+///
+/// ★ **What a `true` stands on** is that one point: it lies on the edge and strictly inside the
+/// face, which is the proposition whole. So the ends' heights must be exact — they are read
+/// where a plane of each end's name crosses **this ruling**, not the axis (a plane naming the end
+/// may be slanted, and where it meets the axis says nothing of the end) — while the cut heights,
+/// read off the arcs' corners as [`loop_parity`] reads them, only decide which points are asked:
+/// wrong there, a touch can be missed, never invented. ☐ No input yet where the cut changes the
+/// answer — an arc of the face crossing the edge's line meets the two walls there too, and the
+/// arrangement makes that point a vertex, so the edge already ends at it; asking a piece at a time
+/// keeps the question «does the open segment meet the interior» rather than leaning on that.
+///
+/// `None` is a point on the face's boundary, an end with no plane across the ruling, a loop the
+/// road cannot read, or arithmetic out — the guard calling this abstains then, it does not refuse.
+pub(crate) fn ruling_meets_lateral(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    loops: &[LateralLoop],
+    w: [usize; 2],
+    ends: [NodeId; 2],
+) -> Option<bool> {
+    use nacre_exact::quad::{CylinderMeet, plane_side};
+    use nacre_exact::{Orient, Rat, dot3_rat};
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let walls = [class_coeffs_rat(jd, w[0])?, class_coeffs_rat(jd, w[1])?];
+    let CylinderMeet::OnRuling(ruling) =
+        nacre_exact::quad::plane_plane_cylinder(&walls[0], &walls[1], &o, &m, r2)?
+    else {
+        return None;
+    };
+    // The ruling's base, as an axis parameter: `m·(base − o) / m·m`.
+    let base = ruling.base();
+    let mm = dot3_rat(&m, &m)?;
+    let mut d = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        d[k] = base[k].checked_sub(o[k])?;
+    }
+    let at_base = dot3_rat(&m, &d)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    // An end's height: a plane of its name across the ruling meets it at the end.
+    let z_of = |n: NodeId| -> Option<Rat> {
+        let planes: Vec<usize> = match (three_plane_name(n), pierce_name(n)) {
+            (Some(t), _) => t.to_vec(),
+            (None, Some((p, _, _))) => p.to_vec(),
+            (None, None) => return None,
+        };
+        planes.into_iter().find_map(|c| {
+            let t = nacre_exact::axis_param_of_plane(&class_coeffs_rat(jd, c)?, &base, &m)?;
+            at_base.checked_add(t)
+        })
+    };
+    let (a, b) = (z_of(ends[0])?, z_of(ends[1])?);
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    let mut ts = vec![lo, hi];
+    for lp in loops {
+        match lp {
+            LateralLoop::Rim(c) => ts.push(crate::planes::axis_param_of_plane(
+                &class_coeffs_rat(jd, *c)?,
+                def,
+            )?),
+            LateralLoop::Ring(edges) => {
+                for e in edges {
+                    if matches!(e.carrier, Carrier::Arc(_)) {
+                        ts.push(corner_axis_param(jd, def, e.node)?);
+                    }
+                }
+            }
+        }
+    }
+    ts.retain(|t| *t >= lo && *t <= hi);
+    ts.sort();
+    ts.dedup();
+    let half = Rat::new(1, 2)?;
+    let mut abstained = false;
+    for piece in ts.windows(2) {
+        let mid = piece[0].checked_add(piece[1])?.checked_mul(half)?;
+        let rim = rim_plane(def, mid)?;
+        // A secant wall meets the cylinder in two rulings at this height; the point is the one on
+        // the other wall too. (A tangent wall meets it in its own ruling alone — the other wall is
+        // then the secant one.)
+        let point = (0..2).find_map(|i| {
+            match nacre_exact::quad::plane_plane_cylinder(&walls[i], &rim, &o, &m, r2)? {
+                CylinderMeet::Pair { line, s } => s
+                    .into_iter()
+                    .find(|x| plane_side(&walls[1 - i], &line, x) == Orient::Zero)
+                    .map(|x| (line, x)),
+                _ => None,
+            }
+        });
+        match point.and_then(|(line, x)| loop_parity(jd, def, loops, &line, &x)) {
+            Some(true) => return Some(true),
+            Some(false) => {}
+            None => abstained = true,
+        }
+    }
+    (!abstained).then_some(false)
+}
+
 /// A component as its faces, each boundary already carrying its edges' walls.
 pub(crate) type ComponentFaces = Vec<CompFace>;
 

@@ -127,8 +127,10 @@ pub enum RejectReason {
     /// does. An embedded boundary cannot do that — two pieces of it would occupy the same points —
     /// so what came back is not a solid, however plausible its volume.
     ///
-    /// ★★★★★ **Two witnesses, one proposition.** The first is planar and combinatorial: an *edge*
-    /// of the solid lies in the interior of one of that same solid's faces. The second is curved
+    /// ★★★★★ **Two witnesses, one proposition.** The first is combinatorial: an *edge* of the
+    /// solid lies in the interior of one of that same solid's faces — a plane face, or a lateral
+    /// along whose ruling two of the solid's plane faces meet (a wedge's apex edge along the
+    /// solid's own bore wall). The second is curved
     /// and has no edge at all: a **lateral tangent to one of the solid's own plane
     /// faces along a line**. Nothing splits at such a contact, so there is no edge to count and no
     /// vertex to link — the topology sees a perfectly ordinary solid — and it is caught instead by

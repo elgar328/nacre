@@ -223,6 +223,18 @@ pub(crate) fn assemble_fuse_cut(
 /// The rings a face is trimmed by are built **lazily and once per face**: `Ring::edges` spends an
 /// exact predicate per node, and building them for every result face is the same unconditional cost
 /// that put 12x on the star when the void label did it.
+///
+/// ★ **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
+/// that can lie inside it: an edge two of the solid's plane faces share along a ruling of that
+/// cylinder. The sieve is the gate's record of such lines (`SharedLines::on_cylinder` — a line on
+/// a lateral *face* of an operand, which every result lateral lies within), so a boolean whose
+/// cylinders record none skips the arm, and the census asks it of no edge at all. The exact test is
+/// [`combinatorics::ruling_meets_lateral`]. ☑ What it refuses that nothing else saw: a plate's bore
+/// with a wedge whose apex edge lies along the bore wall and that crosses the hole into the plate
+/// beyond, and a cylinder with a C-shaped prism touching it from outside and running through it
+/// elsewhere — each one body, `validate` clean, the volume right. Two bodies touching on that line
+/// are two groups and are not asked; the line a lateral's own slit cut is its boundary, which the
+/// test abstains on, and the edge-use guard names that shape.
 pub(super) fn self_touch_reject(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -240,21 +252,41 @@ pub(super) fn self_touch_reject(
             )
         })
         .collect();
+    // ★ **The witness is the smallest offending edge**, not the first a hash map hands over — the
+    // rejection's `at` is a census key's neighbour and must not move between runs. Only the
+    // rejecting path keeps scanning, so a result that builds pays nothing for it.
+    let mut found: Option<[NodeId; 2]> = None;
+    let mut found_at = |e: [NodeId; 2]| {
+        found = Some(found.map_or(e, |f| f.min(e)));
+    };
+    // The curved arm's sieve, built the first time a solid with a lateral asks it.
+    let mut shared: Option<combinatorics::SharedLines> = None;
+    let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
-        // ★ **Planar faces only.** The proposition this sieve tests — "an edge of
-        // this solid lies in the interior of one of its own faces" — is asked through plane
-        // membership and in-plane boxes, and a lateral band has neither a plane nor a node to
-        // offer. It abstains rather than pretending: the edge-use guard, the non-manifold vertex
-        // check and `validate` all still stand behind it, so a curved self-touch surfaces there
-        // instead of being missed silently. A band that pinches against a *plane* face is
-        // therefore the case this does not see yet, and it is written down rather than assumed
-        // away. ★ **An edge with a pierce endpoint joins that population**: it has no
-        // three-plane name for the plane-membership question below, so it is skipped by the same
-        // rule and for the same reason.
-        let faces: Vec<&LocalFace> = g
+        // ★ **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
+        // its own faces". The planar arm asks it of plane faces, through plane membership and
+        // in-plane boxes. The curved arm asks it of a lateral face, for the edges two of the
+        // solid's plane faces share along a ruling of that cylinder (the gate's record,
+        // `SharedLines::on_cylinder`) — a wedge's apex edge lying along the solid's own bore wall,
+        // say ([`combinatorics::ruling_meets_lateral`]). What neither asks — an arc edge against
+        // any face, a ruling edge of the lateral against a plane face, a point contact — abstains
+        // rather than pretends: the edge-use guard, the non-manifold vertex check and `validate`
+        // still stand behind it, and the population is written down rather than assumed away.
+        let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
+            .collect();
+        let faces: Vec<&LocalFace> = all
+            .iter()
+            .copied()
             .filter(|lf| matches!(lf.surf, ClassIx::Plane(_)))
+            .collect();
+        let laterals: Vec<(usize, &LocalFace)> = all
+            .iter()
+            .filter_map(|lf| match lf.surf {
+                ClassIx::Cyl(k) => Some((k, *lf)),
+                ClassIx::Plane(_) => None,
+            })
             .collect();
         // One pass: which faces sit on each plane, which two faces own each edge, and a box per
         // face holding its vertices' reach.
@@ -283,13 +315,12 @@ pub(super) fn self_touch_reject(
             boxes.push((lo, hi));
         }
         let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
-        for (&[u, v], own) in &owners {
-            // ★ **Abstain, exactly as the paragraph above already does for a lateral band.** An
-            // edge with a pierce endpoint has no three-plane name to intersect, and this is a
-            // *rejection guard*: declining here would turn "I cannot check this edge" into "this
-            // model is invalid" — a reject on a possibly-sound solid. The nets named above (the
-            // edge-use guard, the non-manifold vertex check, `validate`) still stand behind it,
-            // and this population joins the one already written down there.
+        'edges: for (&[u, v], own) in &owners {
+            // ★ **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
+            // intersect, and this is a *rejection guard*: declining here would turn "I cannot
+            // check this edge" into "this model is invalid" — a reject on a possibly-sound solid.
+            // The curved arm below asks the one such population it can read (an edge along a
+            // ruling, against the solid's lateral); the nets named above stand behind the rest.
             let (Some(up), Some(vp)) = (
                 combinatorics::three_plane_name(u),
                 combinatorics::three_plane_name(v),
@@ -308,12 +339,12 @@ pub(super) fn self_touch_reject(
                     if !in_box {
                         continue;
                     }
-                    // A face trimmed by a mixed ring joins the populations this sieve
-                    // already passes over (a lateral face, a pierce-ended edge): the
-                    // named walk cannot read it, and an `Err` here would turn "cannot
-                    // check" into "model invalid". The net behind the skip stays what
-                    // it is for those: the edge-use guard, the non-manifold vertex
-                    // check, and `check_result_topology`'s plane-self edge guard.
+                    // A face trimmed by a mixed ring joins the populations this sieve passes over
+                    // (a pierce-ended edge, the edges the curved arm does not ask): the named walk
+                    // cannot read it, and an `Err` here would turn "cannot check" into "model
+                    // invalid". The net behind the skip stays what it is for those: the edge-use
+                    // guard, the non-manifold vertex check, and `check_result_topology`'s
+                    // plane-self edge guard.
                     if rings_of(faces[j]).any(Ring::is_mixed) {
                         continue;
                     }
@@ -345,16 +376,54 @@ pub(super) fn self_touch_reject(
                         vp,
                         &rings_of_face[&j],
                     )? {
-                        // The offending edge itself, as the witness: both endpoints are in `pt`
-                        // (the `in_box` guard above already looked them up).
-                        return Err(crate::reject_at(
-                            RejectReason::SelfTouchingResult,
-                            crate::RejectWhere::Segment([pt[&u].0, pt[&v].0]),
-                        ));
+                        found_at([u, v]);
+                        continue 'edges;
                     }
                 }
             }
         }
+        if laterals.is_empty() || !any_shared {
+            continue;
+        }
+        let shared = shared.get_or_insert_with(|| combinatorics::SharedLines::of(jd, cyls));
+        // The lateral's loops, read once per face and only for a face some edge is asked against;
+        // one the loops road cannot read (`RingNaming`) abstains like every other unreadable case.
+        let mut loops_of: HashMap<usize, Option<Vec<combinatorics::LateralLoop>>> = HashMap::new();
+        'ruling_edges: for (&[u, v], own) in &owners {
+            let [f, h] = own[..] else { continue };
+            let w = [faces[f].surf.plane(), faces[h].surf.plane()];
+            for (li, &(k, lf)) in laterals.iter().enumerate() {
+                if !shared.on_cylinder(w[0], w[1], k) {
+                    continue;
+                }
+                let loops =
+                    loops_of.entry(li).or_insert_with(|| {
+                        match super::grouping::comp_face(jd, cyls, lf).ok()?.outer {
+                            combinatorics::BoundEdges::Lateral(loops) => Some(loops),
+                            _ => None,
+                        }
+                    });
+                let Some(loops) = loops else { continue };
+                if combinatorics::ruling_meets_lateral(jd, &cyls[k].def, loops, w, [u, v])
+                    == Some(true)
+                {
+                    found_at([u, v]);
+                    continue 'ruling_edges;
+                }
+            }
+        }
+    }
+    if let Some([u, v]) = found {
+        // The offending edge itself, as the witness — or the end the seam table realized.
+        let at = match (pt.get(&u), pt.get(&v)) {
+            (Some(a), Some(b)) => Some(crate::RejectWhere::Segment([a.0, b.0])),
+            (Some(a), None) | (None, Some(a)) => Some(crate::RejectWhere::Point(a.0)),
+            (None, None) => None,
+        };
+        return Err(match at {
+            Some(at) => crate::reject_at(RejectReason::SelfTouchingResult, at),
+            None => reject(RejectReason::SelfTouchingResult),
+        });
     }
     Ok(())
 }
