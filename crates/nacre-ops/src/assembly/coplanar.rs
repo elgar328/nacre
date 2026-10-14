@@ -286,7 +286,9 @@ fn merge_component(
             return Ok(None); // multiplicity across an opposed pair: ambiguous
         }
         // An opposed 1:1 with a curved wall on either side is two different edges — both stay
-        // boundaries and thread below.
+        // boundaries and thread below. (A ruling piece opposed to a plane segment of the same
+        // recorded line would be one edge; ☑ measured, no such pair reaches here in the suite or
+        // the census.)
     }
     // 3. Re-thread what survives, keeping the material on the left. Each surviving directed edge
     //    is collected in ring order, so the walk below is the same on every replay; the wall rides
@@ -377,11 +379,9 @@ fn merge_component(
                 }
                 cur = step;
             }
-            // ★ The floor is the one the cell walk and `loop_winding` read
-            // ([`combinatorics::ring_floor`]): a 2-gon closed by a curved wall is a ring, a
-            // two-node polygon is not, and one arc from a node back to itself is the circle a
-            // polygon corner cuts at that point — what is left of a cap when the wedge standing
-            // on it with its apex on the rim merges back in.
+            // ★ The floor every ring reader shares ([`combinatorics::ring_floor`]) — one arc from
+            // a node back to itself is what a cap merges back to under a wedge whose apex is on
+            // its rim.
             let self_loop = nodes.len() == 1 && matches!(walls[0], Wall::Arc { .. });
             let floor = combinatorics::ring_floor(
                 walls.iter().any(|w| !matches!(w, Wall::Plane(_))),
@@ -674,6 +674,11 @@ pub(super) fn dissolve_straight_angles(
     // one per node costs more than the whole pass is worth (measured: 4% of a fold).
     let mut nbrs: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
     let mut first_wall: HashMap<(NodeId, ClassIx), Wall> = HashMap::new();
+    // ★ «One line» is not transitive — a plane wall is one line with a ruling piece walked either
+    // way, while the two pieces walked opposite ways are a cusp — so a key that meets a second,
+    // different wall keeps every wall it meets and asks each new one against all of them. Equal
+    // walls, the common case, never reach this map.
+    let mut more_walls: HashMap<(NodeId, ClassIx), Vec<Wall>> = HashMap::new();
     let mut bent: HashSet<NodeId> = HashSet::new();
     for &fi in which {
         let lf = &out[fi];
@@ -686,8 +691,17 @@ pub(super) fn dissolve_straight_angles(
                 for nd in [a, b] {
                     match first_wall.entry((nd, lf.surf)) {
                         std::collections::hash_map::Entry::Occupied(e) => {
-                            if !shared.one_line(lf.surf, *e.get(), ring.walls[i]) {
-                                bent.insert(nd);
+                            let w = ring.walls[i];
+                            if *e.get() != w {
+                                let seen = more_walls.entry((nd, lf.surf)).or_default();
+                                if !shared.one_line(lf.surf, *e.get(), w)
+                                    || (false
+                                        && seen.iter().any(|&o| !shared.one_line(lf.surf, o, w)))
+                                    || seen.iter().any(|&o| !shared.one_line(lf.surf, o, w))
+                                {
+                                    bent.insert(nd);
+                                }
+                                seen.push(w);
                             }
                         }
                         std::collections::hash_map::Entry::Vacant(e) => {

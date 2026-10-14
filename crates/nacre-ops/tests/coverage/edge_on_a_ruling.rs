@@ -722,8 +722,8 @@ fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
 /// [`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`], `B` standing on `A`'s base and
 /// reaching exactly its top, on both frames. The touch runs the cylinder's whole height, so every
 /// corner of `A`'s body lies on the line of contact and both its caps are the closed arc from that
-/// corner back to itself. All six build: the union is two bodies touching along the line, `A ∩ B`
-/// is empty, and the differences are the operands.
+/// corner back to itself. All six build — valid and meshed: the union is two bodies touching along
+/// the line, `A ∩ B` is empty, and the differences are the operands.
 #[test]
 fn an_outside_corner_as_tall_as_the_cylinder_builds() {
     let shapes: &[(&str, &[[f64; 2]])] = &[
@@ -769,6 +769,9 @@ fn an_outside_corner_as_tall_as_the_cylinder_builds() {
                     m.rebuild_adjacency();
                     let vs = nacre_validate::validate(&m);
                     assert!(vs.is_empty(), "{at}: {vs:?}");
+                    let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                        .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
+                    assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
                     let v: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
                     let (bodies, want) = match i {
                         0 | 1 => (2, tau + b),

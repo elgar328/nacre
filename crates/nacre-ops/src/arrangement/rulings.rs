@@ -105,8 +105,9 @@ fn arc_flank(ccw: bool, arriving: bool) -> i8 {
 }
 
 /// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about
-/// the axis, by name ([`circular_order`]). `Err` when the order cannot be formed or two of the
-/// three are one point wearing two names — the caller's population, not a tie to shrug at.
+/// the axis, by name ([`circular_order`]). For two ends that differ, `Err` when the order cannot
+/// be formed or two of the three are one point wearing two names — the caller's population, not
+/// a tie to shrug at.
 ///
 /// ★ **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
 /// from that node back to it, so every other point of the circle is inside — and the node itself,

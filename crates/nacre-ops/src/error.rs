@@ -370,19 +370,20 @@ pub enum RejectReason {
     /// `loop_winding` compares pierce coordinates through the quad tower
     /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a pierce node
     /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
-    /// from its name. That arm has no fixture, and neither does the ray-cast one next to it; both
-    /// are recorded rather than hidden. (`DegenerateWitness` is the precedent: no fixture, written
-    /// down, and not taken as licence to delete the guard.)
+    /// from its name. That arm has no fixture; it is recorded rather than hidden
+    /// (`DegenerateWitness` is the precedent: no fixture, written down, and not taken as licence
+    /// to delete the guard). The ray-cast one next to it (`combinatorics::every_ray`) fires on
+    /// every ring with a pierce corner — the ray road cannot side one without a cylinder table —
+    /// and `nesting` reads that as the road declining (`Said::Declines`): a witness further down
+    /// answers, and this name never surfaces from there.
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
     /// and replay stand on (`defs_are_remappable`). The coplanar merge dissolves the corners that
     /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose boss
-    /// only touches the plate), so the names the result keeps are mostly its own; the suite raises
-    /// it for one family — a triangle whose side is tangent to a cylinder at a corner on its rim
-    /// (`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`: `B − A` with `B` past the
-    /// cylinder's top, and the union with `B` past the top alone), where a body touching the other
-    /// along that line keeps a corner named by the other's walls. A shipped check rather than a
+    /// only touches the plate), and the straight-angle cleaning reads one line's two spellings as
+    /// one (a prism's edge along a cylinder's lateral and on past its cap), so the names the result
+    /// keeps are its own: ☑ no input in the workspace suite or the census raises it. A shipped check rather than a
     /// debug_assert all the same: a definition naming a surface the result has **no face on at
     /// all** is a model that cannot describe itself, and in a release build it would ship
     /// silently — right volume, wrong names.

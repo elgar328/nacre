@@ -438,7 +438,6 @@ fn one_line_spelled_as_a_ruling_and_a_plane_segment_dissolves() {
                 other: 9,
                 cyl: 0,
                 side,
-                stated: true,
             }],
         )
     };
@@ -455,6 +454,44 @@ fn one_line_spelled_as_a_ruling_and_a_plane_segment_dissolves() {
     ] {
         assert_eq!(run(&shared).nodes, vec![a, x, b, c], "{why}: x is a bend");
     }
+    // «One line» is not transitive: the plane spelling is one line with the ruling piece walked
+    // either way, but the two pieces walked opposite ways are a cusp. A ring through `x` twice that
+    // meets all three there keeps `x`, whichever it meets first. (`a` and `b` are corners of a
+    // second face, so `x` is the only node the cleaning could drop.)
+    let down = Wall::Ruling {
+        cyl: 0,
+        side: 1,
+        up: false,
+        plane: 7,
+    };
+    let twice = LocalFace {
+        surf: ClassIx::Plane(7),
+        outer: Bound::Ring(Ring::new(
+            vec![a, x, b, x],
+            vec![Wall::Plane(9), ruling, down, Wall::Plane(9)],
+        )),
+        inner: Vec::new(),
+        flip: false,
+    };
+    let corners = LocalFace {
+        surf: ClassIx::Plane(8),
+        outer: Bound::Ring(Ring::new(
+            vec![a, b, c],
+            vec![Wall::Plane(3), Wall::Plane(4), Wall::Plane(5)],
+        )),
+        inner: Vec::new(),
+        flip: false,
+    };
+    let mut v = vec![twice, corners];
+    super::coplanar::dissolve_straight_angles(&mut v, &[0, 1], &line(1));
+    let Bound::Ring(r) = &v[0].outer else {
+        panic!("still a ring")
+    };
+    assert!(
+        r.nodes.contains(&x),
+        "a cusp through x keeps it: {:?}",
+        r.nodes
+    );
 }
 
 /// **The rim table holds the nodes the faces hold** (`draft::held_rims`) — one node when one is

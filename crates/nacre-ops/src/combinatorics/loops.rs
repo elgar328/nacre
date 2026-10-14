@@ -587,7 +587,7 @@ fn curved_wall(
             // distinct caps cross the axis at distinct parameters. The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
-            let other_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {
+            let axial_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {
                 let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };
@@ -597,8 +597,8 @@ fn curved_wall(
             };
             let [v0, v1] = model.edge(he.edge).vertices;
             let (t0, t1) = (
-                other_param(v0).ok_or_else(curved)?,
-                other_param(v1).ok_or_else(curved)?,
+                axial_param(v0).ok_or_else(curved)?,
+                axial_param(v1).ok_or_else(curved)?,
             );
             let ascends = t1 > t0;
             Ok(crate::combinatorics::Wall::Ruling {

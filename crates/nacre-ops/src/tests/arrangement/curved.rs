@@ -191,7 +191,8 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
 /// where the wall `x = 40` meets it — the arc from that node back to it. The class's ray runs along
 /// `y` at the probe's `x`, so a probe on `x = 40` sends it through both of the wall's points: the
 /// node, where the arc both leaves and arrives, and the other point, inside the arc. From the
-/// circle's centre the ray crosses once (inside); from beyond the circle, twice (outside) —
+/// circle's centre the ray crosses once (inside); from beyond the circle on either side — one of
+/// the two runs the ray through both points, whichever way the chart points it — twice (outside),
 /// whichever of the two points is the node.
 #[test]
 fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
@@ -223,7 +224,11 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
                 from_h: combinatorics::EndPin::Cylinder,
                 to_h: combinatorics::EndPin::Cylinder,
             }];
-            for (probe, want) in [([40, 20, 20], true), ([40, 30, 20], false)] {
+            for (probe, want) in [
+                ([40, 20, 20], true),
+                ([40, 30, 20], false),
+                ([40, 10, 20], false),
+            ] {
                 assert_eq!(
                     combinatorics::point_in_mixed_ring(
                         &jd,

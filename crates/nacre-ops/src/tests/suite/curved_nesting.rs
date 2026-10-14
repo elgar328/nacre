@@ -1102,6 +1102,64 @@ fn the_walk_asks_a_curved_edge_its_crossings() {
     });
 }
 
+/// **A closed arc whose node is on the line crosses it again** (`ring_against_plane`). A ring of
+/// one node on `x = 1` and one arc from it back to it, departing to side σ: its two ends are one
+/// node, so they do not settle the count, and the walk asks the arc — with that end — and reads
+/// one crossing, a sign change between the arc's two pieces, and the node a run whose flanks
+/// differ. Any other count is impossible for a transverse departure, and unnameable.
+#[test]
+fn a_closed_arc_on_the_line_is_asked_its_crossing() {
+    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane};
+    on_the_cube_ring(|jd, ring, x1, _| {
+        let node = [ring[1]];
+        for sigma in [1i8, -1] {
+            let walk = |count: u8| {
+                let asked = std::cell::RefCell::new(Vec::new());
+                let got = ring_against_plane(
+                    jd,
+                    &[],
+                    &node,
+                    x1,
+                    |_| Some(EdgeMeet::Departs(sigma)),
+                    |i, on_end| {
+                        asked.borrow_mut().push((i, on_end));
+                        Some(count)
+                    },
+                );
+                (got, asked.into_inner())
+            };
+            let (RingWalk::Met(mut got), asked) = walk(1) else {
+                panic!("σ = {sigma}: the ring meets the line")
+            };
+            assert_eq!(asked, [(0, Some(0))], "the arc is asked, with its end");
+            got.sort_by_key(|f| matches!(f, Feature::Run { .. }));
+            assert_eq!(
+                got,
+                vec![
+                    Feature::Crossing {
+                        edge: 0,
+                        from: sigma,
+                        nth: 0,
+                    },
+                    Feature::Run {
+                        first: 0,
+                        len: 1,
+                        flanks_differ: true,
+                        flank: -sigma,
+                    },
+                ],
+                "σ = {sigma}"
+            );
+            for count in [0, 2] {
+                assert!(
+                    matches!(walk(count).0, RingWalk::Unnameable),
+                    "σ = {sigma}: {count} crossings is impossible"
+                );
+            }
+        }
+    });
+}
+
 /// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions
 /// in `arrangement::disk_side_probe`, which fire where the fact is made and so see every chart in
 /// the binary. Those say the geometry never contradicts the rule; what a test adds is the other

@@ -61,7 +61,13 @@ pub(crate) fn pierce_name_from_def(
         let name = model.world_plane_name(h)?;
         let c = name.narrow()?;
         for &k in candidates {
-            let Some(sense) = plane_sense(c, &class_coeffs_rat(jd, k)?) else {
+            // A candidate with no narrow description cannot be this handle's class and is passed
+            // over — the corner's other planes still decide; a handle none answers to leaves
+            // `seen` empty and the corner unnamed below.
+            let Some(kc) = class_coeffs_rat(jd, k) else {
+                continue;
+            };
+            let Some(sense) = plane_sense(c, &kc) else {
                 continue;
             };
             if seen[i].is_some() {

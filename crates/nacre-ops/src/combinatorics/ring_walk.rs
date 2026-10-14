@@ -286,17 +286,16 @@ pub(crate) fn ring_against_plane(
                 // ★ Two on-`q` ends settle the count only when they are two points: a circle
                 // meets a line twice, so an arc between them is wholly on one side. A **closed**
                 // arc's two ends are one node, and its whole turn meets the line again at the
-                // other root (none where the line is tangent there) — asked like any edge whose
-                // ends cannot say, the departure's side flipping at the crossing.
+                // other root — asked like any edge whose ends cannot say, the departure's side
+                // flipping at the crossing. A departure is transverse at the node (a tangent one
+                // has no side, and `on_meet` says `None` for it), so the line meets the circle at
+                // a second point and any count but one is impossible.
                 Some(EdgeMeet::Departs(s)) if nodes[i] == nodes[(i + 1) % n] => {
-                    match crossings(i, Some(i)) {
-                        Some(0) => seq.push((s, Entry::Departure)),
-                        Some(1) => {
-                            seq.push((s, Entry::Piece { edge: i, k: 0 }));
-                            seq.push((-s, Entry::Piece { edge: i, k: 1 }));
-                        }
-                        _ => return RingWalk::Unnameable,
+                    if crossings(i, Some(i)) != Some(1) {
+                        return RingWalk::Unnameable;
                     }
+                    seq.push((s, Entry::Piece { edge: i, k: 0 }));
+                    seq.push((-s, Entry::Piece { edge: i, k: 1 }));
                 }
                 Some(EdgeMeet::Departs(s)) => seq.push((s, Entry::Departure)),
             }

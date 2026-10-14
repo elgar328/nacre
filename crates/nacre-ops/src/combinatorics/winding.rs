@@ -501,7 +501,8 @@ fn arc_extremum_winding(
 }
 
 /// **The fewest edges a ring can have and still bound a cell** — the one rule the walk's orbit
-/// length (`arrangement::walk_cells`) and [`loop_winding`] both read, so the two cannot part.
+/// length (`arrangement::walk_cells`), [`loop_winding`] and the coplanar merge's cycles
+/// (`assembly::coplanar`) read, so they cannot part.
 ///
 /// Two straight edges between two points are one edge traced twice, so a straight ring needs
 /// three. Two arcs between two points are a lens, and an arc with its chord a circular segment —

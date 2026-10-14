@@ -326,15 +326,14 @@ pub(crate) enum Wall {
 /// **A line two plane classes share on a cylinder, as one of the two reads it** — read off the
 /// gate's record ([`crate::planes::SharedRuling`]), never decided again: `other` is the second
 /// class, `cyl` the cylinder, `side` which of the reading class's two rulings the line is
-/// ([`ruling_side_signed`] against that class — `0` for a tangent class's one ruling), and
-/// `stated` whether the reading class states it as a station of the cylinder's chart (the
-/// record's `stated_by`).
+/// ([`ruling_side_signed`] against that class — `0` for a tangent class's one ruling). Whether the
+/// reading class states it as a station of the cylinder's chart is the record's own `stated_by`,
+/// which `split_rulings` asks before it reads the line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SharedLine {
     pub(crate) other: usize,
     pub(crate) cyl: usize,
     pub(crate) side: i8,
-    pub(crate) stated: bool,
 }
 
 /// **One record of the gate, read by `own`** — `None` when `own` is not one of its two classes,
@@ -369,12 +368,7 @@ pub(crate) fn shared_line(
         def,
         (&line, &QuadVal::from_rat(nacre_exact::Rat::from_int(0))),
     )?;
-    Some(SharedLine {
-        other,
-        cyl,
-        side,
-        stated: sr.stated_by.contains(&own),
-    })
+    Some(SharedLine { other, cyl, side })
 }
 
 /// **Every plane class's shared lines** — the table «do these two walls of one face run along
@@ -387,8 +381,8 @@ pub(crate) fn shared_line(
 /// `Wall::Plane` above it. Compared as values the two are a bend, and the point between them
 /// stays a vertex that only the other solid's surfaces name.
 ///
-/// A class whose lines cannot be read is left out, and a pair it would have joined reads as a
-/// bend — the vertex stays, which is today's answer, never a wrong one.
+/// A record a class cannot read is left out, and a pair it would have joined reads as a bend —
+/// the vertex stays, never a wrong answer.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SharedLines {
     by_class: HashMap<usize, Vec<SharedLine>>,
@@ -398,19 +392,14 @@ impl SharedLines {
     /// Built from the gate's records, every class of every record reading it.
     pub(crate) fn of(jd: &Judge<'_, WorkingPlane>, cyls: &[crate::planes::WorkingCyl]) -> Self {
         let mut by_class: HashMap<usize, Vec<SharedLine>> = HashMap::new();
-        let mut unread: Vec<usize> = Vec::new();
         for (ci, cy) in cyls.iter().enumerate() {
             for sr in &cy.shared {
                 for own in [sr.line.0, sr.line.1] {
-                    match shared_line(jd, cyls, ci, sr, own) {
-                        Some(l) => by_class.entry(own).or_default().push(l),
-                        None => unread.push(own),
+                    if let Some(l) = shared_line(jd, cyls, ci, sr, own) {
+                        by_class.entry(own).or_default().push(l);
                     }
                 }
             }
-        }
-        for c in unread {
-            by_class.remove(&c);
         }
         Self { by_class }
     }

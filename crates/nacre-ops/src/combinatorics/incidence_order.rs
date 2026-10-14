@@ -375,9 +375,10 @@ pub(crate) fn on_line(
 /// Whether a pierce point's name puts it on the line `p ∩ q` — the pair the two locators are handed.
 ///
 /// ★ **A producer's invariant, asserted rather than trusted.** A pierce point is located as one
-/// only on the line its own pair names — every site that pins an end by the cylinder asks
-/// [`pin_for`], which answers the quadric for that pair alone and the point's other plane for any
-/// other line — and the quadratic road leans on it: the point's meet line is solved from the name's planes, and the axis two pierce points are
+/// only on the line its own pair names: a site that mints the point on a line names it by that
+/// line's pair, and a site that pins an end arriving under a name asks [`pin_for`], which answers
+/// the quadric for the name's own pair alone and the point's other plane for any other line. The
+/// quadratic road leans on it: the point's meet line is solved from the name's planes, and the axis two pierce points are
 /// compared on comes from the line's (`stored_line_dir`). A pair that disagreed would compare a
 /// point against a line it does not lie on. `false` for a three-plane name, which no pierce arm hands in.
 fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
