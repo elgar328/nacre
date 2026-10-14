@@ -94,11 +94,25 @@ fn offset_of(m: &mut Model, frame: SketchFrame, dist: f64) -> SketchFrame {
     frame
 }
 
-/// A box over `rect` in the world, from `z = −5` up to `z = 0`, stated by a sweep against the
-/// normal.
-fn block_below(m: &mut Model, rect: [[f64; 2]; 4]) -> Handle<Solid> {
-    let frame = SketchFrame::world(m, Axis::Z);
+/// A box over `rect` on `frame`, from 5 below it up to it, stated by a sweep against the normal.
+fn block_below(m: &mut Model, frame: SketchFrame, rect: [[f64; 2]; 4]) -> Handle<Solid> {
     prism_on(m, frame, &rect, -5.0)
+}
+
+/// The world frame or the 3-4-5 one through the origin, with its own axes in the world —
+/// `u`, `v` and the normal `n = u × v`.
+fn base_frame(m: &mut Model, tilted: bool) -> (SketchFrame, [[f64; 3]; 3]) {
+    if tilted {
+        (
+            crate::common::pythagorean_frame(m, Point3::from_array([0.0; 3])),
+            [[0.6, 0.8, 0.0], [-0.48, 0.36, 0.8], [0.64, -0.48, 0.6]],
+        )
+    } else {
+        (
+            SketchFrame::world(m, Axis::Z),
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        )
+    }
 }
 
 /// A unit cube, and a wedge sunk into it whose sharp tip reaches `tip_x`. At `tip_x == 1.0` the tip
@@ -296,7 +310,14 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
         [[f64; 2]; 4],
         f64,
     );
-    let cases: [Case; 2] = [
+    let cases: [Case; 3] = [
+        (
+            "a corner on the block's top",
+            [[-10.0, -8.0], [3.0, -8.0], [3.0, 4.0], [-10.0, 4.0]],
+            slanted,
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            780.0 + 1.0,
+        ),
         (
             "a corner on the block's corner",
             [[-10.0, -8.0], [0.0, -8.0], [0.0, 0.0], [-10.0, 0.0]],
@@ -317,7 +338,8 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
             for swapped in [false, true] {
                 let at = format!("{what}, turned = {turned}, swapped = {swapped}");
                 let mut m = Model::new();
-                let mut a = block_below(&mut m, rect);
+                let world = SketchFrame::world(&m, Axis::Z);
+                let mut a = block_below(&mut m, world, rect);
                 let f = frame(&mut m);
                 let mut b = prism_on(&mut m, f, &bar, 1.0);
                 if turned {
@@ -364,8 +386,10 @@ fn a_bar_resting_on_its_own_block_by_an_edge_is_refused() {
         for swapped in [false, true] {
             let at = format!("turned = {turned}, swapped = {swapped}");
             let mut m = Model::new();
+            let world = SketchFrame::world(&m, Axis::Z);
             let mut a = block_below(
                 &mut m,
+                world,
                 [[-10.0, -8.0], [6.0, -8.0], [6.0, 4.0], [-10.0, 4.0]],
             );
             let f = tipped(&mut m);
@@ -381,6 +405,199 @@ fn a_bar_resting_on_its_own_block_by_an_edge_is_refused() {
                     ..
                 }) => {}
                 other => panic!("{at}: {other:?}"),
+            }
+        }
+    }
+}
+
+/// ★ **A body standing on itself at one point is refused, whichever operand comes first.** A
+/// slanted prism's lowest corner rests on the block's top — inside the face, or on the face's edge
+/// — and a long leg of the same prism sinks into the block further off, so the fuse is one body
+/// whose surface touches itself at that corner. No edge of the body lies on the block's top there,
+/// so only the point arm asks; on the face's edge the arrangement splits one of the two faces at
+/// the corner and not the other, and the edge-use guard would name an open shell further on. The
+/// twins without the leg are two bodies
+/// (`two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order`).
+#[test]
+fn a_body_standing_on_itself_at_a_corner_is_refused() {
+    let u_shape: &[[f64; 2]] = &[
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 4.0],
+        [-8.0, 4.0],
+        [-8.0, 1.0],
+        [0.0, 1.0],
+    ];
+    for (what, rect) in [
+        (
+            "inside the block's top",
+            [[-10.0, -8.0], [3.0, -8.0], [3.0, 4.0], [-10.0, 4.0]],
+        ),
+        (
+            "on the block's top edge",
+            [[-10.0, -8.0], [0.0, -8.0], [0.0, 4.0], [-10.0, 4.0]],
+        ),
+    ] {
+        for turned in [false, true] {
+            for swapped in [false, true] {
+                let at = format!("{what}, turned = {turned}, swapped = {swapped}");
+                let mut m = Model::new();
+                let world = SketchFrame::world(&m, Axis::Z);
+                let mut a = block_below(&mut m, world, rect);
+                let f = slanted(&mut m);
+                let mut b = prism_on(&mut m, f, u_shape, 1.0);
+                if turned {
+                    a = xf(&mut m, a, rot30());
+                    b = xf(&mut m, b, rot30());
+                }
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                match boolean(&mut m, BoolKind::Fuse, x, y) {
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::SelfTouchingResult,
+                        ..
+                    }) => {}
+                    other => panic!("{at}: {other:?}"),
+                }
+            }
+        }
+    }
+}
+
+/// ★ **A bar resting on a notched face of its own block is refused** — the face's outline carries
+/// the arc a cylinder cut at its far corner, so the edge test does not read it (a mixed ring); the
+/// bar's bottom edge has its ends inside the face, and the point arm reads them on the rational
+/// road. The cylinder sits where no slanted plane of the bar meets its side, so the gate passes
+/// the pair. The twin without the leg is two bodies. On the world frame and a 3-4-5 one, in either
+/// operand order.
+#[test]
+fn a_bar_resting_on_its_own_notched_block_is_refused() {
+    let bar: &[[f64; 2]] = &[[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]];
+    let legged: &[[f64; 2]] = &[
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [2.0, 0.5],
+        [4.0, 0.5],
+        [4.0, -3.0],
+        [5.0, -3.0],
+        [5.0, 1.0],
+        [0.0, 1.0],
+    ];
+    let notch = std::f64::consts::PI * 0.25 / 2.0 * 5.0; // half a disk of radius 0.5, 5 deep
+    for (what, top, joined) in [("alone", bar, false), ("with a leg", legged, true)] {
+        for tilted in [false, true] {
+            for swapped in [false, true] {
+                let at = format!("{what}, tilted = {tilted}, swapped = {swapped}");
+                let mut m = Model::new();
+                let (base, [u, v, n]) = base_frame(&mut m, tilted);
+                let block = block_below(
+                    &mut m,
+                    base,
+                    [[-10.0, -11.0], [6.0, -11.0], [6.0, 4.0], [-10.0, 4.0]],
+                );
+                let floor = offset_of(&mut m, base, -6.0);
+                let disk = nacre_ops::from_paths(vec![
+                    nacre_ops::Ring2d::circle(Point2::from_array([-8.0, -11.0]), 0.5)
+                        .expect("a circle"),
+                ])
+                .expect("a disk")
+                .remove(0);
+                let cutter = extrude_on(&mut m, floor, disk, 7.0);
+                let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the notch")[0];
+                m.rebuild_adjacency();
+                // The bar's frame, tipped about the base's `u` towards its normal.
+                let tip: [f64; 3] = core::array::from_fn(|k| 0.8 * v[k] + 0.6 * n[k]);
+                let f = frame_on(&mut m, u, tip);
+                let b = prism_on(&mut m, f, top, 1.0);
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let got = boolean(&mut m, BoolKind::Fuse, x, y);
+                match (joined, got) {
+                    (
+                        true,
+                        Err(BoolError::Rejected {
+                            reason: RejectReason::SelfTouchingResult,
+                            ..
+                        }),
+                    ) => {}
+                    (false, Ok(solids)) => {
+                        m.rebuild_adjacency();
+                        assert_eq!(solids.len(), 2, "{at}: two bodies");
+                        assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                        let vol: f64 = solids
+                            .iter()
+                            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                            .sum();
+                        let want = 1200.0 - notch + 2.0;
+                        assert!((vol - want).abs() < 1e-6, "{at}: volume {vol}, want {want}");
+                    }
+                    (_, other) => panic!("{at}: {other:?}"),
+                }
+            }
+        }
+    }
+}
+
+/// ★ **A turned prism standing on its own bored block at one point is refused.** The prism is
+/// turned 30° about the vertical through its corner, so its planes have no world statement, and
+/// its corner, resting on the block's top, is named by those planes alone: no rational coordinate
+/// says whether it is in the bore's disk. The gate proved the bore's cylinder beside every one of
+/// them, and a point on a plane the cylinder lies wholly beside is off the disk — so the top face
+/// reads the corner as inside and the point arm refuses the body. The twin without the leg is two
+/// bodies. Either operand order.
+#[test]
+fn a_turned_prism_standing_on_its_own_bored_block_is_refused() {
+    let leg: &[[f64; 2]] = &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let u_shape: &[[f64; 2]] = &[
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 4.0],
+        [-8.0, 4.0],
+        [-8.0, 1.0],
+        [0.0, 1.0],
+    ];
+    let bore = std::f64::consts::PI * 0.25 * 5.0;
+    for (what, top, joined) in [("alone", leg, false), ("with a leg", u_shape, true)] {
+        for swapped in [false, true] {
+            let at = format!("{what}, swapped = {swapped}");
+            let mut m = Model::new();
+            let world = SketchFrame::world(&m, Axis::Z);
+            let block = block_below(
+                &mut m,
+                world,
+                [[-14.0, -12.0], [8.0, -12.0], [8.0, 8.0], [-14.0, 8.0]],
+            );
+            let floor = offset_of(&mut m, world, -6.0);
+            let disk = nacre_ops::from_paths(vec![
+                nacre_ops::Ring2d::circle(Point2::from_array([-12.0, 6.0]), 0.5).expect("a circle"),
+            ])
+            .expect("a disk")
+            .remove(0);
+            let cutter = extrude_on(&mut m, floor, disk, 7.0);
+            let a = boolean(&mut m, BoolKind::Cut, block, cutter).expect("the bore")[0];
+            m.rebuild_adjacency();
+            let f = slanted(&mut m);
+            let b = prism_on(&mut m, f, top, 1.0);
+            let b = xf(&mut m, b, crate::common::rot_iso(Axis::Z, 30));
+            let (x, y) = if swapped { (b, a) } else { (a, b) };
+            match (joined, boolean(&mut m, BoolKind::Fuse, x, y)) {
+                (
+                    true,
+                    Err(BoolError::Rejected {
+                        reason: RejectReason::SelfTouchingResult,
+                        ..
+                    }),
+                ) => {}
+                (false, Ok(solids)) => {
+                    m.rebuild_adjacency();
+                    assert_eq!(solids.len(), 2, "{at}: two bodies");
+                    assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                    let vol: f64 = solids
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                        .sum();
+                    let want = 2200.0 - bore + 1.0;
+                    assert!((vol - want).abs() < 1e-6, "{at}: volume {vol}, want {want}");
+                }
+                (_, other) => panic!("{at}: {other:?}"),
             }
         }
     }

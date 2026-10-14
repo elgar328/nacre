@@ -501,14 +501,12 @@ fn ask(
     w: &Where,
     target: Cell<'_>,
 ) -> Result<Said, BoolError> {
-    let radial = |p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef| {
-        match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
-            nacre_exact::Orient::Negative => Said::In,
-            nacre_exact::Orient::Positive => Said::Out,
-            // On the rim: this witness says nothing, the next may — one reading for the ring and
-            // the disk alike.
-            nacre_exact::Orient::Zero => Said::Abstain,
-        }
+    let disk = |side: nacre_geom::intersect::RingSide| match side {
+        nacre_geom::intersect::RingSide::Inside => Said::In,
+        nacre_geom::intersect::RingSide::Outside => Said::Out,
+        // On the rim: this witness says nothing, the next may — one reading for the ring and
+        // the disk alike.
+        nacre_geom::intersect::RingSide::OnBoundary => Said::Abstain,
     };
     Ok(match (w, target) {
         (Where::Named(t), Cell::Ring(rb)) => {
@@ -564,31 +562,28 @@ fn ask(
             Err(_) => Said::Unformed,
         },
         (Where::Named(t), Cell::Disk(def)) => {
-            // ★ **A corner on a class the gate proved silent about this disk's cylinder is outside
-            // the disk, exactly.** Where the class is `Beside` the cylinder, the corner lies on its
-            // plane and the whole cylinder — this disk among its sections — strictly to one side.
-            // Where the class is `Apart`, the corner lies on a face of that class (a class's
-            // segments are its faces met by the cell's plane), those faces stand apart from the
-            // lateral boxes, and the disk lies in the box its rim does. A `Sectioned` class never
-            // gets here: its cylinder has no whole rim, so no disk. ⚠ The `Apart` argument reads
-            // «a corner named by the class lies on one of its faces»; an alias that put the class
-            // into the name of a point off its faces would break it unseen.
-            let silent = cyls
+            // ★ **A corner on a class the gate proved apart from this disk's cylinder is outside
+            // the disk, exactly** — here, and not in the shared reading below: the corner lies on
+            // a face of that class (a class's segments are its faces met by the cell's plane),
+            // those faces stand apart from the lateral boxes, and the disk lies in the box its rim
+            // does. A `Sectioned` class never gets here: its cylinder has no whole rim, so no disk.
+            // ⚠ The argument reads «a corner named by the class lies on one of its faces», which a
+            // cell's corner keeps and a point off the class's faces does not; an alias that put the
+            // class into the name of a point off its faces would break it unseen. A class proved
+            // `Beside` the cylinder needs no such premise and is read by the shared rule.
+            let apart = cyls
                 .iter()
                 .find(|cy| cy.def == *def)
-                .is_some_and(|cy| t.iter().any(|&k| cy.is_silent(k)));
-            if silent {
+                .is_some_and(|cy| t.iter().any(|&k| cy.is_silent(k) && cy.beside(k).is_none()));
+            if apart {
                 return Ok(Said::Out);
             }
-            match combinatorics::node_coords_rat(
-                jd,
-                NodeId::three_planes(combinatorics::Canon3::three(*t)),
-            ) {
-                Some(p) => radial(&p, def),
+            match combinatorics::named_point_in_disk(jd, cyls, *t, def) {
+                Some(side) => disk(side),
                 None => Said::Unformed,
             }
         }
-        (Where::Coord(p), Cell::Disk(def)) => radial(p, def),
+        (Where::Coord(p), Cell::Disk(def)) => disk(combinatorics::point_in_disk(p, def)),
     })
 }
 

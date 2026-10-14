@@ -232,12 +232,36 @@ fn ray_misses_face(
 ///
 /// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
-fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> RingSide {
+pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> RingSide {
     match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
         nacre_exact::Orient::Negative => RingSide::Inside,
         nacre_exact::Orient::Positive => RingSide::Outside,
         nacre_exact::Orient::Zero => RingSide::OnBoundary,
     }
+}
+
+/// **Where the point named `t` is against the disk `def` bounds**, on a plane through both.
+///
+/// ★ **On a class the gate proved this cylinder beside, outside — exactly.** Every lateral face
+/// of the cylinder lies strictly on one side of that class's plane, so its rims and the disks
+/// they bound do too, and the point, on the plane, is off the disk whatever else names it. This
+/// needs nothing of where the point came from, which is why every reader of a named point takes
+/// it. Otherwise the point's rational coordinates answer by their radial side, and with none the
+/// answer is unknown.
+pub(crate) fn named_point_in_disk(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    t: [usize; 3],
+    def: &nacre_topo::CylinderDef,
+) -> Option<RingSide> {
+    if cyls
+        .iter()
+        .find(|cy| cy.def == *def)
+        .is_some_and(|cy| t.iter().any(|&k| cy.beside(k).is_some()))
+    {
+        return Some(RingSide::Outside);
+    }
+    node_coords_rat(jd, NodeId::three_planes(Canon3::three(t))).map(|p| point_in_disk(&p, def))
 }
 
 /// [`point_in_mixed_ring`]'s answer as a side: its `None` does not tell a point on the ring from
@@ -674,7 +698,7 @@ pub(crate) fn named_point_in_face(
                     }
                 }))
             }
-            BoundEdges::Circle(def) => Ok(at().map(|p| point_in_disk(&p, def))),
+            BoundEdges::Circle(def) => Ok(named_point_in_disk(jd, cyls, x, def)),
             // Loops bound a cylinder, never a plane — a producer error, not an input.
             BoundEdges::Lateral(_) => Ok(None),
         }

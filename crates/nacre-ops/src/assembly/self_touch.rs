@@ -1,4 +1,5 @@
 use super::*;
+use nacre_geom::intersect::RingSide;
 /// **What the tangency verdict needs, carried as one parameter** — the operation (the only thing
 /// that decides `keep`) and the rows the gate stated. Empty for every boolean without a tangent
 /// wall, which is almost all of them.
@@ -184,19 +185,18 @@ pub(crate) fn assemble_fuse_cut(
 
 /// **A solid whose surface touches itself is not a solid.**
 ///
-/// The proposition: *an edge of this solid lies in the interior of one of this same solid's faces.*
-/// An embedded boundary cannot do that — the surface would occupy the same points twice — so a
-/// result that does is refused rather than returned. The unit is the **result solid**, outer shell
+/// The proposition: *an edge of this solid lies in the interior of one of this same solid's faces,
+/// or a vertex of it on the closed region of one it does not bound.* An embedded boundary cannot do
+/// that — the surface would occupy the same points twice — so a result that does is refused rather
+/// than returned. The unit is the **result solid**, outer shell
 /// and cavities together: a wedge cut whose tip lands on the far wall touches its own cavity, and
 /// asking the question per component would miss exactly that.
 ///
 /// **Three sieves, cheapest first**, because the exact question is the expensive one:
 ///
 /// 1. ★ **Which faces are near** — a box per face against the edge's box (its two ends' reach),
-///    through a window on the faces sorted by their low `x`. Over the perf folds, 666,653 pairs.
-///    The window reads about 120 faces per edge on a turned fold, whose fins overlap on every axis;
-///    sorting on `y` or `z` read more, and a uniform grid over the boxes was slower still (its
-///    per-query collection outweighed the faces it skipped) — measured, and the window kept.
+///    the faces filed in a grid over their boxes ([`FaceGrid`]). Over the perf folds, 666,653
+///    pairs.
 /// 2. ★ **Which of those lie under the edge** — both ends exactly on the face's plane
 ///    (`side_of`), 1,583 of those pairs. Not the planes the two ends' **names** share: a name
 ///    carries three of the planes through its point, and where three planes hold the edge's line (a
@@ -256,19 +256,21 @@ pub(super) fn self_touch_reject(
             )
         })
         .collect();
-    // ★ **The witness is the smallest offending edge**, not the first a hash map hands over — the
-    // rejection's `at` is a census key's neighbour and must not move between runs. Only the
-    // rejecting path keeps scanning, so a result that builds pays nothing for it.
-    let mut found: Option<[NodeId; 2]> = None;
-    let mut found_at = |e: [NodeId; 2]| {
+    // ★ **The witness is the smallest offending edge, else the smallest offending vertex**, not
+    // the first a hash map hands over — the rejection's `at` is a census key's neighbour and must
+    // not move between runs. Only the rejecting path keeps scanning, so a result that builds pays
+    // nothing for it.
+    let mut found: Option<Touch> = None;
+    let mut found_at = |e: Touch| {
         found = Some(found.map_or(e, |f| f.min(e)));
     };
     // ★ **A proof beats a «cannot tell».** A candidate whose exact test cannot be formed (a ring
     // the walk cannot name, a ray it cannot cast) is held, not raised: the scan goes on, and a
     // self-touch found anywhere is the answer. Only a result with none raises the held error —
-    // the one met at the smallest edge, so its kind does not follow the hash map's order either.
-    let mut held: Option<([NodeId; 2], BoolError)> = None;
-    let mut hold = |e: [NodeId; 2], err: BoolError| {
+    // the one met at the smallest edge or vertex, so its kind does not follow the hash map's order
+    // either.
+    let mut held: Option<(Touch, BoolError)> = None;
+    let mut hold = |e: Touch, err: BoolError| {
         if held.as_ref().is_none_or(|(k, _)| e < *k) {
             held = Some((e, err));
         }
@@ -282,10 +284,14 @@ pub(super) fn self_touch_reject(
         // membership. The curved arm asks it of a lateral face, for the edges two of the
         // solid's plane faces share along a ruling of that cylinder (the gate's record,
         // `SharedLines::on_cylinder`) — a wedge's apex edge lying along the solid's own bore wall,
-        // say ([`combinatorics::ruling_meets_lateral`]). What neither asks — an arc edge against
-        // any face, a ruling edge of the lateral against a plane face, a point contact — abstains
-        // rather than pretends: the edge-use guard, the non-manifold vertex check and `validate`
-        // still stand behind it, and the population is written down rather than assumed away.
+        // say ([`combinatorics::ruling_meets_lateral`]). The point arm below asks a vertex
+        // against a plane face. What none asks abstains rather than pretends, each for a reason
+        // written down: an arc edge lies in a plane face only on its own circle's plane, where
+        // the faces overlap in area (the coplanar merge's); a lateral's own ruling edge lies in a
+        // plane face only on a line the gate records, and the rulings split refuses a face across
+        // it (`RulingBoundNotYet`); a contact with a curved face at a point needs a plane slanted
+        // to its axis through the cylinder (`ObliqueCylinderCut`); and a face trimmed by a mixed
+        // ring is not read by the edge test (a vertex inside it is, by the point arm).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -305,6 +311,7 @@ pub(super) fn self_touch_reject(
         // One pass: which two faces own each edge, which edges an arc carries, and a box per face
         // holding its vertices' reach and its arcs' circles.
         let mut owners: HashMap<[NodeId; 2], Vec<usize>> = HashMap::new();
+        let mut visits: Vec<(NodeId, usize)> = Vec::new();
         let mut arc_edges: std::collections::HashSet<[NodeId; 2]> = Default::default();
         let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
         for (j, lf) in faces.iter().enumerate() {
@@ -321,6 +328,7 @@ pub(super) fn self_touch_reject(
                     let (u, v) = (r.nodes[i], r.nodes[(i + 1) % k]);
                     let key = if u < v { [u, v] } else { [v, u] };
                     owners.entry(key).or_default().push(j);
+                    visits.push((u, j));
                     if let Some(&(_, (rl, rh))) = pt.get(&u) {
                         grow(rl, rh);
                     }
@@ -343,22 +351,12 @@ pub(super) fn self_touch_reject(
             }
             boxes.push((lo, hi));
         }
-        // The faces by their boxes' low `x`, so a feature reads only the faces whose `x` span can
-        // reach it. A face with no ring (a cap disk) has an empty box and is never reached.
-        let mut by_x: Vec<usize> = (0..faces.len()).collect();
-        by_x.sort_by(|&a, &b| boxes[a].0[0].total_cmp(&boxes[b].0[0]));
-        let (boxes, by_x) = (&boxes, &by_x);
-        let near = |lo: [f64; 3], hi: [f64; 3]| {
-            by_x.iter()
-                .copied()
-                .take_while(move |&j| boxes[j].0[0] <= hi[0])
-                .filter(move |&j| {
-                    let (fl, fh) = boxes[j];
-                    (0..3).all(|k| hi[k] >= fl[k] && lo[k] <= fh[k])
-                })
-        };
-        // Does node `n` lie on plane `q`? Exact. Not cached: a pair recurs too rarely to pay for
-        // the table (measured over the perf folds: 932k distinct pairs of 1.33M asks).
+        let grid = FaceGrid::new(&boxes);
+        let mut near_buf = NearFaces::new(faces.len());
+        // Does node `n` lie on plane `q`? Exact, asked afresh: neither the answers nor the
+        // node's implicit point pay for a table (measured over the perf folds: 932k distinct
+        // (node, plane) pairs of 1.33M asks; a table of implicit points, to share a turned
+        // class's Cramer parts, cost more in hashing than it saved).
         let on = |n: NodeId, q: usize| combinatorics::side_of(jd, cyls, n, q) == Some(0);
         let reach_of = |n: NodeId| {
             pt.get(&n)
@@ -385,7 +383,7 @@ pub(super) fn self_touch_reject(
             let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
             let el: [f64; 3] = core::array::from_fn(|k| ul[k].min(vl[k]));
             let eh: [f64; 3] = core::array::from_fn(|k| uh[k].max(vh[k]));
-            for j in near(el, eh) {
+            for &j in near_buf.of(&grid, &boxes, el, eh) {
                 if own.contains(&j) {
                     continue;
                 }
@@ -419,7 +417,7 @@ pub(super) fn self_touch_reject(
                             slot.insert(face);
                         }
                         Err(err) => {
-                            hold([u, v], err);
+                            hold(Touch::Edge([u, v]), err);
                             continue;
                         }
                     }
@@ -436,11 +434,63 @@ pub(super) fn self_touch_reject(
                 };
                 match combinatorics::segment_meets_face(jd, cyls, q, w2, up, vp, &read[&j]) {
                     Ok(true) => {
-                        found_at([u, v]);
+                        found_at(Touch::Edge([u, v]));
                         continue 'edges;
                     }
                     Ok(false) => {}
-                    Err(err) => hold([u, v], err),
+                    Err(err) => hold(Touch::Edge([u, v]), err),
+                }
+            }
+        }
+        // ★ **The point arm** — a vertex of this solid on the closed region of one of its own plane
+        // faces it does not bound: a corner of one part resting on a face of another part the body
+        // joins elsewhere. No edge of it lies on that face, so the edges above never ask; inside the
+        // face or on its boundary, the surface touches itself at that point. The faces are the
+        // edges' sieve's: near the vertex's reach, its plane exactly through the vertex.
+        //
+        // ★ `OnBoundary` counts: a vertex on another face's ring where it is no node of it touches
+        // there whether the arrangement split one of the two faces at it (the edge-use guard would
+        // name the open shell further on) or neither (the counts close and nothing else sees it).
+        // The cost: a producer's T-junction — a node one face lists and its neighbour across the
+        // edge does not — would read here as a self-touch, `Impossible` where `SuspectedDefect` is
+        // the truth; the suite holds no such vertex (measured).
+        //
+        // A pierce vertex abstains: a point contact with a curved face needs a plane slanted to
+        // the cylinder's axis through a point of the cylinder, which `ObliqueCylinderCut` refuses.
+        visits.sort_unstable();
+        for at in visits.chunk_by(|x, y| x.0 == y.0) {
+            let n = at[0].0;
+            let Some(name) = combinatorics::three_plane_name(n) else {
+                continue;
+            };
+            let mine = |j: usize| at.binary_search(&(n, j)).is_ok();
+            let (nl, nh) = reach_of(n);
+            for &j in near_buf.of(&grid, &boxes, nl, nh) {
+                if mine(j) || matches!(faces[j].outer, Bound::Circle { .. }) {
+                    continue;
+                }
+                let q = faces[j].surf.plane();
+                if !on(n, q) {
+                    continue;
+                }
+                if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
+                    match super::grouping::comp_face(jd, cyls, faces[j]) {
+                        Ok(face) => {
+                            slot.insert(face);
+                        }
+                        Err(err) => {
+                            hold(Touch::Point(n), err);
+                            continue;
+                        }
+                    }
+                }
+                match combinatorics::named_point_in_face(jd, cyls, q, name, &read[&j]) {
+                    Ok(Some(RingSide::Inside | RingSide::OnBoundary)) => {
+                        found_at(Touch::Point(n));
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(err) => hold(Touch::Point(n), err),
                 }
             }
         }
@@ -471,18 +521,22 @@ pub(super) fn self_touch_reject(
                 if combinatorics::ruling_meets_lateral(jd, &cyls[k].def, loops, w, [u, v])
                     == Some(true)
                 {
-                    found_at([u, v]);
+                    found_at(Touch::Edge([u, v]));
                     continue 'ruling_edges;
                 }
             }
         }
     }
-    if let Some([u, v]) = found {
-        // The offending edge itself, as the witness — or the end the seam table realized.
-        let at = match (pt.get(&u), pt.get(&v)) {
-            (Some(a), Some(b)) => Some(crate::RejectWhere::Segment([a.0, b.0])),
-            (Some(a), None) | (None, Some(a)) => Some(crate::RejectWhere::Point(a.0)),
-            (None, None) => None,
+    if let Some(touch) = found {
+        // The offending edge itself, as the witness — or the end the seam table realized — or the
+        // offending vertex.
+        let at = match touch {
+            Touch::Edge([u, v]) => match (pt.get(&u), pt.get(&v)) {
+                (Some(a), Some(b)) => Some(crate::RejectWhere::Segment([a.0, b.0])),
+                (Some(a), None) | (None, Some(a)) => Some(crate::RejectWhere::Point(a.0)),
+                (None, None) => None,
+            },
+            Touch::Point(n) => pt.get(&n).map(|a| crate::RejectWhere::Point(a.0)),
         };
         return Err(match at {
             Some(at) => crate::reject_at(RejectReason::SelfTouchingResult, at),
@@ -504,4 +558,142 @@ pub(super) fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// made to hold the rational.
 fn outward(x: f64, away: f64) -> f64 {
     x + away * (x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE)
+}
+
+/// **Where a self-touch was found** — on an edge of the body, or at a vertex of it with no edge on
+/// the face it touches. Ordered edges first, each by its names, so the witness and the held error
+/// are the same run after run.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Touch {
+    Edge([NodeId; 2]),
+    Point(NodeId),
+}
+
+/// **The faces filed by their boxes** — a uniform grid over the group's finite boxes, about `∛F`
+/// cells a side, so a box reads the faces of the cells it covers rather than every face. A sweep
+/// on one axis is not enough: the fins of a turned fold overlap on every axis, and a window on the
+/// faces sorted by low `x` read about 120 faces per edge there (`y` and `z` read more) — over the
+/// perf folds both arms took 242 ms through the window and 196 ms through this grid (measured).
+/// A query collects into one buffer and drops repeats by a stamp ([`NearFaces`]); collecting a
+/// fresh vector per query and sorting it to drop them was slower than the window. A face whose box
+/// has no finite bound (an arc whose circle has no exact description) is filed everywhere; an empty
+/// box (a ring-less cap disk) nowhere.
+struct FaceGrid {
+    lo: [f64; 3],
+    step: [f64; 3],
+    n: [usize; 3],
+    cells: Vec<Vec<usize>>,
+    everywhere: Vec<usize>,
+}
+
+impl FaceGrid {
+    fn new(boxes: &[([f64; 3], [f64; 3])]) -> FaceGrid {
+        let finite = |(lo, hi): &([f64; 3], [f64; 3])| {
+            (0..3).all(|k| lo[k].is_finite() && hi[k].is_finite() && lo[k] <= hi[k])
+        };
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for b in boxes.iter().filter(|b| finite(b)) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(b.0[k]);
+                hi[k] = hi[k].max(b.1[k]);
+            }
+        }
+        let side = ((boxes.len() as f64).cbrt().ceil() as usize).clamp(1, 32);
+        let (mut n, mut step) = ([1; 3], [1.0; 3]);
+        for k in 0..3 {
+            if hi[k] > lo[k] {
+                n[k] = side;
+                step[k] = (hi[k] - lo[k]) / side as f64;
+            }
+        }
+        let mut grid = FaceGrid {
+            lo,
+            step,
+            n,
+            cells: vec![Vec::new(); n[0] * n[1] * n[2]],
+            everywhere: Vec::new(),
+        };
+        for (j, b) in boxes.iter().enumerate() {
+            if finite(b) {
+                for c in grid.cells_of(b.0, b.1) {
+                    grid.cells[c].push(j);
+                }
+            } else if (0..3).all(|k| b.0[k] <= b.1[k]) {
+                grid.everywhere.push(j);
+            }
+        }
+        grid
+    }
+
+    /// The cells a box covers, clamped to the grid.
+    fn cells_of(&self, lo: [f64; 3], hi: [f64; 3]) -> impl Iterator<Item = usize> + use<> {
+        let r: [[usize; 2]; 3] = core::array::from_fn(|k| {
+            let at = |x: f64| -> usize {
+                let i = ((x - self.lo[k]) / self.step[k]).floor();
+                if i.is_nan() || i < 0.0 {
+                    0
+                } else {
+                    (i as usize).min(self.n[k] - 1)
+                }
+            };
+            [at(lo[k]), at(hi[k])]
+        });
+        let n = self.n;
+        (r[0][0]..=r[0][1]).flat_map(move |x| {
+            (r[1][0]..=r[1][1])
+                .flat_map(move |y| (r[2][0]..=r[2][1]).map(move |z| (x * n[1] + y) * n[2] + z))
+        })
+    }
+}
+
+/// A query's buffer over a [`FaceGrid`]: the faces whose boxes meet a box, each once, in
+/// ascending order — so which face a caller asks first does not follow the grid. A face filed in
+/// several cells is kept once by the stamp of the query that met it.
+struct NearFaces {
+    stamp: Vec<u32>,
+    query: u32,
+    out: Vec<usize>,
+}
+
+impl NearFaces {
+    fn new(faces: usize) -> NearFaces {
+        NearFaces {
+            stamp: vec![0; faces],
+            query: 0,
+            out: Vec::new(),
+        }
+    }
+
+    fn of(
+        &mut self,
+        grid: &FaceGrid,
+        boxes: &[([f64; 3], [f64; 3])],
+        lo: [f64; 3],
+        hi: [f64; 3],
+    ) -> &[usize] {
+        self.query += 1;
+        self.out.clear();
+        let meets = |j: usize| {
+            let (fl, fh) = boxes[j];
+            (0..3).all(|k| hi[k] >= fl[k] && lo[k] <= fh[k])
+        };
+        for c in grid.cells_of(lo, hi) {
+            for &j in &grid.cells[c] {
+                if self.stamp[j] != self.query {
+                    self.stamp[j] = self.query;
+                    if meets(j) {
+                        self.out.push(j);
+                    }
+                }
+            }
+        }
+        for &j in &grid.everywhere {
+            if self.stamp[j] != self.query && meets(j) {
+                self.stamp[j] = self.query;
+                self.out.push(j);
+            }
+        }
+        self.out.sort_unstable();
+        &self.out
+    }
 }
