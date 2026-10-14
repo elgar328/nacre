@@ -160,6 +160,24 @@ pub(crate) fn class_coeffs_rat(
     jd.planes[c].world_rat()
 }
 
+/// **How the line `a ∩ b` of two plane classes meets a cylinder** — the meet
+/// [`nacre_exact::quad::plane_plane_cylinder`] answers for the two classes' world statements, its
+/// `Pair` roots the two points [`NodeId::pierce`] names on that line. `None` where a class has no
+/// world statement or the arithmetic runs out.
+///
+/// ★ One question with two askers: the tracer's chord across a circle bound
+/// (`arrangement::sides::chord_stations`) and the self-touch verdict's crossings of a circle hole
+/// along an edge's line ([`segment_meets_face`]).
+pub(crate) fn class_line_meets_cylinder(
+    jd: &Judge<'_, WorkingPlane>,
+    a: usize,
+    b: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<nacre_exact::quad::CylinderMeet> {
+    let (ca, cb) = (class_coeffs_rat(jd, a)?, class_coeffs_rat(jd, b)?);
+    nacre_exact::quad::plane_plane_cylinder(&ca, &cb, &def.origin(), &def.dir(), def.r2())
+}
+
 /// A node's exact coordinates: the rational meet of its three classes' descriptions. `None` when
 /// any class lacks a narrow rational description — the caller declines rather than guessing.
 ///

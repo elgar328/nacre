@@ -165,9 +165,14 @@ pub(crate) fn every_ray(
 /// another. Read as one alternation it also subsumes the endpoint test: an endpoint strictly inside
 /// puts `u` in an inside stretch.
 ///
-/// **Holes come along for free.** All rings go into one bag: the rings of a face are disjoint, so
+/// **Holes come along for free.** All bounds go into one bag: the bounds of a face are disjoint, so
 /// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the
-/// rule `design.md` states one dimension down for 2D sketches.
+/// rule `design.md` states one dimension down for 2D sketches. A circle hole meets the line at the
+/// two points where it crosses the hole's cylinder ([`class_line_meets_cylinder`] — a tangent line
+/// touches without crossing), and they toggle like any crossing. ★ The circles are read only when
+/// the polygon bounds alone leave an inside stretch overlapping the segment: a hole only takes
+/// material away, so a «no» needs no circle, and asking one can fail where the answer needed none.
+/// A face bounded outside by a circle (a cap disk) is not this road's: its polygon bounds are holes.
 ///
 /// ★★ **A `Run` is a stretch, not a place.** `Run { len >= 2 }` means the boundary *lies along* the
 /// line, so it occupies an interval where the segment would be **on** the face rather than inside
@@ -181,7 +186,7 @@ pub(crate) fn segment_meets_face(
     w: usize,
     u: [usize; 3],
     v: [usize; 3],
-    rings: &[Vec<RingEdge>],
+    face: &CompFace,
 ) -> Result<bool, BoolError> {
     // A point on `P ∩ w` is named there by a third plane of its own that **cuts** the line; one
     // parallel to it names nothing (the same duty `every_ray`'s `namer` states).
@@ -189,10 +194,32 @@ pub(crate) fn segment_meets_face(
     let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
         return Err(reject(RejectReason::RingNaming));
     };
-    // Every place a ring meets the line: `[lo, hi]` handles (equal for a crossing at a point) and
-    // whether passing it flips inside/outside.
-    let mut events: Vec<([usize; 2], bool)> = Vec::new();
-    for ring in rings {
+    let BoundEdges::Ring(_) = &face.outer else {
+        return Err(reject(RejectReason::RingNaming));
+    };
+    // Two places on the line, ordered: plane pins by `order_along` (the hot road), anything a
+    // cylinder pins by `order_on`.
+    let order = |a: PointOn, b: PointOn| -> Result<i8, BoolError> {
+        match (a, b) {
+            (PointOn::Class(x), PointOn::Class(y)) => Ok(order_along(jd, p, w, x, y)),
+            _ => order_on(jd, cyls, p, w, a, b)
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational)),
+        }
+    };
+    // Every place a bound meets the line: `[lo, hi]` (equal for a crossing at a point) and whether
+    // passing it flips inside/outside.
+    let mut events: Vec<([PointOn; 2], bool)> = Vec::new();
+    let mut circles: Vec<&nacre_topo::CylinderDef> = Vec::new();
+    for bound in core::iter::once(&face.outer).chain(&face.inner) {
+        let ring = match bound {
+            BoundEdges::Ring(ring) => ring,
+            BoundEdges::Circle(def) => {
+                circles.push(def);
+                continue;
+            }
+            // Loops bound a cylinder, never a plane — a producer error, not an input.
+            BoundEdges::Lateral(_) => return Err(reject(RejectReason::RingNaming)),
+        };
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
@@ -219,7 +246,7 @@ pub(crate) fn segment_meets_face(
                         .carrier
                         .wall()
                         .ok_or_else(|| reject(RejectReason::RingNaming))?;
-                    events.push(([h, h], true));
+                    events.push(([PointOn::Class(h); 2], true));
                 }
                 Feature::Run {
                     first,
@@ -235,24 +262,74 @@ pub(crate) fn segment_meets_face(
                         return Err(reject(RejectReason::RingNaming));
                     };
                     let lo_first = order_along(jd, p, w, a, b) <= 0;
+                    let [a, b] = [PointOn::Class(a), PointOn::Class(b)];
                     events.push((if lo_first { [a, b] } else { [b, a] }, flanks_differ));
                 }
             }
         }
     }
-    events.sort_by(|x, y| match order_along(jd, p, w, x.0[0], y.0[0]) {
-        -1 => std::cmp::Ordering::Less,
-        1 => std::cmp::Ordering::Greater,
-        _ => std::cmp::Ordering::Equal,
-    });
-    // Walk the line: outside before the first event, flipping as each genuine crossing is passed.
-    // The stretch between two events is a cell; an inside cell that overlaps the open `(u, v)` is
-    // the surface meeting itself.
     let (lo, hi) = if order_along(jd, p, w, hu, hv) <= 0 {
-        (hu, hv)
+        (PointOn::Class(hu), PointOn::Class(hv))
     } else {
-        (hv, hu)
+        (PointOn::Class(hv), PointOn::Class(hu))
     };
+    let polygons = inside_overlaps(&mut events, lo, hi, &order)?;
+    if !polygons || circles.is_empty() {
+        return Ok(polygons);
+    }
+    for def in circles {
+        let cyl = cyls
+            .iter()
+            .position(|c| c.def == *def)
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+        // A class with no world statement the gate proved this cylinder beside: the line lies in
+        // that plane and the whole cylinder off it, so the line misses the circle. Proved apart
+        // only, it may cross the circle at points no world statement names — not read.
+        if cyls[cyl].beside(w).is_some() {
+            continue;
+        }
+        use nacre_exact::quad::CylinderMeet;
+        match class_line_meets_cylinder(jd, p, w, def) {
+            Some(CylinderMeet::Pair { .. }) => {
+                for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+                    let at = PointOn::Pierce(NodeId::pierce(p, w, cyl, root));
+                    events.push(([at; 2], true));
+                }
+            }
+            // A tangent line touches the circle without crossing it; a missing one meets nothing.
+            Some(
+                CylinderMeet::Tangent { .. }
+                | CylinderMeet::Miss(_)
+                | CylinderMeet::AxisParallelMiss(_),
+            ) => {}
+            _ => return Err(reject(RejectReason::WitnessNotRational)),
+        }
+    }
+    inside_overlaps(&mut events, lo, hi, &order)
+}
+
+/// **Walk the line**: outside before the first event, flipping as each genuine crossing is passed.
+/// The stretch between two events is a cell; an inside cell that overlaps the open `(lo, hi)` is
+/// the surface meeting itself.
+fn inside_overlaps(
+    events: &mut [([PointOn; 2], bool)],
+    lo: PointOn,
+    hi: PointOn,
+    order: &impl Fn(PointOn, PointOn) -> Result<i8, BoolError>,
+) -> Result<bool, BoolError> {
+    let mut failed = None;
+    events.sort_by(|x, y| match order(x.0[0], y.0[0]) {
+        Ok(-1) => std::cmp::Ordering::Less,
+        Ok(1) => std::cmp::Ordering::Greater,
+        Ok(_) => std::cmp::Ordering::Equal,
+        Err(e) => {
+            failed.get_or_insert(e);
+            std::cmp::Ordering::Equal
+        }
+    });
+    if let Some(e) = failed {
+        return Err(e);
+    }
     let mut inside = false;
     for i in 0..events.len() {
         if events[i].1 {
@@ -264,15 +341,15 @@ pub(crate) fn segment_meets_face(
         // The cell runs from this event's far end to the next event's near end.
         let cell_start = events[i].0[1];
         let Some(next) = events.get(i + 1) else {
-            // ★ Reaching the unbounded tail while *inside* means the rings crossed the line an odd
-            // number of times, which a closed curve cannot do. Reading it as "outside" would let a
-            // real contact past in silence, so it is named instead — the same rule the rest of this
-            // engine follows for an invariant it cannot verify.
+            // ★ Reaching the unbounded tail while *inside* means the bounds crossed the line an
+            // odd number of times, which a closed curve cannot do. Reading it as "outside" would
+            // let a real contact past in silence, so it is named instead — the same rule the rest
+            // of this engine follows for an invariant it cannot verify.
             return Err(reject(RejectReason::RingParity));
         };
         let cell_end = next.0[0];
-        // Overlap with the **open** interval: strictly, so touching at `u` or `v` is not inside.
-        if order_along(jd, p, w, cell_start, hi) < 0 && order_along(jd, p, w, cell_end, lo) > 0 {
+        // Overlap with the **open** interval: strictly, so touching at `lo` or `hi` is not inside.
+        if order(cell_start, hi)? < 0 && order(cell_end, lo)? > 0 {
             return Ok(true);
         }
     }

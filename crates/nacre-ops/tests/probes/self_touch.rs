@@ -36,6 +36,11 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 fn prism_on(m: &mut Model, frame: SketchFrame, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     let profile =
         Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).expect("profile");
+    extrude_on(m, frame, profile, h)
+}
+
+/// `profile` on `frame`, swept `h` along its normal.
+fn extrude_on(m: &mut Model, frame: SketchFrame, profile: Profile2d, h: f64) -> Handle<Solid> {
     let nacre_ops::OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
@@ -74,6 +79,19 @@ fn slanted(m: &mut Model) -> SketchFrame {
 /// over the band `y ≥ 0` meets the plane `z = 0` along its bottom edge on the `x` axis.
 fn tipped(m: &mut Model) -> SketchFrame {
     frame_on(m, [1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
+}
+
+/// `frame` moved `dist` along its normal.
+fn offset_of(m: &mut Model, frame: SketchFrame, dist: f64) -> SketchFrame {
+    let Ok(nacre_ops::OpOutput::DatumPlane { frame, .. }) = apply(
+        m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::Offset { frame, dist },
+        },
+    ) else {
+        panic!("offsetting a frame")
+    };
+    frame
 }
 
 /// A box over `rect` in the world, from `z = −5` up to `z = 0`, stated by a sweep against the
@@ -317,6 +335,58 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
                     .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
                     .sum();
                 assert!((v - want).abs() < 1e-9, "{at}: volume {v}, want {want}");
+            }
+        }
+    }
+}
+
+/// ★ **A pin standing in a blind round hole, its top flush with the plate's top, is one body.**
+/// The pin's top edges lie on the plate's top plane but over the hole, where that face has no
+/// material: the face's bounds are its square and the hole's circle, and both are read — the
+/// circle as the two points where the edge's line crosses it. Beside it, a bar standing in the
+/// hole that crosses its wall builds as it does without the circle. On the world frame and on a
+/// 3-4-5 frame, in either operand order.
+#[test]
+fn a_pin_flush_in_a_round_hole_is_one_body() {
+    let pin: &[[f64; 2]] = &[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]];
+    let bar: &[[f64; 2]] = &[[-0.2, -0.2], [0.98, -0.2], [0.98, 0.2], [-0.2, 0.2]];
+    let quarter = std::f64::consts::PI / 2.0; // the hole: radius 1, depth 0.5
+    for (what, top, want) in [
+        ("a pin flush in the hole", pin, 16.0 - quarter + 0.08),
+        ("a bar across the hole's wall", bar, 14.665204),
+    ] {
+        for tilted in [false, true] {
+            for swapped in [false, true] {
+                let at = format!("{what}, tilted = {tilted}, swapped = {swapped}");
+                let mut m = Model::new();
+                let base = if tilted {
+                    crate::common::pythagorean_frame(&mut m, Point3::from_array([0.0; 3]))
+                } else {
+                    SketchFrame::world(&m, Axis::Z)
+                };
+                let plate = prism_on(
+                    &mut m,
+                    base,
+                    &[[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]],
+                    1.0,
+                );
+                let floor = offset_of(&mut m, base, 0.5);
+                let hole = extrude_on(&mut m, floor, crate::common::unit_disk(), 1.0);
+                let cup = boolean(&mut m, BoolKind::Cut, plate, hole).expect("the cup")[0];
+                m.rebuild_adjacency();
+                let floor = offset_of(&mut m, base, 0.5);
+                let b = prism_on(&mut m, floor, top, 0.5);
+                let (x, y) = if swapped { (b, cup) } else { (cup, b) };
+                let got =
+                    boolean(&mut m, BoolKind::Fuse, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                m.rebuild_adjacency();
+                assert_eq!(got.len(), 1, "{at}: one body");
+                assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                let v = nacre_props::mass_props(&m, got[0]).expect("props").volume;
+                assert!((v - want).abs() < 1e-6, "{at}: volume {v}, want {want}");
+                let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                    .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
+                assert_eq!(crate::common::non_watertight(&t), 0, "{at}: the mesh leaks");
             }
         }
     }

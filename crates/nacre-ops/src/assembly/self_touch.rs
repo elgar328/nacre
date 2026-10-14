@@ -220,9 +220,9 @@ pub(crate) fn assemble_fuse_cut(
 /// protects is not hypothetical: the wedge that motivated this check touches at exactly `x = 1`,
 /// which is a face of its own box.
 ///
-/// The rings a face is trimmed by are built **lazily and once per face**: `Ring::edges` spends an
-/// exact predicate per node, and building them for every result face is the same unconditional cost
-/// that put 12x on the star when the void label did it.
+/// A face's bounds — its rings and its circles (`comp_face`) — are read **lazily and once per
+/// face**: `Ring::edges` spends an exact predicate per node, and building them for every result
+/// face is the same unconditional cost that put 12x on the star when the void label did it.
 ///
 /// ★ **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
 /// that can lie inside it: an edge two of the solid's plane faces share along a ruling of that
@@ -326,7 +326,7 @@ pub(super) fn self_touch_reject(
             }
             boxes.push((lo, hi));
         }
-        let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
+        let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
         'edges: for (&[u, v], own) in &owners {
             // ★ **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
             // intersect, and this is a *rejection guard*: declining here would turn "I cannot
@@ -360,14 +360,17 @@ pub(super) fn self_touch_reject(
                     if rings_of(faces[j]).any(Ring::is_mixed) {
                         continue;
                     }
-                    if let std::collections::hash_map::Entry::Vacant(slot) = rings_of_face.entry(j)
-                    {
-                        match rings_of(faces[j])
-                            .map(|r| r.edges(jd, cyls, Some(q)))
-                            .collect::<Result<_, BoolError>>()
-                        {
-                            Ok(rings) => {
-                                slot.insert(rings);
+                    // ★ A face bounded outside by a circle — a cap disk — is not asked. Its plane is
+                    // ⊥ to the cylinder's axis, and an edge of the same body lying on it from
+                    // outside needs a plane slanted to that axis through a point of the disk,
+                    // which cannot clear the cylinder's side: `ObliqueCylinderCut` refuses first.
+                    if matches!(faces[j].outer, Bound::Circle { .. }) {
+                        continue;
+                    }
+                    if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
+                        match super::grouping::comp_face(jd, cyls, faces[j]) {
+                            Ok(face) => {
+                                slot.insert(face);
                             }
                             Err(err) => {
                                 hold([u, v], err);
@@ -386,15 +389,7 @@ pub(super) fn self_touch_reject(
                     else {
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
-                    match combinatorics::segment_meets_face(
-                        jd,
-                        cyls,
-                        q,
-                        w2,
-                        up,
-                        vp,
-                        &rings_of_face[&j],
-                    ) {
+                    match combinatorics::segment_meets_face(jd, cyls, q, w2, up, vp, &read[&j]) {
                         Ok(true) => {
                             found_at([u, v]);
                             continue 'edges;

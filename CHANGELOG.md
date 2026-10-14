@@ -39,6 +39,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Fixed
 
+- A pin standing in a blind round hole with its top flush with the plate's top — a square pin, not touching the hole's wall — fuses into the one body it is; it was refused as `self_touching_result`. The check that refuses a body touching itself read a face's polygon bounds and left out its circular holes, so the pin's top edges over the hole read as lying inside the plate's top face.
 - Two solids touching at a point or along a line — a slanted corner standing on another's corner, a tipped bar resting on another's top by its bottom edge — fuse into the two bodies they are in either order. In one operand order the fuse was refused as `point_on_ring`: a point lying on a plane its name does not carry was ordered along a ray by a plane of its name that holds the ray.
 - A union of a cylinder with a prism that touches it from outside along one of its rulings and runs through it elsewhere — one body whose surface touches itself along that line — is refused as `self_touching_result`; it came back as one solid, `validate` clean and the volume right. The check that refuses a body touching itself now asks a cylinder's side too: an edge of the body along a ruling, inside the body's own side face.
 - A plate's bore fused with a wedge inside it whose corner lies on the bore wall builds as the two bodies it is, where it refused (`ring_orientation`).

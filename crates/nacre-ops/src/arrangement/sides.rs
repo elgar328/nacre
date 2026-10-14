@@ -50,10 +50,7 @@ pub(super) fn chord_stations(
         nacre_exact::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
-    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordUnstatable)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let Some(CylinderMeet::Pair { .. }) =
-        nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
+    let Some(CylinderMeet::Pair { .. }) = combinatorics::class_line_meets_cylinder(jd, wc, fc, def)
     else {
         return Err(ChordUnstatable);
     };

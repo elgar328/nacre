@@ -370,8 +370,8 @@ pub(crate) struct LocalFace {
 
 impl LocalFace {
     /// Every **polygon** ring of the face, outer first. Circle bounds carry no nodes and are
-    /// deliberately absent — node-level consumers (the seam table, edge scans, self-touch)
-    /// have nothing to read off them.
+    /// deliberately absent — node-level consumers (the seam table, edge scans) have nothing to
+    /// read off them. A reader of the face's **region** takes every bound (`comp_face`).
     pub(crate) fn poly_rings(&self) -> impl Iterator<Item = &Ring> {
         std::iter::once(&self.outer)
             .chain(self.inner.iter())
