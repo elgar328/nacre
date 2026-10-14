@@ -206,9 +206,9 @@ pub(crate) fn segment_meets_face(
                 .ok_or_else(|| reject(RejectReason::WitnessNotRational)),
         }
     };
-    // Every place a bound meets the line: `[lo, hi]` (equal for a crossing at a point) and whether
-    // passing it flips inside/outside.
-    let mut events: Vec<([PointOn; 2], bool)> = Vec::new();
+    // Every place a polygon bound meets the line: `[lo, hi]` plane pins (equal for a crossing at a
+    // point) and whether passing it flips inside/outside.
+    let mut events: Vec<([usize; 2], bool)> = Vec::new();
     let mut circles: Vec<&nacre_topo::CylinderDef> = Vec::new();
     for bound in core::iter::once(&face.outer).chain(&face.inner) {
         let ring = match bound {
@@ -246,7 +246,7 @@ pub(crate) fn segment_meets_face(
                         .carrier
                         .wall()
                         .ok_or_else(|| reject(RejectReason::RingNaming))?;
-                    events.push(([PointOn::Class(h); 2], true));
+                    events.push(([h, h], true));
                 }
                 Feature::Run {
                     first,
@@ -262,7 +262,6 @@ pub(crate) fn segment_meets_face(
                         return Err(reject(RejectReason::RingNaming));
                     };
                     let lo_first = order_along(jd, p, w, a, b) <= 0;
-                    let [a, b] = [PointOn::Class(a), PointOn::Class(b)];
                     events.push((if lo_first { [a, b] } else { [b, a] }, flanks_differ));
                 }
             }
@@ -273,7 +272,14 @@ pub(crate) fn segment_meets_face(
     } else {
         (PointOn::Class(hv), PointOn::Class(hu))
     };
-    let polygons = inside_overlaps(&mut events, lo, hi, &order)?;
+    // Plane pins only, so the sort's comparison cannot fail — `sort_by` may panic on one that
+    // answers inconsistently, and a comparison that fails has no consistent answer to give.
+    events.sort_by(|x, y| order_along(jd, p, w, x.0[0], y.0[0]).cmp(&0));
+    let mut events: Vec<([PointOn; 2], bool)> = events
+        .into_iter()
+        .map(|([a, b], flips)| ([PointOn::Class(a), PointOn::Class(b)], flips))
+        .collect();
+    let polygons = inside_overlaps(&events, lo, hi, &order)?;
     if !polygons || circles.is_empty() {
         return Ok(polygons);
     }
@@ -293,7 +299,8 @@ pub(crate) fn segment_meets_face(
             Some(CylinderMeet::Pair { .. }) => {
                 for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
                     let at = PointOn::Pierce(NodeId::pierce(p, w, cyl, root));
-                    events.push(([at; 2], true));
+                    let i = place(&events, at, &order)?;
+                    events.insert(i, ([at; 2], true));
                 }
             }
             // A tangent line touches the circle without crossing it; a missing one meets nothing.
@@ -305,31 +312,38 @@ pub(crate) fn segment_meets_face(
             _ => return Err(reject(RejectReason::WitnessNotRational)),
         }
     }
-    inside_overlaps(&mut events, lo, hi, &order)
+    inside_overlaps(&events, lo, hi, &order)
 }
 
-/// **Walk the line**: outside before the first event, flipping as each genuine crossing is passed.
-/// The stretch between two events is a cell; an inside cell that overlaps the open `(lo, hi)` is
-/// the surface meeting itself.
+/// Where the crossing `at` goes among `events`, sorted along the line: after every event before
+/// it. A search rather than a sort, so an order that cannot be formed returns here instead of
+/// riding a comparator. The bounds of a face are disjoint, so no event shares its place.
+fn place(
+    events: &[([PointOn; 2], bool)],
+    at: PointOn,
+    order: &impl Fn(PointOn, PointOn) -> Result<i8, BoolError>,
+) -> Result<usize, BoolError> {
+    let (mut lo, mut hi) = (0, events.len());
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if order(events[mid].0[0], at)? < 0 {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+
+/// **Walk the line** over `events` sorted along it: outside before the first event, flipping as
+/// each genuine crossing is passed. The stretch between two events is a cell; an inside cell that
+/// overlaps the open `(lo, hi)` is the surface meeting itself.
 fn inside_overlaps(
-    events: &mut [([PointOn; 2], bool)],
+    events: &[([PointOn; 2], bool)],
     lo: PointOn,
     hi: PointOn,
     order: &impl Fn(PointOn, PointOn) -> Result<i8, BoolError>,
 ) -> Result<bool, BoolError> {
-    let mut failed = None;
-    events.sort_by(|x, y| match order(x.0[0], y.0[0]) {
-        Ok(-1) => std::cmp::Ordering::Less,
-        Ok(1) => std::cmp::Ordering::Greater,
-        Ok(_) => std::cmp::Ordering::Equal,
-        Err(e) => {
-            failed.get_or_insert(e);
-            std::cmp::Ordering::Equal
-        }
-    });
-    if let Some(e) = failed {
-        return Err(e);
-    }
     let mut inside = false;
     for i in 0..events.len() {
         if events[i].1 {
