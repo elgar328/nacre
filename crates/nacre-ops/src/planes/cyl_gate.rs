@@ -1611,9 +1611,7 @@ pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
         nacre_topo::PointCache::Bounded { coord, bound } => {
             let c = coord.as_array();
             let w: [f64; 3] = core::array::from_fn(|k| {
-                bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON)
-                    + c[k].abs() * (4.0 * f64::EPSILON)
-                    + f64::MIN_POSITIVE
+                bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON) + round_slack(c[k])
             });
             (
                 core::array::from_fn(|k| c[k] - w[k]),
@@ -1624,6 +1622,13 @@ pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
             ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3])
         }
     }
+}
+
+/// **A few ulps of `x`, and the smallest normal** — how far an `f64` computed near `x` may round
+/// from the value it stands for. A bound read in `f64` is widened by it to hold the truth:
+/// [`cache_reach`]'s radius, and the self-touch sieve's rational circle boxes.
+pub(crate) fn round_slack(x: f64) -> f64 {
+    x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE
 }
 
 /// **Does this cylinder leave only whole rims?** — every loop of every lateral face is one edge

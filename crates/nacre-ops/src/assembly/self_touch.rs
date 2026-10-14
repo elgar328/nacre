@@ -557,7 +557,7 @@ pub(super) fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// `x` moved one rounding step further `away` (`−1` down, `+1` up) — a rounded rational bound
 /// made to hold the rational.
 fn outward(x: f64, away: f64) -> f64 {
-    x + away * (x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE)
+    x + away * crate::planes::round_slack(x)
 }
 
 /// **Where a self-touch was found** — on an edge of the body, or at a vertex of it with no edge on
