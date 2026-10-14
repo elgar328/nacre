@@ -116,14 +116,20 @@ pub(crate) struct RulingExtent {
     /// of them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
     /// cell inside the strip is where that plane's two sides are stated at the lateral.
     ///
-    /// `None` when the wall has no world statement to relate its rational name and its facing
-    /// ([`crate::planes::WorldName`]) — the ruling is then left without an answer and **counted**,
-    /// never guessed at.
+    /// `None` for a tangent ruling (`side == 0`) only: a class with no world statement reads its
+    /// stored facing ([`crate::arrangement::plus_theta_is_above`]), and every half-edge of the
+    /// class's walk bounds a cell — the chart's census asserts the rest are formed.
     ///
     /// ★ It ships, not an instrument — the cell reader reads it beside the rims' labels
     /// ([`crate::arrangement::cyl_chart::Chart::read_cell`]): it answers a cell no rim speaks
     /// for, and where both speak the two must agree or the cell has no chamber.
     pub(crate) label: Option<Label>,
+    /// The label of the cell this ruling borders **outside** the cylinder, on the same wall — the
+    /// other half-edge's. Where two walls state one ruling and the lateral keeps the material
+    /// outside the cylinder, the chamber that decides whether the lateral runs on across the line
+    /// is the one between the walls out there, and only this cell states it
+    /// ([`crate::arrangement::cyl_chart::Chart::slit_at`]). `None` exactly where `label` is.
+    pub(crate) outer: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.
     ///

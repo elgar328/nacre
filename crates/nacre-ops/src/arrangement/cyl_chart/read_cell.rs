@@ -151,14 +151,34 @@ pub(crate) struct CellRead<'a> {
 
 impl Chart {
     /// **Whether the lateral ends at station `i` on both sides** — a station two secant walls
-    /// state, where the result keeps no material **between** the two walls. The chamber there
-    /// is the far side of the wall that bounds the `+θ` sector ([`StationTwin::bounds_plus`]),
-    /// read off that wall's label; `keep` says whether it is in the result. Kept, the material
-    /// runs across the line and so does the lateral; not kept, what lies on the two sides meets on
-    /// the line alone. `false` for every station one wall states. `Err` when the label or the side
-    /// could not be read: a label or a facing needs the wall's world statement, which the cylinder
-    /// gate demands of every class, so their absence is the stages disagreeing; the side carries
-    /// its own cause ([`ruling_side_of`]).
+    /// state, where the material the lateral bounds does not run round the line: the chamber
+    /// between the two walls, **on the lateral's material side**, is not in the result. Kept, the
+    /// material runs across the line and so does the lateral; not kept, what lies on the two sides
+    /// meets on the line alone. `false` for every station one wall states — there is no chamber
+    /// between.
+    ///
+    /// ★ **Both sides are read off one wall**, the one that bounds the `+θ` sector inside
+    /// ([`StationTwin::bounds_plus`]): its inside cell holds the chamber beside `+θ` on the near
+    /// side and the chamber between the chords on the far side, and its outside cell holds the
+    /// chamber between the walls' outer halves on the near side — the two «between» chambers are
+    /// vertically opposite angles. The material side is the one the `+θ` chamber inside answers:
+    /// kept, the lateral bounds material inside; not, outside. That reading only has to be true
+    /// where the answer is used — the walk cuts a lateral at a slit only between two cells it
+    /// emits, and an emitted `+θ` cell keeps one side of the lateral and not the other. One
+    /// boolean keeps a lateral's material on one side all round a line: `keep` is monotone in each
+    /// operand, and an operand, being a manifold, has its own material on one side of the
+    /// cylinder on both sides of the line (☑ measured: no station with its two cells emitted keeps
+    /// different sides, in the suite or the census).
+    ///
+    /// ☑ Both halves carry an answer (`edge_on_a_ruling`): the inside chamber read where the
+    /// material is outside cuts the lateral of a box less the wedge fused on a rim, across the
+    /// pinch — the chamber between the chords is the wedge's own — and no chamber read there
+    /// builds a box with a V-notch whose apex lies on the lateral, less the cylinder, as a body
+    /// touching itself along the line.
+    ///
+    /// `Err` when a label or the side could not be read: the labels are formed for every secant
+    /// ruling, so their absence is the stages disagreeing; the side carries its own cause
+    /// ([`ruling_side_of`]).
     pub(crate) fn slit_at(
         &self,
         jd: &Judge<'_, WorkingPlane>,
@@ -173,16 +193,24 @@ impl Chart {
         let Some(tw) = seg.twin else {
             return Ok(false);
         };
-        let (label, wall) = if tw.bounds_plus {
-            (tw.label, tw.wall)
+        let (label, outer, wall) = if tw.bounds_plus {
+            (tw.label, tw.outer, tw.wall)
         } else {
-            (seg.label, seg.wall)
+            (seg.label, seg.outer, seg.wall)
         };
         let label = label.ok_or(stages)?;
         let sd = ruling_side_of(jd, k, def, wall, seg.end[0])?;
         let plus_above = crate::arrangement::plus_theta_is_above(jd, wall, sd).ok_or(stages)?;
-        let (own, other) = read_bits(&label, side, !plus_above);
-        Ok(!keep_for(kind, side, own, other))
+        let keeps = |l: &Label, above: bool| {
+            let (own, other) = read_bits(l, side, above);
+            keep_for(kind, side, own, other)
+        };
+        let between = if keeps(&label, plus_above) {
+            keeps(&label, !plus_above)
+        } else {
+            keeps(&outer.ok_or(stages)?, plus_above)
+        };
+        Ok(!between)
     }
 
     /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
@@ -474,9 +502,10 @@ impl Chart {
             }
             // ★ A station two walls state answers each side from the wall that bounds the
             // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
-            // ☑ Held here as well as in `slit_at`, which reads the same `bounds_plus`: swapping
-            // the two walls turns the corner and inward-wedge families of `edge_on_a_ruling` red,
-            // where the rims speak too and the swapped wall contradicts them.
+            // ☑ Held here as well as in `slit_at`, which reads the same `bounds_plus` (and that
+            // wall's outside cell too): swapping the two walls turns the corner and inward-wedge
+            // families of `edge_on_a_ruling` red, where the rims speak too and the swapped wall
+            // contradicts them.
             let (l, (wall, sd)) = match seg.twin {
                 Some(tw) if tw.bounds_plus == starts_here => (
                     tw.label?,

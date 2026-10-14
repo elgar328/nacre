@@ -153,8 +153,8 @@ pub(crate) fn walk(
     let units = ns.max(1);
 
     // ★ **Where the lateral ends although both sides keep it** — a station two walls state
-    // ([`Chart::slit_at`]): the result's material between the two walls is gone, so what is
-    // kept on the two sides meets on the line alone. The lateral is cut there — no adjacency
+    // ([`Chart::slit_at`]): on the lateral's material side, the result has nothing between the two
+    // walls, so what is kept on the two sides meets on the line alone. The lateral is cut there — no adjacency
     // across, and a boundary on both sides even within one component — so the line becomes an
     // edge the other solid's two faces use too, and the assembly sees the touch: four uses of
     // one edge in one solid, or two solids apart. Run through as one face, the lateral hides it

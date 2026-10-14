@@ -115,6 +115,10 @@ pub(crate) struct ThetaSeg {
     /// `DiskLabels`/`ArcLabels`; this is the half they never had, and [`Chart::read_cell`] reads
     /// it beside them — the cell's chamber stands only where the two agree.
     pub(crate) label: Option<Label>,
+    /// The label of the cell beside this ruling **outside** the cylinder — [`RulingExtent::outer`].
+    /// A cell's chamber never reads it; [`Chart::slit_at`] does, where the lateral keeps the
+    /// outside.
+    pub(crate) outer: Option<Label>,
     /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.
     #[cfg(test)]
@@ -132,12 +136,19 @@ pub(crate) struct ThetaSeg {
 pub(crate) struct StationTwin {
     pub(crate) wall: usize,
     pub(crate) label: Option<Label>,
+    pub(crate) outer: Option<Label>,
     /// **Whether this wall, not the station's own, bounds the sector counter-clockwise of the
     /// line.** Inside the cylinder the two planes run from the line as two chords; turning from
     /// the lateral's `+θ` tangent `τ = m × r` inward (counter-clockwise about `m`, towards `−r`),
     /// the first chord met closes the chamber beside the `+θ` sector, and the other closes the
     /// `−θ` one. Chord `d₁` comes first iff `(d₁ × d₂)·m > 0`, with each `dᵢ = m × nᵢ` turned to
     /// point inward — exact, from the two planes and the axis.
+    ///
+    /// The same wall's **outer** half bounds the chamber between the two walls outside the
+    /// cylinder: the line cuts the cross-section into six chambers — beside `+θ` inside, between
+    /// the chords, beside `−θ` inside, then beside `−θ` outside, between the walls' outer halves,
+    /// beside `+θ` outside — and the two «between» chambers are vertically opposite angles, so
+    /// both lie on this wall's far side from the `+θ` sector inside and on its near side outside.
     pub(crate) bounds_plus: bool,
 }
 
@@ -456,6 +467,7 @@ pub(crate) fn chart_of(
                         end,
                         z,
                         label: r.label,
+                        outer: r.outer,
                         #[cfg(test)]
                         marks: r.marks.clone(),
                         twin: None,
@@ -503,6 +515,7 @@ fn fold_shared_stations(
             theta[i].twin = Some(StationTwin {
                 wall: other.wall,
                 label: other.label,
+                outer: other.outer,
                 bounds_plus: plus_is_t2,
             });
         }

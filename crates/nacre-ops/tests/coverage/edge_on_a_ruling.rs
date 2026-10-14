@@ -449,6 +449,75 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
+/// ★ **A V-notch whose apex lies on the lateral** — `B` a box round `A` with a notch opening
+/// away from the axis, its two walls meeting on a ruling of `A` at the seam and off it: the
+/// inward wedge's walls turned inside out. `A` lies inside `B` but for that line, so `B − A` keeps
+/// the material **outside** the cylinder on both sides of the line and none in the notch between
+/// the walls — two lobes meeting on the line alone, one solid touching itself, refused
+/// (`NonManifoldResultEdge`). The lateral keeps the outside here, so whether it runs on across the
+/// line is asked of the chamber between the walls outside the cylinder (`cyl_chart::Chart::slit_at`);
+/// read off the chamber inside, which is `A`'s and gone, the answer is right by accident, and
+/// read off no chamber the lateral runs through the line as one face over a body touching itself
+/// — `validate` clean and the volumes right. Everything else builds: `A ∩ B` is `A` over the
+/// height the two share, `A − B` the rest of `A` (two bodies with `B` inside `A`'s span, none
+/// with `B` past both caps).
+#[test]
+fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
+    let on_the_seam: &[[f64; 2]] = &[
+        [-2.0, -2.0],
+        [3.0, -2.0],
+        [3.0, -1.0],
+        [1.0, 0.0],
+        [3.0, 1.0],
+        [3.0, 2.0],
+        [-2.0, 2.0],
+    ];
+    // The same box turned by `(x, y) → (0.8x + 0.6y, −0.6x + 0.8y)`: the apex at `(0.8, −0.6)`.
+    let off_the_seam: &[[f64; 2]] = &[
+        [-2.8, -0.4],
+        [1.2, -3.4],
+        [1.8, -2.6],
+        [0.8, -0.6],
+        [3.0, -1.0],
+        [3.6, -0.2],
+        [-0.4, 2.8],
+    ];
+    let all = every_six(
+        unit_disk,
+        &[("on the seam", on_the_seam), ("off the seam", off_the_seam)],
+    );
+    assert_eq!(all.len(), 2 * 2 * 2 * 4, "the family");
+    for (p, six) in &all {
+        for (i, r) in six.iter().enumerate() {
+            match (i, r) {
+                (2, Ok((n, _))) => {
+                    let lobes = match p.height {
+                        Height::OnBase | Height::PastTop => 1,
+                        Height::Inside => 2,
+                        Height::PastBoth => 0,
+                    };
+                    assert_eq!(*n, lobes, "{p}: A − B");
+                }
+                (3, Err(reason)) => assert_eq!(
+                    *reason,
+                    RejectReason::NonManifoldResultEdge,
+                    "{p}: B − A refused as {reason:?}"
+                ),
+                (3, Ok(got)) => panic!("{p}: B − A touches itself on the line, built: {got:?}"),
+                (_, Ok((n, _))) => assert_eq!(*n, 1, "{p}: [{i}]"),
+                (_, Err(reason)) => panic!("{p}: [{i}] {reason:?}"),
+            }
+        }
+        identities(p, six);
+        let common = six[4].as_ref().expect("built").1;
+        let want = std::f64::consts::PI * p.height.shared();
+        assert!(
+            (common - want).abs() < 1e-9,
+            "{p}: Common {common}, want {want}"
+        );
+    }
+}
+
 /// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The prism's corner
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
 /// seam and off it) or from outside, with one side tangent there or with both sides leaving it (a
@@ -636,31 +705,28 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
 /// ★ **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the
 /// cylinder's top ([`nacre_ops::fixtures::wedge_on_a_rim`]), whose top cap passes the apex twice,
 /// taken into a second boolean against a box: far from the pinch on top, across it, and apart.
-/// Every result that builds is checked as the other families are — `validate`, the mesh, the
-/// volume identities over the six booleans; what does not build yet is pinned by tool and boolean
-/// (todo «공유 룰링이 벽 면 없는 높이에도 정거장을 세운다»).
+/// Every one builds, checked as the other families are — `validate`, the mesh, the volume
+/// identities over the six booleans.
 ///
 /// The cap's loop names the apex once, by its own definition (`combinatorics::loop_triples`);
 /// the closed rim edge is the whole turn to every reader on the way — the span on its circle
 /// (`arrangement::rulings::theta_between`), and a cut line through the apex, which the arc crosses
 /// once more at the other root (`combinatorics::ring_against_plane`); and the apex is pinned on a
-/// line by the plane of its own that cuts that line (`combinatorics::pin_for`).
+/// line by the plane of its own that cuts that line (`combinatorics::pin_for`). The wedge's two
+/// walls meet on a ruling of the cylinder, one station of its chart; taken from the box across the
+/// pinch, the lateral keeps the material outside the cylinder, and whether it runs on across that
+/// line is asked of the chamber between the walls out there (`cyl_chart::Chart::slit_at`) — the
+/// one between the chords, inside, is the wedge's own and gone.
 #[test]
-fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
+fn a_pinched_cap_as_an_operand_builds() {
     use nacre_ops::fixtures::{cuboid, wedge_on_a_rim};
-    use std::collections::BTreeMap;
     let tools: &[(&str, [f64; 3], [f64; 3])] = &[
         ("box far on top", [-0.5, -0.25, 1.5], [0.0, 0.25, 3.0]),
         ("box across the pinch", [0.3, -0.5, 1.5], [1.5, 0.5, 3.0]),
         ("box apart", [5.0, 5.0, 0.0], [6.0, 6.0, 1.0]),
     ];
-    let name = |r: &RejectReason| match r {
-        RejectReason::TraceDeclined { kind, .. } => format!("TraceDeclined({kind:?})"),
-        other => format!("{other:?}"),
-    };
-    let mut tally: BTreeMap<(&str, usize), String> = BTreeMap::new();
     for &(tool, lo, hi) in tools {
-        let mut six: Vec<Option<f64>> = Vec::new();
+        let mut six: Vec<f64> = Vec::new();
         let (mut vw, mut vt) = (0.0, 0.0);
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             for swapped in [false, true] {
@@ -671,51 +737,35 @@ fn a_pinched_cap_as_an_operand_builds_or_is_refused_by_name() {
                 (vw, vt) = (volume(&m, w), volume(&m, t));
                 let (x, y) = if swapped { (t, w) } else { (w, t) };
                 let at = format!("{tool}, {kind:?} swapped = {swapped}");
-                match boolean(&mut m, kind, x, y) {
-                    Ok(solids) => {
-                        m.rebuild_adjacency();
-                        let vs = nacre_validate::validate(&m);
-                        assert!(vs.is_empty(), "{at}: {vs:?}");
-                        let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
-                            .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
-                        assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
-                        six.push(Some(solids.iter().map(|&s| volume(&m, s)).sum()));
-                    }
-                    Err(BoolError::Rejected { reason, .. }) => {
-                        tally.insert((tool, six.len()), name(&reason));
-                        six.push(None);
-                    }
-                    Err(e) => panic!("{at}: {e:?}"),
-                }
+                let solids =
+                    boolean(&mut m, kind, x, y).unwrap_or_else(|e| panic!("{at}: refused — {e:?}"));
+                m.rebuild_adjacency();
+                let vs = nacre_validate::validate(&m);
+                assert!(vs.is_empty(), "{at}: {vs:?}");
+                let t = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                    .unwrap_or_else(|e| panic!("{at}: the mesher refuses it: {e:?}"));
+                assert_eq!(non_watertight(&t), 0, "{at}: the mesh leaks");
+                six.push(solids.iter().map(|&s| volume(&m, s)).sum());
             }
         }
         // `W ∪ T`, `T ∪ W`, `W − T`, `T − W`, `W ∩ T`, `T ∩ W`.
         let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
         for (x, y) in [(0, 1), (4, 5)] {
-            if let (Some(a), Some(b)) = (six[x], six[y]) {
-                assert!(close(a, b), "{tool}: [{x}] {a} vs [{y}] {b}");
-            }
+            assert!(
+                close(six[x], six[y]),
+                "{tool}: [{x}] {} vs [{y}] {}",
+                six[x],
+                six[y]
+            );
         }
         for (i, want) in [(0, vw + vt), (2, vw), (3, vt)] {
-            if let (Some(r), Some(c)) = (six[i], six[4]) {
-                assert!(
-                    close(r + c, want),
-                    "{tool}: [{i}] + Common = {}, want {want}",
-                    r + c
-                );
-            }
+            assert!(
+                close(six[i] + six[4], want),
+                "{tool}: [{i}] + Common = {}, want {want}",
+                six[i] + six[4]
+            );
         }
     }
-    // `T − W` with the box across the pinch: the wedge's two walls hold a line on the cylinder
-    // (their shared ruling, the gate's record), and the lateral's chart stations it at the box's
-    // floor too, where neither wall has a face — the region walk meets a rim run from a point the
-    // cleaned caps do not hold (`cyl_chart::regions`). A suspected defect, pinned as today's answer.
-    let want: BTreeMap<(&str, usize), String> = [(
-        ("box across the pinch", 3),
-        "CylinderStagesDisagree".to_string(),
-    )]
-    .into();
-    assert_eq!(tally, want);
 }
 
 /// **An outside corner as tall as the cylinder** — the tangent side and the line contact of

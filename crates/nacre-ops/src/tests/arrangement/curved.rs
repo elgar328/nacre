@@ -971,8 +971,9 @@ fn a_cut_circle_bounds_the_bands() {
         })
     ));
     // ★ **A wall that contradicts the rims is not outvoted.** With the arcs as they are and every
-    // ruling label inside out, the walls read the opposite chamber on every cell they bound, and
-    // the reader answers neither.
+    // ruling's inside label inside out — the cell beside it inside the cylinder, the one a cell's
+    // chamber reads — the walls read the opposite chamber on every cell they bound, and the reader
+    // answers neither.
     let mut contrary = Curved {
         aliases: Aliases::default(),
         disk_labels: curved.disk_labels.clone(),

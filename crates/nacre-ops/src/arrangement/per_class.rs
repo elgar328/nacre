@@ -71,11 +71,12 @@ pub(super) fn per_class(
                 node_axis_param(jd, &r.def, r.end[0])?,
                 node_axis_param(jd, &r.def, r.end[1])?,
             ];
-            // ★★ The chart's vertical answer — see [`RulingExtent::label`]. It is an `Option`
-            // rather than a `?` deliberately: dropping the piece here would make the recorded
-            // population differ between a test build and a release one, and then the census would
-            // be measuring a corpus production never sees.
-            let label = {
+            // ★★ The chart's vertical answer — see [`RulingExtent::label`] and
+            // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
+            // than a `?` deliberately: dropping the piece here would make the recorded population
+            // differ between a test build and a release one, and then the census would be measuring
+            // a corpus production never sees.
+            let (label, outer) = {
                 let base = 2 * (edges.segs.len() + edges.arcs.len());
                 let cell_at = |even: bool| -> Option<Label> {
                     Some(labels[*face_of.get(&(base + 2 * i + usize::from(!even)))?])
@@ -90,6 +91,7 @@ pub(super) fn per_class(
                     ruling_interior_is_even(jd, wc, r.side)
                 };
                 let out = inside.and_then(cell_at);
+                let outer = inside.and_then(|inside| cell_at(!inside));
                 #[cfg(test)]
                 {
                     // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
@@ -99,7 +101,7 @@ pub(super) fn per_class(
                     // exception) and that says nothing about the side.
                     // ★ Recorded only where a label was formed, so `None` means one thing — the content
                     // did not distinguish — and never "there was nothing to check".
-                    if let (Some(inside), Some(s)) = (inside, r.merged.first().map(|m| m.0)) {
+                    if let Some(s) = r.merged.first().map(|m| m.0) {
                         let has = |l: Label| {
                             let b = match s {
                                 crate::planes::SolidSide::A => 0,
@@ -107,7 +109,7 @@ pub(super) fn per_class(
                             };
                             l[b] || l[b + 1]
                         };
-                        if let (Some(i_l), Some(e_l)) = (cell_at(inside), cell_at(!inside)) {
+                        if let (Some(i_l), Some(e_l)) = (out, outer) {
                             // ★ The lateral's material is inside the cylinder for a boss and
                             // **outside** for a bore or a notch (`orient` — re-operated Cut
                             // results are such a population on a through-axis class), so
@@ -137,7 +139,7 @@ pub(super) fn per_class(
                         ruling_probe::LABELLED.push(out.is_some());
                     }
                 }
-                out
+                (out, outer)
             };
             Some((
                 r.cyl,
@@ -147,6 +149,7 @@ pub(super) fn per_class(
                     end: r.end,
                     z,
                     label,
+                    outer,
                     #[cfg(test)]
                     marks: r.merged.clone(),
                 },
