@@ -1,4 +1,5 @@
 use super::*;
+use nacre_geom::intersect::RingSide;
 /// Whether the point named by plane triple `query` lies inside a connected component — the exact
 /// 3D lift of [`point_in_ring`]. A winding-parity ray whose line `L = a ∩ b` is built from two of
 /// the query's own planes (never an arbitrary direction): each crossing with a face on plane `q`
@@ -93,7 +94,7 @@ pub(crate) enum CurvedHit {
 ///
 /// ★★★ **The combination is one rule; only the *asking* is two.** A named point answers a polygon
 /// by a ring walk and a circle by its radial side; a rational one projects through a chart. Those
-/// genuinely differ — the point arrives differently. But "outer and not any hole, and abandon the
+/// genuinely differ — the point arrives differently. But "outer and not any hole, and stop the
 /// moment a bound says *on me*" is the same sentence for both roads, and a sentence written twice
 /// is one that drifts ([[rule-lives-inline-next-door]] is this repository's most-repeated defect).
 /// It was written twice for one commit; this is that commit's correction.
@@ -105,26 +106,37 @@ pub(crate) enum CurvedHit {
 /// wrongly-counted crossing is wrongly counted **twice**, leaving the parity alone. A blind bore
 /// on a classified component breaks the pairing and there is no such fixture yet. Extraction is
 /// what guards this, not a lock.
+///
+/// The answer is where the point is — inside the face, outside it, or **on** its boundary (on the
+/// outer bound, or on a hole's) — and `None` where a bound could not tell. On the outer bound or
+/// outside it the holes are not asked: they cannot change that answer, and asking one can fail.
 pub(super) fn material_of(
     f: &CompFace,
-    mut ask: impl FnMut(&BoundEdges) -> Result<Option<bool>, BoolError>,
-) -> Result<Option<bool>, BoolError> {
-    let Some(mut here) = ask(&f.outer)? else {
-        return Ok(None);
-    };
-    if here {
-        for hole in &f.inner {
-            match ask(hole)? {
-                Some(true) => {
-                    here = false;
-                    break;
-                }
-                Some(false) => {}
-                None => return Ok(None),
-            }
+    mut ask: impl FnMut(&BoundEdges) -> Result<Option<RingSide>, BoolError>,
+) -> Result<Option<RingSide>, BoolError> {
+    match ask(&f.outer)? {
+        Some(RingSide::Inside) => {}
+        other => return Ok(other),
+    }
+    for hole in &f.inner {
+        match ask(hole)? {
+            Some(RingSide::Inside) => return Ok(Some(RingSide::Outside)),
+            Some(RingSide::Outside) => {}
+            other => return Ok(other),
         }
     }
-    Ok(Some(here))
+    Ok(Some(RingSide::Inside))
+}
+
+/// **Inside or outside, and nothing else** — what the component's probes count by: a point on a
+/// face's boundary is no answer to «how deep is this nested», and neither is a bound that could
+/// not tell.
+pub(super) fn decided(side: Option<RingSide>) -> Option<bool> {
+    match side? {
+        RingSide::Inside => Some(true),
+        RingSide::Outside => Some(false),
+        RingSide::OnBoundary => None,
+    }
 }
 
 /// **A component's probe** — a point to ask "how deep is this component nested" from.

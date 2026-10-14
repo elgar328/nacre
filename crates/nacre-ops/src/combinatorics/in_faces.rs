@@ -1,4 +1,5 @@
 use super::*;
+use nacre_geom::intersect::RingSide;
 /// **Is the point `p` inside this component**, asked along the ray `p + t·dir` — the coordinate
 /// twin of [`point_in_component`].
 ///
@@ -34,7 +35,7 @@ pub(crate) fn point_in_faces_rat(
     faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
     use nacre_exact::Rat;
-    use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
+    use nacre_geom::intersect::point_in_ring_2d_rat;
     let not_rational = || reject(RejectReason::WitnessNotRational);
     let zero = Rat::from_int(0);
     if dir.iter().all(|c| *c == zero) {
@@ -132,14 +133,14 @@ pub(crate) fn point_in_faces_rat(
         let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
         let x2 = chart.project(&x).ok_or_else(not_rational)?;
         // Each bound answers by its own kind — the same split the named road makes.
-        let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
+        let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
             match b {
                 BoundEdges::Ring(r) => {
                     // A mixed ring forks to the rational walk here exactly as the named
                     // road forks: the crossing x is already rational, and the chart-ring
                     // derivation below has no spelling for a pierce corner or an arc step.
                     if ring_is_mixed(r) {
-                        return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &x, r));
+                        return Ok(mixed_side(point_in_mixed_ring(jd, cyls, &coeffs, &x, r)));
                     }
                     // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
                     // which would make a degenerate ring *invisible* to the parity instead of
@@ -163,17 +164,13 @@ pub(crate) fn point_in_faces_rat(
                         .collect::<Option<_>>()
                         .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
                     let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;
-                    Ok(match point_in_ring_2d_rat(x2, &ring2) {
-                        RingSide::Inside => Some(true),
-                        RingSide::Outside => Some(false),
-                        RingSide::OnBoundary => None,
-                    })
+                    Ok(Some(point_in_ring_2d_rat(x2, &ring2)))
                 }
-                BoundEdges::Circle(def) => Ok(point_in_disk(&x, def)),
+                BoundEdges::Circle(def) => Ok(Some(point_in_disk(&x, def))),
                 BoundEdges::Lateral(_) => Ok(None),
             }
         };
-        let Some(material) = material_of(f, inside)? else {
+        let Some(material) = decided(material_of(f, inside)?) else {
             return Ok(None);
         };
         if t == zero {
@@ -228,20 +225,31 @@ fn ray_misses_face(
             .all(|x| plane_sign_hp(ahead, x, prec) == Some(true))
 }
 
-/// **Is `p` strictly inside this circle?** — `None` when it lies *on* the circle (non-generic,
-/// abandon) or when the arithmetic could not answer.
+/// **Where `p` is against this circle** — inside its disk, outside, or on the circle.
 ///
 /// ★ It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
 /// crossing first, the coordinate road already has one. The rule must not be written twice.
 ///
 /// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
-fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
+fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> RingSide {
     match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
-        nacre_exact::Orient::Negative => Some(true),
-        nacre_exact::Orient::Positive => Some(false),
-        nacre_exact::Orient::Zero => None,
+        nacre_exact::Orient::Negative => RingSide::Inside,
+        nacre_exact::Orient::Positive => RingSide::Outside,
+        nacre_exact::Orient::Zero => RingSide::OnBoundary,
     }
+}
+
+/// [`point_in_mixed_ring`]'s answer as a side: its `None` does not tell a point on the ring from
+/// an abstention, so a point on a mixed ring reads as unknown.
+fn mixed_side(inside: Option<bool>) -> Option<RingSide> {
+    inside.map(|b| {
+        if b {
+            RingSide::Inside
+        } else {
+            RingSide::Outside
+        }
+    })
 }
 
 /// [`lateral_face_crossings`] for a probe ray named by three plane classes: it states the ray's
@@ -628,6 +636,52 @@ pub(crate) fn ruling_meets_lateral(
 /// A component as its faces, each boundary already carrying its edges' walls.
 pub(crate) type ComponentFaces = Vec<CompFace>;
 
+/// **Where the point named `x` is against the plane face `f` on class `q`** — inside it, outside
+/// it, or on its boundary; `None` where a bound could not tell. `x` lies on `q` and its name need
+/// not carry `q`.
+///
+/// ★ Each bound answers by its own kind — a polygon by a ring walk, a circle by its radial side, a
+/// mixed ring (an arc step, a pierce corner) by the rational road: the point is a rational
+/// three-plane point, the ring is walked by its carriers, and every tie abstains. The named walk
+/// cannot read a pierce corner at all (it sides nodes with no cylinder table) — letting it try
+/// would refuse with `PierceVertexUnnamed`. That road does not tell a point on its ring from an
+/// abstention, so a point on a mixed ring is unknown.
+pub(crate) fn named_point_in_face(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    q: usize,
+    x: [usize; 3],
+    f: &CompFace,
+) -> Result<Option<RingSide>, BoolError> {
+    let at = || node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)));
+    let inside = |b: &BoundEdges| -> Result<Option<RingSide>, BoolError> {
+        match b {
+            BoundEdges::Ring(r) => {
+                if ring_is_mixed(r) {
+                    let (Some(coeffs), Some(px)) = (class_coeffs_rat(jd, q), at()) else {
+                        return Ok(None); // no exact class statement or coordinate: abstain
+                    };
+                    return Ok(mixed_side(point_in_mixed_ring(jd, cyls, &coeffs, &px, r)));
+                }
+                if point_on_ring(jd, q, x, r)? {
+                    return Ok(Some(RingSide::OnBoundary));
+                }
+                Ok(every_ray(jd, cyls, q, x, r)?.first().map(|&b| {
+                    if b {
+                        RingSide::Inside
+                    } else {
+                        RingSide::Outside
+                    }
+                }))
+            }
+            BoundEdges::Circle(def) => Ok(at().map(|p| point_in_disk(&p, def))),
+            // Loops bound a cylinder, never a plane — a producer error, not an input.
+            BoundEdges::Lateral(_) => Ok(None),
+        }
+    };
+    material_of(f, inside)
+}
+
 pub(crate) fn point_in_component(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -665,45 +719,9 @@ pub(crate) fn point_in_component(
             };
             let q = *q;
             // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
-            // ★ Each bound answers by its own kind — a polygon by a ring walk, a circle by its
-            // radial side — and either can say "the point is *on* me", which is the same
-            // non-generic abandon `point_on_ring` has always raised.
-            let material = |x: [usize; 3]| -> Result<Option<bool>, BoolError> {
-                let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
-                    match b {
-                        BoundEdges::Ring(r) => {
-                            // A mixed ring (an arc step, a pierce corner) takes the
-                            // rational road: the crossing X is a rational three-plane
-                            // point, the ring is walked by its carriers, and every tie
-                            // abstains for the next probe. The named walk cannot read a
-                            // pierce corner at all (it sides nodes with no cylinder table) -
-                            // letting it try would refuse with `PierceVertexUnnamed`.
-                            if ring_is_mixed(r) {
-                                let Some(coeffs) = class_coeffs_rat(jd, q) else {
-                                    return Ok(None); // no exact class statement: abstain
-                                };
-                                let Some(px) =
-                                    node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)))
-                                else {
-                                    return Ok(None);
-                                };
-                                return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &px, r));
-                            }
-                            if point_on_ring(jd, q, x, r)? {
-                                return Ok(None);
-                            }
-                            Ok(every_ray(jd, cyls, q, x, r)?.first().copied())
-                        }
-                        BoundEdges::Circle(def) => {
-                            Ok(node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)))
-                                .and_then(|p| point_in_disk(&p, def)))
-                        }
-                        // Loops bound a cylinder, never a plane — a producer error, not an input.
-                        BoundEdges::Lateral(_) => Ok(None),
-                    }
-                };
-                material_of(f, inside)
-            };
+            // On the face's boundary is no answer here — the same non-generic abandon
+            // `point_on_ring` has always raised.
+            let material = |x: [usize; 3]| named_point_in_face(jd, cyls, q, x, f).map(decided);
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 // `L` is parallel to `q` — and possibly **in** it, which is not the same thing.
                 // A coplanar ray never passes from one side of this face to the other, so zero
