@@ -301,11 +301,13 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 
 `split_at_crossings`(`split.rs`)·`circular_order`·`split_segments_at`(`split_circles.rs`)·`split_rulings`·
 `angular_order`(`direction.rs`)·`pierce_between`(`winding.rs`)은 정확 비교가 답하지 못하면 플래그를 세우고 `Equal` 로
-읽은 뒤, 정렬이 끝나면 거절한다. 그런 비교는 전순서가 아니고, 표준 라이브러리의 `sort_by` 는 길이가 20을 넘으면 전순서가
-아닌 비교에서 패닉할 수 있다(길이 40·실패 10% 의 장난감에서 2000번 중 1896번 — 20 이하는 삽입 정렬이라 패닉하지 않는다).
-`angular_order` 의 주석 «`sort_by` is then free to produce any permutation» 은 그래서 거짓이다. 자리마다 실패하는 비교와
-그 정렬의 길이 인구를 먼저 잰다. 고치는 길은 실패할 수 없는 비교로 정렬하고 나머지를 이진 탐색으로 끼워 넣는 것
-(`segment_meets_face` 의 `place`), 또는 비교를 정렬 전에 물어 실패하면 정렬에 들어가지 않는 것.
+읽은 뒤, 정렬이 끝나면 실패를 돌려준다(거절 또는 `None`). 그런 비교는 전순서가 아니고, 표준 라이브러리의 `sort_by` 는
+길이가 20을 넘으면 전순서가 아닌 비교에서 패닉할 수 있다(길이 40·실패 10% 의 장난감에서 2000번 중 1896번 — 20 이하는
+삽입 정렬이라 패닉하지 않는다). `angular_order` 의 주석 «`sort_by` is then free to produce any permutation» 은 그래서
+거짓이다. 측정: 스위트·ignored·census·perf 전체에서 여섯 자리의 비교 실패는 0 이고, `split_at_crossings` 의 정렬은
+길이 21~162 로 1,608번 돈다 — 그 자리에서 비교가 한 번 실패하면 패닉할 수 있는 길이다. 고치는 길은 실패할 수 없는
+비교로 정렬하고 나머지를 이진 탐색으로 끼워 넣는 것(`segment_meets_face` 의 `place`), 또는 비교를 정렬 전에 물어
+실패하면 정렬에 들어가지 않는 것.
 
 ### 감김의 `frame_sign`·옆면 `orient_sign` 부호 잠금
 
