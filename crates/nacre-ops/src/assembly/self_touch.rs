@@ -229,10 +229,12 @@ pub(crate) fn assemble_fuse_cut(
 /// cylinder. The sieve is the gate's record of such lines (`SharedLines::on_cylinder` — a line on
 /// a lateral *face* of an operand, which every result lateral lies within), so a boolean whose
 /// cylinders record none skips the arm, and the census asks it of no edge at all. The exact test is
-/// [`combinatorics::ruling_meets_lateral`]. ☑ What it refuses that nothing else saw: a plate's bore
-/// with a wedge whose apex edge lies along the bore wall and that crosses the hole into the plate
-/// beyond, and a cylinder with a C-shaped prism touching it from outside and running through it
-/// elsewhere — each one body, `validate` clean, the volume right. Two bodies touching on that line
+/// [`combinatorics::ruling_meets_lateral`]. ☑ The shapes it refuses are ones no other guard can
+/// see — each one body whose counts, `validate` and volume are all right: a plate's bore with a
+/// wedge whose apex edge lies along the bore wall and that crosses the hole into the plate beyond,
+/// and a cylinder with a C-shaped prism touching it from outside and running through it
+/// elsewhere. A test whose exact question cannot be formed is held, not raised — a self-touch
+/// found elsewhere is still the answer. Two bodies touching on that line
 /// are two groups and are not asked; the line a lateral's own slit cut is its boundary, which the
 /// test abstains on, and the edge-use guard names that shape.
 pub(super) fn self_touch_reject(
@@ -258,6 +260,16 @@ pub(super) fn self_touch_reject(
     let mut found: Option<[NodeId; 2]> = None;
     let mut found_at = |e: [NodeId; 2]| {
         found = Some(found.map_or(e, |f| f.min(e)));
+    };
+    // ★ **A proof beats a «cannot tell».** A candidate whose exact test cannot be formed (a ring
+    // the walk cannot name, a ray it cannot cast) is held, not raised: the scan goes on, and a
+    // self-touch found anywhere is the answer. Only a result with none raises the held error —
+    // the one met at the smallest edge, so its kind does not follow the hash map's order either.
+    let mut held: Option<([NodeId; 2], BoolError)> = None;
+    let mut hold = |e: [NodeId; 2], err: BoolError| {
+        if held.as_ref().is_none_or(|(k, _)| e < *k) {
+            held = Some((e, err));
+        }
     };
     // The curved arm's sieve, built the first time a solid with a lateral asks it.
     let mut shared: Option<combinatorics::SharedLines> = None;
@@ -350,11 +362,18 @@ pub(super) fn self_touch_reject(
                     }
                     if let std::collections::hash_map::Entry::Vacant(slot) = rings_of_face.entry(j)
                     {
-                        slot.insert(
-                            rings_of(faces[j])
-                                .map(|r| r.edges(jd, cyls, Some(q)))
-                                .collect::<Result<_, BoolError>>()?,
-                        );
+                        match rings_of(faces[j])
+                            .map(|r| r.edges(jd, cyls, Some(q)))
+                            .collect::<Result<_, BoolError>>()
+                        {
+                            Ok(rings) => {
+                                slot.insert(rings);
+                            }
+                            Err(err) => {
+                                hold([u, v], err);
+                                continue;
+                            }
+                        }
                     }
                     // ★ The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
                     // from the endpoint names and not from the ring's recorded wall. Both of those
@@ -367,7 +386,7 @@ pub(super) fn self_touch_reject(
                     else {
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
-                    if combinatorics::segment_meets_face(
+                    match combinatorics::segment_meets_face(
                         jd,
                         cyls,
                         q,
@@ -375,9 +394,13 @@ pub(super) fn self_touch_reject(
                         up,
                         vp,
                         &rings_of_face[&j],
-                    )? {
-                        found_at([u, v]);
-                        continue 'edges;
+                    ) {
+                        Ok(true) => {
+                            found_at([u, v]);
+                            continue 'edges;
+                        }
+                        Ok(false) => {}
+                        Err(err) => hold([u, v], err),
                     }
                 }
             }
@@ -390,6 +413,8 @@ pub(super) fn self_touch_reject(
         // one the loops road cannot read (`RingNaming`) abstains like every other unreadable case.
         let mut loops_of: HashMap<usize, Option<Vec<combinatorics::LateralLoop>>> = HashMap::new();
         'ruling_edges: for (&[u, v], own) in &owners {
+            // Two faces on one plane (or one face passing the edge twice) ask `on_cylinder(p, p, k)`,
+            // which is false: the gate records a line of two classes, never of one with itself.
             let [f, h] = own[..] else { continue };
             let w = [faces[f].surf.plane(), faces[h].surf.plane()];
             for (li, &(k, lf)) in laterals.iter().enumerate() {
@@ -424,6 +449,9 @@ pub(super) fn self_touch_reject(
             Some(at) => crate::reject_at(RejectReason::SelfTouchingResult, at),
             None => reject(RejectReason::SelfTouchingResult),
         });
+    }
+    if let Some((_, err)) = held {
+        return Err(err);
     }
     Ok(())
 }

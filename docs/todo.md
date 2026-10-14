@@ -23,7 +23,7 @@
 
 옆면 차트(`cyl_chart`)도 먼저다. 차트는 축에 평행한 선분만 받는다 — 모서리가 «z선 × 정거장»이고 한 모서리에 길이
 넷이다(게이트의 다섯 갈래에서 유도한 전제). 4차 교선은 차트 위의 곡선이라 그 전제를 깬다. 그리고 교선은 지금
-게이트의 기록(`crossings`·`tangencies`·`SharedRuling` — 게이트 밖에서 판정에 읽는 파일 7: `trace_class`·`aliases`·
+게이트의 기록(`crossings`·`tangencies`·`SharedRuling` — 게이트 밖에서 그 필드를 직접 읽는 파일 7: `trace_class`·`aliases`·
 `split_rulings`·`cyl_chart`·`naming`·`names`·`self_touch`)과 곡선 종류마다의 분할
 모듈(선분 `split.rs` · 원 `split_circles.rs` · 룰링 `split_rulings.rs`·`rulings.rs`·`cyl_trace.rs`, 합 약
 2,850줄)로 배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
