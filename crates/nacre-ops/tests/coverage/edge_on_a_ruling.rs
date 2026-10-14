@@ -10,9 +10,9 @@
 //!
 //! Both families build.
 //!
-//! Plus the shapes whose honest answer is partly a refusal by name: both walls entering `A` (an
-//! inward wedge — its `A − B` touches itself along the line), and a corner touching `A` from
-//! outside (a line contact, a tangent side) — see
+//! Plus the shapes whose corner stands on `A`'s rim: both walls entering `A` (an inward wedge —
+//! its `A − B` touches itself along the line, a refusal by name) and a corner touching `A` from
+//! outside (a line contact, a tangent side), which builds — see
 //! [`a_vertex_on_a_cap_circle_builds_or_is_refused_by_name`].
 //!
 //! Every family runs over both frames (the world and [`pythagorean_frame`]), the polygon as

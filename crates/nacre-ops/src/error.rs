@@ -372,21 +372,22 @@ pub enum RejectReason {
     /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
     /// from its name. That arm has no fixture; it is recorded rather than hidden
     /// (`DegenerateWitness` is the precedent: no fixture, written down, and not taken as licence
-    /// to delete the guard). The ray-cast one next to it (`combinatorics::every_ray`) fires on
-    /// every ring with a pierce corner — the ray road cannot side one without a cylinder table —
-    /// and `nesting` reads that as the road declining (`Said::Declines`): a witness further down
-    /// answers, and this name never surfaces from there.
+    /// to delete the guard). The ray-cast one next to it (`combinatorics::every_ray`) fires on a
+    /// ring with a pierce corner cast against a class with a world statement — that road carries
+    /// no cylinder table to side one — and `nesting` reads that as the road declining
+    /// (`Said::Declines`): a witness further down answers, and this name never surfaces from
+    /// there.
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
     /// and replay stand on (`defs_are_remappable`). The coplanar merge dissolves the corners that
-    /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose boss
-    /// only touches the plate), and the straight-angle cleaning reads one line's two spellings as
-    /// one (a prism's edge along a cylinder's lateral and on past its cap), so the names the result
-    /// keeps are its own: ☑ no input in the workspace suite or the census raises it. A shipped check rather than a
-    /// debug_assert all the same: a definition naming a surface the result has **no face on at
-    /// all** is a model that cannot describe itself, and in a release build it would ship
-    /// silently — right volume, wrong names.
+    /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose
+    /// boss only touches the plate), and the straight-angle cleaning reads one line's two
+    /// spellings as one (a prism's edge along a cylinder's lateral and on past its cap), so the
+    /// names the result keeps are its own: ☑ no input in the workspace suite or the census raises
+    /// it. A shipped check rather than a debug_assert all the same: a definition naming a surface
+    /// the result has **no face on at all** is a model that cannot describe itself, and in a
+    /// release build it would ship silently — right volume, wrong names.
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
     /// could not be shown to miss the plane — where they meet, the intersection is an ellipse

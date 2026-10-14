@@ -695,8 +695,6 @@ pub(super) fn dissolve_straight_angles(
                             if *e.get() != w {
                                 let seen = more_walls.entry((nd, lf.surf)).or_default();
                                 if !shared.one_line(lf.surf, *e.get(), w)
-                                    || (false
-                                        && seen.iter().any(|&o| !shared.one_line(lf.surf, o, w)))
                                     || seen.iter().any(|&o| !shared.one_line(lf.surf, o, w))
                                 {
                                     bent.insert(nd);

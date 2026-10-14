@@ -2076,7 +2076,9 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
   이루는 최소 길이(`combinatorics::ring_floor` — 셀 걷기·`loop_winding`·동일평면 병합), 호가 원 위의 점을 품는가
   (이름으로 `theta_between`·구간 쌍둥이 `between_on_circle_hp`, 좌표로 `arc_span` — 닫힘은 기하가 아니라 위상이라
   호출자가 `ArcEnds::Closed` 로 넘기고, 노드는 두 끝이라 `ArcSpan::AtBothEnds`), 호가 선을 몇 번 넘는가
-  (`ring_against_plane` — 노드가 선 위인 닫힌 호는 다른 근에서 한 번 더 넘는다). 원을 극점에서 단조 조각으로
+  (`ring_against_plane` — 노드가 선 위인 닫힌 호는 다른 근에서 한 번 더 넘는다). 한 자리는 읽지 않고 거절한다:
+  옆면의 고리(구멍·패널·사슬 림)가 클래스 위를 닫힌 호로 달리면 `cyl_trace` 의 범위 조립은 그것을 길이 0 과
+  가르지 않고 `CylHoleFeature` 로 멈춘다. 원을 극점에서 단조 조각으로
   자르는 표현(CGAL)은 자르는 자리가 좌표틀에 따라 위상에 새겨진다 — seam 간선을 버린 것과 같은 이유다.
 - **호 라벨은 «셀에 직접 묻는 절대 판정»이다** — 저장 프레임 × 축으로 고르면 안 된다. 셀은 원을
   가로지를 수 없으므로 **유리 코너 하나의 반경 부호가 그 셀의 쪽**이다. 잠금은 결론이 아니라
