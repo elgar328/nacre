@@ -219,6 +219,30 @@ pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[Rin
     })
 }
 
+/// **The box a circle on class `wc` lies in** — its centre (where the cylinder's axis meets that
+/// plane) ± `r` on every axis, `r` rounded up to a rational by [`crate::planes::sqrt_at_least`].
+/// `None` for a class or circle with no exact description.
+pub(crate) fn circle_box_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[[nacre_exact::Rat; 3]; 2]> {
+    let c = circle_centre_rat(jd, wc, def)?;
+    let r = crate::planes::sqrt_at_least(def.r2().narrow()?)?;
+    Some([
+        [
+            c[0].checked_sub(r)?,
+            c[1].checked_sub(r)?,
+            c[2].checked_sub(r)?,
+        ],
+        [
+            c[0].checked_add(r)?,
+            c[1].checked_add(r)?,
+            c[2].checked_add(r)?,
+        ],
+    ])
+}
+
 /// **Points whose box holds a ring**, in the judge's interval arithmetic — every corner, whatever
 /// names it ([`node_point_hp`]), and for every arc the corners of its circle's box (an arc lies in
 /// its circle, and the circle in its centre ± `r` on every axis, `r` rounded up to a rational by
@@ -238,18 +262,7 @@ pub(crate) fn ring_box_points_hp(
     for e in rb {
         out.push(node_point_hp(jd, cyls, e.node)?);
         if let Carrier::Arc(ac) = &e.carrier {
-            let c = circle_centre_rat(jd, wc, &ac.def)?;
-            let r = crate::planes::sqrt_at_least(ac.def.r2().narrow()?)?;
-            let lo = [
-                c[0].checked_sub(r)?,
-                c[1].checked_sub(r)?,
-                c[2].checked_sub(r)?,
-            ];
-            let hi = [
-                c[0].checked_add(r)?,
-                c[1].checked_add(r)?,
-                c[2].checked_add(r)?,
-            ];
+            let [lo, hi] = circle_box_rat(jd, wc, &ac.def)?;
             for bits in 0..8usize {
                 out.push(std::array::from_fn(|k| {
                     let v = if bits >> k & 1 == 0 { lo[k] } else { hi[k] };

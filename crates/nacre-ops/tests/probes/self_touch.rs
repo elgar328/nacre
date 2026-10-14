@@ -340,6 +340,52 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
     }
 }
 
+/// ★ **A body resting on itself along an edge is refused, whichever operand comes first.** A tipped
+/// bar lies on the block's top by its bottom edge, and a leg of the same bar dips into the block
+/// further on, so the fuse is one body whose surface touches itself along that edge; the twin
+/// without the leg is two bodies (`two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order`).
+///
+/// Three planes hold the edge's line — the bar's two and the block's top — and the ends' names
+/// carry two of them, which two decided by class order. The faces asked are the ones on whose
+/// plane both ends lie, measured exactly, so the block's top is asked in both orders.
+#[test]
+fn a_bar_resting_on_its_own_block_by_an_edge_is_refused() {
+    let legged: &[[f64; 2]] = &[
+        [0.0, 0.0],
+        [2.0, 0.0],
+        [2.0, 0.5],
+        [4.0, 0.5],
+        [4.0, -3.0],
+        [5.0, -3.0],
+        [5.0, 1.0],
+        [0.0, 1.0],
+    ];
+    for turned in [false, true] {
+        for swapped in [false, true] {
+            let at = format!("turned = {turned}, swapped = {swapped}");
+            let mut m = Model::new();
+            let mut a = block_below(
+                &mut m,
+                [[-10.0, -8.0], [6.0, -8.0], [6.0, 4.0], [-10.0, 4.0]],
+            );
+            let f = tipped(&mut m);
+            let mut b = prism_on(&mut m, f, legged, 1.0);
+            if turned {
+                a = xf(&mut m, a, rot30());
+                b = xf(&mut m, b, rot30());
+            }
+            let (x, y) = if swapped { (b, a) } else { (a, b) };
+            match boolean(&mut m, BoolKind::Fuse, x, y) {
+                Err(BoolError::Rejected {
+                    reason: RejectReason::SelfTouchingResult,
+                    ..
+                }) => {}
+                other => panic!("{at}: {other:?}"),
+            }
+        }
+    }
+}
+
 /// ★ **A pin standing in a blind round hole, its top flush with the plate's top, is one body.**
 /// The pin's top edges lie on the plate's top plane but over the hole, where that face has no
 /// material: the face's bounds are its square and the hole's circle, and both are read — the

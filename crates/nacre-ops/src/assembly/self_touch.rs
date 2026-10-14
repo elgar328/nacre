@@ -192,14 +192,16 @@ pub(crate) fn assemble_fuse_cut(
 ///
 /// **Three sieves, cheapest first**, because the exact question is the expensive one:
 ///
-/// 1. ★ **Which planes** — both endpoints must lie on the face's plane, and a vertex's plane triple
-///    *is* the set of planes it lies on, so the candidates for an edge are `triple(u) ∩ triple(v)`,
-///    usually two. Exact, no coordinates, a hash lookup per edge. Scanning every face for every
-///    edge instead costs ~40% on the 80-fold star (measured).
-/// 2. ★ **Which faces on that plane** — one plane can carry *eighty* faces in a folded star, so the
-///    lookup above is not the end of it. A box per face rejects 99.99% of what survives step 1
-///    (measured: 2,538,703 candidate pairs down to 203), and on the booleans that cost the most it
-///    rejects all of them.
+/// 1. ★ **Which faces are near** — a box per face against the edge's box (its two ends' reach),
+///    through a window on the faces sorted by their low `x`. Over the perf folds, 666,653 pairs.
+///    The window reads about 120 faces per edge on a turned fold, whose fins overlap on every axis;
+///    sorting on `y` or `z` read more, and a uniform grid over the boxes was slower still (its
+///    per-query collection outweighed the faces it skipped) — measured, and the window kept.
+/// 2. ★ **Which of those lie under the edge** — both ends exactly on the face's plane
+///    (`side_of`), 1,583 of those pairs. Not the planes the two ends' **names** share: a name
+///    carries three of the planes through its point, and where three planes hold the edge's line (a
+///    pencil) it carries two of them, which two decided by class order — that is, by operand
+///    order, and an edge resting on the other operand's face went unasked in one of the two.
 /// 3. The exact test, on what is left: [`combinatorics::segment_meets_face`] — **the open segment**,
 ///    not its endpoints. The endpoints alone miss the shape that motivated this: a cut taken all the
 ///    way *through* leaves a contact line whose ends sit on the face's ring while its middle crosses
@@ -276,8 +278,8 @@ pub(super) fn self_touch_reject(
     let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
         // ★ **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
-        // its own faces". The planar arm asks it of plane faces, through plane membership and
-        // in-plane boxes. The curved arm asks it of a lateral face, for the edges two of the
+        // its own faces". The planar arm asks it of plane faces, through boxes and exact plane
+        // membership. The curved arm asks it of a lateral face, for the edges two of the
         // solid's plane faces share along a ruling of that cylinder (the gate's record,
         // `SharedLines::on_cylinder`) — a wedge's apex edge lying along the solid's own bore wall,
         // say ([`combinatorics::ruling_meets_lateral`]). What neither asks — an arc edge against
@@ -300,32 +302,68 @@ pub(super) fn self_touch_reject(
                 ClassIx::Plane(_) => None,
             })
             .collect();
-        // One pass: which faces sit on each plane, which two faces own each edge, and a box per
-        // face holding its vertices' reach.
-        let mut by_plane: HashMap<usize, Vec<usize>> = HashMap::new();
+        // One pass: which two faces own each edge, which edges an arc carries, and a box per face
+        // holding its vertices' reach and its arcs' circles.
         let mut owners: HashMap<[NodeId; 2], Vec<usize>> = HashMap::new();
+        let mut arc_edges: std::collections::HashSet<[NodeId; 2]> = Default::default();
         let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
         for (j, lf) in faces.iter().enumerate() {
-            by_plane.entry(lf.surf.plane()).or_default().push(j);
             let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            let mut grow = |rl: [f64; 3], rh: [f64; 3]| {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(rl[k]);
+                    hi[k] = hi[k].max(rh[k]);
+                }
+            };
             for r in rings_of(lf) {
                 let k = r.nodes.len();
                 for i in 0..k {
                     let (u, v) = (r.nodes[i], r.nodes[(i + 1) % k]);
-                    owners
-                        .entry(if u < v { [u, v] } else { [v, u] })
-                        .or_default()
-                        .push(j);
+                    let key = if u < v { [u, v] } else { [v, u] };
+                    owners.entry(key).or_default().push(j);
                     if let Some(&(_, (rl, rh))) = pt.get(&u) {
-                        for k in 0..3 {
-                            lo[k] = lo[k].min(rl[k]);
-                            hi[k] = hi[k].max(rh[k]);
+                        grow(rl, rh);
+                    }
+                    // An arc bulges past its two ends: the box takes its whole circle's, and with
+                    // no exact circle it holds everything — a box with no proved bound must not
+                    // drop a candidate.
+                    if let Wall::Arc { cyl, .. } = r.walls[i] {
+                        arc_edges.insert(key);
+                        match cyls.get(cyl).and_then(|c| {
+                            combinatorics::circle_box_rat(jd, lf.surf.plane(), &c.def)
+                        }) {
+                            Some([cl, ch]) => grow(
+                                cl.map(|x| outward(x.to_f64(), -1.0)),
+                                ch.map(|x| outward(x.to_f64(), 1.0)),
+                            ),
+                            None => grow([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
                         }
                     }
                 }
             }
             boxes.push((lo, hi));
         }
+        // The faces by their boxes' low `x`, so a feature reads only the faces whose `x` span can
+        // reach it. A face with no ring (a cap disk) has an empty box and is never reached.
+        let mut by_x: Vec<usize> = (0..faces.len()).collect();
+        by_x.sort_by(|&a, &b| boxes[a].0[0].total_cmp(&boxes[b].0[0]));
+        let (boxes, by_x) = (&boxes, &by_x);
+        let near = |lo: [f64; 3], hi: [f64; 3]| {
+            by_x.iter()
+                .copied()
+                .take_while(move |&j| boxes[j].0[0] <= hi[0])
+                .filter(move |&j| {
+                    let (fl, fh) = boxes[j];
+                    (0..3).all(|k| hi[k] >= fl[k] && lo[k] <= fh[k])
+                })
+        };
+        // Does node `n` lie on plane `q`? Exact. Not cached: a pair recurs too rarely to pay for
+        // the table (measured over the perf folds: 932k distinct pairs of 1.33M asks).
+        let on = |n: NodeId, q: usize| combinatorics::side_of(jd, cyls, n, q) == Some(0);
+        let reach_of = |n: NodeId| {
+            pt.get(&n)
+                .map_or(([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]), |&(_, r)| r)
+        };
         let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
         'edges: for (&[u, v], own) in &owners {
             // ★ **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
@@ -339,64 +377,70 @@ pub(super) fn self_touch_reject(
             ) else {
                 continue;
             };
-            for q in up.iter().copied().filter(|x| vp.contains(x)) {
-                let Some(js) = by_plane.get(&q) else { continue };
-                for &j in js.iter().filter(|j| !own.contains(j)) {
-                    let (lo, hi) = boxes[j];
-                    let in_box = [u, v].iter().all(|t| {
-                        pt.get(t).is_some_and(|&(_, (rl, rh))| {
-                            (0..3).all(|k| rh[k] >= lo[k] && rl[k] <= hi[k])
-                        })
-                    });
-                    if !in_box {
-                        continue;
-                    }
-                    // A face trimmed by a mixed ring joins the populations this sieve passes over
-                    // (a pierce-ended edge, the edges the curved arm does not ask): the named walk
-                    // cannot read it, and an `Err` here would turn "cannot check" into "model
-                    // invalid". The net behind the skip stays what it is for those: the edge-use
-                    // guard, the non-manifold vertex check, and `check_result_topology`'s
-                    // plane-self edge guard.
-                    if rings_of(faces[j]).any(Ring::is_mixed) {
-                        continue;
-                    }
-                    // ★ A face bounded outside by a circle — a cap disk — is not asked. Its plane is
-                    // ⊥ to the cylinder's axis, and an edge of the same body lying on it from
-                    // outside needs a plane slanted to that axis through a point of the disk,
-                    // which cannot clear the cylinder's side: `ObliqueCylinderCut` refuses first.
-                    if matches!(faces[j].outer, Bound::Circle { .. }) {
-                        continue;
-                    }
-                    if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
-                        match super::grouping::comp_face(jd, cyls, faces[j]) {
-                            Ok(face) => {
-                                slot.insert(face);
-                            }
-                            Err(err) => {
-                                hold([u, v], err);
-                                continue;
-                            }
+            // An arc lies in a plane face only on its own circle's plane, where the face would
+            // overlap the arc's own face in area — the coplanar merge's case, not a line contact.
+            if arc_edges.contains(&[u, v]) {
+                continue;
+            }
+            let ((ul, uh), (vl, vh)) = (reach_of(u), reach_of(v));
+            let el: [f64; 3] = core::array::from_fn(|k| ul[k].min(vl[k]));
+            let eh: [f64; 3] = core::array::from_fn(|k| uh[k].max(vh[k]));
+            for j in near(el, eh) {
+                if own.contains(&j) {
+                    continue;
+                }
+                // ★ **Which faces: the ones on whose plane both ends lie.** Not the planes the two
+                // ends' names share — a name carries three of the planes through its point, and
+                // where three planes hold the edge's line (a pencil) it carries two of them, which
+                // two decided by class order, that is by operand order.
+                let q = faces[j].surf.plane();
+                if !(on(u, q) && on(v, q)) {
+                    continue;
+                }
+                // A face trimmed by a mixed ring joins the populations this sieve passes over
+                // (a pierce-ended edge, the edges the curved arm does not ask): the named walk
+                // cannot read it, and an `Err` here would turn "cannot check" into "model
+                // invalid". The net behind the skip stays what it is for those: the edge-use
+                // guard, the non-manifold vertex check, and `check_result_topology`'s
+                // plane-self edge guard.
+                if rings_of(faces[j]).any(Ring::is_mixed) {
+                    continue;
+                }
+                // ★ A face bounded outside by a circle — a cap disk — is not asked. Its plane is
+                // ⊥ to the cylinder's axis, and an edge of the same body lying on it from
+                // outside needs a plane slanted to that axis through a point of the disk,
+                // which cannot clear the cylinder's side: `ObliqueCylinderCut` refuses first.
+                if matches!(faces[j].outer, Bound::Circle { .. }) {
+                    continue;
+                }
+                if let std::collections::hash_map::Entry::Vacant(slot) = read.entry(j) {
+                    match super::grouping::comp_face(jd, cyls, faces[j]) {
+                        Ok(face) => {
+                            slot.insert(face);
+                        }
+                        Err(err) => {
+                            hold([u, v], err);
+                            continue;
                         }
                     }
-                    // ★ The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
-                    // from the endpoint names and not from the ring's recorded wall. Both of those
-                    // fail, measured: an edge can lie on a pencil of three planes and the ring is
-                    // free to call it by any of them — including `q` itself — and where four planes
-                    // concur the endpoints' canonical triples need not share a second plane at all
-                    // (31 pairs in the rotation sweep). An edge's two faces always give one, because
-                    // that is what the edge *is*.
-                    let Some(w2) = own.iter().map(|&o| faces[o].surf.plane()).find(|&x| x != q)
-                    else {
-                        continue; // an edge whose faces are both on `q` is not an edge
-                    };
-                    match combinatorics::segment_meets_face(jd, cyls, q, w2, up, vp, &read[&j]) {
-                        Ok(true) => {
-                            found_at([u, v]);
-                            continue 'edges;
-                        }
-                        Ok(false) => {}
-                        Err(err) => hold([u, v], err),
+                }
+                // ★ The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
+                // from the endpoint names and not from the ring's recorded wall. Both of those
+                // fail, measured: an edge can lie on a pencil of three planes and the ring is
+                // free to call it by any of them — including `q` itself — and where four planes
+                // concur the endpoints' canonical triples need not share a second plane at all
+                // (31 pairs in the rotation sweep). An edge's two faces always give one, because
+                // that is what the edge *is*.
+                let Some(w2) = own.iter().map(|&o| faces[o].surf.plane()).find(|&x| x != q) else {
+                    continue; // an edge whose faces are both on `q` is not an edge
+                };
+                match combinatorics::segment_meets_face(jd, cyls, q, w2, up, vp, &read[&j]) {
+                    Ok(true) => {
+                        found_at([u, v]);
+                        continue 'edges;
                     }
+                    Ok(false) => {}
+                    Err(err) => hold([u, v], err),
                 }
             }
         }
@@ -454,4 +498,10 @@ pub(super) fn self_touch_reject(
 /// A face's rings, outer first.
 pub(super) fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
     lf.poly_rings()
+}
+
+/// `x` moved one rounding step further `away` (`−1` down, `+1` up) — a rounded rational bound
+/// made to hold the rational.
+fn outward(x: f64, away: f64) -> f64 {
+    x + away * (x.abs() * (4.0 * f64::EPSILON) + f64::MIN_POSITIVE)
 }

@@ -496,11 +496,12 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             }
         }
     }
-    // The walk itself, plus the five places that ask about a **single point** rather than a ring:
+    // The walk itself, plus the six places that ask about a **single point** rather than a ring:
     // `point_on_ring` ("is `v` on this edge's line"), the ray probe's parallel arm ("is the query on
     // the plane the ray lies in"), the alias seed ("does this vertex lie on that class"), the
-    // result's subdivision ("is this pierce point on the other class of a shared ruling"), and the
-    // split's containment against a silent class ("which side of `w` is this segment's end").
+    // result's subdivision ("is this pierce point on the other class of a shared ruling"), the
+    // split's containment against a silent class ("which side of `w` is this segment's end"), and
+    // the self-touch sieve ("does this result vertex lie on that face's plane").
     // None reads a sign sequence, so none is a walk.
     //
     // ★ A three-plane name is minted through `Canon3`
@@ -519,6 +520,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             && !o.contains("side_of(jd, cyls, n, b)")
             && !o.contains("side_of(jd, cyls, n, a)")
             && !o.contains("side_of(jd, cyls, segs[i].end[k], w)")
+            && !o.contains("side_of(jd, cyls, n, q)")
     });
     assert_eq!(
         offenders,
