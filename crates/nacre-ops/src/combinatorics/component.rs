@@ -99,13 +99,10 @@ pub(crate) enum CurvedHit {
 /// is one that drifts ([[rule-lives-inline-next-door]] is this repository's most-repeated defect).
 /// It was written twice for one commit; this is that commit's correction.
 ///
-/// ★★ **The hole clause fires and no test would notice if it stopped.** Measured: 7 entries with
-/// a hole across `nacre-ops`, **6 of which subtract** — and stubbing the loop away leaves every
-/// target green. That is a property of today's population, not of the rule: a hole here is a
-/// **through** bore, so a ray that passes through it pierces the *pair* of annular caps and a
-/// wrongly-counted crossing is wrongly counted **twice**, leaving the parity alone. A blind bore
-/// on a classified component breaks the pairing and there is no such fixture yet. Extraction is
-/// what guards this, not a lock.
+/// ★★ **The hole clause is locked.** Stubbing the loop turns five tests red (measured) — among them
+/// the pin standing flush in a blind round hole (`a_pin_flush_in_a_round_hole_is_one_body`), whose
+/// top corners lie on the plate's top plane inside the hole: read without the hole they are inside
+/// the plate's face, and the body would be refused as touching itself.
 ///
 /// The answer is where the point is — inside the face, outside it, or **on** its boundary (on the
 /// outer bound, or on a hole's) — and `None` where a bound could not tell. On the outer bound or

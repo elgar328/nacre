@@ -732,8 +732,8 @@ fn an_ordinary_fuse_is_untouched() {
 /// The judge folds *every* ring of a face into one bag and reads even-odd, because a point inside a
 /// hole has crossed the boundary twice. Writing it as "inside the outer ring **and** outside each
 /// hole" was one of the two shapes that got the earlier drafts wrong, so the rule needs a fixture
-/// rather than a corpus that happens to cover it: 52 of the corpus's candidate faces are holed
-/// (measured), but nothing there would fail if the hole handling broke.
+/// rather than a corpus that happens to cover it: the census's edges reach the exact test against
+/// 214 faces, none of them holed (measured).
 ///
 /// A plate with a square hole, and a wedge cut whose tip lands exactly on the hole's wall: the
 /// contact line lies on a plane the plate carries, and the point is on the **hole's** ring, not the
