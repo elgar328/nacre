@@ -1,5 +1,8 @@
 //! Regression probes: each file is one shape that once broke the kernel, kept as a named test.
 
+#[path = "support/fixtures.rs"]
+mod common;
+
 #[path = "probes/collinear_loop_points.rs"]
 mod collinear_loop_points;
 #[path = "probes/concurrent_line.rs"]

@@ -62,16 +62,16 @@ pub(crate) fn every_ray(
                 RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
                 RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
             };
-        let qb = *v
-            .iter()
-            .find(|&&x| x != p && x != qa)
-            .ok_or_else(|| reject(RejectReason::RingNaming))?;
+        // The plane `v` is ordered against along the line, by the rule every handle on a line
+        // takes: one of `v`'s own planes that cuts `p ∩ qa`. When `p` is not among `v`'s planes
+        // one of the other two can hold the line (a pencil), and read there it orders nothing.
+        let qb = pin_on_line(jd, p, qa, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
         // A node on the line is a crossing point in its own right, so it must be nameable as one:
         // some plane of its own, off the line, pins it there. (`third_on_l` picks a handle the
         // same way, and for the same reason — one parallel to the line names no point on it.)
         // ★ The projection is safe *here* and nowhere earlier: the walk answered `Met`, which it
         // only does when every node is three planes.
-        let namer = |i: usize| pin_on_line(jd, p, qa, three_plane_name(nodes[i])?);
+        let namer = |i: usize| pin_on_line(jd, p, qa, &three_plane_name(nodes[i])?);
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back
         // inside itself: its two ends bracket it, and ends that disagree mean `v` is *between*
@@ -185,11 +185,7 @@ pub(crate) fn segment_meets_face(
 ) -> Result<bool, BoolError> {
     // A point on `P ∩ w` is named there by a third plane of its own that **cuts** the line; one
     // parallel to it names nothing (the same duty `every_ray`'s `namer` states).
-    let handle = |t: [usize; 3]| -> Option<usize> {
-        t.iter()
-            .copied()
-            .find(|&x| x != p && x != w && jd.plane_pair_dir_sign(p, w, x) != 0)
-    };
+    let handle = |t: [usize; 3]| pin_on_line(jd, p, w, &t);
     let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
         return Err(reject(RejectReason::RingNaming));
     };
@@ -317,10 +313,7 @@ pub(super) fn point_on_ring(
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
-        let s = *v
-            .iter()
-            .find(|&&x| x != p && jd.plane_pair_dir_sign(p, r, x) != 0)
-            .ok_or_else(|| reject(RejectReason::RingNaming))?;
+        let s = pin_on_line(jd, p, r, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
         let (a, b) = (order_along(jd, p, r, s, si), order_along(jd, p, r, s, sj));
         if a * b <= 0 {
             return Ok(true); // between the endpoints (or on one)

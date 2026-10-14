@@ -256,7 +256,7 @@ fn trace_transversal_face(
             // canonical triple of what is now known through it — the rule the operand's ring
             // and the alias table use, so the three agree on the representative.
             if t.contains(&wc) {
-                combinatorics::pin_on_line(jd, wc, fc, t)
+                combinatorics::pin_on_line(jd, wc, fc, &t)
                     .map(|r| (n, combinatorics::EndPin::Class(r)))
                     .ok_or(DeclineKind::NoPinOnLine)
             } else {
@@ -270,7 +270,7 @@ fn trace_transversal_face(
                 // ★ `FourPlane` and not `NoPinOnLine`: this arm has already established that
                 // `wc` is a fourth plane through the point, so the substrate limit is the cause
                 // and a missing pin is its symptom.
-                combinatorics::pin_on_line(jd, wc, fc, t)
+                combinatorics::pin_on_line(jd, wc, fc, &t)
                     .ok_or(DeclineKind::FourPlane)
                     .map(|r| {
                         let name = combinatorics::canonical_triple(jd, &set)

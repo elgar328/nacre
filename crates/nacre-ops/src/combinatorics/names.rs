@@ -682,22 +682,26 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// so the **smallest** is taken and replay stays stable. `None` is "this name pins nothing here",
 /// which each caller turns into its own vocabulary rather than sharing one label.
 ///
-/// ★ `t` comes in sorted ([`NodeId::three_planes`] is the only constructor and it sorts), so
-/// "smallest qualifying" is the first that qualifies — the two spellings the call sites used are
-/// the same value.
+/// ★ `t` comes in sorted — a name's planes ([`NodeId::three_planes`] and [`NodeId::pierce`] sort
+/// them) or a sorted set of them — so "smallest qualifying" is the first that qualifies.
 ///
 /// ★★★★★ **Which half of this rule decides an answer, measured by breaking each.** Candidates
-/// number `2` on 9,348 calls across the suite, so "smallest" is not vacuous *as a choice* — yet
-/// taking the **largest** instead leaves the bit census **identical**. That is not a limp
-/// instrument: it measures the invariant this rule rests on, *"under a concurrency several
-/// qualify and any will do"*. What does
-/// decide is the **cut test**: invert it and the census collapses from 269 rows to 5. So the
-/// smallest rule buys replay stability, and the cut test buys correctness.
+/// number two on 61,417 of the suite's 7,996,291 calls and three on 884, so "smallest" is not
+/// vacuous *as a choice* — yet taking the **largest** instead leaves the bit census **identical**.
+/// That is not a limp instrument: it measures the invariant this rule rests on, *"under a
+/// concurrency several qualify and any will do"*. What does decide is the **cut test**: invert
+/// it and the census stops at row 121 of 412. So the smallest rule buys replay stability, and the
+/// cut test buys correctness.
+///
+/// ★ `t` is a slice because a point is not always asked by a name of its own three: the ray
+/// orders a query that lies on its plane `p` without `p` in its name, and the grouping's locator
+/// picks from every plane of the query. Such a name can hold the line itself — a pencil of three
+/// planes through it — and only the cut test leaves that plane out.
 pub(crate) fn pin_on_line(
     jd: &Judge<'_, WorkingPlane>,
     a: usize,
     b: usize,
-    t: [usize; 3],
+    t: &[usize],
 ) -> Option<usize> {
     t.iter()
         .copied()
@@ -796,18 +800,14 @@ pub(crate) fn pin_for(
     name: NodeId,
 ) -> Option<EndPin> {
     match name.kind() {
-        NodeKind::ThreePlane(t) => pin_on_line(jd, a, b, t).map(EndPin::Class),
+        NodeKind::ThreePlane(t) => pin_on_line(jd, a, b, &t).map(EndPin::Class),
         NodeKind::Pierce { planes, .. } => {
             let mut line = [a, b];
             line.sort_unstable();
             if planes == line {
                 return Some(EndPin::Cylinder);
             }
-            planes
-                .iter()
-                .copied()
-                .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
-                .map(EndPin::Class)
+            pin_on_line(jd, a, b, &planes).map(EndPin::Class)
         }
     }
 }

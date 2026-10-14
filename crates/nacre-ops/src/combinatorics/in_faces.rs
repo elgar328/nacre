@@ -713,10 +713,12 @@ pub(crate) fn point_in_component(
                 // proposition the `fwd == 0` arm below abandons for a transversal plane — one rule,
                 // both spellings.
                 //
-                // ★ **Unfired, and measured to be.** 26 rays in the suite lie in a face's plane
-                // and **none** of them is on that face's material. (An earlier count said two;
-                // it read the *outer bound* rather than the face, and both were in a hole.) It is
-                // here because the sentence is true, not because a fixture is red.
+                // ★ A query on the face's material is a body standing on another's face: a
+                // corner on it, or an edge resting along it
+                // (`two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order`). Such a
+                // query's name need not carry `q` — it is the other body's corner — so `material`
+                // reads it with a name that misses `q`, and the ray orders it by a plane of that
+                // name that cuts the line (`pin_on_line`).
                 let mut vq = [query[0], query[1], query[2]];
                 vq.sort_unstable();
                 if side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q) == Some(0)
@@ -751,10 +753,7 @@ pub(crate) fn point_in_component(
         for j in (i + 1)..vplanes.len() {
             let (a, b) = (vplanes[i], vplanes[j]);
             // Locator `c`: a plane of the query off the line `a ∩ b`, so `{a,b,c}` is the query.
-            let Some(&c) = vplanes
-                .iter()
-                .find(|&&x| x != a && x != b && jd.plane_pair_dir_sign(a, b, x) != 0)
-            else {
+            let Some(c) = pin_on_line(jd, a, b, &vplanes) else {
                 continue;
             };
             if let Some(inside) = attempt(a, b, c)? {

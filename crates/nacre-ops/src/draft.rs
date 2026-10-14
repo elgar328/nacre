@@ -243,7 +243,7 @@ impl Ring {
                 // by name rather than guessed at.
                 return Err(reject(RejectReason::RingNaming));
             };
-            combinatorics::pin_on_line(jd, p, *c, t)
+            combinatorics::pin_on_line(jd, p, *c, &t)
                 .map(combinatorics::EndPin::Class)
                 .ok_or_else(|| reject(RejectReason::RingNaming))
         };

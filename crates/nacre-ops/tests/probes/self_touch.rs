@@ -17,22 +17,29 @@
 //! bodies touching on that line — run over both frames with the other ruling families
 //! (`coverage/edge_on_a_ruling.rs`, `a_body_touching_itself_along_a_ruling_is_refused`).
 
+use crate::common::{datum_frame, rot30, xf};
 use nacre_exact::{Angle, Axis, Isometry, Rat};
-use nacre_math::{Point2, Point3};
+use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
-    BoolError, BoolKind, Operation, Profile2d, RejectClass, RejectReason, SketchFrame, apply,
-    boolean,
+    BoolError, BoolKind, Operation, Profile2d, RejectClass, RejectReason, SketchFrame, SketchPlane,
+    apply, boolean,
 };
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
 fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
+    let frame = SketchFrame::world(m, Axis::Z);
+    prism_on(m, frame, pts, h)
+}
+
+/// The prism over `pts` on `frame`, `h` along its normal (a negative `h` sweeps against it).
+fn prism_on(m: &mut Model, frame: SketchFrame, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     let profile =
         Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).expect("profile");
     let nacre_ops::OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            frame: SketchFrame::world(m, Axis::Z),
+            frame,
             profile,
             dist: h,
         },
@@ -44,14 +51,36 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     solid
 }
 
-fn moved(m: &mut Model, s: Handle<Solid>, isometry: Isometry) -> Handle<Solid> {
-    let nacre_ops::OpOutput::Transform { solid } =
-        apply(m, &Operation::Transform { solid: s, isometry }).expect("transform")
-    else {
-        panic!()
-    };
-    m.rebuild_adjacency();
-    solid
+/// The frame through the origin spanned by `u` and `v` (rational decimals, orthonormal).
+fn frame_on(m: &mut Model, u: [f64; 3], v: [f64; 3]) -> SketchFrame {
+    datum_frame(
+        m,
+        SketchPlane::from_axes(
+            Point3::from_array([0.0; 3]),
+            Vector3::from_array(u),
+            Vector3::from_array(v),
+        ),
+    )
+}
+
+/// ★ **A frame slanted against all three world axes** — `u = (0.6, 0.64, 0.48)`,
+/// `v = (−0.8, 0.48, 0.36)`, normal `(0, −0.6, 0.8)`: every edge of a prism on it climbs in `z`, so
+/// a prism over the first quadrant's corner meets the plane `z = 0` at that one corner.
+fn slanted(m: &mut Model) -> SketchFrame {
+    frame_on(m, [0.6, 0.64, 0.48], [-0.8, 0.48, 0.36])
+}
+
+/// ★ **A frame tipped about the world `x` axis** — `u = (1, 0, 0)`, `v = (0, 0.8, 0.6)`: a prism
+/// over the band `y ≥ 0` meets the plane `z = 0` along its bottom edge on the `x` axis.
+fn tipped(m: &mut Model) -> SketchFrame {
+    frame_on(m, [1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
+}
+
+/// A box over `rect` in the world, from `z = −5` up to `z = 0`, stated by a sweep against the
+/// normal.
+fn block_below(m: &mut Model, rect: [[f64; 2]; 4]) -> Handle<Solid> {
+    let frame = SketchFrame::world(m, Axis::Z);
+    prism_on(m, frame, &rect, -5.0)
 }
 
 /// A unit cube, and a wedge sunk into it whose sharp tip reaches `tip_x`. At `tip_x == 1.0` the tip
@@ -66,7 +95,7 @@ fn cube_and_wedge(tip_x: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     );
     m.rebuild_adjacency();
     let b = prism(&mut m, &[[tip_x, 0.5], [0.1, 0.1], [0.1, 0.9]], 0.6);
-    let b = moved(
+    let b = xf(
         &mut m,
         b,
         Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::new(2, 10).unwrap()]),
@@ -182,8 +211,8 @@ fn the_same_contact_is_found_after_a_rotation() {
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         })
     };
-    let a = moved(&mut m, a, turn());
-    let b = moved(&mut m, b, turn());
+    let a = xf(&mut m, a, turn());
+    let b = xf(&mut m, b, turn());
     expect_self_touch(&mut m, a, b, "a rotated self-touch is still a self-touch");
 }
 
@@ -230,6 +259,69 @@ fn a_contact_between_two_bodies_keeps_its_own_name() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
+/// ★ **Two bodies touching at a point or along a line are two bodies, in either order** — the
+/// twins of the self-touch pairs below. A slanted unit cube stands on the block's top corner by its
+/// own lowest corner; a tipped bar lies on the block's top by its bottom edge. Each fuse is two
+/// solids, `validate` clean, whatever operand comes first and whether the scene is turned.
+///
+/// The corner and the edge each lie on a plane of the other solid that their own name does not
+/// carry — four planes through the corner, a pencil of three through the edge's line — so the
+/// grouping's ray asks a point on a plane through it named without that plane. Ordering along that
+/// ray takes a plane of the name that cuts the line ([`pin_on_line`]'s rule); one of the name's
+/// planes holds the ray and orders nothing, and reading it read the point as on the ring.
+#[test]
+fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
+    type Case = (
+        &'static str,
+        [[f64; 2]; 4],
+        fn(&mut Model) -> SketchFrame,
+        [[f64; 2]; 4],
+        f64,
+    );
+    let cases: [Case; 2] = [
+        (
+            "a corner on the block's corner",
+            [[-10.0, -8.0], [0.0, -8.0], [0.0, 0.0], [-10.0, 0.0]],
+            slanted,
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            400.0 + 1.0,
+        ),
+        (
+            "an edge resting on the block's top",
+            [[-10.0, -8.0], [6.0, -8.0], [6.0, 4.0], [-10.0, 4.0]],
+            tipped,
+            [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]],
+            960.0 + 2.0,
+        ),
+    ];
+    for (what, rect, frame, bar, want) in cases {
+        for turned in [false, true] {
+            for swapped in [false, true] {
+                let at = format!("{what}, turned = {turned}, swapped = {swapped}");
+                let mut m = Model::new();
+                let mut a = block_below(&mut m, rect);
+                let f = frame(&mut m);
+                let mut b = prism_on(&mut m, f, &bar, 1.0);
+                if turned {
+                    a = xf(&mut m, a, rot30());
+                    b = xf(&mut m, b, rot30());
+                }
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let got =
+                    boolean(&mut m, BoolKind::Fuse, x, y).unwrap_or_else(|e| panic!("{at}: {e:?}"));
+                m.rebuild_adjacency();
+                assert_eq!(got.len(), 2, "{at}: two bodies");
+                assert!(nacre_validate::validate(&m).is_empty(), "{at}");
+                let v: f64 = got
+                    .iter()
+                    .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                    .sum();
+                assert!((v - want).abs() < 1e-9, "{at}: volume {v}, want {want}");
+            }
+        }
+    }
+}
+
 /// ★ **An *area* contact opens the wall instead of leaving a zero-thickness one.**
 ///
 /// This check looks for an edge inside a face, which is a line contact; two faces of one solid
@@ -258,7 +350,7 @@ fn an_area_contact_opens_the_wall_rather_than_touching_it() {
         &[[1.0, 0.4], [1.0, 0.6], [0.1, 0.9], [0.1, 0.1]],
         0.6,
     );
-    let b = moved(
+    let b = xf(
         &mut m,
         b,
         Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::new(2, 10).unwrap()]),
