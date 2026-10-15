@@ -422,24 +422,20 @@ pub(crate) fn circular_order(
     if seam_nodes > 1 {
         return Err(CircleOrderFail::Coincident);
     }
-    let mut bad_theta = false;
     let mut order: Vec<usize> = (0..meets.len()).collect();
-    order.sort_by(|&i, &j| match cmp(i, j) {
-        Some(o) => o.seam_first(),
-        None => {
-            bad_theta = true;
-            core::cmp::Ordering::Equal
-        }
-    });
-    if bad_theta {
-        return Err(CircleOrderFail::Undecided);
-    }
+    combinatorics::try_sort_by(&mut order, |&i, &j| {
+        cmp(i, j)
+            .map(SeamOrder::seam_first)
+            .ok_or(CircleOrderFail::Undecided)
+    })?;
     for w in order.windows(2) {
-        if matches!(
-            cmp(w[0], w[1]),
-            Some(SeamOrder::Ordered(core::cmp::Ordering::Equal))
-        ) {
-            return Err(CircleOrderFail::Coincident);
+        match cmp(w[0], w[1]) {
+            Some(SeamOrder::Ordered(core::cmp::Ordering::Equal)) => {
+                return Err(CircleOrderFail::Coincident);
+            }
+            Some(_) => {}
+            // The sort may have asked this pair the other way round; a failure is no answer.
+            None => return Err(CircleOrderFail::Undecided),
         }
     }
     Ok(order)
@@ -576,7 +572,6 @@ pub(super) fn split_segments_at(
             .iter()
             .map(|k| combinatorics::on_line(jd, cyls, pair[0], pair[1], k.0).ok_or_else(undecided))
             .collect::<Result<_, BoolError>>()?;
-        let mut bad = false;
         let cmp = |i: usize, j: usize| -> Option<core::cmp::Ordering> {
             let a = combinatorics::locate(jd, cyls, pair[0], pair[1], keyed[i].0)?;
             Some(
@@ -588,16 +583,8 @@ pub(super) fn split_segments_at(
             )
         };
         let mut order: Vec<usize> = (0..keyed.len()).collect();
-        order.sort_by(|&i, &j| match cmp(i, j) {
-            Some(o) => o,
-            None => {
-                bad = true;
-                core::cmp::Ordering::Equal
-            }
-        });
-        if bad {
-            return Err(undecided());
-        }
+        combinatorics::try_sort_by(&mut order, |&i, &j| cmp(i, j).ok_or(()))
+            .map_err(|()| undecided())?;
         #[cfg(test)]
         order_probe::against_the_ruler(jd, cyls, wc, &sg, &keyed, pair);
         // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
@@ -606,8 +593,13 @@ pub(super) fn split_segments_at(
         // above; what reaches here is a coincidence no discovery event recorded, and
         // refusing it is honest — there is no ground to invent the identity on.
         for w in order.windows(2) {
-            if cmp(w[0], w[1]) == Some(core::cmp::Ordering::Equal) {
-                return Err(reject(RejectReason::CoincidentNodes));
+            match cmp(w[0], w[1]) {
+                Some(core::cmp::Ordering::Equal) => {
+                    return Err(reject(RejectReason::CoincidentNodes));
+                }
+                Some(_) => {}
+                // The sort may have asked this pair the other way round; a failure is no answer.
+                None => return Err(undecided()),
             }
         }
         // ★★★ **The sub-segments' travel sense, taken from the whole segment's own two named

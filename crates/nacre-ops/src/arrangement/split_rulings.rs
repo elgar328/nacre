@@ -384,20 +384,18 @@ pub(super) fn split_rulings(
         keyed.push((lo, r.end[0]));
         keyed.push((hi, r.end[1]));
         let mut order: Vec<usize> = (0..keyed.len()).collect();
-        let mut bad = false;
-        order.sort_by(|&i, &j| match keyed[i].0.cmp(&keyed[j].0, prec) {
-            Some(o) => o,
-            None => {
-                bad = true;
-                core::cmp::Ordering::Equal
-            }
-        });
-        if bad {
-            return Err(undecided());
-        }
+        combinatorics::try_sort_by(&mut order, |&i, &j| {
+            keyed[i].0.cmp(&keyed[j].0, prec).ok_or(())
+        })
+        .map_err(|()| undecided())?;
         for pair in order.windows(2) {
-            if keyed[pair[0]].0.cmp(&keyed[pair[1]].0, prec) == Some(core::cmp::Ordering::Equal) {
-                return Err(reject(RejectReason::CoincidentNodes));
+            match keyed[pair[0]].0.cmp(&keyed[pair[1]].0, prec) {
+                Some(core::cmp::Ordering::Equal) => {
+                    return Err(reject(RejectReason::CoincidentNodes));
+                }
+                Some(_) => {}
+                // The sort may have asked this pair the other way round; a failure is no answer.
+                None => return Err(undecided()),
             }
         }
         // Ascending axis coordinate **is** the stored convention (`end[0] → end[1]` ascends

@@ -305,19 +305,26 @@ pub(crate) fn pierce_between(
     // Ring order: nearer to `a` first — along `dir`, the larger-toward-`a` side leads. A pair
     // this cannot strictly order (an escalation, or two distinct nodes at one coordinate — which
     // on a shared line would be two names for one point) makes the whole edge unsplittable.
-    let mut sortable = true;
-    mid.sort_by(|(_, x), (_, y)| match kc.cmp(x, y, axis) {
-        Ok(s) if s == dir => std::cmp::Ordering::Less,
-        Ok(s) if s == -dir => std::cmp::Ordering::Greater,
-        _ => {
-            sortable = false;
-            std::cmp::Ordering::Equal
+    let mut order: Vec<usize> = (0..mid.len()).collect();
+    try_sort_by(&mut order, |&i, &j| {
+        kc.cmp(&mid[i].1, &mid[j].1, axis).map(|s| {
+            if s == dir {
+                std::cmp::Ordering::Less
+            } else if s == -dir {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+    })
+    .ok()?;
+    // Two nodes tied on the axis sort next to each other, and a tie is unsplittable.
+    for w in order.windows(2) {
+        if kc.cmp(&mid[w[0]].1, &mid[w[1]].1, axis).ok()? == 0 {
+            return None;
         }
-    });
-    if !sortable {
-        return None;
     }
-    Some(mid.into_iter().map(|(n, _)| n).collect())
+    Some(order.into_iter().map(|i| mid[i].0).collect())
 }
 
 /// **The ring's own lexicographic minimum when it lies inside an arc**, and the winding read

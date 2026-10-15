@@ -813,7 +813,7 @@ pub(crate) fn angular_order(
     // is *not* established. So the assumption is checked rather than trusted, and a failure is an
     // honest reject.
     //
-    // The pairs are checked before sorting rather than inside the comparator: `sort_by` does not
+    // The pairs are checked before sorting rather than inside the comparator: the sort does not
     // compare every pair, so a tie it happens not to evaluate would slip through — and that is
     // precisely the tie that reorders the result. At the degrees this sees (2-3 measured) a
     // bucket holds at most two entries, so the check costs the one comparison the sort would
@@ -833,27 +833,10 @@ pub(crate) fn angular_order(
         return Err(reject(RejectReason::UnorderedEdges));
     }
     // Within an open half-plane, `a` precedes `b` (smaller angle) iff `d_a × d_b > 0`.
-    // `turn` can now fail rather than answer — an arc's side is `a + b√c` arithmetic — and a
-    // comparator cannot carry that out, so the failure is caught in a flag and raised after the
-    // sort (the idiom this file already uses where an exact comparison rides a `sort_by`).
+    // `turn` can fail rather than answer — an arc's side is `a + b√c` arithmetic — and the sort
+    // stops at it ([`try_sort_by`]). A zero turn is unreachable after the check above.
     let by_turn = |v: &mut Vec<usize>| -> Result<(), BoolError> {
-        let mut bad = None;
-        v.sort_by(|&a, &b| match cross(a, b) {
-            Ok(c) if c > 0 => std::cmp::Ordering::Less,
-            Ok(c) if c < 0 => std::cmp::Ordering::Greater,
-            // Unreachable after the check above, and spelled anyway: a comparator that answers
-            // `Greater` both ways is a contract violation, and `sort_by` is then free to produce
-            // any permutation.
-            Ok(_) => std::cmp::Ordering::Equal,
-            Err(e) => {
-                bad = Some(e);
-                std::cmp::Ordering::Equal
-            }
-        });
-        match bad {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
+        try_sort_by(v, |&a, &b| cross(a, b).map(|c| 0.cmp(&c)))
     };
     by_turn(&mut pos)?;
     by_turn(&mut neg)?;
