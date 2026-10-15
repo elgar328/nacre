@@ -4,8 +4,8 @@
 //! once. A reader that takes the whole list, or a window of it, sees other tests' rows too — which
 //! is why a count could not be asserted, only existence or a universal. A row carries its
 //! [`Owner`] instead: the test the work belongs to. [`Ledger::all`] is still the binary's, for the
-//! universals and the whole-suite ledger; [`Ledger::mine`] is this test's alone, and a count over
-//! it is a fact about the fixture.
+//! universals; [`Ledger::mine`] is this test's alone, and a count over it is a fact about the
+//! fixture.
 //!
 //! **The owner is the thread's name, up to `#`.** A boolean's expensive phases run on rayon
 //! workers (`crate::par`), so the pushing thread is usually not the test's. [`owned`] runs the
@@ -77,7 +77,7 @@ impl<T> Ledger<T> {
 }
 
 impl<T: Clone> Ledger<T> {
-    /// Every row in the binary — what a universal assertion and the whole-suite ledger read.
+    /// Every row in the binary — what a universal assertion reads.
     pub(crate) fn all(&self) -> Vec<T> {
         self.rows().iter().map(|(_, r)| r.clone()).collect()
     }
@@ -85,12 +85,6 @@ impl<T: Clone> Ledger<T> {
     /// The rows this test's own work made.
     pub(crate) fn mine(&self) -> Vec<T> {
         self.owned_by(&owner())
-    }
-
-    /// Every row with its owner — for the whole-suite ledger, which names the test a row came
-    /// from.
-    pub(crate) fn all_owned(&self) -> Vec<(Owner, T)> {
-        self.rows().clone()
     }
 
     /// This test's rows recorded since `from`, a snapshot of [`len`](Ledger::len) — for a reader

@@ -108,17 +108,8 @@ extern crate self as nacre_ops;
 #[path = "tests/suite/mod.rs"]
 pub mod tests;
 
-/// **Ledger totals, printed** — a measurement, not an assertion. Run last, single-threaded, so
-/// the sums cover the whole lib suite:
-/// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture zzz_ledger`
-/// is *not* it (a filter runs only this); the whole-suite run is
-/// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture --skip stress --skip spike --skip direction_families`.
 /// Probe rows carry **whose work made them**, so a reader can count its own — the type and the
 /// `owned` wrapper both live here.
 #[cfg(test)]
 #[path = "tests/probes/ledger.rs"]
 pub(crate) mod ledger;
-
-#[cfg(test)]
-#[path = "tests/zzz_ledger.rs"]
-mod zzz_ledger;
