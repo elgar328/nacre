@@ -34,7 +34,7 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     (
         "nacre-ops/src/arrangement/rulings.rs",
         1,
-        "two `Ord` fields, lexicographically",
+        "an exact `Rat` axis parameter, then the derived order of the event",
     ),
     (
         "nacre-ops/src/assembly/grouping.rs",
@@ -46,7 +46,11 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         1,
         "the same coordinate keys as `grouping`'s, under the same `expect`",
     ),
-    ("nacre-ops/src/bands.rs", 1, "an integer pair"),
+    (
+        "nacre-ops/src/bands.rs",
+        1,
+        "a class index, then an exact `Rat` span end",
+    ),
     (
         "nacre-store/src/lib.rs",
         2,
