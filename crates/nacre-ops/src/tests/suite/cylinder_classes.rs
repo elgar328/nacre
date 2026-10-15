@@ -410,11 +410,8 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 /// ☑ **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
 /// winding is **red**, dropping `plus_t_is_above` is **red**, and dropping the root restatement
 /// (the ruling named for a different ⊥ plane) is **red**. Dropping `frame_sign` or the face's
-/// `orient_sign` is **green** — both are `+1` everywhere in today's holed population (no plate
-/// face in it lands on a plane stated first facing the other way, which is the only place a
-/// fixture box's face is `Reversed`, and a boss's lateral faces outward), so this lock cannot
-/// see them and their reasons stand on the derivation alone. A **bore** with a hole in its lateral
-/// is what would exercise them.
+/// `orient_sign` is **green** here — both are `+1` on a boss's holed lateral — and
+/// [`a_bores_lateral_with_a_hole_takes_a_second_cylinder`] is the lock that turns them.
 ///
 /// ★ The claim is over **every** arc this binary carves, in whatever order the tests ran: all of
 /// them come from the wall-boss family, where the plate stands on `y > 0` and the boss is centred
@@ -480,6 +477,125 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
         mids.iter().all(|d| d[1] > 0.0),
         "a hole's arc was stated running the wrong way round: midpoints {mids:?}"
     );
+}
+
+/// ★★★★ **A bore's lateral with a hole takes a second cylinder — the two signs the boss family
+/// cannot turn.**
+///
+/// A tongue fused into a bored plate fills a patch of the bore's lateral, so that face comes back
+/// with a hole whose material lies **outside** the cylinder (`orient_sign = −1`), where a boss's
+/// lies inside. The second operation reads the holed lateral against its ⊥ classes in
+/// `cycle_on_class`, through both arms: the tongue's own faces are the hole's rims (the run arm),
+/// and a far cylinder's cap strictly inside the hole's height is crossed on its two rulings (the
+/// crossing arm). The third row moves everything down by one so that cap lies on the seed plane
+/// `z = 0` facing `+z` — the one place a fixture face is `Reversed` — and the crossing class carries
+/// `frame_sign = −1`, which the crossing arm reads to tell the travel's axis sense.
+///
+/// ☑ Measured by dropping each factor in `cycle_on_class`: without `orient_sign` every row is
+/// refused (`LabelConflict`) and the hole's arcs come back on the `−y` side; without the class's
+/// `frame_sign` the third row is refused (`CylinderFaceUndecided`), and it is the only row in the
+/// suite, the ignored sweep and the census whose crossing arm meets a `frame_sign = −1` class.
+///
+/// ★ The volumes are derived: the plate is 96, the bore removes `2π`, and the tongue adds the part
+/// of the bore it fills — the strip `|x − 6| ≤ 0.6` of the half disk `y ≥ 2`, `0.6·0.8 + asin 0.6`,
+/// one high (`0.6` is a 3-4-5 chord, so the rulings are rational). The second cylinder removes
+/// `π/4` per unit of the plate it passes.
+#[test]
+fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
+    let q = std::f64::consts::PI * 0.25;
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let seam = Vector3::from_array([0.0, -1.0, 0.0]);
+    let first_volume = 96.0 - 8.0 * q + 0.48 + 0.6f64.asin();
+    // (name, the whole fixture's shift along z, the second cylinder's base, the plate it removes)
+    for (name, dz, base, removed) in [
+        ("the run arm", 0.0, -1.0, 2.0),
+        ("the crossing arm", 0.0, 1.0, 1.0),
+        ("the crossing arm on a seed plane", -1.0, -4.0, 1.0),
+    ] {
+        let mut m = Model::new();
+        let plate = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([0.0, 0.0, dz]),
+            Point3::from_array([12.0, 4.0, 2.0 + dz]),
+        );
+        let origin = [6.0, 2.0, -1.0 + dz];
+        let bore = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array(origin),
+            up,
+            seam,
+            1.0,
+            4.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore")[0];
+        m.rebuild_adjacency();
+        let tongue = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([5.4, 2.0, 0.5 + dz]),
+            Point3::from_array([6.6, 3.5, 1.5 + dz]),
+        );
+        m.rebuild_adjacency();
+        let first = boolean(&mut m, BoolKind::Fuse, bored, tongue)
+            .unwrap_or_else(|e| panic!("{name}: the tongue: {e:?}"));
+        assert_eq!(first.len(), 1, "{name}: the tongue makes one solid");
+        m.rebuild_adjacency();
+        let v = nacre_props::mass_props(&m, first[0]).expect("mass").volume;
+        assert!(
+            (v - first_volume).abs() < 1e-9,
+            "{name}: {v} vs {first_volume}"
+        );
+        let b = crate::fixtures::cylinder_with_seam(
+            &mut m,
+            Point3::from_array([2.0, 2.0, base]),
+            up,
+            seam,
+            0.5,
+            4.0,
+        )
+        .solid;
+        m.rebuild_adjacency();
+        // The premise of the third row: the cap that crosses the hole is `Reversed`, and on the
+        // others it is not.
+        let top = m
+            .shell(m.solid(b).outer)
+            .faces
+            .iter()
+            .map(|&f| m.face(f))
+            .find(|f| match m.surface_cache(f.surface) {
+                nacre_geom::Surface::Plane(p) => {
+                    (p.normal() * f64::from(f.orientation.sign())).as_array() == [0.0, 0.0, 1.0]
+                }
+                _ => false,
+            })
+            .expect("the second cylinder's top cap");
+        assert_eq!(
+            top.orientation == nacre_topo::Orientation::Reversed,
+            base + 4.0 == 0.0,
+            "{name}: the cap on the seed plane, and only it, is Reversed"
+        );
+        let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first[0], b))
+            .unwrap_or_else(|e| panic!("{name}: the second cylinder: {e:?}"));
+        assert_eq!(out.len(), 1, "{name}: one solid");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
+        let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
+        let want = first_volume - q * removed;
+        assert!((v - want).abs() < 1e-9, "{name}: {v} vs {want}");
+        // The tongue fills the bore on its `y > 2` side, so that is where the hole is.
+        let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
+            .mine()
+            .iter()
+            .filter(|mid| mid.inner && mid.origin == origin)
+            .map(|mid| mid.dir)
+            .collect();
+        assert!(!mids.is_empty(), "{name}: the probe never ran");
+        assert!(
+            mids.iter().all(|d| d[1] > 0.0),
+            "{name}: a hole's arc was stated running the wrong way round: midpoints {mids:?}"
+        );
+    }
 }
 
 /// ★★★★★ **A boolean's own result takes a second cylinder — the whole road, end to end.**

@@ -777,14 +777,10 @@ pub(crate) fn loop_winding(
 /// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
 /// `axis_up` each turn 60–75 of the crate's tests red, refused as
 /// [`RejectReason::RingOrientation`] and [`RejectReason::LabelConflict`] (the plane cells and the
-/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
-/// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
-/// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
-/// ☑ Under the motion group it is still not caught — the commuting
-/// oracle's 396 always-on cells stay green with the factor dropped, so a ring whose lexicographic
-/// minimum is a smooth arc node on a `frame_sign = −1` class is a population no fixture has yet
-/// (the arc extremum rung reads the smooth minimum *inside* an arc, [`arc_extremum_winding`],
-/// which the oracle does exercise).
+/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` turns 20 red,
+/// the commuting oracle among them; dropped only where the minimum is a node (the arc extremum
+/// rung, [`arc_extremum_winding`], keeping it), 6 — the user's folds and fully rounded plates
+/// (`sketch_models`, `user_models`) and the self-touch chord scoreboard.
 fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir) -> i8 {
     let sign = |b: bool| if b { 1i8 } else { -1 };
     sign(arc.ccw) * sign(arc.axis_up) * jd.planes[p].frame_sign
