@@ -2,6 +2,8 @@
 
 #[path = "support/fixtures.rs"]
 mod common;
+#[path = "support/stated.rs"]
+mod stated;
 
 #[path = "probes/collinear_loop_points.rs"]
 mod collinear_loop_points;

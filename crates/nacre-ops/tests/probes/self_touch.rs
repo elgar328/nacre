@@ -775,3 +775,298 @@ fn a_contact_on_a_holes_wall_is_seen() {
         "the cut's tip touches the hole's wall"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Chords across a face whose ring carries an arc or a pierce corner.
+// ---------------------------------------------------------------------------------------------
+
+/// How the block's top face is trimmed.
+#[derive(Clone, Copy, Debug)]
+enum Trim {
+    /// A plain rectangle `[-10, 6] × [-11, 4]`.
+    Plain,
+    /// The rectangle with a half-disk notch (r 0.5) cut at `(-5, -11)` through its height.
+    Notch,
+    /// The rectangle `[-10, 6] × [-11, top]` with every corner filleted (r 0.5).
+    Fillet { top: f64 },
+}
+
+/// A block 6 deep under the base frame's plane, trimmed by `trim`.
+fn trimmed_block(m: &mut Model, base: SketchFrame, trim: Trim) -> Handle<Solid> {
+    match trim {
+        Trim::Plain | Trim::Notch => {
+            let block = prism_on(
+                m,
+                base,
+                &[[-10.0, -11.0], [6.0, -11.0], [6.0, 4.0], [-10.0, 4.0]],
+                -6.0,
+            );
+            if matches!(trim, Trim::Plain) {
+                return block;
+            }
+            let floor = offset_of(m, base, -7.0);
+            let disk = nacre_ops::from_paths(vec![
+                nacre_ops::Ring2d::circle(Point2::from_array([-5.0, -11.0]), 0.5)
+                    .expect("a circle"),
+            ])
+            .expect("a disk")
+            .remove(0);
+            let cutter = extrude_on(m, floor, disk, 8.0);
+            let got = boolean(m, BoolKind::Cut, block, cutter).expect("the notch")[0];
+            m.rebuild_adjacency();
+            got
+        }
+        Trim::Fillet { top } => {
+            use crate::stated::{arc_turns, line, stated};
+            let p = |x: f64, y: f64| Point2::from_array([x, y]);
+            let r = 0.5;
+            let (x0, x1, y0, y1) = (-10.0, 6.0, -11.0, top);
+            let edges = vec![
+                line(p(x0 + r, y0), p(x1 - r, y0)),
+                arc_turns(p(x1 - r, y0 + r), p(x1 - r, y0), 1),
+                line(p(x1, y0 + r), p(x1, y1 - r)),
+                arc_turns(p(x1 - r, y1 - r), p(x1, y1 - r), 1),
+                line(p(x1 - r, y1), p(x0 + r, y1)),
+                arc_turns(p(x0 + r, y1 - r), p(x0 + r, y1), 1),
+                line(p(x0, y1 - r), p(x0, y0 + r)),
+                arc_turns(p(x0 + r, y0 + r), p(x0, y0 + r), 1),
+            ];
+            let profile = stated(edges).expect("the filleted rectangle").remove(0);
+            extrude_on(m, base, profile, -6.0)
+        }
+    }
+}
+
+/// `body` fused with a step of height 3 over each of `rects`.
+fn with_steps(
+    m: &mut Model,
+    base: SketchFrame,
+    mut body: Handle<Solid>,
+    rects: &[[[f64; 2]; 2]],
+) -> Handle<Solid> {
+    for &[[x0, y0], [x1, y1]] in rects {
+        let step = prism_on(m, base, &[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 3.0);
+        body = boolean(m, BoolKind::Fuse, body, step).expect("a step")[0];
+        m.rebuild_adjacency();
+    }
+    body
+}
+
+/// The bar of [`a_bar_resting_on_its_own_notched_block_is_refused`]'s frame: a unit-square
+/// section over `[x0, x1]` on the frame tipped about the base's `u` towards its normal, its bottom
+/// edge on the base plane along the base's `x` axis when `lift` is 0 (and `lift` up the tipped
+/// frame's `v` otherwise).
+fn tipped_bar(m: &mut Model, axes: [[f64; 3]; 3], [x0, x1]: [f64; 2], lift: f64) -> Handle<Solid> {
+    let [u, v, n] = axes;
+    let tip: [f64; 3] = core::array::from_fn(|k| 0.8 * v[k] + 0.6 * n[k]);
+    let f = frame_on(m, u, tip);
+    prism_on(
+        m,
+        f,
+        &[[x0, lift], [x1, lift], [x1, lift + 1.0], [x0, lift + 1.0]],
+        1.0,
+    )
+}
+
+/// A wedge along the world `x` over `[-8, 4]` whose section in `(y, z)` is the triangle
+/// `(0, 0), (0.8, 0.6), (0.6, 0.8)` raised `lift`: both of its faces through the bottom edge
+/// lean towards `+y`, so on the far side of the edge both stand above the plane `z = lift`.
+fn leaning_wedge(m: &mut Model, lift: f64) -> Handle<Solid> {
+    let yz = frame_on(m, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let start = offset_of(m, yz, -8.0);
+    prism_on(
+        m,
+        start,
+        &[[0.0, lift], [0.8, 0.6 + lift], [0.6, 0.8 + lift]],
+        12.0,
+    )
+}
+
+/// What a fuse answers.
+#[derive(Clone, Copy, Debug)]
+enum Want {
+    /// This many solids of this total volume, `validate` clean.
+    Built(usize, f64),
+    /// Refused by the self-touch check, its witness the chord `(−7, 0, 0)`–`(3, 0, 0)` on the
+    /// world frame (on the 3-4-5 frame the reason alone is asserted).
+    Touches,
+    /// Refused by this name.
+    Refused(RejectReason),
+}
+
+/// Fuses `a` and `b` and holds the answer against `want`.
+fn expect_fuse(
+    m: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    want: Want,
+    world: bool,
+    at: &str,
+) {
+    let got = boolean(m, BoolKind::Fuse, a, b);
+    match (want, got) {
+        (Want::Built(n, vol), Ok(solids)) => {
+            m.rebuild_adjacency();
+            assert_eq!(solids.len(), n, "{at}");
+            assert!(nacre_validate::validate(m).is_empty(), "{at}");
+            let got: f64 = solids
+                .iter()
+                .map(|&s| nacre_props::mass_props(m, s).expect("props").volume)
+                .sum();
+            assert!((got - vol).abs() < 1e-6, "{at}: volume {got}, want {vol}");
+        }
+        (
+            Want::Touches,
+            Err(BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                at: witness,
+            }),
+        ) => {
+            if world {
+                let Some(nacre_ops::RejectWhere::Segment(ends)) = witness else {
+                    panic!("{at}: witness {witness:?}");
+                };
+                let mut xs = ends.map(|p| p.as_array());
+                xs.sort_by(|p, q| p[0].total_cmp(&q[0]));
+                let want = [[-7.0, 0.0, 0.0], [3.0, 0.0, 0.0]];
+                for (g, w) in xs.iter().zip(&want) {
+                    assert!(
+                        (0..3).all(|k| (g[k] - w[k]).abs() < 1e-9),
+                        "{at}: witness {xs:?}"
+                    );
+                }
+            }
+        }
+        (Want::Refused(r), Err(BoolError::Rejected { reason, .. })) if reason == r => {}
+        (want, got) => panic!("{at}: want {want:?}, got {got:?}"),
+    }
+}
+
+/// ★ **A bar lying along a chord of its own block's top face, today, when the face's outline
+/// carries an arc** — the scoreboard of the self-touch edge test against a face trimmed by a
+/// cylinder. The bar is tipped about the base's `x` axis so its bottom edge lies on the top face
+/// along `y = 0`, and two steps on the block bury its two ends, so the body is one and its surface
+/// meets itself along the chord from `x = −7` to `x = 3`. With a plain top face the edge test
+/// reads the chord and refuses the body. With a half-disk notch cut in the face's far side, or with
+/// filleted corners, the face's ring carries an arc and pierce corners, the edge test does not
+/// read it, and the body builds — one solid, `validate` clean, the volume exact. The bar raised
+/// off the face is the twin that builds in every row. On the world frame and a 3-4-5 one, in
+/// either operand order.
+///
+/// Around it: the chord left open at one end (one step only) is caught elsewhere — by the
+/// self-touch check on the plain face, by the pinch check where the chord meets the notched face's
+/// outline; a tipped bar whose edge line meets a fillet arc never reaches the check, because one of
+/// its faces through that line is a plane slanted to the cylinder's axis through a point of its
+/// side (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces
+/// through the edge both lean away from the fillet circles the line crosses off their arcs passes
+/// the gate and builds; and a 3-4-5 column standing on a plate against the notched block's front
+/// wall, its corner edge on the wall (a line parallel to the cylinder's axis), is caught by the
+/// pinch check where that edge meets the top, or — its edge on the notch's own ruling — by the
+/// non-manifold edge check.
+#[test]
+fn chords_across_a_face_trimmed_by_a_cylinder_build_today() {
+    let full = [[[3.0, -11.0], [6.0, 4.0]], [[-10.0, -11.0], [-7.0, 4.0]]];
+    let partial = [[[3.0, -8.0], [6.0, 4.0]], [[-10.0, -8.0], [-7.0, 4.0]]];
+    let notch = std::f64::consts::PI * 0.25 / 2.0 * 6.0;
+    let fillets = |depth: f64| 4.0 * (0.25 - std::f64::consts::PI * 0.25 / 4.0) * depth;
+    for tilted in [false, true] {
+        for (trim, steps, vol) in [
+            (Trim::Plain, &full[..], 1720.0),
+            (Trim::Notch, &full[..], 1720.0 - notch),
+            (
+                Trim::Fillet { top: 7.0 },
+                &partial[..],
+                1728.0 - fillets(6.0) + 216.0 + 10.0,
+            ),
+        ] {
+            for lift in [0.0, 0.5] {
+                for swapped in [false, true] {
+                    let at =
+                        format!("{trim:?}, tilted = {tilted}, lift = {lift}, swapped = {swapped}");
+                    let want = match (trim, lift == 0.0) {
+                        (Trim::Plain, true) => Want::Touches,
+                        _ => Want::Built(1, vol),
+                    };
+                    let mut m = Model::new();
+                    let (base, axes) = base_frame(&mut m, tilted);
+                    let block = trimmed_block(&mut m, base, trim);
+                    let a = with_steps(&mut m, base, block, steps);
+                    let b = tipped_bar(&mut m, axes, [-8.0, 4.0], lift);
+                    let (x, y) = if swapped { (b, a) } else { (a, b) };
+                    expect_fuse(&mut m, x, y, want, !tilted, &at);
+                }
+            }
+        }
+    }
+    for (trim, want) in [
+        (Trim::Plain, Want::Refused(RejectReason::SelfTouchingResult)),
+        (Trim::Notch, Want::Refused(RejectReason::NonManifoldVertex)),
+    ] {
+        let mut m = Model::new();
+        let (base, axes) = base_frame(&mut m, false);
+        let block = trimmed_block(&mut m, base, trim);
+        let a = with_steps(&mut m, base, block, &full[..1]);
+        let b = tipped_bar(&mut m, axes, [-12.0, 4.0], 0.0);
+        expect_fuse(&mut m, a, b, want, true, &format!("one step, {trim:?}"));
+    }
+    for (turned, reason) in [
+        (false, RejectReason::ObliqueCylinderCut),
+        (true, RejectReason::CylinderGateUndecided),
+    ] {
+        let mut m = Model::new();
+        let (base, axes) = base_frame(&mut m, false);
+        let a = trimmed_block(&mut m, base, Trim::Fillet { top: 0.25 });
+        let mut b = tipped_bar(&mut m, axes, [-8.0, 4.0], 0.0);
+        if turned {
+            b = xf(&mut m, b, rot30());
+        }
+        let at = format!("an edge line across a fillet arc, turned = {turned}");
+        expect_fuse(&mut m, a, b, Want::Refused(reason), true, &at);
+    }
+    for lift in [0.0, 0.5] {
+        let mut m = Model::new();
+        let (base, _) = base_frame(&mut m, false);
+        let block = trimmed_block(&mut m, base, Trim::Fillet { top: 0.75 });
+        let a = with_steps(
+            &mut m,
+            base,
+            block,
+            &[[[3.0, -8.0], [4.5, 1.0]], [[-8.5, -8.0], [-7.0, 1.0]]],
+        );
+        let b = leaning_wedge(&mut m, lift);
+        // The block 16 × 11.75 × 6 less its fillets, two steps 1.5 × 9 × 3, and the wedge's
+        // section (0.14) over the 10 between them.
+        let vol = 1128.0 - fillets(6.0) + 81.0 + 1.4;
+        let at = format!(
+            "a wedge whose edge line crosses the fillet circles off their arcs, lift = {lift}"
+        );
+        expect_fuse(&mut m, a, b, Want::Built(1, vol), true, &at);
+    }
+    for (x0, reason) in [
+        (-2.0, RejectReason::NonManifoldVertex),
+        (-4.5, RejectReason::NonManifoldResultEdge),
+    ] {
+        let mut m = Model::new();
+        let (base, _) = base_frame(&mut m, false);
+        let block = trimmed_block(&mut m, base, Trim::Notch);
+        let below = offset_of(&mut m, base, -8.0);
+        let plate = prism_on(
+            &mut m,
+            below,
+            &[[-12.0, -16.0], [8.0, -16.0], [8.0, 6.0], [-12.0, 6.0]],
+            2.0,
+        );
+        let a = boolean(&mut m, BoolKind::Fuse, block, plate).expect("the plate")[0];
+        m.rebuild_adjacency();
+        // A 3-4-5 square column, its corner edge on the front wall `y = −11` at `x0`.
+        let ring = [
+            [x0, -11.0],
+            [x0 - 1.6, -12.2],
+            [x0 - 0.4, -13.8],
+            [x0 + 1.2, -12.6],
+        ];
+        let b = prism_on(&mut m, below, &ring, 8.0);
+        let at = format!("a column against the front wall at x = {x0}");
+        expect_fuse(&mut m, a, b, Want::Refused(reason), true, &at);
+    }
+}
