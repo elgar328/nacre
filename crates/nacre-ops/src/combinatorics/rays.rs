@@ -184,10 +184,10 @@ pub(crate) fn every_ray(
 /// pierce corner is sided by [`side_of`]'s pierce arm; an arc's crossings counted and named by
 /// [`arc_crossings_of`], a ruling's by [`crossing_on_ruling`]; an arc leaving the line between two
 /// nodes on it by its tangent ([`arc_departure_side`]); and a run's ends pinned by [`pin_for`],
-/// a pierce corner by the plane of its own pair that cuts the line. The line meets such a ring
-/// wherever the tracer's line can: one of the edge's own faces may lie on `P` facing the other way
-/// (a box's bottom over a bore, beside the plate's top), and then the other can stand parallel to
-/// the cylinder's axis, which the gate passes.
+/// a pierce corner by the plane of its own pair that cuts the line. No part of that reading sits
+/// behind the gate: one of the edge's own faces may lie on `P` facing the other way (a box's
+/// bottom over a bore, beside the plate's top), the other may then stand parallel to the
+/// cylinder's axis, which the gate passes, and the line crosses the ring's arc.
 pub(crate) fn segment_meets_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

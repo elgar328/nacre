@@ -955,9 +955,10 @@ fn expect_fuse(
 /// Around it: the chord left open at one end (one step only) is the same refusal; a tipped bar
 /// whose edge line meets a fillet arc never reaches the check, because one of its faces through
 /// that line is a plane slanted to the cylinder's axis through a point of its side
-/// (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces through the edge both lean away
-/// from the fillet circles its line crosses off their arcs passes the gate, and the circles count
-/// no crossing there (`arc_crossings`); and a 3-4-5 column standing on a plate against the notched
+/// (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces through
+/// the edge both lean away from the fillet circles its line crosses off their arcs passes the
+/// gate, the circles count no crossing there (`arc_crossings`), and it is refused like the bar
+/// (its raised twin builds); and a 3-4-5 column standing on a plate against the notched
 /// block's front wall — its corner edge on the wall, a line parallel to the cylinder's axis — is
 /// refused by the edge test, or, its edge on the notch's own ruling, by the non-manifold edge
 /// check.
