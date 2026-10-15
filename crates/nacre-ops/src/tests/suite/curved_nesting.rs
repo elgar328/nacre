@@ -740,10 +740,9 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
 /// each ruling is `Transversal` from the whole rim at `z = −1` up to the plate's bottom `z = 0`
 /// (both halves of the boss are there), then a `Graze` along the chain's own ruling edge up to
 /// the boss's top `z = 1` — the collinear run whose arcs arrive from the outer half and leave into
-/// the inner one toggles the face off above it. A lock of the **rule**, not of a result: every
-/// re-operation of a half boss is still refused at its cap's chord, so
-/// the classes are traced by hand and the road's ledger is read for this boss (`origin
-/// (2, 0, −1)`, rulings spanning `t ∈ [0, 2]`).
+/// the inner one toggles the face off above it. A lock of the **rule**, not of a result: the
+/// classes are traced by hand (`trace_every_class`) and the road's ledger is read for this boss
+/// (`origin (2, 0, −1)`, rulings spanning `t ∈ [0, 2]`).
 #[test]
 fn a_chain_sweeps_its_rulings() {
     let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);

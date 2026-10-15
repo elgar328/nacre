@@ -4,7 +4,6 @@ use super::*;
 /// `planes` is ground truth: it is found by asking every plane in the table whether it passes
 /// through the point, not by the rule the engine uses to notice concurrencies. That is the whole
 /// value of it — the discovery rule can then be measured against something other than itself.
-#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct Concurrency {
     /// The plane class whose arrangement used the name.
@@ -26,7 +25,6 @@ pub(crate) struct Concurrency {
 /// whose boolean is still refused one road later would then see different records per traversal
 /// mode. This runs the tracer on every class, like [`concurrency_audit`], and keeps nothing but
 /// what the roads recorded on the way.
-#[cfg(test)]
 pub(crate) fn trace_every_class(
     model: &Model,
     a: Handle<Solid>,
@@ -71,7 +69,6 @@ pub(crate) fn trace_every_class(
 /// a decline, which the production driver cannot do: it returns at the first declined class, so on
 /// exactly the models that have concurrencies it would see one and stop. Both halves are called,
 /// not reimplemented, so what is observed is what the engine does.
-#[cfg(test)]
 pub(crate) fn concurrency_audit(
     model: &Model,
     a: Handle<Solid>,
@@ -219,7 +216,6 @@ pub(crate) fn concurrency_audit(
 /// for that vertex — one per face loop that visits it, with whether each is an independent
 /// triple (three planes sharing a line name no point) and what the alias table folds it to after
 /// every class has been traced.
-#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct OperandVertexReport {
     /// Which operand (`0` = A, `1` = B) and the vertex.
@@ -245,7 +241,6 @@ pub(crate) struct OperandVertexReport {
 /// instrument). The point has more names than the corner's own: the three-plane name of its two
 /// planes with the class, and the class's ruling crossing with the corner's cap plane at whichever
 /// root is this point. Whether the alias table knows they are one point is what this reports.
-#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct PierceCornerReport {
     pub side: usize,
@@ -264,12 +259,10 @@ pub(crate) struct PierceCornerReport {
 }
 
 /// One declined (class, face, kind) of a full trace — [`trace_declines`]' row.
-#[cfg(test)]
 pub(crate) type ClassDecline = (usize, Option<Handle<Face>>, DeclineKind);
 
 /// Every declined (class, face) of a full trace over every class — the audits' companion, since
 /// the production driver stops at the first.
-#[cfg(test)]
 pub(crate) fn trace_declines(
     model: &Model,
     a: Handle<Solid>,
@@ -314,7 +307,6 @@ pub(crate) fn trace_declines(
 
 /// Every pierce corner of `a` and `b` that lies on a class plane not its own, as
 /// [`PierceCornerReport`]s — the cylinder twin of [`operand_vertex_audit`].
-#[cfg(test)]
 pub(crate) fn pierce_corner_audit(
     model: &Model,
     a: Handle<Solid>,
@@ -438,7 +430,6 @@ pub(crate) fn pierce_corner_audit(
 /// class and keeps going past a decline, accumulating the alias table so the fold it reports is
 /// the one production would reach. Vertices a cylinder touches are skipped: their names are
 /// pierce points, a different vocabulary.
-#[cfg(test)]
 pub(crate) fn operand_vertex_audit(
     model: &Model,
     a: Handle<Solid>,
@@ -612,11 +603,9 @@ pub(crate) fn operand_vertex_audit(
     Ok(out)
 }
 
-/// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
-/// "above" on this class, plus how far the per-class pipeline gets. `#[cfg(test)]`, `pub(crate)`
-/// so the driver test can live in `crate::tests` where the two-solid fixtures are (the same reason
-/// [`boolean`] is `pub(crate)`).
-#[cfg(test)]
+/// One plane class's **label-frame audit**: what each producer says about "above" on this class,
+/// plus how far the per-class pipeline gets. `pub(crate)` so the driver test can live in
+/// `crate::tests` where the two-solid fixtures are (the same reason [`boolean`] is `pub(crate)`).
 #[derive(Debug)]
 pub(crate) struct ClassAudit {
     pub wc: usize,
@@ -657,8 +646,8 @@ pub(crate) struct ClassAudit {
     /// handednesses and pushes cells in its own order, so *which* vertex a ring starts at is not a
     /// fact about the geometry — the minimum coordinate goes first. Reversal *is* a fact: it is
     /// what a wrong `sense` on a split segment produces, and it is invisible in every
-    /// order-independent summary the previous rungs measured (cell counts, nesting, sorted
-    /// labels). Folding it here would delete the one thing this field exists to see.
+    /// order-independent summary (cell counts, nesting, sorted labels). Folding it here would
+    /// delete the one thing this field exists to see.
     ///
     /// ★★★ **And rotation-normalization is itself reversal-blind at `n <= 2`**: reversing a
     /// two-cycle *is* a rotation of it. Such a ring cannot carry this lock at all — which is why
@@ -675,14 +664,12 @@ pub(crate) struct ClassAudit {
     ///   normal direction* — an implementation fact, not one of the fixture's numbers. Carrying it
     ///   would put one bit in here that a fence could only fill by copying a run, and reversal —
     ///   the thing this field exists for — is already caught by the sequence itself.
-    /// - **Inner rings.** A face's holes are not carried. Today's arc classes have none
-    ///   (`nesting.holes` is empty, measured), so there is nothing to lose *yet*; an arc class with
-    ///   a hole would go unchecked here, and that is the day this grows.
+    /// - **Inner rings.** A face's holes are not carried; an arc class with a hole goes unchecked
+    ///   here.
     pub outer_rings: Option<Vec<Vec<[f64; 3]>>>,
 }
 
 /// The per-class arrangement's output, for [`ClassAudit`].
-#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Produced {
     pub cells: usize,
@@ -701,7 +688,6 @@ pub(crate) struct Produced {
 
 /// Lexicographic order on realized coordinates. `total_cmp` rather than `partial_cmp`: a node that
 /// failed to realize comes through as `NaN` below, and this must still be a total order.
-#[cfg(test)]
 fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
     a.iter()
         .zip(b)
@@ -721,7 +707,6 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 ///
 /// ★ A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
 /// length, so the fence reads "this vertex had no coordinate" instead of "the ring is short".
-#[cfg(test)]
 fn face_ring_coords(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -766,7 +751,6 @@ fn face_ring_coords(
 
 /// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
 /// [`trace_result_faces`] but never aborts, so one failing class does not hide the rest.
-#[cfg(test)]
 pub(crate) fn frame_audit(
     model: &Model,
     kind: BoolKind,
