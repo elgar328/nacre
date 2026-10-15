@@ -288,70 +288,31 @@ fn trace_transversal_face(
     let mut declined: Option<DeclineKind> = None;
     'rings: for (ring, walls) in outer.iter().chain(holes.iter()) {
         let n = ring.len();
-        // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
-        // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
-        // function's own business: naming it, recording a four-plane alias, deciding occupancy.
-        // ★ **What "on the meet" means here**: `W` cuts this *planar* face in a straight **line**,
-        // and two points fix a line — so a straight edge between two on-line nodes is on it and a
-        // curved one is not. (The lateral road's meet is a **circle**, where an arc *can* lie on it,
-        // so it tests the carrier instead — see `cycle_on_class`.)
-        // An arc between two on-line nodes leaves the line to the side its tangent points
-        // ([`combinatorics::arc_departure_side`]); a straight edge stays on it.
-        let on_meet = |i: usize| match walls[i] {
-            crate::combinatorics::Wall::Arc { cyl, ccw, .. } => {
-                combinatorics::arc_departure_side(jd, cyls, ring[i], wc, cyl, ccw)
-                    .map(combinatorics::EdgeMeet::Departs)
+        // Where this ring meets `L`, and whether it crosses or only touches — the reading every
+        // road that walks a plane face's ring along a line shares ([`combinatorics::ClassLine`]).
+        // What is done with a feature is this function's own business: naming it, recording a
+        // four-plane alias, deciding occupancy.
+        // ★ **What "on the meet" means here**: `W` cuts this *planar* face in a straight **line**.
+        // (The lateral road's meet is a **circle**, where an arc *can* lie on it, so it tests the
+        // carrier instead — see `cycle_on_class`.)
+        let line = combinatorics::ClassLine::new(jd, cyls, fc, wc, ring, |i| walls[i].into());
+        let features = match line.walk() {
+            combinatorics::RingWalk::Met(f) => f,
+            // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
+            combinatorics::RingWalk::AllOn => {
+                declined = Some(DeclineKind::AllOnPlane);
+                break;
             }
-            crate::combinatorics::Wall::Plane(_) | crate::combinatorics::Wall::Ruling { .. } => {
-                Some(combinatorics::EdgeMeet::On)
+            // ★ Not "a corner a cylinder made" any more — the walk reads those. This is the
+            // walk's own `None`: a side it could not form exactly, an arc between two on-line
+            // nodes tangent to the class at its end, or an arc whose crossings could not be
+            // counted (`arc_crossings`' `None`, or a count its ends make impossible). ☑ Measured
+            // 0 raises across the suite; the name is kept because the walk can still say it.
+            combinatorics::RingWalk::Unnameable => {
+                declined = Some(DeclineKind::PierceNode);
+                break;
             }
         };
-        // Where `L` crosses an arc strictly inside it, per edge, asked once
-        // ([`combinatorics::arc_crossings_of`], [`combinatorics::EdgeCrossings`]): the walk reads
-        // the count, and the Crossing arm below names the `nth`.
-        let arcs = combinatorics::EdgeCrossings::new(n, |i: usize, on_end: Option<usize>| {
-            match walls[i] {
-                crate::combinatorics::Wall::Arc { cyl, ccw, .. } => {
-                    combinatorics::arc_crossings_of(
-                        jd,
-                        cyls,
-                        wc,
-                        fc,
-                        cyl,
-                        ccw,
-                        [ring[i], ring[(i + 1) % n]],
-                        on_end.map(|k| ring[k]),
-                    )
-                    .ok_or(DeclineKind::CurvedRingWall)
-                }
-                crate::combinatorics::Wall::Plane(_)
-                | crate::combinatorics::Wall::Ruling { .. } => Ok(Vec::new()),
-            }
-        });
-        let arc_at = |i: usize, on_end: Option<usize>| arcs.at(i, on_end);
-        let arc_count = |i: usize, on_end: Option<usize>| {
-            arc_at(i, on_end)
-                .ok()
-                .map(|v| u8::try_from(v.len()).expect("a circle meets a line twice at most"))
-        };
-        let features =
-            match combinatorics::ring_against_plane(jd, cyls, ring, wc, on_meet, arc_count) {
-                combinatorics::RingWalk::Met(f) => f,
-                // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
-                combinatorics::RingWalk::AllOn => {
-                    declined = Some(DeclineKind::AllOnPlane);
-                    break;
-                }
-                // ★ Not "a corner a cylinder made" any more — the walk reads those. This is the
-                // walk's own `None`: a side it could not form exactly, an arc between two on-line
-                // nodes tangent to the class at its end, or an arc whose crossings could not be
-                // counted (`arc_crossings`' `None`, or a count its ends make impossible). ☑ Measured
-                // 0 raises across the suite; the name is kept because the walk can still say it.
-                combinatorics::RingWalk::Unnameable => {
-                    declined = Some(DeclineKind::PierceNode);
-                    break;
-                }
-            };
         for feature in features {
             match feature {
                 combinatorics::Feature::Crossing { edge, nth, .. } => {
@@ -368,63 +329,42 @@ fn trace_transversal_face(
                     // crossing on an **arc** is the same pierce node, at the root the arc strictly
                     // contains — the `nth` in travel order where it contains both
                     // ([`combinatorics::arc_crossings`]).
-                    let (id, pin) = match walls[edge] {
-                        crate::combinatorics::Wall::Plane(w) => (
+                    // ★ The gate records the pairs it could not prove clear, so a pair it proved
+                    // clear has no root inside any arc — a crossing named here on an unrecorded pair
+                    // would meet no ruling on the lateral's side.
+                    if let crate::combinatorics::Wall::Arc { cyl, .. } = walls[edge]
+                        && !crossings.contains(&(wc, cyl))
+                        && !cyls.get(cyl).is_some_and(|cy| cy.sections(wc))
+                    {
+                        declined = Some(DeclineKind::CurvedRingWall);
+                        break 'rings;
+                    }
+                    let Some(at) = line.crossing(edge, nth) else {
+                        // A wall this trace does not state.
+                        declined = Some(DeclineKind::CurvedRingWall);
+                        break 'rings;
+                    };
+                    let (id, pin) = match at {
+                        combinatorics::PointOn::Class(w) => (
                             NodeId::three_planes(Canon3::three([wc, fc, w])),
                             combinatorics::EndPin::Class(w),
                         ),
+                        combinatorics::PointOn::Pierce(id) => (id, combinatorics::EndPin::Cylinder),
+                    };
+                    #[cfg(test)]
+                    match walls[edge] {
                         crate::combinatorics::Wall::Ruling { cyl, side, .. } => {
-                            let Some(wcy) = cyls.get(cyl) else {
-                                declined = Some(DeclineKind::CurvedRingWall);
-                                break 'rings;
-                            };
-                            match combinatorics::crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side)
-                            {
-                                Ok(id) => {
-                                    #[cfg(test)]
-                                    crossing_probe::record(
-                                        jd, &wcy.def, cyl, wc, fc, side, false, id,
-                                    );
-                                    (id, combinatorics::EndPin::Cylinder)
-                                }
-                                // Either cause is a wall this trace does not state.
-                                Err(_) => {
-                                    declined = Some(DeclineKind::CurvedRingWall);
-                                    break 'rings;
-                                }
+                            if let Some(wcy) = cyls.get(cyl) {
+                                crossing_probe::record(jd, &wcy.def, cyl, wc, fc, side, false, id);
                             }
                         }
                         crate::combinatorics::Wall::Arc { cyl, .. } => {
-                            // ★ The gate records the pairs it could not prove clear, so a pair it
-                            // proved clear has no root inside any arc — a crossing named here on
-                            // an unrecorded pair would meet no ruling on the lateral's side.
-                            if !crossings.contains(&(wc, cyl))
-                                && !cyls.get(cyl).is_some_and(|cy| cy.sections(wc))
-                            {
-                                declined = Some(DeclineKind::CurvedRingWall);
-                                break 'rings;
-                            }
-                            match arc_at(edge, None).map(|v| v.get(usize::from(nth)).copied()) {
-                                Ok(Some(id)) => {
-                                    #[cfg(test)]
-                                    if let Some(wcy) = cyls.get(cyl) {
-                                        crossing_probe::record(
-                                            jd, &wcy.def, cyl, wc, fc, 0, true, id,
-                                        );
-                                    }
-                                    (id, combinatorics::EndPin::Cylinder)
-                                }
-                                Ok(None) => {
-                                    declined = Some(DeclineKind::CurvedRingWall);
-                                    break 'rings;
-                                }
-                                Err(d) => {
-                                    declined = Some(d);
-                                    break 'rings;
-                                }
+                            if let Some(wcy) = cyls.get(cyl) {
+                                crossing_probe::record(jd, &wcy.def, cyl, wc, fc, 0, true, id);
                             }
                         }
-                    };
+                        crate::combinatorics::Wall::Plane(_) => {}
+                    }
                     // A crossing is one point strictly inside its edge where the boundary passes to
                     // the other side of `L` — twice for an arc crossed twice.
                     stations.push((LineEvent::Toggle, (id, pin)));
