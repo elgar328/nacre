@@ -50,7 +50,7 @@ pub(crate) static LABELLED: Ledger<bool> = Ledger::new();
 /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the
 /// wall class it is stated against.
 ///
-/// ★ A flipped `body_above` is caught downstream too (the results it builds come out wrong); this
+/// ★ A flipped `body_above` is caught downstream too (the tests of the booleans it feeds fail); this
 /// says which side was stated, against the fixture's own geometry: the buried half of the boss
 /// lies at `y < 0` of the wall, so the face is on the stored-normal side exactly when that
 /// normal points at `−y`.

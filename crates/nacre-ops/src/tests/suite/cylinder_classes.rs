@@ -216,7 +216,8 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     // ★★★★★ **And which side the face occupies, against the fixture's own geometry.** The buried
     // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
     // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
-    // factor of the derivation turns this red, and the results downstream with it.
+    // factor of the derivation turns this red; flipping `body_above` itself also fails the tests
+    // of the booleans it feeds.
     let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
         .mine()
         .iter()
