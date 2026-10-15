@@ -207,7 +207,7 @@ impl Aliases {
             return; // the corner sits on `wc`'s axis plane's own line: no ruling to name
         };
         for fc in planes {
-            if let Ok(id) = crossing_on_ruling(jd, def, fc, wc, cyl, side) {
+            if let Ok(id) = combinatorics::crossing_on_ruling(jd, def, fc, wc, cyl, side) {
                 self.union_point(corner, id);
             }
         }

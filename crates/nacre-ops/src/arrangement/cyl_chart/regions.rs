@@ -284,10 +284,10 @@ pub(crate) fn walk(
     };
     // A station's canonical name on a line — [`Chart::station_on`]'s spelling, by name.
     // A rim station the run ends at is one the split placed, so a crossing that is not there is
-    // the stages disagreeing ([`crate::arrangement::RulingNameFail::reason`]).
+    // the stages disagreeing ([`crate::combinatorics::RulingNameFail::reason`]).
     let station_name = |c: usize, s: usize| -> Result<NodeId, BoolError> {
         let (wall, sd) = name_at_station(s);
-        crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd)
+        crate::combinatorics::crossing_on_ruling(jd, def, c, wall, k, sd)
             .map(|n| aliases.canon_point(n))
             .map_err(|e| reject(e.reason()))
     };

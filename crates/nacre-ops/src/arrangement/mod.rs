@@ -118,7 +118,7 @@ use per_class::per_class;
 pub(crate) use result::*;
 pub(crate) use rulings::*;
 pub(crate) use setup::*;
-pub(crate) use sides::*;
+use sides::*;
 pub(crate) use split::*;
 use split_circles::*;
 use split_rulings::*;

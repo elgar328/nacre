@@ -896,7 +896,7 @@ pub enum DeclineKind {
     PierceNode,
     /// The scan's crossing arm met an edge riding a cylinder that it cannot name a point on: an
     /// **arc** (its crossing waits on the lateral's ruling sweep — see
-    /// `arrangement::crossing_on_ruling`), or a **ruling** whose crossing has no exact statement
+    /// `combinatorics::crossing_on_ruling`), or a **ruling** whose crossing has no exact statement
     /// (a class that is not ⊥ to the axis, a plane not through it, a tangency, both roots on one
     /// side). A crossing on a ruling with a statement is named as a pierce node and passes.
     ///

@@ -585,11 +585,11 @@ fn an_order_or_a_crossing_that_cannot_be_formed_names_its_cause() {
         RejectReason::CoincidentNodes
     );
     assert_eq!(
-        RulingNameFail::Width.reason(),
+        combinatorics::RulingNameFail::Width.reason(),
         RejectReason::WitnessNotRational
     );
     assert_eq!(
-        RulingNameFail::NoCrossing.reason(),
+        combinatorics::RulingNameFail::NoCrossing.reason(),
         RejectReason::CylinderStagesDisagree
     );
 }

@@ -324,10 +324,10 @@ impl Chart {
         let (wall, side) = self.ruling_name(jd, k, def, i)?;
         // As the table knows it: a station on a corner is the corner. The wall's ruling reaches
         // this line (the cell's wall spans the interval), so no crossing is the stages
-        // disagreeing ([`crate::arrangement::RulingNameFail::reason`]).
-        crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, side)
+        // disagreeing ([`crate::combinatorics::RulingNameFail::reason`]).
+        crate::combinatorics::crossing_on_ruling(jd, def, c, wall, k, side)
             .map(|n| aliases.canon_point(n))
-            .map_err(crate::arrangement::RulingNameFail::reason)
+            .map_err(crate::combinatorics::RulingNameFail::reason)
     }
 }
 

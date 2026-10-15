@@ -488,14 +488,14 @@ fn cycle_on_class(
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 // ★★★★★ **The crossing is the *same ruling*, restated for this class — through
-                // the one door the planar scan uses** ([`crossing_on_ruling`]): the ruling's side,
+                // the one door the planar scan uses** ([`combinatorics::crossing_on_ruling`]): the ruling's side,
                 // measured against its wall `j` at the hole's own corner — the side the wall
                 // carries (`curved_wall`) — picks the root of `{wc, j}` on the cylinder; restating
                 // the corner's root by the axis senses of the two ⊥ classes would be a second
                 // spelling of the same point. `j` must hold a ruling (a wall plane within the
                 // radius) and `wc` be ⊥, which the door checks; anything else is not this feature.
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
-                let cut = crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
+                let cut = combinatorics::crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
                     .map_err(|_| DeclineKind::CylHoleFeature)?;
                 // Which way the hole runs from here: the travel's axis sense, then the winding.
                 // The side the edge leaves comes from the walk, for the same reason the run's

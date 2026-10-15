@@ -362,7 +362,7 @@ fn trace_transversal_face(
                     //
                     //
                     // ★ A crossing on a **ruling** is a point on the cylinder — a pierce node
-                    // `wc ∩ fc ∩ cyl`, pinned by the quadric ([`crossing_on_ruling`]); the second
+                    // `wc ∩ fc ∩ cyl`, pinned by the quadric ([`combinatorics::crossing_on_ruling`]); the second
                     // operation on a wall boss makes one wherever a ⊥ cap crosses the plate's
                     // wall face along the boss's rulings (the crossing census's mid slab). A
                     // crossing on an **arc** is the same pierce node, at the root the arc strictly
@@ -378,7 +378,8 @@ fn trace_transversal_face(
                                 declined = Some(DeclineKind::CurvedRingWall);
                                 break 'rings;
                             };
-                            match crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side) {
+                            match combinatorics::crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side)
+                            {
                                 Ok(id) => {
                                     #[cfg(test)]
                                     crossing_probe::record(

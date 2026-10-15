@@ -115,7 +115,7 @@ type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
 /// Every cycle contributes **stations** on the ruling, each with an event:
 /// - a whole **rim** toggles the face (it starts or ends there);
 /// - an **arc** that strictly contains the ruling's θ ([`combinatorics::theta_between`]) toggles it — the boundary
-///   crosses the line there, at the pierce node `{arc's plane, wc}` ([`crossing_on_ruling`], the
+///   crosses the line there, at the pierce node `{arc's plane, wc}` ([`combinatorics::crossing_on_ruling`], the
 ///   one door every road names such a point through);
 /// - a **run** of the cycle's own edges lying on the ruling is a `Graze` over its extent, the side
 ///   the face occupies along it `σ·τ·κ·side` (the rulings ladder's derivation, unchanged), and it
@@ -165,8 +165,9 @@ fn ruling_sweep(
     // already told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
     // through it; the sweep never decides coincidence on its own.
     let same = |x: NodeId, y: NodeId| aliases.canon_point(x) == aliases.canon_point(y);
-    let on_ruling =
-        |c: usize| crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling);
+    let on_ruling = |c: usize| {
+        combinatorics::crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling)
+    };
     let mut stations: Vec<(Rat, LineEvent, NodeId)> = Vec::new();
     for &(t, c) in rims {
         stations.push((t, LineEvent::Toggle, on_ruling(c)?));
@@ -240,7 +241,7 @@ fn ruling_sweep(
                         combinatorics::pierce_name(x).is_some_and(|(pl, _, _)| {
                             pl.iter().any(|&c| {
                                 c != t
-                                    && crossing_on_ruling(jd, def, c, wc, k, side)
+                                    && combinatorics::crossing_on_ruling(jd, def, c, wc, k, side)
                                         .is_ok_and(|id| same(id, x))
                             })
                         })

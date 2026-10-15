@@ -404,7 +404,9 @@ pub(crate) fn pierce_corner_audit(
                         for side_r in [1i8, -1i8] {
                             // `crossing_on_ruling` takes the cap (normal ∥ axis) first and the
                             // class holding the axis second; the corner's wall plane errs out.
-                            if let Ok(id) = crossing_on_ruling(&jd, def, fc, class, cyl, side_r) {
+                            if let Ok(id) =
+                                combinatorics::crossing_on_ruling(&jd, def, fc, class, cyl, side_r)
+                            {
                                 if !cands.contains(&id) {
                                     cands.push(id);
                                 }

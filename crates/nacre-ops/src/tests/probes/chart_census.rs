@@ -158,7 +158,7 @@ pub(crate) fn census(
             for l in &chart.z_lines {
                 for &(wall, sd) in &names {
                     ends.station_pairs += 1;
-                    if crate::arrangement::crossing_on_ruling(jd, def, l.class, wall, k, sd)
+                    if crate::combinatorics::crossing_on_ruling(jd, def, l.class, wall, k, sd)
                         .is_err()
                     {
                         ends.station_name_failures += 1;
