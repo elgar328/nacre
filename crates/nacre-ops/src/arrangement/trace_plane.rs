@@ -307,30 +307,23 @@ fn trace_transversal_face(
             }
         };
         // Where `L` crosses an arc strictly inside it, per edge, asked once
-        // ([`arc_crossings`], [`combinatorics::EdgeCrossings`]): the walk reads the count, and the
-        // Crossing arm below names the `nth`.
+        // ([`combinatorics::arc_crossings_of`], [`combinatorics::EdgeCrossings`]): the walk reads
+        // the count, and the Crossing arm below names the `nth`.
         let arcs = combinatorics::EdgeCrossings::new(n, |i: usize, on_end: Option<usize>| {
             match walls[i] {
-                // An arc of a cylinder the gate proved clear of this class lies wholly on one side
-                // of it: no crossing, and nothing to ask of a class with no world statement.
-                crate::combinatorics::Wall::Arc { cyl, .. }
-                    if cyls.get(cyl).is_some_and(|wcy| wcy.beside(wc).is_some()) =>
-                {
-                    Ok(Vec::new())
-                }
-                crate::combinatorics::Wall::Arc { cyl, ccw, .. } => match cyls.get(cyl) {
-                    Some(wcy) => arc_crossings(
+                crate::combinatorics::Wall::Arc { cyl, ccw, .. } => {
+                    combinatorics::arc_crossings_of(
                         jd,
-                        &wcy.def,
+                        cyls,
                         wc,
                         fc,
                         cyl,
                         ccw,
                         [ring[i], ring[(i + 1) % n]],
                         on_end.map(|k| ring[k]),
-                    ),
-                    None => Err(DeclineKind::CurvedRingWall),
-                },
+                    )
+                    .ok_or(DeclineKind::CurvedRingWall)
+                }
                 crate::combinatorics::Wall::Plane(_)
                 | crate::combinatorics::Wall::Ruling { .. } => Ok(Vec::new()),
             }
@@ -352,7 +345,7 @@ fn trace_transversal_face(
                 // ★ Not "a corner a cylinder made" any more — the walk reads those. This is the
                 // walk's own `None`: a side it could not form exactly, an arc between two on-line
                 // nodes tangent to the class at its end, or an arc whose crossings could not be
-                // counted (`arc_crossings`' `Err`, or a count its ends make impossible). ☑ Measured
+                // counted (`arc_crossings`' `None`, or a count its ends make impossible). ☑ Measured
                 // 0 raises across the suite; the name is kept because the walk can still say it.
                 combinatorics::RingWalk::Unnameable => {
                     declined = Some(DeclineKind::PierceNode);
@@ -374,7 +367,7 @@ fn trace_transversal_face(
                     // wall face along the boss's rulings (the crossing census's mid slab). A
                     // crossing on an **arc** is the same pierce node, at the root the arc strictly
                     // contains — the `nth` in travel order where it contains both
-                    // ([`arc_crossings`]).
+                    // ([`combinatorics::arc_crossings`]).
                     let (id, pin) = match walls[edge] {
                         crate::combinatorics::Wall::Plane(w) => (
                             NodeId::three_planes(Canon3::three([wc, fc, w])),

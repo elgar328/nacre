@@ -235,7 +235,7 @@ impl Chart {
     /// end at the plate's corner inside the footprint, so the rim has two nodes while the chart
     /// has four rulings, and three sectors lie inside the long arc).
     ///
-    /// The θ order is asked of `arrangement::circular_order`, the one spelling the cells' own
+    /// The θ order is asked of `combinatorics::circular_order`, the one spelling the cells' own
     /// order comes from — never of a coordinate. A ruling's station on this line is its **name**
     /// ([`Chart::station_on`]): a ruling with a piece ending here is that piece's node, one
     /// without is the same canonical name a piece would have carried — and either way the rim
@@ -302,8 +302,8 @@ impl Chart {
         } else {
             index_of(y).map_err(other)?
         };
-        let order =
-            crate::arrangement::circular_order(jd, k, def, &list).map_err(|e| other(e.reason()))?;
+        let order = crate::combinatorics::circular_order(jd, k, def, &list)
+            .map_err(|e| other(e.reason()))?;
         let n = order.len();
         // `order` is a permutation of `list`'s indices.
         let pos = |li: usize| {

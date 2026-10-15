@@ -214,8 +214,8 @@ pub(super) fn split_circles(
             }
         }
         nodes.sort_unstable();
-        let order =
-            circular_order(jd, circ.cyl, &circ.def, &nodes).map_err(|e| reject(e.reason()))?;
+        let order = combinatorics::circular_order(jd, circ.cyl, &circ.def, &nodes)
+            .map_err(|e| reject(e.reason()))?;
         let len = order.len();
         let mut at = vec![0usize; len];
         for (k, &i) in order.iter().enumerate() {
@@ -345,100 +345,6 @@ pub(super) fn split_circles(
     }
 
     Ok(Some((out_segs, out_circles, arcs, cut_rims)))
-}
-
-/// Why an order around a circle could not be formed — two causes, because two callers turn them
-/// into different words (the split into a reject, the tracer into a decline), the same split
-/// [`RingFail`]/`decline_of` makes on the segment side.
-pub(crate) enum CircleOrderFail {
-    /// A θ comparison could not be formed exactly (checked-`Rat` overflow, a missing description).
-    Undecided,
-    /// Two of the nodes are one point wearing two names.
-    Coincident,
-}
-
-impl CircleOrderFail {
-    /// The refusal a boolean gives — the one mapping every road that refuses on an order reads:
-    /// an order past `Rat` is width, one point under two names is the four-plane limit
-    /// ([`RejectReason::CoincidentNodes`]).
-    pub(crate) fn reason(self) -> RejectReason {
-        match self {
-            Self::Undecided => RejectReason::WitnessNotRational,
-            Self::Coincident => RejectReason::CoincidentNodes,
-        }
-    }
-}
-
-/// **Order nodes around one circle by θ, the seam first** — the nodes' reading of the cyclic order
-/// [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs' spans read it too).
-///
-/// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
-/// very first fixture puts a crossing there — a boss on a plate's edge cuts its own rim exactly on
-/// the seam generator, so this is the common case, not an exotic one.)
-///
-/// ★ At most one node can be seam-incident: two would be the same point, which the adjacency check
-/// below refuses as the two-names-for-one-point it is.
-///
-/// ★★ **Two names for one point.** Two walls crossing the circle at one point are two *different*
-/// pierce names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
-/// length would follow. The segment side asks this question already; asking it here too is what
-/// keeps the two sides from disagreeing about what "one point" means.
-///
-/// Returns the permutation of `nodes` in θ order. `nodes` must already be deduped by name.
-pub(crate) fn circular_order(
-    jd: &Judge<'_, WorkingPlane>,
-    cyl: usize,
-    def: &nacre_topo::CylinderDef,
-    nodes: &[NodeId],
-) -> Result<Vec<usize>, CircleOrderFail> {
-    use nacre_exact::quad::{SeamOrder, circular_order_about_seam};
-    let meets = nodes
-        .iter()
-        .map(|&n| {
-            combinatorics::pierce_meet(jd, cyl, def, n)
-                .and_then(combinatorics::PierceMeet::into_exact)
-                .ok_or(CircleOrderFail::Undecided)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let cmp = |i: usize, j: usize| {
-        circular_order_about_seam(
-            &def.origin(),
-            &def.dir(),
-            &def.ref_dir(),
-            (&meets[i].0, &meets[i].1),
-            (&meets[j].0, &meets[j].1),
-        )
-    };
-    // ★ Counted before the sort, so two seam nodes are `Coincident` ahead of any order the sort
-    // could not form (`Undecided`).
-    let mut seam_nodes = 0usize;
-    for i in 0..meets.len() {
-        match cmp(i, i) {
-            Some(SeamOrder::SeamIncident { first: true, .. }) => seam_nodes += 1,
-            Some(_) => {}
-            None => return Err(CircleOrderFail::Undecided),
-        }
-    }
-    if seam_nodes > 1 {
-        return Err(CircleOrderFail::Coincident);
-    }
-    let mut order: Vec<usize> = (0..meets.len()).collect();
-    combinatorics::try_sort_by(&mut order, |&i, &j| {
-        cmp(i, j)
-            .map(SeamOrder::seam_first)
-            .ok_or(CircleOrderFail::Undecided)
-    })?;
-    for w in order.windows(2) {
-        match cmp(w[0], w[1]) {
-            Some(SeamOrder::Ordered(core::cmp::Ordering::Equal)) => {
-                return Err(CircleOrderFail::Coincident);
-            }
-            Some(_) => {}
-            // The sort may have asked this pair the other way round; a failure is no answer.
-            None => return Err(CircleOrderFail::Undecided),
-        }
-    }
-    Ok(order)
 }
 
 /// **Cut every segment at the points collected on it** — the one emitter the arc split and the

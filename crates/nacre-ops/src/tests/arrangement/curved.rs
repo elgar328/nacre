@@ -180,9 +180,9 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
     let at = |root| combinatorics::NodeId::pierce(wc, top, 0, root);
     let (lo, hi) = (at(nacre_topo::QuadRoot::Lo), at(nacre_topo::QuadRoot::Hi));
     for (node, other) in [(lo, hi), (hi, lo)] {
-        let between = |n| super::rulings::theta_between(&jd, 0, def, node, node, n);
-        assert_eq!(between(other), Ok(true), "{node:?} holds {other:?}");
-        assert_eq!(between(node), Ok(false), "{node:?} does not hold itself");
+        let between = |n| combinatorics::theta_between(&jd, 0, def, node, node, n);
+        assert_eq!(between(other), Some(true), "{node:?} holds {other:?}");
+        assert_eq!(between(node), Some(false), "{node:?} does not hold itself");
     }
 }
 

@@ -104,66 +104,6 @@ fn arc_flank(ccw: bool, arriving: bool) -> i8 {
     if ccw == arriving { -1 } else { 1 }
 }
 
-/// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about
-/// the axis, by name ([`circular_order`]). For two ends that differ, `Err` when the order cannot
-/// be formed or two of the three are one point wearing two names — the caller's population, not
-/// a tie to shrug at.
-///
-/// ★ **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
-/// from that node back to it, so every other point of the circle is inside — and the node itself,
-/// under its own name or another (`Coincident`), is not. Read as the three-point order it would be
-/// two points, and refuse.
-pub(super) fn theta_between(
-    jd: &Judge<'_, WorkingPlane>,
-    k: usize,
-    def: &nacre_topo::CylinderDef,
-    lo: NodeId,
-    hi: NodeId,
-    node: NodeId,
-) -> Result<bool, DeclineKind> {
-    let nodes = [lo, hi, node];
-    // A point with no exact meet is placed by its interval box — and only such a point: a named
-    // trio keeps the name road, whose «one point, two names» answer an interval has no twin for.
-    if nodes
-        .iter()
-        .any(|&n| combinatorics::names_a_nameless_plane(jd, n))
-    {
-        return combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node)
-            .ok_or(DeclineKind::Ruling);
-    }
-    if lo == hi {
-        let inside = node != lo
-            && match circular_order(jd, k, def, &[lo, node]) {
-                Ok(_) => true,
-                Err(super::split_circles::CircleOrderFail::Coincident) => false,
-                Err(super::split_circles::CircleOrderFail::Undecided) => {
-                    return Err(DeclineKind::Ruling);
-                }
-            };
-        debug_assert!(
-            combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node)
-                .is_none_or(|b| b == inside),
-            "the interval reading of the closed arc disagrees with the circular order"
-        );
-        return Ok(inside);
-    }
-    let order = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
-    let pos = |x: usize| {
-        order
-            .iter()
-            .position(|&i| i == x)
-            .expect("a permutation of the three")
-    };
-    let (p_lo, p_hi, p_n) = (pos(0), pos(1), pos(2));
-    let inside = (p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3;
-    // ★ The interval reading's turn convention, checked against the name road wherever both answer.
-    debug_assert!(
-        combinatorics::between_on_circle_hp(jd, k, def, lo, hi, node).is_none_or(|b| b == inside),
-        "the interval turn about the axis disagrees with the circular order"
-    );
-    Ok(inside)
-}
-
 /// What one side's sweep states: the ruling's pieces (its own vocabulary) and, for a plane-pair
 /// line the face touches on this ruling, the face's side of that line (the plane vocabulary).
 type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
@@ -174,7 +114,7 @@ type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
 ///
 /// Every cycle contributes **stations** on the ruling, each with an event:
 /// - a whole **rim** toggles the face (it starts or ends there);
-/// - an **arc** that strictly contains the ruling's θ ([`theta_between`]) toggles it — the boundary
+/// - an **arc** that strictly contains the ruling's θ ([`combinatorics::theta_between`]) toggles it — the boundary
 ///   crosses the line there, at the pierce node `{arc's plane, wc}` ([`crossing_on_ruling`], the
 ///   one door every road names such a point through);
 /// - a **run** of the cycle's own edges lying on the ruling is a `Graze` over its extent, the side
@@ -388,7 +328,7 @@ fn ruling_sweep(
                 continue;
             }
             let (lo, hi) = if nu { (a, b) } else { (b, a) };
-            if theta_between(jd, k, def, lo, hi, node)? {
+            if combinatorics::theta_between(jd, k, def, lo, hi, node).ok_or(DeclineKind::Ruling)? {
                 let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
                 stations.push((t, LineEvent::Toggle, node));
             }

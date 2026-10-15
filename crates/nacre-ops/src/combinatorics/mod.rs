@@ -34,6 +34,7 @@ use nacre_topo::{Edge, Face, Model, Solid, Vertex};
 use std::collections::HashMap;
 
 mod component;
+mod cyl_crossings;
 mod direction;
 mod in_faces;
 mod incidence_order;
@@ -54,6 +55,7 @@ mod winding;
 mod witnesses;
 
 pub(crate) use component::*;
+pub(crate) use cyl_crossings::*;
 pub(crate) use direction::*;
 pub(crate) use in_faces::*;
 pub(crate) use incidence_order::*;

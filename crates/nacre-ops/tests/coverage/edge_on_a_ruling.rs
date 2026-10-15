@@ -825,7 +825,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
 ///
 /// The cap's loop names the apex once, by its own definition (`combinatorics::loop_triples`);
 /// the closed rim edge is the whole turn to every reader on the way — the span on its circle
-/// (`arrangement::rulings::theta_between`), and a cut line through the apex, which the arc crosses
+/// (`combinatorics::theta_between`), and a cut line through the apex, which the arc crosses
 /// once more at the other root (`combinatorics::ring_against_plane`); and the apex is pinned on a
 /// line by the plane of its own that cuts that line (`combinatorics::pin_for`). The wedge's two
 /// walls meet on a ruling of the cylinder, one station of its chart; taken from the box across the

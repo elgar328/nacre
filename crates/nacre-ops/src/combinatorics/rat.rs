@@ -1062,7 +1062,7 @@ pub(crate) fn between_on_circle_hp(
 }
 
 /// **Where the line `p ∩ q` crosses the arc `a → b` strictly inside it**, for a pair one of whose
-/// planes has no world statement — the interval twin of the arrangement's exact `arc_crossings`,
+/// planes has no world statement — the interval twin of the exact [`arc_crossings`],
 /// with its contract: the roots `{p, q, cyl}` the travelled arc contains, in the order its travel
 /// meets them, and a root that *is* the arc's end on the line (`on_end`) not counted. The meet's
 /// shape is read off the discriminant's sign; a tangency or an axis-parallel line is a statement an

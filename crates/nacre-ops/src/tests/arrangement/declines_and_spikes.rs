@@ -577,11 +577,11 @@ fn count_cull(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> Counts {
 #[test]
 fn an_order_or_a_crossing_that_cannot_be_formed_names_its_cause() {
     assert_eq!(
-        CircleOrderFail::Undecided.reason(),
+        combinatorics::CircleOrderFail::Undecided.reason(),
         RejectReason::WitnessNotRational
     );
     assert_eq!(
-        CircleOrderFail::Coincident.reason(),
+        combinatorics::CircleOrderFail::Coincident.reason(),
         RejectReason::CoincidentNodes
     );
     assert_eq!(

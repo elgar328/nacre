@@ -106,7 +106,7 @@ pub(crate) struct ThetaSeg {
     /// on, with no chamber to read behind it, so no `label`.
     pub(crate) side: i8,
     /// The piece's own two pierce nodes: the θ **order** is asked of these
-    /// (`circular_order_about_seam` via `arrangement::circular_order`), never of a coordinate.
+    /// (`circular_order_about_seam` via `combinatorics::circular_order`), never of a coordinate.
     pub(crate) end: [combinatorics::NodeId; 2],
     /// `[lower, upper]` on the axis.
     pub(crate) z: [Rat; 2],
@@ -271,8 +271,8 @@ impl Chart {
             // of the *segment*, and one endpoint states it.
             let nodes: Vec<combinatorics::NodeId> =
                 alive.iter().map(|&j| self.theta[j].end[0]).collect();
-            let order = crate::arrangement::circular_order(jd, k, def, &nodes)
-                .map_err(crate::arrangement::CircleOrderFail::reason)?;
+            let order = crate::combinatorics::circular_order(jd, k, def, &nodes)
+                .map_err(crate::combinatorics::CircleOrderFail::reason)?;
             let n = order.len();
             for s in 0..n {
                 // `k` cuts make `k` sectors, and one cut makes one: the circle opens at that point

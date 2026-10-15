@@ -120,7 +120,7 @@ pub(crate) use rulings::*;
 pub(crate) use setup::*;
 pub(crate) use sides::*;
 pub(crate) use split::*;
-pub(crate) use split_circles::*;
+use split_circles::*;
 use split_rulings::*;
 pub(crate) use trace_class::*;
 use trace_plane::*;

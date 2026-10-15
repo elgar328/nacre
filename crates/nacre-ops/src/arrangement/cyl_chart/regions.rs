@@ -114,7 +114,7 @@ pub(crate) fn walk(
     let ns = names.len();
     let mut station_of_name = vec![0usize; ns];
     if ns > 0 {
-        let order = crate::arrangement::circular_order(jd, k, def, &reps)
+        let order = crate::combinatorics::circular_order(jd, k, def, &reps)
             .map_err(|e| reject(e.reason()))?;
         for (p, &ni) in order.iter().enumerate() {
             station_of_name[ni] = p;

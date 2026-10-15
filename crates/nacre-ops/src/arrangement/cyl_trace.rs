@@ -227,9 +227,9 @@ fn assemble_spans(
     let mut nodes: Vec<NodeId> = carved.iter().flat_map(|c| c.arc).collect();
     nodes.sort_unstable();
     nodes.dedup();
-    let order = circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
-        CircleOrderFail::Undecided => DeclineKind::CylSpan,
-        CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+    let order = combinatorics::circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+        combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
+        combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
     })?;
     let n = order.len();
     // θ position of each node, keyed by its index in the sorted `nodes`.
@@ -517,9 +517,9 @@ fn cycle_on_class(
     // ([`sweep_line`]).
     if !cuts.is_empty() {
         let nodes: Vec<NodeId> = cuts.iter().map(|c| c.0).collect();
-        let order = circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
-            CircleOrderFail::Undecided => DeclineKind::CylSpan,
-            CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+        let order = combinatorics::circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+            combinatorics::CircleOrderFail::Undecided => DeclineKind::CylSpan,
+            combinatorics::CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
         })?;
         for k in 0..order.len() {
             let (a, ahead) = cuts[order[k]];
