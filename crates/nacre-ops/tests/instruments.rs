@@ -6,6 +6,8 @@
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
+#[path = "instruments/comparators.rs"]
+mod comparators;
 #[path = "instruments/manifest.rs"]
 mod manifest;
 #[path = "instruments/module_graph.rs"]
