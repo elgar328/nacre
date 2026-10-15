@@ -15,6 +15,7 @@ pub(crate) enum LineCarrier {
 }
 
 impl From<Wall> for LineCarrier {
+    #[inline]
     fn from(w: Wall) -> Self {
         match w {
             Wall::Plane(p) => LineCarrier::Plane(p),
@@ -27,6 +28,7 @@ impl From<Wall> for LineCarrier {
 }
 
 impl From<&Carrier> for LineCarrier {
+    #[inline]
     fn from(c: &Carrier) -> Self {
         match c {
             Carrier::Plane { wall, .. } => LineCarrier::Plane(*wall),
@@ -62,10 +64,12 @@ impl From<&Carrier> for LineCarrier {
 /// a fourth plane through a run's node). Naming every crossing up front would change which refusal
 /// comes first.
 ///
-/// ★ **An arc's crossings are solved once per edge**: the walk asks an edge only where its ends
-/// cannot say, with the end on the line where there is one; a crossing named later reads the same
-/// list, whatever end it passes. Nothing is allocated until an edge is asked — most rings carry no
-/// arc.
+/// ★ **An arc's crossings are solved once per edge**, so the count the walk read and the point a
+/// road names cannot disagree. The walk asks an edge only where its ends cannot say, with the end
+/// on the line where there is one (that end's own root is not counted); an edge the walk did not
+/// ask (ends on opposite sides) is solved on naming, with no end on the line. Nothing is allocated
+/// until an edge is asked — most rings a ray walks carry no arc, and a ray builds one reading per
+/// line it casts.
 pub(crate) struct ClassLine<'a, C> {
     jd: &'a Judge<'a, WorkingPlane>,
     cyls: &'a [crate::planes::WorkingCyl],
@@ -102,6 +106,7 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
     }
 
     /// Where the ring meets the line — [`ring_against_plane`] with this reading's two answers.
+    #[inline]
     pub(crate) fn walk(&self) -> RingWalk {
         ring_against_plane(
             self.jd,
@@ -125,6 +130,7 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
     /// The point where the walk's `Crossing { edge, nth }` lies on the line; `None` where it has no
     /// exact name — a ruling measured against another plane than the face's, a cylinder missing
     /// from the table, a root the arc's list does not hold.
+    #[inline]
     pub(crate) fn crossing(&self, edge: usize, nth: u8) -> Option<PointOn> {
         match (self.carrier)(edge) {
             LineCarrier::Plane(wall) => Some(PointOn::Class(wall)),
@@ -151,6 +157,7 @@ impl<'a, C: Fn(usize) -> LineCarrier> ClassLine<'a, C> {
 
     /// Where edge `i` crosses the line strictly inside it — the first ask's answer, whatever end a
     /// later ask passes.
+    #[inline]
     fn arc_roots(&self, i: usize, on_end: Option<usize>) -> Option<Vec<NodeId>> {
         if let Some(Some(got)) = self.arcs.borrow().get(i) {
             return got.clone();

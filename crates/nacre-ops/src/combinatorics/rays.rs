@@ -29,7 +29,8 @@ pub(crate) fn every_ray(
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
-        // Where the ring meets the line — the walk `trace_transversal_face` reads too.
+        // Where the ring meets the line — the reading every road that walks a plane face's ring
+        // along a line shares ([`ClassLine`]).
         //
         // ★ **A straight edge's `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
         // the edge", asked with two `order_along`s — `a` the sign of `X − From` along `P ∩ R` and
@@ -37,31 +38,19 @@ pub(crate) fn every_ray(
         // `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a`, which the walk already
         // knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        // ★ No cylinder table on this road for a class with a world statement: a pierce node in a
-        // **result** cell's ring declines here, and threading one is the arc road's business. A
-        // class the gate passed as silent reads the gate's record instead ([`silent_crossings`]).
-        // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
-        // edge between two on-line nodes is on it and a curved one is not. Same reading as
-        // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
-        // ★ An arc between two on-line nodes would need a cylinder table to side
-        // (`arc_departure_side`), and so would an arc whose ends do not settle how often it
-        // crosses (both on one side, or one on the line) to count them — this road carries
-        // none, so `None` is the honest answer to both, and the walk's `Unnameable` is the same
-        // refusal a pierce node already meets here. (Against a silent class an arc crosses
-        // nowhere — the gate's record, [`silent_crossings`] — or, where the class sections the arc's
-        // cylinder, as often as the boxes count.)
-        let on_meet =
-            |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
+        // ★ No cylinder table on this road for a class with a world statement ([`silent_table`]):
+        // a pierce node in a **result** cell's ring declines here (`nesting` reads it as the road
+        // declining, and the coordinate road answers), and so does an arc whose crossings or
+        // departure need the table. A class the gate passed as silent reads the gate's record
+        // instead: against it an arc crosses nowhere, or — where the class sections the arc's
+        // cylinder — as often as the boxes count.
         let table = silent_table(cyls, qa);
-        let arcs = EdgeCrossings::new(ring.len(), |i, e| {
-            silent_crossings(jd, table, (p, qa), ring, i, e)
-        });
-        let features =
-            match ring_against_plane(jd, table, &nodes, qa, on_meet, |i, e| arcs.count(i, e)) {
-                RingWalk::Met(f) => f,
-                RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
-                RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
-            };
+        let line = ClassLine::new(jd, table, p, qa, &nodes, |i| (&ring[i].carrier).into());
+        let features = match line.walk() {
+            RingWalk::Met(f) => f,
+            RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
+            RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
+        };
         // The plane `v` is ordered against along the line, by the rule every handle on a line
         // takes: one of `v`'s own planes that cuts `p ∩ qa`. When `p` is not among `v`'s planes
         // one of the other two can hold the line (a pencil), and read there it orders nothing.
@@ -69,8 +58,8 @@ pub(crate) fn every_ray(
         // A node on the line is a crossing point in its own right, so it must be nameable as one:
         // some plane of its own, off the line, pins it there. (`third_on_l` picks a handle the
         // same way, and for the same reason — one parallel to the line names no point on it.)
-        // ★ The projection is safe *here* and nowhere earlier: the walk answered `Met`, which it
-        // only does when every node is three planes.
+        // ★ A node with no three-plane name — a pierce corner, which the walk sides only against a
+        // silent class — names no point here, and this ray is not cast (`unnameable` below).
         let namer = |i: usize| pin_on_line(jd, p, qa, &three_plane_name(nodes[i])?);
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back
@@ -105,44 +94,32 @@ pub(crate) fn every_ray(
         if unnameable {
             continue;
         }
-        for dir in [1i8, -1] {
-            let mut crossings = run_hits.iter().filter(|&&o| o == dir).count();
-            for f in &features {
-                let Feature::Crossing { edge, nth, .. } = *f else {
-                    continue; // runs are counted above
-                };
-                // Strictly ahead of `v` along `dir · (n_P × n_Qa)`? A straight edge's crossing is
-                // the point `{P, Q_a, carrier}`; an arc's, on a cylinder `Q_a` sections, is the
-                // pierce point the arc road names in travel order ([`arc_crossings_hp`], the list
-                // the walk counted) — ordered against `v` by its side of `Q_b`, the
-                // pierce-against-pin rule of `order_located`.
-                let ahead = match &ring[edge].carrier {
-                    Carrier::Arc(a) if cyls.get(a.cyl).is_some_and(|cy| cy.sections(qa)) => {
-                        let naming = || reject(RejectReason::RingNaming);
-                        let x = *arcs
-                            .at(edge, None)
-                            .ok_or_else(naming)?
-                            .get(usize::from(nth))
-                            .ok_or_else(naming)?;
-                        pierce_meet(jd, a.cyl, &a.def, x)
-                            .and_then(|m| m.side(jd, qb))
-                            .ok_or_else(naming)?
-                            * dir_sign(jd, p, qa, qb)
-                    }
-                    c => order_along(
-                        jd,
-                        p,
-                        qa,
-                        c.wall().ok_or_else(|| reject(RejectReason::RingNaming))?,
-                        qb,
-                    ),
-                };
-                match ahead {
-                    0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
-                    o if o == dir => crossings += 1,
-                    _ => {}
+        // Where each crossing lies against `v` along `n_P × n_Qa`, once, in ring order — so the
+        // first refusal is the one met first along the ring, as a pass per direction met it. A
+        // plane wall's crossing is the point `{P, Q_a, wall}` (the hot road, `order_along`); an
+        // arc's is the pierce point the walk counted, ordered against `v` by its side of `Q_b`
+        // (`order_on`'s pierce-against-pin rule).
+        // Crossings strictly ahead of `v` along `+d` and along `−d`.
+        let mut ahead = [0usize; 2];
+        for f in &features {
+            let Feature::Crossing { edge, nth, .. } = *f else {
+                continue; // runs are counted above
+            };
+            let naming = || reject(RejectReason::RingNaming);
+            let at = line.crossing(edge, nth).ok_or_else(naming)?;
+            let o = match at {
+                PointOn::Class(w) => order_along(jd, p, qa, w, qb),
+                PointOn::Pierce(_) => {
+                    order_on(jd, table, p, qa, at, PointOn::Class(qb)).ok_or_else(naming)?
                 }
+            };
+            if o == 0 {
+                return Err(reject(RejectReason::PointOnRing)); // `X == v`, inside an edge
             }
+            ahead[usize::from(o < 0)] += 1;
+        }
+        for (k, dir) in [1i8, -1].into_iter().enumerate() {
+            let crossings = run_hits.iter().filter(|&&o| o == dir).count() + ahead[k];
             out.push(crossings % 2 == 1);
         }
     }
@@ -392,55 +369,21 @@ pub(super) fn point_on_ring(
     Ok(false)
 }
 
-/// **What [`every_ray`] reads of a ring against plane `q`** — the cylinder table ([`silent_table`])
-/// and the arcs' crossings ([`silent_crossings`]). This road carries no cylinder table for a class
-/// with a world statement: a pierce corner there has no side here and the walk declines, as an arc's crossings do — the
-/// coordinate road answers instead. A class the gate passed as silent about the cylinders is the
-/// exception the gate's record makes: every pierce corner and every arc of a cylinder that
-/// lies beside it is on the recorded side ([`crate::planes::WorkingCyl::beside`]), so the table
-/// is handed over for [`side_of`] to read, and such an arc crosses `q` nowhere. A class that
-/// **sections** a cylinder (its plane cuts the lateral, its faces stand apart —
-/// `Silence::Sectioned`) has no recorded side for that cylinder's arcs: how often one crosses the
-/// line `p ∩ q` is read off interval boxes ([`arc_crossings_hp`]), the count the arrangement's own
-/// arc road gives the same arc. The crossings come back per edge, solved once
-/// ([`EdgeCrossings`]): the walk counts them and the ray names its `nth` from the same list.
+/// **The cylinder table [`every_ray`] reads a ring against plane `q` with** ([`ClassLine`]). This road
+/// carries none for a class with a world statement: a pierce corner there has no side here and the
+/// walk declines, as an arc's crossings and departure do — the coordinate road answers instead. A
+/// class the gate passed as silent about the cylinders is the exception the gate's record makes:
+/// every pierce corner and every arc of a cylinder that lies beside it is on the recorded side
+/// ([`crate::planes::WorkingCyl::beside`]), so the table is handed over for [`side_of`] to read,
+/// and such an arc crosses `q` nowhere ([`arc_crossings_of`]). A class that **sections** a cylinder
+/// (its plane cuts the lateral, its faces stand apart — `Silence::Sectioned`) has no recorded side
+/// for that cylinder's arcs: how often one crosses the line `p ∩ q` is read off interval boxes
+/// ([`arc_crossings_hp`]), the count the arrangement's own arc road gives the same arc. A class
+/// silent by `Silence::Apart` meets no arc of the cylinder at all.
 fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes::WorkingCyl] {
     if cyls.iter().any(|cy| cy.is_silent(q)) {
         cyls
     } else {
         &[]
     }
-}
-
-/// Where edge `i` of `ring` crosses the line `p ∩ q` strictly inside it, against the table
-/// [`silent_table`] handed over — `None` where it cannot be stated. What [`every_ray`]'s
-/// [`EdgeCrossings`] solves.
-fn silent_crossings(
-    jd: &Judge<'_, WorkingPlane>,
-    table: &[crate::planes::WorkingCyl],
-    (p, q): (usize, usize),
-    ring: &[RingEdge],
-    i: usize,
-    on_end: Option<usize>,
-) -> Option<Vec<NodeId>> {
-    let Carrier::Arc(a) = &ring[i].carrier else {
-        return Some(Vec::new());
-    };
-    let cy = table.get(a.cyl)?;
-    if cy.beside(q).is_some() {
-        return Some(Vec::new());
-    }
-    if !cy.sections(q) {
-        return None;
-    }
-    arc_crossings_hp(
-        jd,
-        &a.def,
-        p,
-        q,
-        a.cyl,
-        a.ccw,
-        [ring[i].node, ring[i].to],
-        on_end.map(|k| ring[k].node),
-    )
 }

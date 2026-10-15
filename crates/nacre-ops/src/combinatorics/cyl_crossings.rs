@@ -149,8 +149,8 @@ pub(crate) fn theta_between(
 /// **Where the class line `L = wc ∩ fc` crosses an arc strictly inside it** — the pierce nodes
 /// `wc ∩ fc ∩ cyl` the travelled arc `a → b` contains, in the order its travel meets them (the
 /// arc runs counter-clockwise about the axis when `ccw`). One answer serves both questions the
-/// planar scan asks of an arc: the walk's *how many* (its length, where the ends cannot say) and
-/// the tracer's *which* (its `nth` entry, [`Feature::Crossing`]).
+/// line roads ask of an arc ([`ClassLine`]): the walk's *how many* (its length, where the ends
+/// cannot say) and a crossing's *which* (its `nth` entry, [`Feature::Crossing`]).
 ///
 /// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the meet decides first:
 /// - two parallel planes (`fc` against another ⊥ class — every cap meets its twin this way), a
@@ -241,8 +241,7 @@ pub(crate) fn arc_crossings(
 
 /// [`arc_crossings`] behind the one shortcut the gate's record gives: an arc of a cylinder the gate
 /// proved clear of the class `wc` lies wholly on one side of it, so it crosses nothing — and a class
-/// with no world statement is not asked. The tracer and the self-touch chord test both read an
-/// arc's crossings of a class line here.
+/// with no world statement is not asked. What [`ClassLine`] counts and names an arc's crossings by.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arc_crossings_of(
     jd: &Judge<'_, WorkingPlane>,

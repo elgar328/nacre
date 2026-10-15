@@ -143,54 +143,6 @@ pub(crate) enum EdgeMeet {
     Departs(i8),
 }
 
-/// **Where each ring edge crosses the meet strictly inside it, solved once per edge** — what a
-/// [`ring_against_plane`] caller hands the walk as `crossings` (the count) and then names a
-/// [`Feature::Crossing`]'s `nth` from (the point). One answer, so the count the walk read and the
-/// point the caller names cannot disagree. The walk asks an edge only where its ends cannot say,
-/// with `on_end` where one end is on the line, and that end's own root is not counted; an edge the
-/// walk did not ask (ends on opposite sides) is solved on naming, with no end on the line.
-///
-/// ★ Nothing is allocated until an edge is asked: most rings a ray road walks carry no arc, and the
-/// ray caster builds one memo per cast.
-pub(crate) struct EdgeCrossings<T, F> {
-    n: usize,
-    got: std::cell::RefCell<Vec<Option<T>>>,
-    solve: F,
-}
-
-impl<T: Clone, F: Fn(usize, Option<usize>) -> T> EdgeCrossings<T, F> {
-    /// A memo for a ring of `n` edges, `solve(i, on_end)` answering edge `i`.
-    pub(crate) fn new(n: usize, solve: F) -> Self {
-        Self {
-            n,
-            got: std::cell::RefCell::new(Vec::new()),
-            solve,
-        }
-    }
-
-    /// Edge `i`'s answer — the first ask's, whatever `on_end` a later ask passes.
-    pub(crate) fn at(&self, i: usize, on_end: Option<usize>) -> T {
-        if let Some(Some(got)) = self.got.borrow().get(i) {
-            return got.clone();
-        }
-        let got = (self.solve)(i, on_end);
-        let mut memo = self.got.borrow_mut();
-        if memo.is_empty() {
-            memo.resize(self.n, None);
-        }
-        memo[i] = Some(got.clone());
-        got
-    }
-}
-
-impl<N: Clone, F: Fn(usize, Option<usize>) -> Option<Vec<N>>> EdgeCrossings<Option<Vec<N>>, F> {
-    /// How many — the walk's `crossings`.
-    pub(crate) fn count(&self, i: usize, on_end: Option<usize>) -> Option<u8> {
-        self.at(i, on_end)
-            .and_then(|found| u8::try_from(found.len()).ok())
-    }
-}
-
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
 /// ★ **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring
@@ -205,9 +157,10 @@ impl<N: Clone, F: Fn(usize, Option<usize>) -> Option<Vec<N>>> EdgeCrossings<Opti
 /// consumer is resilience the other does not have — the same shape the nesting road's retry was in
 /// before `nesting::cell_inside` became its one loop.
 ///
-/// What each consumer does *with* a feature stays its own: the tracer turns it into a **named
-/// point** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into one bit ("ahead of
-/// `v`?"). That is where the sharing stops.
+/// The three that read a plane face's ring along a line call it through [`ClassLine`], which also
+/// says what each crossing's point is; what each does *with* a feature stays its own: the tracer
+/// turns it into a **station** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into
+/// one bit ("ahead of `v`?"), the chord test into an alternation. That is where the sharing stops.
 ///
 /// `AllOn` when every node **and edge** lies on `q` — a ring in the plane has no flanks to be
 /// decided by.
