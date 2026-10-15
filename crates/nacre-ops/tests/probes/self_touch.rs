@@ -1091,8 +1091,8 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
     }
 }
 
-/// ★ **An edge at a groove's mouth builds** — the chord test reading a ruling crossing and an arc's
-/// departure, the two arms of the ring reading (`segment_meets_face`) nothing else reaches.
+/// ★ **An edge at a groove's mouth builds** — the chord test (`segment_meets_face`) reading a
+/// crossing on a ruling and an arc's departure.
 ///
 /// A column stands on the plate in front of the groove's mouth, narrower than the mouth, its back
 /// face on the front wall's plane `y = −11`; its top-back edge lies on a plane face of the same
@@ -1104,6 +1104,8 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 ///   the wall nowhere: the same crossings with the wall's ring untouched by the bracket;
 /// - **flush with the top, at the through notch** — the line `y = −11` on the top face holds both
 ///   ends of the notch's arc, which leaves it between them (`arc_departure_side`).
+///
+/// Each on the world frame and a 3-4-5 one, in either operand order.
 ///
 /// The groove is blind for the first two because a through groove splits the front wall into two
 /// faces either side of it, and an edge in front of the mouth overlaps neither face's box — the
@@ -1119,8 +1121,7 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 /// No row here touches: for the line to cross a ruling, the edge's faces must be one ⊥ to the axis
 /// and one on the wall's plane facing the other way (a face slanted to the axis passes a point of
 /// the cylinder, which the gate refuses — the wedge below), and that face fits only where the wall
-/// is not, so the edge never runs over the wall's inside. On the world frame and a 3-4-5 one, in
-/// either operand order.
+/// is not, so the edge never runs over the wall's inside.
 #[test]
 fn an_edge_at_a_grooves_mouth_builds() {
     let disk = std::f64::consts::PI * 0.25 / 2.0;
@@ -1162,7 +1163,8 @@ fn an_edge_at_a_grooves_mouth_builds() {
                         m.rebuild_adjacency();
                         got
                     }
-                    _ => prism_on(&mut m, below, &mouth, 8.0),
+                    "flush with the top" => prism_on(&mut m, below, &mouth, 8.0),
+                    _ => unreachable!("a row with no column"),
                 };
                 let (x, y) = if swapped { (b, a) } else { (a, b) };
                 let at = format!("{row}, tilted = {tilted}, swapped = {swapped}");
