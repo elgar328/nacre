@@ -505,29 +505,29 @@ fn trace_transversal_face(
     }
 
     // Phase B — order the stations along `L`, and at one point by the order their events apply.
-    // ★ A comparator cannot decline, so it raises a flag the caller reads. What can make it fire
-    // has narrowed: the second road landed, so a cylinder-pinned node is *ordered* here rather
-    // than refused, and the only `None` left is a description that could not be formed exactly.
+    // ★ An order that cannot be formed declines the face — the sort stops at it
+    // ([`combinatorics::try_sort_by`]) rather than reading it as a tie. What can fail has
+    // narrowed: a cylinder-pinned node is *ordered* here rather than refused, and the only `None`
+    // left is a description that could not be formed exactly. The neighbours compared after the
+    // sort can fail too — the sort may have asked that pair the other way round.
     // ☑ Still unexercised in the corpus — measured through `reject_census`, which does not move.
-    let mut unordered = false;
-    let mut order = |a: (NodeId, combinatorics::EndPin), b: (NodeId, combinatorics::EndPin)| {
-        match combinatorics::order_pinned(jd, cyls, wc, fc, a, b) {
-            Some(o) => o.cmp(&0),
-            None => {
-                unordered = true;
-                std::cmp::Ordering::Equal
-            }
-        }
+    let order = |a: (NodeId, combinatorics::EndPin), b: (NodeId, combinatorics::EndPin)| {
+        combinatorics::order_pinned(jd, cyls, wc, fc, a, b).map(|o| o.cmp(&0))
     };
-    stations.sort_by(|a, b| order(a.1, b.1).then(a.0.cmp(&b.0)));
-    let same: Vec<bool> = stations
-        .windows(2)
-        .map(|w| order(w[0].1, w[1].1) == std::cmp::Ordering::Equal)
-        .collect();
-    if unordered {
+    let same: Option<Vec<bool>> = combinatorics::try_sort_by(&mut stations, |a, b| {
+        order(a.1, b.1).map(|o| o.then(a.0.cmp(&b.0))).ok_or(())
+    })
+    .ok()
+    .and_then(|()| {
+        stations
+            .windows(2)
+            .map(|w| order(w[0].1, w[1].1).map(|o| o == std::cmp::Ordering::Equal))
+            .collect()
+    });
+    let Some(same) = same else {
         out.declined.push((fp, DeclineKind::PierceNode));
         return;
-    }
+    };
     // Phase C — the sweep both line roads share.
     let mat = SegKind::Transversal {
         mat: faces[fp].plane().orient_sign,

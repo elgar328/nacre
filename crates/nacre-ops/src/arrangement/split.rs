@@ -273,28 +273,26 @@ pub(super) fn split_at_crossings(
             // `group.first()` below, which is the representative and so the emitted name.
             pts.sort_unstable();
             pts.dedup();
-            let mut bad = false;
-            pts.sort_by(|&x, &y| {
-                match combinatorics::order_on(jd, cyls, wc, w, x.on(wc, w), y.on(wc, w)) {
-                    Some(-1) => std::cmp::Ordering::Less,
-                    Some(1) => std::cmp::Ordering::Greater,
-                    Some(_) => std::cmp::Ordering::Equal,
-                    // ★ A comparator cannot decline, so it raises a flag the caller reads — the
-                    // idiom `split_circles` uses for the same reason.
-                    None => {
-                        bad = true;
-                        std::cmp::Ordering::Equal
-                    }
-                }
-            });
-            if bad {
+            // An order this line cannot form is named by the classes on it — which the gate's,
+            // which the arithmetic's ([`combinatorics::undecided_reason`]) — read off the points.
+            let undecided = |pts: &[Split]| {
                 let classes: Vec<usize> = std::iter::once(w)
                     .chain(pts.iter().filter_map(|x| match x {
                         Split::Class(r) => Some(*r),
                         _ => None,
                     }))
                     .collect();
-                return Err(cause(&classes));
+                cause(&classes)
+            };
+            // ★ A comparison that cannot be formed stops the sort rather than reading as a tie
+            // ([`combinatorics::try_sort_by`]); a stopped sort still holds every point.
+            let sorted = combinatorics::try_sort_by(&mut pts, |&x, &y| {
+                combinatorics::order_on(jd, cyls, wc, w, x.on(wc, w), y.on(wc, w))
+                    .map(|o| o.cmp(&0))
+                    .ok_or(())
+            });
+            if sorted.is_err() {
+                return Err(undecided(&pts));
             }
             // ★ Two DISTINCT points ordering equal are one point wearing two names — a four-plane
             // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
@@ -345,9 +343,18 @@ pub(super) fn split_at_crossings(
                 group.clear();
             };
             for &r in &pts {
-                let same = group.first().is_some_and(|&g| {
-                    combinatorics::order_on(jd, cyls, wc, w, g.on(wc, w), r.on(wc, w)) == Some(0)
-                });
+                // ★ The group's first point against this one is not always a pair the sort asked,
+                // so it can fail here too — and a failure is no answer, not «another point»: read
+                // as one, it would split a group of tied names in two.
+                let same = match group.first() {
+                    None => false,
+                    Some(&g) => {
+                        match combinatorics::order_on(jd, cyls, wc, w, g.on(wc, w), r.on(wc, w)) {
+                            Some(o) => o == 0,
+                            None => return Err(undecided(&pts)),
+                        }
+                    }
+                };
                 if !same {
                     flush(&mut group, &mut reps, aliases, &mut tied_pierce);
                 }
