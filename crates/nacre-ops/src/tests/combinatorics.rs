@@ -637,3 +637,102 @@ fn an_arc_crossed_twice_by_a_nameless_plane_counts_two() {
         "one arc holds both crossings, the other none: {counts:?}"
     );
 }
+
+/// Keys with many ties, each tagged by where it started — the tag is what shows stability.
+fn tagged(keys: &[u8]) -> Vec<(u8, usize)> {
+    keys.iter().copied().zip(0..).collect()
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
+    /// On a comparison that never fails, `try_sort_by` is the standard stable sort — ties in the
+    /// order they came, on random, already sorted and reversed input, short and past the
+    /// insertion length.
+    #[test]
+    fn a_sort_that_cannot_fail_is_the_standard_stable_sort(
+        keys in proptest::collection::vec(0u8..6, 0..90),
+        shape in 0u8..3,
+    ) {
+        let mut keys = keys;
+        match shape {
+            1 => keys.sort_unstable(),
+            2 => keys.sort_unstable_by(|a, b| b.cmp(a)),
+            _ => {}
+        }
+        let mut want = tagged(&keys);
+        want.sort_by_key(|a| a.0);
+        let mut got = tagged(&keys);
+        try_sort_by(&mut got, |a, b| Ok::<_, ()>(a.0.cmp(&b.0))).unwrap();
+        proptest::prop_assert_eq!(got, want);
+    }
+}
+
+/// A comparison that fails for every pair one element takes part in — the shape a
+/// cylinder-pinned point with no readable side has — reads as `Equal` nowhere: the sort stops
+/// with the failure, does not panic, and leaves the slice a permutation of its input (a caller
+/// names the failure from what the slice holds).
+#[test]
+fn a_failing_comparison_stops_the_sort_and_keeps_every_element() {
+    for seed in 0..200u64 {
+        let mut s = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        let mut next = || {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            s >> 33
+        };
+        let v: Vec<(u64, bool)> = (0..40).map(|_| (next() % 1000, next() % 10 == 0)).collect();
+        if !v.iter().any(|x| x.1) {
+            continue;
+        }
+        let mut got = v.clone();
+        let out = try_sort_by(&mut got, |a, b| {
+            if a.1 || b.1 {
+                Err(())
+            } else {
+                Ok(a.0.cmp(&b.0))
+            }
+        });
+        assert_eq!(
+            out,
+            Err(()),
+            "seed {seed}: a failed comparison must come back"
+        );
+        let (mut a, mut b) = (v, got);
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(a, b, "seed {seed}: the slice must still hold its input");
+    }
+}
+
+/// The same, failing **inside a merge**: each half holds one marked element and the comparison
+/// fails only where two marked ones meet, so both halves sort and the merge is what stops. (With
+/// failures spread as above, the insertions of the halves meet them first and no merge is ever
+/// interrupted — writing a merge straight into the slice passed that test.)
+#[test]
+fn a_comparison_failing_mid_merge_keeps_every_element() {
+    // Evens then odds, `20` and `21` marked: the halves sort without meeting a second mark, and
+    // the merge, walking both, reaches the two marks together.
+    let v: Vec<(u32, bool)> = (0..20)
+        .map(|k| (2 * k, 2 * k == 20))
+        .chain((0..20).map(|k| (2 * k + 1, 2 * k + 1 == 21)))
+        .collect();
+    let mut got = v.clone();
+    let out = try_sort_by(&mut got, |a, b| {
+        if a.1 && b.1 {
+            Err(())
+        } else {
+            Ok(a.0.cmp(&b.0))
+        }
+    });
+    assert_eq!(out, Err(()), "the two marks meet only in the merge");
+    let (mut a, mut b) = (v, got);
+    a.sort_unstable();
+    b.sort_unstable();
+    assert_eq!(
+        a, b,
+        "a merge that stops must leave the slice holding its input"
+    );
+}

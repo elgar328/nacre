@@ -43,6 +43,7 @@ mod names;
 mod rat;
 mod rays;
 mod ring_walk;
+mod sort;
 #[cfg(test)]
 #[path = "../tests/combinatorics.rs"]
 mod tests;
@@ -62,6 +63,7 @@ pub(crate) use names::*;
 pub(crate) use rat::*;
 pub(crate) use rays::*;
 pub(crate) use ring_walk::*;
+pub(crate) use sort::*;
 pub(crate) use winding::*;
 pub(crate) use witnesses::*;
 
