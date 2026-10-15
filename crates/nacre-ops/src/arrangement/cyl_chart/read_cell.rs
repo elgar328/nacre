@@ -122,18 +122,15 @@ enum RunFail {
 }
 
 /// One cell, read.
-/// `ends`, `disagree` and `exist_disagree` are the census's readers; production reads `chamber`,
+/// `ends` and `exist_disagree` are the census's readers; production reads `chamber`,
 /// `present`, `emit` and `unread` (the emitter) and pays for the rest only as a copy.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
     /// `(in_own, in_other)` on the cylinder's inside, agreed by every side that could speak — the
     /// two ends' rims and the two walls' rulings. `None` when no side could, or when two sides
-    /// disagreed (`disagree`).
+    /// disagreed.
     pub(crate) chamber: Option<(bool, bool)>,
-    /// Two speaking sides contradicted each other — the one cause of an empty `chamber` besides
-    /// silence.
-    pub(crate) disagree: bool,
     /// Why `chamber` is empty, as the refusal a present cell gets: two sides contradicting each
     /// other is labels the arrangement wrote disagreeing (`LabelConflict`); no side speaking is
     /// named by why the ends are silent ([`silence`]). `None` when there is a chamber.
@@ -626,7 +623,6 @@ impl Chart {
         Ok(CellRead {
             ends,
             chamber,
-            disagree,
             unread,
             present,
             exist_disagree,

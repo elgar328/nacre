@@ -18,21 +18,13 @@ use nacre_topo::Model;
 /// * `rows >= 1` — a cylinder class exists because a face made it (`cyl_rows` refuses
 ///   otherwise), so the hand-written road always has at least one row for it.
 /// * `z_lines >= 2` — a band needs two boundaries; a lateral face's own two rims are ⊥ classes
-///   and both are in the set. ☑ Measured minimum across the suite: exactly 2.
-/// * `theta` is **even** — a plane holding the axis cuts the lateral in *two* rulings
-///   (`QuadRoot::{Lo, Hi}`), and nothing else contributes a vertical line. ☑ Measured: 0, 4,
-///   6, 8.
-///
-/// And the same for the cells, again universally:
-///
-/// * `refused` is never set — a chart's θ orders can always be formed. ☑ Measured 0 across the
-///   suite; asserted rather than merely counted, so the day a population appears it says so.
+///   and both are in the set.
+/// * `refused` is never set — a chart's θ orders can always be formed; asserted rather than
+///   merely counted, so the day a population appears it says so.
 /// * `cells >= 1` — `z_lines >= 2` is one interval, and an interval with no ruling is still one
 ///   cell (the whole circle).
-/// * every cell is claimed at most once, and `claimed + unclaimed == cells` — the partition is
-///   total, so a cell can neither be lost nor counted twice by the comparison.
-/// * `reversed` is never set: a panel ring's two rulings always match the sector's own order.
-///   ☑ Measured 0 over 65 panels, which is what makes the exact-order join sound.
+/// * `whole_circle + odd_k < z_lines` — the intervals with no ruling and those with an odd
+///   number are disjoint subsets of the chart's `z_lines − 1` intervals.
 #[test]
 fn the_chart_census_is_running() {
     let mut m = Model::new();
@@ -133,7 +125,6 @@ fn the_charts_vertical_answers_close() {
     let mine = super::probe::rulings::ROWS.mine();
     // ★ Universal over every recorded chart, so no interleaving can break it.
     for r in &rows {
-        assert_eq!(r.does_not_close, 0, "an interval did not close: {r:?}");
         // Both counts are subsets of the same denominator, in the same table.
         assert!(r.wall_flips <= r.rulings, "more flips than rulings: {r:?}");
         assert!(
@@ -141,12 +132,10 @@ fn the_charts_vertical_answers_close() {
             "more grazes than rulings: {r:?}"
         );
         assert!(
-            r.intervals_with_flip <= r.closes + r.does_not_close + r.unpaired,
+            r.intervals_with_flip <= r.closes + r.unpaired,
             "more flipping intervals than walked ones: {r:?}"
         );
     }
-    // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
-    // empty here", never "nothing was looked at".
     // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
     // empty here", never "nothing was looked at". Counted on **this fixture's own rows**: the
     // boss's lateral is one class, so one chart; its four z lines (the boss's two rims and the
@@ -171,29 +160,22 @@ fn the_charts_vertical_answers_close() {
 
 /// **A present cell always has a horizontal answer, and the ledger's bookkeeping is total**.
 ///
-/// The absolute claims are asserted in `census`, where the facts are made: a present cell
-/// always has a speaking end (`src0_present == 0`, `other_present == 0` — the reason the walls'
-/// rulings only check the chamber and never have to decide it), the emitter's faces cover exactly the emitted cells (the
-/// cell→face assertions), and the ends' bookkeeping is total. What this holds, universally
-/// over every recorded row so no interleaving can break it, is the rest:
+/// The absolute claims are asserted in `census`, where the facts are made and every chart is
+/// seen: a present cell always has a speaking end and never an `Other` one, never meets a line
+/// with no circle of its cylinder, and is never emitted over a chamber that could not be read;
+/// every cut end carries at most one lateral mark of its own solid; the emitter's faces cover
+/// exactly the emitted cells. What this holds, universally over every recorded row, is what only
+/// the ledger can say:
 ///
-/// * `emit_unknown == 0 || emitter_refused` — the emitter never puts a face over a present
-///   cell it could not read, e.g. one whose speaking sides contradict each other.
 /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
 ///   existence story wherever both speak.
-/// * `nocircle_present == 0` — a present cell has a circle at both ends.
-/// * `arcs_read == end_exact + exact_run_arcs`, `arcs_multi_mark == 0` — every cut-end read
-///   carries at most one lateral mark of its own solid (the band road's MARKS contract), and
-///   an end that spans a run of the rim's arcs reads every one of them. (`arcs_no_mark` is no
-///   longer 0: a ⊥ cap through a notch reads cut ends inside the lateral's hole.)
+/// * `arcs_read == end_exact + exact_run_arcs` — an end that spans a run of the rim's arcs reads
+///   every one of them.
 ///
 /// And the counters are not vacuous, counted on **this test's own rows** (`ledger::owned`), so
 /// each number is a fact about the fixtures below and not about whatever else the binary ran:
 /// every end kind reaches the ledger, the chained pairs drop five sectors for existence, arcs
-/// are read and faces are emitted. `end_other` is **measured, not unexercised**: every one of
-/// the suite's is a whole-circle interval beyond a face's span whose cut rim's arcs disagree
-/// about the far side, on an absent cell; the single-cut arm is the one still without a
-/// population.
+/// are read and faces are emitted.
 #[test]
 fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     use super::probe::cell_ends::ROWS as CELL_ENDS;
@@ -283,14 +265,6 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     let mine = CELL_ENDS.mine();
 
     for r in &rows {
-        assert!(
-            r.emit_unknown == 0 || r.emitter_refused,
-            "a cell's chamber could not be read, yet the emitter emitted: {r:?}"
-        );
-        assert_eq!(
-            r.src0_present, 0,
-            "the record-site assertion was not live: {r:?}"
-        );
         assert_eq!(
             r.exist_disagree, 0,
             "trace and span disagree on existence: {r:?}"
@@ -298,18 +272,6 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
         assert_eq!(
             r.read_refused, 0,
             "the reader refused a cell by name: {r:?}"
-        );
-        // The reference-road checks, held as counts.
-        assert_eq!(
-            r.nocircle_present, 0,
-            "a cell with a face meets a line with no circle: {r:?}"
-        );
-        // ★ `arcs_no_mark` is not held at 0 here: a ⊥ cap through a wall boss's notch
-        // reads cut ends inside the lateral's hole, and those carry no mark by right.
-        // The record site asserts the true proposition — none only where the cell is absent.
-        assert_eq!(
-            r.arcs_multi_mark, 0,
-            "a cut end read carries two lateral marks of one solid: {r:?}"
         );
         // ★★★★★ **A run is why this is not `arcs_read == end_exact`.** A sector may span several
         // of the rim's arcs, and the proposition that holds over every row in the binary — the
@@ -319,32 +281,15 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             r.end_exact + r.exact_run_arcs,
             "every exact end is a cut end read, and only those: {r:?}"
         );
-        // ★ The emitter's face count is not predicted here: its faces are the regions of the
-        // chart, asserted against the reads where the fact is made (`census`).
-        assert_eq!(
-            r.end_swapped, 0,
-            "a ruling arrived with z descending: {r:?}"
-        );
-        assert_eq!(
-            r.end_disk + r.end_exact + r.end_other + r.end_uncovered + r.end_nocircle,
-            2 * r.cells,
-            "two ends per cell: {r:?}"
-        );
         assert!(r.emit <= r.cells, "more emitted cells than cells: {r:?}");
-        assert!(
-            r.other_present <= r.cells,
-            "more other-ended cells than cells: {r:?}"
-        );
         assert!(
             r.exist_marks_false <= r.cells,
             "more dropped cells than cells: {r:?}"
         );
     }
-    // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing
-    // was looked at". `end_other` is deliberately not in this list.
     // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing was
     // looked at" — and on **this test's own rows**, so no neighbour's fixture can stand in for
-    // one of these. `end_other` is deliberately not among them.
+    // one of these.
     assert_eq!(mine.len(), 20, "the fixtures' charts");
     assert_eq!(sum(&mine, |r| r.end_disk), 84, "disk ends read");
     assert_eq!(sum(&mine, |r| r.end_exact), 132, "exact arc ends read");
