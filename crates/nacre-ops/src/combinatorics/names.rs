@@ -664,15 +664,12 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
         .collect()
 }
 
-/// A ring's edges from its nodes and the **carried** wall of each edge.
-///
 /// **Which plane of a point's name pins it on the line `a ∩ b`** — the one place that rule lives.
 ///
-/// ★★★★★ **It was written five times before it was written once.** the ring-edge derivation (now `Ring::edges` in `boolean`), the ray
-/// caster's namer, and *both* arms of `arrangement::third_on_l` each spelled it, and the tracer's
-/// seated road spelled a **reduced** version — no cut test, no smallest rule, a `panic` where this
-/// returns `None`. That is this codebase's dominant defect shape: the correct rule inlined in a
-/// sibling while a second site uses a smaller one. So it lives here now and they all call it.
+/// ★★★★★ **Every site that pins a point on a line calls this**, directly or through [`pin_for`].
+/// The risk it stands against is this codebase's dominant defect shape: the rule inlined in a
+/// sibling as a **reduced** copy — no cut test, no smallest rule, a `panic` where this returns
+/// `None`.
 ///
 /// **The rule, and why each half of it.** A handle only has to be *some* plane through the node
 /// that **cuts** `a ∩ b` — that is all [`order_along`] asks of it, since it reads the handle through

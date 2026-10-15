@@ -55,12 +55,16 @@ pub(crate) fn every_ray(
         // takes: one of `v`'s own planes that cuts `p ∩ qa`. When `p` is not among `v`'s planes
         // one of the other two can hold the line (a pencil), and read there it orders nothing.
         let qb = pin_on_line(jd, p, qa, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
-        // A node on the line is a crossing point in its own right, so it must be nameable as one:
-        // some plane of its own, off the line, pins it there. (`third_on_l` picks a handle the
-        // same way, and for the same reason — one parallel to the line names no point on it.)
-        // ★ A node with no three-plane name — a pierce corner, which the walk sides only against a
-        // silent class — names no point here, and this ray is not cast (`unnameable` below).
-        let namer = |i: usize| pin_on_line(jd, p, qa, &three_plane_name(nodes[i])?);
+        // Where a point on the line lies against `v` along `n_P × n_Qa`: a plane pin by the hot
+        // road (`order_along`), a pierce point by its side of `Q_b` (`order_on`'s
+        // pierce-against-pin rule). Runs and crossings both ask it.
+        let against_v = |at: PointOn| -> Result<i8, BoolError> {
+            match at {
+                PointOn::Class(w) => Ok(order_along(jd, p, qa, w, qb)),
+                PointOn::Pierce(_) => order_on(jd, table, p, qa, at, PointOn::Class(qb))
+                    .ok_or_else(|| reject(RejectReason::WitnessNotRational)),
+            }
+        };
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back
         // inside itself: its two ends bracket it, and ends that disagree mean `v` is *between*
@@ -78,14 +82,16 @@ pub(crate) fn every_ray(
                 continue;
             };
             let ends = [first, (first + len - 1) % nodes.len()];
-            let (Some(lo), Some(hi)) = (namer(ends[0]), namer(ends[1])) else {
+            // A node on the line is a crossing point in its own right, pinned there by the one
+            // rule ([`pin_for`]): a plane of its own that cuts the line, or — for a pierce corner of
+            // the line's own pair — its cylinder. A name nothing of its own pins here (every plane
+            // of it holds the line) leaves this ray uncast.
+            let pin = |i: usize| end_on_line(jd, p, qa, nodes[i]);
+            let (Some(lo), Some(hi)) = (pin(ends[0]), pin(ends[1])) else {
                 unnameable = true;
                 break;
             };
-            let o = [
-                order_along(jd, p, qa, lo, qb),
-                order_along(jd, p, qa, hi, qb),
-            ];
+            let o = [against_v(lo)?, against_v(hi)?];
             if o[0] != o[1] || o[0] == 0 {
                 return Err(reject(RejectReason::PointOnRing)); // `v` inside the run, or one of it
             }
@@ -94,25 +100,19 @@ pub(crate) fn every_ray(
         if unnameable {
             continue;
         }
-        // Where each crossing lies against `v` along `n_P × n_Qa`, once, in ring order — so the
-        // first refusal is the one met first along the ring, as a pass per direction met it. A
-        // plane wall's crossing is the point `{P, Q_a, wall}` (the hot road, `order_along`); an
-        // arc's is the pierce point the walk counted, ordered against `v` by its side of `Q_b`
-        // (`order_on`'s pierce-against-pin rule).
+        // Where each crossing lies against `v`, once, in ring order — so the first refusal is the
+        // one met first along the ring, as a pass per direction met it. A plane wall's crossing is
+        // the point `{P, Q_a, wall}`; an arc's is the pierce point the walk counted.
         // Crossings strictly ahead of `v` along `+d` and along `−d`.
         let mut ahead = [0usize; 2];
         for f in &features {
             let Feature::Crossing { edge, nth, .. } = *f else {
                 continue; // runs are counted above
             };
-            let naming = || reject(RejectReason::RingNaming);
-            let at = line.crossing(edge, nth).ok_or_else(naming)?;
-            let o = match at {
-                PointOn::Class(w) => order_along(jd, p, qa, w, qb),
-                PointOn::Pierce(_) => {
-                    order_on(jd, table, p, qa, at, PointOn::Class(qb)).ok_or_else(naming)?
-                }
-            };
+            let at = line
+                .crossing(edge, nth)
+                .ok_or_else(|| reject(RejectReason::RingNaming))?;
+            let o = against_v(at)?;
             if o == 0 {
                 return Err(reject(RejectReason::PointOnRing)); // `X == v`, inside an edge
             }
@@ -174,7 +174,7 @@ pub(crate) fn segment_meets_face(
     face: &CompFace,
 ) -> Result<bool, BoolError> {
     // A point on `P ∩ w` is named there by a third plane of its own that **cuts** the line; one
-    // parallel to it names nothing (the same duty `every_ray`'s `namer` states).
+    // parallel to it names nothing ([`pin_on_line`]).
     let handle = |t: [usize; 3]| pin_on_line(jd, p, w, &t);
     let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
         return Err(reject(RejectReason::RingNaming));
@@ -234,9 +234,7 @@ pub(crate) fn segment_meets_face(
                     // A run's end is pinned on the line by the one rule ([`pin_for`]): a pierce
                     // corner — the end of a ruling the line runs along, when the line is parallel
                     // to the axis — by the plane of its own pair that cuts the line.
-                    let pin = |i: usize| -> Option<PointOn> {
-                        Some(PointOn::of((nodes[i], pin_for(jd, p, w, nodes[i])?)))
-                    };
+                    let pin = |i: usize| end_on_line(jd, p, w, nodes[i]);
                     let (Some(a), Some(b)) = (pin(ends[0]), pin(ends[1])) else {
                         return Err(reject(RejectReason::RingNaming));
                     };
@@ -367,6 +365,12 @@ pub(super) fn point_on_ring(
         }
     }
     Ok(false)
+}
+
+/// **A named point on the line `a ∩ b`, as the place a comparison along it takes** — pinned by
+/// [`pin_for`]; `None` where nothing of the name pins it there.
+fn end_on_line(jd: &Judge<'_, WorkingPlane>, a: usize, b: usize, name: NodeId) -> Option<PointOn> {
+    Some(PointOn::of((name, pin_for(jd, a, b, name)?)))
 }
 
 /// **The cylinder table [`every_ray`] reads a ring against plane `q` with** ([`ClassLine`]). This road
