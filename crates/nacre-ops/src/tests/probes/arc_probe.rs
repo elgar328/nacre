@@ -15,10 +15,9 @@ use super::{Judge, NodeId, WorkingPlane, combinatorics};
 use crate::ledger::Ledger;
 
 /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
-/// arc** — one entry per extent a cycle has carved out of a circle in this binary, whether the
-/// face grazes there (the cycle's own arc) or is absent (a hole's interior, a panel's outside).
-/// Beside it whether the cycle is an inner loop and the cylinder's origin, so a reader can pick
-/// **its own**
+/// arc** — one entry per extent a cycle has carved out of a circle, whether the face grazes there
+/// (the cycle's own arc) or is absent (a hole's interior, a panel's outside). Beside it whether
+/// the cycle is an inner loop and the cylinder's origin, so a reader can pick **its own**
 /// fixture's holes out of a ledger every test in the binary writes to.
 pub(crate) static MIDS: Ledger<Mid> = Ledger::new();
 

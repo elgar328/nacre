@@ -1,11 +1,11 @@
-//! **Where a cylinder crossing actually landed, realized** — the f64 twin of the name the
+//! **Where a crossing on a ruling actually landed, realized** — the f64 twin of the name the
 //! tracer minted for it.
 //!
 //! ★ **It checks a name against coordinates, which is the one thing the namer cannot do.**
-//! `crossing_on_ruling` and `arc_crossings` build a [`NodeId`] from exact predicates and never
-//! evaluate it; this realizes the point afterwards and records its distance to all three
-//! surfaces it is supposed to lie on, plus the ruling side read in f64 against the side the
-//! ring's edge carried. A fixture then asserts the offsets are zero and the two sides agree.
+//! `crossing_on_ruling` builds a [`NodeId`] from exact predicates and never evaluates it; this
+//! realizes the point afterwards and records its distance to all three surfaces it is supposed to
+//! lie on, plus the ruling side read in f64 against the side the ring's edge carried. A fixture
+//! then asserts the offsets are zero and the two sides agree.
 //!
 //! ★★ **It does not decide anything, and it must not.** Nothing downstream reads [`HITS`]; the
 //! engine's answer is the same with this module compiled out, which is what `cfg(test)` at the
@@ -21,8 +21,6 @@ use crate::ledger::Ledger;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Hit {
-    /// Read through `Debug` in the probe's messages.
-    #[allow(dead_code)]
     pub point: [f64; 3],
     /// Distances to the class plane, the face plane, and the cylinder's surface.
     pub off: [f64; 3],
@@ -31,14 +29,10 @@ pub(crate) struct Hit {
     pub side_f64: i8,
     /// The side the ring's edge carried.
     pub side: i8,
-    /// `true` for a crossing on an arc, whose carried side is 0 — the ruling-side
-    /// twin check is the rulings' alone.
-    pub arc: bool,
 }
 
 pub(crate) static HITS: Ledger<Hit> = Ledger::new();
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn record(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -46,7 +40,6 @@ pub(crate) fn record(
     wc: usize,
     fc: usize,
     side: i8,
-    arc: bool,
     id: NodeId,
 ) {
     let Some(p) = combinatorics::pierce_point(jd, cyl, def, id) else {
@@ -89,6 +82,5 @@ pub(crate) fn record(
         off: [plane_off(w), plane_off(v), cyl_off],
         side_f64,
         side,
-        arc,
     });
 }

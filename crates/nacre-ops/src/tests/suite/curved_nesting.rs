@@ -1068,10 +1068,8 @@ fn a_closed_arc_on_the_line_is_asked_its_crossing() {
 /// exercised**. A rule whose deciding factor is constant over the corpus is a rule nothing has
 /// tested, which is exactly how it shipped wrong the first time.
 ///
-/// ★ Read as floors, not literals. The rows are this test's own, but some of its operations are
-/// **refused**, and the two builds do not do the same amount of work on a refused input: the
-/// parallel one evaluates the remaining classes, the serial one stops at the first error. So the
-/// shape of the population is held, not its size.
+/// ★ Read as floors, not literals: the shape of the population is held, not its size, which moves
+/// with the boss corpus.
 #[test]
 fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
     // ★ **The test builds the population it measures**, and owns it: the very row this needs is a
@@ -1083,9 +1081,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
         for (_, base, h) in BOSS_FAMILIES {
             for kind in [BoolKind::Fuse, BoolKind::Cut] {
                 let (mut m, plate, boss) = boss_family(base, h);
-                let Result::Ok(out) = boolean(&mut m, kind, plate, boss) else {
-                    continue;
-                };
+                let out = boolean(&mut m, kind, plate, boss).expect("the boss family builds");
                 // The second operation is what puts a `Reversed` root face on a cut circle's
                 // class (a notch's ceiling), which is where the frame factor decides.
                 m.rebuild_adjacency();
@@ -1095,7 +1091,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
                     Point3::from_array([5.0, 5.0, 1.5]),
                 );
                 m.rebuild_adjacency();
-                let _ = boolean(&mut m, BoolKind::Cut, out[0], t);
+                boolean(&mut m, BoolKind::Cut, out[0], t).expect("the slab cut builds");
             }
         }
     });

@@ -1,9 +1,8 @@
-//! **What a holed lateral's ruling actually came out as** — the lock for
-//! `a_holed_laterals_ruling_grazes_where_the_hole_is`.
-//!
-//! ★ This cell's result lives *inside* an operation that still refuses further down, so there is no
-//! solid to open and count faces on. The trace's own answer is the thing to hold, the way
-//! `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free one.
+//! **What a lateral's rulings actually came out as** — their pieces' kinds, whether each got a
+//! label and whether that label agrees with the cells' content, and a graze's stated side.
+//! These are intermediates no face count shows directly; a reader holds them against the
+//! fixture's own geometry, which names *which* ruling went wrong where a result would only say
+//! that one did.
 //!
 //! ★ **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `ruling_probe`, which is what keeps `super::`
@@ -12,9 +11,8 @@
 use super::SegKind;
 use crate::ledger::Ledger;
 
-/// The sentence the ruling label's postcondition panics with — one spelling, so the
-/// commuting oracle's `KNOWN` list names the site by the same constant the
-/// `assert` prints.
+/// The sentence the ruling label's postcondition panics with — one spelling, so a commuting
+/// oracle `KNOWN` entry can name the site by the same constant the `assert` prints.
 pub(crate) const WRONG_SIDE: &str = "the ruling label took the wrong side of the wall";
 
 /// One entry per ruling a cycle grazed, in emission order: the kinds of its pieces, beside
@@ -52,12 +50,10 @@ pub(crate) static LABELLED: Ledger<bool> = Ledger::new();
 /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the
 /// wall class it is stated against.
 ///
-/// ★★★★★ **The sign has no oracle downstream yet** — the operation this exercises refuses at
-/// the labelling for an unrelated incompleteness, so flipping any factor of `body_above`
-/// changes nothing a test can see (☑ measured: all four controls green). So the claim is
-/// checked against the fixture's own geometry instead: the buried half of the boss lies at
-/// `y < 0` of the wall, so the face is on the stored-normal side exactly when that normal
-/// points at `−y`.
+/// ★ A flipped `body_above` is caught downstream too (the results it builds come out wrong); this
+/// says which side was stated, against the fixture's own geometry: the buried half of the boss
+/// lies at `y < 0` of the wall, so the face is on the stored-normal side exactly when that
+/// normal points at `−y`.
 /// Beside them the cylinder's origin and the run's stations, the fixture's identity.
 pub(crate) static GRAZE_SIDE: Ledger<GrazeSide> = Ledger::new();
 

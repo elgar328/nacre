@@ -826,7 +826,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// **The mesh census is live** — the invariant itself is asserted where the fact is made.
 ///
 /// `assembly::tess_census::record` checks every result as it is produced ("every solid a boolean
-/// returns meshes" — with no exemption), because a test reading the vector
+/// returns meshes" — with no exemption), because a test reading the ledger
 /// afterwards sees only the booleans that ran before it. What is left for a test is that the
 /// census is **running at all**: a hook that silently stopped recording would take the whole
 /// guarantee with it and nothing would go red.
@@ -854,10 +854,9 @@ fn the_mesh_census_is_running() {
     .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore"));
-    // One boolean, one solid, one census entry — and it meshed.
+    // One boolean, one solid, one census entry.
     let seen = crate::assembly::tess_census::MESHED.mine();
     assert_eq!(seen.len(), 1, "the census never ran: {seen:?}");
-    assert!(seen[0].is_ok(), "the census recorded no mesh: {seen:?}");
 }
 
 /// **A ruling carries the label of the cell inside the cylinder** — the chart's vertical answer.
@@ -935,13 +934,10 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         lab.iter().filter(|b| !**b).count(),
         lab.len()
     );
+    // `Some(false)` never reaches the ledger: the record site asserts it away (`WRONG_SIDE`).
     assert!(
         !chk.is_empty(),
         "the side check never ran beside the labels"
-    );
-    assert!(
-        chk.iter().all(|c| *c != Some(false)),
-        "a ruling label contradicted the content check"
     );
     // ★ And the check is not vacuous: it decides for most of the population, not none of it.
     assert!(
@@ -1339,8 +1335,8 @@ fn a_spliced_band_is_cut_across_its_notch() {
     // caps' classes cross it there — the scan names each crossing as a pierce node. The
     // tool takes the plate's `x ∈ [3, 4]` slab (4) and the boss's outer half over the slab's
     // height (π/8); its wall `x = 3` clears the boss (1 > r). Beside the volume, the probe: every
-    // crossing named in this binary lies on its class, its face plane and the cylinder, on the
-    // ruling side the ring carried — the f64 road to the sign `crossing_on_ruling` chose by.
+    // crossing this cut names on a ruling lies on its class, its face plane and the cylinder, on
+    // the ruling side the ring carried — the f64 road to the sign `crossing_on_ruling` chose by.
     {
         let (mut m, r0, v0) = build();
         let tool = crate::fixtures::cuboid(
@@ -1375,18 +1371,15 @@ fn a_spliced_band_is_cut_across_its_notch() {
         points.sort_unstable();
         points.dedup();
         assert_eq!(points.len(), 4, "the probe saw {} crossings", hits.len());
-        assert!(hits.iter().all(|h| !h.arc), "all of them on rulings");
         for h in &hits {
             assert!(
                 h.off.iter().all(|&d| d <= 1e-9),
                 "a named crossing sits off its surfaces: {h:?}"
             );
-            if !h.arc {
-                assert_eq!(
-                    h.side_f64, h.side,
-                    "a named crossing lies on the other ruling: {h:?}"
-                );
-            }
+            assert_eq!(
+                h.side_f64, h.side,
+                "a named crossing lies on the other ruling: {h:?}"
+            );
         }
     }
 }

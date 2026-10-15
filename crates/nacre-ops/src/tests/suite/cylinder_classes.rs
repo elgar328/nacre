@@ -144,10 +144,9 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 /// the plate the lateral does not *cross* that wall — it ends at it. So the mark is
 /// `Transversal · Graze · Transversal` along the axis, not one full-height crossing.
 ///
-/// ★★ **Held at the trace, because there is no result to open**: the operation this exercises still
-/// refuses further down (the assembly's own incompleteness), so the face count that would show the
-/// ghost wall face gone cannot be read. The trace's own answer is what survives, the way
-/// `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free case.
+/// ★★ **Held at the trace**: the operation builds, but a result says only that a ruling went
+/// wrong, not which piece of it; the trace's own answer says that, the way `arrangement`'s
+/// `sides == [-1, 1]` lock holds the hole-free case.
 ///
 /// ★ The claim is over every ruling **this fixture** carves on its boss, counted on the rows its
 /// own operation recorded.
@@ -183,9 +182,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     )
     .solid;
     m.rebuild_adjacency();
-    crate::ledger::owned(|| {
-        let _ = boolean(&mut m, BoolKind::Cut, first, b);
-    });
+    crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first, b).expect("the bore builds"));
     // ★ This operation's own carvings — but it carves other classes of the same model too (a
     // panel's ruling is one graze, a chain's a transversal then a graze), so the boss is still
     // named: origin `(2, 0, −1)`, rulings spanning `t ∈ [0, 4]`.
@@ -213,13 +210,13 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
         );
     }
     // ★ Both rulings are carved, not just one: the hole has a vertical edge on each. A floor,
-    // not a count: this operation is **refused** further down, and the parallel build evaluates
-    // the classes after the first error while the serial one stops there.
+    // not a count: a `debug_assertions` build traces the arrangement twice (the reuse-off
+    // reference).
     assert!(carved.len() >= 2, "only {} ruling carved", carved.len());
     // ★★★★★ **And which side the face occupies, against the fixture's own geometry.** The buried
     // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
     // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
-    // factor of the derivation turns this red; nothing downstream does, yet.
+    // factor of the derivation turns this red, and the results downstream with it.
     let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
         .mine()
         .iter()
@@ -264,11 +261,9 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 /// `orient_sign` is **green** here — both are `+1` on a boss's holed lateral — and
 /// [`a_bores_lateral_with_a_hole_takes_a_second_cylinder`] is the lock that turns them.
 ///
-/// ★ The claim is over **every** arc this binary carves, in whatever order the tests ran: all of
-/// them come from the wall-boss family, where the plate stands on `y > 0` and the boss is centred
-/// on the wall `y = 0`, so the buried half — the hole — is the `y > 0` one. A fixture that buries
-/// a lateral somewhere else would need its own reading of "which side is the hole", and this
-/// assertion is where that would show up.
+/// ★ The claim is over this test's own arcs on the wall boss (origin `(2, 0, −1)`): the plate
+/// stands on `y > 0` and the boss is centred on the wall `y = 0`, so the buried half — the hole —
+/// is the `y > 0` one.
 #[test]
 fn a_holes_arcs_run_the_way_the_hole_lies() {
     // ★ Two second operands, because they reach **different arms** of the walk. A cylinder rising
@@ -426,6 +421,7 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
             base + 4.0 == 0.0,
             "{name}: the cap on the seed plane, and only it, is Reversed"
         );
+        let from = crate::arrangement::arc_probe::MIDS.len();
         let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first[0], b))
             .unwrap_or_else(|e| panic!("{name}: the second cylinder: {e:?}"));
         assert_eq!(out.len(), 1, "{name}: one solid");
@@ -434,9 +430,10 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         let want = first_volume - q * removed;
         assert!((v - want).abs() < 1e-9, "{name}: {v} vs {want}");
-        // The tongue fills the bore on its `y > 2` side, so that is where the hole is.
+        // The tongue fills the bore on its `y > 2` side, so that is where the hole is. This row's
+        // own arcs only, so an earlier row's cannot say the probe ran here.
         let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
-            .mine()
+            .mine_since(from)
             .iter()
             .filter(|mid| mid.inner && mid.origin == origin)
             .map(|mid| mid.dir)

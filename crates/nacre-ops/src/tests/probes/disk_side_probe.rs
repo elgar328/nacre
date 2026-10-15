@@ -4,8 +4,8 @@
 
 use crate::ledger::Ledger;
 
-/// The sentence the disk-side check panics with — one spelling, shared with the commuting
-/// oracle's `KNOWN` list.
+/// The sentence the disk-side check panics with — one spelling, so a commuting oracle `KNOWN`
+/// entry can name the site by the constant the check prints.
 pub(crate) const NOT_OWN_SOLID: &str = "a cut circle's disk side does not carry its own solid";
 
 /// One entry per arc.

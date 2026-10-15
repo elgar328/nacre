@@ -350,18 +350,10 @@ fn trace_transversal_face(
                         combinatorics::PointOn::Pierce(id) => (id, combinatorics::EndPin::Cylinder),
                     };
                     #[cfg(test)]
-                    match walls[edge] {
-                        crate::combinatorics::Wall::Ruling { cyl, side, .. } => {
-                            if let Some(wcy) = cyls.get(cyl) {
-                                crossing_probe::record(jd, &wcy.def, cyl, wc, fc, side, false, id);
-                            }
-                        }
-                        crate::combinatorics::Wall::Arc { cyl, .. } => {
-                            if let Some(wcy) = cyls.get(cyl) {
-                                crossing_probe::record(jd, &wcy.def, cyl, wc, fc, 0, true, id);
-                            }
-                        }
-                        crate::combinatorics::Wall::Plane(_) => {}
+                    if let crate::combinatorics::Wall::Ruling { cyl, side, .. } = walls[edge]
+                        && let Some(wcy) = cyls.get(cyl)
+                    {
+                        crossing_probe::record(jd, &wcy.def, cyl, wc, fc, side, id);
                     }
                     // A crossing is one point strictly inside its edge where the boundary passes to
                     // the other side of `L` — twice for an arc crossed twice.
