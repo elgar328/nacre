@@ -775,11 +775,11 @@ pub(crate) fn loop_winding(
 /// arrival), or a line running on into an arc tangent ([`tangent_pole`]).
 ///
 /// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
-/// `axis_up` each turn 60–75 of the crate's tests red, refused as
-/// [`RejectReason::RingOrientation`] and [`RejectReason::LabelConflict`] (the plane cells and the
-/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` turns 21 red,
-/// the commuting oracle among them; dropped only where the minimum is a node (the arc extremum
-/// rung, [`arc_extremum_winding`], keeping it), 6 — the user's folds and fully rounded plates
+/// `axis_up` are each refused across the crate as [`RejectReason::RingOrientation`] and
+/// [`RejectReason::LabelConflict`] (the plane cells and the chart's labels no longer agreeing), so
+/// the lock names them. Dropping `frame_sign` is caught by the commuting oracle, the disk-side
+/// census and the self-touch probes; dropped only where the minimum is a node (the arc extremum
+/// rung, [`arc_extremum_winding`], keeping it), by the user's folds and fully rounded plates
 /// (`sketch_models`, `user_models`) and the self-touch chord scoreboard.
 fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir) -> i8 {
     let sign = |b: bool| if b { 1i8 } else { -1 };
