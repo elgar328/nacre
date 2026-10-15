@@ -787,6 +787,9 @@ enum Trim {
     Plain,
     /// The rectangle with a half-disk notch (r 0.5) cut at `(-5, -11)` through its height.
     Notch,
+    /// The same half disk cut only 4 deep — a blind groove, so the front wall `y = −11` stays one
+    /// face with the groove's two rulings in its ring.
+    Groove,
     /// The rectangle `[-10, 6] × [-11, top]` with every corner filleted (r 0.5).
     Fillet { top: f64 },
 }
@@ -794,24 +797,27 @@ enum Trim {
 /// A block 6 deep under the base frame's plane, trimmed by `trim`.
 fn trimmed_block(m: &mut Model, base: SketchFrame, trim: Trim) -> Handle<Solid> {
     match trim {
-        Trim::Plain | Trim::Notch => {
+        Trim::Plain | Trim::Notch | Trim::Groove => {
             let block = prism_on(
                 m,
                 base,
                 &[[-10.0, -11.0], [6.0, -11.0], [6.0, 4.0], [-10.0, 4.0]],
                 -6.0,
             );
-            if matches!(trim, Trim::Plain) {
-                return block;
-            }
-            let floor = offset_of(m, base, -7.0);
+            let depth = match trim {
+                Trim::Notch => 7.0,
+                Trim::Groove => 4.0,
+                Trim::Plain => return block,
+                Trim::Fillet { .. } => unreachable!("the fillet has its own arm"),
+            };
+            let floor = offset_of(m, base, -depth);
             let disk = nacre_ops::from_paths(vec![
                 nacre_ops::Ring2d::circle(Point2::from_array([-5.0, -11.0]), 0.5)
                     .expect("a circle"),
             ])
             .expect("a disk")
             .remove(0);
-            let cutter = extrude_on(m, floor, disk, 8.0);
+            let cutter = extrude_on(m, floor, disk, depth + 1.0);
             let got = boolean(m, BoolKind::Cut, block, cutter).expect("the notch")[0];
             m.rebuild_adjacency();
             got
@@ -850,6 +856,25 @@ fn with_steps(
         m.rebuild_adjacency();
     }
     body
+}
+
+/// `block` fused onto a plate `[-12, 8] × [-16, 6]` 2 thick under it (from 8 below the base frame
+/// to 6 below), and the plate's underside frame, for what stands on the plate beside the block.
+fn on_a_plate(
+    m: &mut Model,
+    base: SketchFrame,
+    block: Handle<Solid>,
+) -> (SketchFrame, Handle<Solid>) {
+    let below = offset_of(m, base, -8.0);
+    let plate = prism_on(
+        m,
+        below,
+        &[[-12.0, -16.0], [8.0, -16.0], [8.0, 6.0], [-12.0, 6.0]],
+        2.0,
+    );
+    let body = boolean(m, BoolKind::Fuse, block, plate).expect("the plate")[0];
+    m.rebuild_adjacency();
+    (below, body)
 }
 
 /// The bar of [`a_bar_resting_on_its_own_notched_block_is_refused`]'s frame: a unit-square
@@ -1052,15 +1077,7 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
         let mut m = Model::new();
         let (base, _) = base_frame(&mut m, false);
         let block = trimmed_block(&mut m, base, Trim::Notch);
-        let below = offset_of(&mut m, base, -8.0);
-        let plate = prism_on(
-            &mut m,
-            below,
-            &[[-12.0, -16.0], [8.0, -16.0], [8.0, 6.0], [-12.0, 6.0]],
-            2.0,
-        );
-        let a = boolean(&mut m, BoolKind::Fuse, block, plate).expect("the plate")[0];
-        m.rebuild_adjacency();
+        let (below, a) = on_a_plate(&mut m, base, block);
         // A 3-4-5 square column, its corner edge on the front wall `y = −11` at `x0`.
         let ring = [
             [x0, -11.0],
@@ -1072,4 +1089,101 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
         let at = format!("a column against the front wall at x = {x0}");
         expect_fuse(&mut m, a, b, Want::Refused(reason), true, &at);
     }
+}
+
+/// ★ **An edge at a groove's mouth builds** — the chord test reading a ruling crossing and an arc's
+/// departure, the two arms of the ring reading (`segment_meets_face`) nothing else reaches.
+///
+/// A column stands on the plate in front of the groove's mouth, narrower than the mouth, its back
+/// face on the front wall's plane `y = −11`; its top-back edge lies on a plane face of the same
+/// body, so the edge test reads that face's ring along the edge's line:
+/// - **against the wall, top at `z = −3`** — the groove is blind (`Trim::Groove`, `z ∈ [−4, 0]`)
+///   and the column stands against the wall below it: the line crosses the groove's two rulings
+///   in the wall's ring (`crossing_on_ruling`);
+/// - **a bracket** — a column off the wall whose arm reaches the mouth at `z ∈ [−3.5, −3]`, touching
+///   the wall nowhere: the same crossings with the wall's ring untouched by the bracket;
+/// - **flush with the top, at the through notch** — the line `y = −11` on the top face holds both
+///   ends of the notch's arc, which leaves it between them (`arc_departure_side`).
+///
+/// The groove is blind for the first two because a through groove splits the front wall into two
+/// faces either side of it, and an edge in front of the mouth overlaps neither face's box — the
+/// sieve drops it before the ring is read.
+///
+/// ☑ Measured by breaking each arm in the chord test alone: a ruling crossing left unnamed refuses
+/// the column and the bracket (`RingNaming`); named at the other ruling's root, the column is
+/// refused as touching itself; an arc's departure left unread refuses the flush column
+/// (`PierceVertexUnnamed`), and turned the other way, as touching itself. ★ The rows hold only the
+/// answer: a sieve that stopped asking these faces would leave them green and the arms unread, so
+/// a change to the sieve measures this again by breaking the arms.
+///
+/// No row here touches: for the line to cross a ruling, the edge's faces must be one ⊥ to the axis
+/// and one on the wall's plane facing the other way (a face slanted to the axis passes a point of
+/// the cylinder, which the gate refuses — the wedge below), and that face fits only where the wall
+/// is not, so the edge never runs over the wall's inside. On the world frame and a 3-4-5 one, in
+/// either operand order.
+#[test]
+fn an_edge_at_a_grooves_mouth_builds() {
+    let disk = std::f64::consts::PI * 0.25 / 2.0;
+    let mouth = [[-5.3, -12.0], [-4.7, -12.0], [-4.7, -11.0], [-5.3, -11.0]];
+    // The block 16 × 15 × 6 less the groove's half disk over its depth, the plate 20 × 22 × 2, and
+    // what stands on it above the plate's top.
+    for (row, trim, vol) in [
+        (
+            "against the wall",
+            Trim::Groove,
+            1440.0 - disk * 4.0 + 880.0 + 0.6 * 3.0,
+        ),
+        (
+            "a bracket",
+            Trim::Groove,
+            1440.0 - disk * 4.0 + 880.0 + 0.6 * 3.0 + 0.6 * 2.0 * 0.5 - 0.6 * 0.5,
+        ),
+        (
+            "flush with the top",
+            Trim::Notch,
+            1440.0 - disk * 6.0 + 880.0 + 0.6 * 6.0,
+        ),
+    ] {
+        for tilted in [false, true] {
+            for swapped in [false, true] {
+                let mut m = Model::new();
+                let (base, _) = base_frame(&mut m, tilted);
+                let block = trimmed_block(&mut m, base, trim);
+                let (below, a) = on_a_plate(&mut m, base, block);
+                let b = match row {
+                    "against the wall" => prism_on(&mut m, below, &mouth, 5.0),
+                    "a bracket" => {
+                        let off = [[-5.3, -13.0], [-4.7, -13.0], [-4.7, -12.0], [-5.3, -12.0]];
+                        let column = prism_on(&mut m, below, &off, 5.0);
+                        let level = offset_of(&mut m, base, -3.5);
+                        let reach = [[-5.3, -13.0], [-4.7, -13.0], [-4.7, -11.0], [-5.3, -11.0]];
+                        let arm = prism_on(&mut m, level, &reach, 0.5);
+                        let got = boolean(&mut m, BoolKind::Fuse, column, arm).expect("bracket")[0];
+                        m.rebuild_adjacency();
+                        got
+                    }
+                    _ => prism_on(&mut m, below, &mouth, 8.0),
+                };
+                let (x, y) = if swapped { (b, a) } else { (a, b) };
+                let at = format!("{row}, tilted = {tilted}, swapped = {swapped}");
+                expect_fuse(&mut m, x, y, Want::Built(1, vol), !tilted, &at);
+            }
+        }
+    }
+    // A wedge along the wall whose edge lies on it at `z = −3` across the groove, both faces
+    // leaning off it: slanted to the axis through the groove's side.
+    let mut m = Model::new();
+    let (base, _) = base_frame(&mut m, false);
+    let block = trimmed_block(&mut m, base, Trim::Groove);
+    let (_, a) = on_a_plate(&mut m, base, block);
+    let yz = frame_on(&mut m, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let start = offset_of(&mut m, yz, -8.0);
+    let wedge = prism_on(
+        &mut m,
+        start,
+        &[[-11.0, -3.0], [-11.8, -2.4], [-11.6, -2.2]],
+        6.0,
+    );
+    let want = Want::Refused(RejectReason::ObliqueCylinderCut);
+    expect_fuse(&mut m, a, wedge, want, true, "a wedge leaning off the wall");
 }
