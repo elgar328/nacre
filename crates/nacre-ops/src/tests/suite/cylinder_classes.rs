@@ -403,9 +403,10 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 /// axis. Reversed, the answer is not approximate but **exactly opposite**: the graze would sit on
 /// the band and the crossing inside the hole.
 ///
-/// ★★ **Nothing downstream notices yet** — these fixtures stop at `loop_winding` before
-/// `label_cells` could judge a label — so the arc is realized and judged here instead. The kernel
-/// reads no coordinate to choose it; this reads one afterwards.
+/// ★★ **Downstream notices only the symptom** — reversed, a chained operation is refused as
+/// `LabelConflict` and emission's disk-side check fires, neither naming the arc — so the arc is
+/// realized and judged here as well. The kernel reads no coordinate to choose it; this reads one
+/// afterwards.
 ///
 /// ☑ **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
 /// winding is **red**, dropping `plus_t_is_above` is **red**, and dropping the root restatement
@@ -488,7 +489,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// `cycle_on_class`, through both arms: the tongue's own faces are the hole's rims (the run arm),
 /// and a far cylinder's cap strictly inside the hole's height is crossed on its two rulings (the
 /// crossing arm). The third row moves everything down by one so that cap lies on the seed plane
-/// `z = 0` facing `+z` — the one place a fixture face is `Reversed` — and the crossing class carries
+/// `z = 0` facing `+z`, which makes it a `Reversed` face — and the crossing class carries
 /// `frame_sign = −1`, which the crossing arm reads to tell the travel's axis sense.
 ///
 /// ☑ Measured by dropping each factor in `cycle_on_class`: without `orient_sign` every row is

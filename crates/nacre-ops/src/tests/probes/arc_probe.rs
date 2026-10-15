@@ -1,9 +1,9 @@
 //! **Which way a hole's arcs actually run, realized** — the independent oracle for
 //! [`cycle_on_class`]'s winding rule.
 //!
-//! ★★★★★ **The rule is derived from signs and nothing downstream reads it yet.** A reversed arc
-//! would put the band's answer inside the hole and the hole's on the band — the exactly-opposite
-//! answer — and today's fixtures stop at `loop_winding` before `label_cells` could notice. So every
+//! ★★★★★ **The rule is derived from signs, and downstream sees only the symptom.** A reversed arc
+//! puts the band's answer inside the hole and the hole's on the band — the exactly-opposite
+//! answer — which the labels then refuse (`LabelConflict`) without saying which arc. So every
 //! extent a hole carves is **realized here** and a lock judges it against the fixture's own
 //! geometry. The kernel reads no coordinate to choose an arc; this reads one afterwards, to check.
 //!

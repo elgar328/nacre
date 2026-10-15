@@ -777,7 +777,7 @@ pub(crate) fn loop_winding(
 /// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
 /// `axis_up` each turn 60–75 of the crate's tests red, refused as
 /// [`RejectReason::RingOrientation`] and [`RejectReason::LabelConflict`] (the plane cells and the
-/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` turns 20 red,
+/// chart's labels no longer agreeing), so the lock names them. Dropping `frame_sign` turns 21 red,
 /// the commuting oracle among them; dropped only where the minimum is a node (the arc extremum
 /// rung, [`arc_extremum_winding`], keeping it), 6 — the user's folds and fully rounded plates
 /// (`sketch_models`, `user_models`) and the self-touch chord scoreboard.
