@@ -33,6 +33,7 @@ use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Model, Solid, Vertex};
 use std::collections::HashMap;
 
+mod class_line;
 mod component;
 mod cyl_crossings;
 mod direction;
@@ -54,6 +55,7 @@ pub(crate) mod tie_probe;
 mod winding;
 mod witnesses;
 
+pub(crate) use class_line::*;
 pub(crate) use component::*;
 pub(crate) use cyl_crossings::*;
 pub(crate) use direction::*;

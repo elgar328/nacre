@@ -180,11 +180,10 @@ pub(crate) fn every_ray(
 /// are not counted as inside; `flanks_differ` still says whether crossing the run flips the side,
 /// which is the rule the tracer and the ray caster already read a ring with.
 ///
-/// ★★ **A ring a cylinder trimmed is read as the tracer reads it** — the whole cylinder table, so a
-/// pierce corner is sided by [`side_of`]'s pierce arm; an arc's crossings counted and named by
-/// [`arc_crossings_of`], a ruling's by [`crossing_on_ruling`]; an arc leaving the line between two
-/// nodes on it by its tangent ([`arc_departure_side`]); and a run's ends pinned by [`pin_for`],
-/// a pierce corner by the plane of its own pair that cuts the line. No part of that reading sits
+/// ★★ **A ring a cylinder trimmed is read as the tracer reads it** — through [`ClassLine`] with the
+/// whole cylinder table, so a pierce corner is sided by [`side_of`]'s pierce arm and an arc's and
+/// a ruling's crossings are counted and named; a run's ends are pinned by [`pin_for`], a pierce
+/// corner by the plane of its own pair that cuts the line. No part of that reading sits
 /// behind the gate: one of the edge's own faces may lie on `P` facing the other way (a box's
 /// bottom over a bore, beside the plate's top), the other may then stand parallel to the
 /// cylinder's axis, which the gate passes, and the line crosses the ring's arc.
@@ -232,59 +231,20 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        // The meet is a line, so a straight edge between two nodes on it lies on it and an arc
-        // leaves it, to the side its tangent points — the tracer's reading of the same ring.
-        let on_meet = |i: usize| match &ring[i].carrier {
-            Carrier::Arc(a) => {
-                arc_departure_side(jd, cyls, ring[i].node, w, a.cyl, a.ccw).map(EdgeMeet::Departs)
-            }
-            Carrier::Plane { .. } | Carrier::Ruling(_) => Some(EdgeMeet::On),
+        let line = ClassLine::new(jd, cyls, p, w, &nodes, |i| (&ring[i].carrier).into());
+        let features = match line.walk() {
+            RingWalk::Met(f) => f,
+            RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
+            // The whole ring lies on `w`: this face's boundary is the line itself, and the
+            // alternation has no crossings to read. Refusing to guess.
+            RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
         };
-        let arcs = EdgeCrossings::new(ring.len(), |i, on_end: Option<usize>| {
-            match &ring[i].carrier {
-                Carrier::Arc(a) => arc_crossings_of(
-                    jd,
-                    cyls,
-                    w,
-                    p,
-                    a.cyl,
-                    a.ccw,
-                    [ring[i].node, ring[i].to],
-                    on_end.map(|k| ring[k].node),
-                ),
-                Carrier::Plane { .. } | Carrier::Ruling(_) => Some(Vec::new()),
-            }
-        });
-        let features =
-            match ring_against_plane(jd, cyls, &nodes, w, on_meet, |i, e| arcs.count(i, e)) {
-                RingWalk::Met(f) => f,
-                RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
-                // The whole ring lies on `w`: this face's boundary is the line itself, and the
-                // alternation has no crossings to read. Refusing to guess.
-                RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
-            };
         for f in &features {
             match *f {
-                // A crossing is named by what carries the edge: a plane wall pins it; on an arc it
-                // is the `nth` root the arc strictly contains, on a ruling the root that ruling is
-                // — pierce points of the line's own pair either way.
                 Feature::Crossing { edge, nth, .. } => {
-                    let at = match &ring[edge].carrier {
-                        Carrier::Plane { wall, .. } => Some(PointOn::Class(*wall)),
-                        Carrier::Arc(_) => arcs
-                            .at(edge, None)
-                            .and_then(|roots| roots.get(usize::from(nth)).copied())
-                            .map(PointOn::Pierce),
-                        // `side` reads only against the plane it was measured on — on a plane
-                        // face's ring, the face's own.
-                        Carrier::Ruling(r) if r.plane == p => {
-                            crossing_on_ruling(jd, &r.def, w, p, r.cyl, r.side)
-                                .ok()
-                                .map(PointOn::Pierce)
-                        }
-                        Carrier::Ruling(_) => None,
-                    };
-                    let at = at.ok_or_else(|| reject(RejectReason::RingNaming))?;
+                    let at = line
+                        .crossing(edge, nth)
+                        .ok_or_else(|| reject(RejectReason::RingNaming))?;
                     events.push(([at; 2], true));
                 }
                 Feature::Run {
