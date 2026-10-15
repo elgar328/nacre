@@ -19,9 +19,6 @@ use std::collections::{HashMap, HashSet};
 mod coplanar;
 mod grouping;
 mod naming;
-#[cfg(test)]
-#[path = "../tests/probes/assembly_probe.rs"]
-pub(crate) mod probe;
 mod reconstruct;
 mod self_touch;
 #[cfg(test)]

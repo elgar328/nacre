@@ -618,9 +618,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             {
                 let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
                 for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                    // The mixed road's abstentions, attributed to this cell.
-                    let tie0 = crate::combinatorics::tie_probe::len();
-                    let dec0 = crate::assembly::probe::deciding::ROWS.len();
                     let (mut m, plate, boss) = boss_family(base, h);
                     let got = match boolean(&mut m, kind, plate, boss) {
                         Err(BoolError::Rejected { .. }) => First,
@@ -679,21 +676,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                             }
                         }
                     };
-                    if got == Rejected(NoClearRay) {
-                        let hist = crate::combinatorics::tie_probe::since(tie0);
-                        eprintln!("tie {name} {kind:?} x {tool_name}: {hist:?}");
-                        let dec = crate::assembly::probe::deciding::ROWS.mine_since(dec0);
-                        for r in dec.iter().filter(|r| !r.2) {
-                            eprintln!(
-                                "deciding {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
-                                r.1, r.3
-                            );
-                        }
-                        let decided: Vec<usize> = dec.iter().filter(|r| r.2).map(|r| r.0).collect();
-                        eprintln!(
-                            "deciding {name} {kind:?} x {tool_name}: decided tried {decided:?}"
-                        );
-                    }
                     match tally.iter_mut().find(|(c, _)| *c == got) {
                         Some((_, n)) => *n += 1,
                         None => tally.push((got, 1)),
@@ -752,88 +734,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // winding read at the region's extremum, not at a node the ring bulges past.
     assert_eq!(count(|c| *c == First), 0);
     assert_eq!(count(|c| *c == Empty), 5);
-}
-
-/// **The ⊥ road runs on a panel and on a chain, and says what the walk-through predicts.**
-/// Locked through the road's own ledger (`cycle_probe`) — the carved extents and spans are an
-/// intermediate no result shows — and every class is traced by hand (`trace_every_class`), since
-/// the production driver stops at the first decline and, in serial mode, would never reach the
-/// classes this reads. Stations are axis parameters from the
-/// boss's base (z = −1), so `t = z + 1`.
-///
-/// Panel (wall +x Cut, cut by the wall slab): at `z = 0.5` the class runs strictly inside the
-/// panel's range — outer `Crosses`, the two rulings crossed carve **one** extent (the outer half)
-/// away, one span left;
-/// at `z = 0` the class is the panel's own lower arc — no outer answer, one graze carved, one
-/// span. Chain (half wall Fuse, cut by the far cube): `z = −1` is the whole rim — a graze, nothing
-/// carved; `z = 0` is inside — `Crosses`, the plate-bottom arc carves a graze on the inner half,
-/// two spans; `z = 1` is the chain's top — no outer answer, the boss-top arc grazes, one span.
-#[test]
-fn a_cycle_is_carved_on_its_classes() {
-    crate::ledger::owned(|| {
-        {
-            let (mut m, plate, boss) = boss_family([4.0, 2.0, -1.0], 4.0);
-            let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
-            m.rebuild_adjacency();
-            let t = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([3.0, -1.0, 0.5]),
-                Point3::from_array([6.0, 5.0, 1.5]),
-            );
-            m.rebuild_adjacency();
-            crate::arrangement::trace_every_class(&m, out[0], t)
-                .expect("the panel's classes trace");
-        }
-        {
-            let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
-            let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
-            m.rebuild_adjacency();
-            let far = crate::fixtures::cuboid(
-                &mut m,
-                Point3::from_array([20.0; 3]),
-                Point3::from_array([21.0; 3]),
-            );
-            m.rebuild_adjacency();
-            crate::arrangement::trace_every_class(&m, out[0], far)
-                .expect("the chain's classes trace");
-        }
-    });
-    use crate::arrangement::CylOnClass;
-    // ★ This test's own records: the two traces above and nothing else, so a station's rows
-    // are its fixture's and can be counted rather than merely found.
-    let hits = crate::arrangement::cycle_probe::HITS.mine();
-    // `kinds = [whole rims, other outer, other inner]`; every recorded entry of the shape at the station
-    // must read the same, and the station must have been reached. A graze's `body_above` is
-    // written in the class's stored frame, so the rim check asks only for the kind of answer.
-    let check = |kinds: [usize; 3],
-                 t: f64,
-                 outer: fn(Option<CylOnClass>) -> bool,
-                 carved: usize,
-                 spans: usize| {
-        let rows: Vec<_> = hits
-            .iter()
-            .filter(|h| h.kinds == kinds && h.t == t)
-            .collect();
-        assert!(!rows.is_empty(), "no record for {kinds:?} at t = {t}");
-        for h in rows {
-            assert!(outer(h.outer), "{kinds:?} at t = {t}: {h:?}");
-            assert_eq!(
-                (h.carved, h.spans),
-                (carved, spans),
-                "{kinds:?} at t = {t}: {h:?}"
-            );
-        }
-    };
-    let crosses = |o: Option<CylOnClass>| o == Some(CylOnClass::Crosses);
-    let grazes = |o: Option<CylOnClass>| matches!(o, Some(CylOnClass::Grazes { .. }));
-    let absent = |o: Option<CylOnClass>| o.is_none();
-    let panel = [0, 1, 0];
-    check(panel, 1.5, crosses, 1, 1);
-    check(panel, 1.0, absent, 1, 1);
-    let chain = [1, 0, 1];
-    check(chain, 0.0, grazes, 0, 1);
-    check(chain, 1.0, crosses, 1, 2);
-    check(chain, 2.0, absent, 1, 1);
 }
 
 /// **The rulings road sweeps a chain rim**: on the half wall boss's wall class `y = 0`,

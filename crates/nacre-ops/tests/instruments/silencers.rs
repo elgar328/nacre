@@ -3,9 +3,9 @@
 //! `#[cfg_attr(not(test), allow(dead_code))]` is this crate's idiom for an item a *product* build
 //! legitimately never reads — an instrument's field, a variant only the census builds
 //! (`arrangement::result`'s note argues for it over a blanket allow). It is also the exact
-//! spelling that hid a defect: `crossing_probe` and `cycle_probe` were whole instrumentation
-//! modules with no `#[cfg(test)]` at their mounts, so a release library carried them, and this
-//! attribute silenced the one warning a product build raised about it.
+//! spelling that can hide a defect: a whole instrumentation module mounted without
+//! `#[cfg(test)]` rides into a release library, and this attribute silences the one warning a
+//! product build raises about it.
 //!
 //! ★ **The attribute is not the tell; the sentence above it is.** Of the nine sites that existed
 //! when this was written, seven said why in the line above ("Read by the census only…", "Used by

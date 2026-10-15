@@ -49,7 +49,7 @@ pub(crate) enum ArcEnds<'a> {
 /// boss's alias corner arrives. A closed arc holds every point of its circle but its node, which
 /// is [`ArcSpan::AtBothEnds`]. `None` for a zero-span arc (two distinct ends at one place, the
 /// seam's two names for one point included — upstream refuses it) and for checked arithmetic
-/// running out; `tie_probe` says which.
+/// running out.
 pub(crate) fn arc_span(
     def: &nacre_topo::CylinderDef,
     ends: ArcEnds<'_>,
@@ -76,8 +76,6 @@ pub(crate) fn arc_span(
     Some(match (x0 == Ordering::Equal, x1 == Ordering::Equal) {
         (true, true) => {
             // zero-span arc cannot stand
-            #[cfg(test)]
-            tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
             return None;
         }
         (true, false) => ArcSpan::AtLo,
@@ -88,8 +86,6 @@ pub(crate) fn arc_span(
                 Ordering::Greater => x0 == Ordering::Greater || x1 == Ordering::Less,
                 Ordering::Equal => {
                     // zero-span arc cannot stand
-                    #[cfg(test)]
-                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
                     return None;
                 }
             };
@@ -132,7 +128,7 @@ pub(crate) fn arc_span(
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
 /// across the ray, at an arc root inside the arc's closed span), a tangent ray, a horizontal
 /// tangent at an arc end the root lands on, checked-`Rat` overflow — and the caller keeps its
-/// `WitnessNotRational`. The kinds are counted under `tie_probe` in tests. A root on the seam is
+/// `WitnessNotRational`. A root on the seam is
 /// none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
 /// ★ **A radical mismatch is not among them.**
@@ -140,23 +136,6 @@ pub(crate) fn arc_span(
 /// a test or debug build it **panics** rather than abstaining. The contract it states is
 /// same-radical arithmetic, and a caller that could mix two must not reach it.
 pub(crate) fn point_in_mixed_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc_coeffs: &[nacre_exact::Rat; 4],
-    probe: &[nacre_exact::Rat; 3],
-    ring: &[RingEdge],
-) -> Option<bool> {
-    #[cfg(test)]
-    tie_probe::begin();
-    let out = point_in_mixed_ring_inner(jd, cyls, wc_coeffs, probe, ring);
-    #[cfg(test)]
-    if out.is_none() {
-        tie_probe::abstained();
-    }
-    out
-}
-
-fn point_in_mixed_ring_inner(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc_coeffs: &[nacre_exact::Rat; 4],
@@ -223,8 +202,6 @@ fn point_in_mixed_ring_inner(
                 if ya == Orient::Zero
                     && a[0].checked_sub(&QuadVal::from_rat(qx))?.sign() == Orient::Zero
                 {
-                    #[cfg(test)]
-                    tie_probe::mark(tie_probe::Tie::ProbeAtCorner);
                     return None;
                 }
                 // A step lying along the ray straddles nothing (half-open: neither end is
@@ -233,12 +210,6 @@ fn point_in_mixed_ring_inner(
                     let sa = a[0].checked_sub(&QuadVal::from_rat(qx))?.sign();
                     let sb = b[0].checked_sub(&QuadVal::from_rat(qx))?.sign();
                     if sa != sb {
-                        #[cfg(test)]
-                        tie_probe::mark(if sb == Orient::Zero {
-                            tie_probe::Tie::ProbeAtCorner
-                        } else {
-                            tie_probe::Tie::ProbeOnStep
-                        });
                         return None;
                     }
                     continue;
@@ -263,8 +234,6 @@ fn point_in_mixed_ring_inner(
                     Some(false) => {}
                     None => {
                         // probe on the step
-                        #[cfg(test)]
-                        tie_probe::mark(tie_probe::Tie::ProbeOnStep);
                         return None;
                     }
                 }
@@ -281,8 +250,6 @@ fn point_in_mixed_ring_inner(
                     // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
                     // cannot count — abstain.
                     _ => {
-                        #[cfg(test)]
-                        tie_probe::mark(tie_probe::Tie::TangentRay);
                         return None;
                     }
                 };
@@ -318,8 +285,6 @@ fn point_in_mixed_ring_inner(
                             if arc_span(&arc.def, ends, &rootp) == Some(ArcSpan::Outside) {
                                 continue;
                             }
-                            #[cfg(test)]
-                            tie_probe::mark(tie_probe::Tie::ArcRootAtProbe);
                             return None;
                         }
                         Orient::Negative => continue,
@@ -338,11 +303,7 @@ fn point_in_mixed_ring_inner(
                     // `ray_step_crossing(Zero, ty, ty)` and no second cross product is spelled.
                     // A horizontal tangent (`rs` zero) is the genuine second-order tie.
                     let departs_across = |end: &(MeetLine, QuadVal), ccw: bool| -> Option<bool> {
-                        let Some(rs) = ruling_side(&ray_plane, &arc.def, (&end.0, &end.1)) else {
-                            #[cfg(test)]
-                            tie_probe::mark(tie_probe::Tie::TangentAtEnd);
-                            return None;
-                        };
+                        let rs = ruling_side(&ray_plane, &arc.def, (&end.0, &end.1))?;
                         let ty = if (if ccw { -rs } else { rs }) > 0 {
                             Orient::Positive
                         } else {

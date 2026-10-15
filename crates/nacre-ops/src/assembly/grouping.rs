@@ -118,7 +118,7 @@ pub(super) fn group_faces(
         // ★ Each name once, in first-seen order: a vertex sits on three faces' rings and used
         // to be offered three times, so an exhausted list cast the same rays three times over
         // (the corner Commons: six probes for two points). The first deciding probe is the same,
-        // so the answers are; only the ledger's «offered» count falls.
+        // so the answers are.
         let mut seen = std::collections::HashSet::new();
         let named: Vec<combinatorics::Probe> = combinatorics::three_plane_probes(
             by_comp_lf[c]
@@ -161,7 +161,7 @@ pub(super) fn group_faces(
     //
     // ★ **Built only on exhaustion**, because `probes_of` is eager and asked at three sites: a
     // component with 8 vertices has some 30 edge points behind it, and paying for them where a
-    // vertex answers first is waste the ledger already warns about two doc comments above.
+    // vertex answers first is waste.
     let edge_probes_of = |c: usize| -> Vec<combinatorics::Probe> {
         let mut out = Vec::new();
         for f in comp_faces[c].iter() {
@@ -209,45 +209,21 @@ pub(super) fn group_faces(
     /// Trying it **after** the primary list means every question the primary list decides is
     /// decided on the same probe, in the same order; the second stage answers only questions the
     /// first ran out on.
-    ///
-    /// The ledger's `offered` is now **what was actually built**: the primary list when it decided,
-    /// the sum when it did not. One row per question either way.
     fn first_deciding<T>(
         probes: &[combinatorics::Probe],
         more: impl FnOnce() -> Vec<combinatorics::Probe>,
         mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
-        #[cfg(test)]
-        let tie0 = combinatorics::tie_probe::len();
-        for (tried, x) in probes.iter().enumerate() {
-            #[cfg(not(test))]
-            let _ = tried;
+        for x in probes {
             if let Some(v) = f(x)? {
-                #[cfg(test)]
-                probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
                 return Ok(Some(v));
             }
         }
-        let extra = more();
-        let offered = probes.len() + extra.len();
-        for (tried, x) in extra.iter().enumerate() {
-            #[cfg(not(test))]
-            let _ = tried;
+        for x in &more() {
             if let Some(v) = f(x)? {
-                #[cfg(test)]
-                probe::deciding::record(probes.len() + tried + 1, offered, true, Vec::new());
                 return Ok(Some(v));
             }
         }
-        #[cfg(not(test))]
-        let _ = offered;
-        #[cfg(test)]
-        probe::deciding::record(
-            offered,
-            offered,
-            false,
-            combinatorics::tie_probe::since(tie0),
-        );
         Ok(None)
     }
     // ★ A list that **started empty** is not a list that ran out: a component whose

@@ -658,15 +658,13 @@ fn a_sketched_bored_plate_meets_a_box() {
     }
 }
 
-/// ★ **A filleted plate builds beside a far box, and the decline probe reads
-/// nothing.** The wall faces that ride a tangent ruling get their outer loop: the tangent
+/// ★ **A filleted plate builds beside a far box.** The wall faces that ride a tangent ruling get their outer loop: the tangent
 /// ruling is a carrier with `side = 0`, the seated wall states its own piece, the split keeps no
 /// phantom arc, the angular order and the winding walk read the smooth corner as a half turn, and
 /// the chart reads an uncovered rim piece as the face's end. Two bodies, the plate's volume
 /// `7·8 − 2·(1.5² − π·1.5²/4)` plus the box's 1.
 #[test]
-fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
-    use crate::arrangement::decline_probe::ROWS;
+fn a_filleted_plate_builds_beside_a_far_box() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let edges = vec![
         line(p2(-2.0, -4.0), p2(2.0, -4.0)),
@@ -696,9 +694,8 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
         Point3::from_array([21.0, 21.0, 21.0]),
     );
     m.rebuild_adjacency();
-    // Owned, so the declines this fixture would produce are this test's and not a neighbour's.
-    let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Fuse, plate, far));
-    let out = out.expect("the filleted plate and the far box fuse");
+    let out = boolean(&mut m, BoolKind::Fuse, plate, far)
+        .expect("the filleted plate and the far box fuse");
     assert_eq!(out.len(), 2, "two bodies, apart");
     m.rebuild_adjacency();
     assert!(
@@ -712,11 +709,6 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
         .sum();
     let want = 56.0 - 2.0 * (2.25 - std::f64::consts::PI * 2.25 / 4.0) + 1.0;
     assert!((v - want).abs() < 1e-9, "plate + box: {v} vs {want}");
-    assert!(
-        ROWS.mine().is_empty(),
-        "no decline was produced: {:?}",
-        ROWS.mine()
-    );
 }
 
 /// ★ **The user's plate, slot plate and gusset fold into one body.** The filleted,

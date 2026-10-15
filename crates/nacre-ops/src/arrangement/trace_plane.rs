@@ -134,8 +134,6 @@ fn trace_transversal_face(
                 None
             }
             None => {
-                #[cfg(test)]
-                decline_probe::mark(decline_probe::Site::NoOuter);
                 out.declined.push((fp, DeclineKind::OuterRing));
                 return;
             }
@@ -617,8 +615,6 @@ pub(super) fn trace_one(
                 // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
                 // failed, which is the finer fact when a face has several.
                 Err(RingFail::Collapsed) => {
-                    #[cfg(test)]
-                    decline_probe::mark(decline_probe::Site::PolyCollapsed);
                     out.declined.push((fp, DeclineKind::OuterRing));
                     continue;
                 }
@@ -635,8 +631,6 @@ pub(super) fn trace_one(
             }
             // A lateral's rim never names a plane face's outer loop (see `FaceLoops::cycles`).
             Some(combinatorics::LoopRing::Rim { .. }) | None => {
-                #[cfg(test)]
-                decline_probe::mark(decline_probe::Site::RimOrNone);
                 out.declined.push((fp, DeclineKind::OuterRing));
                 continue;
             }

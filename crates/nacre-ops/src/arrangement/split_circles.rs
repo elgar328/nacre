@@ -139,10 +139,6 @@ pub(super) fn split_circles(
                     seg_ends[si] = Some(locate_ends(sg)?);
                 }
                 let ends = seg_ends[si].as_ref().expect("located just above");
-                #[cfg(test)]
-                if let [Some(p0), Some(p1)] = &seg_coords[si] {
-                    extent_probe::against_the_fences(jd, sg, [p0, p1], n, &circ.def, &at, ends, wc);
-                }
                 if !combinatorics::closed_contains(jd, wc, sg.wall, &at, ends)
                     .ok_or_else(undecided)?
                 {
@@ -387,8 +383,7 @@ pub(super) fn split_segments_at(
         //
         // ★★ **The pair is the sorted one, and that is not cosmetic.** `pierce_meet`'s canonical
         // line runs along `n_min × n_max`; asking in call order would flip every comparison on a
-        // class where `wc > wall`, taking the emitted pieces and the sense with it. ☑ Differenced
-        // against that ruler (`order_probe`).
+        // class where `wc > wall`, taking the emitted pieces and the sense with it.
         //
         // ★★ **The guard that checked all crossings share one line becomes a check on their
         // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
@@ -491,8 +486,6 @@ pub(super) fn split_segments_at(
         let mut order: Vec<usize> = (0..keyed.len()).collect();
         combinatorics::try_sort_by(&mut order, |&i, &j| cmp(i, j).ok_or(()))
             .map_err(|()| undecided())?;
-        #[cfg(test)]
-        order_probe::against_the_ruler(jd, cyls, wc, &sg, &keyed, pair);
         // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
         // one and a pierce one — and the DCEL keys vertices by name, so shipping both would make
         // two vertices where there is one. Names the alias table knows as one point were folded
@@ -545,32 +538,6 @@ pub(super) fn split_segments_at(
         }
     }
     Ok(out_segs)
-}
-
-/// **Where a rational point sits along a line** — a ruler's half for a three-plane end (a pierce
-/// end brings its own parameter from [`combinatorics::pierce_meet`]).
-///
-/// ★★ **Production lays no ruler**: it needs a *rational* point, and an end a cylinder pins has
-/// none. This lives only inside [`order_probe`], which differences the order rule against it.
-#[cfg(test)]
-pub(super) fn along(
-    line: &nacre_exact::quad::MeetLine,
-    p: &[Rat; 3],
-) -> Option<nacre_exact::quad::QuadVal> {
-    use nacre_exact::quad::QuadVal;
-    let (base, dir) = (line.base(), line.dir());
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    let mut rel = [Rat::from_int(0); 3];
-    for k in 0..3 {
-        rel[k] = p[k].checked_sub(base[k])?;
-    }
-    let dd = dot(&dir, &dir)?;
-    let t = dot(&rel, &dir)?.checked_mul(Rat::new(dd.denom(), dd.numer())?)?;
-    Some(QuadVal::from_rat(t))
 }
 
 /// The order of two line parameters. Same radicand is a subtraction and a sign; different ones

@@ -372,7 +372,7 @@ fn corner_axis_param(
 /// its own carrier (`plane_side(plane) == 0 ∧ ruling_side_signed(plane) == side`, against the
 /// plane its side was measured against — the predicate `crossing_on_ruling` names stations with).
 ///
-/// `None` = `x` on the boundary (a rim, an arc, a ruling — `tie_probe` says which), a zero-span
+/// `None` = `x` on the boundary (a rim, an arc, a ruling), a zero-span
 /// arc inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
 /// arithmetic running out. `z` is asked before `θ`: an arc below `x` needs no order.
 pub(crate) fn loop_parity(
@@ -396,8 +396,6 @@ pub(crate) fn loop_parity(
                     Orient::Negative => crossings += 1,
                     Orient::Positive => {}
                     Orient::Zero => {
-                        #[cfg(test)]
-                        tie_probe::push(tie_probe::Tie::OnRim);
                         return None;
                     }
                 }
@@ -406,11 +404,7 @@ pub(crate) fn loop_parity(
                 for e in edges {
                     match &e.carrier {
                         Carrier::Arc(arc) => {
-                            let Some(t) = corner_axis_param(jd, def, e.node) else {
-                                #[cfg(test)]
-                                tie_probe::push(tie_probe::Tie::TiltedArc);
-                                return None;
-                            };
+                            let t = corner_axis_param(jd, def, e.node)?;
                             let side = above(t)?;
                             if side == Orient::Positive {
                                 continue; // the arc is below the point
@@ -428,10 +422,7 @@ pub(crate) fn loop_parity(
                                 ArcEnds::Open(&e_lo, &e_hi)
                             };
                             let Some(span) = arc_span(&arc.def, ends, &(meet.clone(), *s)) else {
-                                // A zero-span arc (two ends at one place) or arithmetic out —
-                                // the mark says which.
-                                #[cfg(test)]
-                                tie_probe::flush_or(tie_probe::Tie::Other);
+                                // A zero-span arc (two ends at one place) or arithmetic out.
                                 return None;
                             };
                             if side == Orient::Zero {
@@ -439,8 +430,6 @@ pub(crate) fn loop_parity(
                                 if span == ArcSpan::Outside {
                                     continue;
                                 }
-                                #[cfg(test)]
-                                tie_probe::push(tie_probe::Tie::OnArc);
                                 return None;
                             }
                             // Half-open `[lo, hi)`: a closed arc's node is its `lo`, counted once.
@@ -454,8 +443,6 @@ pub(crate) fn loop_parity(
                                 corner_axis_param(jd, def, e.node),
                                 corner_axis_param(jd, def, e.to),
                             ) else {
-                                #[cfg(test)]
-                                tie_probe::push(tie_probe::Tie::Producer);
                                 return None;
                             };
                             let (lo, hi) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
@@ -471,14 +458,10 @@ pub(crate) fn loop_parity(
                             if plane_side(&w, meet, s) == Orient::Zero
                                 && ruling_side_signed(&w, def, (meet, s))? == rl.side
                             {
-                                #[cfg(test)]
-                                tie_probe::push(tie_probe::Tie::OnRuling);
                                 return None;
                             }
                         }
                         Carrier::Plane { .. } => {
-                            #[cfg(test)]
-                            tie_probe::push(tie_probe::Tie::Producer);
                             return None;
                         }
                     }

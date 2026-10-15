@@ -1341,18 +1341,6 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
         // `y = 15, 25` graze the circle — measured: 160 of 160, no corner among
         // them), and its count is a property of this grid, not of the rule.
         assert!(abstained > 0, "abstentions: {abstained}");
-        // What those abstentions were, by kind.
-        {
-            let rows = combinatorics::tie_probe::ROWS.mine();
-            let mut hist: Vec<(combinatorics::tie_probe::Tie, usize)> = Vec::new();
-            for t in &rows {
-                match hist.iter_mut().find(|(k, _)| k == t) {
-                    Some((_, c)) => *c += 1,
-                    None => hist.push((*t, 1)),
-                }
-            }
-            eprintln!("tie digon abstained {abstained} on_chord {on_chord} kinds {hist:?}");
-        }
         assert!(
             on_chord > 0,
             "points on the chord inside the circle: {on_chord}"
