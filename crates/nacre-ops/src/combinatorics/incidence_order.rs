@@ -159,7 +159,7 @@ impl PointOn {
     /// plane."*
     /// ☑ Measured unexercised over the whole suite and the ignored sweep before it was made loud.
     #[inline]
-    fn of(pt: (NodeId, EndPin)) -> PointOn {
+    pub(crate) fn of(pt: (NodeId, EndPin)) -> PointOn {
         match pt.1 {
             EndPin::Class(r) => PointOn::Class(r),
             EndPin::Cylinder => match pt.0.kind() {

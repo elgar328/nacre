@@ -179,6 +179,15 @@ pub(crate) fn every_ray(
 /// it — two faces sharing an edge, which is ordinary adjacency. Those stretches are boundary and
 /// are not counted as inside; `flanks_differ` still says whether crossing the run flips the side,
 /// which is the rule the tracer and the ray caster already read a ring with.
+///
+/// ★★ **A ring a cylinder trimmed is read as the tracer reads it** — the whole cylinder table, so a
+/// pierce corner is sided by [`side_of`]'s pierce arm; an arc's crossings counted and named by
+/// [`arc_crossings_of`], a ruling's by [`crossing_on_ruling`]; an arc leaving the line between two
+/// nodes on it by its tangent ([`arc_departure_side`]); and a run's ends pinned by [`pin_for`],
+/// a pierce corner by the plane of its own pair that cuts the line. The line meets such a ring
+/// wherever the tracer's line can: one of the edge's own faces may lie on `P` facing the other way
+/// (a box's bottom over a bore, beside the plate's top), and then the other can stand parallel to
+/// the cylinder's axis, which the gate passes.
 pub(crate) fn segment_meets_face(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -223,16 +232,31 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        // No cylinder table on this road either (see `every_ray`): an arc answers `None`, to both
-        // questions — but against a silent class, which reads the gate's record.
-        let on_meet =
-            |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
-        let table = silent_table(cyls, w);
-        let arcs = EdgeCrossings::new(ring.len(), |i, e| {
-            silent_crossings(jd, table, (p, w), ring, i, e)
+        // The meet is a line, so a straight edge between two nodes on it lies on it and an arc
+        // leaves it, to the side its tangent points — the tracer's reading of the same ring.
+        let on_meet = |i: usize| match &ring[i].carrier {
+            Carrier::Arc(a) => {
+                arc_departure_side(jd, cyls, ring[i].node, w, a.cyl, a.ccw).map(EdgeMeet::Departs)
+            }
+            Carrier::Plane { .. } | Carrier::Ruling(_) => Some(EdgeMeet::On),
+        };
+        let arcs = EdgeCrossings::new(ring.len(), |i, on_end: Option<usize>| {
+            match &ring[i].carrier {
+                Carrier::Arc(a) => arc_crossings_of(
+                    jd,
+                    cyls,
+                    w,
+                    p,
+                    a.cyl,
+                    a.ccw,
+                    [ring[i].node, ring[i].to],
+                    on_end.map(|k| ring[k].node),
+                ),
+                Carrier::Plane { .. } | Carrier::Ruling(_) => Some(Vec::new()),
+            }
         });
         let features =
-            match ring_against_plane(jd, table, &nodes, w, on_meet, |i, e| arcs.count(i, e)) {
+            match ring_against_plane(jd, cyls, &nodes, w, on_meet, |i, e| arcs.count(i, e)) {
                 RingWalk::Met(f) => f,
                 RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
                 // The whole ring lies on `w`: this face's boundary is the line itself, and the
@@ -241,12 +265,27 @@ pub(crate) fn segment_meets_face(
             };
         for f in &features {
             match *f {
-                Feature::Crossing { edge, .. } => {
-                    let h = ring[edge]
-                        .carrier
-                        .wall()
-                        .ok_or_else(|| reject(RejectReason::RingNaming))?;
-                    events.push(([PointOn::Class(h); 2], true));
+                // A crossing is named by what carries the edge: a plane wall pins it; on an arc it
+                // is the `nth` root the arc strictly contains, on a ruling the root that ruling is
+                // — pierce points of the line's own pair either way.
+                Feature::Crossing { edge, nth, .. } => {
+                    let at = match &ring[edge].carrier {
+                        Carrier::Plane { wall, .. } => Some(PointOn::Class(*wall)),
+                        Carrier::Arc(_) => arcs
+                            .at(edge, None)
+                            .and_then(|roots| roots.get(usize::from(nth)).copied())
+                            .map(PointOn::Pierce),
+                        // `side` reads only against the plane it was measured on — on a plane
+                        // face's ring, the face's own.
+                        Carrier::Ruling(r) if r.plane == p => {
+                            crossing_on_ruling(jd, &r.def, w, p, r.cyl, r.side)
+                                .ok()
+                                .map(PointOn::Pierce)
+                        }
+                        Carrier::Ruling(_) => None,
+                    };
+                    let at = at.ok_or_else(|| reject(RejectReason::RingNaming))?;
+                    events.push(([at; 2], true));
                 }
                 Feature::Run {
                     first,
@@ -255,14 +294,16 @@ pub(crate) fn segment_meets_face(
                     ..
                 } => {
                     let ends = [first, (first + len - 1) % nodes.len()];
-                    // ★ The projection is safe *here*: the walk answered `Met`, which it only does
-                    // when every node is three planes.
-                    let name = |i: usize| -> Option<usize> { handle(three_plane_name(nodes[i])?) };
-                    let (Some(a), Some(b)) = (name(ends[0]), name(ends[1])) else {
+                    // A run's end is pinned on the line by the one rule ([`pin_for`]): a pierce
+                    // corner — the end of a ruling the line runs along, when the line is parallel
+                    // to the axis — by the plane of its own pair that cuts the line.
+                    let pin = |i: usize| -> Option<PointOn> {
+                        Some(PointOn::of((nodes[i], pin_for(jd, p, w, nodes[i])?)))
+                    };
+                    let (Some(a), Some(b)) = (pin(ends[0]), pin(ends[1])) else {
                         return Err(reject(RejectReason::RingNaming));
                     };
-                    let lo_first = order_along(jd, p, w, a, b) <= 0;
-                    let [a, b] = [PointOn::Class(a), PointOn::Class(b)];
+                    let lo_first = order(a, b)? <= 0;
                     events.push((if lo_first { [a, b] } else { [b, a] }, flanks_differ));
                 }
             }
@@ -391,7 +432,7 @@ pub(super) fn point_on_ring(
     Ok(false)
 }
 
-/// **What a ray road reads of a ring against plane `q`** — the cylinder table ([`silent_table`])
+/// **What [`every_ray`] reads of a ring against plane `q`** — the cylinder table ([`silent_table`])
 /// and the arcs' crossings ([`silent_crossings`]). This road carries no cylinder table for a class
 /// with a world statement: a pierce corner there has no side here and the walk declines, as an arc's crossings do — the
 /// coordinate road answers instead. A class the gate passed as silent about the cylinders is the
@@ -412,7 +453,7 @@ fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes
 }
 
 /// Where edge `i` of `ring` crosses the line `p ∩ q` strictly inside it, against the table
-/// [`silent_table`] handed over — `None` where it cannot be stated. What each ray road's
+/// [`silent_table`] handed over — `None` where it cannot be stated. What [`every_ray`]'s
 /// [`EdgeCrossings`] solves.
 fn silent_crossings(
     jd: &Judge<'_, WorkingPlane>,

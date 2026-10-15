@@ -666,9 +666,9 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 ///
 /// ★ Each bound answers by its own kind — a polygon by a ring walk, a circle by its radial side, a
 /// mixed ring (an arc step, a pierce corner) by the rational road: the point is a rational
-/// three-plane point, the ring is walked by its carriers, and every tie abstains. The named walk
-/// cannot read a pierce corner at all (it sides nodes with no cylinder table) — letting it try
-/// would refuse with `PierceVertexUnnamed`. That road does not tell a point on its ring from an
+/// three-plane point, the ring is walked by its carriers, and every tie abstains. The ray road's
+/// walk cannot read a pierce corner against a class with a world statement (it sides nodes with
+/// no cylinder table there) — letting it try would refuse with `PierceVertexUnnamed`. That road does not tell a point on its ring from an
 /// abstention, so a point on a mixed ring is unknown.
 pub(crate) fn named_point_in_face(
     jd: &Judge<'_, WorkingPlane>,

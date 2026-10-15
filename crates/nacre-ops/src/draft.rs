@@ -187,17 +187,6 @@ impl Ring {
         Ring { nodes, walls }
     }
 
-    /// The carrier-level reading of [`combinatorics::ring_is_mixed`], asked of the
-    /// **walls** rather than of derived edges — for a consumer that holds the `Ring` and has
-    /// no `RingEdge`s to ask (the self-touch sieve, which passes such a ring over).
-    pub(crate) fn is_mixed(&self) -> bool {
-        self.walls.iter().any(|w| !matches!(w, Wall::Plane(_)))
-            || self
-                .nodes
-                .iter()
-                .any(|&n| combinatorics::pierce_name(n).is_some())
-    }
-
     /// This ring's edges, ready for the exact predicates - built from the walls the ring
     /// carries, in the engine's own vocabulary.
     ///

@@ -464,9 +464,9 @@ fn a_body_standing_on_itself_at_a_corner_is_refused() {
 }
 
 /// ★ **A bar resting on a notched face of its own block is refused** — the face's outline carries
-/// the arc a cylinder cut at its far corner, so the edge test does not read it (a mixed ring); the
-/// bar's bottom edge has its ends inside the face, and the point arm reads them on the rational
-/// road. The cylinder sits where no slanted plane of the bar meets its side, so the gate passes
+/// the arc a cylinder cut at its far corner; the bar's bottom edge lies inside the face, so the
+/// edge test reads it against that ring (its arc and pierce corners) and the point arm reads the
+/// edge's ends on the rational road. The cylinder sits where no slanted plane of the bar meets its side, so the gate passes
 /// the pair. The twin without the leg is two bodies. On the world frame and a 3-4-5 one, in either
 /// operand order.
 #[test]
@@ -942,29 +942,27 @@ fn expect_fuse(
     }
 }
 
-/// ★ **A bar lying along a chord of its own block's top face, today, when the face's outline
-/// carries an arc** — the scoreboard of the self-touch edge test against a face trimmed by a
-/// cylinder. The bar is tipped about the base's `x` axis so its bottom edge lies on the top face
-/// along `y = 0`, and two steps on the block bury its two ends, so the body is one and its surface
-/// meets itself along the chord from `x = −7` to `x = 3`. With a plain top face the edge test
-/// reads the chord and refuses the body. With a half-disk notch cut in the face's far side, or with
-/// filleted corners, the face's ring carries an arc and pierce corners, the edge test does not
-/// read it, and the body builds — one solid, `validate` clean, the volume exact. The bar raised
-/// off the face is the twin that builds in every row. On the world frame and a 3-4-5 one, in
-/// either operand order.
+/// ★ **A bar lying along a chord of its own block's top face is refused, whatever trims the
+/// face** — the self-touch edge test against a face whose ring a cylinder cut. The bar is tipped
+/// about the base's `x` axis so its bottom edge lies on the top face along `y = 0`, and two steps
+/// on the block bury its two ends, so the body is one and its surface meets itself along the chord
+/// from `x = −7` to `x = 3`. The top face is plain, or carries a half-disk notch cut in its far
+/// side, or has filleted corners — the last two put an arc and pierce corners in its ring, which
+/// the edge test reads with the whole cylinder table (`segment_meets_face`). Every one is refused
+/// with the chord as its witness; the bar raised off the face is the twin that builds. On the
+/// world frame and a 3-4-5 one, in either operand order.
 ///
-/// Around it: the chord left open at one end (one step only) is caught elsewhere — by the
-/// self-touch check on the plain face, by the pinch check where the chord meets the notched face's
-/// outline; a tipped bar whose edge line meets a fillet arc never reaches the check, because one of
-/// its faces through that line is a plane slanted to the cylinder's axis through a point of its
-/// side (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces
-/// through the edge both lean away from the fillet circles the line crosses off their arcs passes
-/// the gate and builds; and a 3-4-5 column standing on a plate against the notched block's front
-/// wall, its corner edge on the wall (a line parallel to the cylinder's axis), is caught by the
-/// pinch check where that edge meets the top, or — its edge on the notch's own ruling — by the
-/// non-manifold edge check.
+/// Around it: the chord left open at one end (one step only) is the same refusal; a tipped bar
+/// whose edge line meets a fillet arc never reaches the check, because one of its faces through
+/// that line is a plane slanted to the cylinder's axis through a point of its side
+/// (`ObliqueCylinderCut` named, `CylinderGateUndecided` turned); a wedge whose two faces through the edge both lean away
+/// from the fillet circles its line crosses off their arcs passes the gate, and the circles count
+/// no crossing there (`arc_crossings`); and a 3-4-5 column standing on a plate against the notched
+/// block's front wall — its corner edge on the wall, a line parallel to the cylinder's axis — is
+/// refused by the edge test, or, its edge on the notch's own ruling, by the non-manifold edge
+/// check.
 #[test]
-fn chords_across_a_face_trimmed_by_a_cylinder_build_today() {
+fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
     let full = [[[3.0, -11.0], [6.0, 4.0]], [[-10.0, -11.0], [-7.0, 4.0]]];
     let partial = [[[3.0, -8.0], [6.0, 4.0]], [[-10.0, -8.0], [-7.0, 4.0]]];
     let notch = std::f64::consts::PI * 0.25 / 2.0 * 6.0;
@@ -983,9 +981,10 @@ fn chords_across_a_face_trimmed_by_a_cylinder_build_today() {
                 for swapped in [false, true] {
                     let at =
                         format!("{trim:?}, tilted = {tilted}, lift = {lift}, swapped = {swapped}");
-                    let want = match (trim, lift == 0.0) {
-                        (Trim::Plain, true) => Want::Touches,
-                        _ => Want::Built(1, vol),
+                    let want = if lift == 0.0 {
+                        Want::Touches
+                    } else {
+                        Want::Built(1, vol)
                     };
                     let mut m = Model::new();
                     let (base, axes) = base_frame(&mut m, tilted);
@@ -998,10 +997,8 @@ fn chords_across_a_face_trimmed_by_a_cylinder_build_today() {
             }
         }
     }
-    for (trim, want) in [
-        (Trim::Plain, Want::Refused(RejectReason::SelfTouchingResult)),
-        (Trim::Notch, Want::Refused(RejectReason::NonManifoldVertex)),
-    ] {
+    for trim in [Trim::Plain, Trim::Notch] {
+        let want = Want::Refused(RejectReason::SelfTouchingResult);
         let mut m = Model::new();
         let (base, axes) = base_frame(&mut m, false);
         let block = trimmed_block(&mut m, base, trim);
@@ -1040,10 +1037,15 @@ fn chords_across_a_face_trimmed_by_a_cylinder_build_today() {
         let at = format!(
             "a wedge whose edge line crosses the fillet circles off their arcs, lift = {lift}"
         );
-        expect_fuse(&mut m, a, b, Want::Built(1, vol), true, &at);
+        let want = if lift == 0.0 {
+            Want::Touches
+        } else {
+            Want::Built(1, vol)
+        };
+        expect_fuse(&mut m, a, b, want, true, &at);
     }
     for (x0, reason) in [
-        (-2.0, RejectReason::NonManifoldVertex),
+        (-2.0, RejectReason::SelfTouchingResult),
         (-4.5, RejectReason::NonManifoldResultEdge),
     ] {
         let mut m = Model::new();

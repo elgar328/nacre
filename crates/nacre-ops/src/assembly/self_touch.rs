@@ -289,9 +289,8 @@ pub(super) fn self_touch_reject(
         // written down: an arc edge lies in a plane face only on its own circle's plane, where
         // the faces overlap in area (the coplanar merge's); a lateral's own ruling edge lies in a
         // plane face only on a line the gate records, and the rulings split refuses a face across
-        // it (`RulingBoundNotYet`); a contact with a curved face at a point needs a plane slanted
-        // to its axis through the cylinder (`ObliqueCylinderCut`); and a face trimmed by a mixed
-        // ring is not read by the edge test (a vertex inside it is, by the point arm).
+        // it (`RulingBoundNotYet`); and a contact with a curved face at a point needs a plane
+        // slanted to its axis through the cylinder (`ObliqueCylinderCut`).
         let all: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -393,15 +392,6 @@ pub(super) fn self_touch_reject(
                 // two decided by class order, that is by operand order.
                 let q = faces[j].surf.plane();
                 if !(on(u, q) && on(v, q)) {
-                    continue;
-                }
-                // A face trimmed by a mixed ring joins the populations this sieve passes over
-                // (a pierce-ended edge, the edges the curved arm does not ask): the named walk
-                // cannot read it, and an `Err` here would turn "cannot check" into "model
-                // invalid". The net behind the skip stays what it is for those: the edge-use
-                // guard, the non-manifold vertex check, and `check_result_topology`'s
-                // plane-self edge guard.
-                if rings_of(faces[j]).any(Ring::is_mixed) {
                     continue;
                 }
                 // ★ A face bounded outside by a circle — a cap disk — is not asked. Its plane is

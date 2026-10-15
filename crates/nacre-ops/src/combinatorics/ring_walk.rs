@@ -79,9 +79,9 @@ pub(crate) enum RingWalk {
     /// ★★ **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
     /// table.** Given one, [`side_of`]'s pierce arm answers (short of a class with no narrow
     /// rational description or a cylinder missing from the table) and the corner is read like any
-    /// other; `every_ray` passes none, so on that road every pierce corner is this variant, whatever
-    /// the plane — which is why `nesting` reads the ray road's `PierceVertexUnnamed` on a ring with
-    /// a pierce corner as the road declining the ring.
+    /// other; `every_ray` passes none against a class with a world statement (`silent_table`), so on
+    /// that road such a pierce corner is this variant — which is why `nesting` reads the ray road's
+    /// `PierceVertexUnnamed` on a ring with a pierce corner as the road declining the ring.
     Unnameable,
 }
 
