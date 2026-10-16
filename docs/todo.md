@@ -213,6 +213,11 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   `ObliqueCircleClass` 백스톱으로 나간다(잰 인구 0). 원인을 묻는 독자가 늘면 세계 서술의 문
   (`world_cylinder_def`·`chain_point_rat`)이 원인을 직접 돌려주게 옮긴다 — 지금은 «접히는가»(`chain_folds`)로
   정확히 가른다.
+- 배열의 룰링 분할에서 `lateral_crossings` 의 `plane_plane_cylinder`(checked `i128`)가 넘치면 불리언을
+  `WitnessNotRational` 로 거절한다(잰 인구: 스위트·무시 스윕·census·kit 0). 재현은 이동량을 f64 의 정확한
+  이진값(`Rat::try_from_f64(25.7)`, 분모 2⁴⁸)으로 준 테스트뿐이다 — 구멍 난 판에서 `through_block` 홈을 판 몸을
+  그렇게 옮겨 fuse 하면 3-4-5 벽과 이진 이동량의 계수가 넘친다. 같은 이동을 십진(`Rat::from_decimal` — kit 이 읽는
+  철자)으로 주면 빌드된다.
 
 ### 불리언이 이름 붙여 거절하는 인구
 
@@ -223,11 +228,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 옆면 구멍에 자국이 닿으면 `DeclineKind::CylFaceHole` 로 거절한다.
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
-- 구멍 난 판(`[0,40]²×[0,10]`, 구멍 중심 (7.3, 7.3), r 2.1)에서 `through_block(4)` 를 판 홈을 `(25.7, 3.3, 2)`
-  옮겨 같은 판(홈 없이든 있든)과 fuse 하면 `WitnessNotRational` 로 거절한다 — 룰링 분할이 룰링 끝의 축 좌표를 못
-  구한다(`split_rulings` 의 `AxisCoord::of`; 기록 도로에서는 그 앞에 광선이 `PierceVertexUnnamed` 둘). 진술된
-  좌표로 셈하면 홈 옆벽의 평면 `−4x + 3y = 0` 이 구멍 축을 1.46(< r) 거리로 지나고 면은 구멍에서 멀다.
-  `(25, 3, 2)` 로 옮기면 빌드되고, 이동을 옮겨 적든(진술된 평면으로 지은 홈) 기록하든 같다. 원인은 재지 않았다.
 
 ## 다음 — 출력 정밀도: STEP 의 f64 는 실현 통로 하나로
 
