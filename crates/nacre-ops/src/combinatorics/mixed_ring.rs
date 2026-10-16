@@ -99,13 +99,13 @@ pub(crate) fn arc_span(
 }
 
 /// A line step's corner in chart coordinates, `r₀ + r₁·√c` — one radical for both coordinates.
-struct Corner {
+struct ChartCorner {
     r0: [nacre_exact::Rat; 2],
     r1: [nacre_exact::Rat; 2],
     c: nacre_exact::Rat,
 }
 
-impl Corner {
+impl ChartCorner {
     /// The radical the corner carries — `0` for a rational corner, whatever `c` its root spelled.
     fn radical(&self) -> nacre_exact::Rat {
         let zero = nacre_exact::Rat::from_int(0);
@@ -190,7 +190,7 @@ pub(crate) fn point_in_mixed_ring(
     // coordinate's own `QuadVal` folds `c` to 0 where its radical part vanishes, so the two
     // coordinates of one corner can spell different `c()`s, and the radical read off either one
     // would drop the other's `√c` term.
-    let corner = |nd: NodeId| -> Option<Corner> {
+    let corner = |nd: NodeId| -> Option<ChartCorner> {
         if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
             let (line, s) = pierce_meet(jd, cyl, def, nd)?.into_exact()?;
@@ -203,7 +203,7 @@ pub(crate) fn point_in_mixed_ring(
                 ))
             };
             let ((x0, x1), (y0, y1)) = (coord(e1)?, coord(e2)?);
-            Some(Corner {
+            Some(ChartCorner {
                 r0: [x0, y0],
                 r1: [x1, y1],
                 c: s.c(),
@@ -212,7 +212,7 @@ pub(crate) fn point_in_mixed_ring(
             let p = node_coords_rat(jd, nd)?;
             let pr = chart.project(&p)?;
             let zero = Rat::from_int(0);
-            Some(Corner {
+            Some(ChartCorner {
                 r0: pr,
                 r1: [zero, zero],
                 c: zero,
