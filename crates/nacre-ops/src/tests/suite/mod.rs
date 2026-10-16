@@ -9,11 +9,12 @@ use fixtures::{
     boolean_one, cube_and_notch, extrude_op, has_face_on_plane, l_and_corner_box, l_and_dimple,
     l_and_inner_box, l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes,
     outer_points, p2, pythagorean_frame, regular_ngon, rotated_l_prism, square, stacked_cubes,
-    two_boxes, u_and_slab, u_prism,
+    two_boxes, u_and_slab, u_prism, walled_bore, walled_bore_volume,
 };
-// Reached from outside this module (`bands`' and `tolerant`'s tests) as `crate::tests::…`.
+// Reached from outside this module (`bands`', `tolerant`'s and `combinatorics`' tests) as
+// `crate::tests::…`.
 pub(crate) use fixtures::{
-    decimal_coincidence, extrude_log_op, rounded_corner_walls, rounded_twin_walls,
+    decimal_coincidence, extrude_log_op, plate_with_bore, rounded_corner_walls, rounded_twin_walls,
 };
 use stated::{Stated, arc_turns, circle, line, stated};
 

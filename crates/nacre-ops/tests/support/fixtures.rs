@@ -203,6 +203,52 @@ pub fn a_solid_and_a_placed_prism(
     (m, a, b)
 }
 
+/// The plate `[0,40]²×[0,10]` with a through bore of radius 2 at `(10, 10)` — volume `16000 − 40π`.
+pub fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
+    let plate = nacre_ops::fixtures::cuboid(
+        m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    m.rebuild_adjacency();
+    let bore = nacre_ops::fixtures::cylinder_with_seam(
+        m,
+        Point3::from_array([10.0, 10.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        2.0,
+        12.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bored plate")[0];
+    m.rebuild_adjacency();
+    out
+}
+
+/// The bored plate with the wall `[9,11]×[0,40]×[5,15]` fused on — its plane `x = 9` runs within
+/// the bore's radius, and its face across the bore.
+pub fn walled_bore(m: &mut Model) -> Handle<Solid> {
+    let p = plate_with_bore(m);
+    let wall = nacre_ops::fixtures::cuboid(
+        m,
+        Point3::from_array([9.0, 0.0, 5.0]),
+        Point3::from_array([11.0, 40.0, 15.0]),
+    );
+    m.rebuild_adjacency();
+    let out = boolean(m, BoolKind::Fuse, p, wall).expect("the walled plate")[0];
+    m.rebuild_adjacency();
+    out
+}
+
+/// [`walled_bore`]'s volume. The wall's upper half stands clear, and its lower half is inside the
+/// plate except where it fills the bore's strip `|x − 10| ≤ 1` — `∫ 2√(4 − u²) du` over `[−1, 1]` =
+/// `2√3 + 4π/3` — so `(16000 − 40π) + 800 − (400 − 5(2√3 + 4π/3))`.
+pub fn walled_bore_volume() -> f64 {
+    let pi = std::f64::consts::PI;
+    (16000.0 - 40.0 * pi) + 800.0 - (400.0 - 5.0 * (2.0 * 3f64.sqrt() + 4.0 * pi / 3.0))
+}
+
 /// The unit disk about the sketch origin — its seam at `(1, 0)`.
 pub fn unit_disk() -> Profile2d {
     nacre_ops::from_paths(vec![

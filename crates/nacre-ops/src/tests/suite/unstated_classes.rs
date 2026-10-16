@@ -65,21 +65,6 @@ fn op(m: &mut Model, kind: BoolKind, a: Handle<Solid>, b: Handle<Solid>) -> Hand
     out
 }
 
-/// The plate `[0,40]²×[0,10]` with a through bore of radius 2 at `(10, 10)` — volume `16000 − 40π`.
-fn plate_with_bore(m: &mut Model) -> Handle<Solid> {
-    let plate = cuboid(m, [0.0; 3], [40.0, 40.0, 10.0]);
-    let bore = z_cylinder(m, [10.0, 10.0, -1.0], 2.0, 12.0);
-    op(m, BoolKind::Cut, plate, bore)
-}
-
-/// The bored plate with the wall `[9,11]×[0,40]×[5,15]` fused on — its plane `x = 9` runs within
-/// the bore's radius, and its face across the bore.
-fn walled_bore(m: &mut Model) -> Handle<Solid> {
-    let p = plate_with_bore(m);
-    let wall = cuboid(m, [9.0, 0.0, 5.0], [11.0, 40.0, 15.0]);
-    op(m, BoolKind::Fuse, p, wall)
-}
-
 /// The plate with a pin of radius `r`, height 3, standing on its top at `(x, y)` — volume
 /// `16000 + 3πr²`.
 fn plate_with_pin(m: &mut Model, x: f64, y: f64, r: f64) -> Handle<Solid> {
@@ -169,10 +154,7 @@ fn nameless_classes_beside_world_cylinders() {
     use RejectReason::CylinderGateUndecided as Undecided;
     let pi = std::f64::consts::PI;
     let bored = 16000.0 - 40.0 * pi;
-    // The bored plate fused with the wall `[9,11]×[0,40]×[5,15]`: the wall's upper half stands
-    // clear, and its lower half is inside the plate except where it fills the bore's strip
-    // `|x − 10| ≤ 1` — `∫ 2√(4 − u²) du` over `[−1, 1]` = `2√3 + 4π/3`.
-    let walled = bored + 800.0 - (400.0 - 5.0 * (2.0 * 3f64.sqrt() + 4.0 * pi / 3.0));
+    let walled = walled_bore_volume();
     // The turned box standing on `z0`: what it shares with the walled plate — `25` per unit of
     // depth inside the plate (`z` up to 10), and above it the box's section inside the wall's strip
     // `9 ≤ x ≤ 11`. The box's width across a line `x = 10 + u` is `5/cos θ` while the line passes

@@ -355,25 +355,9 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
 #[test]
 fn a_nodes_interval_holds_it_for_either_kind_of_name() {
     use crate::arrangement::{PlaneSetup, plane_index_setup};
-    use nacre_math::{Point3, Vector3};
+    use nacre_math::Point3;
     let mut m = Model::new();
-    let plate = crate::fixtures::cuboid(
-        &mut m,
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([40.0, 40.0, 10.0]),
-    );
-    let bore = crate::fixtures::cylinder_with_seam(
-        &mut m,
-        Point3::from_array([10.0, 10.0, -1.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        Vector3::from_array([0.0, -1.0, 0.0]),
-        2.0,
-        12.0,
-    )
-    .solid;
-    m.rebuild_adjacency();
-    let plate =
-        crate::boolean(&mut m, crate::BoolKind::Cut, plate, bore).expect("the bored plate")[0];
+    let plate = crate::tests::plate_with_bore(&mut m);
     let wall = crate::fixtures::cuboid(
         &mut m,
         Point3::from_array([9.0, 0.0, 5.0]),
