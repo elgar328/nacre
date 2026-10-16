@@ -525,9 +525,7 @@ fn ask(
                     // so no coordinate witness stands behind it when the ray road cannot place it.
                     // The one question its interval answers is whether it stands outside the
                     // ring's box — the coordinate arm's own question below, asked of the same box.
-                    Said::Declines | Said::Abstain
-                        if t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))) =>
-                    {
+                    Said::Declines | Said::Abstain if crate::planes::silent_among(cyls, t) => {
                         match combinatorics::three_point_hp(jd, *t) {
                             Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
                             _ => Said::Silent,

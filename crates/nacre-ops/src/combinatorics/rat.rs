@@ -213,10 +213,8 @@ pub(crate) fn node_coords_rat(
 /// whose corners have no rational coordinates for the gate's own reason
 /// ([`crate::planes::WorkingCyl::silent`]).
 pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[RingEdge]) -> bool {
-    rb.iter().any(|e| {
-        three_plane_name(e.node)
-            .is_some_and(|t| t.iter().any(|&k| cyls.iter().any(|cy| cy.is_silent(k))))
-    })
+    rb.iter()
+        .any(|e| three_plane_name(e.node).is_some_and(|t| crate::planes::silent_among(cyls, &t)))
 }
 
 /// **The box a circle on class `wc` lies in** — its centre (where the cylinder's axis meets that
@@ -314,10 +312,7 @@ pub(crate) fn undecided_reason(
     cyls: &[crate::planes::WorkingCyl],
     classes: &[usize],
 ) -> RejectReason {
-    if classes
-        .iter()
-        .any(|&c| cyls.iter().any(|cy| cy.is_silent(c)))
-    {
+    if crate::planes::silent_among(cyls, classes) {
         RejectReason::CylinderGateUndecided
     } else {
         RejectReason::WitnessNotRational

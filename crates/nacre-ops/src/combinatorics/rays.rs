@@ -376,7 +376,7 @@ fn end_on_line(jd: &Judge<'_, WorkingPlane>, a: usize, b: usize, name: NodeId) -
 /// ([`arc_crossings_hp`]), the count the arrangement's own arc road gives the same arc. A class
 /// silent by `Silence::Apart` meets no arc of the cylinder at all.
 fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes::WorkingCyl] {
-    if cyls.iter().any(|cy| cy.is_silent(q)) {
+    if crate::planes::silent_among(cyls, &[q]) {
         cyls
     } else {
         &[]

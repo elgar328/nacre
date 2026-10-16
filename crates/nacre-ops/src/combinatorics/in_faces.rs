@@ -85,7 +85,7 @@ pub(crate) fn point_in_faces_rat(
         // ray misses the face when every corner lies strictly to one side of a plane through the
         // ray, or strictly behind its origin ([`ray_misses_face`]); what that cannot show, this
         // road cannot answer, and the reason is the gate's.
-        let unstated = cyls.iter().any(|cy| cy.is_silent(q))
+        let unstated = crate::planes::silent_among(cyls, &[q])
             || std::iter::once(&f.outer)
                 .chain(&f.inner)
                 .any(|b| matches!(b, BoundEdges::Ring(r) if names_a_silent_class(cyls, r)));

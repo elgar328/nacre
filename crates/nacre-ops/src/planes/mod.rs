@@ -580,6 +580,15 @@ impl WorkingCyl {
     }
 }
 
+/// **Whether the gate passed any of `classes` as silent about the cylinders** ([`WorkingCyl::silent`]).
+/// Not «has no world statement»: a boolean with no cylinder has no gate record, so a nameless class
+/// there is not silent.
+pub(crate) fn silent_among(cyls: &[WorkingCyl], classes: &[usize]) -> bool {
+    classes
+        .iter()
+        .any(|&k| cyls.iter().any(|cy| cy.is_silent(k)))
+}
+
 /// **The interval a lateral face reaches along a direction `d`**, in `d·p` units.
 ///
 /// A point of the face is `p = o + s·m + r·u` with `u ⊥ m` a unit vector and `s` over the face's
