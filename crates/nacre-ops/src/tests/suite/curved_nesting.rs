@@ -1775,7 +1775,8 @@ fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
 /// by the mid slab: the result's cells carry pierce corners, so the ray road cannot side them from
 /// any ray plane and declines ([`nesting`]'s `Said::Declines`); the coordinate witnesses answer.
 /// Every such question must show the refusal at least once — the fixture is not vacuous — and no
-/// **named** witness asked after it, since each would put the same question to the same road.
+/// **named** witness asked after it: no class here is silent, so each would put the same question
+/// to the same road.
 #[test]
 fn a_road_that_declined_a_ring_is_not_asked_again() {
     let (_, base, h) = BOSS_FAMILIES
@@ -1797,7 +1798,7 @@ fn a_road_that_declined_a_ring_is_not_asked_again() {
     assert_eq!(out.expect("the slab parts it").len(), 2);
     let rows = nesting::nesting_probe::DECLINES.mine();
     assert!(!rows.is_empty(), "no question met a declining road");
-    for (declines, named_after) in rows {
+    for (declines, named_after, _) in rows {
         assert!(declines > 0);
         assert_eq!(
             named_after, 0,

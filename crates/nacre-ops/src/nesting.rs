@@ -245,24 +245,28 @@ enum Said {
     /// a `Wide` name or an overflow, and those are width, where this is the gate's own
     /// undecidedness carried to the place that met it.
     Silent,
-    /// **The road cannot read the target**, whichever of its witnesses asks — the ray road against
-    /// a ring with a pierce corner, or a two-edge lens. Not [`Said::Abstain`]: that is one
-    /// witness's circumstance and the next witness of the same road is its remedy; here every
-    /// witness of this road would say the same, so the rest of them are skipped and the other road
-    /// (coordinates) answers. For the refusal's name it counts as an abstention.
+    /// **The road cannot read the target** — the ray road against a ring with a pierce corner,
+    /// cast from a plane with a world statement (no cylinder table there), or a two-edge lens. Not
+    /// [`Said::Abstain`]: that is one witness's circumstance and the next witness of the same road
+    /// is its remedy; here every witness whose name holds no class the gate passed silent would say
+    /// the same, so the rest of those are skipped and the other road (coordinates) answers. A
+    /// witness whose name holds one never says this: [`ask`] answers it by the ring's box. For the
+    /// refusal's name it counts as an abstention.
     Declines,
 }
 
 impl Said {
     /// **What the ray road's refusal means for this witness** — the one place its errors are read.
     ///
-    /// The road asks a pierce corner's side with no cylinder table (`every_ray` hands `side_of` an
-    /// empty one), so a ring **with a pierce corner** is unreadable from every ray plane:
-    /// `PierceVertexUnnamed` there is the ring's, and the road declines. Without one, the same name
-    /// comes from an arc whose ends do not settle it against the ray's plane — both on it, both on
-    /// one side (none or two crossings), or one on it (none or one): the road has no cylinder to
-    /// side or count the arc with. That is a plane the witness chose, so the next witness may
-    /// answer, and it is an abstention. A ring of fewer than three edges is a lens
+    /// From a ray plane with a world statement the road asks a pierce corner's side with no
+    /// cylinder table (`every_ray`'s `silent_table`), so from such a plane a ring **with a pierce
+    /// corner** is unreadable: `PierceVertexUnnamed` there is the ring's, and the road declines.
+    /// Without one, the same name comes from an arc whose ends do not settle it against the ray's
+    /// plane — both on it, both on one side (none or two crossings), or one on it (none or one):
+    /// on that plane the road has no cylinder to side or count the arc with (a plane the gate
+    /// passed silent answers from the gate's record — by boxes where it sections the cylinder).
+    /// That is a plane the witness chose, so the next witness
+    /// may answer, and it is an abstention. A ring of fewer than three edges is a lens
     /// when it is mixed (a chord and its arc — an ordinary shape the ray road cannot walk) and a
     /// producer defect when it is all straight, which is raised under its own name. Anything else
     /// (`RingNaming`: a ring whose names the road cannot read) is not a witness's circumstance and
@@ -636,10 +640,11 @@ fn inside(
     // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices could cut it
     // short, and both are statements about a *road* rather than about the question:
     //   · skipping the ray road for a **mixed** target in advance — the ray road says so itself
-    //     when asked ([`Said::Declines`]), and from then on its remaining witnesses are skipped:
-    //     each would put the same question to the same road (measured before this rule: 2–12
-    //     identical refusals per question, and over 9,128 such questions no named witness after
-    //     the first refusal ever answered);
+    //     when asked ([`Said::Declines`]), and from then on its remaining named witnesses are
+    //     skipped where they would put the same question to the same road: every one whose name
+    //     holds no class the gate passed silent (measured over the suite, the ignored sweep, the
+    //     census and the kit: of 39,040 skips, the 38,992 without a silent class would each have
+    //     declined again, and the 48 with one, which are asked now, each answered);
     //   · answering a plain ring target on names **alone** once it names any probe, which refuses
     //     a ring whose every ray grazed with coordinates still in hand.
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
@@ -662,12 +667,20 @@ fn inside(
                 (p, true)
             }
         };
-        if declined && matches!(p, Where::Named(_)) {
+        // `ask` answers a name holding a class the gate passed silent by the ring's box, so only
+        // the others would repeat the road's refusal.
+        let repeats =
+            declined && matches!(&p, Where::Named(t) if !crate::planes::silent_among(cyls, t));
+        if repeats {
             continue;
         }
         #[cfg(test)]
-        if declined && matches!(p, Where::Named(_)) {
+        if repeats {
             tally.named_after += 1;
+        }
+        #[cfg(test)]
+        if declined && matches!(p, Where::Named(_)) {
+            tally.silent_after += 1;
         }
         match ask(jd, cyls, wc, &p, b)? {
             Said::Unformed => unformed = true,
@@ -933,21 +946,23 @@ pub(crate) mod nesting_probe {
         ROWS.push(r);
     }
 
-    /// Per question that the ray road declined: how many witnesses it declined for, and how many
-    /// **named** witnesses were still asked after the first refusal — `0` is the skip in
-    /// [`super::inside`], and a row is pushed as the question leaves, by whichever exit.
-    pub(crate) static DECLINES: Ledger<(usize, usize)> = Ledger::new();
+    /// Per question that the ray road declined: how many witnesses it declined for, how many
+    /// named witnesses the skip in [`super::inside`] should have passed over were still asked
+    /// (`0` is the skip), and how many named witnesses holding a class the gate passed silent were
+    /// asked after the refusal. A row is pushed as the question leaves, by whichever exit.
+    pub(crate) static DECLINES: Ledger<(usize, usize, usize)> = Ledger::new();
 
     #[derive(Default)]
     pub(crate) struct DeclineTally {
         pub(crate) declines: usize,
         pub(crate) named_after: usize,
+        pub(crate) silent_after: usize,
     }
 
     impl Drop for DeclineTally {
         fn drop(&mut self) {
             if self.declines > 0 && on() {
-                DECLINES.push((self.declines, self.named_after));
+                DECLINES.push((self.declines, self.named_after, self.silent_after));
             }
         }
     }

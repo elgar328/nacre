@@ -707,3 +707,38 @@ fn nameless_classes_beside_world_cylinders() {
         }
     }
 }
+
+/// **A witness whose name holds a silent class is asked after the ray road declines.** The ray road
+/// declines a ring with a pierce corner from a ray plane with a world statement, and `nesting`
+/// then skips the named witnesses that would put the same question to it — but `ask` answers a
+/// name holding a class the gate passed silent by the ring's box, so that one is no repeat. In this
+/// family (the recorded rib wall, a box turned 37 across its plane) twelve questions meet such a
+/// witness after the road declined, and each is asked and answers. Read back from the skip's tally
+/// (`nesting_probe::DECLINES`):
+/// `silent_after` counts them, `named_after` the witnesses the skip should have passed over.
+#[test]
+fn a_witness_naming_a_silent_class_is_asked_after_the_road_declines() {
+    let rows = crate::ledger::owned(|| {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let mut m = Model::new();
+            let p = plate_with_bore(&mut m);
+            let rib = cuboid(&mut m, [9.0, 30.0, 5.0], [11.0, 40.0, 15.0]);
+            let a = op(&mut m, BoolKind::Fuse, p, rib);
+            let b = turned_box(&mut m, 37, [10, 25], 5.0, 10.0);
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, kind, a, b).expect("the turned box meets the ribbed plate");
+        }
+        crate::nesting::nesting_probe::DECLINES.mine()
+    });
+    assert!(
+        rows.iter().any(|&(_, _, silent_after)| silent_after > 0),
+        "no witness naming a silent class was asked after a declining road: {rows:?}"
+    );
+    for (declines, named_after, _) in rows {
+        assert!(declines > 0);
+        assert_eq!(
+            named_after, 0,
+            "a repeating witness was asked after its road declined"
+        );
+    }
+}
