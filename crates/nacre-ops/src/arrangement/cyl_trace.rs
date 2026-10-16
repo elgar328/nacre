@@ -380,6 +380,8 @@ fn cycle_on_class(
     out: &mut Vec<Carved>,
 ) -> Result<(), DeclineKind> {
     let _ = inner; // the ledger's, under test
+    #[cfg(test)]
+    let start = out.len();
     // ★★ **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
     // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
@@ -462,12 +464,12 @@ fn cycle_on_class(
                     let a = ring[edge];
                     let b = ring[(edge + 1) % n];
                     let arc = if nu { [a, b] } else { [b, a] };
-                    #[cfg(test)]
-                    arc_probe::record(jd, cyl, def, inner, arc);
                     out.push(Carved {
                         arc,
                         on: Some(CylOnClass::Grazes { body_above }),
                     });
+                    #[cfg(test)]
+                    arc_probe::record(jd, cyl, def, inner, &out[start..]);
                 }
             }
             combinatorics::Feature::Crossing { edge, from, .. } => {
@@ -526,10 +528,12 @@ fn cycle_on_class(
                 return Err(DeclineKind::CylHoleFeature); // the boundaries did not alternate
             }
             if ahead {
-                let arc = [a, b];
+                out.push(Carved {
+                    arc: [a, b],
+                    on: None,
+                });
                 #[cfg(test)]
-                arc_probe::record(jd, cyl, def, inner, arc);
-                out.push(Carved { arc, on: None });
+                arc_probe::record(jd, cyl, def, inner, &out[start..]);
             }
         }
     }

@@ -11,7 +11,7 @@
 //! [`crate::arrangement`] mounts it with `#[path]` as `arc_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
-use super::{Judge, NodeId, WorkingPlane, combinatorics};
+use super::{Carved, Judge, WorkingPlane, combinatorics};
 use crate::ledger::Ledger;
 
 /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
@@ -26,15 +26,26 @@ pub(crate) struct Mid {
     pub dir: [f64; 3],
     pub inner: bool,
     pub origin: [f64; 3],
+    /// How many extents the same cycle had carved on the same class before this one — both arms
+    /// counted together, the run's arcs first.
+    pub nth: usize,
+    /// Whether the extent is one of the cycle's own arcs on the class (the face grazes there) rather
+    /// than a stretch the class crosses the cycle's interior over.
+    pub grazes: bool,
 }
 
-pub(crate) fn record(
+/// Record the newest extent of `this_call` — what one cycle has carved on one class so far.
+pub(super) fn record(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     inner: bool,
-    arc: [NodeId; 2],
+    this_call: &[Carved],
 ) {
+    let Some(carved) = this_call.last() else {
+        return;
+    };
+    let arc = carved.arc;
     let (Some(pa), Some(pb)) = (
         combinatorics::pierce_point(jd, cyl, def, arc[0]),
         combinatorics::pierce_point(jd, cyl, def, arc[1]),
@@ -76,5 +87,7 @@ pub(crate) fn record(
         dir: core::array::from_fn(|i| c * u[i] + s * w[i]),
         inner,
         origin: o,
+        nth: this_call.len() - 1,
+        grazes: carved.on.is_some(),
     });
 }

@@ -447,6 +447,61 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
     }
 }
 
+/// ★★★★ **A cycle that carves two extents on one class has both read.** The wall `[9,11]×[0,40]×[5,15]`
+/// fused across the bored plate ([`walled_bore`]) opens two windows in the bore's lateral, one on
+/// either side of the axis, from `z = 5` up to the plate's top, and the lateral's boundary around
+/// them is one cycle. `cycle_on_class` reads it against each ⊥ class: on `z = 10` and on `z = 5` it
+/// lays two arcs (the run arm), and a box standing on `z = 8` — far from the bore, there only for
+/// its plane — crosses its four rulings, two stretches, one per window (the crossing arm).
+///
+/// ☑ Measured by dropping the last extent of a call that carved two or more: with only the arcs'
+/// or only the stretches' dropped, every operation here is refused (`LabelConflict`). The
+/// `nth ≥ 1` rows are the fixture's premise rather than a claim about the kernel — a change that
+/// rightly read this cycle in one extent per class would turn them red without anything being
+/// wrong, and then this case needs another fixture.
+#[test]
+fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
+    let walled = walled_bore_volume();
+    for (kind, want) in [
+        (BoolKind::Fuse, walled + 200.0),
+        (BoolKind::Cut, walled - 50.0),
+        (BoolKind::Common, 50.0),
+    ] {
+        let mut m = Model::new();
+        let a = walled_bore(&mut m);
+        let b = crate::fixtures::cuboid(
+            &mut m,
+            Point3::from_array([30.0, 30.0, 8.0]),
+            Point3::from_array([35.0, 35.0, 18.0]),
+        );
+        m.rebuild_adjacency();
+        let from = crate::arrangement::arc_probe::MIDS.len();
+        let out = crate::ledger::owned(|| boolean(&mut m, kind, a, b))
+            .unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+        assert_eq!(out.len(), 1, "{kind:?}: one solid");
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{kind:?}: validate"
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
+        assert!((v - want).abs() <= 1e-9 * want, "{kind:?}: {v} vs {want}");
+        let second: Vec<bool> = crate::arrangement::arc_probe::MIDS
+            .mine_since(from)
+            .iter()
+            .filter(|mid| mid.inner && mid.origin == [10.0, 10.0, -1.0] && mid.nth >= 1)
+            .map(|mid| mid.grazes)
+            .collect();
+        for (arm, grazes) in [("an arc", true), ("a crossed stretch", false)] {
+            assert!(
+                second.contains(&grazes),
+                "{kind:?}: no cycle carved {arm} as its second extent on a class — the fixture no \
+                 longer reaches the case it locks"
+            );
+        }
+    }
+}
+
 /// ★★★★★ **A boolean's own result takes a second cylinder — the whole road, end to end.**
 ///
 /// A boss standing on a **wall** was the one chained operand that did not build. It buries half the
