@@ -1983,7 +1983,8 @@ pierce 꼭짓점은 기권한다. 남는 기권과 그 근거: 곡선 간선 × 
 ### 분할과 자국
 
 - **분할 세 패스는 한 어휘를 쓴다.** 분할점은 `Split`(평면 클래스 **또는** 어느 원통의 어느 근),
-  순서는 `order_located` **한 규칙**. 호 분할의 구간 판정은 `closed_contains` 이고, 좌표를 읽는 것은
+  순서는 **한 규칙**(`order_on` — 평면 핀 쌍은 `order_along`, 관통점이 끼면 `order_located`; 오버레이처럼 위치를
+  끌어올리는 자리는 `closed_contains` 를 거쳐 `order_located` 를 읽는다). 호 분할의 구간 판정은 `closed_contains` 이고, 좌표를 읽는 것은
   `segment_meets_cylinder` **필터** 하나뿐이며 양 끝에 좌표가 있을 때만 돈다(필터를 잃으면 풀이 한 번이
   들 뿐 답은 안 변한다). 룰링 분할의 방출부는 `split_segments_at` 으로 호 분할과 **한 함수**다.
 - **옆면의 구멍은 «다른 모든 면과 똑같이» 이름 짓는다.** `loop_triples` 에 「면 자신이 원통인」 팔이

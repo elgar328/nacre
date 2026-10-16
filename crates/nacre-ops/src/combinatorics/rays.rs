@@ -55,15 +55,11 @@ pub(crate) fn every_ray(
         // takes: one of `v`'s own planes that cuts `p ∩ qa`. When `p` is not among `v`'s planes
         // one of the other two can hold the line (a pencil), and read there it orders nothing.
         let qb = pin_on_line(jd, p, qa, &v).ok_or_else(|| reject(RejectReason::RingNaming))?;
-        // Where a point on the line lies against `v` along `n_P × n_Qa`: a plane pin by the hot
-        // road (`order_along`), a pierce point by its side of `Q_b` (`order_on`'s
-        // pierce-against-pin rule). Runs and crossings both ask it.
+        // Where a point on the line lies against `v` along `n_P × n_Qa` ([`order_on`]). Runs and
+        // crossings both ask it.
         let against_v = |at: PointOn| -> Result<i8, BoolError> {
-            match at {
-                PointOn::Class(w) => Ok(order_along(jd, p, qa, w, qb)),
-                PointOn::Pierce(_) => order_on(jd, table, p, qa, at, PointOn::Class(qb))
-                    .ok_or_else(|| reject(RejectReason::WitnessNotRational)),
-            }
+            order_on(jd, table, p, qa, at, PointOn::Class(qb))
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational))
         };
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back
@@ -182,14 +178,9 @@ pub(crate) fn segment_meets_face(
     let BoundEdges::Ring(_) = &face.outer else {
         return Err(reject(RejectReason::RingNaming));
     };
-    // Two places on the line, ordered: plane pins by `order_along` (the hot road), anything a
-    // cylinder pins by `order_on`.
+    // Two places on the line, ordered ([`order_on`]).
     let order = |a: PointOn, b: PointOn| -> Result<i8, BoolError> {
-        match (a, b) {
-            (PointOn::Class(x), PointOn::Class(y)) => Ok(order_along(jd, p, w, x, y)),
-            _ => order_on(jd, cyls, p, w, a, b)
-                .ok_or_else(|| reject(RejectReason::WitnessNotRational)),
-        }
+        order_on(jd, cyls, p, w, a, b).ok_or_else(|| reject(RejectReason::WitnessNotRational))
     };
     // Every place a bound meets the line: `[lo, hi]` (equal for a crossing at a point) and whether
     // passing it flips inside/outside.

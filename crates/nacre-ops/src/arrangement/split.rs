@@ -151,9 +151,11 @@ pub(super) fn split_at_crossings(
     // containment test below sweeps `i` over every wall, so asking it there would ask the same
     // question `|walls|` times over (measured: 1.5M `dir_sign` calls where 113k are distinct).
     // ★★★★★ **This pass is not plane-only.** A split point is
-    // a [`Split`] — a plane class **or** which root of which cylinder — and the order comes from
-    // [`combinatorics::order_located`], which takes both. The endpoints are not read as class ids
-    // up front either: they are located as [`combinatorics::OnLine`]s, so an end a cylinder pinned
+    // a [`Split`] — a plane class **or** which root of which cylinder — and the order is one rule
+    // that takes both ([`combinatorics::order_on`]; here [`combinatorics::closed_contains`] reads
+    // [`combinatorics::order_located`] with the hoists handed in). The endpoints are not read as
+    // class ids up front either: they are located
+    // as [`combinatorics::OnLine`]s, so an end a cylinder pinned
     // has a form to be compared by, and nothing here refuses: [`Split::of`] and
     // `combinatorics::PointOn::of` **panic** on a cylinder pin beside a three-plane name, because
     // those two halves disagreeing is this kernel's defect and not a shape a model can have.

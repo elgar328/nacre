@@ -656,10 +656,10 @@ pub enum RejectReason {
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
     /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one of
-    /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
-    /// calls it), the arrangement's split passes and the cylinder chart's stations, orders and
-    /// ruling sides, where a point's own description — its `(line, s)` or its `dir_sign` — could
-    /// not be formed, and a ring's winding
+    /// them has no exact description (`combinatorics::order_on`, and `combinatorics::order_located`
+    /// in the interval overlay), the arrangement's split passes and the cylinder chart's stations,
+    /// orders and ruling sides, where a point's own description — its `(line, s)` or its
+    /// `dir_sign` — could not be formed, and a ring's winding
     /// (`combinatorics::arc_extremum_winding`), where an arc's minimum — the pierce point of its
     /// cap plane, a plane through the axis, and the cylinder — could not be solved.
     ///

@@ -87,8 +87,8 @@ pub(crate) fn order_along(
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
-/// **The order of two points along `L = P ∩ Q`, whatever pins them** — the one place that rule
-/// lives, and both its consumers (the tracer's node sort and [`edge_dir`]) call it.
+/// **The order of two points along `L = P ∩ Q`, whatever pins them** — [`order_on`] for an end
+/// carried as a (name, pin) pair.
 ///
 /// ★★★★★ **Which direction is `order_along`'s, derived rather than matched.** [`Judge::orient3d`]
 /// is *not* a four-plane determinant — it is the point `V = {p, q, i}` against the **triangle** `j`,
@@ -122,7 +122,15 @@ pub(crate) fn order_pinned(
     order_on(jd, cyls, p, q, PointOn::of(a), PointOn::of(b))
 }
 
-/// [`order_pinned`] for callers that already hold the points in [`PointOn`] form.
+/// **The order of two [`PointOn`]s along `L = P ∩ Q`** — the rule [`order_pinned`] states: two plane
+/// pins by [`order_along`], any pair with a pierce point through the located forms
+/// ([`order_located`]).
+///
+/// ★ **Two plane pins take `order_along` here, before anything is located.** The located road gives
+/// the same sign (its first arm is `order_along` with the Cramer parts cached), but building the
+/// forms for a single comparison is not free: a variant where the ray caster and the chord test
+/// asked their plane pairs that way — the ray even locating `v` once per ray — ran 2–4% slower on
+/// the axis-aligned 80-fin fold, with and without one codegen unit.
 #[inline]
 pub(crate) fn order_on(
     jd: &Judge<'_, WorkingPlane>,
@@ -132,6 +140,9 @@ pub(crate) fn order_on(
     a: PointOn,
     b: PointOn,
 ) -> Option<i8> {
+    if let (PointOn::Class(i), PointOn::Class(j)) = (a, b) {
+        return Some(order_along(jd, p, q, i, j));
+    }
     let (a, b) = (locate(jd, cyls, p, q, a)?, on_line(jd, cyls, p, q, b)?);
     order_located(jd, p, q, &a, &b)
 }
@@ -341,8 +352,8 @@ pub(crate) fn closed_contains(
 
 /// Put a point on `L = P ∩ Q` into the form [`order_located`] takes.
 ///
-/// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — which is what
-/// keeps [`order_pinned`] total on the plane/plane pair its two older callers ask about.
+/// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — so a plane pin
+/// never makes a comparison fail.
 #[inline]
 pub(crate) fn on_line(
     jd: &Judge<'_, WorkingPlane>,
@@ -390,8 +401,7 @@ fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
 
 /// Put a point into the **first**-argument form — an [`on_line`] with the Cramer handle beside it.
 ///
-/// ☑ **Infallible for a plane pin**, like [`on_line`], which is what keeps [`order_pinned`] total
-/// on the plane/plane pair its two older callers ask about.
+/// ☑ **Infallible for a plane pin**, like [`on_line`].
 #[inline]
 pub(crate) fn locate<'j>(
     jd: &'j Judge<'j, WorkingPlane>,
@@ -421,8 +431,8 @@ pub(crate) fn locate<'j>(
     }
 }
 
-/// **The order of two located points along `L = P ∩ Q`** — [`order_pinned`]'s body, with the
-/// hoists handed in rather than rebuilt.
+/// **The order of two located points along `L = P ∩ Q`** — [`order_on`]'s road for a pair with a
+/// pierce point, and the whole rule for a caller that hands its hoists in rather than rebuilding them.
 ///
 /// ★★★★★ The plane/plane test is the **first statement** on purpose: everything after it computes
 /// the line's rational direction and a radical comparison, and the overlay asks this millions of

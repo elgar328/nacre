@@ -397,14 +397,6 @@ census 21/5,687 클래스, 스위트 모션 없는 클래스의 약 11%(10,156/8
 잠그려면 깎은 칸이 둘 이상인 순환을 가진 픽스처가 결과(부피·면)로 그 칸을 읽어야 한다 — 어떤 모양이 그런지부터
 찾는다.
 
-### 선 위 두 점의 순서를 고르는 갈래가 두 벌이다
-
-`combinatorics/rays.rs` 의 `every_ray`(`against_v`)와 `segment_meets_face`(`order`)가 같은 갈래를 따로 적는다 — 평면
-핀끼리는 `order_along`, 관통점이 끼면 `order_on`. `order_on` 은 평면 핀 둘도 같은 식으로 답하므로(`order_located` 의 첫
-갈래가 `order_along` 그대로다) 둘 다 `order_on` 하나로 줄일 수 있다. 막는 것은 비용이다: 평면 쌍마다 `jd.point` 로
-점을 짓는 몫이 붙고 `every_ray` 는 nesting 의 뜨거운 길이다. 같은 세션 A/B 로 재되, 작은 불리언의 벽시계는 코드 배치로도
-움직이므로 `codegen-units=1` 로 양쪽을 함께 잰다.
-
 ### 광선 도로가 원통 표 없이 묻는다는 두 문장
 
 `nesting::Said::of_ray_error` 의 문서와 design 「증인과 중점」의 넷째 사건 문단은 «광선 도로는 관통 꼭짓점의 쪽을 원통
