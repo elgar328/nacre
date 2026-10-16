@@ -25,6 +25,7 @@ fn oracle_families() -> Vec<(&'static str, Build)> {
     v.push(("bore axis", Box::new(|| bored_plate_and_slab(10.0))));
     v.push(("through mid", Box::new(fused_through_and_mid_slab)));
     v.push(("recorded block", Box::new(recorded_block_and_box)));
+    v.push(("recorded bore", Box::new(recorded_bore_and_box)));
     v
 }
 
@@ -35,6 +36,33 @@ fn oracle_families() -> Vec<(&'static str, Build)> {
 fn recorded_block_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut m = Model::new();
     let a = super::fixtures::through_block(&mut m, 1.0);
+    let b = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([1.0, 2.5, 0.5]),
+        Point3::from_array([2.0, 3.5, 1.5]),
+    );
+    m.rebuild_adjacency();
+    (m, a, b)
+}
+
+/// [`recorded_block_and_box`] with a bore through the block — the family where the group's
+/// motions put a **cylinder** on a chain that folds, so the gate reads it through the fold
+/// (`world_cylinder_def`). The box crosses the bore, and a quarter turn about `y` puts two
+/// spellings of the bore's radical on one step of a mixed ring.
+fn recorded_bore_and_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let block = super::fixtures::through_block(&mut m, 1.0);
+    let bore = crate::fixtures::cylinder_with_seam(
+        &mut m,
+        Point3::from_array([1.24, 3.32, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+        0.4,
+        3.0,
+    )
+    .solid;
+    m.rebuild_adjacency();
+    let a = boolean(&mut m, BoolKind::Cut, block, bore).expect("the bore cuts")[0];
     let b = crate::fixtures::cuboid(
         &mut m,
         Point3::from_array([1.0, 2.5, 0.5]),

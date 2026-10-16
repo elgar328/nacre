@@ -1,8 +1,8 @@
 use super::*;
 /// A ring the rational chart road cannot name: a pierce corner (no rational coordinates) or an
 /// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
-/// step by step in ℚ(√c) — the one predicate, asked by the circle arm of the arrangement's `cell_in_cell` of a
-/// centre and by its polygon arm of a node.
+/// step by step in quadratic radicals — the one predicate, asked by the circle arm of the
+/// arrangement's `cell_in_cell` of a centre and by its polygon arm of a node.
 pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
     ring.iter()
         .any(|e| matches!(e.carrier, Carrier::Arc(_)) || pierce_name(e.node).is_some())
@@ -98,6 +98,31 @@ pub(crate) fn arc_span(
     })
 }
 
+/// A line step's corner in chart coordinates, `r₀ + r₁·√c` — one radical for both coordinates.
+struct Corner {
+    r0: [nacre_exact::Rat; 2],
+    r1: [nacre_exact::Rat; 2],
+    c: nacre_exact::Rat,
+}
+
+impl Corner {
+    /// The radical the corner carries — `0` for a rational corner, whatever `c` its root spelled.
+    fn radical(&self) -> nacre_exact::Rat {
+        let zero = nacre_exact::Rat::from_int(0);
+        if self.r1 == [zero, zero] {
+            zero
+        } else {
+            self.c
+        }
+    }
+
+    /// The two coordinates as `QuadVal`s, for the one-radical questions a corner is asked alone.
+    fn values(&self) -> Option<[nacre_exact::QuadVal; 2]> {
+        let v = |k: usize| nacre_exact::QuadVal::new(self.r0[k], self.r1[k], self.c);
+        Some([v(0)?, v(1)?])
+    }
+}
+
 /// **Parity of a rational point against a ring with pierce corners and arc steps** — the mixed
 /// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
 ///
@@ -105,12 +130,13 @@ pub(crate) fn arc_span(
 /// second basis spelling): in chart coordinates it is `{ y = q.y, x > q.x }`. Each ring step
 /// answers by its carrier:
 ///
-/// * a **line step** compares in ℚ(√c): the corners' chart coordinates are `QuadVal`s (a
-///   rational corner lifted by `from_rat`, a pierce corner evaluated along its canonical meet
-///   line — [`pierce_meet`]), the y-straddle is two signs, and "right of the
-///   probe" is the 2-D orientation `(b−a) × (q−a)` — products stay in one radical because a
-///   step carries at most one circle's corners; two *different* circles' corners on one step
-///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
+/// * a **line step** reads its corners as chart coordinates `r₀ + r₁·√c` (a rational corner with
+///   `r₁ = 0`, a pierce corner evaluated along its canonical meet line — [`pierce_meet`]), the
+///   y-straddle is two signs, and "right of the probe" is the 2-D orientation `(b−a) × (q−a)`.
+///   Its two corners need not spell one radical — the ends of one ruling named by two plane
+///   pairs carry `c` and `k²c`, and two circles' corners carry two radicals — so the orientation
+///   is one `QuadVal` expression where they do and the two-radical sign (`biquad_sign`) where
+///   they do not;
 /// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
 ///   class plane and the cylinder is [`nacre_exact::quad::plane_plane_cylinder`], the pierce
 ///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
@@ -131,10 +157,10 @@ pub(crate) fn arc_span(
 /// `WitnessNotRational`. A root on the seam is
 /// none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
-/// ★ **A radical mismatch is not among them.**
-/// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
-/// a test or debug build it **panics** rather than abstaining. The contract it states is
-/// same-radical arithmetic, and a caller that could mix two must not reach it.
+/// ★ **A radical mismatch is not among them**, and nothing here can reach one: every value two
+/// corners are combined into goes through the line step's orientation above, which asks
+/// `QuadVal` only when the two share a spelling. `QuadVal`'s same-radical arithmetic
+/// `debug_assert`s on a mix, so a mix would be a panic in a test build, not an abstention.
 pub(crate) fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -160,28 +186,37 @@ pub(crate) fn point_in_mixed_ring(
             .checked_add(x[1].checked_mul(y[1])?)?
             .checked_add(x[2].checked_mul(y[2])?)
     };
-    // A corner's chart coordinates, as `QuadVal`s.
-    let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
+    // A corner's chart coordinates `r₀ + r₁·√c`, with the radical read **once, off the root** — a
+    // coordinate's own `QuadVal` folds `c` to 0 where its radical part vanishes, so the two
+    // coordinates of one corner can spell different `c()`s, and the radical read off either one
+    // would drop the other's `√c` term.
+    let corner = |nd: NodeId| -> Option<Corner> {
         if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
             let (line, s) = pierce_meet(jd, cyl, def, nd)?.into_exact()?;
-            // ★ **A rational root is used as the rational it is.** A step's two corners share one
-            // radical because they are the two meets of one line with the cylinder — unless a
-            // corner arrives under another pair's name: a point on a line two classes share
-            // on the cylinder, whose representative is the other class's pierce name. Such a
-            // point is three planes' meet, so rational, but its root carries that other pair's
-            // (square) discriminant, and mixing it with the step's radical is the caller bug
-            // `QuadVal` refuses.
-            let s = s.as_rat().map_or(s, QuadVal::from_rat);
             let (b, d) = (line.base(), line.dir());
-            let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
-                QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)
+            let coord = |e: &[Rat; 3]| -> Option<(Rat, Rat)> {
+                let along = dot(&d, e)?;
+                Some((
+                    dot(&b, e)?.checked_add(s.a().checked_mul(along)?)?,
+                    s.b().checked_mul(along)?,
+                ))
             };
-            Some([coord(e1)?, coord(e2)?])
+            let ((x0, x1), (y0, y1)) = (coord(e1)?, coord(e2)?);
+            Some(Corner {
+                r0: [x0, y0],
+                r1: [x1, y1],
+                c: s.c(),
+            })
         } else {
             let p = node_coords_rat(jd, nd)?;
             let pr = chart.project(&p)?;
-            Some([QuadVal::from_rat(pr[0]), QuadVal::from_rat(pr[1])])
+            let zero = Rat::from_int(0);
+            Some(Corner {
+                r0: pr,
+                r1: [zero, zero],
+                c: zero,
+            })
         }
     };
     let k = ring.len();
@@ -192,8 +227,8 @@ pub(crate) fn point_in_mixed_ring(
             // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
             // its corners are pierce points, which `corner` already evaluates exactly.
             Carrier::Plane { .. } | Carrier::Ruling(_) => {
-                let a = corner(na)?;
-                let b = corner(nb)?;
+                let (ca, cb) = (corner(na)?, corner(nb)?);
+                let (a, b) = (ca.values()?, cb.values()?);
                 let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
                 let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
                 // A corner on the ray is the boundary only when the probe *is* that corner —
@@ -219,17 +254,41 @@ pub(crate) fn point_in_mixed_ring(
                 if ray_straddle(ya, yb).is_none() {
                     continue;
                 }
-                // orient2d(a, b, q) = (b−a) × (q−a), all in one radical (or an honest None).
-                let (qxv, qyv) = (QuadVal::from_rat(qx), QuadVal::from_rat(qy));
-                let o = b[0]
-                    .checked_sub(&a[0])?
-                    .checked_mul(&qyv.checked_sub(&a[1])?)?
-                    .checked_sub(
-                        &b[1]
-                            .checked_sub(&a[1])?
-                            .checked_mul(&qxv.checked_sub(&a[0])?)?,
-                    )?;
-                match ray_step_crossing(ya, yb, o.sign()) {
+                // orient2d(a, b, q) = (b−a) × (q−a). In one radical — the two corners spell the
+                // same `c`, or one of them is rational — it is `QuadVal` arithmetic. Two spellings
+                // (the corners of one ruling named by two plane pairs carry `c` and `k²c`) or two
+                // circles' radicals take the form every two-radical sign in the kernel takes: the
+                // same value is `(a−q) × (b−q)`, bilinear in `a − q ∈ ℚ(√u)²` and `b − q ∈ ℚ(√v)²`,
+                // so its four terms go to `biquad_sign`.
+                let o = if ca.radical() == cb.radical()
+                    || ca.radical() == Rat::from_int(0)
+                    || cb.radical() == Rat::from_int(0)
+                {
+                    let (qxv, qyv) = (QuadVal::from_rat(qx), QuadVal::from_rat(qy));
+                    b[0].checked_sub(&a[0])?
+                        .checked_mul(&qyv.checked_sub(&a[1])?)?
+                        .checked_sub(
+                            &b[1]
+                                .checked_sub(&a[1])?
+                                .checked_mul(&qxv.checked_sub(&a[0])?)?,
+                        )?
+                        .sign()
+                } else {
+                    let ra = [ca.r0[0].checked_sub(qx)?, ca.r0[1].checked_sub(qy)?];
+                    let rb = [cb.r0[0].checked_sub(qx)?, cb.r0[1].checked_sub(qy)?];
+                    let cross = |x: &[Rat; 2], y: &[Rat; 2]| -> Option<Rat> {
+                        x[0].checked_mul(y[1])?.checked_sub(x[1].checked_mul(y[0])?)
+                    };
+                    nacre_exact::biquad_sign(
+                        cross(&ra, &rb)?,
+                        cross(&ca.r1, &rb)?,
+                        cross(&ra, &cb.r1)?,
+                        cross(&ca.r1, &cb.r1)?,
+                        ca.c,
+                        cb.c,
+                    )?
+                };
+                match ray_step_crossing(ya, yb, o) {
                     Some(true) => inside = !inside,
                     Some(false) => {}
                     None => {
