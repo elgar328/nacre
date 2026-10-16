@@ -1205,35 +1205,6 @@ enum LoopOnLine {
     Crossings([Vec<nacre_exact::QuadVal>; 2]),
 }
 
-/// The order of two values that may carry different radicals — `None` is arithmetic that could
-/// not answer. ★ Same-radical arithmetic is [`nacre_exact::QuadVal`]'s contract (it
-/// `debug_assert`s on a mix), so two different radicals go through
-/// [`nacre_exact::biquad_sign`]; a perfect-square radical is folded to its rational first, since it
-/// otherwise looks like a radical of its own.
-fn cmp_quad(x: nacre_exact::QuadVal, y: nacre_exact::QuadVal) -> Option<core::cmp::Ordering> {
-    use nacre_exact::{Orient, QuadVal, Rat};
-    let zero = Rat::from_int(0);
-    let norm = |q: QuadVal| q.as_rat().map_or(q, QuadVal::from_rat);
-    let (x, y) = (norm(x), norm(y));
-    let sign = if x.b() == zero || y.b() == zero || x.c() == y.c() {
-        x.checked_sub(&y)?.sign()
-    } else {
-        nacre_exact::biquad_sign(
-            x.a().checked_sub(y.a())?,
-            x.b(),
-            zero.checked_sub(y.b())?,
-            zero,
-            x.c(),
-            y.c(),
-        )?
-    };
-    Some(match sign {
-        Orient::Positive => core::cmp::Ordering::Greater,
-        Orient::Negative => core::cmp::Ordering::Less,
-        Orient::Zero => core::cmp::Ordering::Equal,
-    })
-}
-
 /// **Where does the tangent line run through the wall face, over one stretch of the line a lateral
 /// face covers?** —
 /// the proposition a row carries ([`Tangency::runs_through`]), and whether the face touches the
@@ -1452,7 +1423,7 @@ fn line_runs_through_face(
     for p in points {
         let mut at = sorted.len();
         for (i, q) in sorted.iter().enumerate() {
-            match cmp_quad(p, *q)? {
+            match p.cmp_value(q)? {
                 Ordering::Equal => {
                     at = usize::MAX;
                     break;
@@ -1473,12 +1444,12 @@ fn line_runs_through_face(
         Some(match l {
             LoopOnLine::Clear => false,
             LoopOnLine::Chord(a, b) => {
-                cmp_quad(*a, lo)? != Ordering::Greater && cmp_quad(hi, *b)? != Ordering::Greater
+                a.cmp_value(&lo)? != Ordering::Greater && hi.cmp_value(b)? != Ordering::Greater
             }
             LoopOnLine::Crossings(c) => {
                 let mut below = 0usize;
                 for x in &c[r] {
-                    if cmp_quad(*x, lo)? != Ordering::Greater {
+                    if x.cmp_value(&lo)? != Ordering::Greater {
                         below += 1;
                     }
                 }
@@ -1494,7 +1465,7 @@ fn line_runs_through_face(
     };
     for pair in sorted.windows(2) {
         let (lo, hi) = (pair[0], pair[1]);
-        if cmp_quad(lo, s0)? == Ordering::Less || cmp_quad(hi, s1)? == Ordering::Greater {
+        if lo.cmp_value(&s0)? == Ordering::Less || hi.cmp_value(&s1)? == Ordering::Greater {
             continue;
         }
         let mut reading = [false; 2];

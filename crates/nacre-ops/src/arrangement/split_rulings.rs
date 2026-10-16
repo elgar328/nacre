@@ -113,8 +113,8 @@ type LateralCrossing = (combinatorics::NodeId, combinatorics::PierceMeet);
 
 /// **A point's coordinate along a cylinder's axis** (`m · x`) — exact (`a + b√c`) where the point has
 /// an exact meet or lies on a plane across the axis, else an interval. Two exact ones compare
-/// exactly ([`cmp_along`]); a pair with an interval compares by the boxes and is never a tie:
-/// `None` where they cannot be separated.
+/// exactly ([`nacre_exact::QuadVal::cmp_value`]); a pair with an interval compares by the boxes
+/// and is never a tie: `None` where they cannot be separated.
 #[derive(Clone)]
 enum AxisCoord {
     Exact(nacre_exact::quad::QuadVal),
@@ -183,7 +183,7 @@ impl AxisCoord {
             Self::Bounded(b) => Some(b.clone()),
         };
         match (self, other) {
-            (Self::Exact(a), Self::Exact(b)) => cmp_along(a, b),
+            (Self::Exact(a), Self::Exact(b)) => a.cmp_value(b),
             _ => match hp(self)?.sub(&hp(other)?, prec).sign()? {
                 true => Some(Ordering::Greater),
                 false => Some(Ordering::Less),
@@ -208,9 +208,10 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// `ClassEdges::of` carries a shipped backstop over the pair that has an exact predicate
 /// ([`crate::RejectReason::CircleCrossesRuling`]).
 ///
-/// The ordering vocabulary is the established one: along a segment, [`cmp_along`] on the
-/// canonical meet line; along a ruling, the same comparator on the **axis coordinate**
-/// (`m · x`, evaluated exactly from each node's re-solved name).
+/// The ordering vocabulary is the established one: along a segment,
+/// [`nacre_exact::QuadVal::cmp_value`] on the canonical meet line; along a ruling, the same
+/// comparator on the **axis coordinate** (`m · x`, evaluated exactly from each node's re-solved
+/// name).
 pub(super) fn split_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -494,7 +495,7 @@ fn fold_onto_rulings(
         let (Some(a), Some(b)) = (axis_at(cyl, sg.end[0]), axis_at(cyl, sg.end[1])) else {
             return Err(undecided());
         };
-        let (a, b) = match cmp_along(&a, &b).ok_or_else(undecided)? {
+        let (a, b) = match a.cmp_value(&b).ok_or_else(undecided)? {
             core::cmp::Ordering::Greater => (b, a),
             _ => (a, b),
         };
@@ -503,8 +504,8 @@ fn fold_onto_rulings(
                 return Err(undecided());
             };
             use core::cmp::Ordering::Less;
-            if cmp_along(&a, &hi).ok_or_else(undecided)? == Less
-                && cmp_along(&lo, &b).ok_or_else(undecided)? == Less
+            if a.cmp_value(&hi).ok_or_else(undecided)? == Less
+                && lo.cmp_value(&b).ok_or_else(undecided)? == Less
             {
                 return Err(reject(RejectReason::RulingBoundNotYet));
             }

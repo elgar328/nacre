@@ -13,7 +13,8 @@ type SplitCircles = Option<(
 /// ★★★ This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
 /// names them.
 /// The work here is ordering: around the circle (θ, [`nacre_exact::quad::circular_order_about_seam`])
-/// to make arcs, and along each segment (the line parameter, [`cmp_along`]) to make sub-segments.
+/// to make arcs, and along each segment (the line parameter, [`nacre_exact::QuadVal::cmp_value`])
+/// to make sub-segments.
 ///
 /// ★ A circle nothing crosses is returned **whole**, on the road it has always taken. The parallel
 /// road shrinks to the population it is actually about.
@@ -538,34 +539,6 @@ pub(super) fn split_segments_at(
         }
     }
     Ok(out_segs)
-}
-
-/// The order of two line parameters. Same radicand is a subtraction and a sign; different ones
-/// (two cylinders cutting one segment) land on `biquad_sign`, which answers there without
-/// declining. `None` is checked-`Rat` overflow — the road's own name, not a shape answer.
-pub(super) fn cmp_along(
-    a: &nacre_exact::quad::QuadVal,
-    b: &nacre_exact::quad::QuadVal,
-) -> Option<core::cmp::Ordering> {
-    use core::cmp::Ordering;
-    use nacre_exact::Orient;
-    let orient = if a.c() == b.c() {
-        a.checked_sub(b)?.sign()
-    } else {
-        nacre_exact::quad::biquad_sign(
-            a.a().checked_sub(b.a())?,
-            a.b(),
-            Rat::from_int(0).checked_sub(b.b())?,
-            Rat::from_int(0),
-            a.c(),
-            b.c(),
-        )?
-    };
-    Some(match orient {
-        Orient::Negative => Ordering::Less,
-        Orient::Positive => Ordering::Greater,
-        Orient::Zero => Ordering::Equal,
-    })
 }
 
 /// **Where a segment crosses a circle**, exactly — the points a `Vertex::Pierce` names.

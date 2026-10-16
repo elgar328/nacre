@@ -18,7 +18,8 @@
 //!
 //! **No `PartialEq`.** `1 + 2√2` and `1 + 1√8` are one value in two spellings, and collapsing
 //! the spelling needs the square-free part of `c` — a factorization, whose cost is unbounded.
-//! Value equality is the sign tower's job (`x.checked_sub(y)?.sign() == Orient::Zero`);
+//! Value order and equality are the sign tower's job ([`QuadVal::cmp_value`], which answers across
+//! two spellings — subtracting two of them is the same-radical arithmetic below, and refuses);
 //! structural equality is deliberately not offered until a consumer needs it by name.
 
 use crate::{BigRat, HpBounded, MeetPoint, Orient, Rat};
@@ -33,8 +34,10 @@ use num_bigint::BigInt;
 ///   does **not** make structural equality value equality, see the module docs).
 ///
 /// Arithmetic is same-radical only: ℚ(√c) is closed under `+`/`−`/`×`, and mixing radicals is
-/// a caller bug (debug-asserted, `None` in release). A rational (`c == 0`) is compatible with
-/// every radical.
+/// a caller bug (debug-asserted, `None` in release) — "same" is the spelling, so `√c` and
+/// `√(k²c)` mix too. A rational (`c == 0`) is compatible with every radical. Two values that may
+/// spell different radicals are compared by [`QuadVal::cmp_value`], or by [`biquad_sign`] on the
+/// caller's own bilinear form.
 #[derive(Clone, Copy, Debug)]
 pub struct QuadVal {
     a: Rat,
@@ -185,6 +188,35 @@ impl QuadVal {
         // Integerize the radical first: √(p/q) = √(p·q)/q, folding 1/q into b.
         let (big_a, big_b, big_c) = integerize(self.a, self.b, self.c);
         sign1_int(&big_a, &big_b, &big_c)
+    }
+
+    /// **The order of two values, whatever radicals they spell** — `sign(self − other)`.
+    ///
+    /// One radical (the same `c`, or either value rational) is a subtraction and [`QuadVal::sign`].
+    /// Two spellings — of one radical (`√c` and `√(k²c)`, the same number) or of two — are
+    /// `(a₁ − a₂) + b₁√c₁ − b₂√c₂`, the element [`biquad_sign`] closes, so the answer never
+    /// depends on how the radicals were written. `None` is checked-`Rat` overflow only.
+    ///
+    /// A named method, not `Ord`: the order can fail, and a comparison a sort rides into must not.
+    pub fn cmp_value(&self, other: &QuadVal) -> Option<core::cmp::Ordering> {
+        let zero = Rat::from_int(0);
+        let sign = if self.b == zero || other.b == zero || self.c == other.c {
+            self.checked_sub(other)?.sign()
+        } else {
+            biquad_sign(
+                self.a.checked_sub(other.a)?,
+                self.b,
+                zero.checked_sub(other.b)?,
+                zero,
+                self.c,
+                other.c,
+            )?
+        };
+        Some(match sign {
+            Orient::Negative => core::cmp::Ordering::Less,
+            Orient::Zero => core::cmp::Ordering::Equal,
+            Orient::Positive => core::cmp::Ordering::Greater,
+        })
     }
 }
 

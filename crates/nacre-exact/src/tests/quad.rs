@@ -139,6 +139,31 @@ fn two_spellings_of_one_value_cancel() {
     );
 }
 
+/// **Order by value, not by spelling.** The two spellings a mixed ring met on one ruling —
+/// `−(1/4)·√(1276/625)` and `−(1/8)·√(5104/625)` (`5104 = 4 · 1276`) — are one value, and
+/// subtracting them is the same-radical arithmetic that refuses; `cmp_value` answers. Two genuinely
+/// different radicals answer too, and so does a rational against either.
+#[test]
+fn cmp_value_answers_across_two_spellings() {
+    use core::cmp::Ordering;
+    let one = qv(r(-31, 25), r(-1, 4), r(1276, 625));
+    let other = qv(r(-31, 25), r(-1, 8), r(5104, 625));
+    assert_eq!(one.cmp_value(&other), Some(Ordering::Equal));
+    let nudged = qv(r(-30, 25), r(-1, 8), r(5104, 625));
+    assert_eq!(one.cmp_value(&nudged), Some(Ordering::Less));
+    assert_eq!(nudged.cmp_value(&one), Some(Ordering::Greater));
+    // √2 ≈ 1.414 against 1 + √3 − 1.3 ≈ 1.432.
+    let root2 = qv(ri(0), ri(1), ri(2));
+    let near = qv(r(-3, 10), ri(1), ri(3));
+    assert_eq!(root2.cmp_value(&near), Some(Ordering::Less));
+    // A rational against a radical is one-radical arithmetic.
+    assert_eq!(
+        QuadVal::from_rat(r(7, 5)).cmp_value(&root2),
+        Some(Ordering::Less)
+    );
+    assert_eq!(root2.cmp_value(&root2), Some(Ordering::Equal));
+}
+
 #[test]
 fn biquad_hand_cases() {
     let cases: [(Rat, Rat, Rat, Rat, Orient); 5] = [
