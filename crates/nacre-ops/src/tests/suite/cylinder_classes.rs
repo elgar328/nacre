@@ -1072,12 +1072,19 @@ fn a_disk_merges_into_the_face_it_lies_in() {
 /// test. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)` by 0.8 with `r = 2.12`,
 /// so the cheap test fails and each face on that class has to answer for itself; the pocket wall
 /// that carries it sits at `x ∈ [60.3, 73.2]`, nowhere near the bore, and says so. The user's
-/// 12-up array is this shape. The move is exact on every statement, so it is carried: the moved
-/// cell is world-stated and its corners and axis share the world. (Its corners read in a frame
-/// other than the axis's — the question this test was written for — need a recorded motion: a
-/// `Through` face, an overflow or a history.)
+/// 12-up array is this shape. It runs on both roads a move takes. Plain, the move is exact on every
+/// statement and carried: the moved cell is world-stated and its corners and axis share the world.
+/// Notched (`fixtures::through_notched` — a `Through` face), the move is recorded: the wall's
+/// corners are stated before the chain and the gate carries them out through its fold to meet the
+/// axis, and the moved bore is a world cylinder only through the fold (`world_cylinder_def`).
 #[test]
 fn a_moved_face_answers_the_clearance_test() {
+    for recorded in [false, true] {
+        moved_face_answers_the_clearance_test(recorded);
+    }
+}
+
+fn moved_face_answers_the_clearance_test(recorded: bool) {
     use nacre_exact::Rat;
     let cell = |m: &mut Model| {
         let plate = crate::fixtures::cuboid(
@@ -1105,7 +1112,11 @@ fn a_moved_face_answers_the_clearance_test() {
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
         m.rebuild_adjacency();
-        out
+        if recorded {
+            super::fixtures::through_notched(m, out, 10.0)
+        } else {
+            out
+        }
     };
     let mut m = Model::new();
     let a = cell(&mut m);
@@ -1121,7 +1132,45 @@ fn a_moved_face_answers_the_clearance_test() {
     )
     .unwrap();
     m.rebuild_adjacency();
-    assert!(!carries_motion(&m, b), "the move is carried");
+    assert_eq!(carries_motion(&m, b), recorded, "recorded {recorded}");
+    if recorded {
+        // The population, or both roads go unmeasured: the bore stands on a chain that folds, and
+        // the near-miss wall's corners answer in the chain's frame, not the world's.
+        let faces = m.shell(m.solid(b).outer).faces.clone();
+        let lateral = faces
+            .iter()
+            .map(|&f| m.face(f).surface)
+            .find(|&s| matches!(m.surface(s), nacre_topo::Surface::Cylinder { .. }))
+            .expect("the bore");
+        let leaf = m.plane_motion(lateral).expect("the bore records the move");
+        assert!(
+            m.chain_folds(leaf) && m.world_cylinder_def(lateral).is_some(),
+            "the bore stands on a chain that folds to a world statement"
+        );
+        let corners = |f: Handle<Face>| -> Vec<Handle<nacre_topo::Vertex>> {
+            m.face(f)
+                .outer
+                .half_edges
+                .iter()
+                .map(|he| m.he_start(*he))
+                .collect()
+        };
+        let wall = faces
+            .iter()
+            .copied()
+            .find(|&f| {
+                corners(f)
+                    .iter()
+                    .all(|&v| m.vertex_point(v).as_array()[1] == 47.8)
+            })
+            .expect("the pocket wall on y = 47.8");
+        assert!(
+            corners(wall)
+                .iter()
+                .all(|&v| matches!(m.vertex_meet(v), Some((_, Some(_))))),
+            "the near-miss wall's corners are stated before the chain"
+        );
+    }
     // The cells stand clear of each other (a *touching* pair is the contact family, another
     // cell), so this is an ordinary two-body result — what it pins is that the gate **decided**
     // the near-miss wall face by face.
@@ -1129,12 +1178,17 @@ fn a_moved_face_answers_the_clearance_test() {
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     let pi = std::f64::consts::PI;
-    let one = 86.0 * 86.0 * 71.5 - 12.9 * 16.7 * 68.5 - pi * 2.12 * 2.12 * 71.5;
+    let notch = if recorded { 10.0 * 298.0 / 75.0 } else { 0.0 };
+    let one = 86.0 * 86.0 * 71.5 - 12.9 * 16.7 * 68.5 - pi * 2.12 * 2.12 * 71.5 - notch;
     let v: f64 = out
         .iter()
         .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
         .sum();
-    assert!((v - 2.0 * one).abs() <= 1e-9 * one, "{v} vs {}", 2.0 * one);
+    assert!(
+        (v - 2.0 * one).abs() <= 1e-9 * one,
+        "recorded {recorded}: {v} vs {}",
+        2.0 * one
+    );
 }
 
 /// ★ The negative control: a **rotated** cylinder has no exact world description, and the gate

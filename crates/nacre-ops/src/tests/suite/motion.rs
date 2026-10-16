@@ -243,24 +243,31 @@ fn two_bored_plates_fuse_face_to_face() {
     );
 }
 
-/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again.** Every move is
-/// exact on the cells' statements, so each is carried: the second generation is a world-stated
-/// row, like a row drawn in place. Where a row's surfaces come from two provenances with
-/// different chains (a recorded motion — a `Through` face, an overflow or a history), moving it
-/// puts carriers with different chains on one corner, and the corner road answers those in the
-/// world; this grid no longer builds that population (every chain here is carried away).
+/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again**, on both roads a move
+/// takes.
+///
+/// Plain, every move is exact on the cells' statements, so each is carried: the second generation
+/// is a world-stated row, like a row drawn in place, and every corner answers in the world.
+///
+/// Notched (`fixtures::through_notched` — a `Through` face), every move is recorded: the first row
+/// holds surfaces of two provenances (the cell's, unmoved, and the moved cell's, on a chain), so
+/// moving it again puts carriers with different chains on one corner. Those corners answer in the
+/// world through each carrier's folded name (`vertex_meet_of`'s world road) — with that road off
+/// the grid fuse refuses `CylinderGateUndecided` — and the rest answer in a frame, which is what
+/// says the body is the mixed one. The gate reads the moved cells' bores and wall corners through
+/// their folds, as the clearance test's notched arm does.
 ///
 /// The oracle is **proportionality**: n cells of one part must weigh exactly n times one cell.
-/// That is what says nothing was lost or double-counted at the joins.
-///
-/// ★ **The cell is the user's part** (one pocket, two through-bores). Measured when these moves
-/// were recorded: it was the smallest set that refused `CylinderGateUndecided` with the world
-/// corner road off and built with it on — a plain plate, or one with a bore or two, never landed a
-/// second-generation corner where the gate had to judge it, and the relation is not monotone
-/// (the user's cell cut to two pockets and four bores builds, one of those pockets with two other
-/// bores refuses). Carried, it locks the proportionality of the grid.
+/// That is what says nothing was lost or double-counted at the joins. The cell is the user's part
+/// (one pocket, two through-bores).
 #[test]
 fn a_two_by_two_grid_fuses() {
+    for recorded in [false, true] {
+        two_by_two_grid_fuses(recorded);
+    }
+}
+
+fn two_by_two_grid_fuses(recorded: bool) {
     use nacre_exact::Rat;
     let cell = |m: &mut Model, at: [f64; 3]| {
         let plate = crate::fixtures::cuboid(
@@ -301,7 +308,11 @@ fn a_two_by_two_grid_fuses() {
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore2).expect("bore 2")[0];
         m.rebuild_adjacency();
-        out
+        if recorded {
+            super::fixtures::through_notched(m, out, 10.0)
+        } else {
+            out
+        }
     };
     let shift = |m: &mut Model, s, o: [f64; 3]| {
         let s = transform(
@@ -333,7 +344,7 @@ fn a_two_by_two_grid_fuses() {
     m.rebuild_adjacency();
     // ★ The second generation: a row that already mixes two provenances, moved again.
     let row2 = shift(&mut m, row2, [0.0, 86.0, 0.0]);
-    assert!(!carries_motion(&m, row2), "the move is carried");
+    assert_eq!(carries_motion(&m, row2), recorded, "recorded {recorded}");
     let out = boolean(&mut m, BoolKind::Fuse, row, row2).expect("the grid fuses");
     assert_eq!(out.len(), 1, "one solid");
     m.rebuild_adjacency();
@@ -341,7 +352,7 @@ fn a_two_by_two_grid_fuses() {
     let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
     assert!(
         (v - 4.0 * one).abs() <= 1e-9 * one,
-        "{v} vs {} (4 x {one})",
+        "recorded {recorded}: {v} vs {} (4 x {one})",
         4.0 * one
     );
     let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
@@ -358,10 +369,12 @@ fn a_two_by_two_grid_fuses() {
         "the mesh is watertight"
     );
 
-    // ★★ **The grid's corners are a datum's carriers too, so the ledger says so here.** Every
-    // move was carried, so every corner answers in the world (its carriers each state it) and
-    // none in a frame. A datum through three of them gets a **name**, which is the road
-    // `ThroughStatement` takes when the three meets agree on a frame.
+    // ★★ **The grid's corners are a datum's carriers too, so the ledger says so here.** Carried,
+    // every corner answers in the world (its carriers each state it) and none in a frame;
+    // recorded, the corners of two chains answer in the world and the rest in a frame — both
+    // must be present, or the fixture is not the mixed body it claims to be. A datum through
+    // three world-answered corners gets a **name**, which is the road `ThroughStatement` takes
+    // when the three meets agree on a frame.
     let mut world: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
     let mut framed = 0usize;
     {
@@ -386,8 +399,8 @@ fn a_two_by_two_grid_fuses() {
     }
     world.sort_by_key(|v| v.index());
     assert!(
-        world.len() >= 3 && framed == 0,
-        "a carried grid answers every corner in the world (world {}, framed {framed})",
+        world.len() >= 3 && (framed > 0) == recorded,
+        "recorded {recorded}: world {}, framed {framed}",
         world.len()
     );
     let Ok(OpOutput::DatumPlane { plane, .. }) = apply(

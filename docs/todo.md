@@ -223,6 +223,11 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 옆면 구멍에 자국이 닿으면 `DeclineKind::CylFaceHole` 로 거절한다.
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
+- 구멍 난 판(`[0,40]²×[0,10]`, 구멍 중심 (7.3, 7.3), r 2.1)에서 `through_block(4)` 를 판 홈을 `(25.7, 3.3, 2)`
+  옮겨 같은 판(홈 없이든 있든)과 fuse 하면 `WitnessNotRational` 로 거절한다 — 룰링 분할이 룰링 끝의 축 좌표를 못
+  구한다(`split_rulings` 의 `AxisCoord::of`; 그 앞에 광선이 `PierceVertexUnnamed` 둘). 홈 옆벽의 평면
+  `−4x + 3y = 0` 이 구멍 축을 1.46(< r) 거리로 지나고 면은 구멍에서 멀다. `(25, 3, 2)` 로 옮기면 빌드되고, 이동을
+  옮겨 적든(진술된 평면으로 지은 홈) 기록하든 같다. 원인은 재지 않았다.
 
 ## 다음 — 출력 정밀도: STEP 의 f64 는 실현 통로 하나로
 
@@ -285,7 +290,16 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 
 답은 초록이지만 전제나 뒤처리가 흔들리는 자리 — 결과를 어떻게 바꾸는지를 먼저 잰다.
 
-지금 이 부류의 항목은 없다.
+### 섞인 링의 직선 걸음은 두 모서리를 한 근호로 계산한다
+
+`point_in_mixed_ring`(`combinatorics/mixed_ring.rs`)은 직선·룰링 걸음의 orient2d `(b−a)×(q−a)` 를 `QuadVal` 의
+한 근호 산술로 계산한다 — 문서는 «한 걸음은 한 원의 모서리만 든다»를 그 근거로 적는다. 한 원의 두 모서리가 다른
+철자(√c 와 √(k²c))로 오면 그 전제가 깨진다: `through_block(1)` 에서 구멍(중심 (1.24, 3.32), r 0.4)을 빼고 상자
+`[1,2]×[2.5,3.5]×[0.5,1.5]` 와 함께 y 축 둘레로 90° 돌린 세 연산이 √(1276/625) 와 √(5104/625)(= 2·√(1276/625))를
+섞는다. debug 는 `QuadVal::common_radical` 의 단언으로 패닉하고, release 는 그 도로가 기권한 뒤 다른 증인이 답한다
+— 회전 전후 부피와 결과 정점 비트가 같다(commuting oracle, release). 같은 기하를 진술된 평면으로 지어도 같다.
+저장소의 다른 «두 값이 다른 근호일 수 있다» 자리(seam 순서·`QuadVec::bilinear_sign`·`cmp_along`·`cmp_quad`)는
+철자가 다르면 `biquad_sign` 으로 묻는다 — orient2d `(a−q)×(b−q)` 도 쌍선형이라 같은 모양으로 열린다.
 
 ## 다음 — 내부 정비: 사용자가 보는 답을 바꾸지 않는 것
 
@@ -314,18 +328,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
 남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
-
-### 접히는 사슬 위 원통의 잠금
-
-사분각 회전·거울·이동만으로 된(접히는) 사슬은 `Through` 면이 섞인 솔리드와 `i128` 넘침에서만 기록된다 —
-새 솔리드의 그런 모션은 진술로 옮겨 적는다(design 「모션 사슬 — `MoveNode`」). 제품 도로의 인구는 옮겨 적기를
-켠 스위트에서 넷(넘침·Wide 이름·원통 거울·`Through` datum), census 0 이고, 테스트는 `through_block` 픽스처로
-그 사슬을 짓는다. 그 사슬 아래 정점은 접기에서 정확한 유리수로 읽힌다(`realize.rs` 의 `build_three_plane`).
-
-잠금을 잃은 인구: 원통이 **접히는** 사슬 위에 선 경우 — 접기로 얻는 세계 원통(`world_cylinder_def`, `motion.rs`
-의 이동한 공구·보스), 이동한 몸의 모서리를 원통 축과 같은 프레임에서 읽는 클리어런스 게이트(`cylinder_classes`),
-출처가 둘인 행의 모서리를 세계에서 답하는 모서리 도로(2×2 격자). 그 테스트들은 이동이 옮겨 적히면서 옮겨 적는
-도로를 재게 됐고, 이 인구의 제품 도로는 `Through` 면이 섞인 원통 솔리드뿐이라 지금 잠금이 없다.
 
 ### 정점 캐시의 «버리고 재생» 보증
 

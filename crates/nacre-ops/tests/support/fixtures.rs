@@ -671,6 +671,31 @@ pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat
     solid
 }
 
+/// `solid` less a [`through_block`] `height` tall — the recorded twin of any body: the notch leaves
+/// a `Through` face behind, so every later motion of the result is recorded and its other faces,
+/// cylinders included, gain chains that fold.
+///
+/// The notch's footprint is the square with corners `(1.44, 1.92)`, `(2.64, 3.52)`, `(1.04, 4.72)`,
+/// `(−0.16, 3.12)` — the last pokes `0.16` past `x = 0` as a right triangle with legs `0.2` and
+/// `4/15`, area `2/75`. On a body that covers the rest of it from `z = 0` up to `height`, the notch
+/// removes `height · (4 − 2/75) = height · 298/75`.
+pub fn through_notched(m: &mut Model, solid: Handle<Solid>, height: f64) -> Handle<Solid> {
+    let notch = through_block(m, height);
+    let out = boolean(m, BoolKind::Cut, solid, notch).expect("the notch cuts")[0];
+    m.rebuild_adjacency();
+    assert!(
+        m.shell(m.solid(out).outer).faces.iter().any(|&f| matches!(
+            m.surface(m.face(f).surface),
+            nacre_topo::Surface::Plane {
+                points: nacre_topo::PlanePoints::Through(_),
+                ..
+            }
+        )),
+        "the notch must leave its `Through` face, or nothing later records"
+    );
+    out
+}
+
 /// The top cap of `solid` — the face highest in `z`.
 pub fn top_face(m: &Model, solid: Handle<Solid>) -> Handle<Face> {
     m.shell(m.solid(solid).outer)
