@@ -12,8 +12,9 @@ const MOTION_SUBSET: [&str; 6] = [
     "t(7/11,3/10,1/4)",
 ];
 
-/// The families the oracle runs: the boss corpus, an enclosed boss, a planar pair and the
-/// second-operation families (the first boolean's result against a tool).
+/// The families the oracle runs: the boss corpus, an enclosed boss, a planar pair, the
+/// second-operation families (the first boolean's result against a tool) and the recorded
+/// families (an operand with a `Through` face, so every motion of the group is a chain node on it).
 fn oracle_families() -> Vec<(&'static str, Build)> {
     let mut v: Vec<(&'static str, Build)> = Vec::new();
     for &(fam, base, h) in BOSS_FAMILIES.iter() {
