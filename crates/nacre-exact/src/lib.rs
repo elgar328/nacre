@@ -112,7 +112,7 @@ thread_local! {
     /// reading one realized at the wrong depth.
     static TRIG: RefCell<HashMap<(Angle, usize), TrigAt>> = RefCell::new(HashMap::new());
 
-    /// **How far this platform's `f64` cos/sin land from the truth** — see
+    /// **How far an `f64` cos/sin pair lands from the truth** — see
     /// [`Angle::realization_error_of`].
     ///
     /// ★ **No precision in the key, and that is the point.** [`TRIG`] is keyed by
@@ -122,13 +122,10 @@ thread_local! {
     ///
     /// ★★★ **The realized pair is in the key, not just the angle.** The quantity is how far *this
     /// `(cos, sin)`* sits from the truth, so the pair that was measured is part of the question.
-    /// Keying on the angle alone would hand a caller the error of a realization it did not use —
-    /// which is not hypothetical: `(deg.to_f64() * PI / 180.0).sin()` is measured to differ by
-    /// 1 ulp between a debug and a release build, and between two call sites within one release
-    /// build (LLVM folds the literal-angle site at compile time and leaves the other to libm).
-    ///
-    /// ★★ **So a second entry under one angle is a signal, not waste**: it says two realizations of
-    /// that angle are live in this process. The tests read the count for exactly that reason.
+    /// The kernel realizes an angle by one route ([`Angle::cos_sin_f64`], correctly rounded, so its
+    /// pair is unique), and keying on the pair keeps the answer about the pair a caller holds
+    /// rather than about the route — a second entry under one angle would mean a caller holds a
+    /// pair that route did not give.
     static F64_ERR: RefCell<HashMap<RealizedAt, (f64, f64)>> = RefCell::new(HashMap::new());
 
     /// **The f64 realization of an angle, keyed by the angle alone** — see [`Angle::cos_sin_f64`].

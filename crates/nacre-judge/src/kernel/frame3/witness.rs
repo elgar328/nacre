@@ -142,11 +142,11 @@ impl WitnessPoint {
     /// pivot adds its own f64 rounding (`coord − p`, `p + …`, the pivot's Rat→f64) —
     /// present even for an exact angle — covered by the `piv` term (checked by `tol_bounds_error_over_random_chains`).
     ///
-    /// **Two error terms, and neither is a guess.** `rot` carries the one input here without a
-    /// rounding contract (`f64::cos`) and charges what `Angle::realization_error_of` *measured* of
-    /// the very pair used below; `piv` is nothing but round-to-nearest steps and a realization, so it
-    /// is derived and measured the way [`translate`](Self::translate) and [`mirror`](Self::mirror)
-    /// derive and measure theirs.
+    /// **Two error terms, and neither is a guess.** `rot` carries the angle's realization (the
+    /// correctly rounded pair `Angle::cos_sin_f64` gives) and charges what
+    /// `Angle::realization_error_of` *measured* of the very pair used below; `piv` is nothing but
+    /// round-to-nearest steps and a realization, so it is derived and measured the way
+    /// [`translate`](Self::translate) and [`mirror`](Self::mirror) derive and measure theirs.
     ///
     /// ★★ **`rot` is per axis, and it has to be.** The two coordinates are not the same expression:
     /// `i` mixes `u·c − v·s` while `j` mixes `u·s + v·c`, so `u` pairs with `cos`'s error on one
@@ -203,9 +203,9 @@ impl WitnessPoint {
         // exact predicate path. An unconditional arithmetic term would break that quietly.
         //
         // ★★★ **It measures `c` and `s` — the values three lines above — not the angle.** They are
-        // handed in rather than re-derived because a second realization of one angle is measured to
-        // be able to differ from the first (`Angle`'s `F64_ERR` says where and why). An error taken
-        // against a pair that never reached `coord` would bound a number this kernel never stored.
+        // handed in rather than re-derived so that the error is the one of the pair that reached
+        // `coord`, whatever route produced it. An error taken against a pair that never reached
+        // `coord` would bound a number this kernel never stored.
         let (dc, ds) = angle.realization_error_of(c, s);
         let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
             (0.0, 0.0)
@@ -218,10 +218,9 @@ impl WitnessPoint {
         };
         // **The pivot arithmetic, charged the way `translate` and `mirror` charge theirs.**
         //
-        // Not a trig constant — which would exist only *because `f64::cos` has no accuracy
-        // contract* — for three operations that all do have one. Like its two siblings in this
-        // `impl`, it **measures** the rational's realization and **counts** the round-to-nearest
-        // steps.
+        // Not a measured trig error: the three operations here each have a rounding contract, so
+        // their roundings are counted. Like its two siblings in this `impl`, it **measures** the
+        // rational's realization and **counts** the round-to-nearest steps.
         //
         // - The pivot's `Rat → f64` is measured, not counted, for the same reason they measure it:
         //   `Rat::to_f64` is one rounding for a numerator and denominator under `2⁵³` and takes

@@ -230,16 +230,14 @@ impl Angle {
     /// ★★★ **The caller passes the values in rather than letting this re-realize them**, and that
     /// is the whole soundness argument. The consumer is `WitnessPoint::rotate_about`, whose `tol` must bound
     /// the error in the `coord` it just wrote from *its* `cos_sin_f64()` result. An error measured
-    /// against a second, independent realization would bound a number nobody stored — and those two
-    /// realizations are measured to differ (see [`F64_ERR`]). Taking `c` and `s` as arguments makes
-    /// "the error describes the value that was used" hold by construction instead of by hope.
+    /// against a realization the caller did not use would bound a number nobody stored. Taking `c`
+    /// and `s` as arguments makes "the error describes the value that was used" hold by
+    /// construction instead of by the route being the only one.
     ///
-    /// ★★ **This is what lets the error accounting stop guessing.** `f64::cos` has no accuracy
-    /// contract — neither Rust nor any libm promises one — so a measured-once constant with margin
-    /// would be sound only on platforms like the one it was taken on, which a kernel that ships to
-    /// browsers cannot know. Measuring instead means a worse libm
-    /// simply reports a larger error and the tolerance grows to match: **the kernel adapts rather
-    /// than assumes.**
+    /// ★★ **Measured, not a constant.** The pair [`Angle::cos_sin_f64`] hands out is the correctly
+    /// rounded one, so its error is at most half an ulp of each value — but what is charged is the
+    /// error measured for the pair actually held, so the accounting does not lean on which route
+    /// produced it.
     ///
     /// ★ **Exactly zero for the 90°-family**, because `cos_sin_f64` returns `0.0`/`±1.0` there and
     /// those *are* the true values. Callers rely on that zero: a rotation whose realization carries
