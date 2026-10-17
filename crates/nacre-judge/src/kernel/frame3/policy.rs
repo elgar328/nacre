@@ -6,7 +6,7 @@ use super::*;
 /// means a resolution of `1e-76` for a solid turned once and `1e+15` for one turned three hundred
 /// times — the same setting meaning entirely different things per model, which is not something
 /// anyone can reason about. Bits are the implementation detail the kernel computes per model
-/// ([`judge_precision`]); the length is the physics.
+/// ([`precision_for`]); the length is the physics.
 ///
 /// `coincidence` is not a tolerance in the usual sense, and deliberately not called one: a global
 /// tol says *"anything closer than this, snap together"* (merging without knowing), while this
@@ -123,7 +123,7 @@ pub(super) fn denom_lo(v: &HpBounded) -> Result<Mag, Gap> {
 ///
 /// **The next precision is computed, not doubled.** The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and
 /// `C` does not depend on the precision (measured), so `log₂(gap / limit)` *is* the number of bits
-/// missing — the same derivation [`judge_precision`] uses to size the model in the first place.
+/// missing — the same derivation [`precision_for`] uses to size the model in the first place.
 /// One jump lands there, rounded up to a whole word because astro-float allocates whole words
 /// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
 /// starts deep, undershoot and realize everything twice for nothing.
@@ -205,7 +205,7 @@ pub(super) fn escalate(
 /// The precision at which a realization's error is *measured*, before the real one is chosen.
 ///
 /// Nothing is judged here — this only has to be deep enough that the radius it produces is a
-/// meaningful reading of `C` (see [`judge_precision`]), and cheap.
+/// meaningful reading of `C` (see [`precision_for`]), and cheap.
 const TRIAL_PREC: usize = 128;
 
 /// ★ **And deep enough that an exactly-representable point reads exactly zero.**
@@ -225,39 +225,8 @@ const _: () = assert!(TRIAL_PREC >= 127);
 /// pays for the round-up and then throws the difference away.
 const WORD: usize = 64;
 
-/// **The precision this model needs, in bits.**
-///
-/// A realization's error radius is `C · 2⁻ᵖʳᵉᶜ`, where `C` depends on the *model* — its rotation
-/// history and its coordinate magnitudes — and **not on the precision** (measured: identical `C`
-/// at 256, 320, 384, 512 and 1024 bits). So one reading of `C` at any precision fixes the
-/// precision needed to bring the radius under `limit`:
-///
-/// ```text
-///     C · 2⁻ⁿᵉᵉᵈ ≤ limit    ⇒    need = log₂(C / limit)
-/// ```
-///
-/// rounded up to a whole word. That round-up is free and its leftover is real confidence: asking
-/// for 130 bits costs the same as 192, so take the 192.
-///
-/// `C` grows about **one bit per turn** in the rotation history, which is why a fixed precision
-/// cannot work — it silently decides how long a model's history may be. At 256 bits a solid
-/// turned 245 times stops building.
-///
-/// This is an *estimate*, and correctness does not rest on it: every judgement checks its own
-/// interval, so an under-estimate costs a re-run and never an answer. It is deliberately
-/// generous by one word to cover the determinant arithmetic stacked on top of the coordinates.
-pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, limit: Mag) -> usize {
-    let mut worst = Mag::ZERO;
-    for p in pts {
-        let b = trial_bound(p);
-        if worst.lt(b) {
-            worst = b;
-        }
-    }
-    precision_for(worst, limit)
-}
-
-/// One point's share of [`judge_precision`] — its realization error at the trial precision.
+/// One point's share of the model's precision — its realization error at the trial precision.
+/// The model's is the maximum over its points, which [`precision_for`] turns into bits.
 ///
 /// Split out because a model has hundreds of these and they do not depend on each other, so a
 /// caller can evaluate them however it likes. **Combining them is a maximum**, which is
@@ -278,8 +247,28 @@ pub fn trial_bound(p: &WitnessPoint) -> Mag {
     worst
 }
 
-/// The working precision that brings a model whose worst trial-precision error is `worst`
-/// within `limit` — the arithmetic half of [`judge_precision`], once the maximum is known.
+/// **The precision this model needs, in bits** — from `worst`, the largest [`trial_bound`] over
+/// its points.
+///
+/// A realization's error radius is `C · 2⁻ᵖʳᵉᶜ`, where `C` depends on the *model* — its rotation
+/// history and its coordinate magnitudes — and **not on the precision** (measured: identical `C`
+/// at 256, 320, 384, 512 and 1024 bits). So one reading of `C` at any precision fixes the
+/// precision needed to bring the radius under `limit`:
+///
+/// ```text
+///     C · 2⁻ⁿᵉᵉᵈ ≤ limit    ⇒    need = log₂(C / limit)
+/// ```
+///
+/// rounded up to a whole word. That round-up is free and its leftover is real confidence: asking
+/// for 130 bits costs the same as 192, so take the 192.
+///
+/// `C` grows about **one bit per turn** in the rotation history, which is why a fixed precision
+/// cannot work — it silently decides how long a model's history may be. At 256 bits a solid
+/// turned 245 times stops building.
+///
+/// This is an *estimate*, and correctness does not rest on it: every judgement checks its own
+/// interval, so an under-estimate costs a re-run and never an answer. It is deliberately
+/// generous by one word to cover the determinant arithmetic stacked on top of the coordinates.
 pub fn precision_for(worst: Mag, limit: Mag) -> usize {
     // `worst = C · 2⁻ᵗʳⁱᵃˡ`, so `C = worst · 2ᵗʳⁱᵃˡ` and `need = log₂C − log₂limit`.
     let (Some(w), Some(l)) = (worst.exp2(), limit.exp2()) else {

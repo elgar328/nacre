@@ -10,7 +10,7 @@ fn exact(c: [f64; 3]) -> Option<WitnessPoint> {
 }
 
 /// The precision these fixtures judge at. Production chooses it per model
-/// ([`judge_precision`]); a fixture pins one so its expectations stay fixed.
+/// ([`precision_for`]); a fixture pins one so its expectations stay fixed.
 const FIXTURE_PREC: usize = 256;
 
 /// The judgement context those fixtures use: that precision, plus the coincidence limit the

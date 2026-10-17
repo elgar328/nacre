@@ -153,7 +153,9 @@ fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {
         let Some(r) = Rat::new(num, den) else {
             continue;
         };
-        let got = nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("range");
+        let got = nearest_f64_big(&BigInt::from(num), &BigInt::from(den))
+            .map(|(v, _)| v)
+            .expect("range");
         if got != r.to_f64() {
             bad += 1;
             if bad < 4 {
@@ -167,7 +169,7 @@ fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {
         for off in [-1i128, 0, 1] {
             let num = &two_p * 2 - BigInt::from(1) + BigInt::from(off);
             let den = BigInt::from(2);
-            let got = nearest_f64_big(&num, &den).expect("range");
+            let got = nearest_f64_big(&num, &den).map(|(v, _)| v).expect("range");
             let want = Rat::new(i128::try_from(&num).expect("fits"), 2)
                 .expect("in range")
                 .to_f64();
@@ -190,7 +192,7 @@ fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {
 #[test]
 fn a_tiny_rational_still_names_its_f64() {
     let one = BigInt::from(1);
-    let at = |e: usize| nearest_f64_big(&one, &(BigInt::from(1) << e));
+    let at = |e: usize| nearest_f64_big(&one, &(BigInt::from(1) << e)).map(|(v, _)| v);
     assert_eq!(at(1000), Some(2f64.powi(-500) * 2f64.powi(-500))); // normal
     assert_eq!(at(1040), Some(2f64.powi(-520) * 2f64.powi(-520))); // subnormal
     assert_eq!(at(1074), Some(f64::from_bits(1))); // the smallest subnormal
@@ -210,8 +212,9 @@ fn the_big_road_agrees_with_the_rat_road() {
     for num in [-97i128, -7, -1, 1, 3, 5, 7, 11, 97, 1234567, -98765432] {
         for den in [1i128, 2, 3, 7, 10, 1024, 999983, 1_000_000_007] {
             let r = Rat::new(num, den).expect("in range");
-            let got =
-                nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("in f64 range");
+            let got = nearest_f64_big(&BigInt::from(num), &BigInt::from(den))
+                .map(|(v, _)| v)
+                .expect("in f64 range");
             assert_eq!(got, r.to_f64(), "{num}/{den}");
             n += 1;
         }
@@ -222,7 +225,9 @@ fn the_big_road_agrees_with_the_rat_road() {
     for e in [50u32, 51, 52, 53] {
         let two_e = 1i128 << e;
         let (num, den) = (two_e * 2 + 1, 2i128);
-        let big = nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("in range");
+        let big = nearest_f64_big(&BigInt::from(num), &BigInt::from(den))
+            .map(|(v, _)| v)
+            .expect("in range");
         assert_eq!(
             big,
             Rat::new(num, den).expect("in range").to_f64(),
@@ -231,7 +236,9 @@ fn the_big_road_agrees_with_the_rat_road() {
     }
     // Wide inputs no `Rat` can hold — the reason this twin exists at all.
     let big = BigInt::from(1i128) << 200;
-    let v = nearest_f64_big(&(&big * 3), &big).expect("in range");
+    let v = nearest_f64_big(&(&big * 3), &big)
+        .map(|(v, _)| v)
+        .expect("in range");
     assert_eq!(v, 3.0);
     assert!(n > 50, "oracle swept {n} pairs");
 }
@@ -303,8 +310,8 @@ fn too_few_bits_report_undecided() {
 #[test]
 fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
     let one = BigInt::from(1);
-    let small = |e: usize| nearest_f64_big_exact(&one, &(BigInt::from(1) << e));
-    let big = |e: usize| nearest_f64_big_exact(&(BigInt::from(1) << e), &one);
+    let small = |e: usize| nearest_f64_big(&one, &(BigInt::from(1) << e));
+    let big = |e: usize| nearest_f64_big(&(BigInt::from(1) << e), &one);
 
     // Large end: the last power of two that names an `f64`, and the first that does not.
     assert_eq!(big(1023), Some((8.98846567431158e307, true)));
@@ -331,14 +338,11 @@ fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
 
     // A real zero is still exactly zero, and the flag still tells exact from rounded.
     assert_eq!(
-        nearest_f64_big_exact(&BigInt::from(0), &BigInt::from(5)),
+        nearest_f64_big(&BigInt::from(0), &BigInt::from(5)),
         Some((0.0, true))
     );
-    assert_eq!(
-        nearest_f64_big_exact(&one, &BigInt::from(4)),
-        Some((0.25, true))
-    );
-    let (third, exact) = nearest_f64_big_exact(&one, &BigInt::from(3)).expect("1/3 is in range");
+    assert_eq!(nearest_f64_big(&one, &BigInt::from(4)), Some((0.25, true)));
+    let (third, exact) = nearest_f64_big(&one, &BigInt::from(3)).expect("1/3 is in range");
     assert!(!exact, "1/3 is not an f64");
     assert_eq!(third, 1.0 / 3.0);
 }

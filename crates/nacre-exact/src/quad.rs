@@ -618,12 +618,6 @@ impl MeetLine {
     pub fn dir(&self) -> V3 {
         self.dir
     }
-
-    /// The f64 realization of the point at parameter `s` — cache only.
-    pub fn point_f64(&self, s: &QuadVal) -> [f64; 3] {
-        let sf = s.to_f64();
-        core::array::from_fn(|k| self.base[k].to_f64() + sf * self.dir[k].to_f64())
-    }
 }
 
 /// What two planes and a cylinder share — every outcome has its own name, no silent

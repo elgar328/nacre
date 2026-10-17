@@ -55,7 +55,7 @@ fn realization_is_f64_while_angle_stays_exact() {
     assert!(a.try_exact_cos_sin().is_none()); // √2/2 is not rational
 
     // Nothing is nearer: both neighbours are further from the deep truth than `c` is.
-    let (deep, _) = a.cos_sin_at(512);
+    let deep = a.cos_sin_bounded(512).0.value;
     let dist = |f: f64| BigFloat::from_f64(f, 512).sub(&deep, 512, HP_RM).abs();
     let here = dist(c);
     for nb in [
@@ -100,7 +100,7 @@ fn exact_cos_sin_only_for_quadrantal_angles() {
     assert!(a45.try_exact_cos_sin().is_none());
     // The high-precision realization of 90° is *not* zero either — it is ~2⁻¹²⁸ — which is
     // exactly why the branch above exists rather than being an optimization.
-    assert!(!a90.cos_sin_at(128).0.is_zero());
+    assert!(!a90.cos_sin_bounded(128).0.value.is_zero());
 }
 
 /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0`, and the exactly-representable
@@ -369,11 +369,11 @@ fn high_precision_trig_meets_gate() {
     let mut worst = i32::MIN;
     for (deg, exact_cos, exact_sin) in cases {
         let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
-        let ec = hp_err_exp(&a.cos_sin_at(GT_PREC).0, exact_cos);
+        let ec = hp_err_exp(&a.cos_sin_bounded(GT_PREC).0.value, exact_cos);
         assert!(ec < GATE_EXP, "cos {deg}° error 2^{ec} exceeds gate");
         worst = worst.max(ec);
         if let Some(s) = exact_sin {
-            let es = hp_err_exp(&a.cos_sin_at(GT_PREC).1, s);
+            let es = hp_err_exp(&a.cos_sin_bounded(GT_PREC).1.value, s);
             assert!(es < GATE_EXP, "sin {deg}° error 2^{es} exceeds gate");
             worst = worst.max(es);
         }
@@ -515,7 +515,8 @@ fn the_trig_bound_holds_against_a_far_deeper_realization() {
             let (bc, bs) = (c.error, s.error);
             let (c, s) = (c.value, s.value);
             let deep = prec + 512;
-            let (rc, rs) = a.cos_sin_at(deep);
+            let (rc, rs) = a.cos_sin_bounded(deep);
+            let (rc, rs) = (rc.value, rs.value);
             for (got, reference, bound, what) in [(&c, &rc, bc, "cos"), (&s, &rs, bs, "sin")] {
                 let diff = got.sub(reference, deep, HP_RM);
                 let Some(de) = (if diff.is_zero() {

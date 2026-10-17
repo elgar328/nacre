@@ -283,8 +283,8 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 내보내기는 `&Model` 서명을 지킨다 — `&mut Model` 을 받으면 이름이 약속하지 않은 일을 한다.
 - 이름: 실현 문은 `realize_*` 이고 정밀도를 항상 명시한다(기본값 없음). 정밀도 인자 없는 캐시 도로 문은
   `realize_cache` 의 선례를 따른다. `_at` 은 이 커널에서 위치의 낱말(`point_at`·`normal_at`·
-  `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`hp_coord`·`judge_precision`·
-  `trial_bound`)를 쓴다.
+  `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`hp_coord`·`trial_bound`·
+  `precision_for`)를 쓴다.
 
 ## 알려진 결함과 절벽
 
@@ -477,7 +477,7 @@ census 를 재고 움직인다. 인구(문에 들어온 이름 없는 `Through` 
 ### 가라앉은 좌표의 경계 0
 
 `Realized::to_f64` 의 오차 팔이 `Mag::of(val).times(Mag::pow2(-53))` 이라 `val == 0.0` 이면 **경계도 0**
-이다 ⇒ 0 이 아닌 값에 «참값 ∈ 0 ± 0» 이 실린다(`nearest_f64_big_exact` 의 `exact` 깃발은 `false` 로
+이다 ⇒ 0 이 아닌 값에 «참값 ∈ 0 ± 0» 이 실린다(`nearest_f64_big` 의 `exact` 깃발은 `false` 로
 정직하지만 경계는 아니다). **인구 0**: 그러려면 좌표가 2⁻¹⁰⁷⁵ 아래여야 하는데 `Rat` 이름은 i128 비율이고
 가장 넓게 잰 `Wide` 이름도 168비트다. 고치려면 `to_f64` 의 오차 모형을 손대야 한다(가라앉은 값의 경계는
 최소 비정규수의 반). 닿으면 `Unrepresentable` 류로 거절하는 쪽이 맞을 수도 있다 — 그때 잰다.

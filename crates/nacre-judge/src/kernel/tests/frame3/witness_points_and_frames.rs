@@ -90,7 +90,7 @@ fn one_pass_equals_node_by_node() {
 ///
 /// The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and `C` does not move with the precision, so
 /// `log₂(gap / limit)` is exactly the number of missing bits — the same reading
-/// [`judge_precision`] takes to size the model. This pins that the loop uses it: the fixture's
+/// [`precision_for`] takes to size the model. This pins that the loop uses it: the fixture's
 /// gap shrinks bit-for-bit with the precision, it starts 100 bits short, and the next attempt
 /// must arrive at 384 — `256 + 100` rounded up to a word — not at 512 (doubling), and not at
 /// 320 (a fixed word step, which would need two more rounds).
@@ -1615,7 +1615,7 @@ fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
 /// **An exactly-representable point demands no precision at all** — its trial bound is `0`.
 ///
 /// The twin of the test above, one level up: that one pins the `f64` tol, this one pins the
-/// *realization* bound, which is what [`judge_precision`] reads to size a model. So a model
+/// *realization* bound, which is what [`precision_for`] reads to size a model. So a model
 /// with no rotation history asks for nothing, and a caller that already knows a point is
 /// exact can skip [`trial_bound`] rather than spend a realization computing a zero.
 ///

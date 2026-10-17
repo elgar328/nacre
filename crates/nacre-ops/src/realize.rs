@@ -181,7 +181,7 @@ impl Realized {
                     // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. An
                     // earlier spelling reported `[0.0; 3]` here, which is the cache's own lie in
                     // a new place, and the audit lock written for it *enforced* the lie.
-                    let (val, no_loss) = nacre_exact::nearest_f64_big_exact(&n[k], d)?;
+                    let (val, no_loss) = nacre_exact::nearest_f64_big(&n[k], d)?;
                     v[k] = val;
                     e[k] = match no_loss {
                         true => Mag::ZERO,

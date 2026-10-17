@@ -305,7 +305,7 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 ///
 /// The twin of [`sqrt_f64`], under the same correct-rounding contract, so the answer is unique and
 /// asking at more bits cannot move it. The exact branch runs first: when `n·n` is a perfect square
-/// every component is a rational, rounded once ([`nearest_f64_big_exact`]) — an axis-aligned or
+/// every component is a rational, rounded once ([`nearest_f64_big`]) — an axis-aligned or
 /// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized at 128 and
 /// then 256 bits — through the memoized [`inv_sqrt_bounded`] where `n·n` fits `Rat`, and
 /// [`inv_sqrt_bigint_bounded`] where it does not — and each product rounded; the midpoint stands
@@ -322,7 +322,7 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
     }
     let root = nn.sqrt();
     if &root * &root == nn {
-        let c = |k: usize| nearest_f64_big_exact(&n[k], &root).map(|(v, _)| v);
+        let c = |k: usize| nearest_f64_big(&n[k], &root).map(|(v, _)| v);
         return Some([c(0)?, c(1)?, c(2)?]);
     }
     let inv = |prec: usize| match nn.to_i128() {

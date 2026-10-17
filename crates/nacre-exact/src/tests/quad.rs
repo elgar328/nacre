@@ -9,6 +9,20 @@ use super::*;
 use crate::HP_RM;
 use astro_float::BigFloat;
 
+/// The point at parameter `s` in plain `f64` — each part rounded, then multiplied and added, so
+/// no nearest-`f64` promise. The tests read it as a picture of where the exact point lies (order
+/// around the axis, which side of a plane); nothing in the kernel needs it.
+trait PointApprox {
+    fn point_approx(&self, s: &QuadVal) -> [f64; 3];
+}
+
+impl PointApprox for MeetLine {
+    fn point_approx(&self, s: &QuadVal) -> [f64; 3] {
+        let sf = s.to_f64();
+        core::array::from_fn(|k| self.base()[k].to_f64() + sf * self.dir()[k].to_f64())
+    }
+}
+
 fn r(n: i128, d: i128) -> Rat {
     Rat::new(n, d).expect("test rational")
 }
@@ -386,7 +400,7 @@ fn the_degenerate_ladder_names_every_outcome() {
     // x = 1 ∧ z = 0: horizontal, touching at (1, 0, 0) — a rational double root.
     match meet(&plane(1, 0, 0, -1), &plane(0, 0, 1, 0)) {
         CylinderMeet::Tangent { line, s } => {
-            let p = line.point_f64(&QuadVal::from_rat(s));
+            let p = line.point_approx(&QuadVal::from_rat(s));
             assert_eq!(p, [1.0, 0.0, 0.0], "the tangency point");
         }
         other => panic!("expected Tangent, got {other:?}"),
@@ -394,7 +408,7 @@ fn the_degenerate_ladder_names_every_outcome() {
     // x = 0 ∧ z = 0: through the axis — two points (0, ±1, 0), s ascending.
     match meet(&plane(1, 0, 0, 0), &plane(0, 0, 1, 0)) {
         CylinderMeet::Pair { line, s } => {
-            let (lo, hi) = (line.point_f64(&s[0]), line.point_f64(&s[1]));
+            let (lo, hi) = (line.point_approx(&s[0]), line.point_approx(&s[1]));
             assert_eq!(lo[1].abs(), 1.0);
             assert_eq!(hi[1], -lo[1]);
             // Both roots lie on both cutting planes — the zero cross-check for plane_side,
@@ -434,7 +448,7 @@ fn a_tilted_meet_realizes_onto_its_carriers() {
     match plane_plane_cylinder(&p1, &p2, &o, &m, &radius).expect("fits") {
         CylinderMeet::Pair { line, s } => {
             for sv in &s {
-                let p = line.point_f64(sv);
+                let p = line.point_approx(sv);
                 // Plane residuals.
                 assert!((p[0] - 1.0).abs() < 1e-12 && (p[2] - 2.0).abs() < 1e-12);
                 // Cylinder residual: |w|²|m|² − (w·m)² = r²|m|².
@@ -491,12 +505,12 @@ fn the_circular_order_matches_the_realized_angles() {
     by_exact.sort_by(order);
     let mut by_angle = points.clone();
     by_angle.sort_by(|a, b| {
-        theta(a.0.point_f64(&a.1))
-            .partial_cmp(&theta(b.0.point_f64(&b.1)))
+        theta(a.0.point_approx(&a.1))
+            .partial_cmp(&theta(b.0.point_approx(&b.1)))
             .unwrap()
     });
-    let realized: Vec<[f64; 3]> = by_exact.iter().map(|(l, s)| l.point_f64(s)).collect();
-    let realized_angle: Vec<[f64; 3]> = by_angle.iter().map(|(l, s)| l.point_f64(s)).collect();
+    let realized: Vec<[f64; 3]> = by_exact.iter().map(|(l, s)| l.point_approx(s)).collect();
+    let realized_angle: Vec<[f64; 3]> = by_angle.iter().map(|(l, s)| l.point_approx(s)).collect();
     assert_eq!(
         realized, realized_angle,
         "exact order ≠ realized angle order"
@@ -516,7 +530,7 @@ fn the_seam_point_is_surfaced_not_ranked() {
         panic!("expected Pair, got {meet:?}");
     };
     // Which root is +x?
-    let (seam_s, pi_s) = if line.point_f64(&s[0])[0] > 0.0 {
+    let (seam_s, pi_s) = if line.point_approx(&s[0])[0] > 0.0 {
         (&s[0], &s[1])
     } else {
         (&s[1], &s[0])
@@ -545,7 +559,7 @@ fn the_seam_point_ranks_first_in_the_cyclic_order() {
     let CylinderMeet::Pair { line, s } = meet else {
         panic!("expected Pair, got {meet:?}");
     };
-    let (seam_s, pi_s) = if line.point_f64(&s[0])[0] > 0.0 {
+    let (seam_s, pi_s) = if line.point_approx(&s[0])[0] > 0.0 {
         (&s[0], &s[1])
     } else {
         (&s[1], &s[0])
@@ -592,7 +606,7 @@ fn the_exact_order_outresolves_f64() {
         let cut = [ri(1), ri(0), ri(0), ri(0).checked_sub(c).unwrap()];
         match plane_plane_cylinder(&cut, &z0, &o, &m, &radius).expect("fits") {
             CylinderMeet::Pair { line, s } => {
-                let sv = if line.point_f64(&s[0])[1] > 0.0 {
+                let sv = if line.point_approx(&s[0])[1] > 0.0 {
                     s[0]
                 } else {
                     s[1]
@@ -606,8 +620,8 @@ fn the_exact_order_outresolves_f64() {
     let (l2, s2) = upper(c2);
     // f64 is blind: both x-coordinates realize to the same float.
     assert_eq!(
-        l1.point_f64(&s1)[0].to_bits(),
-        l2.point_f64(&s2)[0].to_bits(),
+        l1.point_approx(&s1)[0].to_bits(),
+        l2.point_approx(&s2)[0].to_bits(),
         "the fixture must sit below f64 resolution"
     );
     // Exact is not: larger x ⇒ smaller θ on the upper half, strictly.
@@ -1244,7 +1258,7 @@ fn a_branch_points_two_roots_can_straddle_a_strip() {
     };
     // `s[0]`/`s[1]` are the roots in the line's own order; name them by the coordinate that
     // separates them rather than by index.
-    let (pos, neg) = if line.point_f64(&s[0])[0] > 0.0 {
+    let (pos, neg) = if line.point_approx(&s[0])[0] > 0.0 {
         (s[0], s[1])
     } else {
         (s[1], s[0])

@@ -34,9 +34,11 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `step::StepError` is `#[non_exhaustive]` and has an `Io` variant, holding the output's `std::io::Error` when `step::write_step` cannot write; an exhaustive `match` on it needs a `_` arm.
 - **Breaking:** `tess::Tessellation::to_obj` takes the model the mesh was built from, and every corner of the OBJ now carries its face's outward normal (`vn`, `f a//na b//nb c//nc`): a cylinder shades round and its rims stay sharp.
 - **Breaking:** `topo::Model::rebuild_edge_cache` takes the solids whose edges it re-derives; pass `model.live_solids()` for all of them.
+- **Breaking:** `exact::nearest_f64_big` returns the nearest `f64` together with whether it is the rational exactly, as `exact::nearest_f64_big_exact` did; the bare-`f64` form is gone.
 
 ### Removed
 
+- **Breaking:** `exact::Angle::cos_sin_at` and `exact::quad::MeetLine::point_f64`, which nothing in the kernel called. `exact::Angle::cos_sin_bounded` gives the `(cos, sin)` intervals whose values the first returned.
 - **Breaking:** `ops::RejectReason::CurvedStraightRun`, which nothing raises now that a ring's winding is read by that one rule.
 - `geom::intersect::drop_collinear_midpoints`, which nothing in the kernel called — a profile's normal form dissolves flat corners itself, and `geom::intersect::flat_corner` is the predicate it asks.
 - `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.

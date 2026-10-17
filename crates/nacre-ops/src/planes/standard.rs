@@ -64,7 +64,8 @@ impl Watch {
 /// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
 /// the result does not depend on traversal order (replay must reproduce it exactly).
 ///
-/// The precision that reaches the target is then [`nacre_judge::judge_precision`]'s to compute;
+/// The precision that reaches the target is then [`nacre_judge::precision_for`]'s to compute, from
+/// the worst [`nacre_judge::trial_bound`] over the table;
 /// [`JUDGE_PREC_CAP`] is where the kernel stops and says so instead, and [`CLIMB_HEADROOM`] is
 /// what a single hard judgement may spend on top of it.
 ///

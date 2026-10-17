@@ -17,8 +17,8 @@
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
 //!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
 //!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
-//!   so those rotations of a rational point stay tol 0; and `cos_sin_at`
-//!   realize in arbitrary precision (astro-float) for the judgment path.
+//!   so those rotations of a rational point stay tol 0; and `cos_sin_bounded`
+//!   realizes them in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment lives in `nacre-judge`).
 //! [`Rat::from_decimal`] carries this into *construction*: a prism's
@@ -80,7 +80,7 @@ pub use winding::*;
 ///
 /// **There is no default precision here, on purpose.** A fixed one would be a hand-picked depth
 /// waiting to be wired into a judgement whose precision belongs to the *model*
-/// (`nacre_judge::judge_precision`). Callers pass `prec`.
+/// (`nacre_judge::precision_for`). Callers pass `prec`.
 ///
 /// Public because the judge (`nacre-judge`) rounds with it too — one mode in two places is one
 /// more thing that can drift.
@@ -198,10 +198,9 @@ pub struct BigRat(Ratio<num_bigint::BigInt>);
 /// A *direction* angle in degrees, kept normalized to `[0, 360)` exactly
 /// (rational). Accumulation is exact: turning by a rational angle repeatedly and
 /// completing a full turn lands back on exactly `0` — no f64 drift. `cos`/`sin`
-/// realization crosses into f64 (deg→rad via π): the irrational-realization
-/// boundary, past which a *judgement* realizes at arbitrary precision instead
-/// ([`Angle::cos_sin_at`]). The angle stays exact; only its realized coordinate
-/// carries tol.
+/// realization crosses into f64: the irrational-realization boundary, past which a
+/// *judgement* realizes at arbitrary precision instead ([`Angle::cos_sin_bounded`]).
+/// The angle stays exact; only its realized coordinate carries tol.
 ///
 /// This is the direction type: it keeps no turn count. A multi-turn *amount* (helix
 /// pitch × turns, a revolve past 360°) must preserve its turns, so it cannot be an

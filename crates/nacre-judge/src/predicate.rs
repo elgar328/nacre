@@ -260,7 +260,7 @@ pub struct NameInts {
     /// span (the name is derived from them without rounding). This is what an unmoved plane's
     /// exact shortcuts read ([`PlaneWitness::exact_coeffs`]). A wider integer keeps the BigInt
     /// rescue: an `Expansion` over it overflows in `cmp_coord`'s degree-6 products, and
-    /// `nacre_exact::nearest_f64_big_exact` alone would call `2⁶⁰` exact.
+    /// `nacre_exact::nearest_f64_big` alone would call `2⁶⁰` exact.
     pub row: Option<[f64; 4]>,
     /// The first three under the same rule — what a direction question reads, which stands where
     /// `d` alone is too wide.
@@ -338,7 +338,7 @@ pub fn name_stored_ints(
         if x.bits() > 53 {
             return None;
         }
-        let (v, exact) = nacre_exact::nearest_f64_big_exact(x, &BigInt::from(1))?;
+        let (v, exact) = nacre_exact::nearest_f64_big(x, &BigInt::from(1))?;
         exact.then_some(v)
     };
     let normal = (|| Some([exact(&ints[0])?, exact(&ints[1])?, exact(&ints[2])?]))();

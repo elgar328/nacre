@@ -240,18 +240,11 @@ fn round_shifted(num: &num_bigint::BigInt, den: &num_bigint::BigInt, k: i64) -> 
 }
 
 /// **The nearest `f64` to the exact rational `num/den`** (`den` positive) — one rounding, from
-/// integers.
+/// integers — **and whether the rounding lost anything**.
 ///
 /// [`nearest_f64`]'s unbounded twin: that one is the `Rat` road and caps at `u128`, this one takes
 /// the `(numerator, common denominator)` pair [`MeetPoint::lift`] hands out, which is how a
 /// coordinate too wide for `Rat` still gets a correctly rounded coordinate rather than a refusal.
-///
-/// `None` when the value is outside `f64`'s normal range.
-pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Option<f64> {
-    nearest_f64_big_exact(num, den).map(|(v, _)| v)
-}
-
-/// [`nearest_f64_big`], **and whether the rounding lost anything**.
 ///
 /// ★★★ **The second half is not optional information.** A three-plane meet is an exact rational,
 /// which is a fact about the *realization*, not about the `f64` it is then read out as: a 59-bit
@@ -261,10 +254,7 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
 /// `0.13086419695308637578…`.
 ///
 /// `true` means the `f64` **is** the rational, so a caller may honestly say its error is zero.
-pub fn nearest_f64_big_exact(
-    num: &num_bigint::BigInt,
-    den: &num_bigint::BigInt,
-) -> Option<(f64, bool)> {
+pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Option<(f64, bool)> {
     use num_bigint::BigInt;
     if num.sign() == num_bigint::Sign::NoSign {
         return Some((0.0, true));
