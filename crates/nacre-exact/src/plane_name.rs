@@ -292,7 +292,7 @@ pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bo
     {
         let iv = |r: Rat| {
             let x = r.to_f64();
-            crate::Bounded::new(x, (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE))
+            crate::Bounded::new(x, crate::Bounded::round_off(x))
         };
         let e = |q: &[Rat; 3]| [0, 1, 2].map(|i| iv(q[i]).sub(iv(a[i])));
         let (u, v) = (e(b), e(p));

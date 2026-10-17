@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `exact::Bounded::round_off` is the rounding that brings a value to its nearest `f64`: half an ulp, floored at the smallest normal `f64`.
 - `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, what its witness replays for each of the three vertices, summed.
 - `topo::Model::vertex_named_meet` says what a three-plane definition's plane names say about its point — the point and its frame, or `topo::NamedMeet::NoPoint` where the three planes are parallel or share a line.
 - `geom::intersect::flat_corner` says whether a ring vertex is strictly mid-run between its neighbours — the corner a profile's normal form dissolves.
@@ -68,7 +69,7 @@ While the version is `0.0.z`, every release may break anything.
 - A plane through three vertices that a transform moved (a datum plane, or a face built on one) is now exported at the nearest `f64` of its true position and orientation, unless its history is longer than 192 recorded motions behind a turn that is not a multiple of 90° or a sketch plane with no rational frame; before, it carried the previous position moved in floating point.
 - A circular edge in STEP export (and in tessellation and mass properties) now carries its cylinder's axis, reference direction and radius bit for bit, and its centre is the nearest `f64` of the exact centre — including cylinders turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, these values could be a few units in the last place off.
 - A straight edge in STEP export is written with a unit `VECTOR` magnitude, and its direction is the nearest `f64` of the exact direction — including edges on faces turned by an angle that is not a multiple of 90° or built on a sketch plane with no rational frame, unless that history is longer than 192 recorded motions; before, the direction and the length were recomputed from the rounded end points.
-- `exact::Mag::upper_f64` answers `2^e` for a bound below `2^-1023`, down to the smallest subnormal; it answered `0.0` there — a zero radius, which says exact — wherever the exponent was not a compile-time constant.
+- `exact::Mag::upper_f64` reads a bound below `2^-1022` as the smallest normal `f64` (`f64::MIN_POSITIVE`), the floor the kernel's other `f64` bounds keep; below `2^-1023` it answered `0.0` — a zero radius, which says exact — wherever the exponent was not a compile-time constant.
 
 ## [0.0.1] - 2026-10-02
 

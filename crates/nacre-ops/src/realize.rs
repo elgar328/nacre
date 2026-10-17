@@ -1728,14 +1728,15 @@ pub fn realize_vertex_decimal(
     out.to_decimal(places).ok_or(RealizeError::Undecided)
 }
 
-/// Walk [`LADDER`] until `decided` accepts a realization. The exact arm decides on the first rung
-/// whatever is asked, so a rational vertex never climbs.
+/// Walk the paid budget's rungs ([`Budget::Paid`] — the whole [`LADDER`]) until `decided` accepts a
+/// realization. The exact arm decides on the first rung whatever is asked, so a rational vertex
+/// never climbs.
 fn climb(
     model: &Model,
     def: &Vertex,
     decided: impl Fn(Realization) -> Option<Realization>,
 ) -> Result<Realization, RealizeError> {
-    for bits in LADDER {
+    for &bits in Budget::Paid.rungs() {
         match build(model, def, bits, &mut Accel::default()) {
             Ok(r) => {
                 if r.is_exact() {

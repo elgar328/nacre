@@ -91,9 +91,9 @@ impl WitnessPoint {
 
     /// A point at a rational `base`, its coordinate the nearest `f64` and its tol **from that
     /// contract rather than measured**: exactly `0` where the coordinate is representable, else
-    /// `|x|·2⁻⁵³` (floored at `f64::MIN_POSITIVE`) — `Rat::to_f64` is documented as *"the
-    /// **nearest** f64 … ties to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds for every normal
-    /// `x` without anyone computing it.
+    /// [`Bounded::round_off`] (`|x|·2⁻⁵³`, floored at the smallest normal) — `Rat::to_f64` is
+    /// documented as *"the **nearest** f64 … ties to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds
+    /// for every normal `x` without anyone computing it.
     ///
     /// [`at`](Self::at) learns the same number by measuring at 120 bits — nine BigFloat
     /// operations per point. This is the spelling `nacre-ops` uses where the base is a
@@ -113,8 +113,7 @@ impl WitnessPoint {
         if representable {
             return Self::at_with_tol(base, [0.0; 3]);
         }
-        let bound = |x: f64| (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE);
-        Self::at_with_tol(base, [bound(f[0]), bound(f[1]), bound(f[2])])
+        Self::at_with_tol(base, f.map(Bounded::round_off))
     }
 
     /// A point at `base` with an explicit initial `tol` — for a root that already

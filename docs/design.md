@@ -641,14 +641,15 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
 
 같은 값의 다른 숫자 판이 있거나 정확한 값에서 수를 만드는 함수는 이름 끝이 그 결과를 말한다. 숫자 판이 하나뿐인 접근자
 (`SketchPlane::origin()` 등)와 f64 전용 크레이트(`nacre-geom`·`nacre-math`)는 달지 않는다. 판정의 칸은 모두 `_iv` 이상이다 —
-`_approx` 는 부호를 정하는 산술에 들어가지 않고 대략값·계측·보기, 그리고 정밀도 정책의 크기 어림(`standard_from` 의 `scale`)에만 쓰인다.
+`_approx` 는 진실에 대한 부호를 정하는 산술에 들어가지 않고 대략값·계측·보기, 정밀도 정책의 크기 어림(`standard_from` 의 `scale`),
+그리고 이름 없는 평면 캐시의 향 맞추기(`align_cache_sense` — 캐시의 향이지 진실의 부호가 아니다)에만 쓰인다.
 
 | 철자 | 뜻 | 예 |
 |---|---|---|
 | `_rat` | 정확한 `Rat`. 무리수이거나 넘칠 수 있으면 `Option` | `cos_sin_rat`·`sqrt_rat`·`chain_point_rat` |
 | `_hp` | 호출자의 `prec` 에서의 `HpBounded` — 값과 건전한 반지름 | `cos_sin_hp`·`inv_sqrt_hp`·`quad_hp`·`coord_hp` |
 | `_iv` | f64 구간 `Bounded` — 값과 증명된 반지름 | `orient3d_iv`·`det3_iv`·`coord_iv` |
-| `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. 사다리가 256비트에서도 반올림 경계를 못 가르면 그 구간의 중점(충실 반올림)이다 | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64` |
+| `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. 사다리가 256비트에서도 반올림 경계를 못 가르면 그 구간의 중점(충실 반올림)이다. 앞의 낱말이 약속을 바꾸면 그 낱말이 말한다 — `upper_f64` 는 그 경계 이상인 `f64` | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64`·`Mag::upper_f64` |
 | `_approx` | 약속 없는 `f64` — 여러 번 반올림했거나 캐시·대략값을 `f64` 로 계산했다 | `QuadVal::to_f64_approx`·`Isometry::point_approx`·`coord_approx` |
 | `_big` | 좁은 쌍둥이가 있을 때의 넓은 입력판, 숫자 타입 뒤에 둔다. BigFloat 출력은 `_bigfloat` | `sqrt_rat_big`·`inv_sqrt_hp_big`·`rat_to_bigfloat` |
 | `_uncached` | memo 문 뒤의 본체 | `cos_sin_hp_uncached`·`coord_hp_uncached` |
@@ -656,6 +657,11 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
 | `exact_` 접두사 | 값이 반올림 없이 그대로 `f64` 일 때만 답한다(아니면 `None`) — 정확 술어가 기댄다 | `PlaneWitness::exact_coeffs` |
 
 정밀도 인자는 exact·judge 에서 `prec`, ops 에서 `bits`, 십진 자릿수는 `places` 다.
+
+**바닥.** `f64` 로 읽는 경계는 `f64::MIN_POSITIVE`(가장 작은 정상수) 아래로 내리지 않는다. 비정규수 구역의 반올림 오차는 값에
+비례하지 않고 고정된 반 칸(`2⁻¹⁰⁷⁵`)이라, 상대 오차로 쓴 식이 거기서 성립하지 않는다 — `|x|·ε/2` 는 0 이 되고(정확하다는 거짓)
+`× (1 + kε)` 는 대개 값을 키우지 못한다. 그 바닥을 `Mag::upper_f64`(경계의 위쪽 읽기)·`Bounded::round_off`(반올림 한 번의 반 ulp)·
+`cyl_gate::round_slack`(계산된 값의 여유)이 지킨다.
 
 **동사.** `realize_*` 는 모델 안의 정의(정점·담체 곡면)를 값으로 바꾸는 문이고 정밀도를 늘 명시한다(`Precision`·`bits` —
 기본값 없음). 정밀도 대신 push 의 싼 예산을 묻는 문은 이름이 그렇게 말한다(`realize_vertex_cache`·`realize_surface_cache` —

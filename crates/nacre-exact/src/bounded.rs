@@ -55,6 +55,15 @@ impl Bounded {
     pub fn new(value: f64, error: f64) -> Self {
         Bounded { value, error }
     }
+    /// The rounding that brought a value to this nearest `f64`: at most a half-ulp, `|value|·ε/2`,
+    /// floored at the smallest normal — the floor every `f64` bound in this kernel keeps
+    /// ([`Mag::upper_f64`]): a subnormal's rounding error is a fixed half step, which `|value|·ε/2`
+    /// would read as zero. `HpBounded::round_off` is the same charge at `prec` bits. Never zero,
+    /// `0.0` included — the `f64` alone does not say its rounding was exact; a caller that knows
+    /// gives zero itself.
+    pub fn round_off(value: f64) -> f64 {
+        (value.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
+    }
     /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
     /// picked, and the same charge in `add` and `mul`.
     pub fn sub(self, o: Bounded) -> Bounded {
