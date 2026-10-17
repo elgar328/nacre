@@ -739,7 +739,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
         // `|f − true| ≥ |f − deep| − rad`. Without that, `1/√(1/10⁶)` — which is exactly
         // `1000.0`, correctly reported as a zero error — fails against the 1024-bit
         // realization's `2⁻¹⁰¹³` residue, and the test would be measuring its own ruler.
-        let ref_rad = deep_rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32));
+        let ref_rad = deep_rad.upper_f64();
         let floor = if true_err == i32::MIN {
             0.0
         } else {

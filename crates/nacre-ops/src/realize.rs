@@ -2283,7 +2283,7 @@ mod tests {
             // And independently: the original cylinder's cache turned in `f64`.
             let pv = pivot.map(|r| r.to_f64());
             let deg = f64::from(deg as i32);
-            let at = |p: [f64; 3]| turned_f64(p, axis, deg, pv);
+            let at = |p: [f64; 3]| turned_approx(p, axis, deg, pv);
             let dir = |v: [f64; 3]| {
                 let (a, o) = (at(v), at([0.0; 3]));
                 [a[0] - o[0], a[1] - o[1], a[2] - o[2]]
@@ -2306,7 +2306,7 @@ mod tests {
     /// `p` turned `deg` degrees about `axis` through `pivot`, in `f64` — the independent reading the
     /// turned-cylinder locks hold the realizations to (a derivation that shares nothing with the
     /// chain replay it checks).
-    fn turned_f64(p: [f64; 3], axis: nacre_exact::Axis, deg: f64, pivot: [f64; 3]) -> [f64; 3] {
+    fn turned_approx(p: [f64; 3], axis: nacre_exact::Axis, deg: f64, pivot: [f64; 3]) -> [f64; 3] {
         let (s, c) = deg.to_radians().sin_cos();
         let v = [p[0] - pivot[0], p[1] - pivot[1], p[2] - pivot[2]];
         let w = match axis {
@@ -2412,7 +2412,7 @@ mod tests {
                 seams_before.iter().any(|&q| {
                     let q = steps
                         .iter()
-                        .fold(q, |q, &(a, d, pv)| turned_f64(q, a, d, pv));
+                        .fold(q, |q, &(a, d, pv)| turned_approx(q, a, d, pv));
                     near(p, q)
                 })
             })

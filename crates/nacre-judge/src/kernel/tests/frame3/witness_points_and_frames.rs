@@ -1216,7 +1216,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
                 );
             }
             let mag = bf_mag(&e.value.abs());
-            let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+            let error = e.error.upper_f64();
             assert!(
                 mag <= error || mag < 1e-100,
                 "plane {c:?}, point ({u}, {v}): off the plane by {mag:e}, radius {error:e}"
@@ -1312,7 +1312,7 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
                 );
             }
             let mag = bf_mag(&e.value.abs());
-            let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+            let error = e.error.upper_f64();
             assert!(
                 mag <= error || mag < 1e-100,
                 "plane {c:?}, point ({u}, {v}): off the plane by {mag:e}, radius {error:e}"
@@ -1408,7 +1408,7 @@ fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
             e = e.add(&hp[k].mul(&HpBounded::of_bigint(&c[k], GT), GT), GT);
         }
         let mag = bf_mag(&e.value.abs());
-        let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+        let error = e.error.upper_f64();
         assert!(
             mag <= error,
             "wide plane, point ({u}, {v}): off the plane by {mag:e}, radius {error:e}"

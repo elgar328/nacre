@@ -1,11 +1,6 @@
 use super::*;
 use crate::Angle;
 
-/// An upper `f64` reading of a [`Mag`], for comparisons in tests only.
-fn mag_f64(m: Mag) -> f64 {
-    m.exp2().map_or(0.0, |e| 2f64.powi(e as i32))
-}
-
 /// |x − y| at the two values' own precision, as f64 — a test-side residual reader.
 fn resid(x: &BigFloat, y: &BigFloat, prec: usize) -> f64 {
     let d = x.sub(y, prec, HP_RM).abs();
@@ -49,9 +44,9 @@ fn the_interval_division_agrees_with_the_exact_route_and_contains_the_corners() 
             let truth = at.div(&bt, gt, HP_RM);
             let err = resid(&q.value, &truth, gt);
             assert!(
-                err <= mag_f64(q.error) || err == 0.0,
+                err <= q.error.upper_f64() || err == 0.0,
                 "corner ({da},{db}) of {a}±{ra} / {b}±{rb}: off by {err:e}, radius {:e}",
-                mag_f64(q.error)
+                q.error.upper_f64()
             );
         }
     }
@@ -70,7 +65,7 @@ fn the_interval_inv_sqrt_agrees_with_the_exact_route_and_contains_the_endpoints(
             let exact = crate::inv_sqrt_hp(rat, prec).expect("positive");
             let err = resid(&s.value, &exact.value, prec);
             assert!(
-                err <= mag_f64(s.error) + mag_f64(exact.error),
+                err <= s.error.upper_f64() + exact.error.upper_f64(),
                 "exact input {x}: the two routes disagree by {err:e}"
             );
         }
@@ -80,9 +75,9 @@ fn the_interval_inv_sqrt_agrees_with_the_exact_route_and_contains_the_endpoints(
             let truth = big(1.0, gt).div(&xt.sqrt(gt, HP_RM), gt, HP_RM);
             let err = resid(&s.value, &truth, gt);
             assert!(
-                err <= mag_f64(s.error) || err == 0.0,
+                err <= s.error.upper_f64() || err == 0.0,
                 "endpoint {d} of {x}±{r}: off by {err:e}, radius {:e}",
-                mag_f64(s.error)
+                s.error.upper_f64()
             );
         }
     }
@@ -205,7 +200,7 @@ fn the_measured_trig_error_bounds_the_real_one() {
         for (which, f, h, reported) in [("cos", c, &hc, dc), ("sin", s, &hs, ds)] {
             // |f64 − true| ≤ |f64 − deep midpoint| + that realization's own radius.
             let truth = big(f, GT).sub(&h.value, GT, HP_RM).abs().add(
-                &big(h.error.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
+                &big(h.error.upper_f64(), GT),
                 GT,
                 HP_RM,
             );
