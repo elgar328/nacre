@@ -1536,6 +1536,14 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
             m.vertex_cache(vh)
         );
     }
+    // A vertex the nameless datum carries directly — no frame node in between, so its cost is the
+    // datum's own replay depth, which the datum's motion (none) does not show.
+    let def = Vertex::ThreePlane([m.world_plane(Axis::X), m.world_plane(Axis::Y), plane]);
+    assert_eq!(
+        realize_cache(&m, &def).err(),
+        Some(CacheDecline::CostCap),
+        "a carrier costs its own replay depth, not its motion's"
+    );
     let report = nacre_ops::refine_caches(&mut m);
     assert!(report.vertices.refined >= corners.len(), "{report:?}");
     assert_eq!(

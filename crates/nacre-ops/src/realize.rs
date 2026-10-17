@@ -410,10 +410,11 @@ pub(crate) fn realize_cache_tracked(
     def: &Vertex,
     acc: &mut Accel<'_>,
 ) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
+    // A carrier costs its own replay depth (`Model::plane_replay_depth`) — a nameless datum's comes
+    // from its vertices' chains, not from a motion of its own.
     let deep = def
         .carriers()
-        .filter_map(|h| model.plane_motion(h))
-        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP));
+        .any(|h| model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP);
     // ★ **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
     // shared-frame road replays one point through one chain; the mixed road ([`build_meet`])
     // replays three witness points through each carrier's chain, so under the same budget it
@@ -968,7 +969,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
     };
     let road = |r: bool| if r { Half::Stopped } else { Half::NoRoad };
     if budget == Budget::Cache
-        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+        && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
     {
         return Some((road(anchor_road), road(normal_road)));
     }
@@ -1346,7 +1347,7 @@ fn rim_centre(
     if budget == Budget::Cache
         && (deep(*motion)
             || (crate::planes::world_plane_coeffs(model, cap).is_none()
-                && deep(model.plane_motion(cap))))
+                && model.plane_replay_depth(cap, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP))
     {
         return None;
     }
@@ -1383,9 +1384,7 @@ fn line_direction(
     if budget == Budget::Cache
         && s.iter().any(|&h| {
             crate::planes::world_plane_coeffs(model, h).is_none()
-                && model
-                    .plane_motion(h)
-                    .is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+                && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
         })
     {
         return None;
@@ -1998,8 +1997,7 @@ impl PlaneMemo {
 fn meet_road_over_cap(model: &Model, def: &Vertex) -> bool {
     let nodes: usize = def
         .carriers()
-        .filter_map(|h| model.plane_motion(h))
-        .map(|leaf| 3 * model.motion_depth_up_to(leaf, CACHE_REPLAY_COST_CAP))
+        .map(|h| 3 * model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP))
         .sum();
     nodes > CACHE_REPLAY_COST_CAP
         && match model.vertex_named_meet(def) {
