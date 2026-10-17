@@ -10,7 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
-- `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, the deepest of its vertices' carriers.
+- `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, what its witness replays for each of the three vertices, summed.
 - `topo::Model::vertex_named_meet` says what a three-plane definition's plane names say about its point — the point and its frame, or `topo::NamedMeet::NoPoint` where the three planes are parallel or share a line.
 - `geom::intersect::flat_corner` says whether a ring vertex is strictly mid-run between its neighbours — the corner a profile's normal form dissolves.
 - `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.

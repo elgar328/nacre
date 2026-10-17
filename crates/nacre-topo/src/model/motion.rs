@@ -21,7 +21,8 @@ impl Model {
     }
 
     /// Whether a replay through `leaf`'s chain walks more than `n` nodes ([`Model::motion_depth_up_to`]).
-    /// Walks at most about `n + 1` nodes, so asking about a 4,000-deep history costs `n`.
+    /// Each step hands the budget that is left down to what it unfolds into, and the walk stops once
+    /// past `n`, so asking about a 4,000-deep history costs about `n` steps.
     pub fn motion_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
         self.motion_depth_up_to(leaf, n) > n
     }
@@ -74,10 +75,13 @@ impl Model {
     }
 
     /// **How many nodes a replay walks to place `plane`'s statement in the world**, counted no
-    /// further than `n + 1`: its own chain, and for a nameless `Through` statement the deepest of its
-    /// vertices' carriers too — its judged frame realizes those points, each through its own
-    /// carriers' chains (a nameless statement's carriers are named: the datum door refuses one on a
-    /// nameless carrier).
+    /// further than past `n`: its own chain, and for a nameless `Through` statement what its witness
+    /// replays for each of its three vertices too, summed — the walk `rotated_vertex::through_judged_points`
+    /// takes. A vertex whose names meet in a narrow point in one frame is one point through that
+    /// frame's chain; any other (it straddles frames, or its meet is wider than a witness base) is a
+    /// meet of its carriers' witness triangles, three points through each carrier's replay — the
+    /// count the mixed vertex road's cap keeps too. (A nameless statement's carriers are named: the
+    /// datum door refuses one on a nameless carrier.)
     pub fn plane_replay_depth(&self, plane: Handle<Surface>, n: usize) -> usize {
         let own = self
             .plane_motion(plane)
@@ -92,15 +96,24 @@ impl Model {
         if own > n || self.surface_name.contains_key(&plane) {
             return own;
         }
-        let mut deepest = 0;
+        let mut depth = own;
         for &v in vs {
-            for c in self.vertex(v).carriers() {
-                if let Some(m) = self.plane_motion(c) {
-                    deepest = deepest.max(self.motion_depth_up_to(m, n - own));
-                }
+            if depth > n {
+                break;
             }
+            let def = self.vertex(v);
+            depth += match self.vertex_named_meet(def) {
+                Some(crate::NamedMeet::Point(nacre_exact::MeetPoint::Narrow(_), frame)) => {
+                    frame.map_or(0, |m| self.motion_depth_up_to(m, n - depth))
+                }
+                Some(crate::NamedMeet::NoPoint) => 0,
+                _ => def
+                    .carriers()
+                    .map(|c| 3 * self.plane_replay_depth(c, n - depth))
+                    .sum(),
+            };
         }
-        own + deepest
+        depth
     }
 
     /// Whether every node of `leaf`'s recorded chain fixes the plane `coeffs` **as a set** —

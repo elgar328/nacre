@@ -1556,6 +1556,98 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     }
 }
 
+/// ★★ **A nameless datum costs all three of its vertices' chains, not the deepest one.** Its witness
+/// replays each defining vertex through its own chain, so three boxes turned by different angles and
+/// each moved 70 times give three corners well under the cost cap that together are over it: the
+/// datum's cache and the corners of a prism on it stop by cost on the cache road, and the paid door
+/// raises them.
+#[test]
+fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
+    let mut m = Model::new();
+    let mut corners = Vec::new();
+    for (k, deg) in [7i128, 11, 13].into_iter().enumerate() {
+        let x = 5.0 * k as f64;
+        let mut s = cuboid(&mut m, [x, 0.0, 0.0], [x + 1.0, 1.0, 1.0]);
+        m.rebuild_adjacency();
+        s = moved(&mut m, s, turn(Axis::Z, deg));
+        for _ in 0..70 {
+            let iso = Isometry::translation([
+                Rat::new(1, 7).expect("1/7"),
+                Rat::from_int(0),
+                Rat::from_int(0),
+            ]);
+            s = moved(&mut m, s, iso);
+        }
+        m.rebuild_adjacency();
+        let top = m.shell(m.solid(s).outer).faces[1];
+        corners.push(m.he_start(m.face(top).outer.half_edges[0]));
+    }
+    for &v in &corners {
+        let (_, frame) = m
+            .vertex_meet(v)
+            .expect("each corner is exact in its own frame");
+        let leaf = frame.expect("behind its box's chain");
+        assert!(
+            !m.motion_deeper_than(leaf, 192),
+            "each corner alone is under the cap"
+        );
+    }
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices([corners[0], corners[1], corners[2]]),
+        },
+    )
+    .expect("a datum through three frames") else {
+        unreachable!()
+    };
+    assert!(
+        !m.surface_name.contains_key(&plane),
+        "the datum is nameless"
+    );
+    assert_eq!(
+        m.surface_cache_standing(plane),
+        nacre_topo::CacheStanding::Ceiling,
+        "the three chains together are past the cap"
+    );
+    let profile = nacre_ops::Profile2d::polygon(vec![
+        p2(0.25, 0.25),
+        p2(0.75, 0.25),
+        p2(0.75, 0.75),
+        p2(0.25, 0.75),
+    ])
+    .expect("a square");
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 0.5,
+        },
+    )
+    .expect("a prism on the datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let on_it: Vec<_> = m.reachable_from(&[prism]).vertices.into_iter().collect();
+    for &vh in &on_it {
+        assert_eq!(
+            realize_cache(&m, m.vertex(vh)).err(),
+            Some(CacheDecline::CostCap),
+            "{:?}",
+            m.vertex_cache(vh)
+        );
+    }
+    nacre_ops::refine_caches(&mut m);
+    assert_eq!(
+        m.surface_cache_standing(plane),
+        nacre_topo::CacheStanding::Realized
+    );
+    for &vh in &on_it {
+        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+    }
+}
+
 /// A box turned 7° and then carrying `n` recorded translation nodes — the turn is irrational, so
 /// it is recorded, and once a history exists every motion after it is recorded too (a fresh box
 /// would carry a translation into its statements). The chain is `n + 1` deep on the walls; the
