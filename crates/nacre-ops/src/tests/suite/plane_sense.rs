@@ -244,20 +244,110 @@ fn every_plane_faces_the_way_its_truth_says() {
     let p = nameless(&mut m);
     mirrored(&mut m, p);
     cases.push(("nameless mirrored", m));
-    // The premise: each holds a live face on a nameless `Through` plane, and the moved two give it a
-    // motion of its own.
-    for (name, m) in &cases[cases.len() - 3..] {
-        let moved_case = *name != "nameless";
+    // A nameless statement with a straddling vertex — a corner of two boxes turned about different
+    // axes and fused — whose witness is its judged frame's probes, not its own points: still, moved
+    // and mirrored.
+    let straddling = |m: &mut Model| -> Handle<Solid> {
+        let a = crate::fixtures::cuboid(
+            m,
+            nacre_math::Point3::from_array([0.0, 0.0, 0.0]),
+            nacre_math::Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let b = crate::fixtures::cuboid(
+            m,
+            nacre_math::Point3::from_array([1.0, 1.0, 1.0]),
+            nacre_math::Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let turned = |deg: i128, axis| {
+            Isometry::rotation(Rotation {
+                axis,
+                pivot: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(deg)).expect("an angle"),
+            })
+        };
+        let a = moved(m, a, turned(37, Axis::Z));
+        let b = moved(m, b, turned(20, Axis::X));
+        let Ok(crate::OpOutput::Boolean { solids }) = crate::apply(
+            m,
+            &crate::Operation::Boolean {
+                kind: crate::BoolKind::Fuse,
+                a,
+                b,
+            },
+        ) else {
+            panic!("the fuse")
+        };
+        m.rebuild_adjacency();
+        let straddler = m
+            .reachable_from(&solids)
+            .vertices
+            .into_iter()
+            .filter(|&v| {
+                matches!(m.vertex(v), nacre_topo::Vertex::ThreePlane(t)
+                    if t.iter().all(|h| m.surface_name.contains_key(h)))
+                    && m.vertex_meet(v).is_none()
+            })
+            .min_by_key(|v| v.index())
+            .expect("a fused corner straddles");
+        let still = world_box(m);
+        let still = moved(
+            m,
+            still,
+            Isometry::translation([Rat::from_int(10), Rat::from_int(0), Rat::from_int(0)]),
+        );
+        let top = top_corners(m, still);
+        let f = datum(
+            m,
+            crate::DatumDef::ThroughVertices([straddler, top[0], top[1]]),
+        );
+        prism_on(m, f)
+    };
+    let mut m = Model::new();
+    straddling(&mut m);
+    cases.push(("nameless straddling", m));
+    let mut m = Model::new();
+    let p = straddling(&mut m);
+    let p = moved(
+        &mut m,
+        p,
+        Isometry::translation([
+            Rat::new(1, 3).expect("1/3"),
+            Rat::from_int(2),
+            Rat::from_int(0),
+        ]),
+    );
+    moved(
+        &mut m,
+        p,
+        Isometry::rotation(Rotation {
+            axis: Axis::X,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(20)).expect("an angle"),
+        }),
+    );
+    cases.push(("nameless straddling moved", m));
+    let mut m = Model::new();
+    let p = straddling(&mut m);
+    mirrored(&mut m, p);
+    cases.push(("nameless straddling mirrored", m));
+    // The premise: each holds a live face on a nameless `Through` plane, the moved and mirrored ones
+    // give it a motion of its own, and the straddling ones have a defining vertex in two frames.
+    for (name, m) in &cases[cases.len() - 6..] {
+        let moved_case = name.ends_with("moved") || name.ends_with("mirrored");
+        let straddle_case = name.contains("straddling");
+        let straddles =
+            |vs: &[Handle<nacre_topo::Vertex>; 3]| vs.iter().any(|&v| m.vertex_meet(v).is_none());
         let found = m.live_solids().iter().any(|&s| {
             m.shell(m.solid(s).outer).faces.iter().any(|&f| {
                 let h = m.face(f).surface;
                 matches!(
                     m.surface(h),
                     nacre_topo::Surface::Plane {
-                        points: nacre_topo::PlanePoints::Through(_),
+                        points: nacre_topo::PlanePoints::Through(vs),
                         motion,
                         ..
-                    } if motion.is_some() == moved_case
+                    } if motion.is_some() == moved_case && straddles(vs) == straddle_case
                 ) && !m.surface_name.contains_key(&h)
             })
         });
