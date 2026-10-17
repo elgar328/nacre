@@ -47,9 +47,9 @@ impl AxisAffine {
 
     /// A turn about the line through `pivot` along `axis` — the map [`Isometry::point_rat`]
     /// applies, `p + R·(x − p)` — when the turn is a quarter multiple; `None` otherwise (no other
-    /// rational-degree angle has rational `cos`/`sin`, [`Angle::try_exact_cos_sin`]).
+    /// rational-degree angle has rational `cos`/`sin`, [`Angle::cos_sin_rat`]).
     pub fn rotation(r: Rotation) -> Option<AxisAffine> {
-        let (cos, sin) = r.angle.try_exact_cos_sin()?;
+        let (cos, sin) = r.angle.cos_sin_rat()?;
         let unit = |v: Rat| -> Option<i8> { (v.denom() == 1).then(|| v.numer() as i8) };
         let (c, s) = (unit(cos)?, unit(sin)?);
         let (i, j) = r.axis.plane();

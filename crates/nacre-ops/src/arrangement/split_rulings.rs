@@ -179,7 +179,7 @@ impl AxisCoord {
     fn cmp(&self, other: &Self, prec: usize) -> Option<core::cmp::Ordering> {
         use core::cmp::Ordering;
         let hp = |c: &Self| match c {
-            Self::Exact(q) => nacre_exact::realize_quad(q, prec),
+            Self::Exact(q) => nacre_exact::quad_hp(q, prec),
             Self::Bounded(b) => Some(b.clone()),
         };
         match (self, other) {

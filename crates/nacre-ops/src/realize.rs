@@ -304,7 +304,7 @@ pub(crate) fn realize_def_tracked(
 /// guard this replaces read as *"past here the arithmetic cannot decide anyway"*, and measured,
 /// that is **false**: 150 rational translations and 80 turns of 7° decide perfectly at 128 bits,
 /// while a single 37° turn stops deciding past the 63rd. What a node costs in bits depends on its
-/// **angle** (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those add no
+/// **angle** (`Angle::cos_sin_rat` answers only 0/90/180/270 — Niven, so those add no
 /// radius), not on how many nodes came before it. Precision is decided by the first rung's own
 /// verdict; this number decides only **how much work a push is willing to do**.
 ///
@@ -1805,7 +1805,7 @@ fn seam_point_stated(
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
     let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let centre = nacre_exact::axis_plane_meet(&coeffs, &o, &m)?;
-    nacre_exact::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
+    nacre_exact::seam_point_hp(centre, perp_component(&e, &m)?, r2, bits)
 }
 
 /// [`seam_point`] met in the world: the seam's line — the cylinder's origin plus `r·ê`, along the
@@ -1856,9 +1856,9 @@ fn pierce_point(
     )?;
     // `point = base + s·dir`, with `s` the quadratic root realized at `bits` — the only step that
     // is not exact rational arithmetic.
-    let sb = nacre_exact::realize_quad(&sv, bits)?;
+    let sb = nacre_exact::quad_hp(&sv, bits)?;
     let (b, d) = (line.base(), line.dir());
-    let coord = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, bits);
+    let coord = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, bits);
     Some([coord(0)?, coord(1)?, coord(2)?])
 }
 
@@ -2609,10 +2609,10 @@ mod tests {
             "a pair is not a Double"
         );
         let at = |q: &nacre_exact::quad::QuadVal| {
-            let sb = nacre_exact::realize_quad(q, 256).expect("realized");
+            let sb = nacre_exact::quad_hp(q, 256).expect("realized");
             let (b, d) = (line.base(), line.dir());
             let c = |k: usize| {
-                let s = nacre_exact::affine_bounded(b[k], d[k], &sb, 256).expect("affine");
+                let s = nacre_exact::affine_hp(b[k], d[k], &sb, 256).expect("affine");
                 nacre_exact::round_to_digits(&s.value, s.error, 20)
                     .expect("decided")
                     .parse::<f64>()

@@ -320,7 +320,7 @@ pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
     if nn == Rat::from_int(0) {
         return None; // not a plane
     }
-    let len = rat_sqrt_exact(nn)?;
+    let len = sqrt_rat(nn)?;
     canonical_plane_coeffs([
         n[0],
         n[1],

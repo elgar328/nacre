@@ -2075,7 +2075,7 @@ fn separated(
 
 /// **Two lateral faces on parallel axes: do their rims' arcs miss each other in the common
 /// cross-section?**. The chart is `a`'s: `û₁` the reference direction's unit part ⊥
-/// the axis, `û₂ = m̂ × û₁` — rational exactly when both norms are (`inv_sqrt_exact`; every prism
+/// the axis, `û₂ = m̂ × û₁` — rational exactly when both norms are (`inv_sqrt_rat`; every prism
 /// on a world frame), else `None`. Each face's arc is its angular extent, or the whole circle
 /// when none is stated; the question is [`nacre_geom::mixed::arcs_share_a_point`]'s, and a
 /// touch is not clear. Sound for any face of the class because the extent is the footprint's
@@ -2098,8 +2098,8 @@ fn cross_sections_clear(
     for k in 0..3 {
         e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
     }
-    let inv_e1 = nacre_exact::inv_sqrt_exact(nacre_exact::dot3_rat(&e1, &e1)?)?;
-    let inv_m = nacre_exact::inv_sqrt_exact(mm)?;
+    let inv_e1 = nacre_exact::inv_sqrt_rat(nacre_exact::dot3_rat(&e1, &e1)?)?;
+    let inv_m = nacre_exact::inv_sqrt_rat(mm)?;
     let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
         Some([
             v[0].checked_mul(k)?,
@@ -2150,7 +2150,7 @@ fn cross_sections_clear(
                 // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a
                 // rational radius; without one this pair is not judged here (`None`, the
                 // caller's honest road).
-                let p = add2(centre, [c.def.radius_exact()?, zero])?;
+                let p = add2(centre, [c.def.radius_rat()?, zero])?;
                 (p, p)
             }
         };

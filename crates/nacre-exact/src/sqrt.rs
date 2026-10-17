@@ -59,9 +59,9 @@ impl From<Rat> for BigRat {
     }
 }
 
-/// [`rat_sqrt_exact`] for a wide radicand: the root, when it is rational **and** fits `Rat` —
+/// [`sqrt_rat`] for a wide radicand: the root, when it is rational **and** fits `Rat` —
 /// which every stated radius does, its square being what widened.
-pub fn rat_sqrt_exact_big(v: &BigRat) -> Option<Rat> {
+pub fn sqrt_rat_big(v: &BigRat) -> Option<Rat> {
     if v.is_negative() {
         return None;
     }
@@ -75,11 +75,11 @@ pub fn rat_sqrt_exact_big(v: &BigRat) -> Option<Rat> {
 
 /// The exact `√v` of a rational, or `None` when it is irrational (or `v < 0`).
 ///
-/// An integer square root, as [`rat_sqrt_exact_big`] takes one — the same question at `Rat`'s
+/// An integer square root, as [`sqrt_rat_big`] takes one — the same question at `Rat`'s
 /// width. An `f64` estimate searched over a few neighbours is the rejected alternative: its error
 /// grows with the root, past `2⁵⁵` it left the ±2 window that was searched, and it answered
 /// «irrational» for 168 of 20,000 radii written to f64's last digit.
-pub fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
+pub fn sqrt_rat(v: Rat) -> Option<Rat> {
     let (num, den) = (*v.0.numer(), *v.0.denom());
     if num < 0 {
         return None;
@@ -93,24 +93,24 @@ pub fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
 
 /// The exact `1/√v` of a positive rational, or `None` when it is irrational.
 ///
-/// `1/√v = √(1/v)`, so this is [`rat_sqrt_exact`] of the reciprocal — and the test is symmetric
+/// `1/√v = √(1/v)`, so this is [`sqrt_rat`] of the reciprocal — and the test is symmetric
 /// under inversion (a fraction in lowest terms is a perfect square exactly when both of its parts
 /// are), so nothing is lost by asking it that way round.
 ///
 /// ★ **This branch is why an axis-aligned model pays nothing.** A frame normal of `(0, 0, 1)` has
 /// `n·n = 1` and lands here with `1.0`, exactly, without touching arbitrary precision — the same
-/// role [`Angle::try_exact_cos_sin`] plays for a quadrantal rotation.
-pub fn inv_sqrt_exact(v: Rat) -> Option<Rat> {
+/// role [`Angle::cos_sin_rat`] plays for a quadrantal rotation.
+pub fn inv_sqrt_rat(v: Rat) -> Option<Rat> {
     if v <= Rat::from_int(0) {
         return None;
     }
-    rat_sqrt_exact(Rat::new(*v.0.denom(), *v.0.numer())?)
+    sqrt_rat(Rat::new(*v.0.denom(), *v.0.numer())?)
 }
 
 /// `1/√v` at `prec` bits **with an upper bound on how far it may be from the true value** — the
 /// seed for every error radius that a frame's realization grows from.
 ///
-/// The bound is *derived*, term by term, in the shape [`Angle::cos_sin_bounded`] uses:
+/// The bound is *derived*, term by term, in the shape [`Angle::cos_sin_hp`] uses:
 ///
 /// - `numer`/`denom` enter as `i128`, exactly. Routing them through `f64` would cost a relative
 ///   `2⁻⁵³` past 2⁵³ that no working precision recovers.
@@ -129,14 +129,14 @@ pub fn inv_sqrt_exact(v: Rat) -> Option<Rat> {
 ///
 /// `None` when `v ≤ 0` — there is no frame normal with a non-positive squared length, so that is a
 /// broken premise rather than an unusual input.
-pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<HpBounded> {
+pub fn inv_sqrt_hp(v: Rat, prec: usize) -> Option<HpBounded> {
     if v <= Rat::from_int(0) {
         return None;
     }
     if let Some(hit) = INV_SQRT.with_borrow(|t| t.get(&(v, prec)).cloned()) {
         return Some(hit);
     }
-    let out = realize_inv_sqrt(v, prec);
+    let out = inv_sqrt_hp_uncached(v, prec);
     INV_SQRT.with_borrow_mut(|t| t.insert((v, prec), out.clone()));
     Some(out)
 }
@@ -145,8 +145,8 @@ pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<HpBounded> {
 /// integer's own bit length, so no digit is ever rounded away.
 ///
 /// The wide-frame realization feeds plane data wider than `i128` through this; keeping the
-/// conversion exact is what keeps [`inv_sqrt_bigint_bounded`]'s error budget identical to
-/// [`inv_sqrt_bounded`]'s: every rounding still happens *after* the value has entered whole,
+/// conversion exact is what keeps [`inv_sqrt_hp_big`]'s error budget identical to
+/// [`inv_sqrt_hp`]'s: every rounding still happens *after* the value has entered whole,
 /// exactly as the narrow twin's `i128`s do.
 ///
 /// Horner over the base-2⁶⁴ digits: the scale multiply is an exponent shift (exact), and each
@@ -166,7 +166,7 @@ pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat
     acc
 }
 
-/// [`inv_sqrt_bounded`] for a squared length wider than `i128` — the wide-frame twin.
+/// [`inv_sqrt_hp`] for a squared length wider than `i128` — the wide-frame twin.
 ///
 /// Same ladder, same derived bound: the integer enters **exactly** ([`bigint_to_bigfloat`] at
 /// its own bit length), the square root rounds once (halving the incoming relative error, which
@@ -175,7 +175,7 @@ pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat
 ///
 /// **Uncached** — the wide population is a fraction of a percent of pushes and the memo key
 /// would be a `BigInt`; measured before optimizing, per the cache philosophy.
-pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<HpBounded> {
+pub fn inv_sqrt_hp_big(v: &num_bigint::BigInt, prec: usize) -> Option<HpBounded> {
     if v.sign() != num_bigint::Sign::Plus {
         return None;
     }
@@ -189,9 +189,9 @@ pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<Hp
     Some(HpBounded::new(z, error))
 }
 
-/// [`inv_sqrt_bounded`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
+/// [`inv_sqrt_hp`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
 /// borrow is held across the arbitrary-precision work.
-fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
+fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
     // As `i128`, not through `f64`: the loss would happen before astro-float saw the value.
     let ip = prec.max(128);
     let n = BigFloat::from_i128(*v.0.numer(), ip);
@@ -208,7 +208,7 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
 
 /// **`1/√v` as the `f64` nearest the true value**, or `None` when `v ≤ 0`.
 ///
-/// ★★ **The exact branch runs first** ([`inv_sqrt_exact`]) and covers every axis-aligned frame,
+/// ★★ **The exact branch runs first** ([`inv_sqrt_rat`]) and covers every axis-aligned frame,
 /// plus the Pythagorean ones a CAD user actually draws — a `(3, 4, 0)` normal has `n·n = 25` and
 /// `1/|n| = 1/5`. Only a genuinely irrational length reaches the ladder.
 ///
@@ -218,7 +218,7 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
 ///
 /// **The ladder is 128 then 256 bits, and it terminates.** Unlike `cos 90°`, `1/√v` is never zero
 /// for a positive `v`, so its interval never straddles zero and [`round_to_f64`] cannot answer
-/// `None` forever. The rungs match [`Angle::realize_rounded_f64`]'s so a judgement at
+/// `None` forever. The rungs match [`Angle::cos_sin_f64_uncached`]'s so a judgement at
 /// `nacre_judge`'s trial precision shares this realization instead of paying for a second one.
 ///
 /// ★ **Correct rounding is what keeps debug and release the same.** A faithfully-rounded value
@@ -231,25 +231,25 @@ pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
     }
-    if let Some(r) = inv_sqrt_exact(v) {
+    if let Some(r) = inv_sqrt_rat(v) {
         return Some(r.to_f64());
     }
     if let Some(hit) = F64_INV_SQRT.with_borrow(|m| m.get(&v).copied()) {
         return Some(hit);
     }
     // Outside the borrow: the realization below takes `INV_SQRT`'s in turn.
-    let out = realize_inv_sqrt_rounded(v);
+    let out = inv_sqrt_f64_uncached(v);
     F64_INV_SQRT.with_borrow_mut(|m| m.insert(v, out));
     Some(out)
 }
 
 /// [`inv_sqrt_f64`]'s general branch without the memo or the exact test.
-fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
+fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
     for (i, prec) in [128usize, 256].into_iter().enumerate() {
         let HpBounded {
             value: z,
             error: rad,
-        } = realize_inv_sqrt_memoized(v, prec);
+        } = inv_sqrt_hp(v, prec).expect("v > 0 checked by the caller");
         if let Some(f) = round_to_f64(&z, rad, prec) {
             #[cfg(test)]
             if i > 0 {
@@ -262,19 +262,16 @@ fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
     }
     #[cfg(test)]
     INV_SQRT_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-    let z = realize_inv_sqrt_memoized(v, 256).value;
-    to_f64_exact(&z).unwrap_or(f64::NAN)
-}
-
-/// [`inv_sqrt_bounded`] for a `v` already known positive.
-fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> HpBounded {
-    inv_sqrt_bounded(v, prec).expect("v > 0 checked by the caller")
+    let z = inv_sqrt_hp(v, 256)
+        .expect("v > 0 checked by the caller")
+        .value;
+    bigfloat_to_f64(&z).unwrap_or(f64::NAN)
 }
 
 /// **`√v` as the `f64` nearest the true value**, or `None` when `v < 0` — the f64 realization of
 /// a radius stated as its square, at any width.
 ///
-/// The twin of [`inv_sqrt_f64`]: the exact branch runs first ([`rat_sqrt_exact`] — every radius a
+/// The twin of [`inv_sqrt_f64`]: the exact branch runs first ([`sqrt_rat`] — every radius a
 /// user writes as a decimal lands here, and comes back as the `to_f64` of the rational it always
 /// was, bit for bit), and only a genuinely irrational root reaches the 128 → 256 bit ladder, under
 /// the same correct-rounding contract. `√v` is nonzero for `v > 0`, so the interval never
@@ -284,20 +281,20 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if v.is_negative() {
         return None;
     }
-    if let Some(r) = rat_sqrt_exact_big(v) {
+    if let Some(r) = sqrt_rat_big(v) {
         return Some(r.to_f64());
     }
     for prec in [128usize, 256] {
         let HpBounded {
             value: z,
             error: rad,
-        } = sqrt_bounded_big(v, prec)?;
+        } = sqrt_hp_big(v, prec)?;
         if let Some(f) = round_to_f64(&z, rad, prec) {
             return Some(f);
         }
     }
-    let z = sqrt_bounded_big(v, 256)?.value;
-    Some(to_f64_exact(&z).unwrap_or(f64::NAN))
+    let z = sqrt_hp_big(v, 256)?.value;
+    Some(bigfloat_to_f64(&z).unwrap_or(f64::NAN))
 }
 
 /// **The unit direction of an integer vector, each component the `f64` nearest `nₖ/|n|`**, or
@@ -307,8 +304,8 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 /// asking at more bits cannot move it. The exact branch runs first: when `n·n` is a perfect square
 /// every component is a rational, rounded once ([`nearest_f64_big`]) — an axis-aligned or
 /// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized at 128 and
-/// then 256 bits — through the memoized [`inv_sqrt_bounded`] where `n·n` fits `Rat`, and
-/// [`inv_sqrt_bigint_bounded`] where it does not — and each product rounded; the midpoint stands
+/// then 256 bits — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
+/// [`inv_sqrt_hp_big`] where it does not — and each product rounded; the midpoint stands
 /// if even 256 bits leave a component undecided, as in [`sqrt_f64`].
 ///
 /// ★ **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
@@ -326,8 +323,8 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
         return Some([c(0)?, c(1)?, c(2)?]);
     }
     let inv = |prec: usize| match nn.to_i128() {
-        Some(v) => inv_sqrt_bounded(Rat::from_int(v), prec),
-        None => inv_sqrt_bigint_bounded(&nn, prec),
+        Some(v) => inv_sqrt_hp(Rat::from_int(v), prec),
+        None => inv_sqrt_hp_big(&nn, prec),
     };
     for prec in [128usize, 256] {
         let s = inv(prec)?;
@@ -342,13 +339,13 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
     let s = inv(256)?;
     let c = |k: usize| {
         let v = HpBounded::of_bigint(&n[k], 256).mul(&s, 256).value;
-        to_f64_exact(&v).unwrap_or(f64::NAN)
+        bigfloat_to_f64(&v).unwrap_or(f64::NAN)
     };
     Some([c(0), c(1), c(2)])
 }
 
 /// **How far the `1/√v` the caller was handed sits from the true one** — measured against an
-/// arbitrary-precision realization, the twin of [`Angle::realization_error_of`].
+/// arbitrary-precision realization, the twin of [`Angle::cos_sin_error_of`].
 ///
 /// ★★★ **The caller passes the value in rather than letting this re-realize it**, for the same
 /// reason the trig one does: the consumer is a frame's `tol`, which must bound the error in the
@@ -356,7 +353,7 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 /// independent realization would bound a number nobody stored.
 ///
 /// ★★★★ **Exactly zero only when the exact value is also *dyadic*, which is not the same thing
-/// as being exact.** [`Angle::realization_error_of`] can return a flat `0` for its exact family
+/// as being exact.** [`Angle::cos_sin_error_of`] can return a flat `0` for its exact family
 /// because `{0, ±1}` are f64 values; `1/√v` cannot. A **Pythagorean** normal like `(3, 4, 0)` has
 /// `n·n = 25` and an exactly rational `1/|n| = 1/5` — which is *not* an f64, so the realization
 /// still rounds. Copying the trig zero here reported `0` for a real `2⁻⁵³` error, and
@@ -384,9 +381,9 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
     //
     // The gap is taken in **exact rational arithmetic** — `try_from_f64` is exact, so `f − r` is
     // exact and its being zero is a fact rather than a measurement below some resolution. That is
-    // what lets an axis-aligned frame reach a literal `0.0`; going through `inv_sqrt_bounded`
+    // what lets an axis-aligned frame reach a literal `0.0`; going through `inv_sqrt_hp`
     // would hand it the realization's own `2⁻¹²⁴` radius and no exact route would ever be taken.
-    if let Some(r) = inv_sqrt_exact(v) {
+    if let Some(r) = inv_sqrt_rat(v) {
         if r.to_f64() == f {
             let d = Rat::try_from_f64(f).and_then(|fr| fr.checked_sub(r))?;
             if d == Rat::from_int(0) {
@@ -400,14 +397,14 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
     let HpBounded {
         value: h,
         error: rad,
-    } = inv_sqrt_bounded(v, P)?;
+    } = inv_sqrt_hp(v, P)?;
     let diff = BigFloat::from_f64(f, P).sub(&h, P, HP_RM);
     let mag = if diff.is_zero() {
         0.0
     } else {
         2f64.powi(diff.exponent().unwrap_or(0))
     };
-    // Rounded up, for the reason `Angle::measure_realization_error` spells out: when `|diff|` is
+    // Rounded up, for the reason `Angle::cos_sin_error_of_uncached` spells out: when `|diff|` is
     // itself a power of two the octave bound has no slack, and `mag + rad` would round back down
     // to `mag` in f64 — short by the radius.
     Some((mag + rad.upper_f64()) * (1.0 + 2.0 * f64::EPSILON))

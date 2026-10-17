@@ -148,13 +148,6 @@ impl QuadVal {
         QuadVal::new(self.a.checked_mul(k)?, self.b.checked_mul(k)?, self.c)
     }
 
-    /// The f64 realization `a + b·√c` — a **cache** value, not exactly rounded (three
-    /// roundings compose); consumers that need a certified value go through the sign tower.
-    ///
-    /// ★★ **Witnesses and display only — never a decision.** Deciding on two realizations hands
-    /// the answer to `f64` rounding, which is what [`QuadVal::sign`] exists to take back. Said
-    /// out loud now that the first caller has arrived (a reject's witness location, drawn for a
-    /// human and asserted only approximately).
     /// The value as a rational **when it is one**: `b = 0`, or `c` a perfect square (then
     /// `a + b·√c` exactly). `None` is an irrational value, not a failure.
     ///
@@ -165,11 +158,19 @@ impl QuadVal {
         if self.b == Rat::from_int(0) {
             return Some(self.a);
         }
-        let k = crate::rat_sqrt_exact(self.c)?;
+        let k = crate::sqrt_rat(self.c)?;
         self.a.checked_add(self.b.checked_mul(k)?)
     }
 
-    pub fn to_f64(&self) -> f64 {
+    /// `a + b·√c` in plain `f64` — three roundings compose, so no nearest-`f64` promise;
+    /// consumers that need a certified value go through the sign tower.
+    ///
+    /// ★★ **Witnesses, seeds and display only — never a decision.** Deciding on two of these
+    /// hands the answer to `f64` rounding, which is what [`QuadVal::sign`] exists to take back. A
+    /// seed is checked exactly before it is believed (`rational_between` verifies its midpoint
+    /// against both ends); a witness location is drawn for a human and asserted only
+    /// approximately.
+    pub fn to_f64_approx(&self) -> f64 {
         self.a.to_f64() + self.b.to_f64() * self.c.to_f64().sqrt()
     }
 
@@ -285,8 +286,8 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
     }
 }
 
-/// **The realized point of a plane·plane·cylinder crossing** — a cache value for witnesses and
-/// display, never a decision (see [`QuadVal::to_f64`]).
+/// **The point of a plane·plane·cylinder crossing in plain `f64`** — for witnesses and display,
+/// never a decision (see [`QuadVal::to_f64_approx`]).
 ///
 /// ★ Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
 /// answering. A caller that assembled the same expression in `QuadVal` would lose the point
@@ -298,7 +299,7 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
 /// of them, so nothing exceeds about `10^190`. ⇒ the bound is the argument type's, not this
 /// function's: an input carrying `BigInt` coefficients would break it, and the `expect` below is
 /// where that would be heard rather than silently returning `NaN`.
-pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
+pub fn branch_point_approx(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
     core::array::from_fn(|axis| {
         let k = axis_coord(line, s, axis);
         let f = |x: &BigInt| -> f64 {

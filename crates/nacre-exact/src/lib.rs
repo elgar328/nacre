@@ -17,7 +17,7 @@
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
 //!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
 //!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
-//!   so those rotations of a rational point stay tol 0; and `cos_sin_bounded`
+//!   so those rotations of a rational point stay tol 0; and `cos_sin_hp`
 //!   realizes them in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment lives in `nacre-judge`).
@@ -35,7 +35,7 @@
 pub mod bounded;
 pub mod mag;
 pub mod quad;
-pub use bounded::{Bounded, HpBounded, rat_to_big};
+pub use bounded::{Bounded, HpBounded, rat_to_bigfloat};
 pub use mag::Mag;
 pub use quad::{
     QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear, cylinders_nested,
@@ -95,7 +95,7 @@ thread_local! {
     /// [`TRIG`] below, which is what saves the *evaluation*.
     static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
 
-    /// **Realized `cos`/`sin` per `(angle, precision)`** — see [`Angle::cos_sin_bounded`].
+    /// **Realized `cos`/`sin` per `(angle, precision)`** — see [`Angle::cos_sin_hp`].
     ///
     /// A rotation's realization asks for the *same* angle once per point: a 60-fin fold evaluated
     /// **29,037 of them for 112 distinct `(angle, prec)` pairs**, and a solid turned 4,200 times
@@ -110,10 +110,10 @@ thread_local! {
     /// so the memo cannot move an answer; only how often Ziv's loop runs. `prec` is *in* the key,
     /// so a model whose judging precision grows simply lands on a different entry rather than
     /// reading one realized at the wrong depth.
-    static TRIG: RefCell<HashMap<(Angle, usize), TrigAt>> = RefCell::new(HashMap::new());
+    static TRIG: RefCell<HashMap<(Angle, usize), CosSinHp>> = RefCell::new(HashMap::new());
 
     /// **How far an `f64` cos/sin pair lands from the truth** — see
-    /// [`Angle::realization_error_of`].
+    /// [`Angle::cos_sin_error_of`].
     ///
     /// ★ **No precision in the key, and that is the point.** [`TRIG`] is keyed by
     /// `(angle, precision)` because it holds a value *realized at* a depth. This holds how wrong
@@ -135,7 +135,7 @@ thread_local! {
     /// change an answer — it only stops the arbitrary-precision realization from running per vertex.
     ///
     /// **Measured, which is why it is here from the start**: one realization costs ~32µs against
-    /// libm's 22ns, and `Isometry::apply_point` runs per vertex.
+    /// libm's 22ns, and `Isometry::point_approx` runs per vertex.
     static F64_TRIG: RefCell<HashMap<Angle, (f64, f64)>> = RefCell::new(HashMap::new());
 
     /// How often the f64 realization needed a second, deeper pass, and how often even that left
@@ -145,7 +145,7 @@ thread_local! {
     #[cfg(test)]
     static ROUND_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 
-    /// **Realized `1/√v` per `(rational, precision)`** — see [`inv_sqrt_bounded`].
+    /// **Realized `1/√v` per `(rational, precision)`** — see [`inv_sqrt_hp`].
     ///
     /// The same argument that makes [`TRIG`] sound applies unchanged: the key is a *value*, not a
     /// handle, so two models asking for the same squared length are asking the same question; the
@@ -169,7 +169,7 @@ thread_local! {
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
-type TrigAt = (HpBounded, HpBounded);
+type CosSinHp = (HpBounded, HpBounded);
 
 /// An angle **together with one f64 realization of it** — `(angle, cos.to_bits(), sin.to_bits())`.
 /// The bits, not the floats, because the key has to be `Hash` and `Eq`.
@@ -199,7 +199,7 @@ pub struct BigRat(Ratio<num_bigint::BigInt>);
 /// (rational). Accumulation is exact: turning by a rational angle repeatedly and
 /// completing a full turn lands back on exactly `0` — no f64 drift. `cos`/`sin`
 /// realization crosses into f64: the irrational-realization boundary, past which a
-/// *judgement* realizes at arbitrary precision instead ([`Angle::cos_sin_bounded`]).
+/// *judgement* realizes at arbitrary precision instead ([`Angle::cos_sin_hp`]).
 /// The angle stays exact; only its realized coordinate carries tol.
 ///
 /// This is the direction type: it keeps no turn count. A multi-turn *amount* (helix

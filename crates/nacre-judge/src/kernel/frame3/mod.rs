@@ -23,7 +23,7 @@
 
 use super::HP_RM;
 use astro_float::BigFloat;
-use nacre_exact::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_big};
+use nacre_exact::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_bigfloat};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]

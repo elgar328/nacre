@@ -119,7 +119,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
 /// ★ Two hypotheses died on the way, and both were mine. **Origin cancellation** (`1.6 − 1.0`)
 /// is not the cause: a unit axis at `(1, 2, 3)` survives, which
 /// [`a_realized_axis_survives_only_when_it_needs_no_normalizing`] pins. And the planning
-/// argument "`|u_raw|² = 1`, so `inv_sqrt_exact` returns exactly one" held only for axes that
+/// argument "`|u_raw|² = 1`, so `inv_sqrt_rat` returns exactly one" held only for axes that
 /// are *already* unit; I generalized it to every rational axis and predicted agreement.
 ///
 /// [`RatFrame::of_plane_frame`] asks in `Rat` and never realizes — the same rule

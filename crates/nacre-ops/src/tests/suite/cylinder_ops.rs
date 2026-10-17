@@ -72,7 +72,7 @@ fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
         nacre_exact::BigRat::from(rat(1, 100)),
         "r² of the stated 1/10"
     );
-    assert_eq!(def.radius_exact(), Some(rat(1, 10)));
+    assert_eq!(def.radius_rat(), Some(rat(1, 10)));
     assert_eq!(faces.len(), 3, "bottom cap, top cap, lateral");
 }
 

@@ -98,7 +98,7 @@ fn ring_interior_candidates(
         // same points it always did. Without one it is `min(r², 1)/(2(|e|²+1))`, inside because
         // `λ|e| ≤ 1/4 < 1 ≤ r` when `r ≥ 1` and `λ|e| ≤ r²/4 < r` when `r < 1`; the assertion
         // below is the judge either way.
-        let lam = match nacre_exact::rat_sqrt_exact_big(r2) {
+        let lam = match nacre_exact::sqrt_rat_big(r2) {
             Some(r) => Rat::new(
                 r.numer().checked_mul(len2.denom())?,
                 r.denom()
@@ -385,7 +385,7 @@ fn holed_cap_witness(
     centre: &[nacre_exact::Rat; 3],
     f: &CompFace,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    use nacre_exact::{Orient, Rat, inv_sqrt_exact, quad::cylinder_radial_side};
+    use nacre_exact::{Orient, Rat, inv_sqrt_rat, quad::cylinder_radial_side};
     let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
         let mut acc = Rat::from_int(0);
         for k in 0..3 {
@@ -401,9 +401,9 @@ fn holed_cap_witness(
         ])
     };
     let (m, e) = (def.dir(), def.ref_dir());
-    // `1/|ref_dir|` and `1/(|m||ref_dir|)`, exact when the norms are (`inv_sqrt_exact`).
-    let inv_e = inv_sqrt_exact(dot(&e, &e)?)?;
-    let inv_me = inv_e.checked_mul(inv_sqrt_exact(dot(&m, &m)?)?)?;
+    // `1/|ref_dir|` and `1/(|m||ref_dir|)`, exact when the norms are (`inv_sqrt_rat`).
+    let inv_e = inv_sqrt_rat(dot(&e, &e)?)?;
+    let inv_me = inv_e.checked_mul(inv_sqrt_rat(dot(&m, &m)?)?)?;
     let u1 = scale(&e, inv_e)?;
     let u2 = scale(&nacre_exact::cross3_rat(&m, &e)?, inv_me)?;
     let neg = |v: &[Rat; 3]| scale(v, Rat::from_int(-1));
@@ -411,12 +411,12 @@ fn holed_cap_witness(
     // Probe circles midway between the outer rim and each hole's, at rational radii — which
     // needs the radii themselves. A face whose squared radii have no rational root is not probed
     // this way; `None` is the answer this function already gives when it cannot form a witness.
-    let big_r = def.radius_exact()?;
+    let big_r = def.radius_rat()?;
     let half = Rat::new(1, 2)?;
     let mut radii = vec![big_r.checked_mul(half)?];
     for hole in &f.inner {
         if let BoundEdges::Circle(h) = hole {
-            radii.push(big_r.checked_add(h.radius_exact()?)?.checked_mul(half)?);
+            radii.push(big_r.checked_add(h.radius_rat()?)?.checked_mul(half)?);
         }
     }
     let coeffs = class_coeffs_rat(jd, plane);

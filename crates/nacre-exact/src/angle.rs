@@ -49,21 +49,21 @@ impl Angle {
     /// why a process-wide memo is sound here and a handle-keyed one would not be.
     ///
     /// Returns `(cos, sin)`, each with the radius it carries.
-    pub fn cos_sin_bounded(self, prec: usize) -> (HpBounded, HpBounded) {
+    pub fn cos_sin_hp(self, prec: usize) -> (HpBounded, HpBounded) {
         if let Some(hit) = TRIG.with_borrow(|t| t.get(&(self, prec)).cloned()) {
             return hit;
         }
-        let out = self.realize_cos_sin(prec);
+        let out = self.cos_sin_hp_uncached(prec);
         TRIG.with_borrow_mut(|t| t.insert((self, prec), out.clone()));
         out
     }
 
-    /// [`cos_sin_bounded`](Self::cos_sin_bounded) without the memo — the evaluation itself.
+    /// [`cos_sin_hp`](Self::cos_sin_hp) without the memo — the evaluation itself.
     ///
     /// **Separate so no `TRIG` borrow is held across it.** `HP_CONSTS` is borrowed for the whole
     /// realization and the trig calls are the slow part; nesting the memo's borrow around that is
     /// how a re-entrant call would panic rather than merely be slow.
-    fn realize_cos_sin(self, prec: usize) -> (HpBounded, HpBounded) {
+    fn cos_sin_hp_uncached(self, prec: usize) -> (HpBounded, HpBounded) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
@@ -105,7 +105,7 @@ impl Angle {
     /// f64 (even an exact `0.0`/`1.0`) would drop the point into f64 and lose the
     /// very exactness this path exists for. So a 90°-family rotation of a rational
     /// point stays tol 0.
-    pub fn try_exact_cos_sin(self) -> Option<(Rat, Rat)> {
+    pub fn cos_sin_rat(self) -> Option<(Rat, Rat)> {
         let zero = Rat::from_int(0);
         let one = Rat::from_int(1);
         let neg_one = Rat::from_int(-1);
@@ -143,21 +143,21 @@ impl Angle {
     /// and friends is exactly representable and comes out of the general path just fine.)
     ///
     /// **The realization is memoized per angle** ([`F64_TRIG`]), because one costs ~32µs against
-    /// libm's 22ns and `Isometry::apply_point` runs per vertex. The memo cannot change an answer —
+    /// libm's 22ns and `Isometry::point_approx` runs per vertex. The memo cannot change an answer —
     /// a correctly rounded value is unique — so it is a cost question only.
     ///
     /// A caller accounting for the realization's *error* hands what it got back to
-    /// [`realization_error_of`](Self::realization_error_of), which returns zero for exactly this
+    /// [`cos_sin_error_of`](Self::cos_sin_error_of), which returns zero for exactly this
     /// family — so nothing here has to report which branch ran.
     pub fn cos_sin_f64(self) -> (f64, f64) {
-        if let Some((cr, sr)) = self.try_exact_cos_sin() {
+        if let Some((cr, sr)) = self.cos_sin_rat() {
             return (cr.to_f64(), sr.to_f64());
         }
         if let Some(hit) = F64_TRIG.with_borrow(|m| m.get(&self).copied()) {
             return hit;
         }
         // Outside the borrow: the realization below takes `TRIG`'s and `HP_CONSTS`' in turn.
-        let out = self.realize_rounded_f64();
+        let out = self.cos_sin_f64_uncached();
         F64_TRIG.with_borrow_mut(|m| m.insert(self, out));
         out
     }
@@ -181,13 +181,13 @@ impl Angle {
     ///
     /// ★ **If even 256 leaves it undecided the answer is still returned, not a panic.** The value is
     /// then *faithfully* rounded (within an ulp) instead of correctly rounded, which stays sound
-    /// because [`realization_error_of`](Self::realization_error_of) measures the error that is
+    /// because [`cos_sin_error_of`](Self::cos_sin_error_of) measures the error that is
     /// actually there and the tolerance grows to match — and it stays deterministic, because a
     /// 256-bit midpoint is. A test build counts it, so that "can't happen" does not quietly become
     /// "happens".
-    fn realize_rounded_f64(self) -> (f64, f64) {
+    fn cos_sin_f64_uncached(self) -> (f64, f64) {
         for (i, prec) in [128usize, 256].into_iter().enumerate() {
-            let (c, s) = self.cos_sin_bounded(prec);
+            let (c, s) = self.cos_sin_hp(prec);
             if let (Some(cf), Some(sf)) = (
                 round_to_f64(&c.value, c.error, prec),
                 round_to_f64(&s.value, s.error, prec),
@@ -203,10 +203,10 @@ impl Angle {
         }
         #[cfg(test)]
         ROUND_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-        let (c, s) = self.cos_sin_bounded(256);
+        let (c, s) = self.cos_sin_hp(256);
         (
-            to_f64_exact(&c.value).unwrap_or(f64::NAN),
-            to_f64_exact(&s.value).unwrap_or(f64::NAN),
+            bigfloat_to_f64(&c.value).unwrap_or(f64::NAN),
+            bigfloat_to_f64(&s.value).unwrap_or(f64::NAN),
         )
     }
 
@@ -240,31 +240,31 @@ impl Angle {
     ///
     /// The reading is at octave granularity (`2^exponent` of the residual), so it can sit up to 2×
     /// above the true error. Conservative in the sound direction, and still a measurement.
-    pub fn realization_error_of(self, c: f64, s: f64) -> (f64, f64) {
+    pub fn cos_sin_error_of(self, c: f64, s: f64) -> (f64, f64) {
         let key = (self, c.to_bits(), s.to_bits());
         if let Some(hit) = F64_ERR.with_borrow(|m| m.get(&key).copied()) {
             return hit;
         }
         // Outside the borrow: the computation below takes `TRIG`'s and `HP_CONSTS`' in turn.
-        let out = self.measure_realization_error(c, s);
+        let out = self.cos_sin_error_of_uncached(c, s);
         F64_ERR.with_borrow_mut(|m| m.insert(key, out));
         out
     }
 
-    /// [`realization_error_of`](Self::realization_error_of) without the memo — the measurement.
-    fn measure_realization_error(self, c: f64, s: f64) -> (f64, f64) {
+    /// [`cos_sin_error_of`](Self::cos_sin_error_of) without the memo — the measurement.
+    fn cos_sin_error_of_uncached(self, c: f64, s: f64) -> (f64, f64) {
         const P: usize = 128; // the hp radius is then ~2⁻¹²⁸ against an ε-scale quantity
         // ★ The zero is claimed of *these* values, not of the angle: the exactness that callers
         // depend on is "the pair I am holding is the true cos/sin", and only comparing the pair
         // says that. An angle in the family whose caller somehow realized it the general way is
         // then measured like any other rather than being handed a zero it has not earned.
         if self
-            .try_exact_cos_sin()
+            .cos_sin_rat()
             .is_some_and(|(cr, sr)| cr.to_f64() == c && sr.to_f64() == s)
         {
             return (0.0, 0.0);
         }
-        let (hc, hs) = self.cos_sin_bounded(P);
+        let (hc, hs) = self.cos_sin_hp(P);
         let (rc, rs) = (hc.error, hs.error);
         let (hc, hs) = (hc.value, hs.value);
         let gap = |f: f64, h: &BigFloat, rad: Mag| {

@@ -1516,7 +1516,7 @@ fn a_rim_witness_is_the_seam_point_at(radius: f64) {
     );
     // The post-condition the supply asserts where it mints: a rim point is on the rim, exactly.
     let r = def
-        .radius_exact()
+        .radius_rat()
         .expect("a stated radius has a rational spelling");
     for u in [u1, u2] {
         let mut p = def.origin();

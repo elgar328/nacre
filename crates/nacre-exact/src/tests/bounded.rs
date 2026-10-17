@@ -67,7 +67,7 @@ fn the_interval_inv_sqrt_agrees_with_the_exact_route_and_contains_the_endpoints(
         if r == 0.0 {
             // Against the exact-rational route on a value both can state.
             let rat = Rat::from_decimal(x).expect("in the window");
-            let exact = crate::inv_sqrt_bounded(rat, prec).expect("positive");
+            let exact = crate::inv_sqrt_hp(rat, prec).expect("positive");
             let err = resid(&s.value, &exact.value, prec);
             assert!(
                 err <= mag_f64(s.error) + mag_f64(exact.error),
@@ -105,7 +105,7 @@ fn big(x: f64, prec: usize) -> BigFloat {
     BigFloat::from_f64(x, prec)
 }
 
-/// **Does the error `Angle::realization_error_of` reports actually bound the real one?**
+/// **Does the error `Angle::cos_sin_error_of` reports actually bound the real one?**
 ///
 /// `WitnessPoint::rotate_about` charges that number for the one input here without a rounding contract:
 /// neither Rust nor any libm promises an accuracy for `f64::cos`. It measures rather than charging
@@ -130,7 +130,7 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// property `tol` actually needs, which is about the pair in hand.
 ///
 /// ★ **The 90°-family is included, not skipped, and that is the load-bearing part.** There
-/// `realization_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute
+/// `cos_sin_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute
 /// no tolerance at all — which is what keeps a quadrantal origin rotation at tol 0 and keeps
 /// axis-aligned models on the exact predicate path. A claimed zero that was not really zero
 /// would not fail loudly; it would quietly move those models. Here it has to be real.
@@ -197,11 +197,11 @@ fn the_measured_trig_error_bounds_the_real_one() {
             continue; // outside Rat's range — `from_deg` declines, and so does the kernel
         };
         let (c, s) = a.cos_sin_f64();
-        let (dc, ds) = a.realization_error_of(c, s);
+        let (dc, ds) = a.cos_sin_error_of(c, s);
         if dc == 0.0 && ds == 0.0 {
             exact_seen += 1;
         }
-        let (hc, hs) = a.cos_sin_bounded(GT);
+        let (hc, hs) = a.cos_sin_hp(GT);
         for (which, f, h, reported) in [("cos", c, &hc, dc), ("sin", s, &hs, ds)] {
             // |f64 − true| ≤ |f64 − deep midpoint| + that realization's own radius.
             let truth = big(f, GT).sub(&h.value, GT, HP_RM).abs().add(
@@ -211,7 +211,7 @@ fn the_measured_trig_error_bounds_the_real_one() {
             );
             assert!(
                 truth.cmp(&big(reported, GT)).is_some_and(|sign| sign <= 0),
-                "realization_error_of under-states at {n}/{d} deg [{which}]: \
+                "cos_sin_error_of under-states at {n}/{d} deg [{which}]: \
                      f = {f:e}, reported {reported:e}, true error 2^{:?}",
                 truth.exponent(),
             );

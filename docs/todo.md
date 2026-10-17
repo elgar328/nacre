@@ -73,7 +73,7 @@
 
 **지금 참인 것.** 반지름의 진실은 r² 다: `Edge2d::Arc { center: [Rat; 2], r2: Rat, ccw }` ·
 `CylinderDef { origin, dir, ref_dir, r2: BigRat }`. r 은 실현(`radius_f64`)이거나 제곱근이 유리수일 때만
-`radius_exact()` 다. 「유리수 점을 r 로 짓는 자리 여섯」이 `radius_exact()` 뒤에 서 있다 — 아래 단계의
+`radius_rat()` 다. 「유리수 점을 r 로 짓는 자리 여섯」이 `radius_rat()` 뒤에 서 있다 — 아래 단계의
 방문 목록이다.
 
 **남은 문제 — 중심.** 기울어진 코너의 필렛은 **중심 자체가 무리수**다(모서리에서 이등분선 방향으로 r —
@@ -275,8 +275,8 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   17자리 뒤는 이진 반올림의 부산물). 그리고 brep-to-step 은 f64 를 최단 왕복으로만 찍으므로 자릿수 지정은
   작성기에 그 입력이 생겨야 한다.
 - **기계는 있다.** `nacre-exact` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부 `prec` 를 받는다) ·
-  `WitnessPoint::realize(prec)` · `round_to_f64`/`round_to_digits` · `sqrt_bounded`·`realize_quad`·
-  `realize_seam_point`(림의 각 0 점) · `Angle::cos_sin_bounded`(각마다 메모). 정확 반올림이라 실현이 유일하므로
+  `WitnessPoint::realize(prec)` · `round_to_f64`/`round_to_digits` · `sqrt_hp`·`quad_hp`·
+  `seam_point_hp`(림의 각 0 점) · `Angle::cos_sin_hp`(각마다 메모). 정확 반올림이라 실현이 유일하므로
   **같은 정밀도면 답이 하나**다.
 - **잠금이 공짜로 딸려 온다.** 같은 모델은 **바이트 동일**한 파일을 내고, 실현 정밀도를 **두 배로 올려도
   f64 결과가 안 바뀌어야** 한다. 그 둘이 「정밀도 기능이 아니라 정확성 고침」의 증거다.
@@ -319,6 +319,14 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
 남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
+
+### 최근접 `f64` 사다리가 네 벌이다
+
+정확한 값을 최근접 `f64` 로 읽는 사다리 — 128비트에서 `round_to_f64`, 못 정하면 256비트, 그래도 반올림 경계를 못 가르면
+256비트 중점(충실 반올림) — 가 `nacre-exact` 에 네 벌 있다. `Angle::cos_sin_f64_uncached`·`inv_sqrt_f64_uncached` 는 함수이고
+memo 와 상승 카운터를 갖는다. `sqrt_f64`·`unit_vector_f64` 는 같은 사다리를 본문에 풀어 쓰고 memo·카운터가 없다. ops 의
+`on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realized::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
+함수가 아니다. 한 사다리로 접으면 칸·폴백·카운터가 한 곳에 산다. 접기 전에 네 자리의 폴백(중점, `NaN`)이 모두 같은지부터 본다.
 
 ### `surface_name` 곁표 접기
 

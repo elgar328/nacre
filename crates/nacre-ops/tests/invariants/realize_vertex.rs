@@ -454,7 +454,7 @@ fn every_vertex_variant_answers() {
 
 /// ★★★ **The curved arms are checked against a route that shares nothing with them.**
 ///
-/// A seam or pierce coordinate is assembled here out of `inv_sqrt_bounded` and exact rational
+/// A seam or pierce coordinate is assembled here out of `inv_sqrt_hp` and exact rational
 /// arithmetic; the cached one was computed at boolean time by different code entirely. Agreement
 /// to the cache's own accuracy is therefore evidence, where comparing two spellings of the same
 /// derivation would not be (`tests/` has that failure on record).
@@ -933,7 +933,7 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// and only one of them is true: as a *cost* limit it is load-bearing — a 4,200-turn history
 /// realized on every push turns a 5.6 s test into 30 s — but as a *precision* rule it is
 /// measurably wrong: what costs precision is an **irrational turn**, and a rational translation
-/// costs nothing at all (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those
+/// costs nothing at all (`Angle::cos_sin_rat` answers only 0/90/180/270 — Niven, so those
 /// add no radius). A depth of 64 holds back chains that decide perfectly: rational translations
 /// by the hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the
 /// ladder's first rung decides; these two come back `Bounded`.

@@ -52,10 +52,10 @@ fn realization_is_f64_while_angle_stays_exact() {
     let a = Angle::from_deg(Rat::from_int(45)).unwrap();
     assert_eq!(a.deg(), Rat::from_int(45)); // angle exact
     let (c, _) = a.cos_sin_f64();
-    assert!(a.try_exact_cos_sin().is_none()); // √2/2 is not rational
+    assert!(a.cos_sin_rat().is_none()); // √2/2 is not rational
 
     // Nothing is nearer: both neighbours are further from the deep truth than `c` is.
-    let deep = a.cos_sin_bounded(512).0.value;
+    let deep = a.cos_sin_hp(512).0.value;
     let dist = |f: f64| BigFloat::from_f64(f, 512).sub(&deep, 512, HP_RM).abs();
     let here = dist(c);
     for nb in [
@@ -77,7 +77,7 @@ fn realization_is_f64_while_angle_stays_exact() {
 #[test]
 fn exact_cos_sin_only_for_quadrantal_angles() {
     let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
-    let (c, s) = a90.try_exact_cos_sin().unwrap();
+    let (c, s) = a90.cos_sin_rat().unwrap();
     assert_eq!((c, s), (Rat::from_int(0), Rat::from_int(1)));
 
     // Exact rotation of (3, 5) by 90° → (-5, 3), all rational (tol 0):
@@ -97,10 +97,10 @@ fn exact_cos_sin_only_for_quadrantal_angles() {
 
     // 45° has no exact rational realization → None (falls to the rounded high-precision path).
     let a45 = Angle::from_deg(Rat::from_int(45)).unwrap();
-    assert!(a45.try_exact_cos_sin().is_none());
+    assert!(a45.cos_sin_rat().is_none());
     // The high-precision realization of 90° is *not* zero either — it is ~2⁻¹²⁸ — which is
     // exactly why the branch above exists rather than being an optimization.
-    assert!(!a90.cos_sin_bounded(128).0.value.is_zero());
+    assert!(!a90.cos_sin_hp(128).0.value.is_zero());
 }
 
 /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0`, and the exactly-representable
@@ -127,7 +127,7 @@ fn cos_sin_f64_is_exact_where_the_true_value_is_representable() {
 
 /// **The 90°-family realizes with no error at all, and that zero is load-bearing.**
 ///
-/// `WitnessPoint::rotate_about` reads [`Angle::realization_error_of`] to decide whether a rotation
+/// `WitnessPoint::rotate_about` reads [`Angle::cos_sin_error_of`] to decide whether a rotation
 /// contributes any tolerance. For `cos`/`sin` in `{0, ±1}` the f64 values *are* the true ones,
 /// and every product and difference downstream is exact too — which is why a quadrantal origin
 /// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.
@@ -142,7 +142,7 @@ fn only_the_quadrantal_family_realizes_exactly() {
     let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
     let err = |a: Angle| {
         let (c, s) = a.cos_sin_f64();
-        a.realization_error_of(c, s)
+        a.cos_sin_error_of(c, s)
     };
     for d in [0, 90, 180, 270] {
         assert_eq!(err(deg(d, 1)), (0.0, 0.0), "{d} deg");
@@ -152,7 +152,7 @@ fn only_the_quadrantal_family_realizes_exactly() {
     // cos/sin from somewhere other than `cos_sin_f64` would be handed an exactness claim that
     // does not hold of what it is holding.
     let a90 = deg(90, 1);
-    assert!(a90.realization_error_of(1e-17, 1.0).0 > 0.0);
+    assert!(a90.cos_sin_error_of(1e-17, 1.0).0 > 0.0);
     for (n, d) in [(1, 1), (37, 1), (45, 1), (337, 1), (1, 3), (359999, 1000)] {
         let (dc, ds) = err(deg(n, d));
         assert!(
@@ -198,10 +198,10 @@ fn the_f64_readout_round_trips() {
         }
     }
     for x in cases {
-        let back = to_f64_exact(&BigFloat::from_f64(x, 128));
+        let back = bigfloat_to_f64(&BigFloat::from_f64(x, 128));
         assert_eq!(back, Some(x), "{x:e} did not survive the round trip");
     }
-    assert_eq!(to_f64_exact(&BigFloat::from_f64(0.0, 128)), Some(0.0));
+    assert_eq!(bigfloat_to_f64(&BigFloat::from_f64(0.0, 128)), Some(0.0));
 }
 
 /// **The rounding check has to be able to say no.**
@@ -214,7 +214,7 @@ fn the_f64_readout_round_trips() {
 #[test]
 fn the_rounding_check_refuses_an_undecidable_interval() {
     let a = Angle::from_deg(Rat::new(37, 1).unwrap()).unwrap();
-    let (c, _) = a.cos_sin_bounded(128);
+    let (c, _) = a.cos_sin_hp(128);
     let (c, rc) = (c.value, c.error);
     assert!(
         round_to_f64(&c, rc, 128).is_some(),
@@ -226,7 +226,7 @@ fn the_rounding_check_refuses_an_undecidable_interval() {
     // straddles zero forever. This is why `cos_sin_f64` resolves the family first.
     let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
     for prec in [128usize, 256, 512] {
-        let (c90, _) = a90.cos_sin_bounded(prec);
+        let (c90, _) = a90.cos_sin_hp(prec);
         let (c90, r90) = (c90.value, c90.error);
         assert!(
             round_to_f64(&c90, r90, prec).is_none(),
@@ -262,7 +262,7 @@ fn the_escalation_rung_is_reachable() {
                     "{a:?} realized to a non-number"
                 );
                 // Whatever rung answered, the answer must still bound its own error.
-                let (dc, ds) = a.realization_error_of(c, s);
+                let (dc, ds) = a.cos_sin_error_of(c, s);
                 assert!(dc >= 0.0 && ds >= 0.0);
                 asked += 1;
             }
@@ -292,16 +292,16 @@ fn the_realization_error_memo_keys_on_the_angle_and_the_pair() {
     let a = deg(1234567, 9973);
     let (c, s) = a.cos_sin_f64();
     let before = entries();
-    let first = a.realization_error_of(c, s);
+    let first = a.cos_sin_error_of(c, s);
     assert_eq!(entries(), before + 1, "the first ask must insert");
-    assert_eq!(a.realization_error_of(c, s), first);
+    assert_eq!(a.cos_sin_error_of(c, s), first);
     assert_eq!(
         entries(),
         before + 1,
         "the second ask must be answered, not recomputed"
     );
     // The same angle, unreduced, with the same pair, is the same entry.
-    assert_eq!(deg(2469134, 19946).realization_error_of(c, s), first);
+    assert_eq!(deg(2469134, 19946).cos_sin_error_of(c, s), first);
     assert_eq!(
         entries(),
         before + 1,
@@ -311,11 +311,11 @@ fn the_realization_error_memo_keys_on_the_angle_and_the_pair() {
     // its own answer — an entry keyed on the angle alone would hand back `first`, an error
     // measured against a pair this caller is not holding.
     let nudged = f64::from_bits(c.to_bits() + 1);
-    assert_ne!(a.realization_error_of(nudged, s), first);
+    assert_ne!(a.cos_sin_error_of(nudged, s), first);
     assert_eq!(entries(), before + 2, "the pair is part of the key");
 }
 
-/// `apply_point`/`apply_dir` realize a 90°-family rotation bit-exactly: no ~6e-17
+/// `point_approx`/`dir_approx` realize a 90°-family rotation bit-exactly: no ~6e-17
 /// spurious cross-term. (3,5,z) about Z by 90° → exactly (-5,3,z); a rational-pivot
 /// rotation is exact too; a non-quadrantal angle is unchanged from the f64 path.
 #[test]
@@ -327,10 +327,10 @@ fn apply_point_exact_for_quadrantal() {
             angle: Angle::from_deg(Rat::from_int(d)).unwrap(),
         })
     };
-    assert_eq!(iso(90).apply_point([3.0, 5.0, 7.0]), [-5.0, 3.0, 7.0]);
-    assert_eq!(iso(180).apply_point([3.0, 5.0, 7.0]), [-3.0, -5.0, 7.0]);
-    assert_eq!(iso(270).apply_point([3.0, 5.0, 7.0]), [5.0, -3.0, 7.0]);
-    assert_eq!(iso(90).apply_dir([0.0, 1.0, 0.0]), [-1.0, 0.0, 0.0]);
+    assert_eq!(iso(90).point_approx([3.0, 5.0, 7.0]), [-5.0, 3.0, 7.0]);
+    assert_eq!(iso(180).point_approx([3.0, 5.0, 7.0]), [-3.0, -5.0, 7.0]);
+    assert_eq!(iso(270).point_approx([3.0, 5.0, 7.0]), [5.0, -3.0, 7.0]);
+    assert_eq!(iso(90).dir_approx([0.0, 1.0, 0.0]), [-1.0, 0.0, 0.0]);
 
     // Non-origin pivot (2,2): 90° maps (3,5)→pivot+R(1,3)=(2-3, 2+1)=(-1,3).
     let piv = Isometry::rotation(Rotation {
@@ -338,14 +338,14 @@ fn apply_point_exact_for_quadrantal() {
         pivot: [Rat::from_int(2), Rat::from_int(2), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
     });
-    assert_eq!(piv.apply_point([3.0, 5.0, 0.0]), [-1.0, 3.0, 0.0]);
+    assert_eq!(piv.point_approx([3.0, 5.0, 0.0]), [-1.0, 3.0, 0.0]);
 
     // Non-quadrantal: the same arithmetic on the same realized pair, so this pins the *route*
     // (`px + u·c − v·s`, in that order) rather than the values.
     let a = Angle::from_deg(Rat::from_int(37)).unwrap();
     let (c, s) = a.cos_sin_f64();
     assert_eq!(
-        iso(37).apply_point([3.0, 5.0, 0.0]),
+        iso(37).point_approx([3.0, 5.0, 0.0]),
         [3.0 * c - 5.0 * s, 3.0 * s + 5.0 * c, 0.0]
     );
 }
@@ -369,11 +369,11 @@ fn high_precision_trig_meets_gate() {
     let mut worst = i32::MIN;
     for (deg, exact_cos, exact_sin) in cases {
         let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
-        let ec = hp_err_exp(&a.cos_sin_bounded(GT_PREC).0.value, exact_cos);
+        let ec = hp_err_exp(&a.cos_sin_hp(GT_PREC).0.value, exact_cos);
         assert!(ec < GATE_EXP, "cos {deg}° error 2^{ec} exceeds gate");
         worst = worst.max(ec);
         if let Some(s) = exact_sin {
-            let es = hp_err_exp(&a.cos_sin_bounded(GT_PREC).1.value, s);
+            let es = hp_err_exp(&a.cos_sin_hp(GT_PREC).1.value, s);
             assert!(es < GATE_EXP, "sin {deg}° error 2^{es} exceeds gate");
             worst = worst.max(es);
         }
@@ -411,7 +411,7 @@ fn a_huge_angle_normalizes_without_counting_turns() {
 
 /// **The memo memoizes, and its key is the *value* of the angle rather than its spelling.**
 ///
-/// Two failure modes, and neither shows up as a wrong answer — [`Angle::cos_sin_bounded`] is a
+/// Two failure modes, and neither shows up as a wrong answer — [`Angle::cos_sin_hp`] is a
 /// pure function either way, so a broken memo is only slow. That is exactly why it needs a
 /// test: a rotated boolean spent 22% of its time re-running Ziv's loop for angles it had
 /// already realized, and nothing but a measurement would say so.
@@ -430,10 +430,10 @@ fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
     // A precision no other test asks for, so this thread's map cannot be pre-warmed for it.
     let prec = 704;
     let before = trig_entries();
-    let first = deg(37, 1).cos_sin_bounded(prec);
+    let first = deg(37, 1).cos_sin_hp(prec);
     assert_eq!(trig_entries(), before + 1, "the first ask must insert");
 
-    let again = deg(37, 1).cos_sin_bounded(prec);
+    let again = deg(37, 1).cos_sin_hp(prec);
     assert_eq!(
         trig_entries(),
         before + 1,
@@ -446,7 +446,7 @@ fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
     );
 
     // ★ The same angle, spelled as an unreduced ratio, is the same entry.
-    let spelled = deg(74, 2).cos_sin_bounded(prec);
+    let spelled = deg(74, 2).cos_sin_hp(prec);
     assert_eq!(
         trig_entries(),
         before + 1,
@@ -459,7 +459,7 @@ fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
 
     // …and precision *is* part of the key: a different depth is a different answer, so reusing
     // an entry across depths would hand back coordinates realized at the wrong one.
-    let deeper = deg(37, 1).cos_sin_bounded(prec + 64);
+    let deeper = deg(37, 1).cos_sin_hp(prec + 64);
     assert_eq!(trig_entries(), before + 2, "precision must key the memo");
     assert_ne!(
         deeper.0.error, again.0.error,
@@ -469,7 +469,7 @@ fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
 
 /// **The seed of every error radius, checked against a realization far deeper than itself.**
 ///
-/// [`Angle::cos_sin_bounded`] derives its bound from two things the crate does not promise in
+/// [`Angle::cos_sin_hp`] derives its bound from two things the crate does not promise in
 /// writing: that `Consts::pi` is correctly rounded, and that `cos`/`sin` are too (they run
 /// Ziv's loop, which is how one builds a correctly-rounded transcendental — but an
 /// implementation detail, not a documented contract). If either weakens, every interval above
@@ -511,11 +511,11 @@ fn the_trig_bound_holds_against_a_far_deeper_realization() {
     for prec in [128usize, 200, 256, 512, 1024] {
         for (num, den) in angles {
             let a = Angle::from_deg(Rat::new(num, den).unwrap()).unwrap();
-            let (c, s) = a.cos_sin_bounded(prec);
+            let (c, s) = a.cos_sin_hp(prec);
             let (bc, bs) = (c.error, s.error);
             let (c, s) = (c.value, s.value);
             let deep = prec + 512;
-            let (rc, rs) = a.cos_sin_bounded(deep);
+            let (rc, rs) = a.cos_sin_hp(deep);
             let (rc, rs) = (rc.value, rs.value);
             for (got, reference, bound, what) in [(&c, &rc, bc, "cos"), (&s, &rs, bs, "sin")] {
                 let diff = got.sub(reference, deep, HP_RM);
@@ -608,9 +608,9 @@ fn the_inverse_sqrt_bound_holds_against_a_far_deeper_realization() {
             let HpBounded {
                 value: z,
                 error: bound,
-            } = inv_sqrt_bounded(v, prec).unwrap();
+            } = inv_sqrt_hp(v, prec).unwrap();
             let deep = prec + 512;
-            let rz = inv_sqrt_bounded(v, deep).unwrap().value;
+            let rz = inv_sqrt_hp(v, deep).unwrap().value;
             let diff = z.sub(&rz, deep, HP_RM);
             let Some(de) = (if diff.is_zero() {
                 None
@@ -669,23 +669,19 @@ fn an_axis_aligned_frame_needs_no_arbitrary_precision() {
         ((9, 25), 5.0 / 3.0),
     ] {
         let r = Rat::new(v.0, v.1).unwrap();
-        assert_eq!(
-            inv_sqrt_exact(r).map(Rat::to_f64),
-            Some(want),
-            "1/sqrt{v:?}"
-        );
+        assert_eq!(inv_sqrt_rat(r).map(Rat::to_f64), Some(want), "1/sqrt{v:?}");
         assert_eq!(inv_sqrt_f64(r), Some(want));
     }
     // …and a tilted one is honestly irrational, so it falls to the ladder.
     for v in [(2, 1), (3, 1), (5, 1), (1, 2)] {
-        assert_eq!(inv_sqrt_exact(Rat::new(v.0, v.1).unwrap()), None, "{v:?}");
+        assert_eq!(inv_sqrt_rat(Rat::new(v.0, v.1).unwrap()), None, "{v:?}");
     }
     // There is no frame with a non-positive squared length; that is a broken premise.
     for v in [(0, 1), (-1, 1)] {
         let r = Rat::new(v.0, v.1).unwrap();
-        assert_eq!(inv_sqrt_exact(r), None);
+        assert_eq!(inv_sqrt_rat(r), None);
         assert_eq!(inv_sqrt_f64(r), None);
-        assert!(inv_sqrt_bounded(r, 128).is_none());
+        assert!(inv_sqrt_hp(r, 128).is_none());
     }
 }
 
@@ -699,8 +695,8 @@ fn inv_sqrt_f64_lands_on_the_nearest_f64() {
     let before = INV_SQRT_ESCALATED.with_borrow(|c| *c);
     for (num, den) in INV_SQRT_CASES {
         let v = Rat::new(num, den).unwrap();
-        let deep = inv_sqrt_bounded(v, 1024).unwrap().value;
-        let want = to_f64_exact(&deep).unwrap();
+        let deep = inv_sqrt_hp(v, 1024).unwrap().value;
+        let want = bigfloat_to_f64(&deep).unwrap();
         assert_eq!(
             inv_sqrt_f64(v),
             Some(want),
@@ -733,7 +729,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
         let HpBounded {
             value: deep,
             error: deep_rad,
-        } = inv_sqrt_bounded(v, 1024).unwrap();
+        } = inv_sqrt_hp(v, 1024).unwrap();
         let true_err = hp_err_exp(&deep, f);
         // A `BigFloat` is `m · 2^e` with `m ∈ [0.5, 1)`, so the exponent gives
         // `2^(e−1) ≤ |f − deep| < 2^e` — the *lower* end is what a bound has to clear. Using
@@ -774,7 +770,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
         let v = Rat::new(num, den).unwrap();
         let f = inv_sqrt_f64(v).unwrap();
         assert!(
-            inv_sqrt_exact(v).is_some() && inv_sqrt_error_of(v, f).unwrap() > 0.0,
+            inv_sqrt_rat(v).is_some() && inv_sqrt_error_of(v, f).unwrap() > 0.0,
             "1/sqrt({num}/{den}) is exactly rational but not an f64 — it must be charged"
         );
     }

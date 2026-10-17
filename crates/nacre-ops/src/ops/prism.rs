@@ -791,7 +791,7 @@ fn sweep_ring(
 ///
 /// The prediction is agreement, and it is structural rather than lucky: a datum's `ref_dir` is
 /// `points[1] − points[0]`, which *is* the caller's `+u`; for a unit rational axis `|u_raw|² = 1`
-/// so `inv_sqrt_exact` returns exactly one; and `v_raw` has its own exact form. But an argument is
+/// so `inv_sqrt_rat` returns exactly one; and `v_raw` has its own exact form. But an argument is
 /// not a gate.
 #[cfg(test)]
 #[path = "../tests/ops_frame_road.rs"]

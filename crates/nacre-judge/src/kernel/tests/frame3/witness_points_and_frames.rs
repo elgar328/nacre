@@ -1010,7 +1010,7 @@ fn tol_bounds_error_over_random_chains() {
                 shape.piv += 1;
             }
             shape.desc.push_str(if at_origin { " R" } else { " Rp" });
-            if ang.try_exact_cos_sin().is_some() {
+            if ang.cos_sin_rat().is_some() {
                 shape.desc.push('!'); // an exact angle: the rotation term is zero
             }
             p = p.rotate_about(ax, ang, pivot);
@@ -1143,7 +1143,7 @@ fn the_tangential_tol_is_unsound_and_the_mixing_one_is_not() {
             // charges. Using it makes the refutation stronger than a constant would: even the
             // *measured* trig error, applied tangentially, fails to bound.
             let (c, s) = angle.cos_sin_f64();
-            let (dc, ds) = angle.realization_error_of(c, s);
+            let (dc, ds) = angle.cos_sin_error_of(c, s);
             for (k, hp_k) in hp.iter().enumerate().take(2) {
                 let err = abs_err(p.realized[k].value, hp_k, GT);
                 // (1) the refuted tangential prediction: the *other* coordinate's magnitude.

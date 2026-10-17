@@ -54,7 +54,7 @@ pub(super) fn bf_mag(bf: &BigFloat) -> f64 {
 /// charged" is exactly the kind of thing that drifts when it is written out twice. `bf_mag` reads
 /// at octave granularity, so the `2×` keeps the result above the truth.
 fn rat_round_tol(r: Rat, f: f64) -> f64 {
-    let e = BigFloat::from_f64(f, 120).sub(&rat_to_big(r, 120), 120, HP_RM);
+    let e = BigFloat::from_f64(f, 120).sub(&rat_to_bigfloat(r, 120), 120, HP_RM);
     2.0 * bf_mag(&e.abs())
 }
 
@@ -144,7 +144,7 @@ impl WitnessPoint {
     ///
     /// **Two error terms, and neither is a guess.** `rot` carries the angle's realization (the
     /// correctly rounded pair `Angle::cos_sin_f64` gives) and charges what
-    /// `Angle::realization_error_of` *measured* of the very pair used below; `piv` is nothing but
+    /// `Angle::cos_sin_error_of` *measured* of the very pair used below; `piv` is nothing but
     /// round-to-nearest steps and a realization, so it is derived and measured the way
     /// [`translate`](Self::translate) and [`mirror`](Self::mirror) derive and measure theirs.
     ///
@@ -204,7 +204,7 @@ impl WitnessPoint {
         // handed in rather than re-derived so that the error is the one of the pair that reached
         // `coord`, whatever route produced it. An error taken against a pair that never reached
         // `coord` would bound a number this kernel never stored.
-        let (dc, ds) = angle.realization_error_of(c, s);
+        let (dc, ds) = angle.cos_sin_error_of(c, s);
         let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
             (0.0, 0.0)
         } else {
@@ -239,7 +239,7 @@ impl WitnessPoint {
         // each coordinate met.
         let piv = if px != 0.0 || py != 0.0 {
             let realized = |r: Rat, f: f64| {
-                bf_mag(&rat_to_big(r, 120).sub(&BigFloat::from_f64(f, 120), 120, HP_RM)).abs()
+                bf_mag(&rat_to_bigfloat(r, 120).sub(&BigFloat::from_f64(f, 120), 120, HP_RM)).abs()
             };
             2.0 * (2.0 * realized(point[i], px) + realized(point[j], py))
                 + 3.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
@@ -322,7 +322,8 @@ impl WitnessPoint {
         // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
         // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
         self.realized[k].error += 4.0
-            * bf_mag(&rat_to_big(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM)).abs()
+            * bf_mag(&rat_to_bigfloat(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM))
+                .abs()
             + f64::EPSILON * (2.0 * c.abs() + self.realized[k].value.abs());
         // The reflection itself — the expression the error term above charges.
         self.realized[k].value = 2.0 * c - self.realized[k].value;
@@ -351,7 +352,8 @@ impl WitnessPoint {
             let t = off.to_f64();
             // The offset's realization error, plus the add's own half-ulp on the result.
             self.realized[k].error += 2.0
-                * bf_mag(&rat_to_big(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM)).abs()
+                * bf_mag(&rat_to_bigfloat(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM))
+                    .abs()
                 + f64::EPSILON * (self.realized[k].value.abs() + t.abs());
             self.realized[k].value += t;
         }
@@ -501,7 +503,7 @@ impl WitnessPoint {
         // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
         const P: usize = 128;
-        let inv = |v: &num_bigint::BigInt| nacre_exact::inv_sqrt_bigint_bounded(v, P);
+        let inv = |v: &num_bigint::BigInt| nacre_exact::inv_sqrt_hp_big(v, P);
         let (iu, iv2, iw) = (inv(&f.uu)?, inv(&f.vv)?, inv(&f.nn)?);
         let comp = |raw: &num_bigint::BigInt, s: &HpBounded| {
             narrow_hp(&HpBounded::of_bigint(raw, P).mul(s, P))
@@ -601,7 +603,7 @@ impl WitnessPoint {
 
     /// **The coordinate realized at `prec` bits from the definition, with the error it carries** —
     /// the door [`Self::hp_coord`] is behind, in the type this workspace hands out publicly
-    /// (`nacre_exact::HpBounded`, what `inv_sqrt_bounded` returns too).
+    /// (`nacre_exact::HpBounded`, what `inv_sqrt_hp` returns too).
     ///
     /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
     /// be rounded honestly — see [`HpBounded`]'s contract: a radius invented for convenience makes
@@ -620,7 +622,7 @@ impl WitnessPoint {
     /// up: the definition is exact, the realization is not, and the radius is what the realization
     /// cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
     /// the rational lands on a `prec`-bit dyadic), each `cos`/`sin` contributes the bound
-    /// [`Angle::cos_sin_bounded`] derives, and every arithmetic operation adds its half-ulp.
+    /// [`Angle::cos_sin_hp`] derives, and every arithmetic operation adds its half-ulp.
     pub(super) fn compute_hp(&self, prec: usize) -> [HpBounded; 3] {
         let p = [
             HpBounded::of_rat(self.base[0], prec),

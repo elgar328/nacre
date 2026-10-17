@@ -10,7 +10,7 @@ use super::*;
 ///   needs the frame of a `CylinderDef` gets a frame whose `û·dir = 0` is a *fact*, not a
 ///   derivation, because everything downstream (`quad::cylinder_radial_side` reduces to
 ///   `‖dir‖²·r²·(û·û − 1)`) is sound only when that holds exactly.
-/// * a norm is **irrational**, or the arithmetic left `i128` ([`inv_sqrt_exact`]).
+/// * a norm is **irrational**, or the arithmetic left `i128` ([`inv_sqrt_rat`]).
 ///
 /// ★ Every cylinder the modelling road states satisfies the first two by construction — a sketch
 /// frame is checked orthonormal exactly, and `ref_dir` is either its `x̂` or a rim chord divided
@@ -44,8 +44,8 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
             .checked_mul(ref_dir[1])?
             .checked_sub(dir[1].checked_mul(ref_dir[0])?)?,
     ];
-    let inv_e = inv_sqrt_exact(dot(ref_dir, ref_dir)?)?;
-    let inv_m = inv_sqrt_exact(dot(dir, dir)?)?;
+    let inv_e = inv_sqrt_rat(dot(ref_dir, ref_dir)?)?;
+    let inv_m = inv_sqrt_rat(dot(dir, dir)?)?;
     Some((
         scale(ref_dir, inv_e)?,
         scale(&cross, inv_e.checked_mul(inv_m)?)?,

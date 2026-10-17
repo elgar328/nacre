@@ -17,7 +17,7 @@ use super::*;
 /// **Not for a value whose true magnitude may be zero.** `cos 90°` is exactly `0`, so its interval
 /// straddles zero, the two ends have opposite signs, and no precision ever makes them agree — this
 /// would return `None` forever. Callers must resolve the exactly-representable cases first;
-/// [`Angle::cos_sin_f64`] does that with `try_exact_cos_sin`.
+/// [`Angle::cos_sin_f64`] does that with `cos_sin_rat`.
 ///
 /// `pub` because **STEP export** will want the same rounding, and two implementations of "round
 /// this interval to f64" is exactly the drift this crate keeps deleting. STEP carries `f64`
@@ -40,9 +40,9 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
         return None;
     }
     let p = prec + 64;
-    let r = rad_upper_big(rad, p)?;
+    let r = rad_upper_bigfloat(rad, p)?;
     let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
-    let (rlo, rhi) = (to_f64_exact(&lo)?, to_f64_exact(&hi)?);
+    let (rlo, rhi) = (bigfloat_to_f64(&lo)?, bigfloat_to_f64(&hi)?);
     (rlo == rhi && !rlo.is_nan()).then_some(rlo)
 }
 
@@ -61,18 +61,22 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
 ///
 /// `None` only when the exponent is absurd enough that the multiply loop would not terminate
 /// usefully — far outside anything a realization produces.
-fn rad_upper_big(rad: Mag, p: usize) -> Option<BigFloat> {
+fn rad_upper_bigfloat(rad: Mag, prec: usize) -> Option<BigFloat> {
     let Some(e) = rad.exp2() else {
-        return Some(BigFloat::from_f64(0.0, p)); // an exact realization: a zero radius is honest
+        return Some(BigFloat::from_f64(0.0, prec)); // an exact realization: a zero radius is honest
     };
     if !(-1_000_000..=1_000_000).contains(&e) {
         return None;
     }
-    let mut out = BigFloat::from_f64(1.0, p);
+    let mut out = BigFloat::from_f64(1.0, prec);
     let mut rem = e;
     while rem != 0 {
         let step = rem.clamp(-1000, 1000);
-        out = out.mul(&BigFloat::from_f64(2f64.powi(step as i32), p), p, HP_RM);
+        out = out.mul(
+            &BigFloat::from_f64(2f64.powi(step as i32), prec),
+            prec,
+            HP_RM,
+        );
         rem -= step;
     }
     Some(out)
@@ -87,7 +91,7 @@ fn rad_upper_big(rad: Mag, p: usize) -> Option<BigFloat> {
 /// Restricted to the normal range on purpose — every caller here holds a `cos`/`sin` of a
 /// non-quadrantal rational-degree angle, whose magnitude is between `2⁻¹³³` and `1`, so a subnormal
 /// or an overflow means a premise broke rather than an input being unusual. `None` says so.
-pub(super) fn to_f64_exact(x: &BigFloat) -> Option<f64> {
+pub(super) fn bigfloat_to_f64(x: &BigFloat) -> Option<f64> {
     if x.is_zero() {
         return Some(0.0);
     }
@@ -284,7 +288,7 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     // the value underflows only where it genuinely should.
     //
     // ★ Third place in this cell where a `2f64.powi` of a realization-sized exponent was wrong
-    // (`rad_upper_big`, `Realized::to_f64`'s error readout, here).
+    // (`rad_upper_bigfloat`, `Realized::to_f64`'s error readout, here).
     let mut v = m;
     let mut rem = -k;
     while rem != 0 && v != 0.0 && v.is_finite() {
@@ -342,7 +346,7 @@ pub fn decimals_of_ratio(
 /// decide them** — the twin of [`round_to_f64`], and `None` means the same thing there.
 ///
 /// ★ The caller's move on `None` is to realize again at higher precision, exactly as
-/// `realize_inv_sqrt_rounded` escalates. That is why this reports undecided rather than picking:
+/// `inv_sqrt_f64_uncached` escalates. That is why this reports undecided rather than picking:
 /// a digit invented here would be indistinguishable, to everything downstream, from one the
 /// definition actually determines.
 pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String> {
@@ -356,7 +360,7 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
     // which makes it worse than a refusal. Reading the precision off the value it is about is the
     // one spelling that cannot disagree with itself.
     let p = bits_of(mid) + 64;
-    let r = rad_upper_big(rad, p)?;
+    let r = rad_upper_bigfloat(rad, p)?;
     let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
     let (nlo, dlo) = big_to_ratio(&lo)?;
     let (nhi, dhi) = big_to_ratio(&hi)?;
@@ -375,87 +379,87 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 // The arithmetic itself is [`HpBounded`]'s (`bounded.rs`) — what lives here are the realizations
 // that drive it.
 
-/// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
-/// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.
+/// **`√v` realized at `prec` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
+/// crate already has ([`inv_sqrt_hp`]) is the only place a square root is approached.
 ///
-/// Crate-private: its consumer is [`realize_quad`] (measured); a radius stated as its square is
-/// wide and takes [`sqrt_bounded_big`]. `None` for a negative `v`.
-pub(crate) fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
+/// Crate-private: its consumer is [`quad_hp`] (measured); a radius stated as its square is
+/// wide and takes [`sqrt_hp_big`]. `None` for a negative `v`.
+pub(crate) fn sqrt_hp(v: Rat, prec: usize) -> Option<HpBounded> {
     if v < Rat::from_int(0) {
         return None;
     }
     if v == Rat::from_int(0) {
-        return Some(HpBounded::exact(BigFloat::from_f64(0.0, p)));
+        return Some(HpBounded::exact(BigFloat::from_f64(0.0, prec)));
     }
-    let inv = inv_sqrt_bounded(v, p)?;
-    Some(HpBounded::of_rat(v, p).mul(&inv, p))
+    let inv = inv_sqrt_hp(v, prec)?;
+    Some(HpBounded::of_rat(v, prec).mul(&inv, prec))
 }
 
-/// [`sqrt_bounded`] for a wide radicand — `√(n/d) = n · (1/√(n·d))`, so the one `BigInt` radical
-/// primitive ([`inv_sqrt_bigint_bounded`]) is the only place a root is approached.
-pub fn sqrt_bounded_big(v: &BigRat, p: usize) -> Option<HpBounded> {
+/// [`sqrt_hp`] for a wide radicand — `√(n/d) = n · (1/√(n·d))`, so the one `BigInt` radical
+/// primitive ([`inv_sqrt_hp_big`]) is the only place a root is approached.
+pub fn sqrt_hp_big(v: &BigRat, prec: usize) -> Option<HpBounded> {
     if v.is_negative() {
         return None;
     }
     if v.is_zero() {
-        return Some(HpBounded::exact(BigFloat::from_f64(0.0, p)));
+        return Some(HpBounded::exact(BigFloat::from_f64(0.0, prec)));
     }
     let nd = v.numer() * v.denom();
-    let inv = inv_sqrt_bigint_bounded(&nd, p)?;
-    Some(HpBounded::of_bigint(v.numer(), p).mul(&inv, p))
+    let inv = inv_sqrt_hp_big(&nd, prec)?;
+    Some(HpBounded::of_bigint(v.numer(), prec).mul(&inv, prec))
 }
 
-/// **A quadratic algebraic scalar `a + b√c` realized at `p` bits, with its error.**
+/// **A quadratic algebraic scalar `a + b√c` realized at `prec` bits, with its error.**
 ///
 /// ★ Exact when the radical vanishes or resolves ([`quad::QuadVal::as_rat`]) — the value is asked,
 /// not its provenance, so a tangency's rational root takes the rational road even though it
 /// arrived through the same variant as an irrational one.
-pub fn realize_quad(q: &quad::QuadVal, p: usize) -> Option<HpBounded> {
+pub fn quad_hp(q: &quad::QuadVal, prec: usize) -> Option<HpBounded> {
     if let Some(r) = q.as_rat() {
         // The rational is the value; the only error is this realization's own rounding — charged
         // unconditionally rather than through `HpBounded::of_rat`'s exact branch, so that this
         // arm never hands an approached coordinate a zero radius (its consumer reads a zero as the
         // exact arm's answer).
-        let v = rat_to_big(r, p);
-        return Some(HpBounded::new(v.clone(), HpBounded::round_off(&v, p)));
+        let v = rat_to_bigfloat(r, prec);
+        return Some(HpBounded::new(v.clone(), HpBounded::round_off(&v, prec)));
     }
-    let root = sqrt_bounded(q.c(), p)?;
-    let term = HpBounded::of_rat(q.b(), p).mul(&root, p);
-    Some(HpBounded::of_rat(q.a(), p).add(&term, p))
+    let root = sqrt_hp(q.c(), prec)?;
+    let term = HpBounded::of_rat(q.b(), prec).mul(&root, prec);
+    Some(HpBounded::of_rat(q.a(), prec).add(&term, prec))
 }
 
 /// `base + dir·s` for exact rational `base`/`dir` and a realized `s` — the last step of a point
 /// that lives at a parameter along an exactly-stated line.
-pub fn affine_bounded(base: Rat, dir: Rat, s: &HpBounded, p: usize) -> Option<HpBounded> {
-    let term = HpBounded::of_rat(dir, p).mul(s, p);
-    Some(HpBounded::of_rat(base, p).add(&term, p))
+pub fn affine_hp(base: Rat, dir: Rat, s: &HpBounded, prec: usize) -> Option<HpBounded> {
+    let term = HpBounded::of_rat(dir, prec).mul(s, prec);
+    Some(HpBounded::of_rat(base, prec).add(&term, prec))
 }
 
-/// **A point on a circle's `+ref` seam, realized at `p` bits.**
+/// **A point on a circle's `+ref` seam, realized at `prec` bits.**
 ///
 /// `centre + r · e₁/|e₁|`, where `e₁` is the reference direction's component perpendicular to the
 /// axis and the radius is stated as its square `r2` (the cylinder truth's form). `centre`, `e₁`
 /// and `r2` are exact rationals. When `r2` is a rational's square — every radius a user writes —
-/// the single irrational step is `1/|e₁|`, one `inv_sqrt_bounded` with exact arithmetic around it,
+/// the single irrational step is `1/|e₁|`, one `inv_sqrt_hp` with exact arithmetic around it,
 /// the road this always took; otherwise `√r2` is realized beside it.
-pub fn realize_seam_point(
+pub fn seam_point_hp(
     centre: [Rat; 3],
     e1: [Rat; 3],
     r2: &BigRat,
-    p: usize,
+    prec: usize,
 ) -> Option<[HpBounded; 3]> {
     let mut sq = Rat::from_int(0);
     for c in &e1 {
         sq = sq.checked_add(c.checked_mul(*c)?)?;
     }
-    let inv = inv_sqrt_bounded(sq, p)?;
-    let scale = match rat_sqrt_exact_big(r2) {
-        Some(radius) => HpBounded::of_rat(radius, p).mul(&inv, p),
-        None => sqrt_bounded_big(r2, p)?.mul(&inv, p),
+    let inv = inv_sqrt_hp(sq, prec)?;
+    let scale = match sqrt_rat_big(r2) {
+        Some(radius) => HpBounded::of_rat(radius, prec).mul(&inv, prec),
+        None => sqrt_hp_big(r2, prec)?.mul(&inv, prec),
     };
     let coord = |k: usize| {
-        let radial = HpBounded::of_rat(e1[k], p).mul(&scale, p);
-        HpBounded::of_rat(centre[k], p).add(&radial, p)
+        let radial = HpBounded::of_rat(e1[k], prec).mul(&scale, prec);
+        HpBounded::of_rat(centre[k], prec).add(&radial, prec)
     };
     Some([coord(0), coord(1), coord(2)])
 }

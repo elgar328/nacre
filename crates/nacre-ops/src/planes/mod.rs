@@ -192,7 +192,7 @@ impl Footprint {
 /// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
 /// direction, `from == to` never (a whole circle is [`Footprint::theta`]'s `None`). Rational, as
 /// every corner a prism's rim has is: a seam point when the reference direction's norm is
-/// (`inv_sqrt_exact`), a pierce corner when its root is ([`nacre_exact::quad::QuadVal::as_rat`]).
+/// (`inv_sqrt_rat`), a pierce corner when its root is ([`nacre_exact::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RimArc {
     pub(crate) from: [nacre_exact::Rat; 3],

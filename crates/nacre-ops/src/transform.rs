@@ -425,7 +425,7 @@ impl Xform<'_> {
 
     fn point(&self, p: Point3) -> Point3 {
         match self {
-            Xform::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
+            Xform::Rigid(iso) => Point3::from_array(iso.point_approx(p.as_array())),
             Xform::Mirror { m, .. } => m.point(p),
         }
     }
@@ -466,8 +466,8 @@ fn transform_surface(
     if iso.rotate.is_none() {
         return s.translated(offset);
     }
-    let p = |q: Point3| Point3::from_array(iso.apply_point(q.as_array()));
-    let d = |v: Vector3| Vector3::from_array(iso.apply_dir(v.as_array()));
+    let p = |q: Point3| Point3::from_array(iso.point_approx(q.as_array()));
+    let d = |v: Vector3| Vector3::from_array(iso.dir_approx(v.as_array()));
     match s {
         nacre_geom::Surface::Plane(pl) => nacre_geom::Surface::Plane(
             Plane::from_point_normal(p(pl.origin()), d(pl.normal()))

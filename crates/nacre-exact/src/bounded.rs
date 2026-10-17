@@ -33,7 +33,7 @@ use crate::{HP_RM, Mag, Rat};
 /// denominator of `2⁵⁴+1` took a coordinate's error bound from `2⁻²⁵¹` to `2⁻⁵⁰`. Chained exact
 /// rational arithmetic multiplies denominators, so that is not an exotic input; it is what the
 /// crate's own bit-growth note is about.
-pub fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
+pub fn rat_to_bigfloat(r: Rat, prec: usize) -> BigFloat {
     // `from_i128` needs at least 128 bits to hold the integer before the division rounds it.
     let p = prec.max(128);
     BigFloat::from_i128(r.numer(), p).div(&BigFloat::from_i128(r.denom(), p), prec, HP_RM)
@@ -95,7 +95,7 @@ impl Bounded {
 ///
 /// Every constructor must supply a radius that actually bounds its value's distance from the
 /// truth — for a coordinate that means the rotation chain's realization error
-/// ([`crate::Angle::cos_sin_bounded`] is where it starts), and for a rational read at enough
+/// ([`crate::Angle::cos_sin_hp`] is where it starts), and for a rational read at enough
 /// bits it means [`Mag::ZERO`]. A radius invented for convenience makes every sign above it
 /// unearned.
 ///
@@ -123,18 +123,18 @@ impl HpBounded {
 
     /// A rational realized at `prec` bits **with the error that realization carries**.
     ///
-    /// The integers themselves are exact — [`rat_to_big`] feeds them in as `i128` — so the only
+    /// The integers themselves are exact — [`rat_to_bigfloat`] feeds them in as `i128` — so the only
     /// error is the division, and even that vanishes when it terminates: a power-of-two
     /// denominator with a numerator inside `prec` bits is exact, and then the radius is genuinely
     /// zero.
     pub fn of_rat(r: Rat, prec: usize) -> Self {
-        let value = rat_to_big(r, prec);
+        let value = rat_to_bigfloat(r, prec);
         let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
         let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
         if d & (d - 1) == 0 && n_bits <= prec {
             return HpBounded::exact(value); // a terminating division: a power-of-two denominator
         }
-        // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
+        // The integers enter exactly (see `rat_to_bigfloat`), so the only error left is the division's
         // own rounding.
         let error = Self::round_off(&value, prec);
         HpBounded::new(value, error)
@@ -239,8 +239,8 @@ impl HpBounded {
         Some(HpBounded::new(value, error))
     }
 
-    /// `1/√x` of an **interval** — the judged-frame twin of [`crate::inv_sqrt_bounded`] (exact
-    /// `Rat` input) and [`crate::inv_sqrt_bigint_bounded`] (exact `BigInt` input): same shape, an
+    /// `1/√x` of an **interval** — the judged-frame twin of [`crate::inv_sqrt_hp`] (exact
+    /// `Rat` input) and [`crate::inv_sqrt_hp_big`] (exact `BigInt` input): same shape, an
     /// input that carries a radius.
     ///
     /// The input error's amplification comes from the derivative: `|d(1/√x)| = ½·x^(−3/2)`,

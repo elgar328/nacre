@@ -1069,7 +1069,7 @@ fn a_tangency_keeps_its_name_through_a_swap() {
 #[test]
 fn swapping_the_planes_trades_the_two_roots_names() {
     use nacre_exact::Rat;
-    use nacre_exact::quad::{CylinderMeet, branch_point_f64, plane_plane_cylinder};
+    use nacre_exact::quad::{CylinderMeet, branch_point_approx, plane_plane_cylinder};
     let r = Rat::from_int;
     let z0 = [r(0), r(0), r(1), r(0)];
     let x0 = [r(1), r(0), r(0), r(0)];
@@ -1084,7 +1084,7 @@ fn swapping_the_planes_trades_the_two_roots_names() {
     let (l_ab, s_ab) = solve(&z0, &x0);
     let (l_ba, s_ba) = solve(&x0, &z0);
     let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-12);
-    let at = |l: &nacre_exact::quad::MeetLine, s| branch_point_f64(l, s);
+    let at = |l: &nacre_exact::quad::MeetLine, s| branch_point_approx(l, s);
     assert!(near(at(&l_ab, &s_ab[0]), [0.0, -2.0, 0.0]), "lo is y = −2");
     assert!(near(at(&l_ab, &s_ab[1]), [0.0, 2.0, 0.0]), "hi is y = +2");
     assert!(
@@ -1669,7 +1669,7 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
             .sum();
         let n = if side < 0.0 { [-a, -b, -c] } else { [a, b, c] };
         let nn = &n[0] * &n[0] + &n[1] * &n[1] + &n[2] * &n[2];
-        let inv = nacre_exact::inv_sqrt_bigint_bounded(&nn, P).expect("a nonzero normal");
+        let inv = nacre_exact::inv_sqrt_hp_big(&nn, P).expect("a nonzero normal");
         let want = n.each_ref().map(|k| {
             let v = nacre_exact::bounded::HpBounded::of_bigint(k, P).mul(&inv, P);
             nacre_exact::round_to_f64(&v.value, v.error, P).expect("decided at 512 bits")

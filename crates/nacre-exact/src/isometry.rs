@@ -74,7 +74,7 @@ pub fn mirror_fixes_plane(axis: Axis, offset: Rat, coeffs: &[Rat; 4]) -> bool {
 }
 
 /// An axis-aligned rigid rotation: turn about `axis` (the line through the rational
-/// `pivot`) by the rational `angle`. Exact for the 90°-family (`try_exact_cos_sin`);
+/// `pivot`) by the rational `angle`. Exact for the 90°-family (`cos_sin_rat`);
 /// otherwise the realized coordinate is irrational (cos/sin) and carries tol.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rotation {
@@ -84,8 +84,9 @@ pub struct Rotation {
 }
 
 /// A rigid-body isometry: a rotation (optional) then a translation.
-/// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
-/// realizers give the f64 cache. Math-type independent — operates on plain
+/// The exact rational data is the **definition**; `point_approx`/`dir_approx` carry an
+/// `f64` figure through it — plain `f64` arithmetic, no nearest-`f64` promise — and
+/// `offset_f64` is the translation rounded once. Math-type independent — operates on plain
 /// `[f64; 3]`, so `nacre-exact` never depends on `nacre-math`; the caller
 /// (`nacre-ops`) applies it to `Point3`/`Plane`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -131,12 +132,12 @@ impl Isometry {
     }
 
     /// Whether the isometry realizes exactly: no rotation, or a 90°-family rotation
-    /// (`try_exact_cos_sin` gives rational cos/sin, so an f64-representable point
+    /// (`cos_sin_rat` gives rational cos/sin, so an f64-representable point
     /// stays exact — tol 0). A non-90° rotation realizes to irrational f64 (tol > 0).
     pub fn is_exact(&self) -> bool {
         match self.rotate {
             None => true,
-            Some(r) => r.angle.try_exact_cos_sin().is_some(),
+            Some(r) => r.angle.cos_sin_rat().is_some(),
         }
     }
 
@@ -160,9 +161,10 @@ impl Isometry {
             && translation_fixes_plane(&self.translate, coeffs)
     }
 
-    /// Apply the full isometry (rotate about the axis point, then translate) to a
-    /// point realized in f64.
-    pub fn apply_point(&self, p: [f64; 3]) -> [f64; 3] {
+    /// Apply the full isometry (rotate about the axis point, then translate) to an `f64`
+    /// point. The cos/sin and the offset are each the nearest `f64`, but the products and sums
+    /// round again, so the result is a figure, not the nearest `f64` of the moved point.
+    pub fn point_approx(&self, p: [f64; 3]) -> [f64; 3] {
         let mut q = p;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
@@ -176,8 +178,9 @@ impl Isometry {
         [q[0] + off[0], q[1] + off[1], q[2] + off[2]]
     }
 
-    /// Apply only the rotation (no axis point, no translation) to a direction.
-    pub fn apply_dir(&self, d: [f64; 3]) -> [f64; 3] {
+    /// Apply only the rotation (no axis point, no translation) to an `f64` direction — a figure,
+    /// for the reason [`Self::point_approx`] gives.
+    pub fn dir_approx(&self, d: [f64; 3]) -> [f64; 3] {
         let mut q = d;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
@@ -190,9 +193,9 @@ impl Isometry {
     }
 
     /// **This isometry applied to a rational plane**, exactly — the definition-level twin of
-    /// [`apply_point`](Isometry::apply_point).
+    /// [`point_approx`](Isometry::point_approx).
     ///
-    /// A plane is not a bag of points, so it does not go through `apply_point`: under
+    /// A plane is not a bag of points, so it does not go through `point_approx`: under
     /// `x ↦ R(x − p) + p + t` the plane `n·x + d = 0` becomes
     ///
     /// ```text
@@ -202,7 +205,7 @@ impl Isometry {
     /// (For a pure translation that collapses to the familiar `d' = d − n·t`.)
     ///
     /// `None` unless the rotation is one the rationals can state — the 90°-family, where
-    /// [`Angle::try_exact_cos_sin`] gives `cos`/`sin` in `{0, ±1}` — or on `i128` overflow.
+    /// [`Angle::cos_sin_rat`] gives `cos`/`sin` in `{0, ±1}` — or on `i128` overflow.
     /// That is the same condition [`Isometry::is_exact`] reports, so a caller that already
     /// checked it will not be surprised here.
     ///
@@ -213,7 +216,7 @@ impl Isometry {
         let (n2, pivot) = match self.rotate {
             None => (n, [Rat::from_int(0); 3]),
             Some(r) => {
-                let (cos, sin) = r.angle.try_exact_cos_sin()?;
+                let (cos, sin) = r.angle.cos_sin_rat()?;
                 let (i, j) = r.axis.plane();
                 let mut m = n;
                 m[i] = n[i].checked_mul(cos)?.checked_sub(n[j].checked_mul(sin)?)?;
@@ -232,10 +235,10 @@ impl Isometry {
     }
 
     /// **This isometry applied to a rational point**, exactly — the rational twin
-    /// [`apply_point`](Isometry::apply_point) never had, and the map
+    /// [`point_approx`](Isometry::point_approx) never had, and the map
     /// [`plane_coeffs`](Isometry::plane_coeffs) is described against.
     ///
-    /// `x ↦ R(x − p) + p + t`, with `R` read from [`Angle::try_exact_cos_sin`]. `None` under the
+    /// `x ↦ R(x − p) + p + t`, with `R` read from [`Angle::cos_sin_rat`]. `None` under the
     /// same conditions as `plane_coeffs` — a rotation the rationals cannot state, or `i128`
     /// overflow — so a caller that can move one description exactly can move the other.
     ///
@@ -248,7 +251,7 @@ impl Isometry {
         let turned = match self.rotate {
             None => x,
             Some(r) => {
-                let (cos, sin) = r.angle.try_exact_cos_sin()?;
+                let (cos, sin) = r.angle.cos_sin_rat()?;
                 let (i, j) = r.axis.plane();
                 // Pivot-relative, exactly as the realization does it: `u = x − p`, turn, shift back.
                 let u = x[i].checked_sub(r.pivot[i])?;
@@ -269,7 +272,7 @@ impl Isometry {
     }
 
     /// **This isometry's rotation applied to a rational direction**, exactly — the rational twin
-    /// of [`apply_dir`](Isometry::apply_dir). A direction is a difference of points, so the pivot
+    /// of [`dir_approx`](Isometry::dir_approx). A direction is a difference of points, so the pivot
     /// and the translation cancel and only the turn remains. `None` under the same conditions as
     /// [`point_rat`](Isometry::point_rat) — a rotation the rationals cannot state, or `i128`
     /// overflow.
@@ -277,7 +280,7 @@ impl Isometry {
         match self.rotate {
             None => Some(d),
             Some(r) => {
-                let (cos, sin) = r.angle.try_exact_cos_sin()?;
+                let (cos, sin) = r.angle.cos_sin_rat()?;
                 let (i, j) = r.axis.plane();
                 let mut m = d;
                 m[i] = d[i].checked_mul(cos)?.checked_sub(d[j].checked_mul(sin)?)?;

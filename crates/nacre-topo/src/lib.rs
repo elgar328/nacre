@@ -618,7 +618,7 @@ pub struct CylinderDef {
     /// `r²`, not `r`: the square of the distance from the axis to any rational point on the
     /// surface is rational, the radius itself need not be, and no exact predicate ever asks for
     /// the radius unsquared. A radius wanted as a number is a realization ([`Self::radius_f64`]),
-    /// or the exact rational when the square has one ([`Self::radius_exact`]). **Wide**, because
+    /// or the exact rational when the square has one ([`Self::radius_rat`]). **Wide**, because
     /// the square of a stated `Rat` need not fit `i128` (a 16-digit decimal below `1e-4`) and a
     /// statement is never refused for the width of its square.
     r2: nacre_exact::BigRat,
@@ -683,8 +683,8 @@ impl CylinderDef {
     /// caller stated as a number, and of any arc through rational points whose `|start − centre|²`
     /// is a rational's square. `None` is not a refusal: the cylinder is as well-defined as any
     /// other, its radius merely has no rational spelling.
-    pub fn radius_exact(&self) -> Option<Rat> {
-        nacre_exact::rat_sqrt_exact_big(&self.r2)
+    pub fn radius_rat(&self) -> Option<Rat> {
+        nacre_exact::sqrt_rat_big(&self.r2)
     }
 
     /// The radius realized as an `f64`, correctly rounded — a rational radius' own `to_f64`,

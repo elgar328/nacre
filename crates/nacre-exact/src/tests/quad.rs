@@ -18,7 +18,7 @@ trait PointApprox {
 
 impl PointApprox for MeetLine {
     fn point_approx(&self, s: &QuadVal) -> [f64; 3] {
-        let sf = s.to_f64();
+        let sf = s.to_f64_approx();
         core::array::from_fn(|k| self.base()[k].to_f64() + sf * self.dir()[k].to_f64())
     }
 }
@@ -320,9 +320,9 @@ fn mixing_radicals_is_a_caller_bug() {
 }
 
 #[test]
-fn to_f64_realizes_the_value() {
+fn the_approx_lands_near_the_value() {
     let x = qv(ri(1), ri(2), ri(2)); // 1 + 2√2
-    assert!((x.to_f64() - (1.0 + 2.0 * 2f64.sqrt())).abs() < 1e-15);
+    assert!((x.to_f64_approx() - (1.0 + 2.0 * 2f64.sqrt())).abs() < 1e-15);
 }
 
 mod props {
@@ -982,7 +982,7 @@ fn the_two_roads_agree_where_a_crossing_is_rational() {
     // `d = n_cut × n_lid = (1,0,0) × (0,0,1) = (0,-1,0)`, so ascending `s` runs toward −y and
     // `s[0]` is the `+y` end.
     for (sv, want_y) in s.iter().zip([1.0, -1.0]) {
-        let p = branch_point_f64(&line, sv);
+        let p = branch_point_approx(&line, sv);
         assert!(
             (p[0]).abs() < 1e-12 && (p[1] - want_y).abs() < 1e-12 && (p[2] - 3.0).abs() < 1e-12,
             "{p:?}"
@@ -1160,7 +1160,7 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
         panic!("crosses twice");
     };
     for sv in &s {
-        let p = branch_point_f64(&line, sv);
+        let p = branch_point_approx(&line, sv);
         assert!(
             (p[0] - 0.5).abs() < 1e-12 && (p[2] - 5.0).abs() < 1e-12,
             "{p:?}"

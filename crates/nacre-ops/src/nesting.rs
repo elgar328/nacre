@@ -312,7 +312,7 @@ impl Said {
 /// **Soundness rests on `û·û = 1` exactly**, not on the frame being cheap:
 /// `cylinder_radial_side` reduces to `‖m‖²·r²·(û·û − 1)` for any `‖m‖`, so an inexact unit vector
 /// would make a rim point a `Witness::On` that is not on the boundary — and `inside` returns from
-/// a boundary `In` **without** the converse. Hence the exact `inv_sqrt_exact` road and the
+/// a boundary `In` **without** the converse. Hence the exact `inv_sqrt_rat` road and the
 /// post-conditions below, asserted where the point is made rather than where it is used
 /// ([`combinatorics::conjugate_midpoint`]'s rule).
 ///
@@ -360,7 +360,7 @@ fn rim_and_centre<'a>(
     // arithmetic leaves `i128` below.
     if carries
         && let Some((u1, u2)) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())
-        && let Some(r) = def.radius_exact()
+        && let Some(r) = def.radius_rat()
     {
         let neg = |v: &[nacre_exact::Rat; 3]| -> Option<[nacre_exact::Rat; 3]> {
             let z = nacre_exact::Rat::from_int(0);

@@ -389,7 +389,7 @@ pub(crate) fn pierce_point(
     n: NodeId,
 ) -> Option<[f64; 3]> {
     let (line, s) = pierce_meet(jd, cyl, def, n)?.into_exact()?;
-    Some(nacre_exact::quad::branch_point_f64(&line, &s))
+    Some(nacre_exact::quad::branch_point_approx(&line, &s))
 }
 
 /// **The exact half of [`pierce_point`]** — the `(line, s)` the name designates, before it is
@@ -522,7 +522,7 @@ fn rational_between(
     b: &nacre_exact::quad::QuadVal,
 ) -> Option<nacre_exact::Rat> {
     use nacre_exact::{Orient, Rat, quad::QuadVal};
-    let (mut lo, mut hi) = (a.to_f64(), b.to_f64());
+    let (mut lo, mut hi) = (a.to_f64_approx(), b.to_f64_approx());
     if lo > hi {
         std::mem::swap(&mut lo, &mut hi);
     }
@@ -908,7 +908,7 @@ impl PierceMeet {
     }
 
     /// **This point as an interval** — `base + s·dir` along its exact meet line, the root realized
-    /// at the model's precision ([`nacre_exact::realize_quad`]).
+    /// at the model's precision ([`nacre_exact::quad_hp`]).
     pub(crate) fn point_hp(
         &self,
         jd: &Judge<'_, WorkingPlane>,
@@ -917,9 +917,9 @@ impl PierceMeet {
             Self::Bounded { at, .. } => Some((**at).clone()),
             Self::Exact(line, s) => {
                 let prec = jd.standard.prec;
-                let sb = nacre_exact::realize_quad(s, prec)?;
+                let sb = nacre_exact::quad_hp(s, prec)?;
                 let (b, d) = (line.base(), line.dir());
-                let at = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, prec);
+                let at = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, prec);
                 Some([at(0)?, at(1)?, at(2)?])
             }
         }

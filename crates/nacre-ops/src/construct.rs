@@ -135,7 +135,7 @@ impl RatFrame {
     /// `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically* computed `1/5`,
     /// landing on `0.6000000000000001`. `Rat::from_decimal` lifts that, orthonormality fails, and
     /// a plane that is perfectly rational takes the frame-node road — a different arena, not an
-    /// ulp. Here `inv_sqrt_exact` answers in `Rat`: `Some` exactly when the axis lands on a
+    /// ulp. Here `inv_sqrt_rat` answers in `Rat`: `Some` exactly when the axis lands on a
     /// rational, which is the whole question.
     ///
     /// It is the same rule [`nacre_exact::plane_frame_named`] states for `v̂`, applied one level
@@ -148,8 +148,8 @@ impl RatFrame {
         let (v_raw, vv) = pf.v.as_ref()?;
         Some(RatFrame {
             origin: pf.origin,
-            x: scale(&pf.u_raw, nacre_exact::inv_sqrt_exact(pf.uu)?)?,
-            y: scale(v_raw, nacre_exact::inv_sqrt_exact(*vv)?)?,
+            x: scale(&pf.u_raw, nacre_exact::inv_sqrt_rat(pf.uu)?)?,
+            y: scale(v_raw, nacre_exact::inv_sqrt_rat(*vv)?)?,
             parity: 1,
         })
     }
@@ -555,7 +555,7 @@ pub(crate) fn prism_rings_in(
                     // `ref_dir` is a direction, and the truth does not ask for its length.
                     let ref_dir = if r.len() == 1 {
                         let chord = sub(&base[i], &c)?;
-                        match nacre_exact::rat_sqrt_exact(*r2) {
+                        match nacre_exact::sqrt_rat(*r2) {
                             Some(radius) => {
                                 scale(&chord, Rat::new(radius.denom(), radius.numer())?)?
                             }

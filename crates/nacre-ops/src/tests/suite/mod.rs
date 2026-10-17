@@ -235,7 +235,7 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
             .fold(nacre_exact::Rat::from_int(0), |a, b| {
                 a.checked_add(b).unwrap()
             });
-        let inv = nacre_exact::inv_sqrt_exact(len2).expect("an axis-aligned fixture sweep");
+        let inv = nacre_exact::inv_sqrt_rat(len2).expect("an axis-aligned fixture sweep");
         sv.map(|c| c.checked_mul(inv).unwrap())
     };
     let n = rb.len();

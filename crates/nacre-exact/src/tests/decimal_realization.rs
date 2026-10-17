@@ -11,20 +11,20 @@ fn a_radical_realizes_to_its_own_digits() {
     // the rounding is done here by hand, so this is an oracle and not a restatement.
     let want = "1.4142135623730950488016887242096980785697";
     for p in [256usize, 512, 1024] {
-        let HpBounded { value: v, error: e } = sqrt_bounded(two, p).expect("a positive radicand");
+        let HpBounded { value: v, error: e } = sqrt_hp(two, p).expect("a positive radicand");
         let d = round_to_digits(&v, e, 40).expect("40 places at this precision");
         assert_eq!(d, want, "prec {p}");
     }
     // A rational-valued QuadVal takes the exact road.
     let q = quad::QuadVal::from_rat(Rat::new(1, 8).unwrap());
-    let HpBounded { value: v, error: e } = realize_quad(&q, 256).expect("rational");
+    let HpBounded { value: v, error: e } = quad_hp(&q, 256).expect("rational");
     assert_eq!(
         round_to_digits(&v, e, 20).as_deref(),
         Some("0.12500000000000000000")
     );
     // A perfect square resolves rather than being approached: 3 + 2·√4 = 7.
     let q = quad::QuadVal::new(Rat::from_int(3), Rat::from_int(2), Rat::from_int(4)).unwrap();
-    let HpBounded { value: v, error: e } = realize_quad(&q, 256).expect("resolves");
+    let HpBounded { value: v, error: e } = quad_hp(&q, 256).expect("resolves");
     assert_eq!(round_to_digits(&v, e, 5).as_deref(), Some("7.00000"));
 }
 
@@ -35,18 +35,18 @@ fn a_seam_point_lands_on_the_rim() {
     let r = |n: i128| Rat::from_int(n);
     // centre at origin, e1 = +x (already unit), r² = 25 -> (5, 0, 0) exactly.
     let big = |n: i128| BigRat::from(r(n));
-    let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &big(25), 256).expect("ok");
+    let out = seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &big(25), 256).expect("ok");
     let got: Vec<_> = out
         .iter()
         .map(|b| round_to_digits(&b.value, b.error, 10).expect("decided"))
         .collect();
     assert_eq!(got, ["5.0000000000", "0.0000000000", "0.0000000000"]);
     // e1 = (1,1,0): the seam is at radius/√2 on each of x and y.
-    let out = realize_seam_point([r(0); 3], [r(1), r(1), r(0)], &big(1), 512).expect("ok");
+    let out = seam_point_hp([r(0); 3], [r(1), r(1), r(0)], &big(1), 512).expect("ok");
     let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
     assert_eq!(x, "0.70710678118654752440");
     // r² = 2 with e1 = +x: no rational radius exists, and the seam is at √2, realized.
-    let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &big(2), 512).expect("ok");
+    let out = seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &big(2), 512).expect("ok");
     let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
     assert_eq!(x, "1.41421356237309504880");
     // A wide square: `r = 5.000000000000001e-8` has a square no `Rat` holds, and the seam is
@@ -56,8 +56,8 @@ fn a_seam_point_lands_on_the_rim() {
         wide.checked_mul(wide).is_none(),
         "the fixture's square must leave i128"
     );
-    let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &BigRat::square_of(wide), 256)
-        .expect("ok");
+    let out =
+        seam_point_hp([r(0); 3], [r(1), r(0), r(0)], &BigRat::square_of(wide), 256).expect("ok");
     assert_eq!(
         round_to_digits(&out[0].value, out[0].error, 24).expect("decided"),
         "0.000000050000000000000010"
@@ -91,7 +91,7 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
         (3, 1 << 40),
     ] {
         let v = Rat::new(n, d).unwrap();
-        assert!(rat_sqrt_exact(v).is_none(), "{v:?} must not be a square");
+        assert!(sqrt_rat(v).is_none(), "{v:?} must not be a square");
         let want = (n as f64 / d as f64).sqrt(); // exact quotient, then one correct rounding
         assert_eq!(
             sqrt_f64(&BigRat::from(v)).map(f64::to_bits),
@@ -112,7 +112,7 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
 
 /// A perfect square has its root found at **any** width `Rat` holds — the roots past `2⁵⁵` an
 /// `f64` estimate lands too far from to search back to: four radii a user writes to f64's last
-/// digit, and `2^k + 3` up to the top of `i128`. `inv_sqrt_exact` reads the same answer.
+/// digit, and `2^k + 3` up to the top of `i128`. `inv_sqrt_rat` reads the same answer.
 #[test]
 fn a_perfect_square_has_its_root_at_any_width() {
     let decimals = [
@@ -125,9 +125,9 @@ fn a_perfect_square_has_its_root_at_any_width() {
     let ints = (56..=63).map(|k| Rat::from_int((1i128 << k) + 3));
     for r in decimals.into_iter().chain(ints) {
         let r2 = r.checked_mul(r).expect("the square fits i128");
-        assert_eq!(rat_sqrt_exact(r2), Some(r), "{r:?}");
+        assert_eq!(sqrt_rat(r2), Some(r), "{r:?}");
         assert_eq!(
-            inv_sqrt_exact(r2),
+            inv_sqrt_rat(r2),
             Some(Rat::new(r.denom(), r.numer()).unwrap()),
             "{r:?}"
         );
