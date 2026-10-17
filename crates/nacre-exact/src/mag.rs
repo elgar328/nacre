@@ -263,12 +263,17 @@ impl Mag {
     /// f64's floor it lands on the smallest positive normal rather than a zero that would claim
     /// exactness; above the range it is honestly infinite (an infinite radius declines, never
     /// lies). `0.0` only for the bound zero.
+    ///
+    /// Built from the bits, as `pow2_f64` is, and here not for speed: a runtime `2f64.powi(e)`
+    /// is `1 / 2^|e|`, whose denominator is infinite below `2^-1023`, so the subnormal powers came
+    /// back as that zero.
     pub fn upper_f64(self) -> f64 {
         match self.exp2() {
             None => 0.0,
             Some(e) if e < -1074 => f64::MIN_POSITIVE,
             Some(e) if e > 1023 => f64::INFINITY,
-            Some(e) => 2f64.powi(e as i32),
+            Some(e) if e < -1022 => f64::from_bits(1u64 << (e + 1074)),
+            Some(e) => f64::from_bits(((e + 1023) as u64) << 52),
         }
     }
 }
@@ -327,6 +332,23 @@ mod tests {
                 2f64.powi(k as i32).to_bits(),
                 "2^{k}"
             );
+        }
+    }
+
+    /// `upper_f64` must answer `2^e` itself down to the smallest subnormal. With a runtime `e`,
+    /// `2f64.powi(e)` is `1 / 2^|e|`, and past `2^1023` that denominator is infinite — a zero,
+    /// which says the radius is exact. `black_box` keeps `e` a runtime value: folded as a
+    /// constant, `powi` is right and the failure does not show. The oracle halves `1.0`, which is
+    /// exact for every power of two an `f64` holds.
+    #[test]
+    fn an_upper_bound_below_the_normal_range_is_its_power_of_two() {
+        for e in [-1021i64, -1022, -1023, -1024, -1050, -1073, -1074] {
+            let bound = std::hint::black_box(Mag::pow2(e - 1)); // exp2() == e
+            let mut want = 1.0f64;
+            for _ in 0..-e {
+                want /= 2.0;
+            }
+            assert_eq!(bound.upper_f64().to_bits(), want.to_bits(), "2^{e}");
         }
     }
 
