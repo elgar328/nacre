@@ -687,7 +687,11 @@ pub enum PlanePoints {
 /// 단일형이 아니라 **세 변종**이다: 원통 seam 정점은 «세 평면»으로 적을 수 없다.
 /// 불변식은 변종별이고 그것이 이 구조의 근거다.
 pub enum Vertex {
-    /// 세 평면의 교점 — 이름이 곧 점. (D != 0 은 좌표 재생이 생기는 자리에서 단언한다.)
+    /// 세 평면의 교점 — 이름이 곧 점. D ≠ 0(세 평면이 한 점에서 만난다)은 이름이 한 프레임을 말하는 곳에서
+    /// `Model::vertex_named_meet` 한 곳이 정확히 답한다(`NamedMeet::NoPoint`) — `validate` 가 그 정의를
+    /// `VertexNoPoint` 로 보고하고 실현은 `RealizeError::NoPoint` 로 거절한다. 이름이 한 프레임을 말하지 않는
+    /// 정점(혼합 프레임 `Through` 담체 · 세계 이름 없이 갈리는 사슬 — 세 평면 push 의 census 3.3%, 스위트
+    /// 4.0%)은 묻지 않는다.
     ThreePlane([Handle<Surface>; 3]),
     /// 두 곡면의 교차 «곡선» 위의 점 — 원통 seam(테두리 원의 θ=0). 쌍은 곡선을 박고, 그 위의
     /// 점을 고르는 것은 원통 진실의 `ref_dir`(`CylinderDef`)이다 — 그래서

@@ -320,20 +320,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 
 남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
 
-### 정점 캐시의 «버리고 재생» 보증
-
-**무엇이 문제인가.** 간선에는 재생(`nacre_ops::rebuild_edge_cache`, test-util) +
-`edge_cache_discard_and_regenerate_bit_identical` 이 있는데 정점판이 없다. 정점 `D≠0` 의 완전한 유리수 단언도 같은 이유로 없다 — `push_vertex` 의 핸들 상이성
-`debug_assert` 까지다.
-
-**지금 서 있는 계약.** 연산이 만든 모든 정점에 대해 `vertex_point(v)` 는 `realize_cache` 의 답과 비트
-동일이거나, 그 길이 이름으로 거절한 것이다 — census 가 매 행에서 단언한다. 캐시는 태어날 때 실현되고,
-둘째 쓰기 문은 `Model::refine_vertex_cache` 하나이고(`Ceiling` 만 `Bounded` 로 올린다) 그것을 부르는 것은
-내보내기 직전의 문 `nacre_ops::refine_caches` 다(정점 캐시는 뒤이은 연산의 진실을 정하지 않는다 —
-`refining_mid_log_leaves_every_later_truth_as_it_was`). 남은 것은
-**캐시를 통째로 버리고 정의에서 다시 세워도 비트 동일**이라는 보증이다. 실현값↔담체 캐시 거리는 최대
-1.07e-14 로 validate ε 의 다섯 자릿수 아래다.
-
 ### `surface_name` 곁표 접기
 
 **무엇이 문제인가.** `pub surface_name: HashMap<Handle<Surface>, PlaneName>` 은 `Model` 의 마지막 공개

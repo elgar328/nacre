@@ -432,6 +432,22 @@ impl Model {
         &self,
         def: &Vertex,
     ) -> Option<(nacre_exact::MeetPoint, Option<Handle<MotionNode>>)> {
+        match self.vertex_named_meet(def)? {
+            NamedMeet::Point(meet, frame) => Some((meet, frame)),
+            NamedMeet::NoPoint => None,
+        }
+    }
+
+    /// **What a three-plane definition's names say, exactly** — [`Model::vertex_meet_of`] without
+    /// folding "no point" into "no answer". `None` where the names do not speak one frame (a
+    /// definition that is not a three-plane point, carriers with no recorded name, histories that
+    /// part with no world name to meet in); otherwise the point, or [`NamedMeet::NoPoint`] where the
+    /// three planes are parallel or share a line.
+    ///
+    /// ★ Asked in the pre-motion frame where the carriers share a chain: a rigid motion keeps three
+    /// planes meeting in a point, so the shared frame answers for the world. `validate` and the
+    /// realization read this, so "does this definition name a point" is decided here alone.
+    pub fn vertex_named_meet(&self, def: &Vertex) -> Option<NamedMeet> {
         let tri = match *def {
             Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce *is* a point but its coordinates
@@ -439,6 +455,11 @@ impl Model {
             // needs, so both decline here (honest, and spelled per variant so the next
             // variant is a compile error, not a silent fall-through).
             Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
+        };
+        // `three_planes_big` answers `None` for a zero determinant only.
+        let named = |p: Option<nacre_exact::MeetPoint>, frame| match p {
+            Some(p) => NamedMeet::Point(p, frame),
+            None => NamedMeet::NoPoint,
         };
         // ★★★ **The third door — solve in the world**. The two below want *one*
         // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
@@ -455,13 +476,13 @@ impl Model {
         // ★ It transports the **name**, never the point: `world_plane_name` moves each carrier's
         // equation into the world, and `three_planes_big` then meets three world planes. Nothing
         // here realizes a coordinate and shifts it.
-        let world_road = || -> Option<nacre_exact::MeetPoint> {
+        let world_road = || -> Option<NamedMeet> {
             let (a, b, c) = (
                 self.world_plane_name(tri[0])?,
                 self.world_plane_name(tri[1])?,
                 self.world_plane_name(tri[2])?,
             );
-            nacre_exact::three_planes_big([&a, &b, &c])
+            Some(named(nacre_exact::three_planes_big([&a, &b, &c]), None))
         };
         let motions = tri.map(|h| self.plane_motion(h));
         // One shared leaf among the **moved** carriers; no moved carrier means the world.
@@ -471,7 +492,7 @@ impl Model {
                 None => leaf = Some(*m),
                 Some(l) if l == *m => {}
                 // Two histories — no shared frame, so ask whether both state the world.
-                Some(_) => return world_road().map(|p| (p, None)),
+                Some(_) => return world_road(),
             }
         }
         let names = tri.map(|h| self.surface_name.get(&h));
@@ -494,11 +515,11 @@ impl Model {
             for (n, m) in [a, b, c].iter().zip(&motions) {
                 if m.is_none() && !n.narrow().is_some_and(|c| self.chain_fixes_plane(leaf, c)) {
                     // The carriers straddle frames — the world road is the remaining question.
-                    return world_road().map(|p| (p, None));
+                    return world_road();
                 }
             }
         }
-        Some((nacre_exact::three_planes_big([a, b, c])?, leaf))
+        Some(named(nacre_exact::three_planes_big([a, b, c]), leaf))
     }
 
     /// [`Model::through_meets`]' all-narrow projection — the form a **witness triangle** takes,

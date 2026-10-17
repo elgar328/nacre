@@ -4,7 +4,7 @@
 //! finds (an empty `Vec` means the model is valid): reference integrity, loop closure,
 //! half-edge manifold pairing, face orientation against loop winding, geometric
 //! incidence (vertices on their curves and surfaces, and on their own definitions),
-//! one handle per surface, and Euler-Poincaré.
+//! three-plane definitions that name a point, one handle per surface, and Euler-Poincaré.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
@@ -93,6 +93,12 @@ pub enum Violation {
     /// per-variant, and this is the checker that keeps them so — the vertex sibling of
     /// [`Self::EdgeCarrierMismatch`].
     VertexCarrierMismatch { vertex: Handle<Vertex> },
+
+    /// A `ThreePlane` vertex whose three planes meet in **no point** — parallel, or sharing a line
+    /// — decided exactly from their names ([`Model::vertex_named_meet`]). A vertex is a point, so
+    /// such a definition is a producer bug however close its cached figure sits to all three
+    /// planes; the realization refuses it by the same rule (`nacre_ops::RealizeError::NoPoint`).
+    VertexNoPoint { vertex: Handle<Vertex> },
 
     /// An edge's stated carriers disagree with adjacency: the multiset of the two face
     /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
@@ -253,6 +259,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let reach = model.reachable();
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_vertex_def_carriers(model, &mut out);
+    check_vertex_names_a_point(model, &mut out);
     check_duplicate_surfaces(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
@@ -492,6 +499,24 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
         };
         if bad {
             out.push(Violation::VertexCarrierMismatch { vertex: vh });
+        }
+    }
+}
+
+/// Each three-plane definition must name a point: its planes' names, read in the one frame they
+/// speak, have a nonzero determinant. Full-arena, like [`check_vertex_def_carriers`] and for the
+/// same reason.
+///
+/// ⚠ **Asked only where the names answer.** A definition whose carriers share no frame the names
+/// speak — a mixed-frame `Through` carrier, or histories that part with no world name to meet in —
+/// is not asked: no exact question here tells its "no point" from "not yet", and the judgement
+/// that could (`nacre-judge`) is above this crate.
+fn check_vertex_names_a_point(m: &Model, out: &mut Vec<Violation>) {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        if m.vertex_named_meet(m.vertex(vh)) == Some(nacre_topo::NamedMeet::NoPoint) {
+            out.push(Violation::VertexNoPoint { vertex: vh });
         }
     }
 }

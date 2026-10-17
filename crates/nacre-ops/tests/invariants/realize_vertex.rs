@@ -810,6 +810,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
                 // exhaustive match makes the compiler point here instead.
                 match e {
                     RealizeError::NoMeet
+                    | RealizeError::NoPoint
                     | RealizeError::NoMotionChain
                     | RealizeError::NoCurvedPoint
                     | RealizeError::Undecided

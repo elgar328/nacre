@@ -88,6 +88,26 @@ pub enum Vertex {
     },
 }
 
+/// **What a [`Vertex::ThreePlane`] definition's plane names say about its point** — the answer of
+/// [`Model::vertex_named_meet`] wherever the names speak one frame.
+///
+/// ★ Two answers, not an `Option`: "the names meet in this point" and "the names meet in no point"
+/// are both exact, and folding the second into "the names do not answer" is how a definition that
+/// names no point passed for one whose point merely costs more to reach.
+///
+/// (Returned by value and destructured at once, never stored; boxing the point would add an
+/// allocation to every vertex the push funnel realizes.)
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum NamedMeet {
+    /// The point, and the frame it is stated in — `None` the world, `Some(node)` a pre-motion
+    /// frame ([`Model::vertex_meet`]).
+    Point(nacre_exact::MeetPoint, Option<Handle<MotionNode>>),
+    /// The three planes are parallel or share a line: the determinant is zero, so the definition
+    /// names no point.
+    NoPoint,
+}
+
 /// Which root of the two-point plane·plane·cylinder crossing a [`Vertex::Pierce`] means —
 /// ascending parameter along the canonical meet-line direction (see `Pierce`'s doc for the
 /// full convention). Definition vocabulary, so it lives here beside [`Vertex`], not in

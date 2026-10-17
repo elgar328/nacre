@@ -33,7 +33,7 @@ use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{
-    CacheStanding, Edge, EdgeGiven, Model, PointCache, PrefixKey, Solid, Surface, Vertex,
+    CacheStanding, Edge, EdgeGiven, Model, NamedMeet, PointCache, PrefixKey, Solid, Surface, Vertex,
 };
 use num_bigint::BigInt;
 
@@ -80,6 +80,11 @@ pub enum RealizeError {
     /// (`rotated_vertex::surface_witness_triangle` — a nameless `Through` carrier, a chain outside
     /// the decimal window).
     NoMeet,
+    /// A three-plane definition whose planes meet in **no point** — parallel, or sharing a line —
+    /// decided exactly from their names ([`nacre_topo::NamedMeet::NoPoint`]). Not a cost and not
+    /// a missing road: there is nothing to realize. `validate` reports the same definition
+    /// (`VertexNoPoint`).
+    NoPoint,
     /// The vertex's motion chain could not be rebuilt exactly.
     NoMotionChain,
     /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
@@ -356,19 +361,25 @@ pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3])
 }
 
 /// **The realization [`build_three_plane`] reaches without replaying a chain** — an unmoved meet,
-/// or one whose chain's fold answers; `None` where only a replay would. Asked of the fold itself,
-/// not of whether the chain folds: a fold whose offset or point overflowed answers nothing, and a
-/// replay would walk the whole history — the cost [`CACHE_REPLAY_COST_CAP`] exists to bound.
-fn read_without_replay(model: &Model, def: &Vertex) -> Option<Realized> {
-    let nacre_topo::Vertex::ThreePlane(_) = def else {
-        return None;
+/// or one whose chain's fold answers; [`CacheDecline::CostCap`] where only a replay would. Asked of
+/// the fold itself, not of whether the chain folds: a fold whose offset or point overflowed answers
+/// nothing, and a replay would walk the whole history — the cost [`CACHE_REPLAY_COST_CAP`] exists
+/// to bound. A definition that names no point is refused as such, at any depth.
+fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realized, CacheDecline> {
+    let (meet, frame) = match model.vertex_named_meet(def) {
+        Some(NamedMeet::Point(meet, frame)) => (meet, frame),
+        Some(NamedMeet::NoPoint) => return Err(CacheDecline::Cannot(RealizeError::NoPoint)),
+        None => return Err(CacheDecline::CostCap),
     };
-    let (meet, frame) = model.vertex_meet_of(def)?;
-    let (n, d) = match frame {
-        None => meet.lift(),
-        Some(node) => MeetPoint::Narrow(model.chain_point_rat(node, *meet.narrow()?)?).lift(),
+    let lifted = match frame {
+        None => Some(meet.lift()),
+        Some(node) => meet
+            .narrow()
+            .and_then(|&p| model.chain_point_rat(node, p))
+            .map(|w| MeetPoint::Narrow(w).lift()),
     };
-    Some(Realized(Arm::Exact(n, d)))
+    let (n, d) = lifted.ok_or(CacheDecline::CostCap)?;
+    Ok(Realized(Arm::Exact(n, d)))
 }
 
 /// [`realize_cache`] that also reports what the accelerator could keep.
@@ -397,7 +408,7 @@ pub(crate) fn realize_cache_tracked(
         return Err(CacheDecline::CostCap);
     }
     let r = if deep {
-        read_without_replay(model, def).ok_or(CacheDecline::CostCap)?
+        read_without_replay(model, def)?
     } else {
         // A first rung that could not decide (`Undecided` — a seam met after a long chain) is the
         // second rung's business, as a first rung whose interval names no `f64` is.
@@ -519,6 +530,7 @@ fn point_cache_tracked<E>(
         }
         Err(CacheDecline::Cannot(
             RealizeError::NoMeet
+            | RealizeError::NoPoint
             | RealizeError::NoMotionChain
             | RealizeError::NoCurvedPoint
             | RealizeError::Unrepresentable,
@@ -1797,8 +1809,10 @@ fn build_three_plane(
     bits: usize,
     acc: &mut Accel<'_>,
 ) -> Result<Realized, RealizeError> {
-    let Some((meet, frame)) = model.vertex_meet_of(def) else {
-        return build_meet(model, def, bits, acc.planes.as_deref_mut());
+    let (meet, frame) = match model.vertex_named_meet(def) {
+        Some(NamedMeet::Point(meet, frame)) => (meet, frame),
+        Some(NamedMeet::NoPoint) => return Err(RealizeError::NoPoint),
+        None => return build_meet(model, def, bits, acc.planes.as_deref_mut()),
     };
     let Some(node) = frame else {
         // No motion: the meet *is* the coordinate, and `lift` states it as integers whatever its
@@ -1855,8 +1869,10 @@ fn build_three_plane(
 /// 것」): that rounds at every step of the chain, and this rounds once, at the end.
 ///
 /// ⚠ `Undecided` where `D` may be zero at this precision — which is also what three carriers
-/// that truly meet in no point answer, rung after rung: a vertex is a point, so that population
-/// is empty for a valid definition, and the ladder's ceiling is where it would stop.
+/// that truly meet in no point answer, rung after rung. Where the names speak one frame that
+/// definition never arrives here ([`build_three_plane`] refuses it as `NoPoint`, and `validate`
+/// reports it); this road is reached only where they do not, and there no exact question tells
+/// "no point" from "not yet", so it stays `Undecided` and the cache a `Ceiling`.
 fn build_meet(
     model: &Model,
     def: &Vertex,
@@ -1926,9 +1942,11 @@ fn meet_road_over_cap(model: &Model, def: &Vertex) -> bool {
         .map(|leaf| 3 * model.motion_depth_up_to(leaf, CACHE_REPLAY_COST_CAP))
         .sum();
     nodes > CACHE_REPLAY_COST_CAP
-        && match model.vertex_meet_of(def) {
+        && match model.vertex_named_meet(def) {
             None => true,
-            Some((meet, frame)) => frame.is_some() && meet.narrow().is_none(),
+            Some(NamedMeet::Point(meet, frame)) => frame.is_some() && meet.narrow().is_none(),
+            // No road walks: the definition is refused before any replay.
+            Some(NamedMeet::NoPoint) => false,
         }
 }
 
@@ -2045,6 +2063,83 @@ mod tests {
 
     fn r(n: i128) -> Rat {
         Rat::from_int(n)
+    }
+
+    /// ★ **A definition that names no point is refused as such, not stopped as a cost.** Three
+    /// planes sharing a line and two parallel planes with a third: every road answers
+    /// `NoPoint` — the cache road, the paid road on the pushed vertex, and a cache road stopped
+    /// past the replay budget — and the funnel files the vertex `Unrealized`, so the refine door
+    /// counts it as having no way rather than as undecided. Before the names were read for it, the
+    /// mixed road met the planes rung after rung and the cache said `Ceiling`.
+    #[test]
+    fn a_definition_that_names_no_point_is_refused_as_such() {
+        let mut m = Model::new();
+        let plane = |m: &mut Model, pts: [[Rat; 3]; 3], n: [f64; 3]| {
+            m.push_plane(
+                nacre_geom::Plane::from_point_normal(
+                    Point3::origin(),
+                    nacre_math::Vector3::from_array(n),
+                )
+                .unwrap(),
+                CacheStanding::Unrealized,
+                pts,
+                None,
+                nacre_topo::Orientation::Forward,
+            )
+            .0
+        };
+        let diagonal = plane(
+            &mut m,
+            [[r(0), r(0), r(0)], [r(1), r(-1), r(0)], [r(0), r(0), r(1)]],
+            [-1.0, -1.0, 0.0],
+        );
+        let lid = plane(
+            &mut m,
+            [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]],
+            [0.0, 0.0, 1.0],
+        );
+        let w = |a| m.world_plane(a);
+        let (x0, y0, z0) = (
+            w(nacre_exact::Axis::X),
+            w(nacre_exact::Axis::Y),
+            w(nacre_exact::Axis::Z),
+        );
+        for (what, tri) in [("pencil", [x0, y0, diagonal]), ("parallel", [z0, lid, x0])] {
+            let def = Vertex::ThreePlane(tri);
+            assert_eq!(
+                m.vertex_named_meet(&def),
+                Some(NamedMeet::NoPoint),
+                "{what}"
+            );
+            assert_eq!(
+                realize_cache(&m, &def),
+                Err(CacheDecline::Cannot(RealizeError::NoPoint)),
+                "{what}: the cache road"
+            );
+            assert_eq!(
+                read_without_replay(&m, &def).err(),
+                Some(CacheDecline::Cannot(RealizeError::NoPoint)),
+                "{what}: the road past the budget"
+            );
+            let vh = push_vertex_realized(
+                &mut m,
+                def,
+                PointCache::Unrealized {
+                    coord: Point3::origin(),
+                },
+                ChainLink::Fresh,
+            );
+            assert!(
+                matches!(m.vertex_cache(vh), PointCache::Unrealized { .. }),
+                "{what}: {:?}",
+                m.vertex_cache(vh)
+            );
+            assert_eq!(
+                realize_vertex(&m, vh, Precision::NearestF64).err(),
+                Some(RealizeError::NoPoint),
+                "{what}: the paid road"
+            );
+        }
     }
 
     /// **A turned cylinder's cache is its chain realized and rounded once — the same `f64` at twice

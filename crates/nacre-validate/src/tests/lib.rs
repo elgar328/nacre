@@ -793,6 +793,60 @@ fn a_contradictory_vertex_def_is_flagged() {
     }
 }
 
+/// ★ **A three-plane definition that names no point is flagged** — three planes sharing a line
+/// (`x = 0`, `y = 0`, `x + y = 0`) and two parallel planes with a third (`z = 0`, `z = 1`,
+/// `x = 0`), each pushed with a figure at the origin, which lies on every plane of the first. The
+/// box's own corners, which do name their points, are not.
+#[test]
+fn a_vertex_whose_planes_meet_in_no_point_is_flagged() {
+    use nacre_exact::Rat;
+    let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 2.0, 3.0]);
+    let r = Rat::from_int;
+    let plane = |m: &mut Model, pts: [[Rat; 3]; 3], n: [f64; 3]| {
+        m.push_plane(
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
+            nacre_topo::CacheStanding::Unrealized,
+            pts,
+            None,
+            Orientation::Forward,
+        )
+        .0
+    };
+    let diagonal = plane(
+        &mut m,
+        [[r(0), r(0), r(0)], [r(1), r(-1), r(0)], [r(0), r(0), r(1)]],
+        [-1.0, -1.0, 0.0],
+    );
+    let lid = plane(
+        &mut m,
+        [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]],
+        [0.0, 0.0, 1.0],
+    );
+    let w = |a| m.world_plane(a);
+    let (x0, y0, z0) = (
+        w(nacre_exact::Axis::X),
+        w(nacre_exact::Axis::Y),
+        w(nacre_exact::Axis::Z),
+    );
+    let figure = PointCache::Unrealized {
+        coord: Point3::origin(),
+    };
+    let pencil = m.push_vertex(Vertex::ThreePlane([x0, y0, diagonal]), figure);
+    let parallel = m.push_vertex(Vertex::ThreePlane([z0, lid, x0]), figure);
+    let flagged: Vec<_> = validate(&m)
+        .into_iter()
+        .filter_map(|v| match v {
+            Violation::VertexNoPoint { vertex } => Some(vertex),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        flagged,
+        vec![pencil, parallel],
+        "exactly the two definitions that name no point"
+    );
+}
+
 /// ★★ **The positive control for a cap** — the loop with no polygon in it.
 ///
 /// A cylinder cap's boundary is one closed rim, so the Newell path above has
