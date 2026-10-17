@@ -20,9 +20,8 @@ impl Model {
         self.motions.get(h)
     }
 
-    /// Whether more than `n` recorded motions stand between `leaf` and the world — the length of
-    /// the chain a replay would walk (a `Frame` node counts once; its own short expansion is not a
-    /// history). Walks at most `n + 1` nodes, so asking about a 4,000-deep history costs `n`.
+    /// Whether a replay through `leaf`'s chain walks more than `n` nodes ([`Model::motion_depth_up_to`]).
+    /// Walks at most about `n + 1` nodes, so asking about a 4,000-deep history costs `n`.
     pub fn motion_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
         self.motion_depth_up_to(leaf, n) > n
     }
@@ -49,20 +48,59 @@ impl Model {
         false
     }
 
-    /// How many recorded motions stand between `leaf` and the world, counted no further than
-    /// `n + 1` — the same length [`Model::motion_deeper_than`] asks about, as a number, for a caller
-    /// that sums the replays several chains will cost. Walks at most `n + 1` nodes.
+    /// **How many nodes a replay through `leaf`'s chain walks**, counted no further than `n + 1` — the
+    /// same length [`Model::motion_deeper_than`] asks about, as a number, for a caller that sums the
+    /// replays several chains will cost.
+    ///
+    /// ★ **A frame node counts what it unfolds to.** It names a plane, and a replay runs the frame
+    /// and then that plane's own chain (`nacre_ops`' `frame_chain`), so the node is one step plus
+    /// [`Model::plane_replay_depth`]. Counted once, a sketch on a face of a 7°-and-200-translations
+    /// box replayed 201 nodes behind a chain of depth one. The walk stops once past `n`, through the
+    /// frames too.
     pub fn motion_depth_up_to(&self, leaf: Handle<MotionNode>, n: usize) -> usize {
         let mut depth = 0;
         let mut cur = Some(leaf);
         while let Some(h) = cur {
             depth += 1;
+            if let Motion::Frame { plane, .. } = self.motion(h).motion {
+                depth += self.plane_replay_depth(plane, n.saturating_sub(depth));
+            }
             if depth > n {
                 break;
             }
             cur = self.motion(h).parent;
         }
         depth
+    }
+
+    /// **How many nodes a replay walks to place `plane`'s statement in the world**, counted no
+    /// further than `n + 1`: its own chain, and for a nameless `Through` statement the deepest of its
+    /// vertices' carriers too — its judged frame realizes those points, each through its own
+    /// carriers' chains (a nameless statement's carriers are named: the datum door refuses one on a
+    /// nameless carrier).
+    pub fn plane_replay_depth(&self, plane: Handle<Surface>, n: usize) -> usize {
+        let own = self
+            .plane_motion(plane)
+            .map_or(0, |m| self.motion_depth_up_to(m, n));
+        let Surface::Plane {
+            points: PlanePoints::Through(vs),
+            ..
+        } = self.surface(plane)
+        else {
+            return own;
+        };
+        if own > n || self.surface_name.contains_key(&plane) {
+            return own;
+        }
+        let mut deepest = 0;
+        for &v in vs {
+            for c in self.vertex(v).carriers() {
+                if let Some(m) = self.plane_motion(c) {
+                    deepest = deepest.max(self.motion_depth_up_to(m, n - own));
+                }
+            }
+        }
+        own + deepest
     }
 
     /// Whether every node of `leaf`'s recorded chain fixes the plane `coeffs` **as a set** —

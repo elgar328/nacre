@@ -1409,6 +1409,66 @@ fn seventy_turns_of_thirty_seven_degrees_are_realized_on_the_second_rung() {
     }
 }
 
+/// ★★ **A frame node costs what it unfolds to.** A sketch on a face rides a frame node that names the
+/// face's plane, and a replay walks that plane's whole chain behind it. On a wall of the 7°-and-200-
+/// translations box the chain is past the cost cap, so the prism's corners are `Ceiling` on the cache
+/// road — by cost, by name — and the paid door realizes every one of them.
+#[test]
+fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
+    let mut m = translated_chain(200);
+    let s = m.live_solids()[0];
+    let wall = m
+        .shell(m.solid(s).outer)
+        .faces
+        .iter()
+        .copied()
+        .find(|&f| m.plane_motion(m.face(f).surface).is_some())
+        .expect("a wall rides the chain");
+    let frame = nacre_ops::face_sketch_frame(&m, wall).expect("a planar live face");
+    let profile = nacre_ops::Profile2d::polygon(vec![
+        p2(0.25, 0.25),
+        p2(0.75, 0.25),
+        p2(0.75, 0.75),
+        p2(0.25, 0.75),
+    ])
+    .expect("a square");
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 0.5,
+        },
+    )
+    .expect("a prism on the deep wall") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let corners: Vec<_> = live_vertices(&m)
+        .into_iter()
+        .filter(|&vh| m.reachable_from(&[prism]).vertices.contains(&vh))
+        .collect();
+    assert!(!corners.is_empty(), "the prism has corners");
+    for &vh in &corners {
+        assert_eq!(
+            realize_cache(&m, m.vertex(vh)).err(),
+            Some(CacheDecline::CostCap),
+            "the cache road counts the frame's chain and stops: {:?}",
+            m.vertex_cache(vh)
+        );
+        assert!(
+            matches!(m.vertex_cache(vh), PointCache::Ceiling { .. }),
+            "{:?}",
+            m.vertex_cache(vh)
+        );
+    }
+    let report = nacre_ops::refine_caches(&mut m);
+    assert!(report.vertices.refined >= corners.len(), "{report:?}");
+    for &vh in &corners {
+        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+    }
+}
+
 /// A box turned 7° and then carrying `n` recorded translation nodes — the turn is irrational, so
 /// it is recorded, and once a history exists every motion after it is recorded too (a fresh box
 /// would carry a translation into its statements). The chain is `n + 1` deep on the walls; the
