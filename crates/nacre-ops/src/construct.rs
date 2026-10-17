@@ -172,10 +172,10 @@ impl RatFrame {
         })
     }
 
-    /// This frame realized — `to_f64` of each exact coordinate, `(origin, û, v̂, ŵ)` — the way the
-    /// world road realizes the vertices it builds in it, so a report of the frame and the prism
-    /// built in it are one rounding of one statement.
-    pub(crate) fn realized(&self) -> Option<crate::rotated_vertex::WorldBasis> {
+    /// This frame's basis as the nearest `f64` of each exact coordinate, `(origin, û, v̂, ŵ)` — the
+    /// way the world road realizes the vertices it builds in it, so a report of the frame and the
+    /// prism built in it are one rounding of one statement.
+    pub(crate) fn basis_f64(&self) -> Option<crate::rotated_vertex::WorldBasis> {
         let f = |v: &[Rat; 3]| v.map(|x| x.to_f64());
         Some((f(&self.origin), f(&self.x), f(&self.y), f(&self.normal()?)))
     }
@@ -262,7 +262,7 @@ pub(crate) fn swept(base: &[[Rat; 3]], sweep: &[Rat; 3]) -> Option<Vec<[Rat; 3]>
 /// Down to the f64 cache, once, at the end. Equal rationals realize to equal bits —
 /// that is what makes the two extrusion paths meet — and `to_f64` being correctly
 /// rounded is what makes each of them land on the value its decimal named.
-pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
+pub(crate) fn points_f64(pts: &[[Rat; 3]]) -> Vec<Point3> {
     pts.iter()
         .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
         .collect()
@@ -502,8 +502,8 @@ pub(crate) fn prism_rings_in(
     };
     let out = |pts: &[[Rat; 3]]| -> Option<Vec<Point3>> {
         match &chain {
-            None => Some(realize(pts)),
-            Some(c) => realize(pts)
+            None => Some(points_f64(pts)),
+            Some(c) => points_f64(pts)
                 .iter()
                 .map(|f| {
                     // ★ **Rounded to the frame's f64 first, then replayed** — a figure, so only

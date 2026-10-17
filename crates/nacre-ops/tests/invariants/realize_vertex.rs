@@ -31,7 +31,7 @@ use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
 use nacre_ops::{
     BoolKind, CacheDecline, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
-    SketchPlane, apply, boolean, realize_cache, realize_vertex, realize_vertex_decimal,
+    SketchPlane, apply, boolean, realize_vertex, realize_vertex_cache, realize_vertex_decimal,
 };
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
@@ -532,7 +532,7 @@ fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
         .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
-    nacre_ops::rebuild_edge_cache(&mut m);
+    nacre_ops::rebuild_edges_cheap(&mut m);
     let after: Vec<_> = (0..m.edge_count() as u32)
         .filter_map(|i| m.edge_handle_at(i))
         .map(|h| (h, m.edge(h)))
@@ -570,7 +570,7 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
             PointCache::Realized { coord, .. } => {
                 bounded += 1;
                 let (v, _) = realize_vertex(&m, vh, Precision::NearestF64)
-                    .expect("a Realized vertex realizes")
+                    .expect("a Realization vertex realizes")
                     .to_f64()
                     .expect("decided");
                 assert_eq!(coord.as_array(), v);
@@ -928,7 +928,7 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// ★★★★ **A motion chain is held back for the bits it costs, never for its length** — the two
 /// shapes that prove the difference.
 ///
-/// The cache road's limit is a **cost** limit (`CACHE_REPLAY_COST_CAP`, sized from measured cost
+/// The cheap road's limit is a **cost** limit (`CHEAP_REPLAY_COST_CAP`, sized from measured cost
 /// against a stated per-vertex budget), not a depth constant. A depth constant does **two jobs**
 /// and only one of them is true: as a *cost* limit it is load-bearing — a 4,200-turn history
 /// realized on every push turns a 5.6 s test into 30 s — but as a *precision* rule it is
@@ -1283,11 +1283,11 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
 /// there is two motions deep at most, and every coordinate decides on the first rung).
 ///
 /// - **Cost.** A 7° turn and 300 rational translations put the history past
-///   `CACHE_REPLAY_COST_CAP`, so the cache road never walks it — `CacheDecline::CostCap`.
+///   `CHEAP_REPLAY_COST_CAP`, so the cheap road never walks it — `CacheDecline::CostCap`.
 /// - **Bits.** A coordinate that is exactly `0` decides only once its radius is under the
-///   coincidence limit (`Realized::to_f64`). Turning 37° and back sixty times (120 nodes, inside the
+///   coincidence limit (`Realization::to_f64`). Turning 37° and back sixty times (120 nodes, inside the
 ///   cap) returns every corner to where it was, so the corners on `y = 0` are true zeros carrying
-///   120 turns of radius — more than the cache road's two rungs can shrink below `2⁻¹⁸⁰` —
+///   120 turns of radius — more than the cheap road's two rungs can shrink below `2⁻¹⁸⁰` —
 ///   `RealizeError::Undecided`. (A coordinate that is not `0` decides inside the cap at 256 bits.)
 ///
 /// ★★ **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
@@ -1321,11 +1321,14 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     for &vh in &vs {
         assert!(
             matches!(m.vertex_cache(vh), PointCache::Ceiling { .. }),
-            "past the cost cap the cache road stops: {:?}",
+            "past the cost cap the cheap road stops: {:?}",
             m.vertex_cache(vh)
         );
         assert!(
-            matches!(realize_cache(&m, m.vertex(vh)), Err(CacheDecline::CostCap)),
+            matches!(
+                realize_vertex_cache(&m, m.vertex(vh)),
+                Err(CacheDecline::CostCap)
+            ),
             "and says so by name"
         );
         assert!(
@@ -1357,14 +1360,14 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         .filter(|&&vh| {
             matches!(m.vertex_cache(vh), PointCache::Ceiling { .. })
                 && matches!(
-                    realize_cache(&m, m.vertex(vh)),
+                    realize_vertex_cache(&m, m.vertex(vh)),
                     Err(CacheDecline::Cannot(RealizeError::Undecided))
                 )
         })
         .count();
     assert!(
         undecided > 0,
-        "true zeros under 120 turns must be left undecided by the cache road's two rungs"
+        "true zeros under 120 turns must be left undecided by the cheap road's two rungs"
     );
     for &vh in &vs {
         assert!(
@@ -1377,7 +1380,7 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     }
 }
 
-/// **The cache road's second rung decides what the first cannot** — 70 turns of 37° leave six of a
+/// **The cheap road's second rung decides what the first cannot** — 70 turns of 37° leave six of a
 /// box's eight corners undecided at 128 bits; at 256 every one decides, inside the cost cap where a
 /// turn costs about a bit (192 + 53 < 256).
 #[test]
@@ -1451,9 +1454,9 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
     assert!(!corners.is_empty(), "the prism has corners");
     for &vh in &corners {
         assert_eq!(
-            realize_cache(&m, m.vertex(vh)).err(),
+            realize_vertex_cache(&m, m.vertex(vh)).err(),
             Some(CacheDecline::CostCap),
-            "the cache road counts the frame's chain and stops: {:?}",
+            "the cheap road counts the frame's chain and stops: {:?}",
             m.vertex_cache(vh)
         );
         assert!(
@@ -1470,9 +1473,9 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
 }
 
 /// ★★ **A nameless datum costs what its vertices' chains cost.** Its witness — the plane the
-/// judging table and the cache roads read — realizes its defining vertices through their own
+/// judging table and the realization roads read — realizes its defining vertices through their own
 /// carriers' chains, so a datum through a corner of the 7°-and-200-translations box and two corners
-/// of a box that never moved sits behind that history. On the cache road the datum's own cache and
+/// of a box that never moved sits behind that history. On the cheap road the datum's own cache and
 /// the corners of a prism on it stop by cost, and the paid door raises them.
 #[test]
 fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
@@ -1530,9 +1533,9 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     assert!(!corners.is_empty(), "the prism has corners");
     for &vh in &corners {
         assert_eq!(
-            realize_cache(&m, m.vertex(vh)).err(),
+            realize_vertex_cache(&m, m.vertex(vh)).err(),
             Some(CacheDecline::CostCap),
-            "the cache road counts the datum's vertices' chains and stops: {:?}",
+            "the cheap road counts the datum's vertices' chains and stops: {:?}",
             m.vertex_cache(vh)
         );
     }
@@ -1540,7 +1543,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     // datum's own replay depth, which the datum's motion (none) does not show.
     let def = Vertex::ThreePlane([m.seeded_plane(Axis::X), m.seeded_plane(Axis::Y), plane]);
     assert_eq!(
-        realize_cache(&m, &def).err(),
+        realize_vertex_cache(&m, &def).err(),
         Some(CacheDecline::CostCap),
         "a carrier costs its own replay depth, not its motion's"
     );
@@ -1559,7 +1562,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
 /// ★★ **A nameless datum costs all three of its vertices' chains, not the deepest one.** Its witness
 /// replays each defining vertex through its own chain, so three boxes turned by different angles and
 /// each moved 70 times give three corners well under the cost cap that together are over it: the
-/// datum's cache and the corners of a prism on it stop by cost on the cache road, and the paid door
+/// datum's cache and the corners of a prism on it stop by cost on the cheap road, and the paid door
 /// raises them.
 #[test]
 fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
@@ -1632,7 +1635,7 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
     let on_it: Vec<_> = m.reachable_from(&[prism]).vertices.into_iter().collect();
     for &vh in &on_it {
         assert_eq!(
-            realize_cache(&m, m.vertex(vh)).err(),
+            realize_vertex_cache(&m, m.vertex(vh)).err(),
             Some(CacheDecline::CostCap),
             "{:?}",
             m.vertex_cache(vh)
@@ -1672,7 +1675,7 @@ fn translated_chain(n: usize) -> Model {
 /// ★★★★ **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
 /// touches nothing else.**
 ///
-/// The fixture is a 7° turn and 300 rational translations: past the cache road's cost cap, so every
+/// The fixture is a 7° turn and 300 rational translations: past the cheap road's cost cap, so every
 /// live vertex is `Ceiling` — and decidable at the first rung once something is willing to walk the
 /// chain, so the door must raise all of them rather than report them as left behind.
 #[test]
@@ -1703,7 +1706,7 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     assert_eq!(report.left_undecided, 0, "and none is left behind");
     for (&vh, w) in vs.iter().zip(&want) {
         let PointCache::Realized { coord, .. } = *m.vertex_cache(vh) else {
-            panic!("a raised vertex is Realized: {:?}", m.vertex_cache(vh));
+            panic!("a raised vertex is Realization: {:?}", m.vertex_cache(vh));
         };
         assert_eq!(
             coord.as_array(),
@@ -1725,7 +1728,7 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
 /// The shape an application makes: a solid and a copy of it (a script layer copies before every
 /// consumption, so its intermediates stay live). The copy restates its source's surfaces — so the
 /// two share surface handles — but owns its own vertices and edges, which the copy re-realized on
-/// the cache road and so stand at `Ceiling` past the 300-motion chain. Refining the source must
+/// the cheap road and so stand at `Ceiling` past the 300-motion chain. Refining the source must
 /// raise its own vertices and leave the copy's vertex caches and edge curves exactly as they were;
 /// refining the whole model afterwards then raises the copy's and none of the source's.
 #[test]
@@ -1788,7 +1791,7 @@ fn the_refine_door_pays_for_the_solids_it_is_given() {
 /// vertices it writes** — two roads to one geometry: a plane cache from the carried name of its
 /// statement, a vertex from the meet of its three carriers.
 ///
-/// The fixture's walls ride the 7° turn and 300 translations — past the cache road's cost cap, so
+/// The fixture's walls ride the 7° turn and 300 translations — past the cheap road's cost cap, so
 /// the funnel left them `Ceiling` with the producer's figure. Every corner is realized first, on
 /// the expensive road, as the oracle (asked before the door, so it is not what the door wrote).
 /// After the door each corner lies on each of its face's planes within what the two correct
@@ -1909,7 +1912,7 @@ fn a_refined_model_exports_the_same_bytes_twice() {
 }
 
 /// ★★★ **The door raises a cylinder too** — a cylinder solid turned 7° and carried 300 recorded
-/// translations is past the cache road's cost cap, so its lateral cache is the producer's figure,
+/// translations is past the cheap road's cost cap, so its lateral cache is the producer's figure,
 /// `Ceiling`. After the door it is `Realized`, and the seam corners — realized beforehand on the
 /// expensive road, as the oracle — lie at the radius from its axis within what the roundings allow
 /// (the seam point and the cylinder replay the same chain, so this checks the cache's frame and
@@ -2018,7 +2021,7 @@ fn the_refine_door_carries_the_edges_with_it() {
         "if the curves did not move, this fixture proves nothing about carrying them"
     );
 
-    nacre_ops::rebuild_edge_cache_paid(&mut m);
+    nacre_ops::rebuild_edges_paid(&mut m);
     let again: Vec<_> = (0..m.edge_count() as u32)
         .filter_map(|i| m.edge_handle_at(i))
         .map(|h| (h, m.edge(h)))
@@ -2128,7 +2131,7 @@ fn the_prefix_table_stays_one_generation() {
             "depth {depth}: the table should hold one entry per live vertex, not per node"
         );
     }
-    // A 37° history whose corners need the cache road's second rung from about the 63rd turn: the
+    // A 37° history whose corners need the cheap road's second rung from about the 63rd turn: the
     // second rung files nothing, so the first rung's entry is still the one generation kept.
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
@@ -2221,9 +2224,9 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
     }
 }
 
-/// ★★ **The surface lock holds where the door derives and the cache road would stop** — a block
+/// ★★ **The surface lock holds where the door derives and the cheap road would stop** — a block
 /// with a `Through` face carried by 250 recorded quarter turns: every chain folds, so the push door
-/// derives every surface cache from the truth (`Realized`) at a depth the cache road would not walk.
+/// derives every surface cache from the truth (`Realized`) at a depth the cheap road would not walk.
 /// The census's question (`realize_surface_cache`) must agree there too, or it cries wolf on the
 /// first deep folding model the census meets.
 #[test]

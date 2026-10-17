@@ -154,7 +154,7 @@ fn an_edge_on_one_cylinder_twice_is_refused() {
 }
 
 /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
-/// endpoints — on the push's own budget (`nacre_ops::rebuild_edge_cache`) — is bit-identical to the
+/// endpoints — on the push's own budget (`nacre_ops::rebuild_edges_cheap`) — is bit-identical to the
 /// one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
 /// box and a box turned 37°, so circles, straight edges on named planes and straight edges
 /// whose direction only a chain replay realizes all regenerate.
@@ -232,7 +232,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
             .collect()
     };
     let before = snapshot(&m);
-    nacre_ops::rebuild_edge_cache(&mut m);
+    nacre_ops::rebuild_edges_cheap(&mut m);
     // ⚠ True of a model nothing has refined. `nacre_ops::refine_caches` moves coordinates,
     // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
     // re-derives. This asserts the derivation is stable, not that rebuilding is always free.

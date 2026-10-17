@@ -164,7 +164,7 @@ pub(super) fn frame_basis(
     frame: &SketchFrame,
 ) -> Option<crate::rotated_vertex::WorldBasis> {
     match exact_frame(model, frame) {
-        Some(rf) => rf.realized(),
+        Some(rf) => rf.basis_f64(),
         None => crate::rotated_vertex::frame_world_basis(
             model,
             frame.plane(),

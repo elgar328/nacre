@@ -283,7 +283,7 @@ impl FrameThrough {
 
     /// The rung realization of defining point 0, as the affine `[f64; 3]` the datum producer anchors
     /// its figure at — read off the definition itself, never a second route through a vertex cache.
-    /// Not the nearest `f64` (a pure point's is its replayed `coord_approx`): the cache road realizes the
+    /// Not the nearest `f64` (a pure point's is its replayed `coord_approx`): the cheap road realizes the
     /// same point and rounds it once. For a meet this is the one place the homogeneous point is divided, and the divisor
     /// is safe by construction: [`FrameThrough::of`] proved the rung derivation, which includes
     /// this point's `D` sign.

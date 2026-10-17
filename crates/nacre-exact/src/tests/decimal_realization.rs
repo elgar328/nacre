@@ -305,7 +305,7 @@ fn too_few_bits_report_undecided() {
 /// - ⚠ **Between `2^-1075` and that end, the flag lied.** The value is right — below the
 ///   smallest subnormal the nearest `f64` genuinely is `0.0`, and
 ///   `a_tiny_rational_still_names_its_f64` locks exactly that — but it came back marked
-///   *exact*, and [`Realized::to_f64`] turns that mark into a proven zero bound. The value
+///   *exact*, and [`Realization::to_f64`] turns that mark into a proven zero bound. The value
 ///   stays; the claim is gone.
 #[test]
 fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {

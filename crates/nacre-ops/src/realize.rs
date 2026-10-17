@@ -40,11 +40,11 @@ use num_bigint::BigInt;
 /// How precisely to realize — always stated, never defaulted.
 ///
 /// ★ There is no `Digits` here on purpose: the digit count belongs to
-/// [`Realized::to_decimal`] alone. Carrying it in both places lets the two disagree, and the way
+/// [`Realization::to_decimal`] alone. Carrying it in both places lets the two disagree, and the way
 /// they disagree is by printing digits the realization never determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precision {
-    /// Realize from the definition and read it out once ([`Realized::to_f64`] — the nearest
+    /// Realize from the definition and read it out once ([`Realization::to_f64`] — the nearest
     /// `f64`, or `+0.0` within the coincidence limit), escalating until the interval names one.
     /// This is the value the cache *should* hold.
     NearestF64,
@@ -57,7 +57,7 @@ pub enum Precision {
 /// Opaque: the arms are an implementation detail, and a caller that could see them would be
 /// coupled to astro-float's types through this crate as well as through `nacre-exact`.
 #[derive(Clone, Debug)]
-pub struct Realized(Arm);
+pub struct Realization(Arm);
 
 #[derive(Clone, Debug)]
 enum Arm {
@@ -110,7 +110,7 @@ pub enum RealizeError {
     Unrepresentable,
 }
 
-/// Why the **cache road** did not answer — two reasons, and only one of them is a failure.
+/// Why the **cheap road** did not answer — two reasons, and only one of them is a failure.
 ///
 /// ★ Deliberately not a `RealizeError` variant. That enum's own doc says it answers *"why a vertex
 /// could not be realized"*, and a chain refused for cost was never attempted: "did not" is not
@@ -118,7 +118,7 @@ pub enum RealizeError {
 /// they can never receive.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CacheDecline {
-    /// The motion history is deeper than [`CACHE_REPLAY_COST_CAP`] — the road did not walk it.
+    /// The motion history is deeper than [`CHEAP_REPLAY_COST_CAP`] — the road did not walk it.
     /// A paid realization still can, which is what [`refine_caches`] is for.
     CostCap,
     /// The realization itself declined, by name.
@@ -136,7 +136,7 @@ pub enum CacheDecline {
 /// than made to wait.
 const LADDER: [usize; 6] = [128, 256, 512, 1024, 2048, crate::planes::JUDGE_PREC_CAP];
 
-impl Realized {
+impl Realization {
     /// The nearest `f64` per coordinate, with the error each carries — **or `+0.0` where the
     /// coordinate is proven within the coincidence limit of zero**. `None` where the realization
     /// names neither.
@@ -255,7 +255,7 @@ impl Realized {
 
 /// **How far a correctly rounded `f64` can sit from the value it rounds** — `|v| · 2⁻⁵³`, which is
 /// at least half an ulp of `v` on either side of a binade edge. As a [`Mag`], so the bound of a tiny
-/// coordinate cannot vanish on the way out. One rule for both arms of [`Realized::to_f64`]: an exact
+/// coordinate cannot vanish on the way out. One rule for both arms of [`Realization::to_f64`]: an exact
 /// rational read at 53 bits and an interval that decided its `f64` are both a correct rounding.
 fn half_ulp(v: f64) -> Mag {
     Mag::of(v).times(Mag::pow2(-53))
@@ -266,39 +266,39 @@ pub fn realize_vertex(
     model: &Model,
     v: Handle<Vertex>,
     p: Precision,
-) -> Result<Realized, RealizeError> {
-    realize_def(model, model.vertex(v), p)
+) -> Result<Realization, RealizeError> {
+    realize_vertex_of(model, model.vertex(v), p)
 }
 
 /// [`realize_vertex`] on a definition that has not been pushed yet — the road every vertex an
 /// operation makes takes *before* it exists, so its cache is the realization from the start.
-pub(crate) fn realize_def(
+pub(crate) fn realize_vertex_of(
     model: &Model,
     def: &Vertex,
     p: Precision,
-) -> Result<Realized, RealizeError> {
-    realize_def_tracked(model, def, p, &mut Accel::default())
+) -> Result<Realization, RealizeError> {
+    realize_vertex_of_accel(model, def, p, &mut Accel::default())
 }
 
-/// [`realize_def`] with the accelerators ([`Accel`]): what it may read to go faster, and what it
+/// [`realize_vertex_of`] with the accelerators ([`Accel`]): what it may read to go faster, and what it
 /// learned that they could keep.
 ///
 /// ★ Only the fixed-precision road fills the prefix. A climb asks the same definition at rung after
 /// rung, so whatever it learned at 128 bits is not what it returns, and filing the rung it happened
 /// to pass through would put a value under a key the next reader asks at a different precision.
-pub(crate) fn realize_def_tracked(
+pub(crate) fn realize_vertex_of_accel(
     model: &Model,
     def: &Vertex,
     p: Precision,
     acc: &mut Accel<'_>,
-) -> Result<Realized, RealizeError> {
+) -> Result<Realization, RealizeError> {
     match p {
         Precision::Bits(bits) => build(model, def, bits, acc),
         Precision::NearestF64 => climb(model, def, |r| r.to_f64().map(|_| r)),
     }
 }
 
-/// **How deep a motion history the cache road replays — a `cost` limit, not a precision rule.**
+/// **How deep a motion history the cheap road replays — a `cost` limit, not a precision rule.**
 ///
 /// ⚠★★★★ **That distinction is the whole of this constant, and collapsing it cost a cell.** The
 /// guard this replaces read as *"past here the arithmetic cannot decide anyway"*, and measured,
@@ -355,34 +355,28 @@ pub(crate) fn realize_def_tracked(
 /// reading it costs the same under two nodes and under two thousand. Measured on 2000 recorded
 /// quarter turns (release, same session): the build goes 65 → 100 ms, and every vertex past the
 /// cap is its exact point instead of the construction's figure.
-const CACHE_REPLAY_COST_CAP: usize = 192;
+const CHEAP_REPLAY_COST_CAP: usize = 192;
 
-/// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
-/// makes: the definition realized on the ladder's first two rungs (the second only where the
-/// first does not decide) and read out by [`Realized::to_f64`], or `None` where neither names an
-/// `f64` (a realization that declines by name, an interval too wide at 256 bits) — or where the
-/// road did not even walk, because a replay is deeper than [`CACHE_REPLAY_COST_CAP`] is willing
-/// to pay for.
+/// [`realize_vertex_cache_accel`] with no accelerator — the question the push funnel asks, for an
+/// instrument to hold the cache to ([`audit_vertex_caches`]). Nothing in the product asks it.
 ///
-/// Two rungs, deliberately: a coordinate a low rung decides is the same answer any higher rung
-/// would give, so where this answers it agrees with [`realize_vertex`] at `NearestF64` bit for
-/// bit; where it does not, the cost of climbing on every push is not paid, and the cache says so
-/// by carrying the construction's figure instead. Public so an instrument
-/// can ask the same question the push funnel asked and hold the cache to it.
-///
-/// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
-/// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
-/// [`PointCache::Unrealized`] (there is no road, or no point to reach).
-pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
-    realize_cache_tracked(model, def, &mut Accel::default())
+/// ★ The door stays narrow on purpose: that question is about a coordinate, not about a side
+/// table. Only the funnel — which holds `&mut Model` and therefore can act on it — takes the wider
+/// one.
+#[cfg(any(test, feature = "test-util"))]
+pub fn realize_vertex_cache(
+    model: &Model,
+    def: &Vertex,
+) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
+    realize_vertex_cache_accel(model, def, &mut Accel::default())
 }
 
 /// **The realization [`build_three_plane`] reaches without replaying a chain** — an unmoved meet,
 /// or one whose chain's fold answers; [`CacheDecline::CostCap`] where only a replay would. Asked of
 /// the fold itself, not of whether the chain folds: a fold whose offset or point overflowed answers
-/// nothing, and a replay would walk the whole history — the cost [`CACHE_REPLAY_COST_CAP`] exists
+/// nothing, and a replay would walk the whole history — the cost [`CHEAP_REPLAY_COST_CAP`] exists
 /// to bound. A definition that names no point is refused as such, at any depth.
-fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realized, CacheDecline> {
+fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realization, CacheDecline> {
     let (meet, frame) = match model.vertex_named_meet(def) {
         Some(NamedMeet::Point(meet, frame)) => (meet, frame),
         Some(NamedMeet::NoPoint) => return Err(CacheDecline::Cannot(RealizeError::NoPoint)),
@@ -396,16 +390,27 @@ fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realized, CacheDec
             .map(|w| MeetPoint::Narrow(w).lift()),
     };
     let (n, d) = lifted.ok_or(CacheDecline::CostCap)?;
-    Ok(Realized(Arm::Exact(n, d)))
+    Ok(Realization(Arm::Exact(n, d)))
 }
 
-/// [`realize_cache`] that also reports what the accelerator could keep.
+/// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
+/// makes: the definition realized on the ladder's first two rungs (the second only where the
+/// first does not decide) and read out by [`Realization::to_f64`], or `None` where neither names an
+/// `f64` (a realization that declines by name, an interval too wide at 256 bits) — or where the
+/// road did not even walk, because a replay is deeper than [`CHEAP_REPLAY_COST_CAP`] is willing
+/// to pay for.
 ///
-/// ★ The public door stays narrow on purpose: an instrument asks it the same question the funnel
-/// asks and holds the cache to the answer, and that question is about a coordinate, not about a
-/// side table. Only the funnel — which holds `&mut Model` and therefore can act on it — takes the
-/// wider one.
-pub(crate) fn realize_cache_tracked(
+/// Two rungs, deliberately: a coordinate a low rung decides is the same answer any higher rung
+/// would give, so where this answers it agrees with [`realize_vertex`] at `NearestF64` bit for
+/// bit; where it does not, the cost of climbing on every push is not paid, and the cache says so
+/// by carrying the construction's figure instead.
+///
+/// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
+/// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
+/// [`PointCache::Unrealized`] (there is no road, or no point to reach).
+///
+/// `acc` reports what the accelerator could keep ([`Accel`]).
+pub(crate) fn realize_vertex_cache_accel(
     model: &Model,
     def: &Vertex,
     acc: &mut Accel<'_>,
@@ -414,7 +419,7 @@ pub(crate) fn realize_cache_tracked(
     // from its vertices' chains, not from a motion of its own.
     let deep = def
         .carriers()
-        .any(|h| model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP);
+        .any(|h| model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP);
     // ★ **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
     // shared-frame road replays one point through one chain; the mixed road ([`build_meet`])
     // replays three witness points through each carrier's chain, so under the same budget it
@@ -428,9 +433,13 @@ pub(crate) fn realize_cache_tracked(
     let r = if deep {
         read_without_replay(model, def)?
     } else {
+        // The cheap budget's two rungs — the ones a surface's and an edge's push pay too.
+        let [first_rung, second_rung] = Budget::Cheap.rungs() else {
+            unreachable!("the cheap budget is two rungs")
+        };
         // A first rung that could not decide (`Undecided` — a seam met after a long chain) is the
         // second rung's business, as a first rung whose interval names no `f64` is.
-        let first = match realize_def_tracked(model, def, Precision::Bits(LADDER[0]), acc) {
+        let first = match realize_vertex_of_accel(model, def, Precision::Bits(*first_rung), acc) {
             Err(RealizeError::Undecided) => None,
             other => Some(other.map_err(CacheDecline::Cannot)?),
         };
@@ -448,7 +457,7 @@ pub(crate) fn realize_cache_tracked(
                 prefix: None,
                 planes: acc.planes.as_deref_mut(),
             };
-            realize_def_tracked(model, def, Precision::Bits(LADDER[1]), &mut second)
+            realize_vertex_of_accel(model, def, Precision::Bits(*second_rung), &mut second)
                 .map_err(CacheDecline::Cannot)?
         }
     };
@@ -464,20 +473,20 @@ pub(crate) fn realize_cache_tracked(
 /// operation makes takes, so `Model::vertex_point` is the realization's memo from the moment the
 /// vertex exists (design: *"the cache is what `realize` produced, never a second truth"*).
 ///
-/// `fallback` is the coordinate the construction site computed, and it stands wherever
-/// [`realize_cache`] declines — but the *variant* is this funnel's to choose, not the caller's
+/// `figure` is the coordinate the construction site computed, and it stands wherever
+/// [`realize_vertex_cache_accel`] declines — but the *variant* is this funnel's to choose, not the caller's
 /// ([`point_cache`]).
 pub(crate) fn push_vertex_realized(
     model: &mut Model,
     def: Vertex,
-    fallback: PointCache,
+    figure: PointCache,
     link: ChainLink,
 ) -> Handle<Vertex> {
     let mut acc = Accel::default();
-    let Ok(cache) = point_cache_tracked(
+    let Ok(cache) = point_cache_accel(
         model,
         &def,
-        || Ok::<_, core::convert::Infallible>(fallback.coord()),
+        || Ok::<_, core::convert::Infallible>(figure.coord()),
         &mut acc,
     );
     // ★ **Take what was used and leave what was made** — the handover that keeps the table at one
@@ -493,7 +502,7 @@ pub(crate) fn push_vertex_realized(
 /// funnel's answer, asked once by whoever needed the coordinate first (the seam table), so the
 /// minting does not pay the realization a second time. Never a figure: a cache from anywhere else
 /// goes through [`push_vertex_realized`].
-pub(crate) fn push_vertex_asked(
+pub(crate) fn push_vertex_prerealized(
     model: &mut Model,
     def: Vertex,
     cache: PointCache,
@@ -508,7 +517,7 @@ pub(crate) fn push_vertex_asked(
 /// `planes` is the batch's plane memo ([`PlaneMemo`]) — a caller asking this of many vertices on
 /// one model holds one, so a carrier plane shared by many corners is realized once.
 ///
-/// `fallback` is asked only where the road declines, and its error is the caller's: a
+/// `figure` is asked only where the road declines, and its error is the caller's: a
 /// construction figure the caller cannot produce either (the seam table's plane-cache solve on
 /// planes whose caches are parallel) is a refusal of its own, not a cache.
 ///
@@ -523,30 +532,30 @@ pub(crate) fn point_cache<E>(
     model: &Model,
     def: &Vertex,
     planes: &mut PlaneMemo,
-    fallback: impl FnOnce() -> Result<Point3, E>,
+    figure: impl FnOnce() -> Result<Point3, E>,
 ) -> Result<PointCache, E> {
     let mut acc = Accel {
         prefix: None,
         planes: Some(planes),
     };
-    point_cache_tracked(model, def, fallback, &mut acc)
+    point_cache_accel(model, def, figure, &mut acc)
 }
 
 /// [`point_cache`] with the accelerators ([`Accel`]) — the funnel's form.
-fn point_cache_tracked<E>(
+fn point_cache_accel<E>(
     model: &Model,
     def: &Vertex,
-    fallback: impl FnOnce() -> Result<Point3, E>,
+    figure: impl FnOnce() -> Result<Point3, E>,
     acc: &mut Accel<'_>,
 ) -> Result<PointCache, E> {
-    Ok(match realize_cache_tracked(model, def, acc) {
+    Ok(match realize_vertex_cache_accel(model, def, acc) {
         Ok((coord, bound)) => PointCache::Realized {
             coord: Point3::from_array(coord),
             bound,
         },
         // Bits or cost — either way a paid realization can still answer.
         Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
-            PointCache::Ceiling { coord: fallback()? }
+            PointCache::Ceiling { coord: figure()? }
         }
         Err(CacheDecline::Cannot(
             RealizeError::NoMeet
@@ -554,7 +563,7 @@ fn point_cache_tracked<E>(
             | RealizeError::NoMotionChain
             | RealizeError::NoCurvedPoint
             | RealizeError::Unrepresentable,
-        )) => PointCache::Unrealized { coord: fallback()? },
+        )) => PointCache::Unrealized { coord: figure()? },
     })
 }
 
@@ -566,7 +575,7 @@ fn point_cache_tracked<E>(
 /// plane under a turn off the quarters or a frame, and there `figure` — the construction's own
 /// `f64` — stands. So the figure is pushed as **not yet asked** ([`CacheStanding::Unrealized`]),
 /// and whatever the door did not derive is realized from the pushed truth and raised
-/// ([`raise_surface`]) — the door decides what it can first, so «the truth answers here» is spelled
+/// ([`raise_surface_cache`]) — the door decides what it can first, so «the truth answers here» is spelled
 /// in `nacre-topo` alone. Each half on its own ([`plane_realization`]):
 /// * **Anchor** — the truth's first point replayed through the chain: the same point the door
 ///   anchors a named plane at, so the two kinds of plane agree about where a cache is pinned.
@@ -578,9 +587,9 @@ fn point_cache_tracked<E>(
 ///   (measured on 21,543 narrow names); not the road for every plane, because at 256 bits it
 ///   leaves undecided 226 normals the name road decides.
 ///
-/// Both are read out by [`Realized::to_f64`] at 128 bits and then 256, so a component that is
+/// Both are read out by [`Realization::to_f64`] at 128 bits and then 256, so a component that is
 /// exactly `0` is `+0.0`. Where a half does not answer, `figure`'s half stands, and the cache says
-/// so ([`CacheStanding::Ceiling`]): a replay past [`CACHE_REPLAY_COST_CAP`] (both halves),
+/// so ([`CacheStanding::Ceiling`]): a replay past [`CHEAP_REPLAY_COST_CAP`] (both halves),
 /// undecided at 256 (that half). The refine door ([`refine_caches`]) pays for those.
 ///
 /// ★ **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
@@ -606,7 +615,7 @@ pub(crate) fn push_plane_realized(
     sense: nacre_topo::Orientation,
 ) -> (Handle<Surface>, bool) {
     let out = model.push_plane(figure, CacheStanding::Unrealized, points, motion, sense);
-    raise_surface(model, out.0, Budget::Cache);
+    raise_surface_cache(model, out.0, Budget::Cheap);
     out
 }
 
@@ -621,7 +630,7 @@ pub(crate) fn push_plane_through_realized(
     sense: nacre_topo::Orientation,
 ) -> (Handle<Surface>, bool) {
     let out = model.push_plane_through(figure, CacheStanding::Unrealized, vertices, motion, sense);
-    raise_surface(model, out.0, Budget::Cache);
+    raise_surface_cache(model, out.0, Budget::Cheap);
     out
 }
 
@@ -633,7 +642,7 @@ pub(crate) fn push_plane_through_realized(
 /// off the quarters or a frame; that cache is realized from the chain ([`world_cylinder_hp`]): the
 /// origin, the unit axis and the unit `ref_dir` replayed at 128 or 256 bits and each rounded once;
 /// the radius is the statement's (the chain is an isometry). The same guard as the plane's: a chain
-/// deeper than [`CACHE_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided,
+/// deeper than [`CHEAP_REPLAY_COST_CAP`] keeps `figure`, as does one the two rungs leave undecided,
 /// and the cache says so.
 pub(crate) fn push_cylinder_realized(
     model: &mut Model,
@@ -642,7 +651,7 @@ pub(crate) fn push_cylinder_realized(
     motion: Option<Handle<nacre_topo::MotionNode>>,
 ) -> Handle<Surface> {
     let h = model.push_cylinder(figure, CacheStanding::Unrealized, def, motion);
-    raise_surface(model, h, Budget::Cache);
+    raise_surface_cache(model, h, Budget::Cheap);
     h
 }
 
@@ -653,7 +662,7 @@ pub(crate) fn push_cylinder_realized(
 /// Returns what the realization itself came to — `None` for no road at all. That is the honest
 /// count for a caller: a cache whose standing could not rise (it never falls) still says by this
 /// whether the paid road ran out or found no road.
-pub(crate) fn raise_surface(
+pub(crate) fn raise_surface_cache(
     model: &mut Model,
     h: Handle<Surface>,
     budget: Budget,
@@ -758,12 +767,12 @@ pub(crate) fn surface_realization(
 
 /// **A surface's cache as the push funnel would leave it now** — the question the census asks of
 /// every surface to hold the cache and its standing to the funnel's answer (the twin of
-/// [`realize_cache`] for vertices). `None` where there is no road.
+/// [`realize_vertex_cache`] for vertices). `None` where there is no road.
 ///
 /// ★ The funnel's first step is the push door's own derivation, which reads a chain that folds at
-/// any depth, where the cache road stops at its cost cap. So a cache the model calls `Realized` is
+/// any depth, where the cheap road stops at its cost cap. So a cache the model calls `Realized` is
 /// held to the paid realization — correctly rounded, so the same bits wherever both answer — and
-/// only the rest to the cache road.
+/// only the rest to the cheap road.
 #[cfg(any(test, feature = "test-util"))]
 pub fn realize_surface_cache(
     model: &Model,
@@ -771,7 +780,7 @@ pub fn realize_surface_cache(
 ) -> Option<(nacre_geom::Surface, CacheStanding)> {
     let budget = match model.surface_cache_standing(h) {
         CacheStanding::Realized => Budget::Paid,
-        CacheStanding::Ceiling | CacheStanding::Unrealized => Budget::Cache,
+        CacheStanding::Ceiling | CacheStanding::Unrealized => Budget::Cheap,
     };
     surface_realization(model, h, budget)
 }
@@ -788,13 +797,15 @@ fn cylinder_realization(
     if perp_component(&def.ref_dir(), &def.dir()).is_none() || def.r2().narrow().is_none() {
         return Half::NoRoad;
     }
-    if budget == Budget::Cache
-        && motion.is_some_and(|leaf| model.chain_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+    if budget == Budget::Cheap
+        && motion.is_some_and(|leaf| model.chain_deeper_than(leaf, CHEAP_REPLAY_COST_CAP))
     {
         return Half::Stopped;
     }
     let read = |v: [HpBounded; 3], bits: usize| {
-        Realized(Arm::Approached(v, bits)).to_f64().map(|(v, _)| v)
+        Realization(Arm::Approached(v, bits))
+            .to_f64()
+            .map(|(v, _)| v)
     };
     for &bits in budget.rungs() {
         let Some(hp) = world_cylinder_hp(model, def, motion, bits) else {
@@ -968,8 +979,8 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         None => false,
     };
     let road = |r: bool| if r { Half::Stopped } else { Half::NoRoad };
-    if budget == Budget::Cache
-        && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
+    if budget == Budget::Cheap
+        && model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP
     {
         return Some((road(anchor_road), road(normal_road)));
     }
@@ -1038,8 +1049,8 @@ fn nameless_halves(
     motion: Option<Handle<nacre_topo::MotionNode>>,
     budget: Budget,
 ) -> PlaneHalves {
-    if budget == Budget::Cache
-        && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
+    if budget == Budget::Cheap
+        && model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP
     {
         return (Half::Stopped, Half::Stopped);
     }
@@ -1131,14 +1142,14 @@ fn unit(d: [HpBounded; 3], bits: usize) -> Option<[HpBounded; 3]> {
 }
 
 /// Read a realization out on `rungs` — each only where the one before does not name an `f64`
-/// ([`Realized::to_f64`]) — the surface cache's copy of the rule [`realize_cache_tracked`] keeps
+/// ([`Realization::to_f64`]) — the surface cache's copy of the rule [`realize_vertex_cache_accel`] keeps
 /// for vertices ([`Budget::rungs`]).
 fn on_rungs(
     rungs: &[usize],
     realize: impl Fn(usize) -> Option<[HpBounded; 3]>,
 ) -> Option<[f64; 3]> {
     rungs.iter().find_map(|&bits| {
-        Realized(Arm::Approached(realize(bits)?, bits))
+        Realization(Arm::Approached(realize(bits)?, bits))
             .to_f64()
             .map(|(v, _)| v)
     })
@@ -1172,10 +1183,10 @@ pub struct RefineReport {
     pub edges: Refined,
 }
 
-/// **The door before an export: pay for the realizations the cache roads would not** — and report,
+/// **The door before an export: pay for the realizations the cheap roads would not** — and report,
 /// per kind of cache, what is left.
 ///
-/// The cache roads run on every push, so they take two rungs and refuse a history past their cost
+/// The cheap roads run on every push, so they take two rungs and refuse a history past their cost
 /// cap; this door runs when a caller asks, so it climbs the whole ladder at any depth:
 /// 1. every live vertex's `Ceiling` ([`PointCache`]) is realized from its definition;
 /// 2. every live surface short of `Realized` ([`CacheStanding`]) is realized from its truth —
@@ -1257,7 +1268,7 @@ pub fn refine_caches_of(model: &mut Model, solids: &[Handle<Solid>]) -> RefineRe
         if model.surface_cache_standing(h) == CacheStanding::Realized {
             continue;
         }
-        match raise_surface(model, h, Budget::Paid) {
+        match raise_surface_cache(model, h, Budget::Paid) {
             Some(CacheStanding::Realized) => out.surfaces.refined += 1,
             Some(CacheStanding::Ceiling) => out.surfaces.left_undecided += 1,
             Some(CacheStanding::Unrealized) | None => out.surfaces.left_unrealized += 1,
@@ -1279,22 +1290,23 @@ pub fn refine_caches_of(model: &mut Model, solids: &[Handle<Solid>]) -> RefineRe
     out
 }
 
-/// **How much an edge's realization may spend** — the two budgets a cache is realized under.
+/// **How much a realization may spend** — the two budgets a cache is realized under, for a
+/// vertex, a surface and an edge alike.
 ///
-/// `Cache` is what a push pays, on every push: the cache road's two rungs, and no replay of a chain
-/// deeper than [`CACHE_REPLAY_COST_CAP`] (the vertex funnel's own bargain, [`realize_cache`]).
-/// `Paid` is what the refine door pays when a caller asks: the whole [`LADDER`], at any depth.
-/// Correct rounding makes the answer unique, so where `Cache` answers, `Paid` answers the same bits.
+/// `Cheap` is what a push pays, on every push: the ladder's first two rungs, and no replay of a
+/// chain deeper than [`CHEAP_REPLAY_COST_CAP`]. `Paid` is what the refine door pays when a caller
+/// asks: the whole [`LADDER`], at any depth. Correct rounding makes the answer unique, so where
+/// `Cheap` answers, `Paid` answers the same bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Budget {
-    Cache,
+    Cheap,
     Paid,
 }
 
 impl Budget {
     fn rungs(self) -> &'static [usize] {
         match self {
-            Budget::Cache => &LADDER[..2],
+            Budget::Cheap => &LADDER[..2],
             Budget::Paid => &LADDER,
         }
     }
@@ -1307,7 +1319,7 @@ impl Budget {
 /// a frame), the direction the two planes meet in is the cross product of their normals, read off
 /// the planes' coefficients realized at `bits` — the world name's where the plane has one, else the
 /// plane its witness triangle spans after its chain ([`PlaneMemo`], the seam table's own road and
-/// memo) — scaled to a unit and read out once ([`Realized::to_f64`]), unsigned: the derivation turns
+/// memo) — scaled to a unit and read out once ([`Realization::to_f64`]), unsigned: the derivation turns
 /// it toward the end vertex. `nacre-topo` asks only where its own roads — the names
 /// ([`Model::world_line_direction_f64`]) and what pushers gave this pair before — do not answer,
 /// so «the names answer» is spelled there alone.
@@ -1342,12 +1354,12 @@ fn rim_centre(
         return None;
     };
     let deep = |leaf: Option<Handle<nacre_topo::MotionNode>>| {
-        leaf.is_some_and(|leaf| model.chain_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+        leaf.is_some_and(|leaf| model.chain_deeper_than(leaf, CHEAP_REPLAY_COST_CAP))
     };
-    if budget == Budget::Cache
+    if budget == Budget::Cheap
         && (deep(*motion)
             || (crate::planes::world_plane_coeffs(model, cap).is_none()
-                && model.plane_replay_depth(cap, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP))
+                && model.plane_replay_depth(cap, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP))
     {
         return None;
     }
@@ -1358,7 +1370,7 @@ fn rim_centre(
         let Some(c) = line_meets_plane_hp(&origin, &axis, &plane, bits) else {
             continue;
         };
-        if let Some((v, _)) = Realized(Arm::Approached(c, bits)).to_f64() {
+        if let Some((v, _)) = Realization(Arm::Approached(c, bits)).to_f64() {
             return Some(v);
         }
     }
@@ -1380,11 +1392,11 @@ fn line_direction(
         return None;
     }
     // ★ The guard runs before any chain is walked: the witness triangle replays its plane's whole
-    // history, and a push must not pay for a history the cache road would not.
-    if budget == Budget::Cache
+    // history, and a push must not pay for a history the cheap road would not.
+    if budget == Budget::Cheap
         && s.iter().any(|&h| {
             crate::planes::world_plane_coeffs(model, h).is_none()
-                && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
+                && model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP
         })
     {
         return None;
@@ -1397,7 +1409,7 @@ fn line_direction(
         let Some(u) = unit([x(1, 2), x(2, 0), x(0, 1)], bits) else {
             continue;
         };
-        if let Some((v, _)) = Realized(Arm::Approached(u, bits)).to_f64() {
+        if let Some((v, _)) = Realization(Arm::Approached(u, bits)).to_f64() {
             return Some(v);
         }
     }
@@ -1421,7 +1433,7 @@ fn plane_coeffs_hp(
 
 /// **Push an edge whose cache is realized from its truth** — the edge twin of
 /// [`push_vertex_realized`] and [`push_plane_realized`], and the road every edge an operation makes
-/// takes: what `nacre-topo` cannot derive is realized here ([`edge_given`], [`Budget::Cache`]) and
+/// takes: what `nacre-topo` cannot derive is realized here ([`edge_given`], [`Budget::Cheap`]) and
 /// handed to [`Model::push_edge`].
 pub(crate) fn push_edge_realized(
     model: &mut Model,
@@ -1430,7 +1442,7 @@ pub(crate) fn push_edge_realized(
     memo: &mut PlaneMemo,
 ) -> Result<Handle<Edge>, nacre_topo::EdgeDecline> {
     model.push_edge(surfaces, vertices, |m| {
-        edge_given(m, surfaces, Budget::Cache, memo)
+        edge_given(m, surfaces, Budget::Cheap, memo)
     })
 }
 
@@ -1461,17 +1473,17 @@ pub(crate) fn rebuild_edges(model: &mut Model, solids: &[Handle<Solid>], budget:
 /// budget. The «discard and regenerate» lock's door: on a model nothing has refined it changes no
 /// bit.
 #[cfg(any(test, feature = "test-util"))]
-pub fn rebuild_edge_cache(model: &mut Model) {
+pub fn rebuild_edges_cheap(model: &mut Model) {
     let live = model.live_solids().to_vec();
-    let _ = rebuild_edges(model, &live, Budget::Cache);
+    let _ = rebuild_edges(model, &live, Budget::Cheap);
 }
 
 /// **The edge cache as the refine door derives it** — every live edge re-derived on the door's
 /// budget, which walks any chain. After the door this changes no bit; the push's budget
-/// ([`rebuild_edge_cache`]) would, wherever the door realized a direction behind a chain deeper
+/// ([`rebuild_edges_cheap`]) would, wherever the door realized a direction behind a chain deeper
 /// than the push pays for.
 #[cfg(any(test, feature = "test-util"))]
-pub fn rebuild_edge_cache_paid(model: &mut Model) {
+pub fn rebuild_edges_paid(model: &mut Model) {
     let live = model.live_solids().to_vec();
     let _ = rebuild_edges(model, &live, Budget::Paid);
 }
@@ -1481,24 +1493,24 @@ pub fn rebuild_edge_cache_paid(model: &mut Model) {
 #[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Debug, Default)]
 pub struct VertexCacheAudit {
-    /// `Realized`, bit for bit what the cache road answers.
+    /// `Realized`, bit for bit what the cheap road answers.
     pub realized: usize,
-    /// `Ceiling`, where the cache road stops for bits or cost.
+    /// `Ceiling`, where the cheap road stops for bits or cost.
     pub ceiling: usize,
-    /// `Realized` where the cache road stops — raised by the refine door, so bit for bit what the
+    /// `Realized` where the cheap road stops — raised by the refine door, so bit for bit what the
     /// paid road answers.
     pub raised: usize,
-    /// `Unrealized`, where the cache road has no way.
+    /// `Unrealized`, where the cheap road has no way.
     pub unrealized: usize,
     /// Coordinates of `realized` vertices read as `0.0` with a nonzero bound — the coincidence
-    /// rule's answers ([`Realized::to_f64`]). An exact zero carries a zero bound.
+    /// rule's answers ([`Realization::to_f64`]). An exact zero carries a zero bound.
     pub coincidence_zeros: usize,
     /// The vertices whose cache is not what their definition answers, with what was asked.
     pub mismatches: Vec<(Handle<Vertex>, String)>,
 }
 
 /// ★★ **The vertex cache regenerates from the definition** — the vertex lock's one rule, asked of
-/// each vertex given: the cache road ([`realize_cache`]) answers again and the cache is that very
+/// each vertex given: the cheap road ([`realize_vertex_cache`]) answers again and the cache is that very
 /// answer, or the road stops and the cache says why. Compared bit for bit, so `-0.0` is not
 /// `+0.0`.
 ///
@@ -1508,7 +1520,7 @@ pub struct VertexCacheAudit {
 /// this only reads, and «discard and regenerate» is the claim that this finds nothing at any point
 /// of a log, not only right after the operation that pushed the vertex.
 ///
-/// A `Realized` vertex the cache road stops on is one the refine door raised ([`refine_caches`]):
+/// A `Realized` vertex the cheap road stops on is one the refine door raised ([`refine_caches`]):
 /// it must be what the paid road answers, and it is counted apart (`raised`) so a caller that never
 /// opened that door can say none exists.
 #[cfg(any(test, feature = "test-util"))]
@@ -1523,7 +1535,7 @@ pub fn audit_vertex_caches(
     let mut out = VertexCacheAudit::default();
     for vh in vertices {
         let cache = *model.vertex_cache(vh);
-        let wrong = match realize_cache(model, model.vertex(vh)) {
+        let wrong = match realize_vertex_cache(model, model.vertex(vh)) {
             Ok(answer) => match cache {
                 PointCache::Realized { coord, bound } if same(coord, bound, answer) => {
                     out.realized += 1;
@@ -1532,7 +1544,7 @@ pub fn audit_vertex_caches(
                         (0..3).filter(|&k| c[k] == 0.0 && !b[k].is_zero()).count();
                     None
                 }
-                _ => Some(format!("the cache road answers {answer:?}")),
+                _ => Some(format!("the cheap road answers {answer:?}")),
             },
             Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
                 match cache {
@@ -1547,12 +1559,12 @@ pub fn audit_vertex_caches(
                                 None
                             }
                             paid => Some(format!(
-                                "the cache road stops, and the paid road answers {paid:?}"
+                                "the cheap road stops, and the paid road answers {paid:?}"
                             )),
                         }
                     }
                     PointCache::Unrealized { .. } => {
-                        Some("the cache road stops for bits or cost".to_owned())
+                        Some("the cheap road stops for bits or cost".to_owned())
                     }
                 }
             }
@@ -1561,7 +1573,7 @@ pub fn audit_vertex_caches(
                     out.unrealized += 1;
                     None
                 }
-                _ => Some(format!("the cache road has no way ({d:?})")),
+                _ => Some(format!("the cheap road has no way ({d:?})")),
             },
         };
         if let Some(asked) = wrong {
@@ -1572,13 +1584,13 @@ pub fn audit_vertex_caches(
     out
 }
 
-/// What [`rim_centre_check`] found of a rim's cached centre against its truth.
+/// What [`audit_rim_centre`] found of a rim's cached centre against its truth.
 #[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RimCentreCheck {
+pub struct RimCentreAudit {
     /// The centre realized at the asked bits and read out by the one rule — `None` where those bits
     /// do not decide it.
-    pub realized: Option<[f64; 3]>,
+    pub centre: Option<[f64; 3]>,
     /// Whether the cached centre lies within half an ulp per coordinate of the cap's plane:
     /// `(n·c + d)² ≤ (n·n)(h·h)`, `h` the cached centre's half ulps — `None` where undecided.
     pub on_cap: Option<bool>,
@@ -1594,7 +1606,7 @@ pub struct RimCentreCheck {
 /// ulp fails it unless the miss runs along the very line it is held to). `None` where the edge is
 /// not a circle or a carrier cannot be read.
 #[cfg(any(test, feature = "test-util"))]
-pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<RimCentreCheck> {
+pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<RimCentreAudit> {
     let nacre_geom::Curve::Circle(circle) = model.edge_curve(e) else {
         return None;
     };
@@ -1609,8 +1621,8 @@ pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let chain = cylinder_chain(model, *motion)?;
     let (o, a) = axis_hp(def, &chain, bits)?;
     let n = plane_coeffs_hp(model, cap, bits, &mut PlaneMemo::default()).ok()?;
-    let realized = line_meets_plane_hp(&o, &a, &n, bits)
-        .and_then(|c| Realized(Arm::Approached(c, bits)).to_f64())
+    let centre = line_meets_plane_hp(&o, &a, &n, bits)
+        .and_then(|c| Realization(Arm::Approached(c, bits)).to_f64())
         .map(|(v, _)| v);
     // The cached `f64`s, exactly, read off their bits: `±mantissa · 2^exponent`.
     let exact = |v: f64| -> Option<HpBounded> {
@@ -1635,7 +1647,7 @@ pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let c = circle.center().as_array();
     let ch: [HpBounded; 3] = [exact(c[0])?, exact(c[1])?, exact(c[2])?];
     // Half an ulp per coordinate; a coordinate read as `+0.0` stands within the coincidence limit
-    // instead (`Realized::to_f64`: `max(1, the point's largest |coordinate|)·2⁻¹⁸⁰`).
+    // instead (`Realization::to_f64`: `max(1, the point's largest |coordinate|)·2⁻¹⁸⁰`).
     let scale = c.iter().fold(1f64, |m, v| m.max(v.abs()));
     let half = |v: f64| -> f64 {
         if v == 0.0 {
@@ -1663,8 +1675,8 @@ pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
         .mul(&hh, bits)
         .sub(&dot(&cross, &cross), bits)
         .sign();
-    Some(RimCentreCheck {
-        realized,
+    Some(RimCentreAudit {
+        centre,
         on_cap,
         on_axis,
     })
@@ -1673,7 +1685,7 @@ pub fn rim_centre_check(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
 /// **A line edge's direction from its two endpoints' definitions** — the instrument's independent
 /// road to the truth the edge road realizes: both endpoints realized at `bits` from their own
 /// definitions ([`realize_vertex`]'s road), their difference scaled to a unit at `bits` and read out
-/// by the one rule ([`Realized::to_f64`]), run from `vertices[0]` to `vertices[1]`. `None` where an
+/// by the one rule ([`Realization::to_f64`]), run from `vertices[0]` to `vertices[1]`. `None` where an
 /// endpoint does not realize or the rung does not decide.
 ///
 /// The second value says whether both endpoints were met in a shared frame (an exact meet, folded
@@ -1698,13 +1710,13 @@ pub fn line_direction_from_endpoints(
             .vertex_meet_of(model.vertex(v))
             .is_some_and(|(meet, _)| meet.narrow().is_some())
     });
-    Some((Realized(Arm::Approached(u, bits)).to_f64()?.0, shared))
+    Some((Realization(Arm::Approached(u, bits)).to_f64()?.0, shared))
 }
 
 /// `places` decimal places, escalating until the realization determines them.
 ///
 /// ★ This is the door the app and the kit call, and its contract is **"ask for `places`, get
-/// `places`"**. The `None` on [`Realized::to_decimal`] is the rung-to-rung signal underneath, not
+/// `places`"**. The `None` on [`Realization::to_decimal`] is the rung-to-rung signal underneath, not
 /// something a caller sees: the only ways this fails are a vertex that cannot be realized at all
 /// and a ladder that ran out.
 pub fn realize_vertex_decimal(
@@ -1721,8 +1733,8 @@ pub fn realize_vertex_decimal(
 fn climb(
     model: &Model,
     def: &Vertex,
-    decided: impl Fn(Realized) -> Option<Realized>,
-) -> Result<Realized, RealizeError> {
+    decided: impl Fn(Realization) -> Option<Realization>,
+) -> Result<Realization, RealizeError> {
     for bits in LADDER {
         match build(model, def, bits, &mut Accel::default()) {
             Ok(r) => {
@@ -1753,11 +1765,11 @@ fn build(
     def: &Vertex,
     bits: usize,
     acc: &mut Accel<'_>,
-) -> Result<Realized, RealizeError> {
+) -> Result<Realization, RealizeError> {
     match *def {
         nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, acc),
         nacre_topo::Vertex::OnSeam([cyl, cap]) => {
-            seam_point(model, cyl, cap, bits).map(|p| Realized(Arm::Approached(p, bits)))
+            seam_point(model, cyl, cap, bits).map(|p| Realization(Arm::Approached(p, bits)))
         }
         nacre_topo::Vertex::Pierce {
             planes,
@@ -1767,8 +1779,8 @@ fn build(
     }
 }
 
-fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realized, RealizeError> {
-    Ok(Realized(Arm::Approached(
+fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realization, RealizeError> {
+    Ok(Realization(Arm::Approached(
         p.ok_or(RealizeError::NoCurvedPoint)?,
         bits,
     )))
@@ -1867,7 +1879,7 @@ fn build_three_plane(
     def: &Vertex,
     bits: usize,
     acc: &mut Accel<'_>,
-) -> Result<Realized, RealizeError> {
+) -> Result<Realization, RealizeError> {
     let (meet, frame) = match model.vertex_named_meet(def) {
         Some(NamedMeet::Point(meet, frame)) => (meet, frame),
         Some(NamedMeet::NoPoint) => return Err(RealizeError::NoPoint),
@@ -1877,7 +1889,7 @@ fn build_three_plane(
         // No motion: the meet *is* the coordinate, and `lift` states it as integers whatever its
         // width — so `Wide` is not a refusal on this road.
         let (n, d) = meet.lift();
-        return Ok(Realized(Arm::Exact(n, d)));
+        return Ok(Realization(Arm::Exact(n, d)));
     };
     // Replaying a motion needs a rational base (`WitnessPoint::at` takes `[Rat; 3]`); a meet
     // wider than that takes the carriers' own witnesses instead.
@@ -1893,7 +1905,7 @@ fn build_three_plane(
     // past `Rat`) the replay does.
     if let Some(world) = model.chain_point_rat(node, base) {
         let (n, d) = MeetPoint::Narrow(world).lift();
-        return Ok(Realized(Arm::Exact(n, d)));
+        return Ok(Realization(Arm::Exact(n, d)));
     }
     let chain = motion_chain(model, node).ok_or(RealizeError::NoMotionChain)?;
     let (point, used) = match remembered_prefix(model, base, node, bits) {
@@ -1914,7 +1926,7 @@ fn build_three_plane(
         key: (base, node, bits),
         value: (chain.len(), point.clone()),
     });
-    Ok(Realized(Arm::Approached(point, bits)))
+    Ok(Realization(Arm::Approached(point, bits)))
 }
 
 /// **A meet no shared frame states** — carriers whose motion histories differ (a turned block's
@@ -1937,22 +1949,22 @@ fn build_meet(
     def: &Vertex,
     bits: usize,
     mut memo: Option<&mut PlaneMemo>,
-) -> Result<Realized, RealizeError> {
+) -> Result<Realization, RealizeError> {
     let nacre_topo::Vertex::ThreePlane(tri) = *def else {
         return Err(RealizeError::NoMeet);
     };
     let mut plane = |h: Handle<Surface>| match memo.as_deref_mut() {
         Some(m) => m.plane(model, h, bits),
-        None => realize_plane(model, h, bits),
+        None => realize_witness_plane(model, h, bits),
     };
     let planes = [plane(tri[0])?, plane(tri[1])?, plane(tri[2])?];
     let p = nacre_judge::meet_hp(&planes, bits).ok_or(RealizeError::Undecided)?;
-    Ok(Realized(Arm::Approached(p, bits)))
+    Ok(Realization(Arm::Approached(p, bits)))
 }
 
 /// One carrier plane's coefficients at `bits`, from its witness triangle. `NoMeet` for a carrier
 /// that has none (a chain outside the decimal window, or a judged frame that does not stand).
-fn realize_plane(
+fn realize_witness_plane(
     model: &Model,
     h: Handle<Surface>,
     bits: usize,
@@ -1984,22 +1996,22 @@ impl PlaneMemo {
         if let Some(p) = self.0.get(&(h, bits)) {
             return Ok(p.clone());
         }
-        let p = realize_plane(model, h, bits)?;
+        let p = realize_witness_plane(model, h, bits)?;
         self.0.insert((h, bits), p.clone());
         Ok(p)
     }
 }
 
 /// Whether the mixed road ([`build_meet`]) would replay more chain nodes than
-/// [`CACHE_REPLAY_COST_CAP`] pays for: three witness points through each carrier's chain. The road
+/// [`CHEAP_REPLAY_COST_CAP`] pays for: three witness points through each carrier's chain. The road
 /// is asked second, and only when the sum passes the cap — it is the same two branches
 /// [`build_three_plane`] takes to `build_meet` (no shared frame, or a meet too wide to replay).
 fn meet_road_over_cap(model: &Model, def: &Vertex) -> bool {
     let nodes: usize = def
         .carriers()
-        .map(|h| 3 * model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP))
+        .map(|h| 3 * model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP))
         .sum();
-    nodes > CACHE_REPLAY_COST_CAP
+    nodes > CHEAP_REPLAY_COST_CAP
         && match model.vertex_named_meet(def) {
             None => true,
             Some(NamedMeet::Point(meet, frame)) => frame.is_some() && meet.narrow().is_none(),
@@ -2125,7 +2137,7 @@ mod tests {
 
     /// ★ **A definition that names no point is refused as such, not stopped as a cost.** Three
     /// planes sharing a line and two parallel planes with a third: every road answers
-    /// `NoPoint` — the cache road, the paid road on the pushed vertex, and a cache road stopped
+    /// `NoPoint` — the cheap road, the paid road on the pushed vertex, and a cheap road stopped
     /// past the replay budget — and the funnel files the vertex `Unrealized`, so the refine door
     /// counts it as having no way rather than as undecided. Before the names were read for it, the
     /// mixed road met the planes rung after rung and the cache said `Ceiling`.
@@ -2170,9 +2182,9 @@ mod tests {
                 "{what}"
             );
             assert_eq!(
-                realize_cache(&m, &def),
+                realize_vertex_cache(&m, &def),
                 Err(CacheDecline::Cannot(RealizeError::NoPoint)),
-                "{what}: the cache road"
+                "{what}: the cheap road"
             );
             assert_eq!(
                 read_without_replay(&m, &def).err(),
@@ -2248,7 +2260,7 @@ mod tests {
                 "{axis:?}"
             );
             let hp = world_cylinder_hp(&m, &def, motion, 512).expect("the chain");
-            let read = |v: [HpBounded; 3]| Realized(Arm::Approached(v, 512)).to_f64().unwrap().0;
+            let read = |v: [HpBounded; 3]| Realization(Arm::Approached(v, 512)).to_f64().unwrap().0;
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(lateral) else {
                 unreachable!()
             };
@@ -2320,7 +2332,7 @@ mod tests {
                         && !out.iter().any(|&(v, _)| v == vh)
                     {
                         let p = seam_point_met(m, cyl, cap, 512).expect("the seam meets its cap");
-                        out.push((vh, Realized(Arm::Approached(p, 512)).to_f64().unwrap().0));
+                        out.push((vh, Realization(Arm::Approached(p, 512)).to_f64().unwrap().0));
                     }
                 }
             }
@@ -2354,7 +2366,10 @@ mod tests {
                 );
                 let stated = seam_point_stated(&m, cyl, cap, 512).expect("the stated road");
                 assert_eq!(
-                    Realized(Arm::Approached(stated, 512)).to_f64().unwrap().0,
+                    Realization(Arm::Approached(stated, 512))
+                        .to_f64()
+                        .unwrap()
+                        .0,
                     met,
                     "{axis:?}"
                 );
@@ -2459,8 +2474,8 @@ mod tests {
     }
 
     /// **Past the replay budget the seam waits for the paid door, and the door answers.** A cylinder
-    /// turned 193 times — its chain one node past [`CACHE_REPLAY_COST_CAP`] — keeps its seam
-    /// vertices `Ceiling` (the cache road declines by cost, not for want of a road), and
+    /// turned 193 times — its chain one node past [`CHEAP_REPLAY_COST_CAP`] — keeps its seam
+    /// vertices `Ceiling` (the cheap road declines by cost, not for want of a road), and
     /// [`refine_caches`] raises every one of them to `Realized` through the same meet.
     #[test]
     fn a_seam_past_the_replay_budget_waits_for_the_paid_door() {
@@ -2474,7 +2489,7 @@ mod tests {
             2.0,
         )
         .solid;
-        for _ in 0..=CACHE_REPLAY_COST_CAP {
+        for _ in 0..=CHEAP_REPLAY_COST_CAP {
             let Ok(crate::OpOutput::Transform { solid: s }) = crate::apply(
                 &mut m,
                 &crate::Operation::Transform {

@@ -76,7 +76,7 @@ pub(crate) fn reconstruct(
                 // afresh, with the seam's coordinate as its figure.
                 let v = def.vertex(planes, cyls);
                 if Def::of_name(node) == Some(*def) {
-                    crate::realize::push_vertex_asked(model, v, sv.cache)
+                    crate::realize::push_vertex_prerealized(model, v, sv.cache)
                 } else {
                     crate::realize::push_vertex_realized(
                         model,

@@ -59,18 +59,18 @@ pub use ops::{
     SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
 pub use realize::{
-    CacheDecline, Precision, RealizeError, Realized, RefineReport, Refined, realize_cache,
-    realize_vertex, realize_vertex_decimal, refine_caches, refine_caches_of,
+    CacheDecline, Precision, Realization, RealizeError, RefineReport, Refined, realize_vertex,
+    realize_vertex_decimal, refine_caches, refine_caches_of,
 };
 /// The edge-cache doors the census and the invariant tests hold the push to.
 #[cfg(any(test, feature = "test-util"))]
 pub use realize::{
-    RimCentreCheck, line_direction_from_endpoints, realize_surface_cache, rebuild_edge_cache,
-    rebuild_edge_cache_paid, rim_centre_check,
+    RimCentreAudit, audit_rim_centre, line_direction_from_endpoints, realize_surface_cache,
+    rebuild_edges_cheap, rebuild_edges_paid,
 };
 /// The vertex-cache lock, for the census and the invariant tests.
 #[cfg(any(test, feature = "test-util"))]
-pub use realize::{VertexCacheAudit, audit_vertex_caches};
+pub use realize::{VertexCacheAudit, audit_vertex_caches, realize_vertex_cache};
 /// The plane-sense lock, for the measurements that live in other crates' tests.
 #[cfg(any(test, feature = "test-util"))]
 pub use rotated_vertex::{SenseAudit, audit_plane_senses};

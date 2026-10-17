@@ -144,7 +144,7 @@ pub(crate) fn collect_planes(
                 w
             };
             // ★ **The plane's exact definition comes from its truth** — the witness triangle
-            // (`rotated_vertex::plane_witness`, the one spelling the cache roads read too), wound
+            // (`rotated_vertex::plane_witness`, the one spelling the realization roads read too), wound
             // to this face's outward by the sign its turn runs against the plane times this face's
             // `orientation`. `rotated` is the routing signal "no exact world description", which
             // makes every exact shortcut decline.

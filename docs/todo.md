@@ -243,8 +243,8 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 `push_cylinder_realized`); 원 간선의 프레임은 원통 캐시를 비트 그대로 싣고, 원 중심은 진실의 만남이다 — 진술된
 원통이면 `derive_edge_curve` 가, 아니면 ops 깔때기가 사슬을 재생해(`EdgeGiven`). 남는 생산자 값은 비용 한계를
 넘는 사슬뿐이고(아래 표의 깊은 이력 행), 그 자리에서 내보내는 수가 «진실의 최근접 f64»가 아니다.
-정점 쪽 문 `nacre_ops::realize_vertex{,_decimal}` 과 `Precision { NearestF64, Bits(usize) }`·`Realized` 는
-서 있고, 자릿수는 `Realized::to_decimal` 만 든다.
+정점 쪽 문 `nacre_ops::realize_vertex{,_decimal}` 과 `Precision { NearestF64, Bits(usize) }`·`Realization` 은
+서 있고, 자릿수는 `Realization::to_decimal` 만 든다.
 
 두 손잡이를 가르는 것이 이 항목의 핵심이다.
 
@@ -281,10 +281,6 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - **잠금이 공짜로 딸려 온다.** 같은 모델은 **바이트 동일**한 파일을 내고, 실현 정밀도를 **두 배로 올려도
   f64 결과가 안 바뀌어야** 한다. 그 둘이 「정밀도 기능이 아니라 정확성 고침」의 증거다.
 - 내보내기는 `&Model` 서명을 지킨다 — `&mut Model` 을 받으면 이름이 약속하지 않은 일을 한다.
-- 이름: 실현 문은 `realize_*` 이고 정밀도를 항상 명시한다(기본값 없음). 정밀도 인자 없는 캐시 도로 문은
-  `realize_cache` 의 선례를 따른다. `_at` 은 이 커널에서 위치의 낱말(`point_at`·`normal_at`·
-  `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`coord_hp`·`trial_bound`·
-  `precision_for`)를 쓴다.
 
 ## 알려진 결함과 절벽
 
@@ -314,18 +310,23 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### 실현 문의 발행 범위와 잠금
+### 캐시 쓰기 문은 `realize.rs` 만 부른다 — 잠금이 없다
 
-실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::coord_hp(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
-
-남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
+f64 캐시(정점·곡면·간선)에 값을 쓰는 topo 의 문 — `push_vertex`·`refine_vertex_cache`·`push_plane`·`push_plane_through`·
+`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache` — 을 제품에서 부르는 것은 ops 의 깔때기
+(`nacre-ops/src/realize.rs`)뿐이다(빈 모델의 세계 평면 씨앗 셋은 topo 안). 깔때기는 진실에서 실현하고, 실현이 물러나는
+자리에만 생산자의 대략값(`figure`)을 남기며 그 캐시에 `Ceiling`·`Unrealized` 를 단다. 그래서 «STEP 이 읽는 캐시의 `f64` 는
+실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 구조로 선다. 그러나 문들이 크레이트 경계 때문에 `pub` 이라, `realize.rs`
+밖에서 부르는 새 호출을 컴파일러가 막지 못한다. 잠금의 모양은 스캔 테스트(«이 문들은 `realize.rs` 에서만 부른다» —
+`tests/instruments/comparators.rs` 와 같은 모양) 또는 clippy `disallowed_methods`(그 파일에만 허용)다. `.to_f64()` 호출 수는
+잠금의 대상이 아니다 — 유리수의 `to_f64` 는 정확 반올림이라 그 자체가 실현이다.
 
 ### 최근접 `f64` 사다리가 네 벌이다
 
 정확한 값을 최근접 `f64` 로 읽는 사다리 — 128비트에서 `round_to_f64`, 못 정하면 256비트, 그래도 반올림 경계를 못 가르면
 256비트 중점(충실 반올림) — 가 `nacre-exact` 에 네 벌 있다. `Angle::cos_sin_f64_uncached`·`inv_sqrt_f64_uncached` 는 함수이고
 memo 와 상승 카운터를 갖는다. `sqrt_f64`·`unit_vector_f64` 는 같은 사다리를 본문에 풀어 쓰고 memo·카운터가 없다. ops 의
-`on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realized::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
+`on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realization::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
 함수가 아니다. 한 사다리로 접으면 칸·폴백·카운터가 한 곳에 산다. 접기 전에 네 자리의 폴백(중점, `NaN`)이 모두 같은지부터 본다.
 
 ### 판정의 바닥값은 증명인가 상수인가
@@ -501,7 +502,7 @@ census 를 재고 움직인다. 인구(문에 들어온 이름 없는 `Through` 
 
 ### 가라앉은 좌표의 경계 0
 
-`Realized::to_f64` 의 오차 팔이 `Mag::of(val).times(Mag::pow2(-53))` 이라 `val == 0.0` 이면 **경계도 0**
+`Realization::to_f64` 의 오차 팔이 `Mag::of(val).times(Mag::pow2(-53))` 이라 `val == 0.0` 이면 **경계도 0**
 이다 ⇒ 0 이 아닌 값에 «참값 ∈ 0 ± 0» 이 실린다(`nearest_f64_big` 의 `exact` 깃발은 `false` 로
 정직하지만 경계는 아니다). **인구 0**: 그러려면 좌표가 2⁻¹⁰⁷⁵ 아래여야 하는데 `Rat` 이름은 i128 비율이고
 가장 넓게 잰 `Wide` 이름도 168비트다. 고치려면 `to_f64` 의 오차 모형을 손대야 한다(가라앉은 값의 경계는

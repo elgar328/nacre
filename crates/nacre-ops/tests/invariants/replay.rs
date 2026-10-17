@@ -333,7 +333,7 @@ fn a_transform_log_replays() {
 }
 
 /// `[Extrude, Transform × 201]` — a 7° turn, which gives the prism a history, and then 200
-/// translations, each recorded behind it: deep enough that the cache road refuses on cost, so every
+/// translations, each recorded behind it: deep enough that the cheap road refuses on cost, so every
 /// live vertex lands on `PointCache::Ceiling` and there is something for the refine door to raise.
 fn deep_transform_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();

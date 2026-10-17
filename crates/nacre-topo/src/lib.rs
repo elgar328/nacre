@@ -864,9 +864,9 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///
 /// - [`Self::Realized`] — the coordinate was **realized from the definition** and rounded once
 ///   (`nacre_ops::realize_vertex`), so `bound` is a *proven* per-axis containment: the truth lies
-///   within `coord ± bound`. Every vertex an operation makes carries this unless the cache road
+///   within `coord ± bound`. Every vertex an operation makes carries this unless the cheap road
 ///   declined.
-/// - [`Self::Ceiling`] — the cache road **stopped**, and a road willing to pay more can still
+/// - [`Self::Ceiling`] — the cheap road **stopped**, and a road willing to pay more can still
 ///   answer. Two walls stop it and they say the same thing to a reader: the ladder's first two
 ///   rungs did not decide the coordinate, or a chain the road would have to replay ran past what the cache
 ///   road pays for (`nacre_ops`'s cost cap — a chain whose fold answers is read at any depth).
@@ -894,7 +894,7 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 pub enum PointCache {
     /// Realized from the definition: the truth lies within `coord ± bound` on every axis.
     Realized { coord: Point3, bound: [Mag; 3] },
-    /// The cache road stopped — too few bits on its one rung, or a history past its cost cap.
+    /// The cheap road stopped — too few bits on its one rung, or a history past its cost cap.
     /// A paid realization can still answer; until one does, `coord` is the construction's figure.
     Ceiling { coord: Point3 },
     /// No realization stands behind `coord`: no road to it, or nobody asked.

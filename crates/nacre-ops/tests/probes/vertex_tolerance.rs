@@ -67,7 +67,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
             PointCache::Unrealized { .. } | PointCache::Ceiling { .. } => continue,
             PointCache::Realized { coord, .. } => {
                 let (realized, _) = realize_vertex(m, vh, Precision::NearestF64)
-                    .expect("a Realized vertex realizes")
+                    .expect("a Realization vertex realizes")
                     .to_f64()
                     .expect("decided");
                 assert_eq!(

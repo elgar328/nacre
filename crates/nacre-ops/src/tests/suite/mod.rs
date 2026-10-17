@@ -226,7 +226,7 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
         .iter()
         .map(|b| core::array::from_fn(|i| b[i].checked_add(sv[i]).expect("fixture widths")))
         .collect();
-    let top = crate::construct::realize(&rt);
+    let top = crate::construct::points_f64(&rt);
     // The fixture's frame normal: the sweep's direction, which these fixtures keep axis-aligned.
     let normal: [nacre_exact::Rat; 3] = {
         let len2 = sv
@@ -333,7 +333,7 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
             {
                 for vh in m.edge(he.edge).vertices {
                     // ★ Positive: "realized from its definition" is the claim, and the negative
-                    // form would let `Ceiling` in — a vertex the cache road stopped on.
+                    // form would let `Ceiling` in — a vertex the cheap road stopped on.
                     if seen.insert(vh)
                         && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. })
                     {

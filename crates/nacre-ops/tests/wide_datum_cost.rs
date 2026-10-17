@@ -116,7 +116,7 @@ fn assert_the_census_moved(climbs: u64, bits: u64) {
 ///
 /// ⚠ Stated positively. It read "not the bare figure" while two variants counted as vouched for;
 /// with `Ceiling` in the enum that negative form would admit a vertex whose coordinate nothing has
-/// proven anything about — the cache road stopped on it.
+/// proven anything about — the cheap road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
     matches!(m.vertex_cache(v), PointCache::Realized { .. })
 }

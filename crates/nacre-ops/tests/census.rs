@@ -180,7 +180,7 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
 }
 
 /// Result-vertex coordinates the realization read as `+0.0` by the coincidence rule
-/// (`Realized::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero carries
+/// (`Realization::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero carries
 /// a zero bound, and no other decided coordinate is `0.0`, so this counts the rule's answers
 /// without a counter in the product.
 static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -245,7 +245,7 @@ static SENSE: [std::sync::atomic::AtomicUsize; 4] =
 /// Circle edges the rim lock reads: `[stated, unstated, unstated undecided]` — a stated rim's
 /// centre is checked against the truth spelled below; an unstated one (a cylinder without a world
 /// statement, or a cap without a narrow world name), whose centre the push realizes by replaying
-/// the chain, is held by `nacre_ops::rim_centre_check` at 512 bits: equal to the realization there,
+/// the chain, is held by `nacre_ops::audit_rim_centre` at 512 bits: equal to the realization there,
 /// and within its own half ulps of the cap's plane and of the axis (residuals, not the push's
 /// construction — though both replay the same chain and read the same cap). The third slot counts
 /// the unstated rims that instrument could not decide.
@@ -420,10 +420,10 @@ fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
             }
             None => {
                 CIRCLES[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let check = nacre_ops::rim_centre_check(m, eh, 512)
+                let check = nacre_ops::audit_rim_centre(m, eh, 512)
                     .expect("a circle edge on a readable cylinder");
                 let (Some(t), Some(on_cap), Some(on_axis)) =
-                    (check.realized, check.on_cap, check.on_axis)
+                    (check.centre, check.on_cap, check.on_axis)
                 else {
                     CIRCLES[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     continue;

@@ -51,7 +51,7 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
 
 /// **A plane's witness triangle** — three exact definitions on the plane, and which way their turn
 /// runs against the plane's own facing. The one spelling of it: the judging table winds it to a
-/// face's outward (`planes::collect_planes`), and the cache roads realize a carrier from it (the
+/// face's outward (`planes::collect_planes`), and the realization roads realize a carrier from it (the
 /// mixed vertex road, an edge's direction, a seam's cap — [`surface_witness_triangle`]).
 ///
 /// `turn` is `±1` with `turn · ((p₁ − p₀) × (p₂ − p₀))` running the way the plane faces. A
@@ -162,7 +162,7 @@ pub(crate) struct WitnessTriangle {
     pub(crate) world_exact: bool,
 }
 
-/// **A carrier plane's witness triangle on the cache roads** — [`plane_witness`]'s points, for a
+/// **A carrier plane's witness triangle on the realization roads** — [`plane_witness`]'s points, for a
 /// consumer that realizes the carrier's coefficients and asks nothing of their turn (the mixed
 /// vertex road, an edge's direction, a seam's cap). `None` for a cylinder or an unreadable chain.
 pub(crate) fn surface_witness_triangle(

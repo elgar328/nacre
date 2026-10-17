@@ -122,7 +122,7 @@ struct Tally {
     vertices: usize,
     /// No realization stands behind the coordinate — the construction's own figure (the control).
     unrealized: usize,
-    /// The cache road stopped: too few bits on its one rung, or a history past its cost cap.
+    /// The cheap road stopped: too few bits on its one rung, or a history past its cost cap.
     ceiling: usize,
     /// Realized from the definition (`Realized`): exact where every bound is zero.
     realized_exact: usize,

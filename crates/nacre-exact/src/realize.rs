@@ -288,7 +288,7 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     // the value underflows only where it genuinely should.
     //
     // ★ Third place in this cell where a `2f64.powi` of a realization-sized exponent was wrong
-    // (`rad_upper_bigfloat`, `Realized::to_f64`'s error readout, here).
+    // (`rad_upper_bigfloat`, `Realization::to_f64`'s error readout, here).
     let mut v = m;
     let mut rem = -k;
     while rem != 0 && v != 0.0 && v.is_finite() {
@@ -305,7 +305,7 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     // ⚠★★★★ **A flushed value is not an exact one.** `exact` is decided on `q · 2^-k`, but `v` is
     // what the caller gets, and below the smallest subnormal the scaling loop flushes `v` to `0.0`
     // while the rational is nowhere near zero. That came back as `(0.0, true)` — and
-    // [`Realized::to_f64`] turns the flag into `Mag::ZERO`, a *proven* bound — so the cache would
+    // [`Realization::to_f64`] turns the flag into `Mag::ZERO`, a *proven* bound — so the cache would
     // have published "this coordinate is exactly zero" for `2⁻¹¹⁰⁰`.
     //
     // ★ Only the claim goes, not the value: `0.0` **is** the nearest `f64` there, and

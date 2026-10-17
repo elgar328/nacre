@@ -252,8 +252,8 @@ fn a_split_sweep_lands_on_the_same_points_as_the_whole_one() {
     let split = swept(&lower, &f.sweep(6.6).unwrap()).unwrap();
 
     assert_eq!(whole, split, "exact");
-    assert_eq!(realize(&whole), realize(&split), "realized");
-    assert_eq!(realize(&whole)[0][2], 7.7);
+    assert_eq!(points_f64(&whole), points_f64(&split), "realized");
+    assert_eq!(points_f64(&whole)[0][2], 7.7);
 
     // The f64 arithmetic this replaces does not agree with itself.
     assert_ne!(0.0 + 1.1 + 6.6, 0.0 + 7.7);
