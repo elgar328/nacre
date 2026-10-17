@@ -107,7 +107,7 @@ impl Model {
                 Some(crate::NamedMeet::Point(nacre_exact::MeetPoint::Narrow(_), frame)) => {
                     frame.map_or(0, |m| self.motion_depth_up_to(m, n - depth))
                 }
-                Some(crate::NamedMeet::NoPoint) => 0,
+                // Straddling, wide, or naming no point: a meet of its carriers' witness triangles.
                 _ => def
                     .carriers()
                     .map(|c| 3 * self.plane_replay_depth(c, n - depth))

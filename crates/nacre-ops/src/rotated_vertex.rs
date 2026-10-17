@@ -131,11 +131,12 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
             Some(base) => stated(carried(base.map(WitnessPoint::at))?, motion.is_none()),
             // A named statement whose meets are wider than any witness base: its name's frame.
             None if model.surface_name.contains_key(&h) => probes(),
-            // ★★★ **The nameless statement (the heterogeneous half).** Vertices each exact in
-            // their own frame give a triangle whose chains simply differ — the judging layer never
-            // required them to agree (`plane_iv`/`plane_hp` realize each point on its own), and the
-            // plane's later motion appends to each point's own chain. A straddling vertex has no
-            // point of its own, and then the judged frame's probes are the witness.
+            // ★★★ **The nameless statement (the heterogeneous half).** Vertices each solved to a
+            // narrow point in their own frame give a triangle whose chains simply differ — the
+            // judging layer never required them to agree (`plane_iv`/`plane_hp` realize each point
+            // on its own), and the plane's later motion appends to each point's own chain. A vertex
+            // that straddles frames, or whose meet is wider than a witness base, has no such point,
+            // and then the judged frame's probes are the witness.
             None => {
                 let judged = through_judged_points(model, *vs)?;
                 let mut pure: [Option<WitnessPoint>; 3] = [None, None, None];
