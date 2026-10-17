@@ -1104,8 +1104,9 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   **평면의 향은 진실이다**(`Surface::Plane.sense`): 면의 바깥 = 평면의 향 × `Face.orientation`, 둘 다
 //   진실이다. 생산자는 향을 정확히 진술하고(캐시에서 읽지 않는다 — `f64 → 진실` 이다), `flipped` 는 두
 //   진실의 비교다. 캐시의 향은 진실을 따른다: 세계 이름이 있으면 법선 자체가 이름 × 향이고,
-//   이름 없는 평면은 문이 점들의 f64 외적으로 맞추며(`align_cache_sense`), 회전·프레임이 있는 사슬에서는
-//   census 잠금(`audit_plane_senses`)이 지킨다. 원통은 기준이
+//   이름 없는 평면은 문이 점들의 f64 외적으로 맞추며(`align_cache_sense`), 회전·프레임이 있는 사슬과 움직인
+//   이름 없는 평면은 향 잠금(`audit_plane_senses` — census, 그리고 이름 없는 평면을 드는 스위트의
+//   `every_plane_faces_the_way_its_truth_says`)이 지킨다. 원통은 기준이
 //   진실 안에 있다(축에서 바깥으로). `fallback` 인자가 드는 것은 실현값(앵커·단위 법선)뿐이다.
 //   **향을 묻는 판정은 전부 이 진실을 읽는다**: 평면이 보는 쪽 = `sense` × 점들의 방향(이름과의 관계는
 //   `Model::plane_name_sense`·`world_plane_name_sense`), 증인 삼각형의 순서 = `sense × orientation`, 두 면의

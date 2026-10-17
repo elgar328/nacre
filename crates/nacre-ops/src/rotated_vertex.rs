@@ -472,11 +472,15 @@ pub struct SenseAudit {
     /// populations where a sense rule is easiest to get wrong.
     pub mirrored: usize,
     pub turned: usize,
+    /// Of all the planes looked at: how many are nameless `Through` statements, read through their
+    /// vertices' own realizations — the population no other reading of a plane's world reaches.
+    pub nameless: usize,
 }
 
 /// **Does every live plane's cache face the way its truth says?** — the world direction
 /// `(q₁ − q₀) × (q₂ − q₀) · sense`, with `qᵢ` the stored points carried through the plane's own
-/// chain, against the cache's normal.
+/// chain, against the cache's normal. A nameless `Through` statement's points are its vertices'
+/// realizations, carried through that chain after.
 ///
 /// An `f64` read of both sides, and only a read: it decides nothing, it checks the sense a
 /// producer stated against the cache the same producer built. The two are parallel normals of
@@ -513,7 +517,11 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                     PlanePoints::Known(p) => {
                         (|| Some([carry(p[0])?, carry(p[1])?, carry(p[2])?]))()
                     }
-                    PlanePoints::Through(vs) => {
+                    // A named statement's meets are written in the frame its vertices share, and its
+                    // `motion` carries that frame (`Model::through_meets`), so the plane's own chain
+                    // places them; a wide meet has no `Rat` to replay, and with nothing moved since,
+                    // the vertices' own realizations are those points.
+                    PlanePoints::Through(vs) if model.surface_name.contains_key(&h) => {
                         let meet = |v| match model.vertex_meet(v) {
                             Some((nacre_exact::MeetPoint::Narrow(p), _)) => carry(p),
                             _ => None,
@@ -523,6 +531,22 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                                 .is_none()
                                 .then(|| vs.map(|v| model.vertex_point(v).as_array()))
                         })
+                    }
+                    // ★ A nameless statement's vertices are each placed by their own chain, and its
+                    // `motion` runs after (design 「진실의 타입」, the order `frame_chain` keeps):
+                    // each vertex realized from its definition, its `f64` read exactly as a binary
+                    // rational, then carried through the plane's chain. Dropping each vertex's frame
+                    // and replaying its meet through the plane's chain alone is not this plane.
+                    PlanePoints::Through(vs) => {
+                        out.nameless += 1;
+                        let placed = |v| {
+                            let (c, _) =
+                                crate::realize_vertex(model, v, crate::Precision::NearestF64)
+                                    .ok()?
+                                    .to_f64()?;
+                            carry(coord_rat(c).ok()?)
+                        };
+                        (|| Some([placed(vs[0])?, placed(vs[1])?, placed(vs[2])?]))()
                     }
                 };
                 let nacre_geom::Surface::Plane(cache) = model.surface_cache(h) else {

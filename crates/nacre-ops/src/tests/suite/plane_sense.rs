@@ -1,8 +1,9 @@
 //! **Every plane faces the way its truth says** — the sense lock over the populations where a
 //! sense rule is easiest to get wrong, gathered on purpose: reflections carried into points and
 //! recorded as nodes, turns, frames, statements of handles in both orders, and an offset under a
-//! reflection (on a plain block and on one whose `Through` face makes every motion a node). The
-//! census holds the same lock over its corpus; its reflections are few.
+//! reflection (on a plain block and on one whose `Through` face makes every motion a node), and a
+//! nameless statement still, moved and mirrored. The census holds the same lock over its corpus;
+//! its reflections are few and its nameless planes none.
 
 use super::*;
 use nacre_exact::{Angle, Isometry, Rat, Rotation};
@@ -190,6 +191,82 @@ fn every_plane_faces_the_way_its_truth_says() {
     prism_on(&mut m, f);
     cases.push(("through turned", m));
 
+    // A nameless statement — vertices exact in their own frames and not in each other's — and the
+    // same plane moved and mirrored, which leaves the push door nothing to turn its cache by.
+    let nameless = |m: &mut Model| -> Handle<Solid> {
+        let still = world_box(m);
+        let spun = world_box(m);
+        let spun = moved(
+            m,
+            spun,
+            Isometry::translation([Rat::from_int(4), Rat::from_int(0), Rat::from_int(0)]),
+        );
+        let spun = moved(
+            m,
+            spun,
+            Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                pivot: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(37)).expect("an angle"),
+            }),
+        );
+        let top = top_corners(m, still);
+        let base = m.shell(m.solid(spun).outer).faces[0];
+        let low = crate::he_start(m, m.face(base).outer.half_edges[0]);
+        let f = datum(m, crate::DatumDef::ThroughVertices([top[0], top[1], low]));
+        prism_on(m, f)
+    };
+    let mut m = Model::new();
+    nameless(&mut m);
+    cases.push(("nameless", m));
+    let mut m = Model::new();
+    let p = nameless(&mut m);
+    let p = moved(
+        &mut m,
+        p,
+        Isometry::translation([
+            Rat::new(1, 3).expect("1/3"),
+            Rat::from_int(2),
+            Rat::from_int(0),
+        ]),
+    );
+    moved(
+        &mut m,
+        p,
+        Isometry::rotation(Rotation {
+            axis: Axis::X,
+            pivot: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(20)).expect("an angle"),
+        }),
+    );
+    cases.push(("nameless moved", m));
+    let mut m = Model::new();
+    let p = nameless(&mut m);
+    mirrored(&mut m, p);
+    cases.push(("nameless mirrored", m));
+    // The premise: each holds a live face on a nameless `Through` plane, and the moved two give it a
+    // motion of its own.
+    for (name, m) in &cases[cases.len() - 3..] {
+        let moved_case = *name != "nameless";
+        let found = m.live_solids().iter().any(|&s| {
+            m.shell(m.solid(s).outer).faces.iter().any(|&f| {
+                let h = m.face(f).surface;
+                matches!(
+                    m.surface(h),
+                    nacre_topo::Surface::Plane {
+                        points: nacre_topo::PlanePoints::Through(_),
+                        motion,
+                        ..
+                    } if motion.is_some() == moved_case
+                ) && !m.surface_name.contains_key(&h)
+            })
+        });
+        assert!(
+            found,
+            "{name}: no live face on a nameless plane of that motion"
+        );
+    }
+
     let (mut mirrored_seen, mut turned_seen) = (0, 0);
     for (name, m) in &cases {
         let a = crate::audit_plane_senses(m);
@@ -199,6 +276,9 @@ fn every_plane_faces_the_way_its_truth_says() {
             "{name}: the lock could not look at every plane"
         );
         assert!(a.agree > 0, "{name}: nothing was judged");
+        if name.starts_with("nameless") {
+            assert!(a.nameless > 0, "{name}: no nameless plane was read");
+        }
         if name.starts_with("through: mirror") {
             assert!(
                 a.mirrored > 0,
