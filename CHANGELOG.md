@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, the deepest of its vertices' carriers.
 - `topo::Model::vertex_named_meet` says what a three-plane definition's plane names say about its point — the point and its frame, or `topo::NamedMeet::NoPoint` where the three planes are parallel or share a line.
 - `geom::intersect::flat_corner` says whether a ring vertex is strictly mid-run between its neighbours — the corner a profile's normal form dissolves.
 - `ops::refine_caches_of` raises the caches of the solids given only, for an export that writes part of the model; `topo::Model::reachable_from` is the walk it uses.
@@ -18,6 +19,8 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- A plane through three vertices that share no frame (a datum through corners of parts moved differently) has its cache realized from its definition, as every other plane does: its normal and anchor are the nearest `f64` of the truth (before, the figure the datum or the last transform computed, at most an ulp away in the suite), and `topo::Model::surface_cache_standing` says `Realized`. The corners of a solid built on such a plane are realized too, where before they kept the construction's figure.
+- `topo::Model::motion_depth_up_to` and `topo::Model::motion_deeper_than` count what a frame node unfolds to — the framed plane's own chain — so a sketch on a face with a long motion history waits for `ops::refine_caches` instead of the push paying for that history.
 - **Breaking:** `validate` reports a three-plane vertex whose planes meet in no point as `Violation::VertexNoPoint`, and the realization refuses it as `ops::RealizeError::NoPoint` (its cache is `Unrealized`, and `refine_caches` counts it as left with no way rather than undecided); before, it was a `Ceiling`. An exhaustive `match` on either enum needs the new arm.
 - STEP files are written by [brep-to-step](https://crates.io/crates/brep-to-step), a shape-only writer with no dependencies, instead of step-io, which `nacre-step` no longer depends on. The shapes are the same; the file differs in its `FILE_NAME` preprocessor (`brep-to-step 0.2.0`) and originating system (`nacre` and the kernel's version, was `nacre`), its AP242 edition 2 year (2020, was 2011), its parts, named `Part 1`, `Part 2`, … in order (was `nacre_solid`), and its solids, which carry no name (was `'body'`). The header's time stamp may be at most 256 characters, and a character outside ASCII is written as a `\X2\` escape. `step::StepError::Backend` holds the writer's message.
 - A cylindrical side face has no seam line, whether an extruded circle's or a boolean's result: it is bounded by its two rims (each a whole circle, or a chain of arcs and lines where the rim is cut), one its outer loop and the other an inner loop, with its holes. An extruded circle has two edges instead of three, a cut rim no vertex at its seam point, and STEP output no seam `LINE`.

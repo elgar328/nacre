@@ -554,8 +554,9 @@ pub struct SenseAudit {
     /// populations where a sense rule is easiest to get wrong.
     pub mirrored: usize,
     pub turned: usize,
-    /// Of all the planes looked at: how many are nameless `Through` statements, read through their
-    /// vertices' own realizations — the population no other reading of a plane's world reaches.
+    /// Of all the planes looked at: how many are nameless `Through` statements — the ones read through
+    /// their vertices' own realizations (counted whether or not every vertex realized; one that did
+    /// not is `unmeasured` too).
     pub nameless: usize,
 }
 
