@@ -317,7 +317,7 @@ pub(super) fn datum_plane(
                 let ft = nacre_judge::FrameThrough::of(jpts, false)
                     .ok_or(OpError::ThroughFrameUndecided)?;
                 // The cache anchors at the validated realization of the first stored vertex —
-                // the definition's own replay, same rule as the named road below.
+                // the definition walked through its own chain, as on the named road below.
                 let anchor =
                     Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
@@ -340,21 +340,17 @@ pub(super) fn datum_plane(
             };
 
             // ★★★ **The cache is a world description, and the meets are not world coordinates
-            // unless the carriers share no motion.** Realizing them means walking the very chain
-            // the definition names — `construct.rs` states the rule ("the realization must be the
-            // definition's own replay, not a second route to the same real number"), and taking
-            // any other road here is how a plane's cache and its truth end up describing
-            // different planes.
+            // unless the carriers share no motion.** Placing them means walking the very chain
+            // the definition names (`replay`); a pre-motion meet read as a world point is how a
+            // plane's cache and its truth end up describing different planes.
             //
             // ★ **Split by width so the narrow bits stay put**: a `Narrow` meet takes the road
             // letter for letter. A `Wide` meet has no
             // `Rat` triple to replay — and no f64 realization of it survives an exact lift
             // either (a value like 5⁻⁴⁰ rounds to a dyadic whose denominator leaves `i128`) —
-            // so its cache anchors at the **first stored vertex's own world cache**: the
-            // definition's replay already performed by whoever made the vertex (the 8/8 lock is
-            // what says re-solving and replaying lands on it), and a rounded cache like every
-            // anchor (`plane_anchor.rs` measured what anchor wobble costs — nothing the judging
-            // reads).
+            // so its cache anchors at the **first stored vertex's own world cache** — that
+            // vertex's realization, already in the world — a rounded cache like every anchor
+            // (`plane_anchor.rs` measured what anchor wobble costs — nothing the judging reads).
             let anchor = match (&meets[0], motion) {
                 (nacre_exact::MeetPoint::Narrow(p), None) => {
                     Point3::from_array(p.map(|r| r.to_f64()))

@@ -490,12 +490,12 @@ pub(crate) fn prism_rings_in(
     frame: Option<Handle<MotionNode>>,
 ) -> Option<(Swept, Vec<Swept>)> {
     let sweep = f.sweep(dist)?;
-    // ★★★ **The realization must be the *definition's* own replay, not a second route to the
-    // same real number.** A vertex written here is defined against `frame`, and a judge
-    // reads that definition back through `replay`; if this rounded the coordinates some other
-    // way the two would sit an ulp apart and the invariant that lets a coordinate be checked
-    // against its definition would be false. In the world frame there is no motion and `to_f64`
-    // *is* the replay, which is why that branch is the one that was always here.
+    // ★★★ **These rings are figures, not the truth.** The prism's vertices are defined by their
+    // carrier planes and cached as that definition's realization (`push_vertex_realized`); the
+    // f64 here is what a vertex keeps where the realization declines, and the figure its planes'
+    // caches start from (`push_plane_realized`). On a frame node it is the frame coordinate carried
+    // through the frame's chain by `replay`; in the world frame there is no motion and `to_f64` is
+    // that road.
     let chain = match frame {
         Some(leaf) => Some(crate::rotated_vertex::motion_chain(model, leaf)?),
         None => None,
@@ -506,17 +506,10 @@ pub(crate) fn prism_rings_in(
             Some(c) => realize(pts)
                 .iter()
                 .map(|f| {
-                    // ★★★★ **Realize to the frame's f64 first, and define against *that*.**
-                    // The rationals here came from the user's written decimals, and `1/10` does
-                    // not round-trip through f64 — so a definition holding `1/10` and a
-                    // coordinate holding `0.1` would replay to different bits, and the invariant
-                    // that lets a coordinate be checked against its definition would be false.
-                    // The vertex's base is the f64 the frame coordinate realizes to, exactly as
-                    // the world path already keeps only the realized f64 in the point cache.
-                    //
-                    // ★ Nothing is lost where it matters: the *plane coefficients* are still
-                    // computed from the decimal rationals above, so `7.7` and `1.1 + 6.6` name
-                    // one plane however their vertices round.
+                    // ★ **Rounded to the frame's f64 first, then replayed** — a figure, so only
+                    // nearness matters. The truth is the decimal rationals the planes state
+                    // themselves in ([`SweptRat`]), so `7.7` and `1.1 + 6.6` name one plane however
+                    // these round.
                     let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
                     let q = crate::rotated_vertex::replay(nacre_judge::WitnessPoint::at(b), c)?;
                     Some(Point3::from_array(q.coord()))

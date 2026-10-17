@@ -666,10 +666,8 @@ fn sweep_ring(
     // wall contains the sweep direction, a cap has it as normal). The honest reject stands in
     // for the unreachable arm; the suite is what would refute "unreachable".
     //
-    // (There is no frame base vertex: a frame-drawn corner is the intersection of
-    // three planes sharing the frame's motion, and solving them in that frame and replaying
-    // the chain reproduces the stored coordinate bit for bit — measured 8/8, re-measured
-    // suite-wide by the reuse differential.)
+    // (There is no frame base vertex: a frame-drawn corner is the meet of three planes sharing
+    // the frame's motion, so the planes define it and its cache is their realization.)
     let define = |model: &Model,
                   i: usize,
                   cap: Handle<Surface>,

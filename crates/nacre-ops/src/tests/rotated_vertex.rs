@@ -68,37 +68,28 @@ fn transformed(
     solid
 }
 
-/// **A replay reproduces the stored coordinate bit for bit.**
+/// **Every moved corner is its realization, and a corner on one chain replays near it.**
 ///
-/// This is the contract that lets a consumer check a coordinate against its definition by
-/// equality rather than by tolerance: the replay must perform the *same* float operations, in
-/// the same order, that the producer did. Every motion node owes this, and `Mirror` is where
-/// it is easiest to lose — `WitnessPoint::mirror` walks the same `2c − x` that `AxisMirror::point` did,
-/// rather than an algebraically equal rearrangement.
+/// The cache is the definition's realization — read out to its nearest `f64` when the corner is
+/// pushed (`push_vertex_realized`) — so `realize_vertex` gives it back bit for bit, whatever chains
+/// the corner's carriers hold. `tests/invariants/realize_vertex.rs`'
+/// `an_operations_cache_is_the_realization` holds that for boxes, booleans and a tilted frame; this
+/// table holds it for motion chains.
 ///
-/// ★★★ **It is also what stands between this kernel and a realization that is not a function
-/// of its angle.** `Angle`'s f64 route is `(deg.to_f64() * PI / 180.0).cos()`, and that is
-/// measured to give two answers one ulp apart — between a debug and a release build, and
-/// between two call sites within one release build, where LLVM evaluates a literal-angle site
-/// at compile time and leaves the other to libm. Both routes below realize the same angle, so a
-/// producer and a consumer that folded differently would land different coordinates here.
-///
-/// ★★ **What holds it is that the angle crosses the model store.** It is written into an
-/// `Operation::Transform`, pushed, and read back out before either route realizes it — and no
-/// optimiser propagates a constant through a heap structure. That is *why* this passes with a
-/// literal angle, and it is worth knowing: a future route that realizes an `Angle` it never
-/// stored is not covered by this argument, only by this test happening to exercise it.
-///
-/// **Measured, not argued:** the whole census is bit-identical between a debug and a release
-/// build (`tests/census.rs` documents the diff), which is the direct reading of the same claim
-/// over 130 cases rather than one.
+/// Where the three carriers share one chain, the corner is also solved from their pre-motion names
+/// and replayed through that chain in `f64` (`replay_chain_coord`), the road the judging witnesses
+/// take. That replay is not the cache — it lands within the construction epsilon of it, not on it
+/// (measured on corners drawn on a frame node: 88 of 800 bit-equal, the worst 1,591 ulps off) — and
+/// what it checks is that the chain is read root to leaf and that each node's `f64` step is the
+/// motion the node names. A corner whose carriers hold *different* chains — a cap a first turn fixed
+/// and a later turn moved — has no one chain to replay, and the reuse road gives it up too
+/// (`reuse::solid_points`): counted, per chain.
 #[test]
-fn replay_reproduces_the_stored_coordinate() {
-    // ★ A chain, not one turn, and none of it "nice": a pivot off the origin, an angle whose
-    // realization is nowhere near a quadrantal one, then a translate and a reflection. A single
-    // Z-turn about a rational pivot exercises one node and one of the two rotate axes.
+fn a_moved_corner_is_its_realization_and_replays_near_it() {
+    // ★ Chains, not one turn, and none of them "nice": pivots off the origin, angles whose
+    // realization is nowhere near a quadrantal one, translations and reflections between turns.
     let mv = |iso| Step::Move(Box::new(iso));
-    let chains: [Vec<Step>; 4] = [
+    let chains: [Vec<Step>; 5] = [
         vec![mv(rot30z())],
         vec![
             mv(turn(Axis::Z, [1, 1, 0], (2749, 71))),
@@ -111,8 +102,7 @@ fn replay_reproduces_the_stored_coordinate() {
                 R::from_int(-2),
                 R::from_int(0),
             ])),
-            // ★ A reflection between two turns, because this is the node the contract is
-            // easiest to lose on and the one whose parity the chain has to carry.
+            // ★ A reflection between two turns, the node whose parity the chain has to carry.
             Step::Flip(Axis::X, R::new(1, 2).unwrap()),
             mv(turn(Axis::Z, [0, 0, 0], (271, 4))),
         ],
@@ -121,10 +111,16 @@ fn replay_reproduces_the_stored_coordinate() {
         // licence at depth 2 — walls [Z, Z], caps None, `chain_fixes_plane` proving
         // the caps ride the whole chain.
         vec![mv(rot30z()), mv(turn(Axis::Z, [2, -1, 3], (2749, 71)))],
+        // ★ A reflection **last** — the node a definition and its coordinate are easiest to part
+        // on — at an offset that is not zero, where the mirror's `2c` term would vanish. The caps
+        // are fixed by the Z turn and by an X mirror alike, so every corner rides the walls' one
+        // [Z, M] chain through the licence.
+        vec![mv(rot30z()), Step::Flip(Axis::X, R::new(1, 3).unwrap())],
     ];
-    let mut checked = 0;
-    let mut declined = 0;
-    for chain in &chains {
+    // Per chain, `(replayed, declined)` edge-end visits — a cuboid's 48 each. Measured: the two
+    // mixed-axis chains leave every corner on two chains; the others put every corner on one.
+    let want: [(usize, usize); 5] = [(48, 0), (0, 48), (0, 48), (48, 0), (48, 0)];
+    for (chain, want) in chains.iter().zip(want) {
         let mut m = Model::new();
         let s = crate::fixtures::cuboid(
             &mut m,
@@ -139,14 +135,25 @@ fn replay_reproduces_the_stored_coordinate() {
                 Step::Flip(axis, offset) => reflected(&mut m, r, *axis, *offset),
             };
         }
+        let (mut replayed, mut declined) = (0, 0);
         let sh = m.solid(r).outer;
         for &fh in &m.shell(sh).faces {
             for he in &m.face(fh).outer.half_edges {
                 for &vh in m.edge(he.edge).vertices.iter() {
-                    // ★★ **Solve the definition**: the corner's three planes share one
-                    // motion, so solving their pre-motion names exactly (rational Cramer)
-                    // and replaying that chain must reproduce the stored coordinate —
-                    // a lock over every chain shape in this table.
+                    // The cache is the realization, on every corner.
+                    let stored = m.vertex_point(vh).as_array();
+                    assert!(
+                        matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                        "a moved corner is realized from its definition"
+                    );
+                    let (realized, _) = crate::realize_vertex(&m, vh, crate::Precision::NearestF64)
+                        .expect("the def road realizes what it solves")
+                        .to_f64()
+                        .expect("decided");
+                    assert_eq!(
+                        realized, stored,
+                        "the cache is the realization, bit for bit"
+                    );
                     let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                         panic!("a cuboid corner is a three-plane point");
                     };
@@ -154,12 +161,9 @@ fn replay_reproduces_the_stored_coordinate() {
                         nacre_topo::Surface::Plane { motion, .. } => *motion,
                         nacre_topo::Surface::Cylinder { motion, .. } => *motion,
                     };
-                    // The solvable population mirrors `solid_points`' own criterion: the
-                    // moved carriers share one leaf, and a world-stated carrier among
-                    // them is provably fixed by that chain (the restatement licence).
-                    // A corner whose carriers hold *different* leaves — a mixed-axis
-                    // chain leaves a partially-fixed cap with a shorter history — is
-                    // production's honest decline (Arrange), counted, not asserted.
+                    // The replayable population mirrors `solid_points`' own criterion: the moved
+                    // carriers share one leaf, and a world-stated carrier among them is provably
+                    // fixed by that chain (the restatement licence).
                     let leaves: Vec<_> = tri.iter().filter_map(|&h| motion_of(h)).collect();
                     let leaf = *leaves.first().expect("a moved solid moves some carrier");
                     if !leaves.iter().all(|&l| l == leaf) {
@@ -180,49 +184,28 @@ fn replay_reproduces_the_stored_coordinate() {
                     }
                     let base = nacre_exact::three_planes_rat(coeffs)
                         .expect("three distinct planes of a cuboid corner meet");
-                    let replayed = replay_chain_coord(
+                    let replay = replay_chain_coord(
                         &m,
                         [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
                         leaf,
                     )
                     .unwrap();
-                    // ★ The stored coordinate is the *realization* of the definition:
-                    // the exact pre-motion base carried through the chain at 128
-                    // bits and rounded once. The f64 replay of the same chain agrees with it
-                    // to the rounding of its own arithmetic, not bit for bit — so the lock
-                    // is: cache == realization, and replay within the construction epsilon.
-                    let stored = m.vertex_point(vh).as_array();
-                    assert!(
-                        matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
-                        "a moved corner is realized from its definition"
-                    );
-                    let (realized, _) = crate::realize_vertex(&m, vh, crate::Precision::NearestF64)
-                        .expect("the def road realizes what it solves")
-                        .to_f64()
-                        .expect("decided");
-                    assert_eq!(
-                        realized, stored,
-                        "the cache is the realization, bit for bit"
-                    );
                     for k in 0..3 {
                         assert!(
-                            (replayed[k] - stored[k]).abs() <= 1e-9 * (1.0 + stored[k].abs()),
-                            "f64 replay within the construction epsilon: {replayed:?} vs {stored:?}"
+                            (replay[k] - stored[k]).abs() <= 1e-9 * (1.0 + stored[k].abs()),
+                            "f64 replay within the construction epsilon: {replay:?} vs {stored:?}"
                         );
                     }
-                    checked += 1;
+                    replayed += 1;
                 }
             }
         }
+        assert_eq!(
+            (replayed, declined),
+            want,
+            "the corners this chain replays and declines"
+        );
     }
-    // Both populations must be real, or half the lock is vacuous: the single-turn and
-    // same-axis chains solve (fixed caps riding the licence), the mixed-axis chains
-    // decline at their partially-fixed corners.
-    assert!(checked > 80, "solved only {checked} vertices");
-    assert!(
-        declined > 0,
-        "no mixed-leaf corner declined — the residual vanished?"
-    );
 }
 
 /// A chain is read root-to-leaf, so replaying it applies the rotations in the order they

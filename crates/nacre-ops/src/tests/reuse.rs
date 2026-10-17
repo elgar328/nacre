@@ -152,9 +152,11 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     let pts = solid_points(&m, prism).expect("a framed prism's corners solve");
     assert_eq!(pts.len(), 8, "eight corners, none given up");
 
-    // ② One point, one realization road: every replayed coordinate IS a stored vertex
-    // coordinate, bit for bit. A ulp here would mean construction and replay realize one
-    // rational through two roads — a finding, not a tolerance.
+    // ② One point, one number: every solved coordinate IS a stored vertex coordinate, bit for
+    // bit. The frame's basis is rational, so the prism is stated in the world with no chain; the
+    // solve hands each corner its exact point's nearest `f64` and the cache is that point's
+    // realization — the same rounding of the same number. A ulp here would mean the two read
+    // different points.
     let mut stored: std::collections::HashSet<[u64; 3]> = std::collections::HashSet::new();
     let sol = m.solid(prism);
     for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {

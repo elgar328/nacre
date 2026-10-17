@@ -174,11 +174,9 @@ impl WitnessPoint {
         let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
         //
-        // **Through `Angle`'s single entry point, not re-spelled here.** This function's contract
-        // is to redo the producer's f64 route operation for operation (`Isometry::apply_point`,
-        // which calls the same thing), and a second spelling of "how an angle becomes f64" is
-        // exactly how the two would drift — silently, at the 90°-family, where one route snaps to
-        // `0.0`/`±1.0` and the other lands `cos(90°) ≈ 6e-17`.
+        // **Through `Angle`'s single entry point, not re-spelled here.** At the 90°-family it
+        // returns exactly `0.0`/`±1.0`, the exactness the tol-0 gate below reads; a second spelling
+        // of "how an angle becomes f64" could land `cos(90°) ≈ 6e-17` there instead.
         let (c, s) = angle.cos_sin_f64();
         self.realized[i].value = px + u * c - v * s;
         self.realized[j].value = py + u * s + v * c;
@@ -302,9 +300,9 @@ impl WitnessPoint {
 
     /// The point reflected in `axis = offset` — one more link in the definition.
     ///
-    /// **`coord` follows the producer's own route** (`AxisMirror::point`), so a replay of the
-    /// definition reproduces the stored coordinate bit for bit. The exact offset lives in the
-    /// chain, where [`compute_hp`](Self::compute_hp) realizes it.
+    /// **`coord` is this step's `f64`** (`2c − x`), and `tol` grows by exactly the roundings it
+    /// takes, so `coord ± tol` holds the definition's value. The exact offset lives in the chain,
+    /// where [`compute_hp`](Self::compute_hp) realizes it.
     pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
         let mut p = self.mirrored(axis, offset);
         p.remember(MoveNode::Mirror { axis, offset });
@@ -326,19 +324,17 @@ impl WitnessPoint {
         self.realized[k].error += 4.0
             * bf_mag(&rat_to_big(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM)).abs()
             + f64::EPSILON * (2.0 * c.abs() + self.realized[k].value.abs());
-        // The producer's own route (`AxisMirror::point`), operation for operation — a replay of
-        // the definition has to reproduce the stored coordinate bit for bit.
+        // The reflection itself — the expression the error term above charges.
         self.realized[k].value = 2.0 * c - self.realized[k].value;
         self
     }
 
     /// The point translated by an exact rational `offset` — one more link in the definition.
     ///
-    /// **`coord` is updated exactly as the producer does it** (`Isometry::apply_point`: add the
-    /// offset's f64 image), so a replay of the definition reproduces the stored coordinate bit for
-    /// bit. The exact offset lives in the chain, where [`compute_hp`](Self::compute_hp) realizes
-    /// it; the two roundings this f64 step takes (the offset's own, and the add's) are what `tol`
-    /// grows by.
+    /// **`coord` adds the offset's `f64` image**, and the two roundings this step takes (the
+    /// offset's own, and the add's) are what `tol` grows by, so `coord ± tol` holds the
+    /// definition's value. The exact offset lives in the chain, where
+    /// [`compute_hp`](Self::compute_hp) realizes it.
     ///
     /// That split is the whole point: two placements that reach the same real wall by different
     /// routes keep f64 coordinates an ulp apart, but their *definitions* realize to the same
@@ -365,9 +361,9 @@ impl WitnessPoint {
     /// The point read as `(u, v, w)` in the frame of the plane `origin`/`u_raw`/`n` describe, and
     /// written out in that plane's own frame — one more link in the definition.
     ///
-    /// **`coord` follows the producer's route operation for operation**, so a replay of the
-    /// definition reproduces the stored coordinate bit for bit. The exact inputs live in the
-    /// chain, where [`compute_hp`](Self::compute_hp) realizes them.
+    /// **`coord` is this step's `f64`**, its roundings charged to `tol`, so `coord ± tol` holds the
+    /// definition's value. The exact inputs live in the chain, where
+    /// [`compute_hp`](Self::compute_hp) realizes them.
     ///
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual
     /// one, and a caller that cannot build a basis must not get a point that pretends otherwise.

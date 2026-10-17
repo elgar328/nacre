@@ -3,8 +3,10 @@
 //! A node names one motion — a turn about an axis, a translation, or a reflection in a coordinate
 //! plane — and a chain of them is the exact definition of everything that motion moved. This
 //! module walks that chain: [`motion_chain`] reads it root-to-leaf and [`replay`] carries a point
-//! through it in the *same* order and float operations the producer used, which is what lets a
-//! consumer check a coordinate against its definition bit for bit.
+//! through it — the exact definition remembered, and an `f64` coordinate with a bound on its error,
+//! which is what the judging witnesses and the producers' fallback figures read. A vertex's cache is
+//! not that coordinate but its definition's realization (`crate::realize`), so a replay lands near
+//! the cache, not on it.
 //!
 //! A rotated face's exact plane is read, not hunted for through its vertices: surfaces carry
 //! their truth (points + motion), so the plane comes from `crate::planes`.
@@ -21,14 +23,10 @@ pub(crate) enum WitnessPointError {
     Downgrade,
 }
 
-/// The coordinate a vertex would have with `base_point` as its root and
-/// `leaf`'s chain applied — the *same* computation [`build`] performs, in the same order.
-///
-/// **The invariant, not a producer.** Every producer reaches its coordinate by walking the motion
-/// it just recorded, so no caller needs this to *build* anything — what needs it is the check that
-/// the two agree **bit for bit**, which the predicates rely on and which two float routes to the
-/// same real number would not satisfy. Reflection is a chain node like the rest, so it takes the
-/// same route and needs no exception.
+/// The `f64` coordinate [`replay`] gives a point at `base_point` carried through `leaf`'s chain —
+/// what the replay lock holds against the cache, to the construction epsilon: the cache is the
+/// definition's realization, and this is one `f64` route to near it. Reflection is a chain node
+/// like the rest, so it takes the same route and needs no exception.
 #[cfg(test)]
 pub(crate) fn replay_chain_coord(
     model: &Model,
@@ -41,8 +39,8 @@ pub(crate) fn replay_chain_coord(
         .coord())
 }
 
-/// `p` carried through `chain`, in the producer's own order and float operations — the one
-/// definition of "replay" this crate has, so a coordinate and its definition cannot drift apart.
+/// `p` carried through `chain`, root to leaf — the one spelling of "replay" this crate has, so every
+/// witness and figure built from one chain walks it alike.
 ///
 /// `None` only for a [`MoveNode::Frame`] whose squared lengths do not fit `i128`, which
 /// [`motion_chain`] already refuses to emit — so in practice this is infallible, and the `Option`
