@@ -49,45 +49,137 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
     p.apply_chain(chain)
 }
 
-/// **A surface's plane as its exact witness triangle** — the per-carrier building block of an
-/// implicit point. The same computation `collect_planes`' arms perform per face, spelled
-/// once for the per-carrier consumer: `Known` points replay through the surface's own motion; a
-/// **named** `Through` plane (rational closure) solves through `through_points_rat` and replays
-/// the same way. ★ A named `Through` plane whose meets are wider than any witness base
-/// gets its **own frame's canonical probes** instead — on-plane exact definitions, the
-/// same witness `collect_planes`' probe branch builds; `frame_chain` already carries the
-/// plane's later motion, so those return directly. `None` for a nameless `Through` carrier
-/// (a datum on a nameless datum — depth) and for a cylinder.
+/// **A plane's witness triangle** — three exact definitions on the plane, and which way their turn
+/// runs against the plane's own facing. The one spelling of it: the judging table winds it to a
+/// face's outward (`planes::collect_planes`), and the cache roads realize a carrier from it (the
+/// mixed vertex road, an edge's direction, a seam's cap — [`surface_witness_triangle`]).
+///
+/// `turn` is `±1` with `turn · ((p₁ − p₀) × (p₂ − p₀))` running the way the plane faces. A
+/// triangle of the statement's own points in the statement's order turns with `sense`; a judged
+/// frame's probes turn about the frame's `ŵ`, which `frame_normal_sense` relates to the facing —
+/// the probes' order is the frame's, not the statement's, so `sense` alone would read them wrong.
+/// `world_exact` is whether the points are the statement in the world (no motion), which is what
+/// lets the judging table's exact shortcuts read the plane's name as a world description.
+///
+/// `None` where a chain cannot be read, a nameless statement's points cannot be judged, or the
+/// surface is a cylinder.
+pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<WitnessTriangle> {
+    let Surface::Plane {
+        points,
+        motion,
+        sense,
+    } = model.surface(h)
+    else {
+        return None;
+    };
+    let (motion, sense) = (*motion, sense.sign());
+    // The statement's points, carried through the plane's recorded chain — the same computation,
+    // in the same order, that a moved vertex's `WitnessPoint` performs.
+    let carried = |w: [WitnessPoint; 3]| -> Option<[WitnessPoint; 3]> {
+        let Some(leaf) = motion else {
+            return Some(w);
+        };
+        let chain = motion_chain(model, leaf)?;
+        let [a, b, c] = w.map(|p| replay(p, &chain));
+        Some([a?, b?, c?])
+    };
+    // ★★★★ **A plane with no triangle of its own points has its frame's probes**: `(0,0,0)·(1,0,0)·
+    // (0,1,0)` in its canonical frame are exact definitions on the plane by construction (the
+    // origin is the foot of the perpendicular, `û` and `v̂` lie in it), and `frame_chain` already
+    // appends the plane's own later motion — so they are not carried again.
+    let probes = || -> Option<WitnessTriangle> {
+        let chain = frame_chain(model, h, &nacre_topo::FramePlacement::Canonical, false)?;
+        let r = Rat::from_int;
+        let probe = |u: i128, v: i128| replay(WitnessPoint::at([r(u), r(v), r(0)]), &chain);
+        Some(WitnessTriangle {
+            points: [probe(0, 0)?, probe(1, 0)?, probe(0, 1)?],
+            turn: frame_normal_sense(model, h)?,
+            world_exact: false,
+        })
+    };
+    let stated = |points, world_exact| {
+        Some(WitnessTriangle {
+            points,
+            turn: sense,
+            world_exact,
+        })
+    };
+    match points {
+        // ★★★★★ **The plane's own points state the plane — not a face's triangle.** After a chain
+        // of booleans a face's corners are seam points the kernel itself annotated with a bound,
+        // and stating them as tol-0 witnesses claims an exactness they lack — measured, 1,938 of
+        // 68,350 triangles carried one, in 162 plane tables, 77 of which also held a rotated
+        // plane, where the claim is consulted. The plane's recorded points are construction points.
+        //
+        // ★★★ **The bound is free; measuring it is not** — `at_nearest` states the rounding from
+        // `Rat::to_f64`'s contract (measured once: 38.3% of these points are not f64, and measuring
+        // them at 120 bits cost the suite 6%). A realization reads the definition, not the bound.
+        nacre_topo::PlanePoints::Known(pts) if motion.is_none() => {
+            stated(pts.map(WitnessPoint::at_nearest), true)
+        }
+        // ★★★★★ **The exact points the plane was built from — the only description.** No realized
+        // `[Point3; 3]` rides beside the motion: a third of realized points do not survive the trip
+        // (measured 34.5% — `11/10` is not an f64, so lifting the realization back recovers a
+        // different rational), and a plane described through three rounded points tells two caps
+        // that are one plane apart with full confidence.
+        nacre_topo::PlanePoints::Known(pts) => stated(carried(pts.map(WitnessPoint::at))?, false),
+        // ★★★ **A `Through` plane is solved into the same triangle** — its truth is handles, and the
+        // points are derived at the boundary. A rational closure (`through_points_rat`) gives a
+        // triangle indistinguishable from a stated one; with no motion recorded its frame is the
+        // world (the door asserts a named statement's motion carries its vertices' frame).
+        nacre_topo::PlanePoints::Through(vs) => match model.through_points_rat(*vs) {
+            Some(base) => stated(carried(base.map(WitnessPoint::at))?, motion.is_none()),
+            // A named statement whose meets are wider than any witness base: its name's frame.
+            None if model.surface_name.contains_key(&h) => probes(),
+            // ★★★ **The nameless statement (the heterogeneous half).** Vertices each exact in
+            // their own frame give a triangle whose chains simply differ — the judging layer never
+            // required them to agree (`plane_iv`/`plane_hp` realize each point on its own), and the
+            // plane's later motion appends to each point's own chain. A straddling vertex has no
+            // point of its own, and then the judged frame's probes are the witness.
+            None => {
+                let judged = through_judged_points(model, *vs)?;
+                let mut pure: [Option<WitnessPoint>; 3] = [None, None, None];
+                for (o, jp) in pure.iter_mut().zip(judged) {
+                    if let nacre_judge::JudgedPoint::Pure(wp) = jp {
+                        *o = Some(wp);
+                    }
+                }
+                match pure {
+                    [Some(a), Some(b), Some(c)] => stated(carried([a, b, c])?, false),
+                    _ => probes(),
+                }
+            }
+        },
+    }
+}
+
+/// What [`plane_witness`] answers: three exact definitions on the plane, the sign that relates their
+/// turn to the plane's facing, and whether they state the plane in the world.
+pub(crate) struct WitnessTriangle {
+    pub(crate) points: [WitnessPoint; 3],
+    pub(crate) turn: i8,
+    pub(crate) world_exact: bool,
+}
+
+/// **A carrier plane's witness triangle on the cache roads** — [`plane_witness`]'s points, for a
+/// consumer that realizes the carrier's coefficients and asks nothing of their turn. `None` for a
+/// cylinder, an unreadable chain, and a nameless `Through` carrier, whose witness these roads do not
+/// read.
 pub(crate) fn surface_witness_triangle(
     model: &Model,
     h: Handle<Surface>,
 ) -> Option<[WitnessPoint; 3]> {
-    let (base, motion) = match model.surface(h) {
-        nacre_topo::Surface::Plane {
-            points: nacre_topo::PlanePoints::Known(pts),
-            motion,
+    if matches!(
+        model.surface(h),
+        Surface::Plane {
+            points: nacre_topo::PlanePoints::Through(_),
             ..
-        } => (*pts, *motion),
-        nacre_topo::Surface::Plane {
-            points: nacre_topo::PlanePoints::Through(vs),
-            motion,
-            ..
-        } => match model.through_points_rat(*vs) {
-            Some(base) => (base, *motion),
-            None if model.surface_name.contains_key(&h) => {
-                let chain = frame_chain(model, h, &nacre_topo::FramePlacement::Canonical, false)?;
-                let r = nacre_exact::Rat::from_int;
-                let probe = |u: i128, v: i128| replay(WitnessPoint::at([r(u), r(v), r(0)]), &chain);
-                return Some([probe(0, 0)?, probe(1, 0)?, probe(0, 1)?]);
-            }
-            None => return None, // nameless Through — depth
-        },
-        nacre_topo::Surface::Cylinder { .. } => return None,
-    };
-    match motion {
-        None => Some(base.map(WitnessPoint::at)),
-        Some(m) => replayed_triangle(base, &motion_chain(model, m)?),
+        }
+    ) && !model.surface_name.contains_key(&h)
+    {
+        return None;
     }
+    plane_witness(model, h).map(|w| w.points)
 }
 
 /// A stated triple's three points replayed through `chain` — the witness triangle of a `Known`

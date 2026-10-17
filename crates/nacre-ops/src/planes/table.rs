@@ -143,176 +143,24 @@ pub(crate) fn collect_planes(
                 );
                 w
             };
+            // ★ **The plane's exact definition comes from its truth** — the witness triangle
+            // (`rotated_vertex::plane_witness`, the one spelling the cache roads read too), wound
+            // to this face's outward by the sign its turn runs against the plane times this face's
+            // `orientation`. `rotated` is the routing signal "no exact world description", which
+            // makes every exact shortcut decline.
             let (tri_pt3, rotated, motion) = match model.surface(face.surface) {
-                // ★★★★★ **The plane's own points state the plane — not the face's triangle.**
-                //
-                // After a chain of booleans a face's corners are seam points the kernel itself
-                // annotated with a bound, and stating them as tol-0 witnesses claims an exactness
-                // they lack — measured, 1,938 of 68,350 triangles carried one, in 162 plane
-                // tables, 77 of which also held a rotated plane, where the claim is consulted.
-                // The plane's recorded points are construction points, so no such claim is made.
-                //
-                // ★ `WitnessPoint::at_nearest` states a representable point with tol 0 and a
-                // non-representable one with the ½-ulp bound
-                // `Rat::to_f64` promises — one spelling for a point that came from a rational.
-                nacre_topo::Surface::Plane {
-                    points: nacre_topo::PlanePoints::Known(pts),
-                    motion: None,
-                    ..
-                } => {
-                    // ★★★ **The bound is free; measuring it is not** — `at_nearest` states the
-                    // rounding from `Rat::to_f64`'s contract (measured here once: 38.3% of these
-                    // points are not f64, and measuring them at 120 bits cost the suite 6%).
-                    let w = pts.map(WitnessPoint::at_nearest);
-                    (wind(w, facing), false, None)
-                }
-                nacre_topo::Surface::Plane {
-                    points: nacre_topo::PlanePoints::Known(pts),
-                    motion: Some(motion),
-                    ..
-                } => {
+                nacre_topo::Surface::Plane { points, motion, .. } => {
                     let motion = *motion;
-                    let _t = Watch::new(); // charged at the arm's end
-                    // The pre-motion description, carried through the recorded chain — the same
-                    // computation, in the same order, that a moved vertex's `WitnessPoint` performs.
-                    let chain = crate::rotated_vertex::motion_chain(model, motion)
+                    let unmoved_known =
+                        motion.is_none() && matches!(points, nacre_topo::PlanePoints::Known(_));
+                    // An unmoved stated plane costs nothing worth timing.
+                    let watch = (!unmoved_known).then(Watch::new);
+                    let w = crate::rotated_vertex::plane_witness(model, face.surface)
                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                    let turn = |base: [nacre_exact::Rat; 3]| -> Result<WitnessPoint, BoolError> {
-                        crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)
-                            .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
-                    };
-                    // ★★★★★ **The exact points the plane was built from — the only description.**
-                    //
-                    // No realized `witness: [Point3; 3]` rides beside the motion: a third of
-                    // realized points do not survive the trip (measured 34.5% — `11/10` is not an
-                    // f64, so lifting the realization back recovers a different rational), and a
-                    // plane described through three rounded points tells two caps that are one
-                    // plane apart with full confidence.
-                    let w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
-                    _t.charge(Sub::TriPt3);
-                    (wind(w, facing), true, Some(motion))
-                }
-                // ★★★ **A `Through` plane is solved into the same witness triangle here.**
-                //
-                // Its truth is handles, and the judging layer takes points — so the points are
-                // *derived* at the boundary, once per plane per operation, exactly like the name
-                // was derived once at push. That does not make the points a second truth: this
-                // table lives for one operation and is a mirror.
-                //
-                // The rational-closure branch: three vertices that solve to `Rat` give a
-                // triangle indistinguishable from a stated one, so every predicate below
-                // runs unchanged.
-                //
-                // ★★★ **The nameless branch (the heterogeneous half).**
-                // A pure-mixed datum's vertices are each exact *in their own frame*, so its
-                // witness triangle exists — three `WitnessPoint`s whose chains simply differ.
-                // The judging layer never required them to agree: `plane_iv`/`plane_hp` realize
-                // each point independently, so the whole toleranced route runs unchanged,
-                // and `standard_for` sizes the operation from these very points. What such a
-                // plane has none of is exact f64 coefficients — so it is flagged `rotated`
-                // (the routing signal means "no exact description", not "carries a motion"),
-                // which makes every exact shortcut decline.
-                //
-                // A *straddling*-vertex datum has no witness triangle **from its vertices** —
-                // its witness is the judged frame's probes, built in the branch below.
-                nacre_topo::Surface::Plane {
-                    points: nacre_topo::PlanePoints::Through(vs),
-                    motion,
-                    ..
-                } => {
-                    let motion = *motion;
-                    let _t = Watch::new();
-                    let replay_all = |mut w: [WitnessPoint; 3],
-                                      m: Handle<nacre_topo::MotionNode>|
-                     -> Result<[WitnessPoint; 3], BoolError> {
-                        let chain = crate::rotated_vertex::motion_chain(model, m)
-                            .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                        for o in w.iter_mut() {
-                            *o = crate::rotated_vertex::replay(o.clone(), &chain)
-                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                        }
-                        Ok(w)
-                    };
-                    let (w, rotated, turn) = match model.through_points_rat(*vs) {
-                        Some(base) => {
-                            let w = base.map(WitnessPoint::at);
-                            let w = match motion {
-                                None => w,
-                                Some(m) => replay_all(w, m)?,
-                            };
-                            // ★ `rotated` is also the licence to read the name as a **world**
-                            // description (`PlaneWitness::exact_coeffs`). A `Through` name is
-                            // derived from the meets in the frame the three vertices share, so
-                            // with no motion recorded that frame is the world: the door asserts a
-                            // named statement's motion carries its vertices' frame
-                            // (`Model::push_plane_through`).
-                            (w, motion.is_some(), facing)
-                        }
-                        None => {
-                            let j = crate::rotated_vertex::through_judged_points(model, *vs)
-                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            // ★ All-pure unwraps to the heterogeneous triangle, letter for
-                            // letter — that road is locked by its own tests and stays.
-                            //
-                            // ★★★★ **Any implicit point: the witness is the plane's own judged
-                            // frame**. The table's contract is "three exact points *on the
-                            // plane*, wound to the outward" — never "the face's corners" — and a judged plane has such points by definition: its
-                            // canonical frame's probes `(0,0,0)·(1,0,0)·(0,1,0)`, the same ones
-                            // `frame_world_basis` realizes. The origin is the foot of the
-                            // perpendicular (on the plane exactly), û and v̂ are in-plane by
-                            // construction, and `frame_chain` already appends the plane's own
-                            // later motion — so the probes are exact definitions the escalation
-                            // realizes at any precision.
-                            let all_pure = j
-                                .iter()
-                                .all(|p| matches!(p, nacre_judge::JudgedPoint::Pure(_)));
-                            if all_pure {
-                                let mut w: [Option<WitnessPoint>; 3] = [None, None, None];
-                                for (o, jp) in w.iter_mut().zip(j) {
-                                    if let nacre_judge::JudgedPoint::Pure(wp) = jp {
-                                        *o = Some(wp);
-                                    }
-                                }
-                                let w = w.map(|o| o.expect("all pure"));
-                                let w = match motion {
-                                    // ★ The plane's own later motion appends to each point's
-                                    // own chain — motions add, never multiply.
-                                    None => w,
-                                    Some(m) => replay_all(w, m)?,
-                                };
-                                (w, true, facing)
-                            } else {
-                                let chain = crate::rotated_vertex::frame_chain(
-                                    model,
-                                    face.surface,
-                                    &nacre_topo::FramePlacement::Canonical,
-                                    false,
-                                )
-                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                let r = nacre_exact::Rat::from_int;
-                                let probe = |u: i128, v: i128| {
-                                    crate::rotated_vertex::replay(
-                                        WitnessPoint::at([r(u), r(v), r(0)]),
-                                        &chain,
-                                    )
-                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
-                                };
-                                // `frame_chain` already carries the plane's own later motion in
-                                // its tail, so no `replay_all` here — appending it twice would
-                                // move the witness off the plane.
-                                let w = [probe(0, 0)?, probe(1, 0)?, probe(0, 1)?];
-                                // The probes turn about the frame's `ŵ`, and they ride the plane's
-                                // own motion as its facing does — so they turn toward the outward
-                                // exactly when `ŵ` runs with the facing in the plane's own frame.
-                                let s =
-                                    crate::rotated_vertex::frame_normal_sense(model, face.surface)
-                                        .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                (w, true, s * orient_sign)
-                            }
-                        }
-                    };
-                    _t.charge(Sub::TriPt3);
-                    (wind(w, turn), rotated, motion)
+                    if let Some(t) = watch {
+                        t.charge(Sub::TriPt3);
+                    }
+                    (wind(w.points, w.turn * orient_sign), !w.world_exact, motion)
                 }
                 nacre_topo::Surface::Cylinder { .. } => {
                     unreachable!("a plane cache cannot carry a cylinder truth")
