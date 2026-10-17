@@ -300,9 +300,9 @@ impl WitnessPoint {
 
     /// The point reflected in `axis = offset` — one more link in the definition.
     ///
-    /// **`coord` is this step's `f64`** (`2c − x`), and `tol` grows by exactly the roundings it
-    /// takes, so `coord ± tol` holds the definition's value. The exact offset lives in the chain,
-    /// where [`compute_hp`](Self::compute_hp) realizes it.
+    /// **`coord` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the roundings it
+    /// takes (with the margin every term carries), so `coord ± tol` holds the definition's value.
+    /// The exact offset lives in the chain, where [`compute_hp`](Self::compute_hp) realizes it.
     pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
         let mut p = self.mirrored(axis, offset);
         p.remember(MoveNode::Mirror { axis, offset });
