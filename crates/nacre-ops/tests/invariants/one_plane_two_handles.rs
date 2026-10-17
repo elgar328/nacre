@@ -362,10 +362,9 @@ fn run(sc: &mut Scene, kind: BoolKind) -> (Shape, BoolReport) {
 /// flush pair merges exactly — its second datum faces `−z`, and the flipped frame's witnesses answer
 /// the coplanarity with an exact zero where the unflipped ones needed a proved coincidence.
 ///
-/// ★ S3's prisms are **not** compared by bits before the boolean: corners on a nameless carrier
-/// have no realization road (`Unrealized`, the `NoMeet` population), so they hold the
-/// construction's figure until the boolean mints the result's vertices from their definitions.
-/// They agree within `1e-12` there, and the results agree to the bit.
+/// ★ The prisms are compared by bits before the boolean, S3's too: a corner on the nameless carrier is
+/// realized through that carrier's witness triangle (`rotated_vertex::plane_witness`) and lands on
+/// the same nearest `f64` as its twin on the named plane.
 #[test]
 fn a_plane_stated_twice_booleans_as_it_does_once() {
     type Build = fn(bool, bool) -> Scene;
@@ -398,17 +397,7 @@ fn a_plane_stated_twice_booleans_as_it_does_once() {
                 );
                 for (p2, p1) in two.prisms.iter().zip(&one.prisms) {
                     let (a, b) = (positions(&two.m, *p2), positions(&one.m, *p1));
-                    if name == "S3" {
-                        let near = a.len() == b.len()
-                            && a.iter().zip(&b).all(|(x, y)| {
-                                (0..3).all(|k| {
-                                    (f64::from_bits(x[k]) - f64::from_bits(y[k])).abs() < 1e-12
-                                })
-                            });
-                        assert!(near, "{at}: the two prisms stand in one place");
-                    } else {
-                        assert_eq!(a, b, "{at}: the two prisms are the same prism");
-                    }
+                    assert_eq!(a, b, "{at}: the two prisms are the same prism");
                 }
 
                 let (shape_two, report) = run(&mut two, kind);

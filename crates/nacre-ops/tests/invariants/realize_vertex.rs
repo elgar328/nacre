@@ -1469,6 +1469,85 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
     }
 }
 
+/// ★★ **A nameless datum costs what its vertices' chains cost.** Its witness — the plane the
+/// judging table and the cache roads read — realizes its defining vertices through their own
+/// carriers' chains, so a datum through a corner of the 7°-and-200-translations box and two corners
+/// of a box that never moved sits behind that history. On the cache road the datum's own cache and
+/// the corners of a prism on it stop by cost, and the paid door raises them.
+#[test]
+fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
+    let mut m = translated_chain(200);
+    let deep = m.live_solids()[0];
+    let still = cuboid(&mut m, [10.0, 0.0, 0.0], [11.0, 1.0, 1.0]);
+    m.rebuild_adjacency();
+    let corner = |m: &Model, s: Handle<Solid>, k: usize| {
+        let top = m.shell(m.solid(s).outer).faces[1];
+        m.he_start(m.face(top).outer.half_edges[k])
+    };
+    let vs = [
+        corner(&m, still, 0),
+        corner(&m, still, 1),
+        corner(&m, deep, 0),
+    ];
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("a datum through mixed frames") else {
+        unreachable!()
+    };
+    assert!(
+        !m.surface_name.contains_key(&plane),
+        "the datum is nameless — its vertices share no frame"
+    );
+    assert_eq!(
+        m.surface_cache_standing(plane),
+        nacre_topo::CacheStanding::Ceiling,
+        "the datum's cache stops by cost"
+    );
+    let profile = nacre_ops::Profile2d::polygon(vec![
+        p2(0.25, 0.25),
+        p2(0.75, 0.25),
+        p2(0.75, 0.75),
+        p2(0.25, 0.75),
+    ])
+    .expect("a square");
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 0.5,
+        },
+    )
+    .expect("a prism on the datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let corners: Vec<_> = m.reachable_from(&[prism]).vertices.into_iter().collect();
+    assert!(!corners.is_empty(), "the prism has corners");
+    for &vh in &corners {
+        assert_eq!(
+            realize_cache(&m, m.vertex(vh)).err(),
+            Some(CacheDecline::CostCap),
+            "the cache road counts the datum's vertices' chains and stops: {:?}",
+            m.vertex_cache(vh)
+        );
+    }
+    let report = nacre_ops::refine_caches(&mut m);
+    assert!(report.vertices.refined >= corners.len(), "{report:?}");
+    assert_eq!(
+        m.surface_cache_standing(plane),
+        nacre_topo::CacheStanding::Realized,
+        "the paid door realizes the datum"
+    );
+    for &vh in &corners {
+        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+    }
+}
+
 /// A box turned 7° and then carrying `n` recorded translation nodes — the turn is irrational, so
 /// it is recorded, and once a history exists every motion after it is recorded too (a fresh box
 /// would carry a translation into its statements). The chain is `n + 1` deep on the walls; the

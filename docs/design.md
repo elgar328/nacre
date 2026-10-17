@@ -1085,8 +1085,7 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   topo 는 감싸기만 하고 기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에
 //   남는다 — 다형 질의는 geom 의 enum 이 안에서 가른다. 감싸는 이유는 캐시가 자랄 자리가 있는 이름 붙은
 //   것이 되게 하려는 것이었고, 거기서 `PointCache` 의 세 변종과 같은 말이 자랐다(경계를 들 것이 없어 표지만):
-//   `Unrealized` 는 아무도 실현하지 않았다(안 물었거나 도로가 없다 — 혼합 프레임 `Through` 는 증인 삼각형이
-//   없다), `Ceiling` 은 싼 도로가 멈췄다(비용 한계를 넘는 사슬·두 단에서 미결정 — 값을 치르는 문이 올린다),
+//   `Unrealized` 는 아무도 실현하지 않았다(안 물었거나 도로가 없다 — 읽을 수 없는 사슬), `Ceiling` 은 싼 도로가 멈췄다(비용 한계를 넘는 사슬·두 단에서 미결정 — 값을 치르는 문이 올린다),
 //   `Realized` 는 모든 부분이 진실의 최근접 f64 다. 둘째 쓰기 문 `refine_surface_cache` 는 표지를 내리지 못한다.
 //   평면의 f64 실현은 문이 진실에서 유도한다(`derive_surface_cache`) — 세계 이름이 있으면 단위 법선은 이름 ×
 //   향의 정확 반올림(`nacre_exact::unit_vector_f64`, 참 0 성분은 `+0.0`), 앵커는 진실의 첫 점(`Through` 는
@@ -1096,17 +1095,20 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   답하나»는 topo 한 곳에 있다. 앵커는 첫 점을 사슬로 재생해(넓은 만남이면 첫 꼭짓점 자신의 실현), 법선은 모션
 //   전 이름 법선을 사슬로 옮겨(이름이 `Rat` 보다 넓으면 진술의 세 점을 재생해 그들이 펼치는 법선으로 — 판정의
 //   증인이 프레임 탐침이면 그 순서는 진술의 것이 아니라 쓰지 않는다), 둘 다 같은 읽기 규칙으로. 답하지 않는 반쪽은
-//   생산자 값이고 표지가 그것을 말한다: 재생이 비용 한계를 넘는 사슬·256 에서 미결정은 `Ceiling`, 혼합 프레임
-//   `Through` 는 `Unrealized`. 원통도 같은 두 단이다 — 세계에 진술되면 문이 원점·단위 축·단위 `ref_dir`·반지름을
+//   생산자 값이고 표지가 그것을 말한다: 재생이 비용 한계를 넘는 사슬·256 에서 미결정은 `Ceiling`. 이름이 없는
+//   (혼합 프레임) `Through` 는 이름 법선이 없으니 증인 삼각형(`plane_witness` — 판정 표가 감는 그 삼각형)이 펼치는
+//   법선을 그 삼각형과 함께 오는 회전의 향(`turn`)으로 세우고, 앵커는 정의 점 0 의 실현을 평면 사슬로 옮긴 점이다;
+//   비용 한계는 그 평면이 재생하는 정점 담체의 사슬까지 센다(`Model::plane_replay_depth`). 원통도 같은 두 단이다 — 세계에 진술되면 문이 원점·단위 축·단위 `ref_dir`·반지름을
 //   정확 반올림하고(`cyl_unit_frame_f64`), 아니면 깔때기(`push_cylinder_realized`)가 사슬을 재생해 같은 넷을 실현하며,
 //   비용 한계를 넘는 사슬은 생산자 값에 `Ceiling` 이다. 사설
 //   `push_plane_raw`·`push_cylinder_raw` 가 진실과 캐시를 같은 자리에서 채운다.
 //   **평면의 향은 진실이다**(`Surface::Plane.sense`): 면의 바깥 = 평면의 향 × `Face.orientation`, 둘 다
 //   진실이다. 생산자는 향을 정확히 진술하고(캐시에서 읽지 않는다 — `f64 → 진실` 이다), `flipped` 는 두
 //   진실의 비교다. 캐시의 향은 진실을 따른다: 세계 이름이 있으면 법선 자체가 이름 × 향이고,
-//   이름 없는 평면은 문이 점들의 f64 외적으로 맞추며(`align_cache_sense`), 회전·프레임이 있는 사슬과 움직인
-//   이름 없는 평면은 향 잠금(`audit_plane_senses` — census, 그리고 이름 없는 평면을 드는 스위트의
-//   `every_plane_faces_the_way_its_truth_says`)이 지킨다. 원통은 기준이
+//   이름 없는 평면은 증인 삼각형과 그 회전의 향(`turn`)에서 실현된다 — 문이 먼저 점들의 f64 외적으로 생산자
+//   수치를 맞추고(`align_cache_sense`, 움직이지 않은 것만), 그 수치는 실현이 멈춘 곳(`Ceiling`)에만 남는다. 향
+//   잠금(`audit_plane_senses` — census, 그리고 이름 없는 평면을 드는 스위트의
+//   `every_plane_faces_the_way_its_truth_says`)이 결과를 지킨다. 원통은 기준이
 //   진실 안에 있다(축에서 바깥으로). `fallback` 인자가 드는 것은 실현값(앵커·단위 법선)뿐이다.
 //   **향을 묻는 판정은 전부 이 진실을 읽는다**: 평면이 보는 쪽 = `sense` × 점들의 방향(이름과의 관계는
 //   `Model::plane_name_sense`·`world_plane_name_sense`), 증인 삼각형의 순서 = `sense × orientation`, 두 면의

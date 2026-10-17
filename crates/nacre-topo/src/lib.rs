@@ -981,7 +981,7 @@ pub struct SurfaceCache {
 ///
 /// ★ The order is knowledge, and a cache only moves up it ([`Model::refine_surface_cache`]):
 /// `Unrealized` — nothing has realized it, the pusher's own figure stands (the road was not asked,
-/// or there is none: a mixed-frame `Through` plane spans no witness triangle); `Ceiling` — the
+/// or there is none: a chain that cannot be read); `Ceiling` — the
 /// cheap road stopped (a history deeper than the cache's cost cap, or undecided on its rungs) and
 /// a paid realization can still answer, so part or all of it is the figure; `Realized` — every
 /// part is the truth's nearest `f64`.

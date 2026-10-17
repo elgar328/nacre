@@ -74,11 +74,14 @@ impl Model {
     /// sense ([`Model::derive_surface_cache`]), which is the truth's direction by construction.
     /// Here the `f64` cross of the plane's points, carried to the world where this crate can
     /// carry them, is compared with the cache; chains with a turn or a frame, and a nameless plane
-    /// under any motion, are out of reach — the sense lock (`nacre_ops::audit_plane_senses`) holds
-    /// them, over the census and over the suite's `every_plane_faces_the_way_its_truth_says`, which
-    /// holds the nameless ones (the census has none). For a `Known` statement the
-    /// push door has already asserted the two agree, so this is the lock that the cache is a
-    /// function of the truth rather than a correction.
+    /// under any motion, are out of reach. It is the figure's turn, not the cache's last word: the
+    /// `nacre_ops` funnel then realizes the plane from its truth — a nameless one from its witness
+    /// triangle, facing the way that triangle's turn says — and the figure stays only where the
+    /// realization stops (`Ceiling`). The sense lock (`nacre_ops::audit_plane_senses`, over the
+    /// census and over the suite's `every_plane_faces_the_way_its_truth_says`, which holds the
+    /// nameless planes the census lacks) holds the result. For a `Known` statement the push door has
+    /// already asserted the two agree, so this is the lock that the cache is a function of the truth
+    /// rather than a correction.
     pub(crate) fn align_cache_sense(&mut self, h: Handle<Surface>) -> bool {
         let Surface::Plane {
             points,

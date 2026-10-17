@@ -77,8 +77,8 @@ pub enum RealizeError {
     /// A three-plane vertex no road reaches: its carriers share no frame the exact roads read
     /// ([`nacre_topo::Model::vertex_meet`] declines, or the meet is wider than `Rat` under a
     /// motion), **and** one of them has no witness triangle of its own for the mixed road
-    /// (`rotated_vertex::surface_witness_triangle` — a nameless `Through` carrier, a chain outside
-    /// the decimal window).
+    /// (`rotated_vertex::surface_witness_triangle` — a chain outside the decimal window, or a
+    /// judged frame that does not stand).
     NoMeet,
     /// A three-plane definition whose planes meet in **no point** — parallel, or sharing a line —
     /// decided exactly from their names ([`nacre_topo::NamedMeet::NoPoint`]). Not a cost and not
@@ -225,6 +225,23 @@ impl Realized {
                     out[k] = nacre_exact::round_to_digits(&p[k].value, p[k].error, places)?;
                 }
                 Some(out)
+            }
+        }
+    }
+
+    /// The coordinate as high-precision values at `bits` — an exact rational divided out at `bits`,
+    /// an approached one as it stands — for a caller that carries the point on before reading it out
+    /// once. `None` where a division leaves no bounded value.
+    pub(crate) fn hp(&self, bits: usize) -> Option<[HpBounded; 3]> {
+        match &self.0 {
+            Arm::Approached(p, _) => Some(p.clone()),
+            Arm::Exact(n, d) => {
+                let d = HpBounded::of_bigint(d, bits);
+                let mut out = Vec::with_capacity(3);
+                for k in n {
+                    out.push(HpBounded::of_bigint(k, bits).div(&d, bits)?);
+                }
+                out.try_into().ok()
             }
         }
     }
@@ -696,7 +713,7 @@ fn standing_of(halves: &[bool; 2], no_road: bool) -> CacheStanding {
 
 /// **A surface's cache realized from its truth on `budget`**, the parts that do not answer kept
 /// from the cache as it stands — with the standing that earns. `None` where nothing can be
-/// realized at all (no road: a mixed-frame `Through` plane, an unreadable chain).
+/// realized at all (no road: an unreadable chain, a witness that does not stand).
 pub(crate) fn surface_realization(
     model: &Model,
     h: Handle<Surface>,
@@ -929,12 +946,12 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
     let (motion, sense) = (*motion, *sense);
     // The statement's points: a `Known` plane's own, a `Through` plane's vertex meets in the frame
     // they meet in (which the plane's motion continues). A mixed-frame `Through` has none, and no
-    // name: there is no road.
+    // name: its vertices are each placed by their own chain, and it takes its own road.
     let meets: [MeetPoint; 3] = match points {
         nacre_topo::PlanePoints::Known(p) => p.map(MeetPoint::Narrow),
         nacre_topo::PlanePoints::Through(vs) => match model.through_meets(*vs) {
             Some((m, _)) => m,
-            None => return Some((Half::NoRoad, Half::NoRoad)),
+            None => return Some(nameless_halves(model, h, vs[0], motion, budget)),
         },
     };
     let name = model.surface_name.get(&h);
@@ -997,6 +1014,57 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         },
     };
     Some((anchor, normal))
+}
+
+/// **A nameless `Through` plane's halves** — the plane its witness triangle spans
+/// ([`crate::rotated_vertex::plane_witness`], the triangle the judging table winds), facing the way
+/// that triangle's `turn` says, and anchored at its first defining point: `first`, realized from its
+/// definition and carried through the plane's own chain (the producer anchors there too —
+/// `FrameThrough::anchor_coord`).
+///
+/// ★ Not the rejected «spread a judging witness into the cache's normal» (design 「가지 말 것」):
+/// that draft multiplied `sense` onto a frame's probes, whose turn is the frame's, not the
+/// statement's. `turn` is the sign the witness comes with — `sense` for the statement's own points,
+/// the frame's relation to the facing for probes — the one the judging table winds by at every
+/// boolean. A named plane carries its name's normal instead ([`carried_name_normal`]).
+///
+/// The cost cap counts what this replays: the plane's own chain and its vertices' carriers'
+/// ([`Model::plane_replay_depth`]).
+fn nameless_halves(
+    model: &Model,
+    h: Handle<Surface>,
+    first: Handle<Vertex>,
+    motion: Option<Handle<nacre_topo::MotionNode>>,
+    budget: Budget,
+) -> PlaneHalves {
+    if budget == Budget::Cache
+        && model.plane_replay_depth(h, CACHE_REPLAY_COST_CAP) > CACHE_REPLAY_COST_CAP
+    {
+        return (Half::Stopped, Half::Stopped);
+    }
+    let (Some(w), Some(chain)) = (
+        crate::rotated_vertex::plane_witness(model, h),
+        match motion {
+            Some(leaf) => motion_chain(model, leaf),
+            None => Some(Vec::new()),
+        },
+    ) else {
+        return (Half::NoRoad, Half::NoRoad);
+    };
+    let rungs = budget.rungs();
+    let facing = if w.turn < 0 {
+        nacre_topo::Orientation::Reversed
+    } else {
+        nacre_topo::Orientation::Forward
+    };
+    let normal = Half::from_stopped(spanned_normal(&w.points, facing, rungs));
+    let anchor = Half::from_stopped(on_rungs(rungs, |bits| {
+        let p = build(model, model.vertex(first), bits, &mut Accel::default())
+            .ok()?
+            .hp(bits)?;
+        Some(nacre_judge::fold_suffix(p, &chain, bits))
+    }));
+    (anchor, normal)
 }
 
 /// The plane's unit normal from its (narrow) pre-motion name `n`, carried by `chain`.
@@ -1080,8 +1148,8 @@ fn on_rungs(
 /// ★ `left_*` are not error counts. They are what the model keeps that no precision paid here
 /// settled, split by name the way the cache variants are: `left_undecided` — the paid road ran out
 /// of ladder (a `Ceiling` it could not raise) — and `left_unrealized` — there is no road (an
-/// `Unrealized` cache: a vertex `NoMeet` or `NoCurvedPoint` reaches, a mixed-frame `Through`
-/// plane), or for a vertex `NoPoint`, a definition that names no point. "This model is expensive"
+/// `Unrealized` cache: a vertex `NoMeet` or `NoCurvedPoint` reaches, a plane whose chain cannot be
+/// read), or for a vertex `NoPoint`, a definition that names no point. "This model is expensive"
 /// and "this cannot be realized" stay different reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refined {
@@ -1297,7 +1365,7 @@ fn rim_centre(
 }
 
 /// [`edge_given`]'s line arm — `None` where a carrier is not a plane, a carrier
-/// has no road (a nameless `Through`), the budget does not walk the chain, or no rung decides.
+/// has no witness, the budget does not walk the chain, or no rung decides.
 fn line_direction(
     model: &Model,
     s: [Handle<Surface>; 2],
@@ -1620,20 +1688,9 @@ pub fn line_direction_from_endpoints(
 ) -> Option<([f64; 3], bool)> {
     let ends = model.edge(e).vertices;
     let hp = |v: Handle<Vertex>| -> Option<[HpBounded; 3]> {
-        match build(model, model.vertex(v), bits, &mut Accel::default())
+        build(model, model.vertex(v), bits, &mut Accel::default())
             .ok()?
-            .0
-        {
-            Arm::Approached(p, _) => Some(p),
-            Arm::Exact(n, d) => {
-                let d = HpBounded::of_bigint(&d, bits);
-                let mut out = Vec::with_capacity(3);
-                for k in &n {
-                    out.push(HpBounded::of_bigint(k, bits).div(&d, bits)?);
-                }
-                out.try_into().ok()
-            }
-        }
+            .hp(bits)
     };
     let (a, b) = (hp(ends[0])?, hp(ends[1])?);
     let u = unit(core::array::from_fn(|k| b[k].sub(&a[k], bits)), bits)?;
@@ -1895,7 +1952,7 @@ fn build_meet(
 }
 
 /// One carrier plane's coefficients at `bits`, from its witness triangle. `NoMeet` for a carrier
-/// that has none (a nameless `Through` carrier — depth — or a chain outside the decimal window).
+/// that has none (a chain outside the decimal window, or a judged frame that does not stand).
 fn realize_plane(
     model: &Model,
     h: Handle<Surface>,

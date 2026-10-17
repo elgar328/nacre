@@ -265,6 +265,33 @@ fn every_plane_faces_the_way_its_truth_says() {
             found,
             "{name}: no live face on a nameless plane of that motion"
         );
+        // ★ And each such plane's cache is realized from its truth — the funnel's own answer asked
+        // again, as the census holds every other plane to it.
+        for &s in m.live_solids() {
+            for &f in &m.shell(m.solid(s).outer).faces {
+                let h = m.face(f).surface;
+                let nameless = matches!(
+                    m.surface(h),
+                    nacre_topo::Surface::Plane {
+                        points: nacre_topo::PlanePoints::Through(_),
+                        ..
+                    }
+                ) && !m.surface_name.contains_key(&h);
+                if !nameless {
+                    continue;
+                }
+                assert_eq!(
+                    m.surface_cache_standing(h),
+                    nacre_topo::CacheStanding::Realized,
+                    "{name}: a nameless plane's cache is its truth's realization"
+                );
+                assert_eq!(
+                    crate::realize_surface_cache(m, h).map(|(c, _)| c).as_ref(),
+                    Some(m.surface_cache(h)),
+                    "{name}: and the funnel's answer, asked again"
+                );
+            }
+        }
     }
 
     let (mut mirrored_seen, mut turned_seen) = (0, 0);

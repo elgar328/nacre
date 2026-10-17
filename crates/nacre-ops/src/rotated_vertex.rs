@@ -162,23 +162,12 @@ pub(crate) struct WitnessTriangle {
 }
 
 /// **A carrier plane's witness triangle on the cache roads** — [`plane_witness`]'s points, for a
-/// consumer that realizes the carrier's coefficients and asks nothing of their turn. `None` for a
-/// cylinder, an unreadable chain, and a nameless `Through` carrier, whose witness these roads do not
-/// read.
+/// consumer that realizes the carrier's coefficients and asks nothing of their turn (the mixed
+/// vertex road, an edge's direction, a seam's cap). `None` for a cylinder or an unreadable chain.
 pub(crate) fn surface_witness_triangle(
     model: &Model,
     h: Handle<Surface>,
 ) -> Option<[WitnessPoint; 3]> {
-    if matches!(
-        model.surface(h),
-        Surface::Plane {
-            points: nacre_topo::PlanePoints::Through(_),
-            ..
-        }
-    ) && !model.surface_name.contains_key(&h)
-    {
-        return None;
-    }
     plane_witness(model, h).map(|w| w.points)
 }
 
@@ -205,8 +194,9 @@ pub(crate) fn replayed_triangle(
 /// straddling population, **and** the pure-but-too-wide one, which a meet represents
 /// without ever asking the coordinate to fit anything.
 ///
-/// `None` for a seam vertex, or a carrier that has no witness triangle of its own (a nameless
-/// `Through` carrier — depth — or a chain outside the decimal window). The producer tells those
+/// `None` for a seam vertex, or a carrier that has no witness triangle of its own (a chain outside
+/// the decimal window). A nameless carrier has one ([`plane_witness`]), though the datum door refuses
+/// a statement on such a carrier before asking (the depth question). The producer tells those
 /// apart by cause before any plane is pushed; here one answer suffices, because reaching this
 /// through an *accepted* statement re-derives the same deterministic result.
 pub(crate) fn through_judged_points(
