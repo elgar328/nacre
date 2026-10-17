@@ -696,8 +696,8 @@ pub enum Vertex {
     /// 두 곡면의 교차 «곡선» 위의 점 — 원통 seam(테두리 원의 θ=0). 쌍은 곡선을 박고, 그 위의
     /// 점을 고르는 것은 원통 진실의 `ref_dir`(`CylinderDef`)이다 — 그래서
     /// `OnSeam([cylinder, cap])` 은 「rim ∩ +`ref_dir` 광선」으로 **정확히 지정된 한 점**이다.
-    /// 정의에서 좌표를 재생하는 기계는 `realize_vertex`(`seam_point`)다.
-    /// 계획: 재생한 값을 캐시에 되쓰는 것 — 그것이 없는 동안 STEP 은 만들 때 나온 f64 를 내보낸다(todo).
+    /// 정의에서 좌표를 재생하는 기계는 `realize_vertex`(`seam_point`)이고, push 깔때기가 같은 도로로
+    /// 실현해 캐시에 넣는다.
     OnSeam([Handle<Surface>; 2]),
     /// 이 점은 도법기하의 **관통점**(piercing point)이다 — 두 평면의 교선이 원통 옆면을 뚫는 자리.
     /// 담체 종류를 **구조로** 말한다(닮은 핸들 셋이 아니라). 교선 방향은 저장 순서(오름차순
@@ -1043,7 +1043,7 @@ pub enum PointCache {
     Unrealized { coord: Point3 },                                 //   실현이 뒤에 없다 — 도로가 없거나, 안 물었거나
 }
 // 연산이 만든 정점은 push 시점에 실현되므로(`push_vertex_realized`) 거의 전부 `Bounded` 다
-//   (census 결과 정점 4,972/4,972). 모션 이력이 갈린 담체의 코너는 담체마다의 증인 삼각형으로 실현된다
+//   (census 결과 정점 5,082/5,082). 모션 이력이 갈린 담체의 코너는 담체마다의 증인 삼각형으로 실현된다
 //   (담체마다 `surface_witness_triangle` → `nacre_judge::plane_hp`, 세 평면의 교점 `meet_hp`, 한 묶음 동안 평면은
 //   `PlaneMemo` 가 한 번만 실현한다); 그 도로는 증인 점 아홉을 재생하므로 비용 한계가
 //   그 합을 센다.

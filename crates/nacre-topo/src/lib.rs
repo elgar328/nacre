@@ -52,7 +52,7 @@ pub enum Vertex {
     /// sits in the cylinder's truth ([`CylinderDef`]): `OnSeam([cylinder, cap])`
     /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
     /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
-    /// it; what remains is writing that back into the cache.
+    /// it — the road the push funnel realizes the cache on.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
     /// per-variant; [`Vertex::Pierce`] is the first.
     OnSeam([Handle<Surface>; 2]),
