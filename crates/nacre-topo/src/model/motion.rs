@@ -49,9 +49,10 @@ impl Model {
         false
     }
 
-    /// **How many nodes a replay through `leaf`'s chain walks**, counted no further than `n + 1` — the
-    /// same length [`Model::motion_deeper_than`] asks about, as a number, for a caller that sums the
-    /// replays several chains will cost.
+    /// **How many nodes a replay through `leaf`'s chain walks**, counted until the count passes `n` —
+    /// the same length [`Model::motion_deeper_than`] asks about, as a number, for a caller that sums
+    /// the replays several chains will cost. Past `n` the number says only that: a frame step adds
+    /// what its plane unfolds to at once, so it can overshoot.
     ///
     /// ★ **A frame node counts what it unfolds to.** It names a plane, and a replay runs the frame
     /// and then that plane's own chain (`nacre_ops`' `frame_chain`), so the node is one step plus
