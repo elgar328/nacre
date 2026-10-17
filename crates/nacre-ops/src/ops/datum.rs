@@ -164,9 +164,11 @@ pub(super) fn datum_plane(
         // says "no frame" while the door says "this one" stops there (it once filed a frame-local
         // name as a world plane — `a_datum_through_frame_local_vertices_is_not_a_world_plane`).
         // One decision, one place.
-        let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
-        let mut frames = [None; 3];
-        for (i, vh) in vs.iter().enumerate() {
+        // ★★ **Every vertex is asked what it is before any is solved.** A straddling vertex makes
+        // the statement nameless on the spot (below), so a refusal asked inside the same pass would
+        // be skipped for every vertex after it in handle order — and the depth question would be
+        // answered by which vertex happened to be older.
+        for vh in &vs {
             let tri = match *model.vertex(*vh) {
                 nacre_topo::Vertex::ThreePlane(tri) => tri,
                 // A through-vertices datum needs three-plane meets; a seam vertex has no
@@ -184,6 +186,10 @@ pub(super) fn datum_plane(
                 // the label further.
                 return Err(OpError::VerticesInMixedFrames);
             }
+        }
+        let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
+        let mut frames = [None; 3];
+        for (i, vh) in vs.iter().enumerate() {
             let Some((meet, frame)) = model.vertex_meet(*vh) else {
                 // ★ A straddling vertex — no rational coordinate anywhere, but a complete
                 // definition (the meet of its carriers). The judged road takes it, as

@@ -1173,10 +1173,124 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::CollinearVertices
     );
 
-    // ★ The pure-vertices-in-different-frames shape is **not on this list** — it is accepted,
-    // and `a_nameless_datum_hosts_a_sketch_end_to_end` is where it lives. What stays refused under
-    // `VerticesInMixedFrames` is a single
-    // vertex whose own carriers straddle (`a_datum_on_straddling_carriers_has_no_name`).
+    // ★★ `VerticesInMixedFrames` names the depth question: a vertex one of whose carriers is itself a
+    // nameless datum. Asked of all three vertices before any is solved, so a straddling vertex that
+    // comes first in handle order (and would make the statement nameless) does not let the next one
+    // through — two boxes turned about different axes and fused give the straddler, a prism on a
+    // nameless datum gives the corner on a nameless carrier.
+    let mut dp = Model::new();
+    let moved = |m: &mut Model, solid, axis, deg: i128| match apply(
+        m,
+        &Operation::Transform {
+            solid,
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+                axis,
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(deg)).unwrap(),
+            }),
+        },
+    ) {
+        Ok(OpOutput::Transform { solid }) => solid,
+        other => panic!("a turn: {other:?}"),
+    };
+    let a = nacre_ops::fixtures::cuboid(
+        &mut dp,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([2.0, 2.0, 2.0]),
+    );
+    let b = nacre_ops::fixtures::cuboid(
+        &mut dp,
+        Point3::from_array([1.0, 1.0, 1.0]),
+        Point3::from_array([3.0, 3.0, 3.0]),
+    );
+    dp.rebuild_adjacency();
+    let a = moved(&mut dp, a, Axis::Z, 37);
+    let b = moved(&mut dp, b, Axis::X, 20);
+    let Ok(OpOutput::Boolean { solids }) = apply(
+        &mut dp,
+        &Operation::Boolean {
+            kind: nacre_ops::BoolKind::Fuse,
+            a,
+            b,
+        },
+    ) else {
+        panic!("the fuse")
+    };
+    dp.rebuild_adjacency();
+    let carriers_named = |m: &Model, v| match m.vertex(v) {
+        nacre_topo::Vertex::ThreePlane(t) => t.iter().all(|h| m.surface_name.contains_key(h)),
+        _ => false,
+    };
+    let straddler = dp
+        .reachable_from(&solids)
+        .vertices
+        .into_iter()
+        .filter(|&v| carriers_named(&dp, v) && dp.vertex_meet(v).is_none())
+        .min_by_key(|v| v.index())
+        .expect("a fused corner straddles");
+    let still = nacre_ops::fixtures::cuboid(
+        &mut dp,
+        Point3::from_array([10.0, 0.0, 0.0]),
+        Point3::from_array([11.0, 1.0, 1.0]),
+    );
+    dp.rebuild_adjacency();
+    let top = dp.shell(dp.solid(still).outer).faces[1];
+    let sc: Vec<_> = (0..3)
+        .map(|k| dp.he_start(dp.face(top).outer.half_edges[k]))
+        .collect();
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut dp,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices([straddler, sc[0], sc[1]]),
+        },
+    )
+    .expect("a datum through a straddler is nameless, not refused") else {
+        unreachable!()
+    };
+    assert!(!dp.surface_name.contains_key(&plane));
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut dp,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 0.5),
+            dist: 0.5,
+        },
+    )
+    .expect("a prism on the nameless datum") else {
+        unreachable!()
+    };
+    dp.rebuild_adjacency();
+    let on_nameless = dp
+        .reachable_from(&[prism])
+        .vertices
+        .into_iter()
+        .find(|&v| !carriers_named(&dp, v))
+        .expect("the prism has corners on the nameless datum");
+    let straddlers: Vec<_> = dp
+        .reachable_from(&solids)
+        .vertices
+        .into_iter()
+        .filter(|&v| carriers_named(&dp, v) && dp.vertex_meet(v).is_none() && v != straddler)
+        .collect();
+    let first = straddlers
+        .iter()
+        .copied()
+        .find(|v| v.index() < on_nameless.index())
+        .expect("a straddler older than the prism");
+    assert_eq!(
+        through(&mut dp, [first, on_nameless, sc[2]]),
+        OpError::VerticesInMixedFrames,
+        "a straddler first in handle order"
+    );
+    assert_eq!(
+        through(&mut dp, [on_nameless, sc[2], sc[1]]),
+        OpError::VerticesInMixedFrames,
+        "no straddler at all"
+    );
+
+    // ★ The pure-vertices-in-different-frames shape is **not on this list** — it is accepted, and
+    // `a_nameless_datum_hosts_a_sketch_end_to_end` is where it lives; so is a single vertex whose own
+    // carriers straddle (`a_datum_on_straddling_carriers_has_no_name`).
 }
 
 /// ★★★★★ **A nameless datum, end to end**: a datum through three vertices
