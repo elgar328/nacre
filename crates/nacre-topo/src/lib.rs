@@ -872,8 +872,10 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///   road pays for (`nacre_ops`'s cost cap — a chain whose fold answers is read at any depth).
 ///   `nacre_ops::refine_caches` is what lifts these.
 /// - [`Self::Unrealized`] — **no realization stands behind the coordinate**: the kernel has no road
-///   to it (the realization declines by name), or nobody asked (a hand-built fixture). The figure
-///   is the construction's own, and a checker applies its construction epsilon.
+///   to it (the realization declines by name), the definition names no point (three planes that
+///   meet in none — a producer's bug `validate` reports), or nobody asked (a hand-built
+///   fixture). The figure is the construction's own, and a checker applies its construction
+///   epsilon.
 ///
 /// ⚠★★★ **There is no stored tolerance.** A residual is **not** a bound: it is one distance,
 /// from the point to its carriers, and says nothing about how

@@ -355,7 +355,7 @@ const CACHE_REPLAY_COST_CAP: usize = 192;
 ///
 /// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
 /// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
-/// [`PointCache::Unrealized`] (there is no road).
+/// [`PointCache::Unrealized`] (there is no road, or no point to reach).
 pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     realize_cache_tracked(model, def, &mut Accel::default())
 }
@@ -496,9 +496,11 @@ pub(crate) fn push_vertex_asked(
 ///
 /// ★ **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
 /// two reasons that mean "ask again and pay more" become [`PointCache::Ceiling`]; everything else
-/// means the kernel has no road, and becomes [`PointCache::Unrealized`]. That split exists for the
-/// reader: "this model is expensive" and "the kernel cannot do this" are different reports, and a
-/// single label would hide the second behind the first.
+/// means no realization can stand behind the coordinate, and becomes [`PointCache::Unrealized`] —
+/// the kernel has no road, or the definition names no point at all ([`RealizeError::NoPoint`], a
+/// producer's bug `validate` reports). That split exists for the reader: "this model is expensive"
+/// and "this cannot be realized" are different reports, and a single label would hide the second
+/// behind the first.
 pub(crate) fn point_cache<E>(
     model: &Model,
     def: &Vertex,
@@ -1079,7 +1081,8 @@ fn on_rungs(
 /// settled, split by name the way the cache variants are: `left_undecided` — the paid road ran out
 /// of ladder (a `Ceiling` it could not raise) — and `left_unrealized` — there is no road (an
 /// `Unrealized` cache: a vertex `NoMeet` or `NoCurvedPoint` reaches, a mixed-frame `Through`
-/// plane). "This model is expensive" and "the kernel cannot do this" stay different reports.
+/// plane), or for a vertex `NoPoint`, a definition that names no point. "This model is expensive"
+/// and "this cannot be realized" stay different reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refined {
     pub refined: usize,
@@ -1113,7 +1116,7 @@ pub struct RefineReport {
 ///    vertex caches (a line's anchor) and the surface caches (a rim's frame).
 ///
 /// `Realized`/`Bounded` caches are already the realization and are not touched. An `Unrealized`
-/// vertex has no road; an `Unrealized` surface may have one to the half it still lacks, so it is
+/// vertex has no road (or no point); an `Unrealized` surface may have one to the half it still lacks, so it is
 /// asked — what cannot be realized is counted by name. «Live» is what the live solids reach: a surface no live
 /// face carries (a datum plane nothing was built on) is not walked, as an export does not write it.
 ///

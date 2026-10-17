@@ -547,10 +547,10 @@ fn record(
             //
             // ★★ The contract is **answer ⇔ variant**, three ways: the road answers and the cache is
             // `Bounded` with that very coordinate and bound, bit for bit; the road stops for bits or
-            // cost and the cache is `Ceiling`; the road has no way there at all and the cache is
-            // `Unrealized`. The refusals are counted **by name**, not as one lump — "a paid road can
-            // answer" and "there is no road" are different reports, one a cost and the other a gap
-            // in the kernel. Nothing here opens the refine door, so no vertex may be `raised`.
+            // cost and the cache is `Ceiling`; the road has no way there at all (or the definition
+            // names no point) and the cache is `Unrealized`. The refusals are counted **by name**, not
+            // as one lump — "a paid road can answer" and "this cannot be realized" are different
+            // reports, one a cost and the other a gap. Nothing here opens the refine door, so no vertex may be `raised`.
             let mut seen = std::collections::HashSet::new();
             let mut vertices = Vec::new();
             for &s in v {
