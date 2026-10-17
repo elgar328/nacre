@@ -261,9 +261,10 @@ impl Mag {
 
     /// **An `f64` no smaller than this bound** — `2^e`, since the mantissa is below one, built from
     /// the exponent field as `pow2_f64` is. Below the normal range it is the smallest normal
-    /// (`f64::MIN_POSITIVE`), the floor every `f64` bound in this kernel keeps: a subnormal's
-    /// rounding error is a fixed half step, not a fraction of the value, so the relative
-    /// arithmetic its readers do (`(… + upper) · (1 + 2ε)`) would not hold there. Above the range it
+    /// (`f64::MIN_POSITIVE`), the floor a bound keeps wherever it is read out into an `f64`
+    /// ([`crate::Bounded::round_off`] floors the same way): a subnormal's rounding error is a fixed
+    /// half step, not a fraction of the value, so the relative arithmetic its readers do
+    /// (`(… + upper) · (1 + 2ε)`) would not hold there. Above the range it
     /// is honestly infinite (an infinite radius declines, never lies). `0.0` only for the bound
     /// zero.
     ///
