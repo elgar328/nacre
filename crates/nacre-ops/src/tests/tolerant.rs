@@ -164,7 +164,7 @@ fn orient3d_is_rotation_invariant() {
 fn plane_def_from_face() {
     let on_plane = |pi: &crate::planes::WorkingPlane| {
         for d in &pi.tri_pt3 {
-            let dist = pi.plane.distance(Point3::from_array(d.coord()));
+            let dist = pi.plane.distance(Point3::from_array(d.coord_approx()));
             assert!(dist < 1e-9, "a witness point sits {dist:e} off its plane");
         }
     };
@@ -550,7 +550,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
                 plane: f.plane,
                 orient_sign: f.orient_sign,
                 tri_pt3: std::array::from_fn(|i| {
-                    let c = f.tri_pt3[i].coord();
+                    let c = f.tri_pt3[i].coord_approx();
                     let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
                     WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
                         .mirror(Axis::X, Rat::from_int(1))
@@ -564,8 +564,8 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
         let (a, b) = (a.plane(), b.plane());
         for i in 0..3 {
             assert_eq!(
-                a.tri_pt3[i].coord(),
-                b.tri_pt3[i].coord(),
+                a.tri_pt3[i].coord_approx(),
+                b.tri_pt3[i].coord_approx(),
                 "same coordinates"
             );
             // The *operation* is exact on these integers, but `tol` is an a-priori bound
@@ -573,8 +573,8 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
             // zero. Sound, and it costs nothing here: the base frame is chosen on the
             // rational `base`, not on `tol`.
             for k in 0..3 {
-                let t = b.tri_pt3[i].realized[k].error;
-                let c = b.tri_pt3[i].realized[k].value.abs();
+                let t = b.tri_pt3[i].coord_iv[k].error;
+                let c = b.tri_pt3[i].coord_iv[k].value.abs();
                 assert!(
                     t <= 4.0 * f64::EPSILON * c.max(1.0),
                     "reflection tol stays within a few ulp"
@@ -1109,7 +1109,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
 fn two_caps_described_exactly_are_one_plane() {
     use nacre_exact::Mag;
     use nacre_judge::predicate::{Judge, Notes};
-    use nacre_judge::{Standard, WitnessPoint};
+    use nacre_judge::{ProofStandard, WitnessPoint};
 
     let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
     let faces = collect_planes(&m, s).unwrap();
@@ -1165,7 +1165,7 @@ fn two_caps_described_exactly_are_one_plane() {
     // A two-plane table over those definitions. `base_rat: None` keeps the composed-rotation
     // shortcut out of it, so what runs is the interval route.
     let mk = |d: [WitnessPoint; 3]| {
-        let tri = d.clone().map(|p| Point3::from_array(p.coord()));
+        let tri = d.clone().map(|p| Point3::from_array(p.coord_approx()));
         WorkingPlane {
             base_rat: None,
             world: None,
@@ -1186,7 +1186,7 @@ fn two_caps_described_exactly_are_one_plane() {
         let notes = Notes::new();
         // ★ A limit no realization can reach, so the judge never answers `Coincident` and has
         // to report the bound it actually achieved.
-        let standard = Standard {
+        let standard = ProofStandard {
             prec,
             coincidence: Mag::pow2(-4000),
             scale: Mag::of(16.0),
@@ -1228,7 +1228,7 @@ fn two_caps_described_exactly_are_one_plane() {
     let mut flattened = false;
     for prec in [128usize, 192, 256, 384, 512] {
         let notes = Notes::new();
-        let standard = Standard {
+        let standard = ProofStandard {
             prec,
             coincidence: Mag::pow2(-4000),
             scale: Mag::of(16.0),
@@ -1594,7 +1594,7 @@ mod wide_name_rescue {
     use crate::planes::WorkingPlane;
     use crate::{DatumDef, OpOutput, Profile2d};
     use nacre_exact::{Mag, PlaneName};
-    use nacre_judge::Standard;
+    use nacre_judge::ProofStandard;
     use nacre_judge::predicate::{Judge, Notes, name_stored_ints};
     use nacre_math::Point2;
     use num_bigint::BigInt;
@@ -2020,7 +2020,7 @@ mod wide_name_rescue {
                     };
                     let tri_pt3: [WitnessPoint; 3] = bases.map(WitnessPoint::at);
                     let tri: [Point3; 3] =
-                        std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord()));
+                        std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord_approx()));
                     WorkingPlane {
                         base_rat: None,
                         world: None,
@@ -2055,7 +2055,7 @@ mod wide_name_rescue {
         let negated = build([-1; 5], true);
         let mixed = build([1, -1, 1, 1, -1], true);
 
-        let starved = Standard {
+        let starved = ProofStandard {
             prec: 8,
             coincidence: Mag::pow2(-4000),
             scale: Mag::of(16.0),

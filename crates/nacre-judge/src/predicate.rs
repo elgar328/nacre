@@ -19,7 +19,7 @@
 //! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, MoveNode, Standard, WitnessPoint, chain_parity, cramer_iv, dir_sign_judge,
+    Decision, MoveNode, ProofStandard, WitnessPoint, chain_parity, cramer_iv, dir_sign_judge,
     indirect_cmp_coord_judge, orient3d_from_cramer, orient3d_judge,
 };
 use nacre_exact::{Orient, Rat};
@@ -365,7 +365,7 @@ pub struct Judge<'a, W> {
     /// The witness table these indices name.
     pub planes: &'a [W],
     /// How deeply to realize, and how close counts as one thing.
-    pub standard: Standard,
+    pub standard: ProofStandard,
     /// Where an inconclusive judgement's evidence is collected — diagnostic only; nothing read
     /// from here changes a sign, a merge or a coordinate.
     pub notes: &'a Notes,
@@ -398,7 +398,7 @@ type BoundedCell = std::sync::OnceLock<[nacre_exact::Bounded; 4]>;
 type BoundedCell = std::cell::OnceCell<[nacre_exact::Bounded; 4]>;
 
 impl<'a, W> Judge<'a, W> {
-    pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
+    pub fn new(planes: &'a [W], standard: ProofStandard, notes: &'a Notes) -> Judge<'a, W> {
         Judge {
             planes,
             standard,
@@ -425,7 +425,7 @@ impl<'a, W> Judge<'a, W> {
 /// The plane-class predicates — the questions the arrangement asks of a plane table.
 ///
 /// Each routes itself: all-axis-aligned planes take the exact path and never build a `WitnessPoint`;
-/// any rotated plane goes to the kernel judges, under this operation's [`Standard`], with what
+/// any rotated plane goes to the kernel judges, under this operation's [`ProofStandard`], with what
 /// it could not prove recorded in [`Judge::notes`].
 impl<W: Witness> Judge<'_, W> {
     /// Plane `k`'s interval coefficients, built once and copied thereafter.
@@ -711,7 +711,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
 /// `Judge` behind it, borrowed immutably. (On the `Judge` this cache would need a lock, and a lock
 /// here would serialize the parallel arrangement.)
 ///
-/// One lifetime suffices: `Judge`'s fields are `&'a [W]`, `Standard`, `&'a Notes` and an owned
+/// One lifetime suffices: `Judge`'s fields are `&'a [W]`, `ProofStandard`, `&'a Notes` and an owned
 /// `Vec`, all covariant in `'a`, so `&'p Judge<'a, W>` coerces to `&'p Judge<'p, W>`.
 pub struct ImplicitPoint<'a, W> {
     jd: &'a Judge<'a, W>,

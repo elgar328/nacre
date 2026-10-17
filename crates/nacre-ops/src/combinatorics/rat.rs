@@ -346,7 +346,7 @@ pub(crate) fn plane_sign_hp(
 /// ★ `cfg(test)` only while the audit is its one consumer. The seam table's `Vertex` minting
 /// asks for the same pair of roads and will want it in production.
 #[cfg(test)]
-pub(crate) fn node_point_f64(
+pub(crate) fn node_point_approx(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,

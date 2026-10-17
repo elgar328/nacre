@@ -86,7 +86,7 @@ pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
 // A cylinder row contributes no witness points to the standard — structurally right, not an
 // omission: an axis-aligned-grade rational cylinder is the `rotated == false` case (its exact
 // def needs no high-precision realization); the rotated-cylinder story is CIP's.
-pub(crate) fn standard_for(rows: &[FaceRow]) -> Standard {
+pub(crate) fn standard_for(rows: &[FaceRow]) -> ProofStandard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
     // Its `tri_pt3` are `WitnessPoint::at_nearest` of the plane's own rational points and the chain
@@ -160,7 +160,7 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
     let notes: &'static Notes = Box::leak(Box::new(Notes::new()));
     Judge::new(
         planes,
-        Standard {
+        ProofStandard {
             prec: 256,
             coincidence: Mag::pow2(-180),
             scale: Mag::of(1.0),
@@ -179,7 +179,7 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
 #[cfg(test)]
 pub(crate) fn standard_for_points<'a>(
     pts: impl IntoIterator<Item = &'a WitnessPoint> + Clone,
-) -> Standard {
+) -> ProofStandard {
     standard_from(pts.clone(), worst_trial(pts))
 }
 
@@ -205,10 +205,10 @@ fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>) -> Mag {
 
 /// The standard for points whose worst trial bound is already known: `scale` off the f64
 /// coordinates, the coincidence limit derived from it, and the precision that reaches it.
-fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag) -> Standard {
+fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag) -> ProofStandard {
     let mut scale = 1.0f64;
     for p in pts {
-        for c in p.coord() {
+        for c in p.coord_approx() {
             scale = scale.max(c.abs());
         }
     }
@@ -216,7 +216,7 @@ fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag
     let output_precision = scale.times(Mag::pow2(-52));
     let coincidence = output_precision.times(Mag::pow2(-128));
     let prec = nacre_judge::precision_for(worst, coincidence);
-    Standard {
+    ProofStandard {
         prec,
         coincidence,
         scale,

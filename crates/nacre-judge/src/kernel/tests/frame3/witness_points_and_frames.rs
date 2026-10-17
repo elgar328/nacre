@@ -61,8 +61,8 @@ fn one_pass_equals_node_by_node() {
             _ => unreachable!("the fixtures above hold no frame node"),
         });
         assert_eq!(
-            one_pass.coord(),
-            node_by_node.coord(),
+            one_pass.coord_approx(),
+            node_by_node.coord_approx(),
             "chain {i}: coordinate"
         );
         assert_eq!(one_pass.tol(), node_by_node.tol(), "chain {i}: tol");
@@ -72,9 +72,9 @@ fn one_pass_equals_node_by_node() {
             "chain {i}: the definition is remembered whole"
         );
         for (a, b) in one_pass
-            .realize(256)
+            .coord_hp(256)
             .iter()
-            .zip(node_by_node.realize(256).iter())
+            .zip(node_by_node.coord_hp(256).iter())
         {
             assert_eq!(a.error, b.error, "chain {i}: realization radius");
             assert_eq!(
@@ -97,7 +97,7 @@ fn one_pass_equals_node_by_node() {
 #[test]
 fn the_climb_lands_where_the_shortfall_names_in_one_jump() {
     let mut asked = Vec::new();
-    let j = Standard {
+    let j = ProofStandard {
         prec: 256,
         coincidence: Mag::pow2(-300),
         scale: Mag::of(1.0),
@@ -123,7 +123,7 @@ fn the_climb_lands_where_the_shortfall_names_in_one_jump() {
 /// the geometry only because the outcome itself is still there to be reported.
 #[test]
 fn a_gap_that_never_reaches_the_limit_is_exhausted_not_coincident() {
-    let j = Standard {
+    let j = ProofStandard {
         prec: 256,
         coincidence: Mag::pow2(-300),
         scale: Mag::of(1.0),
@@ -170,7 +170,7 @@ fn a_gap_that_never_reaches_the_limit_is_exhausted_not_coincident() {
 /// other is the geometry, and a caller that cannot tell them apart cannot act on either.
 #[test]
 fn a_degenerate_witness_is_told_apart_from_an_exhausted_one() {
-    let j = Standard {
+    let j = ProofStandard {
         prec: 256,
         coincidence: Mag::pow2(-300),
         scale: Mag::of(1.0),
@@ -249,7 +249,7 @@ fn a_structural_zero_comes_back_proved_not_assumed() {
 
     // …and the limit is genuinely consulted: ask for a coincidence a thousand bits finer than
     // the model can carry and the same judgement must refuse to call it one.
-    let strict = Standard {
+    let strict = ProofStandard {
         coincidence: Mag::pow2(-2000),
         cap: 512,
         ..j
@@ -292,7 +292,7 @@ fn a_deeper_precision_actually_narrows_the_radius() {
     let mut prev_coord: Option<i64> = None;
     let mut prev_det: Option<i64> = None;
     for prec in [256usize, 512, 1024, 2048] {
-        let coord = a.hp_coord(prec)[0]
+        let coord = a.coord_hp(prec)[0]
             .error
             .exp2()
             .expect("a rotated coordinate is not exact, so its radius is not zero");
@@ -353,7 +353,7 @@ fn the_normalized_determinant_is_a_height_in_model_units() {
                 let a = p(0, 0, (hn, hd));
                 let det = det3_hp(&a, &b, &c, &d, prec);
                 let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
-                let (bh, ch, dh) = (b.hp_coord(prec), c.hp_coord(prec), d.hp_coord(prec));
+                let (bh, ch, dh) = (b.coord_hp(prec), c.coord_hp(prec), d.coord_hp(prec));
                 let (u, v) = (
                     [
                         sub(&bh[0], &dh[0]),
@@ -505,7 +505,7 @@ fn probe_through(f: &FrameThrough) -> [[f64; 3]; 4] {
             .expect("probe coords are f64")
             .frame_through(f)
             .expect("a constructed node realizes")
-            .coord()
+            .coord_approx()
     };
     let o = ap([0.0, 0.0, 0.0]);
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -523,7 +523,7 @@ fn probe_named(pf: nacre_exact::PlaneFrame) -> [[f64; 3]; 4] {
             .expect("probe coords are f64")
             .frame(pf)
             .expect("a named frame realizes")
-            .coord()
+            .coord_approx()
     };
     let o = ap([0.0, 0.0, 0.0]);
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -673,8 +673,8 @@ fn a_meet_spelling_derives_the_same_frame_as_the_pure_one() {
         }
         // And the anchor — the one place a meet is divided — agrees with the pure cache.
         let (ap, am) = (
-            pure.anchor_coord().expect("pure anchor"),
-            meet.anchor_coord().expect("meet anchor"),
+            pure.anchor_approx().expect("pure anchor"),
+            meet.anchor_approx().expect("meet anchor"),
         );
         for k in 0..3 {
             assert!(
@@ -715,13 +715,13 @@ fn a_straddling_meet_realizes_within_its_stated_tol() {
     let q = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
         .frame_through(&ft)
         .expect("realizes");
-    let hp = q.hp_coord(GT);
+    let hp = q.coord_hp(GT);
     for (k, h) in hp.iter().enumerate() {
-        let err = abs_err(q.realized[k].value, h, GT);
+        let err = abs_err(q.coord_iv[k].value, h, GT);
         assert!(
-            err <= q.realized[k].error.max(1e-300),
+            err <= q.coord_iv[k].error.max(1e-300),
             "axis {k}: cache off by {err:e}, stated tol {:e}",
-            q.realized[k].error
+            q.coord_iv[k].error
         );
     }
     // Determinism — same statement, same node, same realization (replay's requirement).
@@ -730,7 +730,7 @@ fn a_straddling_meet_realizes_within_its_stated_tol() {
     let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
         .frame_through(&ft2)
         .expect("realizes");
-    assert_eq!(q.coord(), q2.coord());
+    assert_eq!(q.coord_approx(), q2.coord_approx());
     assert_eq!(q.tol(), q2.tol());
 }
 
@@ -795,16 +795,16 @@ fn a_heterogeneous_definition_realizes_within_its_stated_tol() {
     let q = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
         .frame_through(&ft)
         .expect("realizes");
-    let hp = q.hp_coord(GT);
+    let hp = q.coord_hp(GT);
     for (k, h) in hp.iter().enumerate() {
-        let err = abs_err(q.realized[k].value, h, GT);
+        let err = abs_err(q.coord_iv[k].value, h, GT);
         assert!(
-            err <= q.realized[k].error.max(1e-300),
+            err <= q.coord_iv[k].error.max(1e-300),
             "axis {k}: cache off the realization by {err:e}, stated tol {:e}",
-            q.realized[k].error
+            q.coord_iv[k].error
         );
         assert!(
-            q.realized[k].error > 0.0,
+            q.coord_iv[k].error > 0.0,
             "a judged frame's image carries honest positive tol"
         );
     }
@@ -816,7 +816,11 @@ fn a_heterogeneous_definition_realizes_within_its_stated_tol() {
     let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
         .frame_through(&ft2)
         .expect("realizes");
-    assert_eq!(q.coord(), q2.coord(), "same statement, same realization");
+    assert_eq!(
+        q.coord_approx(),
+        q2.coord_approx(),
+        "same statement, same realization"
+    );
     assert_eq!(q.tol(), q2.tol(), "and the same stated error");
 }
 
@@ -1015,22 +1019,22 @@ fn tol_bounds_error_over_random_chains() {
             }
             p = p.rotate_about(ax, ang, pivot);
         }
-        let hp = p.hp_coord(GT);
+        let hp = p.coord_hp(GT);
         for (axis, hp_a) in hp.iter().enumerate() {
-            let err = abs_err(p.realized[axis].value, hp_a, GT);
+            let err = abs_err(p.coord_iv[axis].value, hp_a, GT);
             // ★ **The chain belongs in the failure, not only in the summary below.** An
             // exceeded bound means a term is missing, and the first thing needed is which
             // links were involved — but the panic aborts before any summary prints, so the
             // shape has to travel with the message. It is how the asymmetry in `rot` was
             // found: the offending chain was `R M`, and nothing else was.
             assert!(
-                err <= p.realized[axis].error || err < 1e-100,
+                err <= p.coord_iv[axis].error || err < 1e-100,
                 "tol must bound the error: axis {axis}, err {err:e} > tol {:e}, links:{}",
-                p.realized[axis].error,
+                p.coord_iv[axis].error,
                 shape.desc
             );
-            if p.realized[axis].error > 0.0 {
-                let r = err / p.realized[axis].error;
+            if p.coord_iv[axis].error > 0.0 {
+                let r = err / p.coord_iv[axis].error;
                 ratio_sum += r;
                 ratio_n += 1;
                 if r > worst_ratio {
@@ -1138,21 +1142,21 @@ fn the_tangential_tol_is_unsound_and_the_mixing_one_is_not() {
             let base = [ri(bxn, bxd), ri(byn, byd), ri(0, 1)];
             let angle = deg(an, ad);
             let p = WitnessPoint::at(base).rotate(Axis::Z, angle);
-            let hp = p.compute_hp(GT);
+            let hp = p.coord_hp_uncached(GT);
             // The realization error this angle actually has — the same quantity `rotate_about`
             // charges. Using it makes the refutation stronger than a constant would: even the
             // *measured* trig error, applied tangentially, fails to bound.
             let (c, s) = angle.cos_sin_f64();
             let (dc, ds) = angle.cos_sin_error_of(c, s);
             for (k, hp_k) in hp.iter().enumerate().take(2) {
-                let err = abs_err(p.realized[k].value, hp_k, GT);
+                let err = abs_err(p.coord_iv[k].value, hp_k, GT);
                 // (1) the refuted tangential prediction: the *other* coordinate's magnitude.
-                if err > [dc, ds][k] * p.realized[1 - k].value.abs() {
+                if err > [dc, ds][k] * p.coord_iv[1 - k].value.abs() {
                     tangential_sound = false;
                     first_break.get_or_insert((bxn, bxd, byn, byd, an, ad, k));
                 }
                 // (2) the adopted mixing tol, which is what `rotate_about` computes.
-                if err > p.realized[k].error {
+                if err > p.coord_iv[k].error {
                     mixing_sound = false;
                 }
             }
@@ -1202,7 +1206,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
             let p = WitnessPoint::at(base)
                 .frame(fr)
                 .expect("a frame with positive lengths");
-            let hp = p.hp_coord(GT);
+            let hp = p.coord_hp(GT);
             // a·x + b·y + c·z + d, realized — its interval must contain zero.
             let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
             for k in 0..3 {
@@ -1258,8 +1262,8 @@ fn a_named_frame_takes_its_own_origin_and_u() {
     let q = WitnessPoint::at([Rat::from_int(0); 3])
         .frame(named)
         .unwrap();
-    let u = [0, 1, 2].map(|k| p.realized[k].value - q.realized[k].value);
-    assert!(p.realized[1].value.abs() < 1e-15, "on the plane y = 0");
+    let u = [0, 1, 2].map(|k| p.coord_iv[k].value - q.coord_iv[k].value);
+    assert!(p.coord_iv[1].value.abs() < 1e-15, "on the plane y = 0");
     assert!((u[2] - 3.0).abs() < 1e-15, "+u ran along ẑ, got {u:?}");
 
     // ★ Two spellings of one direction, one frame.
@@ -1299,7 +1303,7 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
             let p = WitnessPoint::at([ri(u, 1), ri(v, 1), Rat::from_int(0)])
                 .frame(fr)
                 .expect("a frame with positive lengths");
-            let hp = p.hp_coord(GT);
+            let hp = p.coord_hp(GT);
             let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
             for k in 0..3 {
                 e = e.add(
@@ -1314,11 +1318,11 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
                 "plane {c:?}, point ({u}, {v}): off the plane by {mag:e}, radius {error:e}"
             );
             for (k, h) in hp.iter().enumerate() {
-                let err = abs_err(p.realized[k].value, h, GT);
+                let err = abs_err(p.coord_iv[k].value, h, GT);
                 assert!(
-                    err <= p.realized[k].error || err < 1e-100,
+                    err <= p.coord_iv[k].error || err < 1e-100,
                     "plane {c:?} axis {k}: err {err:e} > tol {:e}",
-                    p.realized[k].error
+                    p.coord_iv[k].error
                 );
             }
         }
@@ -1328,7 +1332,7 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
     assert!(frame_of([2, -3, 7, 11]).v.is_some());
 }
 
-/// **`tol` bounds the error in the `coord` the frame actually wrote** — the same contract
+/// **`tol` bounds the error in the `coord_approx` the frame actually wrote** — the same contract
 /// `tol_bounds_error_over_random_chains` holds a rotation to, for the one motion
 /// whose realization is a square root rather than a cosine.
 #[test]
@@ -1340,16 +1344,16 @@ fn a_frame_s_tol_bounds_its_own_realization() {
         for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
             let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
             let p = WitnessPoint::at(base).frame(fr).unwrap();
-            let hp = p.hp_coord(GT);
+            let hp = p.coord_hp(GT);
             for (k, h) in hp.iter().enumerate() {
-                let err = abs_err(p.realized[k].value, h, GT);
+                let err = abs_err(p.coord_iv[k].value, h, GT);
                 assert!(
-                    err <= p.realized[k].error || err < 1e-100,
+                    err <= p.coord_iv[k].error || err < 1e-100,
                     "plane {c:?} at ({u},{v},{w}) axis {k}: err {err:e} > tol {:e}",
-                    p.realized[k].error
+                    p.coord_iv[k].error
                 );
-                if p.realized[k].error > 0.0 && err / p.realized[k].error > worst {
-                    worst = err / p.realized[k].error;
+                if p.coord_iv[k].error > 0.0 && err / p.coord_iv[k].error > worst {
+                    worst = err / p.coord_iv[k].error;
                     worst_at = format!("plane {c:?} at ({u},{v},{w}) axis {k}");
                 }
             }
@@ -1397,7 +1401,7 @@ fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
         let p = WitnessPoint::at(base)
             .frame_wide(&fr)
             .expect("a wide frame has positive lengths");
-        let hp = p.hp_coord(GT);
+        let hp = p.coord_hp(GT);
         // a·x + b·y + c·z + d, realized — its interval must contain zero.
         let mut e = HpBounded::exact(nacre_exact::bigint_to_bigfloat(&c[3], GT));
         for k in 0..3 {
@@ -1412,7 +1416,7 @@ fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
     }
 }
 
-/// **The wide twin of `a_frame_s_tol_bounds_its_own_realization`**: the f64 `coord`
+/// **The wide twin of `a_frame_s_tol_bounds_its_own_realization`**: the f64 `coord_approx`
 /// a wide frame writes is within the `tol` it writes, measured against a far deeper
 /// realization of the same definition.
 #[test]
@@ -1423,16 +1427,16 @@ fn a_wide_frame_s_tol_bounds_its_own_realization() {
     for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
         let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
         let p = WitnessPoint::at(base).frame_wide(&fr).unwrap();
-        let hp = p.hp_coord(GT);
+        let hp = p.coord_hp(GT);
         for (k, h) in hp.iter().enumerate() {
-            let err = abs_err(p.realized[k].value, h, GT);
+            let err = abs_err(p.coord_iv[k].value, h, GT);
             assert!(
-                err <= p.realized[k].error || err < 1e-100,
+                err <= p.coord_iv[k].error || err < 1e-100,
                 "wide frame at ({u},{v},{w}) axis {k}: err {err:e} > tol {:e}",
-                p.realized[k].error
+                p.coord_iv[k].error
             );
-            if p.realized[k].error > 0.0 && err / p.realized[k].error > worst {
-                worst = err / p.realized[k].error;
+            if p.coord_iv[k].error > 0.0 && err / p.coord_iv[k].error > worst {
+                worst = err / p.coord_iv[k].error;
                 worst_at = format!("({u},{v},{w}) axis {k}");
             }
         }
@@ -1464,7 +1468,7 @@ fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
     let p = WitnessPoint::at([ri(3, 1), ri(-7, 1), ri(2, 1)])
         .frame(fr)
         .unwrap();
-    assert_eq!(p.coord(), [3.0, -7.0, 2.0]);
+    assert_eq!(p.coord_approx(), [3.0, -7.0, 2.0]);
 }
 
 /// ★★★★ **The prize: two points sketched in one frame are judged *exactly*.**
@@ -1540,7 +1544,7 @@ fn quadrantal_origin_chain_is_tol_zero() {
         .rotate(Axis::Y, deg(270, 1));
     assert_eq!(p.tol(), [0.0; 3]);
     // and the realized coords are the exact permutation/negation (no spurious term).
-    assert_eq!(p.coord(), [7.0, -3.0, -5.0]);
+    assert_eq!(p.coord_approx(), [7.0, -3.0, -5.0]);
 }
 
 /// **A representable base measures exactly zero — `at` and `at_nearest` agree on it.**
@@ -1563,8 +1567,12 @@ fn a_representable_base_measures_exactly_zero() {
     ] {
         let fast = exact(c).expect("representable");
         let measured = WitnessPoint::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
-        assert_eq!(fast.coord(), c, "the coordinates round-trip: {c:?}");
-        assert_eq!(fast.coord(), measured.coord(), "same coord for {c:?}");
+        assert_eq!(fast.coord_approx(), c, "the coordinates round-trip: {c:?}");
+        assert_eq!(
+            fast.coord_approx(),
+            measured.coord_approx(),
+            "same coord for {c:?}"
+        );
         assert_eq!(
             measured.tol(),
             [0.0; 3],
@@ -1583,21 +1591,21 @@ fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
     let base = [r(1, 2), r(-3, 1), r(1, 8)];
     let p = WitnessPoint::at_nearest(base);
     assert_eq!(p.tol(), [0.0; 3]);
-    assert_eq!(p.coord(), [0.5, -3.0, 0.125]);
+    assert_eq!(p.coord_approx(), [0.5, -3.0, 0.125]);
     assert_eq!(p.tol(), WitnessPoint::at(base).tol());
     // One coordinate `f64` cannot hold: the contract bound on every axis, never below the
     // measured rounding, and the coordinate is the nearest f64 of the base itself.
     let base = [r(3, 10), r(1, 1), r(7, 10)];
     let p = WitnessPoint::at_nearest(base);
     let measured = WitnessPoint::at(base);
-    assert_eq!(p.coord(), measured.coord());
-    assert_eq!(p.coord(), [0.3, 1.0, 0.7]);
+    assert_eq!(p.coord_approx(), measured.coord_approx());
+    assert_eq!(p.coord_approx(), [0.3, 1.0, 0.7]);
     assert!(
         measured.tol()[0] > 0.0,
         "0.3 is not an f64 — the measurement must see it"
     );
     for k in 0..3 {
-        let x = p.coord()[k];
+        let x = p.coord_approx()[k];
         let want = (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE);
         assert_eq!(p.tol()[k], want, "axis {k}");
         // The contract: `to_f64` is nearest, so the rounding is at most half an ulp of the
@@ -1674,7 +1682,7 @@ fn at_seeds_base_rounding_tol() {
         [0.0; 3]
     );
     let third = WitnessPoint::at([ri(1, 3), ri(0, 1), ri(0, 1)]);
-    assert!(third.realized[0].error > 0.0 && third.realized[1].error == 0.0);
+    assert!(third.coord_iv[0].error > 0.0 && third.coord_iv[1].error == 0.0);
 }
 
 /// `at_with_tol` seeds a nonzero root tol (a boolean's seam vertex) and the chain
@@ -1700,8 +1708,8 @@ fn bundling_is_tighter_than_incremental() {
     let k_theta = theta.checked_mul(Rat::from_int(k)).unwrap();
     let bundled = WitnessPoint::at(base).rotate(Axis::Z, Angle::from_deg(k_theta).unwrap());
     assert!(
-        bundled.realized[0].error < incr.realized[0].error
-            && bundled.realized[1].error < incr.realized[1].error,
+        bundled.coord_iv[0].error < incr.coord_iv[0].error
+            && bundled.coord_iv[1].error < incr.coord_iv[1].error,
         "bundled {:?} must be tighter than incremental {:?}",
         bundled.tol(),
         incr.tol()

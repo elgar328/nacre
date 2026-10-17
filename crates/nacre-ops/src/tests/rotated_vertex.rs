@@ -444,7 +444,7 @@ fn chain_basis(chain: &[MoveNode]) -> WorldBasis {
     let at = |p: [i128; 3]| -> [f64; 3] {
         replay(WitnessPoint::at(p.map(R::from_int)), chain)
             .expect("the frame replays")
-            .coord()
+            .coord_approx()
     };
     let o = at([0, 0, 0]);
     let axis = |p: [i128; 3]| {

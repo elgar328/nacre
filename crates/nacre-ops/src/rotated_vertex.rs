@@ -36,7 +36,7 @@ pub(crate) fn replay_chain_coord(
     let chain = motion_chain(model, leaf).ok_or(WitnessPointError::Downgrade)?;
     Ok(replay(WitnessPoint::at(coord_rat(base_point)?), &chain)
         .ok_or(WitnessPointError::Downgrade)?
-        .coord())
+        .coord_approx())
 }
 
 /// `p` carried through `chain`, root to leaf — the one spelling of "replay" this crate has, so every
@@ -522,7 +522,7 @@ pub(crate) fn frame_world_basis(
 ) -> Option<WorldBasis> {
     let chain = frame_chain(model, plane, placement, flip)?;
     let at = |p: [i128; 3]| -> Option<[f64; 3]> {
-        Some(replay(WitnessPoint::at(p.map(Rat::from_int)), &chain)?.coord())
+        Some(replay(WitnessPoint::at(p.map(Rat::from_int)), &chain)?.coord_approx())
     };
     let o = at([0, 0, 0])?;
     let axis = |p: [i128; 3]| -> Option<[f64; 3]> {
@@ -595,7 +595,7 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                     Some(leaf) => motion_chain(model, *leaf),
                 };
                 let carry = |base: [Rat; 3]| -> Option<[f64; 3]> {
-                    Some(replay(WitnessPoint::at(base), chain.as_ref()?)?.coord())
+                    Some(replay(WitnessPoint::at(base), chain.as_ref()?)?.coord_approx())
                 };
                 let world: Option<[[f64; 3]; 3]> = match points {
                     PlanePoints::Known(p) => {

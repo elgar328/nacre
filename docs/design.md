@@ -610,7 +610,7 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
    - 부호가 **증명되면** → 그 부호(`Sign`).
    - 부호는 못 갈랐지만 **«일치 정밀도보다 가깝다»가 증명되면** → 일치로 처리하되 근거를 실어
      **보고**한다(`Decision::Coincident{within}`, `boolean_with_report`). 일치 정밀도
-     (`Standard::coincidence` = 모델 크기 × 2⁻¹⁸⁰ — f64 출력 해상도 2⁻⁵² 보다 두 워드 아래)는
+     (`ProofStandard::coincidence` = 모델 크기 × 2⁻¹⁸⁰ — f64 출력 해상도 2⁻⁵² 보다 두 워드 아래)는
      **모델에서 유도**되는 값이지 사용자 설정이 아니다 — 낮게 잡으면 비트만 더 쓰고 높게 잡으면
      진짜로 떨어진 것을 합치는 비대칭이 아래로 밀며, 그 아래의 갈라짐은 어떤 출력에도 살아남지
      못한다. 전역 tolerance(*"가까우면 붙여라"*)와 방향이 반대(*"가깝다고 **증명되어야** 일치"*)다.
@@ -634,6 +634,27 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
 7. **`Rat` 을 넓히지 않는다(C8).** 넓어지는 것은 중간값(BigInt 이름 유도·`Expansion` 술어·
    BigFloat 상승)뿐이다. 규칙 1 의 근거가 그대로 이 규칙의 근거다 — 저장되는 값의 폭은 사용자가
    쓴 기하가 정하고 연산을 쌓아도 자라지 않으므로, 넓은 그릇이 필요한 자리는 저장이 아니라 계산이다.
+
+
+### 수의 이름 — 접미사는 결과가 어떤 수이고 얼마나 믿을 수 있는지를 말한다
+
+같은 값의 다른 숫자 판이 있거나 정확한 값에서 수를 만드는 함수는 이름 끝이 그 결과를 말한다. 숫자 판이 하나뿐인 접근자
+(`SketchPlane::origin()` 등)와 f64 전용 크레이트(`nacre-geom`·`nacre-math`)는 달지 않는다. 판정의 칸은 모두 `_iv` 이상이다 —
+`_approx` 는 부호를 정하는 산술에 들어가지 않고 대략값·계측·보기, 그리고 정밀도 정책의 크기 어림(`standard_from` 의 `scale`)에만 쓰인다.
+
+| 철자 | 뜻 | 예 |
+|---|---|---|
+| `_rat` | 정확한 `Rat`. 무리수이거나 넘칠 수 있으면 `Option` | `cos_sin_rat`·`sqrt_rat`·`chain_point_rat` |
+| `_hp` | 호출자의 `prec` 에서의 `HpBounded` — 값과 건전한 반지름 | `cos_sin_hp`·`inv_sqrt_hp`·`quad_hp`·`coord_hp` |
+| `_iv` | f64 구간 `Bounded` — 값과 증명된 반지름 | `orient3d_iv`·`det3_iv`·`coord_iv` |
+| `_f64` | 참값의 최근접 `f64`(규칙 4), 또는 반올림 없이 정확한 `f64`. 사다리가 256비트에서도 반올림 경계를 못 가르면 그 구간의 중점(충실 반올림)이다 | `cos_sin_f64`·`sqrt_f64`·`unit_vector_f64`·`Rat::to_f64` |
+| `_approx` | 약속 없는 `f64` — 여러 번 반올림했거나 캐시·대략값을 `f64` 로 계산했다 | `QuadVal::to_f64_approx`·`Isometry::point_approx`·`coord_approx` |
+| `_big` | 좁은 쌍둥이가 있을 때의 넓은 입력판, 숫자 타입 뒤에 둔다. BigFloat 출력은 `_bigfloat` | `sqrt_rat_big`·`inv_sqrt_hp_big`·`rat_to_bigfloat` |
+| `_uncached` | memo 문 뒤의 본체 | `cos_sin_hp_uncached`·`coord_hp_uncached` |
+| `_exact` | 정확함에 대한 말 — 반올림 없이 결정된 답, 정확한 변종이나 반지름 0 의 구간, 정확한 피연산자를 전제로 한 연산. 반올림하는 함수에는 쓰지 않는다 | `plane_name_exact`·`is_exact`·`HpBounded::exact`·`div_exact` |
+| `exact_` 접두사 | 값이 반올림 없이 그대로 `f64` 일 때만 답한다(아니면 `None`) — 정확 술어가 기댄다 | `PlaneWitness::exact_coeffs` |
+
+정밀도 인자는 exact·judge 에서 `prec`, ops 에서 `bits`, 십진 자릿수는 `places` 다.
 
 ---
 
@@ -1032,7 +1053,7 @@ pub struct Mag { m: f64, e: i64 }                                  // f64 밖 �
 pub struct Bounded   { pub value: f64,      pub error: f64 }
 pub struct HpBounded { pub value: BigFloat, pub error: Mag }
 
-// ── 경계 지어진 점 — 원자 셋(축별). 실현(`realize`)의 출력과 `WitnessPoint.realized` 가 이 모양이다.
+// ── 경계 지어진 점 — 원자 셋(축별). 실현(`realize`)의 출력과 `WitnessPoint.coord_iv` 가 이 모양이다.
 //   값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
 //   값만 옮기고 오차를 안 옮기는 desync 가 불가능하다.
 
@@ -1149,7 +1170,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 `realize_vertex(…, NearestF64)` 와 비트 동일하고, `nacre-step` 은 `vertex_point` 를 읽는다). 자릿수를 더
 원하는 호출자의 문은 `realize_vertex_decimal` 이다 — 캐시를 더 길게 찍으면 점이 아니라 반올림이 찍힌다.
 
-| | 모델 캐시 (`PointCache`·`SurfaceCache`·`EdgeCache`) | 실현 (`WitnessPoint.realized`·`WorkingCyl.realized`) |
+| | 모델 캐시 (`PointCache`·`SurfaceCache`·`EdgeCache`) | 실현 (`WitnessPoint.coord_iv`·`WorkingCyl.realized`) |
 |---|---|---|
 | 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 문이 유도하지 못한 반쪽은 ops 깔때기가 push 한 뒤 진실에서 실현해 올린다. 답하지 않는 반쪽엔 생산자가 계산한 f64 가 서고, 표지(`CacheStanding`)가 그것을 말한다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값에 `Ceiling`). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현한 것(그 길이 답하지 않을 때만 캐시끼리의 f64 만남); 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 평면 하나라도 세계 이름이 없으면 ops 깔때기가 두 평면의 계수(세계 이름, 아니면 증인 삼각형 — `PlaneMemo`)의 외적을 실현한 최근접 단위를 따르고, 그 길이 답하지 않을 때만(비용 한계를 넘는 사슬·증인 없는 평면) 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
 | 오차 | 정점만 축별 경계 셋(`Bounded` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
@@ -1230,7 +1251,7 @@ m.rebuild_edge_cache(given) · m.rebuild_adjacency()        // 통째 재생 —
 ## 판정 (연산 동안만 산다)
 
 판정 타입은 두 크레이트에 나뉘어 산다. **`nacre-judge`** 는 정의를 든 점(`WitnessPoint`)·모션의
-펼침(`MoveNode`)·증명 기준(`Standard`)·결과(`Decision`)와, 평면 표에 던지는 질문(`Judge<W: Witness>`)을
+펼침(`MoveNode`)·증명 기준(`ProofStandard`)·결과(`Decision`)와, 평면 표에 던지는 질문(`Judge<W: Witness>`)을
 갖는다. **`nacre-ops`** 는 연산 하나 동안 모델에서 그 표를 짓는다(`pub(crate)` `FaceInfo`·`WorkingPlane`·
 `WorkingCyl`) — `nacre-judge` 는 `nacre-topo` 를 모르므로 핸들은 이 경계에서 해소된다.
 
@@ -1321,7 +1342,7 @@ pub enum MoveNode {
 /// 이 연산이 무엇을 증명으로 인정하나 — 전부 모델에서 유도, 설정 없음(nacre-ops 의 `standard_for`).
 /// 문턱은 비트 수가 아니라 **모델 단위의 길이**다: 같은 «256비트»가 한 번 돌린 솔리드엔 1e-76,
 /// 삼백 번 돌린 솔리드엔 1e+15 의 해상도라, 비트는 커널이 모델마다 계산하는 구현 세부다.
-pub struct Standard {
+pub struct ProofStandard {
     pub prec: usize,                          // 상승이 정의를 실현하는 정밀도 — 연산 내내 균일(메모가 따뜻하게)
     pub coincidence: Mag,                     // 이보다 가깝다고 **증명**되면 하나다(2⁻¹⁸⁰ 계열)
     pub scale: Mag,                           // 모델 크기 — 길이 한계를 방향 질문의 각도로 바꾼다
@@ -2444,16 +2465,16 @@ pad·pocket 은 커널 연산이 아니라 편의 레이어(kit)의 조합이다
 pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: HpRc<[MoveNode]>,
-    pub realized: [Bounded; 3],
+    pub coord_iv: [Bounded; 3],
     hp: HpCell, // memoized high-precision realization
 }
 ```
 
-- `base` + `chain` 이 정확한 **정의**이고 결코 잃지 않는다. `realized` 는 f64 실현(캐시)이며 축마다 **값과 그 오차 한계를 한 원자(`Bounded`)에** 묶는다 — 둘이 서로 어긋날 수 없다. `coord()` / `tol()` 이 벡터로 읽어 준다.
+- `base` + `chain` 이 정확한 **정의**이고 결코 잃지 않는다. `coord_iv` 는 f64 좌표(캐시)이며 축마다 **값과 그 오차 한계를 한 원자(`Bounded`)에** 묶는다 — 둘이 서로 어긋날 수 없다. `coord_approx()` / `tol()` 이 벡터로 읽어 준다 — 회전을 f64 산술로 나르므로 값은 최근접 `f64` 가 아니고, 참값까지의 증명된 거리는 `tol()` 이 든다.
 - 평면 교차점(tol = 0)과 회전 점(tol > 0)이 **같은 틀**이다. 특수 경로가 없다.
 - **tol 은 xyz 방향별 벡터다.** 스칼라(구) tol 은 정보를 버린다 — z축 둘레 회전이면 z 방향 오차가 0 인데 스칼라는 모든 방향에 실어 「z=5 평면 위인가?」를 불필요하게 애매하게 만들고 상승을 유발한다. 행렬식에서 각 방향의 오차는 **서로 다른 계수로 증폭**되므로(2D orient 에서 `a` 의 x-tol 은 `(by−cy)` 와, y-tol 은 `(bx−cx)` 와 곱해진다) 하나로 뭉치면 정확히 증폭할 수 없다. CGAL Lazy_kernel 이 좌표를 구간으로 드는 이유와 같다. nacre 는 범용 구간 산술 대신 **방향별 tol + 미리 유도한 오차 한계 공식**을 쓴다 — 술어가 소수·고정이라 유도가 가능하다(CGAL 은 술어가 수백 개라 구간을 택했다).
-- `hp_coord` 는 정의에서 임의 정밀도로 사슬을 실현한다. 같은 정의를 가진 두 점은 동일하게 실현된다(**경로 무관** — 건전성 논증의 뿌리).
-- **정의 동등성.** `WitnessPoint` 의 `PartialEq` 는 `base` 와 `chain` 만 본다. `realized`/`hp` 는 캐시이고 실현은 정의의 순수 함수이므로, 정의가 같은 두 점의 캐시는 정직하게 다를 수 없다. 이 동등성의 소비자는 `shared_base` 의 노드 통째 사슬 비교다 — 두 모션이 *한* 모션이라고 선언하는 것은 정의에 대한 질문이지 캐시에 대한 질문이 아니다. `FrameThrough` 노드가 점을 안에 싣고 있으므로 이 동등성이 노드 비교까지 닿는다.
+- `coord_hp` 는 정의에서 임의 정밀도로 사슬을 실현한다. 같은 정의를 가진 두 점은 동일하게 실현된다(**경로 무관** — 건전성 논증의 뿌리).
+- **정의 동등성.** `WitnessPoint` 의 `PartialEq` 는 `base` 와 `chain` 만 본다. `coord_iv`/`hp` 는 캐시이고 실현은 정의의 순수 함수이므로, 정의가 같은 두 점의 캐시는 정직하게 다를 수 없다. 이 동등성의 소비자는 `shared_base` 의 노드 통째 사슬 비교다 — 두 모션이 *한* 모션이라고 선언하는 것은 정의에 대한 질문이지 캐시에 대한 질문이 아니다. `FrameThrough` 노드가 점을 안에 싣고 있으므로 이 동등성이 노드 비교까지 닿는다.
 - `chain` 이 `HpRc` 인 이유: clone 을 refcount 증가로 만들면서 `parallel` 빌드의 스레드 경계를 지킨다(`parallel` 에서 `Arc`, 아니면 `Rc`). 불리언은 모든 worker 에게 같은 `&[WorkingPlane]` 를 건네므로 `WitnessPoint` 는 `Sync` 여야 한다. 고정밀 실현 캐시 `HpCell` 도 같은 선택이다(`Arc<OnceLock>` / `Rc<OnceCell>`) — 두 worker 가 한 셀을 다투어 채워도 같은 값을 계산하므로 답은 누가 이겼는지에 의존하지 않는다.
 
 **생성자는 경우를 이름으로 구분한다.**
@@ -2503,7 +2524,7 @@ pub enum JudgedPoint {
   - **`JudgedPoint`** 는 정의점이 **어떻게 진술됐는지**다. `Pure` = 자기 프레임에서 정확한 점(유리수 base + 사슬). `Meet` = **세 담체 평면의 교점 — 어디에도 좌표가 없는 점.** 각 담체는 자기 증인 삼각형으로 기술되고, 점은 담체들의 Cramer 계(`cramer_hp`)가 낸 동차 `[Dvec : D]` 로 실현된다. `Pure` 는 `[p : 1]` 이라는 특수 경우다.
   - 동차점 셋을 **사영 join**(`plane_hp_through` — 3×4 의 네 3×3 소행렬식, 부호 교대)이 평면으로 잇는다. meet(세 평면 → 점, Cramer)의 **쌍대**라 새 산술이 없다. **여기서는 아무것도 나누지 않는다** — `Dvec/D` 로 아핀 좌표를 만들면 무리수를 제조해 그 반올림을 하류 전체에 굽는다. 차수는 9 다(아핀 외적 경로는 15 — 구간 폭과 요구 정밀도가 그만큼 준다).
   - **배율의 부호는 값 안에서 없앤다.** join 은 행에 대해 다중선형이라 결과가 참 평면의 `D0·D1·D2` 배다. 양의 배는 무해하지만(평면에 묻는 것은 전부 부호 질문) 음의 배는 방향을 조용히 뒤집고, 방향은 `frame_sign`·외향 법선·딱지 프레임 전체의 토대다. 함수가 자기 결과를 부정한다. 어느 `D_i` 의 부호가 미결이면 `None` — 그 세 평면이 한 점에서 만나는지조차 모르므로 호출자가 상승한다.
-  - meet 가 나뉘는 자리는 `anchor_coord` 한 곳이다(캐시가 닻을 내릴 아핀 `[f64; 3]`). 제수는 구성상 안전하다 — `FrameThrough::of` 가 rung 유도를 증명했고 거기에 이 점의 `D` 부호가 포함된다.
+  - meet 가 나뉘는 자리는 `anchor_approx` 한 곳이다(캐시가 닻을 내릴 아핀 `[f64; 3]`). 제수는 구성상 안전하다 — `FrameThrough::of` 가 rung 유도를 증명했고 거기에 이 점의 `D` 부호가 포함된다.
 
 **실현은 나눠도 된다. 금지되는 것은 술어의 부호 질문에서의 나눗셈이다.** `HpBounded::div` 는 구간 제수로 나누되 먼저 제수를 0 에서 떼어 놓고(`None` = 제수 구간이 0 에 닿을 수 있음 — 호출자는 상승하거나 이름으로 거절한다), 자기가 만든 반경을 돌려준다. 소비자는 프레임 원점 `(−d·n)/(n·n)` 이다. `HpBounded::inv_sqrt` 는 반경을 지닌 입력의 `1/√x` 다(오차 증폭은 도함수에서: `r / (2·L^(3/2))`; `None` = `x` 가 0 에 닿거나 양이 아님 — 퇴화 법선에는 방향이 없고 호출자가 이름으로 말한다). `HpBounded::div_exact` 는 **정확한** 제수만 받는다(wide 프레임의 원점 `num / den`). 부호 질문에서 몫은 술어가 믿어야 하는 무리수를 제조하므로 거기서는 나누지 않는다.
 
@@ -2551,7 +2572,7 @@ pub enum JudgedPoint {
 
 **세 술어.** 평면 표의 인덱스로 묻는다(`Judge::orient3d` · `Judge::cmp_coord` · `Judge::plane_pair_dir_sign`).
 
-- **직접 orient3d** — 명시적 네 점. 오차 한계는 `frame3::det3_bound`: 행렬식은 간선 성분의 부호 있는 삼중곱 여섯 개이고 각 성분 `(a−d)[k]` 는 tol `tol_a[k] + tol_d[k]` 를 든다. 여섯 곱의 구간 반경(`Π(|v|+τ) − Π|v|`)의 합 + 행렬식 자체 산술의 f64 반올림 항. `orient3d_judge` 가 필터 → 상승 → 정규화된 간격 판정으로 소비한다.
+- **직접 orient3d** — 명시적 네 점. 오차 한계는 `frame3::orient3d_iv` 의 반지름이다: 행렬식은 간선 성분의 부호 있는 삼중곱 여섯 개이고 각 성분 `(a−d)[k]` 는 tol `tol_a[k] + tol_d[k]` 를 든다. 여섯 곱의 구간 반경(`Π(|v|+τ) − Π|v|`)의 합 + 행렬식 자체 산술의 f64 반올림 항. `orient3d_judge` 가 필터 → 상승 → 정규화된 간격 판정으로 소비한다.
 - **간접 orient3d** — 3-평면 implicit point 대 평면(`indirect_orient3d_judge`). 세 평면의 구간 계수 → Cramer(`cramer_iv`) → `orient3d_from_cramer`.
 - **cmp_coord** — 두 implicit point 의 한 축 좌표 비교(`indirect_cmp_coord_judge`).
 - 방향 질문(`plane_pair_dir_sign` → `dir_sign_judge`)은 길이 한계를 모델 크기로 각도로 바꿔 쓴다.
@@ -2567,7 +2588,7 @@ pub enum JudgedPoint {
 판정의 오차 반경은 `C·2⁻ᵖʳᵉᶜ` 이고 `C` 는 **모델의 성질**(회전 이력 1회당 약 1비트, 좌표 크기)이지 정밀도의 함수가 아니다. 고정 정밀도는 *모델의 회전 이력이 얼마나 길 수 있는지를 조용히 결정*한다(고정 256비트에서 245회 회전한 솔리드는 빌드에 실패한다). 그래서 `C` 를 연산마다 한 번 읽어 필요 비트를 계산한다(점마다 `trial_bound`, 그 최댓값을 `precision_for` 가 비트로).
 
 ```rust
-pub struct Standard {
+pub struct ProofStandard {
     pub prec: usize,       // the precision escalation realizes at, chosen per model
     pub coincidence: Mag,  // proved-closer-than-this means one thing
     pub scale: Mag,        // model size
@@ -2864,7 +2885,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 평면의 방향을 점 순서에서 뽑기 | 점 순서는 향을 말하지 않는다: 씨앗·datum·원통 밑캡은 관례로 점과 반대인 향을 들고(비씨앗 `Known` 342, 씨앗 전부), `Stated` datum 은 순서를 프레임 배치(`ref_dir`)로 읽고, `Through` 삼중은 정렬된 열쇠다. 향은 진실의 한 비트(`Surface::Plane.sense`)가 든다. 이름은 「어디」에 답하지 「어느 쪽」엔 못 답한다 | — |
 | 평면 캐시를 «수선의 발 앵커 + 정준 행»으로 | census 32행이 움직이고 8건이 넘친다(`n·n` 이 계수를 제곱한다). 살아남은 것은 «진실 삼중의 첫 점» 앵커뿐 | `8b53a2c` |
 | `rotated` 플래그를 풀어 회전 클래스를 원통 관문에 들이기 | 그 플래그는 정확 지름길이 평면의 이름을 세계 진술로 읽는 허가다 — 모션 있는 평면의 이름은 모션 전 프레임을 말한다. 풀었을 때는 클래스 병합이 면 꼭짓점 캐시의 삼각형 판정으로 가서 공유 벽이 두 몸으로 갈렸다(그 판정은 은퇴했다 — 병합은 세계 이름을 읽는다) | 되돌림(`planes` 주석) |
-| 접미사만 다른 형제 함수를 «중복»으로 세어 합치기 | 일곱 갈래를 열어 보니 진짜 중복은 0 이었다. `det3`(정의 10개)·`three_planes_rat`/`_big` 은 층마다 숫자 타입(`Expansion`·`f64`·`Bounded`·`HpBounded`·`BigInt`)이 다른 **정밀도 사다리**이고, 나머지는 트레이트 기본 구현+impl, 인자가 다른 별개 함수, doc 에 사유가 있는 한 줄 편의 문이었다. 세기 전에 **인자 타입**을 먼저 본다 | — |
+| 접미사만 다른 형제 함수를 «중복»으로 세어 합치기 | 일곱 갈래를 열어 보니 진짜 중복은 0 이었다. `det3`·`orient3d_iv` 계열(정의 12개)·`three_planes_rat`/`_big` 은 층마다 숫자 타입(`Expansion`·`f64`·`Bounded`·`HpBounded`·`BigInt`)이 다른 **정밀도 사다리**이고, 나머지는 트레이트 기본 구현+impl, 인자가 다른 별개 함수, doc 에 사유가 있는 한 줄 편의 문이었다. 세기 전에 **인자 타입**을 먼저 본다 | — |
 | 원통 옆면을 seam 엣지(A — 세로 seam 간선 `[c, c]` 를 두 번 쓰는 한 루프)로 짓기 | 각도의 시작점(`ref_dir`)이 위상에 새겨진다: 잘린 림마다 θ = 0 정점과 호 쪼개기(census 154·스위트 1,980), seam 에 걸린 구멍을 잇는 slit 걸음, θ = 0 에서만 보는 집힘 그물, self-pair 담체 규칙이 붙고, 같은 모양이 seam 의 자리에 따라 다른 위상이 된다. 옆면은 림 두 루프로 닫는다(「seam 엣지 방식」 B) | `e60ab2b9`, `497b54b5` |
 
 ### 정리

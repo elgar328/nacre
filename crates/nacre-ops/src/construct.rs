@@ -512,7 +512,7 @@ pub(crate) fn prism_rings_in(
                     // these round.
                     let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
                     let q = crate::rotated_vertex::replay(nacre_judge::WitnessPoint::at(b), c)?;
-                    Some(Point3::from_array(q.coord()))
+                    Some(Point3::from_array(q.coord_approx()))
                 })
                 .collect(),
         }

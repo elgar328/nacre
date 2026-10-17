@@ -701,7 +701,7 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 ///
 /// ★★ **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
 /// and two are pierce points — and the dispatch between them lives in
-/// [`combinatorics::node_point_f64`], not here: spelling a [`combinatorics::NodeId`] variant
+/// [`combinatorics::node_point_approx`], not here: spelling a [`combinatorics::NodeId`] variant
 /// outside that file is what `three_plane_name`'s gate forbids, and the first draft of this
 /// function broke it with the suite green.
 ///
@@ -712,7 +712,7 @@ fn face_ring_coords(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[LocalFace],
 ) -> Vec<Vec<[f64; 3]>> {
-    let point = |n: NodeId| combinatorics::node_point_f64(jd, cyls, n).unwrap_or([f64::NAN; 3]);
+    let point = |n: NodeId| combinatorics::node_point_approx(jd, cyls, n).unwrap_or([f64::NAN; 3]);
     let mut out: Vec<Vec<[f64; 3]>> = faces
         .iter()
         .filter_map(|f| f.outer.ring())

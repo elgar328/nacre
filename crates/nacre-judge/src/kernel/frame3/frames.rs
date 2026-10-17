@@ -228,7 +228,7 @@ fn judged_homog(p: &JudgedPoint, prec: usize) -> (HpBounded, [HpBounded; 3]) {
     match p {
         JudgedPoint::Pure(wp) => (
             HpBounded::exact(BigFloat::from_f64(1.0, prec)),
-            wp.hp_coord(prec),
+            wp.coord_hp(prec),
         ),
         JudgedPoint::Meet(carriers) => {
             let plane =
@@ -283,13 +283,13 @@ impl FrameThrough {
 
     /// The rung realization of defining point 0, as the affine `[f64; 3]` the datum producer anchors
     /// its figure at — read off the definition itself, never a second route through a vertex cache.
-    /// Not the nearest `f64` (a pure point's is its replayed `coord`): the cache road realizes the
+    /// Not the nearest `f64` (a pure point's is its replayed `coord_approx`): the cache road realizes the
     /// same point and rounds it once. For a meet this is the one place the homogeneous point is divided, and the divisor
     /// is safe by construction: [`FrameThrough::of`] proved the rung derivation, which includes
     /// this point's `D` sign.
-    pub fn anchor_coord(&self) -> Option<[f64; 3]> {
+    pub fn anchor_approx(&self) -> Option<[f64; 3]> {
         match &self.points[0] {
-            JudgedPoint::Pure(wp) => Some(wp.coord()),
+            JudgedPoint::Pure(wp) => Some(wp.coord_approx()),
             JudgedPoint::Meet(_) => {
                 let p = Self::RUNG;
                 let (d, dvec) = judged_homog(&self.points[0], p);
@@ -342,7 +342,7 @@ fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[
 
 /// The judged frame's basis at `prec` bits: `[origin, û, v̂, ŵ]`, every component carrying the
 /// error its own derivation incurred. The one place the derivation is spelled, so the f64 cache
-/// ([`WitnessPoint::frame_through`]) and the escalation ([`WitnessPoint::hp_coord`]) cannot
+/// ([`WitnessPoint::frame_through`]) and the escalation ([`WitnessPoint::coord_hp`]) cannot
 /// disagree about what the frame *is*.
 pub(super) fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpBounded; 3]; 4]> {
     let zero = || HpBounded::exact(BigFloat::from_f64(0.0, prec));

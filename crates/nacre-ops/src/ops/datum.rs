@@ -325,7 +325,7 @@ pub(super) fn datum_plane(
                 // The cache anchors at the validated realization of the first stored vertex —
                 // the definition walked through its own chain, as on the named road below.
                 let anchor =
-                    Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
+                    Point3::from_array(ft.anchor_approx().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
                 let (plane, flipped) = crate::realize::push_plane_through_realized(
@@ -367,7 +367,7 @@ pub(super) fn datum_plane(
                     let w =
                         crate::rotated_vertex::replay(nacre_judge::WitnessPoint::at(*p), &chain)
                             .ok_or(OpError::PlaneWithoutExactForm)?;
-                    Point3::from_array(w.coord())
+                    Point3::from_array(w.coord_approx())
                 }
                 (nacre_exact::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),
             };

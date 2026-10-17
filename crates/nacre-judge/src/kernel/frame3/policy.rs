@@ -13,7 +13,7 @@ use super::*;
 /// says *"a coincidence must be **proved** to be closer than this"*. Nothing is merged on
 /// ignorance; a judgement that cannot prove it climbs, and then says so.
 #[derive(Clone, Copy, Debug)]
-pub struct Standard {
+pub struct ProofStandard {
     /// The precision the escalation realizes definitions at — chosen for this model, uniform
     /// across the operation so [`WitnessPoint`]'s realization cache stays warm.
     pub prec: usize,
@@ -128,7 +128,7 @@ pub(super) fn denom_lo(v: &HpBounded) -> Result<Mag, Gap> {
 /// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
 /// starts deep, undershoot and realize everything twice for nothing.
 pub(super) fn escalate(
-    j: Standard,
+    j: ProofStandard,
     limit: Mag,
     mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
@@ -139,7 +139,7 @@ pub(super) fn escalate(
     // mistake, not a geometry one, so it fails loudly here rather than quietly answering `Zero`.
     debug_assert!(
         j.prec > 0,
-        "escalate at zero precision — unstamped Standard"
+        "escalate at zero precision — unstamped ProofStandard"
     );
     // ★ Charged on **every** way out, not just the resolved one: most climbs end in `Coincident`
     // or a proved zero, and counting only the `Ok` path reported a mean of exactly 0 bits — a
@@ -235,11 +235,11 @@ const WORD: usize = 64;
 /// be: a reassociated floating-point sum is a different number.
 pub fn trial_bound(p: &WitnessPoint) -> Mag {
     let mut worst = Mag::ZERO;
-    // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
+    // **Uncached on purpose.** `coord_hp` fills a point's realization cell with whatever
     // precision asks first, and this measurement runs before the real precision is known —
     // so going through it would fill every cell at `TRIAL_PREC` and make every later
     // judgement miss and re-realize. That is the exact cost the cell exists to remove.
-    for c in p.compute_hp(TRIAL_PREC) {
+    for c in p.coord_hp_uncached(TRIAL_PREC) {
         if worst.lt(c.error) {
             worst = c.error;
         }

@@ -5,7 +5,7 @@ use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_exact::Mag;
 use nacre_geom::Plane;
 use nacre_judge::predicate::Judge;
-use nacre_judge::{Standard, WitnessPoint};
+use nacre_judge::{ProofStandard, WitnessPoint};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Shell, Solid, Surface, Vertex};
@@ -501,7 +501,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) def: nacre_topo::CylinderDef,
     /// The f64 twin of `def` — its realization, what a construction figure reads (the rim table
     /// solves a seam vertex's figure on it), while every decision reads `def`. Not a cache of the
-    /// model: it lives for one operation, like `WitnessPoint::realized`.
+    /// model: it lives for one operation, like `WitnessPoint::coord_iv`.
     pub(crate) realized: nacre_geom::Cylinder,
     /// Which operand states this class. The pair loop asks only pairs of **different**
     /// owners: two classes of one valid solid keep their faces apart by construction, and the

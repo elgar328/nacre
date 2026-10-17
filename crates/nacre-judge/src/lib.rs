@@ -17,8 +17,8 @@ pub mod predicate;
 // The toleranced-sign kernel symbols consumers use directly (`nacre-ops`: `WitnessPoint`/`MoveNode` for
 // vertex assembly, `dir_orient3d_judge` for a per-face normal sign).
 pub use kernel::frame3::{
-    Decision, FrameThrough, JudgedPoint, MoveNode, Standard, WideFrame, WitnessPoint, chain_parity,
-    dir_orient3d_judge, dir_sign_judge, fold_suffix, indirect_cmp_coord_judge,
+    Decision, FrameThrough, JudgedPoint, MoveNode, ProofStandard, WideFrame, WitnessPoint,
+    chain_parity, dir_orient3d_judge, dir_sign_judge, fold_suffix, indirect_cmp_coord_judge,
     indirect_orient3d_judge, meet_hp, normals_agree_judge, orient3d_filter, orient3d_judge,
     plane_hp, precision_for, trial_bound,
 };

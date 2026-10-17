@@ -5,10 +5,10 @@
 //! the error, accumulated as the definition is turned through a chain of
 //! axis-aligned rotations (`new tol = |R|·old + mix`). [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
-//! ([`det3_bound`]) decides the easy cases, the ambiguous ones **escalate**
+//! ([`orient3d_iv`]) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and one whose interval still straddles zero is
 //! **normalized into the distance it stands for** and held against the operation's coincidence
-//! limit ([`Standard`]): below it the coincidence is proved, above it the judgement climbs to the
+//! limit ([`ProofStandard`]): below it the coincidence is proved, above it the judgement climbs to the
 //! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only**
 //! — wired into the boolean since the CIP stages that followed (`nacre-ops`'
@@ -17,7 +17,7 @@
 //! (Shewchuk), routed by a higher layer, not here.
 //!
 //! Soundness is tested against astro-float ground truth over random heterogeneous-rotation
-//! configs — `det3_bound_soundness` (the determinant bound) and
+//! configs — `orient3d_iv_soundness` (the determinant interval) and
 //! `tol_bounds_error_over_random_chains` (chain and arbitrary-pivot tol): the bound never
 //! under-estimates the true error.
 
@@ -57,7 +57,7 @@ pub use witness::*;
 /// does not depend on who did.
 ///
 /// Otherwise it is `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has
-/// the identical signature on both, so the consumer ([`WitnessPoint::hp_coord`]) is unchanged.
+/// the identical signature on both, so the consumer ([`WitnessPoint::coord_hp`]) is unchanged.
 type HpCell = HpRc<HpOnce<(usize, [HpBounded; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
@@ -76,7 +76,7 @@ pub enum MoveNode {
         angle: Angle,
         pivot: [Rat; 3],
     },
-    /// An exact rational translation. Realized by adding the offset — see [`WitnessPoint::compute_hp`].
+    /// An exact rational translation. Realized by adding the offset — see [`WitnessPoint::coord_hp_uncached`].
     Translate { offset: [Rat; 3] },
     /// An exact reflection in `axis = offset` (`x ↦ 2·offset − x` on that axis).
     ///

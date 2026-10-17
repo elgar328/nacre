@@ -345,7 +345,7 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
 }
 
 /// **A node's interval holds the node, whichever kind of name it is** — [`node_point_hp`] against
-/// [`node_point_f64`], over every ring node of every face a boolean emits. The fixture is a plate
+/// [`node_point_approx`], over every ring node of every face a boolean emits. The fixture is a plate
 /// with a bore fused with a wall whose plane runs inside the bore's radius, so the wall class's
 /// rings carry the bore's pierce points beside three-plane corners, and the caps carry arcs.
 ///
@@ -409,7 +409,7 @@ fn a_nodes_interval_holds_it_for_either_kind_of_name() {
     for f in &faces {
         for &n in f.outer.ring().into_iter().flat_map(|r| &r.nodes) {
             let x = node_point_hp(&jd, cyls, n).expect("an interval for every emitted node");
-            let p = node_point_f64(&jd, cyls, n).expect("a realized point");
+            let p = node_point_approx(&jd, cyls, n).expect("a realized point");
             for k in 0..3 {
                 let at = |d: f64| {
                     nacre_exact::HpBounded::of_rat(

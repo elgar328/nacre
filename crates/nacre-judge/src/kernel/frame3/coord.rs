@@ -91,7 +91,7 @@ pub fn indirect_cmp_coord_judge(
     a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     axis: usize,
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
     let iv = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
         [
@@ -138,7 +138,7 @@ pub fn dir_sign_judge(
     a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
     // ★ **Not fed from `Judge`'s interval-plane cache, and that is measured.** Wiring it here
     // bought 1.007x on the crossing collector: this judgement's cost is almost entirely the
@@ -193,7 +193,7 @@ pub fn dir_sign_judge(
 pub fn normals_agree_judge(
     a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
     let (pa, pb) = (plane_iv(a.0, a.1, a.2), plane_iv(b.0, b.1, b.2));
     let dot = (0..3).fold(Bounded::new(0.0, 0.0), |acc, k| acc.add(pa[k].mul(pb[k])));

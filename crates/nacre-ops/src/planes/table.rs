@@ -107,7 +107,7 @@ pub(crate) fn collect_planes(
                             for (o, p) in out.iter_mut().zip(pts.iter()) {
                                 let q = crate::rotated_vertex::replay(WitnessPoint::at(*p), &chain)
                                     .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                *o = Point3::from_array(q.coord());
+                                *o = Point3::from_array(q.coord_approx());
                             }
                             out
                         }
@@ -137,7 +137,7 @@ pub(crate) fn collect_planes(
                     w.swap(1, 2);
                 }
                 debug_assert!(
-                    turns_outward_f64(&w, n_out) != Some(false),
+                    turns_outward_approx(&w, n_out) != Some(false),
                     "the truth's winding and the aligned cache disagree: face {fh:?} on {:?}",
                     face.surface
                 );
@@ -293,7 +293,8 @@ pub(crate) fn collect_planes(
                 w.swap(1, 2);
             }
             debug_assert!(
-                turns_outward_f64(&w, f.plane.normal() * f64::from(f.orient_sign)) != Some(false),
+                turns_outward_approx(&w, f.plane.normal() * f64::from(f.orient_sign))
+                    != Some(false),
                 "the restated winding and the aligned cache disagree on {:?}",
                 f.surf
             );
@@ -337,8 +338,8 @@ pub(crate) fn collect_planes(
 /// realized corners are too close to collinear for the reading to mean anything (`|cos| ≤ ½`,
 /// the bar the face corners' check in `collect_planes` holds): there the rounding picks the
 /// direction, and a check that fired on it would be checking the rounding.
-fn turns_outward_f64(w: &[WitnessPoint; 3], n_out: Vector3) -> Option<bool> {
-    let p = w.each_ref().map(|q| Vector3::from_array(q.coord()));
+fn turns_outward_approx(w: &[WitnessPoint; 3], n_out: Vector3) -> Option<bool> {
+    let p = w.each_ref().map(|q| Vector3::from_array(q.coord_approx()));
     let cos = (p[1] - p[0]).cross(p[2] - p[0]).normalize()?.dot(n_out);
     (cos.abs() > 0.5).then_some(cos > 0.0)
 }

@@ -55,8 +55,8 @@ use nacre_exact::Mag;
 
 /// How these fixtures judge; production chooses both per model. The coincidence limit is the
 /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
-fn fixture() -> Standard {
-    Standard {
+fn fixture() -> ProofStandard {
+    ProofStandard {
         prec: 256,
         coincidence: Mag::pow2(-180),
         scale: Mag::of(1.0),
@@ -235,7 +235,7 @@ impl RW {
             p
         });
         let base = pts.map(|q| Point3::from_array([q[0] as f64, q[1] as f64, q[2] as f64]));
-        let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord()));
+        let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord_approx()));
         RW {
             coeffs: plane_of(tri.map(|p| p.as_array())),
             base_coeffs: plane_of(base.map(|p| p.as_array())),

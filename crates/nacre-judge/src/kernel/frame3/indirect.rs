@@ -28,7 +28,7 @@ pub(super) fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
 /// (checked by `plane_coefficient_tol_soundness`).
 pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Bounded; 4] {
-    let (a, b, c) = (p0.realized, p1.realized, p2.realized);
+    let (a, b, c) = (p0.coord_iv, p1.coord_iv, p2.coord_iv);
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
     let e2 = [c[0].sub(a[0]), c[1].sub(a[1]), c[2].sub(a[2])];
     let n = [
@@ -45,7 +45,7 @@ pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) 
 
 /// The plane's four coefficients realized at `prec` bits from the definitions
 /// (ground truth for the coefficient tol; no trig of its own — consumes point
-/// `hp_coord`). Public for a caller that meets one plane in many points and realizes it once
+/// `coord_hp`). Public for a caller that meets one plane in many points and realizes it once
 /// ([`meet_hp`]).
 pub fn plane_hp(
     p0: &WitnessPoint,
@@ -53,7 +53,7 @@ pub fn plane_hp(
     p2: &WitnessPoint,
     prec: usize,
 ) -> [HpBounded; 4] {
-    let (a, b, c) = (p0.hp_coord(prec), p1.hp_coord(prec), p2.hp_coord(prec));
+    let (a, b, c) = (p0.coord_hp(prec), p1.coord_hp(prec), p2.coord_hp(prec));
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
     let e1 = [sub(&b[0], &a[0]), sub(&b[1], &a[1]), sub(&b[2], &a[2])];
@@ -80,7 +80,7 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// **The plane through three points that have no coordinates** — the projective join, the dual
 /// of [`cramer_hp`]: that one meets three planes into a homogeneous point `[Dvec : D]`, this
 /// joins three such points back into a plane. Both are the same 3×3 determinant expansion read
-/// the other way round, which is why the whole thing is four [`det3_big`] calls and no new
+/// the other way round, which is why the whole thing is four [`det3_refs_hp`] calls and no new
 /// arithmetic. Consumed by [`judged_coeffs`]' homogeneous route (a judged frame whose defining
 /// point is a [`JudgedPoint::Meet`]).
 ///
@@ -115,7 +115,7 @@ pub(super) fn plane_hp_through(
     };
     let (r0, r1, r2) = (row(0), row(1), row(2));
     let minor = |a: usize, b: usize, c: usize| {
-        det3_big(
+        det3_refs_hp(
             [
                 [r0[a], r0[b], r0[c]],
                 [r1[a], r1[b], r1[c]],
@@ -196,7 +196,7 @@ pub(super) fn normals_det_iv(planes: [[Bounded; 4]; 3]) -> Bounded {
 /// three `Dvec` determinants. The escalation is where a wasted determinant costs the most.
 pub(super) fn normals_det_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> HpBounded {
     let n = |k: usize, j: usize| &planes[k][j];
-    det3_big(
+    det3_refs_hp(
         [
             [n(0, 0), n(0, 1), n(0, 2)],
             [n(1, 0), n(1, 1), n(1, 2)],
@@ -276,14 +276,14 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let zero = HpBounded::exact(BigFloat::from_f64(0.0, prec));
     // The four matrices are the same twelve values rearranged, so they are built as *views* of
-    // the coefficients rather than copies of them — see [`det3_big`].
+    // the coefficients rather than copies of them — see [`det3_refs_hp`].
     let n = |k: usize, j: usize| &planes[k][j];
     let hc = [
         sub(&zero, &planes[0][3]),
         sub(&zero, &planes[1][3]),
         sub(&zero, &planes[2][3]),
     ];
-    let d = det3_big(
+    let d = det3_refs_hp(
         [
             [n(0, 0), n(0, 1), n(0, 2)],
             [n(1, 0), n(1, 1), n(1, 2)],
@@ -292,7 +292,7 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
         prec,
     );
     let dvec = [
-        det3_big(
+        det3_refs_hp(
             [
                 [&hc[0], n(0, 1), n(0, 2)],
                 [&hc[1], n(1, 1), n(1, 2)],
@@ -300,7 +300,7 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
             ],
             prec,
         ),
-        det3_big(
+        det3_refs_hp(
             [
                 [n(0, 0), &hc[0], n(0, 2)],
                 [n(1, 0), &hc[1], n(1, 2)],
@@ -308,7 +308,7 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
             ],
             prec,
         ),
-        det3_big(
+        det3_refs_hp(
             [
                 [n(0, 0), n(0, 1), &hc[0]],
                 [n(1, 0), n(1, 1), &hc[1]],
@@ -404,7 +404,7 @@ pub fn indirect_orient3d_judge(
     q: &WitnessPoint,
     r: &WitnessPoint,
     s: &WitnessPoint,
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
     let iv = [
         plane_iv(plane_a.0, plane_a.1, plane_a.2),
@@ -430,9 +430,9 @@ pub(crate) fn orient3d_from_cramer(
     q: &WitnessPoint,
     r: &WitnessPoint,
     s: &WitnessPoint,
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
-    if let Some(o) = filter_from_cramer(cr, q.realized, r.realized, s.realized) {
+    if let Some(o) = filter_from_cramer(cr, q.coord_iv, r.coord_iv, s.coord_iv) {
         return Decision::Sign(o);
     }
     // Escalate: the same two determinants at prec, each carrying the radius accumulated
@@ -442,9 +442,9 @@ pub(crate) fn orient3d_from_cramer(
         let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
         let (d, m, cross) = indirect_hp(
             [ph(plane_a), ph(plane_b), ph(plane_c)],
-            q.hp_coord(prec),
-            r.hp_coord(prec),
-            s.hp_coord(prec),
+            q.coord_hp(prec),
+            r.coord_hp(prec),
+            s.coord_hp(prec),
             prec,
         );
         match combine(d.sign(), m.sign()) {

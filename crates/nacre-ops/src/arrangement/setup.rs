@@ -1,6 +1,6 @@
 use super::*;
 use crate::combinatorics::{EdgeFaces, edge_faces};
-use nacre_judge::Standard;
+use nacre_judge::ProofStandard;
 use nacre_topo::Surface;
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
@@ -47,7 +47,7 @@ pub(crate) struct PlaneSetup {
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
     /// [`Judge`].
-    pub(crate) standard: Standard,
+    pub(crate) standard: ProofStandard,
     pub(crate) notes: Notes,
 }
 

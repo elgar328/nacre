@@ -349,7 +349,7 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 ///
 /// ★★★ **The caller passes the value in rather than letting this re-realize it**, for the same
 /// reason the trig one does: the consumer is a frame's `tol`, which must bound the error in the
-/// `coord` it wrote from *its* `inv_sqrt_f64` result. An error measured against a second,
+/// `coord_approx` it wrote from *its* `inv_sqrt_f64` result. An error measured against a second,
 /// independent realization would bound a number nobody stored.
 ///
 /// ★★★★ **Exactly zero only when the exact value is also *dyadic*, which is not the same thing

@@ -1,8 +1,8 @@
 use super::*;
-/// A rational base point carried through a chain of axis rotations (a rotation history). `base` + `chain` are the exact **definition** (never lost); `realized` is
-/// the f64 realization (a cache) with, per axis, the bound on its error — a **direction-wise
+/// A rational base point carried through a chain of axis rotations (a rotation history). `base` + `chain` are the exact **definition** (never lost); `coord_iv` is
+/// the f64 coordinate (a cache) with, per axis, the bound on its error — a **direction-wise
 /// xyz vector** held beside the value it bounds, so the two cannot drift apart.
-/// [`hp_coord`](Self::hp_coord) realizes the chain at
+/// [`coord_hp`](Self::coord_hp) realizes the chain at
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).
 #[derive(Clone, Debug)]
@@ -10,8 +10,8 @@ pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: HpRc<[MoveNode]>,
     // (equality is definitional — see the `PartialEq` impl below the struct)
-    pub realized: [Bounded; 3],
-    /// Memoized `hp_coord` at the boolean's chosen precision — the astro-float realization
+    pub coord_iv: [Bounded; 3],
+    /// Memoized `coord_hp` at the boolean's chosen precision — the astro-float realization
     /// once per definition and shared across clones (`Rc`). A judge escalates the *same*
     /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
     /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
@@ -22,7 +22,7 @@ pub struct WitnessPoint {
     hp: HpCell,
 }
 
-/// **Definitional equality — `base` and `chain`, nothing else.** `realized`/`hp` are caches,
+/// **Definitional equality — `base` and `chain`, nothing else.** `coord_iv`/`hp` are caches,
 /// and realization is a pure function of the definition (path independence is this file's root
 /// soundness argument), so two points with equal definitions cannot honestly disagree in their
 /// caches. The consumer this exists for is [`shared_base`]'s whole-node chain comparison — it
@@ -59,18 +59,19 @@ fn rat_round_tol(r: Rat, f: f64) -> f64 {
 }
 
 impl WitnessPoint {
-    /// The realized coordinate — the values of [`Self::realized`], for readers that want the
-    /// point whole.
+    /// The `f64` coordinate — the values of [`Self::coord_iv`], for readers that want the point
+    /// whole. Approximate: a rotation is carried in `f64` arithmetic, so the value is not the
+    /// nearest `f64` of the point; the proven distance from it is [`Self::tol`].
     #[inline]
-    pub fn coord(&self) -> [f64; 3] {
-        self.realized.map(|b| b.value)
+    pub fn coord_approx(&self) -> [f64; 3] {
+        self.coord_iv.map(|b| b.value)
     }
 
-    /// The per-axis error bounds — the radii of [`Self::realized`], for readers that want them
+    /// The per-axis error bounds — the radii of [`Self::coord_iv`], for readers that want them
     /// as a vector.
     #[inline]
     pub fn tol(&self) -> [f64; 3] {
-        self.realized.map(|b| b.error)
+        self.coord_iv.map(|b| b.error)
     }
 
     /// A point at `base`, tol seeded with the base→f64 rounding (a division; exactly
@@ -122,7 +123,7 @@ impl WitnessPoint {
     /// rounding).
     pub fn at_with_tol(base: [Rat; 3], tol: [f64; 3]) -> Self {
         WitnessPoint {
-            realized: [0, 1, 2].map(|k| Bounded::new(base[k].to_f64(), tol[k])),
+            coord_iv: [0, 1, 2].map(|k| Bounded::new(base[k].to_f64(), tol[k])),
             base,
             chain: HpRc::from([] as [MoveNode; 0]),
             hp: HpCell::default(),
@@ -170,7 +171,7 @@ impl WitnessPoint {
     fn rotated(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
-        let (ci, cj) = (self.realized[i].value, self.realized[j].value); // pre-rotation magnitudes for tol
+        let (ci, cj) = (self.coord_iv[i].value, self.coord_iv[j].value); // pre-rotation magnitudes for tol
         let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
         //
@@ -178,8 +179,8 @@ impl WitnessPoint {
         // returns exactly `0.0`/`±1.0`, the exactness the tol-0 gate below reads; a second spelling
         // of "how an angle becomes f64" could land `cos(90°) ≈ 6e-17` there instead.
         let (c, s) = angle.cos_sin_f64();
-        self.realized[i].value = px + u * c - v * s;
-        self.realized[j].value = py + u * s + v * c;
+        self.coord_iv[i].value = px + u * c - v * s;
+        self.coord_iv[j].value = py + u * s + v * c;
         // **The rotation's own error — measured for this angle, not charged from a constant.**
         //
         // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth — measured here,
@@ -202,8 +203,8 @@ impl WitnessPoint {
         //
         // ★★★ **It measures `c` and `s` — the values three lines above — not the angle.** They are
         // handed in rather than re-derived so that the error is the one of the pair that reached
-        // `coord`, whatever route produced it. An error taken against a pair that never reached
-        // `coord` would bound a number this kernel never stored.
+        // `coord_approx`, whatever route produced it. An error taken against a pair that never reached
+        // `coord_approx` would bound a number this kernel never stored.
         let (dc, ds) = angle.cos_sin_error_of(c, s);
         let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
             (0.0, 0.0)
@@ -246,9 +247,9 @@ impl WitnessPoint {
         } else {
             0.0
         };
-        let (ti, tj) = (self.realized[i].error, self.realized[j].error);
-        self.realized[i].error = c.abs() * ti + s.abs() * tj + rot_i + piv;
-        self.realized[j].error = s.abs() * ti + c.abs() * tj + rot_j + piv;
+        let (ti, tj) = (self.coord_iv[i].error, self.coord_iv[j].error);
+        self.coord_iv[i].error = c.abs() * ti + s.abs() * tj + rot_i + piv;
+        self.coord_iv[j].error = s.abs() * ti + c.abs() * tj + rot_j + piv;
         self
     }
 
@@ -300,9 +301,9 @@ impl WitnessPoint {
 
     /// The point reflected in `axis = offset` — one more link in the definition.
     ///
-    /// **`coord` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the roundings it
-    /// takes (with the margin every term carries), so `coord ± tol` holds the definition's value.
-    /// The exact offset lives in the chain, where [`compute_hp`](Self::compute_hp) realizes it.
+    /// **`coord_approx` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the roundings it
+    /// takes (with the margin every term carries), so `coord_iv` holds the definition's value.
+    /// The exact offset lives in the chain, where [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
     pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
         let mut p = self.mirrored(axis, offset);
         p.remember(MoveNode::Mirror { axis, offset });
@@ -321,21 +322,21 @@ impl WitnessPoint {
         // here is `4 = 2 (the doubling) × 2 (the same safety margin every other term carries)`.
         // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
         // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
-        self.realized[k].error += 4.0
+        self.coord_iv[k].error += 4.0
             * bf_mag(&rat_to_bigfloat(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM))
                 .abs()
-            + f64::EPSILON * (2.0 * c.abs() + self.realized[k].value.abs());
+            + f64::EPSILON * (2.0 * c.abs() + self.coord_iv[k].value.abs());
         // The reflection itself — the expression the error term above charges.
-        self.realized[k].value = 2.0 * c - self.realized[k].value;
+        self.coord_iv[k].value = 2.0 * c - self.coord_iv[k].value;
         self
     }
 
     /// The point translated by an exact rational `offset` — one more link in the definition.
     ///
-    /// **`coord` adds the offset's `f64` image**, and the two roundings this step takes (the
-    /// offset's own, and the add's) are what `tol` grows by, so `coord ± tol` holds the
+    /// **`coord_approx` adds the offset's `f64` image**, and the two roundings this step takes (the
+    /// offset's own, and the add's) are what `tol` grows by, so `coord_iv` holds the
     /// definition's value. The exact offset lives in the chain, where
-    /// [`compute_hp`](Self::compute_hp) realizes it.
+    /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
     ///
     /// That split is the whole point: two placements that reach the same real wall by different
     /// routes keep f64 coordinates an ulp apart, but their *definitions* realize to the same
@@ -351,11 +352,11 @@ impl WitnessPoint {
         for (k, &off) in offset.iter().enumerate() {
             let t = off.to_f64();
             // The offset's realization error, plus the add's own half-ulp on the result.
-            self.realized[k].error += 2.0
+            self.coord_iv[k].error += 2.0
                 * bf_mag(&rat_to_bigfloat(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM))
                     .abs()
-                + f64::EPSILON * (self.realized[k].value.abs() + t.abs());
-            self.realized[k].value += t;
+                + f64::EPSILON * (self.coord_iv[k].value.abs() + t.abs());
+            self.coord_iv[k].value += t;
         }
         self
     }
@@ -363,9 +364,9 @@ impl WitnessPoint {
     /// The point read as `(u, v, w)` in the frame of the plane `origin`/`u_raw`/`n` describe, and
     /// written out in that plane's own frame — one more link in the definition.
     ///
-    /// **`coord` is this step's `f64`**, its roundings charged to `tol`, so `coord ± tol` holds the
+    /// **`coord_approx` is this step's `f64`**, its roundings charged to `tol`, so `coord_iv` holds the
     /// definition's value. The exact inputs live in the chain, where
-    /// [`compute_hp`](Self::compute_hp) realizes them.
+    /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes them.
     ///
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual
     /// one, and a caller that cannot build a basis must not get a point that pretends otherwise.
@@ -457,7 +458,7 @@ impl WitnessPoint {
                 .chain(&vh)
                 .chain(&wh)
                 .all(|c| *c == 0.0 || c.abs() == 1.0);
-        let p = self.coord();
+        let p = self.coord_approx();
         let t = self.tol();
         for k in 0..3 {
             let ok = f.origin[k].to_f64();
@@ -476,8 +477,8 @@ impl WitnessPoint {
                             + (p[1] * vh[k]).abs()
                             + (p[2] * wh[k]).abs())
             };
-            self.realized[k].value = ok + terms;
-            self.realized[k].error = carried + realized + arith;
+            self.coord_iv[k].value = ok + terms;
+            self.coord_iv[k].error = carried + realized + arith;
         }
         Some(self)
     }
@@ -521,7 +522,7 @@ impl WitnessPoint {
         }
         // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
         // of `rat_round_tol`.
-        let p = self.coord();
+        let p = self.coord_approx();
         let t = self.tol();
         for k in 0..3 {
             let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
@@ -534,8 +535,8 @@ impl WitnessPoint {
                         + (p[0] * uh[k]).abs()
                         + (p[1] * vh[k]).abs()
                         + (p[2] * wh[k]).abs());
-            self.realized[k].value = oh[k] + terms;
-            self.realized[k].error = carried + realized + arith;
+            self.coord_iv[k].value = oh[k] + terms;
+            self.coord_iv[k].error = carried + realized + arith;
         }
         Some(self)
     }
@@ -562,7 +563,7 @@ impl WitnessPoint {
     fn framed_through(mut self, f: &FrameThrough) -> Option<Self> {
         let basis = judged_basis(f, FrameThrough::RUNG)?;
         let [o, u, v, w] = basis.map(|row| row.map(|c| narrow_hp(&c)));
-        let p = self.coord();
+        let p = self.coord_approx();
         let t = self.tol();
         for k in 0..3 {
             let (uh, eu) = u[k];
@@ -576,54 +577,46 @@ impl WitnessPoint {
                 + 3.0
                     * f64::EPSILON
                     * (oh.abs() + (p[0] * uh).abs() + (p[1] * vh).abs() + (p[2] * wh).abs());
-            self.realized[k].value = oh + terms;
-            self.realized[k].error = carried + realized + arith;
+            self.coord_iv[k].value = oh + terms;
+            self.coord_iv[k].error = carried + realized + arith;
         }
         Some(self)
     }
 
-    /// The coordinate realized at `prec` bits from the **definition** (base rotated
-    /// through the chain, each node about its pivot) — path-independent ground truth /
-    /// escalation realization. The result is memoized in
-    /// [`WitnessPoint::hp`] and shared across clones of the same definition, so a definition-point pays
-    /// the astro-float cos/sin once per boolean rather than once per predicate.
-    pub(crate) fn hp_coord(&self, prec: usize) -> [HpBounded; 3] {
-        // **Keyed by precision, and that key is load-bearing.** The precision is chosen per
-        // boolean, so within one operation every call arrives with the same value and the cell is
-        // filled once — which is the whole point, since re-realizing a definition per predicate
-        // was 77% of a rotated boolean's runtime. A call at a different precision (the rare
-        // per-judgement fallback) recomputes without disturbing the cached value, rather than
-        // silently returning coordinates realized at the wrong precision.
-        let cached = self.hp.get_or_init(|| (prec, self.compute_hp(prec)));
-        if cached.0 == prec {
-            return cached.1.clone();
-        }
-        self.compute_hp(prec)
-    }
-
-    /// **The coordinate realized at `prec` bits from the definition, with the error it carries** —
-    /// the door [`Self::hp_coord`] is behind, in the type this workspace hands out publicly
-    /// (`nacre_exact::HpBounded`, what `inv_sqrt_hp` returns too).
+    /// **The coordinate realized at `prec` bits from the definition** (base rotated through the
+    /// chain, each node about its pivot), **with the error it carries** — path-independent
+    /// ground truth / escalation realization, in the type this workspace hands out publicly
+    /// (`nacre_exact::HpBounded`, what `inv_sqrt_hp` returns too). The result is memoized in
+    /// [`WitnessPoint::hp`] and shared across clones of the same definition, so a definition-point
+    /// pays the astro-float cos/sin once per boolean rather than once per predicate.
     ///
     /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
     /// be rounded honestly — see [`HpBounded`]'s contract: a radius invented for convenience makes
     /// every sign above it unearned. Callers round with `nacre_exact::round_to_f64` /
     /// `round_to_digits`, which report *undecided* rather than picking when `prec` is short.
-    ///
-    /// ★★ Calling this at a precision the boolean is not using is safe: [`Self::hp_coord`]'s memo
-    /// is keyed by precision and recomputes rather than disturbing the cached value.
-    pub fn realize(&self, prec: usize) -> [HpBounded; 3] {
-        self.hp_coord(prec)
+    pub fn coord_hp(&self, prec: usize) -> [HpBounded; 3] {
+        // **Keyed by precision, and that key is load-bearing.** The precision is chosen per
+        // boolean, so within one operation every call arrives with the same value and the cell is
+        // filled once — which is the whole point, since re-realizing a definition per predicate
+        // was 77% of a rotated boolean's runtime. A call at a different precision (the rare
+        // per-judgement fallback, or a caller outside the boolean) recomputes without disturbing
+        // the cached value, rather than silently returning coordinates realized at the wrong
+        // precision.
+        let cached = self.hp.get_or_init(|| (prec, self.coord_hp_uncached(prec)));
+        if cached.0 == prec {
+            return cached.1.clone();
+        }
+        self.coord_hp_uncached(prec)
     }
 
-    /// The uncached realization (the body of [`Self::hp_coord`]), **with the error it carries**.
+    /// [`Self::coord_hp`] without the memo, **with the error it carries**.
     ///
     /// This is the same walk as [`rotate_about`](Self::rotate_about)'s tol propagation, one level
     /// up: the definition is exact, the realization is not, and the radius is what the realization
     /// cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
     /// the rational lands on a `prec`-bit dyadic), each `cos`/`sin` contributes the bound
     /// [`Angle::cos_sin_hp`] derives, and every arithmetic operation adds its half-ulp.
-    pub(super) fn compute_hp(&self, prec: usize) -> [HpBounded; 3] {
+    pub(super) fn coord_hp_uncached(&self, prec: usize) -> [HpBounded; 3] {
         let p = [
             HpBounded::of_rat(self.base[0], prec),
             HpBounded::of_rat(self.base[1], prec),

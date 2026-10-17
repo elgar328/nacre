@@ -1,7 +1,7 @@
 use super::*;
 /// **Carry a realized point through `nodes`, continuing from wherever it already is.**
 ///
-/// [`WitnessPoint::compute_hp`] is this function seeded from the definition's base, and that is the
+/// [`WitnessPoint::coord_hp_uncached`] is this function seeded from the definition's base, and that is the
 /// whole relationship: the fold is a left fold whose entire state is the three coordinates, so the
 /// value after `k` nodes *is* the prefix, and resuming from it reaches the same bits as folding the
 /// prefix again. That is what lets a caller who kept the previous generation's value pay for one

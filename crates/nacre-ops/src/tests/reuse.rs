@@ -60,7 +60,7 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     for p in &dec_pts {
         // The coordinate is the definition's nearest f64 — for a constructed box the same
         // value the cache holds, so what the road changes is the *tolerance*, not the point.
-        let c = p.coord();
+        let c = p.coord_approx();
         assert!(c.iter().all(|x| [0.3, 0.7, -1.0, 2.0].contains(x)), "{c:?}");
         assert!(
             p.tol().iter().all(|&t| t > 0.0),
@@ -106,7 +106,7 @@ fn assert_answers(m: &Model, s: Handle<Solid>, want_some: bool, what: &str) {
             assert!(!pts.is_empty(), "{what}: answered with no points");
             for p in &pts {
                 assert!(
-                    p.coord().iter().all(|c| c.is_finite()),
+                    p.coord_approx().iter().all(|c| c.is_finite()),
                     "{what}: a realized coordinate is not finite"
                 );
             }
@@ -173,9 +173,9 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     assert_eq!(stored.len(), 8, "a prism has eight distinct corners");
     for p in &pts {
         assert!(
-            stored.contains(&p.coord().map(f64::to_bits)),
+            stored.contains(&p.coord_approx().map(f64::to_bits)),
             "a replayed corner {:?} is not any stored coordinate",
-            p.coord()
+            p.coord_approx()
         );
     }
 

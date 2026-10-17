@@ -275,7 +275,7 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   17자리 뒤는 이진 반올림의 부산물). 그리고 brep-to-step 은 f64 를 최단 왕복으로만 찍으므로 자릿수 지정은
   작성기에 그 입력이 생겨야 한다.
 - **기계는 있다.** `nacre-exact` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부 `prec` 를 받는다) ·
-  `WitnessPoint::realize(prec)` · `round_to_f64`/`round_to_digits` · `sqrt_hp`·`quad_hp`·
+  `WitnessPoint::coord_hp(prec)` · `round_to_f64`/`round_to_digits` · `sqrt_hp`·`quad_hp`·
   `seam_point_hp`(림의 각 0 점) · `Angle::cos_sin_hp`(각마다 메모). 정확 반올림이라 실현이 유일하므로
   **같은 정밀도면 답이 하나**다.
 - **잠금이 공짜로 딸려 온다.** 같은 모델은 **바이트 동일**한 파일을 내고, 실현 정밀도를 **두 배로 올려도
@@ -283,7 +283,7 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 - 내보내기는 `&Model` 서명을 지킨다 — `&mut Model` 을 받으면 이름이 약속하지 않은 일을 한다.
 - 이름: 실현 문은 `realize_*` 이고 정밀도를 항상 명시한다(기본값 없음). 정밀도 인자 없는 캐시 도로 문은
   `realize_cache` 의 선례를 따른다. `_at` 은 이 커널에서 위치의 낱말(`point_at`·`normal_at`·
-  `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`hp_coord`·`trial_bound`·
+  `surface_handle_at`)이라 쓰지 않는다. 판정은 이 문을 안 부르고 자기 어휘(`coord_hp`·`trial_bound`·
   `precision_for`)를 쓴다.
 
 ## 알려진 결함과 절벽
@@ -316,7 +316,7 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 
 ### 실현 문의 발행 범위와 잠금
 
-실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::realize(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
+실현은 한 도로다 — 층이 둘일 뿐이다. `nacre_ops::realize_def` 가 `nacre-judge` 의 `WitnessPoint::coord_hp(prec)` 를 부르고(`realize.rs` 의 `build_three_plane`), `construct.rs` 의 `realize(pts)` 는 `Rat::to_f64`(정확 반올림 — 유리수에서는 그것이 실현이다)이며 호출처는 `prism_rings_in` 하나다(모션 프레임 쪽 분기도 정의가 쓰는 `replay` 를 탄다). `realize_def`/`realize_cache` 와 `_tracked` 짝은 가속기(`&mut Accel` — 접두 메모 쓰기와 `PlaneMemo`)를 깔때기에만 여는 어댑터라 합칠 중복이 아니다(「가지 말 것」 «접미사만 다른 형제 함수를 «중복»으로 세어 합치기»).
 
 남은 것 둘. **발행 범위** — 공개 문 넷(`realize_vertex`·`realize_vertex_decimal`·`realize_cache`·`refine_caches`) 중 제품 소비자가 있는 것은 kit 의 둘(`realize_vertex_decimal` · `export_step` 이 부르는 `refine_caches`)이고, `realize_cache` 는 census 가 같은 물음을 묻도록 `pub` 이다(형제 크레이트용 `pub` 은 발행 API — 가릴 자리는 `test-util`). **잠금** — 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나 밖에서 f64 좌표를 짓는 것을 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다. 제품의 `.to_f64()` 호출 63곳이 그 인구다(아직 분류하지 않았다).
 
@@ -327,6 +327,15 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 memo 와 상승 카운터를 갖는다. `sqrt_f64`·`unit_vector_f64` 는 같은 사다리를 본문에 풀어 쓰고 memo·카운터가 없다. ops 의
 `on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realized::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
 함수가 아니다. 한 사다리로 접으면 칸·폴백·카운터가 한 곳에 산다. 접기 전에 네 자리의 폴백(중점, `NaN`)이 모두 같은지부터 본다.
+
+### 판정의 바닥값은 증명인가 상수인가
+
+판정층 문서가 «바닥»을 여럿 부른다 — `indirect.rs` 머리의 «상수 `mag`-floor 정책»과 «`orient3d_judge` 의 명시적
+`16·scale³` floor», `orient3d.rs`·`coord.rs` 의 «below-floor» 갈래. 바닥마다 모델에서 유도한 값(오차 반경·일치 정밀도)인지
+정한 상수인지는 열어 보지 않았다. 고정 역치는 «정밀도는 모델이 정한다»(overview 「정밀도 인프라」)와 어긋나므로, 바닥마다
+유도를 찾고 없으면 유도로 바꾼다. 같은 자리에 필터 둘이 있다: `orient3d_iv`(네 점, 손으로 유도한 반지름)와 `det3_iv`(행마다
+구간 산술, 간접점 도로)는 같은 행렬식을 두 방법으로 묶는다. 합치면 필터의 결정이 바뀌므로 동작 변경이고, 어느 쪽 반지름이
+좁은지부터 잰다.
 
 ### `surface_name` 곁표 접기
 
@@ -403,7 +412,8 @@ kit 에서 이 원인으로 갈라 잰 수가 0 이 아닐 때. 기권 자체의
 여는 날은 reuse 가 시간을 버는 일(접는 fold)에서 이 물러남이 벽시계에 보일 때다. 그 코너의 캐시는 `Bounded`(증인
 삼각형 실현)이므로 그 **증명된 경계**로 `misses` 의 필터만 물으면 된다 — `orient3d_filter` 의 정확 길(`shared_base`)은
 첫 점의 사슬이 비면 서지 않아 이력 없는 점은 필터만 간다. 다만 정의가 없는 점을 `WitnessPoint`(`base` 가 정의다)에
-넣지 않는다 — 따로 타입을 두거나 필터 전용 판정 함수를 연다(`det3_bound` 는 `pub(super)`).
+넣지 않는다 — 따로 타입을 두거나 필터 전용 판정 함수를 연다(`orient3d_iv` 는 `WitnessPoint` 를 받고, 그 조각
+`orient3d_mid`·`orient3d_radius` 는 `det3.rs` 비공개다).
 
 ### 림 표는 몸체를 가리지 않는다
 
@@ -570,7 +580,7 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 ### 판정층의 남은 이름과 타입
 
-`Standard` → `ProofStandard` 개명, 좌표 없이 부호만 답하는 동차 정점(`WorkingVertex`), 고정밀 실현의 타입화(지금은 `(usize, [HpBounded; 3])` 튜플), `FaceInfo`/`WorkingPlane` 합치기(개명이 아니라 설계 작업), `plane_motion(h)` → `m.surface(h).motion()`, `edge_curve(e)` → `edge_cache(e).curve()`.
+좌표 없이 부호만 답하는 동차 정점(`WorkingVertex`), 고정밀 실현의 타입화(지금은 `(usize, [HpBounded; 3])` 튜플), `FaceInfo`/`WorkingPlane` 합치기(개명이 아니라 설계 작업), `plane_motion(h)` → `m.surface(h).motion()`, `edge_curve(e)` → `edge_cache(e).curve()`.
 
 ### 어휘 밖의 요구가 오면
 

@@ -4,7 +4,7 @@ use super::*;
 
 /// A point rotated about one random axis (through a random pivot) by one **inexact**
 /// rational angle — generic non-degenerate, heterogeneous provenance (each point its
-/// own rotation), `det3_bound_soundness`'s corpus shape. Inexact angles only (an exact/near-coplanar
+/// own rotation), `orient3d_iv_soundness`'s corpus shape. Inexact angles only (an exact/near-coplanar
 /// mix would expose the tol-0 GT noise floor — that is the declare-0 test's job).
 fn rand_point(st: &mut u64) -> WitnessPoint {
     let base = rand_base(st);
@@ -13,17 +13,17 @@ fn rand_point(st: &mut u64) -> WitnessPoint {
     let pivot = if rng(st, 0, 1) == 0 {
         [Rat::from_int(0); 3]
     } else {
-        rand_base(st) // non-origin pivot: exercises the pivot tol → det3_bound path
+        rand_base(st) // non-origin pivot: exercises the pivot tol → orient3d_iv path
     };
     WitnessPoint::at(base).rotate_about(axis, ang, pivot)
 }
 
-/// `det3_bound` soundness: over many random heterogeneous-rotation 4-point configs (inexact
+/// `orient3d_iv` soundness: over many random heterogeneous-rotation 4-point configs (inexact
 /// angles, arbitrary pivots), the bound must upper-bound the real error of the f64 determinant vs
 /// the astro-float truth — never exceeded. `#[ignore]`: slow (4× astro-float per sample).
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn det3_bound_soundness() {
+fn orient3d_iv_soundness() {
     const GT: usize = 512;
     let mut st = 0x3D00_1234_ABCD_EF01u64;
     let (mut bad, mut worst) = (0usize, 0.0_f64);
@@ -34,13 +34,10 @@ fn det3_bound_soundness() {
             rand_point(&mut st),
             rand_point(&mut st),
         );
-        let det = det3_f64(pa.coord(), pb.coord(), pc.coord(), pd.coord());
+        let iv = orient3d_iv([&pa, &pb, &pc, &pd]);
         let truth = det3_hp(&pa, &pb, &pc, &pd, GT);
-        let err = abs_err(det, &truth, GT);
-        let bound = det3_bound(
-            [pa.coord(), pb.coord(), pc.coord(), pd.coord()],
-            [pa.tol(), pb.tol(), pc.tol(), pd.tol()],
-        );
+        let err = abs_err(iv.value, &truth, GT);
+        let bound = iv.error;
         if err > bound {
             bad += 1;
         }
@@ -48,18 +45,18 @@ fn det3_bound_soundness() {
             worst = worst.max(err / bound);
         }
     }
-    eprintln!("[det3_bound N=5000] violations: {bad}; worst tightness: {worst:.3}");
+    eprintln!("[orient3d_iv N=5000] violations: {bad}; worst tightness: {worst:.3}");
     assert_eq!(
         bad, 0,
-        "det3_bound must bound the determinant error on every sample"
+        "orient3d_iv must bound the determinant error on every sample"
     );
 }
 
 /// Fast port check (default suite): a handful of random configs must not violate
-/// `det3_bound` (catches a transcription bug; the full statistical soundness is the
-/// `#[ignore]`d `det3_bound_soundness`).
+/// `orient3d_iv` (catches a transcription bug; the full statistical soundness is the
+/// `#[ignore]`d `orient3d_iv_soundness`).
 #[test]
-fn det3_bound_port_check() {
+fn orient3d_iv_port_check() {
     const GT: usize = 512;
     let mut st = 0x0BAD_F00D_1234_5678u64;
     for _ in 0..40 {
@@ -69,13 +66,10 @@ fn det3_bound_port_check() {
             rand_point(&mut st),
             rand_point(&mut st),
         );
-        let det = det3_f64(pa.coord(), pb.coord(), pc.coord(), pd.coord());
-        let err = abs_err(det, &det3_hp(&pa, &pb, &pc, &pd, GT), GT);
-        let bound = det3_bound(
-            [pa.coord(), pb.coord(), pc.coord(), pd.coord()],
-            [pa.tol(), pb.tol(), pc.tol(), pd.tol()],
-        );
-        assert!(err <= bound, "det3_bound {bound:e} < err {err:e}");
+        let iv = orient3d_iv([&pa, &pb, &pc, &pd]);
+        let err = abs_err(iv.value, &det3_hp(&pa, &pb, &pc, &pd, GT), GT);
+        let bound = iv.error;
+        assert!(err <= bound, "orient3d_iv {bound:e} < err {err:e}");
     }
 }
 
@@ -324,7 +318,7 @@ fn indirect_orient3d_soundness() {
             plane_iv(b.0, b.1, b.2),
             plane_iv(c.0, c.1, c.2),
         ];
-        if indirect_filter(planes, q.realized, r.realized, s.realized).is_none() {
+        if indirect_filter(planes, q.coord_iv, r.coord_iv, s.coord_iv).is_none() {
             escalated += 1;
         } else {
             filter_resolved += 1;
@@ -624,8 +618,8 @@ fn well_conditioned(p: &[WitnessPoint; 3]) -> bool {
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let (e1, e2) = (
-        sub(p[1].coord(), p[0].coord()),
-        sub(p[2].coord(), p[0].coord()),
+        sub(p[1].coord_approx(), p[0].coord_approx()),
+        sub(p[2].coord_approx(), p[0].coord_approx()),
     );
     let n = [
         e1[1] * e2[2] - e1[2] * e2[1],
@@ -924,7 +918,7 @@ fn dir_orient3d_soundness() {
             let big = rng(&mut st, 100_000_000, 9_000_000_000) as f64;
             let comp = |k: usize| {
                 ri(
-                    (big * (x.realized[k].value - base.realized[k].value)).round() as i128,
+                    (big * (x.coord_iv[k].value - base.coord_iv[k].value)).round() as i128,
                     1,
                 )
             };
@@ -933,7 +927,7 @@ fn dir_orient3d_soundness() {
         let judged = dir_orient3d_judge(d, &base, &x, &y, FIXTURE_PREC);
         // Recompute the Bounded filter to tally which path resolved (mirrors the judge).
         let dp = WitnessPoint::at(d);
-        let (bi, xi, yi, di) = (base.realized, x.realized, y.realized, dp.realized);
+        let (bi, xi, yi, di) = (base.coord_iv, x.coord_iv, y.coord_iv, dp.coord_iv);
         let subi =
             |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
         if det3_iv([di, subi(xi, bi), subi(yi, bi)]).sign().is_none() {

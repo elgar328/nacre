@@ -17,14 +17,10 @@ pub fn orient3d_filter(
     pc: &WitnessPoint,
     pd: &WitnessPoint,
 ) -> Option<Orient> {
-    let (a, b, c, d) = (pa.coord(), pb.coord(), pc.coord(), pd.coord());
-    let det = det3_f64(a, b, c, d);
-    let bound = det3_bound([a, b, c, d], [pa.tol(), pb.tol(), pc.tol(), pd.tol()]);
-    if det > bound {
-        return Some(Orient::Positive);
-    }
-    if det < -bound {
-        return Some(Orient::Negative);
+    match orient3d_iv([pa, pb, pc, pd]).sign() {
+        Some(true) => return Some(Orient::Positive),
+        Some(false) => return Some(Orient::Negative),
+        None => {}
     }
     // One shared rigid motion cancels out of `det[a−d, b−d, c−d]` (`det(R) = 1`), so the same
     // question is answered exactly on the pre-rotation coordinates — no tolerance, no escalation.
@@ -49,7 +45,7 @@ pub fn orient3d_judge(
     pb: &WitnessPoint,
     pc: &WitnessPoint,
     pd: &WitnessPoint,
-    j: Standard,
+    j: ProofStandard,
 ) -> Decision {
     if let Some(o) = orient3d_filter(pa, pb, pc, pd) {
         return Decision::Sign(o);
@@ -73,7 +69,7 @@ fn cross_of(
     pd: &WitnessPoint,
     prec: usize,
 ) -> [HpBounded; 3] {
-    let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
+    let (b, c, d) = (pb.coord_hp(prec), pc.coord_hp(prec), pd.coord_hp(prec));
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let (u, v) = (
         [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
@@ -99,7 +95,7 @@ fn cross_of(
 /// need one: a zero here means the ray runs along the face's plane, and `boolean` answers that by
 /// casting a different ray rather than by asking how close it came.
 ///
-/// `d` is realized through an unrotated [`WitnessPoint`] purely to reuse `pt_iv`/`hp_coord` for its
+/// `d` is realized through an unrotated [`WitnessPoint`] purely to reuse `pt_iv`/`coord_hp` for its
 /// coord/tol/hp — the row is `d` itself, never `d − base`.
 pub fn dir_orient3d_judge(
     d: [Rat; 3],
@@ -109,7 +105,7 @@ pub fn dir_orient3d_judge(
     prec: usize,
 ) -> Orient {
     let dp = WitnessPoint::at(d);
-    let (bi, xi, yi, di) = (base.realized, x.realized, y.realized, dp.realized);
+    let (bi, xi, yi, di) = (base.coord_iv, x.coord_iv, y.coord_iv, dp.coord_iv);
     let sub_iv =
         |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
@@ -117,10 +113,10 @@ pub fn dir_orient3d_judge(
     }
     // Escalate: the same determinant at prec from the exact definitions.
     let (bh, xh, yh, dh) = (
-        base.hp_coord(prec),
-        x.hp_coord(prec),
-        y.hp_coord(prec),
-        dp.hp_coord(prec),
+        base.coord_hp(prec),
+        x.coord_hp(prec),
+        y.coord_hp(prec),
+        dp.coord_hp(prec),
     );
     let sub_hp = |u: &HpBounded, v: &HpBounded| u.sub(v, prec);
     let rows = [
@@ -136,7 +132,7 @@ pub fn dir_orient3d_judge(
             sub_hp(&yh[2], &bh[2]),
         ],
     ];
-    match det3_big_rows(&rows, prec).sign() {
+    match det3_rows_hp(&rows, prec).sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }

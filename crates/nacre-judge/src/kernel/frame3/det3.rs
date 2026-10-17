@@ -8,8 +8,18 @@ fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
     ]
 }
 
-/// f64 `orient3d` determinant `det[a−d, b−d, c−d]`.
-pub(super) fn det3_f64(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
+/// **The `orient3d` determinant of four witness points as an `f64` interval** — the filter's first
+/// rung. The value is `det[a−d, b−d, c−d]` in `f64` and the radius is [`orient3d_radius`]: derived
+/// from each point's proven tol and the determinant's own rounding, never a chosen threshold. A sign
+/// is trusted only when the interval excludes zero ([`Bounded::sign`]).
+pub(super) fn orient3d_iv(p: [&WitnessPoint; 4]) -> Bounded {
+    let c = p.map(|w| w.coord_approx());
+    let t = p.map(|w| w.tol());
+    Bounded::new(orient3d_mid(c[0], c[1], c[2], c[3]), orient3d_radius(c, t))
+}
+
+/// `det[a−d, b−d, c−d]` in `f64` — the middle of [`orient3d_iv`], with no promise of its own.
+fn orient3d_mid(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
     let r = rows(a, b, c, d);
     r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
         - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
@@ -27,8 +37,8 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 /// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. Checked by
-/// `det3_bound_soundness`.
-pub(super) fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
+/// `orient3d_iv_soundness`.
+fn orient3d_radius(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     let r = rows(p[0], p[1], p[2], p[3]);
     let td = t[3]; // apex tol adds to every edge on subtraction
     let t = [
@@ -67,7 +77,7 @@ pub(super) fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
 /// owns its rows makes the caller copy each value up to three times over. An `HpBounded` copy is a
 /// mantissa heap allocation, and this determinant is the hot path — [`cramer_hp`] alone made
 /// forty-five of them per call for values it only ever read.
-pub(super) fn det3_big(r: [[&HpBounded; 3]; 3], prec: usize) -> HpBounded {
+pub(super) fn det3_refs_hp(r: [[&HpBounded; 3]; 3], prec: usize) -> HpBounded {
     let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
     let m0 = mul(r[1][1], r[2][2]).sub(&mul(r[1][2], r[2][1]), prec);
     let m1 = mul(r[1][0], r[2][2]).sub(&mul(r[1][2], r[2][0]), prec);
@@ -77,9 +87,9 @@ pub(super) fn det3_big(r: [[&HpBounded; 3]; 3], prec: usize) -> HpBounded {
         .add(&mul(r[0][2], &m2), prec)
 }
 
-/// [`det3_big`] over rows the caller already owns — the borrow, spelled once.
-pub(super) fn det3_big_rows(r: &[[HpBounded; 3]; 3], prec: usize) -> HpBounded {
-    det3_big(
+/// [`det3_refs_hp`] over rows the caller already owns — the borrow, spelled once.
+pub(super) fn det3_rows_hp(r: &[[HpBounded; 3]; 3], prec: usize) -> HpBounded {
+    det3_refs_hp(
         [
             [&r[0][0], &r[0][1], &r[0][2]],
             [&r[1][0], &r[1][1], &r[1][2]],
@@ -99,10 +109,10 @@ pub(super) fn det3_hp(
     prec: usize,
 ) -> HpBounded {
     let (a, b, c, d) = (
-        pa.hp_coord(prec),
-        pb.hp_coord(prec),
-        pc.hp_coord(prec),
-        pd.hp_coord(prec),
+        pa.coord_hp(prec),
+        pb.coord_hp(prec),
+        pc.coord_hp(prec),
+        pd.coord_hp(prec),
     );
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let rows = [
@@ -110,7 +120,7 @@ pub(super) fn det3_hp(
         [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
         [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
     ];
-    det3_big_rows(&rows, prec)
+    det3_rows_hp(&rows, prec)
 }
 
 /// The points' pre-motion coordinates, **brought into the moved frame's handedness**, when they

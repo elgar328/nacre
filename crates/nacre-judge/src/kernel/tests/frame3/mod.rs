@@ -16,8 +16,8 @@ const FIXTURE_PREC: usize = 256;
 /// The judgement context those fixtures use: that precision, plus the coincidence limit the
 /// default derivation gives a unit-scale model (output resolution `2⁻⁵²`, two words further
 /// down) and the production cap.
-pub(in crate::kernel::frame3) fn fixture() -> Standard {
-    Standard {
+pub(in crate::kernel::frame3) fn fixture() -> ProofStandard {
+    ProofStandard {
         prec: FIXTURE_PREC,
         coincidence: Mag::pow2(-180),
         scale: Mag::of(1.0),

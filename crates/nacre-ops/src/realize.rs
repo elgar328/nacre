@@ -884,7 +884,7 @@ fn axis_hp(
     chain: &[nacre_judge::MoveNode],
     bits: usize,
 ) -> Option<([HpBounded; 3], [HpBounded; 3])> {
-    let origin = replay(WitnessPoint::at(def.origin()), chain)?.realize(bits);
+    let origin = replay(WitnessPoint::at(def.origin()), chain)?.coord_hp(bits);
     let axis = replayed_offset(def, &def.dir(), &origin, chain, bits)?;
     Some((origin, axis))
 }
@@ -904,7 +904,7 @@ fn replayed_offset(
         o[1].checked_add(v[1])?,
         o[2].checked_add(v[2])?,
     ];
-    let p = replay(WitnessPoint::at(tip), chain)?.realize(bits);
+    let p = replay(WitnessPoint::at(tip), chain)?.coord_hp(bits);
     Some(core::array::from_fn(|k| p[k].sub(&origin[k], bits)))
 }
 
@@ -978,7 +978,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         None => Vec::new(),
     };
     let rungs = budget.rungs();
-    let realize_point = |p: &WitnessPoint| on_rungs(rungs, |bits| Some(p.realize(bits)));
+    let realize_point = |p: &WitnessPoint| on_rungs(rungs, |bits| Some(p.coord_hp(bits)));
     let anchor = match (narrow_meets[0], points) {
         (Some(p0), _) => match replay(WitnessPoint::at(p0), &chain) {
             Some(p) => Half::from_stopped(realize_point(&p)),
@@ -1021,7 +1021,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
 /// ([`crate::rotated_vertex::plane_witness`], the triangle the judging table winds), facing the way
 /// that triangle's `turn` says, and anchored at its first defining point: `first`, realized from its
 /// definition and carried through the plane's own chain (the producer anchors there too —
-/// `FrameThrough::anchor_coord`).
+/// `FrameThrough::anchor_approx`).
 ///
 /// ★ Not the rejected «spread a judging witness into the cache's normal» (design 「가지 말 것」):
 /// that draft multiplied `sense` onto a frame's probes, whose turn is the frame's, not the
@@ -1095,7 +1095,7 @@ fn carried_name_normal(
         return Half::NoRoad;
     };
     Half::from_stopped(on_rungs(rungs, |bits| {
-        let (t, h) = (tail.realize(bits), head.realize(bits));
+        let (t, h) = (tail.coord_hp(bits), head.coord_hp(bits));
         unit(core::array::from_fn(|k| h[k].sub(&t[k], bits)), bits)
     }))
 }
@@ -1905,7 +1905,7 @@ fn build_three_plane(
         None => (
             replay(WitnessPoint::at(base), &chain)
                 .ok_or(RealizeError::NoMotionChain)?
-                .realize(bits),
+                .coord_hp(bits),
             None,
         ),
     };

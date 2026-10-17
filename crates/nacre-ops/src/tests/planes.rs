@@ -7,7 +7,7 @@ impl FaceInfo {
     pub(crate) fn witness_coords(&self) -> [Point3; 3] {
         self.tri_pt3
             .each_ref()
-            .map(|w| Point3::from_array(w.coord()))
+            .map(|w| Point3::from_array(w.coord_approx()))
     }
 }
 
@@ -16,7 +16,7 @@ impl WorkingPlane {
     pub(crate) fn witness_coords(&self) -> [Point3; 3] {
         self.tri_pt3
             .each_ref()
-            .map(|w| Point3::from_array(w.coord()))
+            .map(|w| Point3::from_array(w.coord_approx()))
     }
 }
 

@@ -1,10 +1,10 @@
 //! **Soundness oracles that do not borrow the judge's arithmetic.**
 //!
 //! A judge that escalates realizes its question at high precision through its own functions
-//! (`plane_hp`, `cramer_hp`, `indirect_hp`, `cmp_hp_with_gap`, `det3_big_rows`). An oracle built
+//! (`plane_hp`, `cramer_hp`, `indirect_hp`, `cmp_hp_with_gap`, `det3_rows_hp`). An oracle built
 //! from those same functions can only compare a function with itself at another precision: a
 //! mistake in them is made twice and passes. So the truth here shares only the **input** — each
-//! point's own realization, `WitnessPoint::hp_coord` (cross-checked against the separately
+//! point's own realization, `WitnessPoint::coord_hp` (cross-checked against the separately
 //! written f64 walk by `tol_bounds_error_over_random_chains`) — and takes a different road from
 //! there:
 //!
@@ -56,7 +56,7 @@ fn sign(x: &BigFloat) -> Option<bool> {
 }
 
 fn point(w: &WitnessPoint, p: usize) -> P3 {
-    let h = w.hp_coord(p);
+    let h = w.coord_hp(p);
     [h[0].value.clone(), h[1].value.clone(), h[2].value.clone()]
 }
 
