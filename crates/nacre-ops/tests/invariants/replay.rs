@@ -450,6 +450,93 @@ fn truth_sig(m: &Model) -> Vec<SigItem> {
     out
 }
 
+/// The model [`refining_mid_log_leaves_every_later_truth_as_it_was`] builds — the deep prism, with
+/// the refine door opened after it when `refine` — then a box moved onto it, a datum through the
+/// box's corners, their fuse and a pad on the fused top. One construction for both roads: they
+/// push the same cells in the same order, so a handle means the same thing on both.
+fn refined_mid_log(refine: bool) -> Model {
+    let (_, mut m) = deep_transform_log();
+    if refine {
+        let report = nacre_ops::refine_caches(&mut m);
+        assert!(
+            report.vertices.refined > 0 && report.surfaces.refined > 0,
+            "the deep prism must carry vertex and surface Ceilings, or the door changes \
+             nothing: {report:?}"
+        );
+    }
+    let prism = m.live_solids()[0];
+    let ex = extrude_op(&m, 1.0, 3.0, 1.0);
+    let OpOutput::Extrude { solid: b, .. } = apply(&mut m, &ex).expect("a second box") else {
+        unreachable!()
+    };
+    let OpOutput::Transform { solid: b } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: b,
+            // Onto the prism, which 200 steps of 1/7 took to x ≈ 28.6: the box spans
+            // x ∈ [28⅓, 30⅓], y ∈ [1, 3], so the fuse has to judge the prism's corners.
+            isometry: Isometry::translation([
+                Rat::new(82, 3).expect("27⅓"),
+                Rat::from_int(0),
+                Rat::from_int(0),
+            ]),
+        },
+    )
+    .expect("the box moves") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    // A datum through three corners of the moved box's top (the transform keeps face order,
+    // and an extrude's second face is its far cap).
+    let top = m.shell(m.solid(b).outer).faces[1];
+    let corners: Vec<_> = m.face(top).outer.half_edges[..3]
+        .iter()
+        .map(|&he| m.he_start(he))
+        .collect();
+    apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices([corners[0], corners[1], corners[2]]),
+        },
+    )
+    .expect("a datum through the box's corners");
+    let top_plane = m.face(top).surface;
+    let OpOutput::Boolean { solids } = apply(
+        &mut m,
+        &Operation::Boolean {
+            kind: BoolKind::Fuse,
+            a: prism,
+            b,
+        },
+    )
+    .expect("the deep prism and the box fuse") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert_eq!(solids.len(), 1, "the box overlaps the prism: one body");
+    let face = solids
+        .iter()
+        .flat_map(|&s| m.shell(m.solid(s).outer).faces.clone())
+        .find(|&f| m.face(f).surface == top_plane)
+        .expect("the fuse keeps a face on the box's top plane");
+    // The top's frame is the world's (u = x, v = y): a rectangle inside the box's top.
+    nacre_ops::fixtures::pad(
+        &mut m,
+        face,
+        Profile2d::polygon(vec![
+            Point2::from_array([29.0, 1.5]),
+            Point2::from_array([29.5, 1.5]),
+            Point2::from_array([29.5, 2.0]),
+            Point2::from_array([29.0, 2.0]),
+        ])
+        .expect("a rectangle"),
+        0.5,
+    )
+    .expect("a pad on the fused top");
+    m.rebuild_adjacency();
+    m
+}
+
 /// ★★★ **Refining in the middle of a log leaves every later truth as it was.**
 ///
 /// The refine door rewrites vertex caches — `Ceiling` to `Bounded` — and an operation after it
@@ -462,91 +549,7 @@ fn truth_sig(m: &Model) -> Vec<SigItem> {
 /// rows, or the door did nothing to measure against.
 #[test]
 fn refining_mid_log_leaves_every_later_truth_as_it_was() {
-    // One construction, with the door on one road only; both roads push the same cells in the
-    // same order, so a handle means the same thing on both.
-    let build = |refine: bool| -> Model {
-        let (_, mut m) = deep_transform_log();
-        if refine {
-            let report = nacre_ops::refine_caches(&mut m);
-            assert!(
-                report.vertices.refined > 0 && report.surfaces.refined > 0,
-                "the deep prism must carry vertex and surface Ceilings, or the door changes \
-                 nothing: {report:?}"
-            );
-        }
-        let prism = m.live_solids()[0];
-        let ex = extrude_op(&m, 1.0, 3.0, 1.0);
-        let OpOutput::Extrude { solid: b, .. } = apply(&mut m, &ex).expect("a second box") else {
-            unreachable!()
-        };
-        let OpOutput::Transform { solid: b } = apply(
-            &mut m,
-            &Operation::Transform {
-                solid: b,
-                // Onto the prism, which 200 steps of 1/7 took to x ≈ 28.6: the box spans
-                // x ∈ [28⅓, 30⅓], y ∈ [1, 3], so the fuse has to judge the prism's corners.
-                isometry: Isometry::translation([
-                    Rat::new(82, 3).expect("27⅓"),
-                    Rat::from_int(0),
-                    Rat::from_int(0),
-                ]),
-            },
-        )
-        .expect("the box moves") else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        // A datum through three corners of the moved box's top (the transform keeps face order,
-        // and an extrude's second face is its far cap).
-        let top = m.shell(m.solid(b).outer).faces[1];
-        let corners: Vec<_> = m.face(top).outer.half_edges[..3]
-            .iter()
-            .map(|&he| m.he_start(he))
-            .collect();
-        apply(
-            &mut m,
-            &Operation::DatumPlane {
-                def: nacre_ops::DatumDef::ThroughVertices([corners[0], corners[1], corners[2]]),
-            },
-        )
-        .expect("a datum through the box's corners");
-        let top_plane = m.face(top).surface;
-        let OpOutput::Boolean { solids } = apply(
-            &mut m,
-            &Operation::Boolean {
-                kind: BoolKind::Fuse,
-                a: prism,
-                b,
-            },
-        )
-        .expect("the deep prism and the box fuse") else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        assert_eq!(solids.len(), 1, "the box overlaps the prism: one body");
-        let face = solids
-            .iter()
-            .flat_map(|&s| m.shell(m.solid(s).outer).faces.clone())
-            .find(|&f| m.face(f).surface == top_plane)
-            .expect("the fuse keeps a face on the box's top plane");
-        // The top's frame is the world's (u = x, v = y): a rectangle inside the box's top.
-        nacre_ops::fixtures::pad(
-            &mut m,
-            face,
-            Profile2d::polygon(vec![
-                Point2::from_array([29.0, 1.5]),
-                Point2::from_array([29.5, 1.5]),
-                Point2::from_array([29.5, 2.0]),
-                Point2::from_array([29.0, 2.0]),
-            ])
-            .expect("a rectangle"),
-            0.5,
-        )
-        .expect("a pad on the fused top");
-        m.rebuild_adjacency();
-        m
-    };
-    let (plain, refined) = (build(false), build(true));
+    let (plain, refined) = (refined_mid_log(false), refined_mid_log(true));
     let (tp, tr) = (truth_sig(&plain), truth_sig(&refined));
     for what in ["surface.truth", "surface.chain", "vertex.def"] {
         assert!(
@@ -570,6 +573,51 @@ fn refining_mid_log_leaves_every_later_truth_as_it_was() {
         arena_sig(&plain),
         arena_sig(&refined),
         "the caches must differ, or this measured a door that changed nothing"
+    );
+}
+
+/// Every vertex in the arena — superseded ones too, and those a rejected operation left behind —
+/// asked again from its definition ([`nacre_ops::audit_vertex_caches`]). Returns what was counted,
+/// so a caller can say the lock looked at something.
+fn assert_caches_regenerate(m: &Model, what: &str) -> nacre_ops::VertexCacheAudit {
+    let every = (0u32..).map_while(|i| m.vertex_handle_at(i));
+    let audit = nacre_ops::audit_vertex_caches(m, every);
+    assert!(
+        audit.mismatches.is_empty(),
+        "{what}: a vertex cache is not what its definition answers at the end of the log: {:?}",
+        audit.mismatches
+    );
+    audit
+}
+
+/// ★★★ **The vertex cache regenerates from the definition — at the end of a log, not only after
+/// the operation that pushed the vertex.** The vertex sibling of the edges'
+/// `edge_cache_discard_and_regenerate_bit_identical`, as a reader: a `Bounded` cache is what the
+/// definition answers again, bit for bit, and a `Ceiling` or `Unrealized` one is where the road
+/// still stops for that reason (its figure regenerates from the log alone — [`arena_sig`]).
+///
+/// Asked after everything a log does between a push and the end: later operations push more
+/// surfaces and motions, the prefix table hands entries over and drops them, results supersede
+/// their inputs. Three logs — every variant; the deep prism, whose vertices stop on cost; and the
+/// prism refined mid-log and built on, whose raised vertices must be what the paid road answers.
+#[test]
+fn vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log() {
+    let (_, every) = every_variant_log();
+    let a = assert_caches_regenerate(&every, "every variant");
+    assert!(a.realized > 0, "every variant: nothing realized");
+    assert_eq!(a.raised, 0, "every variant: nothing raised a vertex");
+
+    let (_, deep) = deep_transform_log();
+    let a = assert_caches_regenerate(&deep, "deep transform");
+    assert!(a.ceiling > 0, "deep transform: no vertex stopped on cost");
+    assert_eq!(a.raised, 0, "deep transform: nothing raised a vertex");
+
+    let refined = refined_mid_log(true);
+    let a = assert_caches_regenerate(&refined, "refined mid-log");
+    assert!(a.raised > 0, "refined mid-log: the door raised nothing");
+    println!(
+        "refined mid-log: realized={} raised={} ceiling={} unrealized={}",
+        a.realized, a.raised, a.ceiling, a.unrealized
     );
 }
 
@@ -1052,6 +1100,7 @@ proptest! {
 
         let violations = nacre_validate::validate(&session);
         prop_assert!(violations.is_empty(), "session model is invalid: {violations:?}");
+        assert_caches_regenerate(&session, "generated session");
 
         let once = replay(&log).expect("the accepted log replays");
         assert_same_arena(&once, &session, "replay(log) vs session");
@@ -1089,6 +1138,14 @@ proptest! {
 /// new variant does not compile until this fixture says how it is reached.
 #[test]
 fn a_log_using_every_variant_replays() {
+    let (log, m) = every_variant_log();
+    let replayed = replay(&log).expect("a log of every variant replays");
+    assert_same_arena(&replayed, &m, "every variant");
+}
+
+/// The log [`a_log_using_every_variant_replays`] replays, and the model it built — every variant of
+/// [`Operation`], checked here so a fixture that stops reaching one fails where it is built.
+fn every_variant_log() -> (Vec<Operation>, Model) {
     fn variant(op: &Operation) -> &'static str {
         match op {
             Operation::DatumPlane { .. } => "DatumPlane",
@@ -1260,9 +1317,7 @@ fn a_log_using_every_variant_replays() {
         ],
         "this fixture is supposed to exercise every variant an application writes"
     );
-
-    let replayed = replay(&log).expect("a log of every variant replays");
-    assert_same_arena(&replayed, &m, "every variant");
+    (log, m)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

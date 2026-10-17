@@ -862,9 +862,12 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 /// has been **proven** about the coordinate, and the arrangement's self-touch sieve reads this
 /// bound too.
 ///
-/// Unlike [`EdgeCache`] there is no discard-and-rebuild: a vertex is realized when it is pushed, so
-/// the cache is the realization's memo from the start. What can happen later is a **refinement** —
-/// `Ceiling` raised to `Bounded` — which only ever makes a coordinate more accurate.
+/// Unlike [`EdgeCache`] there is no door that discards it and writes it again: a vertex is realized
+/// when it is pushed, so the cache is the realization's memo from the start, and a rewrite would have
+/// nothing to do — a `Bounded` coordinate is what the definition answers again, and a `Ceiling` or
+/// `Unrealized` one is the construction's figure, which only replaying the log produces again. What
+/// can happen later is a **refinement** — `Ceiling` raised to `Bounded` — which only ever makes a
+/// coordinate more accurate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PointCache {
     /// Realized from the definition: the truth lies within `coord ± bound` on every axis.

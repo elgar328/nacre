@@ -46,7 +46,7 @@ mod stated;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, Solid};
+use nacre_topo::{Model, Solid};
 use stated::*;
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
@@ -179,9 +179,6 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     (bits.len(), h.finish())
 }
 
-/// Running totals of [`nacre_ops::audit_plane_senses`] over every row — `agree`, `unmeasured`,
-/// `mirrored`, `turned`. This binary's dump is its only test, so a process-global sum is the
-/// corpus's.
 /// Result-vertex coordinates the realization read as `+0.0` by the coincidence rule
 /// (`Realized::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero carries
 /// a zero bound, and no other decided coordinate is `0.0`, so this counts the rule's answers
@@ -239,6 +236,9 @@ fn surface_audit(m: &Model) -> Vec<String> {
     off
 }
 
+/// Running totals of [`nacre_ops::audit_plane_senses`] over every row — `agree`, `unmeasured`,
+/// `mirrored`, `turned`. This binary's dump is its only test, so a process-global sum is the
+/// corpus's.
 static SENSE: [std::sync::atomic::AtomicUsize; 4] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 4];
 
@@ -541,17 +541,18 @@ fn record(
                 ));
             }
             println!("{} {}", v.len(), parts.join(" "));
-            // ★ **The cache is the realization**: every result vertex the push funnel
-            // could realize on the ladder's first rung is `Bounded` with that value bit for bit.
-            // Asked again here with the funnel's own question, so the row cannot pass by measuring
-            // nothing.
+            // ★ **The cache is the realization**: every result vertex is asked again with the push
+            // funnel's own question (`nacre_ops::audit_vertex_caches`), so the row cannot pass by
+            // measuring nothing.
             //
-            // ★★ And the refusals are counted **by name**, not as one lump. "The cache road stopped
-            // and a paid road can answer" (`ceiling`) and "there is no road" (`unrealized`) are
-            // different reports — one is a cost, the other is a gap in the kernel — and a single
-            // `kept=` would hide the second behind the first as the population moves.
+            // ★★ The contract is **answer ⇔ variant**, three ways: the road answers and the cache is
+            // `Bounded` with that very coordinate and bound, bit for bit; the road stops for bits or
+            // cost and the cache is `Ceiling`; the road has no way there at all and the cache is
+            // `Unrealized`. The refusals are counted **by name**, not as one lump — "a paid road can
+            // answer" and "there is no road" are different reports, one a cost and the other a gap
+            // in the kernel. Nothing here opens the refine door, so no vertex may be `raised`.
             let mut seen = std::collections::HashSet::new();
-            let (mut realized, mut kept, mut ceiling) = (0usize, 0usize, 0usize);
+            let mut vertices = Vec::new();
             for &s in v {
                 let src = m.solid(s).clone();
                 for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
@@ -560,54 +561,8 @@ fn record(
                         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                             for he in &lp.half_edges {
                                 for &vh in m.edge(he.edge).vertices.iter() {
-                                    if !seen.insert(vh) {
-                                        continue;
-                                    }
-                                    // ★★ The contract is now **answer ⇔ variant**, three ways: the
-                                    // road answers and the cache is `Bounded` with that very
-                                    // coordinate; the road stops for bits or cost and the cache is
-                                    // `Ceiling`; the road has no way there at all and the cache is
-                                    // `Unrealized`. Written out rather than as "not Bounded", so a
-                                    // vertex cannot drift between the two refusals unnoticed.
-                                    match nacre_ops::realize_cache(m, m.vertex(vh)) {
-                                        Ok((c, b)) => {
-                                            realized += 1;
-                                            let zeros = (0..3)
-                                                .filter(|&k| c[k] == 0.0 && !b[k].is_zero())
-                                                .count();
-                                            ZERO_BY_COINCIDENCE.fetch_add(
-                                                zeros,
-                                                std::sync::atomic::Ordering::Relaxed,
-                                            );
-                                            assert!(
-                                                matches!(m.vertex_cache(vh), PointCache::Bounded { coord, .. } if coord.as_array() == c),
-                                                "{tag}: vertex {} is not the realization: {:?} vs {c:?}",
-                                                vh.index(),
-                                                m.vertex_cache(vh)
-                                            );
-                                        }
-                                        Err(d) => {
-                                            kept += 1;
-                                            let want_ceiling = matches!(
-                                                d,
-                                                nacre_ops::CacheDecline::CostCap
-                                                    | nacre_ops::CacheDecline::Cannot(
-                                                        nacre_ops::RealizeError::Undecided
-                                                    )
-                                            );
-                                            let is_ceiling = matches!(
-                                                m.vertex_cache(vh),
-                                                PointCache::Ceiling { .. }
-                                            );
-                                            ceiling += usize::from(is_ceiling);
-                                            assert_eq!(
-                                                want_ceiling,
-                                                is_ceiling,
-                                                "{tag}: vertex {} declined with {d:?} but the cache says {:?}",
-                                                vh.index(),
-                                                m.vertex_cache(vh)
-                                            );
-                                        }
+                                    if seen.insert(vh) {
+                                        vertices.push(vh);
                                     }
                                 }
                             }
@@ -615,9 +570,20 @@ fn record(
                     }
                 }
             }
+            let audit = nacre_ops::audit_vertex_caches(m, vertices);
+            assert!(
+                audit.mismatches.is_empty(),
+                "{tag}: a vertex is not its definition's realization: {:?}",
+                audit.mismatches
+            );
+            assert_eq!(audit.raised, 0, "{tag}: nothing here raised a vertex");
+            ZERO_BY_COINCIDENCE.fetch_add(
+                audit.coincidence_zeros,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             println!(
-                "r {tag} realized={realized} ceiling={ceiling} unrealized={}",
-                kept - ceiling
+                "r {tag} realized={} ceiling={} unrealized={}",
+                audit.realized, audit.ceiling, audit.unrealized
             );
         }
     }

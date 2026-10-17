@@ -1394,6 +1394,102 @@ pub fn rebuild_edge_cache_paid(model: &mut Model) {
     let _ = rebuild_edges(model, &live, Budget::Paid);
 }
 
+/// What [`audit_vertex_caches`] found of the vertices it was given — each counted once, by what its
+/// cache knows.
+#[cfg(any(test, feature = "test-util"))]
+#[derive(Clone, Debug, Default)]
+pub struct VertexCacheAudit {
+    /// `Bounded`, bit for bit what the cache road answers.
+    pub realized: usize,
+    /// `Ceiling`, where the cache road stops for bits or cost.
+    pub ceiling: usize,
+    /// `Bounded` where the cache road stops — raised by the refine door, so bit for bit what the
+    /// paid road answers.
+    pub raised: usize,
+    /// `Unrealized`, where the cache road has no way.
+    pub unrealized: usize,
+    /// Coordinates of `realized` vertices read as `0.0` with a nonzero bound — the coincidence
+    /// rule's answers ([`Realized::to_f64`]). An exact zero carries a zero bound.
+    pub coincidence_zeros: usize,
+    /// The vertices whose cache is not what their definition answers, with what was asked.
+    pub mismatches: Vec<(Handle<Vertex>, String)>,
+}
+
+/// ★★ **The vertex cache regenerates from the definition** — the vertex lock's one rule, asked of
+/// each vertex given: the cache road ([`realize_cache`]) answers again and the cache is that very
+/// answer, or the road stops and the cache says why. Compared bit for bit, so `-0.0` is not
+/// `+0.0`.
+///
+/// There is no door that discards the vertex cache and writes it again, because there is nothing a
+/// rewrite could do: a `Bounded` cache is already this answer, and a `Ceiling` or `Unrealized` one
+/// holds the construction's figure, which no realization produces — the log does, replayed. So
+/// this only reads, and «discard and regenerate» is the claim that this finds nothing at any point
+/// of a log, not only right after the operation that pushed the vertex.
+///
+/// A `Bounded` vertex the cache road stops on is one the refine door raised ([`refine_caches`]):
+/// it must be what the paid road answers, and it is counted apart (`raised`) so a caller that never
+/// opened that door can say none exists.
+#[cfg(any(test, feature = "test-util"))]
+pub fn audit_vertex_caches(
+    model: &Model,
+    vertices: impl IntoIterator<Item = Handle<Vertex>>,
+) -> VertexCacheAudit {
+    let bits = |c: [f64; 3]| c.map(f64::to_bits);
+    let same = |coord: Point3, bound: [Mag; 3], (c, b): ([f64; 3], [Mag; 3])| {
+        bits(coord.as_array()) == bits(c) && bound == b
+    };
+    let mut out = VertexCacheAudit::default();
+    for vh in vertices {
+        let cache = *model.vertex_cache(vh);
+        let wrong = match realize_cache(model, model.vertex(vh)) {
+            Ok(answer) => match cache {
+                PointCache::Bounded { coord, bound } if same(coord, bound, answer) => {
+                    out.realized += 1;
+                    let (c, b) = answer;
+                    out.coincidence_zeros +=
+                        (0..3).filter(|&k| c[k] == 0.0 && !b[k].is_zero()).count();
+                    None
+                }
+                _ => Some(format!("the cache road answers {answer:?}")),
+            },
+            Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
+                match cache {
+                    PointCache::Ceiling { .. } => {
+                        out.ceiling += 1;
+                        None
+                    }
+                    PointCache::Bounded { coord, bound } => {
+                        match realize_vertex(model, vh, Precision::NearestF64).map(|r| r.to_f64()) {
+                            Ok(Some(paid)) if same(coord, bound, paid) => {
+                                out.raised += 1;
+                                None
+                            }
+                            paid => Some(format!(
+                                "the cache road stops, and the paid road answers {paid:?}"
+                            )),
+                        }
+                    }
+                    PointCache::Unrealized { .. } => {
+                        Some("the cache road stops for bits or cost".to_owned())
+                    }
+                }
+            }
+            Err(d) => match cache {
+                PointCache::Unrealized { .. } => {
+                    out.unrealized += 1;
+                    None
+                }
+                _ => Some(format!("the cache road has no way ({d:?})")),
+            },
+        };
+        if let Some(asked) = wrong {
+            out.mismatches
+                .push((vh, format!("{asked}, and the cache is {cache:?}")));
+        }
+    }
+    out
+}
+
 /// What [`rim_centre_check`] found of a rim's cached centre against its truth.
 #[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -488,8 +488,8 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
 }
 
 /// ★★★ **An operation's cache is the realization.** Every vertex the push funnel could realize
-/// on the ladder's first rung carries `Bounded` with that realization bit for bit; every one it
-/// could not is not `Bounded`.
+/// on the ladder's first two rungs carries `Bounded` with that realization bit for bit; every one
+/// it could not carries the variant that says why (`nacre_ops::audit_vertex_caches`).
 #[test]
 fn an_operations_cache_is_the_realization() {
     for (what, m) in [
@@ -497,35 +497,21 @@ fn an_operations_cache_is_the_realization() {
         ("boolean'd twice", boolean_twice()),
         ("tilted frame", tilted_frame(1)),
     ] {
-        let (mut realized, mut kept) = (0usize, 0usize);
-        for vh in live_vertices(&m) {
-            match realize_cache(&m, m.vertex(vh)) {
-                Ok((v, bound)) => {
-                    realized += 1;
-                    let PointCache::Bounded { coord, bound: b } = *m.vertex_cache(vh) else {
-                        panic!(
-                            "{what}: a realizable vertex is not Bounded: {:?}",
-                            m.vertex_cache(vh)
-                        );
-                    };
-                    assert_eq!(
-                        coord.as_array(),
-                        v,
-                        "{what}: the cache is the realization, bit for bit"
-                    );
-                    assert_eq!(b, bound, "{what}: and carries its bound");
-                }
-                Err(_) => {
-                    kept += 1;
-                    assert!(
-                        !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
-                        "{what}: a refused vertex cannot be Bounded"
-                    );
-                }
-            }
-        }
-        println!("{what:<18} realized={realized} kept={kept}");
-        assert!(realized > 0, "{what}: nothing realized — the road is dead");
+        let audit = nacre_ops::audit_vertex_caches(&m, live_vertices(&m));
+        println!(
+            "{what:<18} realized={} ceiling={} unrealized={}",
+            audit.realized, audit.ceiling, audit.unrealized
+        );
+        assert!(
+            audit.mismatches.is_empty(),
+            "{what}: a vertex is not its definition's realization: {:?}",
+            audit.mismatches
+        );
+        assert_eq!(audit.raised, 0, "{what}: nothing here raised a vertex");
+        assert!(
+            audit.realized > 0,
+            "{what}: nothing realized — the road is dead"
+        );
     }
 }
 

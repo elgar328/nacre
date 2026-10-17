@@ -33,7 +33,9 @@ impl Model {
     /// realization's memo ([`PointCache::Bounded`]) or a named reason it is not
     /// ([`PointCache::Ceiling`], [`PointCache::Unrealized`]). The old warrant for the absence
     /// (*"238 of 1,992 differ from a naive re-solve"*) compared against a naive re-solve; the
-    /// exact-rounding realization is not one, and the census says so vertex by vertex.
+    /// exact-rounding realization is not one: the census says so vertex by vertex, and nacre-ops'
+    /// `vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log` asks every vertex of
+    /// an arena again once its log has ended.
     ///
     /// ⚠ **A second writer does exist, and it only ever raises**: `nacre_ops::refine_caches`
     /// lifts a `Ceiling` to `Bounded` by paying for the realization this road would not. It cannot
