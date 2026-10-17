@@ -4,10 +4,10 @@ use super::*;
 
 impl Model {
     /// Push a **plane**, stating its truth outright: three exact points and the motion they are
-    /// written before (`None` = the world), with the producer's own `f64` figure as the
-    /// `fallback` cache. The truth is not optional: there is no point-less plane.
+    /// written before (`None` = the world), with the producer's own `f64` figure (`figure`) for the
+    /// cache. The truth is not optional: there is no point-less plane.
     ///
-    /// ★ **`fallback` stands only where the plane has no world name** (a chain that does not fold,
+    /// ★ **`figure` stands only where the plane has no world name** (a chain that does not fold,
     /// a mixed-frame `Through`) — everywhere else the cache is the truth's realization
     /// (`derive_surface_cache`), and the figure handed in is dropped.
     ///
@@ -31,7 +31,7 @@ impl Model {
     /// plane approached from both sides, which is as ordinary as it sounds.
     pub fn push_plane(
         &mut self,
-        fallback: nacre_geom::Plane,
+        figure: nacre_geom::Plane,
         standing: CacheStanding,
         points: [[nacre_exact::Rat; 3]; 3],
         motion: Option<Handle<MotionNode>>,
@@ -46,7 +46,7 @@ impl Model {
             points: PlanePoints::Known(points),
             motion,
             sense,
-            fallback,
+            figure,
             standing,
         })
     }
@@ -107,11 +107,11 @@ impl Model {
                 points,
                 motion,
                 sense,
-                fallback,
+                figure,
                 ..
             } => {
                 debug_assert!(
-                    self.cache_agrees_with_sense(fallback, points, *motion, *sense) != Some(false),
+                    self.cache_agrees_with_sense(figure, points, *motion, *sense) != Some(false),
                     "the stated sense {sense:?} disagrees with the figure the producer built"
                 );
                 let keyed = self.plane_key(points, *motion);
@@ -167,7 +167,7 @@ impl Model {
                 points,
                 motion,
                 sense,
-                fallback,
+                figure,
                 standing,
             } => {
                 // One clone per push — the name is derived once here, never on a judging loop.
@@ -175,14 +175,14 @@ impl Model {
                     Some(SurfaceKey::Name(n, _)) => Some(n.clone()),
                     _ => None,
                 };
-                self.push_plane_raw(points, motion, sense, name, fallback, standing)
+                self.push_plane_raw(points, motion, sense, name, figure, standing)
             }
             Stated::Cylinder {
                 def,
                 motion,
-                cache,
+                figure,
                 standing,
-            } => self.push_cylinder_raw(def, motion, cache, standing, true),
+            } => self.push_cylinder_raw(def, motion, figure, standing, true),
         };
         if let Some(k) = key {
             self.interned.insert(k, h);
@@ -241,7 +241,7 @@ impl Model {
     /// nothing moved the plane after them). Through a folded chain the points' cross travels as
     /// `det M · M·n` — the linear part carries it, and a reflection, carrying points, reverses
     /// it; the offset plays no part, so a chain whose offset overflowed still answers.
-    pub(super) fn points_world_direction(
+    pub(super) fn points_world_direction_approx(
         &self,
         points: &PlanePoints,
         motion: Option<Handle<MotionNode>>,
@@ -260,7 +260,7 @@ impl Model {
         match motion {
             None => Some(w),
             Some(leaf) => {
-                let fold = self.chain_fold(leaf)?;
+                let fold = self.chain_affine(leaf)?;
                 let det = f64::from(fold.det());
                 Some(fold.dir_f64(w).map(|c| c * det))
             }
@@ -277,7 +277,7 @@ impl Model {
     /// unnamed one's is turned by [`Model::align_cache_sense`]).
     fn cache_agrees_with_sense(
         &self,
-        cache: &nacre_geom::Plane,
+        figure: &nacre_geom::Plane,
         points: &PlanePoints,
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
@@ -285,8 +285,8 @@ impl Model {
         if matches!(points, PlanePoints::Through(_)) {
             return None;
         }
-        let w = self.points_world_direction(points, motion)?;
-        let n = cache.normal().as_array();
+        let w = self.points_world_direction_approx(points, motion)?;
+        let n = figure.normal().as_array();
         let d = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign());
         d.is_finite().then_some(d > 0.0)
     }
@@ -330,7 +330,7 @@ impl Model {
     /// [`push_plane`]: Model::push_plane
     pub fn push_plane_through(
         &mut self,
-        fallback: nacre_geom::Plane,
+        figure: nacre_geom::Plane,
         standing: CacheStanding,
         vertices: [Handle<Vertex>; 3],
         motion: Option<Handle<MotionNode>>,
@@ -344,7 +344,7 @@ impl Model {
             points: PlanePoints::Through(vertices),
             motion,
             sense,
-            fallback,
+            figure,
             standing,
         })
     }
@@ -484,7 +484,7 @@ impl Model {
             );
             Some(named(nacre_exact::three_planes_big([&a, &b, &c]), None))
         };
-        let motions = tri.map(|h| self.plane_motion(h));
+        let motions = tri.map(|h| self.surface_motion(h));
         // One shared leaf among the **moved** carriers; no moved carrier means the world.
         let mut leaf = None;
         for m in motions.iter().flatten() {
@@ -540,7 +540,7 @@ impl Model {
 
     /// The motion a surface's truth records, whichever variant it is.
     #[inline]
-    pub fn plane_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
+    pub fn surface_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
         match self.surface(h) {
             Surface::Plane { motion, .. } | Surface::Cylinder { motion, .. } => *motion,
         }
@@ -553,7 +553,7 @@ impl Model {
     /// way round to report.
     pub fn push_cylinder(
         &mut self,
-        cache: nacre_geom::Cylinder,
+        figure: nacre_geom::Cylinder,
         standing: CacheStanding,
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
@@ -561,7 +561,7 @@ impl Model {
         self.intern(Stated::Cylinder {
             def,
             motion,
-            cache,
+            figure,
             standing,
         })
         .0
@@ -576,13 +576,13 @@ enum Stated {
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
-        fallback: nacre_geom::Plane,
+        figure: nacre_geom::Plane,
         standing: CacheStanding,
     },
     Cylinder {
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
-        cache: nacre_geom::Cylinder,
+        figure: nacre_geom::Cylinder,
         standing: CacheStanding,
     },
 }

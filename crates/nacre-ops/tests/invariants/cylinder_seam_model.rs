@@ -202,7 +202,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
             matches!(m.edge_curve(eh), Curve::Line(_))
                 && s.iter()
                     .all(|&h| matches!(m.surface(h), Surface::Plane { .. }))
-                && m.line_direction_from_names(s).is_none()
+                && m.world_line_direction_f64(s).is_none()
         })
         .count();
     assert!(

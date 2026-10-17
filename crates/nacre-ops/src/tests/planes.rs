@@ -339,7 +339,7 @@ fn plane_classes_merge_only_what_interning_merged() {
             let surfaces: std::collections::HashSet<_> =
                 faces.iter().map(|f| f.plane().surf).collect();
             assert!(
-                surfaces.iter().all(|&s| m.plane_motion(s).is_none()),
+                surfaces.iter().all(|&s| m.surface_motion(s).is_none()),
                 "{case}: the oracle needs unmoved planes"
             );
             let mut roots = plane_classes(&test_judge(&faces));

@@ -18,7 +18,7 @@
 //! this measures.
 //!
 //! Populations come from the kernel's own discriminator rather than from a story: a vertex is
-//! `PointCache::Bounded` when it was realized from its definition, and anything else says the
+//! `PointCache::Realized` when it was realized from its definition, and anything else says the
 //! cache has no realization behind it, as the cache itself says. Those ride along as the free
 //! control.
 //!
@@ -124,7 +124,7 @@ struct Tally {
     unrealized: usize,
     /// The cache road stopped: too few bits on its one rung, or a history past its cost cap.
     ceiling: usize,
-    /// Realized from the definition (`Bounded`): exact where every bound is zero.
+    /// Realized from the definition (`Realized`): exact where every bound is zero.
     realized_exact: usize,
     /// Realized, with a nonzero bound on some axis (an irrational or non-representable point).
     realized_inexact: usize,
@@ -206,10 +206,10 @@ fn measure(m: &Model) -> Tally {
         match m.vertex_cache(vh) {
             PointCache::Unrealized { .. } => t.unrealized += 1,
             PointCache::Ceiling { .. } => t.ceiling += 1,
-            PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
+            PointCache::Realized { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
                 t.realized_exact += 1
             }
-            PointCache::Bounded { .. } => t.realized_inexact += 1,
+            PointCache::Realized { .. } => t.realized_inexact += 1,
         }
 
         let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
@@ -236,8 +236,8 @@ fn measure(m: &Model) -> Tally {
             // Two causes are left (the def kind and a missing name were handled above): no
             // shared frame, or — same frame, no meet — carriers on one line. The split is for
             // the table's wording; the capability answer above is the kernel's.
-            let f = m.plane_motion(tri[0]);
-            if tri.iter().all(|h| m.plane_motion(*h) == f) {
+            let f = m.surface_motion(tri[0]);
+            if tri.iter().all(|h| m.surface_motion(*h) == f) {
                 t.singular += 1;
             } else {
                 t.mixed_motion += 1;
@@ -249,10 +249,10 @@ fn measure(m: &Model) -> Tally {
         // Split by what the cache knows: a realization with every bound zero is exact, one with a
         // nonzero bound is not; a coordinate with no realization behind it is counted in neither.
         match m.vertex_cache(vh) {
-            PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
+            PointCache::Realized { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
                 t.widths_exact.push(w)
             }
-            PointCache::Bounded { .. } => t.widths_inexact.push(w),
+            PointCache::Realized { .. } => t.widths_inexact.push(w),
             PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => {}
         }
 
@@ -410,8 +410,8 @@ fn datum_reach(m: &Model) -> Reach {
                 Some((p, f)) => VertexReach::Pure(f, p),
                 // The label only; the capability answer is the kernel's above.
                 None => {
-                    let f = m.plane_motion(tri[0]);
-                    if tri.iter().all(|h| m.plane_motion(*h) == f) {
+                    let f = m.surface_motion(tri[0]);
+                    if tri.iter().all(|h| m.surface_motion(*h) == f) {
                         VertexReach::Undefined // carriers share a line — no unique point
                     } else {
                         VertexReach::Straddle
@@ -646,7 +646,7 @@ fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
         // ★ Stated positively on purpose. This read "not the bare figure" while there were two
         // ways to be vouched for; with `Ceiling` in the enum the negative form would quietly admit
         // a vertex nothing has proven anything about.
-        if !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
+        if !matches!(m.vertex_cache(vh), PointCache::Realized { .. }) {
             continue; // the construction's bare figure — the control lives in its own fixture below
         }
         let Vertex::ThreePlane(tri) = *m.vertex(vh) else {

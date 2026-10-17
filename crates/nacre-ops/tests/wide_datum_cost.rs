@@ -118,7 +118,7 @@ fn assert_the_census_moved(climbs: u64, bits: u64) {
 /// with `Ceiling` in the enum that negative form would admit a vertex whose coordinate nothing has
 /// proven anything about — the cache road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
-    matches!(m.vertex_cache(v), PointCache::Bounded { .. })
+    matches!(m.vertex_cache(v), PointCache::Realized { .. })
 }
 
 /// A tilted prism whose walls are written against a recorded frame (`n·n = 3` is not a perfect
@@ -170,7 +170,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
             let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(*v) else {
                 return false;
             };
-            tri.iter().all(|h| m.plane_motion(*h).is_some())
+            tri.iter().all(|h| m.surface_motion(*h).is_some())
         })
         .collect();
     assert!(

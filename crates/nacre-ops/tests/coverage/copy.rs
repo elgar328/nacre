@@ -28,7 +28,7 @@ fn unit_cube(m: &mut Model) -> Handle<Solid> {
     )
 }
 
-/// Vertices the kernel vouches for — realized from their definition (`Bounded`) or measured —
+/// Vertices the kernel vouches for — realized from their definition (`Realized`) or measured —
 /// the count is how the `ThreePlane` remap is observed: a remapped definition that did not
 /// solve would leave the copy's vertex on the construction fallback.
 fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
@@ -36,7 +36,7 @@ fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     for &fh in &m.shell(m.solid(s).outer).faces {
         for he in &m.face(fh).outer.half_edges {
             for vh in m.edge(he.edge).vertices {
-                if matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
+                if matches!(m.vertex_cache(vh), PointCache::Realized { .. }) {
                     n += 1;
                 }
             }

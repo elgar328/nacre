@@ -38,7 +38,7 @@ pub(super) fn frame_toward(
 /// the same question of two roundings.
 fn flip_toward(model: &Model, plane: Handle<Surface>, toward: Orientation) -> Option<bool> {
     let sense = crate::rotated_vertex::frame_normal_sense(model, plane)?;
-    let parity = crate::rotated_vertex::motion_parity(model, model.plane_motion(plane))?;
+    let parity = crate::rotated_vertex::motion_parity(model, model.surface_motion(plane))?;
     Some(sense * parity * toward.sign() < 0)
 }
 
@@ -255,7 +255,7 @@ fn world_placement(
         ]
     };
     let (origin, ref_dir) = nacre_exact::plane_frame_default(world)?;
-    let (origin, ref_dir) = match model.plane_motion(plane) {
+    let (origin, ref_dir) = match model.surface_motion(plane) {
         None => (origin, ref_dir),
         Some(leaf) => (
             model.chain_point_rat_inverse(leaf, origin)?,

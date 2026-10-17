@@ -93,7 +93,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
 
     // Identity heals: the turned bottom cap *is* the world XY seed — one plane, one handle —
     // and the top cap interned back onto its own extrude-minted source.
-    let seed = m.world_plane(Axis::Z);
+    let seed = m.seeded_plane(Axis::Z);
     assert!(
         caps.contains(&seed),
         "the turned bottom cap must intern back onto the seed: caps {caps:?}, seed {seed:?}"

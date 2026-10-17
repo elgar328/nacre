@@ -218,7 +218,7 @@ pub(crate) fn through_judged_points(
             }
         };
         // ★★ **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). This was
-        // the last of the four places that compared `plane_motion(tri[0])` against the other two
+        // the last of the four places that compared `surface_motion(tri[0])` against the other two
         // itself, and that reading calls a turned solid's corner a straddle: the invariant-plane
         // restatement leaves its cap world-stated while the walls carry a node, and only the
         // chain-fixes licence tells that apart from a real straddle. Here the copy cost no

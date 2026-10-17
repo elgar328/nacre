@@ -46,7 +46,7 @@ fn frame_nodes(m: &Model) -> Vec<Motion> {
 #[test]
 fn a_named_frame_rejects_each_bad_claim_by_name() {
     let m = Model::new();
-    let z0 = m.world_plane(Axis::Z);
+    let z0 = m.seeded_plane(Axis::Z);
     let o = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
     let v = |x: f64, y: f64, z: f64| Vector3::from_array([x, y, z]);
 
@@ -205,9 +205,9 @@ fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
             .find(|&fh| m.face(fh).surface == su)
             .expect("the cuboid face")
     };
-    let bottom = face_with_surface(&m, m.world_plane(Axis::Z));
+    let bottom = face_with_surface(&m, m.seeded_plane(Axis::Z));
     let fb = nacre_ops::face_sketch_frame(&m, bottom).expect("the seeded bottom");
-    assert_eq!(fb.plane(), m.world_plane(Axis::Z));
+    assert_eq!(fb.plane(), m.seeded_plane(Axis::Z));
     assert!(fb.flip(), "outward −ẑ against canonical ŵ = +ẑ");
     // ★ Not `placement == Canonical`: which placement spells the frame is an implementation
     // detail (the normal form), and it can hold while the frame is wrong — the contract is the
@@ -367,7 +367,7 @@ fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
             let block = lifted(&mut m, h, lift);
             let top = crate::fixtures::top_face(&m, block);
             assert_eq!(
-                m.plane_motion(m.face(top).surface).is_some(),
+                m.surface_motion(m.face(top).surface).is_some(),
                 recorded,
                 "{road}: whether the lift is recorded"
             );

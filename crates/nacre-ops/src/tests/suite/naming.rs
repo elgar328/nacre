@@ -38,7 +38,10 @@ fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
                     }
                     assert!(
                         matches!(*m.vertex(vh), Vertex::ThreePlane(_))
-                            && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                            && matches!(
+                                m.vertex_cache(vh),
+                                nacre_topo::PointCache::Realized { .. }
+                            ),
                         "vertex {:?} is {:?}, not a realized plane triple",
                         m.vertex_point(vh).as_array(),
                         *m.vertex(vh)

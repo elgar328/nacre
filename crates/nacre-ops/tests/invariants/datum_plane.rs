@@ -54,7 +54,7 @@ fn stating_a_world_plane_returns_the_seed_it_already_is() {
     ] {
         let mut m = Model::new();
         let before = m.surface_count();
-        let seed = m.world_plane(axis);
+        let seed = m.seeded_plane(axis);
         let OpOutput::DatumPlane { plane: h, .. } = apply(&mut m, &datum(plane)).expect("stated")
         else {
             unreachable!()
@@ -391,7 +391,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
     };
     assert_eq!(
         plane,
-        m.world_plane(Axis::Z),
+        m.seeded_plane(Axis::Z),
         "z = 0 is the seeded XY plane, however it was reached"
     );
     let Surface::Plane { motion, .. } = m.surface(plane) else {
@@ -793,7 +793,7 @@ fn the_world_sugar_means_what_a_datum_of_the_same_plane_means() {
     ] {
         let mut m = Model::new();
         let sugar = nacre_ops::SketchFrame::world(&m, axis);
-        assert_eq!(sugar.plane(), m.world_plane(axis));
+        assert_eq!(sugar.plane(), m.seeded_plane(axis));
         assert!(!sugar.flip(), "{axis:?}: the sugar states no flip");
 
         let OpOutput::DatumPlane { frame, .. } = apply(
@@ -830,7 +830,7 @@ fn the_world_sugar_means_what_a_datum_of_the_same_plane_means() {
 #[test]
 fn the_zx_sugar_is_not_the_canonical_frame() {
     let m = Model::new();
-    let zx = m.world_plane(Axis::Y);
+    let zx = m.seeded_plane(Axis::Y);
     let sugar = nacre_ops::SketchFrame::world(&m, Axis::Y);
     let derived = nacre_ops::SketchFrame::canonical(zx);
     assert_eq!(sugar.plane(), derived.plane(), "same plane");
@@ -845,7 +845,7 @@ fn the_zx_sugar_is_not_the_canonical_frame() {
     for axis in [Axis::Z, Axis::X] {
         assert_eq!(
             nacre_ops::SketchFrame::world(&m, axis),
-            nacre_ops::SketchFrame::canonical(m.world_plane(axis)),
+            nacre_ops::SketchFrame::canonical(m.seeded_plane(axis)),
             "{axis:?}: derived and stated agree here, so the sugar must not invent a placement"
         );
     }
@@ -2284,7 +2284,7 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
         .shell(m.solid(turned).outer)
         .faces
         .iter()
-        .find_map(|&f| m.plane_motion(m.face(f).surface))
+        .find_map(|&f| m.surface_motion(m.face(f).surface))
         .expect("a wall carries the turn");
     let x = Some(x);
     let OpOutput::DatumPlane { plane, frame } = apply(
@@ -2307,7 +2307,7 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
         "the fixture's premise: the datum is a Through statement, not a face it interned onto"
     );
     assert_eq!(
-        m.plane_motion(plane),
+        m.surface_motion(plane),
         x,
         "named in the turned frame, with that frame as its motion"
     );
@@ -2349,7 +2349,7 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
         m.surface_name.contains_key(&h),
         "the moved datum keeps its name"
     );
-    let y = m.plane_motion(h);
+    let y = m.surface_motion(h);
     assert!(y.is_some() && y != x, "moving it recorded a new node");
     assert!(
         m.chain_continues(y, x),
@@ -2753,8 +2753,8 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             return false;
         };
-        let f = m.plane_motion(tri[0]);
-        tri.iter().any(|h| m.plane_motion(*h) != f)
+        let f = m.surface_motion(tri[0]);
+        tri.iter().any(|h| m.surface_motion(*h) != f)
     });
     assert!(
         mixed,
@@ -2938,7 +2938,7 @@ fn an_offset_of_a_moved_plane_is_the_exact_plane() {
             let solid = lifted(&mut m, h, lift);
             let top = top_surface(&m, solid);
             assert_eq!(
-                m.plane_motion(top).is_some(),
+                m.surface_motion(top).is_some(),
                 recorded,
                 "{road}: whether the lift is recorded"
             );
@@ -3000,7 +3000,7 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
             let block = mirrored(&mut m, 1.0, lift);
             let top = top_surface(&m, block);
             assert_eq!(
-                m.plane_motion(top).is_some(),
+                m.surface_motion(top).is_some(),
                 recorded,
                 "{what}: whether the fixture's top cap carries its chain"
             );
@@ -3018,7 +3018,7 @@ fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
             m.rebuild_adjacency();
             let far = m.face(faces[1]).surface;
             assert!(
-                m.plane_motion(far).is_none(),
+                m.surface_motion(far).is_none(),
                 "{what}: a world-stated or folding cap puts the prism on the world road"
             );
             let bad = nacre_validate::validate(&m);

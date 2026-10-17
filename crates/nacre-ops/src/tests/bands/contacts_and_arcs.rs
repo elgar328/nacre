@@ -13,7 +13,7 @@ use super::*;
 /// variant the funnel chose.
 fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
     match m.vertex_cache(h) {
-        nacre_topo::PointCache::Bounded { bound, .. } => assert!(
+        nacre_topo::PointCache::Realized { bound, .. } => assert!(
             bound
                 .iter()
                 .all(|b| nacre_exact::Mag::lt(*b, nacre_exact::Mag::of(1e-12))),
@@ -532,7 +532,7 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
 /// production feeds it, so this walks production's stretch step for step: trace, clean,
 /// append the bands, build the seam.
 ///
-/// ★ The cache is asserted **`Bounded` within rounding**, never a copied value; the pierce coordinates
+/// ★ The cache is asserted **`Realized` within rounding**, never a copied value; the pierce coordinates
 /// themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point` road,
 /// so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
 /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
@@ -633,7 +633,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             .collect();
         assert_eq!(pierce.len(), 2, "both crossings reach the seam, once each");
         for sv in pierce {
-            let nacre_topo::PointCache::Bounded { bound, .. } = sv.cache else {
+            let nacre_topo::PointCache::Realized { bound, .. } = sv.cache else {
                 panic!("a pierce seam point is realized: {:?}", sv.cache);
             };
             assert!(

@@ -627,7 +627,7 @@ pub fn through_block(m: &mut Model, height: f64) -> Handle<Solid> {
     );
     let top = top_surface(m, solid);
     assert!(
-        m.plane_motion(top).is_none(),
+        m.surface_motion(top).is_none(),
         "the prism is built in the world: its top has no chain before it moves"
     );
     solid
@@ -641,7 +641,7 @@ pub fn through_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat) 
     let solid = xf(m, solid, Isometry::translation([zero, zero, lift]));
     let top = top_surface(m, solid);
     assert!(
-        m.plane_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        m.surface_motion(top).is_some() && m.world_plane_name(top).is_some(),
         "the lifted top carries a chain that folds"
     );
     solid
@@ -665,7 +665,7 @@ pub fn through_mirrored_block(m: &mut Model, height: f64, lift: nacre_exact::Rat
     m.rebuild_adjacency();
     let top = top_surface(m, solid);
     assert!(
-        m.plane_motion(top).is_some() && m.world_plane_name(top).is_some(),
+        m.surface_motion(top).is_some() && m.world_plane_name(top).is_some(),
         "the mirrored top carries a chain that folds"
     );
     solid

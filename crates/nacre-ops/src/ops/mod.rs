@@ -467,7 +467,7 @@ impl SketchFrame {
     /// ([`Operation::DatumPlane`] turns `flip` to face the normal you state) — the same move as
     /// writing `SketchPlane::from_origin_normal(o, -ẑ)` today.
     pub fn world(model: &Model, axis: nacre_exact::Axis) -> SketchFrame {
-        let plane = model.world_plane(axis);
+        let plane = model.seeded_plane(axis);
         match axis {
             // The two whose derived frame already is the convention.
             nacre_exact::Axis::Z | nacre_exact::Axis::X => SketchFrame::canonical(plane),

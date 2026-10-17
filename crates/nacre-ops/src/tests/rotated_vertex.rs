@@ -143,7 +143,7 @@ fn a_moved_corner_is_its_realization_and_replays_near_it() {
                     // The cache is the realization, on every corner.
                     let stored = m.vertex_point(vh).as_array();
                     assert!(
-                        matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                        matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. }),
                         "a moved corner is realized from its definition"
                     );
                     let (realized, _) = crate::realize_vertex(&m, vh, crate::Precision::NearestF64)

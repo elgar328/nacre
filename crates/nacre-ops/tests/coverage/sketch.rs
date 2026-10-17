@@ -85,7 +85,7 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     assert_eq!(swept_faces, cut_faces, "face count");
 }
 
-/// Every vertex a sweep makes is realized from its definition (`Bounded`).
+/// Every vertex a sweep makes is realized from its definition (`Realized`).
 #[test]
 fn a_swept_hole_is_constructed_throughout() {
     let mut m = Model::new();
@@ -96,7 +96,7 @@ fn a_swept_hole_is_constructed_throughout() {
             for he in &lp.half_edges {
                 for vh in m.edge(he.edge).vertices.iter() {
                     assert!(
-                        matches!(m.vertex_cache(*vh), PointCache::Bounded { .. }),
+                        matches!(m.vertex_cache(*vh), PointCache::Realized { .. }),
                         "a swept vertex is realized from its definition"
                     );
                 }

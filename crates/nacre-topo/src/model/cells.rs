@@ -30,7 +30,7 @@ impl Model {
     ///
     /// ★ There is no `rebuild_vertex_cache` that *replaces* what is here: an operation realizes the
     /// definition *before* it pushes (`nacre_ops`'s push funnel), so what arrives is already the
-    /// realization's memo ([`PointCache::Bounded`]) or a named reason it is not
+    /// realization's memo ([`PointCache::Realized`]) or a named reason it is not
     /// ([`PointCache::Ceiling`], [`PointCache::Unrealized`]). The old warrant for the absence
     /// (*"238 of 1,992 differ from a naive re-solve"*) compared against a naive re-solve; the
     /// exact-rounding realization is not one: the census says so vertex by vertex, and nacre-ops'
@@ -38,7 +38,7 @@ impl Model {
     /// an arena again once its log has ended.
     ///
     /// ⚠ **A second writer does exist, and it only ever raises**: `nacre_ops::refine_caches`
-    /// lifts a `Ceiling` to `Bounded` by paying for the realization this road would not. It cannot
+    /// lifts a `Ceiling` to `Realized` by paying for the realization this road would not. It cannot
     /// reach the other variants and cannot move a coordinate anywhere but closer to the truth, so
     /// what stays true of the cache behind this door is *append-only in accuracy*, not in bytes.
     pub fn push_vertex(&mut self, def: Vertex, cache: PointCache) -> Handle<Vertex> {
@@ -64,12 +64,12 @@ impl Model {
         h
     }
 
-    /// **Raise a [`PointCache::Ceiling`] to [`PointCache::Bounded`]** — the second writer of the
+    /// **Raise a [`PointCache::Ceiling`] to [`PointCache::Realized`]** — the second writer of the
     /// vertex cache, and the only thing it can do is make a coordinate more accurate.
     ///
     /// ★ Deliberately not `set_vertex_cache`. It cannot reach the other two variants: an
     /// `Unrealized` coordinate has no realization behind it (raising it would be inventing one) and
-    /// a `Bounded` one is already the realization. The debug assert is the type saying so out loud
+    /// a `Realized` one is already the realization. The debug assert is the type saying so out loud
     /// — the caller that pays for the realization is `nacre_ops::refine_caches`, and its own
     /// contract is that it looks at nothing else.
     ///
@@ -84,7 +84,7 @@ impl Model {
             matches!(slot, PointCache::Ceiling { .. }),
             "only a Ceiling is raised, not {slot:?}"
         );
-        *slot = PointCache::Bounded { coord, bound };
+        *slot = PointCache::Realized { coord, bound };
     }
 
     /// An edge's curve — **the one road to a curve from an edge**, read from the
@@ -368,7 +368,7 @@ impl Model {
                                 .map(Point3::from_array)
                         };
                         let center =
-                            match self.rim_centre_from_truth(cyl, plane).or_else(given_centre) {
+                            match self.world_rim_centre_f64(cyl, plane).or_else(given_centre) {
                                 Some(truth) => truth,
                                 None => nacre_geom::intersect::line_plane(&axis, p)
                                     .ok_or(EdgeDecline::Degenerate)?,
@@ -399,17 +399,17 @@ impl Model {
     /// world name: that direction needs the plane's chain replayed, which a caller that can do it
     /// hands to [`Model::derive_edge_curve`] as [`EdgeGiven::direction`] — and asks this first, so
     /// the one spelling of «the names answer» is here.
-    pub fn line_direction_from_names(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
+    pub fn world_line_direction_f64(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
         let a = self.world_plane_name(surfaces[0])?;
         let b = self.world_plane_name(surfaces[1])?;
         nacre_exact::meet_direction_f64(&a, &b)
     }
 
     /// **The direction two planes meet in, wherever the model already knows it** — from their world
-    /// names ([`Model::line_direction_from_names`]), else as a pusher realized it for an earlier
+    /// names ([`Model::world_line_direction_f64`]), else as a pusher realized it for an earlier
     /// edge on the same pair.
     pub fn line_direction_cache(&self, surfaces: [Handle<Surface>; 2]) -> Option<[f64; 3]> {
-        self.line_direction_from_names(surfaces)
+        self.world_line_direction_f64(surfaces)
             .or_else(|| self.kept_given(surfaces).direction)
     }
 
@@ -439,12 +439,8 @@ impl Model {
     /// coordinate the nearest `f64` (`Rat::to_f64`, the rounding the cylinder cache's origin takes).
     /// `None` where either carrier has no world statement, the cap's name is `Wide`, or the
     /// arithmetic leaves `i128`.
-    fn rim_centre_from_truth(
-        &self,
-        cyl: Handle<Surface>,
-        plane: Handle<Surface>,
-    ) -> Option<Point3> {
-        let def = self.world_cylinder_statement(cyl)?;
+    fn world_rim_centre_f64(&self, cyl: Handle<Surface>, plane: Handle<Surface>) -> Option<Point3> {
+        let def = self.world_cylinder_def_unchecked(cyl)?;
         let name = self.world_plane_name(plane)?;
         let c = nacre_exact::axis_plane_meet(name.narrow()?, &def.origin(), &def.dir())?;
         Some(Point3::from_array(c.map(|r| r.to_f64())))

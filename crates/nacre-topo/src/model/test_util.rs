@@ -15,7 +15,7 @@ impl Model {
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_plane_unregistered(
         &mut self,
-        cache: nacre_geom::Plane,
+        figure: nacre_geom::Plane,
         points: [[nacre_exact::Rat; 3]; 3],
         sense: Orientation,
     ) -> Handle<Surface> {
@@ -24,7 +24,7 @@ impl Model {
             None,
             sense,
             None,
-            cache,
+            figure,
             CacheStanding::Unrealized,
         )
     }
@@ -36,11 +36,11 @@ impl Model {
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_cylinder_unregistered(
         &mut self,
-        cache: nacre_geom::Cylinder,
+        figure: nacre_geom::Cylinder,
         def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
     ) -> Handle<Surface> {
-        self.push_cylinder_raw(def, motion, cache, CacheStanding::Unrealized, false)
+        self.push_cylinder_raw(def, motion, figure, CacheStanding::Unrealized, false)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals

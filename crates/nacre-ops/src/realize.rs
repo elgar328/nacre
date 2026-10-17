@@ -540,7 +540,7 @@ fn point_cache_tracked<E>(
     acc: &mut Accel<'_>,
 ) -> Result<PointCache, E> {
     Ok(match realize_cache_tracked(model, def, acc) {
-        Ok((coord, bound)) => PointCache::Bounded {
+        Ok((coord, bound)) => PointCache::Realized {
             coord: Point3::from_array(coord),
             bound,
         },
@@ -789,7 +789,7 @@ fn cylinder_realization(
         return Half::NoRoad;
     }
     if budget == Budget::Cache
-        && motion.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+        && motion.is_some_and(|leaf| model.chain_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     {
         return Half::Stopped;
     }
@@ -988,7 +988,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         // the first vertex's own realization is that point.
         (None, nacre_topo::PlanePoints::Through(vs)) if motion.is_none() => {
             match model.vertex_cache(vs[0]) {
-                PointCache::Bounded { coord, .. } => Half::Got(coord.as_array()),
+                PointCache::Realized { coord, .. } => Half::Got(coord.as_array()),
                 PointCache::Ceiling { .. } => Half::Stopped,
                 PointCache::Unrealized { .. } => Half::NoRoad,
             }
@@ -1184,7 +1184,7 @@ pub struct RefineReport {
 /// 3. every live edge is re-derived on the paid budget — last, because a curve reads both the
 ///    vertex caches (a line's anchor) and the surface caches (a rim's frame).
 ///
-/// `Realized`/`Bounded` caches are already the realization and are not touched. An `Unrealized`
+/// `Realized` caches are already the realization and are not touched. An `Unrealized`
 /// vertex has no road (or no point); an `Unrealized` surface may have one to the half it still lacks, so it is
 /// asked — what cannot be realized is counted by name. «Live» is what the live solids reach: a surface no live
 /// face carries (a datum plane nothing was built on) is not walked, as an export does not write it.
@@ -1226,7 +1226,7 @@ pub fn refine_caches_of(model: &mut Model, solids: &[Handle<Solid>]) -> RefineRe
     vertices.sort_by_key(|v| v.index());
     for vh in vertices {
         match model.vertex_cache(vh) {
-            PointCache::Bounded { .. } => {}
+            PointCache::Realized { .. } => {}
             PointCache::Unrealized { .. } => out.vertices.left_unrealized += 1,
             // ⚠ `Ok` is not enough on its own: `climb` returns early for an exact arm without
             // asking whether an `f64` names it, so the answer can still be unrepresentable. That
@@ -1309,7 +1309,7 @@ impl Budget {
 /// plane its witness triangle spans after its chain ([`PlaneMemo`], the seam table's own road and
 /// memo) — scaled to a unit and read out once ([`Realized::to_f64`]), unsigned: the derivation turns
 /// it toward the end vertex. `nacre-topo` asks only where its own roads — the names
-/// ([`Model::line_direction_from_names`]) and what pushers gave this pair before — do not answer,
+/// ([`Model::world_line_direction_f64`]) and what pushers gave this pair before — do not answer,
 /// so «the names answer» is spelled there alone.
 pub(crate) fn edge_given(
     model: &Model,
@@ -1342,7 +1342,7 @@ fn rim_centre(
         return None;
     };
     let deep = |leaf: Option<Handle<nacre_topo::MotionNode>>| {
-        leaf.is_some_and(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
+        leaf.is_some_and(|leaf| model.chain_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     };
     if budget == Budget::Cache
         && (deep(*motion)
@@ -1481,11 +1481,11 @@ pub fn rebuild_edge_cache_paid(model: &mut Model) {
 #[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Debug, Default)]
 pub struct VertexCacheAudit {
-    /// `Bounded`, bit for bit what the cache road answers.
+    /// `Realized`, bit for bit what the cache road answers.
     pub realized: usize,
     /// `Ceiling`, where the cache road stops for bits or cost.
     pub ceiling: usize,
-    /// `Bounded` where the cache road stops — raised by the refine door, so bit for bit what the
+    /// `Realized` where the cache road stops — raised by the refine door, so bit for bit what the
     /// paid road answers.
     pub raised: usize,
     /// `Unrealized`, where the cache road has no way.
@@ -1503,12 +1503,12 @@ pub struct VertexCacheAudit {
 /// `+0.0`.
 ///
 /// There is no door that discards the vertex cache and writes it again, because there is nothing a
-/// rewrite could do: a `Bounded` cache is already this answer, and a `Ceiling` or `Unrealized` one
+/// rewrite could do: a `Realized` cache is already this answer, and a `Ceiling` or `Unrealized` one
 /// holds the construction's figure, which no realization produces — the log does, replayed. So
 /// this only reads, and «discard and regenerate» is the claim that this finds nothing at any point
 /// of a log, not only right after the operation that pushed the vertex.
 ///
-/// A `Bounded` vertex the cache road stops on is one the refine door raised ([`refine_caches`]):
+/// A `Realized` vertex the cache road stops on is one the refine door raised ([`refine_caches`]):
 /// it must be what the paid road answers, and it is counted apart (`raised`) so a caller that never
 /// opened that door can say none exists.
 #[cfg(any(test, feature = "test-util"))]
@@ -1525,7 +1525,7 @@ pub fn audit_vertex_caches(
         let cache = *model.vertex_cache(vh);
         let wrong = match realize_cache(model, model.vertex(vh)) {
             Ok(answer) => match cache {
-                PointCache::Bounded { coord, bound } if same(coord, bound, answer) => {
+                PointCache::Realized { coord, bound } if same(coord, bound, answer) => {
                     out.realized += 1;
                     let (c, b) = answer;
                     out.coincidence_zeros +=
@@ -1540,7 +1540,7 @@ pub fn audit_vertex_caches(
                         out.ceiling += 1;
                         None
                     }
-                    PointCache::Bounded { coord, bound } => {
+                    PointCache::Realized { coord, bound } => {
                         match realize_vertex(model, vh, Precision::NearestF64).map(|r| r.to_f64()) {
                             Ok(Some(paid)) if same(coord, bound, paid) => {
                                 out.raised += 1;
@@ -2156,7 +2156,7 @@ mod tests {
             [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]],
             [0.0, 0.0, 1.0],
         );
-        let w = |a| m.world_plane(a);
+        let w = |a| m.seeded_plane(a);
         let (x0, y0, z0) = (
             w(nacre_exact::Axis::X),
             w(nacre_exact::Axis::Y),
@@ -2365,7 +2365,7 @@ mod tests {
     /// **A turned cylinder's seam is met in the world.** Three placements where the cap and the
     /// cylinder ride different chains or none of them folds — a cylinder turned about its own axis
     /// (its caps, fixed by the turn, stay as stated), one on an axis whose frame is a node (its
-    /// base cap is the frame's plane), and one turned twice: every seam vertex is `Bounded`, its
+    /// base cap is the frame's plane), and one turned twice: every seam vertex is `Realized`, its
     /// cache the met point at 512 bits rounded the same way.
     #[test]
     fn a_turned_cylinder_seam_is_realized_where_it_meets_its_cap() {
@@ -2446,7 +2446,7 @@ mod tests {
                     m.world_cylinder_def(cyl).is_none(),
                     "{what}: no world statement"
                 );
-                let PointCache::Bounded { coord, .. } = m.vertex_cache(vh) else {
+                let PointCache::Realized { coord, .. } = m.vertex_cache(vh) else {
                     panic!("{what}: {:?}", m.vertex_cache(vh))
                 };
                 assert_eq!(coord.as_array(), met, "{what}");
@@ -2461,7 +2461,7 @@ mod tests {
     /// **Past the replay budget the seam waits for the paid door, and the door answers.** A cylinder
     /// turned 193 times — its chain one node past [`CACHE_REPLAY_COST_CAP`] — keeps its seam
     /// vertices `Ceiling` (the cache road declines by cost, not for want of a road), and
-    /// [`refine_caches`] raises every one of them to `Bounded` through the same meet.
+    /// [`refine_caches`] raises every one of them to `Realized` through the same meet.
     #[test]
     fn a_seam_past_the_replay_budget_waits_for_the_paid_door() {
         use nacre_exact::{Angle, Axis, Isometry, Rotation};
@@ -2548,7 +2548,7 @@ mod tests {
         assert!(report.refined >= seams.len(), "{report:?}");
         for &v in &seams {
             assert!(
-                matches!(m.vertex_cache(v), PointCache::Bounded { .. }),
+                matches!(m.vertex_cache(v), PointCache::Realized { .. }),
                 "{:?}",
                 m.vertex_cache(v)
             );

@@ -23,7 +23,7 @@ impl Model {
     /// The seeded world plane whose **normal** runs along `axis` — `Z` names the XY plane
     /// (z = 0), `X` the YZ plane, `Y` the ZX plane. Deterministic (handles 0–2, pushed by
     /// [`Model::new`]), so a handle in an op log and one from a live session agree.
-    pub fn world_plane(&self, axis: nacre_exact::Axis) -> Handle<Surface> {
+    pub fn seeded_plane(&self, axis: nacre_exact::Axis) -> Handle<Surface> {
         let ix = match axis {
             nacre_exact::Axis::Z => 0usize,
             nacre_exact::Axis::X => 1,
@@ -80,7 +80,7 @@ impl Model {
             "surface cache out of step with the surface store — push surfaces through \
              Model::push_plane / push_cylinder"
         );
-        &self.surface_cache[h.index() as usize].realized
+        &self.surface_cache[h.index() as usize].surface
     }
 
     /// What a surface's cache knows about its value ([`CacheStanding`]) — the cache's other piece.
@@ -101,7 +101,7 @@ impl Model {
     pub fn refine_surface_cache(
         &mut self,
         h: Handle<Surface>,
-        realized: nacre_geom::Surface,
+        surface: nacre_geom::Surface,
         standing: CacheStanding,
     ) {
         #[cfg(debug_assertions)]
@@ -113,11 +113,11 @@ impl Model {
             slot.standing
         );
         debug_assert_eq!(
-            std::mem::discriminant(&slot.realized),
-            std::mem::discriminant(&realized),
+            std::mem::discriminant(&slot.surface),
+            std::mem::discriminant(&surface),
             "a surface's cache keeps its kind"
         );
-        *slot = SurfaceCache { realized, standing };
+        *slot = SurfaceCache { surface, standing };
     }
 
     /// How many surfaces the arena holds — live and superseded alike. Handle-validity checks

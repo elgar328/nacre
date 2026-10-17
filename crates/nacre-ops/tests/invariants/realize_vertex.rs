@@ -488,7 +488,7 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
 }
 
 /// ★★★ **An operation's cache is the realization.** Every vertex the push funnel could realize
-/// on the ladder's first two rungs carries `Bounded` with that realization bit for bit; every one
+/// on the ladder's first two rungs carries `Realized` with that realization bit for bit; every one
 /// it could not carries the variant that says why (`nacre_ops::audit_vertex_caches`).
 #[test]
 fn an_operations_cache_is_the_realization() {
@@ -542,7 +542,7 @@ fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
 }
 
 /// ★ **A moved solid is realized from its moved definition** — not from the moved `f64`. A
-/// rational translation of the tilted prism: every moved vertex the road can realize is `Bounded`
+/// rational translation of the tilted prism: every moved vertex the road can realize is `Realized`
 /// and bit for bit the realization; the rest keep the construction's figure, counted.
 #[test]
 fn a_moved_solid_is_realized_from_its_moved_definition() {
@@ -567,10 +567,10 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
     let (mut bounded, mut kept) = (0usize, 0usize);
     for vh in live_vertices(&m) {
         match *m.vertex_cache(vh) {
-            PointCache::Bounded { coord, .. } => {
+            PointCache::Realized { coord, .. } => {
                 bounded += 1;
                 let (v, _) = realize_vertex(&m, vh, Precision::NearestF64)
-                    .expect("a Bounded vertex realizes")
+                    .expect("a Realized vertex realizes")
                     .to_f64()
                     .expect("decided");
                 assert_eq!(coord.as_array(), v);
@@ -674,7 +674,7 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
     );
 }
 
-/// ★★★ **A `Bounded` cache contains its truth** — `coord ± bound` holds the coordinate the
+/// ★★★ **A `Realized` cache contains its truth** — `coord ± bound` holds the coordinate the
 /// definition names, on the arm that approaches it.
 ///
 /// A box turned 30° realizes its corners by replaying the turn, so every coordinate is an interval
@@ -701,7 +701,7 @@ fn a_bounded_cache_contains_the_coordinate_its_definition_names() {
     };
     let (mut checked, mut off) = (0usize, 0usize);
     for vh in live_vertices(&m) {
-        let PointCache::Bounded { coord, bound } = *m.vertex_cache(vh) else {
+        let PointCache::Realized { coord, bound } = *m.vertex_cache(vh) else {
             panic!("the turned box realizes: {:?}", m.vertex_cache(vh));
         };
         let truth = realize_vertex(&m, vh, Precision::Bits(1024))
@@ -763,7 +763,7 @@ fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
         })
         .collect();
     assert_eq!(corner.len(), 1, "one corner at (1, 1/√3, 0)");
-    let PointCache::Bounded { coord, .. } = *m.vertex_cache(corner[0]) else {
+    let PointCache::Realized { coord, .. } = *m.vertex_cache(corner[0]) else {
         panic!(
             "the mixed-frame corner is realized: {:?}",
             m.vertex_cache(corner[0])
@@ -936,7 +936,7 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// costs nothing at all (`Angle::cos_sin_rat` answers only 0/90/180/270 — Niven, so those
 /// add no radius). A depth of 64 holds back chains that decide perfectly: rational translations
 /// by the hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the
-/// ladder's first rung decides; these two come back `Bounded`.
+/// ladder's first rung decides; these two come back `Realized`.
 ///
 /// ★ Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
 /// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice
@@ -969,7 +969,7 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
         assert!(!vs.is_empty(), "{what}: no live vertices");
         for &vh in &vs {
             assert!(
-                matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+                matches!(m.vertex_cache(vh), PointCache::Realized { .. }),
                 "{what}: a chain the first rung decides must be realized, got {:?}",
                 m.vertex_cache(vh)
             );
@@ -992,7 +992,7 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
 /// coordinate that is exactly `0`. The `Through` block records every motion, and a quarter turn
 /// about `x` folds; replaying that chain cannot decide such a zero (its interval straddles `0` at
 /// every rung), so the vertex stayed on the construction's figure. Read from the fold, every
-/// vertex is an exact rational, its cache `Bounded`.
+/// vertex is an exact rational, its cache `Realized`.
 #[test]
 fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
     let mut m = Model::new();
@@ -1005,7 +1005,7 @@ fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
     let mut zeros = 0;
     for &vh in &vs {
         assert!(
-            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            matches!(m.vertex_cache(vh), PointCache::Realized { .. }),
             "a folding chain's vertex is realized: {:?}",
             m.vertex_cache(vh)
         );
@@ -1041,7 +1041,7 @@ fn a_folding_chain_past_the_cost_cap_is_still_read_exactly() {
     assert!(!vs.is_empty(), "no live vertices");
     for &vh in &vs {
         assert!(
-            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            matches!(m.vertex_cache(vh), PointCache::Realized { .. }),
             "a folding chain is read past the cost cap: {:?}",
             m.vertex_cache(vh)
         );
@@ -1066,7 +1066,7 @@ fn a_coordinate_that_cancels_to_zero_is_read_as_zero() {
     m.rebuild_adjacency();
     let mut zeros = 0;
     for vh in live_vertices(&m) {
-        let PointCache::Bounded { coord, bound } = *m.vertex_cache(vh) else {
+        let PointCache::Realized { coord, bound } = *m.vertex_cache(vh) else {
             panic!("realized: {:?}", m.vertex_cache(vh));
         };
         let deep = realize_vertex(&m, vh, Precision::Bits(1024))
@@ -1116,7 +1116,7 @@ fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
         let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             continue;
         };
-        if m.plane_motion(h).is_none() {
+        if m.surface_motion(h).is_none() {
             continue;
         }
         let n = p.normal().as_array();
@@ -1171,7 +1171,7 @@ fn a_plane_turned_off_the_quarters_has_its_anchor_realized() {
     let mut seen = 0;
     for &fh in &m.shell(shell).faces {
         let h = m.face(fh).surface;
-        if m.plane_motion(h).is_none() {
+        if m.surface_motion(h).is_none() {
             continue;
         }
         let Surface::Plane {
@@ -1253,7 +1253,7 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
         "a wall faces along its points"
     );
     assert!(
-        m.plane_motion(wall).is_some(),
+        m.surface_motion(wall).is_some(),
         "the turn is recorded, not folded"
     );
     let nacre_geom::Surface::Plane(cache) = m.surface_cache(wall) else {
@@ -1402,7 +1402,7 @@ fn seventy_turns_of_thirty_seven_degrees_are_realized_on_the_second_rung() {
     );
     for &vh in &vs {
         assert!(
-            matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+            matches!(m.vertex_cache(vh), PointCache::Realized { .. }),
             "the second rung realizes it: {:?}",
             m.vertex_cache(vh)
         );
@@ -1422,7 +1422,7 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
         .faces
         .iter()
         .copied()
-        .find(|&f| m.plane_motion(m.face(f).surface).is_some())
+        .find(|&f| m.surface_motion(m.face(f).surface).is_some())
         .expect("a wall rides the chain");
     let frame = nacre_ops::face_sketch_frame(&m, wall).expect("a planar live face");
     let profile = nacre_ops::Profile2d::polygon(vec![
@@ -1465,7 +1465,7 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
     let report = nacre_ops::refine_caches(&mut m);
     assert!(report.vertices.refined >= corners.len(), "{report:?}");
     for &vh in &corners {
-        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+        assert!(matches!(m.vertex_cache(vh), PointCache::Realized { .. }));
     }
 }
 
@@ -1538,7 +1538,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     }
     // A vertex the nameless datum carries directly — no frame node in between, so its cost is the
     // datum's own replay depth, which the datum's motion (none) does not show.
-    let def = Vertex::ThreePlane([m.world_plane(Axis::X), m.world_plane(Axis::Y), plane]);
+    let def = Vertex::ThreePlane([m.seeded_plane(Axis::X), m.seeded_plane(Axis::Y), plane]);
     assert_eq!(
         realize_cache(&m, &def).err(),
         Some(CacheDecline::CostCap),
@@ -1552,7 +1552,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
         "the paid door realizes the datum"
     );
     for &vh in &corners {
-        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+        assert!(matches!(m.vertex_cache(vh), PointCache::Realized { .. }));
     }
 }
 
@@ -1588,7 +1588,7 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
             .expect("each corner is exact in its own frame");
         let leaf = frame.expect("behind its box's chain");
         assert!(
-            !m.motion_deeper_than(leaf, 192),
+            !m.chain_deeper_than(leaf, 192),
             "each corner alone is under the cap"
         );
     }
@@ -1644,7 +1644,7 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
         nacre_topo::CacheStanding::Realized
     );
     for &vh in &on_it {
-        assert!(matches!(m.vertex_cache(vh), PointCache::Bounded { .. }));
+        assert!(matches!(m.vertex_cache(vh), PointCache::Realized { .. }));
     }
 }
 
@@ -1702,8 +1702,8 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     assert_eq!(report.refined, ceilings, "every Ceiling is raised");
     assert_eq!(report.left_undecided, 0, "and none is left behind");
     for (&vh, w) in vs.iter().zip(&want) {
-        let PointCache::Bounded { coord, .. } = *m.vertex_cache(vh) else {
-            panic!("a raised vertex is Bounded: {:?}", m.vertex_cache(vh));
+        let PointCache::Realized { coord, .. } = *m.vertex_cache(vh) else {
+            panic!("a raised vertex is Realized: {:?}", m.vertex_cache(vh));
         };
         assert_eq!(
             coord.as_array(),
@@ -2036,7 +2036,7 @@ fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
     let mut m = boolean_corner();
     let vh = live_vertices(&m)
         .into_iter()
-        .find(|&vh| matches!(m.vertex_cache(vh), PointCache::Bounded { .. }))
+        .find(|&vh| matches!(m.vertex_cache(vh), PointCache::Realized { .. }))
         .expect("a boolean corner realizes its vertices");
     let coord = m.vertex_point(vh);
     m.refine_vertex_cache(vh, coord, [nacre_exact::Mag::ZERO; 3]);

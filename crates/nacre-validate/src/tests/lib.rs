@@ -165,9 +165,9 @@ fn stray_vertex_ignored() {
     let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     m.push_vertex(
         Vertex::ThreePlane([
-            m.world_plane(nacre_exact::Axis::Z),
-            m.world_plane(nacre_exact::Axis::X),
-            m.world_plane(nacre_exact::Axis::Y),
+            m.seeded_plane(nacre_exact::Axis::Z),
+            m.seeded_plane(nacre_exact::Axis::X),
+            m.seeded_plane(nacre_exact::Axis::Y),
         ]),
         PointCache::Unrealized {
             coord: Point3::origin(),
@@ -767,8 +767,8 @@ fn a_contradictory_vertex_def_is_flagged() {
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the lateral cylinder");
     let (z0, x0) = (
-        m.world_plane(nacre_exact::Axis::Z),
-        m.world_plane(nacre_exact::Axis::X),
+        m.seeded_plane(nacre_exact::Axis::Z),
+        m.seeded_plane(nacre_exact::Axis::X),
     );
     let bad_three = m.push_vertex(
         Vertex::ThreePlane([z0, x0, cyl]),
@@ -822,7 +822,7 @@ fn a_vertex_whose_planes_meet_in_no_point_is_flagged() {
         [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]],
         [0.0, 0.0, 1.0],
     );
-    let w = |a| m.world_plane(a);
+    let w = |a| m.seeded_plane(a);
     let (x0, y0, z0) = (
         w(nacre_exact::Axis::X),
         w(nacre_exact::Axis::Y),
@@ -1027,8 +1027,8 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         .map(|(_, f)| f.surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("lateral");
-    let bottom = m.world_plane(nacre_exact::Axis::Z);
-    let x0 = m.world_plane(nacre_exact::Axis::X);
+    let bottom = m.seeded_plane(nacre_exact::Axis::Z);
+    let x0 = m.seeded_plane(nacre_exact::Axis::X);
     // The good statement, free-floating: reference integrity and the carrier-kind check
     // run over every vertex, and neither may fire.
     let _good = m.push_vertex(
@@ -1113,8 +1113,8 @@ fn a_contradictory_pierce_def_is_flagged() {
         .map(|(_, f)| f.surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("lateral");
-    let bottom = m.world_plane(nacre_exact::Axis::Z);
-    let x0 = m.world_plane(nacre_exact::Axis::X);
+    let bottom = m.seeded_plane(nacre_exact::Axis::Z);
+    let x0 = m.seeded_plane(nacre_exact::Axis::X);
     let cyl_in_plane_slot = m.push_vertex(
         Vertex::Pierce {
             planes: [bottom, lateral],
@@ -1128,7 +1128,7 @@ fn a_contradictory_pierce_def_is_flagged() {
     let plane_in_cyl_slot = m.push_vertex(
         Vertex::Pierce {
             planes: [bottom, x0],
-            cylinder: m.world_plane(nacre_exact::Axis::Y),
+            cylinder: m.seeded_plane(nacre_exact::Axis::Y),
             root: QuadRoot::Lo,
         },
         PointCache::Unrealized {

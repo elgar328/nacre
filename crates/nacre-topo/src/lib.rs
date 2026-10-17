@@ -721,7 +721,7 @@ pub struct Model {
     /// [`Model::rebuild_edge_cache`] set that precedent.
     surface_cache: Vec<SurfaceCache>,
     /// The three seeded world planes, in normal-axis order Z(XY)·X(YZ)·Y(ZX) — captured at
-    /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
+    /// [`Model::new`] so [`Model::seeded_plane`] needs no handle minting. Always length 3.
     world_planes: Vec<Handle<Surface>>,
     /// Per-edge curve caches, index-parallel to `edges` — **cache, not truth**: the
     /// carriers and endpoints decide the curve ([`Model::derive_edge_curve`], asking the pusher
@@ -757,7 +757,7 @@ pub struct Model {
     /// made 2,000 recorded quarter turns cost 6.7 s against 0.20 s, and a 4,200-turn irrational
     /// history 2.14 s against 1.44 s — the questions are asked per plane per transform, so a walk
     /// is quadratic in the history.
-    motion_folds: Vec<Option<nacre_exact::AxisAffine>>,
+    chain_affines: Vec<Option<nacre_exact::AxisAffine>>,
     /// **What pushers realized of an edge's truth, by carrier pair** ([`Edge::carrier_pair`]'s
     /// order) — every piece of [`EdgeGiven`] a pusher answered, kept so the next edge on the same
     /// two carriers reads it instead of realizing it again: the direction two planes meet in, the
@@ -862,7 +862,7 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 /// filled by [`Model::push_vertex`]. The variant says what the cache **knows** about the
 /// coordinate, never where the vertex came from, and there are only three things it can know:
 ///
-/// - [`Self::Bounded`] — the coordinate was **realized from the definition** and rounded once
+/// - [`Self::Realized`] — the coordinate was **realized from the definition** and rounded once
 ///   (`nacre_ops::realize_vertex`), so `bound` is a *proven* per-axis containment: the truth lies
 ///   within `coord ± bound`. Every vertex an operation makes carries this unless the cache road
 ///   declined.
@@ -886,14 +886,14 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///
 /// Unlike [`EdgeCache`] there is no door that discards it and writes it again: a vertex is realized
 /// when it is pushed, so the cache is the realization's memo from the start, and a rewrite would have
-/// nothing to do — a `Bounded` coordinate is what the definition answers again, and a `Ceiling` or
+/// nothing to do — a `Realized` coordinate is what the definition answers again, and a `Ceiling` or
 /// `Unrealized` one is the construction's figure, which only replaying the log produces again. What
-/// can happen later is a **refinement** — `Ceiling` raised to `Bounded` — which only ever makes a
+/// can happen later is a **refinement** — `Ceiling` raised to `Realized` — which only ever makes a
 /// coordinate more accurate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PointCache {
     /// Realized from the definition: the truth lies within `coord ± bound` on every axis.
-    Bounded { coord: Point3, bound: [Mag; 3] },
+    Realized { coord: Point3, bound: [Mag; 3] },
     /// The cache road stopped — too few bits on its one rung, or a history past its cost cap.
     /// A paid realization can still answer; until one does, `coord` is the construction's figure.
     Ceiling { coord: Point3 },
@@ -906,7 +906,7 @@ impl PointCache {
     #[inline]
     pub fn coord(&self) -> Point3 {
         match *self {
-            PointCache::Bounded { coord, .. }
+            PointCache::Realized { coord, .. }
             | PointCache::Ceiling { coord }
             | PointCache::Unrealized { coord } => coord,
         }
@@ -916,7 +916,7 @@ impl PointCache {
     #[inline]
     pub fn bound(&self) -> Option<&[Mag; 3]> {
         match self {
-            PointCache::Bounded { bound, .. } => Some(bound),
+            PointCache::Realized { bound, .. } => Some(bound),
             PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => None,
         }
     }
@@ -972,7 +972,7 @@ impl EdgeGiven {
 /// cache knows about its value, as [`PointCache`]'s variants say it of a point.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SurfaceCache {
-    realized: nacre_geom::Surface,
+    surface: nacre_geom::Surface,
     standing: CacheStanding,
 }
 

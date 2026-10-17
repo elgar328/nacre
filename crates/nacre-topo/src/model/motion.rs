@@ -20,11 +20,11 @@ impl Model {
         self.motions.get(h)
     }
 
-    /// Whether a replay through `leaf`'s chain walks more than `n` nodes ([`Model::motion_depth_up_to`]).
+    /// Whether a replay through `leaf`'s chain walks more than `n` nodes ([`Model::chain_depth_up_to`]).
     /// Each step hands the budget that is left down to what it unfolds into, and the walk stops once
     /// past `n`, so asking about a 4,000-deep history costs about `n` steps.
-    pub fn motion_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
-        self.motion_depth_up_to(leaf, n) > n
+    pub fn chain_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
+        self.chain_depth_up_to(leaf, n) > n
     }
 
     /// Whether the chain ending at `leaf` **continues** the one ending at `prefix` — `prefix` is
@@ -50,7 +50,7 @@ impl Model {
     }
 
     /// **How many nodes a replay through `leaf`'s chain walks**, counted until the count passes `n` —
-    /// the same length [`Model::motion_deeper_than`] asks about, as a number, for a caller that sums
+    /// the same length [`Model::chain_deeper_than`] asks about, as a number, for a caller that sums
     /// the replays several chains will cost. Past `n` the number says only that: a frame step adds
     /// what its plane unfolds to at once, so it can overshoot.
     ///
@@ -59,7 +59,7 @@ impl Model {
     /// [`Model::plane_replay_depth`]. Counted once, a sketch on a face of a 7°-and-200-translations
     /// box replayed 201 nodes behind a chain of depth one. The walk stops once past `n`, through the
     /// frames too.
-    pub fn motion_depth_up_to(&self, leaf: Handle<MotionNode>, n: usize) -> usize {
+    pub fn chain_depth_up_to(&self, leaf: Handle<MotionNode>, n: usize) -> usize {
         let mut depth = 0;
         let mut cur = Some(leaf);
         while let Some(h) = cur {
@@ -85,8 +85,8 @@ impl Model {
     /// datum door refuses one on a nameless carrier.)
     pub fn plane_replay_depth(&self, plane: Handle<Surface>, n: usize) -> usize {
         let own = self
-            .plane_motion(plane)
-            .map_or(0, |m| self.motion_depth_up_to(m, n));
+            .surface_motion(plane)
+            .map_or(0, |m| self.chain_depth_up_to(m, n));
         let Surface::Plane {
             points: PlanePoints::Through(vs),
             ..
@@ -105,7 +105,7 @@ impl Model {
             let def = self.vertex(v);
             depth += match self.vertex_named_meet(def) {
                 Some(crate::NamedMeet::Point(nacre_exact::MeetPoint::Narrow(_), frame)) => {
-                    frame.map_or(0, |m| self.motion_depth_up_to(m, n - depth))
+                    frame.map_or(0, |m| self.chain_depth_up_to(m, n - depth))
                 }
                 // Straddling, wide, or naming no point: a meet of its carriers' witness triangles.
                 _ => def
@@ -158,7 +158,7 @@ impl Model {
     /// its own world statement is `nacre-ops`' `world_cylinder_def`.
     pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_exact::PlaneName> {
         let name = self.surface_name.get(&surf)?;
-        match self.plane_motion(surf) {
+        match self.surface_motion(surf) {
             None => Some(name.clone()),
             Some(leaf) => Some(nacre_exact::PlaneName::Narrow(
                 self.chain_plane_coeffs(leaf, *name.narrow()?)?,
@@ -199,10 +199,10 @@ impl Model {
     /// plane), so a caller that holds the world name always holds its sense.
     pub fn world_plane_name_sense(&self, surf: Handle<Surface>) -> Option<Orientation> {
         let own = self.plane_name_sense(surf)?;
-        let Some(leaf) = self.plane_motion(surf) else {
+        let Some(leaf) = self.surface_motion(surf) else {
             return Some(own);
         };
-        let fold = self.chain_fold(leaf)?;
+        let fold = self.chain_affine(leaf)?;
         let n = self.surface_name.get(&surf)?.narrow()?;
         let carried = fold.dir_rat([n[0], n[1], n[2]])?;
         let world = self.world_plane_name(surf)?;
@@ -237,7 +237,7 @@ impl Model {
     /// the cache's axis while the loops that walk it are decided on this statement's — and the
     /// radius must match. A fold in the wrong order disagrees on the origin or the direction.
     pub fn world_cylinder_def(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
-        let out = self.world_cylinder_statement(surf)?;
+        let out = self.world_cylinder_def_unchecked(surf)?;
         debug_assert!(
             {
                 let nacre_geom::Surface::Cylinder(cache) = self.surface_cache(surf) else {
@@ -259,7 +259,10 @@ impl Model {
     /// [`Model::world_cylinder_def`] without its postcondition — for the one reader whose job is
     /// to **measure** how far the cache stands from the truth (the derived cache), where a
     /// disagreement is the measurement, not a defect: a planted lie must reach `validate`.
-    pub(super) fn world_cylinder_statement(&self, surf: Handle<Surface>) -> Option<CylinderDef> {
+    pub(super) fn world_cylinder_def_unchecked(
+        &self,
+        surf: Handle<Surface>,
+    ) -> Option<CylinderDef> {
         let Surface::Cylinder { def, motion } = self.surface(surf) else {
             unreachable!("a cylinder surface carries a cylinder truth")
         };
@@ -274,11 +277,14 @@ impl Model {
         }
     }
 
-    /// `leaf`'s whole chain, folded ([`Model::motion_folds`]) — read through the store first, so
+    /// `leaf`'s whole chain, folded ([`Model::chain_affines`]) — read through the store first, so
     /// a handle from another model dies here as it does at [`Model::motion`].
-    pub(super) fn chain_fold(&self, leaf: Handle<MotionNode>) -> Option<&nacre_exact::AxisAffine> {
+    pub(super) fn chain_affine(
+        &self,
+        leaf: Handle<MotionNode>,
+    ) -> Option<&nacre_exact::AxisAffine> {
         let _ = self.motion(leaf);
-        self.motion_folds[leaf.index() as usize].as_ref()
+        self.chain_affines[leaf.index() as usize].as_ref()
     }
 
     /// Whether `leaf`'s whole chain folds to a rational map (translations, quarter turns and axis
@@ -287,7 +293,7 @@ impl Model {
     /// answer `None`: a chain that does not fold has no world statement to give, one that folds
     /// overflowed `Rat` carrying it.
     pub fn chain_folds(&self, leaf: Handle<MotionNode>) -> bool {
-        self.chain_fold(leaf).is_some()
+        self.chain_affine(leaf).is_some()
     }
 
     /// **The plane `c`, stated before `leaf`'s chain, restated in the world** — canonicalized, so
@@ -298,7 +304,7 @@ impl Model {
         leaf: Handle<MotionNode>,
         c: [nacre_exact::Rat; 4],
     ) -> Option<[nacre_exact::Rat; 4]> {
-        self.chain_fold(leaf)?.plane_coeffs(c)
+        self.chain_affine(leaf)?.plane_coeffs(c)
     }
 
     /// **The point `p`, stated before `leaf`'s chain, carried to the world** — exactly. `None` as
@@ -308,7 +314,7 @@ impl Model {
         leaf: Handle<MotionNode>,
         p: [nacre_exact::Rat; 3],
     ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_fold(leaf)?.point_rat(p)
+        self.chain_affine(leaf)?.point_rat(p)
     }
 
     /// **The direction `d`, stated before `leaf`'s chain, carried to the world** — the linear
@@ -318,7 +324,7 @@ impl Model {
         leaf: Handle<MotionNode>,
         d: [nacre_exact::Rat; 3],
     ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_fold(leaf)?.dir_rat(d)
+        self.chain_affine(leaf)?.dir_rat(d)
     }
 
     /// **The point `p`, stated in the world, carried back to before `leaf`'s chain** — the inverse
@@ -330,7 +336,7 @@ impl Model {
         leaf: Handle<MotionNode>,
         p: [nacre_exact::Rat; 3],
     ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_fold(leaf)?.inverse().point_rat(p)
+        self.chain_affine(leaf)?.inverse().point_rat(p)
     }
 
     /// **The direction `d`, stated in the world, carried back to before `leaf`'s chain** — the
@@ -340,7 +346,7 @@ impl Model {
         leaf: Handle<MotionNode>,
         d: [nacre_exact::Rat; 3],
     ) -> Option<[nacre_exact::Rat; 3]> {
-        self.chain_fold(leaf)?.inverse().dir_rat(d)
+        self.chain_affine(leaf)?.inverse().dir_rat(d)
     }
 
     /// **How a plane stands to a cylinder's axis, from their truths** — the relation that decides
@@ -369,7 +375,7 @@ impl Model {
             return None;
         };
         let axis = LineDir::of_rat(&def.dir());
-        let pm = self.plane_motion(plane);
+        let pm = self.surface_motion(plane);
         // Written in one frame already, or both carried whole to the world: the same rule, asked
         // where the walk below would have arrived without walking.
         if pm == *cm {
@@ -379,7 +385,7 @@ impl Model {
         }
         if let (Some(name), Some(world)) = (
             self.world_plane_name(plane),
-            self.world_cylinder_statement(cyl),
+            self.world_cylinder_def_unchecked(cyl),
         ) {
             return Some(LineDir::normal_of(&name).relation_to(&LineDir::of_rat(&world.dir())));
         }
@@ -437,7 +443,7 @@ impl Model {
             match *m {
                 Motion::Frame { plane, .. } => {
                     out.push(LineStep::Frame(plane));
-                    out.extend(self.line_path(self.plane_motion(plane)));
+                    out.extend(self.line_path(self.surface_motion(plane)));
                 }
                 _ => out.push(LineStep::Motion(m)),
             }

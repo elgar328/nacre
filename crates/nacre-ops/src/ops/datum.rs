@@ -36,7 +36,7 @@ pub(super) fn pierce_def(
     let nacre_topo::Surface::Cylinder { def, motion } = model.surface(cylinder) else {
         return Err(OpError::DegenerateGeometry);
     };
-    if model.plane_motion(a) != *motion || model.plane_motion(b) != *motion {
+    if model.surface_motion(a) != *motion || model.surface_motion(b) != *motion {
         return Err(OpError::PlaneWithoutExactForm);
     }
     let meet =
@@ -156,7 +156,7 @@ pub(super) fn datum_plane(
         vs: [Handle<Vertex>; 3],
     ) -> Result<ThroughStatement, OpError> {
         // ★★★★ **Which frame a vertex is solvable in is [`nacre_topo::Model::vertex_meet`]'s
-        // answer, not a second copy of its rule.** Comparing `plane_motion(tri[0])` against the
+        // answer, not a second copy of its rule.** Comparing `surface_motion(tri[0])` against the
         // other two here would call a turned solid's corner a straddle — the invariant-plane
         // restatement leaves its cap world-stated while the walls carry a node — and, worse,
         // could *disagree* with the door: `push_plane_through` derives the interning name through

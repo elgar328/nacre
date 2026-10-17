@@ -49,7 +49,7 @@ fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
                     for vh in m.edge(he.edge).vertices {
                         if matches!(*m.vertex(vh), Vertex::Pierce { .. }) {
                             assert!(
-                                matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+                                matches!(m.vertex_cache(vh), PointCache::Realized { .. }),
                                 "{what}: a pierce vertex realizes: {:?}",
                                 m.vertex_cache(vh)
                             );
@@ -267,7 +267,7 @@ fn an_overflow_splits_the_representation_not_the_world() {
         bits.dedup();
         let recorded = faces
             .iter()
-            .any(|&f| m.plane_motion(m.face(f).surface).is_some());
+            .any(|&f| m.surface_motion(m.face(f).surface).is_some());
         (names, bits, recorded)
     };
 
@@ -332,9 +332,9 @@ fn a_foreign_definition_is_rejected() {
     // ...and a vertex whose definition names the world seeds — surfaces this solid's face
     // set does not contain.
     let foreign = Vertex::ThreePlane([
-        m.world_plane(Axis::Z),
-        m.world_plane(Axis::X),
-        m.world_plane(Axis::Y),
+        m.seeded_plane(Axis::Z),
+        m.seeded_plane(Axis::X),
+        m.seeded_plane(Axis::Y),
     ]);
     let mk_v = |m: &mut Model, x: f64| {
         m.push_vertex(
@@ -347,7 +347,7 @@ fn a_foreign_definition_is_rejected() {
     let v0 = mk_v(&mut m, 0.0);
     let v1 = mk_v(&mut m, 1.0);
     let e = m
-        .push_edge([own, m.world_plane(Axis::Z)], [v0, v1], |_| {
+        .push_edge([own, m.seeded_plane(Axis::Z)], [v0, v1], |_| {
             nacre_topo::EdgeGiven::NONE
         })
         .unwrap();
@@ -502,8 +502,8 @@ fn a_pierce_definition_swap_toggles_its_root() {
         .map(|&f| m.face(f).surface)
         .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
         .expect("lateral");
-    let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
-    let x0 = m.world_plane(Axis::X);
+    let bottom = m.seeded_plane(Axis::Z); // the z = 0 cap interned onto the world seed
+    let x0 = m.seeded_plane(Axis::X);
     assert!(bottom.index() < x0.index(), "the fixture's premise");
     // The two pierce points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
     // Canonical normals (0,0,1) × (1,0,0) = +y, so y = −2 is the smaller parameter: Lo.

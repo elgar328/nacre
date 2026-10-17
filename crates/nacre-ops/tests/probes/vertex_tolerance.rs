@@ -50,7 +50,7 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 /// Returns how many vertices were **realized from their definition**, so a fixture that stopped
 /// producing any cannot pass by measuring nothing.
 ///
-/// ⚠ Only realized (`Bounded`) vertices are walked — the cache claims nothing about the rest — and
+/// ⚠ Only realized (`Realized`) vertices are walked — the cache claims nothing about the rest — and
 /// the callers' `> 0` is what keeps the skip from swallowing the whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
@@ -65,9 +65,9 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
         // nothing about it, so there is nothing here to hold it to.
         let tol = match *m.vertex_cache(vh) {
             PointCache::Unrealized { .. } | PointCache::Ceiling { .. } => continue,
-            PointCache::Bounded { coord, .. } => {
+            PointCache::Realized { coord, .. } => {
                 let (realized, _) = realize_vertex(m, vh, Precision::NearestF64)
-                    .expect("a Bounded vertex realizes")
+                    .expect("a Realized vertex realizes")
                     .to_f64()
                     .expect("decided");
                 assert_eq!(

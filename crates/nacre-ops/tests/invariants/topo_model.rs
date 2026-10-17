@@ -278,7 +278,7 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
         nacre_exact::Axis::Y,
     ] {
         assert!(
-            face_surfaces.contains(&m.world_plane(axis)),
+            face_surfaces.contains(&m.seeded_plane(axis)),
             "the {axis:?}-normal face at 0 must be the seed itself"
         );
     }

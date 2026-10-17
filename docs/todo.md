@@ -409,11 +409,18 @@ kit 에서 이 원인으로 갈라 잰 수가 0 이 아닐 때. 기권 자체의
 상한 — 혼합 코너를 f64 캐시로 답해 본 측정(오차 0 이라 낙관적): `perf.rs` 의 건넌 클래스 52,207 → 52,234 에 벽시계
 잡음 안, census 1,084 → 1,169 에 `c` 행 동일·벽시계 잡음 안.
 
-여는 날은 reuse 가 시간을 버는 일(접는 fold)에서 이 물러남이 벽시계에 보일 때다. 그 코너의 캐시는 `Bounded`(증인
+여는 날은 reuse 가 시간을 버는 일(접는 fold)에서 이 물러남이 벽시계에 보일 때다. 그 코너의 캐시는 `Realized`(증인
 삼각형 실현)이므로 그 **증명된 경계**로 `misses` 의 필터만 물으면 된다 — `orient3d_filter` 의 정확 길(`shared_base`)은
 첫 점의 사슬이 비면 서지 않아 이력 없는 점은 필터만 간다. 다만 정의가 없는 점을 `WitnessPoint`(`base` 가 정의다)에
 넣지 않는다 — 따로 타입을 두거나 필터 전용 판정 함수를 연다(`orient3d_iv` 는 `WitnessPoint` 를 받고, 그 조각
 `orient3d_mid`·`orient3d_radius` 는 `det3.rs` 비공개다).
+
+### `Model::adj` 는 읽는 쪽이 없다
+
+`Model::rebuild_adjacency` 가 인접 캐시(`Model::adj`)를 다시 짓지만, 그 필드를 읽는 쪽은 topo 자기 단위 테스트
+(`src/tests/adjacency.rs`)뿐이다 — `validate` 는 캐시를 믿지 않고 `Adjacency::rebuild` 로 따로 짓는다. kit 은
+`rebuild_adjacency` 를 일곱 번, ops 는 `apply` 에서 한 번 부른다. 읽는 소비자가 생기면 남기고, 끝내 없으면 필드와 문을
+지운다 — 그때 overview 절대 원칙 5 의 «인접 = 위상 store(진실) + Adjacency(캐시)» 도 고쳐 쓴다.
 
 ### 림 표는 몸체를 가리지 않는다
 
@@ -433,7 +440,7 @@ kit 에서 이 원인으로 갈라 잰 수가 0 이 아닐 때. 기권 자체의
 대표의 핸들을 물려받는다」). pad·pocket 의 밑캡은 대상 면의 핸들을 그대로 쓰므로 갈리는 것은 윗캡·옆벽이고, 윗캡의
 세계 방정식 `n·p = n·o + d·|n|` 은 `|n|` 이 유리수일 때만 유리수다.
 
-이름을 넓히는 날 짝이 하나 있다: `world_plane_name` 과 `world_plane_name_sense` 는 같은 `chain_fold` 에서 나오고
+이름을 넓히는 날 짝이 하나 있다: `world_plane_name` 과 `world_plane_name_sense` 는 같은 `chain_affine` 에서 나오고
 ops 의 `WorldName::of` 는 이름이 있으면 향도 있다고 `expect` 한다 — 둘을 함께 넓혀야 한다. 거절을 여는 쪽의
 인구는 원통이 든다(「세계 진술 없는 클래스가 낀 원통 불리언」의 기하는 유리수 부류).
 
@@ -559,7 +566,7 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 같은 축·같은 피벗의 인접 회전은 각도를 더해 한 노드로 읽을 수 있다 — `Angle` 이 도 단위 유리수이고
 `checked_add` 가 정확히 mod 360 축약하므로, 30°+60° 처럼 합이 사분각이 되면 유리수 표현이 되살아나 사슬 접기
-(`motion_folds`)에 들어간다. 코퍼스에는 그런 인접쌍이 0 이고 사슬 깊이 최대 2 다 — «픽스처가 안 한다»이지
+(`chain_affines`)에 들어간다. 코퍼스에는 그런 인접쌍이 0 이고 사슬 깊이 최대 2 다 — «픽스처가 안 한다»이지
 «사용자가 못 한다»가 아니다(같은 축으로 두 번 돌리면 생긴다). 모양은 노드별 합성 앞의 «인접 정규화» 한
 겹이라 지금 설계가 막지 않는다. 피벗이 다르면 각도만 더해지지 않는다 — 합성 피벗에 cos/sin 이 든다. 인접쌍
 인구가 생기면.
@@ -578,9 +585,10 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 `tessellate` 는 매번 통째로 짓는다(`Tessellation` 에 무효화 집합이 없다). 면 단위 증분 갱신과 연산별 tolerance override 는 GUI 가 요구할 때.
 
-### 판정층의 남은 이름과 타입
+### 판정층의 남은 타입
 
-좌표 없이 부호만 답하는 동차 정점(`WorkingVertex`), 고정밀 실현의 타입화(지금은 `(usize, [HpBounded; 3])` 튜플), `FaceInfo`/`WorkingPlane` 합치기(개명이 아니라 설계 작업), `plane_motion(h)` → `m.surface(h).motion()`, `edge_curve(e)` → `edge_cache(e).curve()`.
+좌표 없이 부호만 답하는 동차 정점(`WorkingVertex`), 고정밀 실현의 타입화(지금은 `(usize, [HpBounded; 3])` 튜플),
+`FaceInfo`/`WorkingPlane` 합치기 — 셋 다 이름이 아니라 설계 작업이다.
 
 ### 어휘 밖의 요구가 오면
 

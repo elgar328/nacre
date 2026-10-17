@@ -1142,7 +1142,9 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
             .map(|&f| m.face(f).surface)
             .find(|&s| matches!(m.surface(s), nacre_topo::Surface::Cylinder { .. }))
             .expect("the bore");
-        let leaf = m.plane_motion(lateral).expect("the bore records the move");
+        let leaf = m
+            .surface_motion(lateral)
+            .expect("the bore records the move");
         assert!(
             m.chain_folds(leaf) && m.world_cylinder_def(lateral).is_some(),
             "the bore stands on a chain that folds to a world statement"

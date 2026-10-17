@@ -322,7 +322,7 @@ fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Sol
 }
 
 /// Vertices the kernel vouches for beyond the construction's bare figure: realized from their
-/// definition (`Bounded`) or carrying a measured residual. A boolean's vertices realize, so the
+/// definition (`Realized`) or carrying a measured residual. A boolean's vertices realize, so the
 /// count is the population under the name the cache gives it.
 fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
     let mut seen = std::collections::HashSet::new();
@@ -335,7 +335,7 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
                     // ★ Positive: "realized from its definition" is the claim, and the negative
                     // form would let `Ceiling` in — a vertex the cache road stopped on.
                     if seen.insert(vh)
-                        && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. })
+                        && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. })
                     {
                         n += 1;
                     }
@@ -354,7 +354,7 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
     crate::planes::solid_shell_handles(m, s)
         .into_iter()
         .flat_map(|sh| m.shell(sh).faces.clone())
-        .any(|fh| m.plane_motion(m.face(fh).surface).is_some())
+        .any(|fh| m.surface_motion(m.face(fh).surface).is_some())
 }
 
 /// ★★★★★ **The eye on the mesh: does it actually cover the face it approximates?**

@@ -196,7 +196,7 @@ fn a_world_named_face_frames_on_the_arbitrary_axis_of_its_outward_normal() {
                 continue;
             }
             checked += 1;
-            if m.plane_motion(surface).is_some() {
+            if m.surface_motion(surface).is_some() {
                 moved += 1;
             }
             let ring: Vec<[f64; 3]> = m

@@ -23,7 +23,7 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
         (Axis::Y, [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
     ];
     for (axis, u, v, w) in want {
-        let h = m.world_plane(axis);
+        let h = m.seeded_plane(axis);
         let (o, ru, rv, rw) = crate::rotated_vertex::frame_world_basis(
             &m,
             h,

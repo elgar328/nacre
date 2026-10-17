@@ -37,7 +37,7 @@ impl Model {
             vertex_cache: Vec::new(),
             motions: Store::default(),
             motion_ids: HashMap::new(),
-            motion_folds: Vec::new(),
+            chain_affines: Vec::new(),
             given_by_pair: HashMap::new(),
             surface_name: HashMap::new(),
             interned: HashMap::new(),
@@ -61,7 +61,7 @@ impl Model {
         let world_planes: Vec<Handle<Surface>> = seeds
             .into_iter()
             .map(|(n, u, v)| {
-                let cache = nacre_geom::Plane::from_point_normal(
+                let figure = nacre_geom::Plane::from_point_normal(
                     nacre_math::Point3::origin(),
                     nacre_math::Vector3::from_array(n.map(|c| -c)),
                 )
@@ -69,7 +69,7 @@ impl Model {
                 let points = [[r(0); 3], u.map(r), v.map(r)];
                 // The cache faces `−axis` (a base cap's outward) while `(0, u, v)` spans `+axis`.
                 let (h, flipped) = m.push_plane(
-                    cache,
+                    figure,
                     CacheStanding::Unrealized,
                     points,
                     None,
@@ -234,11 +234,11 @@ impl Model {
         // Root first: the parent's chain is applied, then this node.
         let fold = match parent {
             None => own,
-            Some(p) => own.and_then(|o| Some(self.motion_folds[p.index() as usize]?.then(&o))),
+            Some(p) => own.and_then(|o| Some(self.chain_affines[p.index() as usize]?.then(&o))),
         };
-        self.motion_folds.push(fold);
+        self.chain_affines.push(fold);
         debug_assert_eq!(
-            self.motion_folds.len(),
+            self.chain_affines.len(),
             self.motions.len(),
             "one fold per node"
         );

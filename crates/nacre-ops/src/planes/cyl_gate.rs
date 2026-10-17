@@ -1568,18 +1568,18 @@ pub(crate) type CacheReach = ([f64; 3], [f64; 3]);
 /// **Where a vertex's truth can be** — per axis, the interval its cache proves. The self-touch
 /// sieve reads it for seam vertices, the gate for the corners of a face it asks to stand apart.
 ///
-/// A `Bounded` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
+/// A `Realized` cache holds the truth within `coord ± bound`; the radius is widened by a few ulps
 /// of both operands (and the smallest normal), since `coord − bound` computed in `f64` may round
 /// inward by half an ulp of the result — which the widening outgrows on either side of a binade.
 /// Widening only over-keeps. Any other
 /// variant proves nothing, and the answer is the whole line: the sieve then keeps every candidate
 /// the vertex takes part in and leaves it to the exact test, which is the only safe reading of
-/// "no bound". Measured: every seam point in the census and the perf folds is `Bounded`; the
+/// "no bound". Measured: every seam point in the census and the perf folds is `Realized`; the
 /// suite's 72 others (a history past the cost cap, a carrier with no witness) are where this
 /// arm runs.
 pub(crate) fn cache_reach(cache: &nacre_topo::PointCache) -> CacheReach {
     match *cache {
-        nacre_topo::PointCache::Bounded { coord, bound } => {
+        nacre_topo::PointCache::Realized { coord, bound } => {
             let c = coord.as_array();
             let w: [f64; 3] = core::array::from_fn(|k| {
                 bound[k].upper_f64() * (1.0 + 4.0 * f64::EPSILON) + round_slack(c[k])

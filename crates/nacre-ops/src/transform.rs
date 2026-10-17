@@ -355,7 +355,7 @@ fn moved_surface_motion(
     // **Each surface chains from its own leaf, not the solid's.** One solid does not have one
     // history: a boolean between differently-moved operands hands back walls that came from
     // different ones. Memoized per distinct parent so surfaces that did share a history still do.
-    let parent = model.plane_motion(src);
+    let parent = model.surface_motion(src);
     let leaf = match surf_rot.get(&parent) {
         Some(&h) => h,
         None => {
@@ -660,7 +660,7 @@ fn transform_solid(
                 // when the statement already has a history (the node hangs off it and says the
                 // plane before this motion), or when the motion is recorded; otherwise the whole
                 // motion moves the triple.
-                let carried = if invariant || model.plane_motion(s).is_some() {
+                let carried = if invariant || model.surface_motion(s).is_some() {
                     *p
                 } else {
                     match carry {
@@ -719,7 +719,7 @@ fn transform_solid(
                 // The same sentence as the plane's: verbatim behind a history or when the
                 // motion is recorded; otherwise the whole motion moves the def (the very
                 // transport `carry_of` asked).
-                let carried = if model.plane_motion(s).is_some() {
+                let carried = if model.surface_motion(s).is_some() {
                     def.clone()
                 } else {
                     match carry {

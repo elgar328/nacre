@@ -96,7 +96,7 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
             "vertex.cache",
             i,
             match m.vertex_cache(vh) {
-                nacre_topo::PointCache::Bounded { .. } => "bounded",
+                nacre_topo::PointCache::Realized { .. } => "bounded",
                 nacre_topo::PointCache::Ceiling { .. } => "ceiling",
                 nacre_topo::PointCache::Unrealized { .. } => "unrealized",
             }
@@ -437,7 +437,7 @@ fn truth_sig(m: &Model) -> Vec<SigItem> {
             at,
             value: format!("{:?}", m.surface(h)),
         });
-        let mut node = m.plane_motion(h);
+        let mut node = m.surface_motion(h);
         while let Some(n) = node {
             out.push(SigItem {
                 what: "surface.chain",
@@ -539,7 +539,7 @@ fn refined_mid_log(refine: bool) -> Model {
 
 /// ★★★ **Refining in the middle of a log leaves every later truth as it was.**
 ///
-/// The refine door rewrites vertex caches — `Ceiling` to `Bounded` — and an operation after it
+/// The refine door rewrites vertex caches — `Ceiling` to `Realized` — and an operation after it
 /// reads those caches; the door may run mid-log only if none of them decides a truth from one.
 /// Asked directly, on a log that exercises the readers: a prism turned 7° and translated 200
 /// times (every vertex past the cost cap, a `Ceiling`), then — after the door on one road only —
@@ -592,7 +592,7 @@ fn assert_caches_regenerate(m: &Model, what: &str) -> nacre_ops::VertexCacheAudi
 
 /// ★★★ **The vertex cache regenerates from the definition — at the end of a log, not only after
 /// the operation that pushed the vertex.** The vertex sibling of the edges'
-/// `edge_cache_discard_and_regenerate_bit_identical`, as a reader: a `Bounded` cache is what the
+/// `edge_cache_discard_and_regenerate_bit_identical`, as a reader: a `Realized` cache is what the
 /// definition answers again, bit for bit, and a `Ceiling` or `Unrealized` one is where the road
 /// still stops for that reason (its figure regenerates from the log alone — [`arena_sig`]).
 ///

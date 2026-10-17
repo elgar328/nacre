@@ -109,7 +109,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     for (o, h) in coeffs.iter_mut().zip(tri) {
                         *o = *model.surface_name.get(&h)?.narrow()?;
                     }
-                    let motions = tri.map(|h| model.plane_motion(h));
+                    let motions = tri.map(|h| model.surface_motion(h));
                     // One shared leaf among the moved carriers, or a decline.
                     let mut leaf = None;
                     for m in motions.iter().flatten() {

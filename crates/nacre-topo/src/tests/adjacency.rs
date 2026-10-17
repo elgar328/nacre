@@ -26,9 +26,9 @@ fn nonmanifold_vertices_flags_each_pinch_even_count() {
     // detector never dereferences (it reads only the maps).
     let mk_v = |m: &mut Model| {
         let def = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_exact::Axis::Z),
-            m.world_plane(nacre_exact::Axis::X),
-            m.world_plane(nacre_exact::Axis::Y),
+            m.seeded_plane(nacre_exact::Axis::Z),
+            m.seeded_plane(nacre_exact::Axis::X),
+            m.seeded_plane(nacre_exact::Axis::Y),
         ]);
         m.push_vertex(
             def,
@@ -96,9 +96,9 @@ fn rebuild_indexes_a_shared_edge() {
     let mut m = Model::new();
     let mk_v = |m: &mut Model, p: [f64; 3]| {
         let def = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_exact::Axis::Z),
-            m.world_plane(nacre_exact::Axis::X),
-            m.world_plane(nacre_exact::Axis::Y),
+            m.seeded_plane(nacre_exact::Axis::Z),
+            m.seeded_plane(nacre_exact::Axis::X),
+            m.seeded_plane(nacre_exact::Axis::Y),
         ]);
         m.push_vertex(
             def,

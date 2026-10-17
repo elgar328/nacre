@@ -24,7 +24,7 @@ pub(super) fn exact_frame(
         return None;
     };
     let own = crate::construct::RatFrame::of_plane_frame(pf)?;
-    match model.plane_motion(frame.plane()) {
+    match model.surface_motion(frame.plane()) {
         None => Some(own),
         Some(leaf) => own.carried(model, leaf),
     }

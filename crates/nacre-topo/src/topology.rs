@@ -128,9 +128,9 @@ mod tests {
     fn cells_round_trip_their_fields() {
         let mut m = Model::new();
         let seeds = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_exact::Axis::Z),
-            m.world_plane(nacre_exact::Axis::X),
-            m.world_plane(nacre_exact::Axis::Y),
+            m.seeded_plane(nacre_exact::Axis::Z),
+            m.seeded_plane(nacre_exact::Axis::X),
+            m.seeded_plane(nacre_exact::Axis::Y),
         ]);
         let v0 = m.push_vertex(
             seeds,

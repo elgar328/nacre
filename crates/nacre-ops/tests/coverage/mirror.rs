@@ -287,7 +287,7 @@ fn a_mirror_is_carried_when_every_statement_moves_exactly() {
             .shell(m.solid(b).outer)
             .faces
             .iter()
-            .map(|&fh| m.plane_motion(m.face(fh).surface).is_some())
+            .map(|&fh| m.surface_motion(m.face(fh).surface).is_some())
             .collect();
         assert!(!motions.is_empty(), "walked no faces");
         motions

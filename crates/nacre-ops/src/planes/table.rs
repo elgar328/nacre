@@ -321,7 +321,7 @@ pub(crate) fn collect_planes(
         else {
             continue;
         };
-        let restated = f.motion.filter(|_| model.plane_motion(f.surf).is_none());
+        let restated = f.motion.filter(|_| model.surface_motion(f.surf).is_none());
         let parity = crate::rotated_vertex::motion_parity(model, restated).unwrap_or(1);
         debug_assert_eq!(
             model.plane_name_sense(f.surf).map(|s| s.sign() * parity),

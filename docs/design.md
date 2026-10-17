@@ -10,7 +10,7 @@
 
 **「연산 이력을 보존한다」의 보장 범위.** replay는 동일 로그·동일 파라미터에서 동일 모델을 보장하고(undo/redo의 기반), tolerance 변경 재계산은 위상·기하를 불변으로 둔 채 tessellation만 재생성한다(「Tessellation 층」 절). 로그 중간의 파라미터를 수정하는 파라메트릭 편집은 v1 비목표다 — 연산이 원시 Handle을 참조하는 한 상류 수정이 하류 Handle 번호를 밀어내기 때문이다(topological naming 문제). 진화 경로는 「연산 층」 절에 있다.
 
-**「tolerance는 발견된 교차에만 존재한다」를 드는 자리.** 구성 시점에 동일성을 아는 요소에는 tolerance 개념 자체가 없다. 그 구분은 **정점의 실현 캐시**(`PointCache`)가 든다. 캐시에 저장된 tolerance 는 **없다**. 변종 셋은 «캐시가 무엇을 아는가»만 말한다 — 증명된 경계가 있거나(`Bounded`), 싼 도로가 멈췄거나(`Ceiling`: 비트 또는 비용, 둘 다 «더 물으면 답이 있다»), 실현이 뒤에 없거나(`Unrealized`). 발견된 점도 증명된 경계만 든다 — seam 표가 정점이 받을 캐시(`SeamVertex.cache`)를 들고 자기접촉 체가 그 경계를 읽는다.
+**「tolerance는 발견된 교차에만 존재한다」를 드는 자리.** 구성 시점에 동일성을 아는 요소에는 tolerance 개념 자체가 없다. 그 구분은 **정점의 실현 캐시**(`PointCache`)가 든다. 캐시에 저장된 tolerance 는 **없다**. 변종 셋은 «캐시가 무엇을 아는가»만 말한다 — 증명된 경계가 있거나(`Realized`), 싼 도로가 멈췄거나(`Ceiling`: 비트 또는 비용, 둘 다 «더 물으면 답이 있다»), 실현이 뒤에 없거나(`Unrealized`). 발견된 점도 증명된 경계만 든다 — seam 표가 정점이 받을 캐시(`SeamVertex.cache`)를 들고 자기접촉 체가 그 경계를 읽는다.
 
 ## 크레이트 구조
 
@@ -74,7 +74,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **면의 스케치 좌표계 — `face_plane`.** 면의 `SketchFrame`(`face_sketch_frame`)을 실현한 것이고, **그 프레임 위의 `Extrude`(pad 의 보스, pocket 의 공구)가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 한 값의 실현 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다). 실현은 도로마다 그 도로의 것이다(`frame_basis`): 세계 도로는 유리수 세계 기저를 한 번 반올림하고(그 도로의 꼭짓점이 그렇게 실현된다), 프레임 노드 도로는 사슬을 재생한다.
 
-**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 면의 프레임을 진실에서 고르는 한 문이다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 같은 `flip` 으로 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
+**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 면의 프레임을 진실에서 고르는 한 문이다(`face_plane`은 그 실현). **면이 어느 프레임을 갖는가는 면이 어디 있는가로 정하지, 평면이 어떻게 저장됐는가로 정하지 않는다** — 이동을 점에 옮겨 적었는지 노드로 기록했는지는 변환이 정확히 진술할 수 있는 것으로 고르므로, 그것을 읽는 규약은 같은 두 면을 두 프레임에 스케치한다. 세계 방정식이 진술되는 평면(`world_plane_name` — 모션 없음, 또는 접히는 사슬)은 **바깥 법선의 세계 arbitrary-axis 프레임**(`plane_frame_default` — 세계 원점의 투영, `+u = ẑ × n`, 수직이면 `ŷ × n`)을 갖고, 그것을 사슬의 역(`chain_point_rat_inverse`/`chain_dir_rat_inverse` — 접히므로 정확)으로 평면의 진술 좌표계에 옮긴 `Named` 로 적는다 — 같은 `flip` 으로 평면 이름이 유도하는 프레임과 같으면 `Canonical`(정규형). 거울이 든 사슬로 옮긴 프레임은 왼손이다(`û` 는 세계의 것, `v̂` 는 반대, `ŵ` 는 바깥). 그 밖의 평면(프레임 노드·사분각 밖 회전·Wide·이름 없음)은 자기 `Canonical` 프레임을 사슬로 운반해 갖는다. 그래서 모든 평면 면이 철자를 가지며, 계약(실현이 `face_plane` 과 비트 동일)은 `tests/invariants/sketch_frame_contract.rs` 가 여덟 배치 × 6면으로 잠근다. flip 은 `frame_toward`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `seeded_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
 
 **면 프레임의 원점은 세계 원점의 정사영이다 — 면을 전혀 읽지 않는다.** 꼭짓점 평균은 **직선 도중에 꼭짓점이 하나 늘면 움직이고**, 면적중심은 이산화에는 무관하지만 면의 `f64` 꼭짓점을 읽어 반올림된 캐시가 진실이 된다(같은 footprint 를 두 번 pad 하면 넓이 `2.2e-16` 의 면이 남았다) — 그리고 둘 다 같은 평면 위 다른 외곽선이면 원점이 달라진다. 정사영은 평면만의 성질이다(잠금: `the_sketch_origin_does_not_depend_on_the_outline_at_all`). 대가: 원점에서 먼 면에서는 스케치 좌표 `(0, 0)` 이 면 밖이므로, 호출자는 `face_plane` 으로 면의 자리를 읽어 프로파일을 놓는다(kit 의 «`f.center` 근처에 그려라» 안내).
 
@@ -240,7 +240,7 @@ pub enum Curve {
 
 `realize_vertex` 가 **호출자가 고른** 정밀도에서 사다리를 오른다(`Precision` 은 *"always stated, never defaulted"*). 판정 층의 정밀도는 모델이 정하고(정밀도 인프라 절), 실현은 호출자가 정한다 — **둘은 다른 손잡이다.**
 
-**정점의 캐시는 태어날 때부터 실현값이다.** 연산이 정점을 push 하는 자리 다섯(불리언 셋·압출·이동)은 전부 ops 의 깔때기 `push_vertex_realized(model, def, fallback)` 를 지난다: 정의를 사다리의 첫 두 단(128비트, 못 정하면 256비트)에서 실현해 `PointCache::Bounded { coord, bound }` 로 넣는다. 못 넣었을 때 서는 것은 «구성의 폴백»이 아니라 «이름 붙은 이유»다: 깔때기는 `realize_cache` 의 `Err` 를 망라적으로 갈라 `Ceiling`(첫 단의 비트가 모자랐거나, 재생할 이력이 **비용 한계** `CACHE_REPLAY_COST_CAP` 을 넘어 아예 안 걸었거나 — 둘 다 «더 물으면 답이 있다») 과 `Unrealized`(도로가 없거나, 정의가 점을 이름하지 않는다)로 나누고, 좌표만 구성 자리의 값에서 가져온다. 그래서 «실현 통로는 하나»가 구조다 — 표시·tess·STEP·물성·validate 가 읽는 f64 는 realize 의 메모다. **쓰기 문은 둘**이다: 짓는 `push_vertex` 와, `Ceiling` 만 올리는 `Model::refine_vertex_cache` — 그것을 부르는 것은 내보내기 직전의 «비싼 문» `nacre_ops::refine_caches` 하나다(정점·곡면·간선을 차례로 올리고 남은 것을 이유별로 보고한다; 로그 끝의 문이다 — 정점 캐시는 뒤 연산의 진실을 정하지 않지만, 평면 캐시는 뒤 불리언의 seam 표가 `Ceiling` 정점에 쓰는 구성 수치라 그 표의 거절이 달라질 수 있다). 계약은 census 가 행마다 단언한다: 답 ⇔ 변종, 값은 비트 동일. 거절 인구는 이름을 든다(`NoMeet` 등).
+**정점의 캐시는 태어날 때부터 실현값이다.** 연산이 정점을 push 하는 자리 다섯(불리언 셋·압출·이동)은 전부 ops 의 깔때기 `push_vertex_realized(model, def, fallback)` 를 지난다: 정의를 사다리의 첫 두 단(128비트, 못 정하면 256비트)에서 실현해 `PointCache::Realized { coord, bound }` 로 넣는다. 못 넣었을 때 서는 것은 «구성의 폴백»이 아니라 «이름 붙은 이유»다: 깔때기는 `realize_cache` 의 `Err` 를 망라적으로 갈라 `Ceiling`(첫 단의 비트가 모자랐거나, 재생할 이력이 **비용 한계** `CACHE_REPLAY_COST_CAP` 을 넘어 아예 안 걸었거나 — 둘 다 «더 물으면 답이 있다») 과 `Unrealized`(도로가 없거나, 정의가 점을 이름하지 않는다)로 나누고, 좌표만 구성 자리의 값에서 가져온다. 그래서 «실현 통로는 하나»가 구조다 — 표시·tess·STEP·물성·validate 가 읽는 f64 는 realize 의 메모다. **쓰기 문은 둘**이다: 짓는 `push_vertex` 와, `Ceiling` 만 올리는 `Model::refine_vertex_cache` — 그것을 부르는 것은 내보내기 직전의 «비싼 문» `nacre_ops::refine_caches` 하나다(정점·곡면·간선을 차례로 올리고 남은 것을 이유별로 보고한다; 로그 끝의 문이다 — 정점 캐시는 뒤 연산의 진실을 정하지 않지만, 평면 캐시는 뒤 불리언의 seam 표가 `Ceiling` 정점에 쓰는 구성 수치라 그 표의 거절이 달라질 수 있다). 계약은 census 가 행마다 단언한다: 답 ⇔ 변종, 값은 비트 동일. 거절 인구는 이름을 든다(`NoMeet` 등).
 
 판정 술어는 다시 둘로 나뉜다: **명시 좌표점(f64 격자 위)은 direct 술어**(orient3d 등, 좌표를 직접 받음)로, **교차로 정의된 점은 indirect 술어**(implicit point = "어느 원시 요소들의 교차인지"라는 정의를 받아 좌표를 만들지 않고 부호를 정확히 계산 — Attene 2020)로 판정한다. 이유: 교차점을 f64 좌표로 만드는 순간 오차가 끼고, "정확한 direct 술어 × 부정확한 입력 = 부정확한 답"이 되기 때문. indirect 술어는 그 구멍을 닫는다(정의째 받으므로 부정확한 중간 좌표가 없음). 둘은 같은 확장 산술 바닥(`geometry-predicates`)을 공유하며, indirect 층은 `nacre-predicates`가 그 위에 쌓는다 — `indirect_cmp_coord`·`indirect_plane_side` 가 그것이다. indirect predicate가 작동하려면 점이 "정의를 보유"해야 하므로, **점이 정의를 갖는다**는 결정(위상 층 절)이 그 전제다 — 판정이 필요하면 indirect 술어, 좌표가 필요하면 **정의에서 실현한다**(위 `realize_vertex`; 둘은 대체가 아니라 역할 분담).
 
@@ -269,11 +269,11 @@ leaf 에서 이어진다」가 그 노드 위에 선다.
 
 **정점은 자기 정의이고 그것뿐이다.** `Vertex` 는 정의의 enum 이다(`ThreePlane`·`OnSeam`·`Pierce` —
 변종마다 자기 진실을 말하고 불변도 변종별이다). 좌표와 «그 좌표에 대해 증명된 것»은 정점 store 와
-인덱스 병렬인 점 캐시가 든다(`PointCache` — `Bounded { coord, bound }`·`Ceiling`·`Unrealized`;
+인덱스 병렬인 점 캐시가 든다(`PointCache` — `Realized { coord, bound }`·`Ceiling`·`Unrealized`;
 `Model::vertex_cache`/`Model::vertex_point` 로 읽고 `Model::push_vertex` 가 채운다 — 정의가 먼저,
 좌표가 둘째). 캐시의 변종은 캐시가 좌표에 대해 **아는 것**을 말하지 정점이 어디서 왔는지를 말하지
 않는다. 간선의 캐시와 달리 버리고 다시 쓰는 문이 없다: 정점은 push 될 때 실현되고, 뒤에 일어날 수 있는
-것은 `Ceiling` → `Bounded` 의 **정련**뿐이다. 다시 쓸 것이 없어서다 — `Bounded` 는 이미 정의가 다시 답하는 값이고
+것은 `Ceiling` → `Realized` 의 **정련**뿐이다. 다시 쓸 것이 없어서다 — `Realized` 는 이미 정의가 다시 답하는 값이고
 (로그가 끝난 뒤 아레나의 모든 정점에 물어도 비트 동일 — `vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log`;
 census 는 결과 정점마다 묻는다), `Ceiling`·`Unrealized` 의 좌표는 구성 자리의 수치라 정의가 아니라 **로그**를
 재생해야 다시 나온다(재생 잠금이 좌표 비트·변종·경계를 비교한다).
@@ -338,7 +338,7 @@ pub struct Edge {
 
 **서피스는 솔리드의 leaf가 아니라 자기 leaf에서 이어진다.** 한 솔리드에 회전 이력이 하나라는 전제는 거짓이다 — 서로 다른 각도로 회전한 두 피연산자의 불리언 결과는 벽마다 다른 이력을 갖는다. 그리고 불리언 결과의 정점은 자기 모션을 말하지 않으므로(모션은 **면**의 것이고 면이 스스로 기록한다) 정점에게 "이 솔리드는 어느 회전에 있나"를 물으면 답이 없고, 그렇게 물은 다음 회전은 **뿌리부터 다시 시작**해 회전 이전 witness에 두 번째 회전만 태우게 된다(존재하지 않는 평면). 그래서 `transform`은 변환마다 노드 하나가 아니라 **서로 다른 parent leaf마다 노드 하나**를 만든다.
 
-**모델이 들고 다니는 tol 은 없다.** 구성된 점이든 불리언이 발견한 점이든 정점은 태어날 때 정의에서 실현되어 `Bounded` 경계를 들고, 저장된 잔차는 없다. 그렇다고 **tolerance 가 사라지는 것은 아니다** — 검사는 그대로 돌고(위 `EPS_CONSTRUCTED`), 사라지는 것은 **모델이 들고 다니는 tol** 이지 비교가 아니다: Fornjot 의 "무-tolerance 단순함"은 «저장된 tol 이 없다»는 뜻으로만 재현된다.
+**모델이 들고 다니는 tol 은 없다.** 구성된 점이든 불리언이 발견한 점이든 정점은 태어날 때 정의에서 실현되어 `Realized` 경계를 들고, 저장된 잔차는 없다. 그렇다고 **tolerance 가 사라지는 것은 아니다** — 검사는 그대로 돌고(위 `EPS_CONSTRUCTED`), 사라지는 것은 **모델이 들고 다니는 tol** 이지 비교가 아니다: Fornjot 의 "무-tolerance 단순함"은 «저장된 tol 이 없다»는 뜻으로만 재현된다.
 
 **정의가 진실 → indirect predicate·봉합 우회.** 점이 좌표가 아니라 정의(implicit point)를 진실로 삼는다는 것은, 부호 판정을 좌표를 만들지 않고 indirect 술어로 정확히 하기 위한 전제다(해석 기하 층 절; Attene 2020). 이 결정이 실제로 해소하는 것은 과장 없이 셋: (1) **조합적 결정의 불일치**(orient 부호가 여기선 +, 저기선 −로 모순돼 위상이 깨지는 것 — 불리언 실패의 주원인), (2) "정확한 술어에 부정확한 입력" 구멍, (3) 판정에서의 tolerance 튜닝 취약성(부호 판정엔 tolerance 값 자체가 안 쓰임). **봉합 문제도 대부분 해소된다 — 단 «한 불리언이 민팅하는 코너»에 대해서다**: 세 평면이 만나는 꼭짓점을 하나의 `Vertex`로 만들고 정의를 "P₁∩P₂∩P₃"로 두면, 세 엣지가 그 하나의 Vertex Handle을 공유하므로 "세 곡선이 한 점에서 만나는가?"가 좌표 비교가 아니라 Handle 비교(`h==h==h`)가 되고 — 봉합의 본체(어긋난 세 후보를 tolerance로 화해)가 사라진다. 배열의 병합도 같은 말을 한다: `merge_coincident` 의 키는 **(벽, 정렬된 끝점 «이름» 쌍)** — 둘 다 정준으로 접은 뒤다 — 이지 **좌표가 아니다**(평면이 동시적이면 두 생산자가 **벽도 끝점 이름도** 다르게 적을 수 있어 **두 접기가 다 있어야** 키가 같아진다). 끝점 이름은 세 평면만이 아니다 — 관통점(`NodeId::Pierce`)도 이름이다. **연산을 가로지르는 동일성은 별개 물음이다** — 정점은 interning 하지 않는다(인접 면 집합이 자라므로 저장 시점에 키를 못 잡는다). 좌표를 f64로 뽑을 때도 하나의 Vertex 좌표만 뽑으므로 세 어긋난 좌표가 안 생긴다. 잔여물은 "그 하나의 f64 좌표가 세 평면 위에 정확히 안 놓인다"는 반 ulp 오차뿐(f64 저장의 바닥, 대부분 무해, 극단적으로 조밀한 형상에서만 문제). **해소 못 하는 것**: 접선·퇴화 교차의 위상 정책(부호 0일 때 "접하냐/스치냐"는 **판정이 아니라 정책**이고, 그 구역은 삼키지 않고 위로 올린다), 좌표 정밀도 자체, 공간 인덱스·SSI·성능 등 다른 축. 일반 곡면으로의 적용도는 미결이다.
 
@@ -1032,7 +1032,7 @@ pub struct Model {
     given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>, // 담체 쌍 → push 하는 쪽이 실현한 조각
     adj: Adjacency,                           // 요청 시 재구축(`rebuild_adjacency`)
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
-    motion_folds: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
+    chain_affines: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
 
     // 평면의 정준 이름 — 유도되는 값(캐시)인데 `SurfaceCache` 안이 아니라 곁표로 산다.
     // `Model` 의 유일한 공개 필드다.
@@ -1063,7 +1063,7 @@ pub enum PointCache {
     Ceiling    { coord: Point3 },                                 //   싼 도로가 멈췄다 — 비싼 문이 답할 수 있다
     Unrealized { coord: Point3 },                                 //   실현이 뒤에 없다 — 도로가 없거나, 안 물었거나
 }
-// 연산이 만든 정점은 push 시점에 실현되므로(`push_vertex_realized`) 거의 전부 `Bounded` 다
+// 연산이 만든 정점은 push 시점에 실현되므로(`push_vertex_realized`) 거의 전부 `Realized` 다
 //   (census 결과 정점 5,082/5,082). 모션 이력이 갈린 담체의 코너는 담체마다의 증인 삼각형으로 실현된다
 //   (담체마다 `surface_witness_triangle` → `nacre_judge::plane_hp`, 세 평면의 교점 `meet_hp`, 한 묶음 동안 평면은
 //   `PlaneMemo` 가 한 번만 실현한다); 그 도로는 증인 점 아홉을 재생하므로 비용 한계가
@@ -1082,7 +1082,7 @@ pub enum PointCache {
 //   아니라 깔때기(`push_vertex_realized`)이고, 철저한 `match` 라 새 이유가 옛 이름에 조용히 접히지 않는다.
 // **어디에도 잔차를 싣지 않는다.** 잔차는 담체까지의 거리 «하나»이고 좌표가 참값에서 얼마나인지를
 //   말하지 않으므로 «증명된 것»이 아니다 — 배열의 seam 표도 캐시(`SeamVertex.cache`)를 들고, 자기접촉 체는
-//   `Bounded` 의 경계로 상자를 부풀리며 경계가 없는 변종은 무한 상자로 읽는다(후보를 버리지 않고 정확 판정에
+//   `Realized` 의 경계로 상자를 부풀리며 경계가 없는 변종은 무한 상자로 읽는다(후보를 버리지 않고 정확 판정에
 //   넘긴다). ⇒ validate 는 모든 정점에 구성 ε 을 쓴다. 대가: 잔차를 들던 인구의 검사가 1.07e-14 에서 1e-9 로
 //   다섯 자릿수 느슨하다.
 // **«잰 것이 있는지»를 변종으로 말한다** — 경계가 없는 변종엔 오차 자리가 아예 없다(있을 수 없는 것을
@@ -1146,7 +1146,7 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 //   직선의 방향, 세계 진술 없는 원통의 림 중심). ops 의 답은 담체 쌍마다 `given_by_pair` 에 남아 같은 쌍의
 //   다음 간선이 읽고, 재생은 그것도 버려 다시 묻는다.
 // **캐시는 «실현값 (+ 필요하면 그 오차)»** 다: 캐시가 드는 오차는 증명된 경계뿐이고
-//   (`PointCache::Bounded{coord, bound}`), 오차 필드는 «소비자가 있으면» 붙지 대칭으로 붙지 않는다 —
+//   (`PointCache::Realized{coord, bound}`), 오차 필드는 «소비자가 있으면» 붙지 대칭으로 붙지 않는다 —
 //   `EdgeCache`·`SurfaceCache` 에는 오차 필드가 없다.
 ```
 
@@ -1158,7 +1158,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | 무엇 | 성질 | 어디 사나 |
 |---|---|---|
 | `Plane::distance_eps(p)` | **이 거리 계산**의 f64 반올림, `3ε·Σ|pᵢ−oᵢ|` — `p` 에 의존(두 연산자). 원통판은 `4ε·(축거리+반지름)` | 호출할 때마다 계산, **저장 불가** |
-| `PointCache::Bounded.bound` | 실현의 축별 경계 — 좌표가 참값에서 얼마나(결정된 좌표는 반 ulp, 일치 정밀도로 0 이 된 좌표는 그 구간), **잔차가 아니다** | 모델과 같이 |
+| `PointCache::Realized.bound` | 실현의 축별 경계 — 좌표가 참값에서 얼마나(결정된 좌표는 반 ulp, 일치 정밀도로 0 이 된 좌표는 그 구간), **잔차가 아니다** | 모델과 같이 |
 
 「곡면당 저장하는 tol 은 틀린 양」은 첫째 줄에만 맞다: 거리 계산의 반올림은 `p` 에 달려 있어 곡면의
 성질이 아니다 — 평면 위에 정확히 있는 점도 0이 아닌 잔차를 낼 수 있고, 그 잔차가 주장된 허용오차와
@@ -1173,7 +1173,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | | 모델 캐시 (`PointCache`·`SurfaceCache`·`EdgeCache`) | 실현 (`WitnessPoint.coord_iv`·`WorkingCyl.realized`) |
 |---|---|---|
 | 누가 만드나 | 정점: push 깔때기가 **정의에서** 실현한다(실현이 거절하면 구성 자리가 계산한 f64 가 선다). 평면: 세계 이름이 있으면 문이 진실에서 앵커와 단위 법선(정확 반올림)을 유도하고, 문이 유도하지 못한 반쪽은 ops 깔때기가 push 한 뒤 진실에서 실현해 올린다. 답하지 않는 반쪽엔 생산자가 계산한 f64 가 서고, 표지(`CacheStanding`)가 그것을 말한다. 원통: 세계에 진술되면 문이 진술에서, 사슬이 안 접히면 ops 깔때기가 사슬에서 원점·단위 축·단위 `ref_dir`·반지름을 정확 반올림한다(비용 한계를 넘는 사슬은 생산자 값에 `Ceiling`). 간선: 담체·끝점에서 유도 — 원은 원통 캐시의 프레임을 비트 그대로 싣고, 중심은 진술된 원통이면 진실의 만남(정확 반올림), 아니면 ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현한 것(그 길이 답하지 않을 때만 캐시끼리의 f64 만남); 직선은 시작 정점을 지나 세계 이름 있는 두 평면이면 이름 법선의 정확한 외적의 최근접 단위, seam·룰링이면 원통 캐시의 축, 평면 하나라도 세계 이름이 없으면 ops 깔때기가 두 평면의 계수(세계 이름, 아니면 증인 삼각형 — `PlaneMemo`)의 외적을 실현한 최근접 단위를 따르고, 그 길이 답하지 않을 때만(비용 한계를 넘는 사슬·증인 없는 평면) 끝점의 차를 따른다 | 판정이 **정의에서** 정밀도를 불러 만든다 |
-| 오차 | 정점만 축별 경계 셋(`Bounded` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
+| 오차 | 정점만 축별 경계 셋(`Realized` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
 | 누가 읽나 | 테셀레이션·STEP·물성·validate · ops 판정 표의 seam 표 — 실현 도로가 없는 점의 구성 수치 | 판정 1단(f64 필터) → 2단 정수 → 3단 상승 |
 | 수명 | 모델과 함께 | **연산 하나** |
 | 판정 경로에 | `nacre-judge` 는 읽을 수 없다(`nacre-topo` 에 의존하지 않는다). 정확 지름길은 평면의 이름을 읽는다(「판정」의 `WorkingPlane`). ops 의 향 판정도 캐시를 읽지 않는다(`sense`·`WorldName`·`face_facing`) — 판정 표가 평면 캐시를 읽는 것은 seam 표에서 실현 도로가 없는 점의 구성 수치뿐이다 | 그 자체 |
@@ -1204,9 +1204,9 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 m.surface(h) -> &Surface      m.vertex(v) -> &Vertex      m.edge(e) -> &Edge
 m.face(f) -> &Face            m.shell(s)  -> &Shell       m.solid(s) -> &Solid
 m.motion(n) -> &MotionNode
-m.plane_motion(h) -> Option<Handle<MotionNode>>            // 진실의 조각(곡면이 진술된 모션)
+m.surface_motion(h) -> Option<Handle<MotionNode>>            // 진실의 조각(곡면이 진술된 모션)
 m.live_solids() -> &[Handle<Solid>]                        // 루트
-m.world_plane(axis) -> Handle<Surface>                     // 심은 세계 평면
+m.seeded_plane(axis) -> Handle<Surface>                     // 심은 세계 평면
 
 // ── 개수·핸들 복원 — `x_count()` · `x_handle_at(index) -> Option<Handle<X>>` ──
 m.surface_count() · m.vertex_count() · m.edge_count() · m.face_count() · m.shell_count() · m.solid_count()
@@ -1215,9 +1215,9 @@ m.surface_handle_at(i) · m.vertex_handle_at(i) · m.edge_handle_at(i) · m.face
 // ── 캐시 ─────────────────────────────────────────────────────────────
 m.surface_cache(h) -> &nacre_geom::Surface                 // 포장을 벗긴 실현 — `match` 로 바로 가른다
 m.surface_cache_standing(h) -> CacheStanding               // 그 캐시가 값에 대해 아는 것
-m.vertex_cache(v)  -> &PointCache                          // 변종(Bounded | Ceiling | Unrealized)
+m.vertex_cache(v)  -> &PointCache                          // 변종(Realized | Ceiling | Unrealized)
 m.vertex_cache(v).coord() -> Point3                        // 세 변종이 모두 드는 좌표
-m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Bounded 만 — 실현의 축별 경계
+m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Realized 만 — 실현의 축별 경계
 m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
 m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
 m.line_direction_cache([p, q]) -> Option<[f64; 3]>        // 두 평면이 만나는 방향 — 이름에서, 아니면 push 하는 쪽이 실현해 남긴 것
@@ -1233,7 +1233,7 @@ m.push_vertex(def, cache) · m.push_edge(.., given) · m.push_face(..) · m.push
 m.push_motion(..)                                          // interned
 m.refine_vertex_cache(v, coord, bound)                     // 캐시의 둘째 쓰기 문 — `Ceiling` 만 «올린다»
 m.refine_surface_cache(h, s, standing)                     // 곡면 캐시의 둘째 쓰기 문 — 표지는 오르기만 한다
-m.rebuild_edge_cache(given) · m.rebuild_adjacency()        // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
+m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 — `given` 은 topo 가 못 내는 조각을 묻는다
 ```
 
 **진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에
@@ -1242,7 +1242,7 @@ m.rebuild_edge_cache(given) · m.rebuild_adjacency()        // 통째 재생 —
 꺼내는 것(`vertex_cache(v).bound()`)은 `nacre_geom::Surface` 가 `distance()`·`normal_at()` 을 자기
 메서드로 갖고 안에서 가르는 것과 같은 관용구다 — 구·원뿔이 와도 `Model` 의 문은 늘지 않는다.
 
-정제는 `Ceiling` 을 `Bounded` 로 올리는 것뿐이다 — 좌표를 더 정확하게 만들 수만 있다.
+정제는 `Ceiling` 을 `Realized` 로 올리는 것뿐이다 — 좌표를 더 정확하게 만들 수만 있다.
 
 성능은 이 명명의 고려사항이 아니다. 어느 철자든 안에서 하는 일은 «디버그 가드 + 배열 색인 하나 +
 판별자 읽기»이고 할당도 복사도 없다(`#[inline]`). 다만 평면의 이름과 실현이 둘 다 필요한 자리는 조회가
@@ -1785,7 +1785,7 @@ pierce 꼭짓점은 기권한다. 남는 기권과 그 근거: 곡선 간선 × 
   평면 꼭짓점이 섞인 링(필렛 하나인 판)은 뒤집힌 쪽을 «없는 교차»로 읽어 여러 덩어리로 갈라진다.
 - **평면은 원통을 자르지만 면은 떨어진 클래스도 말이 없다**(`Silence::Apart`) — 돌린 리브의 벽을 연장한 평면이
   구멍을 지나도, 그 클래스 위의 면이 모두 직선 모서리이고 면마다 꼭짓점의 증명된 상자(`cache_reach` — 실현 캐시의
-  `Bounded` 경계; 경계가 없으면 공간 전체)가 옆면 상자들과 엄격히 떨어지면 지나간다. 단 셋이 함께일 때다: 원통이
+  `Realized` 경계; 경계가 없으면 공간 전체)가 옆면 상자들과 엄격히 떨어지면 지나간다. 단 셋이 함께일 때다: 원통이
   **온전한 림**만 남기고(모든 옆면 루프가 제자리로 닫히는 원 하나, 그 원을 바깥 루프로 든 면 — 캡의 원판·막힌
   구멍의 바닥 — 도 원만 든다), **다른 기록**(`crossings`·`tangencies`)이 없을 때. 그러면 그 클래스 위에서 원통의
   솔리드는 **구멍을 메운 / 보스를 걷어낸 단면**으로 잘린다 — 원 경계 면의 현과 옆면의 룰링이 함께 빠져 추적이 그대로
@@ -2822,10 +2822,10 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 
 | 하지 말 것 | 이유 | 커밋 |
 |---|---|---|
-| 재생 비용 한계(`CACHE_REPLAY_COST_CAP`)의 깊이에서 프레임 노드를 한 번만 세기(«그 펼침은 짧아 이력이 아니다») | 프레임 노드는 평면을 가리키고 재생은 그 평면의 사슬 전체를 걷는다 — 7° 와 이동 200 번 상자의 벽에 스케치한 프리즘은 깊이 1 로 세어 싼 예산이 201 단을 재생했다(모서리가 `Bounded`). 노드 = 1 + `Model::plane_replay_depth` | `919fd282` |
+| 재생 비용 한계(`CACHE_REPLAY_COST_CAP`)의 깊이에서 프레임 노드를 한 번만 세기(«그 펼침은 짧아 이력이 아니다») | 프레임 노드는 평면을 가리키고 재생은 그 평면의 사슬 전체를 걷는다 — 7° 와 이동 200 번 상자의 벽에 스케치한 프리즘은 깊이 1 로 세어 싼 예산이 201 단을 재생했다(모서리가 `Realized`). 노드 = 1 + `Model::plane_replay_depth` | `919fd282` |
 | f64 필터 없는 정확 술어를 판정의 주 도로에 | `indirect_plane_side` 를 모션 없는 `orient3d` 에 쓰자 축정렬 fold 가 14배 느려졌고, `indirect_cmp_coord`(≈2.7µs, 호출마다 할당 — 필터 있는 인증 도로는 ≈1µs)는 지름길을 타는 평면이 늘자 fold 를 11~17% 늦췄다(한 스레드에선 빨랐다 — 병렬에서 할당자가 줄을 세운다). 둘 다 필터를 달자 기준보다 약 30% 빠르다. 필터는 정확 술어와 한 벌이다 | — |
 | 공간분할(모델을 리전으로 잘라 잎에서 불리언) | 전부 초록인 채로 느렸다: 회전 fold 80 7.4→8.6s, 축정렬 1.7→2.4s. 정점을 용접하고 모서리를 공유하는 b-rep 에서는 분할면에 캡이 필수이고, 자르고 다시 꿰매는 일이 순비용이다(다각형 수프를 내는 EMBER 는 이 비용이 없다) | 되살릴 자리 `d3e9984`·`bfd01e6`·`12ec34d`·`9d69786` |
-| 모션 사슬을 질의마다 걸어 접기 | 질의가 변환마다·평면마다 나오므로 깊이의 제곱이다: 기록된 사분각 회전 2,000번 0.20초 → 6.7초, 37° 4,200번 1.44초 → 2.14초. 노드가 태어날 때 부모의 접기에 자기 하나를 합성해 둔다(`motion_folds`) — 둘 다 기준선 | 실험, 되돌림 |
+| 모션 사슬을 질의마다 걸어 접기 | 질의가 변환마다·평면마다 나오므로 깊이의 제곱이다: 기록된 사분각 회전 2,000번 0.20초 → 6.7초, 37° 4,200번 1.44초 → 2.14초. 노드가 태어날 때 부모의 접기에 자기 하나를 합성해 둔다(`chain_affines`) — 둘 다 기준선 | 실험, 되돌림 |
 | C 로 된 전역 할당자(mimalloc) | 1.21× 이지만 `wasm32-unknown-unknown` 에서 빌드되지 않고(`wchar.h`), 제품 경로는 순수 Rust 다. 할당 36.5% 중 27포인트가 할당자 품질 — 브라우저용 순수 Rust 할당자는 별개의 미측정 항목 | — |
 | 판정 결과 메모 캐시 | 1.14× 뿐이고(`WitnessPoint` 의 hp 캐시가 비싼 부분을 이미 흡수) 워커 공유 캐시가 병렬 5× 를 갉는다. 일을 «없애는» 레버는 병렬과 곱해지고 «저장하는» 레버는 나눠진다 | — |
 | 서피스별 판정 한계를 transform 시점에 미리 계산해 저장 | O(n²): transform 4,200번에 1.58억 마디, 판정에 닿는 서피스는 마지막 6개뿐. «거절이 일보다 먼저 온다»는 속성을 깬다. 언제 계산하나는 누가 그 답을 읽나로 정한다 | 구현 후 되돌림 |
@@ -2851,7 +2851,7 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 모션 노드를 기록할지를 캐시 좌표(꼭짓점·평면 원점·원통 축 원점)가 f64 에서 정확히 옮겨지는지로 고르기 | 두 정확 표현(옮겨 적기·사슬) 가운데 하나를 캐시가 골랐고, 표현을 읽는 규약이 그 선택을 물려받았다 — 같은 자리의 면이 `0.5` 로 옮기면 세계 진술, `1/3` 으로 옮기면 사슬이 되어 거울 뒤 스케치 프레임의 손방향이 갈렸고, 같은 벽이 `(name, motion)` intern 에서 두 핸들이 되어 병합이 고정밀 판정에 기댔다. census 이동 419 중 186, 스위트 약 2,765 번이 그 판정에서 갈렸다(바꾼 뒤 census 출력은 비트 동일). 진술이 `i128` 안에서 옮겨지는지만 묻는다 | — |
 | 평면 클래스를 캐시(평면 캐시 계수의 비례 · 면 꼭짓점 좌표의 정확 `orient3d`)로 합치기 | 반올림된 상이 같은 서로 다른 두 평면이 한 클래스가 된다 — 심은 두 배치에서 `Common` 의 경사면이 남의 평면을 들었고, 닿지도 않는 두 몸의 Fuse 에서 한 몸의 벽이 다른 몸의 평면을 들었다(`validate` 무위반). census 코퍼스(쌍 30,009)에는 그 인구가 없었다(불일치 0). 병합은 세계 이름, 없으면 정의를 읽는다 | — |
 | 정확 지름길의 자격을 캐시끼리의 대조로 주기(평면 캐시의 계수 ↔ 면 꼭짓점의 좌표 캐시) | 둘 다 반올림된 상이라 «반올림된 평면»을 인증한다 — `3·0.1 = 0.3` 인 모서리를 벽 `y = 3x` 밖으로 판정해(진실과 272번 다른 답) 유효한 교집합을 `ZeroLengthEdge` 로 거절했다. census 코퍼스(판정 186만)는 이 배치를 안 때렸다 — 반올림이 유리수 일치를 깨는 배치를 손으로 심어야 보인다. 지름길은 평면의 이름을 읽는다 | `b1d39469` |
-| 잔차(점에서 담체 `f64` 평면까지의 거리)를 좌표의 경계로 읽어 자기접촉 체의 상자를 부풀리기 | 잔차는 거리 «하나»라 좌표가 참값에서 얼마나인지를 말하지 않는다 — 참값의 최근접 f64 까지를 못 덮은 seam 점이 스위트 3,415/9,494(다른 것 중), 그중 155 는 천 배 넘게 모자랐고 census 190. 체는 정확 판정 «앞에서» 후보를 버리므로 모자란 상자는 진짜 접촉을 조용히 버릴 수 있다. 체는 `Bounded` 의 증명된 경계를 읽고, 경계가 없으면 버리지 않는다 | — |
+| 잔차(점에서 담체 `f64` 평면까지의 거리)를 좌표의 경계로 읽어 자기접촉 체의 상자를 부풀리기 | 잔차는 거리 «하나»라 좌표가 참값에서 얼마나인지를 말하지 않는다 — 참값의 최근접 f64 까지를 못 덮은 seam 점이 스위트 3,415/9,494(다른 것 중), 그중 155 는 천 배 넘게 모자랐고 census 190. 체는 정확 판정 «앞에서» 후보를 버리므로 모자란 상자는 진짜 접촉을 조용히 버릴 수 있다. 체는 `Realized` 의 증명된 경계를 읽고, 경계가 없으면 버리지 않는다 | — |
 | 「애매하면 사용자에게 묻는다」 | 회전 코퍼스에서 상승 2,490 중 2,260 이 판정 불가(연산당 수백 건), 가장 느슨한 한계가 2⁻²²⁹, 그리고 f64 출력은 「떨어져 있다」는 답을 표현하지 못한다. 선택지가 하나뿐인 질문은 질문이 아니다 — 근거를 붙여 보고한다 | — |
 | 정밀도 사다리(256→512→1024 배증) | 256·512·1024·2048 비트에서 결과가 비트 동일 — 애매함은 정밀도 부족이 아니라 구조적 0 이다. 필요한 비트는 조건수 `C` 에서 계산해 한 번에 점프한다 | `cc37d86` · `f7a4fec` |
 | 고정 판정 정밀도 | `C` 는 회전 1회당 1비트 자란다: 256비트에서 245회 회전부터 거절, 그것도 사용자가 대응할 수 없는 하류 증상의 이름으로 | `f7a4fec` |

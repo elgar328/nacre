@@ -249,7 +249,7 @@ fn one_vertex_and_three_vertices_solve_the_same_meet() {
 #[test]
 fn the_surface_cache_is_writable_and_the_truth_is_not() {
     let mut m = Model::new();
-    let h = m.world_plane(nacre_exact::Axis::Z);
+    let h = m.seeded_plane(nacre_exact::Axis::Z);
     let truth_before = m.surface(h).clone();
     let cache_before = m.surface_cache(h).clone();
 
@@ -263,7 +263,7 @@ fn the_surface_cache_is_writable_and_the_truth_is_not() {
         .expect("a unit normal names a plane"),
     );
     m.surface_cache[h.index() as usize] = SurfaceCache {
-        realized: refined.clone(),
+        surface: refined.clone(),
         standing: crate::CacheStanding::Realized,
     };
 
@@ -500,7 +500,7 @@ fn a_new_model_carries_the_three_world_planes() {
             ),
         ];
         for (i, (axis, name, cache_n)) in want.into_iter().enumerate() {
-            let h = m.world_plane(axis);
+            let h = m.seeded_plane(axis);
             assert_eq!(h.index() as usize, i, "deterministic seed handles");
             assert_eq!(
                 m.surface_name.get(&h),
@@ -607,7 +607,7 @@ fn a_seed_plane_cache_is_its_truths_realization() {
         (nacre_exact::Axis::X, 0),
         (nacre_exact::Axis::Y, 1),
     ] {
-        let h = m.world_plane(axis);
+        let h = m.seeded_plane(axis);
         let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             panic!("a seed is a plane")
         };
@@ -686,7 +686,7 @@ fn surface_handle_at_is_the_handle_the_arena_issued() {
         nacre_exact::Axis::X,
         nacre_exact::Axis::Y,
     ] {
-        let h = m.world_plane(axis);
+        let h = m.seeded_plane(axis);
         assert_eq!(
             m.surface_handle_at(h.index()),
             Some(h),
@@ -847,7 +847,7 @@ fn unit_box_corners(m: &mut Model, at: &[[f64; 3]]) -> Vec<Handle<Vertex>> {
         plane_through(m, [[0.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 1.0, 0.0]]).0,
         plane_through(m, [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0]]).0,
     ];
-    let zero = [Axis::X, Axis::Y, Axis::Z].map(|a| m.world_plane(a));
+    let zero = [Axis::X, Axis::Y, Axis::Z].map(|a| m.seeded_plane(a));
     at.iter()
         .map(|&c| {
             let on = |k: usize| if c[k] == 1.0 { one[k] } else { zero[k] };
@@ -1714,7 +1714,7 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
         Orientation::Forward,
     );
     assert!(
-        m.plane_motion(h).is_some(),
+        m.surface_motion(h).is_some(),
         "the turn is recorded, not carried"
     );
     check(&m, h, &turned, "turned a quarter");

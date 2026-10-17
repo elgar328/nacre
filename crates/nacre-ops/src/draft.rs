@@ -100,7 +100,7 @@ impl Def {
 /// A seam vertex — a point on both `∂A` and `∂B` (a three-plane corner or a pierce point), shared
 /// (one `Handle`) by every incident result piece.
 ///
-/// ★ **It carries the cache its vertex receives, and nothing measured beside it.** `Bounded`
+/// ★ **It carries the cache its vertex receives, and nothing measured beside it.** `Realized`
 /// says the truth lies within `coord ± bound` — the one thing the self-touch sieve needs to keep
 /// its boxes conservative — and any other variant says no bound is proven, which the sieve reads
 /// as "cannot rule this out". A residual (the point's distance to its carriers' `f64` planes) is

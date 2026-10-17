@@ -656,7 +656,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .map(|&f| {
                 let h = m.face(f).surface;
                 let mut chain = Vec::new();
-                let mut at = m.plane_motion(h);
+                let mut at = m.surface_motion(h);
                 while let Some(node) = at {
                     chain.push(match m.motion(node).motion {
                         nacre_topo::Motion::Rotate { .. } => "R",

@@ -476,7 +476,7 @@ fn a_lateral_window_writes_a_row_only_where_the_lateral_is() {
 /// **A vertex's reach holds its proven interval, and only a proven one is finite.**
 ///
 /// The sieve drops a candidate before the exact test whenever reaches miss a box, so a reach
-/// narrower than the truth's interval drops a real contact in silence. A `Bounded` reach must
+/// narrower than the truth's interval drops a real contact in silence. A `Realized` reach must
 /// contain `coord ± bound` on every axis — an ordinary half-ulp, a zero bound (an exact
 /// coordinate), and a radius far below an `f64`'s — and a cache that proves nothing must
 /// keep every candidate.
@@ -488,7 +488,7 @@ fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
         nacre_exact::Mag::ZERO,
         nacre_exact::Mag::pow2(-2000),
     ];
-    let (lo, hi) = cache_reach(&nacre_topo::PointCache::Bounded { coord, bound });
+    let (lo, hi) = cache_reach(&nacre_topo::PointCache::Realized { coord, bound });
     for k in 0..3 {
         let (c, r) = (coord.as_array()[k], bound[k].upper_f64());
         assert!(

@@ -407,7 +407,7 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
 
 /// ★ **The push funnel realizes; the fallback stands only where the realization declines** (cell
 /// 52). Pushing a realizable definition again with a fallback that is wrong by three ulp gives a
-/// `Bounded` cache holding the realization, not the fallback; a definition the road declines by
+/// `Realized` cache holding the realization, not the fallback; a definition the road declines by
 /// name — a pierce corner on a cylinder under an irrational turn, whose meet no road solves off
 /// the world statement — keeps the fallback it was handed. The same turned cylinder's seam
 /// vertices stand beside them, realized (met in the world).
@@ -427,7 +427,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     );
     assert!(matches!(
         m.vertex_cache(h),
-        nacre_topo::PointCache::Bounded { .. }
+        nacre_topo::PointCache::Realized { .. }
     ));
     assert_eq!(
         m.vertex_point(h).as_array(),
@@ -475,7 +475,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
             Vertex::OnSeam(_) => {
                 seams += 1;
                 assert!(
-                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. }),
                     "{:?}",
                     m.vertex_cache(vh)
                 );
