@@ -66,7 +66,13 @@ impl Bounded {
         (value.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
     }
     /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
-    /// picked, and the same charge in `add` and `mul`.
+    /// picked, and the same charge in `add` and `mul`. The three `ε/2` beyond the value's own
+    /// rounding cover the error terms' rounding too, where it matters: a sign is read only when
+    /// `|value| > error`, and there `1.5ε·|value|` exceeds the `ε·error` the `f64` sum of the
+    /// error terms can lose. That is argued per operation, not proved over a whole chain, so it is
+    /// measured: on the soundness corpora the worst actual error is `0.180` of the radius for the
+    /// `orient3d` determinant (5,000 rotated four-point configurations, `orient3d_iv_soundness`)
+    /// and `0.397` for plane coefficients (10,000, `plane_coefficient_tol_soundness`).
     pub fn sub(self, o: Bounded) -> Bounded {
         let value = self.value - o.value;
         Bounded::new(

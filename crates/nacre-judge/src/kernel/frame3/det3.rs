@@ -1,72 +1,13 @@
 use super::*;
-/// The three edge rows of `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`.
-fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
-    [
-        [a[0] - d[0], a[1] - d[1], a[2] - d[2]],
-        [b[0] - d[0], b[1] - d[1], b[2] - d[2]],
-        [c[0] - d[0], c[1] - d[1], c[2] - d[2]],
-    ]
-}
-
 /// **The `orient3d` determinant of four witness points as an `f64` interval** — the filter's first
-/// rung. The value is `det[a−d, b−d, c−d]` in `f64` and the radius is [`orient3d_radius`]: derived
-/// from each point's proven tol and the determinant's own rounding, never a chosen threshold. A
-/// sign is trusted only when the interval excludes zero ([`Bounded::sign`]).
+/// rung. It is [`det3_iv`] over the rows `a−d, b−d, c−d`, each a [`Bounded`] difference: the same
+/// interval machine the indirect judges' Cramer determinants run on, so the radius comes from each
+/// point's proven tol and every operation's rounding, never a hand-derived formula or a chosen
+/// constant. A sign is trusted only when the interval excludes zero ([`Bounded::sign`]).
 pub(super) fn orient3d_iv(p: [&WitnessPoint; 4]) -> Bounded {
-    let c = p.map(|w| w.coord_approx());
-    let t = p.map(|w| w.tol());
-    Bounded::new(orient3d_mid(c[0], c[1], c[2], c[3]), orient3d_radius(c, t))
-}
-
-/// `det[a−d, b−d, c−d]` in `f64` — the middle of [`orient3d_iv`], with no promise of its own.
-fn orient3d_mid(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
-    let r = rows(a, b, c, d);
-    r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
-        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
-        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
-}
-
-/// Error radius of a product `a·b·c` given each factor's value and tol (≥0):
-/// `Π(|v|+τ) − Π|v|` — the interval product radius (worst-case, sound).
-fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
-    (va.abs() + ta) * (vb.abs() + tb) * (vc.abs() + tc) - va.abs() * vb.abs() * vc.abs()
-}
-
-/// Sound error bound on the f64 `orient3d` determinant from each point's directional
-/// tol. The determinant is six signed triple-products of the edge entries;
-/// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
-/// product radii (input-tol propagation, triangle-inequality worst case) plus a term
-/// for the f64 rounding of the determinant's own arithmetic. Checked by
-/// `orient3d_iv_soundness`.
-fn orient3d_radius(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
-    let r = rows(p[0], p[1], p[2], p[3]);
-    let td = t[3]; // apex tol adds to every edge on subtraction
-    let t = [
-        [t[0][0] + td[0], t[0][1] + td[1], t[0][2] + td[2]],
-        [t[1][0] + td[0], t[1][1] + td[1], t[1][2] + td[2]],
-        [t[2][0] + td[0], t[2][1] + td[1], t[2][2] + td[2]],
-    ];
-    // The six signed triple products of the cofactor expansion (indices into r/t).
-    let terms = [
-        [(0, 0), (1, 1), (2, 2)],
-        [(0, 0), (1, 2), (2, 1)],
-        [(0, 1), (1, 0), (2, 2)],
-        [(0, 1), (1, 2), (2, 0)],
-        [(0, 2), (1, 0), (2, 1)],
-        [(0, 2), (1, 1), (2, 0)],
-    ];
-    let mut input_tol = 0.0;
-    let mut mag = 0.0;
-    for tri in terms {
-        let [(r0, c0), (r1, c1), (r2, c2)] = tri;
-        input_tol += prod_err(
-            r[r0][c0], t[r0][c0], r[r1][c1], t[r1][c1], r[r2][c2], t[r2][c2],
-        );
-        mag += r[r0][c0].abs() * r[r1][c1].abs() * r[r2][c2].abs();
-    }
-    // f64 rounding of the determinant's own ~17 operations. Round-to-nearest costs `ε/2` each, so
-    // the accumulation is about `8.5·ε·mag`; `16·ε` is that with a factor of two over it.
-    input_tol + 16.0 * f64::EPSILON * mag
+    let c = p.map(|w| w.coord_iv);
+    let row = |a: [Bounded; 3]| [0, 1, 2].map(|k| a[k].sub(c[3][k]));
+    det3_iv([row(c[0]), row(c[1]), row(c[2])])
 }
 
 /// 3×3 determinant of high-precision interval rows at `prec` bits — the same expression as

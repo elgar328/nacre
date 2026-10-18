@@ -667,7 +667,7 @@ f64 로 계산한 값의 여유 `cyl_gate::round_slack` 도 같은 바닥을 더
 `× (1 + kε)` 는 대개 값을 키우지 못한다.
 
 **바닥 없는 식은 정상 범위에 기댄다.** f64 구간 산술 — `Bounded` 의 `add`·`sub`·`mul`(`2ε·|value|`), 증인점의 tol
-전파(`rotated`·`mirrored`·`translated`), 필터 반지름 `orient3d_radius`(`16ε·mag`) — 과, 반올림한 `f64` 에 상대 몫을 붙여 경계를
+전파(`rotated`·`mirrored`·`translated`) — 과, 반올림한 `f64` 에 상대 몫을 붙여 경계를
 읽는 자리(`Realization::to_f64` 의 `half_ulp`, `inv_sqrt_error_of` 의 정확한 차), 그리고 다음 `f64` 까지의 칸을 반으로 나눠
 반 ulp 를 짓는 계측 `audit_rim_centre` 는 값이 정상 범위에 머문다는 전제에 기댄다. 0 이 아닌 입력 좌표는 i128 분수라 크기가
 대략 `2⁻¹²⁷` 위에 머물고, 몇 번의 곱으로는 정상 범위를 벗어나지 않아 그 전제가 선다(논증). 전제 밖에서 경계가 모자라거나 0 이
@@ -2616,7 +2616,7 @@ pub enum JudgedPoint {
 
 **세 술어.** 평면 표의 인덱스로 묻는다(`Judge::orient3d` · `Judge::cmp_coord` · `Judge::plane_pair_dir_sign`).
 
-- **직접 orient3d** — 명시적 네 점. 오차 한계는 `frame3::orient3d_iv` 의 반지름이다: 행렬식은 간선 성분의 부호 있는 삼중곱 여섯 개이고 각 성분 `(a−d)[k]` 는 tol `tol_a[k] + tol_d[k]` 를 든다. 여섯 곱의 구간 반경(`Π(|v|+τ) − Π|v|`)의 합 + 행렬식 자체 산술의 f64 반올림 항. `orient3d_judge` 가 필터 → 상승 → 정규화된 간격 판정으로 소비한다.
+- **직접 orient3d** — 명시적 네 점. 오차 한계는 `frame3::orient3d_iv` 의 구간이다: 행 `a−d, b−d, c−d` 를 `Bounded` 차로 짓고 `det3_iv` 로 묶는다 — 간접 술어의 Cramer 와 같은 구간 산술이라, 손으로 유도한 반지름 공식이나 고른 상수가 없다. `orient3d_judge` 가 필터 → 상승 → 정규화된 간격 판정으로 소비한다.
 - **간접 orient3d** — 3-평면 implicit point 대 평면(`indirect_orient3d_judge`). 세 평면의 구간 계수 → Cramer(`cramer_iv`) → `orient3d_from_cramer`.
 - **cmp_coord** — 두 implicit point 의 한 축 좌표 비교(`indirect_cmp_coord_judge`).
 - 방향 질문(`plane_pair_dir_sign` → `dir_sign_judge`)은 길이 한계를 모델 크기로 각도로 바꿔 쓴다.

@@ -318,15 +318,6 @@ memo 와 상승 카운터를 갖는다. `sqrt_f64`·`unit_vector_f64` 는 같은
 `on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realization::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
 함수가 아니다. 한 사다리로 접으면 칸·폴백·카운터가 한 곳에 산다. 접기 전에 네 자리의 폴백(중점, `NaN`)이 모두 같은지부터 본다.
 
-### 판정의 바닥값은 증명인가 상수인가
-
-판정층 문서가 «바닥»을 여럿 부른다 — `indirect.rs` 머리의 «상수 `mag`-floor 정책»과 «`orient3d_judge` 의 명시적
-`16·scale³` floor», `orient3d.rs`·`coord.rs` 의 «below-floor» 갈래. 바닥마다 모델에서 유도한 값(오차 반경·일치 정밀도)인지
-정한 상수인지는 열어 보지 않았다. 고정 역치는 «정밀도는 모델이 정한다»(overview 「정밀도 인프라」)와 어긋나므로, 바닥마다
-유도를 찾고 없으면 유도로 바꾼다. 같은 자리에 필터 둘이 있다: `orient3d_iv`(네 점, 손으로 유도한 반지름)와 `det3_iv`(행마다
-구간 산술, 간접점 도로)는 같은 행렬식을 두 방법으로 묶는다. 합치면 필터의 결정이 바뀌므로 동작 변경이고, 어느 쪽 반지름이
-좁은지부터 잰다.
-
 ### `surface_name` 곁표 접기
 
 **무엇이 문제인가.** `pub surface_name: HashMap<Handle<Surface>, PlaneName>` 은 `Model` 의 마지막 공개
@@ -402,8 +393,8 @@ kit 에서 이 원인으로 갈라 잰 수가 0 이 아닐 때. 기권 자체의
 여는 날은 reuse 가 시간을 버는 일(접는 fold)에서 이 물러남이 벽시계에 보일 때다. 그 코너의 캐시는 `Realized`(증인
 삼각형 실현)이므로 그 **증명된 경계**로 `misses` 의 필터만 물으면 된다 — `orient3d_filter` 의 정확 길(`shared_base`)은
 첫 점의 사슬이 비면 서지 않아 이력 없는 점은 필터만 간다. 다만 정의가 없는 점을 `WitnessPoint`(`base` 가 정의다)에
-넣지 않는다 — 따로 타입을 두거나 필터 전용 판정 함수를 연다(`orient3d_iv` 는 `WitnessPoint` 를 받고, 그 조각
-`orient3d_mid`·`orient3d_radius` 는 `det3.rs` 비공개다).
+넣지 않는다 — 필터 전용 판정은 증명된 경계를 `Bounded` 행으로 짓고 `det3_iv` 를 부르면 된다(`orient3d_iv` 가 하는 일이 그것이고,
+`orient3d_iv` 는 `WitnessPoint` 를 받는다).
 
 ### `Model::adj` 는 읽는 쪽이 없다
 
