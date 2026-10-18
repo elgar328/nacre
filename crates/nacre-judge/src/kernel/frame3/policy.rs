@@ -247,6 +247,22 @@ pub fn trial_bound(p: &WitnessPoint) -> Mag {
     worst
 }
 
+/// **The coincidence limit for a model of size `scale`**: two things proved closer than this are
+/// one thing. Derived rather than chosen —
+///
+/// - `scale · 2⁻⁵²` is the output precision, the finest distinction the `f64` coordinates this
+///   kernel emits can carry. Below it nothing survives export, so distinguishing is meaningless.
+/// - `· 2⁻¹²⁸` puts the limit two whole words further down. Erring low only costs bits, while
+///   erring high merges features that were genuinely apart, so the asymmetry says push it down;
+///   and a word is the natural unit because astro-float allocates whole words anyway.
+///
+/// The one spelling of the rule: the judges' [`ProofStandard::coincidence`] (the model's size)
+/// and the realization's reading of a coordinate as `+0.0` (the point's own size, which is never
+/// larger, so that reading errs strict) both call this.
+pub fn coincidence_for(scale: Mag) -> Mag {
+    scale.times(Mag::pow2(-52)).times(Mag::pow2(-128))
+}
+
 /// **The precision this model needs, in bits** — from `worst`, the largest [`trial_bound`] over
 /// its points.
 ///

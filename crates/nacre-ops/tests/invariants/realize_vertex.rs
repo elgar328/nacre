@@ -1082,7 +1082,7 @@ fn a_coordinate_that_cancels_to_zero_is_read_as_zero() {
             if c == 0.0 && !b.is_zero() {
                 assert_eq!(c.to_bits(), 0.0f64.to_bits(), "+0.0");
                 assert!(
-                    b.lt(nacre_exact::Mag::of(2.0).times(nacre_exact::Mag::pow2(-180))),
+                    b.lt(nacre_judge::coincidence_for(nacre_exact::Mag::of(2.0))),
                     "the bound is the coincidence proof: {b:?}"
                 );
                 zeros += 1;

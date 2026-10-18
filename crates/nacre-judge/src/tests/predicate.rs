@@ -58,7 +58,7 @@ use nacre_exact::Mag;
 fn fixture() -> ProofStandard {
     ProofStandard {
         prec: 256,
-        coincidence: Mag::pow2(-180),
+        coincidence: crate::coincidence_for(Mag::of(1.0)),
         scale: Mag::of(1.0),
         cap: 4096,
     }

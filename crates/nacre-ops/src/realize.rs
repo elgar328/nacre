@@ -202,7 +202,7 @@ impl Realization {
                     let m = Mag::above(&c.value);
                     if s.lt(m) { m } else { s }
                 });
-                let coincidence = scale.times(Mag::pow2(-180));
+                let coincidence = nacre_judge::coincidence_for(scale);
                 for k in 0..3 {
                     let reach = Mag::above(&p[k].value).plus(p[k].error);
                     if reach.lt(coincidence) {
@@ -1657,7 +1657,7 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let scale = c.iter().fold(1f64, |m, v| m.max(v.abs()));
     let half = |v: f64| -> f64 {
         if v == 0.0 {
-            scale * 2f64.powi(-180)
+            nacre_judge::coincidence_for(Mag::of(scale)).upper_f64()
         } else {
             (f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0
         }

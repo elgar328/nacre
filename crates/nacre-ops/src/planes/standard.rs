@@ -52,14 +52,8 @@ impl Watch {
 ///
 /// The target is the **coincidence precision**: two things closer than this are treated as
 /// coincident, and the kernel will only say so once it has *proved* the separation is below it.
-/// Its default is derived rather than chosen —
-///
-/// - `output_precision = scale · 2⁻⁵²`, the finest distinction the `f64` coordinates this kernel
-///   emits can carry. Below it nothing survives export, so distinguishing is meaningless.
-/// - `coincidence_precision = output_precision · 2⁻¹²⁸`, two whole words further down. Erring low
-///   only costs bits, while erring high merges features that were genuinely apart, so the
-///   asymmetry says push it down; and a word is the natural unit because astro-float allocates
-///   whole words anyway.
+/// Its default is derived rather than chosen: [`nacre_judge::coincidence_for`], two words below the
+/// `f64` output precision.
 ///
 /// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
 /// the result does not depend on traversal order (replay must reproduce it exactly).
@@ -162,7 +156,7 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
         planes,
         ProofStandard {
             prec: 256,
-            coincidence: Mag::pow2(-180),
+            coincidence: nacre_judge::coincidence_for(Mag::of(1.0)),
             scale: Mag::of(1.0),
             cap: 256 + CLIMB_HEADROOM,
         },
@@ -213,8 +207,7 @@ fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag
         }
     }
     let scale = Mag::of(scale);
-    let output_precision = scale.times(Mag::pow2(-52));
-    let coincidence = output_precision.times(Mag::pow2(-128));
+    let coincidence = nacre_judge::coincidence_for(scale);
     let prec = nacre_judge::precision_for(worst, coincidence);
     ProofStandard {
         prec,

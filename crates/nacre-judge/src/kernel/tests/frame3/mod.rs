@@ -19,7 +19,7 @@ const FIXTURE_PREC: usize = 256;
 pub(in crate::kernel::frame3) fn fixture() -> ProofStandard {
     ProofStandard {
         prec: FIXTURE_PREC,
-        coincidence: Mag::pow2(-180),
+        coincidence: coincidence_for(Mag::of(1.0)),
         scale: Mag::of(1.0),
         cap: 4096,
     }

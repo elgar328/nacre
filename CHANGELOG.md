@@ -11,6 +11,7 @@ While the version is `0.0.z`, every release may break anything.
 ### Added
 
 - `exact::Bounded::round_off` is the rounding that brings a value to its nearest `f64`: half an ulp, floored at the smallest normal `f64`.
+- `judge::coincidence_for` gives the coincidence limit for a model of a given size — two things proved closer are one — the one rule the judges and the realization's reading of a coordinate as `+0.0` share.
 - `exact::bigfloat_upper_f64` reads a `BigFloat`'s size as an `f64` no smaller than it, from its exponent: `0.0` for zero, the smallest normal `f64` below the normal range, infinity for a value with no exponent.
 - `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, what its witness replays for each of the three vertices, summed.
 - `topo::Model::vertex_named_meet` says what a three-plane definition's plane names say about its point — the point and its frame, or `topo::NamedMeet::NoPoint` where the three planes are parallel or share a line.
