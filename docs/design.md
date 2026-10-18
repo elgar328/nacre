@@ -2937,8 +2937,8 @@ M7 은 열린 연구다. M6 까지가 «확실히 되는» 영역이고, M7 은 
 | 하지 말 것 | 이유 | 커밋 |
 |---|---|---|
 | 긴 함수를 길이로 쪼개기 | 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»다. 300줄이 넘는 열셋 가운데 그런 호출자를 든 단계는 **하나**였고(감사가 손으로 다시 짓던 방향 분할 → `direction_partition`), 나머지는 블록이 바깥에서 받아야 할 지역변수가 1~32개다 | `abaa95d`·`9ab9ac3` |
-| 글자 스캔 `comparators.rs` 를 clippy `disallowed-methods` 로 | 비교를 받는 정렬은 옮겨진다(`slice::sort_by` 경로가 풀리고, clippy 가 찾은 9곳이 허용 표의 정렬 9와 같았다). 그러나 같은 규칙의 다른 반쪽 — 손으로 쓴 `Ord`·`PartialOrd`(`nacre-store` 2) — 은 clippy 에 금지 수단이 없어 한 규칙이 두 장치로 갈린다. 글자 스캔이 두 반쪽을 한 표로 본다 | — |
-| 글자 스캔 `silencers.rs` 를 `clippy::allow_attributes_without_reason` 으로 | lint 하나의 범위로 좁혀지지 않는다 — 규칙은 `allow(dead_code)` 6곳 위의 이유인데, 그 lint 는 제품의 `allow` 68개 전부(`too_many_arguments` 33·`large_enum_variant` 11…)에 `reason` 을 요구한다 | — |
+| 글자 스캔 `comparators.rs` 를 clippy `disallowed-methods` 로 | 비교를 받는 정렬은 옮겨진다(`slice::sort_by` 경로가 풀리고, clippy 가 찾은 9곳이 허용 표의 정렬 9와 같았다). 그러나 같은 규칙의 다른 반쪽 — 손으로 쓴 `Ord`·`PartialOrd`(`nacre-store` 2) — 은 clippy 에 금지 수단이 없어 한 규칙이 두 장치로 갈린다. 글자 스캔이 두 반쪽을 한 표로 본다 | `e42511b6` |
+| 글자 스캔 `silencers.rs` 를 `clippy::allow_attributes_without_reason` 으로 | lint 하나의 범위로 좁혀지지 않는다 — 규칙은 `allow(dead_code)` 6곳 위의 이유인데, 그 lint 는 제품의 `allow` 68개 전부(`too_many_arguments` 33·`large_enum_variant` 11…)에 `reason` 을 요구한다 | `e42511b6` |
 | 주석 비율(36~45%)을 줄이기 | 주석의 대부분은 사용자에게 가는 doc 15,182줄이고, 본문 주석의 가장 긴 덩어리 열 개(294줄)에서 되풀이는 **14줄(5%)** 뿐이었다 — 나머지는 불변식·측정치·거절한 대안·위험이다. 판단 규칙은 `overview.md` 문서 규칙 7 | `82f7b6c`·`56e6756` |
 
 ### 엔진·연산
