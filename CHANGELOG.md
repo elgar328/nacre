@@ -11,6 +11,8 @@ While the version is `0.0.z`, every release may break anything.
 ### Added
 
 - `exact::Bounded::round_off` is the rounding that brings a value to its nearest `f64`: half an ulp, floored at the smallest normal `f64`.
+- `exact::Rat::as_f64` gives the value as an `f64` when it is one — a power-of-two denominator and a numerator whose odd part fits 53 bits — and `None` when `to_f64` would round.
+- `exact::Bounded::of_rat` is a rational as its nearest `f64` with the error that rounding carries: `0` when the rational is an `f64`, half an ulp otherwise.
 - `judge::coincidence_for` gives the coincidence limit for a model of a given size — two things proved closer are one — the one rule the judges and the realization's reading of a coordinate as `+0.0` share.
 - `exact::bigfloat_upper_f64` reads a `BigFloat`'s size as an `f64` no smaller than it, from its exponent: `0.0` for zero, the smallest normal `f64` below the normal range, infinity for a value with no exponent.
 - `topo::Model::plane_replay_depth` says how many motion nodes a replay walks to place a plane's statement in the world — its own chain, and for a plane through three vertices with no name, what its witness replays for each of the three vertices, summed.
@@ -22,6 +24,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- `judge::WitnessPoint::at` seeds each coordinate's tol from `Rat::to_f64`'s nearest-rounding contract (`exact::Bounded::of_rat`) instead of measuring the rounding at 120 bits, which read a rational nearer its `f64` than that precision as exact and stated tol `0`.
 - `exact::Bounded`'s `add`, `sub` and `mul` round their radius up by `1 + 4ε` per operation, so each result's radius is a proved bound — before, the radius's own `f64` arithmetic could come out below it where the radius outweighed the value.
 - `Operation::DatumPlane` through three vertices asks every vertex what it is before solving any, so a vertex whose carriers lie in two frames no longer hides the refusal of a vertex after it in handle order: one whose carrier is itself a nameless datum is refused as `OpError::VerticesInMixedFrames`, and a seam or pierce vertex as `OpError::VertexNotThreePlane` — before, both read `OpError::PlaneWithoutExactForm` there.
 - A plane through three vertices that share no frame (a datum through corners of parts moved differently) has its cache realized from its definition, as every other plane does: its normal and anchor are the nearest `f64` of the truth (before, the figure the datum or the last transform computed, at most an ulp away in the suite), and `topo::Model::surface_cache_standing` says `Realized`. The corners of a solid built on such a plane are realized too, where before they kept the construction's figure.
@@ -45,6 +48,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- **Breaking:** `judge::WitnessPoint::at_nearest` and `judge::WitnessPoint::at_with_tol`. `at` gives what the first did, axis by axis: a coordinate that is an `f64` has tol `0` whatever the other two are. Nothing in the kernel called the second.
 - **Breaking:** `exact::Angle::cos_sin_at` and `exact::quad::MeetLine::point_f64`, which nothing in the kernel called. `exact::Angle::cos_sin_hp` gives the `(cos, sin)` intervals whose values the first returned.
 - **Breaking:** `ops::RejectReason::CurvedStraightRun`, which nothing raises now that a ring's winding is read by that one rule.
 - **Breaking:** `judge::dir_orient3d_judge` and `judge::kernel::frame3::orient3d_ray`, which nothing in the kernel called — the one judgement that answered `Orient::Zero` where it could not decide, with no coincidence limit behind it.

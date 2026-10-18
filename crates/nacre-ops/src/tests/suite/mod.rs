@@ -119,7 +119,7 @@ fn plane_through(m: &mut Model, tri: [Point3; 3]) -> WorkingPlane {
     };
     let surf = m.push_plane_unregistered(plane, tri.map(lift), nacre_topo::Orientation::Forward);
     let tri_pt3 = tri.map(|p| {
-        WitnessPoint::at_nearest(
+        WitnessPoint::at(
             p.as_array()
                 .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
         )

@@ -31,8 +31,8 @@ fn square(a: f64, b: f64) -> crate::Profile2d {
 /// ★ **Witnesses are solved from the definition, not lifted from the cache.** A box stated at
 /// `0.3` has corners `f64` cannot hold; the rounded cache lifted back to a rational is a
 /// different point, claimed with tol 0. The definition road solves
-/// the corner from its three plane names and states the rounding it carries: nonzero here,
-/// exactly zero for an integer box.
+/// the corner from its three plane names and states the rounding it carries, axis by axis:
+/// nonzero on `0.3`/`0.7`, exactly zero on `-1`/`2` and on every axis of an integer box.
 #[test]
 fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     let mut m = Model::new();
@@ -62,11 +62,14 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
         // value the cache holds, so what the road changes is the *tolerance*, not the point.
         let c = p.coord_approx();
         assert!(c.iter().all(|x| [0.3, 0.7, -1.0, 2.0].contains(x)), "{c:?}");
-        assert!(
-            p.tol().iter().all(|&t| t > 0.0),
-            "0.3/0.7 are not f64 — the witness must say so on every axis: {:?}",
-            p.tol()
-        );
+        for (x, t) in c.into_iter().zip(p.tol()) {
+            assert_eq!(
+                t > 0.0,
+                x == 0.3 || x == 0.7,
+                "0.3/0.7 are not f64 and -1/2 are — the witness says which, per axis: {c:?} {:?}",
+                p.tol()
+            );
+        }
     }
 }
 

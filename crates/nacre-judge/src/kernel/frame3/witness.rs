@@ -35,18 +35,6 @@ impl PartialEq for WitnessPoint {
 }
 impl Eq for WitnessPoint {}
 
-/// **How far a rational's f64 image sits from the rational** — measured at high precision, `0`
-/// when the value is exactly representable.
-///
-/// One spelling, because three call sites want the identical quantity ([`WitnessPoint::at`]'s seed,
-/// [`WitnessPoint::translate`]'s offset, [`WitnessPoint::frame`]'s inputs) and "how a rational's rounding is
-/// charged" is exactly the kind of thing that drifts when it is written out twice.
-/// `bigfloat_upper_f64` reads at octave granularity, so the `2×` keeps the result above the truth.
-fn rat_round_tol(r: Rat, f: f64) -> f64 {
-    let e = BigFloat::from_f64(f, 120).sub(&rat_to_bigfloat(r, 120), 120, HP_RM);
-    2.0 * bigfloat_upper_f64(&e.abs())
-}
-
 impl WitnessPoint {
     /// The `f64` coordinate — the values of [`Self::coord_iv`], for readers that want the point
     /// whole. Approximate: a rotation is carried in `f64` arithmetic, so the value is not the
@@ -63,50 +51,22 @@ impl WitnessPoint {
         self.coord_iv.map(|b| b.error)
     }
 
-    /// A point at `base`, tol seeded with the base→f64 rounding (a division; exactly
-    /// 0 for an f64-representable base, positive otherwise). An axis a later chain
-    /// never rotates keeps exactly this, which a per-axis tol check needs.
-    pub fn at(base: [Rat; 3]) -> Self {
-        let coord = [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()];
-        Self::at_with_tol(
-            base,
-            [
-                rat_round_tol(base[0], coord[0]),
-                rat_round_tol(base[1], coord[1]),
-                rat_round_tol(base[2], coord[2]),
-            ],
-        )
-    }
-
-    /// A point at a rational `base`, its coordinate the nearest `f64` and its tol **from that
-    /// contract rather than measured**: exactly `0` where the coordinate is representable, else
-    /// [`Bounded::round_off`] (`|x|·2⁻⁵³`, floored at the smallest normal) — `Rat::to_f64` is
-    /// documented as *"the **nearest** f64 … ties to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds
-    /// for every normal `x` without anyone computing it.
+    /// A point at a rational `base`: each coordinate its nearest `f64`, with the error that
+    /// rounding carries ([`Bounded::of_rat`]) — `0` exactly where the coordinate is an `f64`,
+    /// else half an ulp, **per axis**: an axis a later chain never moves keeps exactly its own,
+    /// which a per-axis tol check needs.
     ///
-    /// [`at`](Self::at) learns the same number by measuring at 120 bits — nine BigFloat
-    /// operations per point. This is the spelling `nacre-ops` uses where the base is a
-    /// **definition** (a plane's own points, a solid's vertices solved from their carriers): the
-    /// bound is free, and its looseness can only turn a definite filter answer into "escalate",
-    /// never the other way round.
+    /// The bound is `Rat::to_f64`'s contract (nearest, ties to even), not a measurement — a
+    /// measurement at a fixed precision reads a rational nearer its `f64` than that precision
+    /// resolves as exact, and costs BigFloat work per point. Its looseness can only turn a
+    /// definite filter answer into "escalate", never the other way round.
     ///
     /// ★ **This is how a point that came from a rational reaches the predicates** — not by
     /// lifting the rounded `f64` back into a `Rat` (that names a different point, with a
     /// tolerance of zero on top).
-    pub fn at_nearest(base: [Rat; 3]) -> Self {
-        if base.iter().all(|r| r.as_f64().is_some()) {
-            return Self::at_with_tol(base, [0.0; 3]);
-        }
-        Self::at_with_tol(base, base.map(|r| Bounded::round_off(r.to_f64())))
-    }
-
-    /// A point at `base` with an explicit initial `tol` — for a root that already
-    /// carries tol (a boolean's seam vertex), whose tol the chain then transports
-    /// (`|R|·old`). [`at`](Self::at) is the constructed case (initial tol = base
-    /// rounding).
-    pub fn at_with_tol(base: [Rat; 3], tol: [f64; 3]) -> Self {
+    pub fn at(base: [Rat; 3]) -> Self {
         WitnessPoint {
-            coord_iv: [0, 1, 2].map(|k| Bounded::new(base[k].to_f64(), tol[k])),
+            coord_iv: base.map(Bounded::of_rat),
             base,
             chain: HpRc::from([] as [MoveNode; 0]),
             hp: HpCell::default(),
@@ -369,10 +329,11 @@ impl WitnessPoint {
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual
     /// one, and a caller that cannot build a basis must not get a point that pretends otherwise.
     ///
-    /// ★★★★ **Everything charged here is measured, and the exact cases really do reach zero.**
-    /// The three sources are the rational inputs' own `Rat → f64` rounding, the two `1/√` values'
-    /// realization error ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith,
-    /// see there), and the f64 arithmetic that combines them. An axis-aligned frame has a signed
+    /// ★★★★ **Every charge has a source, and the exact cases really do reach zero.** The three
+    /// sources are the rational inputs' own `Rat → f64` rounding ([`Bounded::of_rat`] — `0` for an
+    /// input that is an `f64`), the `1/√` values' realization error, measured
+    /// ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith, see there), and the
+    /// f64 arithmetic that combines them. An axis-aligned frame has a signed
     /// permutation for a basis and every one of those terms vanishes: `±1` and `0` are exact, so
     /// the products are exact and the sums pick out one coordinate each.
     pub fn frame(self, f: nacre_exact::PlaneFrame) -> Option<Self> {
@@ -394,9 +355,12 @@ impl WitnessPoint {
         // rational's own rounding scaled by the length, the length's error scaled by the
         // rational, and the product's half-ulp. All three vanish for a `0`/`±1` component.
         let axis_comp = |r: Rat, s: f64, ds: f64| {
-            let rf = r.to_f64();
+            let Bounded {
+                value: rf,
+                error: re,
+            } = Bounded::of_rat(r);
             let c = rf * s;
-            let err = rat_round_tol(r, rf) * s.abs() + rf.abs() * ds;
+            let err = re * s.abs() + rf.abs() * ds;
             (
                 c,
                 if err == 0.0 {
@@ -459,7 +423,10 @@ impl WitnessPoint {
         let p = self.coord_approx();
         let t = self.tol();
         for k in 0..3 {
-            let ok = f.origin[k].to_f64();
+            let Bounded {
+                value: ok,
+                error: eo,
+            } = Bounded::of_rat(f.origin[k]);
             let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
             // The incoming tol turned by the same basis, plus what this step adds.
             let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
@@ -467,13 +434,12 @@ impl WitnessPoint {
             let arith = if perm && ok == 0.0 {
                 0.0
             } else {
-                rat_round_tol(f.origin[k], ok)
-                    + 3.0
-                        * f64::EPSILON
-                        * (ok.abs()
-                            + (p[0] * uh[k]).abs()
-                            + (p[1] * vh[k]).abs()
-                            + (p[2] * wh[k]).abs())
+                eo + 3.0
+                    * f64::EPSILON
+                    * (ok.abs()
+                        + (p[0] * uh[k]).abs()
+                        + (p[1] * vh[k]).abs()
+                        + (p[2] * wh[k]).abs())
             };
             self.coord_iv[k].value = ok + terms;
             self.coord_iv[k].error = carried + realized + arith;
@@ -519,7 +485,7 @@ impl WitnessPoint {
                 narrow_hp(&HpBounded::of_bigint(&f.origin_num[k], P).div_exact(&od, P)?);
         }
         // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
-        // of `rat_round_tol`.
+        // of the rational origin's rounding.
         let p = self.coord_approx();
         let t = self.tol();
         for k in 0..3 {

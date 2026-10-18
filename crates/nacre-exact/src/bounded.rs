@@ -69,6 +69,22 @@ impl Bounded {
     pub fn round_off(value: f64) -> f64 {
         (value.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
     }
+    /// A rational as its nearest `f64` **with the error that rounding carries** — [`HpBounded::of_rat`]
+    /// at `f64`. `0` exactly when the rational is an `f64` ([`Rat::as_f64`]); otherwise
+    /// [`Self::round_off`], because [`Rat::to_f64`] rounds to nearest and so lands within half an
+    /// ulp.
+    ///
+    /// ★ From that contract, not measured: a measurement at a fixed precision reads a rational
+    /// nearer its `f64` than that precision resolves as exactly representable.
+    pub fn of_rat(r: Rat) -> Self {
+        match r.as_f64() {
+            Some(f) => Bounded::new(f, 0.0),
+            None => {
+                let f = r.to_f64();
+                Bounded::new(f, Bounded::round_off(f))
+            }
+        }
+    }
     /// **Each result's radius is a proved bound, operation by operation.** Two charges:
     ///
     /// - `2ε·|value|` for the value's own rounding. Round-to-nearest misses the exact result by

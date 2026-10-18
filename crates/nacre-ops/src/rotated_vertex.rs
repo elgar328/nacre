@@ -111,11 +111,11 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
         // 68,350 triangles carried one, in 162 plane tables, 77 of which also held a rotated
         // plane, where the claim is consulted. The plane's recorded points are construction points.
         //
-        // ★★★ **The bound is free; measuring it is not** — `at_nearest` states the rounding from
-        // `Rat::to_f64`'s contract (measured once: 38.3% of these points are not f64, and measuring
-        // them at 120 bits cost the suite 6%). A realization reads the definition, not the bound.
+        // ★★★ **The bound is free** — `at` states the rounding from `Rat::to_f64`'s contract (38.3%
+        // of these points are not f64; measuring them at 120 bits cost the suite 6%). A realization
+        // reads the definition, not the bound.
         nacre_topo::PlanePoints::Known(pts) if motion.is_none() => {
-            stated(pts.map(WitnessPoint::at_nearest), true)
+            stated(pts.map(WitnessPoint::at), true)
         }
         // ★★★★★ **The exact points the plane was built from — the only description.** No realized
         // `[Point3; 3]` rides beside the motion: a third of realized points do not survive the trip

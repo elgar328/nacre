@@ -83,7 +83,7 @@ pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
 pub(crate) fn standard_for(rows: &[FaceRow]) -> ProofStandard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
-    // Its `tri_pt3` are `WitnessPoint::at_nearest` of the plane's own rational points and the chain
+    // Its `tri_pt3` are `WitnessPoint::at` of the plane's own rational points and the chain
     // is empty: an f64-representable point (base = `mantissa · 2^exp`, a power-of-two denominator
     // and a numerator within `Rat`'s 127 bits) realizes as an *exact* interval, and a decimal one
     // carries the ½-ulp bound it was stated with — nothing a replay could add. The realization has

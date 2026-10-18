@@ -60,8 +60,8 @@ pub(crate) enum ClassPlan {
 /// One road for every vertex: its base is **solved from its definition** — the three carriers'
 /// narrow names, in the frame the planes are stated in ([`nacre_exact::three_planes_rat`]) —
 /// and the coordinate handed to the predicates is that base's own nearest `f64` with the
-/// rounding it carries ([`WitnessPoint::at_nearest`] on the world arm; [`WitnessPoint::at`],
-/// measured, on the motion arm, whose replay transports it). Two arms after that:
+/// rounding it carries ([`WitnessPoint::at`]; on the motion arm the replay transports it). Two
+/// arms after that:
 /// * all three carriers world-stated (`motion: None`) — the base is the world point, done;
 /// * the moved carriers sharing one motion, any world-stated carrier **fixed by that
 ///   chain** — the base is the pre-motion point; replay the chain (measured bit-identical to
@@ -121,9 +121,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     }
                     let Some(leaf) = leaf else {
                         // World-stated throughout: the base is the world point itself.
-                        out.push(WitnessPoint::at_nearest(nacre_exact::three_planes_rat(
-                            coeffs,
-                        )?));
+                        out.push(WitnessPoint::at(nacre_exact::three_planes_rat(coeffs)?));
                         continue;
                     };
                     // A world-stated carrier among chained ones is admissible iff the

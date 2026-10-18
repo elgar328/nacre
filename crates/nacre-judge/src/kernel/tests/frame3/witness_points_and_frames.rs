@@ -950,10 +950,10 @@ fn tol_bounds_error_over_random_chains() {
         ("no translate          ", 0.0, 0, String::new()),
         ("has a translate       ", 0.0, 0, String::new()),
         // ★ **Pivot rotations and nothing else.** Built to isolate the `piv` term, it reports
-        // something else: what dominates there is the *base seed* — `WitnessPoint::at` measures
-        // the base's own rounding and charges twice it, so a chain that only rotates stays under
-        // half its bound whatever `piv` does. **A row that cannot move is reporting a different
-        // term than the one it was built for.**
+        // something else: what dominates there is the *base seed* — `WitnessPoint::at` charges
+        // the half-ulp `Rat::to_f64` may lose, which a coordinate can nearly spend, so the row
+        // moves with the seed and not with `piv`. **A row that does not move with its term is
+        // reporting a different one.**
         ("pivot rotations only  ", 0.0, 0, String::new()),
         ("has a frame node      ", 0.0, 0, String::new()),
         ("ends in a wide frame  ", 0.0, 0, String::new()),
@@ -1588,70 +1588,43 @@ fn quadrantal_origin_chain_is_tol_zero() {
     assert_eq!(p.coord_approx(), [7.0, -3.0, -5.0]);
 }
 
-/// **A representable base measures exactly zero — `at` and `at_nearest` agree on it.**
-///
-/// `at_nearest` states tol `0` for a base every coordinate of which is an `f64`, without
-/// measuring; this pins that the measurement would have said the same. It rests on three
-/// links, and the third is the one worth a test: `try_from_f64` represents an f64 exactly,
-/// realizing that base back yields the same f64, and `bigfloat_upper_f64` of an exact zero is `0.0`
-/// (not a floor). If any link broke, `at` would report a nonzero tol here and the stated zero
-/// would be silently changing geometry rather than skipping arithmetic.
+/// **A representable base is tol `0`** — read off the number (`Rat::as_f64`), so the stated
+/// zero skips arithmetic rather than changing geometry. The corpus includes a coordinate the lift
+/// `try_from_f64` refuses (`2⁻⁸⁰`): it is an `f64` all the same, and `at` says so.
 #[test]
-fn a_representable_base_measures_exactly_zero() {
+fn a_representable_base_is_tol_zero() {
+    let lift = |c: [f64; 3]| c.map(|x| Rat::try_from_f64(x).expect("representable"));
     for c in [
         [0.0, 1.0, -1.0],         // integers, both signs
         [0.5, 0.25, -0.125],      // dyadic fractions
         [4.0, 0.2, 3.0],          // 0.2 is not decimal-exact but *is* an exact f64
         [1e-8, -2.5e-9, 7.5e-7],  // small
         [1e18, -4e17, 3.5e19],    // large, still inside Rat's exponent range
-        [1e-20, -2.5e-21, 5e-18], // small, still inside it (the floor is 2^-74 ≈ 5.3e-23)
+        [1e-20, -2.5e-21, 5e-18], // small, still inside the lift's range
     ] {
-        let fast = exact(c).expect("representable");
-        let measured = WitnessPoint::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
-        assert_eq!(fast.coord_approx(), c, "the coordinates round-trip: {c:?}");
-        assert_eq!(
-            fast.coord_approx(),
-            measured.coord_approx(),
-            "same coord for {c:?}"
-        );
-        assert_eq!(
-            measured.tol(),
-            [0.0; 3],
-            "`at` must measure exactly zero for an f64-derived base: {c:?}"
-        );
-        assert_eq!(fast.tol(), measured.tol(), "same tol for {c:?}");
+        let p = WitnessPoint::at(lift(c));
+        assert_eq!(p.coord_approx(), c, "the coordinates round-trip: {c:?}");
+        assert_eq!(p.tol(), [0.0; 3], "an f64 base is tol 0: {c:?}");
     }
+    let tiny = Rat::new(1, 1 << 80).unwrap();
+    let p = WitnessPoint::at([tiny, Rat::from_int(0), Rat::from_int(0)]);
+    assert_eq!(p.coord_approx(), [2f64.powi(-80), 0.0, 0.0]);
+    assert_eq!(p.tol(), [0.0; 3], "2⁻⁸⁰ is an f64");
 }
 
-/// **`at_nearest` states the tol from `Rat::to_f64`'s contract: zero where the coordinate is an
-/// f64, `|x|·2⁻⁵³` where it is not — and never below what `at` measures.**
+/// **`at` states the tol from `Rat::to_f64`'s contract, per axis**: zero on a coordinate that is
+/// an `f64`, `|x|·2⁻⁵³` on one that is not — whatever the other two are.
 #[test]
-fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
+fn at_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
-    // Representable throughout: identical to `exact`, and to what `at` measures.
-    let base = [r(1, 2), r(-3, 1), r(1, 8)];
-    let p = WitnessPoint::at_nearest(base);
-    assert_eq!(p.tol(), [0.0; 3]);
-    assert_eq!(p.coord_approx(), [0.5, -3.0, 0.125]);
-    assert_eq!(p.tol(), WitnessPoint::at(base).tol());
-    // One coordinate `f64` cannot hold: the contract bound on every axis, never below the
-    // measured rounding, and the coordinate is the nearest f64 of the base itself.
-    let base = [r(3, 10), r(1, 1), r(7, 10)];
-    let p = WitnessPoint::at_nearest(base);
-    let measured = WitnessPoint::at(base);
-    assert_eq!(p.coord_approx(), measured.coord_approx());
+    let p = WitnessPoint::at([r(3, 10), r(1, 1), r(7, 10)]);
     assert_eq!(p.coord_approx(), [0.3, 1.0, 0.7]);
-    assert!(
-        measured.tol()[0] > 0.0,
-        "0.3 is not an f64 — the measurement must see it"
-    );
-    for k in 0..3 {
+    assert_eq!(p.tol()[1], 0.0, "1 is an f64 whatever its neighbours are");
+    for k in [0, 2] {
         let x = p.coord_approx()[k];
-        let want = (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE);
-        assert_eq!(p.tol()[k], want, "axis {k}");
+        assert_eq!(p.tol()[k], x.abs() * (f64::EPSILON * 0.5), "axis {k}");
         // The contract: `to_f64` is nearest, so the rounding is at most half an ulp of the
-        // value it produced — and the stated bound covers that. (`at`'s measurement is
-        // *inflated* by 2 for conservatism, so it is not the yardstick here.)
+        // value it produced — and the stated bound covers that.
         let half_ulp = 0.5 * (f64::from_bits(x.to_bits() + 1) - x);
         assert!(
             p.tol()[k] >= half_ulp,
@@ -1726,29 +1699,34 @@ fn at_seeds_base_rounding_tol() {
     assert!(third.coord_iv[0].error > 0.0 && third.coord_iv[1].error == 0.0);
 }
 
-/// ★ **Scoreboard — the answer `at` gives today, which is wrong.** `at` seeds the tol by
-/// measuring `base − to_f64(base)` at 120 bits (astro-float rounds that to a 128-bit word). A
-/// rational nearer its `f64` than that resolution reads as exactly representable: this one sits
-/// `2⁻¹⁵²` from its `f64` (`n·2⁵² ≡ 1 mod d`, `d = 2¹⁰⁰ + 1`), so the error is real and the seed
-/// is `0`. Random corpora never draw it (their denominators are at most 100). A seed charged from
-/// `Rat::to_f64`'s nearest-rounding contract has no such hole; when `at` takes it, this is the
-/// assertion that turns.
+/// **A rational nearer its `f64` than any fixed precision resolves is still charged.** This one
+/// sits `2⁻¹⁵²` from its `f64` (`n·2⁵² ≡ 1 mod d`, `d = 2¹⁰⁰ + 1`); a seed *measured* at 120 bits
+/// (128 after astro-float's word round-up) reads it as exactly representable and states tol `0`.
+/// The contract seed charges its half-ulp. Random corpora never draw such a point (their
+/// denominators are at most 100).
 #[test]
-fn a_rational_nearer_its_f64_than_the_seed_measures_reads_tol_zero() {
+fn a_rational_nearer_its_f64_than_a_measurement_resolves_is_still_charged() {
     let d = (1i128 << 100) + 1;
     let r = Rat::new(1_267_650_600_228_229_120_021_726_494_721, d).unwrap();
     let p = WitnessPoint::at([r, Rat::from_int(0), Rat::from_int(0)]);
     let err = abs_err(p.coord_iv[0].value, &p.coord_hp(512)[0], 512);
     assert!(err > 1e-47, "the f64 is not the rational: error {err:e}");
-    assert_eq!(p.tol()[0], 0.0, "today's seed reads the error as zero");
+    assert!(
+        p.tol()[0] >= err,
+        "tol {:e} must cover the error {err:e}",
+        p.tol()[0]
+    );
 }
 
-/// `at_with_tol` seeds a nonzero root tol (a boolean's seam vertex) and the chain
-/// transports it (`|R|·old`): a 90° rotation about Z swaps the x/y tol components.
+/// A root that carries tol hands it to the chain, which transports it (`|R|·old`): a 90° rotation
+/// about Z swaps the x/y tol components.
 #[test]
 fn seeded_tol_transports_through_rotation() {
-    let p = WitnessPoint::at_with_tol([ri(1, 1), ri(0, 1), ri(0, 1)], [1e-9, 2e-9, 3e-9])
-        .rotate(Axis::Z, deg(90, 1));
+    let mut p = WitnessPoint::at([ri(1, 1), ri(0, 1), ri(0, 1)]);
+    for (b, t) in p.coord_iv.iter_mut().zip([1e-9, 2e-9, 3e-9]) {
+        b.error = t;
+    }
+    let p = p.rotate(Axis::Z, deg(90, 1));
     // 90° about Z: |R| swaps x,y → tol[0]=old tol[1], tol[1]=old tol[0]; z unchanged.
     assert_eq!(p.tol(), [2e-9, 1e-9, 3e-9]);
 }

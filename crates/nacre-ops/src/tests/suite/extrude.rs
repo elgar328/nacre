@@ -346,7 +346,7 @@ fn plane_classes_merge_a_shared_handle_before_judging() {
             // witnesses' definitions (`tri_pt3`) — the rows have no world name.
             orient_sign: 1,
             tri_pt3: tri.map(|p| {
-                nacre_judge::WitnessPoint::at_nearest(
+                nacre_judge::WitnessPoint::at(
                     p.as_array()
                         .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
                 )
