@@ -127,8 +127,9 @@ pub(super) fn orient_of(pos: bool) -> Orient {
 /// The sign of `det[n_a; n_b; n_c]`, the determinant of the three planes' normals —
 /// `sign((n_a × n_b) · n_c)`, which decides how the line `a ∩ b` runs relative to plane `c`. This is exactly the
 /// Cramer `D` of the three planes ([`cramer_iv`] / [`cramer_hp`]); the interval filter
-/// resolves the easy cases, an ambiguous one escalates, and a below-floor `D` is
-/// [`Orient::Zero`] (the planes' normals are coincident — degenerate).
+/// resolves the easy cases, an ambiguous one escalates, and one still straddling zero is held to
+/// the coincidence limit turned into an angle (`coincidence / scale`): `Coincident` when the
+/// normals are proved that close to coplanar, `Exhausted` or `Degenerate` otherwise.
 ///
 /// **Winding-dependent** (unlike [`orient3d_judge`] / [`indirect_cmp_coord_judge`], which
 /// are normal-orientation invariant): each plane's normal is `(p1−p0)×(p2−p0)`, so the

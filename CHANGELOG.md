@@ -45,6 +45,7 @@ While the version is `0.0.z`, every release may break anything.
 
 - **Breaking:** `exact::Angle::cos_sin_at` and `exact::quad::MeetLine::point_f64`, which nothing in the kernel called. `exact::Angle::cos_sin_hp` gives the `(cos, sin)` intervals whose values the first returned.
 - **Breaking:** `ops::RejectReason::CurvedStraightRun`, which nothing raises now that a ring's winding is read by that one rule.
+- **Breaking:** `judge::dir_orient3d_judge` and `judge::kernel::frame3::orient3d_ray`, which nothing in the kernel called — the one judgement that answered `Orient::Zero` where it could not decide, with no coincidence limit behind it.
 - `geom::intersect::drop_collinear_midpoints`, which nothing in the kernel called — a profile's normal form dissolves flat corners itself, and `geom::intersect::flat_corner` is the predicate it asks.
 - `Operation::PadOnFace` and `Operation::PocketOnFace`, their `OpOutput` variants, and `OpError::PadMissesFace`, `OpError::PocketNotBlind` and `OpError::NonPositiveDistance`. A pad or pocket is the face's sketch frame (`face_sketch_frame`), an `Extrude` with a positive or negative distance, and a `Boolean` with the face's solid; a pocket deeper than the body cuts through.
 - `LogCell::Face`, which only the removed operations used.

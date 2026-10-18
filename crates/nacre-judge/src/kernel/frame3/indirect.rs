@@ -12,8 +12,9 @@ use super::*;
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path; the boolean
 // reaches it through `Judge::orient3d`, whose rotated arm hands the seam's planes over as
 // `WitnessPoint`s. Soundness is tested by `plane_coefficient_tol_soundness` and
-// `indirect_orient3d_soundness`; the constant `mag`-floor policy is indirect-only (distinct from the
-// explicit `16·scale³` floor of [`orient3d_judge`]).
+// `indirect_orient3d_soundness`. What still straddles zero at the escalation's precision is turned
+// into a distance and held to the model's coincidence limit, as [`orient3d_judge`]'s is — there is
+// no constant floor.
 
 /// 3×3 determinant of interval rows.
 pub(super) fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {

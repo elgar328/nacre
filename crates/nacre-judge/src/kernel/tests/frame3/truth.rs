@@ -223,21 +223,3 @@ pub(in crate::kernel::frame3) fn dir_sign(
         prec,
     )
 }
-
-/// The sign of `det[d; x−base; y−base]` — `dir_orient3d_judge`'s question.
-pub(in crate::kernel::frame3) fn dir_orient(
-    d: [Rat; 3],
-    base: &WitnessPoint,
-    x: &WitnessPoint,
-    y: &WitnessPoint,
-    prec: usize,
-) -> Option<Orient> {
-    stable(
-        |p| {
-            let dv = point(&WitnessPoint::at(d), p);
-            let (b, x, y) = (point(base, p), point(x, p), point(y, p));
-            eliminate([dv, sub3(&x, &b, p), sub3(&y, &b, p)], None, p).0
-        },
-        prec,
-    )
-}
