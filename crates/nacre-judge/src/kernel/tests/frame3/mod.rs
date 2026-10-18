@@ -69,7 +69,9 @@ pub(in crate::kernel::frame3) fn rand_base(st: &mut u64) -> [Rat; 3] {
 ///
 /// ★ Not an octave reading ([`bigfloat_upper_f64`]): that sits up to twice the distance, so a
 /// ratio of error to bound read through it cannot tell a bound with a margin of two from one with
-/// none — and a bound proved without a margin reads as broken.
+/// none — and a bound proved without a margin reads as broken. The step up makes `err <= tol`
+/// stricter than the proposition by that one step: a bound the error meets exactly reads as
+/// broken (the outer `worst_ratio < 1.0` gates say the same).
 fn abs_err(f: f64, truth: &HpBounded, gt: usize) -> f64 {
     let d = BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs();
     let radius = truth.error.upper_f64();
