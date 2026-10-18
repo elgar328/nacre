@@ -908,16 +908,18 @@ fn the_shared_motion_shortcut_agrees_with_ground_truth() {
 }
 
 /// Soundness: over random **motion** chains (mixed axes, arbitrary pivots, exact and inexact
-/// angles, **and rational translations and reflections interleaved**), the direction-wise tol
-/// must bound the true f64 error on every axis (astro-float 512-bit ground truth). (An `err` below 1e-100 is 512-bit GT noise.)
+/// angles, rational translations and reflections, **and frame nodes** interleaved), the
+/// direction-wise tol must bound the true f64 error on every axis (astro-float 512-bit ground
+/// truth). (An `err` below 1e-100 is 512-bit GT noise.)
 ///
 /// **Every node kind must appear here.** Each arrives with its own tol term, and nothing else
 /// in the suite checks that term is an upper bound — the whole judgment layer is sound only if
-/// it is. (The translate term was once added without this, and had to be back-filled.)
-/// `#[ignore]`: astro-float ground truth is slow; run with `--ignored` (+ CI). The
-/// per-predicate statistical validation is the `h_*` tests beside this one.
+/// it is. A frame's *carried* term — the incoming tol turned by the basis — is exercised only
+/// by a point that enters the frame already carrying tol, which only a chain gives; the
+/// frame tests beside this one hand it a seed. The wide frame sits only at a chain's end: its
+/// plane is `2⁹⁰` out, so anything after it reads that scale and nothing else.
+/// The per-predicate statistical validation is the `h_*` tests beside this one.
 #[test]
-#[ignore = "slow astro-float ground truth (run with --ignored)"]
 fn tol_bounds_error_over_random_chains() {
     const GT: usize = 512;
     let mut st = 0x2A5C_1234_ABCD_9999u64;
@@ -935,6 +937,8 @@ fn tol_bounds_error_over_random_chains() {
         piv: usize,
         tr: usize,
         mir: usize,
+        fr: usize,
+        wide: bool,
         desc: String,
     }
     // `(worst ratio, count, the chain that reached it)` per shape.
@@ -945,14 +949,51 @@ fn tol_bounds_error_over_random_chains() {
         ("has a mirror          ", 0.0, 0, String::new()),
         ("no translate          ", 0.0, 0, String::new()),
         ("has a translate       ", 0.0, 0, String::new()),
-        // ★ **Pivot rotations and nothing else.** Added to isolate the `piv` term, and it
-        // showed something else instead: this row sits at **exactly 0.5000** and does not
-        // move when `piv` changes, because what dominates there is the *base seed* — `WitnessPoint::at`
-        // measures the base's own rounding and charges twice it, so a chain that only rotates
-        // reports half its bound and nothing else can shift that. **A row that cannot move is
-        // reporting a different term than the one it was built for.**
+        // ★ **Pivot rotations and nothing else.** Built to isolate the `piv` term, it reports
+        // something else: what dominates there is the *base seed* — `WitnessPoint::at` measures
+        // the base's own rounding and charges twice it, so a chain that only rotates stays under
+        // half its bound whatever `piv` does. **A row that cannot move is reporting a different
+        // term than the one it was built for.**
         ("pivot rotations only  ", 0.0, 0, String::new()),
+        ("has a frame node      ", 0.0, 0, String::new()),
+        ("ends in a wide frame  ", 0.0, 0, String::new()),
     ];
+    // Which of `by_shape`'s rows a chain belongs to, in their order.
+    let rows = |sh: &Shape| {
+        [
+            sh.piv == 0,
+            sh.piv > 0,
+            sh.mir == 0,
+            sh.mir > 0,
+            sh.tr == 0,
+            sh.tr > 0,
+            sh.piv > 0 && sh.tr == 0 && sh.mir == 0 && sh.fr == 0 && !sh.wide,
+            sh.fr > 0,
+            sh.wide,
+        ]
+    };
+    // The frame nodes a chain draws from: every named plane `FRAME_PLANES` holds, a judged
+    // frame through three points of different chains (both orientations), and the wide plane.
+    let frames = FRAME_PLANES.map(frame_of);
+    let zero3 = [Rat::from_int(0); 3];
+    let through = [false, true].map(|flip| {
+        let pts = [
+            WitnessPoint::at([ri(2, 1), ri(0, 1), ri(0, 1)]).rotate_about(
+                Axis::Z,
+                deg(37, 1),
+                zero3,
+            ),
+            exact([5.0, 1.0, 0.0]).unwrap(),
+            WitnessPoint::at([ri(0, 1), ri(3, 1), ri(1, 1)]).rotate_about(
+                Axis::X,
+                deg(22, 1),
+                zero3,
+            ),
+        ];
+        FrameThrough::of(pts.map(JudgedPoint::Pure), flip).expect("a mixed-chain plane frames")
+    });
+    let wide = wide_fixture().1;
+    let (mut frame_seen, mut through_seen, mut wide_seen) = (false, false, false);
     // ★ And the **mean**, because a term that shrinks everywhere by a little moves no maximum.
     let (mut ratio_sum, mut ratio_n) = (0.0_f64, 0usize);
     let mut worst_desc = String::new();
@@ -967,7 +1008,7 @@ fn tol_bounds_error_over_random_chains() {
         for _ in 0..rng(&mut st, 1, 5) {
             // Links of every kind, in both orders — which is where a tol term that only holds
             // "on its own" would show.
-            match rng(&mut st, 0, 3) {
+            match rng(&mut st, 0, 4) {
                 0 => {
                     translate_seen = true;
                     shape.tr += 1;
@@ -987,6 +1028,20 @@ fn tol_bounds_error_over_random_chains() {
                         .desc
                         .push_str(if off == Rat::from_int(0) { " M0" } else { " M" });
                     p = p.mirror(axis_of(rng(&mut st, 0, 2)), off);
+                    continue;
+                }
+                2 => {
+                    shape.fr += 1;
+                    p = if rng(&mut st, 0, 1) == 0 {
+                        frame_seen = true;
+                        shape.desc.push_str(" F");
+                        p.frame(frames[rng(&mut st, 0, 5) as usize]).unwrap()
+                    } else {
+                        through_seen = true;
+                        shape.desc.push_str(" Ft");
+                        p.frame_through(&through[rng(&mut st, 0, 1) as usize])
+                            .unwrap()
+                    };
                     continue;
                 }
                 _ => {}
@@ -1019,6 +1074,12 @@ fn tol_bounds_error_over_random_chains() {
             }
             p = p.rotate_about(ax, ang, pivot);
         }
+        if rng(&mut st, 0, 3) == 0 {
+            wide_seen = true;
+            shape.wide = true;
+            shape.desc.push_str(" Fw");
+            p = p.frame_wide(&wide).unwrap();
+        }
         let hp = p.coord_hp(GT);
         for (axis, hp_a) in hp.iter().enumerate() {
             let err = abs_err(p.coord_iv[axis].value, hp_a, GT);
@@ -1044,18 +1105,7 @@ fn tol_bounds_error_over_random_chains() {
                 if seed_free {
                     worst_rot = worst_rot.max(r);
                 }
-                for (i, hit) in [
-                    shape.piv == 0,
-                    shape.piv > 0,
-                    shape.mir == 0,
-                    shape.mir > 0,
-                    shape.tr == 0,
-                    shape.tr > 0,
-                    shape.piv > 0 && shape.tr == 0 && shape.mir == 0,
-                ]
-                .into_iter()
-                .enumerate()
-                {
+                for (i, hit) in rows(&shape).into_iter().enumerate() {
                     if hit && r > by_shape[i].1 {
                         by_shape[i].1 = r;
                         by_shape[i].3 = shape.desc.clone();
@@ -1063,18 +1113,7 @@ fn tol_bounds_error_over_random_chains() {
                 }
             }
         }
-        for (i, hit) in [
-            shape.piv == 0,
-            shape.piv > 0,
-            shape.mir == 0,
-            shape.mir > 0,
-            shape.tr == 0,
-            shape.tr > 0,
-            shape.piv > 0 && shape.tr == 0 && shape.mir == 0,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (i, hit) in rows(&shape).into_iter().enumerate() {
             if hit {
                 by_shape[i].2 += 1;
             }
@@ -1084,19 +1123,23 @@ fn tol_bounds_error_over_random_chains() {
         exact_seen && pivot_seen && translate_seen && mirror_seen,
         "corpus must mix exact angles, pivots, translations and reflections"
     );
-    // **How much of the bound the real error actually uses.** Every term feeding `tol` is now
-    // either derived from round-to-nearest or measured against arbitrary precision — no
-    // constant is left to justify — so this is what says the *assembly* of them holds.
+    assert!(
+        frame_seen && through_seen && wide_seen,
+        "corpus must carry tol into every frame node"
+    );
+    // **How much of the bound the real error actually uses** — read exactly (`abs_err`), so a
+    // ratio near 1 is a bound with no slack and one near ½ a bound with a margin of two.
     //
-    // ★ It stays a figure nobody writes down: a number pasted into a doc went stale the moment
-    // reflections joined this corpus, and was wrong for two commits.
+    // ★ It stays a figure nobody writes down: the corpus grows, and a pasted number goes stale
+    // with it.
     eprintln!("[tol tightness] worst err/tol: {worst_ratio:.4} all, {worst_rot:.4} rotation-only");
     // ★ **Which chain got closest, and which shapes are already tight.** The fix for an
     // exceeded bound is to find the *missing term*, so the gate has to say what the offending
     // chain was made of. The per-shape bests say the same thing in advance: a shape sitting
     // near 1.0 is a term already derived tightly, and one sitting low is where a lumped charge
     // still has slack. `R` a rotation about the origin, `Rp` about a pivot, `!` an exact angle,
-    // `T` a translation, `M` a reflection (`M0` a pure sign flip).
+    // `T` a translation, `M` a reflection (`M0` a pure sign flip), `F` a named frame, `Ft` a
+    // judged frame, `Fw` the wide frame.
     eprintln!(
         "[tol worst chain]  {worst_ratio:.4}  {worst_desc}   mean {:.4} over {ratio_n}",
         ratio_sum / ratio_n.max(1) as f64
@@ -1104,11 +1147,9 @@ fn tol_bounds_error_over_random_chains() {
     for (label, r, n, desc) in &by_shape {
         eprintln!("[tol by shape]  {label}  worst {r:.4}  over {n:>4} chains  ←{desc}");
     }
-    assert!(
-        worst_ratio < 1.0,
-        "the bound was reached exactly, which leaves nothing for a platform whose trig is \
-             one ulp worse than this one's"
-    );
+    // Equality is what the per-axis check above still admits; an error that meets its bound
+    // exactly is one rounding of `abs_err` from reading as broken, so the gate keeps that room.
+    assert!(worst_ratio < 1.0, "the error met its bound exactly");
 }
 
 /// A 90°-family chain about the origin stays exactly tol 0 (Niven exact realization).
@@ -1683,6 +1724,23 @@ fn at_seeds_base_rounding_tol() {
     );
     let third = WitnessPoint::at([ri(1, 3), ri(0, 1), ri(0, 1)]);
     assert!(third.coord_iv[0].error > 0.0 && third.coord_iv[1].error == 0.0);
+}
+
+/// ★ **Scoreboard — the answer `at` gives today, which is wrong.** `at` seeds the tol by
+/// measuring `base − to_f64(base)` at 120 bits (astro-float rounds that to a 128-bit word). A
+/// rational nearer its `f64` than that resolution reads as exactly representable: this one sits
+/// `2⁻¹⁵²` from its `f64` (`n·2⁵² ≡ 1 mod d`, `d = 2¹⁰⁰ + 1`), so the error is real and the seed
+/// is `0`. Random corpora never draw it (their denominators are at most 100). A seed charged from
+/// `Rat::to_f64`'s nearest-rounding contract has no such hole; when `at` takes it, this is the
+/// assertion that turns.
+#[test]
+fn a_rational_nearer_its_f64_than_the_seed_measures_reads_tol_zero() {
+    let d = (1i128 << 100) + 1;
+    let r = Rat::new(1_267_650_600_228_229_120_021_726_494_721, d).unwrap();
+    let p = WitnessPoint::at([r, Rat::from_int(0), Rat::from_int(0)]);
+    let err = abs_err(p.coord_iv[0].value, &p.coord_hp(512)[0], 512);
+    assert!(err > 1e-47, "the f64 is not the rational: error {err:e}");
+    assert_eq!(p.tol()[0], 0.0, "today's seed reads the error as zero");
 }
 
 /// `at_with_tol` seeds a nonzero root tol (a boolean's seam vertex) and the chain

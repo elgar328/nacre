@@ -18,7 +18,7 @@
 //!
 //! Soundness is tested against astro-float ground truth over random heterogeneous-rotation
 //! configs — `orient3d_iv_soundness` (the determinant interval) and
-//! `tol_bounds_error_over_random_chains` (chain and arbitrary-pivot tol): the bound never
+//! `tol_bounds_error_over_random_chains` (every motion node's tol, frames included): the bound never
 //! under-estimates the true error.
 
 use super::HP_RM;

@@ -62,11 +62,21 @@ pub(in crate::kernel::frame3) fn rand_base(st: &mut u64) -> [Rat; 3] {
     ]
 }
 
-/// The f64 value's distance from the high-precision realization's **midpoint** — what the
-/// f64 tol has to bound. (The realization's own radius is a separate, far smaller quantity;
-/// `GT` is deep enough that it does not enter these comparisons.)
+/// The f64 value's distance from the truth — what the f64 tol has to bound — **read exactly**: the
+/// high-precision difference rounded to the nearest `f64` and stepped up one, plus the
+/// realization's own radius. Never below the distance, and above it by a part in `2⁵²`.
+///
+/// ★ Not an octave reading ([`bigfloat_upper_f64`]): that sits up to twice the distance, so a
+/// ratio of error to bound read through it cannot tell a bound with a margin of two from one with
+/// none — and a bound proved without a margin reads as broken.
 fn abs_err(f: f64, truth: &HpBounded, gt: usize) -> f64 {
-    bigfloat_upper_f64(&BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs())
+    let d = BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs();
+    let radius = truth.error.upper_f64();
+    if d.is_zero() {
+        return radius;
+    }
+    let near = nacre_exact::round_to_f64(&d, Mag::ZERO, gt).expect("an exact value rounds");
+    f64::from_bits(near.to_bits() + 1) + radius
 }
 
 /// Borrow an owned plane-triple as the `&WitnessPoint` tuples the judge takes.
