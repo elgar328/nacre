@@ -98,8 +98,8 @@ impl Bounded {
     ///   determinant's intermediate steps.
     ///
     /// Both rest on the values staying in the normal range (design 「수의 이름」). Measured slack on
-    /// the soundness corpora: the worst actual error is `0.106` of the radius for the `orient3d`
-    /// determinant (5,000 rotated four-point configurations, `orient3d_iv_soundness`) and `0.243`
+    /// the soundness corpora: the worst actual error is `0.101` of the radius for the `orient3d`
+    /// determinant (5,000 rotated four-point configurations, `orient3d_iv_soundness`) and `0.347`
     /// for plane coefficients (10,000, `plane_coefficient_tol_soundness`).
     pub fn sub(self, o: Bounded) -> Bounded {
         let value = self.value - o.value;

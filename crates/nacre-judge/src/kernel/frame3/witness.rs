@@ -68,7 +68,8 @@ fn diff(x: Bounded, y: Bounded) -> Bounded {
 /// the same power, exactly.
 fn prod(x: Bounded, y: Bounded) -> Bounded {
     let scaling = |b: Bounded| {
-        b.error == 0.0 && (b.value == 0.0 || b.value.abs().to_bits() & ((1 << 52) - 1) == 0)
+        b.error == 0.0
+            && (b.value == 0.0 || (b.value.is_normal() && b.value.to_bits() & ((1 << 52) - 1) == 0))
     };
     if scaling(y) {
         Bounded::new(x.value * y.value, x.error * y.value.abs())
@@ -436,5 +437,71 @@ impl WitnessPoint {
             HpBounded::of_rat(self.base[2], prec),
         ];
         fold_suffix(p, &self.chain, prec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **The steps' arithmetic passes a radius through only where the operation is exact, and
+    /// charges where it rounds.** The chain locks see the first half (an axis-aligned model stays
+    /// at tol `0`) but not the second: a product left uncharged hides inside a measured `1/√`
+    /// error, which reads up to twice its truth — so the rule is held here, on exact operands
+    /// whose results round, against the exact rational answer.
+    #[test]
+    fn the_exact_cases_pass_through_and_the_rest_are_charged() {
+        let r = |x: f64| Rat::try_from_f64(x).expect("finite");
+        let b = |x: f64| Bounded::new(x, 0.0);
+        let covers = |got: Bounded, want: Rat, what: &str| {
+            let gap = r(got.value).checked_sub(want).unwrap();
+            let zero = Rat::from_int(0);
+            let gap = if gap < zero {
+                zero.checked_sub(gap).unwrap()
+            } else {
+                gap
+            };
+            assert!(gap > zero, "{what}: the fixture must round");
+            assert!(
+                r(got.error) >= gap,
+                "{what}: radius {:e} under the rounding",
+                got.error
+            );
+        };
+        covers(
+            prod(b(3.0), b(0.1)),
+            r(3.0).checked_mul(r(0.1)).unwrap(),
+            "3·0.1",
+        );
+        covers(
+            sum(b(0.1), b(0.2)),
+            r(0.1).checked_add(r(0.2)).unwrap(),
+            "0.1 + 0.2",
+        );
+        covers(
+            diff(b(1.0), b(0.1)),
+            r(1.0).checked_sub(r(0.1)).unwrap(),
+            "1 − 0.1",
+        );
+
+        let t = Bounded::new(0.1, 1e-20);
+        let same = |got: Bounded, value: f64, error: f64, what: &str| {
+            assert_eq!((got.value, got.error), (value, error), "{what}");
+        };
+        same(
+            prod(b(0.1), b(0.5)),
+            0.05,
+            0.0,
+            "a power of two scales exactly",
+        );
+        same(
+            prod(t, b(-1.0)),
+            -0.1,
+            1e-20,
+            "a sign flip carries the radius",
+        );
+        same(prod(t, b(0.0)), 0.0, 0.0, "an exact zero leaves nothing");
+        same(sum(t, b(0.0)), 0.1, 1e-20, "adding an exact zero is exact");
+        same(diff(b(0.0), t), -0.1, 1e-20, "a negation is exact");
     }
 }
