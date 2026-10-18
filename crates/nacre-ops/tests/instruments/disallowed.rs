@@ -15,8 +15,12 @@
 //! planted door call through clippy and this table both; so none is set
 //! ([`no_manifest_or_cargo_config_sets_the_lints_level`]).
 //!
+//! A second `clippy.toml` in a crate replaces the root's for it, so there is only the root's
+//! ([`the_root_clippy_toml_is_the_only_one`]).
+//!
 //! The lock binds the commits the pre-commit hook runs on. `--no-verify`, an edited hook (it is
-//! not versioned) or a user's own `~/.cargo/config.toml` are past what a test in the tree can see.
+//! not versioned), a user's own `~/.cargo/config.toml` or `CLIPPY_CONF_DIR` in the environment are
+//! past what a test in the tree can see.
 //!
 //! Textual, like `comparators.rs`: it reads the attribute's spelling, which is fixed, and
 //! [`the_scan_reads_what_it_should`] pins that reading on literal lines.
@@ -268,10 +272,10 @@ fn manifest_silences(table: &str, t: &str) -> bool {
     let names_the_lint = word("disallowed_methods") || word("disallowed-methods");
     let in_lints = table.starts_with("[lints") || table.starts_with("[workspace.lints");
     let groups = word("all") || word("style") || word("warnings");
-    let flags = code.contains("rustflags") || code.contains("cap-lints");
-    names_the_lint
-        || (in_lints && groups)
-        || (flags && (code.contains("clippy") || word("warnings")))
+    // Any `rustflags` at all: its array may span lines, and the flags that matter (`-A …`) would
+    // then sit on lines this reads without the key.
+    let flags = word("rustflags") || code.contains("cap-lints");
+    names_the_lint || (in_lints && groups) || flags
 }
 
 /// The manifests and cargo configs a lint level can be set in: the root's and every crate's
@@ -315,6 +319,37 @@ fn no_manifest_or_cargo_config_sets_the_lints_level() {
         offenders.is_empty(),
         "a manifest or cargo config sets the level of clippy.toml's disallowed calls (or of a \
          group holding them), which no exemption table sees -- set it nowhere: {offenders:?}"
+    );
+}
+
+/// The root's `clippy.toml` is the only one. clippy reads the nearest config from a crate's own
+/// folder upward, so a `clippy.toml` in a crate (or in `crates/`) — even an empty one — replaces
+/// the root's for that crate and drops every disallowed path with it, measured: an empty
+/// `crates/nacre-ops/clippy.toml` let a planted door call through clippy and every other test here.
+#[test]
+fn the_root_clippy_toml_is_the_only_one() {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/")
+        .to_path_buf();
+    let root = crates.parent().expect("the workspace root").to_path_buf();
+    let mut dirs = vec![crates.clone()];
+    for entry in std::fs::read_dir(&crates).expect("crates/") {
+        let path = entry.expect("entry").path();
+        if path.is_dir() {
+            dirs.push(path);
+        }
+    }
+    let mut shadows: Vec<_> = dirs
+        .iter()
+        .flat_map(|d| [d.join("clippy.toml"), d.join(".clippy.toml")])
+        .collect();
+    shadows.push(root.join(".clippy.toml"));
+    shadows.retain(|p| p.exists());
+    assert!(
+        shadows.is_empty(),
+        "a clippy config besides the root's, which replaces it (and its disallowed calls) for \
+         the crates under it: {shadows:?}"
     );
 }
 
@@ -403,6 +438,14 @@ fn the_scan_reads_what_it_should() {
         "[build]",
         "rustflags = [\"--cap-lints\", \"warn\", \"-A\", \"warnings\"]"
     ));
+    assert!(
+        manifest_silences("[build]", "rustflags = ["),
+        "an array spanning lines is caught at its key"
+    );
+    assert!(
+        !manifest_silences("[package]", "name = \"rustflags-free\""),
+        "not the key"
+    );
     assert!(!manifest_silences(
         "[workspace.lints.rust]",
         "unsafe_code = \"forbid\""

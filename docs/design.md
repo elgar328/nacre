@@ -1269,9 +1269,9 @@ m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 �
 에 이유를 적는다: 깔때기 모듈, 빈 모델의 세계 평면 씨앗(이름이 캐시를 유도한다), seam 표가 실현한 캐시를 넘기는
 `reconstruct.rs`. 테스트 빌드는 크레이트마다 허용한다(픽스처는 문으로 짓는다). 허용은 하나하나 `tests/instruments/disallowed.rs`
 의 표에 이유와 함께 오르고, 표 밖의 허용이나 lint 묶음 허용(`clippy::all`·`clippy::style`·`warnings`), `clippy.toml` 에서 빠진
-경로, 그리고 `Cargo.toml`·cargo 설정에서 그 lint 의 수준을 바꾸는 줄(`[lints]`·`rustflags` — 속성 없이 잠금을 끈다, 잼)은 그
-테스트가 거절한다. 잠금은 커밋 훅이 도는 커밋에 걸린다 — `--no-verify`, 버전 관리되지 않는 훅의 수정, 사용자 자신의
-`~/.cargo/config.toml` 은 저장소 안의 테스트가 볼 수 없다. kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` 호출 수는 잠그지 않는다 — 유리수의
+경로, `Cargo.toml`·cargo 설정에서 그 lint 의 수준을 바꾸는 줄(`[lints]`·`rustflags` — 속성 없이 잠금을 끈다, 잼), 루트 밖의
+`clippy.toml`(크레이트에 하나 두면 빈 파일이라도 그 크레이트에서 루트의 것을 대신한다, 잼)은 그 테스트가 거절한다. 잠금은 커밋 훅이 도는 커밋에 걸린다 — `--no-verify`, 버전 관리되지 않는 훅의 수정, 사용자 자신의
+`~/.cargo/config.toml`·환경의 `CLIPPY_CONF_DIR` 은 저장소 안의 테스트가 볼 수 없다. kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` 호출 수는 잠그지 않는다 — 유리수의
 `to_f64` 는 정확 반올림이라 그 자체가 실현이다.
 
 **진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에
