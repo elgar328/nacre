@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::kernel::frame3::tests::rel_err;
+use nacre_exact::HP_RM;
 
 /// **Is the indirect orient3d's normalized value a point-to-plane distance?**
 ///

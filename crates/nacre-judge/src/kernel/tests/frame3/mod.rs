@@ -1,4 +1,5 @@
 use super::*;
+use nacre_exact::HP_RM;
 
 /// A witness at an `f64`-representable point, stated as the rational it is. Production has no
 /// such door: its precondition ("exactly representable") is one no caller can check, and a

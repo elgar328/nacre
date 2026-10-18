@@ -35,6 +35,65 @@ impl PartialEq for WitnessPoint {
 }
 impl Eq for WitnessPoint {}
 
+// ── The steps' arithmetic: `Bounded`, and the cases it cannot see are exact ──
+//
+// Every step below carries its coordinates through `Bounded`'s operations, whose radius is a proved
+// bound per operation (value rounding, the radius's own rounding, the operands' radii — including
+// what a realized `cos` or `1/√` contributes through the incoming tol). `Bounded` charges every
+// result for its rounding, though, and some steps' operations do not round: adding an exact zero,
+// or multiplying by an exact `0` or power of two (`±1`, a frame's `2⁻ᵏ`). Charging those would
+// leave no model at tol `0` — a quadrantal turn about the origin, a reflection in a plane through
+// it, an axis-aligned frame — and tol `0` is what keeps such a model on the exact predicate path.
+// So these three ask first; the facts hold in `f64`'s normal range, the premise `Bounded` rests on.
+
+/// `x + y`, exact when either is an exact zero.
+fn sum(x: Bounded, y: Bounded) -> Bounded {
+    match (exact_zero(x), exact_zero(y)) {
+        (_, true) => Bounded::new(x.value + y.value, x.error),
+        (true, _) => Bounded::new(x.value + y.value, y.error),
+        _ => x.add(y),
+    }
+}
+
+/// `x − y`, exact when either is an exact zero.
+fn diff(x: Bounded, y: Bounded) -> Bounded {
+    match (exact_zero(x), exact_zero(y)) {
+        (_, true) => Bounded::new(x.value - y.value, x.error),
+        (true, _) => Bounded::new(x.value - y.value, y.error),
+        _ => x.sub(y),
+    }
+}
+
+/// `x · y`, exact when either is an exact `0` or power of two — then the other's radius scales by
+/// the same power, exactly.
+fn prod(x: Bounded, y: Bounded) -> Bounded {
+    let scaling = |b: Bounded| {
+        b.error == 0.0 && (b.value == 0.0 || b.value.abs().to_bits() & ((1 << 52) - 1) == 0)
+    };
+    if scaling(y) {
+        Bounded::new(x.value * y.value, x.error * y.value.abs())
+    } else if scaling(x) {
+        Bounded::new(x.value * y.value, y.error * x.value.abs())
+    } else {
+        x.mul(y)
+    }
+}
+
+fn exact_zero(b: Bounded) -> bool {
+    b.value == 0.0 && b.error == 0.0
+}
+
+/// A point read as `(p₀, p₁, p₂)` in a frame and written in the world: `o + ((p₀·û + p₁·v̂) + p₂·ŵ)`
+/// per axis, in that order, with the basis rows `[û, v̂, ŵ]` and the origin `o` as intervals —
+/// the three frame nodes' one combination. The incoming tol rides in `p` and is turned by the basis
+/// through `prod`; the basis's own error is scaled by the coordinates the same way.
+fn in_frame(p: [Bounded; 3], [u, v, w]: [[Bounded; 3]; 3], o: [Bounded; 3]) -> [Bounded; 3] {
+    core::array::from_fn(|k| {
+        let terms = sum(sum(prod(p[0], u[k]), prod(p[1], v[k])), prod(p[2], w[k]));
+        sum(o[k], terms)
+    })
+}
+
 impl WitnessPoint {
     /// The `f64` coordinate — the values of [`Self::coord_iv`], for readers that want the point
     /// whole. Approximate: a rotation is carried in `f64` arithmetic, so the value is not the
@@ -82,23 +141,14 @@ impl WitnessPoint {
     /// Extend the definition by a rotation about `axis` through the rational pivot
     /// `point`, updating the f64 cache and its direction-wise tol. The two in-plane
     /// coords are taken relative to the pivot, rotated, and shifted back. Same-axis
-    /// 90°-family angles about the origin rotate exactly (tol 0, Niven). A non-origin
-    /// pivot adds its own f64 rounding (`coord − p`, `p + …`, the pivot's Rat→f64) —
-    /// present even for an exact angle — covered by the `piv` term (checked by `tol_bounds_error_over_random_chains`).
+    /// 90°-family angles about the origin rotate exactly (tol 0, Niven).
     ///
-    /// **Two error terms, and neither is a guess.** `rot` carries the angle's realization (the
-    /// correctly rounded pair `Angle::cos_sin_f64` gives) and charges what
-    /// `Angle::cos_sin_error_of` *measured* of the very pair used below; `piv` is nothing but
-    /// round-to-nearest steps and a realization, so it is derived and measured the way
-    /// [`translate`](Self::translate) and [`mirror`](Self::mirror) derive and measure theirs.
-    ///
-    /// ★★ **`rot` is per axis, and it has to be.** The two coordinates are not the same expression:
-    /// `i` mixes `u·c − v·s` while `j` mixes `u·s + v·c`, so `u` pairs with `cos`'s error on one
-    /// and with `sin`'s on the other. A single shared term is only sound when the two errors are
-    /// charged the same amount — which a *constant* did, and a measurement does not. Measured on a
-    /// 356.65° turn, `sin` was eight times further out than `cos`, and the axis whose `u` met `sin`
-    /// needed 2.4× what the other did. The old shared charge hid that; the ground-truth test found
-    /// it the moment the constant left.
+    /// **The tol is `Bounded`'s, step by step** — `cos`/`sin` enter as the correctly rounded pair
+    /// `Angle::cos_sin_f64` gives, each with the error `Angle::cos_sin_error_of` *measured* of it,
+    /// and the pivot as `Bounded::of_rat`. Each axis is its own expression (`i` mixes `u·c − v·s`,
+    /// `j` mixes `u·s + v·c`), so `u` meets `cos`'s error on one and `sin`'s on the other; the
+    /// intervals keep that apart without being told (on a 356.65° turn `sin` is eight times
+    /// further out than `cos`).
     pub fn rotate_about(self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let mut p = self.rotated(axis, angle, point);
         p.remember(MoveNode::Rotate {
@@ -113,92 +163,25 @@ impl WitnessPoint {
     /// [`Self::apply_chain`] folds.
     fn rotated(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
-        let (px, py) = (point[i].to_f64(), point[j].to_f64());
-        // pre-rotation magnitudes for tol
-        let (ci, cj) = (self.coord_iv[i].value, self.coord_iv[j].value);
-        let (u, v) = (ci - px, cj - py);
-        // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
-        //
         // **Through `Angle`'s single entry point, not re-spelled here.** At the 90°-family it
-        // returns exactly `0.0`/`±1.0`, the exactness the tol-0 gate below reads; a second spelling
-        // of "how an angle becomes f64" could land `cos(90°) ≈ 6e-17` there instead.
+        // returns exactly `0.0`/`±1.0`, and the measured error is exactly `0` — the exactness
+        // `prod` reads; a second spelling of "how an angle becomes f64" could land
+        // `cos(90°) ≈ 6e-17` there instead.
+        //
+        // ★★★ **The error is measured of `c` and `s` — the values that reach `coord_approx` — not
+        // of the angle**, so it bounds the number this kernel stores, whatever route produced it.
+        // Measured here rather than taken as a constant: a platform whose trig lands further out
+        // reports a bigger number.
         let (c, s) = angle.cos_sin_f64();
-        self.coord_iv[i].value = px + u * c - v * s;
-        self.coord_iv[j].value = py + u * s + v * c;
-        // **The rotation's own error — measured for this angle, not charged from a constant.**
-        //
-        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth — measured here,
-        // never a constant taken once on one machine, which a kernel that ships to browsers cannot
-        // assume. A worse platform reports a bigger number and the tolerance grows to match.
-        //
-        // ★ **Per axis, because the two coordinates mix the pair differently** — `u` meets `c` on
-        // one and `s` on the other. See this function's doc for what that cost when it was shared.
-        //
-        // **The arithmetic of the products and their combination lives here too, and only here.**
-        // For an origin pivot `piv` below is skipped entirely, so nothing else would cover
-        // `fl(u·c)`, `fl(v·s)` and their combination. Each is `≤ ε/2` of a magnitude bounded by
-        // `|u| + |v|`, so `1·ε` of that sum covers all three.
-        //
-        // ★ **Both are gated on the realization being inexact, and that gate is the invariant.**
-        // When `cos`/`sin` are `0`/`±1` the products and their combination are *exact*, not merely
-        // small — so a quadrantal origin rotation contributes nothing at all, which is what keeps
-        // it at tol 0 (`quadrantal_origin_chain_is_tol_zero`) and keeps axis-aligned models on the
-        // exact predicate path. An unconditional arithmetic term would break that quietly.
-        //
-        // ★★★ **It measures `c` and `s` — the values three lines above — not the angle.** They are
-        // handed in rather than re-derived so that the error is the one of the pair that reached
-        // `coord_approx`, whatever route produced it. An error taken against a pair that never
-        // reached `coord_approx` would bound a number this kernel never stored.
         let (dc, ds) = angle.cos_sin_error_of(c, s);
-        let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
-            (0.0, 0.0)
-        } else {
-            let arith = f64::EPSILON * (u.abs() + v.abs());
-            (
-                u.abs() * dc + v.abs() * ds + arith,
-                u.abs() * ds + v.abs() * dc + arith,
-            )
-        };
-        // **The pivot arithmetic, charged the way `translate` and `mirror` charge theirs.**
-        //
-        // Not a measured trig error: the three operations here each have a rounding contract, so
-        // their roundings are counted. Like its two siblings in this `impl`, it **measures** the
-        // rational's realization and **counts** the round-to-nearest steps.
-        //
-        // - The pivot's `Rat → f64` is measured, not counted, for the same reason they measure it:
-        //   `Rat::to_f64` is one rounding for a numerator and denominator under `2⁵³` and takes
-        //   another path above, so counting would mean knowing which. It enters **twice per axis
-        //   with opposite signs** (`px + (ci − px)·c − …`) and partly cancels; `|1 − c| ≤ 2` and
-        //   `|s| ≤ 1` bound the pair plainly, and the outer `2.0` is the margin every sibling
-        //   term carries. **Exactly zero for a dyadic pivot** — the common case, which a lumped
-        //   charge would still bill.
-        // - **The roundings the pivot itself adds are three**: the two differences `ci − px` and
-        //   `cj − py`, and the final sum `px + …`. (The products and their combination belong to
-        //   `rot` above — they happen whether or not there is a pivot.) Each is `≤ ε/2` of a
-        //   magnitude bounded by `|ci| + |cj| + |px| + |py|`, so `1.5·ε` of that sum covers them;
-        //   `3.0` is that with the same doubling.
-        //
-        // Origin pivot stays exactly 0: `ci − 0.0` and `0.0 + x` are exact, so there is nothing
-        // to charge — and the whole term is skipped rather than measured. This term *is* symmetric
-        // in the two axes, unlike `rot`: it is built from magnitudes, not from which of `cos`/`sin`
-        // each coordinate met.
-        let piv = if px != 0.0 || py != 0.0 {
-            let realized = |r: Rat, f: f64| {
-                bigfloat_upper_f64(&rat_to_bigfloat(r, 120).sub(
-                    &BigFloat::from_f64(f, 120),
-                    120,
-                    HP_RM,
-                ))
-                .abs()
-            };
-            2.0 * (2.0 * realized(point[i], px) + realized(point[j], py))
-                + 3.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
-        } else {
-            0.0
-        };
-        let (ti, tj) = (self.coord_iv[i].error, self.coord_iv[j].error);
-        self.coord_iv[i].error = c.abs() * ti + s.abs() * tj + rot_i + piv;
-        self.coord_iv[j].error = s.abs() * ti + c.abs() * tj + rot_j + piv;
+        let (c, s) = (Bounded::new(c, dc), Bounded::new(s, ds));
+        let (pi, pj) = (Bounded::of_rat(point[i]), Bounded::of_rat(point[j]));
+        // About the pivot and back: `(p + u·c) − v·s`, `(q + u·s) + v·c`. About the origin the
+        // pivot is an exact zero and `sum`/`diff` pass the radius through — but the value still
+        // takes `0.0 + …`, which is the value this point has always had.
+        let (u, v) = (diff(self.coord_iv[i], pi), diff(self.coord_iv[j], pj));
+        self.coord_iv[i] = diff(sum(pi, prod(u, c)), prod(v, s));
+        self.coord_iv[j] = sum(sum(pj, prod(u, s)), prod(v, c));
         self
     }
 
@@ -250,9 +233,8 @@ impl WitnessPoint {
 
     /// The point reflected in `axis = offset` — one more link in the definition.
     ///
-    /// **`coord_approx` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the
-    /// roundings it takes (with the margin every term carries), so `coord_iv` holds the
-    /// definition's value. The exact offset lives in the chain, where
+    /// **`coord_approx` is this step's `f64`** (`2c − x`) and `tol` is `Bounded`'s for it, so
+    /// `coord_iv` holds the definition's value. The exact offset lives in the chain, where
     /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
     pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
         let mut p = self.mirrored(axis, offset);
@@ -263,33 +245,17 @@ impl WitnessPoint {
     /// [`Self::mirror`]'s numbers, without remembering the node.
     fn mirrored(mut self, axis: Axis, offset: Rat) -> Self {
         let k = axis.index();
-        let c = offset.to_f64();
-        // `2·c` is exact (a power-of-two multiply), so the new error is the offset's own
-        // realization plus the subtraction's half-ulp. Negation itself is exact, so the incoming
-        // tol passes through unscaled.
-        //
-        // **The offset enters doubled** (`2·c`), so its realization error does too — the factor
-        // here is `4 = 2 (the doubling) × 2 (the same safety margin every other term carries)`.
-        // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
-        // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
-        self.coord_iv[k].error += 4.0
-            * bigfloat_upper_f64(&rat_to_bigfloat(offset, 120).sub(
-                &BigFloat::from_f64(c, 120),
-                120,
-                HP_RM,
-            ))
-            .abs()
-            + f64::EPSILON * (2.0 * c.abs() + self.coord_iv[k].value.abs());
-        // The reflection itself — the expression the error term above charges.
-        self.coord_iv[k].value = 2.0 * c - self.coord_iv[k].value;
+        // `2·c` is a power-of-two multiply — exact, its radius doubled with it. A reflection in a
+        // plane through the origin is `0 − x`, a negation, exact as well.
+        let twice = prod(Bounded::new(2.0, 0.0), Bounded::of_rat(offset));
+        self.coord_iv[k] = diff(twice, self.coord_iv[k]);
         self
     }
 
     /// The point translated by an exact rational `offset` — one more link in the definition.
     ///
-    /// **`coord_approx` adds the offset's `f64` image**, and the two roundings this step takes (the
-    /// offset's own, and the add's) are what `tol` grows by, so `coord_iv` holds the
-    /// definition's value. The exact offset lives in the chain, where
+    /// **`coord_approx` adds the offset's `f64` image** and `tol` is `Bounded`'s for the sum (the
+    /// offset's own rounding included), so `coord_iv` holds the definition's value. The exact offset lives in the chain, where
     /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
     ///
     /// That split is the whole point: two placements that reach the same real wall by different
@@ -303,18 +269,8 @@ impl WitnessPoint {
 
     /// [`Self::translate`]'s numbers, without remembering the node.
     fn translated(mut self, offset: [Rat; 3]) -> Self {
-        for (k, &off) in offset.iter().enumerate() {
-            let t = off.to_f64();
-            // The offset's realization error, plus the add's own half-ulp on the result.
-            self.coord_iv[k].error += 2.0
-                * bigfloat_upper_f64(&rat_to_bigfloat(off, 120).sub(
-                    &BigFloat::from_f64(t, 120),
-                    120,
-                    HP_RM,
-                ))
-                .abs()
-                + f64::EPSILON * (self.coord_iv[k].value.abs() + t.abs());
-            self.coord_iv[k].value += t;
+        for (x, &off) in self.coord_iv.iter_mut().zip(&offset) {
+            *x = sum(*x, Bounded::of_rat(off));
         }
         self
     }
@@ -322,20 +278,21 @@ impl WitnessPoint {
     /// The point read as `(u, v, w)` in the frame of the plane `origin`/`u_raw`/`n` describe, and
     /// written out in that plane's own frame — one more link in the definition.
     ///
-    /// **`coord_approx` is this step's `f64`**, its roundings charged to `tol`, so `coord_iv` holds
+    /// **`coord_approx` is this step's `f64`** and `tol` is `Bounded`'s for it, so `coord_iv` holds
     /// the definition's value. The exact inputs live in the chain, where
     /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes them.
     ///
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual
     /// one, and a caller that cannot build a basis must not get a point that pretends otherwise.
     ///
-    /// ★★★★ **Every charge has a source, and the exact cases really do reach zero.** The three
-    /// sources are the rational inputs' own `Rat → f64` rounding ([`Bounded::of_rat`] — `0` for an
-    /// input that is an `f64`), the `1/√` values' realization error, measured
-    /// ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith, see there), and the
-    /// f64 arithmetic that combines them. An axis-aligned frame has a signed
-    /// permutation for a basis and every one of those terms vanishes: `±1` and `0` are exact, so
-    /// the products are exact and the sums pick out one coordinate each.
+    /// ★★★★ **Every charge has a source, and the exact cases really do reach zero.** The sources
+    /// are the rational inputs' own `Rat → f64` rounding ([`Bounded::of_rat`] — `0` for an input
+    /// that is an `f64`), the `1/√` values' realization error, measured
+    /// ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith, see there), and
+    /// `Bounded`'s charge for the arithmetic that combines them. An axis-aligned frame through the
+    /// origin has a signed permutation for a basis — integer components over an exact `1/√` of a
+    /// power of four, so each component is an exact `0`/`±1` — and its products and single-term
+    /// sums are exact, so the incoming tol passes through untouched.
     pub fn frame(self, f: nacre_exact::PlaneFrame) -> Option<Self> {
         let mut p = self.framed(f)?;
         p.remember(MoveNode::Frame { frame: f });
@@ -345,118 +302,42 @@ impl WitnessPoint {
     /// [`Self::frame`]'s numbers, without remembering the node.
     fn framed(mut self, f: nacre_exact::PlaneFrame) -> Option<Self> {
         // One inverse square root per axis, each of an exact rational — see `plane_frame` for why
-        // `v̂` gets its own instead of being a cross product of the other two.
-        let inv = |v: Rat| -> Option<(f64, f64)> {
-            let x = nacre_exact::inv_sqrt_f64(v)?;
-            Some((x, nacre_exact::inv_sqrt_error_of(v, x)?))
+        // `v̂` gets its own instead of being a cross product of the other two. A basis component
+        // is the rational over that length: `of_rat`'s rounding scaled by it, its measured error
+        // scaled by the rational, and the product's rounding — `prod` sees the exact cases.
+        let axis = |raw: [Rat; 3], squared: Rat| -> Option<[Bounded; 3]> {
+            let x = nacre_exact::inv_sqrt_f64(squared)?;
+            let len = Bounded::new(x, nacre_exact::inv_sqrt_error_of(squared, x)?);
+            Some(raw.map(|r| prod(Bounded::of_rat(r), len)))
         };
-        let ((iu, du), (iw, dw)) = (inv(f.uu)?, inv(f.nn)?);
-        // A basis vector's component, and a bound on how far it lands from the true one: the
-        // rational's own rounding scaled by the length, the length's error scaled by the
-        // rational, and the product's half-ulp. All three vanish for a `0`/`±1` component.
-        let axis_comp = |r: Rat, s: f64, ds: f64| {
-            let Bounded {
-                value: rf,
-                error: re,
-            } = Bounded::of_rat(r);
-            let c = rf * s;
-            let err = re * s.abs() + rf.abs() * ds;
-            (
-                c,
-                if err == 0.0 {
-                    0.0
-                } else {
-                    err + f64::EPSILON * c.abs()
-                },
-            )
-        };
-        let (mut uh, mut vh, mut wh) = ([0.0; 3], [0.0; 3], [0.0; 3]);
-        let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
-        for k in 0..3 {
-            (uh[k], eu[k]) = axis_comp(f.u_raw[k], iu, du);
-            (wh[k], ew[k]) = axis_comp(f.n[k], iw, dw);
-        }
+        let (u, w) = (axis(f.u_raw, f.uu)?, axis(f.n, f.nn)?);
         // ★★ `v̂` exactly where the frame carries `v_raw`, and `ŵ × û` where it does not.
         //
         // The exact route is one rounding per component; the cross product is two that do not
         // cancel — a wall whose `v` is exactly `ẑ` comes out three ulps short through it. Both are
-        // sound; the fallback is what this crate had before `v_raw` existed, and it is taken only
-        // when `|n|²·|u_raw|²` does not fit `i128` (see `nacre_exact::plane_frame`).
-        match f.v {
-            Some((v_raw, vv)) => {
-                let (iv, dv) = inv(vv)?;
-                for k in 0..3 {
-                    (vh[k], ev[k]) = axis_comp(v_raw[k], iv, dv);
-                }
-            }
-            None => {
-                // `|ŵ|, |û| ≤ 1`, so each of the four products carries the other factor's error at
-                // unit scale; `2·(max eu + max ew)` covers all four with room. Gated on the basis
-                // being inexact for the reason `rotate_about` gates its own: with `0`/`±1` factors
-                // the products *and* their differences are exact, not merely small.
-                let mx = |e: [f64; 3]| e.iter().fold(0.0f64, |a, &b| a.max(b));
-                let (eu_max, ew_max) = (mx(eu), mx(ew));
-                let e = if eu_max == 0.0 && ew_max == 0.0 {
-                    0.0
-                } else {
-                    2.0 * (eu_max + ew_max) + 3.0 * f64::EPSILON
-                };
-                for k in 0..3 {
-                    let (i, j) = ((k + 1) % 3, (k + 2) % 3);
-                    vh[k] = wh[i] * uh[j] - wh[j] * uh[i];
-                    ev[k] = e;
-                }
-            }
-        }
-        // The combination itself: three products and three sums per coordinate, each a
-        // round-to-nearest of a magnitude bounded by the terms' sum — except where the basis is a
-        // signed permutation *and* the frame sits on the origin, where every product is exact and
-        // every sum picks out a single coordinate. That case is the axis-aligned sketch, and it
-        // is the one that has to stay at tol 0.
-        let exact_basis = eu.iter().chain(&ev).chain(&ew).all(|&e| e == 0.0);
-        let perm = exact_basis
-            && uh
-                .iter()
-                .chain(&vh)
-                .chain(&wh)
-                .all(|c| *c == 0.0 || c.abs() == 1.0);
-        let p = self.coord_approx();
-        let t = self.tol();
-        for k in 0..3 {
-            let Bounded {
-                value: ok,
-                error: eo,
-            } = Bounded::of_rat(f.origin[k]);
-            let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
-            // The incoming tol turned by the same basis, plus what this step adds.
-            let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
-            let realized = p[0].abs() * eu[k] + p[1].abs() * ev[k] + p[2].abs() * ew[k];
-            let arith = if perm && ok == 0.0 {
-                0.0
-            } else {
-                eo + 3.0
-                    * f64::EPSILON
-                    * (ok.abs()
-                        + (p[0] * uh[k]).abs()
-                        + (p[1] * vh[k]).abs()
-                        + (p[2] * wh[k]).abs())
-            };
-            self.coord_iv[k].value = ok + terms;
-            self.coord_iv[k].error = carried + realized + arith;
-        }
+        // sound; the fallback is taken only when `|n|²·|u_raw|²` does not fit `i128` (see
+        // `nacre_exact::plane_frame`), which no axis-aligned frame reaches.
+        let v = match f.v {
+            Some((v_raw, vv)) => axis(v_raw, vv)?,
+            None => core::array::from_fn(|k| {
+                let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+                diff(prod(w[i], u[j]), prod(w[j], u[i]))
+            }),
+        };
+        self.coord_iv = in_frame(self.coord_iv, [u, v, w], f.origin.map(Bounded::of_rat));
         Some(self)
     }
 
-    /// [`WitnessPoint::frame`] for a [`WideFrame`] — the same propagation, with the axis and origin
-    /// `(value, error)` pairs taken from a fixed-precision arbitrary-precision realization
-    /// instead of `inv_sqrt_f64`/`axis_comp`. No new f64 error derivation exists here: every
-    /// rounding on the way is inside an `HpBounded`, and the final narrowing to f64 charges itself.
+    /// [`WitnessPoint::frame`] for a [`WideFrame`] — the same combination (`in_frame`), with the
+    /// axis and origin intervals taken from a fixed-precision arbitrary-precision realization
+    /// instead of `inv_sqrt_f64` over a rational. Every rounding on the way to them is inside an
+    /// `HpBounded`, and the narrowing to `f64` charges itself.
     ///
     /// ★ The axes are realized per applied point. The wide population is a fraction of a percent
     /// of pushes, so that cost is accepted rather than memoized — a measure-later item.
     ///
-    /// ★ No exact-permutation shortcut: a wide frame is never an axis permutation (its squared
-    /// lengths exceed `i128`), so the tol-0 branch `WitnessPoint::frame` has cannot apply.
+    /// ★ A wide frame is never an axis permutation (its squared lengths exceed `i128`), so its
+    /// components are never the exact `0`/`±1` that keep an axis-aligned `frame` at tol 0.
     pub fn frame_wide(self, f: &WideFrame) -> Option<Self> {
         let mut p = self.framed_wide(f)?;
         p.remember(MoveNode::FrameWide(f.clone()));
@@ -469,46 +350,30 @@ impl WitnessPoint {
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
         const P: usize = 128;
         let inv = |v: &num_bigint::BigInt| nacre_exact::inv_sqrt_hp_big(v, P);
-        let (iu, iv2, iw) = (inv(&f.uu)?, inv(&f.vv)?, inv(&f.nn)?);
-        let comp = |raw: &num_bigint::BigInt, s: &HpBounded| {
-            narrow_hp(&HpBounded::of_bigint(raw, P).mul(s, P))
+        let axis = |raw: &[num_bigint::BigInt; 3], squared: &num_bigint::BigInt| {
+            let len = inv(squared)?;
+            Some(
+                raw.each_ref()
+                    .map(|r| narrow_hp(&HpBounded::of_bigint(r, P).mul(&len, P))),
+            )
         };
-        let (mut uh, mut vh, mut wh) = ([0.0; 3], [0.0; 3], [0.0; 3]);
-        let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
-        let (mut oh, mut eo) = ([0.0; 3], [0.0; 3]);
+        let (u, v, w) = (
+            axis(&f.u_raw, &f.uu)?,
+            axis(&f.v_raw, &f.vv)?,
+            axis(&f.n, &f.nn)?,
+        );
         let od = HpBounded::of_bigint(&f.origin_den, P);
-        for k in 0..3 {
-            (uh[k], eu[k]) = comp(&f.u_raw[k], &iu);
-            (vh[k], ev[k]) = comp(&f.v_raw[k], &iv2);
-            (wh[k], ew[k]) = comp(&f.n[k], &iw);
-            (oh[k], eo[k]) =
-                narrow_hp(&HpBounded::of_bigint(&f.origin_num[k], P).div_exact(&od, P)?);
+        let mut o = [Bounded::new(0.0, 0.0); 3];
+        for (o, num) in o.iter_mut().zip(&f.origin_num) {
+            *o = narrow_hp(&HpBounded::of_bigint(num, P).div_exact(&od, P)?);
         }
-        // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
-        // of the rational origin's rounding.
-        let p = self.coord_approx();
-        let t = self.tol();
-        for k in 0..3 {
-            let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
-            let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
-            let realized = p[0].abs() * eu[k] + p[1].abs() * ev[k] + p[2].abs() * ew[k];
-            let arith = eo[k]
-                + 3.0
-                    * f64::EPSILON
-                    * (oh[k].abs()
-                        + (p[0] * uh[k]).abs()
-                        + (p[1] * vh[k]).abs()
-                        + (p[2] * wh[k]).abs());
-            self.coord_iv[k].value = oh[k] + terms;
-            self.coord_iv[k].error = carried + realized + arith;
-        }
+        self.coord_iv = in_frame(self.coord_iv, [u, v, w], o);
         Some(self)
     }
 
     /// [`WitnessPoint::frame`] for a [`FrameThrough`] — the judged basis realized
-    /// at the fixed rung, narrowed to `(value, error)` pairs, then **the same propagation as
-    /// [`WitnessPoint::frame_wide`]**: the incoming tol is turned by the basis, the basis's own
-    /// realization error is scaled by the coordinates, and the combination charges its rounding.
+    /// at the fixed rung, narrowed to `f64` intervals, then **the same combination as
+    /// [`WitnessPoint::frame_wide`]** (`in_frame`).
     ///
     /// `None` is unreachable for a node built by [`FrameThrough::of`] — it proved this exact
     /// derivation at this exact rung — and stays an `Option` so that "unreachable" is a fact
@@ -527,23 +392,7 @@ impl WitnessPoint {
     fn framed_through(mut self, f: &FrameThrough) -> Option<Self> {
         let basis = judged_basis(f, FrameThrough::RUNG)?;
         let [o, u, v, w] = basis.map(|row| row.map(|c| narrow_hp(&c)));
-        let p = self.coord_approx();
-        let t = self.tol();
-        for k in 0..3 {
-            let (uh, eu) = u[k];
-            let (vh, ev) = v[k];
-            let (wh, ew) = w[k];
-            let (oh, eo) = o[k];
-            let terms = p[0] * uh + p[1] * vh + p[2] * wh;
-            let carried = uh.abs() * t[0] + vh.abs() * t[1] + wh.abs() * t[2];
-            let realized = p[0].abs() * eu + p[1].abs() * ev + p[2].abs() * ew;
-            let arith = eo
-                + 3.0
-                    * f64::EPSILON
-                    * (oh.abs() + (p[0] * uh).abs() + (p[1] * vh).abs() + (p[2] * wh).abs());
-            self.coord_iv[k].value = oh + terms;
-            self.coord_iv[k].error = carried + realized + arith;
-        }
+        self.coord_iv = in_frame(self.coord_iv, [u, v, w], o);
         Some(self)
     }
 
@@ -575,9 +424,9 @@ impl WitnessPoint {
 
     /// [`Self::coord_hp`] without the memo, **with the error it carries**.
     ///
-    /// This is the same walk as [`rotate_about`](Self::rotate_about)'s tol propagation, one level
-    /// up: the definition is exact, the realization is not, and the radius is what the realization
-    /// cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
+    /// This is the walk the `f64` steps take, one level up — `HpBounded` where they carry
+    /// `Bounded`, one machine at two precisions: the definition is exact, the realization is not,
+    /// and the radius is what the realization cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
     /// the rational lands on a `prec`-bit dyadic), each `cos`/`sin` contributes the bound
     /// [`Angle::cos_sin_hp`] derives, and every arithmetic operation adds its half-ulp.
     pub(super) fn coord_hp_uncached(&self, prec: usize) -> [HpBounded; 3] {

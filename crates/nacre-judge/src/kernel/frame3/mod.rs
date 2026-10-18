@@ -21,11 +21,8 @@
 //! `tol_bounds_error_over_random_chains` (every motion node's tol, frames included): the bound never
 //! under-estimates the true error.
 
-use super::HP_RM;
 use astro_float::BigFloat;
-use nacre_exact::{
-    Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, bigfloat_upper_f64, rat_to_bigfloat,
-};
+use nacre_exact::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, bigfloat_upper_f64};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -134,15 +131,15 @@ pub enum MoveNode {
     FrameThrough(Box<FrameThrough>),
 }
 
-/// A high-precision interval narrowed to an `(f64 value, f64 error)` pair — how a wide frame's
+/// A high-precision interval narrowed to an `f64` interval — how a wide or judged frame's
 /// realization reaches the f64 cache. Correctly rounded when the interval decides it (then the
 /// error is the radius plus the value's own half-ulp); an undecided or out-of-normal-range value
 /// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
 /// components below f64's normal floor.
-fn narrow_hp(x: &HpBounded) -> (f64, f64) {
+fn narrow_hp(x: &HpBounded) -> Bounded {
     match nacre_exact::round_to_f64(&x.value, x.error, 128) {
-        Some(v) => (v, x.error.upper_f64() + v.abs() * f64::EPSILON),
-        None => (0.0, x.error.upper_f64() + bigfloat_upper_f64(&x.value)),
+        Some(v) => Bounded::new(v, x.error.upper_f64() + v.abs() * f64::EPSILON),
+        None => Bounded::new(0.0, x.error.upper_f64() + bigfloat_upper_f64(&x.value)),
     }
 }
 

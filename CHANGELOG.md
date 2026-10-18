@@ -24,6 +24,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- `judge::WitnessPoint`'s motion steps — rotation, reflection, translation and the three frame nodes — carry their coordinates through `exact::Bounded`'s arithmetic, so each tol is a bound proved operation by operation; an operation that cannot round (adding an exact zero, multiplying by an exact `0` or power of two) passes the tol through, so an axis-aligned model stays at tol `0`. The tol values change: before, each step added terms derived by hand, each with a uniform factor of two, and summed them without rounding up.
 - `judge::WitnessPoint::at` seeds each coordinate's tol from `Rat::to_f64`'s nearest-rounding contract (`exact::Bounded::of_rat`) instead of measuring the rounding at 120 bits, which read a rational nearer its `f64` than that precision as exact and stated tol `0`.
 - `exact::Bounded`'s `add`, `sub` and `mul` round their radius up by `1 + 4ε` per operation, so each result's radius is a proved bound — before, the radius's own `f64` arithmetic could come out below it where the radius outweighed the value.
 - `Operation::DatumPlane` through three vertices asks every vertex what it is before solving any, so a vertex whose carriers lie in two frames no longer hides the refusal of a vertex after it in handle order: one whose carrier is itself a nameless datum is refused as `OpError::VerticesInMixedFrames`, and a seam or pierce vertex as `OpError::VertexNotThreePlane` — before, both read `OpError::PlaneWithoutExactForm` there.

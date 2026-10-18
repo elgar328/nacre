@@ -949,11 +949,11 @@ fn tol_bounds_error_over_random_chains() {
         ("has a mirror          ", 0.0, 0, String::new()),
         ("no translate          ", 0.0, 0, String::new()),
         ("has a translate       ", 0.0, 0, String::new()),
-        // ★ **Pivot rotations and nothing else.** Built to isolate the `piv` term, it reports
-        // something else: what dominates there is the *base seed* — `WitnessPoint::at` charges
-        // the half-ulp `Rat::to_f64` may lose, which a coordinate can nearly spend, so the row
-        // moves with the seed and not with `piv`. **A row that does not move with its term is
-        // reporting a different one.**
+        // ★ **Pivot rotations and nothing else.** Built to isolate the pivot's arithmetic, it
+        // reports something else: what dominates there is the *base seed* — `WitnessPoint::at`
+        // charges the half-ulp `Rat::to_f64` may lose, which a coordinate can nearly spend, so the
+        // row moves with the seed and not with the pivot. **A row that does not move with its
+        // term is reporting a different one.**
         ("pivot rotations only  ", 0.0, 0, String::new()),
         ("has a frame node      ", 0.0, 0, String::new()),
         ("ends in a wide frame  ", 0.0, 0, String::new()),

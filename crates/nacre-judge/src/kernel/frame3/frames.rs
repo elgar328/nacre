@@ -295,7 +295,7 @@ impl FrameThrough {
                 let (d, dvec) = judged_homog(&self.points[0], p);
                 let mut out = [0.0; 3];
                 for (o, num) in out.iter_mut().zip(&dvec) {
-                    (*o, _) = narrow_hp(&num.div(&d, p)?);
+                    *o = narrow_hp(&num.div(&d, p)?).value;
                 }
                 Some(out)
             }
