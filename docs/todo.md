@@ -315,8 +315,8 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 «정확한 0 과의 덧셈·뺄셈, 정확한 0·2의 거듭제곱과의 곱셈은 반올림하지 않는다 — 반지름을 그대로 넘긴다»는 규칙이
 `nacre-judge` 의 `witness.rs` 에 비공개 함수 셋(`sum`·`diff`·`prod`)으로 산다. 나머지는 `Bounded::add`·`sub`·`mul` 에
 넘기므로 증명은 한 곳이지만, 연산에 관한 사실이 `Bounded`(`nacre-exact`) 밖에 있다. 도착점은 `Bounded` 의 세 연산이
-그 경우를 먼저 묻는 것 — 그러면 래퍼 셋이 사라지고 판정 필터(`det3_iv`·`indirect` 의 Cramer·`coord`·ops `winding`)도
-같은 사실을 얻는다. 막는 것은 비용이다: 필터는 판정마다 도는 뜨거운 길이고 연산마다 비교·분기가 붙는다(반지름에
+그 경우를 먼저 묻는 것 — 그러면 래퍼 셋이 사라지고 구간 필터(judge 의 `det3_iv`·`indirect` 의 Cramer·`coord`, `nacre-exact`
+의 `name_along_points`)도 같은 사실을 얻는다. 막는 것은 비용이다: 필터는 판정마다 도는 뜨거운 길이고 연산마다 비교·분기가 붙는다(반지름에
 `ERROR_UP` 곱 하나가 명령어 +3.1% 였다). 이득은 구조뿐일 수 있다 — 증인점 tol 의 폭은 census·perf 의 판정을 하나도
 바꾸지 않았다. 지어서 잰다: 명령어 수(perf·census, 순차 빌드)·상승 수·census `c` 행. 증가가 잡음(약 0.15%) 근처면
 옮기고, 아니면 세 함수 옆에 그 수를 이유로 적고 둔다. 옮기면 공개 타입의 반지름이 좁아지는 변경이라 CHANGELOG 에

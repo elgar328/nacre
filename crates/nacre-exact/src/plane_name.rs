@@ -279,8 +279,7 @@ pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bo
     // An interval filter, then the `Rat` route, then integers that cannot overflow — the judge's
     // shape and `plane_residual_sign`'s. The two normals are parallel, so the dot is a full
     // magnitude from zero and the filter answers unless the points are nearly collinear; every
-    // radius is a sound bound (`to_f64` rounds to nearest — half an ulp, and the smallest normal
-    // below that), so a filter answer is the exact answer.
+    // radius is a sound bound (`Bounded::of_rat`), so a filter answer is the exact answer.
     if let (
         PlaneName::Narrow(c),
         [
@@ -290,10 +289,7 @@ pub fn name_along_points(name: &PlaneName, points: [&MeetPoint; 3]) -> Option<bo
         ],
     ) = (name, points)
     {
-        let iv = |r: Rat| {
-            let x = r.to_f64();
-            crate::Bounded::new(x, crate::Bounded::round_off(x))
-        };
+        let iv = crate::Bounded::of_rat;
         let e = |q: &[Rat; 3]| [0, 1, 2].map(|i| iv(q[i]).sub(iv(a[i])));
         let (u, v) = (e(b), e(p));
         let t = |i: usize, j: usize| u[i].mul(v[j]).sub(u[j].mul(v[i]));
