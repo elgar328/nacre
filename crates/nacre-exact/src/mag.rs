@@ -123,10 +123,10 @@ impl Mag {
     }
 
     /// An upper bound on `|x|` from its exponent (`|x| < 2^exponent`) — [`Mag::ZERO`] for an
-    /// exact zero, which has no magnitude to bound. **The one spelling of this reading**: the
-    /// interval arithmetic, the trig and the inverse-square-root realizations all charge their
-    /// rounding as a multiple of it. (A spelling without the zero guard charges an exact zero a
-    /// rounding it never paid.)
+    /// exact zero, which has no magnitude to bound. **The one `Mag` spelling of this reading**
+    /// ([`bigfloat_upper_f64`] is its `f64` twin): the interval arithmetic, the trig and the
+    /// inverse-square-root realizations all charge their rounding as a multiple of it. (A spelling
+    /// without the zero guard charges an exact zero a rounding it never paid.)
     pub fn above(x: &BigFloat) -> Mag {
         match x.exponent() {
             Some(e) if !x.is_zero() => Mag::pow2(i64::from(e)),
