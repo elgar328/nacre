@@ -66,7 +66,7 @@ pub(in crate::kernel::frame3) fn rand_base(st: &mut u64) -> [Rat; 3] {
 /// f64 tol has to bound. (The realization's own radius is a separate, far smaller quantity;
 /// `GT` is deep enough that it does not enter these comparisons.)
 fn abs_err(f: f64, truth: &HpBounded, gt: usize) -> f64 {
-    bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs())
+    bigfloat_upper_f64(&BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs())
 }
 
 /// Borrow an owned plane-triple as the `&WitnessPoint` tuples the judge takes.
@@ -127,11 +127,11 @@ pub(in crate::kernel::frame3) fn rand_triple(st: &mut u64) -> [[WitnessPoint; 3]
 }
 
 /// Relative error of `got` against `want`, as an `f64` magnitude — computed **in astro-float**
-/// so the comparison is not limited by `bf_mag`'s power-of-two rounding. Used by the
+/// so the comparison is not limited by `bigfloat_upper_f64`'s power-of-two rounding. Used by the
 /// normalization tests, where a factor-of-two slop would hide a real units error.
 pub(in crate::kernel::frame3) fn rel_err(got: &BigFloat, want: &BigFloat, prec: usize) -> f64 {
     let d = got.sub(want, prec, HP_RM);
-    bf_mag(&d.abs()) / bf_mag(&want.abs())
+    bigfloat_upper_f64(&d.abs()) / bigfloat_upper_f64(&want.abs())
 }
 
 mod judges;

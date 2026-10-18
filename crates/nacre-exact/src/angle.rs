@@ -269,11 +269,7 @@ impl Angle {
         let (hc, hs) = (hc.value, hs.value);
         let gap = |f: f64, h: &BigFloat, rad: Mag| {
             let diff = BigFloat::from_f64(f, P).sub(h, P, HP_RM);
-            let mag = if diff.is_zero() {
-                0.0
-            } else {
-                2f64.powi(diff.exponent().unwrap_or(0))
-            };
+            let mag = crate::bigfloat_upper_f64(&diff);
             // ★ **The sum is rounded *up*, and that is not pedantry.** `mag` is an octave bound, so
             // it usually sits well above the truth — but when `|diff|` is itself a power of two the
             // slack is exactly zero, and then `mag + rad` rounds back down to `mag` in f64 and the

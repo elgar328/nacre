@@ -3,11 +3,7 @@ use crate::Angle;
 
 /// |x − y| at the two values' own precision, as f64 — a test-side residual reader.
 fn resid(x: &BigFloat, y: &BigFloat, prec: usize) -> f64 {
-    let d = x.sub(y, prec, HP_RM).abs();
-    if d.is_zero() {
-        return 0.0;
-    }
-    d.exponent().map_or(f64::INFINITY, |e| 2f64.powi(e))
+    crate::bigfloat_upper_f64(&x.sub(y, prec, HP_RM))
 }
 
 /// ★ The differential the two new interval operations are locked by: on **exact** inputs they

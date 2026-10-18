@@ -399,11 +399,7 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
         error: rad,
     } = inv_sqrt_hp(v, P)?;
     let diff = BigFloat::from_f64(f, P).sub(&h, P, HP_RM);
-    let mag = if diff.is_zero() {
-        0.0
-    } else {
-        2f64.powi(diff.exponent().unwrap_or(0))
-    };
+    let mag = crate::bigfloat_upper_f64(&diff);
     // Rounded up, for the reason `Angle::cos_sin_error_of_uncached` spells out: when `|diff|` is
     // itself a power of two the octave bound has no slack, and `mag + rad` would round back down
     // to `mag` in f64 — short by the radius.

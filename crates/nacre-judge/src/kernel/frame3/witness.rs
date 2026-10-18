@@ -35,27 +35,16 @@ impl PartialEq for WitnessPoint {
 }
 impl Eq for WitnessPoint {}
 
-/// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero) — the `f64` reading of
-/// the bound [`Mag::above`] carries, for the tol arithmetic in this file, which is `f64`. Kept as
-/// its own reader rather than `2^(Mag::exp2)`: that reads one octave high for a power of two.
-pub(super) fn bf_mag(bf: &BigFloat) -> f64 {
-    if bf.is_zero() {
-        0.0
-    } else {
-        2f64.powi(bf.exponent().unwrap_or(0))
-    }
-}
-
 /// **How far a rational's f64 image sits from the rational** — measured at high precision, `0`
 /// when the value is exactly representable.
 ///
 /// One spelling, because three call sites want the identical quantity ([`WitnessPoint::at`]'s seed,
 /// [`WitnessPoint::translate`]'s offset, [`WitnessPoint::frame`]'s inputs) and "how a rational's rounding is
-/// charged" is exactly the kind of thing that drifts when it is written out twice. `bf_mag` reads
+/// charged" is exactly the kind of thing that drifts when it is written out twice. `bigfloat_upper_f64` reads
 /// at octave granularity, so the `2×` keeps the result above the truth.
 fn rat_round_tol(r: Rat, f: f64) -> f64 {
     let e = BigFloat::from_f64(f, 120).sub(&rat_to_bigfloat(r, 120), 120, HP_RM);
-    2.0 * bf_mag(&e.abs())
+    2.0 * bigfloat_upper_f64(&e.abs())
 }
 
 impl WitnessPoint {
@@ -239,7 +228,12 @@ impl WitnessPoint {
         // each coordinate met.
         let piv = if px != 0.0 || py != 0.0 {
             let realized = |r: Rat, f: f64| {
-                bf_mag(&rat_to_bigfloat(r, 120).sub(&BigFloat::from_f64(f, 120), 120, HP_RM)).abs()
+                bigfloat_upper_f64(&rat_to_bigfloat(r, 120).sub(
+                    &BigFloat::from_f64(f, 120),
+                    120,
+                    HP_RM,
+                ))
+                .abs()
             };
             2.0 * (2.0 * realized(point[i], px) + realized(point[j], py))
                 + 3.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
@@ -322,8 +316,12 @@ impl WitnessPoint {
         // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
         // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
         self.coord_iv[k].error += 4.0
-            * bf_mag(&rat_to_bigfloat(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM))
-                .abs()
+            * bigfloat_upper_f64(&rat_to_bigfloat(offset, 120).sub(
+                &BigFloat::from_f64(c, 120),
+                120,
+                HP_RM,
+            ))
+            .abs()
             + f64::EPSILON * (2.0 * c.abs() + self.coord_iv[k].value.abs());
         // The reflection itself — the expression the error term above charges.
         self.coord_iv[k].value = 2.0 * c - self.coord_iv[k].value;
@@ -352,8 +350,12 @@ impl WitnessPoint {
             let t = off.to_f64();
             // The offset's realization error, plus the add's own half-ulp on the result.
             self.coord_iv[k].error += 2.0
-                * bf_mag(&rat_to_bigfloat(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM))
-                    .abs()
+                * bigfloat_upper_f64(&rat_to_bigfloat(off, 120).sub(
+                    &BigFloat::from_f64(t, 120),
+                    120,
+                    HP_RM,
+                ))
+                .abs()
                 + f64::EPSILON * (self.coord_iv[k].value.abs() + t.abs());
             self.coord_iv[k].value += t;
         }

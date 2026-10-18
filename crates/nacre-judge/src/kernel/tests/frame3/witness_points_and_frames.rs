@@ -1215,7 +1215,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
                     GT,
                 );
             }
-            let mag = bf_mag(&e.value.abs());
+            let mag = bigfloat_upper_f64(&e.value.abs());
             let error = e.error.upper_f64();
             assert!(
                 mag <= error || mag < 1e-100,
@@ -1311,7 +1311,7 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
                     GT,
                 );
             }
-            let mag = bf_mag(&e.value.abs());
+            let mag = bigfloat_upper_f64(&e.value.abs());
             let error = e.error.upper_f64();
             assert!(
                 mag <= error || mag < 1e-100,
@@ -1407,7 +1407,7 @@ fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
         for k in 0..3 {
             e = e.add(&hp[k].mul(&HpBounded::of_bigint(&c[k], GT), GT), GT);
         }
-        let mag = bf_mag(&e.value.abs());
+        let mag = bigfloat_upper_f64(&e.value.abs());
         let error = e.error.upper_f64();
         assert!(
             mag <= error,
@@ -1552,7 +1552,7 @@ fn quadrantal_origin_chain_is_tol_zero() {
 /// `at_nearest` states tol `0` for a base every coordinate of which is an `f64`, without
 /// measuring; this pins that the measurement would have said the same. It rests on three
 /// links, and the third is the one worth a test: `try_from_f64` represents an f64 exactly,
-/// realizing that base back yields the same f64, and `bf_mag` of an exact zero is `0.0` (not
+/// realizing that base back yields the same f64, and `bigfloat_upper_f64` of an exact zero is `0.0` (not
 /// a floor). If any link broke, `at` would report a nonzero tol here and the stated zero
 /// would be silently changing geometry rather than skipping arithmetic.
 #[test]

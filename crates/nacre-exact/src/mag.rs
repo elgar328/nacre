@@ -63,6 +63,40 @@ fn pow2_f64(k: i64) -> f64 {
     f64::from_bits(((1023 + k) as u64) << 52)
 }
 
+/// **`2^e` as an `f64` no smaller than it** — exact over the normal range, built from the exponent
+/// field as [`pow2_f64`] is; below that range the smallest normal (`f64::MIN_POSITIVE`), above it
+/// infinite (an infinite radius declines, never lies). The floor is there because a subnormal's
+/// rounding error is a fixed half step, not a fraction of the value, so the relative arithmetic a
+/// reader does with the result (`(… + upper) · (1 + 2ε)`) would not hold there;
+/// [`crate::Bounded::round_off`] floors the same way.
+///
+/// ⚠ Not `2f64.powi(e)`: with a runtime `e` that is `1 / 2^|e|`, whose denominator is infinite
+/// below `2^-1023` — a zero, which says the bound is exact.
+fn pow2_upper_f64(e: i64) -> f64 {
+    match e {
+        e if e < -1022 => f64::MIN_POSITIVE,
+        e if e > 1023 => f64::INFINITY,
+        e => f64::from_bits(((e + 1023) as u64) << 52),
+    }
+}
+
+/// **An `f64` no smaller than `|x|`**, read from its exponent (`|x| < 2^exponent`) as
+/// [`Mag::upper_f64`] reads a bound: `0.0` for an exact zero, the smallest normal below the normal
+/// range, infinite for a value with no exponent (infinite or NaN — it has no bound). The `f64`
+/// reading of the bound [`Mag::above`] carries, for the `f64` error arithmetic of the trig and
+/// inverse-square-root realizations and of the judge's witness tol.
+///
+/// Not `Mag::above(x).upper_f64()`: that reads one octave high for a power of two. And
+/// [`Mag::above`] gives a value with no exponent the bound zero, where this gives infinity — a
+/// `Mag` has no infinity to give.
+pub fn bigfloat_upper_f64(x: &BigFloat) -> f64 {
+    if x.is_zero() {
+        return 0.0;
+    }
+    x.exponent()
+        .map_or(f64::INFINITY, |e| pow2_upper_f64(i64::from(e)))
+}
+
 impl Mag {
     /// The bound `0` — used only where a quantity is *exactly* representable (a rational read at
     /// enough bits), never as a default.
@@ -259,24 +293,11 @@ impl Mag {
         (self.m != 0.0).then_some(self.e)
     }
 
-    /// **An `f64` no smaller than this bound** — `2^e`, since the mantissa is below one, built from
-    /// the exponent field as `pow2_f64` is. Below the normal range it is the smallest normal
-    /// (`f64::MIN_POSITIVE`), the floor a bound keeps wherever it is read out into an `f64`
-    /// ([`crate::Bounded::round_off`] floors the same way): a subnormal's rounding error is a fixed
-    /// half step, not a fraction of the value, so the relative arithmetic its readers do
-    /// (`(… + upper) · (1 + 2ε)`) would not hold there. Above the range it
-    /// is honestly infinite (an infinite radius declines, never lies). `0.0` only for the bound
-    /// zero.
-    ///
-    /// ⚠ Not `2f64.powi(e)`: with a runtime `e` that is `1 / 2^|e|`, whose denominator is infinite
-    /// below `2^-1023` — a zero, which says the radius is exact.
+    /// **An `f64` no smaller than this bound** — `2^e`, since the mantissa is below one: exact over
+    /// the normal range, the smallest normal (`f64::MIN_POSITIVE`) below it, infinite above it.
+    /// `0.0` only for the bound zero. `pow2_upper_f64` is the reading, and says why it floors.
     pub fn upper_f64(self) -> f64 {
-        match self.exp2() {
-            None => 0.0,
-            Some(e) if e < -1022 => f64::MIN_POSITIVE,
-            Some(e) if e > 1023 => f64::INFINITY,
-            Some(e) => f64::from_bits(((e + 1023) as u64) << 52),
-        }
+        self.exp2().map_or(0.0, pow2_upper_f64)
     }
 }
 
@@ -338,9 +359,9 @@ mod tests {
     }
 
     /// `upper_f64` answers `2^e` itself over the normal range and floors at the smallest normal
-    /// below it — the floor an `f64` bound keeps in this kernel. `black_box` keeps `e` a runtime
-    /// value: folded as a constant, `2f64.powi` was right and its runtime zero did not show. The
-    /// oracle doubles or halves `1.0`, exact for every power of two an `f64` holds.
+    /// below it. `black_box` keeps `e` a runtime value: folded as a constant, `2f64.powi` was right
+    /// and its runtime zero did not show. The oracle doubles or halves `1.0`, exact for every power
+    /// of two an `f64` holds.
     #[test]
     fn an_upper_bound_below_the_normal_range_floors_at_the_smallest_normal() {
         for e in [1023i64, 0, -1021, -1022] {
@@ -353,6 +374,31 @@ mod tests {
             let bound = std::hint::black_box(Mag::pow2(e - 1));
             assert_eq!(bound.upper_f64(), f64::MIN_POSITIVE, "2^{e}");
         }
+    }
+
+    /// A `BigFloat`'s size reads the same way: its octave's top `2^exponent` (so a power of two
+    /// reads one octave high), the smallest normal below the normal range — where the spelling
+    /// this replaced, `2f64.powi(exponent)`, read a nonzero value as `0.0` — and infinity for a
+    /// value with no exponent.
+    #[test]
+    fn a_bigfloats_size_floors_at_the_smallest_normal_and_never_reads_zero() {
+        let p = 64;
+        let big = |x: f64| BigFloat::from_f64(x, p);
+        assert_eq!(bigfloat_upper_f64(&big(0.0)), 0.0);
+        assert_eq!(bigfloat_upper_f64(&big(0.75)), 1.0);
+        assert_eq!(bigfloat_upper_f64(&big(-0.75)), 1.0);
+        assert_eq!(bigfloat_upper_f64(&big(1.0)), 2.0);
+        // 2^-1022 · 2^-78 = 2^-1100, exact in a BigFloat and below any `f64`'s normal range.
+        let tiny = big(f64::MIN_POSITIVE).mul(&big(2f64.powi(-78)), p, crate::HP_RM);
+        assert!(!tiny.is_zero());
+        let e = std::hint::black_box(tiny.exponent().expect("finite"));
+        assert_eq!(
+            2f64.powi(e),
+            0.0,
+            "the replaced spelling reads a nonzero size as zero"
+        );
+        assert_eq!(bigfloat_upper_f64(&tiny), f64::MIN_POSITIVE);
+        assert_eq!(bigfloat_upper_f64(&big(f64::INFINITY)), f64::INFINITY);
     }
 
     /// `Mag::of` round-trips ordinary magnitudes without collapsing them.

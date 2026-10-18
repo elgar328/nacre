@@ -23,7 +23,9 @@
 
 use super::HP_RM;
 use astro_float::BigFloat;
-use nacre_exact::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_bigfloat};
+use nacre_exact::{
+    Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, bigfloat_upper_f64, rat_to_bigfloat,
+};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -139,7 +141,7 @@ pub enum MoveNode {
 fn narrow_hp(x: &HpBounded) -> (f64, f64) {
     match nacre_exact::round_to_f64(&x.value, x.error, 128) {
         Some(v) => (v, x.error.upper_f64() + v.abs() * f64::EPSILON),
-        None => (0.0, x.error.upper_f64() + bf_mag(&x.value)),
+        None => (0.0, x.error.upper_f64() + bigfloat_upper_f64(&x.value)),
     }
 }
 
