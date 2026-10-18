@@ -1,11 +1,11 @@
 use super::*;
 /// **Carry a realized point through `nodes`, continuing from wherever it already is.**
 ///
-/// [`WitnessPoint::coord_hp_uncached`] is this function seeded from the definition's base, and that is the
-/// whole relationship: the fold is a left fold whose entire state is the three coordinates, so the
-/// value after `k` nodes *is* the prefix, and resuming from it reaches the same bits as folding the
-/// prefix again. That is what lets a caller who kept the previous generation's value pay for one
-/// node instead of the whole history.
+/// [`WitnessPoint::coord_hp_uncached`] is this function seeded from the definition's base, and that
+/// is the whole relationship: the fold is a left fold whose entire state is the three coordinates,
+/// so the value after `k` nodes *is* the prefix, and resuming from it reaches the same bits as
+/// folding the prefix again. That is what lets a caller who kept the previous generation's value
+/// pay for one node instead of the whole history.
 ///
 /// ⚠ **One fold, not two.** The per-node arithmetic lives in [`fold_one`] and nothing else spells
 /// it, because two copies of a rounding rule are two rules that drift.

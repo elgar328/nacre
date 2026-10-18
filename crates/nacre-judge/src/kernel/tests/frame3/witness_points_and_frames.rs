@@ -1552,8 +1552,8 @@ fn quadrantal_origin_chain_is_tol_zero() {
 /// `at_nearest` states tol `0` for a base every coordinate of which is an `f64`, without
 /// measuring; this pins that the measurement would have said the same. It rests on three
 /// links, and the third is the one worth a test: `try_from_f64` represents an f64 exactly,
-/// realizing that base back yields the same f64, and `bigfloat_upper_f64` of an exact zero is `0.0` (not
-/// a floor). If any link broke, `at` would report a nonzero tol here and the stated zero
+/// realizing that base back yields the same f64, and `bigfloat_upper_f64` of an exact zero is `0.0`
+/// (not a floor). If any link broke, `at` would report a nonzero tol here and the stated zero
 /// would be silently changing geometry rather than skipping arithmetic.
 #[test]
 fn a_representable_base_measures_exactly_zero() {

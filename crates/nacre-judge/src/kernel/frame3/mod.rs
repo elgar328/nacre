@@ -8,8 +8,8 @@
 //! ([`orient3d_iv`]) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and one whose interval still straddles zero is
 //! **normalized into the distance it stands for** and held against the operation's coincidence
-//! limit ([`ProofStandard`]): below it the coincidence is proved, above it the judgement climbs to the
-//! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
+//! limit ([`ProofStandard`]): below it the coincidence is proved, above it the judgement climbs to
+//! the precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only**
 //! — wired into the boolean since the CIP stages that followed (`nacre-ops`'
 //! `tolerant` module is the seam), and it is the *tol > 0*
@@ -78,7 +78,8 @@ pub enum MoveNode {
         angle: Angle,
         pivot: [Rat; 3],
     },
-    /// An exact rational translation. Realized by adding the offset — see [`WitnessPoint::coord_hp_uncached`].
+    /// An exact rational translation. Realized by adding the offset — see
+    /// [`WitnessPoint::coord_hp_uncached`].
     Translate { offset: [Rat; 3] },
     /// An exact reflection in `axis = offset` (`x ↦ 2·offset − x` on that axis).
     ///

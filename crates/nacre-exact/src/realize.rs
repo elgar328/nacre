@@ -27,12 +27,12 @@ use super::*;
 /// is the nearest `f64` to the exact one.
 ///
 /// ★★ **Not for the coordinates the kernel works with.** Rounding `px + u·c − v·s` as a whole
-/// would make every `WitnessPoint::coord_approx` literally `round(coord_hp_uncached)` and take `tol` to a half-ulp, and it
-/// was **declined**: that is arbitrary precision *per vertex*, where [`Angle::cos_sin_f64`]'s is
-/// per *angle* and memoised, so it would pay at construction for a precision that `WitnessPoint`'s lazy
-/// `coord_hp_uncached` already buys **only where a judgement actually needs it**. (`nacre-judge` depends on
-/// this crate, so that type cannot be named here as a link.) Cheaper ways to shrink that
-/// arithmetic (an FMA, a compensated
+/// would make every `WitnessPoint::coord_approx` literally `round(coord_hp_uncached)` and take
+/// `tol` to a half-ulp, and it was **declined**: that is arbitrary precision *per vertex*, where
+/// [`Angle::cos_sin_f64`]'s is per *angle* and memoised, so it would pay at construction for a
+/// precision that `WitnessPoint`'s lazy `coord_hp_uncached` already buys **only where a judgement
+/// actually needs it**. (`nacre-judge` depends on this crate, so that type cannot be named here as
+/// a link.) Cheaper ways to shrink that arithmetic (an FMA, a compensated
 /// evaluation) stay in `f64` and keep the laziness, so they are the candidates if the term ever
 /// needs to move.
 pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
@@ -305,8 +305,8 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     // ⚠★★★★ **A flushed value is not an exact one.** `exact` is decided on `q · 2^-k`, but `v` is
     // what the caller gets, and below the smallest subnormal the scaling loop flushes `v` to `0.0`
     // while the rational is nowhere near zero. That came back as `(0.0, true)` — and
-    // [`Realization::to_f64`] turns the flag into `Mag::ZERO`, a *proven* bound — so the cache would
-    // have published "this coordinate is exactly zero" for `2⁻¹¹⁰⁰`.
+    // [`Realization::to_f64`] turns the flag into `Mag::ZERO`, a *proven* bound — so the cache
+    // would have published "this coordinate is exactly zero" for `2⁻¹¹⁰⁰`.
     //
     // ★ Only the claim goes, not the value: `0.0` **is** the nearest `f64` there, and
     // `a_tiny_rational_still_names_its_f64` locks that deliberately ("genuinely below the range").
@@ -379,8 +379,8 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 // The arithmetic itself is [`HpBounded`]'s (`bounded.rs`) — what lives here are the realizations
 // that drive it.
 
-/// **`√v` realized at `prec` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
-/// crate already has ([`inv_sqrt_hp`]) is the only place a square root is approached.
+/// **`√v` realized at `prec` bits, with its error** — `v · (1/√v)`, so the one radical primitive
+/// this crate already has ([`inv_sqrt_hp`]) is the only place a square root is approached.
 ///
 /// Crate-private: its consumer is [`quad_hp`] (measured); a radius stated as its square is
 /// wide and takes [`sqrt_hp_big`]. `None` for a negative `v`.

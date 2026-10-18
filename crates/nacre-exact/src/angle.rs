@@ -219,9 +219,9 @@ impl Angle {
     ///
     /// ★★★ **The caller passes the values in rather than letting this re-realize them**, and that
     /// is the whole soundness argument. The consumer is `WitnessPoint::rotate_about`, whose `tol` must bound
-    /// the error in the `coord_approx` it just wrote from *its* `cos_sin_f64()` result. An error measured
-    /// against a realization the caller did not use would bound a number nobody stored. Taking `c`
-    /// and `s` as arguments makes "the error describes the value that was used" hold by
+    /// the error in the `coord_approx` it just wrote from *its* `cos_sin_f64()` result. An error
+    /// measured against a realization the caller did not use would bound a number nobody stored.
+    /// Taking `c` and `s` as arguments makes "the error describes the value that was used" hold by
     /// construction instead of by the route being the only one.
     ///
     /// ★★ **Measured, not a constant.** The pair [`Angle::cos_sin_f64`] hands out is the correctly

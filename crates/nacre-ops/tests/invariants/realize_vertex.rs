@@ -1285,9 +1285,9 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
 /// - **Cost.** A 7° turn and 300 rational translations put the history past
 ///   `CHEAP_REPLAY_COST_CAP`, so the cheap road never walks it — `CacheDecline::CostCap`.
 /// - **Bits.** A coordinate that is exactly `0` decides only once its radius is under the
-///   coincidence limit (`Realization::to_f64`). Turning 37° and back sixty times (120 nodes, inside the
-///   cap) returns every corner to where it was, so the corners on `y = 0` are true zeros carrying
-///   120 turns of radius — more than the cheap road's two rungs can shrink below `2⁻¹⁸⁰` —
+///   coincidence limit (`Realization::to_f64`). Turning 37° and back sixty times (120 nodes, inside
+///   the cap) returns every corner to where it was, so the corners on `y = 0` are true zeros
+///   carrying 120 turns of radius — more than the cheap road's two rungs can shrink below `2⁻¹⁸⁰` —
 ///   `RealizeError::Undecided`. (A coordinate that is not `0` decides inside the cap at 256 bits.)
 ///
 /// ★★ **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
@@ -2226,9 +2226,9 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
 
 /// ★★ **The surface lock holds where the door derives and the cheap road would stop** — a block
 /// with a `Through` face carried by 250 recorded quarter turns: every chain folds, so the push door
-/// derives every surface cache from the truth (`Realized`) at a depth the cheap road would not walk.
-/// The census's question (`realize_surface_cache`) must agree there too, or it cries wolf on the
-/// first deep folding model the census meets.
+/// derives every surface cache from the truth (`Realized`) at a depth the cheap road would not
+/// walk. The census's question (`realize_surface_cache`) must agree there too, or it cries wolf on
+/// the first deep folding model the census meets.
 #[test]
 fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
     let mut m = Model::new();

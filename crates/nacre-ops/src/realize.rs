@@ -255,8 +255,9 @@ impl Realization {
 
 /// **How far a correctly rounded `f64` can sit from the value it rounds** — `|v| · 2⁻⁵³`, which is
 /// at least half an ulp of `v` on either side of a binade edge. As a [`Mag`], so the bound of a tiny
-/// coordinate cannot vanish on the way out. One rule for both arms of [`Realization::to_f64`]: an exact
-/// rational read at 53 bits and an interval that decided its `f64` are both a correct rounding.
+/// coordinate cannot vanish on the way out. One rule for both arms of [`Realization::to_f64`]: an
+/// exact rational read at 53 bits and an interval that decided its `f64` are both a correct
+/// rounding.
 fn half_ulp(v: f64) -> Mag {
     Mag::of(v).times(Mag::pow2(-53))
 }
@@ -280,8 +281,8 @@ pub(crate) fn realize_vertex_of(
     realize_vertex_of_accel(model, def, p, &mut Accel::default())
 }
 
-/// [`realize_vertex_of`] with the accelerators ([`Accel`]): what it may read to go faster, and what it
-/// learned that they could keep.
+/// [`realize_vertex_of`] with the accelerators ([`Accel`]): what it may read to go faster, and what
+/// it learned that they could keep.
 ///
 /// ★ Only the fixed-precision road fills the prefix. A climb asks the same definition at rung after
 /// rung, so whatever it learned at 128 bits is not what it returns, and filing the rung it happened
@@ -474,8 +475,8 @@ pub(crate) fn realize_vertex_cache_accel(
 /// vertex exists: the cache is what the realization produced, never a second truth.
 ///
 /// `figure` is the coordinate the construction site computed, and it stands wherever
-/// [`realize_vertex_cache_accel`] declines — but the *variant* is this funnel's to choose, not the caller's
-/// ([`point_cache`]).
+/// [`realize_vertex_cache_accel`] declines — but the *variant* is this funnel's to choose, not the
+/// caller's ([`point_cache`]).
 pub(crate) fn push_vertex_realized(
     model: &mut Model,
     def: Vertex,
@@ -575,8 +576,8 @@ fn point_cache_accel<E>(
 /// plane under a turn off the quarters or a frame, and there `figure` — the construction's own
 /// `f64` — stands. So the figure is pushed as **not yet asked** ([`CacheStanding::Unrealized`]),
 /// and whatever the door did not derive is realized from the pushed truth and raised
-/// ([`raise_surface_cache`]) — the door decides what it can first, so «the truth answers here» is spelled
-/// in `nacre-topo` alone. Each half on its own ([`plane_realization`]):
+/// ([`raise_surface_cache`]) — the door decides what it can first, so «the truth answers here» is
+/// spelled in `nacre-topo` alone. Each half on its own ([`plane_realization`]):
 /// * **Anchor** — the truth's first point replayed through the chain: the same point the door
 ///   anchors a named plane at, so the two kinds of plane agree about where a cache is pinned.
 /// * **Normal** — the pre-motion name's normal carried by the chain (the difference of the
@@ -1142,8 +1143,8 @@ fn unit(d: [HpBounded; 3], bits: usize) -> Option<[HpBounded; 3]> {
 }
 
 /// Read a realization out on `rungs` — each only where the one before does not name an `f64`
-/// ([`Realization::to_f64`]) — the surface cache's copy of the rule [`realize_vertex_cache_accel`] keeps
-/// for vertices ([`Budget::rungs`]).
+/// ([`Realization::to_f64`]) — the surface cache's copy of the rule [`realize_vertex_cache_accel`]
+/// keeps for vertices ([`Budget::rungs`]).
 fn on_rungs(
     rungs: &[usize],
     realize: impl Fn(usize) -> Option<[HpBounded; 3]>,
@@ -1319,8 +1320,8 @@ impl Budget {
 /// a frame), the direction the two planes meet in is the cross product of their normals, read off
 /// the planes' coefficients realized at `bits` — the world name's where the plane has one, else the
 /// plane its witness triangle spans after its chain ([`PlaneMemo`], the seam table's own road and
-/// memo) — scaled to a unit and read out once ([`Realization::to_f64`]), unsigned: the derivation turns
-/// it toward the end vertex. `nacre-topo` asks only where its own roads — the names
+/// memo) — scaled to a unit and read out once ([`Realization::to_f64`]), unsigned: the derivation
+/// turns it toward the end vertex. `nacre-topo` asks only where its own roads — the names
 /// ([`Model::world_line_direction_f64`]) and what pushers gave this pair before — do not answer,
 /// so «the names answer» is spelled there alone.
 pub(crate) fn edge_given(
@@ -1510,8 +1511,8 @@ pub struct VertexCacheAudit {
 }
 
 /// ★★ **The vertex cache regenerates from the definition** — the vertex lock's one rule, asked of
-/// each vertex given: the cheap road ([`realize_vertex_cache`]) answers again and the cache is that very
-/// answer, or the road stops and the cache says why. Compared bit for bit, so `-0.0` is not
+/// each vertex given: the cheap road ([`realize_vertex_cache`]) answers again and the cache is that
+/// very answer, or the road stops and the cache says why. Compared bit for bit, so `-0.0` is not
 /// `+0.0`.
 ///
 /// There is no door that discards the vertex cache and writes it again, because there is nothing a
@@ -1685,8 +1686,8 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
 /// **A line edge's direction from its two endpoints' definitions** — the instrument's independent
 /// road to the truth the edge road realizes: both endpoints realized at `bits` from their own
 /// definitions ([`realize_vertex`]'s road), their difference scaled to a unit at `bits` and read out
-/// by the one rule ([`Realization::to_f64`]), run from `vertices[0]` to `vertices[1]`. `None` where an
-/// endpoint does not realize or the rung does not decide.
+/// by the one rule ([`Realization::to_f64`]), run from `vertices[0]` to `vertices[1]`. `None` where
+/// an endpoint does not realize or the rung does not decide.
 ///
 /// The second value says whether both endpoints were met in a shared frame (an exact meet, folded
 /// or replayed) — the road that shares nothing with the edge's plane coefficients. An endpoint
@@ -1716,9 +1717,9 @@ pub fn line_direction_from_endpoints(
 /// `places` decimal places, escalating until the realization determines them.
 ///
 /// ★ This is the door the app and the kit call, and its contract is **"ask for `places`, get
-/// `places`"**. The `None` on [`Realization::to_decimal`] is the rung-to-rung signal underneath, not
-/// something a caller sees: the only ways this fails are a vertex that cannot be realized at all
-/// and a ladder that ran out.
+/// `places`"**. The `None` on [`Realization::to_decimal`] is the rung-to-rung signal underneath,
+/// not something a caller sees: the only ways this fails are a vertex that cannot be realized at
+/// all and a ladder that ran out.
 pub fn realize_vertex_decimal(
     model: &Model,
     v: Handle<Vertex>,

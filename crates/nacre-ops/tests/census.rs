@@ -180,9 +180,9 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
 }
 
 /// Result-vertex coordinates the realization read as `+0.0` by the coincidence rule
-/// (`Realization::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero carries
-/// a zero bound, and no other decided coordinate is `0.0`, so this counts the rule's answers
-/// without a counter in the product.
+/// (`Realization::to_f64`) — the ones whose cache is `0.0` with a nonzero bound. An exact zero
+/// carries a zero bound, and no other decided coordinate is `0.0`, so this counts the rule's
+/// answers without a counter in the product.
 static ZERO_BY_COINCIDENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Live surfaces by what their cache knows — `[realized, ceiling, unrealized]`.
@@ -546,11 +546,12 @@ fn record(
             // measuring nothing.
             //
             // ★★ The contract is **answer ⇔ variant**, three ways: the road answers and the cache is
-            // `Realized` with that very coordinate and bound, bit for bit; the road stops for bits or
-            // cost and the cache is `Ceiling`; the road has no way there at all (or the definition
-            // names no point) and the cache is `Unrealized`. The refusals are counted **by name**, not
-            // as one lump — "a paid road can answer" and "this cannot be realized" are different
-            // reports, one a cost and the other a gap. Nothing here opens the refine door, so no vertex may be `raised`.
+            // `Realized` with that very coordinate and bound, bit for bit; the road stops for bits
+            // or cost and the cache is `Ceiling`; the road has no way there at all (or the
+            // definition names no point) and the cache is `Unrealized`. The refusals are counted
+            // **by name**, not as one lump — "a paid road can answer" and "this cannot be realized"
+            // are different reports, one a cost and the other a gap. Nothing here opens the refine
+            // door, so no vertex may be `raised`.
             let mut seen = std::collections::HashSet::new();
             let mut vertices = Vec::new();
             for &s in v {

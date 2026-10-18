@@ -532,9 +532,9 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
 /// production feeds it, so this walks production's stretch step for step: trace, clean,
 /// append the bands, build the seam.
 ///
-/// ★ The cache is asserted **`Realized` within rounding**, never a copied value; the pierce coordinates
-/// themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point` road,
-/// so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
+/// ★ The cache is asserted **`Realized` within rounding**, never a copied value; the pierce
+/// coordinates themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point`
+/// road, so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
 /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
 /// surface and `outer_rings` is what tells them apart.
 #[test]

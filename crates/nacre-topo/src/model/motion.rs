@@ -20,9 +20,10 @@ impl Model {
         self.motions.get(h)
     }
 
-    /// Whether a replay through `leaf`'s chain walks more than `n` nodes ([`Model::chain_depth_up_to`]).
-    /// Each step hands the budget that is left down to what it unfolds into, and the walk stops once
-    /// past `n`, so asking about a 4,000-deep history costs about `n` steps.
+    /// Whether a replay through `leaf`'s chain walks more than `n` nodes
+    /// ([`Model::chain_depth_up_to`]). Each step hands the budget that is left down to what it
+    /// unfolds into, and the walk stops once past `n`, so asking about a 4,000-deep history costs
+    /// about `n` steps.
     pub fn chain_deeper_than(&self, leaf: Handle<MotionNode>, n: usize) -> bool {
         self.chain_depth_up_to(leaf, n) > n
     }

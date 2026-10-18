@@ -345,9 +345,10 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
 }
 
 /// **A node's interval holds the node, whichever kind of name it is** — [`node_point_hp`] against
-/// [`node_point_approx`], over every ring node of every face a boolean emits. The fixture is a plate
-/// with a bore fused with a wall whose plane runs inside the bore's radius, so the wall class's
-/// rings carry the bore's pierce points beside three-plane corners, and the caps carry arcs.
+/// [`node_point_approx`], over every ring node of every face a boolean emits. The fixture is a
+/// plate with a bore fused with a wall whose plane runs inside the bore's radius, so the wall
+/// class's rings carry the bore's pierce points beside three-plane corners, and the caps carry
+/// arcs.
 ///
 /// ★ Bracketed, not contained: the `f64` is a rounding of the true point, and the interval is far
 /// narrower than an ulp, so the true point is inside the interval while the `f64` may sit an ulp

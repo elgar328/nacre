@@ -113,12 +113,12 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// hundred angles is milliseconds.
 ///
 /// ★★★ **It asks about the pair, because that is what the answer is about.** The values go in
-/// as arguments — the same ones `rotate_about` writes into `coord_approx` — rather than being re-derived
-/// inside. Written the other way, this test asked whether the error of *some* realization bounded
-/// the error of *another*, and it failed at 27°: a debug and a release build realize `sin 27°`
-/// one ulp apart, and so do two call sites within one release build. That divergence is a real
-/// and separate defect in the kernel's determinism story; what this test now checks is the
-/// property `tol` actually needs, which is about the pair in hand.
+/// as arguments — the same ones `rotate_about` writes into `coord_approx` — rather than being
+/// re-derived inside. Written the other way, this test asked whether the error of *some*
+/// realization bounded the error of *another*, and it failed at 27°: a debug and a release build
+/// realize `sin 27°` one ulp apart, and so do two call sites within one release build. That
+/// divergence is a real and separate defect in the kernel's determinism story; what this test now
+/// checks is the property `tol` actually needs, which is about the pair in hand.
 ///
 /// ★ **The 90°-family is included, not skipped, and that is the load-bearing part.** There
 /// `cos_sin_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute

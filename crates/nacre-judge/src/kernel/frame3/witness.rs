@@ -1,8 +1,8 @@
 use super::*;
-/// A rational base point carried through a chain of axis rotations (a rotation history). `base` + `chain` are the exact **definition** (never lost); `coord_iv` is
-/// the f64 coordinate (a cache) with, per axis, the bound on its error — a **direction-wise
-/// xyz vector** held beside the value it bounds, so the two cannot drift apart.
-/// [`coord_hp`](Self::coord_hp) realizes the chain at
+/// A rational base point carried through a chain of axis rotations (a rotation history). `base` +
+/// `chain` are the exact **definition** (never lost); `coord_iv` is the f64 coordinate (a cache)
+/// with, per axis, the bound on its error — a **direction-wise xyz vector** held beside the value
+/// it bounds, so the two cannot drift apart. [`coord_hp`](Self::coord_hp) realizes the chain at
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).
 #[derive(Clone, Debug)]
@@ -40,8 +40,8 @@ impl Eq for WitnessPoint {}
 ///
 /// One spelling, because three call sites want the identical quantity ([`WitnessPoint::at`]'s seed,
 /// [`WitnessPoint::translate`]'s offset, [`WitnessPoint::frame`]'s inputs) and "how a rational's rounding is
-/// charged" is exactly the kind of thing that drifts when it is written out twice. `bigfloat_upper_f64` reads
-/// at octave granularity, so the `2×` keeps the result above the truth.
+/// charged" is exactly the kind of thing that drifts when it is written out twice.
+/// `bigfloat_upper_f64` reads at octave granularity, so the `2×` keeps the result above the truth.
 fn rat_round_tol(r: Rat, f: f64) -> f64 {
     let e = BigFloat::from_f64(f, 120).sub(&rat_to_bigfloat(r, 120), 120, HP_RM);
     2.0 * bigfloat_upper_f64(&e.abs())
@@ -159,7 +159,8 @@ impl WitnessPoint {
     fn rotated(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
-        let (ci, cj) = (self.coord_iv[i].value, self.coord_iv[j].value); // pre-rotation magnitudes for tol
+        // pre-rotation magnitudes for tol
+        let (ci, cj) = (self.coord_iv[i].value, self.coord_iv[j].value);
         let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
         //
@@ -191,8 +192,8 @@ impl WitnessPoint {
         //
         // ★★★ **It measures `c` and `s` — the values three lines above — not the angle.** They are
         // handed in rather than re-derived so that the error is the one of the pair that reached
-        // `coord_approx`, whatever route produced it. An error taken against a pair that never reached
-        // `coord_approx` would bound a number this kernel never stored.
+        // `coord_approx`, whatever route produced it. An error taken against a pair that never
+        // reached `coord_approx` would bound a number this kernel never stored.
         let (dc, ds) = angle.cos_sin_error_of(c, s);
         let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
             (0.0, 0.0)
@@ -294,9 +295,10 @@ impl WitnessPoint {
 
     /// The point reflected in `axis = offset` — one more link in the definition.
     ///
-    /// **`coord_approx` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the roundings it
-    /// takes (with the margin every term carries), so `coord_iv` holds the definition's value.
-    /// The exact offset lives in the chain, where [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
+    /// **`coord_approx` is this step's `f64`** (`2c − x`), and `tol` grows by a bound on the
+    /// roundings it takes (with the margin every term carries), so `coord_iv` holds the
+    /// definition's value. The exact offset lives in the chain, where
+    /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes it.
     pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
         let mut p = self.mirrored(axis, offset);
         p.remember(MoveNode::Mirror { axis, offset });
@@ -365,8 +367,8 @@ impl WitnessPoint {
     /// The point read as `(u, v, w)` in the frame of the plane `origin`/`u_raw`/`n` describe, and
     /// written out in that plane's own frame — one more link in the definition.
     ///
-    /// **`coord_approx` is this step's `f64`**, its roundings charged to `tol`, so `coord_iv` holds the
-    /// definition's value. The exact inputs live in the chain, where
+    /// **`coord_approx` is this step's `f64`**, its roundings charged to `tol`, so `coord_iv` holds
+    /// the definition's value. The exact inputs live in the chain, where
     /// [`coord_hp_uncached`](Self::coord_hp_uncached) realizes them.
     ///
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual

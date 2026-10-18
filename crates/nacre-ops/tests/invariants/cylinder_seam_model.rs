@@ -154,8 +154,8 @@ fn an_edge_on_one_cylinder_twice_is_refused() {
 }
 
 /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
-/// endpoints — on the push's own budget (`nacre_ops::rebuild_edges_cheap`) — is bit-identical to the
-/// one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
+/// endpoints — on the push's own budget (`nacre_ops::rebuild_edges_cheap`) — is bit-identical to
+/// the one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
 /// box and a box turned 37°, so circles, straight edges on named planes and straight edges
 /// whose direction only a chain replay realizes all regenerate.
 #[test]

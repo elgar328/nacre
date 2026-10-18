@@ -4,8 +4,8 @@
 //! with a sound error bound handles the easy cases, the ambiguous ones escalate to
 //! astro-float from the exact point definitions, and one that still cannot separate from zero is
 //! turned into the **distance it stands for** and compared against the operation's coincidence
-//! limit ([`frame3::ProofStandard`]) — proved coincident, or said out loud ([`frame3::Decision`]) rather
-//! than assumed. Pure numeric layer — depends only on `nacre-exact` (Rat/Angle/Orient) and
+//! limit ([`frame3::ProofStandard`]) — proved coincident, or said out loud ([`frame3::Decision`])
+//! rather than assumed. Pure numeric layer — depends only on `nacre-exact` (Rat/Angle/Orient) and
 //! astro-float, never on `nacre-math`/`nacre-topo`.
 
 /// Rounding mode for the high-precision (astro-float) realization layer — `nacre-exact`'s, so a

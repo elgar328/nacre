@@ -4,8 +4,9 @@ use super::*;
 
 /// A point rotated about one random axis (through a random pivot) by one **inexact**
 /// rational angle — generic non-degenerate, heterogeneous provenance (each point its
-/// own rotation), `orient3d_iv_soundness`'s corpus shape. Inexact angles only (an exact/near-coplanar
-/// mix would expose the tol-0 GT noise floor — that is the declare-0 test's job).
+/// own rotation), `orient3d_iv_soundness`'s corpus shape. Inexact angles only (an
+/// exact/near-coplanar mix would expose the tol-0 GT noise floor — that is the declare-0 test's
+/// job).
 fn rand_point(st: &mut u64) -> WitnessPoint {
     let base = rand_base(st);
     let axis = axis_of(rng(st, 0, 2));

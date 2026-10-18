@@ -10,8 +10,8 @@ fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
 
 /// **The `orient3d` determinant of four witness points as an `f64` interval** — the filter's first
 /// rung. The value is `det[a−d, b−d, c−d]` in `f64` and the radius is [`orient3d_radius`]: derived
-/// from each point's proven tol and the determinant's own rounding, never a chosen threshold. A sign
-/// is trusted only when the interval excludes zero ([`Bounded::sign`]).
+/// from each point's proven tol and the determinant's own rounding, never a chosen threshold. A
+/// sign is trusted only when the interval excludes zero ([`Bounded::sign`]).
 pub(super) fn orient3d_iv(p: [&WitnessPoint; 4]) -> Bounded {
     let c = p.map(|w| w.coord_approx());
     let t = p.map(|w| w.tol());

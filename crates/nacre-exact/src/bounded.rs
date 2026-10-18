@@ -60,8 +60,8 @@ impl Bounded {
     /// floor: a subnormal's rounding error is a fixed half step, which `|value|·ε/2` would read as
     /// zero. The interval arithmetic below (`add`·`sub`·`mul`) keeps no such floor — it charges
     /// `2ε·|value|` and rests on the values staying in the normal range. `HpBounded::round_off` is
-    /// the same charge at `prec` bits. Never zero, `0.0` included — the `f64` alone does not say its
-    /// rounding was exact; a caller that knows gives zero itself.
+    /// the same charge at `prec` bits. Never zero, `0.0` included — the `f64` alone does not say
+    /// its rounding was exact; a caller that knows gives zero itself.
     pub fn round_off(value: f64) -> f64 {
         (value.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
     }
@@ -133,8 +133,8 @@ impl HpBounded {
 
     /// A rational realized at `prec` bits **with the error that realization carries**.
     ///
-    /// The integers themselves are exact — [`rat_to_bigfloat`] feeds them in as `i128` — so the only
-    /// error is the division, and even that vanishes when it terminates: a power-of-two
+    /// The integers themselves are exact — [`rat_to_bigfloat`] feeds them in as `i128` — so the
+    /// only error is the division, and even that vanishes when it terminates: a power-of-two
     /// denominator with a numerator inside `prec` bits is exact, and then the radius is genuinely
     /// zero.
     pub fn of_rat(r: Rat, prec: usize) -> Self {
@@ -144,8 +144,8 @@ impl HpBounded {
         if d & (d - 1) == 0 && n_bits <= prec {
             return HpBounded::exact(value); // a terminating division: a power-of-two denominator
         }
-        // The integers enter exactly (see `rat_to_bigfloat`), so the only error left is the division's
-        // own rounding.
+        // The integers enter exactly (see `rat_to_bigfloat`), so the only error left is the
+        // division's own rounding.
         let error = Self::round_off(&value, prec);
         HpBounded::new(value, error)
     }
