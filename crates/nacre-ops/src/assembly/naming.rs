@@ -63,6 +63,11 @@ pub(crate) fn name_result_vertices(
     for cy in cyls {
         for sr in &cy.shared {
             let (a, b) = sr.line;
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a point question: is this pierce point on the other class of the \
+                          shared ruling"
+            )]
             let on_line: Vec<NodeId> = pierced
                 .iter()
                 .copied()

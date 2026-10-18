@@ -87,7 +87,12 @@ pub(super) fn seed_from_operands(
             if planes.contains(&c) {
                 continue;
             }
-            if combinatorics::side_of(jd, cyls, corner, c) == Some(0) {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a point question: does this pierce corner lie on class `c`"
+            )]
+            let on_class = combinatorics::side_of(jd, cyls, corner, c) == Some(0);
+            if on_class {
                 aliases.record_on_cylinder(jd, cyls, corner, c);
             }
         }

@@ -514,7 +514,12 @@ fn ask(
     };
     Ok(match (w, target) {
         (Where::Named(t), Cell::Ring(rb)) => {
-            match combinatorics::point_in_ring(jd, cyls, wc, *t, rb) {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "one witness's answer; the retry over witnesses is `cell_inside`'s loop"
+            )]
+            let inside = combinatorics::point_in_ring(jd, cyls, wc, *t, rb);
+            match inside {
                 Ok(true) => Said::In,
                 Ok(false) => Said::Out,
                 // What the road's refusal means is read in one place ([`Said::of_ray_error`]); only

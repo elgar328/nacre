@@ -114,8 +114,8 @@ pub(crate) enum Feature {
     /// ★★★ **`flank` is the side itself, and it travels here because asking again is a second
     /// walk.** A consumer that needs *which* side (not just whether the two agree) would otherwise
     /// call [`side_of`] over a ring member of its own — which is exactly the shape this walk exists
-    /// to prevent, and a source-level lock says so
-    /// (`rotation_sweep`'s `no_production_code_walks_a_ring_past_the_shared_walk`). It is the side
+    /// to prevent, and `clippy.toml` disallows that call outside the walk and the point questions
+    /// that say so. It is the side
     /// of the off-line neighbour **before** the run; with `flanks_differ` false the one after is the
     /// same, and with it true the other is its negation, so one number carries both. Never `0`.
     ///
@@ -208,6 +208,7 @@ pub(crate) fn ring_against_plane(
     crossings: impl Fn(usize, Option<usize>) -> Option<u8>,
 ) -> RingWalk {
     let n = nodes.len();
+    #[expect(clippy::disallowed_methods, reason = "the ring walk itself")]
     let Some(side) = (0..n)
         .map(|i| side_of(jd, cyls, nodes[i], q))
         .collect::<Option<Vec<i8>>>()

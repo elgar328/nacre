@@ -345,7 +345,12 @@ pub(super) fn point_on_ring(
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
         // ☑ A literal triple, so `side_of`'s pierce arm is unreachable here and the empty
         // cylinder table is never consulted — this asks about a *point*, not a ring.
-        if side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r) != Some(0) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "a point question: is the literal vertex `v` on this edge's line"
+        )]
+        let on_line = side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r) == Some(0);
+        if !on_line {
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.

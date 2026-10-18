@@ -746,9 +746,13 @@ pub(crate) fn point_in_component(
                 // name that cuts the line (`pin_on_line`).
                 let mut vq = [query[0], query[1], query[2]];
                 vq.sort_unstable();
-                if side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q) == Some(0)
-                    && material(vq)? != Some(false)
-                {
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "a point question: does the query lie on the face's plane `q`"
+                )]
+                let on_plane =
+                    side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q) == Some(0);
+                if on_plane && material(vq)? != Some(false) {
                     return Ok(None);
                 }
                 continue;

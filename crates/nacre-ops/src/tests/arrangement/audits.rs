@@ -158,9 +158,6 @@ pub(crate) fn concurrency_audit(
                 // triple.
                 // ☑ Measured: it drops **0** nodes across the workspace suite — this audit's own
                 // corpus is plane-only, so the filter is a precondition made explicit.
-                // ★ The call is one line because the source-text meta-test
-                // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site by
-                // its argument text, and it reads line by line.
                 names.extend(
                     rings
                         .into_iter()

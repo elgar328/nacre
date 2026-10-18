@@ -23,4 +23,23 @@ disallowed-methods = [
     # The funnel's door for a cache it already chose: it writes what it is handed, so only a cache
     # `realize::point_cache` answered for this very definition may come through it.
     { path = "nacre_ops::realize::push_vertex_prerealized", reason = "pushes the cache it is handed: use `push_vertex_realized`, or a cache `realize::point_cache` gave for this very definition" },
+    # Parallel iteration lives in nacre-ops' `par.rs` alone (`map_range`, `try_map_range`): they
+    # collect in index order, so a boolean's handles and its first rejection do not depend on the
+    # schedule, and they carry the `#[cfg]` pair that keeps the serial build — the wasm product —
+    # compiling. A second place would break either silently.
+    { path = "rayon::iter::IntoParallelIterator::into_par_iter", reason = "parallel iteration lives in nacre-ops' `par.rs` (`map_range`, `try_map_range`): index order and the serial build depend on it" },
+    { path = "rayon::iter::IntoParallelRefIterator::par_iter", reason = "parallel iteration lives in nacre-ops' `par.rs` (`map_range`, `try_map_range`): index order and the serial build depend on it" },
+    { path = "rayon::slice::ParallelSlice::par_chunks", reason = "parallel iteration lives in nacre-ops' `par.rs` (`map_range`, `try_map_range`): index order and the serial build depend on it" },
+    { path = "rayon::iter::ParallelBridge::par_bridge", reason = "parallel iteration lives in nacre-ops' `par.rs` (`map_range`, `try_map_range`): index order and the serial build depend on it" },
+    { path = "rayon::join", reason = "parallelism lives in nacre-ops' `par.rs`: index order and the serial build depend on it" },
+    { path = "rayon::scope", reason = "parallelism lives in nacre-ops' `par.rs`: index order and the serial build depend on it" },
+    # "Is this ring inside that one" retries over witnesses in `nesting::cell_inside`; a caller that
+    # asks `point_in_ring` itself has one witness and no retry. `nesting::ask` is the one witness's door.
+    { path = "nacre_ops::combinatorics::ring_walk::point_in_ring", reason = "ask `nesting::cell_inside`: the retry over witnesses lives there" },
+    # A ring is walked against a line once, in `ring_against_plane`, whose flank rule says crossing
+    # from touching. Reading `side_of` over a ring's members anywhere else is a second walk. A
+    # single point's side is a different question and says so in its `expect`. What this sees is
+    # the `side_of` call: a road that walks a ring without it is outside — `point_in_mixed_ring`
+    # walks chart coordinates (`QuadVal`), its corner rule `ray_step_crossing`'s, the planar roads'.
+    { path = "nacre_ops::combinatorics::ring_walk::side_of", reason = "walk a ring through `ring_against_plane` (the flank rule lives there); a single point's side is asked with an `expect` saying so" },
 ]

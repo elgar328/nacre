@@ -356,6 +356,10 @@ pub(super) fn self_touch_reject(
         // node's implicit point pay for a table (measured over the perf folds: 932k distinct
         // (node, plane) pairs of 1.33M asks; a table of implicit points, to share a turned
         // class's Cramer parts, cost more in hashing than it saved).
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "a point question: does result node `n` lie on face plane `q`"
+        )]
         let on = |n: NodeId, q: usize| combinatorics::side_of(jd, cyls, n, q) == Some(0);
         let reach_of = |n: NodeId| {
             pt.get(&n)

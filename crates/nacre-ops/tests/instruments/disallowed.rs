@@ -1,8 +1,10 @@
 //! **Every exemption from `clippy.toml`'s disallowed calls is listed here, with its reason.**
 //!
 //! `clippy.toml` names calls the workspace makes only in the places that own them — the f64 cache
-//! write doors, which product code reaches through `nacre-ops`' realization funnel alone — and the
-//! pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one attribute
+//! write doors (product code reaches them through `nacre-ops`' realization funnel alone), rayon's
+//! parallel entry points (`par.rs` alone), and the two ring predicates a shared rule sits above
+//! (`point_in_ring` under `cell_inside`'s retry, `side_of` under `ring_against_plane`'s walk) — and
+//! the pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one attribute
 //! (`allow`, `expect`, a `cfg_attr` around either), so a caller who meets the lint could add one
 //! and be through. This makes that a second, visible step: every exemption in the workspace's
 //! sources is counted per file against [`ALLOWED`], and a new one fails here until it is written
@@ -28,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Every path `clippy.toml` disallows.
-const DISALLOWED: [&str; 11] = [
+const DISALLOWED: [&str; 19] = [
     "nacre_topo::Model::push_vertex",
     "nacre_topo::Model::refine_vertex_cache",
     "nacre_topo::Model::push_plane",
@@ -40,6 +42,14 @@ const DISALLOWED: [&str; 11] = [
     "nacre_topo::Model::push_plane_unregistered",
     "nacre_topo::Model::push_cylinder_unregistered",
     "nacre_ops::realize::push_vertex_prerealized",
+    "rayon::iter::IntoParallelIterator::into_par_iter",
+    "rayon::iter::IntoParallelRefIterator::par_iter",
+    "rayon::slice::ParallelSlice::par_chunks",
+    "rayon::iter::ParallelBridge::par_bridge",
+    "rayon::join",
+    "rayon::scope",
+    "nacre_ops::combinatorics::ring_walk::point_in_ring",
+    "nacre_ops::combinatorics::ring_walk::side_of",
 ];
 
 /// Every exemption, per file (relative to `crates/`): how many, and why it is not a way around.
@@ -60,6 +70,51 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         1,
         "`push_vertex_prerealized`: the seam table's cache, which `realize::point_cache` gave for \
          the very definition pushed",
+    ),
+    (
+        "nacre-ops/src/par.rs",
+        1,
+        "rayon: this module is where parallel iteration lives (a module `expect`, parallel \
+         build only)",
+    ),
+    (
+        "nacre-ops/src/nesting.rs",
+        1,
+        "`point_in_ring`: `ask`, one witness's answer; the retry over witnesses is \
+         `cell_inside`'s loop",
+    ),
+    (
+        "nacre-ops/src/combinatorics/ring_walk.rs",
+        1,
+        "`side_of`: `ring_against_plane`, the ring walk itself",
+    ),
+    (
+        "nacre-ops/src/combinatorics/rays.rs",
+        1,
+        "`side_of`: a point question in `point_on_ring` (is the literal vertex on the edge's line)",
+    ),
+    (
+        "nacre-ops/src/combinatorics/in_faces.rs",
+        1,
+        "`side_of`: a point question in `point_in_component` (does the query lie on the face's \
+         plane)",
+    ),
+    (
+        "nacre-ops/src/arrangement/aliases.rs",
+        1,
+        "`side_of`: a point question in `seed_from_operands` (does a pierce corner lie on a class)",
+    ),
+    (
+        "nacre-ops/src/assembly/naming.rs",
+        1,
+        "`side_of`: a point question in `name_result_vertices` (is a pierce point on the other \
+         class of a shared ruling)",
+    ),
+    (
+        "nacre-ops/src/assembly/self_touch.rs",
+        1,
+        "`side_of`: a point question in `self_touch_reject` (does a result node lie on a face's \
+         plane)",
     ),
     (
         "nacre-ops/src/lib.rs",
