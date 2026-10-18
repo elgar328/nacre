@@ -94,15 +94,10 @@ impl WitnessPoint {
     /// lifting the rounded `f64` back into a `Rat` (that names a different point, with a
     /// tolerance of zero on top).
     pub fn at_nearest(base: [Rat; 3]) -> Self {
-        let f = base.map(|r| r.to_f64());
-        let representable = base
-            .iter()
-            .zip(f)
-            .all(|(&r, x)| Rat::try_from_f64(x) == Some(r));
-        if representable {
+        if base.iter().all(|r| r.as_f64().is_some()) {
             return Self::at_with_tol(base, [0.0; 3]);
         }
-        Self::at_with_tol(base, f.map(Bounded::round_off))
+        Self::at_with_tol(base, base.map(|r| Bounded::round_off(r.to_f64())))
     }
 
     /// A point at `base` with an explicit initial `tol` — for a root that already

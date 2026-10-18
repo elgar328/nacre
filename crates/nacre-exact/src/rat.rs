@@ -67,6 +67,24 @@ impl Rat {
         if neg { -q } else { q }
     }
 
+    /// The value as an `f64` **when it is one** — `None` when [`to_f64`](Self::to_f64) would
+    /// round. A fact about the number, read off it: in lowest terms it is an `f64` exactly when the
+    /// denominator is a power of two and the numerator's odd part fits the 53-bit significand.
+    /// Every nonzero `Rat` lies in `[2⁻¹²⁷, 2¹²⁷]`, inside `f64`'s normal range, so no exponent
+    /// condition joins those two.
+    ///
+    /// ★ Not `try_from_f64(r.to_f64()) == Some(r)`: that lift measures the `f64`'s exponent before
+    /// reducing, so it refuses values `Rat` holds exactly (`2⁻⁸⁰` is `2⁵²/2¹³²` to it) and the
+    /// comparison reads "not an `f64`" for a number that is one.
+    pub fn as_f64(self) -> Option<f64> {
+        let (n, d) = (*self.0.numer(), *self.0.denom());
+        if n == 0 {
+            return Some(0.0);
+        }
+        let odd = n.unsigned_abs() >> n.trailing_zeros();
+        (d.count_ones() == 1 && odd < 1 << 53).then(|| self.to_f64())
+    }
+
     /// The rational **the decimal spelled**, rather than the one the f64 holds.
     ///
     /// These differ, and the difference is the whole point. [`try_from_f64`] lifts the

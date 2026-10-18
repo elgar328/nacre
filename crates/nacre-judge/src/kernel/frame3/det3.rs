@@ -99,9 +99,11 @@ pub(super) fn shared_base<const N: usize>(pts: &[&WitnessPoint; N]) -> Option<[[
             return None;
         }
     }
-    let exact = |r: Rat| Rat::try_from_f64(r.to_f64()) == Some(r);
-    if !pts.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
-        return None; // the exact predicate takes f64; a base that does not round-trip cannot go
+    if !pts
+        .iter()
+        .all(|p| p.base.iter().all(|r| r.as_f64().is_some()))
+    {
+        return None; // the exact predicate takes f64; a base that is not an `f64` cannot go
     }
     // Odd parity ⇒ hand back the mirror image, so the base frame is handed like the moved one.
     let flip = if chain_parity(&first.chain) < 0 {

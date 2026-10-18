@@ -59,8 +59,10 @@ impl BaseFrame {
         };
         // 0 is reserved for "no motion", so never hand it out as an id.
         let chain_id = leaf.index() as u64 + 1;
-        let exact = |r: nacre_exact::Rat| nacre_exact::Rat::try_from_f64(r.to_f64()) == Some(r);
-        if !tri_pt3.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
+        if !tri_pt3
+            .iter()
+            .all(|p| p.base.iter().all(|r| r.as_f64().is_some()))
+        {
             return Self {
                 chain_id,
                 tri: None,
@@ -151,13 +153,14 @@ impl BaseFrame {
             } else {
                 v
             };
-            let f = v.map(|r| r.to_f64());
-            // A canonicalized vector is integral; if it does not survive the round trip the
-            // realization is a rounding and buys nothing over the derivation.
-            v.iter()
-                .zip(f)
-                .all(|(&r, x)| nacre_exact::Rat::try_from_f64(x) == Some(r))
-                .then_some(f)
+            // A canonicalized vector is integral; if a coefficient is not an `f64` the realization
+            // is a rounding and buys nothing over the derivation.
+            Some([
+                v[0].as_f64()?,
+                v[1].as_f64()?,
+                v[2].as_f64()?,
+                v[3].as_f64()?,
+            ])
         });
         let coeffs = exact_coeffs.or(derived);
         Self {

@@ -156,6 +156,66 @@ fn a_split_dimension_stacks_back_to_the_whole_one() {
     );
 }
 
+/// `as_f64` reads "is this rational an `f64`" off the number — including where the lift
+/// `try_from_f64` refuses a value `Rat` holds exactly, which is why the round-trip comparison is
+/// not that question.
+#[test]
+fn as_f64_is_some_exactly_for_the_rationals_that_are_f64s() {
+    let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let tiny = r(1, 1 << 80);
+    assert_eq!(tiny.as_f64(), Some(2f64.powi(-80)));
+    assert_eq!(
+        Rat::try_from_f64(2f64.powi(-80)),
+        None,
+        "the lift measures the unreduced exponent"
+    );
+    for (q, want) in [
+        (Rat::from_int(0), Some(0.0)),
+        (r(-5, 8), Some(-0.625)),
+        (Rat::from_int(1 << 53), Some(9_007_199_254_740_992.0)),
+        (Rat::from_int((1 << 53) + 1), None),
+        (
+            Rat::from_int(((1 << 53) - 1) << 70),
+            Some(((1u128 << 53) - 1) as f64 * 2f64.powi(70)),
+        ),
+        (
+            r((1 << 53) - 1, 1 << 126),
+            Some(((1u64 << 53) - 1) as f64 * 2f64.powi(-126)),
+        ),
+        (Rat::from_int(i128::MIN), Some(-(2f64.powi(127)))),
+        (r(3, 10), None),
+        (r(1, 3), None),
+    ] {
+        assert_eq!(q.as_f64(), want, "{q:?}");
+        if let Some(f) = want {
+            assert_eq!(
+                f,
+                q.to_f64(),
+                "the f64 it names is the one to_f64 gives: {q:?}"
+            );
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
+    /// Where the lift speaks, the round trip and `as_f64` answer alike — the old spelling is the
+    /// oracle on its own range, and `as_f64` only adds answers past it.
+    #[test]
+    fn as_f64_agrees_with_the_round_trip_where_the_lift_speaks(
+        n in -(1i128 << 70)..(1i128 << 70),
+        k in 0u32..100,
+        odd in 1i128..1000,
+    ) {
+        let r = Rat::new(n, (1i128 << k) * odd).unwrap();
+        if let Some(back) = Rat::try_from_f64(r.to_f64()) {
+            prop_assert_eq!(r.as_f64().is_some(), back == r, "{:?}", r);
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")

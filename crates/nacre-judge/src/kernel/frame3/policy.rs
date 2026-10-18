@@ -211,8 +211,8 @@ const TRIAL_PREC: usize = 128;
 /// ★ **And deep enough that an exactly-representable point reads exactly zero.**
 ///
 /// A second requirement, once a caller is allowed to *skip* [`trial_bound`] for a definition it
-/// knows is exact. An f64-representable base (`Rat::try_from_f64` = `mantissa · 2^exp`, the case
-/// `at_nearest` states with tol 0) has a power-of-two denominator and a numerator of at most
+/// knows is exact. An f64-representable base (`Rat::as_f64` is `Some`, the case `at_nearest`
+/// states with tol 0) has a power-of-two denominator and a numerator of at most
 /// `Rat`'s own 127 bits — and
 /// `HpBounded::of_rat` returns an exact interval exactly when both hold *at this precision*. Below
 /// 127 a
