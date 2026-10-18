@@ -68,6 +68,11 @@ impl Model {
                 .expect("a unit axis");
                 let points = [[r(0); 3], u.map(r), v.map(r)];
                 // The cache faces `−axis` (a base cap's outward) while `(0, u, v)` spans `+axis`.
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "the empty model's three world planes: named, so the door derives \
+                              their cache from the name itself"
+                )]
                 let (h, flipped) = m.push_plane(
                     figure,
                     CacheStanding::Unrealized,
@@ -76,6 +81,11 @@ impl Model {
                     Orientation::Reversed,
                 );
                 debug_assert!(!flipped, "an empty model cannot intern a seed");
+                debug_assert_eq!(
+                    m.surface_cache_standing(h),
+                    CacheStanding::Realized,
+                    "a seed's name derives its cache"
+                );
                 h
             })
             .collect();

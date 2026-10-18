@@ -7,6 +7,9 @@
 //! by [`replay`]; every result is a **closed** solid, so `nacre-validate` applies fully.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+// Test fixtures build models through the cache write doors directly; product code is linted
+// without this (see clippy.toml).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 use nacre_math::Point3;
 // The test modules read the root's names through their globs.
 use nacre_exact::Rat;

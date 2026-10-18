@@ -27,6 +27,11 @@
 //! machinery that regenerates the cached coordinate"*, deferred with row 3b. This is the asking
 //! half of it. It does **not** overwrite the cache — that is the row's other half.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "this module is the realization funnel: the one product caller of the cache write doors"
+)]
+
 use crate::rotated_vertex::{motion_chain, replay};
 use nacre_exact::{HpBounded, Mag, MeetPoint};
 use nacre_judge::WitnessPoint;

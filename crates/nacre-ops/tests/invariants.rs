@@ -2,6 +2,9 @@
 //! pipeline, edge carriers, recorded plane points, sketch frames, datum planes, vertex realization,
 //! one plane held as two handles, the topology layer's doors and live set on a product box.
 
+// Fixtures build models through the cache write doors directly (see clippy.toml).
+#![allow(clippy::disallowed_methods)]
+
 #[path = "support/fixtures.rs"]
 mod fixtures;
 #[path = "support/stated.rs"]

@@ -310,16 +310,20 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### 캐시 쓰기 문은 `realize.rs` 만 부른다 — 잠금이 없다
+### 소스를 읽는 잠금을 clippy 로
 
-f64 캐시(정점·곡면·간선)에 값을 쓰는 topo 의 문 — `push_vertex`·`refine_vertex_cache`·`push_plane`·`push_plane_through`·
-`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache` — 을 제품에서 부르는 것은 ops 의 깔때기
-(`nacre-ops/src/realize.rs`)뿐이다(빈 모델의 세계 평면 씨앗 셋은 topo 안). 깔때기는 진실에서 실현하고, 실현이 물러나는
-자리에만 생산자의 대략값(`figure`)을 남기며 그 캐시에 `Ceiling`·`Unrealized` 를 단다. 그래서 «STEP 이 읽는 캐시의 `f64` 는
-실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 구조로 선다. 그러나 문들이 크레이트 경계 때문에 `pub` 이라, `realize.rs`
-밖에서 부르는 새 호출을 컴파일러가 막지 못한다. 잠금의 모양은 스캔 테스트(«이 문들은 `realize.rs` 에서만 부른다» —
-`tests/instruments/comparators.rs` 와 같은 모양) 또는 clippy `disallowed_methods`(그 파일에만 허용)다. `.to_f64()` 호출 수는
-잠금의 대상이 아니다 — 유리수의 `to_f64` 는 정확 반올림이라 그 자체가 실현이다.
+`clippy.toml` 의 `disallowed-methods` 는 호출을 컴파일러의 이름 해석으로 막는다 — 글자 검사가 거르던 비슷한 이름
+(`ruling_side_of`·`rational_point_in_ring`)은 따로 손보지 않아도 걸리지 않고, 정한 폴더가 아니라 크레이트 전체를 본다. 캐시 쓰기 문이
+그 첫 규칙이고, 허용은 `tests/instruments/disallowed.rs` 의 표에 오른다. 같은 장치로 옮길 수 있는 글자 잠금:
+
+- `par.rs` 의 `the_parallel_switch_lives_only_here` — rayon 의 병렬 반복자 메서드를 막고 `par.rs` 만 허용. 순차 빌드에는 rayon 이
+  없어 그 경로가 풀리지 않으니 `allow-invalid` 가 맞는지부터 잰다.
+- `tests/probes/rotation_sweep.rs` 의 두 스캔 — `point_in_ring`·`side_of` 를 공유 술어 밖에서 부르는 것(예외 여섯은 `expect` 로).
+
+따로 판단할 것: `comparators.rs` 는 비교를 받는 정렬은 옮길 수 있지만 손으로 쓴 `Ord` 구현은 clippy 가 막지 못해 한 규칙이 두 장치로
+갈린다. `silencers.rs` 의 «`allow(dead_code)` 위에 이유» 는 `clippy::allow_attributes_without_reason` 이 비슷하지만 제품의 `allow`
+65 개 전부에 걸린다. `module_graph`·`manifest`·facade 의 검사는 clippy 가 볼 수 없는 것(모듈 그래프·`Cargo.toml`)이라 그대로 둔다.
+옮길 때는 옛 스캔과 clippy 가 같은 자리를 찾는지 대조한 뒤 옛 것을 지운다.
 
 ### 최근접 `f64` 사다리가 네 벌이다
 

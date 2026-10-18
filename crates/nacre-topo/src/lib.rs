@@ -11,6 +11,9 @@
 //! tess/ops and break the truth/cache split).
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+// Test fixtures build models through the cache write doors directly; product code is linted
+// without this (see clippy.toml).
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 mod adjacency;
 mod model;
 mod topology;

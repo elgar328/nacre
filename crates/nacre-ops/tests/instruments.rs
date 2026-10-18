@@ -3,11 +3,16 @@
 //! state; the ones that do (`census`, `reject_census`, `wide_datum_cost`) keep their own binary, because
 //! every boolean in the same process moves those counters.
 
+// Fixtures build models through the cache write doors directly (see clippy.toml).
+#![allow(clippy::disallowed_methods)]
+
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
 #[path = "instruments/comparators.rs"]
 mod comparators;
+#[path = "instruments/disallowed.rs"]
+mod disallowed;
 #[path = "instruments/manifest.rs"]
 mod manifest;
 #[path = "instruments/module_graph.rs"]

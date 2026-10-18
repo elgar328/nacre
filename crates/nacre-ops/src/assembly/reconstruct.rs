@@ -76,6 +76,11 @@ pub(crate) fn reconstruct(
                 // afresh, with the seam's coordinate as its figure.
                 let v = def.vertex(planes, cyls);
                 if Def::of_name(node) == Some(*def) {
+                    #[expect(
+                        clippy::disallowed_methods,
+                        reason = "the seam table's cache, realized by `realize::point_cache` for \
+                                  this very definition"
+                    )]
                     crate::realize::push_vertex_prerealized(model, v, sv.cache)
                 } else {
                     crate::realize::push_vertex_realized(

@@ -3,6 +3,9 @@
 //! wide the decimals), and what one statement is in the arena (`push_cylinder` interns by the
 //! whole statement, `ref_dir` included).
 
+// Fixtures build models through the cache write doors directly (see clippy.toml).
+#![allow(clippy::disallowed_methods)]
+
 use nacre_exact::Rat;
 use nacre_math::{Point3, Vector3};
 use nacre_topo::{CylinderDef, Model};

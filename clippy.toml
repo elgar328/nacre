@@ -1,0 +1,26 @@
+# Calls the workspace does not make outside the places that own them.
+#
+# Every exemption — an `allow` or `expect` of `clippy::disallowed_methods` — is listed, with its
+# reason, in `crates/nacre-ops/tests/instruments/disallowed.rs`, which also asserts that every
+# path below is still here. A call blocked here wants the road the reason names, not an
+# exemption.
+
+disallowed-methods = [
+    # The f64 cache write doors. Product code reaches them only through nacre-ops' realization
+    # funnel (`realize.rs`), which realizes the value from the truth or marks the cache `Ceiling`
+    # or `Unrealized` — so what STEP reads either took the realization road or says it did not.
+    # The empty model's world-plane seeds (`nacre-topo/src/model/mod.rs`) are the one other site.
+    { path = "nacre_topo::Model::push_vertex", reason = "a cache write door: push through nacre-ops' realization funnel (`realize.rs`, e.g. `push_vertex_realized`)" },
+    { path = "nacre_topo::Model::refine_vertex_cache", reason = "a cache write door: raise through nacre-ops' realization funnel (`realize.rs`, `refine_caches`)" },
+    { path = "nacre_topo::Model::push_plane", reason = "a cache write door: push through nacre-ops' realization funnel (`realize.rs`, e.g. `push_plane_realized`)" },
+    { path = "nacre_topo::Model::push_plane_through", reason = "a cache write door: push through nacre-ops' realization funnel (`realize.rs`, `push_plane_through_realized`)" },
+    { path = "nacre_topo::Model::push_cylinder", reason = "a cache write door: push through nacre-ops' realization funnel (`realize.rs`, `push_cylinder_realized`)" },
+    { path = "nacre_topo::Model::refine_surface_cache", reason = "a cache write door: raise through nacre-ops' realization funnel (`realize.rs`, `refine_caches`)" },
+    { path = "nacre_topo::Model::push_edge", reason = "a cache write door: push through nacre-ops' realization funnel (`realize.rs`, `push_edge_realized`)" },
+    { path = "nacre_topo::Model::rebuild_edge_cache", reason = "a cache write door: re-derive through nacre-ops' realization funnel (`realize.rs`)" },
+    { path = "nacre_topo::Model::push_plane_unregistered", reason = "a cache write door for test fixtures only" },
+    { path = "nacre_topo::Model::push_cylinder_unregistered", reason = "a cache write door for test fixtures only" },
+    # The funnel's door for a cache it already chose: it writes what it is handed, so only a cache
+    # `realize::point_cache` answered for this very definition may come through it.
+    { path = "nacre_ops::realize::push_vertex_prerealized", reason = "pushes the cache it is handed: use `push_vertex_realized`, or a cache `realize::point_cache` gave for this very definition" },
+]
