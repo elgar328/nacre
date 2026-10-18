@@ -147,8 +147,8 @@ impl Realization {
     /// names neither.
     ///
     /// ★★★ **The coincidence rule, as judging states it.** Two things proven closer than
-    /// `2⁻¹⁸⁰` of the model's size are one (design 「숫자 규칙」 5: below that no split survives
-    /// any output). A coordinate that is exactly `0` never decides by rounding — its interval
+    /// `2⁻¹⁸⁰` of the model's size are one ([`nacre_judge::coincidence_for`]: below that no split
+    /// survives any output). A coordinate that is exactly `0` never decides by rounding — its interval
     /// straddles `0` at every rung, and `-tiny` and `+tiny` are different `f64`s — so an interval
     /// entirely inside `± max(1, largest |coordinate|) · 2⁻¹⁸⁰` is read as `+0.0`, with that
     /// interval's upper bound as its error, which keeps «the truth lies within `coord ± bound`»
