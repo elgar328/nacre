@@ -1264,15 +1264,19 @@ m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 �
 **캐시에 쓰는 문은 깔때기만 부른다.** 위 쓰기 문 가운데 f64 캐시에 쓰는 여덟(`push_vertex`·`refine_vertex_cache`·`push_plane`·
 `push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 `*_unregistered` 둘, 그리고
 깔때기가 다 지은 캐시를 받는 `push_vertex_prerealized` 를 워크스페이스 루트의 `clippy.toml`(`disallowed-methods`)이 막는다 —
-크레이트 경계 때문에 `pub` 인 문을 ops 의 깔때기(`realize.rs`) 밖에서 부르면 훅의 clippy 가 거절한다. 그래서 «STEP 이 읽는 `f64`
-는 실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 약속이 아니라 잠금이다. 제품에서 부르는 자리는 셋이고 셋 다 `#[expect]`
-에 이유를 적는다: 깔때기 모듈, 빈 모델의 세계 평면 씨앗(이름이 캐시를 유도한다), seam 표가 실현한 캐시를 넘기는
-`reconstruct.rs`. 테스트 빌드는 크레이트마다 허용한다(픽스처는 문으로 짓는다). 허용은 하나하나 `tests/instruments/disallowed.rs`
-의 표에 이유와 함께 오르고, 표 밖의 허용이나 lint 묶음 허용(`clippy::all`·`clippy::style`·`warnings`), `clippy.toml` 에서 빠진
-경로, `Cargo.toml`·cargo 설정에서 그 lint 의 수준을 바꾸는 줄(`[lints]`·`rustflags` — 속성 없이 잠금을 끈다, 잼), 루트 밖의
-`clippy.toml`(크레이트에 하나 두면 빈 파일이라도 그 크레이트에서 루트의 것을 대신한다, 잼)은 그 테스트가 거절한다. 잠금은 커밋 훅이 도는 커밋에 걸린다 — `--no-verify`, 버전 관리되지 않는 훅의 수정, 사용자 자신의
-`~/.cargo/config.toml`·환경의 `CLIPPY_CONF_DIR` 은 저장소 안의 테스트가 볼 수 없다. kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` 호출 수는 잠그지 않는다 — 유리수의
-`to_f64` 는 정확 반올림이라 그 자체가 실현이다.
+크레이트 경계 때문에 `pub` 인 문을 ops 의 깔때기(`realize.rs`) 밖에서 부르면 clippy 가 거절한다. 그래서 «STEP 이 읽는 `f64` 는
+실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 약속이 아니라 잠금이다. 제품에서 부르는 자리는 셋이고 셋 다 `#[expect]` 에
+이유를 적는다: 깔때기 모듈, 빈 모델의 세계 평면 씨앗(이름이 캐시를 유도한다), seam 표가 실현한 캐시를 넘기는 `reconstruct.rs`.
+테스트 빌드는 크레이트마다 허용한다(픽스처는 문으로 짓는다).
+
+허용은 하나하나 `tests/instruments/disallowed.rs` 의 표에 이유와 함께 오른다. 그 테스트가 거절하는 것: 표 밖의 허용, lint 묶음
+허용(`clippy::all`·`clippy::style`·`warnings`), `clippy.toml` 에서 빠진 경로, `Cargo.toml`·cargo 설정에서 그 lint 의 수준을 바꾸는
+줄(`[lints]`·`rustflags` — 속성 없이 잠금을 끈다, 잼), 루트 밖의 `clippy.toml`(크레이트에 하나 두면 빈 파일이라도 그 크레이트에서
+루트의 것을 대신한다, 잼). clippy 가 보는 것은 관문의 세 clippy 줄이 짓는 기능 조합이다 — 기본(훅), 순차, 그리고 추적 기능
+(`reject-trace`·`tangency-trace`) 뒤의 코드를 보는 `--all-features`. 잠금은 커밋 훅과 관문이 도는 커밋에 걸린다 — `--no-verify`,
+버전 관리되지 않는 훅의 수정, 사용자 자신의 `~/.cargo/config.toml`·환경의 `CLIPPY_CONF_DIR` 은 저장소 안의 테스트가 볼 수 없다.
+kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` 호출 수는 잠그지 않는다 — 유리수의 `to_f64` 는 정확 반올림이라
+그 자체가 실현이다.
 
 **진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에
 `plane(h)` 같은 문을 달면 진실을 줄 것처럼 읽힌다. 캐시를 주는 문은 `_cache`(또는 캐시의 조각

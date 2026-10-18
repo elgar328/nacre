@@ -93,6 +93,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --no-fail-fast
 cargo test -p nacre-ops --no-default-features                          # 순차 빌드 = wasm 제품
 cargo clippy -p nacre-ops -p nacre-judge --no-default-features --all-targets -- -D warnings
+cargo clippy -p nacre-ops --all-features --all-targets -- -D warnings   # 추적 기능(`reject-trace`·`tangency-trace`) 뒤의 코드
 cargo tree -p nacre-ops --no-default-features -e normal,dev > target/tree-serial.txt   # rayon 이 없어야 한다
 cargo test -p nacre-ops --test census -- --ignored --nocapture > target/census-debug.txt
 cargo test -p nacre-ops --release --test census -- --ignored --nocapture > target/census-release.txt
