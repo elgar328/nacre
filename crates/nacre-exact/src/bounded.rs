@@ -47,6 +47,10 @@ pub struct Bounded {
     pub error: f64,
 }
 
+/// The radius's own rounding, charged upward once per operation: `1 + 4ε`, exactly representable
+/// (`1 + 2⁻⁵⁰`). See [`Bounded::sub`].
+const ERROR_UP: f64 = 1.0 + 4.0 * f64::EPSILON;
+
 // `add`/`sub`/`mul` are spelled like the std traits on purpose and are not them: the same names
 // at both precisions is what lets the two machines be read side by side, and `HpBounded`'s take
 // a `prec` the trait signatures have no room for. Naming these apart would split the one machine.
@@ -65,26 +69,34 @@ impl Bounded {
     pub fn round_off(value: f64) -> f64 {
         (value.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
     }
-    /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
-    /// picked, and the same charge in `add` and `mul`. The three `ε/2` beyond the value's own
-    /// rounding cover the error terms' rounding too, where it matters: a sign is read only when
-    /// `|value| > error`, and there `1.5ε·|value|` exceeds the `ε·error` the `f64` sum of the
-    /// error terms can lose. That is argued per operation, not proved over a whole chain, so it is
-    /// measured: on the soundness corpora the worst actual error is `0.180` of the radius for the
-    /// `orient3d` determinant (5,000 rotated four-point configurations, `orient3d_iv_soundness`)
-    /// and `0.397` for plane coefficients (10,000, `plane_coefficient_tol_soundness`).
+    /// **Each result's radius is a proved bound, operation by operation.** Two charges:
+    ///
+    /// - `2ε·|value|` for the value's own rounding. Round-to-nearest misses the exact result by
+    ///   at most `ε/2` of it, which is under `ε·|value|` of the rounded one; the charge is twice that.
+    /// - `× ERROR_UP` (`1 + 4ε`, exact in `f64`) on the summed radius, for the radius's own
+    ///   arithmetic. That sum is itself rounded to nearest, at most three times in `add`/`sub` (the
+    ///   input sum, the value charge, this product) and five in `mul` (a radius product, two sums,
+    ///   the value charge, this product), each step at most `ε/2` low — so the computed radius is at
+    ///   least `(1 − ε/2)⁵ · (1 + 4ε) > 1` times the exact one. Without it the sum could come out
+    ///   below the radius it stands for wherever the radius outweighs the value, which is most of a
+    ///   determinant's intermediate steps.
+    ///
+    /// Both rest on the values staying in the normal range (design 「수의 이름」). Measured slack on
+    /// the soundness corpora: the worst actual error is `0.180` of the radius for the `orient3d`
+    /// determinant (5,000 rotated four-point configurations, `orient3d_iv_soundness`) and `0.397`
+    /// for plane coefficients (10,000, `plane_coefficient_tol_soundness`).
     pub fn sub(self, o: Bounded) -> Bounded {
         let value = self.value - o.value;
         Bounded::new(
             value,
-            self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
+            (self.error + o.error + 2.0 * f64::EPSILON * value.abs()) * ERROR_UP,
         )
     }
     pub fn add(self, o: Bounded) -> Bounded {
         let value = self.value + o.value;
         Bounded::new(
             value,
-            self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
+            (self.error + o.error + 2.0 * f64::EPSILON * value.abs()) * ERROR_UP,
         )
     }
     pub fn mul(self, o: Bounded) -> Bounded {
@@ -92,7 +104,7 @@ impl Bounded {
         // Worst-case product radius `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, plus the
         // f64 rounding of the product itself.
         let error = self.value.abs() * o.error + o.value.abs() * self.error + self.error * o.error;
-        Bounded::new(value, error + 2.0 * f64::EPSILON * value.abs())
+        Bounded::new(value, (error + 2.0 * f64::EPSILON * value.abs()) * ERROR_UP)
     }
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative,
     /// `None` if the interval straddles 0 (escalate).
