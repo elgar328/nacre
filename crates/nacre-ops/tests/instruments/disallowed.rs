@@ -9,7 +9,14 @@
 //! into the table with why it is not a way around the rule. A lint *group* that would silence the
 //! lint without naming it (`clippy::all`, `clippy::style`, `warnings`) is held to zero everywhere.
 //! [`the_config_still_names_every_call`] holds the other end: a path dropped from `clippy.toml`
-//! is as quiet a way through as an exemption.
+//! is as quiet a way through as an exemption. And a level set outside the sources — a `[lints]`
+//! table in a `Cargo.toml`, `rustflags` in a cargo config — silences the lint with no attribute
+//! at all, measured: one `disallowed_methods = "allow"` line in `nacre-ops`'s manifest let a
+//! planted door call through clippy and this table both; so none is set
+//! ([`no_manifest_or_cargo_config_sets_the_lints_level`]).
+//!
+//! The lock binds the commits the pre-commit hook runs on. `--no-verify`, an edited hook (it is
+//! not versioned) or a user's own `~/.cargo/config.toml` are past what a test in the tree can see.
 //!
 //! Textual, like `comparators.rs`: it reads the attribute's spelling, which is fixed, and
 //! [`the_scan_reads_what_it_should`] pins that reading on literal lines.
@@ -84,12 +91,16 @@ const ALLOWED: &[(&str, usize, &str)] = &[
 ];
 
 /// `t` with its string literals emptied and any `//` comment cut, so a lint named in a reason,
-/// a message or a comment is not an exemption.
+/// a message or a comment is not an exemption. A char literal (`'"'`, `'\"'`) is kept whole, so
+/// its quote does not open a string that would swallow the rest of the line.
 fn code_of(t: &str) -> String {
+    let chars: Vec<char> = t.chars().collect();
     let mut out = String::new();
     let (mut in_str, mut escaped) = (false, false);
-    let mut chars = t.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut k = 0;
+    while k < chars.len() {
+        let c = chars[k];
+        k += 1;
         if in_str {
             match (escaped, c) {
                 (true, _) => escaped = false,
@@ -103,11 +114,22 @@ fn code_of(t: &str) -> String {
             continue;
         }
         match c {
+            '\'' => {
+                // `'x'` or `'\x'`: copy it through; anything else (a lifetime) is one char.
+                let len = match chars.get(k..) {
+                    Some([x, '\'', ..]) if *x != '\\' => 2,
+                    Some(['\\', _, '\'', ..]) => 3,
+                    _ => 0,
+                };
+                out.push(c);
+                out.extend(&chars[k..k + len]);
+                k += len;
+            }
             '"' => {
                 in_str = true;
                 out.push('"');
             }
-            '/' if chars.peek() == Some(&'/') => break,
+            '/' if chars.get(k) == Some(&'/') => break,
             _ => out.push(c),
         }
     }
@@ -230,6 +252,72 @@ fn the_config_still_names_every_call() {
     assert_eq!(named, want, "clippy.toml's disallowed paths moved");
 }
 
+/// Whether line `t` of a manifest or cargo config sets the lint's level (or a group's) — a
+/// `[lints]` table, a `[workspace.lints]` one, or `rustflags` — which silences the disallowed
+/// calls with no attribute in any source. `table` is the header the line sits under.
+fn manifest_silences(table: &str, t: &str) -> bool {
+    let code = t.split('#').next().unwrap_or("");
+    let word = |w: &str| {
+        code.match_indices(w).any(|(at, _)| {
+            let edge = |c: Option<char>| {
+                !c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            };
+            edge(code[..at].chars().next_back()) && edge(code[at + w.len()..].chars().next())
+        })
+    };
+    let names_the_lint = word("disallowed_methods") || word("disallowed-methods");
+    let in_lints = table.starts_with("[lints") || table.starts_with("[workspace.lints");
+    let groups = word("all") || word("style") || word("warnings");
+    let flags = code.contains("rustflags") || code.contains("cap-lints");
+    names_the_lint
+        || (in_lints && groups)
+        || (flags && (code.contains("clippy") || word("warnings")))
+}
+
+/// The manifests and cargo configs a lint level can be set in: the root's and every crate's
+/// `Cargo.toml`, and `.cargo/config(.toml)` if one is ever added.
+fn lint_level_files() -> Vec<std::path::PathBuf> {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/")
+        .to_path_buf();
+    let root = crates.parent().expect("the workspace root").to_path_buf();
+    let mut out = vec![
+        root.join("Cargo.toml"),
+        root.join(".cargo/config.toml"),
+        root.join(".cargo/config"),
+    ];
+    for entry in std::fs::read_dir(&crates).expect("crates/") {
+        out.push(entry.expect("entry").path().join("Cargo.toml"));
+    }
+    out.retain(|p| p.is_file());
+    out.sort();
+    out
+}
+
+/// A level set in a manifest or a cargo config is an exemption no source shows, so there is none.
+#[test]
+fn no_manifest_or_cargo_config_sets_the_lints_level() {
+    let mut offenders = Vec::new();
+    for path in lint_level_files() {
+        let text = std::fs::read_to_string(&path).expect("read");
+        let mut table = String::new();
+        for (k, line) in text.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with('[') {
+                table = t.to_string();
+            } else if manifest_silences(&table, t) {
+                offenders.push(format!("{}:{}: {t}", path.display(), k + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a manifest or cargo config sets the level of clippy.toml's disallowed calls (or of a \
+         group holding them), which no exemption table sees -- set it nowhere: {offenders:?}"
+    );
+}
+
 /// ★ **The rule is exercised on strings, not on the tree** — a scan that only ever sees a tree it
 /// agrees with has not been shown to say anything.
 #[test]
@@ -278,5 +366,53 @@ fn the_scan_reads_what_it_should() {
     assert!(
         !silences_a_group("let style = clippy::style;"),
         "not in an attribute"
+    );
+    assert_eq!(
+        exemptions_in("let q = '\"'; #[allow(clippy::disallowed_methods)]"),
+        1,
+        "a char literal's quote does not open a string"
+    );
+    assert_eq!(
+        exemptions_in("let q = '\\\"'; #[allow(clippy::disallowed_methods)]"),
+        1,
+        "nor an escaped one"
+    );
+    assert_eq!(
+        exemptions_in("fn f<'a>(x: &'a str) {} #[allow(clippy::disallowed_methods)]"),
+        1,
+        "a lifetime is not a char literal"
+    );
+
+    assert!(manifest_silences(
+        "[lints.clippy]",
+        "disallowed_methods = \"allow\""
+    ));
+    assert!(manifest_silences(
+        "[workspace.lints.clippy]",
+        "all = { level = \"allow\", priority = -1 }"
+    ));
+    assert!(manifest_silences(
+        "[lints]",
+        "clippy = { style = \"allow\" }"
+    ));
+    assert!(manifest_silences(
+        "[build]",
+        "rustflags = [\"-A\", \"clippy::disallowed_methods\"]"
+    ));
+    assert!(manifest_silences(
+        "[build]",
+        "rustflags = [\"--cap-lints\", \"warn\", \"-A\", \"warnings\"]"
+    ));
+    assert!(!manifest_silences(
+        "[workspace.lints.rust]",
+        "unsafe_code = \"forbid\""
+    ));
+    assert!(
+        !manifest_silences("[features]", "all = [\"a\", \"b\"]"),
+        "a feature named all"
+    );
+    assert!(
+        !manifest_silences("[lints.clippy]", "# all = \"allow\" once"),
+        "a comment"
     );
 }
