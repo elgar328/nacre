@@ -126,12 +126,14 @@ pub(in crate::kernel::frame3) fn rand_triple(st: &mut u64) -> [[WitnessPoint; 3]
     triple_pts(v, st, ax, angle, piv)
 }
 
-/// Relative error of `got` against `want`, as an `f64` magnitude — computed **in astro-float**
-/// so the comparison is not limited by `bigfloat_upper_f64`'s power-of-two rounding. Used by the
-/// normalization tests, where a factor-of-two slop would hide a real units error.
+/// Relative error of `got` against `want`, as an `f64` no smaller than it — the quotient is taken
+/// **in astro-float** and read once ([`bigfloat_upper_f64`]), so it is at most one octave above the
+/// truth and never below: an `err < limit` check can only fail early, never pass on a slop. (Two
+/// octave readings divided could land a factor of two *under*.) Used by the normalization tests,
+/// where that slop would hide a real units error.
 pub(in crate::kernel::frame3) fn rel_err(got: &BigFloat, want: &BigFloat, prec: usize) -> f64 {
     let d = got.sub(want, prec, HP_RM);
-    bigfloat_upper_f64(&d.abs()) / bigfloat_upper_f64(&want.abs())
+    bigfloat_upper_f64(&d.div(want, prec, HP_RM))
 }
 
 mod judges;

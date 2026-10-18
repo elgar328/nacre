@@ -377,9 +377,10 @@ mod tests {
     }
 
     /// A `BigFloat`'s size reads the same way: its octave's top `2^exponent` (so a power of two
-    /// reads one octave high), the smallest normal below the normal range — where the spelling
-    /// this replaced, `2f64.powi(exponent)`, read a nonzero value as `0.0` — and infinity for a
-    /// value with no exponent.
+    /// reads one octave high), the smallest normal below the normal range, and infinity for a
+    /// value with no exponent. `2^-1050` is the case the replaced spelling got wrong: its octave's
+    /// top `2^-1049` is an `f64` (a subnormal), yet `2f64.powi(-1049)` with a runtime exponent reads
+    /// `0.0`. `2^-1100` is past every `f64`, so there any `f64` reading of `2^e` is `0.0`.
     #[test]
     fn a_bigfloats_size_floors_at_the_smallest_normal_and_never_reads_zero() {
         let p = 64;
@@ -388,16 +389,21 @@ mod tests {
         assert_eq!(bigfloat_upper_f64(&big(0.75)), 1.0);
         assert_eq!(bigfloat_upper_f64(&big(-0.75)), 1.0);
         assert_eq!(bigfloat_upper_f64(&big(1.0)), 2.0);
-        // 2^-1022 · 2^-78 = 2^-1100, exact in a BigFloat and below any `f64`'s normal range.
-        let tiny = big(f64::MIN_POSITIVE).mul(&big(2f64.powi(-78)), p, crate::HP_RM);
-        assert!(!tiny.is_zero());
-        let e = std::hint::black_box(tiny.exponent().expect("finite"));
-        assert_eq!(
-            2f64.powi(e),
-            0.0,
-            "the replaced spelling reads a nonzero size as zero"
-        );
-        assert_eq!(bigfloat_upper_f64(&tiny), f64::MIN_POSITIVE);
+        for k in [28, 78] {
+            // 2^-1022 · 2^-k, exact in a BigFloat and below the normal range.
+            let tiny = big(f64::MIN_POSITIVE).mul(&big(2f64.powi(-k)), p, crate::HP_RM);
+            let e = std::hint::black_box(tiny.exponent().expect("finite"));
+            if k == 28 {
+                let top = f64::MIN_POSITIVE * 2f64.powi(e + 1022); // 2^-1049, exactly
+                assert!(top > 0.0, "the octave's top is an f64");
+                assert_eq!(2f64.powi(e), 0.0, "the replaced spelling read it as zero");
+            }
+            assert_eq!(
+                bigfloat_upper_f64(&tiny),
+                f64::MIN_POSITIVE,
+                "2^-(1022 + {k})"
+            );
+        }
         assert_eq!(bigfloat_upper_f64(&big(f64::INFINITY)), f64::INFINITY);
     }
 
