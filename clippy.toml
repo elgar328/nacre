@@ -41,5 +41,5 @@ disallowed-methods = [
     # single point's side is a different question and says so in its `expect`. What this sees is
     # the `side_of` call: a road that walks a ring without it is outside — `point_in_mixed_ring`
     # walks chart coordinates (`QuadVal`), its corner rule `ray_step_crossing`'s, the planar roads'.
-    { path = "nacre_ops::combinatorics::ring_walk::side_of", reason = "walk a ring through `ring_against_plane` (the flank rule lives there); a single point's side is asked with an `expect` saying so" },
+    { path = "nacre_ops::combinatorics::ring_walk::side_of", reason = "walk a ring through `ring_against_plane` (the flank rule lives there); a single point's side is asked with an `expect` saying so and its row in nacre-ops' tests/instruments/disallowed.rs" },
 ]
