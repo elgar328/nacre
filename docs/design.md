@@ -1076,13 +1076,13 @@ pub struct Mag { m: f64, e: i64 }                                  // f64 밖 �
 pub struct Bounded   { pub value: f64,      pub error: f64 }
 pub struct HpBounded { pub value: BigFloat, pub error: Mag }
 
-// ── 경계 지어진 점 — 원자 셋(축별). 실현(`realize`)의 출력과 `WitnessPoint.coord_iv` 가 이 모양이다.
-//   값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
+// ── 경계 지어진 점 — 원자 셋(축별). `WitnessPoint` 의 `coord_hp`(`HpBounded` 셋)와 `coord_iv`(`Bounded` 셋)가
+//   이 모양이다. 값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
 //   값만 옮기고 오차를 안 옮기는 desync 가 불가능하다.
 
 // ── 정점의 캐시 ──
 pub enum PointCache {
-    Bounded    { coord: Point3, bound: [Mag; 3] },                //   정의에서 실현 — 참값 ∈ coord ± bound
+    Realized   { coord: Point3, bound: [Mag; 3] },                //   정의에서 실현 — 참값 ∈ coord ± bound
     Ceiling    { coord: Point3 },                                 //   싼 도로가 멈췄다 — 비싼 문이 답할 수 있다
     Unrealized { coord: Point3 },                                 //   실현이 뒤에 없다 — 도로가 없거나, 안 물었거나
 }
@@ -1124,7 +1124,7 @@ pub enum PointCache {
 //   그래서 이것은 캐시로 접지 않는다(접으면 경계가 지워진다). 정의는 「판정」 절.
 
 // ── 곡면의 캐시 — geom 의 실현을 감싼 구조체. `EdgeCache` 의 거울이다. ──
-pub struct SurfaceCache { realized: nacre_geom::Surface, standing: CacheStanding } // Plane(..) | Cylinder(..) 는 geom 의 enum
+pub struct SurfaceCache { surface: nacre_geom::Surface, standing: CacheStanding } // Plane(..) | Cylinder(..) 는 geom 의 enum
 pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 값에 대해 아는 것 — 순서가 앎이고, 오르기만 한다
 //   topo 는 감싸기만 하고 기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에
 //   남는다 — 다형 질의는 geom 의 enum 이 안에서 가른다. 감싸는 이유는 캐시가 자랄 자리가 있는 이름 붙은
@@ -1153,7 +1153,7 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   수치를 맞추고(`align_cache_sense`, 움직이지 않은 것만), 그 수치는 실현이 멈춘 곳(`Ceiling`)에만 남는다. 향
 //   잠금(`audit_plane_senses` — census, 그리고 이름 없는 평면을 드는 스위트의
 //   `every_plane_faces_the_way_its_truth_says`)이 결과를 지킨다. 원통은 기준이
-//   진실 안에 있다(축에서 바깥으로). `fallback` 인자가 드는 것은 실현값(앵커·단위 법선)뿐이다.
+//   진실 안에 있다(축에서 바깥으로). `figure` 인자가 드는 것은 실현값(앵커·단위 법선)뿐이다.
 //   **향을 묻는 판정은 전부 이 진실을 읽는다**: 평면이 보는 쪽 = `sense` × 점들의 방향(이름과의 관계는
 //   `Model::plane_name_sense`·`world_plane_name_sense`), 증인 삼각형의 순서 = `sense × orientation`, 두 면의
 //   관계 = `face_facing`. 캐시 법선은 어느 방향 판정에도 들지 않는다. (「가지 말 것」의 «평면의 방향을 점
@@ -1346,7 +1346,7 @@ pub struct WitnessPoint {
                                               // 같은 Rc 를 복제해 든다 — 두 번 펼치지 않으므로
                                               // 어긋날 수 없다. 점이 드는 이유: 자기완결 판정
                                               // (`shared_base`·실현은 점만 받는다).
-    pub realized: [Bounded; 3],
+    pub coord_iv: [Bounded; 3],
     hp: HpCell,                               // HpRc<HpOnce<(usize, [HpBounded; 3])>> — (정밀도, 값)
 }                                             // `parallel` 에선 Arc<OnceLock>, 아니면 Rc<OnceCell>
 

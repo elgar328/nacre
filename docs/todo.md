@@ -360,7 +360,7 @@ it names."*
 
 ### `SurfaceCache` 를 enum 으로
 
-**무엇이 문제인가.** `SurfaceCache` 는 `realized: nacre_geom::Surface` 와 그 표지(`standing`)를 든 struct 다. 도착점은
+**무엇이 문제인가.** `SurfaceCache` 는 `surface: nacre_geom::Surface` 와 그 표지(`standing`)를 든 struct 다. 도착점은
 `enum SurfaceCache` 와 `.plane()`/`.cylinder()` 체이닝. 근거는 «확정한 구조의 이행»이지 «재발 방지»가
 아니다(막을 인구는 0 이다). 인구: 값 21 + 테스트 44, 메서드 이전 8, 통째 출구는 `transform.rs` 한 곳.
 테스트 30곳의 종류 판별도 함께 지나간다.

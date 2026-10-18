@@ -391,7 +391,7 @@ pub struct SurfaceDeriveCounts {
     pub derived: u64,
     /// Pushes where it declined — no world name (no name, a moved `Wide` name, a motion chain that
     /// does not fold — a frame, a turn off the quarters — or an overflow in the carry) or a moved
-    /// cylinder. **This is the population that must reach zero (or be justified) before `fallback`
+    /// cylinder. **This is the population that must reach zero (or be justified) before `figure`
     /// can leave the push doors' signatures.**
     pub declined: u64,
     /// `declined`, split by cause. The split is what says *which* work removing the parameter
@@ -939,7 +939,7 @@ pub struct EdgeCache {
 /// carried by a motion chain that does not fold (a turn off the quarters, a frame): reaching them
 /// means replaying the chain at a precision, which is `nacre-ops`' work, not this crate's. So the
 /// one who can realizes the value when asked — the plane cache's own arrangement (`push_plane`'s
-/// `fallback`, realized by the ops funnel). The derivation decides everything it can decide
+/// `figure`, realized by the ops funnel). The derivation decides everything it can decide
 /// itself first, so «the truth answers here» is spelled in this crate alone and a piece it answers
 /// is never read from this.
 #[derive(Clone, Copy, Debug, PartialEq)]

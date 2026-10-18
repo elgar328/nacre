@@ -471,7 +471,7 @@ pub(crate) fn realize_vertex_cache_accel(
 
 /// Push a vertex whose cache is **realized from its definition** — the one road every vertex an
 /// operation makes takes, so `Model::vertex_point` is the realization's memo from the moment the
-/// vertex exists (design: *"the cache is what `realize` produced, never a second truth"*).
+/// vertex exists: the cache is what the realization produced, never a second truth.
 ///
 /// `figure` is the coordinate the construction site computed, and it stands wherever
 /// [`realize_vertex_cache_accel`] declines — but the *variant* is this funnel's to choose, not the caller's
