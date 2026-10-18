@@ -45,6 +45,13 @@ impl Eq for WitnessPoint {}
 // leave no model at tol `0` — a quadrantal turn about the origin, a reflection in a plane through
 // it, an axis-aligned frame — and tol `0` is what keeps such a model on the exact predicate path.
 // So these three ask first; the facts hold in `f64`'s normal range, the premise `Bounded` rests on.
+//
+// ★ **Here, not inside `Bounded`'s own operations.** The judge's interval filters meet the same
+// cases often — 42–51% of their additions have an exact-zero operand and 31–40% of their products
+// an exact `0` or power of two (census, perf) — but answering them there decides nothing: built
+// both ways, the climbs and census rows are identical, and the check costs every filter operation
+// (+8.2% instructions on the perf folds returning early, +16.9% choosing the charge). The fact
+// matters only where tol `0` is a contract, which is here.
 
 /// `x + y`, exact when either is an exact zero.
 fn sum(x: Bounded, y: Bounded) -> Bounded {
