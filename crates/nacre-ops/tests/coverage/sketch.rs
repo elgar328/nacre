@@ -126,7 +126,7 @@ fn a_donut_prism_is_a_valid_genus_one_solid() {
 /// A hole is only a hole if the mesh and the exchange format agree it is one. The tessellator
 /// sweeps the cap with its hole as a sibling ring, and STEP writes it as an inner face bound.
 ///
-/// ★ This used to say tessellation *"bridges"* cap holes. It does not, and has not since the
+/// This used to say tessellation *"bridges"* cap holes. It does not, and has not since the
 /// monotone sweep landed — bridging is exactly what that sweep exists to avoid.
 #[test]
 fn a_donut_prism_tessellates_and_exports() {
@@ -260,7 +260,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
     );
 }
 
-/// ★ **A negative extrude sweeps against `ŵ` in the frame's own axes, and its base cap is still
+/// **A negative extrude sweeps against `ŵ` in the frame's own axes, and its base cap is still
 /// the frame's plane.** An annulus drawn on the world `XY` seed, swept `−2`: the body lies in
 /// `z ∈ [−2, 0]`, the footprint is where it was drawn (no mirror), the base cap is the seed's own
 /// handle facing `+z` — away from the body, against the sweep — and the far cap faces `−z`. The
@@ -547,7 +547,7 @@ fn the_contract_does_not_bite_legitimate_profiles() {
     );
 }
 
-/// ★ **A coordinate outside the decimal window is a named error at construction** — the
+/// **A coordinate outside the decimal window is a named error at construction** — the
 /// other half. Falling silently to the f64 path would still build the prism, but record no exact
 /// points, and its surfaces could not survive a motion undemoted. Both profile entry points name
 /// it.
@@ -571,7 +571,7 @@ fn a_dimension_outside_the_decimal_window_is_refused_at_construction() {
     );
 }
 
-/// ★ **The truth is the decimal the author wrote, and it wins over the binary carrier.**
+/// **The truth is the decimal the author wrote, and it wins over the binary carrier.**
 ///
 /// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in decimal (slope one) but *not* in the f64
 /// binary values (`0.3` is not exactly `3 × 0.1bin`), so an f64-exact orient2d calls the corner
@@ -694,7 +694,7 @@ fn a_slot_prism_tessellates_and_exports() {
 
 // --- the radius is a square ---
 
-/// ★ **The truth of a circle is its squared radius.** A quarter arc about the origin from
+/// **The truth of a circle is its squared radius.** A quarter arc about the origin from
 /// `(1, 1)` to `(−1, 1)` has `r² = 2` and no rational radius, and no predicate ever needs the
 /// radius unsquared. It is a ring — the circular segment above the chord `y = 1` — and extrudes to
 /// a solid whose volume is `(π/2 − 1)·h`, its lateral cylinder's cache carrying `√2` correctly
@@ -742,7 +742,7 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
     assert_eq!(radii[0].to_bits(), 2f64.sqrt().to_bits());
 }
 
-/// ★ The boolean road carries `r² = 2` end to end: the segment prism above, cut by a box covering
+/// The boolean road carries `r² = 2` end to end: the segment prism above, cut by a box covering
 /// `x ≥ 0`, leaves the left half of the segment — validate clean, volume `(π/2 − 1)/2`. Written as
 /// the cell's probe («which named refusal is the first wall?») and promoted to a lock when it came
 /// back green; a refusal is still reported in the panic so a regression names itself.

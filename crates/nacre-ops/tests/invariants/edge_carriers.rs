@@ -251,7 +251,7 @@ fn derived_curves_match_stored() {
     m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "extrude+cut", &mut st);
 
-    // ③ ★ Moved cylinders: «derive from moved caches» against the stored circle.
+    // ③ Moved cylinders: «derive from moved caches» against the stored circle.
     //    (A mirrored cylinder has no population: `MirrorNotPlanar` rejects it.)
     let moved = {
         let OpOutput::Transform { solid } = apply(

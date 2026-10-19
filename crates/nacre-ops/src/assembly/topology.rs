@@ -57,7 +57,7 @@ pub(crate) fn check_result_topology(
                 Some(crate::RejectWhere::Point(model.vertex_point(vh))),
             ));
         }
-        // ★ **No edge may say it separates one plane from itself.** An edge whose *stated*
+        // **No edge may say it separates one plane from itself.** An edge whose *stated*
         // surface pair is one plane twice is an interior boundary the coplanar cleaning was
         // obliged to erase. When the merge abstains instead — a 2-node cap's chord and its
         // arcs collide in the node-pair key, so the group ships as-is — the pair would sail
@@ -84,7 +84,7 @@ pub(crate) fn check_result_topology(
                 Some(crate::RejectWhere::Point(model.vertex_point(va))),
             ));
         }
-        // ★ **And the other half of that proposition: the stated pair is the pair of surfaces
+        // **And the other half of that proposition: the stated pair is the pair of surfaces
         // the two using faces lie on** — `validate`'s rule, read the same way: two faces on two
         // surfaces must *be* the stated pair; two faces on one surface (two laterals of one
         // cylinder sharing an arc) must have that surface among the two. The
@@ -139,7 +139,7 @@ pub(crate) fn check_result_topology(
 /// ring edge that exactly two of them use. Returns a component label per face (dense `0..n` in
 /// order of first appearance, for replay determinism) and the component count.
 ///
-/// ★★ **Touching is not joining.** Two bodies that meet along a line share that line's nodes but
+/// **Touching is not joining.** Two bodies that meet along a line share that line's nodes but
 /// no *manifold* edge — four faces use the contact line, not two — so they land in two components
 /// and come back as the two bodies they are, not as one pinched pseudo-solid. Where a body touches
 /// **itself** the material still runs around the contact, every edge of that path is used twice,
@@ -181,7 +181,7 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
             let k = ring.len();
             for t in 0..k {
                 let (a, b) = (ring[t], ring[(t + 1) % k]);
-                // ★ A ruling step is a `Line` here: straight, so its unordered pair names it —
+                // A ruling step is a `Line` here: straight, so its unordered pair names it —
                 // what the order bit keeps apart is a circle's complementary pieces, and two
                 // points bound one straight segment whichever vocabulary a face states it in.
                 let key = match ring.walls[t] {
@@ -195,7 +195,7 @@ pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
             }
         }
     }
-    // ★ **The second joining rule**: a cap face and the lateral that meets it on a whole rim
+    // **The second joining rule**: a cap face and the lateral that meets it on a whole rim
     // share **no node at all** — a circle has none — so the node rule above would leave a drilled
     // box's wall in its own component and send the result down the cavity/containment branch.
     // They do share the rim, keyed exactly as `reconstruct` keys it.

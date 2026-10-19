@@ -85,12 +85,12 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// arithmetic. Consumed by [`judged_coeffs`]' homogeneous route (a judged frame whose defining
 /// point is a [`JudgedPoint::Meet`]).
 ///
-/// ★★★ **Nothing is divided, and that is the point.** A point named as an intersection has no
+/// **Nothing is divided, and that is the point.** A point named as an intersection has no
 /// rational coordinates to hand out — dividing `Dvec/D` would manufacture an irrational and bake
 /// its rounding into everything downstream, which is exactly what the homogeneous form exists to
 /// avoid. The plane is built in the same currency: multiplies and subtracts.
 ///
-/// ★★★★ **The scale's sign is removed here, not handed to the caller.** The join of
+/// **The scale's sign is removed here, not handed to the caller.** The join of
 /// `P_i = D_i·[p_i : 1]` is multilinear in its rows, so the answer is `D0·D1·D2` times the plane
 /// through the affine points. A positive multiple is harmless — every question asked of a plane
 /// is a sign question — but a **negative** one silently reverses the plane's direction, and
@@ -184,7 +184,7 @@ pub(crate) fn cramer_iv(planes: [[Bounded; 4]; 3]) -> (Bounded, [Bounded; 3]) {
 
 /// The Cramer `D` **alone** — the determinant of the three planes' normals.
 ///
-/// ★ **A caller that wants only `D` must not go through [`cramer_iv`]**, which builds four
+/// **A caller that wants only `D` must not go through [`cramer_iv`]**, which builds four
 /// determinants and the `h` column for the three it does not need. [`dir_sign_judge`] asks exactly
 /// this question ("how does the line `a ∩ b` run relative to `c`"), and going through
 /// [`cramer_iv`] would throw away three-quarters of the work on every call.
@@ -221,7 +221,7 @@ pub(super) fn indirect_filter(
 
 /// `indirect_filter` with the implicit point's Cramer parts **already in hand**.
 ///
-/// ★ **The split exists because `(D, Dvec)` *is* the point** — it does not mention `q, r, s`, so a
+/// **The split exists because `(D, Dvec)` *is* the point** — it does not mention `q, r, s`, so a
 /// caller asking about one point against several query triangles pays for it once. The arrangement's
 /// crossing collector asks twice in a row (a segment's two endpoints), which is what
 /// [`crate::predicate::ImplicitPoint`] exploits.
@@ -255,7 +255,7 @@ fn filter_from_cramer(
 /// coordinate with the radius the division carries. `None` when `D` may be zero at this
 /// precision: the planes are not proven to meet in a point, and more bits may prove it.
 ///
-/// ★ This is how a meet of carriers whose motion histories differ gets a coordinate: no shared
+/// This is how a meet of carriers whose motion histories differ gets a coordinate: no shared
 /// frame states it exactly, and each carrier's witness triangle does ([`plane_hp`]).
 pub fn meet_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> Option<[HpBounded; 3]> {
     let (d, n) = cramer_hp(planes, prec);

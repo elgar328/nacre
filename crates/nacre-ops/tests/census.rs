@@ -9,7 +9,7 @@
 //! `record`). The gates run it by name, in three builds (`overview.md` 「관문」). Run it on two commits
 //! and `diff`:
 //!
-//! ★ **World-plane seeding**: the seeds intern with every origin-touching producer, so the
+//! **World-plane seeding**: the seeds intern with every origin-touching producer, so the
 //! survivor's f64 plane cache — and with it the `in:` plane digest — is the seed's on the
 //! origin-touching lines. `stat seeded_hits` below is the falsifiability bridge for that
 //! population.
@@ -18,19 +18,19 @@
 //! cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 //! ```
 //!
-//! ★★★ **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
+//! **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
 //! lines must come out — they do, measured (398 of them at one count; the claim is *the same
 //! lines*, not a number, because the corpus grows). That is not a formality: `Angle`'s f64 route is
 //! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
 //! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
 //! mean the coordinates a model stores depend on how it was compiled.
 //!
-//! ★★ **What keeps them equal is that an angle crosses the model store** before anything realizes
+//! **What keeps them equal is that an angle crosses the model store** before anything realizes
 //! it — written into an `Operation`, pushed, read back — and no optimiser propagates a constant
 //! through a heap structure. So this is a real check with a real way to fail, and no in-process
 //! test can express it: a test runs in one profile. It belongs here, next to the diff it extends.
 //!
-//! ★★★★★ **What a census can and cannot see.** Every case is built from coordinates written here,
+//! **What a census can and cannot see.** Every case is built from coordinates written here,
 //! so it sees a change that moves a coordinate — and it is **blind by construction** to a change in
 //! a population it does not contain. The first 130 lines are all *short* decimals, which is why a
 //! regression that closed the exact path for every arbitrarily-tilted plane crossed this file
@@ -67,7 +67,7 @@ fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
 /// an extrude ([`nacre_ops::fixtures::cylinder_with_seam`]) — with the seam on
 /// `axis.any_perpendicular()`.
 ///
-/// ★ **The seam is stated, not left to the frame**, because rows here were built around where it
+/// **The seam is stated, not left to the frame**, because rows here were built around where it
 /// falls (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
 /// fixture. The axes stated here are integer vectors or a 3-4-5 triple, so the seam and the frame
 /// are exact decimals.
@@ -255,7 +255,7 @@ static CIRCLES: [std::sync::atomic::AtomicUsize; 3] =
 /// The centre a circle edge's truth names, as the nearest `f64` — `None` where the cylinder has no
 /// world statement or its cap no narrow world name.
 ///
-/// ★ **Spelled here, not borrowed.** The axis `o + t·m` meets the cap `n·x + d = 0` at
+/// **Spelled here, not borrowed.** The axis `o + t·m` meets the cap `n·x + d = 0` at
 /// `t = −(n·o + d)/(n·m)`, written out in this test's own `Rat` arithmetic from the truth's public
 /// statements, so the kernel's meet is checked against something it did not compute.
 fn circle_centre_truth(
@@ -301,7 +301,7 @@ static LINES: [std::sync::atomic::AtomicUsize; 6] =
 /// Every live line edge of `m` against its truth: the tags of the lines whose cached direction is
 /// not the truth's nearest unit vector, run from the start vertex to the end.
 ///
-/// ★ **Spelled here, not borrowed.** The direction two named planes meet in is the cross product
+/// **Spelled here, not borrowed.** The direction two named planes meet in is the cross product
 /// of their normals, written out in this test's own integer arithmetic from the truth's public
 /// names; only the rounding of that exact vector to `f64` is the kernel's (`unit_vector_f64`).
 fn line_audit(m: &Model) -> Vec<String> {
@@ -450,9 +450,9 @@ fn record(
     inputs: &str,
     out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>,
 ) {
-    // ★ The rim lock: every circle edge's frame is its cylinder cache's, and every stated rim's
+    // The rim lock: every circle edge's frame is its cylinder cache's, and every stated rim's
     // centre is the truth's nearest `f64` — the edge cache's twin of the vertex lock below.
-    // ★ The line lock: every line edge that the truth gives a direction carries that direction.
+    // The line lock: every line edge that the truth gives a direction carries that direction.
     let lines = line_audit(m);
     assert!(
         lines.is_empty(),
@@ -472,7 +472,7 @@ fn record(
         frame.is_empty(),
         "{tag}: rim frames that are not the cylinder cache's: {frame:?}"
     );
-    // ★ The plane-sense lock: every live plane's cache faces the way its truth's sense says.
+    // The plane-sense lock: every live plane's cache faces the way its truth's sense says.
     let audit = nacre_ops::audit_plane_senses(m);
     assert!(
         audit.disagree.is_empty(),
@@ -485,7 +485,7 @@ fn record(
     {
         slot.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
     }
-    // ★ The mesh lock: every solid a boolean returns here can be drawn. The lib suite asserts the
+    // The mesh lock: every solid a boolean returns here can be drawn. The lib suite asserts the
     // same at the boolean's exit (`tess_census`, `cfg(test)`), which this corpus does not pass through.
     if let Ok(v) = out
         && !v.is_empty()
@@ -497,7 +497,7 @@ fn record(
             "{tag}: a boolean built a solid the mesher refuses: {:?}",
             mesh.err()
         );
-        // ★ And no lateral triangle leans off its cylinder past the budget (worst over this
+        // And no lateral triangle leans off its cylinder past the budget (worst over this
         // corpus 0.345°). The `bothrims … slab` rows were where a lattice point on a ruling made
         // ten slivers each, leaning 30° to 34°.
         if let Ok(t) = &mesh {
@@ -517,7 +517,7 @@ fn record(
             let mut parts = Vec::new();
             for &s in v {
                 let p = nacre_props::mass_props(m, s).expect("props");
-                // ★ **A curved result has no centroid to print, and that is a record, not a
+                // **A curved result has no centroid to print, and that is a record, not a
                 // crash.** `centroid` refuses a face it cannot integrate a first moment over
                 // (`CentroidOfCurvedFace`), which the census met the moment cylinder booleans
                 // started returning solids. Volume and area still measure the whole body, so the
@@ -541,11 +541,11 @@ fn record(
                 ));
             }
             println!("{} {}", v.len(), parts.join(" "));
-            // ★ **The cache is the realization**: every result vertex is asked again with the push
+            // **The cache is the realization**: every result vertex is asked again with the push
             // funnel's own question (`nacre_ops::audit_vertex_caches`), so the row cannot pass by
             // measuring nothing.
             //
-            // ★★ The contract is **answer ⇔ variant**, three ways: the road answers and the cache is
+            // The contract is **answer ⇔ variant**, three ways: the road answers and the cache is
             // `Realized` with that very coordinate and bound, bit for bit; the road stops for bits
             // or cost and the cache is `Ceiling`; the road has no way there at all (or the
             // definition names no point) and the cache is `Unrealized`. The refusals are counted
@@ -822,17 +822,17 @@ fn measure_census() {
         }
     }
 
-    // ── ★★★★★ **Full-width coordinates — the population every family above is blind to.**
+    // ── **Full-width coordinates — the population every family above is blind to.**
     //
     // Every corner and dimension above is a *short* decimal (`0.5`, `2.5`, `7.7`), and every
     // rational derived from one stays far inside `i128`. So a change to what the kernel can and
     // cannot **name** leaves all 130 lines bit-identical, and this census reports nothing.
     //
-    // ★★★★★ That is not hypothetical: a regression that closed the exact path for every
+    // That is not hypothetical: a regression that closed the exact path for every
     // arbitrarily-tilted plane shipped, and the census was bit-identical across it — **twice**,
     // because the same blindness had already been recorded once.
     //
-    // ★★ **Measured, and it picks the right target.** A cuboid on seventeen-digit corners
+    // **Measured, and it picks the right target.** A cuboid on seventeen-digit corners
     // overflows `plane_through_points`' *intermediates* on two of its six faces — the
     // narrow-route population the wide derivation (`plane_name_big`) names, since their
     // canonical answers are small. (The genuinely wide-vessel population lives in computed ring
@@ -995,7 +995,7 @@ fn measure_census() {
 
     // ── **Contact — two bodies that meet along a line or at a point, and one pair that cannot part.**
     //
-    // ★ The population this file was blind to. Before the contact work every one of these was a
+    // The population this file was blind to. Before the contact work every one of these was a
     // reject, and census carried **no reject line at all** (measured: 152 lines, 7 `EMPTY`, zero
     // `ERR`), so the whole family was invisible to the gate that reads every commit. It records
     // *both* halves on purpose: the separable contacts coming back as the bodies they are, and the
@@ -1037,7 +1037,7 @@ fn measure_census() {
         m.rebuild_adjacency();
         record(&format!("ct corner {kn}"), &m, &inputs, &out);
     }
-    // ★★ **The pinch that must stay a reject.** A and B meet only along the line x=2, y=2, but a
+    // **The pinch that must stay a reject.** A and B meet only along the line x=2, y=2, but a
     // bridge overlaps both, so the material loops around the contact: cut it there and one piece
     // remains, not two. A line that ever stops saying `ERR` here is the separation going too far.
     {
@@ -1458,7 +1458,7 @@ fn measure_census() {
     // see a rule that holds on one side and not the other.
     //
     // The box twins are the control: the same straddle with a cuboid tool builds on every wall,
-    // volume 35 exactly, so a row that breaks here needs the **cylinder's** edges. ★ Which *kind*
+    // volume 35 exactly, so a row that breaks here needs the **cylinder's** edges. Which *kind*
     // of cylinder edge, this table cannot say — a population fact is not a code fact.
     // Fuse alone for the twins: the control only has to say that the planar straddle builds.
     {
@@ -1519,7 +1519,7 @@ fn measure_census() {
     // translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
     // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
     // z = 0), and the offset boss under a rigid motion and a non-dyadic translation, whose `f64`
-    // images round while the statements move exactly. ★ Rows were added only where **both**
+    // images round while the statements move exactly. Rows were added only where **both**
     // profiles dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the
     // transport law — without it, `world_cylinder_def`'s postcondition (a `debug_assert`) takes the
     // dev census down there while release answers «disjoint» (Fuse 2 bodies, Cut the plate
@@ -1634,7 +1634,7 @@ fn measure_census() {
     // learned to read circles, this table could not have held the answer: every row here either
     // was refused outright or came back with a plane split in two.
     //
-    // ★ **Why the census had nothing to say about that change**: it contained no such fixture at
+    // **Why the census had nothing to say about that change**: it contained no such fixture at
     // all (measured — the diff over the whole table was empty), which is the same lesson three
     // cells running: **the corpus does not contain the population a cell opens until the cell
     // adds it.** These rows are that addition. The bore row is the negative control: its circle
@@ -1749,7 +1749,7 @@ fn measure_census() {
             m.rebuild_adjacency();
             record(&format!("xy three {kn}"), &m, &inputs, &out);
         }
-        // ★★ **The row that actually needs the world road.** Everything above builds whether or
+        // **The row that actually needs the world road.** Everything above builds whether or
         // not the third door exists — measured, by switching the door off and watching these rows
         // come back byte-identical. A grid only reaches a corner the population gate must judge
         // when the cell carries enough features, and the relation is **not monotone** (two pockets
@@ -1841,14 +1841,14 @@ fn measure_census() {
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //
-    // ★★★★★ **This family exists because its absence hid a regression for 169 commits.** Every
+    // **This family exists because its absence hid a regression for 169 commits.** Every
     // datum above is `DatumDef::Stated`; nothing in this corpus stated one **through vertices**,
     // so when the invariant-plane restatement made `vertex_meet` read a turned solid's corners as
     // straddling — costing every one of them the named datum road — the census crossed it
     // bit-identical and said nothing. The rule is to put the
     // population a change touches into the ledger, and this is that population.
     //
-    // ★★ **It does not stop at making the datum.** The plane a `ThroughVertices` datum mints is
+    // **It does not stop at making the datum.** The plane a `ThroughVertices` datum mints is
     // where `collect_planes` has to choose between the exact witness road and the judged one, and
     // that fork is only reached when such a plane meets a boolean. So the datum hosts a prism and
     // the prism is an operand: a row that only *built* a datum would never walk the road worth
@@ -1920,7 +1920,7 @@ fn measure_census() {
         record(&format!("dt {kn}"), &m, &inputs, &out);
     }
 
-    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.**
+    // **The link that turns "interning explains it" into something falsifiable.**
     // Every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with
     // a nonzero count here. If the coordinates move and this stays zero, the cause is something
@@ -2595,7 +2595,7 @@ fn measure_census() {
                 "slab 1.6",
                 Box::new(|m| (plate1(m), slab(m, [1.6, -3.0, 1.0], [2.6, 0.0, 2.0]))),
             ),
-            // ★ A slab reaching the plate's bottom wall plane `y = −4`
+            // A slab reaching the plate's bottom wall plane `y = −4`
             // — its face coplanar with the wall, not overlapping it, its bottom edge on the
             // wall's line past the tangent point. On the axis plane the slab's corner edge lies
             // on the fillet's own seam, which the rulings split does not arrange yet
@@ -2753,7 +2753,7 @@ fn measure_census() {
                     )
                 }),
             ),
-            // ★ A hundred units away — the partner has nothing to do with it. This row is what
+            // A hundred units away — the partner has nothing to do with it. This row is what
             // says the wall is the plate's own.
             (
                 "box far",
@@ -2786,7 +2786,7 @@ fn measure_census() {
             ),
             // The rib the user's script builds, on one side.
             ("rib", Box::new(|m| (plate(m, 4, 4), rib(m, 17.5)))),
-            // ★ The user's own script — plate, both ribs, then the cylinder that bores across
+            // The user's own script — plate, both ribs, then the cylinder that bores across
             // them. It could not be a row until the fuse built; now it is one, and the name it
             // lands on is the **next** wall, a class carrying a circle and rulings at once. That
             // is the hand-off to the cell after this one, held in the corpus so it cannot be lost.
@@ -2812,14 +2812,14 @@ fn measure_census() {
                                 .expect("a right angle"),
                         }),
                     );
-                    // ★ The ops prism spans `0..90` along its axis, so centring the turned
+                    // The ops prism spans `0..90` along its axis, so centring the turned
                     // cylinder on the plate is a shift of **−45** — the script's own
                     // `cylinder({h: 90, center: [0,0,0]})`. With `+45` it would sit beside the
                     // plate touching only its side plane, which is a different model.
                     (abc, shift(m, turned, [-45.0, 0.0, 47.0]))
                 }),
             ),
-            // ★ **A disk that clears *neither* axis of the footprint.** The tool's cap
+            // **A disk that clears *neither* axis of the footprint.** The tool's cap
             // sits on the plate's own side plane, and there it crosses a corner fillet's tangent
             // line (5 away, radius 10) while overlapping the plate's z-span. So the wall rule's
             // answer for it is «does not clear» — the other half of the pair whose first half is
@@ -2843,7 +2843,7 @@ fn measure_census() {
                     (plate(m, 4, 0), shift(m, turned, [-45.0, -15.0, 6.0]))
                 }),
             ),
-            // ★ **Why the class-edge net's population is empty, held as a row.** Two
+            // **Why the class-edge net's population is empty, held as a row.** Two
             // cylinders on crossing axes, one per operand, whose surfaces meet. A class could
             // otherwise carry one's circle and the other's rulings *touching*, which no split
             // cuts; the pair gate refuses the pair (`CylinderPairContact`) before any arrangement
@@ -2933,7 +2933,7 @@ fn measure_census() {
         }
     }
 
-    // ★★★★ **The realization road for surfaces, measured.** These
+    // **The realization road for surfaces, measured.** These
     // counters cover *every* surface this process pushed (they are process-global and the
     // dump is this binary's only test): `surface_cache_differs` is exactly how many `in:` plane
     // digests may move, and a
@@ -2986,7 +2986,7 @@ fn measure_census() {
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].
 ///
-/// ★ The footprint is a **U** (a notched square), so two of its walls lie on one plane. Where the
+/// The footprint is a **U** (a notched square), so two of its walls lie on one plane. Where the
 /// kernel can name that plane the two share a `Surface` handle; where it cannot they are two
 /// handles for one plane, which is the state this line of work removes.
 fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> Handle<Solid> {

@@ -18,12 +18,12 @@
 //!   `prec` bits with the error the realization cost, and a digit is printed only once the interval
 //!   decides it.
 //!
-//! ★ **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
+//! **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
 //! `vertex_meet → WitnessPoint::at → replay → realize` cannot live on `Model`; `nacre-ops` is the
 //! first crate that sees both. The rounding itself lives one layer further down, in
 //! `nacre-exact`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
 //!
-//! ★★ **Migration 3b.** [`nacre_topo::Vertex::OnSeam`]'s doc records the missing piece as *"the
+//! **Migration 3b.** [`nacre_topo::Vertex::OnSeam`]'s doc records the missing piece as *"the
 //! machinery that regenerates the cached coordinate"*, deferred with row 3b. This is the asking
 //! half of it. It does **not** overwrite the cache — that is the row's other half.
 
@@ -44,7 +44,7 @@ use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
 ///
-/// ★ There is no `Digits` here on purpose: the digit count belongs to
+/// There is no `Digits` here on purpose: the digit count belongs to
 /// [`Realization::to_decimal`] alone. Carrying it in both places lets the two disagree, and the way
 /// they disagree is by printing digits the realization never determined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,7 +94,7 @@ pub enum RealizeError {
     NoMotionChain,
     /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
     ///
-    /// ⚠ **This is a bag, and saying so is the point.** It covers: a pierce corner whose carriers
+    /// **This is a bag, and saying so is the point.** It covers: a pierce corner whose carriers
     /// cannot be stated in the world exactly (a seam corner is met in the world instead), a chain
     /// a seam corner's carriers cannot replay, a cap plane parallel to the axis (so it bounds no
     /// rim), a `root` that does not match the kind of crossing the carriers actually
@@ -118,7 +118,7 @@ pub enum RealizeError {
 
 /// Why the **cheap road** did not answer — two reasons, and only one of them is a failure.
 ///
-/// ★ Deliberately not a `RealizeError` variant. That enum's own doc says it answers *"why a vertex
+/// Deliberately not a `RealizeError` variant. That enum's own doc says it answers *"why a vertex
 /// could not be realized"*, and a chain refused for cost was never attempted: "did not" is not
 /// "cannot". Folding the two together would also hand every caller of [`realize_vertex`] a variant
 /// they can never receive.
@@ -134,9 +134,9 @@ pub enum CacheDecline {
 /// The ladder. Doubling, so a value needing `n` bits pays at most `2n`; capped, because an
 /// unbounded climb on an undecidable ask is a hang rather than an answer.
 ///
-/// ★ The last rung **is** the judgement's own cap ([`crate::planes::JUDGE_PREC_CAP`]) rather than
+/// The last rung **is** the judgement's own cap ([`crate::planes::JUDGE_PREC_CAP`]) rather than
 /// a second copy of the same digits: both name the precision this kernel is willing to pay for, so
-/// they move together instead of agreeing by coincidence. ⚠ The price of tying them, stated: a
+/// they move together instead of agreeing by coincidence. The price of tying them, stated: a
 /// model past the judging cap can still be *exported*, so a realization deeper than this is not
 /// meaningless in principle — it is simply not offered, and the caller is told `Undecided` rather
 /// than made to wait.
@@ -147,7 +147,7 @@ impl Realization {
     /// coordinate is proven within the coincidence limit of zero**. `None` where the realization
     /// names neither.
     ///
-    /// ★★★ **The coincidence rule, as judging states it.** Two things proven closer than
+    /// **The coincidence rule, as judging states it.** Two things proven closer than
     /// `2⁻¹⁸⁰` of the model's size are one ([`nacre_judge::coincidence_for`]: below that no split
     /// survives any output). A coordinate that is exactly `0` never decides by rounding — its interval
     /// straddles `0` at every rung, and `-tiny` and `+tiny` are different `f64`s — so an interval
@@ -158,7 +158,7 @@ impl Realization {
     /// that decides gives the same answer — asked after, a true `1e-70` would read `0` where
     /// rounding fails and `1e-70` a rung later. An exact arm is not asked: a rational rounds.
     ///
-    /// ★★★ **A decided coordinate's error is half an ulp, on both arms** (`half_ulp`). The
+    /// **A decided coordinate's error is half an ulp, on both arms** (`half_ulp`). The
     /// realization's own radius bounds its *interval*, not the `f64` read out of it: the truth
     /// sits within `2⁻¹²⁸` of the interval's middle and still up to half an ulp from the value
     /// the readout reports. What makes half an ulp *proven* rather than typical is the rounding
@@ -167,7 +167,7 @@ impl Realization {
     /// The ladder radius handed over as the bound instead leaves `coord ± bound` short of the
     /// truth by up to half an ulp (`a_bounded_cache_contains_the_coordinate_its_definition_names`).
     ///
-    /// ★★ **The error comes back as [`Mag`], not `f64`.** `nacre-exact`'s own test says why: *"a
+    /// **The error comes back as [`Mag`], not `f64`.** `nacre-exact`'s own test says why: *"a
     /// radius the ladder actually produces must not become zero. An `f64` cannot hold
     /// `2⁻²⁰⁴⁸`."* The coincidence arm carries exactly such a radius (an interval around `0` at
     /// 4096 bits), and an earlier spelling that converted it reported `0e0` — indistinguishable
@@ -181,7 +181,7 @@ impl Realization {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
-                    // ⚠★★★ **An exact realization is not an exact `f64`.** The rational is the
+                    // **An exact realization is not an exact `f64`.** The rational is the
                     // truth; reading it out at 53 bits rounds, and a 59-bit coordinate does not
                     // fit — measured on the tilted-frame family, where the value is
                     // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. An
@@ -294,7 +294,7 @@ pub(crate) fn realize_vertex_of(
 /// [`realize_vertex_of`] with the accelerators ([`Accel`]): what it may read to go faster, and what
 /// it learned that they could keep.
 ///
-/// ★ Only the fixed-precision road fills the prefix. A climb asks the same definition at rung after
+/// Only the fixed-precision road fills the prefix. A climb asks the same definition at rung after
 /// rung, so whatever it learned at 128 bits is not what it returns, and filing the rung it happened
 /// to pass through would put a value under a key the next reader asks at a different precision.
 pub(crate) fn realize_vertex_of_accel(
@@ -311,7 +311,7 @@ pub(crate) fn realize_vertex_of_accel(
 
 /// **How deep a motion history the cheap road replays — a `cost` limit, not a precision rule.**
 ///
-/// ⚠★★★★ **That distinction is the whole of this constant, and collapsing it cost a cell.** The
+/// **That distinction is the whole of this constant, and collapsing it cost a cell.** The
 /// guard this replaces read as *"past here the arithmetic cannot decide anyway"*, and measured,
 /// that is **false**: 150 rational translations and 80 turns of 7° decide perfectly at 128 bits,
 /// while a single 37° turn stops deciding past the 63rd. What a node costs in bits depends on its
@@ -331,17 +331,17 @@ pub(crate) fn realize_vertex_of_accel(
 /// (depth ≤ 2) pays. Change the budget and the number follows — that is why the formula is
 /// written here and not just the digits.
 ///
-/// ☑ **And the value carries no correctness load.** Real models measure depth ≤ 2 (census rows by
+/// **And the value carries no correctness load.** Real models measure depth ≤ 2 (census rows by
 /// their deepest chain: 345 at 0, 53 at 1, 3 at 2), so every value above 2 behaves identically on
 /// them; what this decides is how much is done *eagerly*, at push time. Past it, on a chain that
 /// has to be replayed, the construction's own figure stands, and a caller who wants the point exactly still has
 /// [`realize_vertex`], which climbs.
 ///
-/// ⚠ **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
+/// **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
 /// *judgement* will pay for and bites at roughly four thousand turns; this one caps what a *cache*
 /// will pay for and bites two orders of magnitude earlier. Same kind of limit, different scale.
 ///
-/// ☑ **The value survives the prefix accelerator — measured, not assumed.**
+/// **The value survives the prefix accelerator — measured, not assumed.**
 /// The expectation would be that this constant loses its ground: if a realization can
 /// resume from a remembered prefix, one step should cost the same at any depth, and a budget in
 /// milliseconds would hold everywhere. Measured (release, timing **one** transform at depth rather
@@ -361,7 +361,7 @@ pub(crate) fn realize_vertex_of_accel(
 /// the accelerator does not touch. ⇒ the derivation stands and the number does not move. What the
 /// accelerator changes is the common case, not the worst one.
 ///
-/// ★ **It bounds a replay, not a depth.** A vertex whose chain's fold answers
+/// **It bounds a replay, not a depth.** A vertex whose chain's fold answers
 /// ([`read_without_replay`]) is read at any depth: the fold was composed as each node was born, so
 /// reading it costs the same under two nodes and under two thousand. Measured on 2000 recorded
 /// quarter turns (release, same session): the build goes 65 → 100 ms, and every vertex past the
@@ -371,7 +371,7 @@ const CHEAP_REPLAY_COST_CAP: usize = 192;
 /// [`realize_vertex_cache_accel`] with no accelerator — the question the push funnel asks, for an
 /// instrument to hold the cache to ([`audit_vertex_caches`]). Nothing in the product asks it.
 ///
-/// ★ The door stays narrow on purpose: that question is about a coordinate, not about a side
+/// The door stays narrow on purpose: that question is about a coordinate, not about a side
 /// table. Only the funnel — which holds `&mut Model` and therefore can act on it — takes the wider
 /// one.
 #[cfg(any(test, feature = "test-util"))]
@@ -416,7 +416,7 @@ fn read_without_replay(model: &Model, def: &Vertex) -> Result<Realization, Cache
 /// bit; where it does not, the cost of climbing on every push is not paid, and the cache says so
 /// by carrying the construction's figure instead.
 ///
-/// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
+/// The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
 /// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
 /// [`PointCache::Unrealized`] (there is no road, or no point to reach).
 ///
@@ -431,7 +431,7 @@ pub(crate) fn realize_vertex_cache_accel(
     let deep = def
         .carriers()
         .any(|h| model.plane_replay_depth(h, CHEAP_REPLAY_COST_CAP) > CHEAP_REPLAY_COST_CAP);
-    // ★ **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
+    // **For a vertex, the cap bounds the nodes a replay walks, whichever road walks them.** The
     // shared-frame road replays one point through one chain; the mixed road ([`build_meet`])
     // replays three witness points through each carrier's chain, so under the same budget it
     // counts their sum. (The plane funnel guards the chain's depth instead — `push_plane_realized`
@@ -454,7 +454,7 @@ pub(crate) fn realize_vertex_cache_accel(
             Err(RealizeError::Undecided) => None,
             other => Some(other.map_err(CacheDecline::Cannot)?),
         };
-        // ★ **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
+        // **A second rung, and why 256.** A coordinate that is not `0` loses about a bit per
         // turn off the quarters, and the cost cap stops the replay at 192 nodes, so 256 bits keep
         // more than an `f64`'s 53 inside the cap. A coordinate that is exactly `0` needs its radius
         // under the coincidence limit (`2⁻¹⁸⁰`), which 256 bits reach through some sixty to eighty such
@@ -500,7 +500,7 @@ pub(crate) fn push_vertex_realized(
         || Ok::<_, core::convert::Infallible>(figure.coord()),
         &mut acc,
     );
-    // ★ **Take what was used and leave what was made** — the handover that keeps the table at one
+    // **Take what was used and leave what was made** — the handover that keeps the table at one
     // live generation. A vertex minted here rather than carried forward files nothing: nobody will
     // ever ask for its prefix, and an entry no reader can hit is a leak with a slow fuse.
     if let (ChainLink::Extends, Some(w)) = (link, acc.prefix) {
@@ -532,7 +532,7 @@ pub(crate) fn push_vertex_prerealized(
 /// construction figure the caller cannot produce either (the seam table's plane-cache solve on
 /// planes whose caches are parallel) is a refusal of its own, not a cache.
 ///
-/// ★ **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
+/// **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
 /// two reasons that mean "ask again and pay more" become [`PointCache::Ceiling`]; everything else
 /// means no realization can stand behind the coordinate, and becomes [`PointCache::Unrealized`] —
 /// the kernel has no road, or the definition names no point at all ([`RealizeError::NoPoint`], a
@@ -603,16 +603,16 @@ fn point_cache_accel<E>(
 /// so ([`CacheStanding::Ceiling`]): a replay past [`CHEAP_REPLAY_COST_CAP`] (both halves),
 /// undecided at 256 (that half). The refine door ([`refine_caches`]) pays for those.
 ///
-/// ★ **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
+/// **What the anchor buys** (measured over the suite, 21,769 planes whose normal this realizes):
 /// the producer's anchor is more than an ulp off the true plane for 6,933 of them and up to 37 ulps
 /// — a moved plane's figure is the previous cache moved in `f64`, so the rounding accumulates with
 /// each generation — and the realized one is within an ulp for all of them.
 ///
-/// ★ Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
+/// Not the rejected road (design 「가지 말 것」: realizing such a plane by replaying its three
 /// points in `f64`, which was measured further from the truth than the producer's figure): this
 /// realizes at 128 or 256 bits and rounds once.
 ///
-/// ⚠ **The guard is the chain's depth, not the nodes replayed.** Three points walk the chain (the
+/// **The guard is the chain's depth, not the nodes replayed.** Three points walk the chain (the
 /// anchor, the origin, the name vector — or the three stated points), so a plane under 192 nodes
 /// costs up to three such
 /// replays — where the vertex road's mixed arm counts the sum against the same cap
@@ -780,7 +780,7 @@ pub(crate) fn surface_realization(
 /// every surface to hold the cache and its standing to the funnel's answer (the twin of
 /// [`realize_vertex_cache`] for vertices). `None` where there is no road.
 ///
-/// ★ The funnel's first step is the push door's own derivation, which reads a chain that folds at
+/// The funnel's first step is the push door's own derivation, which reads a chain that folds at
 /// any depth, where the cheap road stops at its cost cap. So a cache the model calls `Realized` is
 /// held to the paid realization — correctly rounded, so the same bits wherever both answer — and
 /// only the rest to the cheap road.
@@ -851,7 +851,7 @@ pub(crate) struct CylinderHp {
 
 /// [`CylinderHp`] for the statement `def` under `motion` (`None`: the statement is the world).
 ///
-/// ★ **A direction is the difference of two replayed points.** The chain is affine — turns,
+/// **A direction is the difference of two replayed points.** The chain is affine — turns,
 /// translations, reflections, frames — so the image of a direction `v` is `R(o + v) − R(o)`: the
 /// translation cancels, which is how the plane funnel carries a name's normal
 /// ([`carried_name_normal`]). Replaying `v` as if it were a point would carry the translation
@@ -975,7 +975,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
     };
     let name = model.surface_name.get(&h);
     let narrow_meets = meets.each_ref().map(|m| m.narrow().copied());
-    // ★ Which halves have a road is read off the statement before any cost is weighed, so a cache
+    // Which halves have a road is read off the statement before any cost is weighed, so a cache
     // that stops on cost is one a paid realization can answer (`CacheStanding::Ceiling`'s word):
     // the anchor needs its first meet narrow, or — nothing having moved the plane since — the first
     // vertex itself; the normal needs a narrow name, or three narrow meets to span it.
@@ -1013,7 +1013,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
         }
         (None, _) => Half::NoRoad,
     };
-    // ★ The normal is the name's, carried — never a judging witness's span: a named plane's
+    // The normal is the name's, carried — never a judging witness's span: a named plane's
     // witness may be its frame's probes, whose turn is the frame's and not the statement's.
     let Some(name) = name else {
         return Some((anchor, Half::NoRoad));
@@ -1041,7 +1041,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
 /// definition and carried through the plane's own chain (the producer anchors there too —
 /// `FrameThrough::anchor_approx`).
 ///
-/// ★ Not the rejected «spread a judging witness into the cache's normal» (design 「가지 말 것」):
+/// Not the rejected «spread a judging witness into the cache's normal» (design 「가지 말 것」):
 /// that draft multiplied `sense` onto a frame's probes, whose turn is the frame's, not the
 /// statement's. `turn` is the sign the witness comes with — `sense` for the statement's own points,
 /// the frame's relation to the facing for probes — the one the judging table winds by at every
@@ -1164,7 +1164,7 @@ fn on_rungs(
 
 /// What [`refine_caches`] did to one kind of cache, over the solids it was given.
 ///
-/// ★ `left_*` are not error counts. They are what the model keeps that no precision paid here
+/// `left_*` are not error counts. They are what the model keeps that no precision paid here
 /// settled, split by name the way the cache variants are: `left_undecided` — the paid road ran out
 /// of ladder (a `Ceiling` it could not raise) — and `left_unrealized` — there is no road (an
 /// `Unrealized` cache: a vertex `NoMeet` or `NoCurvedPoint` reaches, a plane whose chain cannot be
@@ -1207,7 +1207,7 @@ pub struct RefineReport {
 /// asked — what cannot be realized is counted by name. «Live» is what the live solids reach: a surface no live
 /// face carries (a datum plane nothing was built on) is not walked, as an export does not write it.
 ///
-/// ★★ **It changes caches, not truths — but it is the door at the end of a log.** No operation
+/// **It changes caches, not truths — but it is the door at the end of a log.** No operation
 /// decides a truth from a vertex cache (`refining_mid_log_leaves_every_later_truth_as_it_was`,
 /// in `tests/invariants/replay.rs`, measured on a log the door raises surfaces on too). A plane
 /// cache, though, is the construction figure a later boolean's seam table falls back on for a
@@ -1246,7 +1246,7 @@ pub fn refine_caches_of(model: &mut Model, solids: &[Handle<Solid>]) -> RefineRe
         match model.vertex_cache(vh) {
             PointCache::Realized { .. } => {}
             PointCache::Unrealized { .. } => out.vertices.left_unrealized += 1,
-            // ⚠ `Ok` is not enough on its own: `climb` returns early for an exact arm without
+            // `Ok` is not enough on its own: `climb` returns early for an exact arm without
             // asking whether an `f64` names it, so the answer can still be unrepresentable. That
             // value cannot be a `Ceiling` (it is classified `Unrealized`), so this branch should
             // not arrive — but that is an agreement between two functions, not something the
@@ -1398,7 +1398,7 @@ fn line_direction(
     {
         return None;
     }
-    // ★ The guard runs before any chain is walked: the witness triangle replays its plane's whole
+    // The guard runs before any chain is walked: the witness triangle replays its plane's whole
     // history, and a push must not pay for a history the cheap road would not.
     if budget == Budget::Cheap
         && s.iter().any(|&h| {
@@ -1516,7 +1516,7 @@ pub struct VertexCacheAudit {
     pub mismatches: Vec<(Handle<Vertex>, String)>,
 }
 
-/// ★★ **The vertex cache regenerates from the definition** — the vertex lock's one rule, asked of
+/// **The vertex cache regenerates from the definition** — the vertex lock's one rule, asked of
 /// each vertex given: the cheap road ([`realize_vertex_cache`]) answers again and the cache is that
 /// very answer, or the road stops and the cache says why. Compared bit for bit, so `-0.0` is not
 /// `+0.0`.
@@ -1724,7 +1724,7 @@ pub fn line_direction_from_endpoints(
 
 /// `places` decimal places, escalating until the realization determines them.
 ///
-/// ★ This is the door the app and the kit call, and its contract is **"ask for `places`, get
+/// This is the door the app and the kit call, and its contract is **"ask for `places`, get
 /// `places`"**. The `None` on [`Realization::to_decimal`] is the rung-to-rung signal underneath,
 /// not something a caller sees: the only ways this fails are a vertex that cannot be realized at
 /// all and a ladder that ran out.
@@ -1833,7 +1833,7 @@ fn seam_point_stated(
 /// axis, both carried by the cylinder's own chain ([`world_cylinder_hp`]) — crossed with the cap's
 /// plane in the world, at `bits`.
 ///
-/// ★ **The cap and the cylinder are often on different chains**, so the meet cannot be solved
+/// **The cap and the cylinder are often on different chains**, so the meet cannot be solved
 /// before the motion: a cylinder turned about its own axis takes a node while its caps, fixed by
 /// the turn, stay as stated; a circle extruded on a frame node stands on the frame's own plane.
 /// So the cap answers for itself — its world name where it has one, else the plane its witness
@@ -1905,7 +1905,7 @@ fn build_three_plane(
     let Some(&base) = meet.narrow() else {
         return build_meet(model, def, bits, acc.planes.as_deref_mut());
     };
-    // ★ **A chain that folds is read, not replayed.** Translations, quarter turns and axis
+    // **A chain that folds is read, not replayed.** Translations, quarter turns and axis
     // reflections compose to a signed axis permutation plus a rational offset, folded once per node
     // as it is born (`Model::chain_point_rat`), so the meet carried through it is an exact rational
     // — the same point the replay approaches, stated outright. A replay cannot decide a coordinate
@@ -1945,10 +1945,10 @@ fn build_three_plane(
 /// ([`nacre_judge::meet_hp`]), so the error is the realization's and the value is read out once.
 /// A batch's [`PlaneMemo`] realizes each carrier plane once.
 ///
-/// ★ Not the rejected road of replaying three points in `f64` to state a plane (design 「가지 말
+/// Not the rejected road of replaying three points in `f64` to state a plane (design 「가지 말
 /// 것」): that rounds at every step of the chain, and this rounds once, at the end.
 ///
-/// ⚠ `Undecided` where `D` may be zero at this precision — which is also what three carriers
+/// `Undecided` where `D` may be zero at this precision — which is also what three carriers
 /// that truly meet in no point answer, rung after rung. Where the names speak one frame that
 /// definition never arrives here ([`build_three_plane`] refuses it as `NoPoint`, and `validate`
 /// reports it); this road is reached only where they do not, and there no exact question tells
@@ -1990,7 +1990,7 @@ fn realize_witness_plane(
 /// of a whole result at once: realizing the wall's coefficients again for each corner was the whole
 /// cost (a fold of 80 turned fins: 1.1 s → 1.8 s; with this memo 1.2 s).
 ///
-/// ★ It cannot change an answer: the value is a function of the plane's truth and the precision,
+/// It cannot change an answer: the value is a function of the plane's truth and the precision,
 /// which is the key. Keyed by handle, so it lives no longer than one operation on one model.
 #[derive(Default)]
 pub(crate) struct PlaneMemo(std::collections::HashMap<(Handle<Surface>, usize), [HpBounded; 4]>);
@@ -2034,7 +2034,7 @@ fn meet_road_over_cap(model: &Model, def: &Vertex) -> bool {
 /// Returns the key it hit (so the caller that owns `&mut Model` can consume it), how many chain
 /// nodes that value already folded, and the value itself.
 ///
-/// ⚠ **Two steps, and the bound is the producer's, not a round number.** `chain_motion` in
+/// **Two steps, and the bound is the producer's, not a round number.** `chain_motion` in
 /// `transform.rs` records at most two nodes for one call — a rotation and a translation — so two
 /// steps always reach the previous generation and a third could only reach a generation that was
 /// already consumed. Without a bound a miss would walk the whole history doing a failed lookup per
@@ -2075,7 +2075,7 @@ pub(crate) struct PrefixWrite {
 
 /// **Whether this vertex continues a chain the accelerator is already following.**
 ///
-/// ⚠ Not a `bool`. At a call site `true` says nothing about what is being claimed, and the claim
+/// Not a `bool`. At a call site `true` says nothing about what is being claimed, and the claim
 /// here is specific: *the vertex being pushed is the image of one realized before, so its prefix is
 /// worth keeping for the next motion*. Only `transform` can say that. An arrangement's result
 /// vertex is nobody's prefix — remembering it would grow the table by an entry per boolean, for a
@@ -2091,7 +2091,7 @@ pub(crate) enum ChainLink {
 /// **`e₁ = (m·m)e − (e·m)m`** — the part of `e` perpendicular to `m`, unnormalized (the caller
 /// divides by its length, which is the one radical).
 ///
-/// ⚠ **A no-op for every cylinder the kit builds today**, whose `ref_dir` is already perpendicular
+/// **A no-op for every cylinder the kit builds today**, whose `ref_dir` is already perpendicular
 /// to the axis — so no fixture can tell this from `mm·e`, and planting that very mutation left the
 /// corpus green. It is kept, and unit-tested directly, because `CylinderDef::new` only requires
 /// `ref_dir × dir ≠ 0`: a slanted reference direction is a *representable* statement, and this is
@@ -2112,7 +2112,7 @@ fn perp_component(
 /// line's direction — `nacre_exact::quad`'s pair order, which is `Vertex::Pierce`'s stated
 /// convention — and a tangency is one point spelled `Double`, never `Lo`.
 ///
-/// ⚠ Split out because the integration oracle ("the point is on the cylinder") is satisfied by
+/// Split out because the integration oracle ("the point is on the cylinder") is satisfied by
 /// **both** roots: swapping them left the whole corpus green when planted. This is the piece a
 /// test can ask the distinguishing question of.
 fn pick_root(
@@ -2144,7 +2144,7 @@ mod tests {
         Rat::from_int(n)
     }
 
-    /// ★ **A definition that names no point is refused as such, not stopped as a cost.** Three
+    /// **A definition that names no point is refused as such, not stopped as a cost.** Three
     /// planes sharing a line and two parallel planes with a third: every road answers
     /// `NoPoint` — the cheap road, the paid road on the pushed vertex, and a cheap road stopped
     /// past the replay budget — and the funnel files the vertex `Unrealized`, so the refine door
@@ -2529,7 +2529,7 @@ mod tests {
             .collect();
         assert!(!seams.is_empty());
         // On that chain the cylinder funnel leaves a new statement the figure it was handed, bit
-        // for bit. ★ This pins the outcome, not the cost guard: past 192 turns the 256-bit rung
+        // for bit. This pins the outcome, not the cost guard: past 192 turns the 256-bit rung
         // cannot decide either (the cap is sized so it can inside it), so the funnel without its
         // depth test answers the same — measured, that plant stays green. The guard's effect is
         // the replay not paid, which no result shows.
@@ -2597,7 +2597,7 @@ mod tests {
         );
     }
 
-    /// ★★ **`Lo` is the lower parameter along the meet line, and `Hi` the higher.**
+    /// **`Lo` is the lower parameter along the meet line, and `Hi` the higher.**
     ///
     /// The oracle the integration test uses — "the point is on the cylinder" — is satisfied by
     /// *both* roots, so swapping them leaves it green (planted and measured). This asks the

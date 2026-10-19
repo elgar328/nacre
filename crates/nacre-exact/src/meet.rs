@@ -7,7 +7,7 @@ use super::*;
 /// face's own vertices, and lifting *that* back into a rational makes a rounded cache into the
 /// truth, which is the one thing construction here must never do.
 ///
-/// ★★★ **The answer does not depend on how the plane is spelled.** A plane has a family of
+/// **The answer does not depend on how the plane is spelled.** A plane has a family of
 /// coefficient vectors and this formula is invariant across all of them:
 ///
 /// ```text
@@ -128,7 +128,7 @@ fn three_planes_rat_narrow(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
 /// The fork mirrors [`PlaneName`]'s: `Narrow` **whenever the answer fits**, so two routes to one
 /// point are structurally equal.
 ///
-/// ★ The reduction is **per coordinate**, because that is what `Rat` — a `Ratio<i128>` each — has
+/// The reduction is **per coordinate**, because that is what `Rat` — a `Ratio<i128>` each — has
 /// to hold. Cramer hands back `detᵢ/det` sharing one denominator, and that shared form is
 /// systematically wider than the coordinates it names; measuring it would report the width of the
 /// *arithmetic* rather than of the point.
@@ -177,7 +177,7 @@ impl MeetPoint {
     /// denominator of each coordinate) *after* the per-coordinate reduction. `≤ 127` is exactly
     /// the `Narrow` condition, so this is the quantity, not a proxy for it.
     ///
-    /// ★ Reduced, deliberately: the unreduced `detᵢ/det` Cramer produces is systematically wider
+    /// Reduced, deliberately: the unreduced `detᵢ/det` Cramer produces is systematically wider
     /// and would report how the answer was computed rather than how wide the answer is.
     pub fn width_bits(&self) -> u64 {
         match self {
@@ -208,7 +208,7 @@ impl MeetPoint {
 ///
 /// **Integers, not rationals** — [`plane_name_big`]'s argument, applied per row instead of per
 /// point: clearing each row's denominators once up front leaves plain integer arithmetic, with
-/// the reductions at the end where the content has to come out anyway. ★ **A plane row is
+/// the reductions at the end where the content has to come out anyway. **A plane row is
 /// scale-free**, so scaling row `k` by its own denominators' lcm leaves the same plane, and
 /// scaling a row of a linear system leaves the same solution.
 ///
@@ -278,7 +278,7 @@ fn three_planes_int(m: [[num_bigint::BigInt; 4]; 3]) -> Option<MeetPoint> {
         (n, q)
     });
 
-    // ★ The same normalization invariant `plane_name_big` states: narrow whenever the canonical
+    // The same normalization invariant `plane_name_big` states: narrow whenever the canonical
     // answer fits `i128`, `Wide` only when it does not — so equal points are structurally equal
     // whichever route derived them.
     let narrow = (|| {
@@ -303,7 +303,7 @@ fn three_planes_int(m: [[num_bigint::BigInt; 4]; 3]) -> Option<MeetPoint> {
 /// be exact at all: the coefficients live in that face's own pre-motion frame, where the rotation's
 /// irrational numbers never appear.
 ///
-/// ★★ **`None` unless `|n|` is rational**, which is the one thing that can stop this: `n·n` must be
+/// **`None` unless `|n|` is rational**, which is the one thing that can stop this: `n·n` must be
 /// a perfect square. It is `1` for a box face and `25` for a `3-4-5` normal; it is `3` for `[1,1,1]`,
 /// and there the caller keeps whatever path it had. Also `None` on `i128` overflow and for `n = 0`,
 /// which is not a plane.

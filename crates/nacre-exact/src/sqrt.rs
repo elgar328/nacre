@@ -102,7 +102,7 @@ pub fn sqrt_rat(v: Rat) -> Option<Rat> {
 /// under inversion (a fraction in lowest terms is a perfect square exactly when both of its parts
 /// are), so nothing is lost by asking it that way round.
 ///
-/// ★ **This branch is why an axis-aligned model pays nothing.** A frame normal of `(0, 0, 1)` has
+/// **This branch is why an axis-aligned model pays nothing.** A frame normal of `(0, 0, 1)` has
 /// `n·n = 1` and lands here with `1.0`, exactly, without touching arbitrary precision — the same
 /// role [`Angle::cos_sin_rat`] plays for a quadrantal rotation.
 pub fn inv_sqrt_rat(v: Rat) -> Option<Rat> {
@@ -334,12 +334,12 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 /// **How far the `1/√v` the caller was handed sits from the true one** — measured against an
 /// arbitrary-precision realization, the twin of [`Angle::cos_sin_error_of`].
 ///
-/// ★★★ **The caller passes the value in rather than letting this re-realize it**, for the same
+/// **The caller passes the value in rather than letting this re-realize it**, for the same
 /// reason the trig one does: the consumer is a frame's `tol`, which must bound the error in the
 /// `coord_approx` it wrote from *its* `inv_sqrt_f64` result. An error measured against a second,
 /// independent realization would bound a number nobody stored.
 ///
-/// ★★★★ **Exactly zero only when the exact value is also *dyadic*, which is not the same thing
+/// **Exactly zero only when the exact value is also *dyadic*, which is not the same thing
 /// as being exact.** [`Angle::cos_sin_error_of`] can return a flat `0` for its exact family
 /// because `{0, ±1}` are f64 values; `1/√v` cannot. A **Pythagorean** normal like `(3, 4, 0)` has
 /// `n·n = 25` and an exactly rational `1/|n| = 1/5` — which is *not* an f64, so the realization
@@ -357,7 +357,7 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
     }
-    // ★ The claim is made of *this* value, not of `v`: what a caller depends on is "the number I
+    // The claim is made of *this* value, not of `v`: what a caller depends on is "the number I
     // am holding is the realization of the true `1/√v`", and only comparing says that.
     //
     // The gap is taken in **exact rational arithmetic** — `try_from_f64` is exact, so `f − r` is

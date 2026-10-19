@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// ★★ **The production path, run on a cylinder-bearing model.**
+/// **The production path, run on a cylinder-bearing model.**
 ///
 /// A `.plane()` call on the production road with cylinder rows flowing into it —
 /// the `work` class list, the decline witness, the report's `class_of` — aborts the
@@ -245,7 +245,7 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
     }
 }
 
-/// ★ **The gate's record arms the rulings road — and only the record.** With the
+/// **The gate's record arms the rulings road — and only the record.** With the
 /// through-boss pair listed, the boss's trace on the wall class is the rectangle: two
 /// rulings (one per side, Pierce-named ends, no plain segments) and two cap chords
 /// (`Lo`/`Hi` roots on the cap classes). With the record empty — every production call
@@ -326,7 +326,7 @@ fn the_gates_record_arms_the_ruling_trace() {
     );
 }
 
-/// ★ **The armed arrangement digests the rectangle** — production bricks end to end on the
+/// **The armed arrangement digests the rectangle** — production bricks end to end on the
 /// wall class. Each ruling is cut at its T-junctions with the plate's `z = 0` and `z = 20`
 /// lines (three pieces each), those lines split at the same Pierce nodes, the chords close
 /// the far ends, and the walk closes the subdivision: one unbounded contour and five
@@ -438,7 +438,7 @@ fn armed_class_edges<'a>(
     }
 }
 
-/// ★★★★ **A ruling is asked against the plane its side was measured on, and a tangent one too.**
+/// **A ruling is asked against the plane its side was measured on, and a tangent one too.**
 /// The line `x = 1, y = 0` beside a cylinder `r = 1` about `z` is held by two planes: `T: x = 1`,
 /// tangent there, and `P: y = 0`, through the axis. A lateral ring runs up that line and back
 /// (`z = 1 → 3`), its corners named on `T` (the cap with the tangent wall, `QuadRoot::Double`) —
@@ -567,13 +567,13 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
 /// 40, the lower cap inside the plate): the lower boundary is a chain — the arc at z = 10
 /// outside the plate, the arc at z = 20 inside, the two rulings between — so at the
 /// station (40, 25) one arc ends `hi` and the other starts `lo`: the corner rule's one
-/// discriminating population. ☑ In a notch both arcs share their ends, and «both ends
+/// discriminating population. In a notch both arcs share their ends, and «both ends
 /// count» is invisible there — measured; the staircase is why the second build exists.
 /// The other station, (40, 15), is the seam (the fixture puts it on −y): a root there is the
 /// cyclic order's first point, and below the notch the notch's arcs above decide it like any
 /// other.
 ///
-/// ☑ Measured on the through build's rays: on the two whole-circle rims alone, «opposite
+/// Measured on the through build's rays: on the two whole-circle rims alone, «opposite
 /// sides of the two rim planes» and the loops road's «exactly one rim above» agree on all
 /// 2,180 rays — every root, the graze on a rim included — which is why no banded arm
 /// exists.
@@ -737,7 +737,7 @@ fn lateral_lattice(staircase: bool) {
 
 /// The through-boss's curved carriers and plane faces, collected the production way
 /// (`per_class` on each of the four ⊥ classes and the wall class), with the cylinder's rows
-/// and the four ⊥ classes `[z0, z20, cap_lo, cap_hi]`. ★ This mirrors production's fold by
+/// and the four ⊥ classes `[z0, z20, cap_lo, cap_hi]`. This mirrors production's fold by
 /// hand (`trace_result_faces`' accumulation). A drift between them is not caught by
 /// anything: a test would simply start measuring a map the boolean never builds.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -778,7 +778,7 @@ fn armed_curved(
     let mut cut_rims: CutRims = HashMap::new();
     let mut plane_faces: Vec<LocalFace> = Vec::new();
     let mut arc_labels: crate::arrangement::ArcLabels = HashMap::new();
-    // ★ The wall class too: the chart's rulings are the wall's pieces, and without them the
+    // The wall class too: the chart's rulings are the wall's pieces, and without them the
     // both-cut middle is one whole-circle cell the emitter cannot read per sector.
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in [z0, z20, cap_lo, cap_hi, wc] {
@@ -809,7 +809,7 @@ fn armed_curved(
     (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi])
 }
 
-/// ★ **A cut circle is a band boundary**. On the armed
+/// **A cut circle is a band boundary**. On the armed
 /// through-boss, the per-class products of the four ⊥ classes are collected the production
 /// way (`per_class` on each), and the chart must break the lateral at the two **cut**
 /// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
@@ -834,7 +834,7 @@ fn a_cut_circle_bounds_the_bands() {
     assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
     assert_eq!(arc_labels[&(0, z20)].len(), 2);
     assert_eq!(rows.len(), 1);
-    // ★ A cut circle is a band boundary (the rulings ladder): the chart's boundary rule names
+    // A cut circle is a band boundary (the rulings ladder): the chart's boundary rule names
     // the two cut rims beside the caps, and the chart's own lines are exactly those four.
     let def = &setup.cyls[0].def;
     let t_of = |c: usize| crate::bands::axis_param(&jd, c, def).unwrap();
@@ -852,7 +852,7 @@ fn a_cut_circle_bounds_the_bands() {
         expect,
         "the chart's lines are the boundaries and nothing else here"
     );
-    // ★ **The emitter answers with regions.** Under `keep` the wall splits the middle
+    // **The emitter answers with regions.** Under `keep` the wall splits the middle
     // interval into two sectors, one kept and one not, and the kept one joins the whole
     // bands above and below it: **fuse** emits one face — a band bounded by its two whole rims
     // (`Bound::Rim`) with the unkept sector as its one **hole** (a 4-node ring: two arcs on the
@@ -916,7 +916,7 @@ fn a_cut_circle_bounds_the_bands() {
         panic!("cut: the kept sector is a ring, got {:?}", cut[0].outer);
     };
     assert!(cut[0].inner.is_empty());
-    // ★ **Fuse's hole is cut's panel**: the sector fuse drops (inside the plate) is exactly
+    // **Fuse's hole is cut's panel**: the sector fuse drops (inside the plate) is exactly
     // the sector cut keeps (the groove's wall), so the two rings carry the same ccw arc on
     // the lower cut rim — «complementary panels», stated for regions.
     let (pf, pc) = (arc_on_z0(hole), arc_on_z0(panel));
@@ -933,7 +933,7 @@ fn a_cut_circle_bounds_the_bands() {
         rulings: curved.rulings.clone(),
     };
     blind.arc_labels.clear();
-    // ★ **Blinding one axis is not blinding the reader** — the chart has two, and the rulings
+    // **Blinding one axis is not blinding the reader** — the chart has two, and the rulings
     // answer where the rims are silent (the vertical read's own cell). So this says the weaker,
     // truer thing: with the arcs gone the emitter still gets an answer, and
     // it is only when **both** axes are blinded that it refuses by name.
@@ -970,7 +970,7 @@ fn a_cut_circle_bounds_the_bands() {
             ..
         })
     ));
-    // ★ **A wall that contradicts the rims is not outvoted.** With the arcs as they are and every
+    // **A wall that contradicts the rims is not outvoted.** With the arcs as they are and every
     // ruling's inside label inside out — the cell beside it inside the cylinder, the one a cell's
     // chamber reads — the walls read the opposite chamber on every cell they bound, and the reader
     // answers neither.
@@ -1022,7 +1022,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), *label);
         }
-        // ★ This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
+        // This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
         // drift between them is not caught by anything: the test would simply start measuring
         // a map the boolean never builds.
         for (cyl, al) in &staged.arc_labels {
@@ -1078,7 +1078,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     (m, setup, wc)
 }
 
-/// ★ **The armed assembly welds the panels** (the lock): the whole
+/// **The armed assembly welds the panels** (the lock): the whole
 /// through-boss fuse, from production parts past the standing gate — every class's
 /// arrangement, the coplanar unify, the band/panel pass, the seam table, and
 /// `reconstruct` — comes back one solid with a clean `validate`. The ruling edges are
@@ -1142,7 +1142,7 @@ fn the_armed_assembly_welds_the_panels() {
     );
 }
 
-/// ★ **The armed solid's mass properties are exact** (the props
+/// **The armed solid's mass properties are exact** (the props
 /// instrument): `mass_props` on the assembled through-boss fuse, with the θ-range lateral
 /// integrals live, answers the derived closed forms — volume `32000 + 1000π` (plate plus
 /// the boss outside it), area `6200 + 425π` (walls 3000 + split x = 40 wall 600, caps
@@ -1168,7 +1168,7 @@ fn the_armed_solids_mass_properties_are_exact() {
     );
 }
 
-/// ★ **The armed solid tessellates watertight** (the tess
+/// **The armed solid tessellates watertight** (the tess
 /// instrument): the open-rim merge triangulates the θ-panels of the assembled through-boss
 /// fuse — the outer panel's rims are arcs from θ = 0 to π, one ruling on θ = 0 (the boss's
 /// reference direction is `−y`, along the wall), so this one solid exercises the multi-polyline
@@ -1242,7 +1242,7 @@ fn the_mixed_parity_reads_a_bitten_ring() {
     });
 }
 
-/// ★★★★★ **The digon's truth is known independently, so the parity can be swept rather than
+/// **The digon's truth is known independently, so the parity can be swept rather than
 /// spot-checked.** A digon of a chord and an arc is `disk ∩ half-space`, and both halves are
 /// exact rational predicates the arrangement already owns —
 /// [`nacre_exact::quad::cylinder_radial_side`] and the sign of the wall's plane equation. A
@@ -1251,7 +1251,7 @@ fn the_mixed_parity_reads_a_bitten_ring() {
 /// non-mixed road's oracle cannot see an arc, and a whole circle's arm collapses to
 /// `Ordering::Equal` on a single step.
 ///
-/// ☑ **What it does and does not reach, measured.** On this fixture the chord's ends are the
+/// **What it does and does not reach, measured.** On this fixture the chord's ends are the
 /// seam and the tangent columns, and a ray along the chord meets **both** arc ends at once —
 /// so this sweep is green under a flipped arc-end departure sign (two ends on one ray flip
 /// together and keep the parity) and green under the straight arm's old corner abstention
@@ -1289,7 +1289,7 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
                 let wall = p[0].checked_sub(Rat::from_int(40)).unwrap();
                 if radial == Orient::Zero || wall == Rat::from_int(0) {
                     on_boundary += 1;
-                    // ★★★★★ **A point strictly inside the circle and *on* the chord is on
+                    // **A point strictly inside the circle and *on* the chord is on
                     // both digons' boundary, and "inside" has no answer there.** These are the
                     // grid's sharpest points: the ray along the chart's first axis leaves such
                     // a point straight through **both arc endpoints** — the chord is a step
@@ -1313,7 +1313,7 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
                     (bite, inside_bite, "bite"),
                     (overhang, inside_over, "overhang"),
                 ] {
-                    // ★ **An abstention is allowed and a wrong answer is not.** The ray runs
+                    // **An abstention is allowed and a wrong answer is not.** The ray runs
                     // along the chart's first axis, so a grid point whose ray meets a ring
                     // corner has no parity to report — the caller's remedy is another point,
                     // which is exactly what `coord_probes` does with its candidate list. What
@@ -1567,7 +1567,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                             }
                             continue;
                         }
-                        // ★ **A ring's boundary is its own arc, not the whole circle.** The bite's
+                        // **A ring's boundary is its own arc, not the whole circle.** The bite's
                         // arc is the circle on the plate's side (`x ≤ 40 ∧ y ≤ 24`), the
                         // overhang's the rest: on its own arc a ring abstains, off it the point is
                         // outside that ring. The tangent columns `x = 35, 45` are the exception the
@@ -1872,7 +1872,7 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     // The class's normal is the cap's own outward +z (the cap is its only member), so the
-    // body — below z=3 — is `body_above: false`. ★ **Two contributions, not one**: the cap is
+    // body — below z=3 — is `body_above: false`. **Two contributions, not one**: the cap is
     // seated here and the lateral's rim grazes here, and on this convex cap they agree.
     assert!(planes[wc].plane.normal().as_array()[2] > 0.0);
     let mut kinds: Vec<SegKind> = tr
@@ -2207,7 +2207,7 @@ fn no_ghost_circle_outside_the_rim_span() {
     // The cylinder's own top cap at z=1.5 (inside the box): the rim-coincident plane carries
     // **two** contributions — the cap's `Seated` circle and the lateral's `Graze`, because a
     // rim is a touch, not a miss. It adds no *transversal* twin (t = span end, not strictly
-    // inside). ★ On a **convex** cap the two agree about which side the body is on; the whole
+    // inside). On a **convex** cap the two agree about which side the body is on; the whole
     // point of carrying both is the reflex corner (a blind bore's ceiling) where they do not,
     // and `edge_mask`'s `Graze > Seated` then picks the right one.
     let cap = trace_on_class_of(
@@ -2247,7 +2247,7 @@ fn no_ghost_circle_outside_the_rim_span() {
     );
 }
 
-/// ★★ **The corner the graze exists for.** On a convex cap the lateral's rim-graze and the
+/// **The corner the graze exists for.** On a convex cap the lateral's rim-graze and the
 /// cap's seated circle say the same thing, so carrying both changes nothing — the test above
 /// locks that. Here they **disagree**: at a blind bore's ceiling the plate's material is above
 /// the cap while the bore's wall hangs below it, a reflex dihedral in the plane. `edge_mask`'s
@@ -2404,7 +2404,7 @@ fn partial_overlap_is_not_merged() {
     );
 }
 
-/// ★ **An arc that crosses the cut line once on its way into an end lying on it** — the half disk
+/// **An arc that crosses the cut line once on its way into an end lying on it** — the half disk
 /// over the arc `(1, 0) → (−1, 0)` (unit radius, `z ∈ [0, 2]`) traced on the slanted class
 /// `x + y = 1`, which runs through the arc's end `(1, 0)` and crosses it again at `(0, 1)`. Each
 /// cap's ring is read as the walk now reads it: the end on the line is flanked by the arc's last

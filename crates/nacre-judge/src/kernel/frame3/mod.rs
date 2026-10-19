@@ -62,7 +62,7 @@ type HpCell = HpRc<HpOnce<(usize, [HpBounded; 3])>>;
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
 /// Motions do not commute, so the chain's **order is the definition**.
-/// ★ **`Frame` is the large variant and it is boxed nowhere.** It holds four rational vectors and
+/// **`Frame` is the large variant and it is boxed nowhere.** It holds four rational vectors and
 /// three rational lengths against `Rotate`'s one vector — but a `MoveNode` lives in a shared
 /// `Rc<[MoveNode]>` that the judgment path clones by refcount, and a chain is a handful of nodes
 /// per point at most. Boxing would trade a flat read for a pointer chase on the hot path to save
@@ -92,31 +92,31 @@ pub enum MoveNode {
     /// out = origin + u·û + v·v̂ + w·ŵ
     /// ```
     ///
-    /// ★★★ **Every input is exact and rational; the only irrational step is dividing by a
+    /// **Every input is exact and rational; the only irrational step is dividing by a
     /// length.** `u_raw` is `ẑ × n` (or `ŷ × n`), which is *already in the plane* — the cross
     /// product is perpendicular to both its arguments, so the projection a general `ref_dir`
     /// would need is not here, and `u_raw` need not be a unit vector for the frame to be exact.
     /// So the whole realization is **two `1/√(rational)` scalars**
     /// ([`nacre_exact::inv_sqrt_f64`]), which is why this can be judged at all.
     ///
-    /// ★★ **`v̂` is exact too, and that matters.** Realizing it as `ŵ × û` in f64 costs two
+    /// **`v̂` is exact too, and that matters.** Realizing it as `ŵ × û` in f64 costs two
     /// roundings that do not cancel — a wall whose `v` is exactly `ẑ` came out three ulps short,
     /// which is a frame that is not quite orthonormal. `n ⊥ u_raw` by construction, so
     /// `|v_raw|² = |n|²·|u_raw|²` exactly, and one inverse square root of a rational lands it on
     /// the nose. [`nacre_exact::plane_frame`] checks that product fits `i128` before handing the
     /// frame out, so the overflow is refused at the source rather than handled here.
     ///
-    /// ★ **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
+    /// **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
     Frame { frame: nacre_exact::PlaneFrame },
     /// [`MoveNode::Frame`] for a plane whose exact data does not fit `Rat` — a `Wide`
     /// name, or a narrow one whose squared lengths overflow `i128`. Same realization shape,
     /// arbitrary-precision integers instead: **nothing here can overflow**, so unlike
     /// `PlaneFrame` there is no partial (`v: None`) form.
     ///
-    /// ★ This variant is why `MoveNode` is not `Copy` — `BigInt` owns heap. The chain is
+    /// This variant is why `MoveNode` is not `Copy` — `BigInt` owns heap. The chain is
     /// shared by `Rc`, so nothing hot copies nodes.
     ///
-    /// ★ **Proper** (`det = +1`), like [`MoveNode::Frame`].
+    /// **Proper** (`det = +1`), like [`MoveNode::Frame`].
     FrameWide(WideFrame),
     /// [`MoveNode::Frame`] for a plane that has **no name at all** — a mixed-frame datum, whose
     /// exact world coefficients are irrational so neither exact vessel can hold them. The node
@@ -124,7 +124,7 @@ pub enum MoveNode {
     /// basis is *judged*: derived as intervals at whatever precision the realization runs at.
     /// See [`FrameThrough`].
     ///
-    /// ★ **Proper** (`det = +1`) — `v̂ = ŵ × û` by construction, like the other frame nodes, so
+    /// **Proper** (`det = +1`) — `v̂ = ŵ × û` by construction, like the other frame nodes, so
     /// [`chain_parity`]'s mirrors-only count stays correct.
     ///
     /// Boxed: the three points dwarf every other variant.
@@ -163,7 +163,7 @@ fn narrow_hp(x: &HpBounded) -> Bounded {
 /// fraction of judgements the f64 filter could not settle" and "what they cost" without
 /// instrumentation scattered across the predicates.
 ///
-/// ★ **A test build's instrument** (`test-util`): its only readers are measurements in another
+/// **A test build's instrument** (`test-util`): its only readers are measurements in another
 /// crate's integration tests, so a product build carries none of it — the counters nor the adds.
 /// That the path is cheap (it has already decided to realize in arbitrary precision) is not the
 /// question; nothing in a product reads what it would count.

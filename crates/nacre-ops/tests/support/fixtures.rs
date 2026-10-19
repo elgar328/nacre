@@ -81,7 +81,7 @@ pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
 
 /// A world-XY extrude **for `m`** — the frame names that model's seeded plane.
 ///
-/// ★ It takes the model because an extrude now *names* its plane rather than carrying it, and a
+/// It takes the model because an extrude now *names* its plane rather than carrying it, and a
 /// handle is only valid in its own arena. For a log that will be `replay`ed rather than applied,
 /// see [`extrude_log_op`].
 pub fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
@@ -409,7 +409,7 @@ pub fn rounded_corner_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// A capability test that wants to say "a face sits on z = 1.5 facing +z" has no face handle in
 /// hand, and asserting geometry from what the test wrote is exactly what an acceptance test may do.
 ///
-/// ★ **Asked of the truth.** The written point and normal are lifted exactly and the plane is
+/// **Asked of the truth.** The written point and normal are lifted exactly and the plane is
 /// named from three points on it — the point and two basis crosses of the normal, the
 /// construction `SketchPlane::from_origin_normal` states a plane with (no products, so a long
 /// decimal still names it) — and compared with each face's world name; the facing is the exact
@@ -558,7 +558,7 @@ pub fn mirrored_lifted_block(m: &mut Model, height: f64, lift: nacre_exact::Rat)
 /// `[0,2] × [0,height]` in that frame, swept `2` along the normal: the top is the horizontal
 /// plane `z = height`, `2 × 2` like [`lifted_block`]'s, and the volume is `4·height`.
 ///
-/// ⚠ The helper box stays live — the datum's statement names its vertices — so an assertion over
+/// The helper box stays live — the datum's statement names its vertices — so an assertion over
 /// every live vertex or solid sees it too.
 pub fn through_block(m: &mut Model, height: f64) -> Handle<Solid> {
     let footprint =

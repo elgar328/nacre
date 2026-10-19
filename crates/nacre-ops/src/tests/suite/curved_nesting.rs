@@ -66,7 +66,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 3] {
 /// outcome beside the boundary cycles its result's laterals carry — and the distribution asserted
 /// at the end reads it as a whole, so a moved cell is seen beside its neighbours.
 ///
-/// ★ The probe beside it counts the loops carrying an `OnSeam` vertex at a joint between two
+/// The probe beside it counts the loops carrying an `OnSeam` vertex at a joint between two
 /// edges — outer loops of plane faces and holes of every face. Both counts are zero: a seam vertex
 /// is a whole rim's, on a loop of that one closed edge, and a cut circle has none.
 #[test]
@@ -228,7 +228,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     };
     // Every kind of every family re-operates but one: `on top`'s Common, which is empty.
     assert_eq!(count(|r| *r == Ok), 50, "{table:?}");
-    // ★ No row waits on the chart's reader. A new population must restate this zero.
+    // No row waits on the chart's reader. A new population must restate this zero.
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::CylinderGateUndecided)),
         0,
@@ -258,7 +258,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
 /// every rectangle — the edge through the centre (a halving),
 /// the edge off it (a segment), two edges, a rectangle inside the disk.
 ///
-/// ★ One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
+/// One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
 /// about the same disk, and two copies would be free to drift. `disk_in_rect_is_the_closed_form`
 /// locks it against the known values and a numeric integration.
 fn disk_in_rect(base: [f64; 3], rect: [[f64; 2]; 2]) -> f64 {
@@ -400,11 +400,11 @@ fn disk_in_rect_is_the_closed_form() {
 /// boss `πr²h`, and their overlap (the disk clipped by the plate's footprint, times the axial
 /// overlap): `Fuse = plate + boss − both`, `Cut = plate − both`, `Common = both`.
 ///
-/// ★★★★★ **`removed_by` never checked this.** It locks what a *tool* removes from the first
+/// **`removed_by` never checked this.** It locks what a *tool* removes from the first
 /// result, taking that result's own volume as the baseline — so a first operation could be wrong
 /// by a whole feature and every row would still agree with itself. The day `corner-lo` opened is
 /// the day that mattered: a family that had only ever been refused arrived with no independent
-/// number of its own. ☑ Its three kinds land on 34.748893572 / 31.607300918 / 0.392699082, to
+/// number of its own. Its three kinds land on 34.748893572 / 31.607300918 / 0.392699082, to
 /// 7e-15 or exactly.
 fn first_volume(kind: BoolKind, base: [f64; 3], h: f64) -> f64 {
     let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
@@ -543,7 +543,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // lateral — not one vertex among them — and the depth classification takes its witness from
     // a cut cap read as the disk it is (`combinatorics::face_circle`, offered by
     // `combinatorics::coord_probes`). The **through-axis wall** cuts the other way and leaves one
-    // solid, each sector read as the run of the rim's arcs it spans. ☑ In every family that
+    // solid, each sector read as the run of the rim's arcs it spans. In every family that
     // takes this constant that tool removes real volume, so each `Ok(1)` is a real cut.
     const COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(2)];
     // A half boss's Cut (a notch with a half-disk ceiling): the arc label carries its own side,
@@ -596,7 +596,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall, cap below
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x, cap below
-        // ★ The offset wall. Every tool builds as it does for the wall families: the
+        // The offset wall. Every tool builds as it does for the wall families: the
         // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
         // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism: its halves'
         // corners are pierce names (the vertex probe drops them) and the cut cap's centre lies
@@ -626,7 +626,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         Result::Ok(out) => {
                             m.rebuild_adjacency();
                             let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
-                            // ★ The first result's own volume against the closed form, so the
+                            // The first result's own volume against the closed form, so the
                             // baseline `removed_by` subtracts from is itself checked. Summed over the
                             // whole result rather than guarded on one solid: a guard is a branch that
                             // can go quietly untaken, and the sum is right however many pieces a first
@@ -707,7 +707,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
     assert_eq!(count(|c| matches!(c, Ok(_))), 250, "{tally:?}");
-    // ★ Each refusal name below is empty in this corpus, and each zero is an emptiness of *this*
+    // Each refusal name below is empty in this corpus, and each zero is an emptiness of *this*
     // corpus, not of the road that names it — a new population must restate it.
     //
     // `NoClearRay`: every probe of the 3D depth classification abstained. Rays from a corner on
@@ -757,7 +757,7 @@ fn a_chain_sweeps_its_rulings() {
     crate::ledger::owned(|| {
         crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace")
     });
-    // ★ This trace's own carvings. The origin and span still name the boss, because the trace
+    // This trace's own carvings. The origin and span still name the boss, because the trace
     // carves other classes of the same model too.
     let rows: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
         .mine()
@@ -1067,11 +1067,11 @@ fn a_closed_arc_on_the_line_is_asked_its_crossing() {
 /// exercised**. A rule whose deciding factor is constant over the corpus is a rule nothing has
 /// tested, which is exactly how it shipped wrong the first time.
 ///
-/// ★ Read as floors, not literals: the shape of the population is held, not its size, which moves
+/// Read as floors, not literals: the shape of the population is held, not its size, which moves
 /// with the boss corpus.
 #[test]
 fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
-    // ★ **The test builds the population it measures**, and owns it: the very row this needs is a
+    // **The test builds the population it measures**, and owns it: the very row this needs is a
     // `Reversed` root face — the **notch** a half boss leaves, whose ceiling class carries
     // `frame_sign = -1` — and a proportion read off the binary's rows would be diluted by
     // whatever else was running. So it runs the boss corpus itself (each family's first op, then
@@ -1113,7 +1113,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
         both > 0,
         "no arc had a witness on both sides — that premise check never ran"
     );
-    // ★ The factor must decide some arcs, or this corpus cannot tell the rule from one without
+    // The factor must decide some arcs, or this corpus cannot tell the rule from one without
     // it.
     assert!(
         frame_neg > 0,
@@ -1128,7 +1128,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
 /// solid's material was flipped across the whole component; the emitter then refused every one of
 /// this family's booleans.
 ///
-/// ★★★★ **The lock is the outcome, not a counter.** A process-global counter snapshotted around
+/// **The lock is the outcome, not a counter.** A process-global counter snapshotted around
 /// this body would not measure it: every other test's booleans write to the same counter in
 /// parallel, so the delta is not this population's. The behaviour is the honest lock, and it is a real one:
 /// reverting `arc_extremum_winding`'s early return turns this test red — in a test build the plane
@@ -1162,7 +1162,7 @@ fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
     }
 }
 
-/// ★★★★★ **A circle names witnesses on its own rim, so a disk has something to offer the
+/// **A circle names witnesses on its own rim, so a disk has something to offer the
 /// converse.**
 ///
 /// `inside`'s converse pass skips `Witness::In` without setting a flag, so a `Cell::Disk` in the
@@ -1234,7 +1234,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     );
 }
 
-/// ★★★★★ **A circle cell is a circle only where the class is ⊥ to the axis.**
+/// **A circle cell is a circle only where the class is ⊥ to the axis.**
 ///
 /// `Cell::Disk` has four rim witnesses, and their being *on the cell's boundary* rests on
 /// the class plane being perpendicular to the cylinder's axis — a premise nothing enforced. Off it
@@ -1245,7 +1245,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
 /// The fixture is the smallest oblique one that still forms everything: a cuboid's `x̂` class with
 /// `dir = (3,4,0)`, `ref_dir = (0,0,1)`. It is oblique (`n × m = (0,0,4) ≠ 0`), the centre still
 /// forms (`n·m = 3 ≠ 0`), and the frame still stands (`‖dir‖ = 5`, `‖ref_dir‖ = 1`, both rational)
-/// — so `û₁ = (0,0,1)` lies in the plane while `û₂ = (4,−3,0)/5` does not. ★ An axis like `(1,1,0)`
+/// — so `û₁ = (0,0,1)` lies in the plane while `û₂ = (4,−3,0)/5` does not. An axis like `(1,1,0)`
 /// measures nothing here: `‖dir‖² = 2` is irrational, no frame forms, and the rim is absent with or
 /// without the guard.
 #[test]
@@ -1294,7 +1294,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     );
 }
 
-/// ★★★★★ **And radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
+/// **And radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
 /// with the centre distance, which is the right question only when both sections are circles.
 ///
 /// This fixture is the half where it is **silently wrong**, not merely conservative: both axes are
@@ -1304,7 +1304,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
 /// inside the big one. Comparing radii would answer `Ok(false)` — `(2−1)² = 1` is not
 /// `> (4/3)² = 16/9` — so an oblique class is refused by name (`ObliqueCircleClass`).
 ///
-/// ⚠ Concentric or minor-axis offsets are answered **correctly** even on an oblique class, so a
+/// Concentric or minor-axis offsets are answered **correctly** even on an oblique class, so a
 /// fixture that did not pin the offset's direction would show the guard "answering" rather than
 /// the radius comparison being wrong.
 #[test]
@@ -1367,7 +1367,7 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     );
 }
 
-/// ★★★★★ **One rule for "the point this edge names", with every arm — the plainest included.**
+/// **One rule for "the point this edge names", with every arm — the plainest included.**
 ///
 /// Spelled as producers per supply — chained verbatim in one, counted again in its instrument,
 /// absent on the component road one dimension up — a planar component whose every corner grazes
@@ -1421,7 +1421,7 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
     );
 }
 
-/// ★★★★★ **A plain bored cube builds at any size, and the answer is right.**
+/// **A plain bored cube builds at any size, and the answer is right.**
 ///
 /// A bore through a cube is the least exotic input this kernel has, and it must not be
 /// **refused** (`WitnessNotRational`) because a coordinate needs a long decimal at a small scale.
@@ -1439,7 +1439,7 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
 /// (`SketchError::Undecidable` — the application's road refuses the circle before any solid
 /// exists). The widths this test is about are the cube's and the centre's, which stay full-digit.
 ///
-/// ⚠ **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
+/// **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
 /// the volume is ~6.4e-21, where any absolute epsilon is meaningless; and `π` does not cancel
 /// here, so the oracle is f64 arithmetic while the kernel's answer is not. Precedent for the
 /// relative form: `pocket_on_a_random_slanted_face_is_valid_or_rejects`' `1e-9 * 8.0`.
@@ -1488,7 +1488,7 @@ fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
     }
 }
 
-/// ★ **The rim witness is the point the cylinder's own statement names.** The extrude
+/// **The rim witness is the point the cylinder's own statement names.** The extrude
 /// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
 /// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes
 /// back as the statement itself and `centre + r·û₁` is that circle's seam point — not new
@@ -1530,7 +1530,7 @@ fn a_rim_witness_is_the_seam_point_at(radius: f64) {
     }
 }
 
-/// ★ **A box poking out through a cylinder's cap, inside its disk, builds at a full-digit
+/// **A box poking out through a cylinder's cap, inside its disk, builds at a full-digit
 /// radius.** The cap's nesting question needs the disk's rim witnesses — the centre alone cannot
 /// answer the converse — and a radius written to f64's last digit has a root past `2⁵⁵`. Every
 /// operation, both orders, against the volumes: the box's far corner is `√200 < r` from the axis,
@@ -1582,7 +1582,7 @@ fn a_box_through_a_cap_builds_at_a_full_digit_radius() {
     }
 }
 
-/// ★ **A ring with no three-plane corner is answered by the witnesses it does have.**
+/// **A ring with no three-plane corner is answered by the witnesses it does have.**
 /// A nesting question is answered by a witness of the source cell, and the supply that names
 /// those witnesses is one spelling for every arm. With every corner filleted the plate's cap ring
 /// offers eight pierce corners, four edge-interior points and **no** three-plane name at all — an
@@ -1622,15 +1622,15 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         - 4.0 * std::f64::consts::PI * 3.5 * 3.5 * 12.0
         + 1000.0;
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
-    // ★ The negative control: the instrument must *see* the failing shape, or its zeros mean
+    // The negative control: the instrument must *see* the failing shape, or its zeros mean
     // nothing. A ring with no three-plane name, asked against a disk.
-    // ★ `route` first. A row from the shared-node or two-radii road
+    // `route` first. A row from the shared-node or two-radii road
     // describes an offer nobody read, and 85% of the rows are of that kind.
     let nameless_vs_disk: Vec<_> = rows
         .iter()
         .filter(|r| r.route == nesting::Route::Engine && !r.a_disk && r.named == 0 && r.b_disk)
         .collect();
-    // ★ Counted on this boolean's own questions (224 of them): 24 ask the cap ring — which has
+    // Counted on this boolean's own questions (224 of them): 24 ask the cap ring — which has
     // no three-plane corner — against a disk. That the shape is reached at all is the negative
     // control; how the 24 divide among the plate's four bores is not a claim this makes.
     assert_eq!(
@@ -1653,7 +1653,7 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         assert!(!r.circle, "and the ring is not a circle: {r:?}");
         assert!(!r.b_mixed, "a disk target is not a mixed ring: {r:?}");
     }
-    // ★ A disk source describes its own supply. Before the rim
+    // A disk source describes its own supply. Before the rim
     // it read all zeros in a ring's vocabulary, so no row ever said what that arm had to offer —
     // which is how a population counted off these rows came out wrong.
     let disks: Vec<_> = rows
@@ -1666,7 +1666,7 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     }
 }
 
-/// ★ **The premise, measured**: where both roads can answer one question, they agree.
+/// **The premise, measured**: where both roads can answer one question, they agree.
 /// The engine picks whichever witness comes first, so «any witness decides» has to
 /// be a fact and not a hope. A single disagreement would mean the answer depends on the witness,
 /// which is the one thing that would make the unification wrong.
@@ -1688,14 +1688,14 @@ fn the_two_roads_never_disagree() {
         }
     });
     let rows = nesting::nesting_probe::ROWS.mine();
-    // ★ `route` first here too. A shared-node pair is «not comparable» — the engine
+    // `route` first here too. A shared-node pair is «not comparable» — the engine
     // discards that question — so agreeing about it measures nothing the kernel acts on.
     let both: Vec<_> = rows
         .iter()
         .filter(|r| r.route == nesting::Route::Engine)
         .filter_map(|r| r.roads)
         .collect();
-    // ★ A floor, not a count: some of these operations are refused, and the parallel build
+    // A floor, not a count: some of these operations are refused, and the parallel build
     // evaluates the classes after the first error while the serial one stops there — so how many
     // questions a refused case asks is a property of the build, not of the kernel.
     assert!(
@@ -1711,11 +1711,11 @@ fn the_two_roads_never_disagree() {
     );
 }
 
-/// ★ **An island standing inside a round hole**, a shape the corpus did not hold: two
+/// **An island standing inside a round hole**, a shape the corpus did not hold: two
 /// bodies whose top faces are coplanar, one of them a ring that lies inside the other's circular
 /// hole and covers its centre.
 ///
-/// ★★ **It does not walk the merge road's converse clause** — measured, and recorded rather than
+/// **It does not walk the merge road's converse clause** — measured, and recorded rather than
 /// dressed up. That road has a converse clause («a centre inside a ring does not mean the disk is
 /// inside it»), and this is the shape that would make a spelling without it claim two owners for
 /// one circle. It passes without the clause too:

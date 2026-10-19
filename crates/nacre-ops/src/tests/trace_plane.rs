@@ -2,9 +2,9 @@
 
 use super::*;
 
-/// ★★★ **Where a named curved ring stops, and under which name.**
+/// **Where a named curved ring stops, and under which name.**
 ///
-/// ★★★★★ **The vessel carries a curved ring through, and only a *collapsed* name is refused.**
+/// **The vessel carries a curved ring through, and only a *collapsed* name is refused.**
 ///
 /// Refusing a pierce corner or a curved carrier would be the type running out — plane ids can
 /// hold neither — rather than a decision; the ring holds names. What stops here is a name that is
@@ -41,7 +41,7 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     };
     let (ts, _) = plane_ring(&curved_corner).expect("a pierce corner is describable");
     assert_eq!(ts[1], pierce, "the corner is the producer's, unflattened");
-    // ★ What is still refused, and for a reason that has nothing to do with cylinders.
+    // What is still refused, and for a reason that has nothing to do with cylinders.
     let collapsed = combinatorics::NamedRing {
         triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
         walls: vec![plane(1), plane(2), plane(3)],

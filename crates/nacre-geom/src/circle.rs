@@ -143,7 +143,7 @@ impl Circle {
     /// `atan2`'s own convention rather than refusing — callers pass realized edge endpoints,
     /// which the store guarantees off-axis.
     ///
-    /// ★ This is what turns the arc convention (an edge's stored `[from, to]` order is
+    /// This is what turns the arc convention (an edge's stored `[from, to]` order is
     /// CCW about the axis) into numbers: consumers take `Δθ = (θ_to − θ_from).rem_euclid(τ)`
     /// for two distinct ends — a closed edge is the whole turn, `τ` (`Model::derive_edge_curve`)
     /// — and never re-derive direction from anything else.

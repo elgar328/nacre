@@ -10,11 +10,11 @@ pub(super) struct ChordUnstatable;
 /// the wall clears the circle (the gate's plane test), or cuts an **irrational** chord this road
 /// cannot state yet — today's silence, and the same trigger the rulings road reads.
 ///
-/// ★ **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
+/// **The record is asked before the wall's coefficients**, as [`rulings_on_class`] asks it: an
 /// unrecorded pair says nothing whatever the wall's description, and a recorded one always has a
 /// world name — the gate records only classes it could state.
 ///
-/// ★ **Written once because a disk's outer and a bored face's hole are the same circle asked the
+/// **Written once because a disk's outer and a bored face's hole are the same circle asked the
 /// same question.**
 ///
 /// The cylinder's statement comes from any face row on its class — the same table `merge_circles`
@@ -41,7 +41,7 @@ pub(super) fn chord_stations(
             _ => None,
         })
         .ok_or(ChordUnstatable)?;
-    // ★ The record is the crossing statement: a listed pair's plane runs within the
+    // The record is the crossing statement: a listed pair's plane runs within the
     // radius, so `L` enters the circle at one root and leaves at the other. The premise is the
     // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
     // listed; see `planes::Tangency`.)
@@ -83,7 +83,7 @@ pub(super) fn chord_stations(
 /// and neither is checkable from the label afterwards (a holed lateral's two sectors can carry a
 /// literally identical label — see [`ArcLabel`]).
 ///
-/// ★ It replaced a rule derived from the class's **stored** frame (`axis_up`), which two classes
+/// It replaced a rule derived from the class's **stored** frame (`axis_up`), which two classes
 /// with identical stored *and* canonical normals were measured to disagree about — the same plane,
 /// the same circle, the same two arcs, opposite half-edges. That rule had been set by measuring
 /// two fixtures and generalising; this one asks the geometry every time.
@@ -111,7 +111,7 @@ fn corner_sides<'a>(
 }
 
 /// **Which side of a circle a cell lies on, by its rational corners — when they agree.** Not by
-/// the *first* corner: a cell can have corners on both sides of a circle it borders. ★ A fillet
+/// the *first* corner: a cell can have corners on both sides of a circle it borders. A fillet
 /// does — the cap face's cell is bounded by a **quarter** of the circle and reaches far beyond
 /// it, so its corners lie outside while the arc bounds it from the disk side. Such a cell has no
 /// single side and the witness abstains; a cell all of whose corners agree answers.

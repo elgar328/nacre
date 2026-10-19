@@ -28,7 +28,7 @@ impl Model {
     /// Push a vertex: its definition (the truth) plus its cache. **The road that builds a vertex,
     /// and the only one** — nothing else may add to the store.
     ///
-    /// ★ There is no `rebuild_vertex_cache` that *replaces* what is here: an operation realizes the
+    /// There is no `rebuild_vertex_cache` that *replaces* what is here: an operation realizes the
     /// definition *before* it pushes (`nacre_ops`'s push funnel), so what arrives is already the
     /// realization's memo ([`PointCache::Realized`]) or a named reason it is not
     /// ([`PointCache::Ceiling`], [`PointCache::Unrealized`]). The old warrant for the absence
@@ -37,7 +37,7 @@ impl Model {
     /// `vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log` asks every vertex of
     /// an arena again once its log has ended.
     ///
-    /// ⚠ **A second writer does exist, and it only ever raises**: `nacre_ops::refine_caches`
+    /// **A second writer does exist, and it only ever raises**: `nacre_ops::refine_caches`
     /// lifts a `Ceiling` to `Realized` by paying for the realization this road would not. It cannot
     /// reach the other variants and cannot move a coordinate anywhere but closer to the truth, so
     /// what stays true of the cache behind this door is *append-only in accuracy*, not in bytes.
@@ -67,13 +67,13 @@ impl Model {
     /// **Raise a [`PointCache::Ceiling`] to [`PointCache::Realized`]** — the second writer of the
     /// vertex cache, and the only thing it can do is make a coordinate more accurate.
     ///
-    /// ★ Deliberately not `set_vertex_cache`. It cannot reach the other two variants: an
+    /// Deliberately not `set_vertex_cache`. It cannot reach the other two variants: an
     /// `Unrealized` coordinate has no realization behind it (raising it would be inventing one) and
     /// a `Realized` one is already the realization. The debug assert is the type saying so out loud
     /// — the caller that pays for the realization is `nacre_ops::refine_caches`, and its own
     /// contract is that it looks at nothing else.
     ///
-    /// ⚠ **Anything derived from this coordinate is now stale**, starting with the edge curves the
+    /// **Anything derived from this coordinate is now stale**, starting with the edge curves the
     /// endpoints decide ([`Model::rebuild_edge_cache`]). The paying caller is responsible for that,
     /// because it is the one that knows whether it moved anything at all.
     pub fn refine_vertex_cache(&mut self, vh: Handle<Vertex>, coord: Point3, bound: [Mag; 3]) {
@@ -103,7 +103,7 @@ impl Model {
 
     /// Push an edge: canonicalize the carrier pair, derive its curve, fill the cache — the one
     /// write road. Refused, by cause ([`EdgeDecline`]), when the curve does not derive; the
-    /// caller says what that cause means for it. ★ A rim is `[v, v]` and NOT degenerate — the
+    /// caller says what that cause means for it. A rim is `[v, v]` and NOT degenerate — the
     /// circle arm never reads the endpoints (see [`Model::derive_edge_curve`]).
     ///
     /// `given` asks the pusher for what it can realize of the truth where this crate cannot
@@ -130,12 +130,12 @@ impl Model {
 
     /// Push a face — **the door that carries the face invariant**.
     ///
-    /// ★ Unlike [`Model::push_vertex`] this pairs no cache with the truth, because a face has
+    /// Unlike [`Model::push_vertex`] this pairs no cache with the truth, because a face has
     /// none (`surface_cache`/`edge_cache`/`vertex_cache` exist; a face cache does not). What this
     /// door is worth is therefore the **invariant**, not cache-sync: a face whose loops do not
     /// close is a face no consumer can walk, and this says so at the moment it is built.
     ///
-    /// ☑ **Measured before it shipped** — every face the production road builds satisfies this,
+    /// **Measured before it shipped** — every face the production road builds satisfies this,
     /// live or superseded, across the boolean / twice-cut / cylinder / tilted-frame fixtures. The
     /// one fixture that did not was a deliberately malformed «franken» face in a `transform` test,
     /// and it was reshaped rather than exempted, so the invariant holds with no hole behind it.
@@ -168,7 +168,7 @@ impl Model {
 
     /// Push a shell — [`Model::push_face`]'s twin, and a cache-less door for the same reason.
     ///
-    /// ☑ **Measured before it shipped**: across the same fixtures no shell the production road
+    /// **Measured before it shipped**: across the same fixtures no shell the production road
     /// builds is empty or names a face outside the arena, live or superseded (36 shells, 0 and 0).
     pub fn push_shell(&mut self, shell: Shell) -> Handle<Shell> {
         debug_assert!(
@@ -192,14 +192,14 @@ impl Model {
     /// (`given_by_pair` is the same kind of cache — all of it, a pair outside `solids` is asked
     /// again by the next push that needs it), so every given piece is asked again rather than read
     /// back.
-    /// ⚠★★★ **Only reachable edges are re-derived, and a superseded one keeps what it has.**
+    /// **Only reachable edges are re-derived, and a superseded one keeps what it has.**
     /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
     /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
     /// those costs the work twice over and — once a caller can *move* a coordinate
     /// ([`Model::refine_vertex_cache`]) — risks a dead cell's endpoints becoming coincident, where
     /// the derivation refuses (`EdgeDecline::Coincident`) and this would die on the `expect`.
     ///
-    /// ☑ That refusal does not happen today: measured over the same fixtures, **zero** stored edges
+    /// That refusal does not happen today: measured over the same fixtures, **zero** stored edges
     /// fail to derive, dead or live. The filter is not a workaround for a live failure — it is what
     /// makes the failure structurally unreachable, because a superseded edge is never derived again.
     ///
@@ -285,12 +285,12 @@ impl Model {
     ///   is not a degeneracy. Oblique — an ellipse — is [`EdgeDecline::Oblique`], and a pair whose
     ///   truths cannot be placed in one frame is [`EdgeDecline::Unstated`].
     ///
-    ///   ★★ **The kind is the truth's, so the «discard and regenerate» warrant holds for it
+    ///   **The kind is the truth's, so the «discard and regenerate» warrant holds for it
     ///   too**: a regenerated cache is the same kind of curve, and every reader that dispatches
     ///   on the cached curve's kind reads the truth's kind. The *values* are the cache's (the
     ///   centre, the frame) — a curve is a measurement.
     ///
-    ///   ★★ **On a circle carrier, the vertex *order* says which arc**: two distinct
+    ///   **On a circle carrier, the vertex *order* says which arc**: two distinct
     ///   endpoints cut a circle into two pieces the endpoints alone cannot tell apart, so
     ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
@@ -299,7 +299,7 @@ impl Model {
     ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
     ///   θ, and the three that add each arc's circular segment to a chord polygon take Δθ from the
     ///   same order — `validate`'s `loop_winding`, `props`' face integrals and the boolean's
-    ///   `outer_tri`. ★ **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
+    ///   `outer_tri`. **A closed edge `[v, v]` is the whole turn**: `Δθ = τ`, and which way it
     ///   runs is its half-edge's `forward` — its ends, being one vertex, say neither. Every one of
     ///   those readers branches on `v0 == v1` for it (a groove's tip touching a cap's rim puts such
     ///   an edge in a loop of several).

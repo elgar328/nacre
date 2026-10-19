@@ -170,7 +170,7 @@ fn every_comparison_a_sort_is_handed_is_total_or_listed() {
     );
 }
 
-/// ★ **The rule is exercised on strings, not on the tree** — a scan that only ever sees a tree it
+/// **The rule is exercised on strings, not on the tree** — a scan that only ever sees a tree it
 /// agrees with has not been shown to say anything.
 #[test]
 fn the_scan_reads_what_it_should() {

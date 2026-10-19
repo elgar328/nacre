@@ -89,7 +89,7 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                 p[2].to_bits()
             ),
         );
-        // ★ The variant, not a stored tolerance: what the cache *knows* is now part of the
+        // The variant, not a stored tolerance: what the cache *knows* is now part of the
         // signature, so a replay that produced the same coordinate by a different road — realized
         // here, fallback there — is caught rather than passing on the coordinate alone.
         push(
@@ -374,7 +374,7 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
     (log, m)
 }
 
-/// ★★★★ **The refine door lives outside the op log — but only after the log has ended.**
+/// **The refine door lives outside the op log — but only after the log has ended.**
 ///
 /// Two lines, because one alone would be satisfied by a digest that cannot see the cache at all:
 ///
@@ -385,7 +385,7 @@ fn deep_transform_log() -> (Vec<Operation>, Model) {
 ///   cache *variant*: without that row a raised coordinate would still show up (the coordinate row
 ///   moves), but a vertex that merely changed how it knows its coordinate would not.
 ///
-/// ⚠ What is deliberately **not** locked here: operating further on a refined model and
+/// What is deliberately **not** locked here: operating further on a refined model and
 /// expecting the whole arena — caches included — to match the unrefined road's. It need not: a
 /// later operation derives caches from the refined ones (a moved vertex's fallback figure, a
 /// datum's cache anchor). The truth does match —
@@ -537,7 +537,7 @@ fn refined_mid_log(refine: bool) -> Model {
     m
 }
 
-/// ★★★ **Refining in the middle of a log leaves every later truth as it was.**
+/// **Refining in the middle of a log leaves every later truth as it was.**
 ///
 /// The refine door rewrites vertex caches — `Ceiling` to `Realized` — and an operation after it
 /// reads those caches; the door may run mid-log only if none of them decides a truth from one.
@@ -590,7 +590,7 @@ fn assert_caches_regenerate(m: &Model, what: &str) -> nacre_ops::VertexCacheAudi
     audit
 }
 
-/// ★★★ **The vertex cache regenerates from the definition — at the end of a log, not only after
+/// **The vertex cache regenerates from the definition — at the end of a log, not only after
 /// the operation that pushed the vertex.** The vertex sibling of the edges'
 /// `edge_cache_discard_and_regenerate_bit_identical`, as a reader: a `Realized` cache is what the
 /// definition answers again, bit for bit, and a `Ceiling` or `Unrealized` one is where the road
@@ -621,7 +621,7 @@ fn vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log() {
     );
 }
 
-/// ★ **The profiles agree now** — and that is the whole shape of the repair.
+/// **The profiles agree now** — and that is the whole shape of the repair.
 ///
 /// `StoreId` is `#[cfg(debug_assertions)]`, so before the repair release was quietly correct
 /// (the index had been right all along) while debug panicked. Re-anchoring makes debug reach
@@ -779,7 +779,7 @@ enum Step {
     Copy {
         solid: usize,
     },
-    /// ★★★★ **A datum that names vertices — the step this generator most needs.**
+    /// **A datum that names vertices — the step this generator most needs.**
     ///
     /// Re-anchoring is a bounds check, and a bounds check cannot see an in-range index that names
     /// the *wrong* cell. Every earlier handle-carrying step names a face, a solid or a surface —
@@ -798,7 +798,7 @@ enum Step {
 
 fn step_strategy() -> impl Strategy<Value = Step> {
     prop_oneof![
-        // ★ Weighted like the other handle-carrying steps, and deliberately *not* filtered to
+        // Weighted like the other handle-carrying steps, and deliberately *not* filtered to
         // triples that succeed: its rejects are part of what the session must survive.
         3 => (0usize..4, 0usize..12, 0usize..12, 0usize..12)
             .prop_map(|(solid, a, b, c)| Step::DatumThroughVertices { solid, a, b, c }),
@@ -1004,7 +1004,7 @@ struct Stats {
     rejected: usize,
     unresolvable: usize,
     handle_carrying: usize,
-    /// ★ Vertex-naming datums accepted **after this session already rejected something** — the
+    /// Vertex-naming datums accepted **after this session already rejected something** — the
     /// only shape in which "in range but the wrong vertex" could show itself, since a reject is
     /// what shifts the indices. Counted so the coverage cannot vanish silently.
     datum_after_reject: usize,
@@ -1035,7 +1035,7 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         st.attempted += 1;
         match apply_planned(&mut model, planned) {
             Ok(ops) => {
-                // ★ Every variant names a cell (`Extrude` carries a frame), so this counts
+                // Every variant names a cell (`Extrude` carries a frame), so this counts
                 // accepted operations.
                 st.handle_carrying += 1;
                 st.accepted += 1;
@@ -1059,7 +1059,7 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         }
     }
 
-    // ★ Property (4) needs no fallback here: there is no operation that carries no handle —
+    // Property (4) needs no fallback here: there is no operation that carries no handle —
     // `Extrude` names its plane, so the seed alone satisfies it. The counter below stays
     // because the *report* is still worth having.
     // The seed extrude names the world plane, so `handle_carrying >= 1` holds before any
@@ -1080,11 +1080,11 @@ const CASE_COUNT: u32 = 32;
 proptest! {
     #![proptest_config(ProptestConfig { cases: CASE_COUNT, ..ProptestConfig::default() })]
 
-    /// ★ **The gate of this stage.** Four properties on one generated session:
+    /// **The gate of this stage.** Four properties on one generated session:
     ///
     /// 1. the session model is a valid b-rep,
     /// 2. `replay` is **idempotent** — replaying twice lands on the same arena,
-    /// 3. ★ `replay(log)` reproduces the session **down to handle indices** — the property the
+    /// 3. `replay(log)` reproduces the session **down to handle indices** — the property the
     ///    contract advertises (every variant names a cell, so every log exercises it),
     /// 4. every case carries at least one handle-bearing operation, guaranteed by construction
     ///    in [`run_recipe`], so (3) is never vacuously true.
@@ -1121,7 +1121,7 @@ proptest! {
                 HANDLED.load(Ordering::Relaxed),
                 DATUM_AFTER_REJECT.load(Ordering::Relaxed),
             );
-            // ★ Reported, not asserted: a random generator cannot be *made* to produce a shape,
+            // Reported, not asserted: a random generator cannot be *made* to produce a shape,
             // and a suite that fails when it does not is flaky rather than strict. The shape this
             // number watches for is guaranteed deterministically instead, by
             // [`a_datum_naming_vertices_survives_a_session_that_rejected`].
@@ -1334,7 +1334,7 @@ fn arena_lengths(m: &Model) -> [usize; 5] {
     ]
 }
 
-/// ★ **A reject is atomic on the live model, but not on the arena.**
+/// **A reject is atomic on the live model, but not on the arena.**
 ///
 /// `ops` says it in one line — "only `live_solids` is touched, the store stays append-only" —
 /// and that line is the whole hazard: an operation that builds a tool prism and *then* declines
@@ -1540,7 +1540,7 @@ fn a_log_before_a_late_reject() -> (Vec<Operation>, Model, Operation, Handle<Sol
     (log, m, declined, solids[0])
 }
 
-/// ★★ **The hazard, executed** — and the reason the re-sync in [`run_recipe`] is a rule and not
+/// **The hazard, executed** — and the reason the re-sync in [`run_recipe`] is a rule and not
 /// a convenience.
 ///
 /// A session that hits a late reject and keeps recording *without* rebuilding from its log is
@@ -1613,7 +1613,7 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     }
 }
 
-/// ★ **The positive control for the repair: re-anchoring did not weaken the door.**
+/// **The positive control for the repair: re-anchoring did not weaken the door.**
 ///
 /// `replay` now launders a log's indices into its own model on purpose. The risk of a laundering
 /// step is that it launders everything — so this checks the case it must *not* touch: a handle
@@ -1655,7 +1655,7 @@ fn a_foreign_handle_still_dies_at_the_door() {
     );
 }
 
-/// ★ **An `Extrude` naming a surface that is not there is a named reject too.**
+/// **An `Extrude` naming a surface that is not there is a named reject too.**
 ///
 /// `Extrude` carries a `SketchFrame`, so `rebind` must re-anchor it rather than borrow it:
 /// forgetting to would put a stale handle into the **most common** operation in any log. This
@@ -1710,7 +1710,7 @@ fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
     assert_eq!(replayed.live_solids().len(), 1);
 }
 
-/// ★★★★★ **A vertex-naming datum, recorded after the session already rejected something.**
+/// **A vertex-naming datum, recorded after the session already rejected something.**
 ///
 /// This is the one shape where re-anchoring could go wrong without any error: a late reject
 /// leaves cells in the arena (measured here, and 63–84 in R's census), so a replay that rebuilt
@@ -1739,7 +1739,7 @@ fn a_datum_naming_vertices_survives_a_session_that_rejected() {
     );
 
     // The discipline: rebuild from the log, so the session's indices are the log's indices.
-    // ★ The rebuilt model is a *different* arena, so `solid` from before it must not be reused —
+    // The rebuilt model is a *different* arena, so `solid` from before it must not be reused —
     // the cross-store guard says so, loudly, and it is right to.
     m = replay(&log).expect("the log so far replays");
     let solid = m.live_solids()[0];

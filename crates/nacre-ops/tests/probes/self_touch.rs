@@ -11,7 +11,7 @@
 //! is now refused — and the reject says only *what* is wrong, since which coincidence was
 //! unintended is design intent the kernel cannot see.
 //!
-//! ★ The propositions here are paired: every fixture that must reject sits next to one that must
+//! The propositions here are paired: every fixture that must reject sits next to one that must
 //! build, because a check that rejects the wedge by rejecting *everything* would pass half of them.
 //! The curved arm's pairs — an edge along a ruling inside the solid's own lateral, beside two
 //! bodies touching on that line — run over both frames with the other ruling families
@@ -68,14 +68,14 @@ fn frame_on(m: &mut Model, u: [f64; 3], v: [f64; 3]) -> SketchFrame {
     )
 }
 
-/// ★ **A frame slanted against all three world axes** — `u = (0.6, 0.64, 0.48)`,
+/// **A frame slanted against all three world axes** — `u = (0.6, 0.64, 0.48)`,
 /// `v = (−0.8, 0.48, 0.36)`, normal `(0, −0.6, 0.8)`: every edge of a prism on it climbs in `z`, so
 /// a prism over the first quadrant's corner meets the plane `z = 0` at that one corner.
 fn slanted(m: &mut Model) -> SketchFrame {
     frame_on(m, [0.6, 0.64, 0.48], [-0.8, 0.48, 0.36])
 }
 
-/// ★ **A frame tipped about the world `x` axis** — `u = (1, 0, 0)`, `v = (0, 0.8, 0.6)`: a prism
+/// **A frame tipped about the world `x` axis** — `u = (1, 0, 0)`, `v = (0, 0.8, 0.6)`: a prism
 /// over the band `y ≥ 0` meets the plane `z = 0` along its bottom edge on the `x` axis.
 fn tipped(m: &mut Model) -> SketchFrame {
     frame_on(m, [1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
@@ -153,12 +153,12 @@ fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &s
         RejectClass::Impossible,
         "a body cannot be made valid by a later milestone"
     );
-    // ★ This is the kernel's first reject raised on a fully assembled result, so it is the first
+    // This is the kernel's first reject raised on a fully assembled result, so it is the first
     // one that could have handed back a model with its operands consumed. It must not.
     assert_eq!(m.live_solids(), live, "a reject retired the operands");
 }
 
-/// ★ **The case the reject is for.** The wedge's tip lands on `x = 1`; the cut leaves one body
+/// **The case the reject is for.** The wedge's tip lands on `x = 1`; the cut leaves one body
 /// whose cavity meets its outer shell along the line `(1, 0.5, 0.2)–(1, 0.5, 0.8)`.
 ///
 /// Before this check the kernel returned it: one solid, volume 0.784, `validate` silent — the
@@ -170,7 +170,7 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
     expect_self_touch(&mut m, a, b, "the wedge tip on the wall self-touches");
 }
 
-/// ★★ **The same contact, taken all the way through — and the endpoints stop being the story.**
+/// **The same contact, taken all the way through — and the endpoints stop being the story.**
 ///
 /// Extrude the same wedge through the whole cube instead of stopping inside it. The contact line
 /// now spans the wall's full height, so **both of its ends land on the wall's ring** rather than
@@ -230,7 +230,7 @@ fn a_through_cut_that_stops_short_of_the_wall_builds() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★ **The same body, turned.** If the check leant on axis-aligned coordinates it would pass here
+/// **The same body, turned.** If the check leant on axis-aligned coordinates it would pass here
 /// and quietly stop working for every real model; the judgement is on plane triples, so it does
 /// not. The rotation is one this kernel's sweep already exercises.
 #[test]
@@ -262,7 +262,7 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★ **Two bodies touching *each other* are not a self-touch.** The proposition here is about one
+/// **Two bodies touching *each other* are not a self-touch.** The proposition here is about one
 /// solid's surface meeting itself; two boxes sharing exactly an edge is the other situation
 /// entirely — nothing is joined, so the answer is the two bodies that went in.
 ///
@@ -291,7 +291,7 @@ fn a_contact_between_two_bodies_keeps_its_own_name() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★ **Two bodies touching at a point or along a line are two bodies, in either order** — the
+/// **Two bodies touching at a point or along a line are two bodies, in either order** — the
 /// twins of the self-touch pairs below. A slanted unit cube stands on the block's top corner by its
 /// own lowest corner; a tipped bar lies on the block's top by its bottom edge. Each fuse is two
 /// solids, `validate` clean, whatever operand comes first and whether the scene is turned.
@@ -362,7 +362,7 @@ fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
     }
 }
 
-/// ★ **A body resting on itself along an edge is refused, whichever operand comes first.** A tipped
+/// **A body resting on itself along an edge is refused, whichever operand comes first.** A tipped
 /// bar lies on the block's top by its bottom edge, and a leg of the same bar dips into the block
 /// further on, so the fuse is one body whose surface touches itself along that edge; the twin
 /// without the leg is two bodies (`two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order`).
@@ -410,7 +410,7 @@ fn a_bar_resting_on_its_own_block_by_an_edge_is_refused() {
     }
 }
 
-/// ★ **A body standing on itself at one point is refused, whichever operand comes first.** A
+/// **A body standing on itself at one point is refused, whichever operand comes first.** A
 /// slanted prism's lowest corner rests on the block's top — inside the face, or on the face's edge
 /// — and a long leg of the same prism sinks into the block further off, so the fuse is one body
 /// whose surface touches itself at that corner. No edge of the body lies on the block's top there,
@@ -463,7 +463,7 @@ fn a_body_standing_on_itself_at_a_corner_is_refused() {
     }
 }
 
-/// ★ **A bar resting on a notched face of its own block is refused** — the face's outline carries
+/// **A bar resting on a notched face of its own block is refused** — the face's outline carries
 /// the arc a cylinder cut at its far corner; the bar's bottom edge lies inside the face, so the
 /// edge test reads it against that ring (its arc and pierce corners) and the point arm reads the
 /// edge's ends on the rational road. The cylinder sits where no slanted plane of the bar meets its side, so the gate passes
@@ -536,7 +536,7 @@ fn a_bar_resting_on_its_own_notched_block_is_refused() {
     }
 }
 
-/// ★ **A turned prism standing on its own bored block at one point is refused.** The prism is
+/// **A turned prism standing on its own bored block at one point is refused.** The prism is
 /// turned 30° about the vertical through its corner, so its planes have no world statement, and
 /// its corner, resting on the block's top, is named by those planes alone: no rational coordinate
 /// says whether it is in the bore's disk. The gate proved the bore's cylinder beside every one of
@@ -603,7 +603,7 @@ fn a_turned_prism_standing_on_its_own_bored_block_is_refused() {
     }
 }
 
-/// ★ **A pin standing in a blind round hole, its top flush with the plate's top, is one body.**
+/// **A pin standing in a blind round hole, its top flush with the plate's top, is one body.**
 /// The pin's top edges lie on the plate's top plane but over the hole, where that face has no
 /// material: the face's bounds are its square and the hole's circle, and both are read — the
 /// circle as the two points where the edge's line crosses it. Beside it, a bar standing in the
@@ -655,7 +655,7 @@ fn a_pin_flush_in_a_round_hole_is_one_body() {
     }
 }
 
-/// ★ **An *area* contact opens the wall instead of leaving a zero-thickness one.**
+/// **An *area* contact opens the wall instead of leaving a zero-thickness one.**
 ///
 /// This check looks for an edge inside a face, which is a line contact; two faces of one solid
 /// overlapping *in area* could in principle escape it, since the boundaries might coincide with no
@@ -727,7 +727,7 @@ fn an_ordinary_fuse_is_untouched() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★ **A face with a hole, so the even-odd rule is exercised and not merely present.**
+/// **A face with a hole, so the even-odd rule is exercised and not merely present.**
 ///
 /// The judge folds *every* ring of a face into one bag and reads even-odd, because a point inside a
 /// hole has crossed the boundary twice. Writing it as "inside the outer ring **and** outside each
@@ -967,7 +967,7 @@ fn expect_fuse(
     }
 }
 
-/// ★ **A bar lying along a chord of its own block's top face is refused, whatever trims the
+/// **A bar lying along a chord of its own block's top face is refused, whatever trims the
 /// face** — the self-touch edge test against a face whose ring a cylinder cut. The bar is tipped
 /// about the base's `x` axis so its bottom edge lies on the top face along `y = 0`, and two steps
 /// on the block bury its two ends, so the body is one and its surface meets itself along the chord
@@ -1091,7 +1091,7 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
     }
 }
 
-/// ★ **An edge at a groove's mouth builds** — the chord test (`segment_meets_face`) reading a
+/// **An edge at a groove's mouth builds** — the chord test (`segment_meets_face`) reading a
 /// crossing on a ruling and an arc's departure.
 ///
 /// A column stands on the plate in front of the groove's mouth, narrower than the mouth, its back
@@ -1111,10 +1111,10 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 /// faces either side of it, and an edge in front of the mouth overlaps neither face's box — the
 /// sieve drops it before the ring is read.
 ///
-/// ☑ Measured by breaking each arm in the chord test alone: a ruling crossing left unnamed refuses
+/// Measured by breaking each arm in the chord test alone: a ruling crossing left unnamed refuses
 /// the column and the bracket (`RingNaming`); named at the other ruling's root, the column is
 /// refused as touching itself; an arc's departure left unread refuses the flush column
-/// (`PierceVertexUnnamed`), and turned the other way, as touching itself. ★ The rows hold only the
+/// (`PierceVertexUnnamed`), and turned the other way, as touching itself. The rows hold only the
 /// answer: a sieve that stopped asking these faces would leave them green and the arms unread, so
 /// a change to the sieve measures this again by breaking the arms.
 ///

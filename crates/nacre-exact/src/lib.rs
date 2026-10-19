@@ -115,12 +115,12 @@ thread_local! {
     /// **How far an `f64` cos/sin pair lands from the truth** — see
     /// [`Angle::cos_sin_error_of`].
     ///
-    /// ★ **No precision in the key, and that is the point.** [`TRIG`] is keyed by
+    /// **No precision in the key, and that is the point.** [`TRIG`] is keyed by
     /// `(angle, precision)` because it holds a value *realized at* a depth. This holds how wrong
     /// the **f64** realization is, and f64 has one precision. The `P` used to measure it says how
     /// finely the answer is read, not what the answer is.
     ///
-    /// ★★★ **The realized pair is in the key, not just the angle.** The quantity is how far *this
+    /// **The realized pair is in the key, not just the angle.** The quantity is how far *this
     /// `(cos, sin)`* sits from the truth, so the pair that was measured is part of the question.
     /// The kernel realizes an angle by one route ([`Angle::cos_sin_f64`], correctly rounded, so its
     /// pair is unique), and keying on the pair keeps the answer about the pair a caller holds
@@ -130,7 +130,7 @@ thread_local! {
 
     /// **The f64 realization of an angle, keyed by the angle alone** — see [`Angle::cos_sin_f64`].
     ///
-    /// ★ Unlike [`F64_ERR`], the pair is *not* in the key, and it must not be: the value here **is**
+    /// Unlike [`F64_ERR`], the pair is *not* in the key, and it must not be: the value here **is**
     /// the pair, and it is the correctly rounded one, which is unique. This memo therefore cannot
     /// change an answer — it only stops the arbitrary-precision realization from running per vertex.
     ///

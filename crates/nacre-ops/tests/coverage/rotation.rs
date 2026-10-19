@@ -310,7 +310,7 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
     }
 }
 
-/// ★ **The four-plane model builds.**
+/// **The four-plane model builds.**
 ///
 /// A bar spun 45° whose bottom corner edge lands exactly in the plane the fused block supplies
 /// (`x = 0.5`): three planes then share that edge's line, and every plane crossing it makes a vertex

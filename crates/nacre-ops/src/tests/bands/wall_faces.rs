@@ -3,7 +3,7 @@
 use super::*;
 
 //
-// ★★ The uniform-slab theorem's premise is about the other operand's **boundary**. Testing the
+// The uniform-slab theorem's premise is about the other operand's **boundary**. Testing the
 // wall's infinite *plane* is a cheaper sufficient condition — and it refuses a whole family the
 // engine serves: a body standing well clear of a bore whose wall plane, extended, happens to
 // pass through it. These lock what the boundary test opens and what it does not.
@@ -52,7 +52,7 @@ fn a_boss_whose_wall_plane_crosses_a_distant_bore_still_fuses() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ **The d = 0 member of the family: the wall plane runs exactly through the bore's
+/// **The d = 0 member of the family: the wall plane runs exactly through the bore's
 /// axis.** The gate passes it the same way (the boss's face clears the
 /// footprint along the span), and the rulings road stays **silent** — its trigger is the
 /// gate's carried `crossings` record, which is empty for every gate-passed pair. This
@@ -225,7 +225,7 @@ fn a_wall_face_that_really_crosses_the_bore_builds() {
 /// material as the **two wedges** between the parabola and the plane, which meet only on the
 /// line, and both are bounded by the same faces so they are one solid. `SelfTouchingResult`.
 ///
-/// ★ Its siblings are the control: the same wall with the boss *inside* the plate builds under
+/// Its siblings are the control: the same wall with the boss *inside* the plate builds under
 /// `Fuse` and `Common` and only `Cut` pinches, and a boss tangent from **outside** comes back
 /// as two valid bodies. So this is not "the gate refuses tangencies"; it is one operation's
 /// answer about one shape.
@@ -267,13 +267,13 @@ fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
     );
 }
 
-/// ★★★★★ **A blind stud tangent to the wall, and the three answers it must get.** A unit cube
+/// **A blind stud tangent to the wall, and the three answers it must get.** A unit cube
 /// and a stud whose axis stands `0.3` from the origin with `r = 0.2`: the wall `x = 0.5` is
 /// **exactly** `r` away, which is what a round set of dimensions produces. The three operations
 /// differ, and they differ without any of them being named — `keep` is asked about the three
 /// regions beside the tangent line and the answers fall out.
 ///
-/// ★ This is not *the user's script*: the app's `cylinder({center})`
+/// This is not *the user's script*: the app's `cylinder({center})`
 /// anchors the cylinder at mid-height, so the user's stud runs `z ∈ [−1, 1]` **through** the
 /// cube. That model is the next test; this one — base at
 /// `z = 0`, one cap pinched — is its blind neighbour, and the shape OCCT measured.
@@ -331,7 +331,7 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     );
 }
 
-/// ★★★★★ **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`
+/// **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`
 /// — and its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through
 /// the cube and is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are
 /// pinched (the stud's circle touches each square's edge at one point) — and
@@ -399,7 +399,7 @@ fn the_users_through_stud_gives_three_answers() {
     );
 }
 
-/// ★★★★★ **The user's cross studs — a stud along `z` and one along `y` through the cube,
+/// **The user's cross studs — a stud along `z` and one along `y` through the cube,
 /// fused in either order.** After the first fuse the `z` stud's remaining lateral faces sit
 /// at `|z| ≥ 0.5` and the `y` stud's whole surface within `|z| ≤ 0.2`: the two cylinder
 /// classes share no face, and the arrangement builds the result: 14 faces, volume
@@ -613,7 +613,7 @@ fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
     }
 }
 
-/// ★★★★★ **The bridge pre-pass splits the wall's two straight edges under the through stud.**
+/// **The bridge pre-pass splits the wall's two straight edges under the through stud.**
 ///
 /// A stud through the cube (`center` anchoring, `z ∈ [−1, 1]`) pinches **both** caps: on
 /// each, the stud's circle touches the square's `x = 0.5` edge at one point, and that edge
@@ -698,7 +698,7 @@ fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
     assert_eq!(report.splits.len(), 1, "{:?}", report.splits);
 }
 
-/// ★★★★★ **A tangency from *outside* is two bodies, not a refusal** — the control that says
+/// **A tangency from *outside* is two bodies, not a refusal** — the control that says
 /// the rule is not "reject every tangency", and the measurement that corrected it.
 ///
 /// The boss's axis stands at `x = −0.5` with `r = 0.5`, so it touches the plate's wall `x = 0`
@@ -746,12 +746,12 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
     }
 }
 
-/// ★★★★★ **The same two lumps, joined elsewhere — and this one *is* a pinch.** The block has a
+/// **The same two lumps, joined elsewhere — and this one *is* a pinch.** The block has a
 /// notch, the boss stands in it tangent to the notch's wall `x = 2` from the void side, and it
 /// overlaps the block in `y` (the notch is `0.8` wide, the boss `1.0`). So the lens and the far
 /// side are the same body, and the tangent line is where that body's surface meets itself.
 ///
-/// ★ This is why the verdict asks the **grouping** and not only the geometry: without it, the
+/// This is why the verdict asks the **grouping** and not only the geometry: without it, the
 /// answer here would be the one the fixture above earns, and this solid shipped `Ok` with
 /// `validate` clean and a mesh — measured before the check existed.
 #[test]
@@ -793,14 +793,14 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     );
 }
 
-/// ★★★★★ **A tangent wall through a window in the lateral does not touch it.** The slab's face
+/// **A tangent wall through a window in the lateral does not touch it.** The slab's face
 /// `x = 1` is tangent to [`crate::fixtures::windowed_boss`]'s cylinder along `x = 1, y = 0`, but
 /// only over `z ∈ [1.7, 2.3]`, inside the window where the lateral face is absent — so cutting the
 /// boss from the slab leaves the slab's face whole and a bridge of slab between the bore's two
 /// sides. One body, its volume the slab less the cylinder's slice less what the window took out of
 /// it: the window's cross-section inside the unit circle is `w·√(1−w²) + asin(w) − w`.
 ///
-/// ★ The pair beside it is the pinch: a slab longer than the window touches the lateral above and
+/// The pair beside it is the pinch: a slab longer than the window touches the lateral above and
 /// below it, and the result's surface meets itself along those two stretches.
 #[test]
 fn a_tangent_wall_through_a_lateral_window_builds() {
@@ -896,7 +896,7 @@ fn two_bodies_touching_on_a_line(
     }
 }
 
-/// ★ **A face far away on the wall's plane joins nothing.** The boss touches the box's wall
+/// **A face far away on the wall's plane joins nothing.** The boss touches the box's wall
 /// `x = 0` from outside along `(0, 0)` — the lens and the far side, two bodies — and it is joined
 /// by a bar to a block whose face lies on that same plane at `y ∈ [10, 12]`, nowhere near the box.
 /// The union is still the two operands touching along the line. Read by the plane's class, the
@@ -939,7 +939,7 @@ fn a_far_face_on_the_walls_plane_joins_nothing() {
     });
 }
 
-/// ★ **A row through a wall face's notch touches nothing.** The box's face `x = 0` is a U — a slot
+/// **A row through a wall face's notch touches nothing.** The box's face `x = 0` is a U — a slot
 /// `y ∈ [−2, 2]`, `z ∈ [1, 3]` cut through the box — and the boss floats in the slot's void, its
 /// surface tangent to the plane `x = 0` along `(0, 0)` where the face is not. Over the boss's
 /// height the line runs through the notch alone, so the face touches nothing on the lateral and
@@ -1041,7 +1041,7 @@ fn wide_boss_in_a_wall_gap(gap: WallGap) -> (Model, Handle<Solid>, Handle<Solid>
     (m, a, b)
 }
 
-/// ★★ **A tangency through a wall face's gap writes no row, so the cut beside it builds.** The
+/// **A tangency through a wall face's gap writes no row, so the cut beside it builds.** The
 /// line `(0, 0)` touches the plane `x = 0` only inside the slot over the boss's height, so no
 /// wall face touches it there; the boss still overlaps the block in the two circular segments past
 /// `|y| = 2`. The U face (and the face around the hole) has corners on both sides of the line, so
@@ -1099,8 +1099,8 @@ fn a_tangency_through_a_wall_faces_gap_beside_material_builds() {
 ///
 /// Read the rows as: the cylinder's side of the wall plane is (or is not) the wall face's
 /// material side, and the cylinder keeps its material inside (a boss) or outside (a bore).
-/// ★ The third row's `Common` is the one that says this is not "a rule about `Cut`": a bore
-/// intersected with the wall's solid leaves the two wedges alone. ★ The lens and the far side
+/// The third row's `Common` is the one that says this is not "a rule about `Cut`": a bore
+/// intersected with the wall's solid leaves the two wedges alone. The lens and the far side
 /// come apart in one cell only — the union with a boss touching the wall from outside, in either
 /// owner order — which is what lets the verdict read that shape as the two operands' own.
 #[test]
@@ -1130,7 +1130,7 @@ fn the_pinch_formula_is_a_truth_table() {
     }
 }
 
-/// ★★★★★ **The disk on a wall plane is read, and it clears.**
+/// **The disk on a wall plane is read, and it clears.**
 ///
 /// The plate carries a **crosswise** bore, so the plane `x = 30` holds that bore's circular cap
 /// face: an outer loop of one arc and one seam vertex. That plane is also parallel to the
@@ -1139,7 +1139,7 @@ fn the_pinch_formula_is_a_truth_table() {
 /// (a rule reading vertices alone would find "every vertex on one side" true
 /// of a **single point**) but one that turns away the true answer along with the false one.
 ///
-/// ☑ The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on
+/// The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on
 /// `y = 4` of half-width `√(9 − 1) ≈ 2.83`. Six apart, so it clears by more than its radius —
 /// and now says so. The volume is the oracle that the answer is not merely *an* answer.
 #[test]
@@ -1163,7 +1163,7 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     m.rebuild_adjacency();
     let bored = crate::boolean(&mut m, BoolKind::Cut, plate, cross).expect("crosswise bore")[0];
     // A vertical drill whose axis stands 1 from the plane x = 30 — inside its radius 3 — and
-    // ★ **6 from the crosswise bore's axis**, clear of the radius sum 5, so the pair rule is
+    // **6 from the crosswise bore's axis**, clear of the radius sum 5, so the pair rule is
     // not what answers here. (At y = 10 the two axes actually meet and this fixture would be
     // measuring `CylinderPairContact` instead — the adjacent proposition.)
     let drill = crate::fixtures::cylinder_with_seam(
@@ -1191,7 +1191,7 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★ **The same boss's `Common` is two thin pieces, and their depths are decided.** What the
+/// **The same boss's `Common` is two thin pieces, and their depths are decided.** What the
 /// boss and the block share is the two circular segments past `|y| = 2` (and, with the slot's
 /// edge on the tangent line, the boss's half disk `y < 0` beside one of them) — two components,
 /// and the depth of each is asked of the other by rays (`assembly::grouping`). The rays from the
@@ -1244,7 +1244,7 @@ fn a_wide_boss_in_a_wall_gap_common_builds() {
     }
 }
 
-/// ★★ **A hole whose edge lies on the tangent line hands the line to the structure.** The slot
+/// **A hole whose edge lies on the tangent line hands the line to the structure.** The slot
 /// `y ∈ [0, 2]` leaves the face `x = 0` a hole whose edge `y = 0` is the tangent line over the
 /// boss's height, and the slot's own wall `y = 0` holds the line too. The face ends on the line
 /// there rather than crossing it, so the row says so (`runs_through` false), the line is an edge

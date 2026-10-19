@@ -4,17 +4,17 @@
 //! kernel. This file is the population it records over — chosen shapes, run one at a time, so the
 //! table says *which shape* produced *which reason at which file*.
 //!
-//! ★ **One `#[test]`, deliberately.** `reject_census::take()` resets a process-global, so a second
+//! **One `#[test]`, deliberately.** `reject_census::take()` resets a process-global, so a second
 //! test in this binary would steal its counts. Binaries are separate processes, so the rest of the
 //! suite is unaffected.
 //!
-//! ★★ **The fixtures are copied from the tests they came from, on purpose.** This population has
+//! **The fixtures are copied from the tests they came from, on purpose.** This population has
 //! to be frozen: if `self_touch.rs` changes its wedge, the census must not move with it. It is the
 //! same reason `tests/census.rs` hard-codes its coordinates instead of sharing helpers. What keeps
 //! a copy from drifting silently is that **every fixture asserts its own reject reason** — a
 //! drifted fixture then fails loudly instead of quietly re-baselining the table.
 //!
-//! ★★★ **What this gate does *not* see.** Its population is these seven shapes. A guard added for
+//! **What this gate does *not* see.** Its population is these seven shapes. A guard added for
 //! M6 quadrics will not be exercised by planar fixtures and this stays green — the whole-suite
 //! sweep (`--features reject-trace`, see the module doc) is what covers that, by hand. It also
 //! cannot see a site moving *within* a file, and it does not contain `precision_budget` (a
@@ -38,7 +38,7 @@ use std::collections::BTreeSet;
 /// an extrude ([`nacre_ops::fixtures::cylinder_with_seam`]) — with the seam on
 /// `axis.any_perpendicular()`.
 ///
-/// ★ **The seam is stated, not left to the frame**, because rows here were built around where it
+/// **The seam is stated, not left to the frame**, because rows here were built around where it
 /// falls (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
 /// fixture. The axes stated here are integer vectors or a 3-4-5 triple, so the seam and the frame
 /// are exact decimals.
@@ -197,7 +197,7 @@ fn wedge_tip_on_wall(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Cut, a, b)
 }
 
-/// ④ ★ **The corpus's carrier of swallowed raises.** A diamond void whose four corners all sit on
+/// ④ **The corpus's carrier of swallowed raises.** A diamond void whose four corners all sit on
 /// the block's walls: every candidate node for the nesting ray grazes, so the retry rings the
 /// `no_clear_ray` guard once per node before the caller runs out of nodes and reports it
 /// (`contact_separates.rs`). Without this shape the raised/surfaced split would measure nothing.
@@ -250,7 +250,7 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 /// digits, so its exact rational has a ~10²³ denominator and the gate's `(n·o+d)² vs r²|n|²`
 /// squares it past `i128`.
 ///
-/// ★ **Chosen from the algebra, not the story** (measured): a *tilted* wide axis cannot test
+/// **Chosen from the algebra, not the story** (measured): a *tilted* wide axis cannot test
 /// this — a real tilt makes the box's planes oblique and the gate rejects for that first — and
 /// a unit-scale box with a wide radius does not overflow at all (`0.5000000000000001²` fits).
 /// Smallness with full digits is the property that bites. Before the gate's predicates became
@@ -317,7 +317,7 @@ fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // A tilted axis against an axis-aligned box: the box's planes are neither ⊥ nor ∥ to
     // (0,3,4), and — unlike rotating the box — every description stays world-rational, so the
-    // gate reaches the *oblique* verdict rather than declining as undecidable. ★ The axis is a
+    // gate reaches the *oblique* verdict rather than declining as undecidable. The axis is a
     // 3-4-5 triple because the sketch frame on its caps then has a rational unit basis and is
     // stated in the world; an axis like (0,1,1) has none, rides a frame node, and the gate refuses
     // it earlier as having no world statement. The axis passes through the box's centre.
@@ -352,7 +352,7 @@ fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Fuse, a, b)
 }
 
-/// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
+/// ⑥ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
 /// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
 /// `SelfTouchingResult` (`Impossible`, the touching edge as the witness): the whole-result
 /// judgement runs before minting.
@@ -383,7 +383,7 @@ fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     Ok(vec![part])
 }
 
-/// ⑦ ★ **The control.** Two overlapping cubes fuse. A boolean that succeeds must leave the census
+/// ⑦ **The control.** Two overlapping cubes fuse. A boolean that succeeds must leave the census
 /// empty — otherwise every row above could be noise from the machinery rather than from the shape.
 fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [1.0; 3]);
@@ -420,18 +420,18 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "diamond-void",
-        // ★ One site, and it is the one the caller is told about. The per-node probe's "this
+        // One site, and it is the one the caller is told about. The per-node probe's "this
         // node cannot decide" is an abstention in its type (`Ok(None)`), not an error for the
         // retry to catch (as an error it rang `no_clear_ray` 24 times per boolean and surfaced
         // once). What rings is what surfaces.
         //
-        // ★★ **And what surfaces is the shape's own name.** `no_clear_ray` was the
+        // **And what surfaces is the shape's own name.** `no_clear_ray` was the
         // depth question running out of witnesses — a planar component was offered nothing but its
         // vertices, and here every one of them sits on the host's wall. Given the points its
         // **edges** name, the depth decides and the self-touch test says what this really is: a void
         // whose corner rides a wall makes the result's surface meet itself along that corner's
         // edge, which is exactly what the one-grazing-corner sibling in `contact_separates.rs` has
-        // always reported. ⚠ This was `NoClearRay`'s only *surfacing* fixture; the name still
+        // always reported. This was `NoClearRay`'s only *surfacing* fixture; the name still
         // raises on the 2-D ring road and the `reject-trace` sweep is what keeps it visible.
         expect: Some(RejectReason::SelfTouchingResult),
         run: diamond_void,
@@ -442,7 +442,7 @@ const CORPUS: [Fixture; 13] = [
     // raised while reading the operands (`plane_index_setup`), before any arrangement work.
     Fixture {
         name: "cylinder-operand",
-        // ★ **The seated-cap row, and the second diff of that kind.** Flush caps: the cylinder's
+        // **The seated-cap row, and the second diff of that kind.** Flush caps: the cylinder's
         // z ∈ [0,2] caps intern onto the box's own cap planes, so every ⊥ class carries faces of
         // both operands. A seated-cap rule would be wider than anything it could name, since
         // what makes a seated circle hard is its *boundary*, and every way a boundary can be met
@@ -454,7 +454,7 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-notyet",
-        // ★ The drill population passes the gate and **builds**: a through hole, walls clear
+        // The drill population passes the gate and **builds**: a through hole, walls clear
         // (distance 1 > r = 0.5), caps unshared.
         expect: None,
         run: cylinder_notyet,
@@ -463,12 +463,12 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-wide-axis",
-        // ★ The same population spelled with long decimals. The **gate** answers it (its
+        // The same population spelled with long decimals. The **gate** answers it (its
         // questions are total), and the wall this input met next was the **value** path: the circle
         // nesting projects the ring's corners into the class's rational chart, and a sub-micron
         // model at full f64 precision left `Rat` there.
         //
-        // ★★ **It builds, and the decline it once met was not about this model at
+        // **It builds, and the decline it once met was not about this model at
         // all.** The chart's second axis is `n x e1`, which squares the normal — and that normal
         // was carrying a factor the plane-name canonicalisation had not removed, because that
         // canonicalisation divides the content out of **four** coefficients while the chart reads
@@ -478,7 +478,7 @@ const CORPUS: [Fixture; 13] = [
         // `s^3 - pi r^2 s`. The fixture stays as coverage — a model three orders of magnitude
         // below anything else here.
         //
-        // ⚠ It was `WitnessNotRational`'s only *surfacing* fixture. That name still raises inside
+        // It was `WitnessNotRational`'s only *surfacing* fixture. That name still raises inside
         // the engine and the `reject-trace` sweep is what keeps it visible; nothing was invented
         // to replace this row.
         expect: None,
@@ -489,7 +489,7 @@ const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "cylinder-wall-contact",
         // The axis sits 0.3 from the x = 0 wall with r = 0.5 — the wall pierces the lateral
-        // surface in two rulings (`y = 1 ± 0.4`). ★ It **builds** (the offset wall):
+        // surface in two rulings (`y = 1 ± 0.4`). It **builds** (the offset wall):
         // the gate records the pair and the tracer cuts the lateral along the rulings and the
         // caps along the chord. The name it carried stays in the code for the tangent alone.
         expect: None,
@@ -564,7 +564,7 @@ fn the_reject_census() {
         let got = (f.run)(&mut m);
         let census = reject_census::take();
 
-        // ★ Assertion 1: the fixture states its own reason. A copied shape that drifts fails here
+        // Assertion 1: the fixture states its own reason. A copied shape that drifts fails here
         // rather than quietly re-baselining the table below.
         match f.expect {
             Some(reason) => assert_eq!(
@@ -583,7 +583,7 @@ fn the_reject_census() {
             ),
         }
 
-        // ★ Assertion 3: which reason is raised in which file. This is what nothing else in the
+        // Assertion 3: which reason is raised in which file. This is what nothing else in the
         // suite pins — every reject test asserts the *reason*, none of them where it lives.
         let want: BTreeSet<(ReasonId, &str)> = f
             .raised
@@ -599,7 +599,7 @@ fn the_reject_census() {
             census.report()
         );
 
-        // ★ Assertion 2: what the caller was told. The strong half — identical in every build.
+        // Assertion 2: what the caller was told. The strong half — identical in every build.
         let want: BTreeSet<ReasonId> = f
             .surfaced
             .iter()
@@ -631,7 +631,7 @@ fn the_reject_census() {
             .1
     };
 
-    // ★★ Assertion 4: **the fold's truth is one site, the whole-result judgement.** The merge
+    // Assertion 4: **the fold's truth is one site, the whole-result judgement.** The merge
     // threads the pinching group by the cyclic order at its pinch, and `self_touch_reject`,
     // hoisted before minting, names the shape. Distinct
     // *sites*, not raise counts: counts move with the build (`debug` re-runs every traced
@@ -643,7 +643,7 @@ fn the_reject_census() {
         "a second `self_touching_result` guard started ringing.\n{}",
         by("fold-45").report()
     );
-    // ★ The positive control for that counter: it can answer something other than 1. The
+    // The positive control for that counter: it can answer something other than 1. The
     // two-site carrier this used to ride (diamond-void's swallowed probe raises) was removed by
     // E on purpose, so the control is the other direction now — a fixture where the reason
     // never rings at all.
@@ -654,14 +654,14 @@ fn the_reject_census() {
         by("plain-fuse").report()
     );
 
-    // ★ There is no Assertion 5 ("at least one reason is raised more often than it
+    // There is no Assertion 5 ("at least one reason is raised more often than it
     // surfaces"): the swallowed-raise champion (`point_in_component`'s per-node probe,
     // 122 of the suite's 151 raises) is a typed abstention. The two columns still measure
     // something: their gap is the count of *remaining* swallowed
     // raises, and near-zero is the goal state — a gap reopening here is news of a new
     // swallow, visible in the whole-suite sweep (`--features reject-trace`).
 
-    // ★ Assertion 6: a successful boolean rings no guard at all.
+    // Assertion 6: a successful boolean rings no guard at all.
     assert!(
         by("plain-fuse").is_empty(),
         "a boolean that succeeded still rang a guard: {}",
@@ -674,7 +674,7 @@ fn instrument_answers_for_itself() {
     // `#[track_caller]` on `reject()` must report the *guard's* line, not `reject`'s own. Nothing
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `error.rs`.
-    // ★ The oblique cut, not the tangent wall: the tangency's reason now comes from the
+    // The oblique cut, not the tangent wall: the tangency's reason now comes from the
     // *assembly* (`assembly/self_touch.rs`), and what this checks is that a **gate** guard names its own line.
     let mut m = Model::new();
     let _ = cylinder_oblique(&mut m);

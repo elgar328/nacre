@@ -19,10 +19,10 @@ fn unit_cube() -> Model {
     m
 }
 
-/// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
+/// **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
 /// the index-parallel cache reads too ([`Model::debug_guard`]).
 ///
-/// ★ `Model::surface`, `vertex_point` and `edge_curve` index a `Vec`, so without the guard a
+/// `Model::surface`, `vertex_point` and `edge_curve` index a `Vec`, so without the guard a
 /// handle from another model reaches all three and answers with the wrong cell. The guard is
 /// `cfg(debug_assertions)`, so the
 /// test is too. Panic output is left unsuppressed on purpose: swapping the panic hook is
@@ -67,10 +67,10 @@ fn a_foreign_handle_cannot_read_a_cache() {
     });
 }
 
-/// ★★★★ **The write doors bite** — the negative control for [`Model::push_face`] and
+/// **The write doors bite** — the negative control for [`Model::push_face`] and
 /// [`Model::push_shell`].
 ///
-/// ★ It is measured that *every face the product builds closes its loop*: one temporary
+/// It is measured that *every face the product builds closes its loop*: one temporary
 /// assertion, the whole suite, 1324 tests, a single red — and that one was a fixture whose
 /// own comment called it a franken-face. That is a **different proposition** from *the
 /// assertion refuses a face that does not close*. The first says the population is clean;
@@ -254,7 +254,7 @@ fn reversed_shell_is_a_valid_manifold() {
     }
 }
 
-/// ★★ The seeds are the interning survivors — an origin box's floor, front and left faces
+/// The seeds are the interning survivors — an origin box's floor, front and left faces
 /// carry the seed handles, so "the world plane" and "that face's plane" are one surface,
 /// stated once (the floor's datum interns onto the `z = 0` seed by name).
 #[test]
@@ -286,7 +286,7 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
     assert_eq!(m.surface_count(), 6);
 }
 
-/// ★★★★ **`supersede_live` keeps the survivors in their original order — and nothing else in
+/// **`supersede_live` keeps the survivors in their original order — and nothing else in
 /// this tree would notice if it did not.**
 ///
 /// `nacre_step::to_step` exports the live set *in order*, the census reads the **arena** (it
@@ -295,7 +295,7 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
 /// the door itself, and again on the export side (`nacre-step`'s
 /// `superseding_a_solid_leaves_the_export_order_alone`).
 ///
-/// ⚠ The oracle is the **construction order**, not a second call to the same machinery —
+/// The oracle is the **construction order**, not a second call to the same machinery —
 /// comparing this against a hand-written `retain` would be one implementation checking itself.
 #[test]
 fn supersede_live_preserves_the_order_of_the_survivors() {

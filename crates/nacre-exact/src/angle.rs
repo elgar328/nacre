@@ -127,7 +127,7 @@ impl Angle {
     /// realizing a rotation angle into f64: every path that turns a point or direction by an angle
     /// goes through here.
     ///
-    /// ★★★ **No libm.** This used to be `(deg.to_f64() * PI / 180.0).cos()`, and the error of that
+    /// **No libm.** This used to be `(deg.to_f64() * PI / 180.0).cos()`, and the error of that
     /// is not something anyone contracts: neither Rust nor any platform promises an accuracy for
     /// `f64::cos`, measured here at `< 5ε`. Worse, it was not a function of the angle — `sin 27°`
     /// came out one ulp apart between a debug and a release build, and between two call sites
@@ -135,7 +135,7 @@ impl Angle {
     /// and its answer differs from the runtime library's. Rounding the high-precision realization
     /// instead makes the result **unique**: the same bits on every platform, profile and call site.
     ///
-    /// ★★ **The 90°-family branch is not an optimization, it is what makes this terminate.**
+    /// **The 90°-family branch is not an optimization, it is what makes this terminate.**
     /// `cos 90°` is exactly `0`, so its interval straddles zero and the two ends never round to the
     /// same f64 no matter how deep the realization goes — [`round_to_f64`] would answer `None`
     /// forever. Niven's theorem says the only rational values are `{0, ±1/2, ±1}`, and only the
@@ -194,24 +194,24 @@ impl Angle {
     /// already uses for a rational's realization in `WitnessPoint`'s `translate`, `mirror` and pivot terms.
     /// Memoized in [`F64_ERR`], keyed by the angle *and the pair* — see there for why the pair.
     ///
-    /// ★★★ **The caller passes the values in rather than letting this re-realize them**, and that
+    /// **The caller passes the values in rather than letting this re-realize them**, and that
     /// is the whole soundness argument. The consumer is `WitnessPoint::rotate_about`, whose `tol` must bound
     /// the error in the `coord_approx` it just wrote from *its* `cos_sin_f64()` result. An error
     /// measured against a realization the caller did not use would bound a number nobody stored.
     /// Taking `c` and `s` as arguments makes "the error describes the value that was used" hold by
     /// construction instead of by the route being the only one.
     ///
-    /// ★★ **Measured, not a constant.** The pair [`Angle::cos_sin_f64`] hands out is the correctly
+    /// **Measured, not a constant.** The pair [`Angle::cos_sin_f64`] hands out is the correctly
     /// rounded one, so its error is at most half an ulp of each value — but what is charged is the
     /// error measured for the pair actually held, so the accounting does not lean on which route
     /// produced it.
     ///
-    /// ★ **Exactly zero for the 90°-family**, because `cos_sin_f64` returns `0.0`/`±1.0` there and
+    /// **Exactly zero for the 90°-family**, because `cos_sin_f64` returns `0.0`/`±1.0` there and
     /// those *are* the true values. Callers rely on that zero: a rotation whose realization carries
     /// no error also performs no rounding downstream (`u·(±1)` and `u·0` are exact), which is what
     /// keeps a quadrantal origin rotation at tol 0.
     ///
-    /// ★ **An `f64`, not a [`Mag`].** `Mag` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
+    /// **An `f64`, not a [`Mag`].** `Mag` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
     /// `f64` to zero and a zero radius claims exactness; this quantity is always ε-scale, so that
     /// hazard is absent — and the consumer is `WitnessPoint::tol`, which is `f64`.
     ///
@@ -231,7 +231,7 @@ impl Angle {
     /// [`cos_sin_error_of`](Self::cos_sin_error_of) without the memo — the measurement.
     fn cos_sin_error_of_uncached(self, c: f64, s: f64) -> (f64, f64) {
         const P: usize = 128; // the hp radius is then ~2⁻¹²⁸ against an ε-scale quantity
-        // ★ The zero is claimed of *these* values, not of the angle: the exactness that callers
+        // The zero is claimed of *these* values, not of the angle: the exactness that callers
         // depend on is "the pair I am holding is the true cos/sin", and only comparing the pair
         // says that. An angle in the family whose caller somehow realized it the general way is
         // then measured like any other rather than being handed a zero it has not earned.
@@ -247,7 +247,7 @@ impl Angle {
         let gap = |f: f64, h: &BigFloat, rad: Mag| {
             let diff = BigFloat::from_f64(f, P).sub(h, P, HP_RM);
             let mag = crate::bigfloat_upper_f64(&diff);
-            // ★ **The sum is rounded *up*, and that is not pedantry.** `mag` is an octave bound, so
+            // **The sum is rounded *up*, and that is not pedantry.** `mag` is an octave bound, so
             // it usually sits well above the truth — but when `|diff|` is itself a power of two the
             // slack is exactly zero, and then `mag + rad` rounds back down to `mag` in f64 and the
             // "bound" is short by the radius. `sin 30°` is that case: it misses 0.5 by exactly

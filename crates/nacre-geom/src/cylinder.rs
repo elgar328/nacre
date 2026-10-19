@@ -144,7 +144,7 @@ impl Cylinder {
     /// direction — is well defined for any point off the axis, and a mesh corner is on the
     /// surface by construction.
     ///
-    /// ★ Why a point version exists at all: a mesh corner *does* carry its angle in the
+    /// Why a point version exists at all: a mesh corner *does* carry its angle in the
     /// tessellation's provenance tag, but a **seam** vertex is tagged as a model vertex and has
     /// no angle. Reading the position asks no question about how the point was made.
     #[inline]

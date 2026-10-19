@@ -57,7 +57,7 @@ pub(crate) fn plane_index_setup(
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
     let (mut setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
-    // ★ The cylinder door: the population gate decides **by name** what stands in the way (an
+    // The cylinder door: the population gate decides **by name** what stands in the way (an
     // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes now
     // goes on to be arranged.
     if !cyl_surfs.is_empty() {
@@ -114,7 +114,7 @@ pub(crate) fn plane_index_setup_inner(
     t.charge(Sub::Classes);
     let t = Watch::new();
     let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
-    // ★ The premise a class with no world statement is read by (`WorkingPlane::stored_hp`): the
+    // The premise a class with no world statement is read by (`WorkingPlane::stored_hp`): the
     // witness triangle turned by `frame_sign` faces the way the stored normal does. Checked on
     // every class that can be checked — the ones whose world statement says it independently.
     #[cfg(debug_assertions)]

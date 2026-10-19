@@ -393,7 +393,7 @@ fn the_big_road_agrees_with_the_rat_road() {
             n += 1;
         }
     }
-    // ★★★ **The tie, which a random sweep can never reach.** At `2⁵² + ½` both neighbours
+    // **The tie, which a random sweep can never reach.** At `2⁵² + ½` both neighbours
     // are representable, so this is where a tie rule is visible — and where half-away-from-zero
     // (what this shipped first) disagreed with the road the point cache is built on.
     for e in [50u32, 51, 52, 53] {

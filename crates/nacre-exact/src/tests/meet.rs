@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// ★★★★★ **An overflowing intermediate does not cost the answer** —
+/// **An overflowing intermediate does not cost the answer** —
 /// locked on the fixture that documents the overflow.
 ///
 /// These three planes meet at `(1, 1, 1)`, which fits `Rat` with room to spare. But their
@@ -13,7 +13,7 @@ use super::*;
 /// this is an independent oracle
 /// and not the two routes agreeing with each other.
 ///
-/// ★ The private narrow route still declines here (asserted), so the fixture keeps proving
+/// The private narrow route still declines here (asserted), so the fixture keeps proving
 /// the fallback is *reached*, not merely present.
 #[test]
 fn an_overflowing_intermediate_no_longer_costs_the_answer() {
@@ -50,7 +50,7 @@ fn an_overflowing_intermediate_no_longer_costs_the_answer() {
     assert_eq!(found.width_bits(), 1, "1/1 is one bit wide");
 }
 
-/// ★ `three_planes_rat` — the exact corner of three rational planes. Hand-checkable
+/// `three_planes_rat` — the exact corner of three rational planes. Hand-checkable
 /// fixture, a degenerate (line-sharing) triple, and an i128-overflow decline.
 #[test]
 fn three_rational_planes_meet_where_they_should() {

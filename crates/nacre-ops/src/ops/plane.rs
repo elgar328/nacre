@@ -2,7 +2,7 @@ use super::*;
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// The axes are unit and orthogonal (the constructors ensure it); the normal is `x × y`.
 ///
-/// ★★★★★ **The fields are private, and that is the whole point.** Public fields would let a
+/// **The fields are private, and that is the whole point.** Public fields would let a
 /// caller hand the kernel three *normalized* f64 vectors — and normalizing is where the
 /// exactness dies: a plane with normal `(1, 1, 1)` has coefficients `[1, 1, 1, 0]`, three
 /// integers, but its unit axes square to `0.9999999999999999…` and no exact form survives,
@@ -37,7 +37,7 @@ impl SketchPlane {
 
     /// The world ZX plane: `+u = ẑ`, `+v = x̂`, normal `+ŷ`.
     ///
-    /// ★★ **The axes are named, not derived.** `ẑ × n` would give `−x̂` here; the convention a
+    /// **The axes are named, not derived.** `ẑ × n` would give `−x̂` here; the convention a
     /// person expects (and the one the script layer documents) is `+u = ẑ`. A named plane gets to
     /// say, which is exactly what [`PlaneDef::ref_dir`] is for.
     pub fn world_zx() -> Self {
@@ -73,11 +73,11 @@ impl SketchPlane {
     /// convention a face's frame uses (`ops::frame_axes` — cross the world `ẑ` into the normal,
     /// or `ŷ` when the normal is vertical). `None` if `normal` is zero.
     ///
-    /// ★ It has to be the same convention: this and [`face_plane`] answer the same question, and a
+    /// It has to be the same convention: this and [`face_plane`] answer the same question, and a
     /// caller that builds a frame here and compares it with one read off a face would otherwise
     /// find them ninety degrees apart.
     ///
-    /// ★★★★ **`normal` is kept, not just consumed.** Normalizing it is what destroys the exact
+    /// **`normal` is kept, not just consumed.** Normalizing it is what destroys the exact
     /// form — the caller's `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`, while `normalize` of it
     /// squares to `0.9999999999999999…`. The unit axes below stay the f64 cache; the definition
     /// records what was handed in. A normal outside the decimal window simply leaves `def` empty,
@@ -103,11 +103,11 @@ impl SketchPlane {
     /// divisions, nothing to overflow. The only declines left are a coordinate outside the
     /// decimal window and a zero normal.
     ///
-    /// ★★ **Polarity is algebraic**: `(a × n) × (b × n) = det[a, b, n] · n`, so `u × w` is a
+    /// **Polarity is algebraic**: `(a × n) × (b × n) = det[a, b, n] · n`, so `u × w` is a
     /// *known scalar* times `n` — `n₁` for the `(ẑ, x̂)` pair — and flipping `w`'s sign when that
     /// scalar is negative makes the point order face the caller's normal, both signs, exactly.
     ///
-    /// ★★★ **Why not `w = n × u`, the "obvious" second direction: its components are products.**
+    /// **Why not `w = n × u`, the "obvious" second direction: its components are products.**
     /// With no f64 fallback to absorb a failed construction, the checked arithmetic is not a
     /// formality: a proptest found the window's small-exponent corner — a `10²¹` denominator squares to `10⁴²`, and even the *primitive*
     /// direction of that cross needs 137 bits. Basis crosses stay inside the inputs' own widths.
@@ -151,7 +151,7 @@ impl SketchPlane {
     /// **A plane through three written points**: `origin` is the sketch's `(0, 0)`, `+u` runs
     /// toward `x_point`, and `+v` leans toward `y_hint`.
     ///
-    /// ★★★ **Everything here is exact by construction.** The written points, lifted to their
+    /// **Everything here is exact by construction.** The written points, lifted to their
     /// decimal truth, **are** the definition — origin first, so the sketch `(0, 0)` and the `+u`
     /// direction (`x_point − origin`) fall out of the structure. `None` if the three are
     /// collinear or fall outside the decimal window.
@@ -184,7 +184,7 @@ impl SketchPlane {
 
     /// The same plane **moved to pass through `p`**, with `p` as the sketch's `(0, 0)`.
     ///
-    /// ★★★★ **The plane travels with the origin** — `plane(ZX, { origin: … })` sets the position
+    /// **The plane travels with the origin** — `plane(ZX, { origin: … })` sets the position
     /// as well as the 2-D origin. Keeping the plane in place while moving the origin would leave
     /// the definition describing one plane and its origin sitting on another: measured on that
     /// reading, `world_xy().with_origin([0, 0, 0.5])` records `z = 0` for a cap at `z = 0.5`, and a
@@ -218,12 +218,12 @@ impl SketchPlane {
     /// — whose axes never lift to exact orthonormal rationals — extrudes through the frame
     /// road (wide names included) instead of falling silently to f64.
     ///
-    /// ★ The **world road** still comes first: a frame whose basis is rational in the world — a
+    /// The **world road** still comes first: a frame whose basis is rational in the world — a
     /// Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — takes the world-rational path
     /// (asked of the datum's truth, not of these decimals). That population is how the
     /// `n·n`-overflow walls (the census `wf` family) are built.
     ///
-    /// ★★ **What the definition states — and what it does not.** Three points, `+u`, and the
+    /// **What the definition states — and what it does not.** Three points, `+u`, and the
     /// polarity (point order); the realized frame is *orthonormal*, exactly as for every other
     /// definition (`ref_dir` is any length, `+v` is derived on `y`'s side). Exact decimal
     /// orthogonality is deliberately **not** required — a rotated pair `[c, s, 0]/[−s, c, 0]`
@@ -297,7 +297,7 @@ impl SketchPlane {
 
 /// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
 ///
-/// ★★★ **One field, and the invariants are structural.** This used to carry coefficients, an
+/// **One field, and the invariants are structural.** This used to carry coefficients, an
 /// origin, and a reference direction as three halves that every constructor had to keep agreeing
 /// ("an origin that is not on `coeffs` is a definition describing two different planes", which
 /// cost 0.04 of volume the one time it happened). Now the definition is the three points alone:
@@ -312,7 +312,7 @@ impl SketchPlane {
 /// failure class "the coefficients do not fit `i128`": three in-window points
 /// always name their plane, however wide its canonical form.
 ///
-/// ★ `ref_dir()` is **not** a unit vector and is not projected; the normalization a frame needs
+/// `ref_dir()` is **not** a unit vector and is not projected; the normalization a frame needs
 /// is exactly one `1/√(rational)` at realization time — never something stored.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaneDef {

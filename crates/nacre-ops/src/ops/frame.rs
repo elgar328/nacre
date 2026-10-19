@@ -4,7 +4,7 @@ use super::*;
 /// handle the door returned). Every road calls it, and its `flip` is [`flip_toward`]'s. `None`
 /// when the plane has no frame (no name and no judged frame).
 ///
-/// ★★★ **Only the frame comes back — deliberately.** A caller that needs the axes asks
+/// **Only the frame comes back — deliberately.** A caller that needs the axes asks
 /// [`crate::rotated_vertex::frame_world_basis`] *with this flip*, so the geometry of `flip` is
 /// written in exactly one place. A flip turns a `Canonical` frame about `v̂` and a `Named` one
 /// about `û` ([`crate::rotated_vertex::narrow_frame`]), so combining an unflipped basis with
@@ -45,7 +45,7 @@ fn flip_toward(model: &Model, plane: Handle<Surface>, toward: Orientation) -> Op
 /// Name a [`SketchFrame`] as the [`nacre_topo::Motion::Frame`] node the sweep writes coordinates
 /// against — the one road from the frame value to a node, shared by the extrude and face paths.
 ///
-/// ★★ **`push_motion` interns**, so two sketches in one frame name the *same* node — which is
+/// **`push_motion` interns**, so two sketches in one frame name the *same* node — which is
 /// what makes their surfaces intern too (a plane's `SurfaceKey::Name` is `(name, motion)`): two
 /// routes to one height become one `Handle<Surface>` at construction, with no f64 comparison
 /// anywhere. With `Canonical` placement the node is `(plane, Canonical, flip)` — nothing
@@ -69,7 +69,7 @@ pub(super) fn push_frame_node(
 /// This is the **arbitrary-axis convention** (DXF/AutoCAD, and what most CAD puts on a face):
 /// cross the world `ẑ` into the normal, unless the normal *is* vertical, in which case cross `ŷ`.
 ///
-/// ★ **Not [`nacre_math::Vector::any_perpendicular`], and the difference is the point.** That one
+/// **Not [`nacre_math::Vector::any_perpendicular`], and the difference is the point.** That one
 /// answers a question of fact — *"give me a unit vector perpendicular to this"* — by crossing in
 /// whichever world axis the normal is **least** aligned with, which keeps the cross far from zero
 /// and is exactly right for a cylinder's seam or a STEP `ref_dir`. It is the wrong answer for a
@@ -85,12 +85,12 @@ pub(super) fn push_frame_node(
 ///   [`nacre_exact::plane_frame_default`] states for a face — the same rule in exact arithmetic,
 ///   which is how a face's frame is chosen (`face_sketch_frame`).
 ///
-/// ★★ **The branch is exact, not toleranced.** DXF switches on `|n_x| < 1/64`, a threshold only a
+/// **The branch is exact, not toleranced.** DXF switches on `|n_x| < 1/64`, a threshold only a
 /// float-only kernel needs; `n_x == 0 && n_y == 0` is the real question and this kernel can ask it.
 /// Nor is the non-vertical branch fragile near vertical: `ẑ × n = (−n_y, n_x, 0)` is a plain
 /// rotation of `(n_x, n_y)` into the plane, with no cancellation to lose digits to.
 ///
-/// ★ **A discontinuity is unavoidable and this convention chooses where to put it** — no continuous
+/// **A discontinuity is unavoidable and this convention chooses where to put it** — no continuous
 /// tangent frame exists on the sphere. `any_perpendicular` breaks along whole arcs (wherever two
 /// components tie for smallest, e.g. `(0.5, 0.5, 0.707)`, far from any pole); this breaks at the
 /// two poles only. It is not smooth *at* the poles either — approaching `+ẑ` from different sides
@@ -136,7 +136,7 @@ pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpEr
 /// is what a viewer needs to draw a sketch where it was drawn: the sketch's coordinates are
 /// `(u, v)` in this frame, and `origin + u·x + v·y` is the point.
 ///
-/// ★ It is a **report**, not a truth. The frame's statement is the truth — this is that
+/// It is a **report**, not a truth. The frame's statement is the truth — this is that
 /// statement realized the way a prism built in it is realized (`frame_basis`), and nothing
 /// exact should be decided from it.
 ///
@@ -179,7 +179,7 @@ pub(super) fn frame_basis(
 /// or the pocket's tool (`dist < 0`) on the face's own plane handle; [`face_plane`] is its
 /// realization.
 ///
-/// ★★ **Which frame a face takes is a fact about where the face is, not about how its plane is
+/// **Which frame a face takes is a fact about where the face is, not about how its plane is
 /// stored.** Whether a moved plane carries its motion as a node or had it carried into its points
 /// is the transform's choice of what it can state exactly, so a rule that read the
 /// representation would sketch two identical faces in two frames.
@@ -277,7 +277,7 @@ fn world_placement(
 /// A [`SketchPlane`] from a **realized** (rounded) frame basis — kernel-internal, and
 /// deliberately without a definition.
 ///
-/// ★★ **Do not lift these axes.** The public [`SketchPlane::from_axes`] lifts what a *caller*
+/// **Do not lift these axes.** The public [`SketchPlane::from_axes`] lifts what a *caller*
 /// wrote, because written decimals are a statement. A realized basis is a cache of a plane that
 /// already has an exact definition (points + motion); lifting it would mint a second,
 /// ulp-different "truth" for the same wall — two exact descriptions of one plane, the defect

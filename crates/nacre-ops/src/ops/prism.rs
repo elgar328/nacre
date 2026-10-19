@@ -10,7 +10,7 @@ use super::*;
 /// truth, never of a realization lifted back: a realized axis that needs normalizing comes back
 /// `0.6000000000000001` and would read as irrational.
 ///
-/// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
+/// Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
 ///
 /// [`RatFrame::of_plane_frame`]: crate::construct::RatFrame::of_plane_frame
 /// [`RatFrame::carried`]: crate::construct::RatFrame::carried
@@ -130,7 +130,7 @@ pub(crate) fn extrude_on_frame(
     }
     profile.check()?;
     refuse_non_quarter_arcs(profile)?;
-    // ★ A `SketchFrame` may name any surface — `SketchFrame::canonical` makes no claim and checks
+    // A `SketchFrame` may name any surface — `SketchFrame::canonical` makes no claim and checks
     // nothing — so a cylinder can reach here, which a `SketchPlane` never could. Reject it by name
     // rather than letting the frame derivation fail later for a reason that reads as something
     // else ("no exact form" when the truth is "not a plane").
@@ -216,7 +216,7 @@ pub(crate) fn build_prism(
     inner_rings: Vec<Swept>,
     normal: Vector3,
     base_cap_surface: Option<(Handle<Surface>, Orientation)>,
-    // ★ The world points of the plane the caller named, when they named one. Its canonical name is
+    // The world points of the plane the caller named, when they named one. Its canonical name is
     // derived from these, so there is no second half that could travel separately.
     base_cap_points: Option<[[nacre_exact::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
@@ -243,7 +243,7 @@ pub(crate) fn build_prism(
         .map(|h| oriented_ring(h, sweep_up, false))
         .collect::<Result<_, _>>()?;
 
-    // ★★★ **Surfaces before topology.** A vertex is defined by the three faces that meet at it,
+    // **Surfaces before topology.** A vertex is defined by the three faces that meet at it,
     // and `Store` is append-only, so the handles have to exist before the vertex does. The two
     // arenas are separate, so interleaving them differently does not shift either one's numbering
     // — but the surfaces' order *among themselves* is what the numbering depends on, and it is
@@ -259,7 +259,7 @@ pub(crate) fn build_prism(
     let (base_surface, base_orient) = match base_cap_surface {
         Some(shared) => shared,
         None => {
-            // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
+            // **The caller's statement wins here, and the frame's is the fallback.**
             //
             // The base cap *is* the plane they named, and they named it in the world — so stating
             // it that way keeps its `motion` `None`, keeps its judgment exact, and lets two
@@ -271,7 +271,7 @@ pub(crate) fn build_prism(
             // The frame's answer is what a plane with no caller statement gets (an axis-aligned
             // sketch, where the two agree anyway).
             //
-            // ★★★★★ **One frame or the other, and the `motion` goes with the points.**
+            // **One frame or the other, and the `motion` goes with the points.**
             // A plane's points and its `motion` are two halves of one statement: `None` means
             // *"these speak about the world"* and `Some` means *"about the pre-motion frame"*.
             // There is no third half: the name is derived from whichever points are recorded, so
@@ -279,7 +279,7 @@ pub(crate) fn build_prism(
             // coefficients beside the prism's **frame** ring, whenever the points overflowed and
             // the coefficients did not.)
             //
-            // ★ The frame's `motion` is the one the top cap takes, and where it is `None` the
+            // The frame's `motion` is the one the top cap takes, and where it is `None` the
             // frame's points speak about the world too — which is every case a missing caller
             // statement can produce.
             let (base_motion, cap_pts) = match base_cap_points {
@@ -484,7 +484,7 @@ impl RingCells {
                 Seg3::Arc { ccw, .. } => *ccw != sweep_up,
             };
             let j = (i + 1) % n;
-            // ★ **A whole circle's lateral is bounded by its two rims and nothing else** — the
+            // **A whole circle's lateral is bounded by its two rims and nothing else** — the
             // base rim the outer loop, the top rim an inner one, each walked the way the quad
             // below walks it. A riser here would join a vertex to its own twin across the face,
             // an edge whose two sides are the one lateral: a seam is where the surface's
@@ -654,14 +654,14 @@ fn sweep_ring(
     let top_pts: Vec<Point3> = ring.top.clone();
     // Corner `i` is where the wall before it, the wall after it, and the cap meet.
     //
-    // ★ **Two walls that are one plane would name a line, not a point** — and since surfaces are
+    // **Two walls that are one plane would name a line, not a point** — and since surfaces are
     // interned, "one plane" *is* "one handle", so the check is a comparison. This is a
     // guard on an invariant, not a live case: the only producer of adjacent same-plane walls is
     // a profile with a collinear midpoint, and `Profile2d`'s constructor dissolves those, so
     // every corner gets its three-plane definition (locked by
     // `a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit`). Non-adjacent walls may
     // still legitimately share a plane (a notch), which never lands `prev == here`.
-    // ★ Total: the guard's `None` (adjacent same-plane walls) is unreachable — the
+    // Total: the guard's `None` (adjacent same-plane walls) is unreachable — the
     // profile constructor dissolves collinear midpoints — and a wall can never equal a cap (a
     // wall contains the sweep direction, a cap has it as normal). The honest reject stands in
     // for the unreachable arm; the suite is what would refute "unreachable".
@@ -782,7 +782,7 @@ fn sweep_ring(
 /// ([`exact_frame`]), and the two must answer alike — while the route that realizes the axes and
 /// lifts them back must visibly lose the frames whose axes need normalizing.
 ///
-/// ★★★ **A one-ulp disagreement there is not an ulp of error.** The plane would silently take the
+/// **A one-ulp disagreement there is not an ulp of error.** The plane would silently take the
 /// frame-node road, and the arena would gain motion nodes and write its points in frame
 /// coordinates: a *different but still valid* model. So the assertion order below matters —
 /// **same road first**, values second. This crate has been bitten by exactly

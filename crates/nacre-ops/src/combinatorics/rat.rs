@@ -25,7 +25,7 @@ pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) 
 
 /// **An operand vertex's own pierce name, restated in this arrangement's class space.**
 ///
-/// ★★★★★ **The second half of a correspondence the forward direction gets for free.** When a
+/// **The second half of a correspondence the forward direction gets for free.** When a
 /// boolean *mints* a [`nacre_topo::Vertex::Pierce`] it writes the two planes as **its own
 /// classes' representative surfaces**, so restating class order as handle order is the only
 /// correction it needs ([`nacre_topo::QuadRoot::canonical`], which the assembly calls). Coming back
@@ -34,14 +34,14 @@ pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) 
 /// the **opposite sign**. `Vertex::Pierce`'s own doc says this correspondence "has to be
 /// established a second time"; this is that time.
 ///
-/// ★★ **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
+/// **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
 /// `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition
 /// `−ℓ` satisfies identically. So negating **either** normal leaves the two planes, and the base,
 /// exactly where they were and only reverses `ℓ`: the two roots trade places, which is what
 /// `flipped` says. Swapping the pair reverses `ℓ` too (the derivation `canonical` already carries).
 /// ⇒ **flip once per reversal, and an even number of reversals is no flip at all.** The swap is
 /// [`NodeId::pierce`]'s to count; the two signs are this function's.
-/// ☑ The cylinder needs no correction: negating its axis direction does not move the surface, so
+/// The cylinder needs no correction: negating its axis direction does not move the surface, so
 /// the two roots are the same two points in the same order.
 pub(crate) fn pierce_name_from_def(
     model: &Model,
@@ -88,7 +88,7 @@ pub(crate) fn pierce_name_from_def(
 /// the section is a circle and not an ellipse. Exact and **total** ([`nacre_exact::parallel_rat`]
 /// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.
 ///
-/// ★★★★★ **The one place this rule is named, and it is load-bearing far past its callers.**
+/// **The one place this rule is named, and it is load-bearing far past its callers.**
 /// Nine sites reason from "a circle's class is ⊥ to its axis" — [`crate::nesting`]'s rim witnesses
 /// and `disk_in_disk`, the segment-vs-arc turn sign below, `segment_meets_cylinder`'s
 /// precondition, `circle_crosses_ruling`'s extent derivation, an `unreachable!` in the
@@ -100,14 +100,14 @@ pub(crate) fn pierce_name_from_def(
 /// lateral faces cannot be *proved* to miss the plane is refused
 /// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse). So a
 /// class that carries a circle is a class whose plane **meets** that cylinder, and had it been
-/// oblique the gate would already have refused. ★ The seated producer has a second, stronger
+/// oblique the gate would already have refused. The seated producer has a second, stronger
 /// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
 /// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
 ///
-/// ⚠ **The argument is easy to misread**,
+/// **The argument is easy to misread**,
 /// which is why the two consumers that would answer *silently wrong* now ask instead of assume.
-/// ⚠ The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
+/// The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
 /// axis answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
 /// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
 /// with no rational description), and the eight inline spellings this will replace already inherit
@@ -119,15 +119,15 @@ pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact
 /// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces
 /// on the plane, exact.
 ///
-/// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
+/// It is rational **whatever way the axis points**: the class has rational coefficients or this
 /// says nothing, and the meet is one division. That is why a circle can always name a witness of
 /// its own where a *ring* cannot — a ring's corners are pierce points and carry radicals.
 ///
-/// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
+/// It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
 /// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
 /// serves both.
 ///
-/// ★★ It lives here, beside [`class_coeffs_rat`] which it reads, because it has **two** consumers
+/// It lives here, beside [`class_coeffs_rat`] which it reads, because it has **two** consumers
 /// and belongs to neither: `nesting`'s witness supply asks it for a circle's own point, and the
 /// arrangement's mixed-class net asks it for the circle to measure against a ruling.
 /// Keeping it inside `nesting` would have meant either a second spelling or opening that module's
@@ -165,7 +165,7 @@ pub(crate) fn class_coeffs_rat(
 /// `Pair` roots the two points [`NodeId::pierce`] names on that line. `None` where a class has no
 /// world statement or the arithmetic runs out.
 ///
-/// ★ One question with two askers: the tracer's chord across a circle bound
+/// One question with two askers: the tracer's chord across a circle bound
 /// (`arrangement::sides::chord_stations`) and the self-touch verdict's crossings of a circle hole
 /// along an edge's line ([`segment_meets_face`]).
 pub(crate) fn class_line_meets_cylinder(
@@ -181,17 +181,17 @@ pub(crate) fn class_line_meets_cylinder(
 /// A node's exact coordinates: the rational meet of its three classes' descriptions. `None` when
 /// any class lacks a narrow rational description — the caller declines rather than guessing.
 ///
-/// ★ **This reads the identity directly rather than going through [`three_plane_name`]**, because
+/// **This reads the identity directly rather than going through [`three_plane_name`]**, because
 /// it is one of the two places whose answer for a second variant is *its own*: a pierce point's
 /// coordinate is `a + b√c`, not a rational meet, so this `match` is where that decision belongs —
 /// not behind a door whose one answer is "no three-plane name, nothing to give".
 ///
-/// ★★ **A pierce node's `None` is a type fact, not a width decline** — the vessel is rational and
+/// **A pierce node's `None` is a type fact, not a width decline** — the vessel is rational and
 /// the coordinate is not, so no amount of precision reaches it. Resist answering `Some` for a
 /// tangency because *its* coordinate happens to be rational: a function right for one root and not
 /// the other is the "sometimes right" trap.
 ///
-/// ★★★ **So a caller must not read that `None` as a width decline** (`WitnessNotRational`, "a
+/// **So a caller must not read that `None` as a width decline** (`WitnessNotRational`, "a
 /// wider rational would lift this", is **false** for a pierce point).
 /// `arrangement::split_circles` asks it of both ends of every segment and uses the answer only as
 /// a filter; the order along the segment is asked without it.
@@ -337,13 +337,13 @@ pub(crate) fn plane_sign_hp(
 /// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of
 /// [`node_coords_rat`] and [`pierce_point`], which each answer for one variant only.
 ///
-/// ★★ **It lives here because the `match` does.** Reaching into a [`NodeId`] variant outside this
+/// **It lives here because the `match` does.** Reaching into a [`NodeId`] variant outside this
 /// file (and `reuse`) is what [`three_plane_name`]'s gate forbids, and the first draft of this
 /// function sat in `arrangement` and broke it — with the whole suite green, exactly as that gate's
 /// doc predicts. The two roads it dispatches between are already both here, so this is where the
 /// third question about the same name belongs.
 ///
-/// ★ `cfg(test)` only while the audit is its one consumer. The seam table's `Vertex` minting
+/// `cfg(test)` only while the audit is its one consumer. The seam table's `Vertex` minting
 /// asks for the same pair of roads and will want it in production.
 #[cfg(test)]
 pub(crate) fn node_point_approx(
@@ -368,12 +368,12 @@ pub(crate) fn node_point_approx(
 /// distinction: a pierce coordinate is `a + b√c`, so the rational vessel next door cannot hold it
 /// and only the cache can.
 ///
-/// ★★ **It re-solves from the name rather than taking the producer's `(line, s)`** — the truth is
+/// **It re-solves from the name rather than taking the producer's `(line, s)`** — the truth is
 /// the definition and the coordinate is its cache. That is also what makes canonicalization
 /// load-bearing: a name whose root failed to follow its pair through the sort designates the
 /// *other* crossing, and the point moves where a test can see it.
 ///
-/// ★ **Strict about a tangency.** `Double` is answered only by `Tangent` and `Lo`/`Hi` only by
+/// **Strict about a tangency.** `Double` is answered only by `Tangent` and `Lo`/`Hi` only by
 /// `Pair`, and the mismatches are `None` rather than a nearest guess — so a second name for a
 /// tangency's one point is unrepresentable here, not merely discouraged.
 ///
@@ -395,7 +395,7 @@ pub(crate) fn pierce_point(
 /// **The exact half of [`pierce_point`]** — the `(line, s)` the name designates, before it is
 /// realized.
 ///
-/// ★ «the definition is the truth, the coordinate a cache»: the pair *is* the point and the `[f64;
+/// «the definition is the truth, the coordinate a cache»: the pair *is* the point and the `[f64;
 /// 3]` beside it is its
 /// realization, so the two are one function split in the middle rather than two solves. Every
 /// exact question about a pierce point — its order along the line, its side of a plane, its θ about
@@ -404,7 +404,7 @@ pub(crate) fn pierce_point(
 /// for a root [`nacre_exact::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
 /// to the axis, a tangent wall's double root); `None` for any other corner or name.
 ///
-/// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
+/// A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
 /// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
 /// This answers a different question — "is there a rational point *here* to cast from?" — and is
 /// total over its input: the corners it cannot state simply do not join the probe list, the way
@@ -428,7 +428,7 @@ pub(crate) fn pierce_coords_rat(
 /// **Every rational point that names the interior of this *straight* ring edge** — the one rule,
 /// with one arm per way the two ends can be described.
 ///
-/// ★★★★★ **One sentence, which must not be four spellings.** "A chord's midpoint" and "an edge's
+/// **One sentence, which must not be four spellings.** "A chord's midpoint" and "an edge's
 /// interior point" are one rule — a chord rule refuses `Carrier::Arc` in as many words, so both
 /// are *a point inside a straight edge*, differing only in how the ends are named. Spelled per
 /// supply, it leaves a road with no edge witness at all, and a planar component whose every
@@ -441,13 +441,13 @@ pub(crate) fn pierce_coords_rat(
 /// | [`pierce_ends_between`] | two solves on one line | a rational verified strictly between |
 /// | [`rational_ends_midpoint`] | both rational | the midpoint of two rationals |
 ///
-/// ★★ **An iterator, not an `Option`, and that is load-bearing.** The first two arms **both** match
+/// **An iterator, not an `Option`, and that is load-bearing.** The first two arms **both** match
 /// a conjugate-rooted edge — the two roots share the plane pair and the cylinder, so `pierce_meet`
 /// hands each end the same line, which is all the second arm asks — and they name **different**
 /// points (a shared `mid` against a realized-then-verified midpoint). Folding them into one answer
 /// would delete a witness silently.
 ///
-/// ☑ **Measured over the lib + census corpus**, because the argument above is read off the
+/// **Measured over the lib + census corpus**, because the argument above is read off the
 /// guards and a reader should not have to re-derive it: **284** edges where the first two arms both
 /// answer and **0** where the first answers alone — so a fold to "the first arm that matches" would
 /// drop 284 points. Those two are **stable across runs**; the other two are not, because proptest
@@ -455,7 +455,7 @@ pub(crate) fn pierce_coords_rat(
 /// answers, and **~10⁴** where only the third — by a wide margin the
 /// largest supply. (Three runs of the same tree: 10,963 / 13,027 / 11,075 for the third.)
 ///
-/// ★ **The order**: conjugate, then between, then the rational midpoint (which is disjoint
+/// **The order**: conjugate, then between, then the rational midpoint (which is disjoint
 /// from both — a pierce end is not rational).
 ///
 /// **Every arm lands *on* the edge**, which is what lets the component road wrap these in
@@ -551,12 +551,12 @@ fn rational_between(
 /// **Every rational point a ring edge offers a witness supply** — its start corner, then the points
 /// its interior names ([`edge_interior_points`]).
 ///
-/// ★ **The whole per-edge chain, in one place**, so that `nesting`'s witness supply and its
+/// **The whole per-edge chain, in one place**, so that `nesting`'s witness supply and its
 /// diagnostic twin do not each hold a copy — the interior half being one rule would still leave
 /// the *corner* half written twice. The order: the corner first — rational if the node has
 /// a three-plane name, else the pierce root's coordinates — then the interior arms.
 ///
-/// ⚠ **The component road one dimension up does not call this**: it already offers every corner as
+/// **The component road one dimension up does not call this**: it already offers every corner as
 /// a [`Probe::Named`], which is exact without coordinates at all, so it takes
 /// [`edge_interior_points`] alone rather than minting a second description of a point it has.
 pub(crate) fn edge_witness_points(
@@ -573,7 +573,7 @@ pub(crate) fn edge_witness_points(
 /// **Arm a of [`edge_interior_points`] — the midpoint of a ring edge whose two ends are one
 /// solve's two roots** — rational, exactly, and strictly between them.
 ///
-/// ★★★★★ **A chord names its own middle.** `plane_plane_cylinder` builds the pair as
+/// **A chord names its own middle.** `plane_plane_cylinder` builds the pair as
 /// `lo = (mid, −half, disc)` and `hi = (mid, +half, disc)` — **one `mid`, shared** — so a segment
 /// whose ends are that pair has `base + s.a()·dir` for its midpoint whichever end is asked, with
 /// no second solve and no approximation. `disc > 0` for a `Pair`, so it is strictly inside.
@@ -594,13 +594,13 @@ pub(crate) fn conjugate_midpoint(
     if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
         return None;
     }
-    // ★★★★★ **The edge must *be* the segment between its ends, and an arc is not.** Two ends can
+    // **The edge must *be* the segment between its ends, and an arc is not.** Two ends can
     // be one solve's two roots and still be joined by a **curve**: a plane cutting a circle names
     // both crossings, and *either* arc between them carries that same pair of names. The chord's
     // midpoint is then a point strictly inside the circle and **not on this ring at all** — and a
     // point off the ring is not a witness for it, since containment is read from a point *of* `a`
     // and a point in `a`'s interior answers a different question wherever `b` nests inside it.
-    // ☑ Measured over the whole lib suite: 120 acceptances, **not one** curved carrier — an
+    // Measured over the whole lib suite: 120 acceptances, **not one** curved carrier — an
     // all-arc ring is answered by `ring_own_circle` one arm up, and every ring that reaches here
     // offered two straight chords. The guard states the precondition; it does not describe a
     // population.
@@ -615,7 +615,7 @@ pub(crate) fn conjugate_midpoint(
     for k in 0..3 {
         p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
     }
-    // ★★★★★ **Asserted where the fact is made, not where it is consumed.** Both claims this
+    // **Asserted where the fact is made, not where it is consumed.** Both claims this
     // function rests on are checkable here and nowhere cheaper: that `MeetLine`'s `base`/`dir`
     // really do parameterize the two planes' meet (so `base + t·dir` is on both), and that the
     // shared `a()` lands **strictly between** the two roots (so it is strictly inside the
@@ -660,7 +660,7 @@ fn rational_ends_midpoint(
     for k in 0..3 {
         p[k] = a[k].checked_add(b[k])?.checked_mul(half)?;
     }
-    // ★ Asserted where the fact is made: the two ends share the two planes this edge rides, so the
+    // Asserted where the fact is made: the two ends share the two planes this edge rides, so the
     // midpoint is on both of them. The same postcondition `conjugate_midpoint` states below, in the
     // vocabulary this arm's ends come in.
     debug_assert!(
@@ -707,7 +707,7 @@ fn rational_ends_midpoint(
 /// the only hits are the first cause, from `a_circle_meeting_a_ruling_is_refused_by_name`'s
 /// hand-built ruling.
 ///
-/// ⚠ A new node kind — a point two curved surfaces meet at — falls into the first arm and reaches
+/// A new node kind — a point two curved surfaces meet at — falls into the first arm and reaches
 /// those callers as `WitnessNotRational`, a width sentence for a naming fact. Give it its own cause
 /// here before it ships.
 pub(crate) fn pierce_meet(
@@ -733,7 +733,7 @@ pub(crate) fn pierce_meet(
         NodeKind::ThreePlane(_) => return None,
     };
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    // ★ **The interval road is for a plane with no world statement, and only for it.** A named pair
+    // **The interval road is for a plane with no world statement, and only for it.** A named pair
     // whose exact solve fails (a wide name, an overflow) keeps declining here under its own name:
     // answering it by intervals would put a second number on a population the exact road owns.
     if planes.iter().any(|&c| jd.planes[c].world.is_none()) {
@@ -776,7 +776,7 @@ pub(crate) fn pierce_meet(
     Some(PierceMeet::Exact(line, s))
 }
 
-/// ★ **The interval road answers for the named population too, where it can be checked.** Every
+/// **The interval road answers for the named population too, where it can be checked.** Every
 /// exact pierce point is also solved the interval way ([`nacre_exact::quad::plane_plane_cylinder_hp`]
 /// on the same coefficients, the same root by name), and the two boxes must overlap — both hold
 /// the true point. A convention that differed between the roads (a root order, a line direction)
@@ -822,7 +822,7 @@ fn debug_assert_bounded_holds_exact(
 /// **Where a pierce point is** — what [`pierce_meet`] solves a pierce name to, and the one vessel
 /// every question about the point reads.
 ///
-/// ★ The questions are this type's methods, so a caller asks *what it wants to know* (a side, an
+/// The questions are this type's methods, so a caller asks *what it wants to know* (a side, an
 /// interval) and never which number answers it. A caller that needs the exact pair itself — an
 /// `a + b√c` comparison, a rational root — takes [`PierceMeet::into_exact`] or
 /// [`PierceMeet::exact`] and declines where there is none.
@@ -1012,7 +1012,7 @@ pub(crate) fn names_a_nameless_plane(jd: &Judge<'_, WorkingPlane>, n: NodeId) ->
 /// among them, or too little precision); the interval twin of the name road's
 /// `circular_order`, and asked only where a point has no exact meet.
 ///
-/// ★ **`lo == hi` is the closed arc** — the circle a single node cuts, its whole turn from that
+/// **`lo == hi` is the closed arc** — the circle a single node cuts, its whole turn from that
 /// node back to it — and every other point of the circle is inside it: `n` is inside exactly when
 /// it is not the node, which the boxes say by being apart (`None` when they cannot prove it).
 pub(crate) fn between_on_circle_hp(
@@ -1125,7 +1125,7 @@ pub(crate) fn arc_crossings_hp(
 
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.
 ///
-/// ★★★★★ **The canonicalisation that made the name narrow was over *four* coefficients, and a
+/// **The canonicalisation that made the name narrow was over *four* coefficients, and a
 /// reader of three does not inherit it.** A [`nacre_exact::PlaneName`] is normalised by
 /// clearing denominators, dividing out the **content of all four**, and fixing a sign; so the
 /// normal `(a, b, c)` keeps a factor of `gcd(a,b,c) / gcd(a,b,c,d)`. For an axis-aligned class at
@@ -1180,7 +1180,7 @@ fn primitive_normal(n: &[nacre_exact::Rat; 3]) -> [nacre_exact::Rat; 3] {
 /// copy of this rule, because a second spelling of it is how two consumers start disagreeing
 /// about which side of a ring a point is on.
 ///
-/// ★★★★★ **"Not orthonormal" is not "not orthogonal", and three cheaper charts die on the
+/// **"Not orthonormal" is not "not orthogonal", and three cheaper charts die on the
 /// difference.** `e₁·e₂ = e₁·(n × e₁) = 0`, so this is an **orthogonal, non-unit frame
 /// of the plane** — and that is what makes [`Self::axes`]'s sentence ("the parity walks its ray
 /// along `e₁`") a true statement about the *world*: in a skew frame the direction of "y fixed, x
@@ -1208,7 +1208,7 @@ impl Chart2dRat {
     /// leaves `i128` — which after [`primitive_normal`] means the **primitive** normal is itself
     /// past ~2⁶³, not that a spurious factor rode in on it.
     ///
-    /// ★ **The rescale is first, and it is why this is not a behaviour change**:
+    /// **The rescale is first, and it is why this is not a behaviour change**:
     /// `ê_k × n` cannot overflow (its factors are 0 and 1) and parallelism is scale-invariant, so
     /// `k` is the same index either way, and both axes come out along the same directions — only
     /// narrower. What the corpus met before was never geometry: an axis-aligned class at an offset

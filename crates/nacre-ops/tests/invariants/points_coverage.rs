@@ -188,7 +188,7 @@ fn every_live_planar_face_records_its_points() {
 /// What still has teeth is the sugar: `SketchFrame::world` must name the seed the model planted,
 /// not some other plane on the same geometry — and a sketch placed through it must land on that
 /// handle. If the seeding or the arbitrary-axis convention moved, this is what notices.
-/// ★★ A `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
+/// A `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
 /// pre-seeded vocabulary meet at one handle. And replay determinism holds with seeds included:
 /// the same log twice gives the same handles.
 #[test]

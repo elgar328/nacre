@@ -397,7 +397,7 @@ fn the_rational_self_intersection_matches_the_gallery() {
     assert!(ring_self_intersection_rat(&spike).is_some());
 }
 
-/// ★★ **The twins exist because the two worlds disagree — here is the disagreement.**
+/// **The twins exist because the two worlds disagree — here is the disagreement.**
 ///
 /// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in the decimals the author wrote
 /// (slope one), but not in the binary values the f64s hold: `0.2` is exactly `2·0.1bin`,

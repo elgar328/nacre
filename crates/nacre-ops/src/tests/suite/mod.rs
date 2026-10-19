@@ -47,7 +47,7 @@ use nacre_topo::{Loop, Orientation, Surface, Vertex};
 use proptest::prelude::*;
 use std::collections::HashMap;
 
-/// ★ **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is how
+/// **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is how
 /// a `NodeId::Pierce` reaches its definition, so an all-plane fixture has nothing to put in it —
 /// and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
@@ -332,7 +332,7 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
         for he in &m.face(fh).outer.half_edges {
             {
                 for vh in m.edge(he.edge).vertices {
-                    // ★ Positive: "realized from its definition" is the claim, and the negative
+                    // Positive: "realized from its definition" is the claim, and the negative
                     // form would let `Ceiling` in — a vertex the cheap road stopped on.
                     if seen.insert(vh)
                         && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. })
@@ -357,7 +357,7 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
         .any(|fh| m.surface_motion(m.face(fh).surface).is_some())
 }
 
-/// ★★★★★ **The eye on the mesh: does it actually cover the face it approximates?**
+/// **The eye on the mesh: does it actually cover the face it approximates?**
 ///
 /// A boolean result was once shipped whose lateral mesh lost **16% of its area** — four triangles
 /// spanned half a turn of the cylinder as flat chords, and the boss rendered as two cones. Every
@@ -567,7 +567,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                     Some(w),
                     "p={p} q={q} {x:?} vs {y:?}"
                 );
-                // ★ `edge_dir` inverts the order to get the travel sense, and it is the carrier
+                // `edge_dir` inverts the order to get the travel sense, and it is the carrier
                 // it pairs with — not a bare `i8` — that the walk consumes.
                 let dir = combinatorics::edge_dir(&jd, &cyls, p, q, x, y)
                     .unwrap_or_else(|e| panic!("p={p} q={q}: {e:?}"));
@@ -717,7 +717,7 @@ const BOSS_FAMILIES: [(&str, [f64; 3], f64); 17] = [
     ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
     ("half +x", [4.0, 2.0, -1.0], 2.0),
     ("half +x, cap below", [4.0, 2.0, 1.0], 2.0),
-    // ★ The offset wall: the boss's axis stands off the plate's wall `x = 4` by less
+    // The offset wall: the boss's axis stands off the plate's wall `x = 4` by less
     // than `r`, so the wall crosses the lateral in two rulings that are not a diameter's ends.
     // Outside by 0.3 (rational rulings, `y = 2 ± 0.4`; the part inside the plate a 0.2-deep
     // segment), inside by 0.3, outside by 0.2 (irrational rulings).
@@ -757,7 +757,7 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
 // second-operation families: a bored plate under a wall tool — the lateral's material lies
 // *outside* the cylinder there — and a fused through-boss parted by a slab, a two-solid result.
 //
-// ★★★ **The motion group is chosen by algebra, not by story.** Every label the arrangement
+// **The motion group is chosen by algebra, not by story.** Every label the arrangement
 // writes reads some product of `(frame_sign, axis_up, κ, exactness)`, and the unmoved corpus
 // never produces `frame_sign = −1` on a wall class: a face sits with `frame_sign = −1` exactly
 // when it lies on a **seed plane** (`Model::new` plants x = 0, y = 0, z = 0 with cache direction
@@ -769,7 +769,7 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
 // (frame +1), so the two classes are complementary. The recorded road is the `recorded block`
 // family's: every motion of it is a node.
 //
-// ★ `KNOWN` is the ledger of cells the kernel does not commute on **today**, each named by the
+// `KNOWN` is the ledger of cells the kernel does not commute on **today**, each named by the
 // sentence of the assertion that catches it — the crossing census's discipline: a fix flips its
 // rows to commuting and the count lock says how many are left. A known cell is **run**, and must
 // panic at one of its named sites; commuting instead is red, and so is a panic somewhere else.
@@ -906,7 +906,7 @@ fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
 /// The four-plane operand: a wall with a gusset whose apex lands on the wall's top edge, fused —
 /// and the second gusset that will be fused onto it (the user's `1.4`/`−2.4`).
 ///
-/// ★ It is **not** a rigid-motion oracle family, and the reason is measured: that oracle's digest
+/// It is **not** a rigid-motion oracle family, and the reason is measured: that oracle's digest
 /// is bit-exact, and a vertex realized from three planes is exact only for axis-aligned triples.
 /// With the slant `5y − 3z + 3 = 0` the moved-then-fused gusset tips came out at `z = −3.9e−16`
 /// against `0`; with a 45° slant (`y − z + 1 = 0`) and dyadic positions every rotation agreed and

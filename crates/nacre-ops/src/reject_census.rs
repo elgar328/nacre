@@ -4,23 +4,23 @@
 //! `#[track_caller]` there records the whole population: the reason, the source line of the guard
 //! that raised it, and separately the reasons that actually left a public entry point.
 //!
-//! ★★★ **The two columns are not the same population, and reading one for the other is how this
+//! **The two columns are not the same population, and reading one for the other is how this
 //! measurement goes wrong.** Measured over the whole workspace suite while `point_in_component`
 //! still raised `no_clear_ray` and its caller retried other nodes: 119 raises, 20 surfaced — 97
 //! of them that one swallowed guard. A census keyed on raises alone would
 //! have reported it as 82% of all rejects, which was false about everything a caller ever saw.
-//! ★ **That population is gone on purpose** — the probe's "this node cannot
+//! **That population is gone on purpose** — the probe's "this node cannot
 //! decide" is a typed abstention now, not an error to swallow — so the columns' gap reads the
 //! other way: it is the count of *remaining* swallowed raises, near-zero is the goal state, and a
 //! gap reopening is news of a new swallow.
 //!
-//! ★★ **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker
+//! **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker
 //! and returned from the main thread, so nothing cheap connects the two (a thread-local cannot
 //! cross the boundary, so a tag-based census cannot see it). It is also not
 //! needed: "is this guard swallowed by its caller?" is a **static** question, answered by reading
 //! the caller, not by counting.
 //!
-//! ★ **A test build's instrument** (`test-util`), like `nacre_judge::climb_census` and
+//! **A test build's instrument** (`test-util`), like `nacre_judge::climb_census` and
 //! `nacre_topo`'s push counters: its only reader is an integration test, so a product build
 //! carries none of it — the tables, the recording calls, nor `reject`'s `#[track_caller]`. That
 //! the path is cheap (it has already decided to fail) is not the question; nothing in a product
@@ -39,7 +39,7 @@
 //!     | grep '^RAISE ' | sort | uniq -c | sort -rn
 //!   ```
 //!
-//! ★ **Raise *counts* are not stable; the *sets* are.** `debug` runs every traced boolean twice
+//! **Raise *counts* are not stable; the *sets* are.** `debug` runs every traced boolean twice
 //! (`arrangement`'s `#[cfg(debug_assertions)]` reference run), and `parallel` evaluates the
 //! remaining plane classes of a failing input while `serial` stops at the first
 //! (`crate::par::try_map_range`). Surfacing is unaffected: that same function returns the
@@ -54,7 +54,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 /// A reason as the census keys it: the stable identifier, plus the **categorical** part of its
 /// payload.
 ///
-/// ★★★ `detail` exists because [`RejectReason::TraceDeclined`]'s eleven
+/// `detail` exists because [`RejectReason::TraceDeclined`]'s eleven
 /// [`crate::DeclineKind`]s are all raised from **one line**. Keyed by `as_str()` alone they would
 /// collapse into a single row — the census reproducing the very defect it is here to find (ten
 /// causes reported under one label is what `TraceDeclined` was split out of). The rule: **the key
@@ -129,7 +129,7 @@ pub(crate) fn surfaced(reason: RejectReason) {
 
 /// What the guards did, **and reset** so the next window is its own.
 ///
-/// ★ The reset is process-global: calling this steals the counts of anything running concurrently.
+/// The reset is process-global: calling this steals the counts of anything running concurrently.
 /// `nacre-ops`' unit-test binary raises three reasons of its own from tests that run in parallel,
 /// so this is called from **one dedicated integration-test binary** (`tests/reject_census.rs`) and
 /// nowhere else.

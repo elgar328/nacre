@@ -224,7 +224,7 @@ fn replay_is_deterministic() {
 #[test]
 fn two_extrudes_make_two_solids() {
     let far = SketchPlane::world_xy().with_origin(Point3::from_array([5.0, 0.0, 0.0]));
-    // ★ The second plane is not a seed, so the log has to state it — and a datum's handle is
+    // The second plane is not a seed, so the log has to state it — and a datum's handle is
     // not known until the datum runs. So the log is assembled against a **scratch model built
     // the same way**: a frame that names surface *N* there names surface *N* in the replay,
     // because `replay` re-anchors indices. That is what a recording
@@ -300,7 +300,7 @@ fn a_boss_fused_then_cut_through() {
 
 /// One geometric plane is one class **whatever the two faces' sizes**.
 ///
-/// ★ **The merge is a handle comparison, made before any judgement.** Surfaces are interned on
+/// **The merge is a handle comparison, made before any judgement.** Surfaces are interned on
 /// their canonical names, so the two walls are handed **one handle** (the statements alone, no
 /// solid: `nacre_topo`'s `two_faces_of_one_plane_are_one_surface_and_one_name`). Their `f64`
 /// figures do not agree — two walls of one plane at different face sizes have un-normalized
@@ -310,7 +310,7 @@ fn one_plane_is_one_class_whatever_the_face_size() {
     let (dx, dy) = (1.628165457453874f64, 0.5f64);
     let (z0, h1, h2) = (0.11200046228159026f64, 0.5f64, 2.07926124157585f64);
     let mut m = Model::new();
-    // ★ A stack on **one** plane `z0 + h1` — below it and on it — so the two boxes meet there.
+    // A stack on **one** plane `z0 + h1` — below it and on it — so the two boxes meet there.
     let zm = z0 + h1;
     let a = crate::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, -h1);
     let b = crate::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, h2);
@@ -342,19 +342,19 @@ fn one_plane_is_one_class_whatever_the_face_size() {
     assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
 }
 
-/// ★★★ **Solving a vertex's three planes lands on its coordinate.**
+/// **Solving a vertex's three planes lands on its coordinate.**
 ///
 /// This is the premise the point types rest on: a point *is* the meeting of three surfaces, and
 /// the stored coordinate is a rounded answer to that question. This asserts it on data the kernel
 /// itself built — the definitions have to be *right*, not merely present.
 ///
-/// ★ **Split by producer, because one row proves nothing.** A boolean's vertex coordinate is
+/// **Split by producer, because one row proves nothing.** A boolean's vertex coordinate is
 /// produced by solving exactly this triple, so agreement there is an identity. The rows that
 /// carry weight are a plain box's and a turned box's corners, where the coordinate came from
 /// somewhere else entirely — construction arithmetic, or a motion applied to it.
 #[test]
 fn a_vertex_definition_solves_to_its_own_coordinate() {
-    // ★ **Three solids, because one would not exercise three kinds of vertex.** A
+    // **Three solids, because one would not exercise three kinds of vertex.** A
     // fused-then-turned-then-cut solid alone gives a worst error of exactly zero — a boolean
     // recomputes every vertex it emits, so the only row present is the tautological one. A plain
     // box keeps its constructed corners; a turned box keeps them under its faces' motion.
@@ -465,7 +465,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
             worst[i]
         );
     }
-    // ★ The **fused** row is the tautological one — a boolean vertex's coordinate *came
+    // The **fused** row is the tautological one — a boolean vertex's coordinate *came
     // from* solving this very triple, so a zero there says nothing. `plain` and `turned`
     // are the claims.
     assert_eq!(worst[2], 0.0, "a boolean vertex is its own solve, exactly");
@@ -561,7 +561,7 @@ fn solve_three_planes(p: [[f64; 4]; 3]) -> Option<[f64; 3]> {
     }))
 }
 
-/// ★ **A collinear midpoint is dissolved at construction, so the prism it builds is its
+/// **A collinear midpoint is dissolved at construction, so the prism it builds is its
 /// clean twin's, bit for bit — and every corner keeps a three-plane definition.**
 ///
 /// Undissolved, this profile builds *seven* faces whose split bottom edge's two walls intern to
@@ -630,7 +630,7 @@ fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
     }
 }
 
-/// ★ **Two *separated* collinear walls intern to one surface.**
+/// **Two *separated* collinear walls intern to one surface.**
 ///
 /// The dissolve pass only deletes flat corners (adjacent same-plane walls); two edges of a
 /// notched profile lying on one line are legitimate geometry, their walls are two statements

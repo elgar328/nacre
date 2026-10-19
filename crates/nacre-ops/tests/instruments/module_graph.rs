@@ -7,7 +7,7 @@
 //! argument, that lived on the wrong side. The difference is the whole finding, and it is only
 //! visible if something counts. One pair is left, and it is not a defect.
 //!
-//! ★ **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
+//! **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
 //! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
 //! `ops` module, then over-corrected and counted almost nothing, then broke on a lookbehind. So
 //! [`targets`] is exercised against **literal lines** in [`the_parser_reads_what_it_should`]. Those
@@ -153,7 +153,7 @@ fn edges() -> BTreeMap<String, BTreeMap<String, usize>> {
     out
 }
 
-/// ★★ **The calibration, and why its module names are made up.**
+/// **The calibration, and why its module names are made up.**
 ///
 /// The subject under test is [`targets`], and it does not know this crate: it takes the module
 /// set as an argument. So the fixtures name `alpha`/`beta`/`gamma`, which exist nowhere. That is
@@ -190,7 +190,7 @@ fn the_parser_reads_what_it_should() {
             "alpha",
             &["gamma"],
         ),
-        // ★ A foreign root that shares a name with a module of this crate. This is the case the
+        // A foreign root that shares a name with a module of this crate. This is the case the
         // whole calibration exists for.
         ("impl std::ops::Deref for Ring {", "beta", &[]),
         // A glob re-export names its module although no second segment follows.
@@ -208,7 +208,7 @@ fn the_parser_reads_what_it_should() {
     }
 }
 
-/// ★★★ **What this restructure established, asserted — and only that.**
+/// **What this restructure established, asserted — and only that.**
 ///
 /// The graph is **not** a DAG and this does not pretend otherwise: `construct` and `ops` still
 /// point at each other -- the ops layer's construction arithmetic and the layer it serves,
@@ -296,7 +296,7 @@ fn the_pipeline_runs_one_way() {
 /// **Everything else, frozen.** The seven surviving cycles are not claimed to be right -- they are
 /// claimed to be *known*, and this is the list.
 ///
-/// ★ When it fires there are two answers and no third. Either the edge goes away, or it joins the
+/// When it fires there are two answers and no third. Either the edge goes away, or it joins the
 /// table **and the commit body says why that direction is correct**. A gate that people only ever
 /// add to is a list, not a gate.
 #[test]

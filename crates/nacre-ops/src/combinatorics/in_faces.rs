@@ -3,18 +3,18 @@ use nacre_geom::intersect::RingSide;
 /// **Is the point `p` inside this component**, asked along the ray `p + t·dir` — the coordinate
 /// twin of [`point_in_component`].
 ///
-/// ★★★ **Two roads, one crossing rule.** The two differ only in how the *point* arrives: a
+/// **Two roads, one crossing rule.** The two differ only in how the *point* arrives: a
 /// three-plane name (exact without coordinates, so it survives a rotated class) or rational
 /// coordinates (the only thing a curved component can offer, since none of its faces carries a
 /// vertex). Everything they ask about a **face** — a circle's radial side, a band's roots and
 /// axial span, the abandon-on-boundary policy — is the same rule and is called, not restated.
 /// Restating it is how the two would come to disagree about a graze.
 ///
-/// ★★ **What is measured, and what is owed.** `an_enclosed_cylindrical_void_is_a_cavity` is the
+/// **What is measured, and what is owed.** `an_enclosed_cylindrical_void_is_a_cavity` is the
 /// fixture that makes this road say `true`, and it goes red if the road is stubbed to `false` —
 /// two *disjoint* bodies would not, since their answer is "outside" whatever the road does.
 ///
-/// ★ The **curved** arm is barely loaded from here: this road is entered a handful of times in
+/// The **curved** arm is barely loaded from here: this road is entered a handful of times in
 /// the suite and mostly looks at no cylinder face at all (the other component is all planes —
 /// the void fixture's is a box); where it does (`two_cylinders_with_coplanar_caps_fuse_apart`)
 /// the ray misses. Nor can a fixture with parallel axes do better: the gate refuses any boolean
@@ -79,7 +79,7 @@ pub(crate) fn point_in_faces_rat(
             }
             CompSurf::Plane(q) => *q,
         };
-        // ★ **A face this road cannot state is asked only whether the ray misses it** — its class,
+        // **A face this road cannot state is asked only whether the ray misses it** — its class,
         // or a corner of its outline, is one the gate proved silent about the cylinders: a class
         // with no world statement, whose coefficients and corners have no rational spelling. The
         // ray misses the face when every corner lies strictly to one side of a plane through the
@@ -101,7 +101,7 @@ pub(crate) fn point_in_faces_rat(
         let residual = nacre_exact::dot3_rat(&n, p)
             .and_then(|v| v.checked_add(coeffs[3]))
             .ok_or_else(not_rational)?;
-        // ★ **Parallel is the origin's question, not the ray's.** `nd == 0` and a nonzero
+        // **Parallel is the origin's question, not the ray's.** `nd == 0` and a nonzero
         // residual is a plain miss. `nd == 0` with a zero residual is the ray lying **in** this
         // plane, where it never passes from one side of the face to the other — zero crossings —
         // *unless* the origin is on the face itself, and then "is the origin inside the component"
@@ -142,12 +142,12 @@ pub(crate) fn point_in_faces_rat(
                     if ring_is_mixed(r) {
                         return Ok(mixed_side(point_in_mixed_ring(jd, cyls, &coeffs, &x, r)));
                     }
-                    // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
+                    // Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
                     // which would make a degenerate ring *invisible* to the parity instead of
                     // loud. A **polygon** face of a valid solid has no such ring, so saying so is
                     // free.
                     //
-                    // ★★★★★ **After the fork, not before it.** A half-disc cap's ring is two edges
+                    // **After the fork, not before it.** A half-disc cap's ring is two edges
                     // — an arc and its chord — which is a perfectly good boundary and not a polygon
                     // at all; "a face of a valid solid has no such ring" is true only of the road
                     // *below*. Measured with the check before the fork: six census cells with a
@@ -227,10 +227,10 @@ fn ray_misses_face(
 
 /// **Where `p` is against this circle** — inside its disk, outside, or on the circle.
 ///
-/// ★ It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
+/// It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
 /// crossing first, the coordinate road already has one. The rule must not be written twice.
 ///
-/// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
+/// The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
 pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> RingSide {
     match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
@@ -242,7 +242,7 @@ pub(crate) fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::Cylinde
 
 /// **Where the point named `t` is against the disk `def` bounds**, on a plane through both.
 ///
-/// ★ **On a class the gate proved this cylinder beside, outside — exactly.** Every lateral face
+/// **On a class the gate proved this cylinder beside, outside — exactly.** Every lateral face
 /// of the cylinder lies strictly on one side of that class's plane, so its rims and the disks
 /// they bound do too, and the point, on the plane, is off the disk whatever else names it. This
 /// needs nothing of where the point came from, which is why every reader of a named point takes
@@ -290,7 +290,7 @@ fn curved_count(
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
 ) -> Result<Option<usize>, BoolError> {
-    // ★ **A ray on a plane the gate proved the whole cylinder beside crosses none of it.** The ray
+    // **A ray on a plane the gate proved the whole cylinder beside crosses none of it.** The ray
     // lies in both `a` and `b`; if the gate recorded this cylinder beside either
     // ([`crate::planes::WorkingCyl::beside`] — by its boxes or by the axis's distance), the count is
     // zero. A class with no world statement reaches here only that way: nothing below can state
@@ -475,7 +475,7 @@ pub(crate) fn loop_parity(
 /// **Where the line `line[0] ∩ line[1]` crosses one lateral face, and how many of those lie on
 /// the half the caller is counting.**
 ///
-/// ★★★ **One copy, two roads.** The named-point probe and the coordinate-point road both state
+/// **One copy, two roads.** The named-point probe and the coordinate-point road both state
 /// their ray as *two rational planes*, so both ask this. Writing the arms twice is how the two
 /// would come to disagree about a graze. A `half` is a rational plane through the ray's origin,
 /// and a crossing counts exactly when it is on that plane's **negative** side — so each road
@@ -486,7 +486,7 @@ pub(crate) fn loop_parity(
 ///
 /// Each root asks the face by [`loop_parity`] **before** the half — a root off the face is not
 /// a crossing whichever side it is on, and a root on the face at the ray's own origin is the
-/// query on the other component's surface (`Graze`). ★ Read as loops, not as a band's two rims
+/// query on the other component's surface (`Graze`). Read as loops, not as a band's two rims
 /// taken for an axial span (the crossing between them iff on opposite sides of the two rim
 /// planes): the two say the same thing on a band — measured identical on 2,180 lattice rays,
 /// every root and every graze — and the loops also read a panel, a chain rim or a hole, where the
@@ -544,7 +544,7 @@ pub(crate) fn lateral_face_crossings(
 /// [`loop_parity`]. A piece inside answers for the edge; a piece on the boundary abstains, and
 /// so does the edge unless another piece is inside.
 ///
-/// ★ **What a `true` stands on** is that one point: it lies on the edge and strictly inside the
+/// **What a `true` stands on** is that one point: it lies on the edge and strictly inside the
 /// face, which is the proposition whole. So the ends' heights must be exact — they are read
 /// where a plane of each end's name crosses **this ruling**, not the axis (a plane naming the end
 /// may be slanted, and where it meets the axis says nothing of the end; ☐ no input names one so —
@@ -647,7 +647,7 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 /// it, or on its boundary; `None` where a bound could not tell. `x` lies on `q` and its name need
 /// not carry `q`.
 ///
-/// ★ Each bound answers by its own kind — a polygon by a ring walk, a circle by its radial side, a
+/// Each bound answers by its own kind — a polygon by a ring walk, a circle by its radial side, a
 /// mixed ring (an arc step, a pierce corner) by the rational road: the point is a rational
 /// three-plane point, the ring is walked by its carriers, and every tie abstains. The ray road's
 /// walk cannot read a pierce corner against a class with a world statement (it sides nodes with
@@ -704,7 +704,7 @@ pub(crate) fn point_in_component(
     let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
         let mut count = 0usize;
         for f in faces {
-            // ★ A cylindrical face is counted by its own arm — the crossings are roots of a
+            // A cylindrical face is counted by its own arm — the crossings are roots of a
             // quadratic, not three-plane points, and "inside the face" is an axial span when
             // the face states one, a bare miss-oracle when it does not.
             if let CompSurf::Cylinder(def) = &f.surf {
@@ -738,7 +738,7 @@ pub(crate) fn point_in_component(
                 // proposition the `fwd == 0` arm below abandons for a transversal plane — one rule,
                 // both spellings.
                 //
-                // ★ A query on the face's material is a body standing on another's face: a
+                // A query on the face's material is a body standing on another's face: a
                 // corner on it, or an edge resting along it
                 // (`two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order`). Such a
                 // query's name need not carry `q` — it is the other body's corner — so `material`

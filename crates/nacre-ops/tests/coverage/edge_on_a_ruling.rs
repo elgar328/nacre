@@ -227,7 +227,7 @@ fn every_six<'q>(
     out
 }
 
-/// ★ **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
+/// **Every built result is drawn** — what `boolean`'s own exit asserts in the library's tests
 /// (`tess_census`), which these front-door tests do not pass through. The mesh exists, is
 /// watertight, and its signed volume is the solids' own up to what sampling cuts off a curved face:
 /// at most the face's area times the sagitta the budget allows, the smaller of `TessConfig::tol`
@@ -285,7 +285,7 @@ fn identities(p: &Placement<'_>, six: &Six) {
     }
 }
 
-/// ★ **Two secant walls, one entering `A` — the corner on the rim's seam (`(1, 0)`, `θ = 0` on
+/// **Two secant walls, one entering `A` — the corner on the rim's seam (`(1, 0)`, `θ = 0` on
 /// both frames) and off it (`(0.8, −0.6)`).** Every boolean builds one body, valid, and the
 /// volumes add up; on the seam, `A ∩ B` is the circular segment beyond the slanted wall
 /// `0.8x + y = 0.8` (its distance from the axis `d = 0.8/√1.64`, area `acos d − d·√(1 − d²)`)
@@ -324,7 +324,7 @@ fn a_corner_entering_a_lateral_builds() {
     });
 }
 
-/// ★ **The keyhole**: the box `[−1, 1] × [0, 3]` against the unit cylinder — its walls `x = ±1`
+/// **The keyhole**: the box `[−1, 1] × [0, 3]` against the unit cylinder — its walls `x = ±1`
 /// tangent, its wall `y = 0` through the axis, its corners `(±1, 0)` on the circle. Every boolean
 /// builds one body, valid, and the volumes add up; `A ∩ B` is the half disk over the height the
 /// two share. At the caps the rim's arc and the tangent wall leave each corner tangent and the
@@ -353,7 +353,7 @@ fn a_keyhole_builds() {
     }
 }
 
-/// ★ **A tangent wall on the edge of a flat through `A`'s own axis.** `A` is the half cylinder
+/// **A tangent wall on the edge of a flat through `A`'s own axis.** `A` is the half cylinder
 /// over [`upper_half_disk`], so its flat `y = 0` meets its lateral in the ruling `(1, 0)` — `A`'s
 /// own edge, where the lateral ends. `B`'s wall `x = 1` is tangent to `A`'s cylinder along that
 /// edge, either running across it or ending on it (then `B`'s face `y = 0` lies on `A`'s flat).
@@ -414,7 +414,7 @@ fn backstop(c: &Case<'_, '_>) -> Option<RejectReason> {
     }
 }
 
-/// ★ **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
+/// **Both walls entering `A` — an inward wedge**, its apex on the lateral at the seam and off
 /// it. Near the line, `A − B` is two lobes meeting on it alone: where they join elsewhere (`B`
 /// inside `A`'s span or reaching past one cap) that is one solid touching itself and is refused
 /// (`NonManifoldResultEdge`); where `B`
@@ -452,7 +452,7 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
-/// ★ **A V-notch whose apex lies on the lateral** — `B` a box round `A` with a notch opening
+/// **A V-notch whose apex lies on the lateral** — `B` a box round `A` with a notch opening
 /// away from the axis, its two walls meeting on a ruling of `A` at the seam and off it: the
 /// inward wedge's walls turned inside out. `A` lies inside `B` but for that line, so `B − A` keeps
 /// the material **outside** the cylinder on both sides of the line and none in the notch between
@@ -521,7 +521,7 @@ fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
-/// ★ **A body touching itself along a ruling is refused; two bodies touching there build.** The
+/// **A body touching itself along a ruling is refused; two bodies touching there build.** The
 /// prism's two walls meet on a ruling of `A`'s cylinder and reach it from the side `A`'s lateral
 /// does not keep — into the bore of a plate, or from outside a cylinder — so the lateral runs on
 /// across the line and the line is an edge of the walls alone. Where that edge's body is the
@@ -633,7 +633,7 @@ fn a_body_touching_itself_along_a_ruling_is_refused() {
     }
 }
 
-/// ★ **A vertex lying on a cap's circle, and nothing else crossing it.** The prism's corner
+/// **A vertex lying on a cap's circle, and nothing else crossing it.** The prism's corner
 /// sits on `A`'s rim — from inside the disk (a wedge whose apex alone reaches the lateral, on the
 /// seam and off it) or from outside, with one side tangent there or with both sides leaving it (a
 /// line contact) — so the circle is cut at exactly that one node: one arc from the node back to
@@ -743,7 +743,7 @@ fn a_vertex_on_a_cap_circle_builds_or_is_refused_by_name() {
     assert_eq!(tally, want);
 }
 
-/// ★ **A tangent face that ends on the line at one height and crosses it at another.** `B` is
+/// **A tangent face that ends on the line at one height and crosses it at another.** `B` is
 /// an L-shaped profile in the plane `x = −1` extruded to `x = 1`: its caps `x = ±1` are tangent
 /// to `A`'s unit cylinder, each an L whose concave corner puts one stretch of its boundary on the
 /// line `(±1, 0)` — beside `B`'s wall `y = 0`, a secant through `A`'s axis — while below that
@@ -817,7 +817,7 @@ fn a_tangent_face_across_its_edge_on_the_line_is_refused_today() {
     assert_eq!(ran, 2 * 6, "the family");
 }
 
-/// ★ **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the
+/// **A pinched cap as an operand** — the union a wedge with its apex on the rim leaves past the
 /// cylinder's top ([`nacre_ops::fixtures::wedge_on_a_rim`]), whose top cap passes the apex twice,
 /// taken into a second boolean against a box: far from the pinch on top, across it, and apart.
 /// Every one builds, checked as the other families are — `validate`, the mesh, the volume

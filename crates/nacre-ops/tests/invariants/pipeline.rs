@@ -1065,7 +1065,7 @@ fn the_fin_array_with_a_star_bore_meshes() {
     assert_agrees(&g, "fin array with a star bore");
 }
 
-/// **★ A dimension split into two lands exactly where the undivided one does.**
+/// **A dimension split into two lands exactly where the undivided one does.**
 ///
 /// Every number below is a literal a user typed, and the only arithmetic is the kernel's own.
 /// In f64 a prism raised from `z = 1.1` by `6.6` puts its top at `7.699999999999999` — one ULP
@@ -1146,7 +1146,7 @@ fn a_split_dimension_meets_the_undivided_one() {
 /// face's sketch frame (`face_sketch_frame`) — whose axes the kernel chooses, not the caller — so
 /// it has to be measured on that path rather than inferred from the world-plane extrude.
 ///
-/// **★ The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against
+/// **The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against
 /// one padded `7.7`, agrees *already* in f64: `(2.0 + 1.1) + 6.6 == 2.0 + 7.7`. That test
 /// passed on the unfixed kernel. The numbers below are chosen because they do not.
 #[test]

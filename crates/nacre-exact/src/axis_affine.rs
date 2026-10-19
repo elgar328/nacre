@@ -11,7 +11,7 @@ use super::*;
 /// `det = −1`, and a turn and a reflection do not commute, so a turn beside a reflection bit
 /// does not compose.
 ///
-/// ★ **`M` and `t` are held apart.** `M` is `i8` and cannot overflow; `t` is `None` once a
+/// **`M` and `t` are held apart.** `M` is `i8` and cannot overflow; `t` is `None` once a
 /// composition overflows `i128`. A direction reads `M` alone, so it still answers there — only
 /// points and planes need the offset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

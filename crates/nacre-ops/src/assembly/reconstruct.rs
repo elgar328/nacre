@@ -38,7 +38,7 @@ pub(crate) fn reconstruct(
     // can be whole for one body and cut for another it touches; everything below asks the rims
     // as these faces hold them, with the group.
     let cut = rims.cut_per_group(faces, &group_of);
-    // ★ **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
+    // **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
     // both are whole-result judgements that need the grouping and must speak *before* a handle is
     // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
     // question "do these two lumps share a solid" is only askable of a grouping that answered.
@@ -67,7 +67,7 @@ pub(crate) fn reconstruct(
                 let Some(def) = def_triple.get(&(g, node)) else {
                     return Err(reject(RejectReason::StraightAngle));
                 };
-                // ★★ **The seam table already asked this vertex's question.** It realized the
+                // **The seam table already asked this vertex's question.** It realized the
                 // node's own definition through the push funnel's rule (`realize::point_cache`),
                 // so where the naming defines the vertex by that same definition its answer is
                 // pushed as it stands; asking twice paid a second realization on every vertex
@@ -113,7 +113,7 @@ pub(crate) fn reconstruct(
         return Err(deferred.unwrap_or(e));
     }
 
-    // ★★ **The rim table**: a whole circle has no node and no triple, so it is not welded through
+    // **The rim table**: a whole circle has no node and no triple, so it is not welded through
     // the seam table at all — it is minted here, once per `(group, cylinder class, plane class)`,
     // with its `OnSeam` vertex, and every face that meets that rim asks for the same pair back.
     // That sharing is what makes the rim edge's use count two (the cap face once, the lateral
@@ -139,7 +139,7 @@ pub(crate) fn reconstruct(
                 if rim.contains_key(&(g, k, c)) {
                     continue;
                 }
-                // ★ A circle this solid still cuts cannot bound it as a whole — one of its faces
+                // A circle this solid still cuts cannot bound it as a whole — one of its faces
                 // on that plane holds one of its nodes ([`HeldRims::cut_per_group`]) — so reaching
                 // here with one is the split and the faces disagreeing, named as that.
                 if cut.contains(&(g, k, c)) {
@@ -153,7 +153,7 @@ pub(crate) fn reconstruct(
                     &realized.axis(),
                     match model.surface_cache(plane) {
                         nacre_geom::Surface::Plane(p) => p,
-                        // ★ **Spelled out rather than `_`, so a third surface kind is a compile
+                        // **Spelled out rather than `_`, so a third surface kind is a compile
                         // error here.**
                         //
                         // The arm is unreachable today: `plane` comes from `jd.planes`, the
@@ -164,7 +164,7 @@ pub(crate) fn reconstruct(
                         // `planes`'s `unreachable!("a cylinder truth carries a cylinder
                         // cache")` is the type-guaranteed shape, and this is not that.
                         //
-                        // ⚠ The reason's wording ("three planes that should meet do not") does
+                        // The reason's wording ("three planes that should meet do not") does
                         // not describe a non-planar cap; it is harmless only because nothing
                         // reaches it. An author who makes it reachable owes it a real name.
                         nacre_geom::Surface::Cylinder(_) => {
@@ -192,14 +192,14 @@ pub(crate) fn reconstruct(
         return Err(deferred.unwrap_or(e));
     }
 
-    // ★ **An edge's carriers are the two faces that use it — read off the whole result, not
+    // **An edge's carriers are the two faces that use it — read off the whole result, not
     // guessed from one side.** The obvious per-face answer ("my plane, plus the wall my
     // arrangement says the edge rides") is wrong exactly where the resolved four-plane
     // concurrency lives: three planes through one LINE make each face's wall a *third* plane
     // that legitimately contains the edge but does not bound it here — measured, the two faces
     // sharing such an edge named two different walls. The faces themselves are the ground
     // truth, and every ring is already in hand, so one pre-scan reads it.
-    // ★ **A ruling edge reads its carriers the same way, from the same table.** A straight
+    // **A ruling edge reads its carriers the same way, from the same table.** A straight
     // edge is its two ends (`EdgeKey`), whichever vocabulary a face states it in, so a ruling and
     // a plane-pair line between one vertex pair are one edge and one entry here: a panel pushes
     // its cylinder, a plane face its plane. Deriving a ruling's plane from the two ends' *names*
@@ -256,7 +256,7 @@ pub(crate) fn reconstruct(
             Wall::Plane(w) => planes[w].surf,
             Wall::Ruling { cyl, .. } => cyls[cyl].surf,
             Wall::Arc { cyl, ccw, plane } => {
-                // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
+                // **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
                 // B counter-clockwise about the axis, so the two complementary arcs between one
                 // pierce pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
                 // endpoints alone cannot give (`EdgeKey`'s note). The carriers are the wall's own
@@ -264,7 +264,7 @@ pub(crate) fn reconstruct(
                 // the scan to read, which also keeps the chord's line key clean (`pair_surfs`
                 // skips arc edges for the same reason).
                 //
-                // ★★ **Not the face's surface**: a lateral's is its cylinder, and an arc stated off
+                // **Not the face's surface**: a lateral's is its cylinder, and an arc stated off
                 // it would be `[cyl, cyl]`. The wall names the rim's plane on a cap and a lateral
                 // alike, so whichever face mints the arc states one pair — and the second face to
                 // walk it must name the plane the edge already carries, or the planar arrangement
@@ -293,7 +293,7 @@ pub(crate) fn reconstruct(
                 return Ok(e);
             }
         };
-        // ★ **A straight edge is one edge, whichever vocabulary states it**: keyed by its two
+        // **A straight edge is one edge, whichever vocabulary states it**: keyed by its two
         // ends, carried by the surfaces of the two faces that use it (the scan above) — one
         // expression for a plane-pair line and a ruling alike, so which face mints it first
         // cannot change what it says. Two faces on one plane state `(P, P)`, which the result
@@ -335,7 +335,7 @@ pub(crate) fn reconstruct(
             for t in 0..k {
                 let (va, vb) = (handles[t], handles[(t + 1) % k]);
                 let e = edge_for(model, memo, va, vb, r.walls[t], face_surf)?;
-                // ★ An arc runs the way its wall says — `ccw`, against the edge's CCW-stored
+                // An arc runs the way its wall says — `ccw`, against the edge's CCW-stored
                 // order. For two distinct ends that is the same as asking which end the edge starts
                 // at (`edge_for` minted it `[from, to]` by that bit); for a rim cut at one point,
                 // the arc from the node back to itself, the ends are one vertex and say neither.
@@ -347,7 +347,7 @@ pub(crate) fn reconstruct(
             }
             Ok(Loop { half_edges })
         };
-        // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it on the
+        // **Which way a rim circle is walked.** `derive_edge_curve` builds it on the
         // cylinder cache's frame (`Circle::from_unit_frame(centre, axis, ref_dir, r)`), so its
         // parameter runs **CCW about the cylinder's axis** — the cache's, which runs the same way
         // as the statement's `def.dir()` (the cylinder door asserts it). A loop must run CCW about
@@ -362,7 +362,7 @@ pub(crate) fn reconstruct(
         // against the axis is the **unflipped** one: `flip` is applied once to every kind of bound
         // right below, and reading it here too would toggle the winding twice.
         //
-        // ★★★★★ **`world_rat` alone cannot answer this; its sense can.** Every other axial
+        // **`world_rat` alone cannot answer this; its sense can.** Every other axial
         // decision on this road asks *where* a plane crosses the axis — a question about the plane,
         // whose answer does not depend on which way its coefficients are written. This one asks
         // which way the class's **frame** points relative to the axis. `world_rat` is the plane's
@@ -399,7 +399,7 @@ pub(crate) fn reconstruct(
         let mut build = |model: &mut Model, b: &Bound, hole: bool| -> Result<Loop, BoolError> {
             match b {
                 Bound::Ring(r) => ring(model, memo, r),
-                // ★ **Each whole circle is spelled by its face** — the cap's on a plane, the rim
+                // **Each whole circle is spelled by its face** — the cap's on a plane, the rim
                 // on a lateral (`dissolve_straight_angles`'s `closed`). On the other face kind it
                 // is an earlier stage stating the wrong fact, and is named as that.
                 Bound::Circle { cyl } => {
@@ -452,7 +452,7 @@ pub(crate) fn reconstruct(
         if lf.flip {
             // Cut's inside-A B-pieces, and a bore's wall: reverse every loop and toggle the
             // orientation below, so the outward normal points into the removed region and
-            // each loop still keeps material on its left. ★ One place for every bound kind —
+            // each loop still keeps material on its left. One place for every bound kind —
             // a curved loop reversed only by its own builder was how the first drilled box
             // came out with its rim used twice in the same sense (`NonOpposedEdge`).
             for lp in std::iter::once(&mut outer).chain(inner.iter_mut()) {
@@ -532,7 +532,7 @@ pub(crate) fn reconstruct(
             return Err(deferred.unwrap_or(reject(RejectReason::OpenResultShell)));
         }
     }
-    // ★ **The grouping decided at the top of this function, raised here.** What it says:
+    // **The grouping decided at the top of this function, raised here.** What it says:
     // one component is the whole result; several mean either an enclosed void (a cavity, an
     // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
     // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
@@ -562,7 +562,7 @@ pub(crate) fn reconstruct(
         })
         .collect();
     // Emit each material solid (with its cavities) in a canonical, replay-stable order keyed on
-    // geometry, so a downstream op can index the returned Vec deterministically. ★ One material
+    // geometry, so a downstream op can index the returned Vec deterministically. One material
     // needs no key and must not pay for one — `comp_key` walks every face of the piece.
     let order: Vec<usize> = if positives.len() == 1 {
         vec![0]
@@ -600,14 +600,14 @@ pub(crate) fn reconstruct(
             })
         })
         .collect());
-    // ★★★ **The deferred stopper's raise — the very end of the assembly.** The socket is empty
+    // **The deferred stopper's raise — the very end of the assembly.** The socket is empty
     // today, but the interception ladder it crowns is architecture: seven
     // layers (per-class → seam stretch → naming → vertex materialization → face loop → shell
     // guard → grouping and the solid assembly) all yield to `deferred`, so the next
     // out-of-coverage class that plugs a stopper into `arrange`'s socket carries one name out
     // however far this pipeline gets.
     //
-    // ★★ **An arc reject therefore leaves a complete garbage solid in the store —
+    // **An arc reject therefore leaves a complete garbage solid in the store —
     // deliberately.** Vertices, edges, faces, shells and the solid itself: cells outside the
     // live set (`assemble_fuse_cut` retires operands only on `Ok`, and nothing pushed here is
     // reachable from a live solid), the same class of residue a late reject's arena cells have
@@ -618,7 +618,7 @@ pub(crate) fn reconstruct(
     if let Some(d) = deferred {
         return Err(d);
     }
-    // ★★ **Every result vertex must re-solve from the result's own faces** — the property
+    // **Every result vertex must re-solve from the result's own faces** — the property
     // transform and replay stand on. It is a shipped check, not a debug_assert: a vertex whose
     // definition names a surface with no face in the result is a wrong name with the right
     // volume, which a release build would otherwise ship silently (no input in the reject-trace

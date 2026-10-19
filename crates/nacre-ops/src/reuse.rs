@@ -68,12 +68,12 @@ pub(crate) enum ClassPlan {
 ///   the stored base-and-replay road, 8/8). (A fixed plane's world equation *is* its
 ///   pre-motion equation, which is what admits a restated cap.)
 ///
-/// ★ **The cache is never read here.** The rounded `f64` of `vertex_point`, lifted back to a
+/// **The cache is never read here.** The rounded `f64` of `vertex_point`, lifted back to a
 /// rational with tol 0, names a different point for every coordinate `f64` cannot hold (measured:
 /// at most 316 of a census corpus's 6,988 operand vertices, `0.3` among them). A boolean's own
 /// result vertices take the road too: their definition has a rational base.
 ///
-/// ★ **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
+/// **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
 /// invariant-plane restatement, a turned block's corner is a restated world cap × two
 /// chained walls; the cap's world equation is *also* its equation in the walls' pre-motion
 /// frame precisely when the chain fixes the plane ([`nacre_topo::Model::chain_fixes_plane`]
@@ -185,7 +185,7 @@ pub(crate) fn class_plans(
         let pts =
             q[other].get_or_insert_with(|| solid_points(model, if other == 0 { a } else { b }));
         let Some(pts) = pts.as_deref() else { continue };
-        // ★ A plane that misses every vertex of a solid misses the solid — **while every face is
+        // A plane that misses every vertex of a solid misses the solid — **while every face is
         // planar**: a planar polygon lies inside the hull of its own vertices even when it is not
         // convex. It is: `collect_planes` rejects a non-planar face before any of this runs, and a
         // curved face would bulge outside its vertices' hull, so curved surfaces arriving here
@@ -209,7 +209,7 @@ pub(crate) fn class_plans(
 /// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
 /// is available without arranging anything.
 ///
-/// ★ That is *a* name, not the only one — the arrangement also names pierce points
+/// That is *a* name, not the only one — the arrangement also names pierce points
 /// ([`crate::combinatorics::NodeKind::Pierce`]). This table stays three-plane by construction: its
 /// population is the vertices a **solid already has**, and a solid gains a pierce vertex only when
 /// the arc split starts building them.
@@ -282,7 +282,7 @@ impl VertexClasses {
 ///
 /// One element of a canonicalized bound: a node's name, or the class a curved bound is.
 ///
-/// ★ **The vessel is wide rather than refusing.** The differential's job is to *separate*
+/// **The vessel is wide rather than refusing.** The differential's job is to *separate*
 /// faces the two routes could disagree about, so a pierce node needs a spelling here — declining
 /// would silently stop covering every face that contains one.
 /// Being an enum also means **no `usize::MAX` sentinels** for a circle and a rim:
@@ -308,7 +308,7 @@ pub(crate) enum CanonNode {
 /// `(plane, flip, outer ring, hole rings)` — every field of a [`LocalFace`] but those freedoms.
 #[cfg(any(debug_assertions, test))]
 impl CanonNode {
-    /// A node's spelling. ★ It reads the identity directly rather than through
+    /// A node's spelling. It reads the identity directly rather than through
     /// `three_plane_name`: this caller's answer for a pierce node is not "refused" but "the key
     /// says which one it is", so the door's single answer is the wrong one here.
     fn of(n: NodeId) -> CanonNode {
@@ -324,7 +324,7 @@ pub(crate) type CanonFace = (usize, bool, Vec<CanonNode>, Vec<Vec<CanonNode>>);
 
 /// A ring's spelling: its nodes from the rotation that reads lexicographically smallest.
 ///
-/// ★ Not «from its smallest node»: a ring may pass one node twice (a face pinched there), and when
+/// Not «from its smallest node»: a ring may pass one node twice (a face pinched there), and when
 /// that node is the smallest, starting at its first visit depends on where the ring happened to
 /// start — two routes holding one face would spell it two ways.
 #[cfg(any(debug_assertions, test))]
@@ -343,7 +343,7 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
     let mut out: Vec<_> = faces
         .iter()
         .map(|f| {
-            // ★ A **curved** bound canonicalizes by its classes rather than by nodes, because it
+            // A **curved** bound canonicalizes by its classes rather than by nodes, because it
             // has none. The key still has to *separate* faces the two routes could disagree
             // about, so a circle contributes its cylinder class and a rim its plane class and
             // sense — spelled as one-element lists so they share the vessel with the node lists.
@@ -398,7 +398,7 @@ pub(crate) fn pass_through(
                 .iter()
                 .map(|&he| Some(canon(vc.triple(he_start(model, he))?)))
                 .collect::<Option<_>>()?;
-            // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
+            // The wall of the edge leaving vertex `i` is the plane of the face on the other side
             // of that edge — carried, not derived (see `draft::Ring`).
             let mut walls: Vec<crate::combinatorics::Wall> = lp
                 .half_edges

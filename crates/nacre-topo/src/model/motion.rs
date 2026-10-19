@@ -55,7 +55,7 @@ impl Model {
     /// the replays several chains will cost. Past `n` the number says only that: a frame step adds
     /// what its plane unfolds to at once, so it can overshoot.
     ///
-    /// ★ **A frame node counts what it unfolds to.** It names a plane, and a replay runs the frame
+    /// **A frame node counts what it unfolds to.** It names a plane, and a replay runs the frame
     /// and then that plane's own chain (`nacre_ops`' `frame_chain`), so the node is one step plus
     /// [`Model::plane_replay_depth`]. Counted once, a sketch on a face of a 7°-and-200-translations
     /// box replayed 201 nodes behind a chain of depth one. The walk stops once past `n`, through the
@@ -129,7 +129,7 @@ impl Model {
     /// restated cap × two chained walls), and this check is what keeps the licence honest:
     /// a frame-hosted datum's cap hits the `Frame` arm and the caller stays declined.
     ///
-    /// ★ **It lives here, below `nacre-ops`, because [`Model::vertex_meet`] needs it.** Without
+    /// **It lives here, below `nacre-ops`, because [`Model::vertex_meet`] needs it.** Without
     /// the rescue that door reads a turned solid's corner as straddling frames — every carrier
     /// but the fixed cap moved — and the datum road it gates loses its named form. Keeping the
     /// rule in `nacre-ops` would mean a second walk down here, and this rule already cost the
@@ -231,7 +231,7 @@ impl Model {
     /// off the quarters, overflow): `None`, and the caller refuses rather than measuring across
     /// two frames.
     ///
-    /// ★ **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
+    /// **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
     /// *realized* world cylinder, so it is an independent second description of the very thing
     /// this door claims to produce: the origin must lie on the cache's axis, the axis must run
     /// along it — **the same way round**, because a rim circle's edge curve is parameterized about
@@ -354,7 +354,7 @@ impl Model {
     /// an edge's curve on the pair ([`Model::derive_edge_curve`]) and the population gate's arms,
     /// by the one rule ([`nacre_exact::LineDir::relation_to`]).
     ///
-    /// ★ **A question about two directions, so only the chains' linear parts matter** — and a
+    /// **A question about two directions, so only the chains' linear parts matter** — and a
     /// rigid motion keeps the relation. So the two statements need not reach the world, only one
     /// frame: each direction (the plane's name normal, the cylinder's `def.dir()`) is carried out
     /// along its own chain **as far as it goes exactly** — a translation leaves a line alone, a

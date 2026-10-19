@@ -97,7 +97,7 @@ fn square(lo: f64, hi: f64) -> crate::Profile2d {
         .remove(0)
 }
 
-/// ★ **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's
+/// **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's
 /// sketch frame is carried by a motion chain with a reflection in it, and the exact winding
 /// read on the profile's 2-D coordinates is the *opposite* sense once the chain has carried
 /// the ring into the world — so [`SweptRat::winding`] folds the chain's parity in. Without
@@ -134,7 +134,7 @@ fn a_pad_on_a_mirrored_tilted_face_stands_up() {
     }
 }
 
-/// ★ **A circle swept on a mirrored solid's tilted face stands up too.** The same frame as
+/// **A circle swept on a mirrored solid's tilted face stands up too.** The same frame as
 /// [`a_pad_on_a_mirrored_tilted_face_stands_up`], a disk of radius ½ swept 1 on it. A circle's
 /// ring has one vertex, so its direction is its arc's turn, not a vertex order — and the arc's
 /// `ccw` must be read in the world as the winding is ([`Seg3::Arc`]). The control is the unmirrored

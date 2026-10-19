@@ -58,7 +58,7 @@ pub(super) fn seed_from_operands(
             }
         }
     }
-    // ★ **The operands' cylinder corners, against every class.** A pierce corner
+    // **The operands' cylinder corners, against every class.** A pierce corner
     // (`Pierce{[p0, p1], cyl, root}` — a fillet's tangent corner, a boss's foot) is a point some
     // *other* class may pass through: the gusset's side plane through the fillet axis contains
     // the tangent ruling, and so the corner. Then the point has three names — its own, the
@@ -69,7 +69,7 @@ pub(super) fn seed_from_operands(
     // in the same round could refuse the coincidence before the round that learnt it — a round
     // that declines returns, and there is no next. `side_of` is exact (the quad tower), and the
     // question is corners × classes, both small.
-    // ★ **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
+    // **And the dual: a line of two classes lying on a cylinder** — the gate's record, one
     // entry per such line, folded before any class is traced for the same reason as the corners
     // below.
     for (ci, cyl) in cyls.iter().enumerate() {
@@ -116,7 +116,7 @@ pub(super) fn seed_from_operands(
 /// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
 /// names agree. That is why the two live in one table and are applied together.
 ///
-/// ★ The table has **two sources**. The operands seed it before any class is traced
+/// The table has **two sources**. The operands seed it before any class is traced
 /// ([`seed_from_operands`] — every vertex with four or more incident plane classes, which the
 /// operand's own topology knows), and the tracer adds what it discovers (`{wc} ∪ t` at a run
 /// vertex, a wall family's line). Among plane names the representative is
@@ -124,7 +124,7 @@ pub(super) fn seed_from_operands(
 /// already gave the point; with four planes through a point every record is the whole set, so the
 /// two sources land in one component.
 ///
-/// ★ A point of the table need not be a plane name at all. The seed also learns every
+/// A point of the table need not be a plane name at all. The seed also learns every
 /// **pierce corner** an operand carries that some further class passes through
 /// ([`Aliases::record_on_cylinder`]), so one component can hold a corner, a three-plane name and
 /// a class's ruling crossing; the representative among those is a **pierce** name
@@ -147,7 +147,7 @@ impl Aliases {
         if s.len() < 4 {
             return; // three planes meeting at a point is the ordinary case, and names nothing new
         }
-        // ★ The representative is [`combinatorics::canonical_triple`]'s answer — the one
+        // The representative is [`combinatorics::canonical_triple`]'s answer — the one
         // rule every producer of a point's name calls — so a name an operand's ring already gave
         // the point is the representative it folds onto here.
         let rep = combinatorics::canonical_triple(jd, s).map(NodeId::three_planes);
@@ -296,7 +296,7 @@ impl Aliases {
     ///
     /// Among three-plane names it is the least, which is [`combinatorics::canonical_triple`]'s
     /// own answer (the operand's name and the arrangement's discoveries meet there).
-    /// ★ **A point on a cylinder is represented on the cylinder.** A `Pierce` name
+    /// **A point on a cylinder is represented on the cylinder.** A `Pierce` name
     /// locates the point exactly *and* says which cylinder it lies on — the lateral chart's
     /// geometry (θ about the axis, `pierce_meet`) reads that from the name — while a three-plane
     /// name of the same point (a class through a tangent corner: `ThreePlane([cap, t, wc])`) is

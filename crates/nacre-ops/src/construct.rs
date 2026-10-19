@@ -38,7 +38,7 @@ use nacre_topo::{Model, MotionNode};
 /// orthonormal. The fields are private, so a frame comes only from a door that proves it
 /// ([`RatFrame::of_plane_frame`], [`RatFrame::identity`], [`RatFrame::carried`]).
 ///
-/// ★★ **A frame carried through a reflection is left-handed**, and `parity` says so: the motion
+/// **A frame carried through a reflection is left-handed**, and `parity` says so: the motion
 /// carries each axis as `L(·)`, and `L(u) × L(v) = det L · L(w)`. The frame's `ŵ` — the way a
 /// sweep runs and the axis an arc wall stands on — is the carried `w`, so [`RatFrame::normal`] is
 /// `parity · (x × y)`, and a ring read counter-clockwise in `(x, y)` turns about `ŵ` with the same
@@ -130,7 +130,7 @@ impl RatFrame {
     /// **A frame's basis asked in rationals, never realized** — whether the plane's own frame has
     /// rational orthonormal axes, and which.
     ///
-    /// ★★★ **Realizing the axes first and lifting them back does not answer it.** Measured
+    /// **Realizing the axes first and lifting them back does not answer it.** Measured
     /// (`ops::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the primitive
     /// `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically* computed `1/5`,
     /// landing on `0.6000000000000001`. `Rat::from_decimal` lifts that, orthonormality fails, and
@@ -185,7 +185,7 @@ impl RatFrame {
         self.parity
     }
 
-    /// ★★★★ **The sketch frame of a plane, read in that plane's own frame — where it is the
+    /// **The sketch frame of a plane, read in that plane's own frame — where it is the
     /// identity.**
     ///
     /// This is what makes a sketch on a *tilted* face exact. In world coordinates that face's
@@ -220,7 +220,7 @@ impl RatFrame {
     /// this frame is written in — the exact form of "d away, along `ŵ`". They span `x × y`, which
     /// is `parity · ŵ`.
     ///
-    /// ★ This is what a datum offset uses when the frame has a rational world basis: the plane can
+    /// This is what a datum offset uses when the frame has a rational world basis: the plane can
     /// then be said in the world, so it interns with every other statement of it (`push_plane`
     /// keys on `(name, motion)`, and a frame node would put it under a different key). `None` on
     /// `i128` overflow — which the caller must turn into a named reject rather than quietly taking
@@ -359,12 +359,12 @@ pub(crate) struct SweptRat {
     /// in the chain reverses every loop's sense, so the 2-D reading is multiplied by the chain's
     /// parity ([`nacre_judge::chain_parity`]). Flipped by [`Swept::reversed`].
     ///
-    /// ★ Written in the frame's coordinates alone it was wrong for every pad on a mirrored
+    /// Written in the frame's coordinates alone it was wrong for every pad on a mirrored
     /// solid's tilted face: the ring realized clockwise about its world normal while this said
     /// counter-clockwise, and the prism went up inside-out (measured, a generated session —
     /// rotate, mirror, pad; the f64 cross-check in `oriented_ring` is what caught it).
     pub winding: Orient,
-    /// ★★★ **Which frame the rationals above are written in.** `None` is the world, which is
+    /// **Which frame the rationals above are written in.** `None` is the world, which is
     /// every case that existed before tilted faces became exact. `Some` says they are the
     /// coordinates of a plane's own frame, and that this motion is what carries them out — so
     /// every plane derived from them states itself *in that frame* and every vertex is
@@ -410,7 +410,7 @@ impl SweptRat {
     /// `top[i]`, the same three `Plane::through_points` is given, so the exact record and the f64
     /// one describe the plane the same way round.
     ///
-    /// ★★★ **There is no coefficient twin of this.** Coefficients `(b − a) × (c − a)`
+    /// **There is no coefficient twin of this.** Coefficients `(b − a) × (c − a)`
     /// canonicalized overflow `i128` far sooner than the points themselves do (measured —
     /// coefficients to 213 bits, ring coordinates to 107) and would leave most walls unnamed. The
     /// name is derived from these points where it is needed, at whatever precision the derivation
@@ -422,7 +422,7 @@ impl SweptRat {
 
     /// Three ring points spanning a cap — `base` when `top` is false, the top ring otherwise.
     ///
-    /// ★ **The indices are chosen on the f64 realization, and that is not a compromise.** Whichever
+    /// **The indices are chosen on the f64 realization, and that is not a compromise.** Whichever
     /// three indices come out, the points recorded are the exact rationals; the realization only
     /// answers *"which three are spread out"*, and a ring whose f64 image has no spread has no
     /// plane in the first place (`Plane::through_points` would already have refused it). Picking
@@ -490,7 +490,7 @@ pub(crate) fn prism_rings_in(
     frame: Option<Handle<MotionNode>>,
 ) -> Option<(Swept, Vec<Swept>)> {
     let sweep = f.sweep(dist)?;
-    // ★★★ **These rings are figures, not the truth.** The prism's vertices are defined by their
+    // **These rings are figures, not the truth.** The prism's vertices are defined by their
     // carrier planes and cached as that definition's realization (`push_vertex_realized`); the
     // f64 here is what a vertex keeps where the realization declines, and the figure its planes'
     // caches start from (`push_plane_realized`). On a frame node it is the frame coordinate carried
@@ -506,7 +506,7 @@ pub(crate) fn prism_rings_in(
             Some(c) => points_f64(pts)
                 .iter()
                 .map(|f| {
-                    // ★ **Rounded to the frame's f64 first, then replayed** — a figure, so only
+                    // **Rounded to the frame's f64 first, then replayed** — a figure, so only
                     // nearness matters. The truth is the decimal rationals the planes state
                     // themselves in ([`SweptRat`]), so `7.7` and `1.1 + 6.6` name one plane however
                     // these round.

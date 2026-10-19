@@ -41,7 +41,7 @@ fn cylinder_mass_matches_analytic() {
     assert!(close(props.area, 28.0 * PI), "area {}", props.area); // 2πr² + 2πrh
 }
 
-/// ★ **Two doors, one fact.** A planar face's normal is answered twice — by
+/// **Two doors, one fact.** A planar face's normal is answered twice — by
 /// [`face_props`] for the whole face and by [`face_normal_at`] at a point — and the two
 /// must say the same thing, or a caller would get a different answer depending on which
 /// it happened to ask. (The point plays no part on a plane, which this also shows.)
@@ -350,7 +350,7 @@ fn a_curved_solid_refuses_a_centroid_but_still_reports_volume() {
 
 /// A `2·hw` square centred on a `size` cube's lid.
 ///
-/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+/// **On a lid these are world coordinates.** The sketch origin is the world origin projected
 /// onto the face's plane and the axes are `u = +x_hat`, `v = +y_hat`, so a frame point `(a, b)`
 /// is world `(a, b, size)`.
 fn centred_on_the_lid(size: f64, hw: f64) -> Profile2d {

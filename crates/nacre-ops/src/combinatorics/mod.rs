@@ -73,19 +73,19 @@ pub(crate) use witnesses::*;
 
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
 ///
-/// ★★★ **The fields are private, and that is the whole point.** Every rule that reads this
+/// **The fields are private, and that is the whole point.** Every rule that reads this
 /// representation — [`turn`], [`antiparallel`], [`parallel_carriers`] via [`continuation`] — lives
 /// in this module, and Rust's module privacy is what keeps it that way: a sibling module cannot
 /// reach in even by accident. The node identity needs a `rg` gate (it caught fifteen bypasses)
 /// because it is an enum whose variants are nameable everywhere; here
 /// the boundary is a compile error instead of a grep.
 ///
-/// ★★ **A test that must read a direction is not a violation — it is an oracle.** It should read
+/// **A test that must read a direction is not a violation — it is an oracle.** It should read
 /// **its own** inputs (the `(carrier, sense)` it built) rather than this type, both because that
 /// keeps the boundary and because an oracle read back out of the value under test is an oracle
 /// derived from its own answer. Do not add accessors for it.
 ///
-/// ★★★ **`carrier`, not `wall` — and it grew when arcs arrived.** A straight edge's direction is a plane carrier and a sign;
+/// **`carrier`, not `wall` — and it grew when arcs arrived.** A straight edge's direction is a plane carrier and a sign;
 /// an arc's is a **tangent at one end**, and the two ends differ. So the type is a sum, and the arc
 /// arm carries *everything the comparison needs* — the end as `(line, s)`, the circle's centre, and
 /// which way the axis points against the class's stored normal — rather than an index a reader
@@ -153,14 +153,14 @@ pub(crate) struct ArcDir {
     axis: [nacre_exact::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
-    /// ★★ ☑ Measured: [`smooth_extremum_winding`] reads it `false` on half its firings, and
+    /// Measured: [`smooth_extremum_winding`] reads it `false` on half its firings, and
     /// dropping it there moves the chained fixtures' wall. No *fixture* forced the factor into
     /// being — the algebra did — and [`arc_side`] records which factors its own population
     /// locks.
     axis_up: bool,
     /// Travel runs counter-clockwise about the circle's own normal (the axis).
     ///
-    /// ★ This one **is** locked: dropping it makes the two arcs at a crossing share a bucket in
+    /// This one **is** locked: dropping it makes the two arcs at a crossing share a bucket in
     /// [`angular_order`], and the walk comes back `UnorderedEdges`.
     ccw: bool,
 }

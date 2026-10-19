@@ -106,7 +106,7 @@ fn lex_less(a: P2, b: P2) -> bool {
 /// right (`−1`). Inside one half-plane that order is a single `orient2d` per pair, and two rays
 /// along one direction (a ring doubling back on itself) are `0`.
 ///
-/// ★ **Every pass through the point is read, not the first.** A pinched ring can pass its extreme
+/// **Every pass through the point is read, not the first.** A pinched ring can pass its extreme
 /// point twice, and one pass's own turn does not say how the ring winds: a figure-eight hole whose
 /// lobes meet at its lowest point turns left at one pass, and two lobes meeting only there turn
 /// right at one pass while the ring winds left. The first ray reads the sector beside it, which
@@ -157,7 +157,7 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// Triangulate rings that are **already in a chart** — the chart-free core of this layer's one
 /// triangulation road: monotone decomposition, then the Lawson pass.
 ///
-/// ★★ **Precondition: the outer ring is CCW and every hole is CW, in `uv`.** The repair is the
+/// **Precondition: the outer ring is CCW and every hole is CW, in `uv`.** The repair is the
 /// *caller's* because charts differ in what a repair costs. A planar face's two axes are
 /// interchangeable, so swapping them mirrors the frame for free — that is what
 /// `planar_chart` does. A curved face's are not: `v` is the sweep axis, and swapping it
@@ -165,11 +165,11 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
 /// diagonals that leave the surface. Such a caller negates one axis instead. Both repairs are
 /// checked here rather than trusted.
 ///
-/// ★★ **`candidates` are points the caller offers the interior**, in its own order; `uv` grows by
+/// **`candidates` are points the caller offers the interior**, in its own order; `uv` grows by
 /// the ones that were taken, in that same order, so a caller can map the tail back through its
 /// chart. A candidate with nowhere to go is **dropped, not forced** — see [`insert_interior`].
 ///
-/// ★★★★★ **`revisits` — a point the boundary passes twice.** A [`Revisit::Bridge`] is a hole
+/// **`revisits` — a point the boundary passes twice.** A [`Revisit::Bridge`] is a hole
 /// touching another ring at one point, spliced into it: the touching point sits at two indices
 /// (the chart layer put the curved ring's sample into the straight edge it touches, so both rings
 /// carry it); the two rings are joined there into one ring, `a[..=i] ++ b[j+1..] ++ b[..=j] ++
@@ -378,7 +378,7 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 
 /// Place each candidate the sweep will accept, and drop the rest.
 ///
-/// ★★★★★ **Two places, and which one is used depends on how the face is spelled.** A candidate may
+/// **Two places, and which one is used depends on how the face is spelled.** A candidate may
 /// fall **strictly inside** a triangle, which splits it in three; or **on an interior edge**, which
 /// splits that edge — and with it both triangles sharing it — in two. The second is not the exotic
 /// one: the caller's points sit on the lines where the face's shape changes, and a triangulation
@@ -403,7 +403,7 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 /// relative to the face's own samples), not with the shape the user drew — so neither branch may
 /// be deleted as unreachable.
 ///
-/// ★★ **A constrained edge is never split.** A point the neighbouring face does not know about is
+/// **A constrained edge is never split.** A point the neighbouring face does not know about is
 /// a T-vertex, and a T-vertex is a crack — the one thing this layer may not produce. A candidate
 /// that lands on the boundary, or outside the rings entirely, is simply dropped: the caller offers
 /// points, it does not get to place them.
@@ -414,7 +414,7 @@ fn insert_interior(
     candidates: &[P2],
 ) {
     for &p in candidates {
-        // ★ **One pass answers both questions.** The two places are mutually exclusive across the
+        // **One pass answers both questions.** The two places are mutually exclusive across the
         // whole triangulation — a point strictly inside one triangle is on no triangle's edge, and
         // vice versa — so there is no need to exhaust the "inside" search before starting the
         // "on an edge" one. Measured: scanning twice cost **8× per triangle** what an ordinary
@@ -463,7 +463,7 @@ fn insert_interior(
         let mut fresh: Vec<[usize; 3]> = Vec::new();
         tris.retain(|t| {
             for e in 0..3 {
-                // ★ Each owner meets the edge in its **own** direction — the two sharing it run
+                // Each owner meets the edge in its **own** direction — the two sharing it run
                 // opposite ways — so the split is written from that rotation, never from `(a, b)`.
                 let (x, y, c) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
                 if (x == a && y == b) || (x == b && y == a) {

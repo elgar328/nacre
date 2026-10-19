@@ -52,7 +52,7 @@ pub(super) fn cramer_big(
 // alone. The same move `three_planes_rat` makes for its value ("the caller resolves the
 // conflation by asking the integer core") and `plane_name_exact` for its name.
 //
-// ★ **The lift keeps each vector's denominator.** Clearing denominators multiplies a vector by
+// **The lift keeps each vector's denominator.** Clearing denominators multiplies a vector by
 // a positive factor, which is harmless for an expression that is *homogeneous* in that vector
 // (a cross, a dot) and **wrong** for one that is not — an expression mixing a term in `p` with
 // a constant would state a different proposition after scaling `p` alone. Every predicate here

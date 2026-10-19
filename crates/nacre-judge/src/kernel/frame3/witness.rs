@@ -46,7 +46,7 @@ impl Eq for WitnessPoint {}
 // it, an axis-aligned frame — and tol `0` is what keeps such a model on the exact predicate path.
 // So these three ask first; the facts hold in `f64`'s normal range, the premise `Bounded` rests on.
 //
-// ★ **Here, not inside `Bounded`'s own operations.** The judge's interval filters meet the same
+// **Here, not inside `Bounded`'s own operations.** The judge's interval filters meet the same
 // cases often — 42–51% of their additions have an exact-zero operand and 31–40% of their products
 // an exact `0` or power of two (census, perf) — but answering them there decides nothing: built
 // both ways, the climbs and census rows are identical, and the check costs every filter operation
@@ -128,7 +128,7 @@ impl WitnessPoint {
     /// resolves as exact, and costs BigFloat work per point. Its looseness can only turn a
     /// definite filter answer into "escalate", never the other way round.
     ///
-    /// ★ **This is how a point that came from a rational reaches the predicates** — not by
+    /// **This is how a point that came from a rational reaches the predicates** — not by
     /// lifting the rounded `f64` back into a `Rat` (that names a different point, with a
     /// tolerance of zero on top).
     pub fn at(base: [Rat; 3]) -> Self {
@@ -176,7 +176,7 @@ impl WitnessPoint {
         // `prod` reads; a second spelling of "how an angle becomes f64" could land
         // `cos(90°) ≈ 6e-17` there instead.
         //
-        // ★★★ **The error is measured of `c` and `s` — the values that reach `coord_approx` — not
+        // **The error is measured of `c` and `s` — the values that reach `coord_approx` — not
         // of the angle**, so it bounds the number this kernel stores, whatever route produced it.
         // Measured here rather than taken as a constant: a platform whose trig lands further out
         // reports a bigger number.
@@ -199,7 +199,7 @@ impl WitnessPoint {
     /// which the judgment path does hundreds of thousands of times. The price is here: appending
     /// copies the slice, so applying `n` nodes one at a time costs `O(n²)`.
     ///
-    /// ⚠★★★★ **That price was measured against the wrong caller, and the comment said so**: *"this
+    /// **That price was measured against the wrong caller, and the comment said so**: *"this
     /// runs when a solid is transformed, never on the judgment path, so the copy is not hot."* Cell
     /// 52 broke the premise — a vertex is now realized as it is pushed, which **replays a chain per
     /// push** — and the copy became the dominant cost of a long history: a 4,200-turn fixture went
@@ -293,7 +293,7 @@ impl WitnessPoint {
     /// `None` when a squared length is not positive — that is a degenerate frame, not an unusual
     /// one, and a caller that cannot build a basis must not get a point that pretends otherwise.
     ///
-    /// ★★★★ **Every charge has a source, and the exact cases really do reach zero.** The sources
+    /// **Every charge has a source, and the exact cases really do reach zero.** The sources
     /// are the rational inputs' own `Rat → f64` rounding ([`Bounded::of_rat`] — `0` for an input
     /// that is an `f64`), the `1/√` values' realization error, measured
     /// ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith, see there), and
@@ -319,7 +319,7 @@ impl WitnessPoint {
             Some(raw.map(|r| prod(Bounded::of_rat(r), len)))
         };
         let (u, w) = (axis(f.u_raw, f.uu)?, axis(f.n, f.nn)?);
-        // ★★ `v̂` exactly where the frame carries `v_raw`, and `ŵ × û` where it does not.
+        // `v̂` exactly where the frame carries `v_raw`, and `ŵ × û` where it does not.
         //
         // The exact route is one rounding per component; the cross product is two that do not
         // cancel — a wall whose `v` is exactly `ẑ` comes out three ulps short through it. Both are
@@ -389,7 +389,7 @@ impl WitnessPoint {
     /// derivation at this exact rung — and stays an `Option` so that "unreachable" is a fact
     /// about the producer rather than an invariant this method asserts across a crate boundary.
     ///
-    /// ★ Cost note: the node's points share their `hp` cells by `Rc`, so the cos/sin of their
+    /// Cost note: the node's points share their `hp` cells by `Rc`, so the cos/sin of their
     /// chains realize once per node, not once per applied point — what recurs per point is
     /// arithmetic, the same acceptance [`WitnessPoint::frame_wide`] records.
     pub fn frame_through(self, f: &FrameThrough) -> Option<Self> {
@@ -413,7 +413,7 @@ impl WitnessPoint {
     /// [`WitnessPoint::hp`] and shared across clones of the same definition, so a definition-point
     /// pays the astro-float cos/sin once per boolean rather than once per predicate.
     ///
-    /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
+    /// **The radius is half the answer.** A value without the bound its realization cost cannot
     /// be rounded honestly — see [`HpBounded`]'s contract: a radius invented for convenience makes
     /// every sign above it unearned. Callers round with `nacre_exact::round_to_f64` /
     /// `round_to_digits`, which report *undecided* rather than picking when `prec` is short.

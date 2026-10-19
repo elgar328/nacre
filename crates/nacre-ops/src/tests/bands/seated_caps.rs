@@ -3,16 +3,16 @@
 use super::*;
 
 //
-// ★★ These five are the seated population. What actually makes a
+// These five are the seated population. What actually makes a
 // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
 // edge on a plane (parallel to the axis → the wall rule, oblique → asked to miss every lateral
 // face, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
-// face pair, else `CylinderPairContact`). ★ The wall rule is not a *fence*:
+// face pair, else `CylinderPairContact`). The wall rule is not a *fence*:
 // it records a crossing or a tangency and the roads behind it answer, so
 // what still stands at the end of this block is the oblique cut that does meet a face and the
 // cylinder pair whose faces do meet.
 //
-// ★★★ **Measured against the pre-deletion kernel, all seven of these came back
+// **Measured against the pre-deletion kernel, all seven of these came back
 // `SeatedCylinderCap` — the two fences included.** The rule stood before the wall and the
 // curved-depth rules and answered for them: an overhanging boss and a pair of coplanar-capped
 // cylinders are refused for reasons that have nothing to do with seating, and the sentence a
@@ -239,7 +239,7 @@ fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
     );
 }
 
-/// ★ **The through-boss builds** — the rulings ladder's milestone: a boss standing through
+/// **The through-boss builds** — the rulings ladder's milestone: a boss standing through
 /// the plate's wall (axis exactly on the `x = 40` plane). Fuse keeps the outer half
 /// (plate + the boss outside it), cut
 /// carves the notch, common keeps the inner half-cylinder — each an exact closed form, and
@@ -262,7 +262,7 @@ fn a_through_boss_common_is_the_inner_half() {
     through_boss_builds(BoolKind::Common, [40.0, 20.0, -10.0], 250.0 * pi);
 }
 
-/// ★ A boss on the plate's **corner** — its axis on *two* wall planes, both recorded, each
+/// A boss on the plate's **corner** — its axis on *two* wall planes, both recorded, each
 /// circle cut by both walls: the rim pairing (`(wall class, root)`) and the θ-panel
 /// machinery quarter the lateral. Measured to assemble in the lift probe; the volume pins
 /// it (plate + three quarters of the cylinder outside).
@@ -272,7 +272,7 @@ fn a_corner_boss_fuses() {
     through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
 }
 
-/// ★★★★★ **Neither exclusion of this fence stands.** The **offset** crossing
+/// **Neither exclusion of this fence stands.** The **offset** crossing
 /// (`0 <` distance `< r`) builds exactly.
 /// The **tangent** wall (distance exactly `r`) «assembles
 /// a volume-correct zero-thickness pinch `validate` cannot see» — and that sentence
@@ -281,14 +281,14 @@ fn a_corner_boss_fuses() {
 /// gate; it is to give that pinch a judge (`assembly::tangency_reject`), which is what this row
 /// exercises — the operation decides, and the ones that do not pinch build.
 ///
-/// ★ The **half-height** boss, whose upper cap
+/// The **half-height** boss, whose upper cap
 /// sits inside the plate's material, has its own row: the chart reads it (a band below the
 /// plate, the outer sector beside it), so it builds — [`Self::a_half_height_boss_builds`].
 #[test]
 fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
     let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
     let pi = std::f64::consts::PI;
-    // ★★★★★ **One expression, both rows — which is the evidence that the rule is general.**
+    // **One expression, both rows — which is the evidence that the rule is general.**
     // The boss's part inside the plate is the disk less the `x > 40` circular segment, over the
     // plate's height; the tangent row is that same expression at `d = r`, where `seg(5, 5) = 0`
     // and the whole disk is inside. Nothing here is copied from an engine run: the tangent
@@ -321,7 +321,7 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
     }
 }
 
-/// ★★★★★ **The half-height boss builds.** A boss
+/// **The half-height boss builds.** A boss
 /// through the plate's wall whose upper cap (z = 10) sits inside the plate: below the plate
 /// the lateral is a whole band, beside it only the outer sector survives, and the cap is a
 /// half-disk. The band road refused this end (`RulingBoundNotYet`); the chart's cells read
@@ -332,7 +332,7 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
 ///
 /// The lateral is **one** face: the band and the outer panel merge into a band whose
 /// upper rim is a **wrapping chain** (the z = 0 inner arc, a ruling, the z = 10 outer arc,
-/// a ruling). ★ Both
+/// a ruling). Both
 /// senses: the boss with its cap inside the plate (`z0 = −10`, a `hi` chain) and its mirror
 /// with its base inside (`z0 = 10`, a `lo` chain) — the walk's rotation rule is measured
 /// on each rather than assumed symmetric. Same volumes by symmetry.
@@ -448,11 +448,11 @@ fn a_boss_overhanging_the_plates_edge_builds() {
     assert_eq!(open, 0, "the mesh is watertight");
 }
 
-/// ★★ **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses
+/// **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses
 /// the circle, so the circle keeps its closed cell — what the shape really asks is that the
 /// **disk cell host a polygon**, which `nest_cells` does.
 ///
-/// ★★★ **The population immediately found a live defect in the nesting predicate.** With the
+/// **The population immediately found a live defect in the nesting predicate.** With the
 /// disk allowed to host, the *circle*'s contour came back as a hole of the **square** — the
 /// footprint `[7,9]×[9,11]` straddles the axis `(8,10)`, so "the circle's centre is inside the
 /// ring" is true in the nesting that does not hold. One witness point says *whether* two
@@ -486,7 +486,7 @@ fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
     );
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a boss over a bore");
-    // ★ The boss's whole footprint is inside the rim, so it stands over the **hole** and
+    // The boss's whole footprint is inside the rim, so it stands over the **hole** and
     // touches no material: two bodies, not one. That is forced by the *geometry* — the
     // footprint is strictly inside the rim, so there is no material to reach — and not
     // by a refusal: the wall rule

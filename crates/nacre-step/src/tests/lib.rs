@@ -108,7 +108,7 @@ fn single_solid_export_isolates_one_solid() {
     assert_eq!(model_none.scene().all_solids().count(), 0);
 }
 
-/// ★★ **The header's time stamp is the caller's, verbatim — so a file is a function of its model
+/// **The header's time stamp is the caller's, verbatim — so a file is a function of its model
 /// and that stamp.** The kernel reads no clock: `wasm32-unknown-unknown` has none (asking the
 /// system for the time there panics), and a stamp taken from the clock would make two exports of
 /// one model differ. Two stamps prove the field is the argument rather than a coincidence of the
@@ -132,13 +132,13 @@ fn the_time_stamp_is_the_callers_and_the_file_repeats() {
     assert_eq!(text, to_step(&cuboid(lo, hi), STAMP).expect("export"));
 }
 
-/// ★★★★ **The live set's order reaches the exported file, so superseding may not permute it.**
+/// **The live set's order reaches the exported file, so superseding may not permute it.**
 ///
 /// `to_step` walks `Model::live_solids` in order. Nothing else in the tree would catch a
 /// permutation — the census reads the arena (never live order) and there is no golden STEP
 /// text — so the export side locks it here, beside the door's own lock in `nacre-topo`.
 ///
-/// ⚠ The oracle is the **construction order and distinctive coordinates**, not a second call
+/// The oracle is the **construction order and distinctive coordinates**, not a second call
 /// to the same door: checking `supersede_live` against a hand-written `retain` would be one
 /// implementation checking itself. The superseded solid's coordinate must also be *absent*,
 /// which is what proves the drop happened at all.
@@ -176,7 +176,7 @@ fn superseding_a_solid_leaves_the_export_order_alone() {
     );
 }
 
-/// ★ **A superseded solid named to `to_step_solids` is written as the stores hold it.** The live set
+/// **A superseded solid named to `to_step_solids` is written as the stores hold it.** The live set
 /// is the current model — `to_step` leaves the superseded box out (the test above) — but the arena
 /// never edits a cell, so the box is still a whole shape of the model's history, and a caller who
 /// names it gets that shape: its coordinate, its six faces, a file that reads back clean.
@@ -248,13 +248,13 @@ fn hollow_solid_round_trips_as_brep_with_voids() {
     assert_eq!(voids[0].len(), 6); // one cavity shell, 6 faces
 }
 
-/// ★★ **A stated rim's centre reaches the file as the truth's nearest `f64`.** The edge cache
+/// **A stated rim's centre reaches the file as the truth's nearest `f64`.** The edge cache
 /// holds it (nacre-ops' `a_stated_rims_centre_is_the_truths_nearest`); this asks the next layer —
 /// what each `CIRCLE`'s placement in the written file says, read back. Stated tilted axes off the
 /// origin; the oracle is `base` and `base + h·û`, computed here in `Rat` from the fixture's
 /// decimals and a unit axis rational by hand.
 ///
-/// ★ The sweep also counts the rims whose centre the caches' own `f64` meet (`line_plane` of the
+/// The sweep also counts the rims whose centre the caches' own `f64` meet (`line_plane` of the
 /// cylinder cache's axis and the cap cache) gets wrong, and requires one — a sweep where that
 /// meet happens to be right everywhere cannot tell the two roads apart.
 #[test]
@@ -346,7 +346,7 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
     );
 }
 
-/// ★★ **A straight edge's direction reaches the file as its edge cache's.** The cache holds the
+/// **A straight edge's direction reaches the file as its edge cache's.** The cache holds the
 /// truth's direction (nacre-ops' census line lock); this asks the written `LINE`s, read back: each
 /// `DIRECTION` is a cached direction bit for bit and each `VECTOR` magnitude is 1. Boxes turned by
 /// whole degrees that are not quarters, requiring one edge whose endpoint-derived direction
@@ -509,7 +509,7 @@ impl std::io::Write for Recording {
     }
 }
 
-/// ★★ **`write_step` streams: the file reaches the output in pieces, not as one text at the end.**
+/// **`write_step` streams: the file reaches the output in pieces, not as one text at the end.**
 /// That is what it is for — a caller writing to a file never holds the whole file. Thirty boxes make
 /// a file of 185 KB, past the writer's 64 KiB chunk twice, so it arrives in at least three writes
 /// (two chunks and the close); an adapter that gathered the text and handed it over once would show
@@ -557,7 +557,7 @@ impl std::io::Write for Refusing {
     }
 }
 
-/// ★ **A failing output is `StepError::Io`, carrying the output's own error** — not the writer's
+/// **A failing output is `StepError::Io`, carrying the output's own error** — not the writer's
 /// message flattened into `Backend`, so the caller can ask what went wrong (a full disk, a closed
 /// pipe). A small file reaches the output only when it is finished, so that is where it fails.
 #[test]
@@ -570,7 +570,7 @@ fn a_failing_output_is_an_io_error() {
     }
 }
 
-/// ★ **Parts are named `Part 1`, `Part 2`, … in the order given, and the header names the kernel
+/// **Parts are named `Part 1`, `Part 2`, … in the order given, and the header names the kernel
 /// and its version.** A name a viewer shows as it is: with no name, FreeCAD shows `Shapes`,
 /// step-loupe the definition's id and OCCT nothing, and several parts cannot be told apart. The
 /// kernel holds no names, so a single solid written alone is always `Part 1`.

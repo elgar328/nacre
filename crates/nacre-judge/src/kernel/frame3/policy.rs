@@ -141,7 +141,7 @@ pub(super) fn escalate(
         j.prec > 0,
         "escalate at zero precision — unstamped ProofStandard"
     );
-    // ★ Charged on **every** way out, not just the resolved one: most climbs end in `Coincident`
+    // Charged on **every** way out, not just the resolved one: most climbs end in `Coincident`
     // or a proved zero, and counting only the `Ok` path reported a mean of exactly 0 bits — a
     // number that looked like "no cost" and was really "no instrument".
     let done = |p: usize, d: Decision| -> Decision {
@@ -208,7 +208,7 @@ pub(super) fn escalate(
 /// meaningful reading of `C` (see [`precision_for`]), and cheap.
 const TRIAL_PREC: usize = 128;
 
-/// ★ **And deep enough that an exactly-representable point reads exactly zero.**
+/// **And deep enough that an exactly-representable point reads exactly zero.**
 ///
 /// A second requirement, once a caller is allowed to *skip* [`trial_bound`] for a definition it
 /// knows is exact. An f64-representable base (`Rat::as_f64` is `Some`, the case `at` states

@@ -59,12 +59,12 @@ impl From<&Carrier> for LineCarrier {
 /// arc it is the `nth` root the arc strictly contains, on a ruling the root that ruling is
 /// ([`crossing_on_ruling`]) — pierce points of the line's own pair either way.
 ///
-/// ★ **Read lazily.** A road walks the ring first and names a crossing only when it reaches it,
+/// **Read lazily.** A road walks the ring first and names a crossing only when it reaches it,
 /// after the runs it handles before (a ray skips itself on an unnameable run end; the tracer records
 /// a fourth plane through a run's node). Naming every crossing up front would change which refusal
 /// comes first.
 ///
-/// ★ **An arc's crossings are solved once per edge**, so the count the walk read and the point a
+/// **An arc's crossings are solved once per edge**, so the count the walk read and the point a
 /// road names cannot disagree. The walk asks an edge only where its ends cannot say, with the end
 /// on the line where there is one (that end's own root is not counted); an edge the walk did not
 /// ask (ends on opposite sides) is solved on naming, with no end on the line. Nothing is allocated
@@ -75,7 +75,7 @@ pub(crate) struct ClassLine<'a, C> {
     cyls: &'a [crate::planes::WorkingCyl],
     /// The face's own plane class.
     face: usize,
-    /// The class that cuts it along the line. ★ Named apart from `face` because the primitives
+    /// The class that cuts it along the line. Named apart from `face` because the primitives
     /// take the pair as `(cut, face)` and a swap would be silent.
     cut: usize,
     nodes: &'a [NodeId],

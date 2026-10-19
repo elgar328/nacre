@@ -23,7 +23,7 @@ fn lateral_crossings(
         return Ok(None);
     };
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    // ★ **A class with no world statement here sections the cylinder** — it carries rulings, so the
+    // **A class with no world statement here sections the cylinder** — it carries rulings, so the
     // gate found it along the axis (`Silence::Sectioned`). Against a wall along the axis too, the
     // line between them is exactly parallel to it (both normals are perpendicular to it) and
     // crosses no ruling: it misses the surface, which `C ≠ 0` shows, or lies on it, which no record
@@ -70,7 +70,7 @@ fn lateral_crossings(
         }
         // A tangent line touches without separating; cutting there would make a zero-length
         // piece — the same skip the circle side's `Double` arm makes.
-        // ★ A **tangent** class touches the cylinder along one ruling: the
+        // A **tangent** class touches the cylinder along one ruling: the
         // segment's line meets it in one point, root `Double` — the crossing the seated face's own
         // tangent piece (`side == 0`) is cut at, named as the scan names it.
         Some(CylinderMeet::Tangent { line, s }) => (
@@ -80,7 +80,7 @@ fn lateral_crossings(
         Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
             return Ok(Some(Vec::new()));
         }
-        // ★ The segment's line lies on the lateral: a line the gate recorded
+        // The segment's line lies on the lateral: a line the gate recorded
         // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
         // [`split_rulings`] states it there. Anywhere else, and where the planes degenerate, the
         // ladder does not arrange the shape yet.
@@ -92,7 +92,7 @@ fn lateral_crossings(
         }
         None => return Ok(None),
     };
-    // ★ Whether a crossing is **on this segment** is the caller's question now, asked in the one
+    // Whether a crossing is **on this segment** is the caller's question now, asked in the one
     // vocabulary that answers it for both kinds of end — the same move the circle side makes.
     Ok(Some(
         roots
@@ -198,7 +198,7 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
 /// twin of [`split_circles`], run after it.
 ///
-/// ★★ **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
+/// **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
 /// circles against segments and not against rulings. One class *can* carry both populations
 /// (there is no blanket refusal that says otherwise), so what keeps the pair of splits
 /// complete is not «they never share a class» but the sharper fact that **a class's edge is
@@ -259,15 +259,15 @@ pub(super) fn split_rulings(
     let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
     let mut on_seg: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); segs.len()];
     for (si, sg) in segs.iter().enumerate() {
-        // ★★★★★ **No skip for a segment whose end a cylinder pins.** The extent question is
+        // **No skip for a segment whose end a cylinder pins.** The extent question is
         // `closed_contains`, which answers for both kinds of end, and «such a segment shares only
         // endpoints with a ruling» is an argument about one narrow population — the sort of claim
         // that goes quietly false when the population widens — so it is asked instead of assumed.
-        // ☑ Measured: **200** such segments reach here and **392** crossings on them are examined;
+        // Measured: **200** such segments reach here and **392** crossings on them are examined;
         // none splits a ruling.
         //
         // A segment whose two ends are one point cuts nothing — asked by **name**, the identity,
-        // rather than by a coordinate a pierce end does not have. ☑ Measured unexercised.
+        // rather than by a coordinate a pierce end does not have. Measured unexercised.
         if sg.end[0] == sg.end[1] {
             continue;
         }
@@ -301,7 +301,7 @@ pub(super) fn split_rulings(
                 return Err(undecided());
             };
             for (n, meet) in xs {
-                // ★ On this segment? The caller's question since the fences went — same rule, same
+                // On this segment? The caller's question since the fences went — same rule, same
                 // vocabulary as the circle side.
                 let at =
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))

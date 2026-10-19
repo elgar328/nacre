@@ -9,7 +9,7 @@ use super::*;
 /// names the same vertices, and the variant is spelled like [`nacre_topo::Vertex::ThreePlane`]
 /// so the arrangement, the assembler and the topology store call the thing by one name.
 ///
-/// ★★★★★ **A newtype, and the private half is the whole point.** The field is `pub(super)`, so
+/// **A newtype, and the private half is the whole point.** The field is `pub(super)`, so
 /// outside `combinatorics` a name can be **read** ([`NodeId::kind`]) but cannot be **made** — the
 /// two constructors below are the only way one comes into being, and "two spellings of one vertex
 /// are one name" holds because nothing can go around them. This used to be a plain `enum` guarded
@@ -20,13 +20,13 @@ pub(crate) struct NodeId(pub(super) NodeKind);
 
 /// **Which of the two things a [`NodeId`] names**, and what it carries.
 ///
-/// ★★ **Read it with `match`, never a `_` arm and never `let`-`else`**: a third variant lights up
+/// **Read it with `match`, never a `_` arm and never `let`-`else`**: a third variant lights up
 /// an exhaustive `match` and falls silently into either of the others — a defect this repository
 /// has already had. A third is not hypothetical: [`nacre_topo::Vertex`] already has three
 /// (`ThreePlane`, `Pierce`, `OnSeam`). Where the happy path really wants `let`-`else`, the `else`
 /// carries a full `match` so the new variant still stops the build (`winding`'s `coord_key`).
 ///
-/// ★ **The variant order is a decision, not a listing** — `Ord` runs over it and "smallest name
+/// **The variant order is a decision, not a listing** — `Ord` runs over it and "smallest name
 /// wins" reads it, exactly as [`nacre_topo::QuadRoot`]'s doc says of its own two.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) enum NodeKind {
@@ -35,7 +35,7 @@ pub(crate) enum NodeKind {
     /// [`nacre_topo::Vertex::Pierce`] names, and the point the next rung splits a circle
     /// into arcs at.
     ///
-    /// ★ **Two index spaces in one name.** `planes` are plane-class indices and `cyl` is a
+    /// **Two index spaces in one name.** `planes` are plane-class indices and `cyl` is a
     /// **cylinder**-class index (`crate::planes::ClassIx::Cyl`'s payload); they are separate
     /// numberings and a value from one is meaningless in the other. `reuse::canonical` already
     /// carries both kinds in one key, so the precedent is the file's, not this type's.
@@ -68,7 +68,7 @@ impl NodeId {
     /// The canonical name of the point where three plane classes meet — **the only way one is
     /// made**, so "two spellings of one vertex are one name" holds by construction.
     ///
-    /// ★★ **Sorting is *this variant's* canonicalization, not the definition of canonical** — see
+    /// **Sorting is *this variant's* canonicalization, not the definition of canonical** — see
     /// [`NodeId::pierce`], whose pair carries a root that a re-sort has to restate.
     ///
     /// It does **not** check for a collapsed triple. Two names being equal is a real condition
@@ -83,7 +83,7 @@ impl NodeId {
     /// The canonical name of a `plane ∩ plane ∩ cylinder` point — **the only way one is made**, so
     /// "two spellings of one vertex are one name" holds by construction here too.
     ///
-    /// ★★★ **It is not a sort.** Ordering the two classes can reverse the meet line, and the root
+    /// **It is not a sort.** Ordering the two classes can reverse the meet line, and the root
     /// is defined against that line, so the pair and the root move **together**. That rule is
     /// [`nacre_topo::QuadRoot::canonical`]'s and this reads it; spelling it again here is how the
     /// same point ends up with two names, one of them pointing at the other root.
@@ -113,11 +113,11 @@ impl NodeId {
 ///
 /// Sites that *dispatch* instead of declining stay out of it deliberately — [`node_coords_rat`],
 /// [`pierce_point`], [`node_point_hp`] and [`loop_winding`]'s lexicographic scan, each with its own
-/// answer for the other variant. ★ And one is **not** in the ring-and-segment world at all: `reuse::canonical`
+/// answer for the other variant. And one is **not** in the ring-and-segment world at all: `reuse::canonical`
 /// builds a comparison key, and its answer is that the key's vessel widens (`CanonNode`), not that
 /// the question is refused.
 ///
-/// ★★ **What keeps this honest is the type, not a convention.** [`NodeId`]'s field is
+/// **What keeps this honest is the type, not a convention.** [`NodeId`]'s field is
 /// `pub(super)`, so outside `combinatorics` a name can be read ([`NodeId::kind`]) and cannot be
 /// made: the two constructors are the only way in, and the compiler says so. Going around this
 /// door is therefore not a thing a caller can do, only a thing it can decline to *use* — and the
@@ -127,7 +127,7 @@ impl NodeId {
 /// It found **fifteen** sites the first time it was run with the whole suite already green, and
 /// eight more the last time — which is the measure of a check nobody runs.
 ///
-/// ★★★ **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
+/// **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
 /// the sites in `arrangement` that need the `Pierce` half — two inside `split_circles`, and the
 /// seam table — go through the twin rather than
 /// asking for the whole [`NodeKind`].
@@ -202,7 +202,7 @@ pub(crate) fn restate_pierce(
 
 /// **The names of a list of *candidates*, pierce points dropped.**
 ///
-/// ★★★ **This is the licence, and its name is where the licence is stated.** Behind the door there
+/// **This is the licence, and its name is where the licence is stated.** Behind the door there
 /// are two shapes and only one of them may lose a member:
 ///
 /// - a **probe list** may — its consumers try each member until one decides, and an exhausted list
@@ -221,13 +221,13 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
 /// **What pins an endpoint on its edge's line** — the third carrier, in the vocabulary that names
 /// it.
 ///
-/// ★ A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
+/// A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
 /// plane class) everywhere. The arc split puts a **cylinder** crossing in the middle of a segment,
 /// and that point has no third *plane* — what pins it is the quadric, and its name is the
 /// [`NodeKind::Pierce`] the edge already carries in its endpoint list. So the pin says **which kind**
 /// and the name is read from beside it, rather than a second copy living here.
 ///
-/// ★★ The two arms are two *orders*, not two spellings of one: [`order_along`] reads a class
+/// The two arms are two *orders*, not two spellings of one: [`order_along`] reads a class
 /// through `orient3d` × `dir_sign` (integer predicates), and a pierce point through the
 /// `a + b√c` tower. Naming the kind is what makes the second reachable at all — a `usize` had
 /// nowhere to say "not a plane".
@@ -253,7 +253,7 @@ impl EndPin {
 /// **What carries a ring edge** — the plane whose meet with `P` the edge rides, or the circle an
 /// arc rides.
 ///
-/// ★ The two arms are not symmetric and should not be made so. A plane carrier is an *index*: the
+/// The two arms are not symmetric and should not be made so. A plane carrier is an *index*: the
 /// class table answers everything about it, and the direction it gives is the same at both ends. An
 /// arc carrier has to carry the cylinder itself, because the direction it gives depends on **where
 /// on the circle** it is asked — which is what [`dir_at`]'s `node` is for.
@@ -264,7 +264,7 @@ pub(crate) enum Carrier {
         wall: usize,
         /// The travel sense along `n_P × n_wall`, when the **endpoints** cannot supply it.
         ///
-        /// ★★ An arc split cuts a segment at pierce points, and `order_along` speaks three-plane
+        /// An arc split cuts a segment at pierce points, and `order_along` speaks three-plane
         /// classes only — so a sub-segment with a cut end has nothing to derive its sense from.
         /// The split does know it (it sorted those points along the line), so it carries it here
         /// rather than leaving a hole for [`edge_dir`] to fall into. `None` on an edge whose two
@@ -292,7 +292,7 @@ pub(crate) enum Carrier {
 /// travels that way, its twin the other), carried rather than re-derived. That bit is what lets
 /// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.
 ///
-/// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
+/// Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
 /// `dissolve_straight_angles` folds equal walls (and one line's two spellings,
 /// [`SharedLines`]), and two arcs of different circles — or of one circle in different directions —
 /// now compare unequal instead of `MAX == MAX`.
@@ -308,7 +308,7 @@ pub(crate) enum Wall {
     /// order it — but its carriers are the cylinder and `plane`, the plane class that holds the
     /// ruling, and `side` names which of that plane's two rulings it is
     /// ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's single ruling).
-    /// ★ `side` is measured against `plane` and means nothing without it: one line held by a
+    /// `side` is measured against `plane` and means nothing without it: one line held by a
     /// tangent plane and a plane through the axis is `0` against the first and `±1` against the
     /// second. Every producer states the plane it measured against — on a plane face the face's
     /// own class, on a result's lateral the chart station's wall, on an operand's lateral the
@@ -375,7 +375,7 @@ pub(crate) fn shared_line(
 /// one line?» reads ([`SharedLines::one_line`]), and «is this edge of two plane faces a ruling of
 /// that cylinder?» ([`SharedLines::on_cylinder`] — the self-touch verdict's sieve).
 ///
-/// ★ **Why a line has two spellings on one face.** A segment on a line the gate recorded is
+/// **Why a line has two spellings on one face.** A segment on a line the gate recorded is
 /// stated in the ruling vocabulary where it runs along the lateral (`split_rulings`' fold — the
 /// chart needs the station there) and stays a plane segment past the lateral's cap, so one
 /// straight edge of a prism taller than the cylinder arrives as `Wall::Ruling` below the rim and
@@ -530,7 +530,7 @@ pub(crate) struct RulingCarrier {
 /// fills). The point arrives as `(line, s)` from [`nacre_exact::quad::plane_plane_cylinder`],
 /// so the sign is one [`nacre_exact::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape). ★ **The abstention is deliberate and this is the abstaining door**: this
+/// tangent shape). **The abstention is deliberate and this is the abstaining door**: this
 /// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
 /// read as "abstain", and answering `Some(0)` here would drop a ray into the `Negative` arm in
 /// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
@@ -547,7 +547,7 @@ pub(crate) fn ruling_side(
 /// **Which ruling of `w` a point of the lateral is on, `0` being `w`'s tangent ruling** — the
 /// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
 ///
-/// ★★★★★ **A side is a fact about the point and the wall, not about the point's own
+/// **A side is a fact about the point and the wall, not about the point's own
 /// name.** Reading it off the name's root (`QuadRoot::Double ⇒ 0`) is the same statement *only*
 /// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
 /// minted on. It is not the same statement once the alias table hands back a representative with
@@ -599,7 +599,7 @@ impl Carrier {
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
-/// ★ **Why this type exists.** A vertex name is a plane triple, and for a long time the engine read
+/// **Why this type exists.** A vertex name is a plane triple, and for a long time the engine read
 /// an edge's supporting plane back out of its endpoints — "the class the two names share besides
 /// `P`". That works only while every vertex lies on exactly three planes. It is an accident of the
 /// corpus, not an invariant: let four planes meet at a point, give the point one canonical name, and
@@ -612,13 +612,13 @@ pub(crate) struct RingEdge {
     pub node: NodeId,
     /// Identity of the vertex it reaches.
     ///
-    /// ★★ **The pins were already two and the names only one, and that asymmetry was the bug's
+    /// **The pins were already two and the names only one, and that asymmetry was the bug's
     /// hiding place.** A direction is a property of `(edge, node)` — for a straight edge the two
     /// ends give the same answer, so nothing ever had to say which end it meant, and a direction
     /// taken at the *wrong* node was unspellable-looking but perfectly legal. With both names here,
     /// [`dir_at`] can check that the node it is asked about is actually on this edge.
     ///
-    /// ★ Measured: 153,798 rings in the suite, **0** where an edge's far end is not the next
+    /// Measured: 153,798 rings in the suite, **0** where an edge's far end is not the next
     /// edge's start — so "a ring is a chain" is asserted here rather than left a producer's
     /// promise.
     pub to: NodeId,
@@ -633,11 +633,11 @@ pub(crate) struct RingEdge {
 /// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
 ///
 /// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]).
-/// ★ **Test-only**: the tracer's crossed-edge
+/// **Test-only**: the tracer's crossed-edge
 /// wall reads the wall the producer carries (`NamedRing`) instead, so no production path
 /// derives ring geometry from names. Kept for hand-built test rings, whose vertices
 /// are clean three-plane points by construction.
-/// ★ It takes bare triples, not [`NodeId`]s, because it is a **fixture constructor**: its callers
+/// It takes bare triples, not [`NodeId`]s, because it is a **fixture constructor**: its callers
 /// hold hand-written literals, so this is where those become names (`NodeId::three_planes`).
 #[cfg(test)]
 pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingEdge>, BoolError> {
@@ -666,7 +666,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 
 /// **Which plane of a point's name pins it on the line `a ∩ b`** — the one place that rule lives.
 ///
-/// ★★★★★ **Every site that pins a point on a line calls this**, directly or through [`pin_for`].
+/// **Every site that pins a point on a line calls this**, directly or through [`pin_for`].
 /// The risk it stands against is this codebase's dominant defect shape: the rule inlined in a
 /// sibling as a **reduced** copy — no cut test, no smallest rule, a `panic` where this returns
 /// `None`.
@@ -679,10 +679,10 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// so the **smallest** is taken and replay stays stable. `None` is "this name pins nothing here",
 /// which each caller turns into its own vocabulary rather than sharing one label.
 ///
-/// ★ `t` comes in sorted — a name's planes ([`NodeId::three_planes`] and [`NodeId::pierce`] sort
+/// `t` comes in sorted — a name's planes ([`NodeId::three_planes`] and [`NodeId::pierce`] sort
 /// them) or a sorted set of them — so "smallest qualifying" is the first that qualifies.
 ///
-/// ★★★★★ **Which half of this rule decides an answer, measured by breaking each.** Candidates
+/// **Which half of this rule decides an answer, measured by breaking each.** Candidates
 /// number two on 61,417 of the suite's 7,996,291 calls and three on 884, so "smallest" is not
 /// vacuous *as a choice* — yet taking the **largest** instead leaves the bit census **identical**.
 /// That is not a limp instrument: it measures the invariant this rule rests on, *"under a
@@ -690,7 +690,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// it and the census stops at row 121 of 412. So the smallest rule buys replay stability, and the
 /// cut test buys correctness.
 ///
-/// ★ `t` is a slice because a point is not always asked by a name of its own three: the ray
+/// `t` is a slice because a point is not always asked by a name of its own three: the ray
 /// orders a query that lies on its plane `p` without `p` in its name, and the grouping's locator
 /// picks from every plane of the query. Such a name can hold the line itself — a pencil of three
 /// planes through it — and only the cut test leaves that plane out.
@@ -744,14 +744,14 @@ impl Canon3 {
 /// (`arrangement::Aliases`) is the minimum of its union-find, i.e. this very triple, so a vertex
 /// an operand names here and a point the arrangement discovers fold onto the same name.
 ///
-/// ★ **Why one function.** The rule has many users —
+/// **Why one function.** The rule has many users —
 /// the arrangement's run-vertex discovery, its alias representative, the result vertex's
 /// definition, a line's wall family, an edge's end triples. Spelled once per user, with
 /// the operand's own vertices keeping a rule of their own (a
 /// triple per face loop), a concurrency arrives under four names, one of them dependent,
 /// and the judge reads the dependent one as lying on every class.
 ///
-/// ★ **Completeness** — why an operand's set plus the arrangement's `{wc} ∪ t` records make one
+/// **Completeness** — why an operand's set plus the arrangement's `{wc} ∪ t` records make one
 /// component: with `|F| = 4` planes through a point every record *is* `F`, so the union-find has
 /// one component whose minimum is this triple. Five or more is not in the corpus
 /// (`concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them`) and is the recorded
@@ -786,7 +786,7 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
 /// quadric's root along that very line); a pierce name with another pair is a point the line
 /// passes through by coincidence, pinned by whichever of that pair's planes cuts the line.
 ///
-/// ★ Why it exists: a segment's endpoint travels as a (name, pin) pair, and the alias table can
+/// Why it exists: a segment's endpoint travels as a (name, pin) pair, and the alias table can
 /// fold the name onto a representative of another **variant** — a tangent corner's `Pierce` onto
 /// the `ThreePlane` of its planes with the class through it. The pin is a fact about the
 /// representative, so it is derived again from it, here, rather than carried across the fold.

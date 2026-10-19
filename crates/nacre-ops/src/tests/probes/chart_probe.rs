@@ -1,4 +1,4 @@
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
@@ -19,7 +19,7 @@ pub(crate) struct Row {
     /// Intervals with no ruling over them: the cell is the whole circle.
     pub(crate) whole_circle: usize,
     /// Intervals crossed by an **odd** number of rulings — the only way to reach the
-    /// one-cut-one-cell branch. ★ A zero here means that branch is *unexercised*, not verified.
+    /// one-cut-one-cell branch. A zero here means that branch is *unexercised*, not verified.
     pub(crate) odd_k: usize,
 }
 
@@ -75,7 +75,7 @@ pub(crate) fn push(r: Row) {
 /// predicts, and how many faces the emitter put on the class. One row per chart with cells,
 /// whether or not the emitter produced a face there.
 ///
-/// ★ Compared **within a row** (`cells` is copied in), never row-by-row against another
+/// Compared **within a row** (`cells` is copied in), never row-by-row against another
 /// ledger: tests run in parallel and the ledgers interleave independently.
 pub(crate) mod cell_ends {
     use crate::ledger::Ledger;

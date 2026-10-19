@@ -40,7 +40,7 @@ pub(crate) use table::*;
 /// The row is an enum so a cylinder face can *sit in the table* (keeping the face-index space that
 /// `surf_ix`/`EdgeFaces`/`plane_ix` share) while the plane data keeps its own struct — plane
 /// consumers read through [`FaceRow::plane`], and the population gate decides what flows.
-/// ★ The size gap is the `Surface` trade taken again: planes dominate every table (a
+/// The size gap is the `Surface` trade taken again: planes dominate every table (a
 /// prism is all planes; a cylinder contributes one lateral row), so boxing the plane data
 /// would put an allocation and a pointer chase on the common row to shrink the rare one.
 #[allow(clippy::large_enum_variant)]
@@ -112,7 +112,7 @@ pub(crate) struct CylFaceInfo {
     /// plane. `None` when a ⊥ carrier has no narrow rational name, or the loop has fewer than two
     /// distinct ⊥ stations.
     ///
-    /// ★★★★★ **This is a range, not a promise about the loop's shape.** Whether the face is a
+    /// **This is a range, not a promise about the loop's shape.** Whether the face is a
     /// band — two whole rims and holes — is `combinatorics::FaceLoops::cycles`' question
     /// (`arrangement::lateral_shape`), and the two lateral roads ask it there before they read anything; a face
     /// that is not a band (a panel, a chain rim) declines by name (`CylSpan`) until the chart can
@@ -120,10 +120,10 @@ pub(crate) struct CylFaceInfo {
     /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
     /// once the tracer has cut every circle the face covers only partly.
     ///
-    /// ★★ It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
+    /// It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
     /// or a chain rim has no such pair.
     ///
-    /// ★ This range is the first axis of the face's [`Footprint`] on its own chart; the
+    /// This range is the first axis of the face's [`Footprint`] on its own chart; the
     /// second, θ, joins with the angular extent.
     pub(crate) footprint: Footprint,
 }
@@ -157,7 +157,7 @@ impl Footprint {
     /// extent this road could not state). `None` is arithmetic that could not answer. The axis
     /// span is not asked here — only θ.
     ///
-    /// ★ **A `false` here is true of the face.** `theta` is the union of the outer loop's rim arcs
+    /// **A `false` here is true of the face.** `theta` is the union of the outer loop's rim arcs
     /// ([`lateral_theta_extent`]), and a lateral face on this road is bounded on its chart by arcs
     /// and rulings alone, so at every θ it covers, its upper and lower boundaries are arcs: the
     /// face's θ-projection is the union of its arcs', and the extent is never narrower than the
@@ -243,7 +243,7 @@ pub(crate) struct WorldName {
 impl WorldName {
     /// The surface's world statement, or `None` where it has none.
     ///
-    /// ★ **The name is never dropped for want of a sense.** Both come from the same truth — the
+    /// **The name is never dropped for want of a sense.** Both come from the same truth — the
     /// sense exists wherever the world name does (the name is derived from the plane's points, and
     /// collinear points have no name) — so a missing sense beside a present name is a broken door,
     /// not an input. Dropping the name there would silently move the class merge off its name road.
@@ -281,7 +281,7 @@ pub(crate) struct FaceInfo {
     /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
     /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
     ///
-    /// ★ **`None` has no producer today.** It stands for a cap a half-space clip puts on an
+    /// **`None` has no producer today.** It stands for a cap a half-space clip puts on an
     /// operand — a
     /// face that lives for one boolean and is never emitted — and nothing mints those.
     /// Every constructor writes `Some`, so every read `expect`s.
@@ -343,7 +343,7 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 /// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
 /// point came from — ordered so their right-hand normal points **out** of the solid: the way the
 /// whole loop winds, its arcs read with its chords (see the fold below).
-/// ★ No production consumer reads the handles any more (the toleranced predicates take their
+/// No production consumer reads the handles any more (the toleranced predicates take their
 /// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
 /// the `None` of a loop that spreads no three points is answered by the caller — the plane's
 /// truth points for a circle-bounded face (`collect_planes`).
@@ -361,7 +361,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         .collect();
     let pts: Vec<Point3> = verts.iter().map(|&vh| model.vertex_point(vh)).collect();
     let n = pts.len();
-    // ★★★ **The widest corner, not the first non-flat one.** A loop carries vertices that do not
+    // **The widest corner, not the first non-flat one.** A loop carries vertices that do not
     // turn: two faces sharing an edge must list the same vertices along it, so a pad that splits a
     // neighbour's face leaves this loop with points strung along one straight line. Three of those
     // span **exactly** zero area — but only in exact arithmetic. On rotated coordinates the f64
@@ -389,7 +389,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     // opposes the global winding, so three consecutive points can hand back an inward
     // normal. The Newell sum has no single corner to be fooled by.
     //
-    // ★★ **And its arcs have to be read, or an arc fools it the way a corner fools a turn.** The
+    // **And its arcs have to be read, or an arc fools it the way a corner fools a turn.** The
     // chord polygon alone winds backwards when an arc dominates the loop — a 270° sector's cap is
     // three points whose triangle turns the other way round, the region between the chords and the
     // long arc lying on the chords' other side. So every circle half-edge adds its **circular
@@ -601,14 +601,14 @@ pub(crate) fn silent_among(cyls: &[WorkingCyl], classes: &[usize]) -> bool {
 ///
 /// `span = None` is a face whose span could not be stated ([`lateral_spans`] empty). The reach
 /// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
-/// otherwise, which is `None`: nothing proved. ★ That `d·m = 0` case is not a branch of its own;
+/// otherwise, which is `None`: nothing proved. That `d·m = 0` case is not a branch of its own;
 /// it is the general formula with the `s` term vanishing — and it is what makes the **common
 /// perpendicular** answerable at all (`d ⊥ m` for both cylinders, so neither needs a span).
 /// The `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`) and what a cylinder
 /// reads along **its own** axis, where the radial term vanishes instead and the reach is the span
 /// itself. `None` is also `Rat` overflow.
 /// The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a rational base and a radical the
-/// arc may or may not add. ★ With an angular extent the radial term `r·(d·û)` over the
+/// arc may or may not add. With an angular extent the radial term `r·(d·û)` over the
 /// face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as before — and at an
 /// **end** of the arc otherwise, where it is `d·v` for the end's radial vector, a rational folded
 /// into the base with a zero radical. One root at most on each end, and no new arithmetic.

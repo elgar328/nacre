@@ -53,7 +53,7 @@ pub fn boolean_with_report(
     // The arrangement engine (`arrangement`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
-    // ★ **A rejected boolean leaves the live set as it found it** — every reject, not just the
+    // **A rejected boolean leaves the live set as it found it** — every reject, not just the
     // topology one below. The engine retires the operands once the result is accepted, so a reject
     // raised after that point would otherwise hand back a model whose inputs had vanished. Restoring
     // here makes the rule hold no matter where inside the engine a reject is raised or added later.

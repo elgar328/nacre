@@ -81,7 +81,7 @@ pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
 // omission: an axis-aligned-grade rational cylinder is the `rotated == false` case (its exact
 // def needs no high-precision realization); the rotated-cylinder story is CIP's.
 pub(crate) fn standard_for(rows: &[FaceRow]) -> ProofStandard {
-    // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
+    // **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
     // Its `tri_pt3` are `WitnessPoint::at` of the plane's own rational points and the chain
     // is empty: an f64-representable point (base = `mantissa · 2^exp`, a power-of-two denominator

@@ -2,7 +2,7 @@ use super::*;
 use nacre_math::Vector3;
 use proptest::prelude::*;
 
-/// ★★★ **One plane stated by two faces of different size is one plane.** The plane `x = 3`
+/// **One plane stated by two faces of different size is one plane.** The plane `x = 3`
 /// stated twice, by the corners of two faces of different size that face opposite ways — a wall
 /// `2.2` deep facing `+X` and one `13.2` deep facing `−X`, as two boxes meeting there would. An
 /// `f64` plane keeps an un-normalized normal whose length follows the face's size, so its offset
@@ -16,7 +16,7 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
     let (sb, flipped) = plane_through(&mut m, [[3.0, 0.0, 0.0], [3.0, 0.0, 1.0], [3.0, 13.2, 0.0]]);
     assert!(flipped, "the second statement faces the other way");
 
-    // ★ **They are one handle now** — that is what the rational coefficients bought.
+    // **They are one handle now** — that is what the rational coefficients bought.
     assert_eq!(sa, sb, "one plane, one surface");
     assert!(m.surface_name.contains_key(&sa), "and it is recorded");
 
@@ -36,7 +36,7 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
     assert!(rat(2.2).is_some());
 }
 
-/// ★★★ **The third door: a corner whose carriers came by different roads still solves.**
+/// **The third door: a corner whose carriers came by different roads still solves.**
 ///
 /// Built synthetically — three planes, two of them carrying **different** translation chains —
 /// because waiting for a boolean to produce the shape would measure "what passed" rather than
@@ -93,7 +93,7 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
         |m: &mut Model, o: [i128; 3]| m.push_motion(Motion::Translate { offset: o.map(r) }, None);
     let t1 = t(&mut m, [2, 0, 0]);
     let t2 = t(&mut m, [0, 3, 0]);
-    // ★ The cache is the **realized world** surface and the truth (points + leaf) stays in the
+    // The cache is the **realized world** surface and the truth (points + leaf) stays in the
     // pre-motion frame — that is what `transform` writes, so the fixture writes it too. Giving
     // a moved plane its pre-motion cache would model a state the kernel never builds.
     let moved = |m: &mut Model,
@@ -212,7 +212,7 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
     );
 }
 
-/// ★ **Two doors, one fact.** The three-vertex door `through_meets` calls `vertex_meet` per
+/// **Two doors, one fact.** The three-vertex door `through_meets` calls `vertex_meet` per
 /// vertex; the two must agree point for point — otherwise there is a second spelling of the
 /// solve, which is this repo's dominant defect shape.
 ///
@@ -236,14 +236,14 @@ fn one_vertex_and_three_vertices_solve_the_same_meet() {
     }
 }
 
-/// ★★★★ **The surface cache is writable, and the truth is not.**
+/// **The surface cache is writable, and the truth is not.**
 ///
 /// The arena holds the truth, so the realization beside it can be rewritten in place — a
 /// refinement pass has somewhere to write. This test is the warrant: it rewrites a cache entry in
 /// place and reads it back through [`Model::surface_cache`], while the truth the same handle names
 /// is untouched.
 ///
-/// ★ It writes through the private field on purpose — that is the door a surface refinement
+/// It writes through the private field on purpose — that is the door a surface refinement
 /// pass inside this crate would take. Outside, there is no door at all,
 /// which is the other half of the warrant and what [`Model::surface_cache`]'s `compile_fail` pins.
 #[test]
@@ -301,7 +301,7 @@ fn orientation_flip_is_involution() {
     );
 }
 
-/// ★★★★★ **A plane is named by its points, and by nothing else.**
+/// **A plane is named by its points, and by nothing else.**
 ///
 /// The three assertions are the three ways this can go wrong. A name has to come out for an
 /// ordinary plane; it has to be the plane the points are **on**, not some other; and it has to
@@ -309,7 +309,7 @@ fn orientation_flip_is_involution() {
 /// producer would lose a name, and losing a name closes the exact road for everything built on
 /// that plane.
 ///
-/// ★ There is no "wrong name" case to test. Coefficients are not something a producer can hand
+/// There is no "wrong name" case to test. Coefficients are not something a producer can hand
 /// in, so a plane cannot be stated twice — a disagreement is unspellable.
 #[test]
 fn a_plane_is_named_by_its_points() {
@@ -338,12 +338,12 @@ fn a_plane_is_named_by_its_points() {
         "the plane z = 0 was not named, or was named as something else"
     );
 
-    // ★★★★ **Wide enough that the narrow derivation gives up.** Decimal arithmetic reduces to
+    // **Wide enough that the narrow derivation gives up.** Decimal arithmetic reduces to
     // denominators that are powers of two on one coordinate and powers of five on another, and
     // a triple of *coprime* denominators needs their product to state its plane — which
     // `(b − a) × (c − a)` then needs squared.
     //
-    // ★ Points chosen to overflow an **agreement check** (`c · p`) do not make the derivation
+    // Points chosen to overflow an **agreement check** (`c · p`) do not make the derivation
     // give up: those are different products, and the derivation goes through.
     let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let wide_pts = [
@@ -363,7 +363,7 @@ fn a_plane_is_named_by_its_points() {
         None,
         Orientation::Forward,
     );
-    // ★ The stored value carries the proposition — `Narrow` says "fits i128" directly.
+    // The stored value carries the proposition — `Narrow` says "fits i128" directly.
     // (This used to compare the global counter before/after, which races against other
     // tests pushing wide planes in parallel; the value cannot.)
     let name = *m
@@ -372,7 +372,7 @@ fn a_plane_is_named_by_its_points() {
         .expect("a plane the narrow route cannot reach went unnamed")
         .narrow()
         .expect("this fixture's canonical answer is small — it must be stored Narrow");
-    // ★★ And it names *these* points' plane — exact rationals, no tolerance.
+    // And it names *these* points' plane — exact rationals, no tolerance.
     for p in &wide_pts {
         let mut acc = name[3];
         for k in 0..3 {
@@ -387,20 +387,20 @@ fn a_plane_is_named_by_its_points() {
         );
     }
 
-    // ★ (A plane with no points cannot be pushed at all; the type is the assertion.)
+    // (A plane with no points cannot be pushed at all; the type is the assertion.)
 }
 
-/// ★★★★★ **A wide name interns — and opens no shortcut**.
+/// **A wide name interns — and opens no shortcut**.
 ///
 /// The fixture is a triple whose **canonical answer** exceeds `i128` (cross-product terms
 /// multiply two ~2^90 coprime numerators — the same triple `nacre-exact` locks as `Wide`).
 /// Without a name two statements of such a plane would be two handles;
 /// it interns like any other.
 ///
-/// ★ Note the population: an axis-aligned cuboid — even on seventeen-digit corners — is NOT
+/// Note the population: an axis-aligned cuboid — even on seventeen-digit corners — is NOT
 /// wide, because its canonical answers are tiny (`[10^13, 0, 0, −c]`); only the *narrow
 /// route's intermediates* overflow there, and the big route names those.
-/// ★★ Measured: today's sketch→extrude walls cap out
+/// Measured: today's sketch→extrude walls cap out
 /// around ~115 bits (the decimal window bounds the products), so a wide name currently
 /// arises only from hand-stated triples like this one — datum planes are the
 /// production source.
@@ -452,7 +452,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
         "a wide name must not open the narrow shortcuts (base_rat, Shewchuk)"
     );
 
-    // ★ The same plane stated again — permuted, even — is the same handle now.
+    // The same plane stated again — permuted, even — is the same handle now.
     let (second, _) = m.push_plane(
         pl,
         crate::CacheStanding::Unrealized,
@@ -474,7 +474,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     );
 }
 
-/// ★★★ **The three world planes are born with the model** — deterministic handles,
+/// **The three world planes are born with the model** — deterministic handles,
 /// canonical truth, −axis caches — and `Default` is the same seeded model (the unseeded
 /// back door is closed).
 #[test]
@@ -519,7 +519,7 @@ fn a_new_model_carries_the_three_world_planes() {
     }
 }
 
-/// ★★★★★ **The anchor derivation's proposition, at its smallest**: a plane's realized cache
+/// **The anchor derivation's proposition, at its smallest**: a plane's realized cache
 /// does not depend on **which point of it the producer anchored at**.
 ///
 /// One truth, two producers: each builds its own `Plane` at a different point of that same
@@ -527,14 +527,14 @@ fn a_new_model_carries_the_three_world_planes() {
 /// built, because the door now overwrites what it is handed and reading it back would compare
 /// the derivation against itself.
 ///
-/// ⚠★★★ **The stronger claim is not made, deliberately** — one
+/// **The stronger claim is not made, deliberately** — one
 /// plane through two *different* triples demanding one cache. Interning folds two such
 /// statements into **one handle and one truth** (the first pusher's), so no model can hold
 /// them at once — the kernel never needed that property, and buying it meant a canonical row,
 /// which is measured and rejected (32 census result rows moved, an exact-coefficient road
 /// lost, `n·n` overflowing for 8 planes). What survives is the reachable half.
 ///
-/// ★ This lock watches the **door**; `plane_anchor.rs`'s
+/// This lock watches the **door**; `plane_anchor.rs`'s
 /// `which_surface_caches_two_anchors_leave_disagreeing` watches the **pipeline**. Fix the door
 /// while an operation still routes around it and this one is green while that one is red.
 #[test]
@@ -564,7 +564,7 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
         stated.push(cache);
         held.push(m.surface_cache(h).clone());
     }
-    // ⚠★★★ **Compared as whole caches, not by the implicit form `[n, −n·origin]`.** On this plane
+    // **Compared as whole caches, not by the implicit form `[n, −n·origin]`.** On this plane
     // both anchors give `d = −6` *exactly*, so the two forms are identical while the producers
     // genuinely disagree — about the anchor, which is the only thing at stake here. A control
     // built on the implicit form fires on a fixture that is perfectly good; the sibling file
@@ -702,7 +702,7 @@ fn surface_handle_at_is_the_handle_the_arena_issued() {
     assert_eq!(m.surface_handle_at(s.index()), Some(s));
 }
 
-/// ★★★★★ **A plane can point at three vertices, and it is the same plane as the values.**
+/// **A plane can point at three vertices, and it is the same plane as the values.**
 ///
 /// The corners of a unit box name three coordinate planes each, so a datum through them is
 /// derivable — and the plane through `(1,0,0)`, `(0,1,0)`, `(0,0,1)` has a name like any
@@ -741,7 +741,7 @@ fn a_plane_stated_through_vertices_is_named_like_any_other() {
     ));
 }
 
-/// ★★ **Interning does not care which way the plane was stated.** A `Known` push of the same
+/// **Interning does not care which way the plane was stated.** A `Known` push of the same
 /// plane returns the handle the `Through` push made — one plane, one handle, which is the
 /// property `PlanePoints` must not break by adding a variant.
 #[test]
@@ -772,7 +772,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
         Orientation::Forward,
     );
     assert_eq!(through, known, "one plane, two statements, one handle");
-    // ★ And the first statement wins, as interning is documented to: the truth still points
+    // And the first statement wins, as interning is documented to: the truth still points
     // at vertices. Which variant a plane ends up with is arena history, not a promise.
     assert!(matches!(
         m.surface(known),
@@ -783,7 +783,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
     ));
 }
 
-/// ★★★ **The reference goes backwards in time only** — append-only storage. A datum is pushed after the
+/// **The reference goes backwards in time only** — append-only storage. A datum is pushed after the
 /// vertices it names, and those vertices name surfaces pushed before *them* — so the walk
 /// plane → vertex → surface strictly descends in index and cannot cycle.
 #[test]
@@ -868,7 +868,7 @@ fn box_corner_vertices() -> (Model, [Handle<Vertex>; 3]) {
     let vs = unit_box_corners(&mut m, &[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
     (m, [vs[0], vs[1], vs[2]])
 }
-/// ★★★★ **Both counters see the second producer too.**
+/// **Both counters see the second producer too.**
 ///
 /// `push_plane_through` began as a copy of `push_plane`'s tail and the copy silently dropped
 /// [`WIDE_PLANES`] and [`SEEDED_HITS`] — the census bridges `stat wide_planes` and
@@ -1024,7 +1024,7 @@ fn a_swapped_pair_renames_the_same_root() {
 
 /// **A pair already in order keeps its root** — the half its sibling above cannot see.
 ///
-/// ★ A constructor that toggled *unconditionally* satisfies
+/// A constructor that toggled *unconditionally* satisfies
 /// [`a_swapped_pair_renames_the_same_root`] on its own: both spellings flip and the equality
 /// survives the double negation. Only this test separates "toggle on swap" from "toggle".
 #[test]
@@ -1043,7 +1043,7 @@ fn an_ordered_pair_keeps_its_root() {
 /// **A tangency keeps its name through a swap** — its two roots coincide, so the swap sends
 /// the one point to itself.
 ///
-/// ★ This is the case `Double` exists for: with a tangency stored as `Lo`, a remap that
+/// This is the case `Double` exists for: with a tangency stored as `Lo`, a remap that
 /// toggles unconditionally brings the same point back named `Hi` — one point, two
 /// names, which is exactly what canonicalization exists to prevent.
 #[test]
@@ -1059,7 +1059,7 @@ fn a_tangency_keeps_its_name_through_a_swap() {
     );
 }
 
-/// ★★ **The geometry the three locks above are about.** Without it they are statements about
+/// **The geometry the three locks above are about.** Without it they are statements about
 /// a convention someone chose; with it they are statements about where the points are.
 ///
 /// `z = 0` and `x = 0` meet on the y-axis, and the cylinder about the x-axis with `r = 2` is
@@ -1097,7 +1097,7 @@ fn swapping_the_planes_trades_the_two_roots_names() {
     );
 }
 
-/// ★ **A plane's cache faces the way its truth says** — the push turns a cache stated the other
+/// **A plane's cache faces the way its truth says** — the push turns a cache stated the other
 /// way, exactly (both normals negated, the anchor kept), and leaves an agreeing one bit for bit.
 ///
 /// Through the planting door, because the named door asserts the two agree before anything is
@@ -1459,7 +1459,7 @@ mod chain_folds {
     }
 }
 
-/// ★★ **An edge's kind is the truth's, not the cache's tolerance.** Two planes a hair off the
+/// **An edge's kind is the truth's, not the cache's tolerance.** Two planes a hair off the
 /// relations a plane can have with a `+z` cylinder — one tilted `1e-10` from ⊥ the axis, one
 /// tilted `1e-10` from ∥ it — are both **oblique** in their exact statements: the section is an
 /// ellipse, which no edge here can carry. Read off `f64` normals under a tolerance, the first
@@ -1528,7 +1528,7 @@ fn a_plane_a_hair_off_either_relation_is_oblique() {
     }
 }
 
-/// ★★ **A plane the cylinder's turn leaves in place is read back through that turn.** An `x`
+/// **A plane the cylinder's turn leaves in place is read back through that turn.** An `x`
 /// cylinder turned 30° about `z` has an irrational world axis, so no world statement; the world
 /// plane `z = 1` is square to the turn's axis. Carried forward, the plane reaches the world and the
 /// cylinder's axis stops at the turn — but the turn fixes `ẑ`, so the plane's normal carried
@@ -1595,7 +1595,7 @@ fn a_plane_the_turn_fixes_meets_a_turned_cylinder_along_a_ruling() {
     );
 }
 
-/// ★★ **A plane's cache faces the way its truth says, not the way its points' caches cross.** A
+/// **A plane's cache faces the way its truth says, not the way its points' caches cross.** A
 /// `Through` statement over three box corners — `(1,0,0)`, `(0,1,0)`, `(0,0,1)`, in that order
 /// facing `+(1,1,1)` — whose vertices' coordinate caches are planted with the last two swapped:
 /// their `f64` cross runs `−(1,1,1)`. The plane has a world name, so its facing is the name's

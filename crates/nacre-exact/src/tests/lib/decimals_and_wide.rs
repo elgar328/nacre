@@ -336,7 +336,7 @@ proptest! {
             let e = Rat::try_from_f64(y).and_then(|yr| r.checked_sub(yr))?;
             if e < zero { zero.checked_sub(e) } else { Some(e) }
         };
-        // ★ The *check* has a range, and it is narrower than the generator: comparing exactly
+        // The *check* has a range, and it is narrower than the generator: comparing exactly
         // needs `r`'s denominator times `q`'s power of two, which for a small enough value
         // leaves `i128` (measured: `n = 1, d = 500930446045` — 2^39 · 2^91). The two
         // neighbours below have always skipped on the same limit; `here` said `expect` and
@@ -355,14 +355,14 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// ★★★★★ **The total predicate must answer what the checked one answered.**
+    /// **The total predicate must answer what the checked one answered.**
     ///
     /// `parallel_rat` must agree with a checked-`Rat` cross wherever that cross can speak at
     /// all (it declines on overflow). That spelling is kept here as the oracle — an independent
     /// derivation, not a call back into the code under test — and compared on every input it
     /// can answer.
     ///
-    /// ★ **The width is drawn, not fixed**, because both halves of the range have to be
+    /// **The width is drawn, not fixed**, because both halves of the range have to be
     /// visited: at `bits ≈ 30` the checked cross answers everything (so the two must agree),
     /// past `bits ≈ 63` its products leave `i128` and it falls silent (so the total one is
     /// alone). Measured with a counter before this spelling settled — a fixed narrow range
@@ -375,7 +375,7 @@ proptest! {
         xs in prop::array::uniform6(-(1i128 << 20)..(1i128 << 20)),
         ds in prop::array::uniform6(1i128..(1i128 << 20)),
     ) {
-        // ★ The denominator's width is what decides whether the checked route survives, and
+        // The denominator's width is what decides whether the checked route survives, and
         // it is **drawn** so both halves of the range are visited. The scale is a power of
         // **three**, not two: scaling numerator and denominator by the same power of two
         // reduces straight back out (measured — the first spelling did exactly that and left
@@ -426,7 +426,7 @@ proptest! {
         rn in 1i128..100,
         rd in 1i128..100_000,
     ) {
-        // ★ The generator is aimed at the **straddle**: an integer normal through the
+        // The generator is aimed at the **straddle**: an integer normal through the
         // origin, a point a hair off the plane (denominators up to 2²⁴), and a radius of
         // comparable size — so the answer is genuinely `Negative` about as often as
         // `Positive`. A generator whose points sit far outside every radius would compare
@@ -533,14 +533,14 @@ proptest! {
         }
     }
 
-    /// ★★★★★ **The two derivations must be the same function.**
+    /// **The two derivations must be the same function.**
     ///
     /// `plane_name_exact` runs the `Rat` route first and only falls back, so wherever the
     /// narrow one answers, the wide one is never consulted — and an error in it would sit
     /// there unseen until the day it *is* consulted, on inputs no test covers. Calling both on
     /// the same inputs is the only way to say they agree.
     ///
-    /// ★ `plane_name_big` is `pub(crate)` for exactly this reason: a fallback hidden behind
+    /// `plane_name_big` is `pub(crate)` for exactly this reason: a fallback hidden behind
     /// its filter cannot be tested against it.
     #[test]
     fn the_wide_derivation_answers_what_the_narrow_one_does(
@@ -556,16 +556,16 @@ proptest! {
         let narrow = plane_through_points(a, b, c);
         let wide = plane_name_big(a, b, c);
         if let Some(n) = narrow {
-            // ★ The invariant rides along: an answer the narrow route reached fits `i128`
+            // The invariant rides along: an answer the narrow route reached fits `i128`
             // by construction, so the wide route must store it `Narrow` — same value, same
             // representation, structural equality.
             prop_assert_eq!(wide.clone(), Some(PlaneName::Narrow(n)),
                 "narrow answered but wide disagrees");
         }
-        // ★ And the wide one, whenever it answers narrowly at all, answers about a plane
+        // And the wide one, whenever it answers narrowly at all, answers about a plane
         // these points are actually on — checked in the rationals, no tolerance.
         //
-        // ★★★★★ **The residual can overflow even when the name and the points both fit**, and
+        // **The residual can overflow even when the name and the points both fit**, and
         // this test found that by asserting it could not. `c · p` multiplies a canonical
         // coefficient by a point coordinate, so it needs the *sum* of their widths — which is
         // exactly the population `Model::push_plane` cannot verify either. An
@@ -587,7 +587,7 @@ proptest! {
     }
 }
 
-/// ★★★★ **The width the narrow route cannot reach, and the wide one can.**
+/// **The width the narrow route cannot reach, and the wide one can.**
 ///
 /// A triple whose reduced denominators are coprime — one a power of two, one a power of five,
 /// which is what decimal arithmetic produces once it reduces — needs their product to state
@@ -623,7 +623,7 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// ★★★★★ **The two solves must be the same function** — the point-side twin of
+    /// **The two solves must be the same function** — the point-side twin of
     /// `the_wide_derivation_answers_what_the_narrow_one_does`, and for the same reason: a
     /// wide route that is only ever consulted where the narrow one declined would carry an
     /// error unseen until the day it is consulted. Calling both on the same inputs is the
@@ -640,14 +640,14 @@ proptest! {
         let wide = three_planes_big([&names[0], &names[1], &names[2]]);
 
         if let Some(n) = three_planes_rat(rows) {
-            // ★ The invariant rides along: a point the narrow route reached fits `Rat` by
+            // The invariant rides along: a point the narrow route reached fits `Rat` by
             // construction, so the wide route must store it `Narrow` — same value, same
             // representation, structural equality.
             prop_assert_eq!(wide.clone(), Some(MeetPoint::Narrow(n)),
                 "narrow answered but wide disagrees");
         }
 
-        // ★★ And wherever the wide one answers **at all**, the point it names is on all three
+        // And wherever the wide one answers **at all**, the point it names is on all three
         // planes — checked in the rationals, no tolerance. This half covers the `Wide` arm,
         // which the differential above cannot reach: the narrow route is silent there by
         // definition, so agreement says nothing and only the residual does.
@@ -719,7 +719,7 @@ proptest! {
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
     /// Totality: wherever the integer core answers `Narrow`, [`three_planes_rat`] answers
-    /// the same. ★ A **wiring** lock, stated as such: after the refactor both routes
+    /// the same. A **wiring** lock, stated as such: after the refactor both routes
     /// converge on `three_planes_int`, so this pins the `.or_else` plumbing (lift,
     /// `narrow()` return) rather than serving as an independent oracle — that role belongs
     /// to `an_overflowing_intermediate_no_longer_costs_the_answer`'s hand-known point and
@@ -740,7 +740,7 @@ proptest! {
     }
 }
 
-/// ★★★★★ **The negative control for [`MeetPoint::width_bits`]** — without it, a corpus that
+/// **The negative control for [`MeetPoint::width_bits`]** — without it, a corpus that
 /// reports "nothing over 127 bits" is indistinguishable from a dead probe.
 ///
 /// A `Wide` carrier states a plane at `x = 2²⁰⁰`, which no `Rat` can hold; the meeting point
@@ -766,7 +766,7 @@ fn the_width_meter_reports_a_point_no_rat_can_hold() {
     assert_eq!(found.narrow(), None);
 }
 
-/// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
+/// **A canonical answer wider than `i128` is a name now, not a `None`** — and two
 /// statements of that plane are one value. The
 /// interning consequence is locked on the model side
 /// (`a_wide_plane_interns_but_opens_no_narrow_shortcut` in nacre-topo).
@@ -786,13 +786,13 @@ fn a_plane_too_wide_for_i128_is_named_wide() {
         "expected the narrow route to overflow"
     );
     let name = plane_name_exact(a, b, c).expect("collinear it is not — it must be named");
-    // ★ Wide carries identity only: the arithmetic shortcuts' door stays shut
+    // Wide carries identity only: the arithmetic shortcuts' door stays shut
     // (a wide name must NOT open a frame).
     assert!(
         name.narrow().is_none(),
         "an answer past i128 must be stored Wide"
     );
-    // ★ Same plane, two spellings (a permuted triple) — one value, structurally.
+    // Same plane, two spellings (a permuted triple) — one value, structurally.
     let permuted = plane_name_exact(b, c, a).expect("the same plane, permuted");
     assert_eq!(
         name, permuted,
@@ -821,7 +821,7 @@ proptest! {
     }
 }
 
-/// ★★ **A `Wide` name still judges its point** — the population `plane_residual_sign` exists
+/// **A `Wide` name still judges its point** — the population `plane_residual_sign` exists
 /// for. Same fixture as `a_plane_too_wide_for_i128_is_named_wide`: canonical coefficients
 /// past `i128`, no `Rat` route to fall back on.
 #[test]

@@ -48,12 +48,12 @@ fn a_shared_rotation_still_assumes_nothing() {
 /// three steps rather than one, and the composition shortcut declines outright on a translation
 /// (a plane's `d` is a statement about position, so nothing cancels). The toleranced path decides.
 ///
-/// ★ A pivot moved *along* the rotation axis does not work here, and the reason is worth keeping:
+/// A pivot moved *along* the rotation axis does not work here, and the reason is worth keeping:
 /// it names the same rotation and realizes to the same bits, so the coefficients agree and an
 /// earlier, cheaper route answers before this one is reached. The spelling has to differ in the
 /// arithmetic, not only in the record.
 ///
-/// ★ **The fixture is a difference the composition cannot cancel.** Same-axis rotations compose
+/// **The fixture is a difference the composition cannot cancel.** Same-axis rotations compose
 /// (`coplanar_by_composed_rotation` sums same-axis angles), so `30°` against `10°` then `20°` is
 /// exact — that pair is pinned in [`the_same_motion_two_ways_is_now_proved`].
 #[test]
@@ -93,7 +93,7 @@ fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
     }
 }
 
-/// ★ **One motion spelled two ways is now *proved*, not judged.**
+/// **One motion spelled two ways is now *proved*, not judged.**
 ///
 /// `30°` about X against `10°` then `20°` about the same axis and pivot: the chains differ
 /// structurally, but they amount to the same rotation, and summing same-axis angles is exact

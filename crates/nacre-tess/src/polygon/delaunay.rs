@@ -13,7 +13,7 @@
 //! edge is ever touched, so watertightness, the triangle count and the boundary all
 //! come through untouched by construction.
 //!
-//! **★ Measured, because the obvious expectation was wrong.** The mean smallest angle
+//! **Measured, because the obvious expectation was wrong.** The mean smallest angle
 //! roughly doubles — on a cylinder cap at `tol` 1e-4, `0.51° → 1.05°`; at 1e-2,
 //! `5.04° → 7.12°` — but the *worst* triangle on a cap does not move at all.
 //!
@@ -38,7 +38,7 @@
 //! there is. Delaunay refinement is not the step missing from this file; it is a different layer's
 //! decision.
 //!
-//! ★ **What the crack-free contract forbids is a vertex on the *boundary*, not one inside.** The
+//! **What the crack-free contract forbids is a vertex on the *boundary*, not one inside.** The
 //! chart above does add interior points where a face's own boundary fails to sample its curvature
 //! and [`super::insert_interior`] places them — never splitting a constrained edge.
 //! This file still creates and removes nothing; it runs after those points have arrived, and their

@@ -68,7 +68,7 @@ fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Sol
 
 /// **The crossing collector's direction families really are equivalence classes.**
 ///
-/// ★ `split_at_crossings` replaced a predicate per wall pair with "same family?", which is sound
+/// `split_at_crossings` replaced a predicate per wall pair with "same family?", which is sound
 /// only because `wc ∩ w ∥ wc ∩ r` is transitive. The argument is in [`direction_partition`]; this
 /// is the **check**, over every wall pair of every class of a rotated and an axis-aligned fold:
 /// the partition **that function builds** must agree with the predicate's own answer, everywhere.
@@ -149,7 +149,7 @@ fn direction_families_partition_the_walls() {
                     &Aliases::default(),
                 );
                 let par = |a: usize, b: usize| jd.plane_pair_dir_sign(wc, a, b) == 0;
-                // ★ The collector's **own** partition, not a copy of it — the thing under test.
+                // The collector's **own** partition, not a copy of it — the thing under test.
                 let walls = super::super::split::direction_partition(
                     &jd,
                     wc,
@@ -189,7 +189,7 @@ fn direction_families_partition_the_walls() {
 /// **Where does a whole boolean's time go?** Every earlier profile answered a share *of a
 /// phase* — and the one that mattered was never taken.
 ///
-/// ★ Two ways to be wrong that this is built against:
+/// Two ways to be wrong that this is built against:
 ///
 /// 1. **Mixed clocks.** The last breakdown summed per-thread timers (CPU) and read the result
 ///    against the fold's wall clock. The part came out larger than the whole — 3,719ms of a
@@ -197,7 +197,7 @@ fn direction_families_partition_the_walls() {
 ///    `--no-default-features`**, where every phase and the total are the same clock.
 /// 2. **Phases that do not add up.** The sum is printed against the measured whole, so anything
 ///    unaccounted for shows as a gap rather than hiding inside a phase's share.
-/// 3. ★★★ **Another test adding to the same counters.** `phase::` are process-global atomics
+/// 3. **Another test adding to the same counters.** `phase::` are process-global atomics
 ///    and `cargo test` runs this binary's tests on parallel threads, so `reset()` here does not
 ///    fence anything: every concurrently running test that calls `boolean` — and in an
 ///    `--ignored` pass that is the *other* spikes and the two rotation stress tests — lands in
@@ -221,7 +221,7 @@ fn measure_spike_where_the_boolean_spends_it() {
 /// and the difference between the two breakdowns is what the certification actually costs.
 fn spend(n: i128, rotated: bool) {
     let mut m = Model::new();
-    // ★ **The two folds must be the same *shape* of work, not the same model minus a rotation.**
+    // **The two folds must be the same *shape* of work, not the same model minus a rotation.**
     // Dropping the tilt stacks all 60 fins on one another — 7.6x fewer segments, a degenerate
     // model, and a comparison that says nothing. The axis-aligned arm places each fin at its
     // own x instead, so both arms fuse `n` distinct blades onto a growing solid and the only
@@ -286,7 +286,7 @@ fn spend(n: i128, rotated: bool) {
     }
 
     let rows = phase::all();
-    // ★ Indentation is nesting: depth 0 are `boolean`'s own phases, depth 1 the inside of
+    // Indentation is nesting: depth 0 are `boolean`'s own phases, depth 1 the inside of
     // `trace_result_faces`, depth 2 the inside of `split_at_crossings`. Depth 1 partitions the
     // work depth 0 does not name, so 0 and 1 add to the whole — and adding depth 2 on top would
     // count `split_at_crossings` twice.
@@ -316,7 +316,7 @@ fn spend(n: i128, rotated: bool) {
     );
     println!("  {:<32} {whole:>8.1?}  100.0%   ← measured", "the fold");
     println!(
-        "\n  ★ split_at_crossings is {:.1}% of the whole boolean. The plan continues at 25%.",
+        "\n  split_at_crossings is {:.1}% of the whole boolean. The plan continues at 25%.",
         100.0
             * rows
                 .iter()
@@ -326,7 +326,7 @@ fn spend(n: i128, rotated: bool) {
             / total as f64
     );
 
-    // ★ **Scale, which decides whether the structural fixes are worth building.** A hull test
+    // **Scale, which decides whether the structural fixes are worth building.** A hull test
     // over wall *pairs* replaces `2 × |segs on r|` predicate calls with `2` — worth nothing when
     // a wall carries one segment, and worth the ratio when it carries many.
     use phase::scale as sc;
@@ -431,7 +431,7 @@ fn measure_spike_cull_potential() {
         tot.pairs
     );
     println!(
-        "  ★ cullable by box       {:>9}  ({:.1}%)",
+        "  cullable by box         {:>9}  ({:.1}%)",
         tot.cullable,
         100.0 * tot.cullable as f64 / tot.pairs.max(1) as f64
     );
@@ -439,7 +439,7 @@ fn measure_spike_cull_potential() {
         "  seated footprint is one piece: {} of {} arranged classes",
         tot.one_piece, tot.arranged
     );
-    // ★ Recorded, and **not** the operative number. The plan restricted the cull to classes
+    // Recorded, and **not** the operative number. The plan restricted the cull to classes
     // whose seated footprint is one connected piece, fearing that several pieces would need
     // several seeds. They do not: what the correction needs is that the culled chords' parity
     // be *constant over the footprint*, and the cull criterion (`box(F)` disjoint from the

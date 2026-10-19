@@ -536,7 +536,7 @@ fn a_rim_held_at_one_node_is_cut_there_alone() {
 /// corners on the cap's plane make the rim cut for the cylinder too, which
 /// `CylinderStagesDisagree` refuses; the plant of a group-blind check measures that.
 ///
-/// ★ **The arch's corner is named by the arch's planes.** The rim node is a pierce point — two
+/// **The arch's corner is named by the arch's planes.** The rim node is a pierce point — two
 /// planes and the cylinder — and the arch has no face on the cylinder, so the naming takes the
 /// canonical triple of the arch's own three planes there (`x = 7`, `y = 4`, `z = 0`); kept, the
 /// pierce name would name a surface the arch lacks and the shipped fence would refuse the vertex

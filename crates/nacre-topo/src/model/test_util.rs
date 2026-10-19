@@ -10,7 +10,7 @@ impl Model {
     /// whose handles are never dereferenced. The truth is still stated, so nothing point-less
     /// enters the arena even from tests.
     ///
-    /// ⚠ The cache still follows the stated sense ([`Model::align_cache_sense`] runs at every raw
+    /// The cache still follows the stated sense ([`Model::align_cache_sense`] runs at every raw
     /// push), so a model whose plane cache opposes its truth cannot be planted through here.
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_plane_unregistered(
@@ -91,7 +91,7 @@ impl Model {
 
     /// Push a solid **without making it live** — test-only.
     ///
-    /// ⚠ Not [`Model::push_solid`], and the difference is the whole point: that door marks the
+    /// Not [`Model::push_solid`], and the difference is the whole point: that door marks the
     /// solid live, while a planted dangling reference has to stay **unreachable**, because what it
     /// proves is that the arena-wide checks see cells nothing points at.
     #[cfg(any(test, feature = "test-util"))]

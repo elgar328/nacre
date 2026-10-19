@@ -355,7 +355,7 @@ fn every_plane_faces_the_way_its_truth_says() {
             found,
             "{name}: no live face on a nameless plane of that motion"
         );
-        // ★ And each such plane's cache is realized from its truth — the funnel's own answer asked
+        // And each such plane's cache is realized from its truth — the funnel's own answer asked
         // again, as the census holds every other plane to it.
         for &s in m.live_solids() {
             for &f in &m.shell(m.solid(s).outer).faces {

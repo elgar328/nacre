@@ -8,19 +8,19 @@ use super::*;
 /// u_raw   = ẑ × n = (−b, a, 0),  or  ŷ × n = (c, 0, 0) when the normal is vertical
 /// ```
 ///
-/// ★★★ **`u_raw` is not projected and need not be a unit vector.** The general recipe for laying
+/// **`u_raw` is not projected and need not be a unit vector.** The general recipe for laying
 /// a reference direction into a plane is `(n·n)·ref − (ref·n)·n`, and it is unnecessary here: a
 /// cross product is perpendicular to both its arguments, so `ẑ × n` is *already* in the plane.
 /// Skipping it is the difference between coefficients that grow cubically and ones that do not —
 /// measured over the faces a face-based operation actually targets, projecting left 21% of them
 /// inside `i128` and this leaves **100%**.
 ///
-/// ★★★ **The sign is kept, unlike [`canonical_plane_coeffs`].** That function answers *"are these
+/// **The sign is kept, unlike [`canonical_plane_coeffs`].** That function answers *"are these
 /// the same plane"*, where direction is noise. A frame's `n` **is** a direction: negating it
 /// negates `û` and `ŵ` together, which is a half-turn about `v` — a different frame, not the same
 /// one written differently.
 ///
-/// ★★ **The branch is exact, not toleranced**, and it matches `nacre-ops`' f64 `frame_axes` term
+/// **The branch is exact, not toleranced**, and it matches `nacre-ops`' f64 `frame_axes` term
 /// for term. DXF's arbitrary-axis convention switches on `|n_x| < 1/64` because a float-only
 /// kernel cannot ask the real question; `a == 0 && b == 0` is the real question.
 ///
@@ -71,22 +71,22 @@ pub fn plane_frame_named(
     let dot =
         |a: &[Rat; 3]| (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?));
     let (uu, nn) = (dot(&u_raw)?, dot(&n)?);
-    // ★★★ **`v_raw` is exact, and taking it exactly is what makes the axes come out exactly.**
+    // **`v_raw` is exact, and taking it exactly is what makes the axes come out exactly.**
     // Realizing `v̂` as `ŵ × û` in f64 costs two roundings that do not cancel: a plain wall whose
     // `v` is exactly `ẑ` came out `0.999999999999999_7`, which is a frame that is not quite
     // orthonormal and an exact path quietly lost. `n ⊥ u_raw` by construction, so
     // `|v_raw|² = |n|²·|u_raw|²` — one inverse square root of an exact rational, and the same
     // wall lands on `1.0`.
     //
-    // ★ Its components are bounded by `|n|·|u_raw|`, so the one `checked_mul` below covers them:
+    // Its components are bounded by `|n|·|u_raw|`, so the one `checked_mul` below covers them:
     // if the squared length fits, so does every component.
-    // ★★★ `v̂` exactly when it fits, and an honest fallback when it does not.
+    // `v̂` exactly when it fits, and an honest fallback when it does not.
     //
     // `|v_raw|² = |n|²·|u_raw|²` is a product of two squared lengths, so it needs **twice** the
     // width they do — measured, that halves the per-component budget from ~62 bits to ~31 and
     // declines 774 of 780 planes built from a wide normal. When it does not fit, the realization
     // falls back to `v̂ = ŵ × û`, which costs two roundings that do not cancel instead of one.
-    // ★ That is the accuracy this crate had before `v_raw` existed — a graceful step down, never
+    // That is the accuracy this crate had before `v_raw` existed — a graceful step down, never
     // a wrong frame. (Filling `vv` with something else would not be a fallback but a corruption:
     // `v̂` would come out the wrong *length* and the basis would not be orthonormal.)
     let cx = |i: usize, j: usize| {

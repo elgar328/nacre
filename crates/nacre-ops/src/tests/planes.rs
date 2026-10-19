@@ -20,7 +20,7 @@ impl WorkingPlane {
     }
 }
 
-/// ★★★★★ **The same circle and the same ruling, and the arc decides.**
+/// **The same circle and the same ruling, and the arc decides.**
 ///
 /// The unit-ish circle of radius `6/5` about the origin in `z = 0`, and a cylinder along `x`
 /// through the origin with radius `1` — so that plane cuts it in the two rulings `y = ±1`, and
@@ -86,7 +86,7 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
     assert!(!holds(Some(&top), -1), "and never the `−1` one");
 }
 
-/// ★★★★★ **An arc's reach, by hand, and which arc it is.**
+/// **An arc's reach, by hand, and which arc it is.**
 ///
 /// The unit circle about the origin in the plane `z = 0`, axis `+ẑ`, and the **first quadrant**
 /// as `from = (1,0) → to = (0,1)` (counter-clockwise about that axis). Its points are
@@ -94,7 +94,7 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
 /// `cos θ + sin θ ∈ [1, √2]` — **one end rational, the other a radical**, which is the shape
 /// no symmetric margin can state and the reason this rule exists.
 ///
-/// ★ The last block is the lock that matters most: swapping the ends names the **complementary**
+/// The last block is the lock that matters most: swapping the ends names the **complementary**
 /// arc, whose reach is genuinely different. Reading the face's normal instead of the carrier's
 /// axis would make exactly that swap.
 #[test]
@@ -126,7 +126,7 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
         arc_extent(Some(&quadrant), &one, &axis, &axis),
         Some((z(0), z(0), z(0), z(0)))
     );
-    // ★ The complement is a different set: `[−1, 1]`, not `[0, 1]`.
+    // The complement is a different set: `[−1, 1]`, not `[0, 1]`.
     let rest = RimArc {
         from: quadrant.to,
         to: quadrant.from,
@@ -144,7 +144,7 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
 /// be removed — that would leave a T-vertex — so the population is every partially-covering
 /// pad, and `outer_tri` has to survive it.
 ///
-/// ★ **Turned coordinates are the whole difficulty.** Axis-aligned collinear points cancel to
+/// **Turned coordinates are the whole difficulty.** Axis-aligned collinear points cancel to
 /// exactly `0.0`, which a "first corner that is not flat" rule skips correctly. Turned, the
 /// cancellation leaves ~2⁻⁵³ — not zero, so that rule takes it, and the direction that comes
 /// back is rounding: measured 90° off its own plane, which is `orient_sign`, the winding of the
@@ -244,7 +244,7 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     }
 }
 
-/// ★ **A pinched cap's outer triangle faces out.** The wedge fused onto the cylinder past its top
+/// **A pinched cap's outer triangle faces out.** The wedge fused onto the cylinder past its top
 /// leaves the top cap one loop: the closed rim from the groove's tip back to itself, then the
 /// groove's three sides ([`crate::fixtures::wedge_on_a_rim`]). Its chords alone are the groove's
 /// triangle, wound against the cap; only the rim's whole turn (`Δθ = τ` for a closed edge) turns
@@ -350,7 +350,7 @@ fn plane_classes_merge_only_what_interning_merged() {
     }
 }
 
-/// ★★ **Which way a face runs against its class is read off the truth** — down to two turned faces
+/// **Which way a face runs against its class is read off the truth** — down to two turned faces
 /// with no world name, merged by their definitions, where only the witnesses' reading
 /// ([`nacre_judge::normals_agree_judge`]) answers. Two cubes turned 30° about `z` — one in a single
 /// turn, the other in two (10° then 20°) — share their turned `y = 0` and `y = 2` walls: two
@@ -438,7 +438,7 @@ fn a_faces_facing_reads_no_plane_cache() {
     );
 }
 
-/// ★★ **A side [`WorkingPlane::misses`] proves is the side the judge gives** — for a corner named
+/// **A side [`WorkingPlane::misses`] proves is the side the judge gives** — for a corner named
 /// by three planes against a class with no world name, `misses` on the corner's exact point
 /// answers what `Judge::orient3d` answers for the three planes. The two read opposite
 /// determinants (the filter's `det[t₀ − v, t₁ − v, t₂ − v]` is the judge's with the point moved

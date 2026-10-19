@@ -3,12 +3,12 @@ use super::*;
 /// counter-clockwise, zero when collinear. The exact-`Rat` twin of `nacre_predicates::orient2d`
 /// (same convention), for coordinates that *are* rational rather than f64.
 ///
-/// ★ **Total.** Unlike every other `Rat` derivation here, this cannot decline: a sign consumed by
+/// **Total.** Unlike every other `Rat` derivation here, this cannot decline: a sign consumed by
 /// a simplicity check that failed open on overflow would read "no intersection" where there is
 /// one — silent-wrong, the exact shape [`plane_name_exact`] was built to kill. So the `Rat` route
 /// runs first and an overflow falls through to integer arithmetic that cannot overflow.
 ///
-/// ★ **The `BigInt` arm is load-bearing, not a corner case.** [`Rat::from_decimal`] denominators
+/// **The `BigInt` arm is load-bearing, not a corner case.** [`Rat::from_decimal`] denominators
 /// reach `10^38`, and the determinant multiplies two coordinate *differences* — two 17-digit
 /// dimensions already push the product denominator past `i128`. Same denominator-clearing shape
 /// as [`plane_name_big`]: each point is scaled by its own positive denominator, which multiplies
@@ -64,7 +64,7 @@ pub(crate) fn orient2d_big(a: [Rat; 2], b: [Rat; 2], c: [Rat; 2]) -> i8 {
 /// **The sign of a plane's residual at a rational point** — `sign(a·x + b·y + c·z + d)` for the
 /// plane a [`PlaneName`] names. `0` means the point lies exactly on the plane.
 ///
-/// ★ **Total**, like [`orient2d_rat`] and for the same reason: this is what a *validating
+/// **Total**, like [`orient2d_rat`] and for the same reason: this is what a *validating
 /// constructor* consumes (is a caller's stated sketch origin on the plane they picked?), and a
 /// check that failed open on overflow would accept an off-plane origin — silent-wrong. The `Rat`
 /// route runs first; an overflow, or a `Wide` name, falls through to integer arithmetic that
@@ -153,7 +153,7 @@ pub enum AxisRelation {
 /// [`AxisRelation`] of a plane with normal `n` to an axis `d`, over integer vectors — exact at any
 /// width, and scale-free: each vector's positive scale, and its sign, leave the answer alone.
 ///
-/// ⚠ A zero vector is parallel to everything ([`parallel_rat`]'s convention), so it answers
+/// A zero vector is parallel to everything ([`parallel_rat`]'s convention), so it answers
 /// `Across`; a statement's own constructor refuses a zero normal or axis before one gets here.
 fn axis_relation_int(n: &[num_bigint::BigInt; 3], d: &[num_bigint::BigInt; 3]) -> AxisRelation {
     use num_traits::Zero;

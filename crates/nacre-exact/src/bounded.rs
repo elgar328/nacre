@@ -74,7 +74,7 @@ impl Bounded {
     /// [`Self::round_off`], because [`Rat::to_f64`] rounds to nearest and so lands within half an
     /// ulp.
     ///
-    /// ★ From that contract, not measured: a measurement at a fixed precision reads a rational
+    /// From that contract, not measured: a measurement at a fixed precision reads a rational
     /// nearer its `f64` than that precision resolves as exactly representable.
     pub fn of_rat(r: Rat) -> Self {
         match r.as_f64() {

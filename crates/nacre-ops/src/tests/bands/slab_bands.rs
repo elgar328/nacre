@@ -50,7 +50,7 @@ fn a_blind_hole_stops_at_the_drills_own_cap() {
     assert!(out[0].flip);
 }
 
-/// ★★ **The first end-to-end cylinder boolean.** A `[0,2]³` box drilled through by a
+/// **The first end-to-end cylinder boolean.** A `[0,2]³` box drilled through by a
 /// radius-0.5 bore: seven faces (four walls, two drilled caps, one hole wall), genus 1, and a
 /// volume of `8 − π·0.25·2`. The volume is the **winding lock** — props integrates by the
 /// divergence theorem, so a hole loop wound the wrong way returns `8 + πr²h` instead.
@@ -70,7 +70,7 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
         .map(|sh| m.shell(sh).faces.len())
         .sum::<usize>();
     assert_eq!(faces, 7, "4 walls + 2 drilled caps + the bore's wall");
-    // ★ **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
+    // **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
     // from memory; the counts are measured here and what is asserted is the relation
     // (`χ = V − E + F − L = 2(S − G)`, so one shell with one through hole gives `χ = 0`).
     let (v_n, e_n, f_n, l_n) = euler_counts(&m, s);
@@ -101,14 +101,14 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
     assert!(v < plain_v, "the bore removes material: {v} vs {plain_v}");
 }
 
-/// ★★ **Two bores in one plate — the case the band pass was rebuilt for.**
+/// **Two bores in one plate — the case the band pass was rebuilt for.**
 ///
 /// The second cut's counterpart already carries a cylinder face (the first bore's wall), and
 /// the old witness road could not describe such a body, so this used to decline by name. The
 /// band pass now reads the arrangement's own disk labels, and a curved counterpart is no
 /// longer a question anyone has to answer.
 ///
-/// ★ It is also where the wall's **own** membership stopped being assumed: the first bore's
+/// It is also where the wall's **own** membership stopped being assumed: the first bore's
 /// wall bounds the *plate*, and inside that circle the plate has no material — the opposite of
 /// a drill, which fills its own cylinder. Assuming the drill's case (as the pass did while
 /// only drills were tested) puts the second bore's `keep` on the wrong chamber.

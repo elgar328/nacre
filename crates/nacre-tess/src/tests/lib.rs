@@ -97,7 +97,7 @@ fn read_obj(text: &str) -> ObjText {
 
 /// **What the OBJ writer owes, now that it is the only one.**
 ///
-/// ★ This used to run the bootstrap `to_obj(&Model)`, whose contract was *"every model vertex
+/// This used to run the bootstrap `to_obj(&Model)`, whose contract was *"every model vertex
 /// is written in store order, so an OBJ index stays a vertex handle's index"*. That writer is
 /// gone and the contract with it — an index is now a **mesh** vertex, and a mesh vertex says
 /// far more than a handle did ([`TessOrigin`] names the vertex, edge or face it came from).
@@ -129,7 +129,7 @@ fn unit_cube_obj_shape() {
 
 /// The eight corners come back as text — **as a set**.
 ///
-/// ★ Ordered comparison would pass today (☑ measured: the mesh's vertices come out in the
+/// Ordered comparison would pass today (measured: the mesh's vertices come out in the
 /// model's order for a cuboid, because `sample_edge` walks the edge store and dedups on first
 /// sight). It is not a contract, though — nothing promises that traversal — so asserting it
 /// would pin an artifact.
@@ -204,7 +204,7 @@ fn cylinder_provenance_matches_positions() {
     }
 }
 
-/// ★ **The radius is 20 so that the sagitta budget is the one being measured.**
+/// **The radius is 20 so that the sagitta budget is the one being measured.**
 /// At `r = 2`, with the angular budget in place, both tolerances answer the same
 /// 180 segments — the test would compare a number with itself and pass on any
 /// `tol` at all. The angular term leads until
@@ -229,7 +229,7 @@ fn finer_tolerance_adds_triangles() {
     assert!(fine > coarse, "fine {fine} should exceed coarse {coarse}");
 }
 
-/// ★★ **The promise, measured on the mesh rather than recomputed from the rule.**
+/// **The promise, measured on the mesh rather than recomputed from the rule.**
 ///
 /// Every turn between consecutive chords of a rim must be within the angular
 /// budget — that is what "the circle does not look polygonal" means, and it is a
@@ -263,7 +263,7 @@ fn no_chord_turns_more_than_the_angular_budget() {
     }
 }
 
-/// ★★★★ **No triangle may leave the surface it approximates.**
+/// **No triangle may leave the surface it approximates.**
 ///
 /// Watertightness cannot see this: a mesh whose triangles cut *through* the cylinder still
 /// uses every edge twice and still counts right. What bounds it is the **sag** — how far a
@@ -271,7 +271,7 @@ fn no_chord_turns_more_than_the_angular_budget() {
 /// one the edge sampler already works to, so a face may not undo with a diagonal what the
 /// boundary paid for.
 ///
-/// ★ This is the assertion the *chart* road owes. The sweep is free to draw a diagonal
+/// This is the assertion the *chart* road owes. The sweep is free to draw a diagonal
 /// between any two boundary vertices, and if the chart were laid out with the sweep running
 /// **along the axis** instead of around it (the handedness repair swapping `u` and `v` would
 /// do exactly that), the diagonals would span wide arcs and every other check here would
@@ -325,7 +325,7 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
     }
 }
 
-/// ★★★★ **The chart follows the ring's own normal, on every plane — and the triangles follow
+/// **The chart follows the ring's own normal, on every plane — and the triangles follow
 /// the ring.**
 ///
 /// Two claims about the projection — *"the projector must follow the ring's own normal, not a
@@ -334,7 +334,7 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
 /// once ([`planar_chart`]), on a cube that states them **six times at once**, one per
 /// axis-aligned plane, with `drop_axis` returning each of its three answers.
 ///
-/// ★ Not just "a ring and its reversal disagree": this says which way is right — every face's
+/// Not just "a ring and its reversal disagree": this says which way is right — every face's
 /// triangles wind about the face's **outward** normal, which is the property the mesh's
 /// consumers actually rely on.
 #[test]
@@ -380,7 +380,7 @@ fn every_planar_face_meshes_about_its_own_normal() {
     assert_eq!(faces, 6, "all six planes, so all three `drop_axis` answers");
 }
 
-/// ★★★★★ **A chart is a bijection, and the way back has to be the way back.**
+/// **A chart is a bijection, and the way back has to be the way back.**
 ///
 /// The chart may now invent an interior point, and an invented point's position comes from
 /// nowhere else — so [`ChartMap`] is load-bearing. Both arms undo a **handedness repair**, and
@@ -428,7 +428,7 @@ fn a_chart_maps_back_to_the_point_it_flattened() {
     }
 }
 
-/// ★★★★ **A band's rims already sample its curvature, so the chart offers nothing.**
+/// **A band's rims already sample its curvature, so the chart offers nothing.**
 ///
 /// Which is a claim about *stations*, and stations are where this can go wrong quietly: they
 /// are read from each boundary circle's **centre** precisely because one rim's sampled points
@@ -464,7 +464,7 @@ fn an_ordinary_band_is_offered_no_interior_points() {
     }
 }
 
-/// ★ **Scale invariance**: the angular budget is a *relative* one, so a small
+/// **Scale invariance**: the angular budget is a *relative* one, so a small
 /// circle and a large one are cut into the same number of pieces. Under an
 /// absolute-only rule these are 10 and 100 — the asymmetry that makes small holes
 /// look like polygons.
@@ -511,7 +511,7 @@ proptest! {
         h in 0.1f64..10.0,
     ) {
         prop_assume!(Vector3::from_array(axis).norm() > 0.1);
-        // ★ A **coarse** angle on purpose: this case is about the mesh's
+        // A **coarse** angle on purpose: this case is about the mesh's
         // *structure* — the counts and watertightness — which do not depend on how
         // finely the rim is cut. The 2° default puts 180 segments on every radius,
         // which made this property 8.5× slower (0.92s → 7.8s, measured) for no
@@ -529,7 +529,7 @@ proptest! {
     }
 }
 
-/// ★★★★★ **A band whose rims are both cut meshes, and its mesh is the surface.**
+/// **A band whose rims are both cut meshes, and its mesh is the surface.**
 ///
 /// [`nacre_ops::fixtures::cut_at_both_rims`] builds a lateral that wraps the axis between two cut
 /// rims with no seam edge — one rim the outer loop, the other an inner one. Its two rings unroll to
@@ -620,7 +620,7 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
     }
 }
 
-/// ★★★★ **The band's generator stays out of a hole, and passes each rim once.** Synthetic turns,
+/// **The band's generator stays out of a hole, and passes each rim once.** Synthetic turns,
 /// where the choice is decided by the rule and not by where samples fall: both wrapping rings
 /// sampled every 10°, so every candidate (the middle of a step, 5° off the grid) is equally far
 /// from every sample; a hole spanning `[−100°, 100°]` with vertices only at its ends. The first
@@ -678,7 +678,7 @@ fn face_area(t: &Tessellation, fh: Handle<Face>) -> f64 {
         .sum()
 }
 
-/// ★★★★★ **A lateral bounded by two whole rims and nothing else is cut at their own vertices.**
+/// **A lateral bounded by two whole rims and nothing else is cut at their own vertices.**
 ///
 /// A bore through a plate: both rims are one closed edge, so the band is cut at their vertices
 /// ([`cut_seamless_bands`]'s first rule) and nothing is inserted — the mesh has exactly the rims'
@@ -745,7 +745,7 @@ fn a_bore_is_cut_at_its_rims_vertices() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
-/// ★★★ **Two whole rims are cut at their vertices only when the vertices share an angle.** The
+/// **Two whole rims are cut at their vertices only when the vertices share an angle.** The
 /// cut between them is a ruling only then; a vertex turned off `θ = 0` would make it a chord
 /// through the solid, and the joined ring's consecutive pairs are where the interior budget does
 /// not look. No producer builds that today, so the plain cylinder's sampled rims stand in: one
@@ -785,7 +785,7 @@ fn whole_rims_are_cut_at_their_vertices_only_on_one_generator() {
     );
 }
 
-/// ★★★★ **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**
+/// **With a hole beside them, two whole rims are cut by the generator, not at their vertices.**
 ///
 /// The windowed boss with its window on the rims' vertices and off them: three loops, so
 /// [`cut_seamless_bands`]'s first rule does not apply — where the window covers `θ = 0`, a cut at
@@ -836,7 +836,7 @@ fn a_seamless_lateral_with_a_window_is_cut_beside_it() {
     }
 }
 
-/// ★★★★ **A whole rim beside a cut one, with a pierce point on `θ = 0`.** A boss standing on a
+/// **A whole rim beside a cut one, with a pierce point on `θ = 0`.** A boss standing on a
 /// plate's edge — the cylinder `r = 1` over `z ∈ [0, 4]` fused with the box `y ∈ [0, 2]`,
 /// `z ∈ [0, 2]`, whose wall `y = 0` runs through the axis: the lateral below `z = 2` is the `y < 0`
 /// half, so its lower rim is a chain with corners at `θ = 0` and `θ = π`, its upper rim whole. A cut
@@ -929,7 +929,7 @@ fn windows_round_a_boss(m: &mut Model) -> Handle<nacre_topo::Solid> {
     s
 }
 
-/// ★★★★★ **Windows that cover every angle between them are cut through.** [`windows_round_a_boss`]:
+/// **Windows that cover every angle between them are cut through.** [`windows_round_a_boss`]:
 /// every generator crosses a window, so the cut crosses one — twice, its two runs spliced into the
 /// outer ring ([`joined_band`]) — rather than refusing the face, which would fail the whole model's
 /// mesh.
@@ -989,7 +989,7 @@ fn a_seamless_lateral_whose_windows_cover_every_angle_is_cut_through_one() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
-/// ★★★★★ **A cut through two windows splices both, in order up the generator.** A boss `r = 1`
+/// **A cut through two windows splices both, in order up the generator.** A boss `r = 1`
 /// over `z ∈ [0, 4]` with four half-cylinder windows, each `0.5` tall at its own height and a
 /// quarter turn from the last (`x > 0`, `y > 0`, `x < 0`, `y < 0`): every angle lies in two of
 /// them, so every generator crosses two windows and the cut severs both, joining their runs to the
@@ -1045,7 +1045,7 @@ fn a_seamless_lateral_cut_through_two_windows_splices_both() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
-/// ★★★★ **A reversed lateral is cut and spliced the same way.** A bore `r = 1` through the plate
+/// **A reversed lateral is cut and spliced the same way.** A bore `r = 1` through the plate
 /// `[−2, 2]² × [0, 4]`, then four slots from the bore out through the plate's sides — `±x`, `±y`,
 /// each `|·| < 0.8` across and half a unit tall, at four heights, the windows of
 /// [`windows_round_a_boss`] carried through to the outside. The bore's lateral faces the axis
@@ -1116,7 +1116,7 @@ fn a_reversed_lateral_is_cut_through_a_window_and_spliced() {
     assert!((area - want).abs() < 1e-3 * want, "{area} vs {want}");
 }
 
-/// ★★★★ **A cut on a whole rim's closing step goes at the end of its polyline.** A closed edge's
+/// **A cut on a whole rim's closing step goes at the end of its polyline.** A closed edge's
 /// polyline does not repeat its first sample, so the ring of a loop that is one closed edge has no
 /// position the closing step arrives through. The plain cylinder, cut at the middle of its first rim's closing step — where the generator can land when every candidate is
 /// as clear as the next. The other rim, walked against its edge, meets that generator on its
@@ -1164,7 +1164,7 @@ fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
     );
 }
 
-/// ★★★ **A ruling's step is never a candidate, whatever its ends' angles.** The edge says what a
+/// **A ruling's step is never a candidate, whatever its ends' angles.** The edge says what a
 /// step is: a ruling on a tilted axis can have ends whose `f64` angles differ by an ulp, and its
 /// middle would stand as a candidate the cut then refuses (`band_cut` crosses only arcs). Synthetic
 /// turns as [`a_band_generator_keeps_out_of_holes_and_passes_each_rim_once`]: with the hole on
@@ -1197,7 +1197,7 @@ fn a_band_generator_takes_no_rulings_step() {
     );
 }
 
-/// ★★★★ **The generator crosses the fewest holes it can, and none it cannot splice.** Synthetic
+/// **The generator crosses the fewest holes it can, and none it cannot splice.** Synthetic
 /// turns, as [`a_band_generator_keeps_out_of_holes_and_passes_each_rim_once`]: two holes whose
 /// spans overlap and together cover the circle — every generator crosses one, and the cut must
 /// cross exactly one, twice, though the first candidate (5°) lies where both overlap and every
@@ -1234,7 +1234,7 @@ fn a_band_generator_crosses_the_fewest_holes_and_never_one_four_times() {
     assert_eq!(band_generator(&folded, [0, 1], |_| true), None);
 }
 
-/// ★★ **`tessellate_solids` meshes the solids given and nothing else — and each of their faces
+/// **`tessellate_solids` meshes the solids given and nothing else — and each of their faces
 /// exactly as the whole mesh does.** An application's model holds solids it does not show, and
 /// meshing them is paid on every run. A box and a cylinder: meshing the cylinder alone gives
 /// the cylinder's faces only, each with the same triangles (count and corner coordinates) as in
@@ -1294,7 +1294,7 @@ fn a_mesh_of_chosen_solids_holds_theirs_as_the_whole_mesh_does() {
     );
 }
 
-/// ★★★ **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims
+/// **Each OBJ corner carries its face's outward normal — so a cylinder is round and its rims
 /// are sharp.** Without `vn` a viewer shades each facet flat (a cylinder reads as bands) or
 /// averages a shared vertex's normals — and the mesh shares every rim point between cap and side,
 /// so the rim would be rounded off. Checked on a boss and on a bore:
@@ -1369,7 +1369,7 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
     }
 }
 
-/// ★★★ **A lattice point on the boundary never enters the mesh — so no lateral triangle leans off
+/// **A lattice point on the boundary never enters the mesh — so no lateral triangle leans off
 /// its surface.**
 ///
 /// The chart's lattice lays rows at the heights of the circles a lateral crosses, so part of every
@@ -1544,7 +1544,7 @@ fn before_cutting(m: &Model) -> usize {
     t.by_edge.values().map(Vec::len).sum()
 }
 
-/// ★★★★ **A boundary nearer another than a chord sags is drawn** ([`separate_crossing_chords`]).
+/// **A boundary nearer another than a chord sags is drawn** ([`separate_crossing_chords`]).
 /// Each of these is a valid solid whose cap the sweep refused before the arcs there were cut
 /// finer — the chords of two curves `1e-8` to `5e-4` apart passing through each other:
 ///
@@ -1614,7 +1614,7 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
     }
 }
 
-/// ★ **Past the finest sampling it is refused by name.** A hole near-concentric with the unit
+/// **Past the finest sampling it is refused by name.** A hole near-concentric with the unit
 /// disk, its seam turned off the disk's (`(0.6, 0.8)`) so the two circles' samples do not line up:
 /// the chords cross all the way round, and every arc must be cut until its sagitta is under the
 /// gap. At `1e-6` that is about 2,300 samples a circle and the cap is drawn; at `1e-8` it would be

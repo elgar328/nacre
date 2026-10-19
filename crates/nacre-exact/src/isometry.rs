@@ -242,7 +242,7 @@ impl Isometry {
     /// same conditions as `plane_coeffs` — a rotation the rationals cannot state, or `i128`
     /// overflow — so a caller that can move one description exactly can move the other.
     ///
-    /// ★ **Why a plane needs it even though a plane is not a bag of points.** A plane's *truth* is
+    /// **Why a plane needs it even though a plane is not a bag of points.** A plane's *truth* is
     /// three points on it (its stated points): its coefficients are a product of two point
     /// differences and overflow `i128` far sooner than the points do. Moving such a plane means
     /// moving its points, and carrying them through f64 would put a rounded coordinate back into a
@@ -308,7 +308,7 @@ pub fn mirror_point_rat(x: [Rat; 3], axis: Axis, offset: Rat) -> Option<[Rat; 3]
 /// `n'_a = −n_a`, `d' = d + 2·offset·n_a`. The reflection is its own inverse, which is why the
 /// map and its transpose-inverse coincide and no case analysis is needed.
 ///
-/// ★ **The determinant is `−1`.** A caller that relies on orientation being preserved has to
+/// **The determinant is `−1`.** A caller that relies on orientation being preserved has to
 /// account for that itself; this function states where the plane goes, nothing more.
 pub fn mirror_plane_coeffs(c: [Rat; 4], axis: Axis, offset: Rat) -> Option<[Rat; 4]> {
     let a = axis.index();

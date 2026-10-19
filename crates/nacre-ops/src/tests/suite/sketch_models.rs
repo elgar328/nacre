@@ -114,7 +114,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     }
 }
 
-/// ★★★★★ **A whole circle extrudes into a lateral bounded by its two rims** — the one b-rep a
+/// **A whole circle extrudes into a lateral bounded by its two rims** — the one b-rep a
 /// closed cylinder has in this kernel: two seam vertices (`OnSeam`, each the `θ = 0` point of its
 /// rim), two full-circle rims each closing on its own seam vertex, a lateral whose outer loop is
 /// one rim and whose inner loop is the other — no seam edge — and two caps of one rim each. Read
@@ -434,7 +434,7 @@ fn vertex_def_names(m: &Model, s: Handle<Solid>) -> Vec<String> {
     brep_digest(m, s).vertex_defs
 }
 
-/// ★★★★★ **A slot stands.** Two straight walls tangent to two half cylinders: every corner is a
+/// **A slot stands.** Two straight walls tangent to two half cylinders: every corner is a
 /// `Pierce` whose root is the **double** one — the wall's plane touches the cylinder along the
 /// ruling through that corner, which is what "tangent" says. Volume `(2rL + πr²)·h`, six faces,
 /// valid, and the mesh covers it.
@@ -658,7 +658,7 @@ fn a_sketched_bored_plate_meets_a_box() {
     }
 }
 
-/// ★ **A filleted plate builds beside a far box.** The wall faces that ride a tangent ruling get their outer loop: the tangent
+/// **A filleted plate builds beside a far box.** The wall faces that ride a tangent ruling get their outer loop: the tangent
 /// ruling is a carrier with `side = 0`, the seated wall states its own piece, the split keeps no
 /// phantom arc, the angular order and the winding walk read the smooth corner as a half turn, and
 /// the chart reads an uncovered rim piece as the face's end. Two bodies, the plate's volume
@@ -711,7 +711,7 @@ fn a_filleted_plate_builds_beside_a_far_box() {
     assert!((v - want).abs() < 1e-9, "plate + box: {v} vs {want}");
 }
 
-/// ★ **The user's plate, slot plate and gusset fold into one body.** The filleted,
+/// **The user's plate, slot plate and gusset fold into one body.** The filleted,
 /// bored plate (p1), the slot-windowed vertical plate standing on it (p2) and a triangular gusset
 /// (p3) — every wall the three walls found: the fillets' tangent rulings, the slot's tangent
 /// rulings, the plate's caps crossing the gusset's side plane inside the fillet's radius, the
@@ -720,7 +720,7 @@ fn a_filleted_plate_builds_beside_a_far_box() {
 /// volume is the sum of the parts: `48 + (34 − π/4) + 7.5` — the plate less its fillets' corners
 /// and bores, the slot plate less its window, the gusset.
 ///
-/// ★ The gusset stands at `x = 1.6` here; at the user's `1.5` its side plane runs **through the
+/// The gusset stands at `x = 1.6` here; at the user's `1.5` its side plane runs **through the
 /// fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
 /// and a cylinder. The second arm below is the plate and the
 /// gusset at `1.5` fusing: `48 + 7.5`. The four-part fold at the script's own dimensions is
@@ -848,7 +848,7 @@ fn the_users_plate_slot_and_gusset_fold() {
     );
 }
 
-/// ★ **The gate reads the arc, not the circle.** A lateral face's footprint has an
+/// **The gate reads the arc, not the circle.** A lateral face's footprint has an
 /// angular extent, and the two clearance questions read it rather than a whole circle: the
 /// oblique plane's reach (a quarter-cylinder sector beside a gusset whose slanted plane runs
 /// within the radius but past the arc) and the parallel pair's cross-section (two half-cylinder
@@ -996,7 +996,7 @@ fn the_gate_reads_the_arc_not_the_circle() {
     );
 }
 
-/// ★ **The gate reads faces at every one of its four sites.** Three fixtures a gate reading
+/// **The gate reads faces at every one of its four sites.** Three fixtures a gate reading
 /// *surfaces* would refuse, and one the gate refuses for a fact about faces — then three shapes
 /// such a refusal hides from the arrangement: a solid with two
 /// coaxial cylinders sectioned by a wall (the annulus), a cap whose merged region is bounded by a
@@ -1225,7 +1225,7 @@ fn the_gate_reads_faces_at_every_site() {
     assert!(out.is_empty(), "{out:?}");
 }
 
-/// ★★★★★ **The common perpendicular is the only direction that sees this pair apart.**
+/// **The common perpendicular is the only direction that sees this pair apart.**
 ///
 /// A 20 × 20 plate 8 thick, every corner filleted `5`, and a `d 7` drill laid along `x` through
 /// it. Each fillet's axis stands `5` from the drill's — inside the radius sum `5 + 7/2`, so the
@@ -1234,7 +1234,7 @@ fn the_gate_reads_faces_at_every_site() {
 /// does separate them is the rulings' cross product, `ŷ`: a fillet's quarter arc reaches
 /// `y ∈ [−10, −5]` (or its mirror) and the drill only `[−7/2, 7/2]`.
 ///
-/// ★ **The kernel's own corpus reaches this predicate nowhere else** — measured:
+/// **The kernel's own corpus reaches this predicate nowhere else** — measured:
 /// the whole suite made 67 face-pair questions and not one needed a third direction. So
 /// this fixture is the kernel's only end-to-end hold on the rule, and the volume is the oracle:
 /// the plate `(400 − 4(25 − 25π/4)) · 8` less the drill's `π(7/2)² · 20`.
@@ -1296,7 +1296,7 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ **A four-plane operand vertex has one name.** A gusset whose apex lands on the
+/// **A four-plane operand vertex has one name.** A gusset whose apex lands on the
 /// wall's top edge leaves the fused operand with a vertex where four faces meet. Named once per
 /// face loop — its own plane and the two edges' walls — that vertex would reach the tracer under
 /// **four names**, one of them (the top face's: front, top, slant) three planes sharing a line
@@ -1425,7 +1425,7 @@ fn a_four_plane_operand_vertex_has_one_name() {
     }
 }
 
-/// ★ **The four-plane operand vertex fuses, in either operand order.** The fused wall
+/// **The four-plane operand vertex fuses, in either operand order.** The fused wall
 /// and gusset carry two vertices where four faces meet; fusing the second gusset onto that solid
 /// must not depend on the order (a symptom met first — `FourPlane`, `DegenerateWitness` — in one,
 /// a body in the other). Both operand orders give one valid body of volume `35 + 2 · 7.5`, every
@@ -1640,7 +1640,7 @@ fn users_four_part_fold_in_either_order(gx: f64) {
     assert_eq!(d0.triangle_bits, d1.triangle_bits, "and the same mesh");
 }
 
-/// ★ **The user's four-part fold builds in script order**, and the two fold orders
+/// **The user's four-part fold builds in script order**, and the two fold orders
 /// agree to the bit. The gussets at `1.4` and `−2.4`: one order leaves a four-plane vertex for
 /// the fourth fuse; the census measured the two results' digests identical,
 /// and this locks that measurement.
@@ -1649,7 +1649,7 @@ fn the_users_four_part_fold_builds_in_either_order() {
     users_four_part_fold_in_either_order(1.4);
 }
 
-/// ★ **The user's fold builds at the script's own dimensions.** The gussets at `1.5`
+/// **The user's fold builds at the script's own dimensions.** The gussets at `1.5`
 /// and `−2.5` stand with a side plane through each fillet's axis, so each such plane holds the
 /// fillet's tangent ruling with the plate's bottom wall — one line shared by two planes and a
 /// cylinder. Same volume, both
@@ -1659,7 +1659,7 @@ fn the_users_fold_builds_at_the_scripts_own_dimensions() {
     users_four_part_fold_in_either_order(1.5);
 }
 
-/// ★ **One name under every rigid motion.** The four-plane operand vertex is named from
+/// **One name under every rigid motion.** The four-plane operand vertex is named from
 /// its incident classes, which a motion permutes and renumbers; under each motion of the oracle's
 /// group the moved operands must still name each apex once, never by a dependent triple, with the
 /// alias fold landing on the vertex — and the moved fuse must build to the same volume. (Why this
@@ -1734,7 +1734,7 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, plate, slab)
 }
 
-/// ★ **A plane through a fillet's axis shares the fillet's tangent ruling.** The slab's
+/// **A plane through a fillet's axis shares the fillet's tangent ruling.** The slab's
 /// face plane `x = 1.5` holds the fillet's axis and so contains the fillet's tangent ruling with
 /// the plate's bottom wall; the slab stands on the plate's top cap and overlaps it nowhere. Fuse
 /// is the sum, `(52 + π) + 3`; cut is the plate, `52 + π`, or the slab, `3`; common is empty —
@@ -1779,7 +1779,7 @@ fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
     }
 }
 
-/// ★ **A wall tangent to a lateral's surface where the face is not touches nothing.** Two shapes
+/// **A wall tangent to a lateral's surface where the face is not touches nothing.** Two shapes
 /// whose surface a box wall touches on the side the lateral face lacks, so every boolean builds —
 /// each result valid, the body count and the volume the shape's own:
 ///
@@ -1871,7 +1871,7 @@ fn a_wall_tangent_where_the_lateral_is_not_touches_nothing() {
     }
 }
 
-/// ★ **One name under every rigid motion.** The tangent corner's identity with the
+/// **One name under every rigid motion.** The tangent corner's identity with the
 /// class's ruling crossing is read from the moved operands' own topology and the moved class
 /// table (`seed_from_operands`, `side_of`), so under each motion of the oracle's group the two
 /// corners on the axis plane must still fold onto one pierce representative, no class may
@@ -1918,7 +1918,7 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
     }
 }
 
-/// ★ **A point on a cylinder that a foreign class passes through has one name.** The
+/// **A point on a cylinder that a foreign class passes through has one name.** The
 /// class plane `x = 1.5` holds the fillet's axis, so one of its two rulings on the fillet is the
 /// fillet's own tangent ruling with the plate's bottom wall, and the tangent corner at each cap
 /// is named three ways — its own `Pierce … Double`, the three-plane name of its planes with the

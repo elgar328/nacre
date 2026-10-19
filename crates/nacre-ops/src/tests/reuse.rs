@@ -28,7 +28,7 @@ fn square(a: f64, b: f64) -> crate::Profile2d {
     .unwrap()
 }
 
-/// ★ **Witnesses are solved from the definition, not lifted from the cache.** A box stated at
+/// **Witnesses are solved from the definition, not lifted from the cache.** A box stated at
 /// `0.3` has corners `f64` cannot hold; the rounded cache lifted back to a rational is a
 /// different point, claimed with tol 0. The definition road solves
 /// the corner from its three plane names and states the rounding it carries, axis by axis:
@@ -73,7 +73,7 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     }
 }
 
-/// ★ **A boolean's result answers too**: its vertices' definition has a rational base.
+/// **A boolean's result answers too**: its vertices' definition has a rational base.
 #[test]
 fn a_boolean_result_answers_from_its_definition() {
     let mut m = Model::new();
@@ -118,7 +118,7 @@ fn assert_answers(m: &Model, s: Handle<Solid>, want_some: bool, what: &str) {
     }
 }
 
-/// ★★★ **The lock on the population that reaches this module.** A decimal-framed
+/// **The lock on the population that reaches this module.** A decimal-framed
 /// prism's constructed corners solve from their carriers' in-frame names, whose rational
 /// Cramer overflows on every one (measured 8/8 — while all eight points fit `Rat`), and
 /// [`solid_points`] gives the whole solid up on the first failure — so a framed operand
@@ -212,7 +212,7 @@ fn a_framed_prisms_corners_solve_for_reuse() {
     );
 }
 
-/// ★★ **Which populations the def road answers for**, pinned per producer. Constructed and
+/// **Which populations the def road answers for**, pinned per producer. Constructed and
 /// turned solids answer; so does a boolean's result — the road does not read the cache, and
 /// a result's corner is a three-plane meet with names like any other, so ③
 /// answers. The one recorded decline is the mixed-frame population (④): there is no

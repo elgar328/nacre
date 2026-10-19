@@ -83,7 +83,7 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
         let [a, b, c] = w.map(|p| replay(p, &chain));
         Some([a?, b?, c?])
     };
-    // ★★★★ **A plane with no triangle of its own points has its frame's probes**: `(0,0,0)·(1,0,0)·
+    // **A plane with no triangle of its own points has its frame's probes**: `(0,0,0)·(1,0,0)·
     // (0,1,0)` in its canonical frame are exact definitions on the plane by construction (the
     // origin is the foot of the perpendicular, `û` and `v̂` lie in it), and `frame_chain` already
     // appends the plane's own later motion — so they are not carried again.
@@ -105,25 +105,25 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
         })
     };
     match points {
-        // ★★★★★ **The plane's own points state the plane — not a face's triangle.** After a chain
+        // **The plane's own points state the plane — not a face's triangle.** After a chain
         // of booleans a face's corners are seam points the kernel itself annotated with a bound,
         // and stating them as tol-0 witnesses claims an exactness they lack — measured, 1,938 of
         // 68,350 triangles carried one, in 162 plane tables, 77 of which also held a rotated
         // plane, where the claim is consulted. The plane's recorded points are construction points.
         //
-        // ★★★ **The bound is free** — `at` states the rounding from `Rat::to_f64`'s contract (38.3%
+        // **The bound is free** — `at` states the rounding from `Rat::to_f64`'s contract (38.3%
         // of these points are not f64; measuring them at 120 bits cost the suite 6%). A realization
         // reads the definition, not the bound.
         nacre_topo::PlanePoints::Known(pts) if motion.is_none() => {
             stated(pts.map(WitnessPoint::at), true)
         }
-        // ★★★★★ **The exact points the plane was built from — the only description.** No realized
+        // **The exact points the plane was built from — the only description.** No realized
         // `[Point3; 3]` rides beside the motion: a third of realized points do not survive the trip
         // (measured 34.5% — `11/10` is not an f64, so lifting the realization back recovers a
         // different rational), and a plane described through three rounded points tells two caps
         // that are one plane apart with full confidence.
         nacre_topo::PlanePoints::Known(pts) => stated(carried(pts.map(WitnessPoint::at))?, false),
-        // ★★★ **A `Through` plane is solved into the same triangle** — its truth is handles, and the
+        // **A `Through` plane is solved into the same triangle** — its truth is handles, and the
         // points are derived at the boundary. A rational closure (`through_points_rat`) gives a
         // triangle indistinguishable from a stated one; with no motion recorded its frame is the
         // world (the door asserts a named statement's motion carries its vertices' frame).
@@ -131,7 +131,7 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
             Some(base) => stated(carried(base.map(WitnessPoint::at))?, motion.is_none()),
             // A named statement whose meets are wider than any witness base: its name's frame.
             None if model.surface_name.contains_key(&h) => probes(),
-            // ★★★ **The nameless statement (the heterogeneous half).** Vertices each solved to a
+            // **The nameless statement (the heterogeneous half).** Vertices each solved to a
             // narrow point in their own frame give a triangle whose chains simply differ — the
             // judging layer never required them to agree (`plane_iv`/`plane_hp` realize each point
             // on its own), and the plane's later motion appends to each point's own chain. A vertex
@@ -218,7 +218,7 @@ pub(crate) fn through_judged_points(
                 return None;
             }
         };
-        // ★★ **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). This was
+        // **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). This was
         // the last of the four places that compared `surface_motion(tri[0])` against the other two
         // itself, and that reading calls a turned solid's corner a straddle: the invariant-plane
         // restatement leaves its cap world-stated while the walls carry a node, and only the
@@ -226,7 +226,7 @@ pub(crate) fn through_judged_points(
         // *capability* — a corner it misread still gets a correct `Meet` — but it made the judged
         // road hand out a weaker witness than it had to.
         //
-        // ★ The old spelling also let one vertex's non-meeting `?` out of the whole call. A fact
+        // The old spelling also let one vertex's non-meeting `?` out of the whole call. A fact
         // about one vertex is not a fact about the triple; a vertex without a rational meet falls
         // to `Meet`, which is exactly what that variant is for.
         let pure = model.vertex_meet(vh).and_then(|(meet, frame)| {
@@ -251,7 +251,7 @@ pub(crate) fn through_judged_points(
 
 /// The motion nodes from the root down to `leaf` (parent chain, reversed).
 ///
-/// ★★★ **A frame expands into more than one node, and that is the recursion.** `Motion::Frame`
+/// **A frame expands into more than one node, and that is the recursion.** `Motion::Frame`
 /// names a *plane*, not a basis, because a wall raised on a tilted face has no rational world
 /// normal to spell. Reading it means: take that plane's own rational coefficients, derive the
 /// frame from them ([`nacre_exact::plane_frame`] — one spelling, so the exact route and the f64
@@ -260,10 +260,10 @@ pub(crate) fn through_judged_points(
 /// with no frame, which is the world.
 ///
 /// `None` when a frame cannot be built exactly — no name recorded at all, or a degenerate plane.
-/// ★ Width is **not** on that list: a `Wide` name or overflowing squared lengths take the
+/// Width is **not** on that list: a `Wide` name or overflowing squared lengths take the
 /// arbitrary-precision road (`MoveNode::FrameWide`) instead of declining.
 ///
-/// ★★ **No caller falls back to an f64 path on this `None`.**
+/// **No caller falls back to an f64 path on this `None`.**
 /// `planes` turns this `None` into `RejectReason::FrameOutOfRange`, `construct.rs` into
 /// `OpError::PlaneWithoutExactForm` (there is no f64 prism road), `reuse.rs` declines to the
 /// arrangement — an equally correct road, not a degraded one — and `replay_chain_coord` names
@@ -336,7 +336,7 @@ pub(crate) fn sense_toward(
 /// **One plane's frame, as the motion nodes that carry it out to the world** — in reading order,
 /// root first.
 ///
-/// ★★★ **The frame node and the plane's own motion are one chain, not two.** A plane states
+/// **The frame node and the plane's own motion are one chain, not two.** A plane states
 /// itself in *its* frame, so whatever moved that plane has to run after the frame — and the
 /// recursion ends at a plane with no motion, which states itself in the world.
 ///
@@ -351,7 +351,7 @@ pub(crate) fn frame_chain(
 ) -> Option<Vec<MoveNode>> {
     use nacre_topo::FramePlacement;
     let Some(name) = model.surface_name.get(&plane) else {
-        // ★★★ **The judged road**: a plane with no name at all — a
+        // **The judged road**: a plane with no name at all — a
         // mixed-frame `Through` statement, whose three vertices no one frame solves rationally. Its
         // frame is derived from the defining points as intervals ([`nacre_judge::FrameThrough`]),
         // with the branch decided once at the fixed rung, so the same statement always frames
@@ -380,7 +380,7 @@ pub(crate) fn frame_chain(
         return Some(chain);
     };
 
-    // ★★★★ **Canonical coefficients carry no direction, and a frame needs one.**
+    // **Canonical coefficients carry no direction, and a frame needs one.**
     // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
     // is *"are these the same plane"* — where direction is noise. A frame's `ŵ` **is** a
     // direction, so the node carries the sense in `flip`, and both roads below spend it on the
@@ -420,7 +420,7 @@ pub(crate) fn frame_chain(
 /// **The narrow road's frame of a plane named `c`** — the one spelling of it, so [`frame_chain`]
 /// and a caller asking which placement is the normal form cannot derive two different frames.
 ///
-/// ★★★ `flip` is spent on the coefficients **first**, and a `Canonical` placement is derived from
+/// `flip` is spent on the coefficients **first**, and a `Canonical` placement is derived from
 /// the result: `+u` is the arbitrary axis of the frame's own `ŵ`, so a flip turns `û` with `ŵ`
 /// and leaves `v̂` — a half-turn about `v̂`, and on a wall "up" stays up. That is the one
 /// convention all three roads can spell: the judged road ([`nacre_judge::FrameThrough`]) proves
@@ -429,7 +429,7 @@ pub(crate) fn frame_chain(
 /// component positive) has no spelling there. A `Named` placement states `+u`, so there the flip
 /// leaves `û` and turns `v̂` with `ŵ`.
 ///
-/// ★★ A `Named` `ref_dir` need not lie in the plane — [`crate::SketchFrame::named`] accepts any
+/// A `Named` `ref_dir` need not lie in the plane — [`crate::SketchFrame::named`] accepts any
 /// direction not parallel to the normal, and its in-plane part names `+u` — while
 /// [`nacre_exact::plane_frame_named`] takes `ref_dir` as `û` unprojected. So it is projected here,
 /// exactly (`(n·n)·r − (r·n)·n`, the wide road's own formula), and only when it is off the plane:
@@ -506,7 +506,7 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 /// **The world image of a frame's origin and axes** — what a caller sees as the sketch plane, and
 /// what the operation places its profile in. `(origin, û, v̂, ŵ)`.
 ///
-/// ★★★★ **Replayed, not read off the coefficients.** They are canonical (no direction) *and*
+/// **Replayed, not read off the coefficients.** They are canonical (no direction) *and*
 /// written in the plane's pre-motion frame, so a dot product of them against a world normal
 /// compares two different frames — the mistake that made a pad miss its face on a twice-turned
 /// fixture, and one that reads as perfectly plausible right up until the plane has a motion. Which
@@ -617,7 +617,7 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                                 .then(|| vs.map(|v| model.vertex_point(v).as_array()))
                         })
                     }
-                    // ★ A nameless statement's vertices are each placed by their own chain, and its
+                    // A nameless statement's vertices are each placed by their own chain, and its
                     // `motion` runs after (design 「진실의 타입」, the order `frame_chain` keeps):
                     // each vertex realized from its definition, its `f64` read exactly as a binary
                     // rational, then carried through the plane's chain. Dropping each vertex's frame

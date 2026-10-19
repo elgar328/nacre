@@ -1,10 +1,10 @@
 //! **Phase timers, on the production path.**
 //!
-//! ★ They live *inside* `boolean` rather than in a spike that replays it, because a replica measures
+//! They live *inside* `boolean` rather than in a spike that replays it, because a replica measures
 //! the proposition next to the one that matters — the last profile of these phases was taken with
 //! `ClassReuse::Off` and read as if it were production's.
 //!
-//! ★ **One table, so it sits under everything that charges it.** Two stages write here — the
+//! **One table, so it sits under everything that charges it.** Two stages write here — the
 //! arrangement (`timed!`/`watch!`, and the scale counters in its split) and the plane setup
 //! (`planes::standard::Watch`) — and `all()` renders every counter in one ordered report, which is
 //! the spike test's whole output. A table split per stage could not produce that report, so the

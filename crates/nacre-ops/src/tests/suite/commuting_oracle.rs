@@ -149,7 +149,7 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
         ("planar", BoolKind::Cut) => 8.0 - 2.88,
         ("planar", BoolKind::Common) => 2.88,
         // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored plate.
-        // ★ The two fuses build (the slab's wall halves the bore's rim; the pieces
+        // The two fuses build (the slab's wall halves the bore's rim; the pieces
         // the split keeps and the witnesses the nesting has now read it): the bored plate plus
         // the slab's share of the bore.
         ("bore offset", BoolKind::Fuse) => bored + 5.0 * seg(2.0, 3.0),
@@ -169,7 +169,7 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
 /// The unmoved answer's **name** where it is not a build — a reject the oracle keeps stable by
 /// name, so the day it builds is noticed and the row gets its closed form.
 fn expected_unmoved_name(fam: &str, kind: BoolKind) -> Option<&'static str> {
-    // ★ Empty: the bore fuses build and are locked by volume above. The door stays for the next
+    // Empty: the bore fuses build and are locked by volume above. The door stays for the next
     // family a reject is the honest answer for.
     let _ = (fam, kind);
     None
@@ -335,7 +335,7 @@ const DIVERGES: &str = "<diverges silently>";
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ The ledger is empty: every cell of the whole group commutes, the recorded quarter turns
+/// The ledger is empty: every cell of the whole group commutes, the recorded quarter turns
 /// included (the cylinder families refused them by name until a cylinder's chain folded to a
 /// world statement). It stays here as the shape the next divergence is written in — a reject
 /// under the reason's name, a silent divergence under [`DIVERGES`].
@@ -348,7 +348,7 @@ const KNOWN_CELLS: usize = 0;
 /// **Cells whose digest differs, by name** — `(family, motions)`, for Fuse and Cut. Such a cell
 /// commutes (volumes, counts and validity agree) while the bits of a vertex do not.
 ///
-/// ★ The scoreboard is empty: a vertex under a recorded chain that folds is read from the fold
+/// The scoreboard is empty: a vertex under a recorded chain that folds is read from the fold
 /// (`Model::chain_point_rat`), exactly, so a coordinate that is exactly `0` is the integer `0` on
 /// both roads — the replay alone could not decide it and left its vertex on the construction's
 /// figure, an ulp off (`1.4399999999999997` against `1.44`, fourteen `recorded block` cells). It
@@ -473,7 +473,7 @@ fn run_commuting_oracle(labels: &[&str]) {
                         outcome.text()
                     )),
                 }
-                // ★ The commuting diagram's digest is a lock where measurement said it holds
+                // The commuting diagram's digest is a lock where measurement said it holds
                 // (the whole group: every quadrantal and every exact-rigid cell bit-identical, the
                 // pierce vertices included, each realized from its moved definition; a cell that
                 // is not goes on the `DIGEST_DIFFERS` scoreboard).

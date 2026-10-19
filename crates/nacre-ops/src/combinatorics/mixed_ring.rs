@@ -18,7 +18,7 @@ pub(crate) enum ArcSpan {
     /// Exactly at the `hi` end — the end the arc leaves clockwise.
     AtHi,
     /// At the one node of a **closed** arc ([`ArcEnds::Closed`]), which is both its ends: the arc
-    /// leaves it counter-clockwise and arrives back at it. ★ Its own answer, not `AtLo`: a reader
+    /// leaves it counter-clockwise and arrives back at it. Its own answer, not `AtLo`: a reader
     /// that counts an end by the way the arc leaves it (the planar ring parity) has to count both
     /// here, and one folded into `AtLo` would count half and answer wrong without a refusal.
     AtBothEnds,
@@ -157,7 +157,7 @@ impl ChartCorner {
 /// `WitnessNotRational`. A root on the seam is
 /// none of them: the seam point is the cyclic order's first ([`arc_span`]).
 ///
-/// ★ **A radical mismatch is not among them**, and nothing here can reach one: every value two
+/// **A radical mismatch is not among them**, and nothing here can reach one: every value two
 /// corners are combined into goes through the line step's orientation above, which asks
 /// `QuadVal` only when the two share a spelling. `QuadVal`'s same-radical arithmetic
 /// `debug_assert`s on a mix, so a mix would be a panic in a test build, not an abstention.
@@ -332,7 +332,7 @@ pub(crate) fn point_in_mixed_ring(
                     let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
                     let rootp = (line.clone(), root);
                     match xsign {
-                        // ★ **A root at the probe is the probe itself** (it is on the ray's
+                        // **A root at the probe is the probe itself** (it is on the ray's
                         // plane and the class's), so the probe is on this circle — and on this
                         // **ring's boundary** only where the arc is: within its closed span. Off
                         // the span it is another part of the circle, and the root, not on the
@@ -351,7 +351,7 @@ pub(crate) fn point_in_mixed_ring(
                     }
                     // Inside the CCW span end[0] → end[1]? Cyclic, with the seam point first
                     // (`arc_span`): an end or a root on the seam is ordered like any other.
-                    // ★ **A root at the arc's own end is the corner on the ray in the arc's
+                    // **A root at the arc's own end is the corner on the ray in the arc's
                     // clothing**, and it takes the rule the line steps and the planar roads take
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
                     // upward. The arc leaves an end along its tangent, whose side of the ray's
@@ -372,7 +372,7 @@ pub(crate) fn point_in_mixed_ring(
                         tie_probe::arc_end_decided();
                         Some(ray_step_crossing(Orient::Zero, ty, ty) == Some(true))
                     };
-                    // ★★★★★ **`Equal` is not "outside the span"** — read so, a root on the arc's
+                    // **`Equal` is not "outside the span"** — read so, a root on the arc's
                     // own end counts nothing, silently: a confident wrong answer, not an
                     // abstention. Both ends decide it alike (`departs_across`), and the span
                     // itself is one spelling (`arc_span`) the lateral road reads too.

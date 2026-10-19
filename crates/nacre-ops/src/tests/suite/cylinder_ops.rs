@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// ★★ The node-omission normalization's ground: **a seeded world plane's canonical frame
+/// The node-omission normalization's ground: **a seeded world plane's canonical frame
 /// realizes bit-exactly on the unit axes** — origin `(0,0,0)`, every axis component `0.0` or
 /// `±1.0`, no rounding anywhere. Such a frame's axes lift to exact orthonormal rationals, so
 /// the operation's `exact()` gate elides the node (the node-omission normalization) and loses
@@ -39,7 +39,7 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
     }
 }
 
-/// ★★ **The frame keeps the statement rational.** On world XY the axis is exactly `(0,0,1)` and
+/// **The frame keeps the statement rational.** On world XY the axis is exactly `(0,0,1)` and
 /// the seam reference exactly `(1,0,0)` — small integers, not decimals lifted back out of a
 /// normalization. The centre and radius are the caller's own written decimals, lifted once.
 ///
@@ -97,7 +97,7 @@ fn a_cylinder_op_replays_deterministically() {
     assert_eq!(m1.surface_count(), m2.surface_count());
 }
 
-/// ★★ **Every refusal is a name, and none of them leaves a cell behind.** The circle's own
+/// **Every refusal is a name, and none of them leaves a cell behind.** The circle's own
 /// numbers are refused where they are written — at the sketch, before any operation exists — and
 /// the operation-level refusals are decided before anything is pushed: a refusal that had already
 /// pushed would shift every later log index (`apply`'s own doc says so).
@@ -169,7 +169,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     );
 }
 
-/// ★★★ **What the app will do, done through the log alone**: a plate, a drill standing through
+/// **What the app will do, done through the log alone**: a plate, a drill standing through
 /// it, and a `Cut`.
 ///
 /// The drill **overshoots** the plate, the way a "through all" hole is drawn. A drill that stops
@@ -233,7 +233,7 @@ fn a_logged_cylinder_cuts_a_through_hole() {
     );
 }
 
-/// ★★ **The negative control the hole above needs**: the same drill, moved clear of the plate,
+/// **The negative control the hole above needs**: the same drill, moved clear of the plate,
 /// removes nothing. Without it, "the volume dropped by πr²t" could be read as "any cylinder in
 /// the log makes a hole".
 #[test]
@@ -276,7 +276,7 @@ fn a_cylinder_clear_of_the_plate_removes_nothing() {
     );
 }
 
-/// ★★ **A face's frame faces *out* of its solid, so a cylinder on it stands on top rather than
+/// **A face's frame faces *out* of its solid, so a cylinder on it stands on top rather than
 /// drilling in.** Asked as a placement question, which is where it is decided — the seam
 /// vertices sit at the plate's top face and one unit above it, not below.
 ///
@@ -322,7 +322,7 @@ fn a_cylinder_on_a_face_frame_stands_outward() {
     );
 }
 
-/// ★★ **A tilted frame builds a cylinder and cannot yet cut with it — and both halves are the
+/// **A tilted frame builds a cylinder and cannot yet cut with it — and both halves are the
 /// point.** The frame has no exact rational basis, so the statement is written in the plane's own
 /// frame and a motion node carries it out (the road a tilted prism already takes). The gate then
 /// declines a *moved* cylinder by name, because its truth is stated before its motion.
@@ -369,7 +369,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
         ),
         _ => panic!("the third face is the lateral"),
     }
-    // ★ The caches are realized from the same *local* rationals the truth is stated in — the
+    // The caches are realized from the same *local* rationals the truth is stated in — the
     // prism road's deal (`SweptRat::motion`). `validate` reads truth against cache, so a
     // world/local mix-up here would surface as `CylinderTruthCacheMismatch` rather than as a
     // wrong model much later.
@@ -390,7 +390,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
     );
 }
 
-/// ★★★ **A cylinder's two caps face opposite ways — even when their planes already exist.**
+/// **A cylinder's two caps face opposite ways — even when their planes already exist.**
 ///
 /// The bottom cap lies on the very plane the frame names, so it always interns; a plane's
 /// canonical name has no direction, so the surface handed back can be the one that faces the
@@ -472,7 +472,7 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     check(&m, &faces, "an existing face's plane");
 }
 
-/// ★★ **A hole must wind the other way round, and now something checks it.**
+/// **A hole must wind the other way round, and now something checks it.**
 ///
 /// `build_prism` is the single place that decides winding — outer CCW about the
 /// sweep, holes the opposite — and this verifies that decision:
@@ -656,7 +656,7 @@ fn a_polygonal_holes_winding_is_checked_too() {
     );
 }
 
-/// ★★ **A boss's wall faces away from its axis; a bore's faces toward it.**
+/// **A boss's wall faces away from its axis; a bore's faces toward it.**
 ///
 /// Same geometry, opposite sense — the material is inside the wall for one and outside it for
 /// the other — and the boolean says so in its own words when it mints a curved face: *"a
@@ -743,7 +743,7 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
     );
 }
 
-/// ★★ **A tunnel crossing a bore is not a tunnel touching a bore** — the model a user brought,
+/// **A tunnel crossing a bore is not a tunnel touching a bore** — the model a user brought,
 /// and the pair rule's real question.
 ///
 /// A plate, a vertical bore through it, and a horizontal tunnel six away with radii summing to
@@ -751,7 +751,7 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
 /// between *parallel* axes reads its own blind spot here as contact ("two cylinders touch or
 /// overlap").
 ///
-/// ★ The pair rule fires on the **second** boolean — the first result already carries a
+/// The pair rule fires on the **second** boolean — the first result already carries a
 /// cylindrical face — so a single cut would not exercise it at all.
 ///
 /// The second half is what keeps the first honest: slide the tunnel onto the bore and the
@@ -831,7 +831,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// census is **running at all**: a hook that silently stopped recording would take the whole
 /// guarantee with it and nothing would go red.
 ///
-/// ★ The count is deliberately not asserted. It is whatever the suite happened to run before this
+/// The count is deliberately not asserted. It is whatever the suite happened to run before this
 /// test, and it moves with every fixture added. The tangency population (the two tangency
 /// fixtures in `bands::tests`) is held to its faces' exact areas there, through
 /// [`mesh_covers_faces`].
@@ -866,7 +866,7 @@ fn the_mesh_census_is_running() {
 /// the cell reader reads two disk labels and asks them to agree. The vertical lines had none, and
 /// this is it — the label of the cell a ruling borders on the axis side of its wall.
 ///
-/// ★★★★★ **The side is derived, and an independent description checks it.**
+/// **The side is derived, and an independent description checks it.**
 /// `ruling_interior_is_even` composes three sentences already in the crate (`RulingCarrier::side`,
 /// the material-on-the-left convention in the **root face's frame** — `frame_sign` — and
 /// the world name's sense `κ`, the lift between the rational name and the plane's facing) into
@@ -874,13 +874,13 @@ fn the_mesh_census_is_running() {
 /// the lateral's own solid has material and outside it does not**, which is the same content rule
 /// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
 ///
-/// ★★★★ **And the check is what watches this sign — the volume oracle cannot.** Everywhere else in
+/// **And the check is what watches this sign — the volume oracle cannot.** Everywhere else in
 /// this ladder a side selector is guarded by the through-boss volume (a global flip passes the
 /// relative locks), but that only works for a sign production *reads*. This label is
-/// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping the product turns the check from
+/// `#[cfg(test)]`, so no volume moves whatever it says. Flipping the product turns the check from
 /// every agreement into a contradiction — it has eyes on 97% of the population.
 ///
-/// ☑ Measured over the whole binary: **30,010 ruling pieces, 30,010 labelled** (the sense
+/// Measured over the whole binary: **30,010 ruling pieces, 30,010 labelled** (the sense
 /// declines none) · **29,266 agree, 0 contradict, 744 blind**. The blind ones are real and expected —
 /// a boss surrounded by its own plate has that solid's material on *both* sides of the ruling, so
 /// the content cannot tell, and only the derivation speaks there.
@@ -909,7 +909,7 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
     });
     let lab = crate::arrangement::ruling_probe::LABELLED.all();
     let chk = crate::arrangement::ruling_probe::SIDE_CHECK.all();
-    // ★ This boolean's own pieces: the wall boss's chart carries **six** ruling pieces, each
+    // This boolean's own pieces: the wall boss's chart carries **six** ruling pieces, each
     // recorded twice because a `debug_assertions` build re-traces the arrangement with reuse off
     // as a reference. Every one of them is labelled, and the content check decides every one —
     // this fixture has no blind piece, so the agreement below is not a formality here.
@@ -926,7 +926,7 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         !lab.is_empty(),
         "the probe never ran, so it measured nothing"
     );
-    // ★ Universal over every recorded piece, which no interleaving can break — a filtered or
+    // Universal over every recorded piece, which no interleaving can break — a filtered or
     // parallel run may bring more entries, never different ones.
     assert!(
         lab.iter().all(|&b| b),
@@ -939,7 +939,7 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         !chk.is_empty(),
         "the side check never ran beside the labels"
     );
-    // ★ And the check is not vacuous: it decides for most of the population, not none of it.
+    // And the check is not vacuous: it decides for most of the population, not none of it.
     assert!(
         chk.contains(&Some(true)),
         "the content check decided nothing at all"
@@ -953,7 +953,7 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
 /// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
 ///
-/// ★★★★★ **`wal corner-lo`: the winding is read at the ring's own extremum, not at its smallest
+/// **`wal corner-lo`: the winding is read at the ring's own extremum, not at its smallest
 /// node.** That corner puts the boss's axis on **both** plate walls, so the chords through its
 /// circle are radii and the sector outside the plate is **reflex** at the centre. Read at the
 /// lexicographically smallest **node** — the centre, which the arc bulges past — the turn comes
@@ -962,7 +962,7 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// while the caps do). Read at the extremum (`combinatorics::arc_extremum_winding`), all three
 /// kinds build with their exact volumes.
 ///
-/// ★ `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut
+/// `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut
 /// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary
 /// between a half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and
 /// its arcs collide in the node-pair edge key), and the shipped pair spelled a stated plane-self
@@ -1261,7 +1261,7 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
     }
 }
 
-/// ★★★★★ **A tool that reaches the recovered band — the lock the far cube cannot be.** The
+/// **A tool that reaches the recovered band — the lock the far cube cannot be.** The
 /// re-operation census cuts each result with a cube far outside it, so a wrong band would pass
 /// it unseen. Here the wall +x boss's result (a band with the wall's notch as a hole) is cut by a
 /// cuboid whose walls clear the
@@ -1360,7 +1360,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
             v0 - (4.0 + pi / 8.0)
         );
         let hits = crate::arrangement::crossing_probe::HITS.mine();
-        // ★ **Four** crossings: two cap classes × the wall face's two halves, one ruling each.
+        // **Four** crossings: two cap classes × the wall face's two halves, one ruling each.
         // The rows are eight, because a `debug_assertions` build re-traces the arrangement with
         // reuse off as a reference and names each crossing again — so the geometry is counted as
         // distinct points, which says the same thing in either build.

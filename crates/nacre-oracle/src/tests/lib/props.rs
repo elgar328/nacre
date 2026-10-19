@@ -276,7 +276,7 @@ fn cylinder_bounds_match_occt() {
     }
 }
 
-/// ★ **The first curved boolean, scored by an independent kernel**. A `[0,2]³`
+/// **The first curved boolean, scored by an independent kernel**. A `[0,2]³`
 /// box drilled through by a radius-0.5 bore: volume catches a bore that never opened, area
 /// catches a missing or inverted wall, and the face count catches a cap whose inner loop was
 /// dropped. Our own analytic figure (`8 − πr²h`) is not evidence about the *topology* — OCCT
@@ -377,7 +377,7 @@ fn a_tangent_wall_through_a_lateral_window_matches_occt() {
 /// the same union. If OCCT returns a body of the same volume, a commercial kernel agrees the
 /// shape is a body.
 ///
-/// ★ **Why the face count is recorded and not asserted.** OCCT splits periodic surfaces at
+/// **Why the face count is recorded and not asserted.** OCCT splits periodic surfaces at
 /// its own seams and merges or divides faces across a STEP round trip, so an absolute count
 /// says nothing about the pinched face. The **ε-twin** (the same model with the tangency
 /// broken by 0.01) is measured beside it so the difference has a control; both numbers are
@@ -436,13 +436,13 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
     }
 }
 
-/// ★★★★★ **The tangent *wall* — the user's own script, scored against OCCT**. A unit
+/// **The tangent *wall* — the user's own script, scored against OCCT**. A unit
 /// cube and a stud whose axis stands `0.3` from the origin with `r = 0.2`, so the wall
 /// `x = 0.5` is exactly `r` away. The kernel fuses it, and the question this asks is the same one
 /// asked of a point tangency: **does a second
 /// kernel agree the shape is a body?**
 ///
-/// ★ The twin (`0.35`, the stud pushed **through** the wall) is the control, and it is chosen
+/// The twin (`0.35`, the stud pushed **through** the wall) is the control, and it is chosen
 /// so the two volumes actually differ: a twin that merely clears the wall keeps the same
 /// overlap and the same union, which would make "the volumes agree" a statement about
 /// arithmetic that never moved. Face counts are recorded, never asserted — OCCT splits
@@ -541,7 +541,7 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
     }
 }
 
-/// ★ **Two bores in one plate, scored independently**. The second cut's counterpart
+/// **Two bores in one plate, scored independently**. The second cut's counterpart
 /// already carries a cylinder face, which is the case the band pass was rebuilt for — and the
 /// case where assuming "a wall's own solid fills its cylinder" puts `keep` on the wrong
 /// chamber. Volume catches that directly; OCCT reading the STEP back catches a topology that
@@ -1015,7 +1015,7 @@ fn overhang_pocket_matches_occt() {
     );
 }
 
-/// ★★★★ **A seamless lateral is a valid shape to OCCT, in every shape the two-rim form takes.**
+/// **A seamless lateral is a valid shape to OCCT, in every shape the two-rim form takes.**
 /// nacre writes a cylinder's lateral as its two rims and no seam edge; OCCT reads it, inserts the
 /// seam it needs on import (`ShapeFix_Face::FixMissingSeam`) and must find the solid valid
 /// (`checkshape`), with nacre's own face count and volume. The shapes: whole rims (a plain

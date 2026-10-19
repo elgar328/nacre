@@ -22,7 +22,7 @@ pub(crate) fn collect_planes(
                             "push_cylinder_raw pairs them, so a cylinder cache has a cylinder truth"
                         )
                     };
-                    // ★ **The world statement, not the stated frame's** — a translated cylinder's
+                    // **The world statement, not the stated frame's** — a translated cylinder's
                     // truth is written before its motion, and every consumer of this row (the
                     // gate's clearance arithmetic, the arrangement's circles and rulings) compares
                     // it against *world* planes. A row whose statement cannot be carried out to
@@ -33,7 +33,7 @@ pub(crate) fn collect_planes(
                         surf: face.surface,
                         face: Some(fh),
                         orient_sign: face.orientation.sign(),
-                        // ★ **The frame this row's description stands in**, which is the world
+                        // **The frame this row's description stands in**, which is the world
                         // once the statement has been carried out to it — not the provenance of
                         // the surface. The one reader is the restatement mirror below, whose
                         // question is exactly "which frames are in play here".
@@ -58,7 +58,7 @@ pub(crate) fn collect_planes(
             // not as the answer.
             let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
-            // ★ **Which way this face's outward runs against its plane's own points** — the truth
+            // **Which way this face's outward runs against its plane's own points** — the truth
             // says, exactly: the plane faces `sense` against its points' turn, and the face faces
             // `orientation` against the plane. So any triangle of the truth's own points, in the
             // truth's own order, turns toward the outward exactly when this product is `+1` — and
@@ -73,7 +73,7 @@ pub(crate) fn collect_planes(
             };
             let tri = match outer_tri(model, face) {
                 Some((tri, _)) => tri,
-                // ★ **A face bounded by a circle-curve edge has area whatever its vertices do.**
+                // **A face bounded by a circle-curve edge has area whatever its vertices do.**
                 // A disk cap's outer loop is one circle edge with a single seam vertex; a
                 // half-disk's is an arc and its chord with two. Neither spreads three loop
                 // points, and neither is degenerate — the plane's own truth points state the
@@ -92,7 +92,7 @@ pub(crate) fn collect_planes(
                     else {
                         return Err(reject(RejectReason::DegenerateFace));
                     };
-                    // ★ The points are stated in the frame the plane's motion names — a disk cap
+                    // The points are stated in the frame the plane's motion names — a disk cap
                     // on a slanted wall's frame is in that frame's coordinates. Realized through
                     // the motion, as every other witness here is, before being wound to the
                     // face's *world* outward; naive f64 of the frame-stated points compared a
@@ -143,7 +143,7 @@ pub(crate) fn collect_planes(
                 );
                 w
             };
-            // ★ **The plane's exact definition comes from its truth** — the witness triangle
+            // **The plane's exact definition comes from its truth** — the witness triangle
             // (`rotated_vertex::plane_witness`, the one spelling the realization roads read too),
             // wound to this face's outward by the sign its turn runs against the plane times this
             // face's `orientation`. `rotated` is the routing signal "no exact world description",
@@ -174,7 +174,7 @@ pub(crate) fn collect_planes(
             // never an arc: `outer_tri` winds by the loop's chords and arcs together, as
             // `validate` does, from the one spelling of the numbers in `nacre-geom`.
             //
-            // ★ This assertion needs three points, so it says nothing about a **disk**
+            // This assertion needs three points, so it says nothing about a **disk**
             // face (one closed rim) or about a face's **holes**. Those belong to the
             // same invariant and `validate` owns them — it reads a rim's circle and
             // every inner loop.
@@ -190,7 +190,7 @@ pub(crate) fn collect_planes(
                 face.orientation
             );
             let name = model.surface_name.get(&face.surface).cloned();
-            // ★★ **The witness must span a plane** — three collinear points lie on every plane
+            // **The witness must span a plane** — three collinear points lie on every plane
             // through their line, and `Judge::planes_coplanar` would read them as "on" whatever it
             // asked. A name is the proof: it is derived from exactly these points (a motion keeps
             // them non-collinear), and `plane_name_exact` is `None` only for collinear ones. The
@@ -223,7 +223,7 @@ pub(crate) fn collect_planes(
             }));
         }
     }
-    // ★★★ **The mirror takes the strongest description — a restated plane rejoins its
+    // **The mirror takes the strongest description — a restated plane rejoins its
     // solid's chain here.** The truth keeps a motion-fixed plane world-stated (the
     // invariant-plane restatement: one plane, one handle, no node), but this table is a
     // per-operation mirror, and a chain-borne description is strictly stronger when the
@@ -303,7 +303,7 @@ pub(crate) fn collect_planes(
             f.motion = Some(c);
         }
     }
-    // ★ **Two exact readings of one fact, each checking the other.** σ — the name against the
+    // **Two exact readings of one fact, each checking the other.** σ — the name against the
     // stored orientation — is read on the witness ([`nacre_judge::predicate::witness_name_sense`],
     // what `name_ints` and `BaseFrame` fold by), and the truth states it outright
     // ([`Model::plane_name_sense`]): the witness's order came from the truth, so the two agree,

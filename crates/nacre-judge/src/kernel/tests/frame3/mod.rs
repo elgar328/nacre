@@ -67,7 +67,7 @@ pub(in crate::kernel::frame3) fn rand_base(st: &mut u64) -> [Rat; 3] {
 /// high-precision difference rounded to the nearest `f64` and stepped up one, plus the
 /// realization's own radius. Never below the distance, and above it by a part in `2⁵²`.
 ///
-/// ★ Not an octave reading ([`bigfloat_upper_f64`]): that sits up to twice the distance, so a
+/// Not an octave reading ([`bigfloat_upper_f64`]): that sits up to twice the distance, so a
 /// ratio of error to bound read through it cannot tell a bound with a margin of two from one with
 /// none — and a bound proved without a margin reads as broken. The step up makes `err <= tol`
 /// stricter than the proposition by that one step: a bound the error meets exactly reads as

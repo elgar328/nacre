@@ -153,7 +153,7 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
     tilted!(l_and_rod);
     tilted!(u_and_slab);
 
-    // ★ And the models that actually have one. Without these the sweep asserts nothing: the
+    // And the models that actually have one. Without these the sweep asserts nothing: the
     // corpus above turns out to carry **no** concurrent vertex at all, so it can measure the
     // blast radius of the coming stages but not the discovery rule. These are the reported
     // model (a bar spun 45° whose bottom corner edge lands in the block's x = 0.5 plane) and
@@ -372,7 +372,7 @@ fn every_producer_states_its_side_in_the_label_frame() {
 /// tilted rational frame (`pythagorean_frame`, normal `(0.64, −0.48, 0.6)`), so none of the box's
 /// planes is either ⊥ or ∥ to its axis and its
 /// lateral face **meets** them. Every crossing is an ellipse — the population
-/// this door still names. ★ The oblique arm asks the faces first, so the fixture
+/// this door still names. The oblique arm asks the faces first, so the fixture
 /// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
 /// and stated on a Pythagorean frame: a frame with no rational unit basis rides a frame node, and
 /// a class with no world description is `CylinderGateUndecided`, an honest but different fact.

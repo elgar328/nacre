@@ -15,7 +15,7 @@
 //! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
 //! ```
 //!
-//! ★★★ **The two measurements take one lock ([`ONE_AT_A_TIME`]), or the labels lie.**
+//! **The two measurements take one lock ([`ONE_AT_A_TIME`]), or the labels lie.**
 //! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
 //! bracket their own boolean with it. Run side by side — the test harness's default — one test's
 //! `take()` walks off with the other's accumulated climbs, and every printed number is still
@@ -26,7 +26,7 @@
 //! the same tree prints the same table twice. Every test here that runs a boolean takes it;
 //! `does_a_vertex_named_datum_produce_a_wide_name` runs none.
 //!
-//! ★ What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
+//! What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
 //! build" does not apply to that half.
 //!
@@ -37,7 +37,7 @@
 //! to hold**, the widest at **168 bits**. No construction path had ever produced one (`stat
 //! wide_planes` is 0 across the corpus).
 //!
-//! ★ And the framed prism is the *wrong* place to look — 4 triples, **0 wide**, 5 bits. Inside its
+//! And the framed prism is the *wrong* place to look — 4 triples, **0 wide**, 5 bits. Inside its
 //! own frame a tilted prism is axis-aligned, so its far cap is `w = dist`. Frames exist to make
 //! that true; the width lives in what a *boolean* discovers, not in what a frame states.
 //!
@@ -58,7 +58,7 @@
 //! a coefficient. A one-variable version would need one plane whose name is wide
 //! and narrow at once, which is a contradiction.
 //!
-//! ★ Two earlier versions of this measurement reported **nothing** and looked fine doing it:
+//! Two earlier versions of this measurement reported **nothing** and looked fine doing it:
 //! "datum vs no datum" gave identical climb counts, because a datum nobody cuts with never reaches
 //! a plane table; and counting bits only on the resolved return path gave a mean of exactly 0,
 //! because most climbs end in `Coincident` or a proved zero.
@@ -104,7 +104,7 @@ fn assert_the_census_moved(climbs: u64, bits: u64) {
 /// realize, and so do a prism's, so the population this file draws triples from is wider than
 /// the one its numbers were measured on.
 ///
-/// ⚠ Stated positively. It read "not the bare figure" while two variants counted as vouched for;
+/// Stated positively. It read "not the bare figure" while two variants counted as vouched for;
 /// with `Ceiling` in the enum that negative form would admit a vertex whose coordinate nothing has
 /// proven anything about — the cheap road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
@@ -141,7 +141,7 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
     solid
 }
 
-/// ★★★★★ **First: is there a population at all?**
+/// **First: is there a population at all?**
 ///
 /// A vertex-named datum's coefficients come from three solved points, so they are roughly three
 /// times as wide as a coordinate — the prediction is that this is the kernel's first producer of a
@@ -204,7 +204,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     );
     assert!(!widths.is_empty(), "no nameable triple — nothing measured");
 
-    // ★★★ The framed prism is the *wrong* population and the number says why: inside its own
+    // The framed prism is the *wrong* population and the number says why: inside its own
     // frame the tilted geometry is axis-aligned, so the far cap is `w = dist` and its name is a
     // handful of bits. Frames exist to make exactly that true.
     //
@@ -313,13 +313,13 @@ fn wf_family_with_pocket() -> Model {
     m
 }
 
-/// ★★★ **What the climb costs, split inside one model.**
+/// **What the climb costs, split inside one model.**
 ///
 /// Two models would have to be matched shape for shape; splitting *within* one leaves the shape,
 /// the size and the motion history shared, so the only difference is whether the datum is there.
 /// The counters live in `escalate`, the single funnel every production escalation passes.
 ///
-/// ★ Reported, not asserted against a threshold — a corpus number is not a budget. What is
+/// Reported, not asserted against a threshold — a corpus number is not a budget. What is
 /// asserted is that the instrument moved at all ([`assert_the_census_moved`]).
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
@@ -327,7 +327,7 @@ fn what_a_datum_bearing_boolean_costs() {
     use nacre_judge::kernel::frame3::climb_census;
     let _line = one_at_a_time();
 
-    // ★★★ The control is **wide name vs narrow name**, not "datum vs no datum".
+    // The control is **wide name vs narrow name**, not "datum vs no datum".
     //
     // The same fixture offers both (60 triples: 24 wide, 36 narrow), so the two runs share the
     // shape, the size and the motion history and differ only in whether the datum's canonical
@@ -337,7 +337,7 @@ fn what_a_datum_bearing_boolean_costs() {
     let run = |mode: &str| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();
         let target = m.live_solids()[0];
-        // ★ The named arms measure over **discovered** vertices (their original question was the
+        // The named arms measure over **discovered** vertices (their original question was the
         // width of discovered coordinates). The nameless arm lifts that filter: this family's
         // differ-population lives on *constructed* corners (prism corners in one frame, pocket
         // corners in another) — the discovered ones here all straddle, which is a different
@@ -418,7 +418,7 @@ fn what_a_datum_bearing_boolean_costs() {
                     bits.checked_div(climbs).unwrap_or(0)
                 );
             }
-            // ★ Said, not silently skipped: an arm that could not be built is a fact about the
+            // Said, not silently skipped: an arm that could not be built is a fact about the
             // population, and pretending the comparison happened would be worse than no number.
             None => println!("stat cost {label:12} UNBUILDABLE — no such datum carried a tool"),
         }
@@ -490,7 +490,7 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
     Some((m, sliced))
 }
 
-/// ★★★ **What the name-integer rescue actually buys, measured where its gates open.**
+/// **What the name-integer rescue actually buys, measured where its gates open.**
 ///
 /// The first datum-bearing boolean (the table above) is a **mixed-frame** table: the wide name
 /// speaks for the world (its carriers are discovered vertices — no chain), the target's walls
@@ -557,7 +557,7 @@ fn what_a_second_generation_boolean_costs() {
     assert_the_census_moved(climbed, charged);
 }
 
-/// ★★ **A width the gate cannot carry is refused for its width, not as a doubt about placement.**
+/// **A width the gate cannot carry is refused for its width, not as a doubt about placement.**
 /// The slice of [`sliced_by_a_datum`], cut by a cylinder column standing inside it. The narrow
 /// slice's plane is oblique to the column's axis, and the gate says so (`ObliqueCylinderCut` — an
 /// ellipse). The wide slice is the same geometry, but its world name is `Wide`: the gate reads

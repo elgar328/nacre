@@ -131,7 +131,7 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 ///    `f64` comparison on stored coordinates, like everything else in this file.
 /// 2. **Two segments passing through each other**, ends strictly straddling each other's line.
 ///
-/// ★★★★★ **A touch vouches for nothing by itself — so each one is asked to.** A vertex sitting on
+/// **A touch vouches for nothing by itself — so each one is asked to.** A vertex sitting on
 /// another segment is either a *tangency* (the boundary reaches the segment and turns back) or a
 /// *crossing that happens to land on a vertex* (the boundary passes through). One `orient2d`
 /// pair tells them apart: the vertex's two ring neighbours lie on the **same** side of the
@@ -139,29 +139,29 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 /// only where the other ring is straight at the touch — a vertex strictly *inside* a segment
 /// ([`TouchKind::Interior`]). Where two rings share a vertex coordinate ([`TouchKind::AtEnd`])
 /// the other ring bends there too and one line is not enough; that case, and a neighbour lying
-/// exactly on the line, are left [`Witness::Abstained`] — recorded, never promoted. ☑ Measured:
+/// exactly on the line, are left [`Witness::Abstained`] — recorded, never promoted. Measured:
 /// a diamond hole crossing the outer ring at its own two vertices came back as a *touch* before
 /// this witness existed, and a bridge laid on that evidence would have meshed a region outside
 /// the outer ring.
 ///
-/// ★ **Why a vertex is enough for the touching case.** A tangency is one point, and the sampled
+/// **Why a vertex is enough for the touching case.** A tangency is one point, and the sampled
 /// boundary reproduces it only when a sample happens to land there — which both measured fixtures
 /// do, their seams sitting on the touch. A tangency whose sampling *misses* the point produces a
 /// boundary that is genuinely separated, meshes, and is wrong only by the sampling error it was
 /// always allowed. So this looks for the vertex, not for the tangency.
 ///
-/// ★★★★★ **A *crossing* is the other answer, and it is a different sentence.** Two segments that
+/// **A *crossing* is the other answer, and it is a different sentence.** Two segments that
 /// pass through each other with no vertex at the crossing make the ring set not a polygon at all —
 /// [`TessError::DegenerateRing`]: any triangulation of it would be wrong — where a touch is a
 /// boundary this decomposition cannot draw. Neither name is a verdict on the solid.
 ///
-/// ☑ **The crossing scan is strict, and must be.** With both scans running, an endpoint sitting
+/// **The crossing scan is strict, and must be.** With both scans running, an endpoint sitting
 /// exactly on the other segment's line (`orient2d == 0`) reaches it — and folding a zero in with
 /// the negative side calls the measured tangency fixture a crossing. A zero at an endpoint means
 /// the segments meet the line only there, which
 /// the touch scan already names; a straddle needs four non-zero signs.
 ///
-/// ☑ **That branch is here because the gap was measured, not imagined.** A self-crossing single
+/// **That branch is here because the gap was measured, not imagined.** A self-crossing single
 /// ring (a bow-tie) already came back `DegenerateRing` from the sweep, but a **hole crossing its
 /// outer ring** came back `Ok` — eight confident, wrong triangles. This file's charter is that a
 /// wrong cache is worse than none, so the check that was going to *document* that gap closes it

@@ -2,7 +2,7 @@ use super::*;
 /// **A plane's exact rational coefficients in the world** — the narrow projection of
 /// [`nacre_topo::Model::world_plane_name`], which is the one place the rule lives.
 ///
-/// ★★★ **Not a restatement of the row.** A moved plane's `rotated` flag is the licence the exact
+/// **Not a restatement of the row.** A moved plane's `rotated` flag is the licence the exact
 /// shortcuts read before taking the plane's *name* as a world statement, and a moved plane's name
 /// speaks its pre-motion frame — so the flag stays set whatever this answers, and the world
 /// description rides *beside* it. Clearing the flag once sent a merge through an exact-`f64`
@@ -23,7 +23,7 @@ pub(crate) fn world_plane_coeffs(
 /// It takes the class's [`WorldName`], so a class without one cannot ask — every reader already
 /// stands on a class whose world coefficients it read.
 ///
-/// ★★ **Ask this, do not re-derive it from the class's rational name alone.** The name is
+/// **Ask this, do not re-derive it from the class's rational name alone.** The name is
 /// *canonical* (first nonzero component positive), which points the other way from the plane on
 /// half the classes; a rule spelled against it reads "above" backwards exactly there. That mistake,
 /// made while adding the second consumer below, turned 36 tests red at once.
@@ -46,7 +46,7 @@ pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) 
 /// centre) ask [`nacre_exact::axis_plane_meet`].
 ///
 /// `None` when the plane is parallel to the axis (`n·m = 0`, no meeting point) or when the
-/// checked `Rat` arithmetic overflows. ★ A rule that lives inlined in one place while a second
+/// checked `Rat` arithmetic overflows. A rule that lives inlined in one place while a second
 /// site spells a reduced version of it is this repo's dominant defect shape, so every reader asks
 /// this.
 pub(crate) fn axis_param_of_plane(
@@ -64,7 +64,7 @@ pub(crate) fn axis_param_of_plane(
 /// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
 /// and the consumer declines the face.
 ///
-/// ★ **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
+/// **Every loop, not the outer one.** A band's upper rim is an inner loop: read off the outer
 /// loop alone, the span of a lateral over `[0, 4]`
 /// bitten at both ends is `[0, 0.5]`, and the gates prove a cylinder or a slanted wall crossing it
 /// at `z = 2` clear of it. A hole's stations lie inside the span, so they never move its ends.
@@ -83,7 +83,7 @@ pub(super) fn lateral_t_range(
         let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
-        // ★ **The cap's world coefficients** — a plane's name is stated in the frame its own
+        // **The cap's world coefficients** — a plane's name is stated in the frame its own
         // motion names, and this parameter is read against a *world* axis. One whose chain does
         // not fold has no world description and the face declines (`None`), which is the same
         // answer the whole row already gives for a rim with no narrow name.
@@ -421,7 +421,7 @@ pub(super) fn lateral_cover_on_ruling(
 /// an **end of the arc** otherwise, where it is `d·v` for that end's radial vector, a value folded
 /// into the offset with a zero radical. One root at most on each end, and no new arithmetic.
 ///
-/// ★★ **`axis` is the arc's own carrier axis, never a face's normal.** `arc.from → arc.to` is
+/// **`axis` is the arc's own carrier axis, never a face's normal.** `arc.from → arc.to` is
 /// counter-clockwise **about that axis** (`derive_edge_curve`'s convention, which
 /// [`lateral_theta_extent`] states), so handing in a normal that runs the other way would silently
 /// name the **complementary** arc — not a bound on this one but a different set, which would prove

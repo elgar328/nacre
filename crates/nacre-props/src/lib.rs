@@ -144,7 +144,7 @@ pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Ve
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.face(face);
     let sign = f64::from(face.orientation.sign());
-    // ★ The cache, because every answer below is an `f64` area or centroid: the integral is
+    // The cache, because every answer below is an `f64` area or centroid: the integral is
     // evaluated numerically, and an exact normal would be rounded into the same product a line
     // later. Kind questions go to the truth; this one's answer is a number.
     match model.surface_cache(face.surface) {
@@ -235,7 +235,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
                 match edge_curve(model, he) {
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
                     Curve::Circle(circle) => {
-                        // ★ The **whole** circle's extent, whatever the edge's endpoints say — so
+                        // The **whole** circle's extent, whatever the edge's endpoints say — so
                         // an arc grows the box too much, never too little. A bound that
                         // errs outward stays a bound, which is why this one needs no change when
                         // arcs arrive; `sample_edge` in `nacre-tess` is the one that would not.
@@ -262,7 +262,7 @@ fn face_contribution(
     reference: Point3,
 ) -> Result<(f64, f64), PropsError> {
     let sign = f64::from(face.orientation.sign());
-    // ★ The cache, for the same reason as `face_props`: the divergence theorem is being
+    // The cache, for the same reason as `face_props`: the divergence theorem is being
     // evaluated in `f64`, so the realization is the right description to read.
     match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
@@ -277,7 +277,7 @@ fn face_contribution(
             // With `p = a₀ + z·axis + r·n̂(θ)` and outward `sign·n̂`, `(p−R)·n̂ = r + (a₀−R)·n̂`
             // (the axial term drops: `axis·n̂ = 0`), so over the region
             //   ∮(p−R)·n̂_out dA = sign·r·( r·∬1 + (a₀−R)·∬n̂ ).
-            // ★ The moments below are already `sign`-carrying, so the two signs **cancel** and
+            // The moments below are already `sign`-carrying, so the two signs **cancel** and
             // none is written here; the area, which must come out positive, keeps one.
             let m = lateral_moments(model, face, cyl)?;
             let radius = cyl.radius();
@@ -321,7 +321,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // `nacre-ops` needs the same computation for its sketch frames).
         nacre_geom::planar_region_area_centroid(&points, &[]).ok_or(PropsError::UnsupportedBoundary)
     } else if outer.half_edges.len() == 1 {
-        // ★ **`len() == 1` is what makes the whole-circle formula safe when arcs arrive**, and the
+        // **`len() == 1` is what makes the whole-circle formula safe when arcs arrive**, and the
         // reason is structural rather than a check: an arc has two *different* endpoints, so it
         // cannot close a loop alone — the smallest arc-bounded loop is an arc plus a chord, two
         // half-edges, which lands in the `else` and declines. Written down so the next reader does
@@ -335,7 +335,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             _ => Err(PropsError::UnsupportedBoundary),
         }
     } else {
-        // ★ **The mixed arm**: a loop of chords and circular arcs. The chord polygon is
+        // **The mixed arm**: a loop of chords and circular arcs. The chord polygon is
         // a signed fan from the first vertex; each arc half-edge then adds or removes its
         // **circular segment** — area `r²(Δθ − sin Δθ)/2`, centroid `4r·sin³(Δθ/2) /
         // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
@@ -416,7 +416,7 @@ struct LateralMoments {
 
 /// A lateral face's moments, by **one line integral over every loop it has**.
 ///
-/// ★★★★★ **This is where the rectangle assumption died.** The old spelling found the loop's two
+/// **This is where the rectangle assumption died.** The old spelling found the loop's two
 /// rims, read one `Δθ` and one height off them, and multiplied — true only for a `(θ, z)`
 /// *rectangle*, so a face with a hole, or one whose outer walk detours around a notch, had to be
 /// refused (`UnsupportedInnerLoop`, `UnsupportedBoundary`). Green's theorem asks the boundary
@@ -441,7 +441,7 @@ struct LateralMoments {
 /// Honest declines (`UnsupportedBoundary`): an empty loop, or a region whose chart area is not
 /// positive.
 ///
-/// ☑ Unchanged assumption: a rim is a **circle** cut by a plane ⊥ the axis, so `z` is constant
+/// Unchanged assumption: a rim is a **circle** cut by a plane ⊥ the axis, so `z` is constant
 /// along an arc. An oblique cut gives an ellipse, and that is out of scope here.
 fn lateral_moments(
     model: &Model,
@@ -457,7 +457,7 @@ fn lateral_moments(
         q.dot(w).atan2(q.dot(u))
     };
     let axial_of = |p: Point3| (p - a0).dot(axis);
-    // ★ `z` is measured from the face's first vertex, to keep the magnitudes small wherever the
+    // `z` is measured from the face's first vertex, to keep the magnitudes small wherever the
     // solid sits. It is legal because `∮cos θ dθ` and `∮sin θ dθ` vanish over every closed loop
     // and `∮dθ` over the face's loops together (a rim loop alone turns ±2π; the two rims turn
     // opposite ways), so `z → z + c` moves neither `j1` nor `jn`; only `jz` shifts, and `z0`
@@ -476,7 +476,7 @@ fn lateral_moments(
             };
             let z = axial_of(c.center()) - z0;
             let [va, vb] = model.edge(he.edge).vertices;
-            // ★★★★★ **The travel comes from the edge's own stored order, never from a wrapped
+            // **The travel comes from the edge's own stored order, never from a wrapped
             // angle difference.** An arc edge stores `[from, to]` **CCW about the axis**
             // (`EdgeKey::Arc`), and `he.forward` says which way this face walks it. A wrapped
             // `θ_to − θ_from` is `±π` for a **half-turn** arc with no way to tell which — and a

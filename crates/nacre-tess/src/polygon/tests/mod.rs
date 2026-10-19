@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 /// The goldens below are written **as a chart** — the numbers are `uv` already.
 ///
-/// ★ No projection is involved: the projection rule lives once, in `planar_chart`, and these
+/// No projection is involved: the projection rule lives once, in `planar_chart`, and these
 /// rings are already in its output space.
 fn pts(v: &[[f64; 2]]) -> Vec<P2> {
     v.to_vec()
@@ -298,7 +298,7 @@ fn random_rectilinear_faces_triangulate() {
     assert!(samples > 1500, "only {samples} samples reached the gate");
 }
 
-/// ★★★★ **Offered points, and the two places they can land.**
+/// **Offered points, and the two places they can land.**
 ///
 /// A lattice over a square: the ones on the diagonal the sweep already drew arrive by the
 /// **edge split** (this is the road the real face uses — every placed candidate on a merged
@@ -331,7 +331,7 @@ fn offered_points_land_inside_and_on_interior_edges() {
     }));
 }
 
-/// ★★★★★ **A candidate on the boundary, or outside it, is dropped — never forced.**
+/// **A candidate on the boundary, or outside it, is dropped — never forced.**
 ///
 /// The boundary polyline is *shared* with the neighbouring face, so a vertex added to it that
 /// the neighbour does not know about is a T-vertex, and a T-vertex is a crack. That is the one
@@ -369,7 +369,7 @@ fn degenerate_rings_are_errors() {
     ));
 }
 
-/// ★★★★★ **A boundary that meets itself, and the two different sentences that says.**
+/// **A boundary that meets itself, and the two different sentences that says.**
 ///
 /// A **touch** — a vertex on the boundary elsewhere — is a boundary this decomposition has
 /// no answer for *as it stands* (an exact tangency, which the sampled boundary reproduces when
@@ -378,7 +378,7 @@ fn degenerate_rings_are_errors() {
 /// triangulation at all: any one would be wrong. Different claims about *the mesh*, different
 /// names — neither is a verdict on the solid, which is `validate`'s to give.
 ///
-/// ☑ **The crossing branch exists because the gap was measured.** A bow-tie already came back
+/// **The crossing branch exists because the gap was measured.** A bow-tie already came back
 /// `DegenerateRing` from the sweep, but the hole below — crossing the outer ring with no
 /// vertex at either crossing — came back **`Ok` with eight confident, wrong triangles**. That
 /// is the one thing this layer may not do.
@@ -422,7 +422,7 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
     ));
 }
 
-/// ★★★★★ **A touch vouches for nothing — two ways a check that trusts one lets a crossing
+/// **A touch vouches for nothing — two ways a check that trusts one lets a crossing
 /// through.**
 ///
 /// Returning on the *first* touch found, and scanning for crossings only when there is none, has
@@ -435,7 +435,7 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
 /// this decomposition cannot draw" — when the true answer is `DegenerateRing`: any
 /// triangulation of this ring set would be wrong.
 ///
-/// ☑ Measured red first (`SelfTouchingBoundary`), then fixed.
+/// Measured red first (`SelfTouchingBoundary`), then fixed.
 #[test]
 fn a_touch_must_not_hide_a_crossing_elsewhere() {
     // A real tangency at (2,0) plus a real crossing of x = 4 at y = 2.25.
@@ -460,7 +460,7 @@ fn a_touch_must_not_hide_a_crossing_elsewhere() {
 /// segment's line for a tangency (the boundary turns back) and on **opposite** sides for a
 /// crossing (the boundary passes through). Here `(3,2)` and `(5,2)` straddle `x = 4`.
 ///
-/// ☑ Measured red first (`SelfTouchingBoundary`), then fixed.
+/// Measured red first (`SelfTouchingBoundary`), then fixed.
 #[test]
 fn a_touch_that_is_really_a_crossing_is_named_so() {
     let p = pts(&[
@@ -477,7 +477,7 @@ fn a_touch_that_is_really_a_crossing_is_named_so() {
     assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
 }
 
-/// ★★★★★ **A pinched face meshes once its touch is bridged.** The square's bottom edge
+/// **A pinched face meshes once its touch is bridged.** The square's bottom edge
 /// carries the hole's apex as a vertex of its own (index 1 — what the chart layer's pre-pass
 /// does to the shared edge), the hole's apex is index 5 at the same point, and the bridge
 /// names the two. The sweep then sees one ring, orders the twins by where they slide, and
@@ -536,7 +536,7 @@ fn tri_pinched(uv: &[P2], ring: &[usize], x: usize, y: usize) -> Result<Triangul
     triangulate_uv(&mut v, &[ring], &[], &[Revisit::Pinch { ring: 0, x, y }])
 }
 
-/// ★★★★★ **A pinched ring meshes without a bridge.** The square's bottom is touched at `(2, 0)`
+/// **A pinched ring meshes without a bridge.** The square's bottom is touched at `(2, 0)`
 /// by the tip of a triangular groove, so the one ring passes that point twice (indices 0 and 5).
 /// Six triangles for the eight-vertex ring, all CCW, covering exactly the square less the groove,
 /// whose once-used edges are the ring.
@@ -570,7 +570,7 @@ fn a_pinched_ring_meshes_without_a_bridge() {
     check_partition(&tris, &turned, &[]);
 }
 
-/// ★★ **A ring pinched at two points meshes — one pair of twins each.** A `6 × 4` rectangle whose
+/// **A ring pinched at two points meshes — one pair of twins each.** A `6 × 4` rectangle whose
 /// bottom is touched by the tips of two triangular grooves, at `(2, 0)` and `(4, 0)`: the one ring
 /// passes each point twice (indices 1 and 4, 5 and 8). Ten triangles for the twelve-vertex ring,
 /// all CCW, covering exactly the rectangle less the grooves, whose once-used edges are the ring.
@@ -611,7 +611,7 @@ fn a_ring_pinched_at_two_points_meshes() {
     check_partition(&tris, &ring, &[]);
 }
 
-/// ★★★★★ **A pinch whose sector is not convex meshes — that visit stays, the other slides.** The
+/// **A pinch whose sector is not convex meshes — that visit stays, the other slides.** The
 /// top of a `6 × 6` plate with a triangular hole `(2,2) (4,3) (4,4)` and the footprint of a
 /// triangular boss `(2,2) (4,0.5) (4,1)` meeting it at `(2, 2)`: one hole ring passing that point
 /// twice (indices 5 and 8), as the kernel builds it. One visit's sector is the 53° between the two
@@ -644,7 +644,7 @@ fn a_pinch_with_a_reflex_sector_meshes() {
     check_partition(&tris, &rings[0], &[&rings[1]]);
 }
 
-/// ★★ **Two pinches on one ring, one of them with a reflex sector.** The same plate with the
+/// **Two pinches on one ring, one of them with a reflex sector.** The same plate with the
 /// boss's corner on the plate's edge, `(2,2) (4,0) (4,1)`: the outer ring passes `(4, 0)` twice
 /// (both sectors convex, both slide) and `(2, 2)` twice (one sector 270°, which stays) — the top
 /// face the kernel builds for that boss. Nine triangles for the eleven-vertex ring.
@@ -684,7 +684,7 @@ fn a_ring_pinched_twice_with_a_reflex_sector_meshes() {
     check_partition(&tris, &ring, &[]);
 }
 
-/// ★★ **Two lobes meeting only at a point are not a face.** Two counter-clockwise triangles above
+/// **Two lobes meeting only at a point are not a face.** Two counter-clockwise triangles above
 /// `T = (0, 0)` (rays at 11°/22° and 39°/50°), one ring through `T` twice: each visit's wedge holds
 /// both of the other's rays. The visit crossing from the upper lobe to the lower turns left — a
 /// convex wedge — so «slide the convex one» alone would move it into the other lobe. That ring is
@@ -825,7 +825,7 @@ fn a_hole_wound_the_wrong_way_is_an_error() {
     ));
 }
 
-/// ★★ **A ring pinched at its extreme point winds by the first ray past the outside gap.** Three
+/// **A ring pinched at its extreme point winds by the first ray past the outside gap.** Three
 /// rings, each passing `T = (0, 0)` — its lowest point — twice, each asked from every starting
 /// index and reversed, so neither where the ring starts nor which pass comes first decides it:
 ///
@@ -908,7 +908,7 @@ fn area2(p: &[P2], ring: &[usize]) -> f64 {
         .sum()
 }
 
-/// ★★★★ **Figure-eight holes at random angles — every one meshes.** A `20 × 20` square with one
+/// **Figure-eight holes at random angles — every one meshes.** A `20 × 20` square with one
 /// hole made of two triangular lobes meeting at `T`, their four rays drawn at random integer
 /// directions and the lobes taken as two runs of adjacent rays, so the two visits never
 /// interleave. Each visit bounds the sector of material between the lobes on its side; in about
@@ -1073,7 +1073,7 @@ fn grid_rings(rng: &mut impl FnMut(i64, i64) -> i64, n: i64) -> (Vec<Vec<(i64, i
 /// corner bridges refused); a tenth keeps the commit hook quick.
 const GRID_SAMPLES: usize = 20_000;
 
-/// ★★★★ **Unions of grid cells, sheared — every pinched face meshes, and only a face is meshed.**
+/// **Unions of grid cells, sheared — every pinched face meshes, and only a face is meshed.**
 /// Random unions of unit cells on a small grid, mapped by two integer shears in turn (determinant
 /// one, so orientation and every pinch survive, at angles other than right ones). Where two cells
 /// touch only at a corner the boundary passes that corner twice, and the pairing there is drawn

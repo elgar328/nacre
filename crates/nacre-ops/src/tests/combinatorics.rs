@@ -29,7 +29,7 @@ fn three_planes_names_one_vertex_however_it_is_spelled() {
     );
 }
 
-/// ★ **`Ord` is the bare triple's lexicographic order** — the proposition the whole migration
+/// **`Ord` is the bare triple's lexicographic order** — the proposition the whole migration
 /// to this type stands on. Rules read it that would answer differently if it moved:
 /// `Aliases::union_point`'s "smallest name wins", `merge_component`'s sorted ring starts, and
 /// `reuse::canonical`'s ring rotation.
@@ -70,14 +70,14 @@ fn a_pierce_is_one_name_however_the_pair_is_handed_in() {
             "{root:?} handed in descending is {other:?} in stored order"
         );
     }
-    // ★ And the two roots of one pair stay **two** names — a canonicalization that collapsed
+    // And the two roots of one pair stay **two** names — a canonicalization that collapsed
     // them would make this pass by making everything equal.
     assert_ne!(NodeId::pierce(2, 9, 7, Lo), NodeId::pierce(2, 9, 7, Hi));
     // A different cylinder through the same two planes is a different point.
     assert_ne!(NodeId::pierce(2, 9, 7, Lo), NodeId::pierce(2, 9, 8, Lo));
 }
 
-/// ★ **The door tells the two variants apart, and `Ord` places them deterministically.**
+/// **The door tells the two variants apart, and `Ord` places them deterministically.**
 ///
 /// The order itself is a *choice* — derived `Ord` puts every `ThreePlane` before every
 /// `Pierce`, so "the smallest name wins" gains a systematic lean toward three-plane names at
@@ -105,13 +105,13 @@ fn the_two_variants_are_told_apart_and_ordered() {
     );
 }
 
-/// ★★★★★ **The chart's shape, stated from the rule rather than from itself.**
+/// **The chart's shape, stated from the rule rather than from itself.**
 ///
 /// One normal carries every clause: `n = 3e19 * (1, 2, 3)` is **wide** (a component of `9e19`,
 /// whose square leaves `i128`, so an unrescaled `e2` is `None`) and **tilted** (`n_k != 0` for
 /// the chosen `k`, without which two of the four clauses below cannot fail).
 ///
-/// ⚠ **The expected axes are written out by hand from `e1 = ê_k × n`, `e2 = n × e1`, never by
+/// **The expected axes are written out by hand from `e1 = ê_k × n`, `e2 = n × e1`, never by
 /// calling `of_normal` a second time.** An earlier draft of this lock compared
 /// `of_normal(K·n)` against `of_normal(n)` — which a chart that ignores magnitude entirely
 /// (dropping a coordinate) passes on both sides while regressing the census by nine rows. An
@@ -150,7 +150,7 @@ fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() 
     );
 }
 
-/// ★★ **A direction sign reads the truth, never the plane cache.** A prism over
+/// **A direction sign reads the truth, never the plane cache.** A prism over
 /// `(0,0)·(1, 10⁻¹⁷)·(1,1)·(0,1)`: its wall from the origin runs along `(1, 10⁻¹⁷)`, so the
 /// plane's world name is `(10⁻¹⁷·k, −k, 0, 0)` canonicalized — a first nonzero component of
 /// `10⁻¹⁷` against the largest. The class's cache is then replaced by a rounded image of the same
@@ -350,7 +350,7 @@ fn an_arc_span_reads_the_seam_point_as_any_other() {
 /// class's rings carry the bore's pierce points beside three-plane corners, and the caps carry
 /// arcs.
 ///
-/// ★ Bracketed, not contained: the `f64` is a rounding of the true point, and the interval is far
+/// Bracketed, not contained: the `f64` is a rounding of the true point, and the interval is far
 /// narrower than an ulp, so the true point is inside the interval while the `f64` may sit an ulp
 /// outside it. The assertion reads both bounds of a window around the `f64`.
 #[test]

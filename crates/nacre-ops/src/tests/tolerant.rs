@@ -156,7 +156,7 @@ fn orient3d_is_rotation_invariant() {
 /// `collect_planes` on a rotated solid fills each plane's exact `WitnessPoint` triple, whose
 /// coordinates **span the face's own plane** and whose definition is rotated (tol > 0).
 ///
-/// ★ The witness is the surface's recorded triple, which is the *first pusher's* —
+/// The witness is the surface's recorded triple, which is the *first pusher's* —
 /// an origin cuboid's axis faces intern onto the seeded world planes, so the witness is the
 /// seed's `[0, u, v]` (rotated along), not this face's corners. "Matches `tri`" was a
 /// first-push coincidence, never the contract; on-plane is.
@@ -613,7 +613,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
 /// gone vacuous.
 ///
-/// ★ **And the base *triangle* must be inert.** `orient3d` asks all four planes in coefficients
+/// **And the base *triangle* must be inert.** `orient3d` asks all four planes in coefficients
 /// — the fourth asked with its pre-motion triangle while the other three speak in coefficients
 /// makes a plane whose `d` is a rounded product two planes inside one judgement — so reversing
 /// the triangles has to change nothing — that is the property,
@@ -796,7 +796,7 @@ fn a_reflected_spelling_compares_coordinates_the_same_way() {
 
 /// How each column reaches `7.7` — the only thing that varies between a run and its control.
 ///
-/// ★ **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
+/// **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
 /// hold the shape fixed and change only the coincidence question, but it cannot be built: the
 /// two columns' shoulders are then one plane and the second column's upper pad is refused with
 /// `Rejected { SeamAlias }` — the same family of defect, one level down. `Single` differs by
@@ -942,13 +942,13 @@ fn cap_pair(m: &Model, faces: &[crate::planes::FaceRow]) -> (usize, usize) {
     (along[0].0, along[1].0)
 }
 
-/// ★★★★★ **Two bosses that reach one height by different arithmetic land on one plane.**
+/// **Two bosses that reach one height by different arithmetic land on one plane.**
 ///
 /// The heights are `2.0 + 7.7` against `2.0 + 1.1 + 6.6`. In the rationals those are the same
 /// number — `77/10` either way — but on a tilted face the cap is reached through an irrational
 /// frame, and the judge compares the plane's **witness**.
 ///
-/// ★★★ **A realized witness answers `Sign(Negative)` — two planes, with full confidence.** A
+/// **A realized witness answers `Sign(Negative)` — two planes, with full confidence.** A
 /// third of the exact ring points do not survive f64 (`11/10` is not one), so a judge reading
 /// them *realized* describes the plane through three rounded points and answers correctly about
 /// the wrong plane. The plane's own exact triple (`Surface::Plane`'s `points`) is the witness,
@@ -986,7 +986,7 @@ fn two_caps_reached_by_different_arithmetic_are_one_plane() {
     }
 }
 
-/// ★★★★★ **A plate laid across both caps builds a well-formed solid.**
+/// **A plate laid across both caps builds a well-formed solid.**
 ///
 /// This is what the split cost, and it is why the split was not merely conservative. With the
 /// caps in different classes the result came back carrying a face whose stored surface normal
@@ -1007,7 +1007,7 @@ fn a_plate_across_both_caps_builds_a_well_formed_solid() {
     ] {
         let (bad, volume_ok, valid) = plate_across_caps(recipe, span);
         assert_eq!(bad, want_bad, "{recipe:?} span={span}");
-        // ★ And the two things a caller would look at say nothing is wrong.
+        // And the two things a caller would look at say nothing is wrong.
         assert!(volume_ok, "{recipe:?} span={span}: volume");
         assert!(valid, "{recipe:?} span={span}: validate");
     }
@@ -1077,7 +1077,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
 
 // ---- the exact description: are the two caps one plane? ----
 
-/// ★★★★★ **Are the two caps *really* one plane?**
+/// **Are the two caps *really* one plane?**
 ///
 /// The exact triple rests on a premise: describing each cap by **exact points** — rather than
 /// by the rounded f64 witness — makes the judge see one plane. That is an algebraic claim about
@@ -1094,7 +1094,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
 /// * falling like `2^-prec` ⇒ the true value is **0** ⇒ the caps are one plane ⇒ premise holds;
 /// * flattening at some nonzero value ⇒ they are genuinely different planes.
 ///
-/// ★★★★★ **Measured: it falls one bit per bit**, and the mantissa stays at `0.9338…` — the
+/// **Measured: it falls one bit per bit**, and the mantissa stays at `0.9338…` — the
 /// bound is `C · 2^-prec` with a constant `C`, exactly the model `escalate` derives its jump
 /// from. So the caps *are* one plane, and only a rounded witness could split them.
 ///
@@ -1184,7 +1184,7 @@ fn two_caps_described_exactly_are_one_plane() {
     let mut prev: Option<(usize, i64)> = None;
     for prec in [128usize, 192, 256, 384, 512] {
         let notes = Notes::new();
-        // ★ A limit no realization can reach, so the judge never answers `Coincident` and has
+        // A limit no realization can reach, so the judge never answers `Coincident` and has
         // to report the bound it actually achieved.
         let standard = ProofStandard {
             prec,
@@ -1217,7 +1217,7 @@ fn two_caps_described_exactly_are_one_plane() {
         prev = Some((prec, w));
     }
 
-    // ★★★★ **The negative control — without it the loop above proves nothing.**
+    // **The negative control — without it the loop above proves nothing.**
     //
     // Offset one cap by `1e-12` *inside its own frame* and the same sweep must stop gaining a
     // bit per bit: a real separation is a floor the precision cannot go under. If this half
@@ -1263,7 +1263,7 @@ fn two_caps_described_exactly_are_one_plane() {
     );
 }
 
-/// ★ **How many planes now carry an exact point triple, and do the triples describe the
+/// **How many planes now carry an exact point triple, and do the triples describe the
 /// plane they are filed under?**
 ///
 /// The points are written but nothing reads them yet, so this is what says the producers were
@@ -1285,7 +1285,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
                 continue;
             };
             with += 1;
-            // ★ The points must satisfy the coefficients they are filed beside — both are
+            // The points must satisfy the coefficients they are filed beside — both are
             // stated in the same frame, so this is an exact rational identity with no
             // tolerance anywhere.
             if let Some(c) = m.surface_name.get(&fi.surf()).and_then(|n| n.narrow()) {
@@ -1314,7 +1314,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
     }
 }
 
-/// ★★★★★ **A boolean creates no surface — so a plane never comes from a discovered point.**
+/// **A boolean creates no surface — so a plane never comes from a discovered point.**
 ///
 /// This is the well-foundedness the whole "a plane's truth is three construction points"
 /// design rests on. If a boolean minted a plane, that plane's points would be seam vertices,
@@ -1326,7 +1326,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
 /// whichever operand face it came from. Only `ops` (construction) and `transform.rs`
 /// (moving one) ever push.
 ///
-/// ★ Asserted rather than argued: the grep that says so today is not a thing the compiler
+/// Asserted rather than argued: the grep that says so today is not a thing the compiler
 /// keeps true, and the failure it would hide is silent.
 #[test]
 fn a_boolean_mints_no_surface() {
@@ -1355,7 +1355,7 @@ fn a_boolean_mints_no_surface() {
                  would break the design's base case",
             after - before
         );
-        // ★ And the cut actually cut: a boolean that missed would keep the arena still for
+        // And the cut actually cut: a boolean that missed would keep the arena still for
         // the wrong reason.
         m.rebuild_adjacency();
         let vol_after: f64 = bodies
@@ -1369,7 +1369,7 @@ fn a_boolean_mints_no_surface() {
     }
 }
 
-/// ★★★★ **A named plane's triple names the caller's plane, full-width normals included —
+/// **A named plane's triple names the caller's plane, full-width normals included —
 /// and the point order carries the caller's polarity.**
 ///
 /// *"`c · p` is computable in `i128`"* is not a property of the triple (a frame-walk triple's
@@ -1431,21 +1431,21 @@ fn a_named_planes_points_name_the_callers_plane() {
     }
 }
 
-/// ★★★★★ **Did the operation take the exact road, or only arrive at the right answer?**
+/// **Did the operation take the exact road, or only arrive at the right answer?**
 ///
 /// Everything else in this suite checks the *answer*: a volume, a face count, a coordinate.
 /// None of them can see a build that silently gave up on exact arithmetic and reached the
 /// same number through f64 — and that is precisely the failure that has to be caught here,
 /// because it does not misbehave until two such builds have to agree with each other.
 ///
-/// ★ **A prism on an arbitrarily tilted plane is the case that exercises it.** An axis-aligned
+/// **A prism on an arbitrarily tilted plane is the case that exercises it.** An axis-aligned
 /// sketch's frame is rational in the world on its own, so it takes the exact road even when
 /// everything else is broken. A tilted one can only get there through its own
 /// frame — the caller's `PlaneDef`, its coefficients, `frame_chain`, `Motion::Frame` — and
 /// every link in that chain is load-bearing. Break any one and the extrude quietly reverts to
 /// the f64 path, still producing a prism of the right volume.
 ///
-/// ★★★★★ **Why a lock:** a producer that drops a name it cannot verify drops it for *every*
+/// **Why a lock:** a producer that drops a name it cannot verify drops it for *every*
 /// tilted plane (the check overflows on wide coefficients), which unhooks the frame and closes
 /// this road — and the whole suite, plus a bit-identical coordinate census, says nothing at all
 /// (measured).
@@ -1454,7 +1454,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
     use crate::{OpOutput, Profile2d, SketchPlane};
     use nacre_math::{Point2, Vector3};
 
-    // ★★ **A full-width direction, not a tidy one.** `[0.3, -0.2, 1.0]` is also tilted, but its
+    // **A full-width direction, not a tidy one.** `[0.3, -0.2, 1.0]` is also tilted, but its
     // decimals are three digits long, so every rational derived from it stays small and the
     // road stays open however wide the arithmetic gets. The normals a real caller hands over —
     // a slider, a computed draft angle, a proptest — carry seventeen digits, and those are what
@@ -1494,7 +1494,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
         let faces = collect_planes(&m, s).unwrap();
         let (mut exact, mut f64_only) = (0usize, 0usize);
         for fi in &faces {
-            // ★ A plane truth *is* three exact points and a motion — the type guarantees the
+            // A plane truth *is* three exact points and a motion — the type guarantees the
             // points, so the only way this face could have left the exact road is not to be a
             // plane truth at all.
             let ok = matches!(m.surface(fi.surf()), nacre_topo::Surface::Plane { .. });
@@ -1521,7 +1521,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
     }
 }
 
-/// ★★★★★ **One plane, one handle — the gain, stated as something that can fail.**
+/// **One plane, one handle — the gain, stated as something that can fail.**
 ///
 /// Everything else in this suite says *"nothing broke"*. This says what the wide derivation
 /// **bought**: a U-shaped footprint has two walls on one plane, and until the kernel could name
@@ -1529,7 +1529,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
 /// `plane_classes` merges on in O(1) and what a coplanar contact is recognised by, so a plane it
 /// cannot name is a plane the engine has to rediscover geometrically every time.
 ///
-/// ★ **The coordinates have to be full-width.** On short decimals (`1.0`, `0.5`) the narrow
+/// **The coordinates have to be full-width.** On short decimals (`1.0`, `0.5`) the narrow
 /// `Rat` route already names every wall and the two already share a handle — a version of this
 /// test written that way passes before the change and proves nothing. These are seventeen
 /// digits, which is what a slider, a computed dimension or a proptest actually produces.
@@ -1586,7 +1586,7 @@ fn two_walls_of_one_plane_become_one_surface() {
     );
 }
 
-/// ★★ A **wide** name's integer rescue, locked two ways: against the climb
+/// A **wide** name's integer rescue, locked two ways: against the climb
 /// on the real population (shared-motion gate, mirrored included), and by a starved judge
 /// that can answer *only* through the name (world gate, path proved from both sides).
 mod wide_name_rescue {
@@ -1783,7 +1783,7 @@ mod wide_name_rescue {
                         .all(|&k| t[k].base.chain_id == t[idx[0]].base.chain_id)))
     }
 
-    /// ★★★ **The probe that corrected the plan's population claim.** The wide datum's
+    /// **The probe that corrected the plan's population claim.** The wide datum's
     /// carriers are the pocket's *discovered* vertices — solved world rationals with no
     /// motion chain — so the wide name is a **world** description (`chain = []`,
     /// `rotated = false`), not a moved one. The boolean that first makes the wide plane
@@ -1930,7 +1930,7 @@ mod wide_name_rescue {
         }
     }
 
-    /// ★★★ **The rescue path itself, proved from both sides** — over questions separated
+    /// **The rescue path itself, proved from both sides** — over questions separated
     /// by `2⁻¹⁰⁰`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
     /// a starved judge with names answers the hand-derived signs (nothing but the
     /// name-integer route can), and the same starved judge without names answers `0` for
@@ -2024,7 +2024,7 @@ mod wide_name_rescue {
                     WorkingPlane {
                         base_rat: None,
                         world: None,
-                        // ★ The exact shortcuts read the name's `f64` row, and these names are
+                        // The exact shortcuts read the name's `f64` row, and these names are
                         // wide (scaled past 53 bits), so there is none: every question here goes
                         // to the BigInt rescue or the climb.
                         name_ints: keep_names

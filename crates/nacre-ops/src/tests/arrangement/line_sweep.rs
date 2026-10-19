@@ -29,7 +29,7 @@ const fn end(toggle: bool) -> LineEvent {
 }
 const T: LineEvent = LineEvent::Toggle;
 
-/// ★★ **What a face leaves on a line, by the events alone.** Each row's pieces are written by
+/// **What a face leaves on a line, by the events alone.** Each row's pieces are written by
 /// hand. The rows a pinched face makes are the ones with two events at one station under one name:
 /// two runs meeting end to start (one graze, unbroken), a crossing at a run's end, and two
 /// crossings of one point that cancel (the face goes on unbroken across it).

@@ -7,7 +7,7 @@ impl Model {
     /// [`Model::surface_cache`] returns. Total: a surface without a truth is unrepresentable — the
     /// truth **is** the arena entry a handle names.
     ///
-    /// ★★★★ **Which door answers which question** (measured).
+    /// **Which door answers which question** (measured).
     /// **Classification, comparison and branching ask the truth**; display, tessellation,
     /// bounding and measurement ask [`Model::surface_cache`]. A *kind* — "is this face planar"
     /// — is a fact about what the surface **is**, so it is asked here even though the cache
@@ -44,7 +44,7 @@ impl Model {
     /// where that guard lives (*"Handle was minted by a different Store"*), so a cache read asks
     /// its store first and throws the answer away.
     ///
-    /// ★ Measured: a `Store::get` carries this guard for free; indexing a cache alone drops
+    /// Measured: a `Store::get` carries this guard for free; indexing a cache alone drops
     /// it, and a foreign handle reaches `surface_cache`/`vertex_point`/`edge_curve` without a
     /// sound. Release builds pay nothing — `Store::get`'s assertion is `cfg(debug_assertions)`
     /// and so is this call.
@@ -57,7 +57,7 @@ impl Model {
     /// The surface a handle names, realized — the **f64 cache** of [`Model::surface`]'s
     /// answer.
     ///
-    /// ★★★★ **What belongs here**: display, tessellation, bounding and
+    /// **What belongs here**: display, tessellation, bounding and
     /// measurement — every question whose answer is a number a rounded copy can carry, plus the
     /// one that compares a cached coordinate against its cached carrier. A *kind* question does
     /// not, even though it would answer correctly; [`Model::surface`] says why.
@@ -96,7 +96,7 @@ impl Model {
     /// order), and a `Realized` cache is never written — it is already the truth's realization.
     /// The new value must be the same kind of surface.
     ///
-    /// ⚠ **Anything derived from this surface's cache is now stale** — a rim's frame is its
+    /// **Anything derived from this surface's cache is now stale** — a rim's frame is its
     /// cylinder cache's — so the caller re-derives the edges ([`Model::rebuild_edge_cache`]).
     pub fn refine_surface_cache(
         &mut self,
@@ -152,7 +152,7 @@ impl Model {
     /// The vertex a log's index names — [`Model::surface_handle_at`]'s twin, for the same reason
     /// (`replay` re-anchors an operation's handles onto the model it is rebuilding).
     ///
-    /// ★ A bounds check is all this can be, and for vertices that is a weaker guarantee than it
+    /// A bounds check is all this can be, and for vertices that is a weaker guarantee than it
     /// looks: a rejected operation still leaves cells behind (measured 63–84), so a log recorded
     /// across a reject can re-anchor **in range and onto the wrong vertex**. The discipline that
     /// answers it — rebuild from the log before recording again — lives with `replay`, and the
@@ -164,7 +164,7 @@ impl Model {
 
     /// The vertex a handle names — the **truth**, which for a vertex is its definition.
     ///
-    /// ★ One door per entity per side:
+    /// One door per entity per side:
     /// `x(h)` is the arena entry itself, `x_cache(h)` is what was realized from it, and the pieces
     /// underneath are reached by chaining on the returned type rather than by more doors here.
     #[inline]
@@ -178,7 +178,7 @@ impl Model {
         self.edges.get(h)
     }
 
-    /// The face a handle names. ★ There is no `face_cache`: a face has no realized twin, which is
+    /// The face a handle names. There is no `face_cache`: a face has no realized twin, which is
     /// why [`Model::push_face`] is worth an invariant rather than a cache pairing.
     #[inline]
     pub fn face(&self, h: Handle<Face>) -> &Face {
@@ -232,7 +232,7 @@ impl Model {
 
     /// The edge an **index** names — [`Model::surface_handle_at`]'s twin for edges.
     ///
-    /// ★★★★ **This family is also how the whole arena is walked, and that is deliberate.** There
+    /// **This family is also how the whole arena is walked, and that is deliberate.** There
     /// is no `iter()` door and there will not be one: exposing one invites treating the arena as
     /// the model, when most of what it holds is superseded (measured: 99% of the vertices after a
     /// box is moved 120 times). A consumer that wants the live model walks `live_solids` and the
@@ -244,7 +244,7 @@ impl Model {
     /// them to the reachable set would make four planted-corruption tests pass while measuring
     /// nothing, because each plants its corruption on an unreachable cell.
     ///
-    /// ☑ Walking by index is not a weaker `iter()`: `nacre-store` locks `handle_at` and `iter`
+    /// Walking by index is not a weaker `iter()`: `nacre-store` locks `handle_at` and `iter`
     /// to the same order, by unit test and by proptest, under the note that the door "grants no
     /// new power".
     #[inline]

@@ -161,7 +161,7 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
         let c = rot_z(&mut m, c, deg as i128).expect("rotating a copy");
         match boolean(&mut m, BoolKind::Fuse, part, c) {
             Ok(out) => {
-                // ★ Taking `out[0]` without asking how many there are would let a fold that starts
+                // Taking `out[0]` without asking how many there are would let a fold that starts
                 // severing carry on against a *fragment* — green, and measuring something else.
                 assert_eq!(out.len(), 1, "the {step}° fold split at the {deg}° copy");
                 part = out[0];
@@ -173,7 +173,7 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
     Ok(())
 }
 
-/// ★ The band one arbitrary probe vertex costs.
+/// The band one arbitrary probe vertex costs.
 ///
 /// "Is this hole inside that ring" is answered by casting a ray from a vertex, and a ring node on
 /// the ray's line makes the parity ambiguous, so that candidate is dropped. The cleaning pass
@@ -190,7 +190,7 @@ fn the_band_of_angles_a_single_probe_used_to_cost() {
     }
 }
 
-/// ★ The angles the retry alone could not save — where **every** candidate ray was blocked.
+/// The angles the retry alone could not save — where **every** candidate ray was blocked.
 ///
 /// A ring node sitting on the ray's line is judged, not abandoned: at 38–40° the arrangement puts
 /// one on every line a probe can cast along — five isolated corners and one whole edge,
@@ -248,13 +248,13 @@ fn the_thirty_degree_sweep_runs_to_completion() {
     }
 }
 
-/// ③ ★ The negative control: a step angle that rejects for an *other* reason, which renaming
+/// ③ The negative control: a step angle that rejects for an *other* reason, which renaming
 /// vertices must not touch. If it moves, the fix reached further than its argument says it does.
 ///
-/// ★★ Not `120°`: two bodies meeting along one line are two bodies, and that copy comes back as
+/// Not `120°`: two bodies meeting along one line are two bodies, and that copy comes back as
 /// two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`).
 ///
-/// ★★★ **45° says its truth**: the arm landing coplanar on its own body is a
+/// **45° says its truth**: the arm landing coplanar on its own body is a
 /// self-touch, and since the whole-result judgement runs before minting, the reject is
 /// `SelfTouchingResult` — `Impossible`,
 /// with the touching edge itself as the witness — not `CoplanarPinch` (`NotSupported`, a
@@ -312,10 +312,10 @@ fn the_other_rejections_are_untouched() {
     }
 }
 
-/// ④ ★ **The 120° copy.** It meets the part along one line and nowhere
+/// ④ **The 120° copy.** It meets the part along one line and nowhere
 /// else, so the fuse is the two bodies it was handed — on a real part, not a pair of cubes.
 ///
-/// ★★ Written as its own statement rather than through `sweep`, because `sweep` is a *fold* and
+/// Written as its own statement rather than through `sweep`, because `sweep` is a *fold* and
 /// asserts its result stays one solid. That assertion is what caught the first draft of this test,
 /// which claimed the fold ran to completion: it does not, and the first step is why.
 #[test]

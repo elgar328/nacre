@@ -7,13 +7,13 @@
 //! `#[cfg(test)]` rides into a release library, and this attribute silences the one warning a
 //! product build raises about it.
 //!
-//! ★ **The attribute is not the tell; the sentence above it is.** Of the nine sites that existed
+//! **The attribute is not the tell; the sentence above it is.** Of the nine sites that existed
 //! when this was written, seven said why in the line above ("Read by the census only…", "Used by
 //! `loop_winding`'s tests…") and the two that said nothing were the two defects. The population
 //! separated perfectly, so that is what this pins: silencing the compiler is allowed, silencing it
 //! without a word is not.
 //!
-//! ★★ **The window is four lines, and it was calibrated against the real population.** At three or
+//! **The window is four lines, and it was calibrated against the real population.** At three or
 //! more it flags exactly the two defects; at two it also flags `cyl_chart::regions`' second field,
 //! which shares the comment written above its sibling. Four leaves a line of margin over the
 //! narrowest width that works.
@@ -54,7 +54,7 @@ fn sources() -> Vec<std::path::PathBuf> {
     out
 }
 
-/// ★ No exemptions, and that is the point: the list is empty because the two that could not have
+/// No exemptions, and that is the point: the list is empty because the two that could not have
 /// been written down were the defect, not because every awkward case was excused.
 #[test]
 fn a_silenced_warning_states_its_reason() {
@@ -76,7 +76,7 @@ fn a_silenced_warning_states_its_reason() {
     );
 }
 
-/// ★ **The rule is exercised on strings, not on the tree.** The whole workspace's population of
+/// **The rule is exercised on strings, not on the tree.** The whole workspace's population of
 /// this attribute lives in this crate, and it is small; a scan that only ever sees a clean tree
 /// has not been shown to say anything at all.
 #[test]

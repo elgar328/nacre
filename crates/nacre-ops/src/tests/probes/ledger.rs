@@ -13,11 +13,11 @@
 //! test's. Work done on the test thread itself is already named after the test, by libtest, in
 //! parallel and `--test-threads=1` runs alike.
 //!
-//! ★ A test that reads `mine()` must build its population inside [`owned`]: in the parallel build a
+//! A test that reads `mine()` must build its population inside [`owned`]: in the parallel build a
 //! boolean called outside it hands the work to the **global** pool, whose workers are nameless, and
 //! the rows go to `"?"`. That shows up as a count of zero, not as a quiet pass.
 //!
-//! ★ **An instrument, so the file lives in the test tree**; `crate::ledger` mounts it with
+//! **An instrument, so the file lives in the test tree**; `crate::ledger` mounts it with
 //! `#[path]`.
 
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -203,7 +203,7 @@ mod tests {
     }
 
     /// **One owner's name may be a prefix of another's**, which is how a `contains` filter would
-    /// hand `a` the rows of `a_b`. ☑ Rewriting the filter as `contains` turns this red.
+    /// hand `a` the rows of `a_b`. Rewriting the filter as `contains` turns this red.
     #[test]
     fn an_owner_that_is_a_prefix_of_another_does_not_take_its_rows() {
         static L: Ledger<u32> = Ledger::new();

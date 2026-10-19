@@ -42,7 +42,7 @@ impl Witness for WorkingPlane {
 }
 
 impl Witness for FaceRow {
-    // ★ Every arm reads through [`FaceRow::plane`], which **panics on a cylinder row**: the
+    // Every arm reads through [`FaceRow::plane`], which **panics on a cylinder row**: the
     // only predicate that runs on the face table is `Judge::planes_coplanar` during class
     // discovery, and that sweep filters to plane rows before asking (a cylinder's identity is
     // the cylinder class table's question). A panic here is an upstream filter bug made
@@ -71,7 +71,7 @@ impl Witness for FaceRow {
 }
 
 impl PlaneWitness for WorkingPlane {
-    // ★ `rotated` gates both: a moved plane's name speaks in its pre-motion frame, and the row
+    // `rotated` gates both: a moved plane's name speaks in its pre-motion frame, and the row
     // is a world description only when nothing moved the plane (the table sets `rotated` from
     // that — including a `Through` plane whose vertices meet in a frame its motion does not name).
     fn exact_coeffs(&self) -> Option<[f64; 4]> {

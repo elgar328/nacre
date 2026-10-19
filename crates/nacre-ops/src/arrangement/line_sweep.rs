@@ -9,7 +9,7 @@ use super::*;
 /// piece. The road that collected the stations knows its line — a class line on a plane face, a
 /// ruling on a lateral — and this does not.
 ///
-/// ★ **A station is a point, not an event.** A boundary that passes one point twice — a face
+/// **A station is a point, not an event.** A boundary that passes one point twice — a face
 /// pinched there — leaves two events under one name at one station: a run's end and a touch, or
 /// two runs meeting end to start. They are one point and are read as one station; refusing them
 /// as two coinciding features refuses every pinched face. Two **different** names at one station

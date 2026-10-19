@@ -12,7 +12,7 @@
 //! measures a different one: 454 of 91,394 result vertices in the corpus, short by at most 2.1e-14
 //! (about two ulps at these coordinates), and a `replay` proptest run drew one.
 //!
-//! ★ The proptest seed that found it is kept, but a seed is a lucky draw. What this file asserts is
+//! The proptest seed that found it is kept, but a seed is a lucky draw. What this file asserts is
 //! the **proposition**, on shapes chosen because they must exercise it.
 
 use nacre_exact::Axis;
@@ -50,7 +50,7 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 /// Returns how many vertices were **realized from their definition**, so a fixture that stopped
 /// producing any cannot pass by measuring nothing.
 ///
-/// ⚠ Only realized (`Realized`) vertices are walked — the cache claims nothing about the rest — and
+/// Only realized (`Realized`) vertices are walked — the cache claims nothing about the rest — and
 /// the callers' `> 0` is what keeps the skip from swallowing the whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
@@ -94,7 +94,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
     measured
 }
 
-/// ★ **The shape that re-names a vertex onto a rotated plane.**
+/// **The shape that re-names a vertex onto a rotated plane.**
 ///
 /// Chosen by measurement, not by reasoning: two boxes with one rotated 30/45/60° read like the
 /// right thing but never make a vertex whose definition is re-derived onto another plane, so they
@@ -102,7 +102,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
 /// apex edge pierces the staircase's step face, four planes meet at that point, and the assembly
 /// re-names the vertex.
 ///
-/// ★★ Measured against the computing triple instead, this goes red. A lock that stays green either
+/// Measured against the computing triple instead, this goes red. A lock that stays green either
 /// way measures nothing.
 #[test]
 fn a_pierced_step_realizes_on_its_defining_planes() {

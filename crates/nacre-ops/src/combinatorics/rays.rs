@@ -16,13 +16,13 @@ pub(crate) fn every_ray(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
-    // ★★ **The unnameable check is the walk's, so it is asked per `qa` rather than once up
+    // **The unnameable check is the walk's, so it is asked per `qa` rather than once up
     // front**: a ring carrying a node the walk cannot read is refused by the first ray that
     // actually asks, not before any ray is cast. The two readings differ only when *every* `qa`
     // answers `AllOn` — a ring lying in both cut planes — and that pairs with a pierce node nothing
     // produces here, so the difference is unreachable twice over.
     //
-    // ★ A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
+    // A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
     // a dropped member would be a different polygon answered about confidently — which is why the
     // walk is handed the ring **whole** and answers `Unnameable` for the ring rather than letting
     // a caller drop a node (see [`three_plane_probes`], where dropping *is* honest).
@@ -32,13 +32,13 @@ pub(crate) fn every_ray(
         // Where the ring meets the line — the reading every road that walks a plane face's ring
         // along a line shares ([`ClassLine`]).
         //
-        // ★ **A straight edge's `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
+        // **A straight edge's `Crossing` needs no per-edge derivation.** "Is `X = {P, Q_a, R}` strictly inside
         // the edge", asked with two `order_along`s — `a` the sign of `X − From` along `P ∩ R` and
         // `b` that of `X − To`, both normalized to the same direction on the same line — holds iff
         // `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a`, which the walk already
         // knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        // ★ No cylinder table on this road for a class with a world statement ([`silent_table`]):
+        // No cylinder table on this road for a class with a world statement ([`silent_table`]):
         // a pierce node in a **result** cell's ring declines here (`nesting` reads it as the road
         // declining, and the coordinate road answers), and so does an arc whose crossings or
         // departure need the table. A class the gate passed as silent reads the gate's record
@@ -130,7 +130,7 @@ pub(crate) fn every_ray(
 /// crosses the interior. An interval query has no candidate to fall back to, so every case that one
 /// declines has to become a value.
 ///
-/// ★ **One algorithm, no special cases.** The rings meet the line `P ∩ w` at a set of places; the
+/// **One algorithm, no special cases.** The rings meet the line `P ∩ w` at a set of places; the
 /// two unbounded ends of the line are outside the face and each genuine crossing flips that, so the
 /// line reads **outside / inside / outside / …**. The answer is whether any *inside* stretch
 /// overlaps the open `(u, v)`. Written as branches — "is there a crossing between them", "is it in a
@@ -142,18 +142,18 @@ pub(crate) fn every_ray(
 /// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the
 /// rule `design.md` states one dimension down for 2D sketches. A circle hole meets the line at the
 /// two points where it crosses the hole's cylinder ([`class_line_meets_cylinder`] — a tangent line
-/// touches without crossing), and they toggle like any crossing. ★ The circles are read only when
+/// touches without crossing), and they toggle like any crossing. The circles are read only when
 /// the polygon bounds alone leave an inside stretch overlapping the segment: a hole only takes
 /// material away, so a «no» needs no circle, and asking one can fail where the answer needed none.
 /// A face bounded outside by a circle (a cap disk) is not this road's: its polygon bounds are holes.
 ///
-/// ★★ **A `Run` is a stretch, not a place.** `Run { len >= 2 }` means the boundary *lies along* the
+/// **A `Run` is a stretch, not a place.** `Run { len >= 2 }` means the boundary *lies along* the
 /// line, so it occupies an interval where the segment would be **on** the face rather than inside
 /// it — two faces sharing an edge, which is ordinary adjacency. Those stretches are boundary and
 /// are not counted as inside; `flanks_differ` still says whether crossing the run flips the side,
 /// which is the rule the tracer and the ray caster already read a ring with.
 ///
-/// ★★ **A ring a cylinder trimmed is read as the tracer reads it** — through [`ClassLine`] with the
+/// **A ring a cylinder trimmed is read as the tracer reads it** — through [`ClassLine`] with the
 /// whole cylinder table, so a pierce corner is sided by [`side_of`]'s pierce arm and an arc's and
 /// a ruling's crossings are counted and named; a run's ends are pinned by [`pin_for`], a pierce
 /// corner by the plane of its own pair that cuts the line. No part of that reading sits
@@ -196,7 +196,7 @@ pub(crate) fn segment_meets_face(
             // Loops bound a cylinder, never a plane — a producer error, not an input.
             BoundEdges::Lateral(_) => return Err(reject(RejectReason::RingNaming)),
         };
-        // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
+        // A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
         let line = ClassLine::new(jd, cyls, p, w, &nodes, |i| (&ring[i].carrier).into());
@@ -300,7 +300,7 @@ fn inside_overlaps(
         // The cell runs from this event's far end to the next event's near end.
         let cell_start = events[i].0[1];
         let Some(next) = events.get(i + 1) else {
-            // ★ Reaching the unbounded tail while *inside* means the bounds crossed the line an
+            // Reaching the unbounded tail while *inside* means the bounds crossed the line an
             // odd number of times, which a closed curve cannot do. Reading it as "outside" would
             // let a real contact past in silence, so it is named instead — the same rule the rest
             // of this engine follows for an invariant it cannot verify.
@@ -318,7 +318,7 @@ fn inside_overlaps(
 /// Every **face** incident to `vh`, as `planes`-table slots. (It returns `inc`'s pairs verbatim,
 /// and those are faces. Its one caller maps them through `plane_ix`.)
 pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<usize> {
-    // ★ A lookup — the incidence table carries the vertex → faces map (built once per
+    // A lookup — the incidence table carries the vertex → faces map (built once per
     // operand), rather than a scan of every edge for every vertex asked.
     inc.faces_at(vh).to_vec()
 }
@@ -343,7 +343,7 @@ pub(super) fn point_on_ring(
             .carrier
             .wall()
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
-        // ☑ A literal triple, so `side_of`'s pierce arm is unreachable here and the empty
+        // A literal triple, so `side_of`'s pierce arm is unreachable here and the empty
         // cylinder table is never consulted — this asks about a *point*, not a ring.
         #[expect(
             clippy::disallowed_methods,

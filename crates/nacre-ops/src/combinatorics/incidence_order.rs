@@ -6,7 +6,7 @@ use super::*;
 /// is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
 /// it happens in `loop_triples`, nowhere else.
 ///
-/// ★ It also holds **every vertex's incident faces**, read off the same walk. That table
+/// It also holds **every vertex's incident faces**, read off the same walk. That table
 /// is what lets a ring vertex be named from *all* the planes through it rather than from the one
 /// face loop asking — and that set takes no `O(V·P)` query: the
 /// operand's own topology knows it, and the edge walk visits every (vertex, face) pair anyway.
@@ -90,7 +90,7 @@ pub(crate) fn order_along(
 /// **The order of two points along `L = P ∩ Q`, whatever pins them** — [`order_on`] for an end
 /// carried as a (name, pin) pair.
 ///
-/// ★★★★★ **Which direction is `order_along`'s, derived rather than matched.** [`Judge::orient3d`]
+/// **Which direction is `order_along`'s, derived rather than matched.** [`Judge::orient3d`]
 /// is *not* a four-plane determinant — it is the point `V = {p, q, i}` against the **triangle** `j`,
 /// so it is symmetric in its first three. With `Vᵢ − Vⱼ = t·(n_p × n_q)` (both lie on `L`),
 ///
@@ -126,7 +126,7 @@ pub(crate) fn order_pinned(
 /// pins by [`order_along`], any pair with a pierce point through the located forms
 /// ([`order_located`]).
 ///
-/// ★ **Two plane pins take `order_along` here, before anything is located.** The located road gives
+/// **Two plane pins take `order_along` here, before anything is located.** The located road gives
 /// the same sign (its first arm is `order_along` with the Cramer parts cached), but building the
 /// forms for a single comparison is not free: a variant where the ray caster and the chord test
 /// asked their plane pairs that way — the ray even locating `v` once per ray — ran 2–4% slower on
@@ -149,7 +149,7 @@ pub(crate) fn order_on(
 
 /// **What a point on `L = P ∩ Q` is given as** — the input [`locate`] and [`on_line`] take.
 ///
-/// ★★★★ **A plane pin brings no name, and that is the point.** `{p, q, pin}` *is* the name, so
+/// **A plane pin brings no name, and that is the point.** `{p, q, pin}` *is* the name, so
 /// asking a caller for one means building a `NodeId` — a sorted triple — that both constructors
 /// then ignore. The arrangement's split-point sort does that twice per comparison, and it showed:
 /// the sort phase ran 29% longer with the name in the signature than without it.
@@ -161,14 +161,14 @@ pub(crate) enum PointOn {
 }
 
 impl PointOn {
-    /// ★★★★ **A cylinder pin arrives with a pierce name — a producer's invariant, so this stops
+    /// **A cylinder pin arrives with a pierce name — a producer's invariant, so this stops
     /// loudly rather than naming a refusal.** Every site that writes `EndPin::Cylinder` writes the
     /// `NodeId::Pierce` beside it, so the two disagreeing is a defect in this kernel rather than a
     /// property of the model, and [`RejectReason::PierceVertexUnnamed`] would be a false sentence
     /// for it: that one says the point *is* exactly named and only the path lacks a way to carry
     /// it. The rule is `crate::planes::ClassIx::plane`'s — *"a loud panic beats a silently wrong
     /// plane."*
-    /// ☑ Measured unexercised over the whole suite and the ignored sweep before it was made loud.
+    /// Measured unexercised over the whole suite and the ignored sweep before it was made loud.
     #[inline]
     pub(crate) fn of(pt: (NodeId, EndPin)) -> PointOn {
         match pt.1 {
@@ -189,7 +189,7 @@ impl PointOn {
 /// **A point on `L = P ∩ Q` with the parts a comparison needs already computed** — the form
 /// [`order_located`] takes.
 ///
-/// ★★★★★ **This exists so the rule can have one implementation *and* keep its hoists.** The
+/// **This exists so the rule can have one implementation *and* keep its hoists.** The
 /// arrangement's interval overlay is the boolean's hottest named phase (12–24% of it, 1.4–3.2M
 /// containment questions per 60-fin fold), and its speed comes from building a point's Cramer
 /// parts **once per wall pair** and its `dir_sign` **once per segment endpoint**, then asking many
@@ -197,7 +197,7 @@ impl PointOn {
 /// alternative — a fast inlined copy beside the general one — is the defect shape this codebase
 /// keeps finding in itself, so the hoist becomes an *argument* instead of a second spelling.
 ///
-/// ★★ **Both sides are `Located`, and the symmetry is load-bearing.** A draft took one side bare
+/// **Both sides are `Located`, and the symmetry is load-bearing.** A draft took one side bare
 /// plus a separate `b_ds: Option<i8>`, which is a value that has to match arguments it cannot see
 /// — the shape of a real bug (passing the wrong `q`). Built here, `ds`
 /// cannot disagree with the `(p, q)` it was built for. And the symmetry pays again: a segment
@@ -206,9 +206,9 @@ impl PointOn {
 pub(crate) enum OnLine {
     /// A point three planes name. `ds` is `dir_sign(p, q, pin)`.
     ///
-    /// ★ `ds` is read when this point is the **second** argument — the formula is
+    /// `ds` is read when this point is the **second** argument — the formula is
     /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
-    /// ★ **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
+    /// **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
     /// derivable and storing it put a 32-byte `NodeId` in a `Vec` the containment loop reads
     /// millions of times. What it was for — identity against the other side — needs none: a
     /// plane-pinned point can never *equal* a cylinder-pinned one, so cross-variant identity is
@@ -216,7 +216,7 @@ pub(crate) enum OnLine {
     Class { pin: usize, ds: i8 },
     /// A point a cylinder pins: the meet line of its two planes and the root along it.
     ///
-    /// ★★★★ **Boxed, and the profile is why** — the same reason [`EdgeDir::Arc`] is: a `MeetLine`
+    /// **Boxed, and the profile is why** — the same reason [`EdgeDir::Arc`] is: a `MeetLine`
     /// and a `QuadVal` are an order of magnitude wider than a plane pin's two words, and the
     /// arrangement stores one of these **per segment endpoint** while every question on the hot
     /// path is a plane pin. Unboxed it moved `split_at_crossings` from 23.2% of a rotated fold to
@@ -264,16 +264,16 @@ impl PierceAt {
 /// A point in the form a comparison's **first** argument needs: an [`OnLine`] plus the Cramer
 /// handle the plane road asks `orient3d` of.
 ///
-/// ★★★★★ **The asymmetry is measured, not assumed.** A draft made both sides `Located` for the
+/// **The asymmetry is measured, not assumed.** A draft made both sides `Located` for the
 /// symmetry, and the profile refused it: an endpoint's handle is **never read** — the plane road is
 /// `at_a.orient3d(b.pin) × ds_b` — while `ImplicitPoint` is wide enough (a `OnceCell` of Cramer
 /// parts) that storing two per segment moved `split_at_crossings` from 23.2% of a rotated fold to
 /// 27.2%, and 12.1% of an axis-aligned one to 17.8%. First arguments are built a few times per
 /// wall; second arguments are stored per segment and asked millions of times.
-/// ★ What the symmetry was protecting against survives: `ds` is still built beside the `pin` it
+/// What the symmetry was protecting against survives: `ds` is still built beside the `pin` it
 /// belongs to, by one constructor, so it cannot disagree with the `(p, q)` it was made for.
 pub(crate) enum Located<'a> {
-    /// ★ **No `ds` here, and that is the point.** The plane road is
+    /// **No `ds` here, and that is the point.** The plane road is
     /// `at_a.orient3d(b.pin) × ds_b` — a *first* argument's `dir_sign` is never read. Computing it
     /// anyway cost a `plane_pair_dir_sign` per wall pair and per sub-interval: measured, the cover
     /// loop went 48.6→90.8ms on an axis-aligned fold with the trip counts unchanged.
@@ -289,17 +289,17 @@ pub(crate) enum Located<'a> {
 
 /// Whether two located points are **the same point by identity**, without asking a predicate.
 ///
-/// ★ Two plane-pinned points compare by **pin**, which is the integer test the arrangement's
+/// Two plane-pinned points compare by **pin**, which is the integer test the arrangement's
 /// overlay has always used: on one line `{p, q, pin}` is injective in `pin`, so equal pins are one
 /// point. It is a *sufficient* condition and not the whole test — where four planes meet, one point
 /// wears two pins — which is why callers still ask the order afterwards.
-/// ★ Anything a cylinder pins has no pin payload to compare, so those compare by **name**.
+/// Anything a cylinder pins has no pin payload to compare, so those compare by **name**.
 #[inline]
 pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
     match (a, b) {
         (Located::Class { pin: x, .. }, OnLine::Class { pin: y, .. }) => x == y,
         (Located::Pierce { name: x, .. }, OnLine::Pierce { name: y, .. }) => x == y,
-        // ★ A point three planes name and a point a cylinder pins are never the same *name* — the
+        // A point three planes name and a point a cylinder pins are never the same *name* — the
         // two are different variants of `NodeId`. Whether they are the same **point** is a
         // different question, and the order predicate below is what asks it.
         _ => false,
@@ -314,24 +314,24 @@ pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
 /// is contained iff it lies between the two — opposite order signs — or a `0` says it *is* one of
 /// them by a second name.
 ///
-/// ★ **Asked before the predicates, not after.** Identity is a *sufficient* condition for
+/// **Asked before the predicates, not after.** Identity is a *sufficient* condition for
 /// containment, so answering it first skips both orientations. It is not the whole test: where four
 /// planes meet, one point wears two pins, and `at` may be the group's representative while the edge
 /// still remembers the other — which is what the `== 0` arms catch. Subsumed, not dropped; the
 /// order between them is free.
 ///
-/// ★★★★★ **`ends` must have been located for the very `(p, q)` handed in here.** Each [`OnLine`]
+/// **`ends` must have been located for the very `(p, q)` handed in here.** Each [`OnLine`]
 /// carries a `dir_sign` — or a `(line, s)` — made for one plane pair, and asking about a point
 /// located for a *different* pair silently compares two different lines. The type does not say so:
 /// `OnLine` records no pair, and giving it one widens the vector the overlay's cover loop reads
 /// millions of times. **Callers hold the pair beside the ends.**
 ///
-/// ★ **The point is a parameter, and that is what lets a caller hoist it.** The point asked about
+/// **The point is a parameter, and that is what lets a caller hoist it.** The point asked about
 /// is constant for every edge on one wall, so a caller locates it once per **wall pair** and every
 /// edge there shares its Cramer parts. Taking a bare class instead would cap the sharing at one
 /// edge's two endpoints, which is what a `_pair` predicate did.
 ///
-/// ★ `None` is a description that could not be formed exactly, never a shape this cannot answer;
+/// `None` is a description that could not be formed exactly, never a shape this cannot answer;
 /// the callers turn it into [`crate::RejectReason::WitnessNotRational`].
 #[inline]
 pub(crate) fn closed_contains(
@@ -352,7 +352,7 @@ pub(crate) fn closed_contains(
 
 /// Put a point on `L = P ∩ Q` into the form [`order_located`] takes.
 ///
-/// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — so a plane pin
+/// **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — so a plane pin
 /// never makes a comparison fail.
 #[inline]
 pub(crate) fn on_line(
@@ -368,7 +368,7 @@ pub(crate) fn on_line(
             ds: dir_sign(jd, p, q, pin),
         }),
         PointOn::Pierce(name) => {
-            // ★ A `match` and not a fallback: a third variant must light this up rather than
+            // A `match` and not a fallback: a third variant must light this up rather than
             // fall in with the three-plane one (`winding`'s `coord_key` states the rule).
             let cyl = match name.kind() {
                 NodeKind::Pierce { cyl, .. } => cyl,
@@ -385,7 +385,7 @@ pub(crate) fn on_line(
 
 /// Whether a pierce point's name puts it on the line `p ∩ q` — the pair the two locators are handed.
 ///
-/// ★ **A producer's invariant, asserted rather than trusted.** A pierce point is located as one
+/// **A producer's invariant, asserted rather than trusted.** A pierce point is located as one
 /// only on the line its own pair names: a site that mints the point on a line names it by that
 /// line's pair, and a site that pins an end arriving under a name asks [`pin_for`], which answers
 /// the quadric for the name's own pair alone and the point's other plane for any other line. The
@@ -401,7 +401,7 @@ fn names_the_line(name: NodeId, p: usize, q: usize) -> bool {
 
 /// Put a point into the **first**-argument form — an [`on_line`] with the Cramer handle beside it.
 ///
-/// ☑ **Infallible for a plane pin**, like [`on_line`].
+/// **Infallible for a plane pin**, like [`on_line`].
 #[inline]
 pub(crate) fn locate<'j>(
     jd: &'j Judge<'j, WorkingPlane>,
@@ -416,7 +416,7 @@ pub(crate) fn locate<'j>(
             at: jd.point(p, q, pin),
         }),
         PointOn::Pierce(name) => {
-            // ★ A `match` and not a fallback: a third variant must light this up rather than
+            // A `match` and not a fallback: a third variant must light this up rather than
             // fall in with the three-plane one (`winding`'s `coord_key` states the rule).
             let cyl = match name.kind() {
                 NodeKind::Pierce { cyl, .. } => cyl,
@@ -434,10 +434,10 @@ pub(crate) fn locate<'j>(
 /// **The order of two located points along `L = P ∩ Q`** — [`order_on`]'s road for a pair with a
 /// pierce point, and the whole rule for a caller that hands its hoists in rather than rebuilding them.
 ///
-/// ★★★★★ The plane/plane test is the **first statement** on purpose: everything after it computes
+/// The plane/plane test is the **first statement** on purpose: everything after it computes
 /// the line's rational direction and a radical comparison, and the overlay asks this millions of
 /// times on pairs that never reach there.
-/// ★★★★★ **Hot and cold are separate functions, and the profile is what says so.** With the
+/// **Hot and cold are separate functions, and the profile is what says so.** With the
 /// quadratic road in the same body the plane road stopped being inlined, and the arrangement's two
 /// containment loops — 1.4M and 3.2M questions per 60-fin fold — **doubled**: collect 78→153ms
 /// rotated, cover 49→100ms axis-aligned, with the trip counts unchanged. The same shape
@@ -450,7 +450,7 @@ pub(crate) fn order_located(
     a: &Located<'_>,
     b: &OnLine,
 ) -> Option<i8> {
-    // ☑ `order_along(jd, p, q, i, j)` exactly: `ImplicitPoint::orient3d(j)` is
+    // `order_along(jd, p, q, i, j)` exactly: `ImplicitPoint::orient3d(j)` is
     // `Judge::orient3d(p, q, pin, j)` on the same four planes with the Cramer parts cached, and
     // `ds` is that call's `dir_sign` factor.
     if let (Located::Class { at, .. }, OnLine::Class { pin: j, ds, .. }) = (a, b) {
@@ -462,7 +462,7 @@ pub(crate) fn order_located(
 /// [`order_located`]'s other road: anything a cylinder pins. Kept out of line so the plane road
 /// above stays small enough to be.
 ///
-/// ★ **A pierce point against a plane pin is the plane road's own formula.** The plane road's
+/// **A pierce point against a plane pin is the plane road's own formula.** The plane road's
 /// `at.orient3d(j) · ds` is «the side of the first point against `j`, times `dir_sign(p, q, j)`»
 /// ([`order_pinned`]'s derivation — `j`'s orientation cancels as a square), and a pierce point has a
 /// side of a plane too ([`PierceMeet::side`]). So the mixed pair reads no coordinate of the plane-pinned
@@ -480,7 +480,7 @@ fn order_located_quad(
     use nacre_exact::Orient;
     use nacre_exact::quad::cmp_coord_branch;
     let (m1, m2, meets) = match (a, b) {
-        // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
+        // Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
         (Located::Class { .. }, OnLine::Class { .. }) => return None,
         (Located::Pierce { at, .. }, OnLine::Class { pin, ds }) => {
@@ -506,7 +506,7 @@ fn order_located_quad(
         }
     };
     // The axis is the first component the line's direction has, and the order along the line is
-    // the order on that axis times that component's sign. ★ The direction is the rational one:
+    // the order on that axis times that component's sign. The direction is the rational one:
     // on an axis where the true component is `0` every point of the line has the same coordinate,
     // so an axis picked off the rounded plane caches there reads two distinct points as one.
     let d = stored_line_dir(jd, p, q)?;
@@ -522,7 +522,7 @@ fn order_located_quad(
         (s != 0).then_some((k, s))
     })?;
     let order = sign(cmp_coord_branch(m1, m2, k)) * dsign;
-    // ★ The box road's convention (`sign((a − b)·d)` along the stored direction), checked against
+    // The box road's convention (`sign((a − b)·d)` along the stored direction), checked against
     // the exact one wherever both answer — the road a pair with a nameless point takes, so a
     // difference between the two would order such a point against its named neighbours wrongly.
     debug_assert!(

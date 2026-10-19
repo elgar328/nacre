@@ -34,7 +34,7 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
         (along_x(0, 5), [-10, 10], [true, false, false]),
         // Off the end of `B`'s own span, and nothing else.
         (along_x(0, 1), [5, 10], [false, true, false]),
-        // ★ Beside it, across both axes — only the common perpendicular sees this.
+        // Beside it, across both axes — only the common perpendicular sees this.
         (along_x(5, 1), [-10, 10], [false, false, true]),
         // Straight through it: no direction separates them, and none may.
         (along_x(0, 1), [-10, 10], [false, false, false]),
@@ -53,7 +53,7 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
     assert_eq!(separating_dirs(&a, &parallel).len(), 2);
 }
 
-/// ★★ **The third direction is the face-level twin of the surface rung.** With a whole circle
+/// **The third direction is the face-level twin of the surface rung.** With a whole circle
 /// and no span, `separated` along the common perpendicular says exactly what
 /// [`nacre_exact::cylinders_clear`] says about the infinite surfaces — so the face test does
 /// not disagree with the rung that runs before it, it only knows more when a face knows more.
@@ -145,7 +145,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
     assert_eq!(reach_clears(&reach, q(-1, 10), q(1, 10)), Some(false)); // inside
     assert_eq!(reach_clears(&reach, q(-1, 10), z(1)), Some(false)); // straddles
 
-    // ★ **An arc reaches less than its circle.** The quarter arc from `(−r, 0)` to
+    // **An arc reaches less than its circle.** The quarter arc from `(−r, 0)` to
     // `(0, −r)` — the third quadrant, counter-clockwise about `+z`.
     let m = [z(0), z(0), z(1)];
     let arc = RimArc {
@@ -207,7 +207,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
 /// `0.5` whose axis stands at `x = 0.5`, so the wall `x = 0` is **exactly** `r` away. Hand
 /// geometry throughout — nothing below is copied from an engine run.
 ///
-/// ★ Called directly rather than through the gate's ledger: a process-global read by tests
+/// Called directly rather than through the gate's ledger: a process-global read by tests
 /// running in parallel attributes one fixture's rows to another
 /// ([[nondeterministic-fixtures-and-instruments]]), and the row builder is a pure function of
 /// the setup, so the honest reading is to hand it that setup.
@@ -357,7 +357,7 @@ fn half_cylinder_and_box(lo: [f64; 2], hi: [f64; 2]) -> Result<Vec<Tangency>, Bo
     crate::arrangement::plane_index_setup(&m, a, b).map(|s| s.tangencies)
 }
 
-/// ★ **A tangency row is about the lateral face, not its surface.** The half cylinder's surface
+/// **A tangency row is about the lateral face, not its surface.** The half cylinder's surface
 /// is tangent to three box walls; the gate writes a row only where the face is:
 ///
 /// - `y = −1` touches the surface at `(0, −1)`, on the half the lateral does not have — no row;

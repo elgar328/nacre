@@ -10,7 +10,7 @@
 //! the first-order term. No coordinate moves — the triangles come out on the exact points — only
 //! the ties are decided, consistently, as one actual small displacement would decide them.
 //!
-//! ★★★★★ **Each twin slides along one of its own edges, or stays**: `d_o = uv[o_along] − T`,
+//! **Each twin slides along one of its own edges, or stays**: `d_o = uv[o_along] − T`,
 //! `d_h = uv[h_along] − T`. On a bridge the two are the ends of the split straight segment — the
 //! split ring's copy slides toward its predecessor, the hole's toward its successor — so both
 //! twins stay *on* that line for every `ε` and keep every collinearity they had with the rest of
@@ -19,7 +19,7 @@
 //! whose sector is not convex names itself as its target (`d = 0`) and stays, the other's slide
 //! alone separating them (`polygon::pinch` decides which, and checks the sectors allow it).
 //!
-//! ★★ **The order needs nothing more — the sweep's own tie-break carries the rest.** The sweep's
+//! **The order needs nothing more — the sweep's own tie-break carries the rest.** The sweep's
 //! order (`v` descending, then `u` ascending) is itself a perturbation: the sweep line turned by
 //! an infinitesimal `δ`. The twins' displacement is taken infinitely smaller still, `ε ≪ δ`, so
 //! a twin against a non-twin at the same `v` is decided by `u` exactly as any two points are, and
@@ -27,14 +27,14 @@
 //! a side test. A displacement with a normal component is therefore no harm to the order; what
 //! the tangential slide buys a bridge is the kept collinearity.
 //!
-//! ★ **Twin-only.** Two facts keep this from touching anything else. Every zero the sweep can
+//! **Twin-only.** Two facts keep this from touching anything else. Every zero the sweep can
 //! meet without the twins is already a refusal (`self_touch`: a vertex on another edge's open
 //! segment), so once the duplicate-coordinate guard is kept for every pair but the sanctioned
 //! ones, the *only* new zeros are those with a twin in them. And a pair's two twins are the only
 //! points at their coordinate, so `d` is zero for every index outside the pairs and the
 //! first-order term reduces to a handful of exact products.
 //!
-//! ★ **Several pairs, one displacement.** A face may be pinched at several points; each point is
+//! **Several pairs, one displacement.** A face may be pinched at several points; each point is
 //! one pair, and every twin slides by the same `ε`. The first-order term is linear in the
 //! displacements, so it reads all of them at once — and pairs at different points never tie with
 //! each other, because their coordinates differ.

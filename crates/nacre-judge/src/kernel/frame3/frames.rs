@@ -185,12 +185,12 @@ fn name_bigints(name: &nacre_exact::PlaneName, flip: bool) -> [num_bigint::BigIn
 /// placement (foot of perpendicular + arbitrary axis — the frozen spec) is derived from those
 /// intervals with its error carried, never assumed away.
 ///
-/// ★ `flip` is the same measured direction every frame node carries, spent the same way: the
+/// `flip` is the same measured direction every frame node carries, spent the same way: the
 /// four coefficients are negated before the basis is derived. There is no canonical-sign field
 /// beside it — the canonical origin is sign-and-scale invariant (the doc's own words), the axes
 /// only read direction, so one global negation is the entire freedom and `flip` is its name.
 ///
-/// ★★ `vertical` is the arbitrary-axis branch (`ŷ×n` instead of `ẑ×n`), **decided once at the
+/// `vertical` is the arbitrary-axis branch (`ŷ×n` instead of `ẑ×n`), **decided once at the
 /// fixed rung and stored**. Deciding per realization precision could change the basis between
 /// the f64 cache and an escalation, and a frame that changes basis with precision is not a
 /// frame; the fixed-rung realization is deterministic, so the same statement always decides the
@@ -213,7 +213,7 @@ pub struct FrameThrough {
 pub enum JudgedPoint {
     /// Exact in its own frame — a rational base carried by a chain.
     Pure(WitnessPoint),
-    /// ★ **The meet of its three carrier planes — a point with no coordinate anywhere**.
+    /// **The meet of its three carrier planes — a point with no coordinate anywhere**.
     /// Each carrier is described by its own witness triangle; the point is realized as the
     /// homogeneous `[Dvec : D]` of the carriers' Cramer system and never divided until a
     /// realization explicitly asks for an affine value. Boxed: nine points dwarf one.
@@ -253,7 +253,7 @@ impl FrameThrough {
     /// `None` when no branch's in-plane axis can be bounded away from zero, or when the basis
     /// derivation fails there (a normal that may vanish — the points may be collinear — or an
     /// origin denominator that may reach zero, or a meet whose `D` sign the rung cannot decide).
-    /// ★ The caller must reject **by name and must not claim degeneracy**: none of these are
+    /// The caller must reject **by name and must not claim degeneracy**: none of these are
     /// proofs that the plane is degenerate, only failures to prove it healthy, and
     /// `CollinearVertices` would be a lie here.
     pub fn of(points: [JudgedPoint; 3], flip: bool) -> Option<FrameThrough> {

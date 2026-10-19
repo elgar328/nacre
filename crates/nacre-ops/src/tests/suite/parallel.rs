@@ -37,7 +37,7 @@ fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
 /// 1-thread pool must equal the default many-thread result, run repeatedly so scheduling
 /// jitter would show.
 ///
-/// **★ Two things this test has to keep honest about itself.**
+/// **Two things this test has to keep honest about itself.**
 ///
 /// First, a one-thread pool is trivially equal to a many-thread one when nothing forks, so
 /// the test passes with *no* parallelism at all. So the fixtures must have real
@@ -112,7 +112,7 @@ fn parallel_boolean_is_thread_order_independent() {
             // choosing among hundreds of candidates — which is the tie-break that a schedule could
             // otherwise decide.
             //
-            // ★★★★★ **The count does not travel, because it is not an answer.**
+            // **The count does not travel, because it is not an answer.**
             // `BoolReport::coincidences` is *"how many judgements were answered by a proved
             // coincidence"* — a measure of **work done**, and how much work the parallel phases do
             // is exactly what a schedule decides. The two decision fields carry their own rule

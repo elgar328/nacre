@@ -8,7 +8,7 @@ impl Model {
     /// A plane's push (private): the exact truth and its f64 cache, index-parallel, in one
     /// motion — so the two cannot come apart.
     ///
-    /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
+    /// **The truth comes first because the arena holds it, and the cache is derived from it
     /// here**: this door calls [`Model::apply_derivation`], so wherever the plane has a world name
     /// its cache is the truth's realization — anchor and unit normal — and `figure`, the value the
     /// pusher brought, stands only where the derivation declines (no world name: a chain that does
@@ -17,18 +17,18 @@ impl Model {
     /// answers ([`Model::refine_surface_cache`]); a test build's `surface_derive_counts` counts
     /// this door's declines, not what the pusher brought.
     ///
-    /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
+    /// **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
     /// beside a cylinder cache, and **four** sites downstream would need an `unreachable!` to
     /// say the pairing holds. A typed door makes the mismatch unspellable, and those four cite
     /// the door instead of asserting the fact.
     ///
-    /// ⚠ **No lock here, and this is why.** The proposition is the signature itself, and a
+    /// **No lock here, and this is why.** The proposition is the signature itself, and a
     /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
     /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
     /// was wide was this crate-internal one. Recorded rather than locked.
     ///
-    /// ★★★ **The name enters here too**, for the same reason the cache does: this is
+    /// **The name enters here too**, for the same reason the cache does: this is
     /// the one place a plane reaches the arena, so it is the one place that can derive a cache
     /// from the truth — and the derivation reads the name. Inserting it one line later
     /// (at interning) would leave a window in which a surface exists without the name that
@@ -115,7 +115,7 @@ impl Model {
     /// now carries a derived normal — the one fact [`Model::push_plane_raw`] needs to know that
     /// the sense is already the truth's.
     ///
-    /// ★ In a test build, counting reads the derivation computed here against the value the
+    /// In a test build, counting reads the derivation computed here against the value the
     /// producer stated, so the census `stat` rows keep meaning "how far the producer's value was
     /// from the truth's".
     ///
@@ -143,13 +143,13 @@ impl Model {
     /// A cylinder's push (private) — [`Model::push_plane_raw`]'s twin, and the other half of the
     /// reason neither takes a `nacre_geom::Surface`.
     ///
-    /// ★ **The cache is the truth's realization wherever the truth is stated in the world** — the
+    /// **The cache is the truth's realization wherever the truth is stated in the world** — the
     /// statement's origin, unit axis, unit `ref_dir` and radius, each correctly rounded
     /// ([`Model::derive_surface_cache`]); the producer's `figure` stands where the derivation
     /// declines (a chain that does not fold — `nacre-ops` realizes those from the chain). `derive`
     /// is `false` only on the test door that plants a cache the truth contradicts.
     ///
-    /// ★ **The producer's cache is still checked, before it is replaced.** It is the one value the
+    /// **The producer's cache is still checked, before it is replaced.** It is the one value the
     /// statement did not produce — the producer moved it in `f64` beside the exact transport of
     /// the statement — so holding the two together is what catches a statement carried wrong (a
     /// fold in the wrong order). Overwritten unchecked, the check `world_cylinder_def` and
@@ -214,12 +214,12 @@ impl Model {
     ///   axis and the unit `ref_dir` across it from [`nacre_exact::cyl_unit_frame_f64`], stored
     ///   as given ([`Cylinder::from_unit_frame`]). [`Model::push_cylinder_raw`] applies it.
     ///
-    /// ★ **What the anchor buys** (measured): a producer-stated anchor on a tilted plane
+    /// **What the anchor buys** (measured): a producer-stated anchor on a tilted plane
     /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
     /// moved planes it does not satisfy the plane's own coefficients. The anchor is
     /// a function of the truth, so neither varies with who asked.
     ///
-    /// ★★★★★ **Why the anchor and not a canonical row** (measured). A canonical row is the
+    /// **Why the anchor and not a canonical row** (measured). A canonical row is the
     /// tidier answer, but it moved 32 census result rows while the judge's exact shortcut still
     /// read the cache's coefficients (a rescaled row failed that road's check against the face
     /// corners — the road now reads the plane's name and not this cache), and it makes
@@ -229,7 +229,7 @@ impl Model {
     /// addition. What it buys is the same thing: the cache becomes **recomputable from the
     /// arena**, so two statements of one plane cannot disagree about where it is anchored.
     ///
-    /// ⚠ **This is not «the cache is a function of the geometry».** The anchor is the *first*
+    /// **This is not «the cache is a function of the geometry».** The anchor is the *first*
     /// point of the *first* pusher's triple; two files whose first pushers state the plane
     /// differently still differ. Inside one model interning makes that unreachable — one name,
     /// one handle, one truth.
@@ -237,7 +237,7 @@ impl Model {
     /// `None` — the caller keeps the cache it has — for a plane with no world name: an unnamed
     /// one, a chain that does not fold, a moved `Wide` name, or an overflow in the carry.
     ///
-    /// ⚠★★★ **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
+    /// **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
     /// skips the name and therefore the derivation. It is the only remaining way for a surface's
     /// truth and its cache to disagree, and it is `cfg(test)`: every call site is a fixture that
     /// wants one geometric plane held as two handles.

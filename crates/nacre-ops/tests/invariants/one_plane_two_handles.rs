@@ -8,7 +8,7 @@
 //! faces land in one plane class. What that leaves to measure is whether the result is the one
 //! the single-handle model gets, and that is what these fixtures assert.
 //!
-//! ★ **Geometry, not model contents.** A result face takes its class representative's surface —
+//! **Geometry, not model contents.** A result face takes its class representative's surface —
 //! the lowest face row, which is the first operand's side — so where the first operand sits on
 //! the nameless handle the merged face keeps it, and the named twin's model does not. That is a
 //! known defect of its own (todo), so the comparison reads positions, windings, volumes and
@@ -353,16 +353,16 @@ fn run(sc: &mut Scene, kind: BoolKind) -> (Shape, BoolReport) {
     (shape(&sc.m, &out), report)
 }
 
-/// ★★★★ **A plane stated twice — once without a name — booleans as it does stated once.** Three
+/// **A plane stated twice — once without a name — booleans as it does stated once.** Three
 /// scenes (an exact merge, two nameless handles merged on a proved coincidence, a tilted plane's
 /// judged datum merged with its named twin), each `Fuse`/`Cut`/`Common`, each overlapping and in
 /// flush contact. The nameless model and the named one must give the same shape.
 ///
-/// ★ Each case pins the road its merge takes, as measured, so a merge that moves road is news: S2's
+/// Each case pins the road its merge takes, as measured, so a merge that moves road is news: S2's
 /// flush pair merges exactly — its second datum faces `−z`, and the flipped frame's witnesses answer
 /// the coplanarity with an exact zero where the unflipped ones needed a proved coincidence.
 ///
-/// ★ The prisms are compared by bits before the boolean, S3's too: a corner on the nameless carrier is
+/// The prisms are compared by bits before the boolean, S3's too: a corner on the nameless carrier is
 /// realized through that carrier's witness triangle (`rotated_vertex::plane_witness`) and lands on
 /// the same nearest `f64` as its twin on the named plane.
 #[test]

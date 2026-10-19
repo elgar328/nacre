@@ -46,7 +46,7 @@ pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<ArcLabel>>;
 
 /// One arc's row in [`ArcLabels`] — what the arc bounds, and **who traced it**.
 ///
-/// ★★★★★ **Two different questions live here and they are not one question.** `label` answers
+/// **Two different questions live here and they are not one question.** `label` answers
 /// *membership* — "is this side material" — and that is all a label can say. Whether this lateral
 /// face is even **here** to bound it is a different proposition, and the trace answers that one:
 /// `marks` is the contribution list that covered this arc ([`MergedArc::merged`]), where a face
@@ -54,7 +54,7 @@ pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<ArcLabel>>;
 /// A **holed** lateral re-entering a boolean makes the difference visible — its two sectors can
 /// carry a literally identical label, and only the kind says which one is a face at all.
 ///
-/// ★ The two are set together, in one pass over one arc, for the reason `tri_pt3` and `rotated`
+/// The two are set together, in one pass over one arc, for the reason `tri_pt3` and `rotated`
 /// are: split into two maps they could disagree, and then nothing could say which was the truth.
 #[derive(Clone, Debug)]
 pub(crate) struct ArcLabel {
@@ -64,7 +64,7 @@ pub(crate) struct ArcLabel {
     pub(crate) label: Label,
     /// The `(solid, kind)` contributions covering this arc — [`MergedArc::merged`] verbatim.
     ///
-    /// ★★★ **A lateral face's mark here is never `Seated`, and the type already says so.** The
+    /// **A lateral face's mark here is never `Seated`, and the type already says so.** The
     /// circle arm of [`trace_one`] builds its kind from [`CylOnClass`], whose only two answers are
     /// `Crosses` and `Grazes` — there is no `Seated` arm to take, because a cylinder's lateral
     /// surface cannot lie *in* a plane. `Seated` circle contributions come from the seated arm one
@@ -77,25 +77,25 @@ pub(crate) struct ArcLabel {
 /// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides and the
 /// **axis interval** it spans.
 ///
-/// ★★★★★ **Carried out rather than recomputed.** `rulings_on_class` already decides this extent
+/// **Carried out rather than recomputed.** `rulings_on_class` already decides this extent
 /// (the rulings ladder), and a chart that worked it out again would be a **second source of one
 /// fact** — the defect shape this repository names first. So the value leaves by the road
 /// [`CutRims`] already takes: made per class, folded once, keyed in the global class space.
 ///
-/// ★ `end` is the piece's own two pierce nodes and `z` their axis parameters
+/// `end` is the piece's own two pierce nodes and `z` their axis parameters
 /// ([`node_axis_param`]). Both are carried because the chart needs the **order** (from the node's
 /// `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
 /// deriving one from the other twice is how a name loses a sign.
-/// ☑ Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
+/// Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
 /// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
 ///
-/// ★★★★ **There is no `side` here, and that is the point.** Nothing would read one: a ruling's
+/// **There is no `side` here, and that is the point.** Nothing would read one: a ruling's
 /// identity is `(wall class, root)`, and which of the two parallel rulings that is derives from it
 /// through the one production spelling ([`crate::combinatorics::ruling_side`], which is how
 /// `cyl_chart::emit_lateral` gets it at emission time). A carried copy of a derived value is a
 /// second spelling of it.
 ///
-/// ★★★★★ **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
+/// **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
 /// which is `#[cfg(test)]`, so outside a test build these fields have none — but *inside* one they
 /// must genuinely be read, and that is what caught `side`. A plain `#[allow(dead_code)]` would
 /// have kept carrying it silently, which is how the field survived a whole rung.
@@ -110,7 +110,7 @@ pub(crate) struct RulingExtent {
     /// **The chart's vertical answer**: the label of the cell this
     /// ruling borders **inside** the cylinder, on the wall class this ruling lies on.
     ///
-    /// ★★★★★ **This is the half `disk_labels`/`arc_labels` do not carry.** A [`Label`] holds the
+    /// **This is the half `disk_labels`/`arc_labels` do not carry.** A [`Label`] holds the
     /// material on **both** sides of its plane, so a ⊥ class's disk label already answers the
     /// chart's *horizontal* crossings entire — which is why `cyl_chart::Chart::read_cell` reads two
     /// of them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
@@ -120,7 +120,7 @@ pub(crate) struct RulingExtent {
     /// stored facing ([`crate::arrangement::plus_theta_is_above`]), and every half-edge of the
     /// class's walk bounds a cell — the chart's census asserts the rest are formed.
     ///
-    /// ★ It ships, not an instrument — the cell reader reads it beside the rims' labels
+    /// It ships, not an instrument — the cell reader reads it beside the rims' labels
     /// ([`crate::arrangement::cyl_chart::Chart::read_cell`]): it answers a cell no rim speaks
     /// for, and where both speak the two must agree or the cell has no chamber.
     pub(crate) label: Option<Label>,
@@ -133,7 +133,7 @@ pub(crate) struct RulingExtent {
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.
     ///
-    /// ★★★★★ **A label answers *membership*; this answers *existence*.** The same split
+    /// **A label answers *membership*; this answers *existence*.** The same split
     /// holds on the ⊥ side: the chart collects **every** perpendicular class, and a ruling's
     /// extent is
     /// set by its *wall*, not by this lateral face — so a vertical line can be in the chart while
@@ -148,7 +148,7 @@ pub(crate) struct RulingExtent {
 /// **Which of a ruling's two half-edges borders the cell inside the cylinder** — `true` for the
 /// even one (the piece's own `end[0] → end[1]`, ascending the axis).
 ///
-/// ★★★★★ **Derived from the definitions, not re-spelled.** Three sentences already in this crate
+/// **Derived from the definitions, not re-spelled.** Three sentences already in this crate
 /// compose to the answer, and none of them is written a second time here:
 ///
 /// * [`combinatorics::RulingCarrier::side`] is `sign((x − o) · (m̂ × n̂))` against the class's
@@ -169,7 +169,7 @@ pub(crate) struct RulingExtent {
 /// — letter for letter the ⊥ road's rule for a cut circle's disk side (`axis_up ≠ (frame_sign >
 /// 0)`, `emit_faces`), which is the other half-edge rule the chart frame enters.
 ///
-/// ★★★★★ **`frame_sign` is a factor, not an ornament.** `side · κ` alone is frame-free —
+/// **`frame_sign` is a factor, not an ornament.** `side · κ` alone is frame-free —
 /// true of *which ruling* it names,
 /// false of *which half-edge's cell*: the chart's left is the root face's, not the stored
 /// normal's. An unmoved corpus never tells them apart because a wall class is `frame_sign = −1`
@@ -196,14 +196,14 @@ pub(crate) struct Curved {
     /// How the arrangement split each circle it cut ([`CutRims`]) — what the arc labels are
     /// indexed by. Not the result's rim: the cleaning pass can dissolve its nodes.
     pub(crate) split_rims: CutRims,
-    /// ★ The alias table the class world settled on — every name in the labels, rims
+    /// The alias table the class world settled on — every name in the labels, rims
     /// and rulings above is its representative, and the lateral chart, which mints station
     /// names of its own, asks it (`canon_point`) so a station on a corner *is* the corner.
     pub(crate) aliases: Aliases,
     /// Per cylinder class, the ruling pieces on it — the **vertical** lines of that cylinder's
     /// chart, where `disk_labels`/`arc_labels` carry the horizontal ones' answers.
     ///
-    /// ★ **Its consumer is `cyl_chart`** — production: `emit_lateral` names
+    /// **Its consumer is `cyl_chart`** — production: `emit_lateral` names
     /// every ruling from these (`Chart::node_on`, `Chart::ruling_name`), and the census reads their
     /// `label`/`marks`.
     pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
@@ -213,7 +213,7 @@ pub(crate) struct Curved {
 /// receives.** The weld table `assemble_fuse_cut` reads; built directly from the
 /// emitted rings, rejecting rather than panicking on a degenerate meet.
 ///
-/// ★★ **A node's coordinate is the cache its vertex will receive.** Each node is realized from
+/// **A node's coordinate is the cache its vertex will receive.** Each node is realized from
 /// the definition the minting pushes ([`Def::vertex`] through [`crate::realize::point_cache`] —
 /// the push funnel's own question), so the arrangement's point and the model's cache are one
 /// answer. The classes' `f64` plane caches are not read for it: two different planes whose caches
@@ -221,7 +221,7 @@ pub(crate) struct Curved {
 /// really have. They supply only the construction figure where the realization has no road, as
 /// every producer's figure does.
 ///
-/// ★ A named function rather than a block for the same reason `per_class` is one: the arc fence
+/// A named function rather than a block for the same reason `per_class` is one: the arc fence
 /// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
 /// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
 /// means no reject name can testify that the pierce arm works, and only a direct second consumer
@@ -249,7 +249,7 @@ pub(crate) fn seam_table(
                 // the kernel simply does not build yet.
                 let def =
                     Def::of_name(node).ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
-                // The construction figure, asked only where the realization has no road. ★ A
+                // The construction figure, asked only where the realization has no road. A
                 // pierce node's is re-solved from its name — the coordinate is `a + b√c` and
                 // `pierce_point` reads it off the name's `(line, s)`; a rational road cannot hold
                 // it (`node_coords_rat`'s doc calls that a type fact, not a width decline).
@@ -323,7 +323,7 @@ pub(super) fn trace_result_faces(
 
     // **What each class contributes, for the classes the other operand cannot reach.** Everything
     // else stays `Arrange`, which is the whole engine as it was.
-    // ★ **A cylinder in the operands turns the reuse shortcut off entirely**.
+    // **A cylinder in the operands turns the reuse shortcut off entirely**.
     // `reuse::pass_through` moves faces **per plane class** (`plane_ix[fi].plane() != wc →
     // continue`), and a lateral face belongs to no plane class — so a class decided
     // `PassThrough` would carry the planes across and leave the cylinder's own faces behind,
@@ -337,7 +337,7 @@ pub(super) fn trace_result_faces(
     };
     let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
 
-    // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
+    // Two passes, because an identity must not depend on the order classes happen to be visited.
     // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
     // Doing both in one loop would key an early class's tables before a later class had reported
     // the alias that renames one of its vertices — the same point would then be assembled under two
@@ -348,10 +348,10 @@ pub(super) fn trace_result_faces(
     // during a split leaves the merge that ran before it stale, so pass A repeats until the table
     // stops growing. Discoveries only accumulate and are bounded, so this terminates; a model with
     // no concurrency at all makes exactly one round.
-    // ★ **Every class that has anything to arrange, in a fixed order.** Only the classes an operand
+    // **Every class that has anything to arrange, in a fixed order.** Only the classes an operand
     // face lies on: a result face on `W` is part of `∂A` or `∂B`, so `W` carries an operand face.
     let work: Vec<usize> = {
-        // ★ **Plane classes only.** A cylinder row rides in `trace_in` too (its lateral face is
+        // **Plane classes only.** A cylinder row rides in `trace_in` too (its lateral face is
         // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
         // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
         // says. Filtering here is the upstream filter that panic is a detector for; without it
@@ -412,7 +412,7 @@ pub(super) fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
-            // ★ A disk cap's chord is one of these segments (both ends pierce-pinned,
+            // A disk cap's chord is one of these segments (both ends pierce-pinned,
             // from the same parity sweep as every polygon's section).
             let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
@@ -463,7 +463,7 @@ pub(super) fn trace_result_faces(
         );
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
-            // ★★ **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
+            // **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
             // everything below must read the *same* edges the walk did — building it here is what
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
@@ -471,18 +471,18 @@ pub(super) fn trace_result_faces(
                 C_SPLIT,
                 ClassEdges::of(jd, cyls, wc, split, circles, rulings, &aliases)
             )?;
-            // ★★★ **A stopper is *made* here — and only made.** A stopper lives in
+            // **A stopper is *made* here — and only made.** A stopper lives in
             // this socket: built where the class-level fact lives, raised inside `reconstruct`
             // at the assembly's very end, intercepting every stage between via the
             // `deferred.unwrap_or(e)` below — so a refused population carries one name out
             // however far the pipeline gets. The arc population is supported and the socket holds
             // `None`; the ladder stays for the next out-of-coverage class (ellipses).
             //
-            // ★★ `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
+            // `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
             // *with* the boolean, so it stays green when both slide to the same wrong name; asking
             // it about interception measures the proposition next door.
             let staged = per_class(jd, cyls, kind, wc, &edges);
-            // ★ **The stopper socket.** A stopper is made here — per class, raised at
+            // **The stopper socket.** A stopper is made here — per class, raised at
             // the assembly's very end, intercepting every stage between (seven layers of
             // `deferred.unwrap_or` down the whole pipeline). The arc population is supported,
             // so the socket holds `None`; the next out-of-coverage class (ellipses,
@@ -540,7 +540,7 @@ pub(super) fn trace_result_faces(
     let mut deferred: Option<BoolError> = None;
     for (k, (faces, labels, arcs, rims, ruls, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
-        // ★ `work[k]` is the translation from this arrangement's k-th class to the global plane
+        // `work[k]` is the translation from this arrangement's k-th class to the global plane
         // class index — the curved maps are keyed in the global space the assembly speaks.
         for (cyl, label) in labels {
             curved.disk_labels.insert((cyl, work[k]), label);
@@ -555,7 +555,7 @@ pub(super) fn trace_result_faces(
         for (cyl, rim) in rims {
             curved.split_rims.insert((cyl, work[k]), rim);
         }
-        // ★ `wall` was this arrangement's k-th class; restate it in the global space the rest of
+        // `wall` was this arrangement's k-th class; restate it in the global space the rest of
         // the map already speaks, exactly as the three keys above do.
         for (cyl, mut r) in ruls {
             r.wall = work[k];

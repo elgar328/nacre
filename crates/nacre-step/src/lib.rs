@@ -63,7 +63,7 @@ impl From<brep_to_step::Error> for StepError {
 /// (`nacre::ops::refine_caches`) pays for those and reports what it could not settle; call it
 /// before exporting such a model. It takes `&mut Model`, which an export does not.
 ///
-/// ★ **`timestamp` is the header's `FILE_NAME` time stamp, written verbatim** (an ISO 8601 string
+/// **`timestamp` is the header's `FILE_NAME` time stamp, written verbatim** (an ISO 8601 string
 /// such as `2026-10-05T12:00:00Z`; `""` leaves the field blank). The caller gives it because the
 /// kernel reads no clock: the same model and the same time stamp give the same bytes, and
 /// `wasm32-unknown-unknown` has no clock to read — asking the system for the time there panics.

@@ -56,7 +56,7 @@ pub fn plane_plane(a: &Plane, b: &Plane) -> Option<Line> {
 /// `t = n·(o_p − o_l) / (n·d)`. `None` when `n·d` is exactly zero (the line runs in or
 /// parallel to the plane — no unique crossing).
 ///
-/// ★ The parallel test is **exact**, not toleranced: the production caller (the rim-circle
+/// The parallel test is **exact**, not toleranced: the production caller (the rim-circle
 /// derivation, cylinder axis × cap plane) is perpendicular by construction, so `n·d ≈ ±|n|` is
 /// far from zero; a near-parallel pair would give a far-away but well-defined crossing, which
 /// is the honest answer to the question asked.

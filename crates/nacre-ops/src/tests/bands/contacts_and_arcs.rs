@@ -6,7 +6,7 @@ use super::*;
 /// A minted vertex sits within `1e-12` of its definition — asserted from the cache where the
 /// cache proves it, and **measured here** where it does not.
 ///
-/// ★ The second half measures what a stored residual would say — the point against the surfaces
+/// The second half measures what a stored residual would say — the point against the surfaces
 /// its definition names — since the cache stores none; "skip those" would be the dishonest
 /// reading. Dropping to a bare `panic!` for the
 /// unproven variants would have turned this from a measurement into a restatement of which
@@ -90,7 +90,7 @@ fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
 /// that can reach here, and the only one whose point carries no radical (`(11, 10, 5)`,
 /// rational).
 ///
-/// ★★ **And a touch is not a break**: the circle keeps its closed cell, so nothing about the
+/// **And a touch is not a break**: the circle keeps its closed cell, so nothing about the
 /// arrangement had to change for this to work. It was refused only because the guard's
 /// sentence was wider than its proposition — measured before the narrowing landed, with the
 /// whole guard off, this already produced exactly the solid asserted below.
@@ -139,26 +139,26 @@ fn a_segment_tangent_to_the_rim_builds() {
         0,
         "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
     );
-    // ★ **This χ is the genus's lock, not the tangency's.** A pinch *that has a vertex* makes
+    // **This χ is the genus's lock, not the tangency's.** A pinch *that has a vertex* makes
     // χ odd — what `check_result_topology` reads — but a tangency mints no vertex at all
     // (below), so an even χ is compatible with a pinch and with none: it decides nothing
     // here. Deleting this assertion would lose the genus, not the manifold claim.
     m.rebuild_adjacency();
     the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
-    // ★★★★★ **And the solid meshes — across a bridge.** The boss's footprint
+    // **And the solid meshes — across a bridge.** The boss's footprint
     // touches the bore's rim at exactly one point, so the plate's top face has two inner
     // loops meeting there: its interior is pinched. `SelfTouchingBoundary` here would be
     // a statement about the *tessellator* (`validate` is clean above and the volume is
     // exact). Instead the touching sample is put into the straight edge it lies on, the two
     // holes are spliced into one at that point, and the sweep orders the twins symbolically.
-    // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
+    // Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
     // census that only agreed with itself would be measuring when it looks rather than what
     // came out. Both spellings say the same thing here.
     m.rebuild_adjacency();
     crate::tests::mesh_covers_faces("segment tangent to the rim", &m, &out);
 }
 
-/// ★★ **The fence post: a crossing that lands exactly on a segment's endpoint.** The boss's
+/// **The fence post: a crossing that lands exactly on a segment's endpoint.** The boss's
 /// corner `(8,13)` sits on the rim `(8,10)`, `r = 3`, so both edges leaving it meet the circle
 /// *at* their own end — the one place the in-segment test's inequality can be open or closed,
 /// and the two spellings give different answers.
@@ -167,7 +167,7 @@ fn a_segment_tangent_to_the_rim_builds() {
 /// it drops every root and falls back to the containment witness — a `Segment`, which would
 /// say "this edge lies inside the circle" about an edge that runs *outward* from a single
 /// touching point. Inclusive is the true sentence, and it is the one the arc split will need.
-/// ☑ Planted strict (`closed_contains` excluding the ends), this test goes red one step
+/// Planted strict (`closed_contains` excluding the ends), this test goes red one step
 /// earlier than its boss: the plate's own bore is refused (`HoleRoots`).
 #[test]
 fn a_crossing_on_a_segments_endpoint_is_inside_it() {
@@ -195,7 +195,7 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     );
     m.rebuild_adjacency();
     let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("corner on rim");
-    // ★★ **One point, several names — folded; then a pinched ring, read where it is extreme.**
+    // **One point, several names — folded; then a pinched ring, read where it is extreme.**
     // `(8,13,5)` is the boss's corner, a three-plane vertex; the rim crossings name the same point
     // as pierce points of `x = 8` (a secant through the axis) and of `y = 13` (tangent). The line
     // `x = 8, y = 13` lies on the bore, so the gate records it and the alias seed folds the names
@@ -213,7 +213,7 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     crate::tests::mesh_covers_faces("corner on the rim", &m, &out);
 }
 
-/// ★★★ **The population where the naming rule actually fires — and the first non-`+Z`
+/// **The population where the naming rule actually fires — and the first non-`+Z`
 /// cylinder in this repository.**
 ///
 /// Almost every cylinder in the suite stands on `[0, 0, 1]`, and that is not an accident of
@@ -227,7 +227,7 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
 /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` wall (interned after
 /// the caps) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
 ///
-/// ★ **A tangency, so there is exactly one root** — and that also means the
+/// **A tangency, so there is exactly one root** — and that also means the
 /// circle is not separated, so this **builds** rather than refusing. The single root is still
 /// what makes the naming rule visible here (it is what the fixture was written for), and the
 /// witness it once asserted is now the *split point that never happens*. That matters: the
@@ -278,15 +278,15 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
         2,
         "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
     );
-    // ★ The genus's lock, not the tangency's — see the note in the fixture above.
+    // The genus's lock, not the tangency's — see the note in the fixture above.
     m.rebuild_adjacency();
     the_touch_is_a_slit(&m, out[0], [4.0, 2.0, 2.0]);
-    // ★★★★★ **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
+    // **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
     // base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's
     // hole touches its own outer ring at one point and the face's interior is pinched there.
     // `validate` is clean above and the volume is exact; the touch is bridged
     // and the face's triangles are held to its exact area.
-    // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
+    // Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
     // census that only agreed with itself would be measuring when it looks rather than what
     // came out. Both spellings say the same thing here.
     m.rebuild_adjacency();
@@ -298,7 +298,7 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
 /// The near cap's circle is cut by two different plate edges (top and corner), so this
 /// result carries the arc-dominated crescent face whose chord Newell reads **backwards**
 /// (`cos = −1`, the measured wall) — `validate == []` here is what pins `loop_winding`'s
-/// segment witnesses. ★ The old fence's proposition — a root that fails to follow its pair
+/// segment witnesses. The old fence's proposition — a root that fails to follow its pair
 /// through the sort names the wrong crossing — did not retire with the reject: the mint
 /// fence asserts the pierce vertices sit **on the derived crossings**, and a wrong root
 /// moves the minted point itself.
@@ -339,7 +339,7 @@ fn a_turned_boss_over_the_plates_corner_builds() {
 /// **The audit and the boolean say the same thing about an arc class — and it says what the
 /// arrangement produced.**
 ///
-/// ★★★★ Three things are pinned here and none had a fence before.
+/// Three things are pinned here and none had a fence before.
 ///
 /// **One: the two copies of the per-class pipeline agree.** `frame_audit` re-runs pass A inline
 /// (trace, merge, split, the class's edges) and shares pass B (`per_class`) with `arrange`, so a
@@ -444,9 +444,9 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         // replay of the same pipeline stops nowhere either.
         let stopped: Vec<_> = audits.iter().filter(|a| a.failed_at.is_some()).collect();
         assert!(stopped.is_empty(), "no class stops: {stopped:?}");
-        // ★ The whole audit, not just `produced`: the ring coordinates are a sibling field, and
+        // The whole audit, not just `produced`: the ring coordinates are a sibling field, and
         // joining two filtered lists by index is the seam where they could come from different
-        // classes. ★ By reference: `Produced` carries the labels, so it is not `Copy`.
+        // classes. By reference: `Produced` carries the labels, so it is not `Copy`.
         let cut: Vec<_> = audits
             .iter()
             .filter(|a| a.produced.as_ref().is_some_and(|p| p.arcs > 0))
@@ -460,14 +460,14 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
                 arcs: 2,
                 roots: 1,
                 holes: 0,
-                // ★★ **Derived from the geometry, not read back.** `[A_above, A_below,
+                // **Derived from the geometry, not read back.** `[A_above, A_below,
                 // B_above, B_below]` for the three `+1` regions, sorted: the boss stands *on*
                 // the plate, so plate-minus-disk has the plate below it and nothing above;
                 // disk-minus-plate — the overhang's underside — has the boss above it and
                 // nothing below; and their intersection has both. The outside cell winds `-1`
                 // and is not here.
                 //
-                // ★ **The same three come out for the turned boss, and the story is the same
+                // **The same three come out for the turned boss, and the story is the same
                 // one in its own frame** — this assertion is inside the two-fixture loop, so
                 // reading it as a sentence about the straddling boss alone would be reading
                 // half of what it checks. There the class is `x = 4`: the plate lies on the
@@ -480,11 +480,11 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
             },
             "the arrangement walked the arcs, nested them, and labelled them"
         );
-        // ★★★★★ **And the faces it emitted, as coordinates.** This is what a wrong `sense` on a
+        // **And the faces it emitted, as coordinates.** This is what a wrong `sense` on a
         // split segment moves and nothing before it does: the cell counts, the nesting and the
         // sorted labels above are all identical whichever way the rings run.
         //
-        // ★★★ **The premise first.** `emit_faces` emits CCW about `n_out(wc)`, and which face
+        // **The premise first.** `emit_faces` emits CCW about `n_out(wc)`, and which face
         // is the class root — hence which way `n_out` points — is a plane-table fact, not one
         // of the fixture's numbers. Pinning it here means a root flip fails *this* assertion,
         // with its own sentence, instead of silently reversing every ring below. Both come
@@ -525,14 +525,14 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
 /// **The seam realizes a pierce vertex from its definition — seen through the door production
 /// uses, because nothing else can see it at all.**
 ///
-/// ★★★ The deferred stopper intercepts the whole seam stretch, so with the pierce arm
+/// The deferred stopper intercepts the whole seam stretch, so with the pierce arm
 /// deleted the seam fails `PierceVertexUnnamed`, the interception swallows it, and **every
 /// boolean-level fence stays green** (measured — that probe is what forced this test). The
 /// arm's only witness is a direct second consumer of `seam_table` on the very faces
 /// production feeds it, so this walks production's stretch step for step: trace, clean,
 /// append the bands, build the seam.
 ///
-/// ★ The cache is asserted **`Realized` within rounding**, never a copied value; the pierce
+/// The cache is asserted **`Realized` within rounding**, never a copied value; the pierce
 /// coordinates themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point`
 /// road, so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
 /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
@@ -647,14 +647,14 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
 /// **Every ring node of the arc population's result faces earns a definition — measured
 /// through the door production uses.**
 ///
-/// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
+/// Same instrument shape as the seam fence, same reason: the deferred stopper stands
 /// behind `name_result_vertices` (at the assembly's very end now) and intercepts
 /// everything, so no reject name can testify the naming completed — a direct second consumer
 /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
 /// and asserts on its product.
 ///
-/// ★★ Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a
-/// pierce def past its arc-carrier guard). ★ The fallback itself went **zero-population** when
+/// Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a
+/// pierce def past its arc-carrier guard). The fallback itself went **zero-population** when
 /// the split-twin subdivision landed — the bitten corner's twins match now, so its def comes
 /// down the far-plane road and no probe reddens on the fallback alone; the subdivision has
 /// its own fence (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
@@ -792,7 +792,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
 
 /// **After the split-twin subdivision, every segment edge has exactly one twin.**
 ///
-/// ★★★ The subdivision cannot be locked through the naming fence — the walls-fallback
+/// The subdivision cannot be locked through the naming fence — the walls-fallback
 /// rescues the bitten corner whether or not the twins match, so that fence is green either
 /// way. What the subdivision actually changes is the **edge-key census**: a neighbour's whole
 /// edge and the arc class's subdivided pieces share `norm_edge` keys only once the whole edge
@@ -802,7 +802,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
 /// > faces.
 ///
 /// Arc edges are excluded because their far side is the band, which contributes no ring.
-/// ★ Both-ends-pierce keys are not excluded: the carrier gives arcs their own ordered key, so
+/// Both-ends-pierce keys are not excluded: the carrier gives arcs their own ordered key, so
 /// the chord and the two arcs between one pierce pair do not fold into a single `norm_edge` key,
 /// and the chord's line key counts exactly its two coplanar faces.
 ///
@@ -935,7 +935,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
 /// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
 /// point itself, which is what this toggle-lock watches.
 ///
-/// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
+/// The coordinates are the fixtures' own crossing derivations (the same numbers the ring
 /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
 /// ascending handle order is `Vertex::Pierce`'s own contract, minted through
 /// `QuadRoot::canonical`'s second answer.
@@ -1003,19 +1003,19 @@ fn a_pierce_vertex_is_minted_and_measured() {
 
 /// **The two complementary arcs are two edges, and the cut rim is none.**
 ///
-/// ★★★ The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle
+/// The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle
 /// arm): between one pair of pierce vertices a circle offers two pieces, the endpoints
 /// alone cannot tell them apart, and the *vertex order* is the bit that does — so the store
 /// must hold **two** circle-carrier edges whose vertex pairs are each other's reverse.
 /// Erase the order from the welding key and they fold into one edge (the red probe this
 /// fence was built against).
 ///
-/// ★★ The rim skip's two sides, on one store: the **cut** circle mints no closed `[v, v]`
+/// The rim skip's two sides, on one store: the **cut** circle mints no closed `[v, v]`
 /// edge (before the skip, both fixtures minted one that only the reject discarded), while
 /// the **uncut** far rim still mints exactly one — the skip's negative control, pinned to
 /// the far cap's axis coordinate so a skip that turned into "skip every rim" reddens here.
 ///
-/// ★ The two populations differ on the chord, deliberately: the straddling boss's pierce
+/// The two populations differ on the chord, deliberately: the straddling boss's pierce
 /// pair is joined by the plate-top chord (welded with the subdivided middle piece into
 /// **one** line edge used by both coplanar faces — the subdivision's promise realized
 /// in the store), while the turned boss's pair sits across the plate corner, joined through
@@ -1161,12 +1161,12 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
 
 /// **The band's loop is one continuous cycle, and the shell closes over it.**
 ///
-/// ★★★ The band assembles its cut rim from the arc chain; this fence counts the closure
+/// The band assembles its cut rim from the arc chain; this fence counts the closure
 /// directly on the store beside the production guard: every edge the boolean minted is used
 /// exactly twice across its faces, and the band face is bounded by its two rims — each loop one
 /// vertex-continuous cycle, the derived number of half-edges between them, no edge walked twice.
 ///
-/// ★ Three fixtures: the straddling boss (lo rim cut through the seam point), the turned boss
+/// Three fixtures: the straddling boss (lo rim cut through the seam point), the turned boss
 /// (lo rim cut elsewhere), and the **hung** boss (the straddling boss mirrored under the plate —
 /// the cut circle is the band's **hi** end, so the chain is walked against the axis).
 #[test]
@@ -1253,13 +1253,13 @@ fn the_bands_loop_is_one_continuous_cycle() {
 
 /// **The grouping joins across a cut rim — through the door production uses.**
 ///
-/// ★★★ A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the
+/// A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the
 /// unordered node rule cannot either: on a 2-node circle the chord and both complementary
 /// arcs fold into one `norm_edge` pair (six users where each piece has two). The `JoinKey`'s
 /// ordered arc pairs — "a line is unordered, a circle is ordered", third appearance — give
 /// every piece exactly its cap and the band, so the result comes back as **one** component.
 ///
-/// ★ Asserted on `name_result_vertices`' own product (the subdivision must run first for the
+/// Asserted on `name_result_vertices`' own product (the subdivision must run first for the
 /// chord's line key to match), across all three fixtures. red: the band's registration
 /// removed → n == 2 and the held grouping is `PierceVertexUnnamed`.
 #[test]
@@ -1364,7 +1364,7 @@ fn the_grouping_joins_across_a_cut_rim() {
 
 /// **A cut-rim boolean builds a complete solid, and the integrals pin it exactly.**
 ///
-/// ★★★ The volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap — every fixture
+/// The volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap — every fixture
 /// is a contact), so a wrong segment sign or scale moves an exact number; and because all
 /// three fixtures share that one number, the straddling boss's two z = 2 faces additionally
 /// split the segment **signs** (the plate top loses its half-disk bite, the digon *is* the
@@ -1420,7 +1420,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
             shell_faces, minted,
             "the outer shell is exactly the boolean's minted faces"
         );
-        // ★★ **The arc integrals answer exactly** —
+        // **The arc integrals answer exactly** —
         // the volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap: every
         // fixture is a contact), so a wrong segment sign or scale moves an exact number.
         let props = nacre_props::mass_props(&m, sh).expect("the mixed loops integrate");
@@ -1430,7 +1430,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
             "volume {} vs derived {expect}",
             props.volume
         );
-        // ★ All three fixtures share that one number, so a global scale error fools them
+        // All three fixtures share that one number, so a global scale error fools them
         // together — the straddling boss's two z = 2 faces split the segment **signs**: the
         // plate top loses its half-disk bite (16 − π/8), the overhang digon *is* the other
         // half-disk (π/8).
@@ -1559,7 +1559,7 @@ fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
     nacre_props::mass_props(&m, out[0]).expect("props").volume
 }
 
-/// ★ **A bored plate takes a straddling boss — the first two-boolean chain through the arc
+/// **A bored plate takes a straddling boss — the first two-boolean chain through the arc
 /// population is green.** Volume `40·40·20 − π·4²·20 + π·5²·10 = 32000 − 70π` (the boss
 /// stands wholly above the plate top, so fuse adds its full cylinder).
 #[test]
@@ -1578,7 +1578,7 @@ fn a_bored_plate_hangs_a_straddling_boss() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ **The chained contact-cut builds clean** (grouping-arm cell). Cut the same chain
+/// **The chained contact-cut builds clean** (grouping-arm cell). Cut the same chain
 /// instead of fusing: the boss only *touches* the bored plate's top, so the cut removes
 /// nothing — and the result is the bored plate, exactly. The top ring's rim seam has to merge
 /// (an arc pair would collide in a node-pair key), or the unmerged ring keeps pierce vertices
@@ -1629,7 +1629,7 @@ fn a_chained_contact_cut_builds_clean() {
 /// actually hard was classifying **two curved bodies**, and both are now probed from a cap
 /// disk's centre — neither has a vertex to probe from.
 ///
-/// ★ Both volumes are the same number derived the same way (`π·0.5²·2`), so the assertion
+/// Both volumes are the same number derived the same way (`π·0.5²·2`), so the assertion
 /// cannot pass by matching one body against the other.
 #[test]
 fn two_cylinders_with_coplanar_caps_fuse_apart() {

@@ -4,13 +4,13 @@
 //! than stored. How wide a discovered coordinate is decides whether a new plane variant is needed
 //! or not. This is its measurement.
 //!
-//! ★ **What the instrument has to be.** `three_planes_rat` cannot answer the question it is
+//! **What the instrument has to be.** `three_planes_rat` cannot answer the question it is
 //! about: it answers only where the point fits `Rat`, so everything it reports fits by
 //! construction. `three_planes_big` has no ceiling, and it separates the two facts a checked
 //! `None` would conflate — *the point does not fit* and *an intermediate overflowed on a point
 //! that would have*.
 //!
-//! ★★ **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
+//! **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
 //! have one as a rational. A vertex's truth is `Vertex::ThreePlane`, three surface handles and
 //! **no coordinate at all**; the motion rides on the surface, and a general
 //! rotation's cos/sin are irrational. So the only rational a discovered point *could* be written
@@ -35,17 +35,17 @@
 //! | `tilted_frame`     | 16 | 12 | **59** | 0 | 0 |
 //! | `tilted_frame_x2`  | 24 | 16 | **59** | 0 | 0 |
 //!
-//! ★★★ **Nothing is wide.** The corpus maximum is **59 bits**; a second feature on the tilted
+//! **Nothing is wide.** The corpus maximum is **59 bits**; a second feature on the tilted
 //! population does not move it (59 → 59), and stacking forty motions leaves the widest *name* as
 //! wide as the same box moved to each place in one step
 //! (`a_stacked_name_is_as_wide_as_the_place_it_lands`).
-//! ★ These are **corpus
+//! These are **corpus
 //! numbers, not bounds** — the meter's negative control lives in `nacre-exact`
 //! (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 = 0` is a fact
 //! about this population and not about a clamped instrument. The narrow route answers every
 //! solved vertex (`declined_but_fits = 0`).
 //!
-//! ★ **The corpus is small** — five models, 108 vertices. It is enough to exhibit counterexamples.
+//! **The corpus is small** — five models, 108 vertices. It is enough to exhibit counterexamples.
 //! It is **not** enough to say what the widest coordinate this kernel can produce is, and a corpus
 //! maximum is not a bound in any case: the width a `Rat` must hold is a property of the *type*
 //! (`PlaneName` is `Narrow | Wide`, so a solved coordinate can be arbitrarily wide), and these
@@ -58,7 +58,7 @@
 //! | `boolean_corner` | 16 | 552 | **0** (negative control) |
 //! | `tilted_frame`   | 12 | 0 | **220 — every one** |
 //!
-//! ★★★ Spelling "the plane through those three corners" in **coordinates** produces a plane with a
+//! Spelling "the plane through those three corners" in **coordinates** produces a plane with a
 //! **different name** on tilted geometry — a different handle, and exact identity answers "no".
 //! That is the capability gap a vertex-naming datum closes, and it is a fact about the population
 //! (the control shows the two roads agreeing on every triple), not about the probe.
@@ -77,16 +77,16 @@
 //! | `tilted_frame`         | 16 | 12 | **2** | **10.7%** | 28.6% | 60.7% | 0 |
 //! | `tilted_frame_x2`      | 24 | 16 | **3** | **3.2%** | 24.5% | 72.3% | 0 |
 //!
-//! ★ Every geometrically sound triple in every population classifies as acceptable — named, a
+//! Every geometrically sound triple in every population classifies as acceptable — named, a
 //! pure-mixed statement (each vertex exact in its own frame), or a straddling vertex taken as the
 //! **meet of its carriers** (the op can still refuse an individual statement as
 //! `ThroughFrameUndecided`). The boolean over such a datum's own face is a separate boundary.
 //!
-//! ★★ **Pure-mixed is its own cause.** Rotation against the world spans the still operand's frame
+//! **Pure-mixed is its own cause.** Rotation against the world spans the still operand's frame
 //! and the turned one's; a prism on a tilted frame with a feature on a *wall* spans **two** frames
 //! of pure vertices, and two passes span three.
 //!
-//! ★★★★★ **`turned_after_the_cut` is letter-identical to `boolean_corner`**, which is the
+//! **`turned_after_the_cut` is letter-identical to `boolean_corner`**, which is the
 //! invariance a rigid motion owes. A Z-turned block's caps stay world-stated while its walls carry
 //! a node — a motion that *fixes* a plane restates nothing — so every corner is two walls and one
 //! cap. Read as "all three carriers share one motion", all 16 corners would be straddling; the
@@ -132,7 +132,7 @@ struct Tally {
     on_seam: usize,
     /// A carrier had no recorded name at all.
     unnamed_carrier: usize,
-    /// ★ A carrier's name is `Wide` — invisible to `three_planes_rat`, solvable by the twin.
+    /// A carrier's name is `Wide` — invisible to `three_planes_rat`, solvable by the twin.
     wide_carrier: usize,
     /// The three carriers do not share one motion — a **structural** limit of the exact road,
     /// nothing to do with width. Counted apart so it cannot be read as "does not fit".
@@ -144,7 +144,7 @@ struct Tally {
     /// Solved, and split by the tol class the vertex came from.
     widths_exact: Vec<u64>,
     widths_inexact: Vec<u64>,
-    /// ★★ The two causes of `three_planes_rat`'s `None`, told apart by the twin's answer.
+    /// The two causes of `three_planes_rat`'s `None`, told apart by the twin's answer.
     narrow_answered: usize,
     declined_but_fits: usize,
     declined_and_wide: usize,
@@ -226,7 +226,7 @@ fn measure(m: &Model) -> Tally {
             t.wide_carrier += 1;
         }
 
-        // ★★★ **The kernel says which vertices have a frame; this table only labels the rest.**
+        // **The kernel says which vertices have a frame; this table only labels the rest.**
         // Comparing the three carriers' motions here would be `vertex_meet`'s rule written a
         // second time — and with the invariant-plane restatement such a copy says "mixed" for
         // every corner of a turned solid and **drops them out of the width table entirely**,
@@ -256,7 +256,7 @@ fn measure(m: &Model) -> Tally {
             PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => {}
         }
 
-        // ★★ The split the whole measurement turns on. The narrow route only runs when every
+        // The split the whole measurement turns on. The narrow route only runs when every
         // carrier is narrow; where it declines anyway, the twin says which fact that was.
         let narrow_in: Option<[[Rat; 4]; 3]> = (|| {
             let mut rows = [[Rat::from_int(0); 4]; 3];
@@ -290,20 +290,20 @@ fn measure(m: &Model) -> Tally {
 /// What `DatumDef::ThroughVertices` would find when it looks at **one** vertex — solved once and
 /// reused across every triple it appears in.
 ///
-/// ★ Solving per triple would be the same `three_planes_big` call `n²` times over; solving per
+/// Solving per triple would be the same `three_planes_big` call `n²` times over; solving per
 /// vertex makes the triple pass plain combination arithmetic, so the whole `C(n,3)` sweep runs
 /// with no cap and nothing silently dropped.
 #[allow(clippy::large_enum_variant)] // a per-vertex scratch value in a measurement walk
 enum VertexReach {
     /// Carriers share one motion — the frame it is written in, and the meet **at whatever width
-    /// it needs** (★ a meet wider than `Rat` is not its own kind: the named road accepts it,
+    /// it needs** (a meet wider than `Rat` is not its own kind: the named road accepts it,
     /// so width is not a reach distinction — exactly mirroring the producer).
     Pure(Option<Handle<nacre_topo::MotionNode>>, MeetPoint),
     /// The door cannot place this vertex in any one frame. **The kernel makes these**, not the
     /// caller: a cut between a turned operand and a still one leaves corners where an unmoved wall
     /// meets two turned ones.
     ///
-    /// ★ Not simply "its three carriers carry different motions" — a *fixed* world-stated carrier
+    /// Not simply "its three carriers carry different motions" — a *fixed* world-stated carrier
     /// sits beside moved ones and is placeable anyway (`Model::chain_fixes_plane`); counting those
     /// here would report a kernel that does not exist.
     Straddle,
@@ -316,19 +316,19 @@ enum VertexReach {
 struct Reach {
     vertices: usize,
     pure: usize,
-    /// ★ How many **distinct frames** the pure vertices span. This is what decides whether the
+    /// How many **distinct frames** the pure vertices span. This is what decides whether the
     /// all-pure combination count is achieved: `through_points_rat`'s two conditions differ in
     /// kind — carriers sharing a motion is *per vertex*, three vertices sharing a frame is
     /// *pairwise* — so a triple of pure vertices in two frames is still refused.
     pure_frames: usize,
     triples: usize,
     accepted: usize,
-    /// ★ A straddling vertex does not block its triple: the meet
+    /// A straddling vertex does not block its triple: the meet
     /// road accepts it (the op can still refuse an individual statement with
     /// `ThroughFrameUndecided`, so like the other buckets this is the classifier's answer — an
     /// upper bound on op-level acceptance).
     accepted_straddle: usize,
-    /// ★ Pure vertices in differing frames: the judged frame accepts them, namelessly. The op can
+    /// Pure vertices in differing frames: the judged frame accepts them, namelessly. The op can
     /// still refuse an individual one (`ThroughFrameUndecided`), so this is the *classifier's*
     /// answer, same as `accepted`.
     accepted_nameless: usize,
@@ -378,15 +378,15 @@ impl Reach {
 /// Walk every live vertex once, then every distinct triple, and classify each triple by **what
 /// the datum operation would answer**.
 ///
-/// ★★★ **The denominator is stated, not assumed.** `collinear` and `undefined` are refused
+/// **The denominator is stated, not assumed.** `collinear` and `undefined` are refused
 /// whatever happens to frames, so they are outside the question; the reported percentage is over
 /// `accepted + accepted_nameless + accepted_straddle` — *"of the triples the frame question
-/// decides, how is each accepted"*. ★ A nameless triple is classified before anything asks
+/// decides, how is each accepted"*. A nameless triple is classified before anything asks
 /// whether it is also collinear, so the nameless buckets can hold triples that would fail anyway.
 /// `collinear`'s rate on the named road is the only estimate of that contamination, and it is
 /// printed for exactly that reason.
 ///
-/// ★ Causes are assigned by **priority**, not by which would fire first in the producer's
+/// Causes are assigned by **priority**, not by which would fire first in the producer's
 /// per-vertex loop — a triple can carry more than one, and a per-triple bucket has to pick. The
 /// order is the producer's own: undefined, straddle, differing frames, width, collinear.
 fn datum_reach(m: &Model) -> Reach {
@@ -402,7 +402,7 @@ fn datum_reach(m: &Model) -> Reach {
             if names.len() != 3 {
                 return VertexReach::Undefined;
             }
-            // ★★★ **Ask the door, do not re-derive its rule.** `VertexReach::Pure` carries
+            // **Ask the door, do not re-derive its rule.** `VertexReach::Pure` carries
             // exactly `vertex_meet`'s return — this classifier *was* that function, written a
             // second time, and the copy is what kept reporting yesterday's kernel after the
             // invariant-plane restatement moved the line.
@@ -484,7 +484,7 @@ fn boolean_corner() -> Model {
     m
 }
 
-/// ★★★★ **The negative control with teeth: motion everywhere, and all of it shared.**
+/// **The negative control with teeth: motion everywhere, and all of it shared.**
 ///
 /// `boolean_corner` reports zero mixed vertices, but it *cannot* report anything else — it has no
 /// motion at all, so the instrument is not being asked. Turning the finished solid gives every
@@ -493,7 +493,7 @@ fn boolean_corner() -> Model {
 /// mixed count here would mean either the measurement is reading something other than "do the
 /// frames agree", or those motions did not intern to one node — and either is a finding.
 ///
-/// ★ The source stays live after a `Transform` (it is not consumed the way a boolean's operands
+/// The source stays live after a `Transform` (it is not consumed the way a boolean's operands
 /// are), and a sweep over *both* would readmit the caller-error shape — two solids in two frames —
 /// which is precisely the variable this control is holding still. So the live set is narrowed to
 /// the image.
@@ -561,11 +561,11 @@ fn boolean_rotated() -> Model {
 /// narrow but whose squared lengths overflow — the population the narrow frame derivation
 /// declines — which is exactly where a plane's coefficients stop being small integers.
 ///
-/// ★ The obvious fixture (a tilted prism cut through an axis-aligned box) is **not** usable here:
+/// The obvious fixture (a tilted prism cut through an axis-aligned box) is **not** usable here:
 /// it rejects with `JudgeExhausted`. A feature on a face is the well-conditioned way to reach
 /// this population, and it is the one the corpus already uses.
 ///
-/// ★★ `passes` is the **depth** axis that matters. `boolean_twice` varies depth too, but every
+/// `passes` is the **depth** axis that matters. `boolean_twice` varies depth too, but every
 /// input there is a short decimal, so a second cut has nothing to widen — it measures depth on a
 /// population that cannot show the effect. Depth has to be varied where the coordinates are
 /// already awkward, which is here.
@@ -643,7 +643,7 @@ fn tilted_frame(passes: usize) -> Model {
 fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
     let mut out = Vec::new();
     for vh in live_vertices(m) {
-        // ★ Stated positively on purpose. This read "not the bare figure" while there were two
+        // Stated positively on purpose. This read "not the bare figure" while there were two
         // ways to be vouched for; with `Ceiling` in the enum the negative form would quietly admit
         // a vertex nothing has proven anything about.
         if !matches!(m.vertex_cache(vh), PointCache::Realized { .. }) {
@@ -699,7 +699,7 @@ fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, 
     (same, diff)
 }
 
-/// ★★★★★ **The capability gap, stated as a counterexample.**
+/// **The capability gap, stated as a counterexample.**
 ///
 /// "A plane through those three corners" is an ordinary CAD request, and today it can only be
 /// spelled in coordinates. Where a vertex's exact coordinate is not an `f64` — and
@@ -707,7 +707,7 @@ fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, 
 /// spelling produces is **a different plane**: not a nearby one, a different name, which interns
 /// to a different handle and answers exact identity with "no".
 ///
-/// ★ The assertion is **existence of a counterexample**, never "always different": a corpus
+/// The assertion is **existence of a counterexample**, never "always different": a corpus
 /// cannot carry a universal. The axis-aligned fixture is the negative control that keeps the
 /// claim about the *population* rather than about the probe — there the two roads agree, because
 /// there the cache **is** the exact coordinate.
@@ -732,7 +732,7 @@ fn the_f64_road_names_a_different_plane() {
         "no counterexample: every triple agreed, so this fixture cannot show the gap"
     );
 
-    // ★ The negative control. Axis-aligned boolean corners land on exact f64s, so the same
+    // The negative control. Axis-aligned boolean corners land on exact f64s, so the same
     // comparison must come back *agreeing* — otherwise "different" is a property of the probe.
     let square = boolean_corner();
     let solved = solved_discovered(&square);
@@ -794,7 +794,7 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     solid
 }
 
-/// ★★★★★ **«Operations accumulate, so surely it overflows eventually» — measured, and no: a name
+/// **«Operations accumulate, so surely it overflows eventually» — measured, and no: a name
 /// is as wide as the place it lands.**
 ///
 /// A move whose statements carry it restates the solid where it lands, so after forty stacked
@@ -885,7 +885,7 @@ fn a_stacked_name_is_as_wide_as_the_place_it_lands() {
 // the measurements
 // ---------------------------------------------------------------------------------------------
 
-/// ★★★★★ **The headline number: how wide is a discovered coordinate's base, really.**
+/// **The headline number: how wide is a discovered coordinate's base, really.**
 ///
 /// Printed, not asserted. A corpus maximum is not a bound, and freezing one here would turn a
 /// sample into a spec. What *is* asserted is that the instrument moved at all — a table of zeros
@@ -914,7 +914,7 @@ fn how_wide_a_discovered_coordinate_is() {
     assert!(solved > 0, "nothing solved — the instrument is dead");
 }
 
-/// ★★★★★ **How much of the datum vocabulary the frame wall costs — in the unit a caller picks.**
+/// **How much of the datum vocabulary the frame wall costs — in the unit a caller picks.**
 ///
 /// The vertex-level number (12 of 20 mixed on `boolean_rotated`) cannot answer this: a datum needs
 /// **three** vertices and `through_points_rat`'s two conditions differ in kind — carriers sharing
@@ -922,14 +922,14 @@ fn how_wide_a_discovered_coordinate_is() {
 /// all-pure combination count is only an upper bound, and `pure_frames` is what says whether it is
 /// reached.
 ///
-/// ★★ **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion,
+/// **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion,
 /// so "zero mixed" there is true by construction and measures nothing.
 /// [`turned_after_the_cut`] has motion on every surface that the turn moves, and every carrier
 /// solvable in that one frame — the caps stay world-stated because the turn **fixes** them, and a
 /// fixed plane's world equation is its pre-motion equation. That is the arm where a zero is
 /// evidence, and it is the arm that went red for 169 commits when the kernel read the caps'
 /// `motion: None` as a straddle (see the module doc's regression section).
-/// ★★★ **Not `#[ignore]`d, unlike its two neighbours** — this one carries an *assertion*, and
+/// **Not `#[ignore]`d, unlike its two neighbours** — this one carries an *assertion*, and
 /// hiding an assertion behind a flag the commit hook never passes is how the regression above
 /// lived for 169 commits. It costs ~0.3s and its table is captured unless it fails, so the price
 /// of the hook seeing it is nothing. The other two measurements print and assert nothing, so they
@@ -965,7 +965,7 @@ fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
     );
 }
 
-/// ★★★★ **The invariant, cheap enough for every run**: wherever `three_planes_rat` answers, the
+/// **The invariant, cheap enough for every run**: wherever `three_planes_rat` answers, the
 /// twin answers the same. `measure` asserts it per vertex; this runs it on the population where
 /// both routes are live so a wiring error cannot hide behind an `#[ignore]`.
 #[test]

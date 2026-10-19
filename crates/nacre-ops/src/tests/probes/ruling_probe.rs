@@ -4,7 +4,7 @@
 //! fixture's own geometry, which names *which* ruling went wrong where a result would only say
 //! that one did.
 //!
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `ruling_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
@@ -30,7 +30,7 @@ pub(crate) struct Carved {
 
 /// **The ruling label's postcondition, one entry per ruling piece**.
 ///
-/// ★★★★★ **A second, independent description of the side the derivation picked.**
+/// **A second, independent description of the side the derivation picked.**
 /// [`super::ruling_interior_is_even`] derives it from `side · κ · frame_sign`; the check asks the *content*
 /// instead — on the side of the surface the lateral's material lies (inside for a boss,
 /// outside for a bore or a notch: `MergedRuling::orient`) its own solid has material, and on
@@ -50,7 +50,7 @@ pub(crate) static LABELLED: Ledger<bool> = Ledger::new();
 /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the
 /// wall class it is stated against.
 ///
-/// ★ A flipped `body_above` is caught downstream too (the tests of the booleans it feeds fail); this
+/// A flipped `body_above` is caught downstream too (the tests of the booleans it feeds fail); this
 /// says which side was stated, against the fixture's own geometry: the buried half of the boss
 /// lies at `y < 0` of the wall, so the face is on the stored-normal side exactly when that
 /// normal points at `−y`.

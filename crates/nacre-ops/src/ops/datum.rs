@@ -97,7 +97,7 @@ pub(super) fn push_line_edge(
 
 /// Put a stated plane in the arena and hand back its handle and the frame the statement implies.
 ///
-/// ★★ **The cache faces `−normal`, and that is a convention with two independent reasons.**
+/// **The cache faces `−normal`, and that is a convention with two independent reasons.**
 /// (i) It is the sense a base cap gets: `extrude` pushes `−plane.normal()` and `Model::new` seeds
 /// the world planes along `−axis`; measured, seeding `+axis` instead flips 781 stored
 /// cap normals for nothing. (ii) `WorkingPlane::frame_sign` records whether a plane's *stored* normal
@@ -117,16 +117,16 @@ pub(super) fn datum_plane(
     /// The same solve `Model::through_points_rat` performs, with its single `None` split into the
     /// causes that have different owners.
     ///
-    /// ★ The split is the point. `three_planes_rat`'s one `None` hid two different facts for as
+    /// The split is the point. `three_planes_rat`'s one `None` hid two different facts for as
     /// long as it existed, and the measurement that found it is the reason this variant is being
     /// added at all — repeating the shape here would make the next stage unable to read how much
     /// of the population it is opening.
     ///
-    /// ★★ A carrier triple that does not meet is **not** on the list: those three planes met, or
+    /// A carrier triple that does not meet is **not** on the list: those three planes met, or
     /// the vertex would not exist. That is asserted, not rejected, so a broken invariant cannot
     /// arrive disguised as a user error.
     ///
-    /// ★★★★★ **The motion comes back with the points, because it *is* which frame they are
+    /// **The motion comes back with the points, because it *is* which frame they are
     /// written in.** Returning the points alone is what produced the defect this function was
     /// rewritten for: the caller then chose a motion, chose `None`, and a plane stated in a frame
     /// was filed as a world plane. `DatumDef::Offset` has always returned `(points, motion)` from
@@ -144,7 +144,7 @@ pub(super) fn datum_plane(
             [nacre_exact::MeetPoint; 3],
             Option<Handle<nacre_topo::MotionNode>>,
         ),
-        /// ★ No one frame holds all three: either a vertex the door cannot place at all (a
+        /// No one frame holds all three: either a vertex the door cannot place at all (a
         /// straddle) or three placeable vertices whose frames differ. No
         /// rational triple, no name, and the plane takes the judged road.
         Nameless,
@@ -155,7 +155,7 @@ pub(super) fn datum_plane(
         model: &Model,
         vs: [Handle<Vertex>; 3],
     ) -> Result<ThroughStatement, OpError> {
-        // ★★★★ **Which frame a vertex is solvable in is [`nacre_topo::Model::vertex_meet`]'s
+        // **Which frame a vertex is solvable in is [`nacre_topo::Model::vertex_meet`]'s
         // answer, not a second copy of its rule.** Comparing `surface_motion(tri[0])` against the
         // other two here would call a turned solid's corner a straddle — the invariant-plane
         // restatement leaves its cap world-stated while the walls carry a node — and, worse,
@@ -164,7 +164,7 @@ pub(super) fn datum_plane(
         // says "no frame" while the door says "this one" stops there (it once filed a frame-local
         // name as a world plane — `a_datum_through_frame_local_vertices_is_not_a_world_plane`).
         // One decision, one place.
-        // ★★ **Every vertex is asked what it is before any is solved.** A straddling vertex makes
+        // **Every vertex is asked what it is before any is solved.** A straddling vertex makes
         // the statement nameless on the spot (below), so a refusal asked inside the same pass would
         // be skipped for every vertex after it in handle order — and the depth question would be
         // answered by which vertex happened to be older.
@@ -179,7 +179,7 @@ pub(super) fn datum_plane(
                 }
             };
             if tri.iter().any(|h| !model.surface_name.contains_key(h)) {
-                // ★★ The one population still refused here: a carrier that is itself a nameless
+                // The one population still refused here: a carrier that is itself a nameless
                 // datum (a datum on a nameless datum — depth). Its triangle needs the judged
                 // machinery recursively, which is the depth question. This is
                 // the **only** thing `VerticesInMixedFrames` names; measure before splitting
@@ -191,11 +191,11 @@ pub(super) fn datum_plane(
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
             let Some((meet, frame)) = model.vertex_meet(*vh) else {
-                // ★ A straddling vertex — no rational coordinate anywhere, but a complete
+                // A straddling vertex — no rational coordinate anywhere, but a complete
                 // definition (the meet of its carriers). The judged road takes it, as
                 // long as every carrier can hand out a witness triangle of its own.
                 //
-                // ★★★ **"The carriers meet" is not assertable here, and finding that out cost a
+                // **"The carriers meet" is not assertable here, and finding that out cost a
                 // red run.** The old pass two `expect`ed it, and rightly: it ran only after the
                 // frames agreed. Solving three names *stated in different frames* is not the
                 // same question — they are not three planes in one coordinate system, so
@@ -208,13 +208,13 @@ pub(super) fn datum_plane(
             pts[i] = Some(meet);
             frames[i] = Some(frame);
         }
-        // ★★ Pure vertices in differing frames — the judged road. The collinearity question is
+        // Pure vertices in differing frames — the judged road. The collinearity question is
         // *not* asked there: with no shared frame there is no exact solve to ask it in, and the
         // judged constructor's failure is reported as undecided, never as proven collinear.
         if !(frames[1] == frames[0] && frames[2] == frames[0]) {
             return Ok(ThroughStatement::Nameless);
         }
-        // ★ The meets are kept at whatever width they need — the name is a
+        // The meets are kept at whatever width they need — the name is a
         // function of the *plane*, and `plane_name_from_meets` derives it without ever asking a
         // coordinate to fit `Rat`.
         let meets = pts.map(|p| p.expect("filled above"));
@@ -250,7 +250,7 @@ pub(super) fn datum_plane(
                 None,
                 Orientation::Reversed,
             );
-            // ★ `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
+            // `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
             // `+u = −x̂` while the script convention (and `SketchPlane::world_zx`) says `+ẑ`, so a
             // placement inferred from the plane would silently turn some sketches. The values are
             // the `PlaneDef`'s own rationals, and `SketchFrame::named`'s checks hold structurally:
@@ -260,7 +260,7 @@ pub(super) fn datum_plane(
                 origin: d.origin(),
                 ref_dir: d.ref_dir(),
             };
-            // ★★★ **`flip` makes the frame face the normal the caller stated** — the only place
+            // **`flip` makes the frame face the normal the caller stated** — the only place
             // the caller's *direction* can survive.
             //
             // A plane's canonical name has no direction, and planes intern: state `z = 0` facing
@@ -274,7 +274,7 @@ pub(super) fn datum_plane(
             Ok((plane, frame))
         }
         DatumDef::ThroughVertices(vs) => {
-            // ★★★ **Every reject here happens before anything is pushed.** The causes are told
+            // **Every reject here happens before anything is pushed.** The causes are told
             // apart first, then the plane is built — so a refusal leaves the model exactly as it
             // found it, and the name of the refusal says which stage owns it.
             let mut sorted = *vs;
@@ -284,7 +284,7 @@ pub(super) fn datum_plane(
             }
             let statement = through_points_by_cause(model, sorted)?;
 
-            // ★ **The caller's order is the stated normal**, by the right-hand rule — the one
+            // **The caller's order is the stated normal**, by the right-hand rule — the one
             // place their choice of side can survive, since the stored triple is sorted and a
             // canonical name carries no direction. The pushed statement faces against it
             // (`through_sense` below, exactly), so the frame faces it as the `Stated` arm's does.
@@ -310,7 +310,7 @@ pub(super) fn datum_plane(
             };
 
             let ThroughStatement::Named(meets, motion) = statement else {
-                // ★★★ **The judged road**: every vertex pure, frames
+                // **The judged road**: every vertex pure, frames
                 // differing — no name exists, and the frame is derived from the defining points
                 // as intervals. **Validation comes before the push**: the judged constructor can
                 // refuse (an undecidable basis), and rejecting after `push_plane_through` would
@@ -345,12 +345,12 @@ pub(super) fn datum_plane(
                 return Ok((plane, frame));
             };
 
-            // ★★★ **The cache is a world description, and the meets are not world coordinates
+            // **The cache is a world description, and the meets are not world coordinates
             // unless the carriers share no motion.** Placing them means walking the very chain
             // the definition names (`replay`); a pre-motion meet read as a world point is how a
             // plane's cache and its truth end up describing different planes.
             //
-            // ★ **Split by width so the narrow bits stay put**: a `Narrow` meet takes the road
+            // **Split by width so the narrow bits stay put**: a `Narrow` meet takes the road
             // letter for letter. A `Wide` meet has no
             // `Rat` triple to replay — and no f64 realization of it survives an exact lift
             // either (a value like 5⁻⁴⁰ rounds to a dyadic whose denominator leaves `i128`) —
@@ -390,7 +390,7 @@ pub(super) fn datum_plane(
             Ok((plane, frame))
         }
         DatumDef::Offset { frame, dist } => {
-            // ★ Zero is the one offset that would duplicate a plane the model already holds; see
+            // Zero is the one offset that would duplicate a plane the model already holds; see
             // `OpError::ZeroOffset`. Checked before the lift so the reject names the real fault.
             if *dist == 0.0 {
                 return Err(OpError::ZeroOffset);
@@ -399,7 +399,7 @@ pub(super) fn datum_plane(
                 nacre_exact::Rat::from_decimal(*dist).ok_or(OpError::DistOutsideDecimalWindow)?;
             let base = frame.plane;
 
-            // ★★ **Normalize to the plane's canonical frame, folding `flip` into the sign.** A
+            // **Normalize to the plane's canonical frame, folding `flip` into the sign.** A
             // parallel plane is fixed by `(plane, signed distance)` — a placement's origin and
             // `+u` do not move it — so building in the caller's frame would give one geometric
             // plane as many handles as there are frames naming it. Every frame on one plane has
@@ -418,7 +418,7 @@ pub(super) fn datum_plane(
                 d
             };
 
-            // ★★ **Say it in the world when the world can hold it** — the same node-omission
+            // **Say it in the world when the world can hold it** — the same node-omission
             // normalization frames use. A plane stated under a frame node lives at the
             // key `(name, Some(node))`, so an offset of the world XY plane would *not* intern with
             // a box's cap on the same plane. Where the canonical frame has a rational world basis
@@ -436,7 +436,7 @@ pub(super) fn datum_plane(
                     .ok_or(OpError::PlaneWithoutExactForm)?,
             );
             let (points, motion) = match exact_frame(model, &canonical_frame) {
-                // ★ An overflowing pullback is a **named reject**, not a quiet switch to the frame
+                // An overflowing pullback is a **named reject**, not a quiet switch to the frame
                 // road — that switch is exactly where the duplicate handle would appear.
                 // `rf`'s normal is the carried `ŵ`, a reflection included, so `d` along it lands on
                 // the side the caller asked for.
@@ -459,7 +459,7 @@ pub(super) fn datum_plane(
             // The cache rides the canonical realization: anchor `o + d·ŵ`, facing `−ŵ` — the same
             // `−normal` convention `Stated` and every base cap keep.
             //
-            // ★ **`d` here is the *signed* distance, not the caller's `dist`.** Using the raw one
+            // **`d` here is the *signed* distance, not the caller's `dist`.** Using the raw one
             // puts the cache on the far side of the plane its own truth names whenever the
             // caller's frame is flipped — an incoherent surface, and one that a `flip` positive
             // control caught rather than any amount of reading.

@@ -41,7 +41,7 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// Replay an operation log into a fresh model. Deterministic: the same log
 /// reproduces the same model down to handle indices.
 ///
-/// ★★ **A log's handles are an index vocabulary, and this is where they are re-anchored.**
+/// **A log's handles are an index vocabulary, and this is where they are re-anchored.**
 /// Every [`Operation`] but a `Stated` datum names a cell by `Handle`, and those handles belong to the
 /// model the log was *recorded* against — a different arena from the one being built here. A
 /// `Handle`'s identity is its index (`Store`'s manual `Eq`/`Hash` use nothing else), so the
@@ -54,7 +54,7 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// atomic for free — a re-anchoring failure happens before the operation pushes anything, and
 /// the half-built `model` is local, so the caller never sees a partly-mutated arena.
 ///
-/// ★ **The premise this rests on: the log is the whole history.** Cells put into a model
+/// **The premise this rests on: the log is the whole history.** Cells put into a model
 /// outside the log (a fixture's `apply` with no log beside it, a direct `push_*`) shift every
 /// later index, and so
 /// does a *late* reject — a boolean that pushed cells before declining leaves them in the
@@ -103,7 +103,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             })
     };
     Ok(match op {
-        // ★ `Extrude` carries a handle too — its frame's plane — so it is remapped like the rest.
+        // `Extrude` carries a handle too — its frame's plane — so it is remapped like the rest.
         Operation::Extrude {
             frame,
             profile,

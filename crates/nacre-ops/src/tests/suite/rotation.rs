@@ -70,7 +70,7 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
 }
 
 /// Two cubes touching only at the corner (1,1,1): nothing is joined, so the Fuse comes back as
-/// the two bodies it was handed. ★ Not `NonManifoldVertex`: that is true of a single welded body
+/// the two bodies it was handed. Not `NonManifoldVertex`: that is true of a single welded body
 /// and beside the point when the pieces are minted per solid. The pinch reject is there for a
 /// body that touches *itself*
 /// (`tests/probes/contact_separates.rs`).
@@ -98,7 +98,7 @@ fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
 /// `arrangement::boolean` to obtain a malformed
 /// solid, then confirm `validate` reports a `NonManifoldVertex`.
 ///
-/// ★ The shape has to be one that **cannot** part: two bodies touching at a corner now come
+/// The shape has to be one that **cannot** part: two bodies touching at a corner now come
 /// back as two bodies and there is no malformed solid to obtain from them. So A and B meet only
 /// at `(2,2,1)` while two bridges run around the contact and join them elsewhere — the material
 /// loops, the pinch is real, and the vertex check (which lives in `boolean`, not in the

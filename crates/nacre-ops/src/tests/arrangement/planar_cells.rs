@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// ★ **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is
+/// **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is
 /// how a `NodeId::Pierce` reaches its definition, so an all-plane fixture has nothing to put
 /// in it — and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
@@ -23,7 +23,7 @@ fn edge_mask_graze_algebra() {
     // An opposite pair: the solid's edge lies in W with material above on one
     // in-plane side and below on the other — both flip (the [T,T] picture).
     assert_eq!(flips(&[g(true), g(false)]), [true, true, false, false]);
-    // ★ A same-side pair: knife edge (or its reflex complement) — nothing flips,
+    // A same-side pair: knife edge (or its reflex complement) — nothing flips,
     // whichever side the pair is on.
     assert_eq!(flips(&[g(true), g(true)]), [false; 4]);
     assert_eq!(flips(&[g(false), g(false)]), [false; 4]);
@@ -260,7 +260,7 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
         .iter()
         .filter(|(u, v)| u[2] == v[2] && u[2] == 0 && u[1] == 1_000_000 && v[1] == 1_000_000)
         .collect();
-    // ★ Falsifiable core: the on-line edge does not merge into the chord that runs through the
+    // Falsifiable core: the on-line edge does not merge into the chord that runs through the
     // cap's interior. x∈[0,1] is interior (the cap straddles y=1) and stays transversal;
     // x∈[1,2] is the cap's own boundary edge, so the cap is on one side there and it leaves as
     // a graze — see `run_body_above`. A single chord spanning [0,2] would be occupancy-blind
@@ -380,7 +380,7 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
         "the interior stretches straddle; the notch bottom is not one of them"
     );
 
-    // ★ The run itself is covered, as a one-sided graze — coverage is not lost, the kind
+    // The run itself is covered, as a one-sided graze — coverage is not lost, the kind
     //   differs. Its body is **below** (y < 1), the side the notch's material is on.
     let graze_z0: Vec<_> = out
         .segs
@@ -404,7 +404,7 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
     );
 }
 
-/// ★ Spike: a coordinate-free exact cyclic order of edges around an arrangement vertex is
+/// Spike: a coordinate-free exact cyclic order of edges around an arrangement vertex is
 /// buildable — the "DNA question" the winding-based engine design flagged as a possible death
 /// condition for the per-plane arrangement. A degree-5 vertex with directions +x, +y, −x, −y and one **oblique**
 /// (the oblique is non-optional: without it every open half-plane bucket holds one element and
@@ -456,7 +456,7 @@ fn angular_order_around_a_vertex_is_coordinate_free_and_ccw() {
     };
     // Five edges: both directions on the y-wall and x-wall lines, one on the diagonal.
     //
-    // ★ **The pairs stay, and the oracle below reads *them*, not the `EdgeDir`s.** A direction's
+    // **The pairs stay, and the oracle below reads *them*, not the `EdgeDir`s.** A direction's
     // representation is private to `combinatorics` on purpose (see `EdgeDir`); a test that needs
     // coordinates is an oracle, and an oracle reads its own inputs — reading them back out of
     // the value under test would derive the oracle from the answer.
@@ -499,7 +499,7 @@ fn angular_order_around_a_vertex_is_coordinate_free_and_ccw() {
         "coordinate-free order is the atan2 cycle (either direction): got {order:?}, want {want:?}"
     );
 
-    // ★ Transitivity fired: the oblique lands strictly between the +x and +y axis directions in
+    // Transitivity fired: the oblique lands strictly between the +x and +y axis directions in
     // the cyclic order — a bucket-sort no-op could not place it. Checked as a cyclic adjacency
     // so it holds regardless of traversal direction.
     let cyc = if order == want { &order } else { &rev_tail };
@@ -829,7 +829,7 @@ fn partial_overlap_is_resolved() {
     );
 }
 
-/// ★★★★★ **The circle-against-ruling net is a check, and this is it being walked.**
+/// **The circle-against-ruling net is a check, and this is it being walked.**
 ///
 /// A class carrying a circle (⊥ one cylinder) and rulings (∥ another) is fine until the two
 /// **meet**, and then the crossing is `plane ∩ cylinder ∩ cylinder` — a point no road mints.
@@ -891,7 +891,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
     };
     // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
     //
-    // ★ The contribution is stated **whole** rather than left empty: the check reads
+    // The contribution is stated **whole** rather than left empty: the check reads
     // the arc a contribution covers, and an empty list is its fallback path. Carrying a real
     // contribution keeps this test on the road a model takes.
     let whole = vec![(SolidSide::A, SegKind::Seated { body_above: true }, None)];
@@ -946,7 +946,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         ),
         "a circle across a ruling must be refused by name"
     );
-    // ★ And a circle that stays clear of both rulings is not refused — without this the check
+    // And a circle that stays clear of both rulings is not refused — without this the check
     // could be a constant and still be green. It sits **outside** the strip rather than inside
     // it, so it adds nothing to `MIXED_CLASS_AUDIT.inside`, which another test reads from the
     // same process-wide counters.
@@ -960,7 +960,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         merged: whole,
         ..circle
     };
-    // ★ Not «builds» — these edges are hand-made and the rest of the walk has no class table
+    // Not «builds» — these edges are hand-made and the rest of the walk has no class table
     // for them — but **not refused by this name**, which is what says the check reads its
     // inputs rather than the mere presence of a circle beside a ruling.
     assert!(
@@ -1032,7 +1032,7 @@ fn the_cross_arrangement_has_six_cells() {
     let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
 
-    // ★★★ **An independent reading of every winding: the shoelace sign.**
+    // **An independent reading of every winding: the shoelace sign.**
     //
     // `loop_winding` reads the turn at one extreme node, which is correct only if the
     // comparison it picks that node with is an order. When it was not, exactly one ring of

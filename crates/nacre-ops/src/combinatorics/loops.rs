@@ -58,7 +58,7 @@ pub(crate) fn lateral_cycles(
 /// sound only while every vertex lies on exactly three planes, and the carried value is total
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
 ///
-/// ★★★★★ **A wall is a *carrier*, not a plane index** — the same [`crate::combinatorics::Wall`] the
+/// **A wall is a *carrier*, not a plane index** — the same [`crate::combinatorics::Wall`] the
 /// result side's `Ring` uses, and deliberately not a second vocabulary. An operand can be a
 /// previous boolean's result, and then a face's ring runs along a cylinder: a boss on a wall bites
 /// an arc out of the plate's caps and splits the wall with its rulings. `usize` had nowhere to
@@ -67,7 +67,7 @@ pub(crate) fn lateral_cycles(
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
     pub walls: Vec<crate::combinatorics::Wall>,
-    /// ★ Every **concurrency** this loop's corners revealed — a corner with four or more
+    /// Every **concurrency** this loop's corners revealed — a corner with four or more
     /// plane classes incident, as the full sorted class set. Its name in `triples` is
     /// [`canonical_triple`] of that set; the set itself goes to the arrangement's alias table
     /// (`arrangement::Aliases`) before any class is traced, so the arrangement's own discoveries
@@ -121,7 +121,7 @@ pub(crate) struct FaceLoops {
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
 /// belong to which operand.
 ///
-/// ★ **Both fields are independent of the plane being traced onto.** They were nevertheless
+/// **Both fields are independent of the plane being traced onto.** They were nevertheless
 /// re-derived once per plane class — measured on an 80-fin fold at **2,280,285** calls (one per
 /// face per class) for **13,492** distinct answers, 3.3% of the boolean. Hoisting them is what
 /// makes the tracer a function of a face table rather than of a topology store, and the 169×
@@ -140,9 +140,9 @@ pub(crate) struct TraceInput {
     /// class's faces clear of the lateral. The tracer's ruling and chord arms fire only on pairs
     /// listed here.
     ///
-    /// ★★ **It is not always empty in production**: the record-and-pass arm fills it for a
+    /// **It is not always empty in production**: the record-and-pass arm fills it for a
     /// wall whose plane holds the axis exactly
-    /// (`planes`, `crossings.insert`). ☑ Measured: listed for the wall/boss pair 2 times in
+    /// (`planes`, `crossings.insert`). Measured: listed for the wall/boss pair 2 times in
     /// a plate-and-wall-boss fuse and 16 in the operation after it.
     pub crossings: std::collections::HashSet<(usize, usize)>,
 }
@@ -169,11 +169,11 @@ pub(crate) fn trace_input(
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shell(sh).faces {
                 let fp = surf_ix[&fh];
-                // ★ A **lateral face's loops** are its `cycles` — its rims (each a whole rim or
+                // A **lateral face's loops** are its `cycles` — its rims (each a whole rim or
                 // a chain) and holes, every one named like any ring — and the tracer's cylinder
                 // roads read those. So `outer` stays `None` here; it is a skip, not a decline.
                 //
-                // ★★★★★ **Its holes are named like every other face's.** A fuse can burn a hole
+                // **Its holes are named like every other face's.** A fuse can burn a hole
                 // into a band (a boss straddling a plate's wall), and that loop is an ordinary
                 // closed ring whose corners are `plane ∩ plane ∩ cylinder` — the shape
                 // [`pierce_name_from_def`] restates. The tracer needs it to answer *per angle*
@@ -229,7 +229,7 @@ pub(crate) fn hole_rings(
 /// A loop's vertices as names — a three-plane triple, or a pierce point where a cylinder is one of
 /// the three surfaces (the face's own, or a neighbour's).
 ///
-/// ★ **A vertex names itself, not the loop.** A plane corner's name is [`canonical_triple`] of the
+/// **A vertex names itself, not the loop.** A plane corner's name is [`canonical_triple`] of the
 /// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
 /// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
 /// corner and its name is the face's own plane with the two neighbours' (no judgement asked).
@@ -286,7 +286,7 @@ fn loop_triples(
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
         let (_, out_pair) = edge(&hes[i])?;
         let (a, b) = (other(in_pair), other(out_pair));
-        // ★★★★★ **The filter [`crate::planes::ClassIx::plane`] asks its callers for.** That
+        // **The filter [`crate::planes::ClassIx::plane`] asks its callers for.** That
         // accessor panics on a cylinder — "a loud panic beats a silently wrong plane" — and it is
         // right to, for the forty-odd callers whose upstream really does filter. This is the one
         // that has to *do* the filtering, because its input is an **operand**, and an operand can
@@ -295,7 +295,7 @@ fn loop_triples(
         // read below are plane-only — the carried wall and the vertex's three-plane name — so the
         // honest answer is to decline the ring rather than to name it wrongly or to abort.
         //
-        // ★★★★★ **A curved neighbour is described now, not declined.** The two questions are
+        // **A curved neighbour is described now, not declined.** The two questions are
         // **independent**: edge `i`'s carrier is `b`'s business, and the corner's name is both
         // neighbours' — a ruling can arrive at this corner and a plane leave it. What this road
         // lacked was the vertex's restatement into class space ([`pierce_name_from_def`] — the
@@ -303,11 +303,11 @@ fn loop_triples(
         // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the full
         // circle handled above.
         //
-        // ★★★★★ **And the face itself may be the cylinder.** A lateral face's *hole* is a loop
+        // **And the face itself may be the cylinder.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
         // are `plane ∩ plane ∩ cylinder`, the very shape [`pierce_name_from_def`] restates — and
         // so is a chain rim's.
-        // ★★ **The corner is where half-edge `i` starts** — not "the one vertex the two edges
+        // **The corner is where half-edge `i` starts** — not "the one vertex the two edges
         // share", which is the same vertex wherever that is unique (a loop's edge `i` starts where
         // edge `i − 1` ends, validate's `OpenLoop`) and no vertex at all for a two-gon (an arc and
         // its chord share both ends). The half-edge already knows. `boolean` does not validate its
@@ -322,7 +322,7 @@ fn loop_triples(
             corner,
             "a loop's edge starts where the previous one ends (OpenLoop)"
         );
-        // ★★ **A corner a cylinder made names itself too** — by its own definition, matched
+        // **A corner a cylinder made names itself too** — by its own definition, matched
         // against **its incident faces'** plane classes, not against this visit's two
         // neighbours. A loop may pass the corner twice (a cap pinched where a wedge's apex
         // touches its rim), and a corner may lie on three planes and the cylinder: the two
@@ -358,7 +358,7 @@ fn loop_triples(
         // Edge `i`'s carried wall, read off `inc` and the edge — total even where the vertex
         // *names* below have to fall back or decline (see [`NamedRing`]).
         walls.push(match (plane_ix[b], plane_ix[p]) {
-            // ★ A lateral's own edge: the curved wall a plane face's curved edge gets, with the
+            // A lateral's own edge: the curved wall a plane face's curved edge gets, with the
             // plane across it as `near` — an arc with its direction about the axis (`he.forward`,
             // the producer's convention) and its rim's plane, a ruling with its side and travel
             // measured against the plane that holds it. Ahead of the plane arm, which would take
@@ -385,7 +385,7 @@ fn loop_triples(
         else {
             unreachable!("the curved arms are handled above")
         };
-        // ★ **The vertex names itself, not the face loop.** The classes through this
+        // **The vertex names itself, not the face loop.** The classes through this
         // corner are the classes of its incident faces, which the incidence table knows, and the
         // name is [`canonical_triple`] of that set. Three classes is the ordinary corner, and its
         // name is the face's own plane and both neighbours' — no judgement is asked.
@@ -462,7 +462,7 @@ fn incident_plane_classes(
 /// `orient3d` answers in, for the predicates that read the name ([`side_of`]'s pierce arm,
 /// [`arc_departure_side`]).
 ///
-/// ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
+/// **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
 /// against the class's **outward** normal, and the name may point either way along the plane's
 /// facing. The world name's sense (`κ`, [`crate::planes::WorldName`]) relates the two — read off
 /// the truth, never off the plane cache — and `frame_sign` carries the plane's facing to the root
@@ -484,7 +484,7 @@ pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> 
 /// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
 /// (`ruling_side` reads zero) or a description is missing — the walk answers `Unnameable`.
 ///
-/// ★ Not [`arc_side`], which is the *turn* of an arc against a segment in the face's own plane
+/// Not [`arc_side`], which is the *turn* of an arc against a segment in the face's own plane
 /// (the winding walk's question, in the stored frame); this is a half-space of `q`.
 pub(crate) fn arc_departure_side(
     jd: &Judge<'_, WorkingPlane>,
@@ -517,7 +517,7 @@ pub(crate) fn arc_departure_side(
 /// realized coefficients are not its truth, so they are refused rather than read).
 /// **The carrier of a ring edge that rides a cylinder** — an arc or a ruling, filled or refused.
 ///
-/// ★★ **The direction bits do not come from `edge_at`.** That convention ("even half-edge = CCW /
+/// **The direction bits do not come from `edge_at`.** That convention ("even half-edge = CCW /
 /// up") is the *arrangement's* edge indexing, and an operand's face loop has no such index. What is
 /// true here is the model's own:
 ///
@@ -557,10 +557,10 @@ fn curved_wall(
                 .and_then(PierceMeet::into_exact)
                 .ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
-            // ★ **A tangent wall has one ruling, and its side is `0`.** A fillet's
+            // **A tangent wall has one ruling, and its side is `0`.** A fillet's
             // or a slot's own walls are tangent to their cylinder, so without this every such
             // operand falls here as `CurvedOperandBoundary`.
-            // ★ The reading is the **point**'s, not the corner's **root**'s
+            // The reading is the **point**'s, not the corner's **root**'s
             // ([`ruling_side_signed`], which answers the axis plane instead
             // of abstaining as `ruling_side` does for the ray caster's sake): the root says `0`
             // only when `near` is the very wall the name pairs, and `near` may be a plane through
@@ -569,7 +569,7 @@ fn curved_wall(
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
             //
-            // ★★★ **There is nothing to read, so it is derived — from the two ends' definitions,
+            // **There is nothing to read, so it is derived — from the two ends' definitions,
             // never from their realizations.** A ruling edge's stored pair carries no order:
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
@@ -580,7 +580,7 @@ fn curved_wall(
             // another plane through the same line where the end is a corner on three planes, named
             // by the pair its definition chose — does not enter.
             //
-            // ☑ **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
+            // **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
             // parallel to the axis or perpendicular to it — the gate admits an oblique class only
             // after proving it misses every lateral face, so no pierce vertex names one
             // — and a parallel plane cannot cut a ruling. So both cutting planes are caps, and

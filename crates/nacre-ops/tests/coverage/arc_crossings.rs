@@ -192,7 +192,7 @@ fn built(label: &str, shared: f64, six: &Six, common_area: f64, bodies: impl Fn(
     near(v(4), common_area * shared, "Common");
 }
 
-/// ★ **Every family builds, all six booleans, in both frames and at both heights** — one body
+/// **Every family builds, all six booleans, in both frames and at both heights** — one body
 /// each, except `B − A` where the plate's cut leaves the half disk's segment standing apart from
 /// the frame around it (`B` inside `A`'s span); valid, the volumes adding up against the operands',
 /// and `A ∩ B` the area the wall cuts off over the height the two share.
@@ -235,13 +235,13 @@ const SECTOR_FRAMES: [Frame; 3] = [
     Frame::Tilted,
 ];
 
-/// ★ **A three-quarter disk, whose arc winds its cap.** Its caps are three points — the centre and
+/// **A three-quarter disk, whose arc winds its cap.** Its caps are three points — the centre and
 /// the arc's two ends — whose chord triangle turns the other way round from the face, and its own
 /// radius class `x = 0` meets the cap's arc once inside, at `(0, 1)`, on the way into the end
 /// `(0, −1)` that lies on the line. Two boxes: the wall `x = 0.5` across the arc once (`A ∩ B` is
 /// the upper half of the segment beyond `x = 0.5`) and the wall `y = 0.5` across it twice (the
 /// whole segment beyond `y = 0.5`). Every boolean builds one body, the volumes adding up, on every
-/// frame. ★ On the tilted frame with `B` inside `A`'s span a cap is not cut, and its smallest node
+/// frame. On the tilted frame with `B` inside `A`'s span a cap is not cut, and its smallest node
 /// is the reflex centre, which the arc bulges past at an irrational point (`x = c_x − 3√41/25`):
 /// the winding is read there (`combinatorics::arc_extremum_winding`), not at the node.
 #[test]
@@ -283,7 +283,7 @@ fn a_surd_radius_sector() -> Profile2d {
     .remove(0)
 }
 
-/// ★ **A sector whose radius is a surd, on the world frame.** Its cap's smallest node is the
+/// **A sector whose radius is a surd, on the world frame.** Its cap's smallest node is the
 /// reflex centre, and the arc bulges past it at `x = −√2` — irrational with the axis upright, so
 /// this is the same misread winding as the tilted frame's without any tilt. The wall `x = −0.5`
 /// cuts the circle's segment beyond it, clear of the missing wedge, so `A ∩ B` is that segment,

@@ -274,7 +274,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     out
 }
 
-// ★★★ **There is no per-vertex tolerance to read — every vertex takes the construction
+// **There is no per-vertex tolerance to read — every vertex takes the construction
 // epsilon.** The cache stores no measured residual: what it knows is *whether the coordinate was
 // realized* and, if so, a per-axis bound on it. The bound is deliberately not used here. It says
 // how far the **coordinate**
@@ -282,12 +282,12 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 // sits from the cached **carriers**, and that distance also carries the carriers' own realization
 // error, which nothing records yet (`SurfaceCache` has no `tol`).
 //
-// ⚠ **What that costs, stated.** Arrangement-born vertices, whose measured residual is **at most
+// **What that costs, stated.** Arrangement-born vertices, whose measured residual is **at most
 // 1.07e-14** over the census corpus, are held to [`EPS_CONSTRUCTED`], five orders looser. What a
 // residual would catch — a re-named definition wearing another triple's tolerance — cannot arise:
 // the cache is the realization of the definition, and the census asserts that vertex by vertex.
 
-/// ★★★★ **This check walks the whole arena on purpose — superseded cells included.**
+/// **This check walks the whole arena on purpose — superseded cells included.**
 ///
 /// Every other check in this file filters by [`Reachable`], and this one deliberately does not:
 /// a torn page is torn whether or not anything still points at it. An editing op supersedes old
@@ -295,12 +295,12 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 /// at 0% for a fresh solid, ~50% after a boolean, and **99%** at depth 120 (960 of 968 vertices).
 /// Filtering here would make the check quieter, not cleaner.
 ///
-/// ⚠ **The premise is not privacy, it is `Store` being append-only** — its public surface is
+/// **The premise is not privacy, it is `Store` being append-only** — its public surface is
 /// `new·push·get·handle_at·len·is_empty·iter`, with no removal at all. So an index that was once
 /// valid stays valid forever and a bounds check cannot fire on a dead cell; the violations this
 /// finds are real dangling references, never arena residue.
 ///
-/// ⚠⚠ **Do not "optimize" this by adding a `reach` filter.** Four tests plant corruption in cells
+/// **Do not "optimize" this by adding a `reach` filter.** Four tests plant corruption in cells
 /// that are *unreachable by construction* and go red the moment this stops looking:
 /// `dangling_reference_solid_shell`, `dangling_reference_vertex_definition`,
 /// `a_contradictory_pierce_def_is_flagged`, `a_contradictory_vertex_def_is_flagged`.
@@ -441,10 +441,10 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 /// from the table it would be checking, so a surface that reached the arena past the table is
 /// seen. Runs after reference integrity (it dereferences surface handles).
 ///
-/// ★ **Full-arena, like [`check_reference_integrity`]** — surfaces are shared definitions that
+/// **Full-arena, like [`check_reference_integrity`]** — surfaces are shared definitions that
 /// nothing supersedes, so a duplicate is one whether or not a live face still cites it.
 ///
-/// ⚠ **Its cost grows with the arena, not the live model.** Measured on a model of 2,000 recorded
+/// **Its cost grows with the arena, not the live model.** Measured on a model of 2,000 recorded
 /// quarter turns (12,022 surfaces, a dozen live faces): 16 ms of `validate`'s 19 ms; on an 80-fin
 /// rotated fold (325 surfaces) 4%. The suite's wall clock did not move, and no application calls
 /// `validate`.
@@ -475,7 +475,7 @@ fn check_duplicate_surfaces(m: &Model, out: &mut Vec<Violation>) {
 /// `ThreePlane` names planes only, `OnSeam` includes a non-plane. Runs after reference
 /// integrity (it dereferences surface handles).
 ///
-/// ★ **Full-arena, like [`check_reference_integrity`] and for the same reason** — a definition
+/// **Full-arena, like [`check_reference_integrity`] and for the same reason** — a definition
 /// that contradicts its own carriers is wrong whether or not a live solid still names that
 /// vertex. Two of the four planted-corruption tests land here.
 fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
@@ -510,7 +510,7 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
 /// speak, have a nonzero determinant. Full-arena, like [`check_vertex_def_carriers`] and for the
 /// same reason.
 ///
-/// ⚠ **Asked only where the names answer.** A definition whose carriers share no frame the names
+/// **Asked only where the names answer.** A definition whose carriers share no frame the names
 /// speak — a mixed-frame `Through` carrier, or histories that part with no world name to meet in —
 /// is not asked: no exact question here tells its "no point" from "not yet", and the judgement
 /// that could (`nacre-judge`) is above this crate.
@@ -967,7 +967,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         if !reach.faces.contains(&fh) {
             continue;
         }
-        // ★ The **cache** is the proposition here, not a shortcut: this asks how far a cached
+        // The **cache** is the proposition here, not a shortcut: this asks how far a cached
         // vertex coordinate sits from its cached carrier — one rounded description against
         // another. The truth-side question (does the definition match its carriers' kinds) is
         // `check_vertex_def_carriers`, and it asks the truth.
@@ -978,7 +978,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     let [a, b] = m.edge(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
                     let residual = surface.distance(m.vertex_point(vh));
-                    // ★ Plus what the residual's *own* arithmetic can produce. The epsilon says
+                    // Plus what the residual's *own* arithmetic can produce. The epsilon says
                     // where the vertex may sit; it says nothing about `Surface::distance`, so a
                     // vertex exactly on the surface can still report a machine-scale residual and
                     // be flagged for it. Measured: a four-plane concurrency whose vertex is
@@ -1003,7 +1003,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
     // it meets (the definition is the truth, the point is a within-tol cache).
     // Reference integrity ran first, so the definition's surface handles are in bounds.
     //
-    // ★ This covers all of them, not just the measured population: the definition *is* the
+    // This covers all of them, not just the measured population: the definition *is* the
     // vertex, so a constructed corner's claim is checked too, and the checker asks the same
     // question of every one — with the tolerance the vertex has (measured) or the construction
     // epsilon (built). The doctrine this serves: the surfaces a vertex is defined by
@@ -1018,7 +1018,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         }
         let tol = EPS_CONSTRUCTED;
         for sh in vertex.carriers() {
-            // ★ Cache against cache, deliberately — `vertex_point` is the cached coordinate,
+            // Cache against cache, deliberately — `vertex_point` is the cached coordinate,
             // so its residual has to be measured against the cached carrier for the two to be
             // the same description. Against the truth this would report the realization error
             // of both, which is a different quantity and has no threshold here.

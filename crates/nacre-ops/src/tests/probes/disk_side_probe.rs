@@ -1,4 +1,4 @@
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `disk_side_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
@@ -29,7 +29,7 @@ pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 /// is what keeps the derivation honest — the rule was a guess once, and the guess was wrong
 /// by one factor.
 ///
-/// ★ A third premise — *no cell has corners on both sides of a circle it cannot straddle* —
+/// A third premise — *no cell has corners on both sides of a circle it cannot straddle* —
 /// is what licenses taking the **first** corner as the cell's answer. Scanning every corner
 /// to assert it costs a rational three-plane solve per corner per arc: the lib suite measured
 /// **526 s** that way against **58 s** taking the first (one session, warm builds). It was
@@ -37,7 +37,7 @@ pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 /// and again here — so it is recorded rather than re-proved on every run.
 pub(crate) fn record(even: Option<bool>, odd: Option<bool>, rule_says_even: bool, frame_sign: i8) {
     let (a, b) = (even, odd);
-    // ★ **Two cells on one side is the witness failing, not the arc**: a **convex**
+    // **Two cells on one side is the witness failing, not the arc**: a **convex**
     // arc — a fillet's quarter, a slot's end — bounds a cell that lies inside the circle at
     // the arc and reaches far outside it, so every rational corner of that cell is outside
     // while the arc bounds it from the disk side. The corner witness cannot see a side

@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// ★★★★ **Padding the same footprint twice must not leave zero-area faces.**
+/// **Padding the same footprint twice must not leave zero-area faces.**
 ///
 /// It did, and `validate` reported nothing. Padding `1.1` and then `6.6` on the top of a
 /// cuboid left two faces of area `2.2e-16` on the plane `z = 2.1`, whose long edges sat one
@@ -15,7 +15,7 @@ use super::*;
 /// profile one ulp away and the kernel — correctly — built the one-ulp-wide faces that answer
 /// describes. The origin reads no face now: it is the world origin's projection.
 ///
-/// ★ `SketchPlane::exact()` does not catch this: it checks only that the axes are orthonormal,
+/// `SketchPlane::exact()` does not catch this: it checks only that the axes are orthonormal,
 /// never the origin.
 #[test]
 fn padding_one_footprint_twice_leaves_no_zero_area_face() {
@@ -74,7 +74,7 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
     assert_eq!(m.shell(shell).faces.len(), 11);
 }
 
-/// ★★★★★ **The target: two ways of reaching one height land on one plane, far from the
+/// **The target: two ways of reaching one height land on one plane, far from the
 /// origin.**
 ///
 /// The frame's origin is where drift would enter: an area centroid is computed in f64 from the
@@ -171,7 +171,7 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
     );
 }
 
-/// ★★★ **One plane, one origin** — even when two faces of it were made by different operations.
+/// **One plane, one origin** — even when two faces of it were made by different operations.
 ///
 /// This is what an area centroid cannot promise: it is a property of the *face*, so a boolean
 /// that reshapes one face moves its sketch origin away from its coplanar neighbour's.
@@ -219,7 +219,7 @@ fn two_faces_of_one_plane_share_a_sketch_origin() {
     );
 }
 
-/// ★★★★★ **The convention, face by face.** This table *is* the rule — every property below is a
+/// **The convention, face by face.** This table *is* the rule — every property below is a
 /// consequence of it, and pinning the consequences without pinning the table would let a
 /// different rule that happens to satisfy them slip in.
 #[test]
@@ -238,7 +238,7 @@ fn the_six_axis_directions_get_the_frames_the_convention_names() {
         let (gu, gv) = crate::ops::frame_axes(v(n)).expect("a unit normal has frame axes");
         assert_eq!(gu.as_array(), u, "u for normal {n:?}");
         assert_eq!(gv.as_array(), w, "v for normal {n:?}");
-        // ★ And the axes stay exactly representable, so the rational construction path still
+        // And the axes stay exactly representable, so the rational construction path still
         // fires — losing that would drop every axis-aligned model to f64 silently.
         let plane = SketchPlane::from_axes(Point3::origin(), gu, gv);
         assert!(plane.exact().is_some(), "exact path lost for normal {n:?}");
@@ -295,7 +295,7 @@ fn the_reference_axis_is_a_unit_normal_perpendicular() {
     }
 }
 
-/// ★★ **The jump at the poles is intended, not a bug to be fixed later.**
+/// **The jump at the poles is intended, not a bug to be fixed later.**
 ///
 /// No continuous tangent frame exists on the sphere, so some set of normals must jump; this
 /// convention spends that budget on the two poles and nowhere else. A normal a billionth off
@@ -342,7 +342,7 @@ fn the_zero_vector_has_no_frame_axes() {
     assert!(crate::ops::frame_axes(Vector3::zero()).is_none());
 }
 
-/// ★★★★★ **A boss on a tilted face, and another beside it — `pad` must not lose the second one.**
+/// **A boss on a tilted face, and another beside it — `pad` must not lose the second one.**
 ///
 /// The prism's far cap and the first boss's cap are one plane, and the boolean says so: its
 /// classes are decided with evidence, and on a tilted face that evidence is a composed-rotation
@@ -434,7 +434,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
         (after - before - 2.0 * 4.62).abs() < 1e-9,
         "volume {before} -> {after}"
     );
-    // ★ And the handle it returned is the boss top, not some other face that happened to pass:
+    // And the handle it returned is the boss top, not some other face that happened to pass:
     // area 0.6, outward along the face's normal.
     for cap in caps {
         let props = nacre_props::face_props(&m, cap).expect("a planar cap");
@@ -448,7 +448,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
 }
 
 //
-// ★★★ The slanted wall: what is exact about it, what is not, and that every face-based operation
+// The slanted wall: what is exact about it, what is not, and that every face-based operation
 // on it gives the right answer — so a change to the frame road is measured against them.
 
 /// A profile edge running `(1, 2)` sweeps a wall whose normal is `(2, 1, 0)` — and **no
@@ -465,7 +465,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
 ///   about the world lift, not about the road an operation takes — a pad on this wall builds
 ///   through `Motion::Frame` (the next test).
 ///
-/// ★ The axes must **not** move — this plane's own frame is the world, so `ẑ × n` is the same
+/// The axes must **not** move — this plane's own frame is the world, so `ẑ × n` is the same
 /// vector before and after.
 #[test]
 fn a_slanted_walls_name_is_rational_and_its_reported_sketch_plane_is_not() {
@@ -493,7 +493,7 @@ fn a_slanted_walls_name_is_rational_and_its_reported_sketch_plane_is_not() {
         "u is ẑ × n normalized, got {:?}",
         sp.x_axis.as_array()
     );
-    // ★ The reported plane's world lift: its axes are irrational.
+    // The reported plane's world lift: its axes are irrational.
     assert!(
         sp.exact().is_none(),
         "a tilted sketch plane's world axes have no rational form"
@@ -524,7 +524,7 @@ fn a_boss_on_a_slanted_wall_is_correct_today() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★★★ **A sketch on a wall raised from a sketch on a wall** — the nesting `Motion::Frame` was
+/// **A sketch on a wall raised from a sketch on a wall** — the nesting `Motion::Frame` was
 /// redesigned for. The second wall's *world* normal is irrational, so its frame cannot be
 /// written down by naming a normal; only by naming the plane.
 ///
@@ -588,7 +588,7 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★★★★★ **The payoff, and its limit — both measured.**
+/// **The payoff, and its limit — both measured.**
 ///
 /// Two bosses of the same height on one tilted face are one plane, not two records that agree
 /// only if their f64 coefficients happen to. Written in the plane's own frame they are both
@@ -596,7 +596,7 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
 /// `Handle<Surface>` at construction**, before anything is compared. And every face of the
 /// result states itself exactly.
 ///
-/// ★★★ **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6` — the target
+/// **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6` — the target
 /// the plan named. Stacking sketches the second boss on the **first boss's cap**, which is a
 /// different plane and therefore a different frame, so the two caps come out `w = 7.7` and
 /// `w = 6.6` — two exact descriptions of one plane that `SurfaceKey` cannot equate. That is
@@ -681,7 +681,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
                 .and_then(|n| n.narrow())
                 .map(|c| c.map(|r| r.to_f64())),
             Some([0.0, 0.0, 10.0, -77.0]),
-            "★ a cap raised in a frame records `w = 7.7` there, exactly"
+            "a cap raised in a frame records `w = 7.7` there, exactly"
         );
         caps.push(su);
     }
@@ -700,11 +700,11 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     assert_eq!(
         (with, without),
         (16, 0),
-        "★ every face of a twice-turned, twice-bossed result states itself exactly"
+        "every face of a twice-turned, twice-bossed result states itself exactly"
     );
 }
 
-/// ★★★★★ **A plane states itself exactly, and its f64 axes are the realization of that.**
+/// **A plane states itself exactly, and its f64 axes are the realization of that.**
 ///
 /// This is the whole point of closing the struct: `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`,
 /// three integers, while the unit axes derived from it square to `0.9999999999999999…`. The
@@ -733,7 +733,7 @@ fn a_named_plane_records_what_its_caller_stated() {
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
         ),
-        // ★ `ẑ × n` would give `−x̂` here; a named plane says `+u = ẑ` instead.
+        // `ẑ × n` would give `−x̂` here; a named plane says `+u = ẑ` instead.
         (
             SketchPlane::world_zx(),
             [0.0, 1.0, 0.0, 0.0],
@@ -752,7 +752,7 @@ fn a_named_plane_records_what_its_caller_stated() {
     assert_eq!(f(&tilt.def.unwrap()), [1.0, 1.0, 1.0, 0.0]);
     assert!(
         tilt.exact().is_none(),
-        "★ the axes still have no exact form — that is what the definition exists to replace"
+        "the axes still have no exact form — that is what the definition exists to replace"
     );
     // Three written points: the plane is exact and `+u` runs toward `x_point`.
     let tp = SketchPlane::through_points(
@@ -774,7 +774,7 @@ fn a_named_plane_records_what_its_caller_stated() {
     let m = moved.def.unwrap();
     assert_eq!(f(&m), f(&d), "same plane");
     assert_eq!(m.origin().map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
-    // ★★★★★ **The origin is *on* the plane by structure**: the origin IS `points[0]`, so there
+    // **The origin is *on* the plane by structure**: the origin IS `points[0]`, so there
     // are no halves to disagree (disagreeing halves cost a boolean 0.04 of volume, measured). The
     // loop keeps the check as a derivation audit: substituting the origin into the *derived*
     // name must still give zero, or the derivation itself is wrong.
@@ -812,7 +812,7 @@ fn a_named_plane_records_what_its_caller_stated() {
             d.origin().map(|r| r.to_f64())
         );
     }
-    // ★ And the axes-only route records the axes' decimal truth — the definition itself,
+    // And the axes-only route records the axes' decimal truth — the definition itself,
     // `[o, o + x, o + y]`.
     let axes = SketchPlane::from_axes(
         Point3::from_array([1.0, 2.0, 3.0]),
@@ -838,14 +838,14 @@ fn a_named_plane_records_what_its_caller_stated() {
     );
 }
 
-/// ★★★★★ **A prism raised on a named tilted plane states every one of its faces.**
+/// **A prism raised on a named tilted plane states every one of its faces.**
 ///
 /// In world coordinates that plane's axes are irrational, so a prism built there would drop to
 /// f64 and record nothing. Two things keep it exact: the base cap **is** the plane the caller
 /// named, so it states itself in the world; and the walls and far cap are built **inside that
 /// plane's frame**, where the axes are `x̂`/`ŷ` and the profile's own decimals are the truth.
 ///
-/// ★★★ **The base cap stays in the world on purpose.** Writing it as `[0,0,1,0]` in this
+/// **The base cap stays in the world on purpose.** Writing it as `[0,0,1,0]` in this
 /// prism's frame would be a second exact description of one plane under a different
 /// `SurfaceKey`. Stated in the world it carries no motion, its judgment stays exact, and two
 /// extrudes share it whatever frames they chose.
@@ -877,26 +877,26 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     assert_eq!(
         coeffs(faces[0], &m),
         Some([1.0, 1.0, 1.0, 0.0]),
-        "★ the base cap is the caller's plane, in the world"
+        "the base cap is the caller's plane, in the world"
     );
     assert!(
         matches!(
             m.surface(m.face(faces[0]).surface),
             nacre_topo::Surface::Plane { motion: None, .. }
         ),
-        "★ and it carries no motion, so its judgment stays exact"
+        "and it carries no motion, so its judgment stays exact"
     );
     assert_eq!(
         coeffs(faces[1], &m),
         Some([0.0, 0.0, 1.0, -1.0]),
-        "★ the far cap is `w = dist` in the frame"
+        "the far cap is `w = dist` in the frame"
     );
-    // ★ Every face now states itself — that is the whole measurement.
+    // Every face now states itself — that is the whole measurement.
     for &f in &faces {
         assert!(coeffs(f, &m).is_some(), "a face with no exact plane");
     }
 
-    // ★★★★★ **Two extrudes on one named plane put their far caps on one handle** — by name,
+    // **Two extrudes on one named plane put their far caps on one handle** — by name,
     // at construction, with no f64 comparison. That is what the frame buys over the f64 path,
     // where the two would agree only if their rounded coefficients happened to.
     let cap_of = |m: &mut Model, d: f64| -> Handle<Surface> {
@@ -920,7 +920,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     assert_ne!(a, cap_of(&mut m, 2.6), "and a different height is not");
 }
 
-/// ★★★★★ **The end-to-end lock on the `n·n`-overflow population** — the measured 1.6%, and the
+/// **The end-to-end lock on the `n·n`-overflow population** — the measured 1.6%, and the
 /// one the producers actually reach.
 ///
 /// A prism raised on a fully tilted, exactly-orthonormal decimal frame from a 16-digit
@@ -928,7 +928,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
 /// (~2^220) overflow `i128`**, past what a narrow derivation holds. The frame realizes through
 /// the wide road, and **every face of a pad on such a wall states its exact points**.
 ///
-/// ★ Probed while building this fixture: a sketch→extrude wall's canonical name caps out
+/// Probed while building this fixture: a sketch→extrude wall's canonical name caps out
 /// around ~115 bits (the profile's decimal window bounds the products), so **`Wide`-named
 /// faces do not arise from today's construction route at all** — the `Wide` opening is
 /// locked at the basis level (`a_wide_plane_hosts_a_canonical_frame`) and the end-to-end
@@ -1003,7 +1003,7 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     );
 }
 
-/// ★★★★★ **An axes-only tilted frame extrudes on the exact road.**
+/// **An axes-only tilted frame extrudes on the exact road.**
 ///
 /// The sibling of `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`, for the
 /// population that one cannot reach: a `from_axes` plane whose axes never lift to exact
@@ -1093,7 +1093,7 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     );
 }
 
-/// ★★★ **What the exact arithmetic cannot state is a named reject, never a silent f64 build.**
+/// **What the exact arithmetic cannot state is a named reject, never a silent f64 build.**
 /// A plane with no exact statement — axes outside the decimal window — and a sweep distance the
 /// window cannot hold each get their own name at the operation's door. A prism built in f64
 /// would record no exact points and could not survive a motion; the reject is the honest form of

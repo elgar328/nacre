@@ -285,7 +285,7 @@ fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
 /// | `Da`, `Db` | `≈ 5u` | `32·U` | 6× |
 /// | `V = Na·Db − Nb·Da` | `≈ 5u + 5u + u + u = 12u` | `64·U` | 5× |
 ///
-/// ★ **Why it exists** (measured): the exact route builds two Cramer expansions and a degree-six
+/// **Why it exists** (measured): the exact route builds two Cramer expansions and a degree-six
 /// product on every call — `≈ 2.7 µs`, against the filtered certified route's `≈ 1 µs` — and it
 /// allocates, so under rayon the workers queue on the allocator. It was the largest single judging
 /// cost of the axis-aligned fold (460 ms of about 1 s, one thread); with this filter that fold runs
@@ -369,14 +369,14 @@ fn cramer_val(p: &ThreePlane) -> ([f64; 3], f64, [f64; 3], f64) {
 /// and handing one predicate both descriptions is how a boolean comes to disagree with itself. With
 /// no triangle there is nothing left to disagree.
 ///
-/// ★ **It is also cheaper.** `X = Dvec/D`, so
+/// **It is also cheaper.** `X = Dvec/D`, so
 ///
 /// > `sign(c·X + c₃) = sign(c·Dvec + c₃·D) · sign(D)`
 ///
 /// — a four-term dot product where the triangle form needs three differences, a cross product and
 /// another dot. Division-free and exact, through [`Expansion`].
 ///
-/// ★★ **The sign is the plane's own, not a face's.** A face whose stored normal opposes its
+/// **The sign is the plane's own, not a face's.** A face whose stored normal opposes its
 /// outward direction has to apply that relation itself (`nacre_ops`' `frame_sign`); this states
 /// where the point is relative to the coefficients it was given, and nothing else.
 ///
@@ -410,7 +410,7 @@ fn indirect_plane_side_exact(p: &ThreePlane, c: [f64; 4]) -> i8 {
 /// | `D` | `≈ 5u` | `32·U` | 6× |
 /// | `S = c·N + c₃·D` | `≈ 5u + u + 3u = 9u` | `64·U` | 7× |
 ///
-/// ★ **Why it exists** (measured): without it every call builds expansions, and once an unmoved
+/// **Why it exists** (measured): without it every call builds expansions, and once an unmoved
 /// plane's `orient3d` asked its fourth plane by coefficients the axis-aligned fold ran **14×**
 /// slower; with it 21.8 M calls of that fold decided here and none reached the expansions.
 #[inline]

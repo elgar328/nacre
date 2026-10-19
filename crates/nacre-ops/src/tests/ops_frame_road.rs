@@ -29,7 +29,7 @@ fn both(model: &mut Model, sp: SketchPlane) -> (Option<RatFrame>, Option<RatFram
         unreachable!()
     };
     let by_value = sp.exact();
-    // ★ The repaired road: ask in `Rat`, never realize.
+    // The repaired road: ask in `Rat`, never realize.
     let by_frame = exact_frame(model, &frame);
     (by_value, by_frame)
 }
@@ -55,7 +55,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
     vec![
         ("world_xy", SketchPlane::world_xy()),
         ("world_yz", SketchPlane::world_yz()),
-        // ★ The axis whose derived frame is not the convention.
+        // The axis whose derived frame is not the convention.
         ("world_zx", SketchPlane::world_zx()),
         (
             "offset_xy",
@@ -65,7 +65,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
             "far_offset_xy",
             SketchPlane::world_xy().with_origin(p3([50.0, -37.25, 0.5])),
         ),
-        // ★ Rational tilt: axes lift exactly, so this takes the world road today — the only
+        // Rational tilt: axes lift exactly, so this takes the world road today — the only
         // family where the two routes could disagree and it would matter.
         (
             "rational_tilt_wf",
@@ -89,7 +89,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
             "irrational_tilt",
             SketchPlane::from_origin_normal(p3([0.0; 3]), v3([1.0, 1.0, 1.0])).expect("a plane"),
         ),
-        // ★ A real population: three call sites extrude on a plane facing −ŷ.
+        // A real population: three call sites extrude on a plane facing −ŷ.
         (
             "negative_normal",
             SketchPlane::from_origin_normal(p3([0.0, 1.3, 0.0]), v3([0.0, -1.0, 0.0]))
@@ -107,7 +107,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
     ]
 }
 
-/// ★★ **They agree — once the question is asked in rationals.**
+/// **They agree — once the question is asked in rationals.**
 ///
 /// Before the repair two families diverged (`rational_tilt_wf`, `rational_tilt_345`): an axis
 /// survived the frame road only when it needed no normalizing, because `reduce_direction`
@@ -116,7 +116,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
 /// `Rat::from_decimal` lifted that, orthonormality failed, and a perfectly rational plane
 /// took the frame-node road — a different arena, not an ulp.
 ///
-/// ★ Two hypotheses died on the way, and both were mine. **Origin cancellation** (`1.6 − 1.0`)
+/// Two hypotheses died on the way, and both were mine. **Origin cancellation** (`1.6 − 1.0`)
 /// is not the cause: a unit axis at `(1, 2, 3)` survives, which
 /// [`a_realized_axis_survives_only_when_it_needs_no_normalizing`] pins. And the planning
 /// argument "`|u_raw|² = 1`, so `inv_sqrt_rat` returns exactly one" held only for axes that
@@ -144,7 +144,7 @@ fn the_two_roads_take_the_same_road() {
     }
 }
 
-/// ★★ **The road the repair replaced, kept as a positive control.**
+/// **The road the repair replaced, kept as a positive control.**
 ///
 /// Realizing the axes and lifting them back still loses exactly the two families whose axes
 /// need normalizing. Without this the repair would read as a refactor of one question; with
@@ -237,7 +237,7 @@ fn the_two_roads_realize_the_same_axes_where_they_agree_on_the_road() {
     );
 }
 
-/// ★★ **The invariant the agreement above quietly rests on, stated.**
+/// **The invariant the agreement above quietly rests on, stated.**
 ///
 /// `exact()` lifts the frame's *realized* origin with `Rat::from_decimal`, so a `Named`
 /// placement's origin has to survive a round trip through `f64` to come back as the same

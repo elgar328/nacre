@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// ★★★★ **One pass equals node by node — coordinate, tol and realization, bit for bit.**
+/// **One pass equals node by node — coordinate, tol and realization, bit for bit.**
 ///
 /// [`WitnessPoint::apply_chain`] exists only to stop rebuilding the remembered chain per node
 /// (`remember`'s doc has the measurement). It is allowed to be faster; it is not allowed to be
@@ -535,7 +535,7 @@ fn probe_named(pf: nacre_exact::PlaneFrame) -> [[f64; 3]; 4] {
     ]
 }
 
-/// ★ **The two-road differential that locks the judged frame** (`three_planes_big`'s
+/// **The two-road differential that locks the judged frame** (`three_planes_big`'s
 /// pattern): a plane both roads can describe — world-rational points, so the narrow road has
 /// exact canonical coefficients — must get the same basis from `plane_frame_default` +
 /// `plane_frame_named` (exact route) and from [`FrameThrough`] (judged route), within the
@@ -571,7 +571,7 @@ fn the_judged_frame_agrees_with_the_named_road() {
         }
     }
 
-    // ★ The negative control: `flip` negates all four coefficients, which must flip ŵ and û
+    // The negative control: `flip` negates all four coefficients, which must flip ŵ and û
     // together and leave v̂ — `Frame`'s own documented semantics, reproduced by the judge.
     let flipped = probe_through(
         &FrameThrough::of(pts().map(JudgedPoint::Pure), true).expect("flip frames too"),
@@ -631,7 +631,7 @@ fn axis_carriers(a: f64, b: f64, c: f64, spin: Option<i128>) -> [[WitnessPoint; 
     ]
 }
 
-/// ★★★★★ **The Pure-vs-Meet differential — the tooth of the meet route** (`three_planes_big`'s
+/// **The Pure-vs-Meet differential — the tooth of the meet route** (`three_planes_big`'s
 /// pattern). A pure point can *also* be written as the meet of its three carriers, so the
 /// same three vertices spelled `[Pure; 3]` and `[Meet; 3]` must derive one basis — that is
 /// the only proof that the affine shortcut (the all-pure road) and the homogeneous join
@@ -774,7 +774,7 @@ fn a_definition_that_cannot_prove_a_basis_is_refused() {
     );
 }
 
-/// ★ The point of the whole node: three defining points with **different** chains — the
+/// The point of the whole node: three defining points with **different** chains — the
 /// population no exact frame can serve. The f64 cache must sit within its own stated tol of
 /// the high-precision realization, and construction must be deterministic (same statement,
 /// same branch, bit-identical realization — replay's requirement).
@@ -927,7 +927,7 @@ fn tol_bounds_error_over_random_chains() {
     let (mut translate_seen, mut mirror_seen) = (false, false);
     let mut worst_ratio = 0.0_f64;
     let mut worst_rot = 0.0_f64;
-    // ★ **What the chain was made of, so a failure can be acted on.** A gate that only says
+    // **What the chain was made of, so a failure can be acted on.** A gate that only says
     // "the bound was exceeded" cannot be debugged: the fix for an exceeded bound is to find
     // the *missing term*, and that means knowing which links the offending chain had. The
     // per-shape bests below also say where the bound is already tight and where it is not —
@@ -949,7 +949,7 @@ fn tol_bounds_error_over_random_chains() {
         ("has a mirror          ", 0.0, 0, String::new()),
         ("no translate          ", 0.0, 0, String::new()),
         ("has a translate       ", 0.0, 0, String::new()),
-        // ★ **Pivot rotations and nothing else.** Built to isolate the pivot's arithmetic, it
+        // **Pivot rotations and nothing else.** Built to isolate the pivot's arithmetic, it
         // reports something else: what dominates there is the *base seed* — `WitnessPoint::at`
         // charges the half-ulp `Rat::to_f64` may lose, which a coordinate can nearly spend, so the
         // row moves with the seed and not with the pivot. **A row that does not move with its
@@ -994,7 +994,7 @@ fn tol_bounds_error_over_random_chains() {
     });
     let wide = wide_fixture().1;
     let (mut frame_seen, mut through_seen, mut wide_seen) = (false, false, false);
-    // ★ And the **mean**, because a term that shrinks everywhere by a little moves no maximum.
+    // And the **mean**, because a term that shrinks everywhere by a little moves no maximum.
     let (mut ratio_sum, mut ratio_n) = (0.0_f64, 0usize);
     let mut worst_desc = String::new();
     for _ in 0..2000 {
@@ -1083,7 +1083,7 @@ fn tol_bounds_error_over_random_chains() {
         let hp = p.coord_hp(GT);
         for (axis, hp_a) in hp.iter().enumerate() {
             let err = abs_err(p.coord_iv[axis].value, hp_a, GT);
-            // ★ **The chain belongs in the failure, not only in the summary below.** An
+            // **The chain belongs in the failure, not only in the summary below.** An
             // exceeded bound means a term is missing, and the first thing needed is which
             // links were involved — but the panic aborts before any summary prints, so the
             // shape has to travel with the message. It is how the asymmetry in `rot` was
@@ -1130,10 +1130,10 @@ fn tol_bounds_error_over_random_chains() {
     // **How much of the bound the real error actually uses** — read exactly (`abs_err`), so a
     // ratio near 1 is a bound with no slack and one near ½ a bound with a margin of two.
     //
-    // ★ It stays a figure nobody writes down: the corpus grows, and a pasted number goes stale
+    // It stays a figure nobody writes down: the corpus grows, and a pasted number goes stale
     // with it.
     eprintln!("[tol tightness] worst err/tol: {worst_ratio:.4} all, {worst_rot:.4} rotation-only");
-    // ★ **Which chain got closest, and which shapes are already tight.** The fix for an
+    // **Which chain got closest, and which shapes are already tight.** The fix for an
     // exceeded bound is to find the *missing term*, so the gate has to say what the offending
     // chain was made of. The per-shape bests say the same thing in advance: a shape sitting
     // near 1.0 is a term already derived tightly, and one sitting low is where a lumped charge
@@ -1230,7 +1230,7 @@ fn frame_of(c: [i128; 4]) -> nacre_exact::PlaneFrame {
     nacre_exact::plane_frame(coeffs).expect("these planes all have exact frames")
 }
 
-/// ★★★★ **The property a frame exists to have: a point drawn at `w = 0` is *on* the plane.**
+/// **The property a frame exists to have: a point drawn at `w = 0` is *on* the plane.**
 ///
 /// Checked on the high-precision realization, against the plane's own exact coefficients — so
 /// it catches a wrong origin, a `u` that is not in the plane, and a `v` that is not
@@ -1266,7 +1266,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
     }
 }
 
-/// ★★★★ **A named frame is a frame the derivation cannot produce.**
+/// **A named frame is a frame the derivation cannot produce.**
 ///
 /// `plane_frame_default` gives the convention a *face* takes — origin at the world origin's
 /// projection, `+u` along `ẑ × n`. A plane a caller **named** may want neither: the script
@@ -1274,7 +1274,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
 /// pair, and this checks that naming them actually moves the frame — and that the frame is
 /// still orthonormal when it does.
 ///
-/// ★★ **And two spellings of one direction are one frame.** `ref_dir` is reduced to its
+/// **And two spellings of one direction are one frame.** `ref_dir` is reduced to its
 /// primitive form, so `[0,0,1]` and `[0,0,5]` build the identical `PlaneFrame` — which is what
 /// lets a motion node intern (the document's blocker 6).
 #[test]
@@ -1307,7 +1307,7 @@ fn a_named_frame_takes_its_own_origin_and_u() {
     assert!(p.coord_iv[1].value.abs() < 1e-15, "on the plane y = 0");
     assert!((u[2] - 3.0).abs() < 1e-15, "+u ran along ẑ, got {u:?}");
 
-    // ★ Two spellings of one direction, one frame.
+    // Two spellings of one direction, one frame.
     let long = [0, 0, 5].map(Rat::from_int);
     assert_eq!(
         nacre_exact::plane_frame_named(coeffs, o_d, long),
@@ -1315,7 +1315,7 @@ fn a_named_frame_takes_its_own_origin_and_u() {
     );
 }
 
-/// ★★★ **The `v̂` fallback is taken, and the frame is still a frame.**
+/// **The `v̂` fallback is taken, and the frame is still a frame.**
 ///
 /// `|v_raw|² = |n|²·|u_raw|²` needs twice the width the lengths themselves do, so a plane with
 /// wide coefficients cannot carry it — and the realization takes `v̂ = ŵ × û` instead. That
@@ -1323,7 +1323,7 @@ fn a_named_frame_takes_its_own_origin_and_u() {
 /// is still a basis. Checked by the property that matters: a point drawn at `w = 0` is *on*
 /// the plane, and `tol` still bounds the coordinate it wrote.
 ///
-/// ★ **A fallback nothing takes is indistinguishable from one that is not there**, so the
+/// **A fallback nothing takes is indistinguishable from one that is not there**, so the
 /// first assertion is that these planes really do decline the exact route.
 #[test]
 fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
@@ -1429,7 +1429,7 @@ fn wide_fixture() -> ([num_bigint::BigInt; 4], WideFrame) {
     (cs, fr)
 }
 
-/// ★★★★ **The wide twin of `a_point_drawn_in_a_frame_lies_on_that_frame_s_plane`**:
+/// **The wide twin of `a_point_drawn_in_a_frame_lies_on_that_frame_s_plane`**:
 /// a point drawn at `w = 0` in a [`WideFrame`] is *on* that plane, checked on the
 /// high-precision realization against the exact arbitrary-precision coefficients. This is
 /// the property that lets a sketch land on a plane whose data exceeds `i128` at all.
@@ -1489,7 +1489,7 @@ fn a_wide_frame_s_tol_bounds_its_own_realization() {
     );
 }
 
-/// ★★★ **A frame on an axis-aligned plane through the origin costs nothing at all** — the
+/// **A frame on an axis-aligned plane through the origin costs nothing at all** — the
 /// basis is a signed permutation, so every product and every sum is exact and `tol` stays a
 /// literal zero. That is what keeps such a sketch on the exact predicate path, and it is the
 /// case the `perm` gate in [`WitnessPoint::frame`] exists for.
@@ -1512,7 +1512,7 @@ fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
     assert_eq!(p.coord_approx(), [3.0, -7.0, 2.0]);
 }
 
-/// ★★★★ **The prize: two points sketched in one frame are judged *exactly*.**
+/// **The prize: two points sketched in one frame are judged *exactly*.**
 ///
 /// `shared_base` cancels a motion every input carries and hands the exact predicate the
 /// pre-motion coordinates. A frame is a rigid motion like any other, so a whole sketch on one
@@ -1521,7 +1521,7 @@ fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
 /// can never prove a determinant *is* zero, so `Some(Orient::Zero)` here is the cancellation
 /// firing and nothing else.
 ///
-/// ★★ **`shared_base` needed no change for this**, and that is worth pinning rather than
+/// **`shared_base` needed no change for this**, and that is worth pinning rather than
 /// leaving to luck: it was written against a *property* (all chains structurally equal, and
 /// the motion preserves the determinant) rather than against a list of variants, so a new
 /// proper motion joined it for free. A test is what tells "it is right" from "it happens to
@@ -1550,7 +1550,7 @@ fn four_points_sharing_one_frame_are_judged_exactly() {
     ));
 }
 
-/// ★★ **A frame is proper, so it must not touch the mirror parity** — the design says so
+/// **A frame is proper, so it must not touch the mirror parity** — the design says so
 /// (`v̂ = ŵ × û` makes the basis right-handed) and `chain_parity` counts only reflections, so
 /// this holds today by not being written. Pinned because the consequence of it changing is a
 /// determinant handed back with the wrong sign, which is a confident wrong answer rather than
@@ -1645,7 +1645,7 @@ fn at_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
 /// The corpus therefore reaches **both ends of `Rat`'s range**: where the numerator is widest
 /// (a large integer, ~127 bits) and where the denominator is deepest (`2^126`).
 ///
-/// ★ The coupling this rests on — `TRIAL_PREC ≥ 127` — is asserted at the constant itself,
+/// The coupling this rests on — `TRIAL_PREC ≥ 127` — is asserted at the constant itself,
 /// where lowering it fails the build rather than one test.
 #[test]
 fn an_exact_point_demands_no_precision() {
@@ -1654,9 +1654,9 @@ fn an_exact_point_demands_no_precision() {
         [0.5, 0.25, -0.125],      // dyadic fractions
         [4.0, 0.2, 3.0],          // 0.2 is not decimal-exact but *is* an exact f64
         [1e18, -4e17, 3.5e19],    // large
-        [1e38, -1.5e38, 1.0],     // ★ near Rat's ceiling: the widest numerator, ~127 bits
+        [1e38, -1.5e38, 1.0],     // near Rat's ceiling: the widest numerator, ~127 bits
         [1e-20, -2.5e-21, 5e-18], // small
-        // ★ the deepest denominator (`2¹²⁶`), with a full significand and with one bit
+        // the deepest denominator (`2¹²⁶`), with a full significand and with one bit
         [
             ((1u64 << 53) - 1) as f64 * 2f64.powi(-126),
             2f64.powi(-126),

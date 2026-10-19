@@ -19,12 +19,12 @@
 //! > the lateral. So membership in the other operand is **uniform** over that slab, and one
 //! > witness decides the whole band.
 //!
-//! ★ **Faces, because that is what a boundary is made of.** The gate long tested each ∥ wall's
+//! **Faces, because that is what a boundary is made of.** The gate long tested each ∥ wall's
 //! infinite *plane*, which is a cheaper sufficient condition and reads almost the same — but it
 //! refused bodies standing well clear of the cylinder whose plane, extended, crossed it. The
 //! theorem never asked for that; it asks about the boundary, and the gate now does too.
 //!
-//! ★★ **A wall face is asked about a rectangle, and the "consecutive cuts" above are per face.**
+//! **A wall face is asked about a rectangle, and the "consecutive cuts" above are per face.**
 //! What a ∥ plane meets of the solid cylinder is a rectangle of that plane: the strip across, a
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
 //! clear on either one misses the rectangle (`planes`' `face_clears_footprint`). With several
@@ -34,7 +34,7 @@
 //! wall sitting in such a gap breaks no premise — there is none there to break. Reading the spans
 //! as one `min..max` would invent both the band and the refusal.
 //!
-//! ★ The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
+//! The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
 //! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
 //! while sitting outside the material. Asking the arrangement is what fixes it, and the
 //! counterexample is a fixture of this pass (`a_cylinder_in_the_notch_keeps_no_band`, with its
@@ -53,7 +53,7 @@ use nacre_exact::Rat;
 
 /// **One lateral face**, as the band pass reads it.
 ///
-/// ★★ **The row is a face, not a class.** A cylinder *class* is one lateral `Surface` handle
+/// **The row is a face, not a class.** A cylinder *class* is one lateral `Surface` handle
 /// (`planes`' `cyl_ix.entry(cf.surf)`), and one surface can carry **several faces of one
 /// solid** — bore a plate through and then cut away the middle of the bore, and its wall becomes
 /// two disjoint bands. "Which parts survive" is a question about a face; the class only says which
@@ -64,7 +64,7 @@ use nacre_exact::Rat;
 /// shell open — the boolean came back `OpenResultShell`, naming a symptom of our own omission.
 /// The chart reads the same span as the cell's existence at an uncut end (`Chart::read_cell`).
 ///
-/// ★ **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
+/// **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
 /// the gap where the solid has no face at all.
 pub(crate) struct CylRow {
     /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
@@ -78,12 +78,12 @@ pub(crate) struct CylRow {
 
 /// One row per lateral **face**, ordered by `(class, lower t)`.
 ///
-/// ★ That order is the replay contract stated at the row level, and the chart's emitter keeps it
+/// That order is the replay contract stated at the row level, and the chart's emitter keeps it
 /// (classes ascending, then lines ascending). A class's faces have disjoint spans, so sorting by
 /// `(class, span[0])` keeps each class's bands in ascending `t`; with one face per class it *is*
 /// class-index order.
 ///
-/// ★★ **That disjointness holds where every lateral face that reaches here is a
+/// **That disjointness holds where every lateral face that reaches here is a
 /// band** — two whole rims and holes. The tracer states a panel and a chain rim too
 /// (`arrangement::lateral_shape`), so two faces of one class *can* share a `t`; the tie then
 /// falls to the stable sort's face order — still deterministic, and the corpus so far carries one
@@ -125,7 +125,7 @@ pub(crate) fn cyl_rows(
         });
     }
     out.sort_by(|a, b| (a.class, a.span[0]).cmp(&(b.class, b.span[0])));
-    // ★ A class exists because a face made it, so a class with no row is the class table and the
+    // A class exists because a face made it, so a class with no row is the class table and the
     // face rows disagreeing rather than an input. It has never fired; an unfired guard stays,
     // under the name its whole class of guards shares (`CylinderStagesDisagree`).
     for k in 0..n_class {

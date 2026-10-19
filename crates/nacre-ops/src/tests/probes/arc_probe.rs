@@ -1,13 +1,13 @@
 //! **Which way a hole's arcs actually run, realized** — the independent oracle for
 //! [`cycle_on_class`]'s winding rule.
 //!
-//! ★★★★★ **The rule is derived from signs, and downstream sees only the symptom.** A reversed arc
+//! **The rule is derived from signs, and downstream sees only the symptom.** A reversed arc
 //! puts the band's answer inside the hole and the hole's on the band — the exactly-opposite
 //! answer — which the labels then refuse (`LabelConflict`) without saying which arc. So every
 //! extent a hole carves is **realized here** and a lock judges it against the fixture's own
 //! geometry. The kernel reads no coordinate to choose an arc; this reads one afterwards, to check.
 //!
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `arc_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 

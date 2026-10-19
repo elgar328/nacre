@@ -1,18 +1,18 @@
 //! **Where a crossing on a ruling actually landed, realized** — the f64 twin of the name the
 //! tracer minted for it.
 //!
-//! ★ **It checks a name against coordinates, which is the one thing the namer cannot do.**
+//! **It checks a name against coordinates, which is the one thing the namer cannot do.**
 //! `crossing_on_ruling` builds a [`NodeId`] from exact predicates and never evaluates it; this
 //! realizes the point afterwards and records its distance to all three surfaces it is supposed to
 //! lie on, plus the ruling side read in f64 against the side the ring's edge carried. A fixture
 //! then asserts the offsets are zero and the two sides agree.
 //!
-//! ★★ **It does not decide anything, and it must not.** Nothing downstream reads [`HITS`]; the
+//! **It does not decide anything, and it must not.** Nothing downstream reads [`HITS`]; the
 //! engine's answer is the same with this module compiled out, which is what `cfg(test)` at the
 //! mount states. What it cannot see is a name that is wrong *and* whose realization is wrong the
 //! same way — the twin check is independent only where the f64 road is.
 //!
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `crossing_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 

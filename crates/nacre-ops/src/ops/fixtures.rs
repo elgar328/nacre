@@ -1,12 +1,12 @@
 //! **Solids built through the product's own operations** — test-only (`test-util`).
 //!
-//! ★ A fixture here states nothing the product does not: it is a sequence of calls an application
+//! A fixture here states nothing the product does not: it is a sequence of calls an application
 //! makes (a datum plane, a circle sketched on it, an extrude). That is the difference from a
 //! constructor that writes cells directly — such a door skips the realization funnel, and a
 //! population built through it can hold what no operation produces (a tilted cap lifted from
 //! realized `f64`, whose rim is an ellipse while its edge cache says circle).
 //!
-//! ★ **A box is a floor and a height**, the way an application states one (kit's `cuboid`
+//! **A box is a floor and a height**, the way an application states one (kit's `cuboid`
 //! extrudes a rectangle by its size): a datum plane, a rectangle on it, an extrude. Two corners
 //! are not a statement the product takes — the extrude reads its distance as the shortest decimal
 //! that round-trips (design 「구성 산술은 사용자가 쓴 십진수로 한다」), so a box whose two heights
@@ -260,7 +260,7 @@ pub fn wedge_on_a_rim(
 pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Handle<Solid> {
     let [x0, y0, z0] = min.as_array();
     let [x1, y1, z1] = max.as_array();
-    // ★ Reversed corners are refused rather than read: a lower `max.z` would become a negative
+    // Reversed corners are refused rather than read: a lower `max.z` would become a negative
     // height — a box below the floor — and a reversed `x`/`y` a clockwise rectangle the extrude
     // quietly winds the other way.
     assert!(
@@ -425,7 +425,7 @@ pub fn pocket(
 
 /// The `0.4` boss/pocket footprint on `[0.3, 0.7]²` of the unit cube's lid.
 ///
-/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+/// **On a lid these are world coordinates.** The sketch origin is the world origin projected
 /// onto the face's plane, and the axes are the arbitrary-axis convention's, which for `n = ẑ` are
 /// `u = +x̂`, `v = +ŷ` — so a frame point `(a, b)` is world `(a, b, 1)`, the identity.
 pub fn lid_square() -> Profile2d {
@@ -437,7 +437,7 @@ pub fn lid_square() -> Profile2d {
 /// The unit cube with a [`lid_square`] pocket `0.5` deep in its top face: the void is
 /// `[0.3, 0.7]² × [0.5, 1]` and the solid measures `1 − 0.16·0.5 = 0.92`.
 ///
-/// ★ Its lid carries an inner loop, and that is what its consumers measure — so it is asserted
+/// Its lid carries an inner loop, and that is what its consumers measure — so it is asserted
 /// here. A footprint the frame places elsewhere (on the lid's corner, say) builds a solid every
 /// test still accepts, and a boolean scored only against another kernel stays green on it.
 pub fn pocketed_cube() -> (Model, Handle<Solid>) {

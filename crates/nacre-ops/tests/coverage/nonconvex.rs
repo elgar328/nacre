@@ -332,7 +332,7 @@ fn fuse_l_staple() {
 
 #[test]
 fn cut_staple_by_l() {
-    // ★ The same loop, on the same face, is now an **island**. Swap the operands and the
+    // The same loop, on the same face, is now an **island**. Swap the operands and the
     // cap's kept region becomes the corner bite alone; the loop lies outside it, in a
     // dropped region, so its interior is what survives.
     //
@@ -801,7 +801,7 @@ fn a_fused_stack_chains_through_a_cut() {
 fn boolean_topology_is_the_same_on_untidy_coordinates() {
     let counts = |dx: f64, dy: f64, z0: f64, h1: f64, h2: f64, kind: BoolKind| {
         let mut m = Model::new();
-        // ★ A stack on **one** plane `z0 + h1` — below it and on it — so the two boxes meet there.
+        // A stack on **one** plane `z0 + h1` — below it and on it — so the two boxes meet there.
         let zm = z0 + h1;
         let a = nacre_ops::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, -h1);
         let b = nacre_ops::fixtures::cuboid_on(&mut m, [0.0, 0.0], [dx, dy], zm, h2);

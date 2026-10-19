@@ -10,14 +10,14 @@
 //! transversally in one sector and ends on it in another: the
 //! corner it asks for is a node no class has.
 //!
-//! ★ **«Same engine» is the same stages, not the same code.** The planar DCEL's `walk_cells`
+//! **«Same engine» is the same stages, not the same code.** The planar DCEL's `walk_cells`
 //! orders half-edges by angle at a vertex, `nest_cells` asks `point_in_ring` on the plane and
 //! `label_cells` propagates from an unbounded root; the chart is an annulus (no unbounded
 //! region, wrapping cycles) and rectilinear (four ways at a corner, cells known by
 //! construction), and its labels are read rather than propagated — so it runs the stages on
 //! its own grid.
 //!
-//! ★ **Vertices are where the neighbouring class has them.** A boundary run along a rim is cut
+//! **Vertices are where the neighbouring class has them.** A boundary run along a rim is cut
 //! at the rim's nodes as the cleaned cap faces hold them ([`crate::draft::HeldRims`] — not the
 //! split, whose nodes the cleaning pass may have dissolved) and a run along a ruling at the wall
 //! class's piece ends (`Curved.rulings`); a station the boundary passes straight through gets no
@@ -152,7 +152,7 @@ pub(crate) fn walk(
     }
     let units = ns.max(1);
 
-    // ★ **Where the lateral ends although both sides keep it** — a station two walls state
+    // **Where the lateral ends although both sides keep it** — a station two walls state
     // ([`Chart::slit_at`]): on the lateral's material side, the result has nothing between the two
     // walls, so what is kept on the two sides meets on the line alone. The lateral is cut there — no adjacency
     // across, and a boundary on both sides even within one component — so the line becomes an
@@ -405,7 +405,7 @@ pub(crate) fn walk(
         }
 
         // ── runs → pieces → rings ──
-        // ★★ **Each cycle's winding about the axis, by its arc units.** An arc edge covers one unit
+        // **Each cycle's winding about the axis, by its arc units.** An arc edge covers one unit
         // sector, `+1` walked counter-clockwise (`ccw` — the face above it) and `−1` against, and
         // a ruling covers none; a closed cycle returns to its station, so the sum is a whole
         // number of turns — `+1` for the lower boundary of a face that wraps the axis, `−1` for
@@ -459,7 +459,7 @@ pub(crate) fn walk(
                             whole_rim = Some((c, ccw));
                             continue;
                         };
-                        // ★ A cut rim's pieces are the arcs between its consecutive nodes
+                        // A cut rim's pieces are the arcs between its consecutive nodes
                         // — the held table, as the cleaned caps hold them; neither the split nor
                         // the arc labels is consulted for the edges. Each piece carries the rim's
                         // plane `c`, which the assembly checks against the cap's.
@@ -601,7 +601,7 @@ pub(crate) fn walk(
             .chamber
             .expect("an emitted cell has a chamber");
         let flip = !super::read_cell::keep_for(kind, side, own, other);
-        // ★ **The outer bound: the lower rim of a face that wraps, or the lowest-bottom cycle of
+        // **The outer bound: the lower rim of a face that wraps, or the lowest-bottom cycle of
         // one that does not.** A connected region of the band has either no wrapping boundary or
         // exactly one of each sense — a second lower rim would cut the region in two — so
         // anything else is a walk this chart does not arrange.

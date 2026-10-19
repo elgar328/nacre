@@ -12,7 +12,7 @@ use super::*;
 ///   `‖dir‖²·r²·(û·û − 1)`) is sound only when that holds exactly.
 /// * a norm is **irrational**, or the arithmetic left `i128` ([`inv_sqrt_rat`]).
 ///
-/// ★ Every cylinder the modelling road states satisfies the first two by construction — a sketch
+/// Every cylinder the modelling road states satisfies the first two by construction — a sketch
 /// frame is checked orthonormal exactly, and `ref_dir` is either its `x̂` or a rim chord divided
 /// by its own radius — so `None` there means the third cause alone.
 pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [Rat; 3])> {
@@ -117,7 +117,7 @@ pub fn axis_plane_meet(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<
 /// gate asks it about an axis point (a wall parallel to the axis is the same distance from every
 /// point of it), but nothing here is about cylinders.
 ///
-/// ★ **Not homogeneous in `p`** — the `d` term is why — so `p`'s denominator and the radius'
+/// **Not homogeneous in `p`** — the `d` term is why — so `p`'s denominator and the radius'
 /// ride into the formula instead of dropping out: for `coeffs = C/Dc`, `p = P/Dp`, `r² = R/S`
 /// the answer is `sign(S(C₀₋₂·P + C₃·Dp)² − R|C₀₋₂|²Dp²)` (`Dc²` *is* a positive common factor
 /// and does cancel). Dropping `Dp` instead — the obvious spelling — states a different
@@ -168,7 +168,7 @@ pub enum StripSide {
     Inside,
     /// **The piece spans a boundary** — its interior lies strictly on both sides of one ruling.
     ///
-    /// ★ A point can never be this (it has no width), so every answer
+    /// A point can never be this (it has no width), so every answer
     /// [`cylinder_strip_side`] and [`cylinder_strip_side_branch`] give is one of the three above,
     /// unchanged. Only [`cylinder_strip_side_margin`] with `rho > 0` produces it.
     Crosses,
@@ -189,12 +189,12 @@ pub enum StripSide {
 ///
 /// No normalization and **no square root** — `h` never has to be formed.
 ///
-/// ★ **This is one of two axes, not a rule of its own.** What the cylinder occupies in this plane
+/// **This is one of two axes, not a rule of its own.** What the cylinder occupies in this plane
 /// is a *rectangle*: this strip across, and the lateral face's axis-parameter span along
 /// ([`point_axis_side`]). Clearing either axis clears the rectangle, so a caller asking whether a
 /// face misses the cylinder asks both and stops at the first that separates.
 ///
-/// ★ **`U = 0` answers [`StripSide::Inside`] before the magnitude test.** With a non-empty strip
+/// **`U = 0` answers [`StripSide::Inside`] before the magnitude test.** With a non-empty strip
 /// that is the truth (the point sits on the axis' own in-plane line). With an empty one it is
 /// merely conservative — and a caller that cares has already passed the plane through
 /// [`point_plane_clearance_rat`], which is the cheaper question and the one that decides
@@ -211,7 +211,7 @@ pub fn cylinder_strip_side(
     m: &[Rat; 3],
     r2: &BigRat,
 ) -> StripSide {
-    // ★ **A door, so the two can never drift.** A point is a disk of radius zero, and at that
+    // **A door, so the two can never drift.** A point is a disk of radius zero, and at that
     // radius the margin form's answers collapse onto this one exactly: `Crosses` needs a strictly
     // positive width to be possible at all, and the remaining comparison is term-for-term this
     // function's own.
@@ -257,7 +257,7 @@ fn strip_scale(
         dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
         "the strip only exists on a plane parallel to the axis"
     );
-    // ★ `_dc` and `_dm` go unused, and that is the derivation showing: the plane's and the
+    // `_dc` and `_dm` go unused, and that is the derivation showing: the plane's and the
     // direction's own denominators enter only as positive squares in the common denominator, so
     // they cancel. The point's and the origin's do **not** — the `c` term breaks homogeneity in
     // `p`, the same way it does in `point_plane_clearance_rat`.
@@ -352,7 +352,7 @@ pub struct StripReach<'a> {
 /// margin twice — those pass `hi = None` — and an arc's two ends differ, because its angular
 /// extent reaches further one way than the other.
 ///
-/// ★★ **`Plus`/`Minus` are exact for every shape; `Crosses` is claimed only where it is proved.**
+/// **`Plus`/`Minus` are exact for every shape; `Crosses` is claimed only where it is proved.**
 /// Spanning a boundary is a *positive* fact the tangency road acts on, so under-reporting it is
 /// the safe direction — and for an asymmetric extent this door reports [`StripSide::Inside`]
 /// rather than prove it. The symmetric case (`hi = None`) keeps the complete answer it always
@@ -412,7 +412,7 @@ pub fn cylinder_strip_side_extent(
 /// **Does that disk reach *one named* ruling?** — `side` names the ruling in **this** family's
 /// vocabulary: the sign of `(p − o)·(n × m)`, the same one [`StripSide::Plus`] is written about.
 ///
-/// ⚠ **The arrangement's `side` is the opposite sign.** `arrangement::ruling_side_signed` measures
+/// **The arrangement's `side` is the opposite sign.** `arrangement::ruling_side_signed` measures
 /// against `m × n`, so a caller carrying a `MergedRuling` must negate before asking here. Stated
 /// rather than absorbed: a predicate that silently accepted either convention would answer about
 /// the wrong ruling for whichever caller it was not written for.
@@ -455,7 +455,7 @@ pub fn cylinder_ruling_reached(
 /// `hi = None` is the symmetric piece (a point, a disk), which is what this door has always been
 /// handed; then one scale answers both ends and the verdict is the one it always gave.
 ///
-/// ★★ **`touch_counts` names the boundary rather than assuming one**. Its predecessor is
+/// **`touch_counts` names the boundary rather than assuming one**. Its predecessor is
 /// closed — a piece touching the ruling at one point has *reached* it — and that is the right
 /// reading for a clearance. The arrangement's net wants the other one: what it cannot mint is a
 /// **crossing**, and an edge tangent to another divides nothing. Two propositions, one door, and
@@ -535,7 +535,7 @@ fn orient_neg(o: Orient) -> Orient {
 /// **Which side of the plane at axis parameter `t` a point stands on.** Exact and total, at any
 /// width.
 ///
-/// ★ **This is the second separating axis of one rectangle, not a second rule.** A wall parallel
+/// **This is the second separating axis of one rectangle, not a second rule.** A wall parallel
 /// to a cylinder's axis meets that cylinder in a rectangle of the wall's own plane: the strip
 /// across ([`cylinder_strip_side`], the first axis) and the lateral face's axis-parameter span
 /// along (this one). A face misses the rectangle as soon as it clears *either* axis, because a
@@ -576,7 +576,7 @@ pub fn point_axis_side(p: &MeetPoint, o: &[Rat; 3], m: &[Rat; 3], t: Rat) -> Ori
     let w: [BigInt; 3] = core::array::from_fn(|i| &pp[i] * &d_o - &oo[i] * &dp);
     // sign((p−o)·m − t·|m|²) with the positive common denominator `dp·d_o·d_m²·td` cleared:
     //   (W·M)·d_m·td  vs  tn·|M|²·dp·d_o
-    // ★ Every cleared factor is positive — `lift3`/`lift` build denominators from an lcm of
+    // Every cleared factor is positive — `lift3`/`lift` build denominators from an lcm of
     // `Rat` denominators, and `Rat` keeps its sign in the numerator — so the comparison is the
     // sign it claims to be.
     let lhs = dot(&w, &mm) * &d_m * &td;
@@ -596,7 +596,7 @@ pub fn point_axis_side(p: &MeetPoint, o: &[Rat; 3], m: &[Rat; 3], t: Rat) -> Ori
 /// — so its coordinates live in `ℚ(√c)`, and every quantity those predicates form from a point is
 /// a polynomial in them, hence of the shape `X + Y√C` whose sign the tower already answers.
 ///
-/// ★ **The radicand is integerised here, once.** `√(p/q) = √(p·q)/q`, so `s` is rewritten over a
+/// **The radicand is integerised here, once.** `√(p/q) = √(p·q)/q`, so `s` is rewritten over a
 /// single positive denominator with an **integer** radicand `C = p·q`; every sum downstream then
 /// carries one `C` and never has to reconcile two spellings of the same surd.
 fn lift_branch(

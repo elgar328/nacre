@@ -118,7 +118,7 @@ impl QuadVal {
         QuadVal::new(self.a.checked_sub(rhs.a)?, self.b.checked_sub(rhs.b)?, c)
     }
 
-    /// Exact negation; `None` on overflow. ★ Checked, not infallible — the first spelling
+    /// Exact negation; `None` on overflow. Checked, not infallible — the first spelling
     /// claimed "a reduced `Ratio` never holds `i128::MIN`", and that is false (measured:
     /// `Rat::from_int(i128::MIN)` is a legal reduced value whose negation overflows). The
     /// claim was a panic path dressed as a proof; the checked contract is the honest one.
@@ -151,7 +151,7 @@ impl QuadVal {
     /// The value as a rational **when it is one**: `b = 0`, or `c` a perfect square (then
     /// `a + b·√c` exactly). `None` is an irrational value, not a failure.
     ///
-    /// ★ Judged on the **value**, never on `b == 0` alone: a perfect-square discriminant leaves
+    /// Judged on the **value**, never on `b == 0` alone: a perfect-square discriminant leaves
     /// `b ≠ 0` with a rational sum — a branch corner where a wall through the axis meets the rim,
     /// for one (such a corner is read by comparing values, the same rule).
     pub fn as_rat(&self) -> Option<Rat> {
@@ -165,7 +165,7 @@ impl QuadVal {
     /// `a + b·√c` in plain `f64` — three roundings compose, so no nearest-`f64` promise;
     /// consumers that need a certified value go through the sign tower.
     ///
-    /// ★★ **Witnesses, seeds and display only — never a decision.** Deciding on two of these
+    /// **Witnesses, seeds and display only — never a decision.** Deciding on two of these
     /// hands the answer to `f64` rounding, which is what [`QuadVal::sign`] exists to take back. A
     /// seed is checked exactly before it is believed (`rational_between` verifies its midpoint
     /// against both ends); a witness location is drawn for a human and asserted only
@@ -240,13 +240,13 @@ fn integerize(a: Rat, b: Rat, c: Rat) -> (BigInt, BigInt, BigInt) {
 
 /// One coordinate of a plane·plane·cylinder point, **exactly**: `(a + b·√c) / d` with `d > 0`.
 ///
-/// ★★ **Integers, not `Rat` — and that is the whole design.** The point is
+/// **Integers, not `Rat` — and that is the whole design.** The point is
 /// `line.base() + s·line.dir()`, and building that in `QuadVal` (which is `Rat`-backed) can
 /// overflow `i128` on the way in. Every comparison below would then decline for a reason that has
 /// nothing to do with the geometry, which is the one thing this file exists to prevent. So the
 /// coordinate is carried to `BigInt` before anything is multiplied.
 ///
-/// ★ **Not [`integerize`].** That one scales by a *positive* factor to make the radicand integral,
+/// **Not [`integerize`].** That one scales by a *positive* factor to make the radicand integral,
 /// which preserves the **sign** and not the value — fine inside one sign question, useless for
 /// comparing two numbers built independently. This keeps `d` so the value survives.
 struct AxisCoord {
@@ -261,7 +261,7 @@ struct AxisCoord {
 /// `√(cn/cd) = √(cn·cd)/cd` folds the radicand's denominator into `b`, so the radicand comes out
 /// integral (`c`) and everything else rides one positive denominator.
 fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
-    // ★ Every consumer below divides by `d` or clears it as a positive factor, so its sign is
+    // Every consumer below divides by `d` or clears it as a positive factor, so its sign is
     // load-bearing. It holds because `Ratio` keeps denominators positive — said here because this
     // is where it is relied on.
     let big = |r: Rat| (BigInt::from(r.numer()), BigInt::from(r.denom()));
@@ -289,11 +289,11 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
 /// **The point of a plane·plane·cylinder crossing in plain `f64`** — for witnesses and display,
 /// never a decision (see [`QuadVal::to_f64_approx`]).
 ///
-/// ★ Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
+/// Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
 /// answering. A caller that assembled the same expression in `QuadVal` would lose the point
 /// instead — which is what this replaces.
 ///
-/// ★★ **And the division cannot go to `inf/inf`.** That was the worry worth checking: both parts
+/// **And the division cannot go to `inf/inf`.** That was the worry worth checking: both parts
 /// are `BigInt` and `f64` runs out at `10^308`. It cannot happen *because of the input type* —
 /// every part comes from a `Rat` (i128, under `10^38`), and the products here reach at most five
 /// of them, so nothing exceeds about `10^190`. ⇒ the bound is the argument type's, not this
@@ -326,7 +326,7 @@ pub fn branch_point_approx(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
 /// gate demands `base_rat`), so [`crate::three_planes_big`] answers; a caller without one would
 /// need a door onto the integer core, and none is opened until such a caller exists.
 ///
-/// ★★ **What this rests on: rational plane coefficients.** An arbitrarily rotated plane has
+/// **What this rests on: rational plane coefficients.** An arbitrarily rotated plane has
 /// irrational coefficients and no rational name, and then there is nothing to lift. That case does
 /// not arise here because the cylinder gate refuses it upstream (`wp.rotated`, and a class with no
 /// `base_rat`), so this is the exact fast road **for the rational population** — not a universal
@@ -342,7 +342,7 @@ pub fn cmp_coord_meet_branch(m: &MeetPoint, line: &MeetLine, s: &QuadVal, axis: 
 /// **The order of two plane·plane·cylinder points along one axis** — `Positive` when the first is
 /// the larger. Exact and **total**.
 ///
-/// ★ **Same radical first, because it is cheaper — not because it is safer.** Two crossings of one
+/// **Same radical first, because it is cheaper — not because it is safer.** Two crossings of one
 /// segment with one circle are the two roots of a single quadratic, so they share a radicand and
 /// the difference stays on the first storey; that is also the pair an arc split meets most often.
 /// Different radicands (two different segments cutting one circle, or two circles) land on the
@@ -452,7 +452,7 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
 /// `√a > √b + √c  ⟺  a − b − c > 0  ∧  (a − b − c)² > 4bc` — one subtraction and one squaring,
 /// no radical ever formed. A zero radicand falls out of the same line (`c = 0` leaves `a > b`).
 ///
-/// ★ **It takes the first term squared** because that is how both callers hold it: the strip's
+/// **It takes the first term squared** because that is how both callers hold it: the strip's
 /// `U` is known through `U²` and a separate sign, and a rational `g` squares exactly. Taking
 /// `√a` rather than `g` is what lets the two share this line at all.
 pub(crate) fn sqrt_exceeds_root_sum(a: &BigInt, b: &BigInt, c: &BigInt) -> bool {
@@ -462,7 +462,7 @@ pub(crate) fn sqrt_exceeds_root_sum(a: &BigInt, b: &BigInt, c: &BigInt) -> bool 
 /// [`sqrt_exceeds_root_sum`] with the boundary **named** — `√a > √b + √c` when `strict`,
 /// `√a ≥ √b + √c` when not.
 ///
-/// ★ Both readings come from the one identity, and a caller that needs the non-strict form is
+/// Both readings come from the one identity, and a caller that needs the non-strict form is
 /// asking the negation of a strict one somewhere else (`√x + √y > √z` is `!(√z ≥ √x + √y)`).
 /// Writing the boundary as an argument keeps that pair from drifting into two spellings.
 pub(crate) fn sqrt_root_sum_cmp(a: &BigInt, b: &BigInt, c: &BigInt, strict: bool) -> bool {
@@ -486,7 +486,7 @@ pub(crate) fn sqrt_root_sum_cmp(a: &BigInt, b: &BigInt, c: &BigInt, strict: bool
 /// and a radical, so "these two intervals are disjoint" is a gap against *two* roots, not one.
 /// `nacre-ops`' cylinder gate is the caller ([`crate::Rat`] units throughout).
 ///
-/// ★ **No new algebra**: it is [`biquad_sign`] with the coefficients this shape fixes —
+/// **No new algebra**: it is [`biquad_sign`] with the coefficients this shape fixes —
 /// `sign(g − √p − √q)`, whose `√(p·q)` coefficient is zero. The degenerate `q = 0` (one root, the
 /// question a rational interval asks) falls out of that function's own `√v` guard, so there is no
 /// second spelling here and no branch to keep in step.
@@ -585,7 +585,7 @@ fn is_zero3(x: &V3) -> bool {
 
 /// Exact rational division by a **positive** divisor; `None` for a zero divisor or overflow.
 ///
-/// ★ The positivity is load-bearing, not cosmetic: `Rat::new(denom, numer)` with a negative
+/// The positivity is load-bearing, not cosmetic: `Rat::new(denom, numer)` with a negative
 /// `numer` normalizes the sign by negating both parts *inside* `Ratio`, which is unchecked —
 /// at `numer = i128::MIN` that negation panics. Every call site divides by `|ℓ|²` or `2A`
 /// (both positive), and the assert keeps the next caller honest.
@@ -746,7 +746,7 @@ pub fn plane_plane_cylinder(
 /// the cylinder, for a plane whose coefficients are known only to an interval (one with no world
 /// statement, met through its witness triangle).
 ///
-/// ★ **The same conventions, so a name means the same point under either number**: the line runs
+/// **The same conventions, so a name means the same point under either number**: the line runs
 /// along `n₁ × n₂`, its base is the Cramer solution with `ℓ·x = 0`, and the roots are ordered along
 /// that direction (`Lo` = `mid − √disc / 2A`). The caller passes the coefficients in the order the
 /// name's canonical pair takes, exactly as it does for the exact solve.
@@ -874,7 +874,7 @@ impl LineQuadHp {
 /// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
 /// [`plane_side`]-against-the-caps, deliberately separate.
 ///
-/// ★ **It cannot answer `None` on overflow.** The expression is one sign, and a sign has no width
+/// **It cannot answer `None` on overflow.** The expression is one sign, and a sign has no width
 /// — only a road to it can. Denominators are cleared once and the arithmetic runs in `BigInt`, so
 /// a caller's decline means the geometry (a point on
 /// the surface), never the arithmetic. The scales are **carried, not dropped**: the `r²|m|²` term
@@ -897,7 +897,7 @@ pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, r2: &BigRat) -> Orien
 /// clamped to `[0,1]` — and the two clamped ends are the endpoints, which
 /// [`cylinder_radial_side`] already answers.
 ///
-/// ★ **No circle centre is formed.** Asking the axis directly avoids computing `o + t·m` for the
+/// **No circle centre is formed.** Asking the axis directly avoids computing `o + t·m` for the
 /// plane's own axis parameter, which is a multiplication that can overflow — a width ceiling
 /// inside a question about *shape*. The caller passes the axis it already has.
 ///
@@ -944,7 +944,7 @@ pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, r2: &BigR
     };
     // `s* ∈ [0,1]` ⟺ `w₀·d ≤ 0 ≤ w₁·d` (because `w₁ = w₀ + d`).
     let (m, _dm) = lift(dir);
-    // ★ The perpendicularity contract, checked on the **lifted integers**. Spelling it in `Rat`
+    // The perpendicularity contract, checked on the **lifted integers**. Spelling it in `Rat`
     // needs a subtraction that can overflow, and the obvious `unwrap_or(0)` there makes the
     // assertion pass *vacuously* on exactly the inputs it exists to catch — a check that measures
     // nothing is worse than none.
@@ -1046,11 +1046,11 @@ fn root_sum_side(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> Orient {
 ///   `C = m_a × m_b`, so `d² = (W·C)² / (Dw²·(C·C))`. Crossing axes (`W·C = 0`) fall out as
 ///   distance zero, which is a refusal, as it should be.
 ///
-/// ★ The direction vectors' own denominators **cancel** in that ratio, and so does their
+/// The direction vectors' own denominators **cancel** in that ratio, and so does their
 /// magnitude — no normalization, and the numerators alone carry the answer (the same reason
 /// [`radial_dist2_int`] drops `_dm`).
 ///
-/// ★ **The radii arrive as squares, so `r_a + r_b` is `√a + √b` and is never formed.** Both
+/// **The radii arrive as squares, so `r_a + r_b` is `√a + √b` and is never formed.** Both
 /// branches compare the distance with that sum through [`sqrt_root_sum_cmp`] — one subtraction and
 /// one squaring in integers — which is also what keeps an `i128` ceiling out of a question that
 /// has no width.
@@ -1060,13 +1060,13 @@ fn root_sum_side(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> Orient {
 /// turned a limit of the arithmetic into a limit of the kernel — a drill crossing a bore at a
 /// safe distance was declined as "touching".
 ///
-/// ★ This is a statement about two **infinite surfaces**, and a sufficient condition only: the
+/// This is a statement about two **infinite surfaces**, and a sufficient condition only: the
 /// gate asks it first, and a non-parallel pair it cannot clear is then asked about its faces —
 /// each lateral face's reach against the other's, along each axis and along this same common
 /// perpendicular (`nacre-ops`, `planes::lateral_faces_clear`). Two studs crossing through a cube
 /// clear along an axis while their axes meet at a point.
 ///
-/// ★★ **The face test's third direction is this branch with extents.** Give it a whole circle and
+/// **The face test's third direction is this branch with extents.** Give it a whole circle and
 /// no span and `planes::separated` along `C` reduces to `|W·C| > (r_a + r_b)|C|`, which is the
 /// line below; a face that reaches less than its circle — a fillet's quarter — then clears where
 /// the surface cannot. Same question, one rung down, and `nacre-ops` freezes the agreement.
@@ -1158,7 +1158,7 @@ fn skew_axes_clear(o_a: &V3, m_a: &V3, r2_a: &BigRat, o_b: &V3, m_b: &V3, r2_b: 
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, then the sign
 /// tower. Exact and **total**.
 ///
-/// ★★ **The arithmetic runs in `BigInt`, and that is the point.** The first spelling built the
+/// **The arithmetic runs in `BigInt`, and that is the point.** The first spelling built the
 /// value in checked `Rat` and answered `None` on overflow, which put a width limit inside a
 /// *shape* question — the thing this crate exists to keep out. Its consumers are the arrangement's
 /// containment tests, where a decline is not a smaller answer but a refused solid.
@@ -1208,7 +1208,7 @@ enum SeamClass {
 /// The circular order of two cylinder-surface points about the seam — the comparator a
 /// sweep about the seam sorts with.
 ///
-/// ★ **The API shape is a candidate** (the math is not): the return type and calling
+/// **The API shape is a candidate** (the math is not): the return type and calling
 /// convention are the sweep's to finalize; what is fixed here is the class ladder and the
 /// sign conventions, property-locked below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -14,7 +14,7 @@ pub(crate) struct Named {
 /// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
 /// every ring node's defining triple.
 ///
-/// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
+/// A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
 /// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
 /// intercepts everything a plugged stopper would, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
@@ -25,7 +25,7 @@ pub(crate) fn name_result_vertices(
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Named, BoolError> {
-    // ★★★ **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
+    // **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
     // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring
     // plane class has no circle (the cylinder is parallel to it), so no vocabulary for the point
     // — measured, the T-junction finding. Only here, where every class's rings are in one hand,
@@ -53,7 +53,7 @@ pub(crate) fn name_result_vertices(
             }
         }
     }
-    // ★ **And a line two classes share on a cylinder** (`SharedRuling`): its pierce points are
+    // **And a line two classes share on a cylinder** (`SharedRuling`): its pierce points are
     // named by a cap and *one* of the two classes, never by the pair itself, so the name fact
     // above cannot find them there. A prism's edge along that line runs past the lateral's cap
     // (the keyhole's box taller than the bore), and the lateral's ruling ends at the cap's rim
@@ -130,12 +130,12 @@ pub(crate) fn name_result_vertices(
         Some(v)
     };
     let faces: &[LocalFace] = subdivided.as_deref().unwrap_or(faces);
-    // ★ **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
+    // **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
     // Everything derived below (an edge's far plane, a vertex's defining triple, the handles
     // themselves) is scoped to one group, so no result solid can be named by — or share a handle
     // with — a solid it merely touches.
     //
-    // ★★ **Held, not raised.** A failed grouping is reported further down, and until then every
+    // **Held, not raised.** A failed grouping is reported further down, and until then every
     // face is one group (`replay::a_late_reject_is_not_index_neutral` measures the arena a
     // declining boolean leaves).
     let grouping = group_faces(jd, faces, cyls);
@@ -143,7 +143,7 @@ pub(crate) fn name_result_vertices(
         Ok(g) => g.group_of.clone(),
         Err(_) => vec![0; faces.len()],
     };
-    // ★★ **A straight angle is a per-solid question, and only a result in several pieces can make
+    // **A straight angle is a per-solid question, and only a result in several pieces can make
     // the two answers differ.** The cleaning pass runs `dissolve_straight_angles` over the whole
     // result, so it keeps a node that is a real corner *somewhere* — right while the result is one
     // body. The moment it is two, the tip of one body's knife edge can land in the middle of
@@ -164,7 +164,7 @@ pub(crate) fn name_result_vertices(
         _ => None,
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
-    // ★ **The whole-result judgement runs before a single cell is minted.** Everything
+    // **The whole-result judgement runs before a single cell is minted.** Everything
     // `self_touch_reject` reads — the seam table, the per-body component lists, the faces'
     // rings — exists right here, and an impossible result must be named by its truth, not by
     // whichever local derivation happens to fail first on its unnameable corners: a
@@ -182,7 +182,7 @@ pub(crate) fn name_result_vertices(
         }
         self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf)?;
     }
-    // ★★ **A result vertex is named by the faces that meet it.**
+    // **A result vertex is named by the faces that meet it.**
     //
     // The arrangement names a point by a canonical plane triple — lexicographically first among
     // the planes through it — and where four planes concur that choice can land on a plane the
@@ -191,7 +191,7 @@ pub(crate) fn name_result_vertices(
     // itself, and `transform`'s remap (which walks this solid's own face surfaces) refuses it two
     // operations later — a reject whose cause is here.
     //
-    // ★ **A result vertex is defined by the canonical triple of its incident faces'
+    // **A result vertex is defined by the canonical triple of its incident faces'
     // planes.** Every face whose ring visits the node passes through the point, so the planes of
     // those faces are the result planes through it, and `canonical_triple` picks the name — the
     // one rule the operand road and the alias table use. Over *incident* planes only, on purpose:
@@ -200,7 +200,7 @@ pub(crate) fn name_result_vertices(
     // (`defs_are_remappable` still stands guard, true by construction). A node fewer than
     // three faces name is a straight corner and keeps `StraightAngle` below.
     //
-    // ★ **A pierce vertex is named by them too.** Its name carries two plane classes and the
+    // **A pierce vertex is named by them too.** Its name carries two plane classes and the
     // cylinder, and while those are the planes the result's faces meet it on, the name is its
     // definition as it stands. Where a line two classes share lies on the cylinder, one point
     // has a pierce name per pair (`Aliases::record_shared_ruling`), and the representative can

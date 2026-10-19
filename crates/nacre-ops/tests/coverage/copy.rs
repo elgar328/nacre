@@ -188,7 +188,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
                 let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                     return false;
                 };
-                // ★ `any`, not `all`: since the invariant-plane restatement the caps a
+                // `any`, not `all`: since the invariant-plane restatement the caps a
                 // rotation fixes are world-stated, so every corner names two moved walls
                 // and one restated cap — the moved provenance lives on the walls.
                 tri.iter().any(|&h| {

@@ -34,9 +34,9 @@ pub(super) fn walk_cells(
                 // Direction sign away from `v` toward the far end — one spelling, `edge_dir`'s (a
                 // swapped-argument `order_along(target, origin)` agrees with it only by the
                 // antisymmetry of a difference cancelling an inversion).
-                // ★ The maker pairs the carrier with the sense, so this site cannot pair them
+                // The maker pairs the carrier with the sense, so this site cannot pair them
                 // wrong.
-                // ★ The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
+                // The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
                 // is where that is checked. Built once per half-edge, which is the hoist the
                 // sort below rests on.
                 edges.push(combinatorics::dir_at(jd, cyls, wc, &edge_of(he), v)?);
@@ -89,7 +89,7 @@ pub(super) fn walk_cells(
                     break;
                 }
             }
-            // ★★ **The floor reads the carriers** ([`combinatorics::ring_floor`], the rule
+            // **The floor reads the carriers** ([`combinatorics::ring_floor`], the rule
             // `loop_winding` reads too): three straight half-edges, two where an arc is one, and
             // one where the orbit is a single arc from a node back to itself — a circle a polygon
             // vertex cuts at exactly that point, whose outside (or inside) is bounded by that arc
@@ -112,7 +112,7 @@ pub(super) fn walk_cells(
                 winding: w,
             });
         }
-        // ★★★★ **Euler, and it is not decoration — it is the half of "this is a subdivision" the
+        // **Euler, and it is not decoration — it is the half of "this is a subdivision" the
         // contour count cannot see.** The outer-contour rule counts one number and a walk can
         // satisfy it while attaching the wrong edges: measured, dropping the canonical-to-stored
         // turn in `combinatorics::arc_side` makes this class trace **one 8-half-edge orbit where
@@ -136,7 +136,7 @@ pub(super) fn walk_cells(
             && cells.iter().filter(|c| c.winding == -1).count() == components
             && subdivides(&cells)
         {
-            // ★ **Circle cells, appended after the segment orbits**. Each circle is a
+            // **Circle cells, appended after the segment orbits**. Each circle is a
             // 1-edge component the DCEL walk cannot express (orbits need ≥3): a `+1` disk cell
             // and a `−1` contour, with pseudo-half-edges numbered past the segment range —
             // `2n + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
@@ -181,7 +181,7 @@ pub(super) fn nest_cells(
 ) -> Result<Nesting, BoolError> {
     let circles = &edges.circles;
     let n = cells.len();
-    // Which circle a cell is, `None` for a cell the walk built. ★ The range test is
+    // Which circle a cell is, `None` for a cell the walk built. The range test is
     // `ClassEdges::kind`'s now: an arc's half-edge is past the segments too, and reading one as a
     // circle would ask the *disk's* exact statement about a shape that is not a disk.
     let circle_of = |c: &Cell| -> Option<usize> {
@@ -230,7 +230,7 @@ pub(super) fn nest_cells(
         if hosts.is_empty() {
             roots.push(c);
         } else {
-            // ★ **A disk may host.** Dropping the host would send the contour to `roots`, where
+            // **A disk may host.** Dropping the host would send the contour to `roots`, where
             // `label_cells` seeds it **void** — the boss over a bore would lose its base face and
             // the shell would open.
             let host = innermost_host(jd, cyls, wc, &rings, &circle_defs, &circle_ix, &hosts)?;
@@ -280,11 +280,11 @@ fn innermost_host(
     circle_ix: &[Option<usize>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
-    // ★ **Two answers, two names.** "Adjacent, so not comparable" is `None` here; "every ray was
+    // **Two answers, two names.** "Adjacent, so not comparable" is `None` here; "every ray was
     // spoiled" is `NoClearRay`, its cause — not `HoleDepth`, whose sentence is "the candidates do
     // not nest into one chain" and is wrong for a spoiled ray.
     //
-    // ★★ **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
+    // **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
     // [`cell_in_cell`], not a polygon-only copy of one arm (sound only while a disk is filtered
     // out before it gets here).
     let inside = |a: usize, b: usize| {
@@ -311,7 +311,7 @@ fn innermost_host(
 
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
 ///
-/// ★★ **"Above" is the side of the class's *stored* plane normal** — `trace_one`'s `w_normal`,
+/// **"Above" is the side of the class's *stored* plane normal** — `trace_one`'s `w_normal`,
 /// which is what every `body_above` in this file is measured against. Not the class's canonical
 /// rational name (that points the other way on half the classes) and not the root face's outward
 /// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in). The absence of
@@ -386,7 +386,7 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
             if grazes.len() > 2 {
                 return Err(reject(RejectReason::EdgeOccupancyConflict));
             }
-            // ★ Grazes combine by **parity per side**, not by union. One graze is a step (the
+            // Grazes combine by **parity per side**, not by union. One graze is a step (the
             // face fills that arc — flip it). An opposite pair is a solid whose edge lies in `W`
             // with material above on one in-plane side and below on the other — both flip, the
             // `[T,T]` of the diagram, which is what a four-plane concurrency is made of. And a
@@ -422,7 +422,7 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 /// **The disk side of a cylinder's trace carries that cylinder's own solid** — `false` when it
 /// does not, which is a labelling that cannot be right whatever the frame conventions are.
 ///
-/// ★★★★★ **The absolute claim the arrangement had none of.** `label_cells` seeds the unbounded
+/// **The absolute claim the arrangement had none of.** `label_cells` seeds the unbounded
 /// contours void and flips per edge, then verifies **every** edge — and that verification is blind
 /// to a global flip of one solid's two bits, because `l ^ mask == l'` survives flipping both sides
 /// together. So a wrong seed inverts a whole component's material for one solid and every check
@@ -434,7 +434,7 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 /// [`crate::planes::CylFaceInfo::orient_sign`] `= +1`, which is the `mat` the trace carries. So
 /// the disk-side cell has the solid on **both** sides for a boss and on **neither** for a bore.
 ///
-/// ★ It reads `edge_mask` rather than re-deriving the branch, so graze and seated keep their
+/// It reads `edge_mask` rather than re-deriving the branch, so graze and seated keep their
 /// priority; and it says nothing where both bits come from an **opposite graze pair** instead,
 /// which carries no `mat` to compare against.
 #[cfg(test)]
@@ -467,7 +467,7 @@ pub(super) fn disk_side_agrees(
 /// relation is verified (`label[c] XOR mask == label[neighbour]`); a violation means the trace was
 /// incomplete and is an honest reject.
 ///
-/// ★ **`seed` is the one place global information enters the arrangement.** Everything else here
+/// **`seed` is the one place global information enters the arrangement.** Everything else here
 /// is a flip relation between neighbours — purely local — so a plane's labelling is determined by
 /// its own segments *plus* one known classification to start from. Whole-model arrangements pass
 /// `[false; 4]`, which is the statement "the region outside every contour is void" and is true

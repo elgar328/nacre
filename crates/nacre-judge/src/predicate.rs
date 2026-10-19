@@ -134,7 +134,7 @@ pub trait Witness {
     /// `==` is plane identity and `!=` is a proof of difference — no judgement, no tolerance.
     /// Required, with no default: a witness that has no name says so.
     ///
-    /// ⚠ An unmoved `Through` plane whose vertices meet in a pre-motion frame is named in that
+    /// An unmoved `Through` plane whose vertices meet in a pre-motion frame is named in that
     /// frame, not the world — the premise every name reader shares (interning, the exact
     /// shortcuts). No producer makes one today; nothing checks it.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName>;
@@ -172,7 +172,7 @@ pub trait Witness {
     /// The witness triangle in the **pre-motion frame**, or `None` when those coordinates are not
     /// `f64`-representable and so cannot be handed to the exact predicate.
     ///
-    /// **★ It is the pre-motion triangle *canonicalised for handedness*, not the raw one — and
+    /// **It is the pre-motion triangle *canonicalised for handedness*, not the raw one — and
     /// that is the implementor's job.** A chain containing an odd number of reflections is
     /// improper (`det = −1`), and the "up to its own determinant" above then bites: every
     /// judgement's inputs carry the *same* chain, so the determinant flips **uniformly** and the
@@ -200,7 +200,7 @@ pub trait PlaneWitness: Witness {
     /// without rounding) as a row, for an unmoved plane whose name fits 53 bits a coefficient;
     /// `None` for a rotated plane, an unnamed one, or a wider name.
     ///
-    /// ★ No other description is consulted: the face corners' `f64` caches need not lie on this
+    /// No other description is consulted: the face corners' `f64` caches need not lie on this
     /// plane (`z = 0.1` is not `fl(0.1)`), so a predicate asks every plane of an exact question by
     /// this row.
     fn exact_coeffs(&self) -> Option<[f64; 4]>;
@@ -270,7 +270,7 @@ pub struct NameInts {
 impl NameInts {
     /// The sign of one coefficient: `+1`, `0`, `-1`.
     ///
-    /// ★ A door, so a consumer above this crate can ask which way the stored-oriented name points
+    /// A door, so a consumer above this crate can ask which way the stored-oriented name points
     /// without touching `BigInt`. `nacre-ops` reads it to check its own canonical→stored turn
     /// against this exact one; giving it the integers instead would put an arbitrary-precision
     /// type into a crate that deliberately has none.
@@ -292,7 +292,7 @@ impl NameInts {
 /// exactly. `frame_sign` (stored vs. triangle) carries it the rest of the way:
 /// `σ = (name along the triangle) · frame_sign`.
 ///
-/// ★ **Exact only where witness and name speak the same frame** — the bases must lie *on* the named
+/// **Exact only where witness and name speak the same frame** — the bases must lie *on* the named
 /// plane. A nonzero residual is not a broken table: a named plane whose meets are wider than any
 /// witness base is witnessed by its own frame's probes, whose bases are frame-local coordinates.
 /// Then this is `None`, as it is for collinear bases, and every consumer keeps its other road.
@@ -369,14 +369,14 @@ pub struct Judge<'a, W> {
     /// Where an inconclusive judgement's evidence is collected — diagnostic only; nothing read
     /// from here changes a sign, a merge or a coordinate.
     pub notes: &'a Notes,
-    /// ★ **Each plane's interval coefficients, built on first use and borrowed thereafter.**
+    /// **Each plane's interval coefficients, built on first use and borrowed thereafter.**
     ///
     /// The same cache shape [`Witness::tri_pt3`] already documents, one level up: the filter every
     /// certified judgement runs takes the planes as intervals, and those are a function of the
     /// definitions alone. Rebuilding them per call is ~20-24% of a certified judgement, and the
     /// arrangement's crossing collector hands in the same three definitions hundreds of times.
     ///
-    /// ★ **Why it is here and not on the witness, where [`Witness::tri_pt3`] says caches go.**
+    /// **Why it is here and not on the witness, where [`Witness::tri_pt3`] says caches go.**
     /// [`PlaneWitness`] is a trait its consumers implement. A method on it returning `[Bounded; 4]`
     /// would ask every implementor to *produce* intervals — to supply radii that actually bound
     /// the coefficients — and the soundness contract that type carries would leave this crate
@@ -467,7 +467,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        // ★ **`j` is asked by its coefficients, not by its triangle.** The rows are the planes'
+        // **`j` is asked by its coefficients, not by its triangle.** The rows are the planes'
         // names in `f64`, derived from their defining points without rounding; `tri` is the face's
         // corners' `f64` caches, which a decimal plane does not pass through (`z = 0.1` is not
         // `fl(0.1)`). Asking `j` by `tri` answered for the rounded model — measured, a box whose
@@ -485,14 +485,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         }
         // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
         //
-        // ★★★ **All four planes are asked for coefficients, `j` included** — the branch above's
+        // **All four planes are asked for coefficients, `j` included** — the branch above's
         // rule. Asking `j` by its pre-motion *triangle* while the other three speak in
         // coefficients describes `j` twice, and the two part whenever its `d` is a rounded product
         // — measured at 27% of the census's rotated classes and 40% of the fin sweep's, answering
         // 30% and 75% of this branch's judgements under the mismatch. One vocabulary removes the
         // mismatch instead of detecting it.
         //
-        // ★ `frame_sign` is what carries the convention across: `indirect_plane_side` answers
+        // `frame_sign` is what carries the convention across: `indirect_plane_side` answers
         // about the plane's own normal, while this predicate's contract is the *triangle's*
         // right-hand normal, and `frame_sign` is exactly the relation between the two.
         if shared_motion(self.planes, &[p, q, r, j]) {
@@ -525,7 +525,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// route exactly as it was — in particular, an all-narrow question never takes this gate,
     /// so a corpus with no wide plane is untouched to the bit.
     ///
-    /// ★ **The parity correction is on the coefficients, and it is not "negate x".** The
+    /// **The parity correction is on the coefficients, and it is not "negate x".** The
     /// canonicalised base frame reflects the *points* in `x` (see [`Witness::base_tri`]), and a
     /// plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
     /// pseudovector, so the reflection `C` (negate the x *coefficient*) arrives with one more
@@ -561,7 +561,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
 
     /// **The one body of the certified `orient3d`**, given the implicit point's Cramer parts.
     ///
-    /// ★ Both entry points end here — [`Judge::orient3d`] builds the parts and throws them away,
+    /// Both entry points end here — [`Judge::orient3d`] builds the parts and throws them away,
     /// [`ImplicitPoint::orient3d`] keeps them. Extracting it is not tidiness: a second copy of this
     /// body is a second place for the escalation policy to live, free to drift into a different
     /// answer for the same question. The route selection has the same hazard and the same answer,
@@ -595,7 +595,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
 
     /// **The implicit point `∩(p, q, r)`, as something you can ask questions of.**
     ///
-    /// ★ On the certified route a point's Cramer parts are four determinants that do not mention the
+    /// On the certified route a point's Cramer parts are four determinants that do not mention the
     /// query at all — `(D, Dvec)` *is* the point. Naming the point makes sharing them a property of
     /// the value, so a caller with several questions about one point needs no "pair" entry point at
     /// every layer (there were three, one per crate boundary, and they capped the sharing at exactly
@@ -660,7 +660,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
     pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
         let planes = self.planes;
-        // ★ **Only the normals are read**, so the row's normal half is enough — a plane whose `d`
+        // **Only the normals are read**, so the row's normal half is enough — a plane whose `d`
         // is too wide for `f64` keeps this route.
         if let (Some(np), Some(na), Some(nb)) = (
             planes[p].exact_normal(),
@@ -705,7 +705,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
 /// Made by [`Judge::point`]. The Cramer parts are filled by the first question that reaches the
 /// certified route and reused by every later one.
 ///
-/// ★ **`OnceCell`, not `Cell<Option<_>>`**: "filled once, never changes" is said by the type, the way
+/// **`OnceCell`, not `Cell<Option<_>>`**: "filled once, never changes" is said by the type, the way
 /// [`Witness::tri_pt3`] and `WitnessPoint`'s realization cell already say it. And a **cell rather than a
 /// lock** because the handle is a local value that never crosses a thread — the shared thing is the
 /// `Judge` behind it, borrowed immutably. (On the `Judge` this cache would need a lock, and a lock
@@ -721,7 +721,7 @@ pub struct ImplicitPoint<'a, W> {
     cramer: std::cell::OnceCell<CramerParts>,
 }
 
-/// `(D, Dvec)`. ★ Kept out of every public signature — an interval in a public signature asks its
+/// `(D, Dvec)`. Kept out of every public signature — an interval in a public signature asks its
 /// caller to reason about radii; see [`Judge`]'s `iv` field for why that stays inside.
 type CramerParts = (nacre_exact::Bounded, [nacre_exact::Bounded; 3]);
 
@@ -774,7 +774,7 @@ impl<W: Witness> Judge<'_, W> {
                 return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
             }
         }
-        // ★ Compose the two motions and compare the exact planes. This is the only route that can
+        // Compose the two motions and compare the exact planes. This is the only route that can
         // *prove* two differently-turned planes identical: everything below decides by narrowing
         // intervals, which can refute equality but never establish it, so it lands on
         // `Coincident` and records that it did.
@@ -989,11 +989,11 @@ fn single_rotation(def: &[WitnessPoint; 3]) -> Option<OneRotation> {
 /// and if that angle is one the rationals can state (the 90° family), carrying `P_A` across is
 /// exact. Both sides are canonical, so `==` *is* plane identity.
 ///
-/// ★ **A `false` here is a proof too**, not a failure to prove: the transported coefficients are
+/// **A `false` here is a proof too**, not a failure to prove: the transported coefficients are
 /// exact, so differing means the planes differ. That is what lets a non-coplanar pair skip the
 /// escalation entirely.
 ///
-/// ★★ **The preconditions are what make the composition valid, not an optimisation.** Rotations
+/// **The preconditions are what make the composition valid, not an optimisation.** Rotations
 /// about *different* axes or pivots compose into a motion whose translation part contains
 /// `R_B⁻¹p` — irrational — so dropping either check would answer confidently and wrongly.
 fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -> Option<bool> {

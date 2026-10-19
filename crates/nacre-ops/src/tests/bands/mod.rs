@@ -139,7 +139,7 @@ fn box_and_drill(z0: f64, h: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 /// `χ = V − E + F − L` over **one solid's** shells — the counts the genus relation
 /// `χ = 2(S − G)` is read from.
 ///
-/// ★ Per solid, not per model: `Model::reachable` spans every live solid, which coincides with
+/// Per solid, not per model: `Model::reachable` spans every live solid, which coincides with
 /// this only while a fixture makes exactly one. The fixtures that make two need the sum split,
 /// and one spelling for all of them is what keeps the relation from being restated.
 fn euler_counts(m: &Model, s: Handle<Solid>) -> (i64, i64, i64, i64) {

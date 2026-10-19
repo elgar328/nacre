@@ -27,7 +27,7 @@ impl Adjacency {
     /// outer + inner loops → half-edges → edges (recording `forward`), and every
     /// bounded edge → its two endpoint vertices. From scratch — cheap, always correct.
     ///
-    /// ★ **Rebuild is the whole story.** An earlier note promised incremental maintenance
+    /// **Rebuild is the whole story.** An earlier note promised incremental maintenance
     /// "with the operation log (M2)"; the log arrived and the incremental path did not, and
     /// nothing has needed it: [`Model::rebuild_adjacency`] replaces the index wholesale and
     /// callers run it once after a batch. Build it when a profile asks for it, not before.

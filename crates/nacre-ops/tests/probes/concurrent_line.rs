@@ -12,7 +12,7 @@
 //! walls onto one line *is* the statement that a second plane carries it), and the report now reads
 //! that back out.
 //!
-//! ★ The shapes here are the ones a user hit in the playground, reduced. What made them worth a
+//! The shapes here are the ones a user hit in the playground, reduced. What made them worth a
 //! file is that the refused model is **valid** — the prism stops at `y = 0.9` and the wall it is
 //! coplanar with lives at `y ∈ [1,2]`, so nothing touches anything.
 
@@ -73,7 +73,7 @@ fn stair_and_prism(step: f64, apex: f64, dist: f64) -> (Model, Handle<Solid>, Ha
     (m, a, b)
 }
 
-/// ★ **Every case in this file validates, with no skip.** A copy of this helper that skips
+/// **Every case in this file validates, with no skip.** A copy of this helper that skips
 /// `validate` would make this file quiet the next time a vertex lands off one of its defining
 /// planes (`apex = 0.7` is where a tolerance measured against the wrong triple did, measured).
 fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
@@ -85,7 +85,7 @@ fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
     nacre_props::mass_props(&m, got[0]).expect("props").volume
 }
 
-/// ★ **The case the report is for.** The prism's apex edge is coplanar with the staircase's step
+/// **The case the report is for.** The prism's apex edge is coplanar with the staircase's step
 /// wall, and the edge pierces the staircase's `y = 0.5` face — four planes at that point, three of
 /// them sharing the apex line.
 ///
@@ -121,7 +121,7 @@ fn a_prism_that_stops_short_of_the_crossing_is_unchanged() {
     assert!(v > 1.75, "volume {v}");
 }
 
-/// ★★ **The lock that matters most.** Put the apex on `x = 0.5` instead and the staircase really
+/// **The lock that matters most.** Put the apex on `x = 0.5` instead and the staircase really
 /// does have a face there covering the point: the fused surface touches itself along the apex line.
 /// That body cannot be built, and this fix must not have widened its way into accepting it —
 /// opening a valid model is worth nothing if it also lets an impossible one through.

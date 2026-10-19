@@ -34,12 +34,12 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
 /// The canonical name of a rational plane — primitive integer coefficients, sign-fixed
 /// (see [`canonical_plane_coeffs`] for the canonical form). One vessel, two widths.
 ///
-/// ★ **Normalization invariant: a value that fits `i128` is ALWAYS stored `Narrow`** — the only
+/// **Normalization invariant: a value that fits `i128` is ALWAYS stored `Narrow`** — the only
 /// constructor ([`plane_name_exact`]) enforces it, so two statements of one plane are
 /// structurally equal (`==`/`Hash`) across representations. That is what makes this the
 /// interning key: identity never depends on which route derived the name.
 ///
-/// ★★ `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports,
+/// `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports,
 /// `base_rat`) read [`PlaneName::narrow`] and decline on `None`, exactly as they declined on a
 /// missing name before — a wide name does not open a frame.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -66,7 +66,7 @@ impl PlaneName {
     /// [`plane_name_exact`] normalizes to), so `numer()` is the value; a wide name already is
     /// the integers.
     ///
-    /// ⚠ **Primitive over *four* coefficients — the normal alone is not**.
+    /// **Primitive over *four* coefficients — the normal alone is not**.
     /// The content divided out is `gcd(a,b,c,d)`, so `(a,b,c)` keeps a factor of
     /// `gcd(a,b,c)/gcd(a,b,c,d)`; for an axis-aligned plane at an offset needing a long decimal
     /// that factor is the offset's **denominator**, arbitrarily large on the plainest of planes.
@@ -90,7 +90,7 @@ impl PlaneName {
 /// not. `None` means exactly one thing — the points are collinear and name no plane. It is
 /// never a shrug about an intermediate, nor about the answer's width.
 ///
-/// ★★★★★ **The distinction is not academic — it was most of the failures.** `plane_through_points`
+/// **The distinction is not academic — it was most of the failures.** `plane_through_points`
 /// works in `Rat`, so `(b − a) × (c − a)` multiplies the points' denominators together and
 /// `−n · a` multiplies once more. Measured on the failing cases, that peak needs **271 bits** while
 /// the canonical answer, after the content is divided out, comes back to about **50**. Recomputing
@@ -98,14 +98,14 @@ impl PlaneName {
 /// vectors differ by a scalar factor and `canonical_plane_coeffs` removes exactly that freedom. So
 /// what overflowed was the road, not the destination.
 ///
-/// ★★★ **Why a second function rather than widening the first.** `plane_through_points` is what a
+/// **Why a second function rather than widening the first.** `plane_through_points` is what a
 /// *caller* uses to state a plane they wrote down ([`crate::plane_frame`]'s callers, a sketch, a
 /// box's corners); this is what the kernel uses to **derive** the name of a plane it already holds
 /// three exact points for. Widening the shared one would change both at once, and they are
 /// different propositions with different evidence. (Making the caller's path exact too is worth
 /// doing and is its own measurement.)
 ///
-/// ★ **Cost is paid only on the fallback.** The `Rat` route runs first and is the answer whenever
+/// **Cost is paid only on the fallback.** The `Rat` route runs first and is the answer whenever
 /// it fits; `BigInt` is reached on the rest. Nothing here is on a boolean's inner loop — a plane is
 /// named once per `Model::push_plane`.
 pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
@@ -122,13 +122,13 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneNa
 /// one answers is the correctness argument, and `the_wide_derivation_answers_what_the_narrow_one_does`
 /// is what holds it. `None` is collinearity, or a canonical component that does not fit `Rat`.
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
-    // ★★★★ **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
+    // **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
     // `plane_through_points` term for term — and that is how this started. But `Ratio` reduces by a
     // gcd on *every* multiply and subtract, and there are a dozen of them, so the reduction work
     // dominates. Clearing each point's denominators once up front leaves plain integer arithmetic
     // and exactly one gcd at the end, where the content has to come out anyway.
     //
-    // ★ **A plane is scale-free, which is what makes this legal.** Each point is scaled by its own
+    // **A plane is scale-free, which is what makes this legal.** Each point is scaled by its own
     // `D_k`, so `u'` and `v'` are the true edges times `D_a·D_b` and `D_a·D_c`; their cross product
     // is the true normal times a positive factor, and the canonical form divides all of it out.
     // The `d` term is `−N·a = −(N·P_a)/D_a`, so scaling the whole 4-vector by `D_a` clears it.
@@ -169,7 +169,7 @@ fn plane_name_from_lifted(
         }
     }
 
-    // ★ The normalization invariant lives here: narrow whenever the canonical answer fits
+    // The normalization invariant lives here: narrow whenever the canonical answer fits
     // `i128`, `Wide` only when it does not — so equal planes are structurally equal whichever
     // route derived them. (This used to be the one honest failure; now it is the fork.)
     let mut out = [Rat::from_int(0); 4];
@@ -357,14 +357,14 @@ fn dot_sign(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> Orient 
 /// canonicalize to **bit-identical** arrays. That is what turns *"are these the same plane?"* from a
 /// predicate into `==`.
 ///
-/// ★★ **Scale-independence is the whole point, and it is what f64 coefficients cannot give.**
+/// **Scale-independence is the whole point, and it is what f64 coefficients cannot give.**
 /// `nacre_geom::Plane` stores an un-normalized `raw` normal whose length follows the *face's size*,
 /// so two faces of the plane `x = 3` come out as `[2.2, 0, 0, −6.6000000000000005]` and
 /// `[13.2, 0, 0, −39.599999999999994]` — the same plane, not exactly proportional, because `d` was a
 /// rounded product. Measured: 18 pairs in the census are merged only because a *second* test looks at
 /// the faces' coordinates instead.
 ///
-/// ★★★ **The input must be rational by construction, not lifted from those f64 coefficients.**
+/// **The input must be rational by construction, not lifted from those f64 coefficients.**
 /// Lifting is lossless but it preserves the drift: `2.2` and `6.6000000000000005` are different
 /// dyadics whose exact ratio is not 3, so canonicalizing them still gives two different vectors.
 /// Rationals here come from the dimensions the user *wrote* ([`Rat::from_decimal`]) carried through

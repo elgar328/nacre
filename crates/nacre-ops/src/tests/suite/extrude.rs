@@ -80,7 +80,7 @@ fn concave_l_profile_is_valid() {
 /// none starts its cap loop one vertex before a reflex corner. `rotated_l_prism`
 /// does, and it is the same solid.
 ///
-/// ★ And a loop's **arcs** wind it too: the three-quarter disk's caps are three points — the
+/// And a loop's **arcs** wind it too: the three-quarter disk's caps are three points — the
 /// centre and the arc's two ends — whose chord triangle turns the other way round from the face,
 /// the long arc enclosing the region on the chords' far side. Both caps walk the arc, in
 /// opposite directions, in the world frame and on a tilted one.
@@ -233,7 +233,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
     );
 }
 
-/// ★★★★★ **A plane's record and its motion are one statement.**
+/// **A plane's record and its motion are one statement.**
 ///
 /// No motion means *"these points speak about the world"*, a motion means *"about the
 /// pre-motion frame"* — so a base cap that takes the caller's world triple must carry no
@@ -241,7 +241,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
 /// it. There is nothing else to keep in step: the plane's canonical name is derived from
 /// whichever triple is recorded.
 ///
-/// ★★ **Two halves, and they cannot come apart.** Coefficients supplied beside the points and
+/// **Two halves, and they cannot come apart.** Coefficients supplied beside the points and
 /// chosen by a **separate** `or_else` would record world coefficients beside the prism's own
 /// frame ring whenever the points overflow and the coefficients do not — one plane stated two
 /// ways, which an agreement filter cannot catch either, since `c · p` overflows at exactly those
@@ -271,7 +271,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
         (m, surf)
     };
 
-    // ★ The caller's triple, when there is one — here a plane nowhere near the prism, so a
+    // The caller's triple, when there is one — here a plane nowhere near the prism, so a
     // record that ignored it would be visibly different rather than coincidentally equal.
     let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
     let (m, surf) = prism(Some(far_pts));
@@ -291,7 +291,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
         "the name was not derived from the triple that was recorded"
     );
 
-    // ★ And with no caller statement, the ring answers — its own exact cap triple, and the
+    // And with no caller statement, the ring answers — its own exact cap triple, and the
     // name derived from it (`z = 0`, visibly different from the caller's `z = 3` above).
     // There is no f64 fallback, so there is no point-less cap to pin: the negative cases live
     // at the operation as named rejects.

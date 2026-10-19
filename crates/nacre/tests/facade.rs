@@ -188,7 +188,7 @@ fn the_ops_dependency_stays_default_free_so_consumers_can_drop_rayon() {
     );
 }
 
-/// ★★ **Can a caller outside the kernel actually name three vertices?**
+/// **Can a caller outside the kernel actually name three vertices?**
 ///
 /// The datum that closes the coordinate gap is only useful if the vertices can be pointed at from
 /// the facade, and today there is no query for that — the caller walks

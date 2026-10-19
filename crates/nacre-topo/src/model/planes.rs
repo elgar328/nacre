@@ -7,26 +7,26 @@ impl Model {
     /// written before (`None` = the world), with the producer's own `f64` figure (`figure`) for the
     /// cache. The truth is not optional: there is no point-less plane.
     ///
-    /// ★ **`figure` stands only where the plane has no world name** (a chain that does not fold,
+    /// **`figure` stands only where the plane has no world name** (a chain that does not fold,
     /// a mixed-frame `Through`) — everywhere else the cache is the truth's realization
     /// (`derive_surface_cache`), and the figure handed in is dropped.
     ///
-    /// ★★★★★ **The points are the only thing a producer states.** The canonical name
+    /// **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
     /// [`nacre_exact::plane_name_exact`] — so a plane cannot be described two ways, because there
     /// is only one place to describe it.
     ///
-    /// ★ **Stated in the frame `motion` names** — the world for `None`, the pre-motion frame
+    /// **Stated in the frame `motion` names** — the world for `None`, the pre-motion frame
     /// otherwise. An interned plane keeps the first pusher's triple.
     ///
-    /// ★ **The `bool` says the returned surface faces the *other* way** from the statement handed
+    /// **The `bool` says the returned surface faces the *other* way** from the statement handed
     /// in (its points and `sense`), and a caller that meets it must record its face
     /// `Orientation::flipped()`. It exists because a plane's canonical form has no direction —
     /// `[0,0,1,−3]` and `[0,0,−1,3]` are one plane — so once identical planes share a handle the
     /// direction has to be reconciled somewhere, and the honest place is where the caller still
     /// knows what it asked for. It is read off the two truths, never the caches.
     ///
-    /// ★★ **It is not a dormant path.** Measured over the census corpus, interning hits 3,281
+    /// **It is not a dormant path.** Measured over the census corpus, interning hits 3,281
     /// times and **297 of those report `flipped`** — a boss meeting the plate it sits on is one
     /// plane approached from both sides, which is as ordinary as it sounds.
     pub fn push_plane(
@@ -37,7 +37,7 @@ impl Model {
         motion: Option<Handle<MotionNode>>,
         sense: Orientation,
     ) -> (Handle<Surface>, bool) {
-        // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
+        // **The name is derived, so it cannot disagree with the thing it names.**
         // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
         // for collinear points (which no production `PlaneDef` can supply); the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
@@ -56,7 +56,7 @@ impl Model {
     /// the door a statement came through. `None` only for a `Known` plane whose points are
     /// collinear (no name, so no interning — no production statement supplies one).
     ///
-    /// ★ **The answer does not change after the push.** What it reads — the plane's points, a
+    /// **The answer does not change after the push.** What it reads — the plane's points, a
     /// `Through` statement's vertex definitions and their carriers' names, the motion chain's
     /// folds — is written once and exists before the key is asked, so a later recomputation
     /// (`validate`) answers what the door answered.
@@ -141,7 +141,7 @@ impl Model {
             if (h.index() as usize) < 3 {
                 SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            // ★ The incoming statement is **dropped here** — the survivor's cache stands, and
+            // The incoming statement is **dropped here** — the survivor's cache stands, and
             // its anchor is the first pusher's: that statement's first point where the truth
             // places one, else the figure that pusher brought. Which statement came first is
             // therefore a choice; what it reaches is measured by `nacre-ops`'
@@ -299,11 +299,11 @@ impl Model {
     /// point of interning — the variant records how this plane's existence is grounded, not who
     /// asked for it first.
     ///
-    /// ★ `vertices` is **sorted** by the caller before it gets here (the same three vertices are
+    /// `vertices` is **sorted** by the caller before it gets here (the same three vertices are
     /// the same statement in any order). Direction is not lost: `sense` states it against the
     /// sorted order, which a caller with its own order reaches through that permutation's parity.
     ///
-    /// ★★★ **The name is a statement in the frame the three vertices meet in, so the motion has to
+    /// **The name is a statement in the frame the three vertices meet in, so the motion has to
     /// carry that frame.** `motion` means two things for a `Through` statement: with a name, the
     /// meets are pre-motion coordinates and `motion` carries them to the world — so it must
     /// *contain* the vertices' frame (that frame, or a chain that continues it); without one,
@@ -315,7 +315,7 @@ impl Model {
     /// on the common roads (the frame is the world, or is `motion` itself), a `Through` push is
     /// rare, and a release build that skipped it would merge planes silently.
     ///
-    /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
+    /// **A statement the name key cannot hold still interns — by the statement itself.**
     /// A mixed-frame datum has no frame that solves its three vertices rationally, so
     /// [`Model::through_meets`] finds no shared frame; such a plane takes the statement key
     /// ([`SurfaceKey::Through`]) — the sorted triple and the motion. That is *statement*
@@ -324,7 +324,7 @@ impl Model {
     /// **not** the record-less population: the truth (handles + motion) is complete; what does
     /// not exist is a rational description of it.
     ///
-    /// ★ The producer remains responsible for rejecting **before** pushing whatever it cannot
+    /// The producer remains responsible for rejecting **before** pushing whatever it cannot
     /// frame — this door stores; it does not validate framability.
     ///
     /// [`push_plane`]: Model::push_plane
@@ -355,7 +355,7 @@ impl Model {
     ///
     /// `None` when any vertex is not a three-plane point, when the carriers do not share one
     /// motion (no frame holds a rational coordinate then), or when the three points are
-    /// collinear. ★ A meet too wide for `Rat` is **not** on the list: the
+    /// collinear. A meet too wide for `Rat` is **not** on the list: the
     /// name is derived from the meets at whatever width they need
     /// ([`nacre_exact::plane_name_from_meets`]) — width was the arithmetic's problem, never
     /// the statement's.
@@ -409,7 +409,7 @@ impl Model {
     /// needs the three to *agree*, which is a weaker demand and would silently mix frames if it
     /// were copied.
     ///
-    /// ★★★ **"Carriers in one frame" is not "carriers with one `motion` field".** A motion that
+    /// **"Carriers in one frame" is not "carriers with one `motion` field".** A motion that
     /// **fixes** a plane restates nothing, so that plane stays world-stated beside carriers that
     /// moved; its world equation *is* its equation in their pre-motion frame, and
     /// [`Model::chain_fixes_plane`] is what proves it. Reading "no shared motion field" as "no
@@ -444,7 +444,7 @@ impl Model {
     /// part with no world name to meet in); otherwise the point, or [`NamedMeet::NoPoint`] where the
     /// three planes are parallel or share a line.
     ///
-    /// ★ Asked in the pre-motion frame where the carriers share a chain: a rigid motion keeps three
+    /// Asked in the pre-motion frame where the carriers share a chain: a rigid motion keeps three
     /// planes meeting in a point, so the shared frame answers for the world. `validate` and the
     /// realization read this, so "does this definition name a point" is decided here alone.
     pub fn vertex_named_meet(&self, def: &Vertex) -> Option<NamedMeet> {
@@ -461,7 +461,7 @@ impl Model {
             Some(p) => NamedMeet::Point(p, frame),
             None => NamedMeet::NoPoint,
         };
-        // ★★★ **The third door — solve in the world**. The two below want *one*
+        // **The third door — solve in the world**. The two below want *one*
         // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
         // both — an array fused in x and then moved in y puts carriers with chains `T2` and
         // `T1·T2` on one corner — and yet every one of those planes states the world exactly,
@@ -469,11 +469,11 @@ impl Model {
         // So when the shared-frame roads decline, the triple is solved from the **world names**
         // and the answer carries no leaf: the caller must not replay anything.
         //
-        // ★ **It is a fallback, deliberately.** Running it first would re-spell points the two
+        // **It is a fallback, deliberately.** Running it first would re-spell points the two
         // doors already answer, and those spellings are what the corpus is pinned on. Reached
         // only where the two doors answer `None`, it can open a population and cannot move one.
         //
-        // ★ It transports the **name**, never the point: `world_plane_name` moves each carrier's
+        // It transports the **name**, never the point: `world_plane_name` moves each carrier's
         // equation into the world, and `three_planes_big` then meets three world planes. Nothing
         // here realizes a coordinate and shifts it.
         let world_road = || -> Option<NamedMeet> {
@@ -499,14 +499,14 @@ impl Model {
         let [Some(a), Some(b), Some(c)] = names else {
             return None;
         };
-        // ★★ **A world-stated carrier among chained ones is not a straddle if the chain fixes
+        // **A world-stated carrier among chained ones is not a straddle if the chain fixes
         // it.** The invariant-plane restatement mints exactly that shape — a turned block's
         // corner is a restated cap × two chained walls — and a fixed plane's world equation *is*
         // its equation in the pre-motion frame, so the corner solves as if all three shared the
         // chain. Reading the mismatch as a straddle is what cost every turned solid's corners
         // their named datum road; `chain_fixes_plane` is the licence that tells them apart.
         //
-        // ★ `narrow()` is asked **only of the carriers being licensed**, never of the other two:
+        // `narrow()` is asked **only of the carriers being licensed**, never of the other two:
         // this function's answer is a `MeetPoint` of any width, and refusing a `Wide` carrier
         // here would quietly switch off the capability `a_datum_through_wide_meets_keeps_its_name`
         // locks. A `Wide` *fixed* carrier declines the licence — the same conservatism the atoms

@@ -36,7 +36,7 @@ fn square(a: f64, b: f64) -> Profile2d {
     .expect("a square is a fair profile")
 }
 
-/// ★ **Stating a world plane returns the seed, and the arena does not grow.**
+/// **Stating a world plane returns the seed, and the arena does not grow.**
 ///
 /// This is the lock on the cache-normal convention. `Model::new` seeds the world planes facing
 /// `−axis` (`+axis` flips 781 stored cap normals for nothing), `extrude` pushes
@@ -119,7 +119,7 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         assert_eq!(dot, zero, "a point off its plane");
     }
 
-    // ★ The frame carries the caller's statement, not a derivation — the ZX convention is the
+    // The frame carries the caller's statement, not a derivation — the ZX convention is the
     // case that forbids deriving, so `Named` is unconditional.
     assert_eq!(frame.plane(), plane);
     assert!(!frame.flip(), "flip is the consumer's to measure");
@@ -151,7 +151,7 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
     );
 }
 
-/// ★★★★★ **A plane the model cannot name cannot host a sketch.**
+/// **A plane the model cannot name cannot host a sketch.**
 ///
 /// This is not judging-layer work. A datum through
 /// vertices in mixed frames has no exact name, and from there:
@@ -163,7 +163,7 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// so a nameless plane never reaches a plane table. That was read out of the code; this runs
 /// it.
 ///
-/// ★ **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
+/// **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
 /// plane behind for a collinear triple (`Model::surface_key` gives it no key), and `SketchFrame::canonical`
 /// is `pub` and checks nothing — so the pair is reachable from outside this crate today and had no
 /// test. Production is safe because every push passes a non-collinearity gate first (`PlaneDef`'s
@@ -171,7 +171,7 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// `Plane::from_point_normal`/`through_points` and `Profile2d::check`), which is what
 /// `every_plane_still_has_a_name` observes — but that is *we do not*, not *it cannot*.
 ///
-/// ★★ **The control is half the test.** An unregistered plane's name is *derivable* and merely
+/// **The control is half the test.** An unregistered plane's name is *derivable* and merely
 /// absent from the side table; a mixed-frame `Through` plane's name **does not exist**. Different
 /// facts — but indistinguishable *to a frame*, because `frame_chain`'s first line and
 /// `SketchFrame::named` both read that one table and there is no other route. Pushing the same
@@ -211,7 +211,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         "a refusal must leave the model alone"
     );
 
-    // ★ The other door onto the same plane answers the same way. One failure, one description —
+    // The other door onto the same plane answers the same way. One failure, one description —
     // two descriptions of one thing is the shape this kernel has been bitten by repeatedly.
     assert_eq!(
         SketchFrame::named(&m, nameless, origin, Vector3::from_array([1.0, 0.0, 0.0])).unwrap_err(),
@@ -219,7 +219,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         "the two doors onto a nameless plane describe the failure differently"
     );
 
-    // ★★ The control: same cache, same points, and the name recorded.
+    // The control: same cache, same points, and the name recorded.
     let mut named = Model::new();
     let (h, _) = named.push_plane(
         cache,
@@ -236,7 +236,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         .expect("the same plane, named, hosts the same sketch");
 }
 
-/// ★★ **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
+/// **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
 ///
 /// An extrude names its plane, and there is no road where the plane is absent. What
 /// remains, and is not free, is the claim underneath: the operation **reuses** the
@@ -272,7 +272,7 @@ fn an_extrudes_base_cap_is_the_frame_it_was_given() {
         h,
         "the base cap is the plane the frame named, not a second one on the same geometry"
     );
-    // ★ Three, not six. The prism wants a base cap, a top cap and four walls; the base is the
+    // Three, not six. The prism wants a base cap, a top cap and four walls; the base is the
     // handle it was given, and two of the walls (`x = 0`, `y = 0`) are the **seeded** YZ and ZX
     // planes. Interning answers for those the same way it answers for the base — which is the
     // point: a plane is a thing the model has, not a thing each operation restates.
@@ -371,7 +371,7 @@ fn box_top_frame(m: &mut Model) -> nacre_ops::SketchFrame {
     nacre_ops::face_sketch_frame(m, faces[1]).expect("the top cap has a frame")
 }
 
-/// ★★ **An offset of a world-liftable plane is said in the world, so it is the same handle as
+/// **An offset of a world-liftable plane is said in the world, so it is the same handle as
 /// every other statement of that plane.**
 ///
 /// This is the normalization that keeps "same plane, same handle" true. `push_plane` keys on
@@ -468,7 +468,7 @@ fn tilted_face_frame(m: &mut Model) -> nacre_ops::SketchFrame {
     nacre_ops::face_sketch_frame(m, faces[1]).expect("the far cap has a frame")
 }
 
-/// ★★ **On a tilted face the offset is stated in the frame, exactly** — the point of the whole
+/// **On a tilted face the offset is stated in the frame, exactly** — the point of the whole
 /// variant. `p + d·n̂` is irrational in the world because `n̂` carries a square root; `w = d` in the
 /// frame is three written decimals.
 #[test]
@@ -516,7 +516,7 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
         "the offset lands where it was asked: {gap}"
     );
 
-    // ★ The offset plane's own frame is the base frame slid along ŵ: its coefficients in the base
+    // The offset plane's own frame is the base frame slid along ŵ: its coefficients in the base
     // frame are `[0,0,1,−d]`, and the arbitrary-axis rule's vertical branch (`ŷ × ẑ = x̂`) hands
     // back the base `û`. Without that, a sketch on an offset plane would find its `(0,0)`
     // somewhere else entirely.
@@ -524,7 +524,7 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
     assert!(matches!(out.placement(), FramePlacement::Canonical));
 }
 
-/// ★★ **Two positive controls for the normalization.**
+/// **Two positive controls for the normalization.**
 ///
 /// (i) `flip` is folded into the sign, so the same `d` through frames facing opposite ways names
 /// the two *different* planes either side — proof the fold is load-bearing and not decoration.
@@ -612,7 +612,7 @@ fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
     }
 }
 
-/// ★★ **The `flip` fold, proved load-bearing.**
+/// **The `flip` fold, proved load-bearing.**
 ///
 /// Two boxes stacked on `z = 1` give two faces on **one plane** whose outward normals oppose: the
 /// lower box's top cap and the upper box's base cap. `face_sketch_frame` measures `flip` against
@@ -713,7 +713,7 @@ fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 
     core::array::from_fn(|k| b[k] - a[k])
 }
 
-/// ★★★ **The measurement this whole stage rests on.**
+/// **The measurement this whole stage rests on.**
 ///
 /// A plane's canonical name has no direction and planes intern, so stating `z = 0` facing `+ẑ`
 /// and stating it facing `−ẑ` produce **one handle**. If the frame handed back carried
@@ -775,7 +775,7 @@ fn two_statements_of_one_plane_share_a_handle_and_keep_their_directions() {
 
 /// The seed sugar and a datum of the same world plane **mean** the same frame.
 ///
-/// ★ They are not the same *value*, and that is worth knowing rather than asserting away: the
+/// They are not the same *value*, and that is worth knowing rather than asserting away: the
 /// sugar spells XY and YZ `Canonical` (derived) while a datum always spells `Named` (the caller's
 /// own `points[0]` and `points[1] − points[0]`). Two spellings of one frame — which is harmless
 /// here because a world plane's basis lifts exactly, so **neither road builds a motion node** and
@@ -821,7 +821,7 @@ fn the_world_sugar_means_what_a_datum_of_the_same_plane_means() {
     }
 }
 
-/// ★★ **The ZX trap, pinned as a positive control.**
+/// **The ZX trap, pinned as a positive control.**
 ///
 /// `SketchFrame::canonical` on the ZX seed gives `+u = −x̂` (the arbitrary-axis derivation) while
 /// the convention gives `+u = +ẑ`. They are *different frames on one plane*, and the sugar exists
@@ -851,7 +851,7 @@ fn the_zx_sugar_is_not_the_canonical_frame() {
     }
 }
 
-/// ★ The world frames face `+axis`, and that is a measurement.
+/// The world frames face `+axis`, and that is a measurement.
 ///
 /// Each seed's canonical `ŵ` realizes to `+axis` because of how `Model::new` writes the seeds'
 /// points and how the canonical name normalizes — not because anything derives it. Re-seed
@@ -973,7 +973,7 @@ fn tilted_prism_with_pocket() -> Model {
 /// Three vertices that share one frame, solve, **and name a plane the model does not already
 /// hold**.
 ///
-/// ★★★ That last clause is not fussiness — without it the fixture measures nothing. Three corners
+/// That last clause is not fussiness — without it the fixture measures nothing. Three corners
 /// of one face are coplanar with that face, so `push_plane_through` interns onto the existing
 /// handle and the stored truth stays `Known`: the datum works, but the storing path never runs.
 /// (Which is also the design saying what it says — *"interning is deterministic, the first pusher
@@ -1009,7 +1009,7 @@ fn three_solvable(m: &Model) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
     panic!("no solvable non-collinear triple in this fixture")
 }
 
-/// ★★★★★ **The capability, closed.** The datum built by *naming* three vertices is the plane
+/// **The capability, closed.** The datum built by *naming* three vertices is the plane
 /// actually through them — and it is **not** the plane their coordinates produce.
 ///
 /// `tests/instruments/point_width.rs` measured the second half of that: on this population, all
@@ -1039,7 +1039,7 @@ fn a_datum_through_vertices_is_the_plane_the_coordinates_miss() {
         "the datum must be the exact plane through those vertices"
     );
 
-    // ★ The negative control that gives the assertion teeth: the same three vertices *spelled in
+    // The negative control that gives the assertion teeth: the same three vertices *spelled in
     // coordinates* land somewhere else. Without this the test would pass on a kernel that quietly
     // rounded, since both roads would then agree.
     let lift = |vh| {
@@ -1057,7 +1057,7 @@ fn a_datum_through_vertices_is_the_plane_the_coordinates_miss() {
     );
 }
 
-/// ★★★ **One plane, two orders, opposite sides.** Sorting keeps identity; the caller's order
+/// **One plane, two orders, opposite sides.** Sorting keeps identity; the caller's order
 /// keeps direction. Asserting only "one handle" would measure half of it and pass on a kernel
 /// where the caller cannot choose a side at all.
 #[test]
@@ -1087,11 +1087,11 @@ fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
     );
 }
 
-/// ★★ **Each refusal has its own name, and each name has a fixture that fires it.** A cause with
+/// **Each refusal has its own name, and each name has a fixture that fires it.** A cause with
 /// no fixture is a cause that was never measured — and `VerticesInMixedFrames` in particular is
 /// how the next stage will count what it is opening.
 ///
-/// ★ There is no `VertexPointTooWide` to list: a meet wider than `Rat` names its plane through
+/// There is no `VertexPointTooWide` to list: a meet wider than `Rat` names its plane through
 /// `plane_name_from_meets`, locked by `a_datum_through_wide_meets_keeps_its_name` below.
 #[test]
 fn a_datum_through_vertices_refuses_by_cause() {
@@ -1115,7 +1115,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         "a refusal must leave the model alone"
     );
 
-    // ★ A cylinder's seam vertex is the reachable `VertexNotThreePlane` case: its pair pins a
+    // A cylinder's seam vertex is the reachable `VertexNotThreePlane` case: its pair pins a
     // curve, so no three planes name it and no exact coordinate follows from its definition. The
     // box beside it supplies the other two — a cylinder alone has only the two seam vertices.
     let mut cy = Model::new();
@@ -1146,7 +1146,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::VertexNotThreePlane
     );
 
-    // ★★ Two boxes stacked share a vertical line, so three of their corners are collinear — the
+    // Two boxes stacked share a vertical line, so three of their corners are collinear — the
     // one shape in this vocabulary that puts three vertices on a line.
     let mut st = Model::new();
     nacre_ops::fixtures::cuboid(
@@ -1173,7 +1173,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::CollinearVertices
     );
 
-    // ★★ `VerticesInMixedFrames` names the depth question: a vertex one of whose carriers is itself a
+    // `VerticesInMixedFrames` names the depth question: a vertex one of whose carriers is itself a
     // nameless datum. Asked of all three vertices before any is solved, so a straddling vertex that
     // comes first in handle order (and would make the statement nameless) does not let the next one
     // through — two boxes turned about different axes and fused give the straddler, a prism on a
@@ -1288,12 +1288,12 @@ fn a_datum_through_vertices_refuses_by_cause() {
         "no straddler at all"
     );
 
-    // ★ The pure-vertices-in-different-frames shape is **not on this list** — it is accepted, and
+    // The pure-vertices-in-different-frames shape is **not on this list** — it is accepted, and
     // `a_nameless_datum_hosts_a_sketch_end_to_end` is where it lives; so is a single vertex whose own
     // carriers straddle (`a_datum_on_straddling_carriers_has_no_name`).
 }
 
-/// ★★★★★ **A nameless datum, end to end**: a datum through three vertices
+/// **A nameless datum, end to end**: a datum through three vertices
 /// that are each exact in their own frame — but not in each other's — gets a *judged* frame,
 /// hosts a sketch, and the whole thing replays.
 ///
@@ -1370,7 +1370,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
         "the truth is the statement: handles, and no motion of its own"
     );
 
-    // ★ Statement interning, end to end: the same three vertices again are the same handle.
+    // Statement interning, end to end: the same three vertices again are the same handle.
     let OpOutput::DatumPlane { plane: again, .. } = apply(
         &mut mx,
         &Operation::DatumPlane {
@@ -1400,7 +1400,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
         "the prism on a nameless datum must be a valid closed b-rep"
     );
 
-    // ★ And the same session rebuilt from scratch reaches the same arena — the judged road is
+    // And the same session rebuilt from scratch reaches the same arena — the judged road is
     // deterministic. The scratch model mints its **own** handles (using `mx`'s here would trip
     // the cross-store guard, and rightly — that is the guard working); determinism is asserted
     // on the indices and the arena count.
@@ -1472,7 +1472,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     );
 }
 
-/// ★★★★ **The second wall, heterogeneous half: the nameless plane's face sits in a judgment
+/// **The second wall, heterogeneous half: the nameless plane's face sits in a judgment
 /// table and a boolean runs over it.**
 ///
 /// The prism's base cap *is* the nameless datum surface, so `collect_planes` meets a `Through`
@@ -1572,7 +1572,7 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     );
 }
 
-/// ★★★ **The mixed-frame cause that is not the caller's doing — one solid, one vertex, carriers in
+/// **The mixed-frame cause that is not the caller's doing — one solid, one vertex, carriers in
 /// two frames.**
 ///
 /// `a_datum_through_vertices_refuses_by_cause` fires `VerticesInMixedFrames` by combining two
@@ -1583,7 +1583,7 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
 /// until this
 /// there was no fixture for it — the label was only ever fired by the caller-error shape.
 ///
-/// ★ **The control is the minimal difference**: three vertices that solve, and the same triple with
+/// **The control is the minimal difference**: three vertices that solve, and the same triple with
 /// one of them swapped for a straddler. Nothing else about the model changes, so the swap is the
 /// whole of the cause.
 #[test]
@@ -1618,7 +1618,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     m.rebuild_adjacency();
     let cut = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, a, b).expect("cut");
     m.rebuild_adjacency();
-    // ★ **The boolean's own result** — the whole point is that the straddling is something the
+    // **The boolean's own result** — the whole point is that the straddling is something the
     // *kernel* produced, not something a caller reached across two solids to make. (The untouched
     // second cuboid is still live; walking every live solid would readmit exactly the caller-error
     // shape this test is not about.) The cut severs a corner, so the result is more than one piece
@@ -1648,7 +1648,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
 
     // Split them by whether the kernel can place them in one frame.
     //
-    // ★★ **Ask the door, do not compare the three carriers' motions here.** That comparison is
+    // **Ask the door, do not compare the three carriers' motions here.** That comparison is
     // `Model::vertex_meet`'s rule written a second time, and it over-counts: a turned solid's
     // corner mixes a *fixed* world-stated cap with moved walls, and the chain-fixes licence
     // places it in the walls' frame. A copy of that rule would file such a corner as "straddling"
@@ -1670,7 +1670,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "a turned-against-still cut must leave carriers straddling — the fixture stopped measuring"
     );
     assert!(pure.len() >= 3, "and some corners must still be pure");
-    // ★★ **Both lists come out of a `HashSet` walk, so order them before choosing.** Picking the
+    // **Both lists come out of a `HashSet` walk, so order them before choosing.** Picking the
     // first of a hash-ordered list is a coin flip dressed as a fixture: it made this test fail
     // about once in twenty when the straddling pool shrank (measured), because some straddler is
     // collinear with the two pure corners and the op then answers `CollinearVertices` — a real
@@ -1686,12 +1686,12 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         .find(|t| m.through_points_rat(*t).is_some())
         .expect("three pure vertices that share one frame");
 
-    // ★★★★★ **The straddling vertex is accepted** — its definition (the meet of its three
+    // **The straddling vertex is accepted** — its definition (the meet of its three
     // carriers) is complete even though its coordinate exists in no frame at all. The
     // acceptance below runs end to end: datum → sketch → extrude → validate → deterministic
     // rebuild.
     //
-    // ★ The straddler is chosen for **not being collinear** with the two pure corners, which is a
+    // The straddler is chosen for **not being collinear** with the two pure corners, which is a
     // property of the triple and nothing to do with the proposition — three points on one line
     // name no plane whatever their frames are.
     let not_collinear = |t: &[nacre_store::Handle<nacre_topo::Vertex>; 3]| {
@@ -1749,7 +1749,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "the prism on a straddle datum must be a valid closed b-rep"
     );
 
-    // ★★★★ **The boolean opens.** The base cap's plane is defined through an implicit
+    // **The boolean opens.** The base cap's plane is defined through an implicit
     // point, and its witness in the judging table is the plane's **own frame's probes** — three
     // exact on-plane definitions the escalation realizes at any precision. `Common` against a
     // swallowing box is the same crisp oracle the pure-mixed e2e uses: the result is the prism,
@@ -1827,14 +1827,14 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     );
 }
 
-/// ★★★★ **A solid built on a vertex-named datum moves exactly once.**
+/// **A solid built on a vertex-named datum moves exactly once.**
 ///
 /// Two failures are possible and they point opposite ways, so both are measured:
 /// **zero** times, if the mover took the no-node path — the f64 cache would travel while the
 /// truth kept pointing at vertices that did not move, leaving the two describing different
 /// planes; and **twice**, if the definition were transported *and* a node recorded.
 ///
-/// ★ The translation is far from the origin on purpose. Near zero, "twice as far" and "not at
+/// The translation is far from the origin on purpose. Near zero, "twice as far" and "not at
 /// all" both look like zero, and the fixture would pass whatever the code did.
 #[test]
 fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
@@ -1913,7 +1913,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
         );
     }
 
-    // ★ And the truth still agrees with the cache: the definition names the *same* vertices plus
+    // And the truth still agrees with the cache: the definition names the *same* vertices plus
     // a node, so the plane derived from the definition must contain the cache's own origin.
     let Surface::Plane {
         points: PlanePoints::Through(named),
@@ -1948,7 +1948,7 @@ fn base_cap(
         .expect("the base cap is the datum's own plane")
 }
 
-/// ★★ **`Copy` must not refuse it either.** `defs_are_remappable` asks whether every *vertex*
+/// **`Copy` must not refuse it either.** `defs_are_remappable` asks whether every *vertex*
 /// definition names surfaces this walk will remap; a `Through` plane is the first reference
 /// pointing the other way, at vertices that need not belong to the solid at all. It is not
 /// remapped — the node carries the motion — but "not needed" is an argument, and this is the
@@ -1992,7 +1992,7 @@ fn a_solid_on_a_vertex_named_datum_can_be_copied() {
     );
 }
 
-/// ★★★★ **The naming invariant, scoped.** What no producer makes is the
+/// **The naming invariant, scoped.** What no producer makes is the
 /// *record-less* plane — no points, no truth to derive anything from. A nameless `Through`
 /// statement (mixed frames — its exact world coefficients are irrational) is not that: the truth
 /// is complete, only a rational description of it does not exist. So the invariant is: **a plane
@@ -2011,7 +2011,7 @@ fn every_plane_still_has_a_name() {
         },
     )
     .expect("datum");
-    // ★ Walked through `surface_handle_at`, which is the only door out of the seal — the store
+    // Walked through `surface_handle_at`, which is the only door out of the seal — the store
     // itself is private, so this sweep sees exactly what a caller can.
     let mut planes = 0;
     let mut i = 0u32;
@@ -2029,7 +2029,7 @@ fn every_plane_still_has_a_name() {
     assert!(planes > 0, "the sweep found no planes to check");
 }
 
-/// ★★★★★ **A datum through vertices must not collide with a plane it is not.**
+/// **A datum through vertices must not collide with a plane it is not.**
 ///
 /// A prism raised on a tilted frame states its far cap **inside that frame**, where it is
 /// `w = dist` — canonical name `[0,0,1,−dist]`, which is *letter for letter* the name of the world
@@ -2160,19 +2160,19 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         unreachable!()
     };
 
-    // ★ The harm, stated as the harm.
+    // The harm, stated as the harm.
     assert_ne!(
         plane, box_top,
         "the datum through the prism's far-cap corners came back as the box's top face — \
          a plane in a different place, which the caller would now sketch on"
     );
-    // ★ And it *is* that far cap: the same three points, so the same plane.
+    // And it *is* that far cap: the same three points, so the same plane.
     assert_eq!(
         plane, far_cap,
         "a datum through three corners of the far cap is the far cap"
     );
 
-    // ★★ The truth says which frame its points are written in — the disambiguator that keeps the
+    // The truth says which frame its points are written in — the disambiguator that keeps the
     // two same-named planes apart.
     let Surface::Plane { motion, .. } = m.surface(plane) else {
         unreachable!()
@@ -2182,7 +2182,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         "a datum whose vertices live in a frame must record that frame"
     );
 
-    // ★★★ And the f64 cache is a *world* description of that same plane: put the cache's own
+    // And the f64 cache is a *world* description of that same plane: put the cache's own
     // anchor back through the definition and the residual must vanish. A cache built from frame
     // coordinates would land far off, which is the other half of the defect.
     let sp = nacre_ops::face_plane(&m, {
@@ -2193,7 +2193,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
             .expect("the far cap is a face of this prism")
     })
     .expect("planar");
-    // ★ The statement is **"the named vertices lie on the cached plane"**, not "the cache's
+    // The statement is **"the named vertices lie on the cached plane"**, not "the cache's
     // origin is one of them" — `face_plane`'s origin is the canonical foot of perpendicular, so
     // comparing positions would pass or fail for reasons that have nothing to do with the defect.
     let n = sp.normal().as_array();
@@ -2209,7 +2209,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
     }
 }
 
-/// ★★★★ **A `Through` statement whose motion leaves out the frame its vertices meet in is
+/// **A `Through` statement whose motion leaves out the frame its vertices meet in is
 /// refused at the door** — the producer bug the test above caught once, now stopped where the name
 /// is made. The far cap's corners meet in the prism's frame, so their name `w = dist` speaks that
 /// frame; stated with no motion it would read as the world plane `z = dist` and intern onto the box
@@ -2439,7 +2439,7 @@ fn wide_meet_vertex(
             ],
         )
     });
-    // The world cache: the meet realized in f64, placed by the fixture's own motion. ★ f64 on
+    // The world cache: the meet realized in f64, placed by the fixture's own motion. f64 on
     // purpose — the exact z is the very value no `Rat` holds (denominator ~13·2⁸⁰·5⁴⁰), which
     // is what this fixture exists to state; a cache is a rounding by definition.
     let zw = -(base[0] as f64 * u.to_f64() + base[1] as f64 * v.to_f64() + base[3] as f64)
@@ -2468,7 +2468,7 @@ fn wide_meet_triple(
     ]
 }
 
-/// ★★★ **The wide-meet lock**: the wall of meets too wide for a witness
+/// **The wide-meet lock**: the wall of meets too wide for a witness
 /// is crossed — `through_points_rat` still says the meets fit no witness (`None`), and the
 /// name is derived anyway, equal to the hand-known plane `T: 7x + 11y − 13z + 1 = 0` the
 /// meets were constructed to lie on. Then the plane lives a full life: interned by name on
@@ -2701,7 +2701,7 @@ fn a_frame_says_where_it_is() {
     assert!((sp.y_axis().norm() - 1.0).abs() < 1e-9);
     assert!(sp.x_axis().dot(sp.y_axis()).abs() < 1e-9);
 
-    // ★ Deliberately **not** compared against `face_plane`: a face's frame winds its axes to
+    // Deliberately **not** compared against `face_plane`: a face's frame winds its axes to
     // the face's own outward normal, so a reversed face names the same plane on a different
     // basis. Both are frames of that plane and neither is wrong — the comparison would be
     // measuring the wrong proposition. What matters for a sketch is that this realization is
@@ -2711,7 +2711,7 @@ fn a_frame_says_where_it_is() {
     // nacre-kit's `sketch_lines` tests.
 }
 
-/// ★★★★★ **A turn does not cost a solid its datum vocabulary** — the regression `point_width`
+/// **A turn does not cost a solid its datum vocabulary** — the regression `point_width`
 /// caught, locked where a caller can see it.
 ///
 /// The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
@@ -2746,7 +2746,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     };
     m.rebuild_adjacency();
 
-    // ★ **Fixture validity first**: the turn must actually have left a cap world-stated beside
+    // **Fixture validity first**: the turn must actually have left a cap world-stated beside
     // moved walls, or this measures the easy case. Without that mismatch the rescue is never
     // asked and the test would pass on a kernel that does not have it.
     let mixed = live_vertices(&m).into_iter().any(|vh| {
@@ -2794,7 +2794,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         plane, again,
         "one plane, one handle — that is what the name is for"
     );
-    // ③ And the road stays open under a further motion. ★ This is also the first time a *named*
+    // ③ And the road stays open under a further motion. This is also the first time a *named*
     // `Through` plane meets `transform`'s invariant arm (which reads the plane's name to decide),
     // so this line walks a path that was unreachable while these planes had no name.
     let OpOutput::Transform { .. } = apply(
@@ -2814,7 +2814,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     m.rebuild_adjacency();
 }
 
-/// ★★ **An offset of a mirrored face lands on the side the caller asked for.**
+/// **An offset of a mirrored face lands on the side the caller asked for.**
 ///
 /// A reflection recorded as a chain node reverses handedness, so the frame's two in-plane axes
 /// carried separately span `x × y = −ŵ`. The world road offsets along the frame's normal; if that
@@ -2915,7 +2915,7 @@ fn offset_of_the_top_lands_outward(
     );
 }
 
-/// ★★ **An offset of a moved plane is the exact plane, not the decimal its realization prints.**
+/// **An offset of a moved plane is the exact plane, not the decimal its realization prints.**
 ///
 /// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3` — a rational with no short
 /// decimal — carried into the plain block's statements, recorded on the `Through` block's (its
@@ -2963,7 +2963,7 @@ fn an_offset_of_a_moved_plane_is_the_exact_plane() {
 /// A way to lift (and perhaps mirror) a block.
 type Lift = fn(&mut Model, f64, nacre_exact::Rat) -> nacre_store::Handle<nacre_topo::Solid>;
 
-/// ★★ **A frame carried through a reflection takes the world road, left-handed, and still sweeps
+/// **A frame carried through a reflection takes the world road, left-handed, and still sweeps
 /// along its `ŵ`.**
 ///
 /// The top cap of the lifted, mirrored `Through` block carries a chain that folds (a translation,

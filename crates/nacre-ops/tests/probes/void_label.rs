@@ -74,7 +74,7 @@ fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) 
     assert!(nacre_validate::validate(m).is_empty());
 }
 
-/// ★ The defect: a **slanted** wedge cut wholly inside a cube, touching nothing at all. Before the
+/// The defect: a **slanted** wedge cut wholly inside a cube, touching nothing at all. Before the
 /// parity label this returned two bodies — the untouched cube (volume 1) and the wedge wound
 /// inside out (volume −0.108) — whose volumes still summed to the right answer.
 #[test]
@@ -115,7 +115,7 @@ fn an_axis_aligned_void_is_unchanged() {
 /// The wedge whose sharp tip stops just **short** of the cube's wall — a plain modelling move, and
 /// the shape that showed the defect first.
 ///
-/// ★ The tip was at `1.0`, *on* the wall, until the kernel learned to refuse a solid whose surface
+/// The tip was at `1.0`, *on* the wall, until the kernel learned to refuse a solid whose surface
 /// touches itself: that version is now `SelfTouchingResult`, and it lives in `self_touch.rs` as the
 /// case that reject is for. Moving it to `0.999` keeps this file asking what it was always asking —
 /// that a cut wholly inside a body comes back as one body with a cavity, whatever the sketch's

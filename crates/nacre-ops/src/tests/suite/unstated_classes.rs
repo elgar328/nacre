@@ -552,7 +552,7 @@ fn nameless_classes_beside_world_cylinders() {
         // turned box straddling that wall's plane far from the bore. On the wall's class the
         // bore's pierce points and the box's corners share lines and rings. The plate with the
         // rib is `bored + 200 − 100`; the box, `y` 21.5..28.5, misses the rib and the bore and
-        // sinks `25·5` into the plate. ★ Its rib face covers none of the cells the order between
+        // sinks `25·5` into the plate. Its rib face covers none of the cells the order between
         // those points shapes, so this family cannot see that order's sign — the two with the wall across the bore can.
         Family {
             name: "recorded rib wall, box turned 37 across its plane",

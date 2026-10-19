@@ -7,7 +7,7 @@ use super::*;
 /// matters here: nacre's own gates all read the same rings, so only an independent
 /// kernel makes the surviving hole's size a real claim.
 ///
-/// ★ And on `want`, the volume worked by hand from the boxes and the
+/// And on `want`, the volume worked by hand from the boxes and the
 /// [`nacre_ops::fixtures::pocketed_cube`] void. Agreeing with OCCT does not say the shape is
 /// the one described — both kernels read the same STEP, wherever the pocket landed.
 fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool, want: f64) {
@@ -796,7 +796,7 @@ fn the_fin_array_matches_occt() {
 ///
 /// So OCCT scores every step of the sweep from the same operands, before nacre consumes them.
 ///
-/// ★ 38°, 40° and 44° are here for the same reason at one remove: those are the sweeps that
+/// 38°, 40° and 44° are here for the same reason at one remove: those are the sweeps that
 /// only run at all because a ray is now allowed to graze a ring corner, and the containment
 /// answers that ray gives are checked by **nothing else**. A hole hung on the wrong face is a
 /// topology error, and volume and centroid see it.

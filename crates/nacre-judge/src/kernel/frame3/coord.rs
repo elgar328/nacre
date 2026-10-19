@@ -141,12 +141,12 @@ pub fn dir_sign_judge(
     c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     j: ProofStandard,
 ) -> Decision {
-    // ★ **Not fed from `Judge`'s interval-plane cache, and that is measured.** Wiring it here
+    // **Not fed from `Judge`'s interval-plane cache, and that is measured.** Wiring it here
     // bought 1.007x on the crossing collector: this judgement's cost is almost entirely the
     // escalation below, because a *true* zero — the walls meeting `wc` in no point, 8.9% of the
     // pairs the collector tests — can never be settled by an interval filter.
     //
-    // ★★★ **And this is where the kernel's escalations come from.** Measured on `fin_fold(80)`:
+    // **And this is where the kernel's escalations come from.** Measured on `fin_fold(80)`:
     // this judgement is 5.4% of its own calls but **78% of every escalation in the boolean**, and
     // **92.6% of those escalations have a midpoint of exactly `0.0`** — genuine degeneracies the
     // arrangement builds by construction. That is why tightening a coordinate's tol does not buy

@@ -166,7 +166,7 @@ fn plane_classes_merge_a_shared_wall() {
     assert_eq!(canon[a_xp], a_xp.min(b_xm));
 }
 
-/// ★★★★ **Two faces of one judged surface are one class.** A nameless plane has no
+/// **Two faces of one judged surface are one class.** A nameless plane has no
 /// name to intern classes by, so its class merging rests on the probes: both faces carry the
 /// *same statement* → the same frame probes → identical chains → `shared_base` cancels the
 /// motion and the exact predicate answers a **proved zero**. This is the argument turned into
@@ -215,7 +215,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
                     let nacre_topo::Vertex::ThreePlane(_) = *m.vertex(vh) else {
                         continue;
                     };
-                    // ★ The kernel says which corners it can place in one frame; comparing the
+                    // The kernel says which corners it can place in one frame; comparing the
                     // three carriers' motions here would be `vertex_meet`'s rule written twice,
                     // and since the invariant-plane restatement that copy calls a turned solid's
                     // corner straddling when the chain-fixes licence places it.
@@ -607,7 +607,7 @@ proptest! {
         let zm = z0 + h1;
         let build = || {
             let mut m = Model::new();
-            // ★ The stack is two boxes on **one** plane `zm`, one hanging below it and one standing
+            // The stack is two boxes on **one** plane `zm`, one hanging below it and one standing
             // on it — the interface this property is about. Two heights summed in f64 would put
             // the lower box's top and the upper box's floor on two planes.
             let a = crate::fixtures::cuboid_on(&mut m, [x0, y0], [x1, y1], zm, -h1);

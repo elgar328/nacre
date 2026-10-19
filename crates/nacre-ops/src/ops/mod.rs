@@ -39,7 +39,7 @@ pub use profile::*;
 
 /// A modelling operation.
 ///
-/// ★ **`DatumPlane` is the large variant and it is not boxed.** It carries a [`SketchPlane`] in
+/// **`DatumPlane` is the large variant and it is not boxed.** It carries a [`SketchPlane`] in
 /// its `Stated` arm, which holds a plane's exact rational definition (~400 bytes). An op log is
 /// tens of entries long and is walked once per replay, so the wasted space is measured in
 /// kilobytes; boxing would buy that back at the cost of an indirection on the one type a caller
@@ -54,7 +54,7 @@ pub enum Operation {
     /// plane of a face it had already built ([`face_sketch_frame`]); every other plane would have
     /// to travel by value. This is the one variant that carries a plane's statement (`Stated`).
     ///
-    /// ★ **It is an operation, not a plain function, because `replay` must reproduce the handle.**
+    /// **It is an operation, not a plain function, because `replay` must reproduce the handle.**
     /// A plane minted outside the log leaves a model that is not self-contained, and the
     /// "handles in a log are index vocabulary" contract (see `docs/design.md`) is false for it.
     ///
@@ -65,13 +65,13 @@ pub enum Operation {
     /// Extrude `profile`, drawn in `frame`, by `dist` along that frame's `ŵ` — or against it when
     /// `dist` is negative.
     ///
-    /// ★ **The plane is named, not carried.** `frame` holds a `Handle<Surface>`, so the plane it
+    /// **The plane is named, not carried.** `frame` holds a `Handle<Surface>`, so the plane it
     /// sketches on is one the model already has — a seeded world plane
     /// ([`SketchFrame::world`]), the plane of a face ([`face_sketch_frame`]), or one a
     /// [`Operation::DatumPlane`] put there. That is what makes the base cap a *shared* handle
     /// rather than a second statement of the same plane, whichever way the prism runs.
     ///
-    /// ★ **The frame says where `ŵ` points and where the sketch's `+u` lies; the sign says which
+    /// **The frame says where `ŵ` points and where the sketch's `+u` lies; the sign says which
     /// side of the plane the body takes.** `flip` is the frame maker's, decided from the truth, so
     /// a face's frame always faces outward — and turning the frame over would re-derive its axes
     /// and land the same sketch mirrored. Sweeping against `ŵ` keeps the axes and is the only
@@ -240,7 +240,7 @@ pub enum OpError {
     /// or a session that kept recording after a *late* reject left arena cells the log does not
     /// account for (see [`replay`]'s note on self-containment).
     ///
-    /// ★ **Existence, not legality.** Whether the cell is a *legal target* is still the
+    /// **Existence, not legality.** Whether the cell is a *legal target* is still the
     /// operation's own question — [`OpError::SolidNotLive`] / [`OpError::FaceNotInLiveSolid`].
     /// And an index that is merely *wrong* rather than out of range cannot be caught here at
     /// all: it names a real cell, just not the intended one. That is why re-anchoring requires
@@ -266,13 +266,13 @@ pub enum OpError {
     /// rational coordinate for them: reaching the world means realizing a rotation, and cos/sin
     /// are irrational.
     ///
-    /// ★ This is not a caller mistake. The dominant shape is not two solids combined by hand but a
+    /// This is not a caller mistake. The dominant shape is not two solids combined by hand but a
     /// **single boolean result**: a cut between a turned operand and a still one leaves corners
     /// where an unmoved wall meets two turned ones, and measured, 12 of that solid's 20 vertices
     /// are in that state (`tests/instruments/point_width.rs`,
     /// `a_datum_on_straddling_carriers_has_no_name`).
     ///
-    /// ★★★★ **What opens this is not the judging layer.** The homogeneous lift
+    /// **What opens this is not the judging layer.** The homogeneous lift
     /// does not open the population. Such
     /// a plane has **no exact name**, and from there:
     ///
@@ -292,7 +292,7 @@ pub enum OpError {
     /// arbitrary-axis branch's squared length — or the normal's, or the origin's denominator —
     /// could be bounded away from zero (`nacre_judge::FrameThrough::of`).
     ///
-    /// ★ Deliberately **not** [`OpError::CollinearVertices`] and not
+    /// Deliberately **not** [`OpError::CollinearVertices`] and not
     /// [`OpError::DegenerateGeometry`]: both claim the construction *is* degenerate, and an
     /// interval that fails to clear zero proves nothing of the kind — the points may be exactly
     /// collinear or merely too close to call. Failing to prove health is its own cause, and a
@@ -335,7 +335,7 @@ pub enum DatumDef {
     /// produced a plane with a *different name* than the plane actually through them
     /// (`tests/instruments/point_width.rs`). Naming the vertices keeps the statement exact.
     ///
-    /// ★ **The order is the direction.** The three are sorted before they are stored — the same
+    /// **The order is the direction.** The three are sorted before they are stored — the same
     /// vertices are the same plane in any order — but the caller's order fixes a normal by the
     /// right-hand rule, and `flip` is measured against it exactly as it is for a stated plane.
     /// Reversing two of them returns *the same handle with the opposite frame*, which is the only
@@ -349,7 +349,7 @@ pub enum DatumDef {
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
     /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
     ///
-    /// ★ **This is the exact form of an offset, and the frame is why.** In the world, "d along the
+    /// **This is the exact form of an offset, and the frame is why.** In the world, "d along the
     /// normal" of a tilted plane is `p + d·n̂` — irrational, because `n̂` carries a square root.
     /// Inside the frame the same plane is `w = d` and every coordinate is a written decimal; the
     /// irrationality lives in the frame's realization, which is machinery the kernel already has.
@@ -371,7 +371,7 @@ pub enum DatumDef {
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
 ///
-/// ★ **`DatumPlane` is the large variant and it is not boxed**, for the same reason
+/// **`DatumPlane` is the large variant and it is not boxed**, for the same reason
 /// [`Operation::Extrude`] is not: it carries a [`SketchFrame`], whose `Named` placement is six
 /// `Rat`s. An `OpOutput` is a return value — one per `apply`, read and dropped, never accumulated
 /// — so the width costs a stack copy, and boxing would buy that back by putting an indirection on
@@ -396,7 +396,7 @@ pub enum OpOutput {
     Mirror { solid: Handle<Solid> },
     /// The datum plane, and **the frame the caller's statement implies**.
     ///
-    /// ★ The frame is not a convenience. A caller who had to rebuild it with
+    /// The frame is not a convenience. A caller who had to rebuild it with
     /// [`SketchFrame::named`] would hand back `f64`, taking `Rat::from_decimal` a second time —
     /// and a computed value can lift to a different rational than the one the statement already
     /// holds. Returning it keeps the caller's sketch origin and `+u` exact, which is what
@@ -417,14 +417,14 @@ pub enum OpOutput {
 /// coefficients need negating to face the way the sketch does. Everything a
 /// [`nacre_topo::Motion::Frame`] node needs, before the model has one.
 ///
-/// ★★ **The fields are private and the constructors validate** — the reason this type is not a
+/// **The fields are private and the constructors validate** — the reason this type is not a
 /// plain record. A `Named` placement is a *claim*: "this origin lies on that plane, this
 /// direction crosses its normal". [`SketchFrame::named`] checks the claim exactly, at
 /// construction, and rejects by name — silently substituting `Canonical` would move a caller's
 /// sketch and answer a question they did not ask. A public
 /// field would let a literal walk around the check.
 ///
-/// ★ **`flip` is not the caller's to state** — the canonical coefficients carry no direction, so
+/// **`flip` is not the caller's to state** — the canonical coefficients carry no direction, so
 /// which way `ŵ` must face is a fact about the *use* (a sweep's sense, a face's outward normal),
 /// decided by the consuming operation from the truth: which way that use faces against the
 /// plane's own facing. Constructors set `false`.
@@ -451,13 +451,13 @@ impl SketchFrame {
     /// twin of [`SketchPlane::world_xy`] / [`world_yz`](SketchPlane::world_yz) /
     /// [`world_zx`](SketchPlane::world_zx), and the door most sketches come through.
     ///
-    /// ★★ **XY and YZ take `Canonical`; ZX must take `Named`.** The arbitrary-axis rule gives the
+    /// **XY and YZ take `Canonical`; ZX must take `Named`.** The arbitrary-axis rule gives the
     /// ZX plane `+u = −x̂`, while the convention — and `SketchPlane::world_zx` — says `+u = +ẑ`.
     /// Derived and stated differ there and only there, so a caller who reached for
     /// [`SketchFrame::canonical`] on the ZX seed would find their sketch a quarter turn from where
     /// they asked. This function is where that one exception lives, spelled once.
     ///
-    /// ★ **`flip` is `false` and that is a measurement, not a derivation**: each seed's canonical
+    /// **`flip` is `false` and that is a measurement, not a derivation**: each seed's canonical
     /// `ŵ` realizes to `+axis` because of how `Model::new` writes the seeds' points and how the
     /// canonical name normalizes — pinned by `a_world_frame_faces_its_axis`, and by
     /// `a_seeded_planes_canonical_frame_is_the_world_basis_exactly` underneath it. Re-seed the
@@ -495,7 +495,7 @@ impl SketchFrame {
     ///   decimal truth (`Rat::from_decimal` — `~1e38` above, `~1e-22` below for a full-width
     ///   value); the claim cannot even be stated exactly.
     /// * [`OpError::PlaneWithoutExactForm`] — the plane carries no name: the same proposition as
-    ///   everywhere this error fires, "there is no exact statement to check against". ★ Not a
+    ///   everywhere this error fires, "there is no exact statement to check against". Not a
     ///   test-only population, as this used to say — [`Model::push_plane`] is public and leaves a
     ///   nameless plane behind for a collinear triple, so a caller outside this crate can reach
     ///   it. Every production push passes a non-collinearity gate first, which is why
@@ -578,7 +578,7 @@ impl SketchFrame {
 /// question that matters: given the *same* plane said two ways, do the two roads leave the same
 /// arena behind?
 ///
-/// ★ The first assertion is **which road was taken**, not whether the models match. A frame whose
+/// The first assertion is **which road was taken**, not whether the models match. A frame whose
 /// basis is not rational is written inside a motion node with its points in frame coordinates — a
 /// different but still valid model, and an equality check would report that without naming it.
 /// [`prism::frame_road`] measured that this used to happen for rational-tilt planes; here it must not

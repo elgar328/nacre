@@ -41,7 +41,7 @@ fn frame_nodes(m: &Model) -> Vec<Motion> {
         .collect()
 }
 
-/// ★★★ **Each bad claim gets its own name** — and the good claim is accepted with the caller's
+/// **Each bad claim gets its own name** — and the good claim is accepted with the caller's
 /// words lifted, not normalized away.
 #[test]
 fn a_named_frame_rejects_each_bad_claim_by_name() {
@@ -117,7 +117,7 @@ fn a_named_frame_rejects_each_bad_claim_by_name() {
     );
 }
 
-/// ★★ **The constructor and the extrude road speak one value** — restating the axes-only plane's
+/// **The constructor and the extrude road speak one value** — restating the axes-only plane's
 /// own origin and `+u` through [`SketchFrame::named`] reproduces the operation's placement
 /// letter for letter. The fixture's name is *wide* (full-width decimal axes: the cross-product
 /// denominators pass `i128`), so the accepted origin also proves the residual check's
@@ -181,7 +181,7 @@ fn a_named_frame_states_what_the_extrude_road_builds() {
     );
 }
 
-/// ★★ **`face_sketch_frame` reports the very frame an extrude on the face builds in** — same
+/// **`face_sketch_frame` reports the very frame an extrude on the face builds in** — same
 /// plane handle, same placement, same measured flip as the `Frame` node a pad (that extrude, fused)
 /// leaves behind. And on an axis-aligned face, where the operation elides the node, the canonical
 /// frame it reports still tells the truth about direction: the top face (outward `+ẑ`, canonical
@@ -209,7 +209,7 @@ fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
     let fb = nacre_ops::face_sketch_frame(&m, bottom).expect("the seeded bottom");
     assert_eq!(fb.plane(), m.seeded_plane(Axis::Z));
     assert!(fb.flip(), "outward −ẑ against canonical ŵ = +ẑ");
-    // ★ Not `placement == Canonical`: which placement spells the frame is an implementation
+    // Not `placement == Canonical`: which placement spells the frame is an implementation
     // detail (the normal form), and it can hold while the frame is wrong — the contract is the
     // realization: the frame this returns must land, bit for bit, on the plane `face_plane`
     // reports — which is what the pad reads.
@@ -345,7 +345,7 @@ fn far_cap(
 /// A way to lift a block, and whether the lift is recorded as a node.
 type Lift = fn(&mut Model, f64, Rat) -> nacre_store::Handle<nacre_topo::Solid>;
 
-/// ★★ **A pad on a lifted face lands its top on the exact plane.**
+/// **A pad on a lifted face lands its top on the exact plane.**
 ///
 /// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3`, a rational with no short
 /// decimal. The pad's frame origin used to be that plane's cache realized and lifted back with
@@ -384,7 +384,7 @@ fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
     }
 }
 
-/// ★★ **A pad on a rational tilted face stays on the world road, so its top is the plane every
+/// **A pad on a rational tilted face stays on the world road, so its top is the plane every
 /// other statement of it names.**
 ///
 /// The far cap of a prism on a `(3, 4, 0)` datum has rational axes, but its cached normal
@@ -423,7 +423,7 @@ fn a_pad_on_a_rational_tilted_face_shares_the_plane_with_an_extrude() {
     );
 }
 
-/// ★★ **A plane whose origin has no short decimal is framed exactly.**
+/// **A plane whose origin has no short decimal is framed exactly.**
 ///
 /// `3x + 4y + 12z = 12` through three corners of a `4 × 3 × 1` box has rational axes
 /// (`(−4, 3, 0)/5`, a `v̂` over `65`) and its world origin `12/169·(3, 4, 12)` has no short
@@ -492,7 +492,7 @@ fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
     assert_eq!(m.face(padded).surface, far, "one plane, one handle");
 }
 
-/// ★★ **The frame a face reports is the frame a pad builds in — on a lifted face and on a
+/// **The frame a face reports is the frame a pad builds in — on a lifted face and on a
 /// mirrored one.**
 ///
 /// `face_sketch_frame` hands a caller the frame to extrude in; an extrude there must land where

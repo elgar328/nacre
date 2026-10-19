@@ -6,7 +6,7 @@ fn resid(x: &BigFloat, y: &BigFloat, prec: usize) -> f64 {
     crate::bigfloat_upper_f64(&x.sub(y, prec, HP_RM))
 }
 
-/// ★ The differential the two new interval operations are locked by: on **exact** inputs they
+/// The differential the two new interval operations are locked by: on **exact** inputs they
 /// must agree with the exact routes that already exist, and on **interval** inputs the radius
 /// must contain the truth — probed at the interval's endpoints, which is where a monotone
 /// function's image is extreme (so the corners are the whole question, not a sample).
@@ -112,7 +112,7 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// they are slow; this one exists so that *every build checks its own platform*, and a few
 /// hundred angles is milliseconds.
 ///
-/// ★★★ **It asks about the pair, because that is what the answer is about.** The values go in
+/// **It asks about the pair, because that is what the answer is about.** The values go in
 /// as arguments — the same ones `rotate_about` writes into `coord_approx` — rather than being
 /// re-derived inside. Written the other way, this test asked whether the error of *some*
 /// realization bounded the error of *another*, and it failed at 27°: a debug and a release build
@@ -120,13 +120,13 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// divergence is a real and separate defect in the kernel's determinism story; what this test now
 /// checks is the property `tol` actually needs, which is about the pair in hand.
 ///
-/// ★ **The 90°-family is included, not skipped, and that is the load-bearing part.** There
+/// **The 90°-family is included, not skipped, and that is the load-bearing part.** There
 /// `cos_sin_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute
 /// no tolerance at all — which is what keeps a quadrantal origin rotation at tol 0 and keeps
 /// axis-aligned models on the exact predicate path. A claimed zero that was not really zero
 /// would not fail loudly; it would quietly move those models. Here it has to be real.
 ///
-/// ★★ **It also still reports the worst error, though nothing depends on it.** Charging a
+/// **It also still reports the worst error, though nothing depends on it.** Charging a
 /// measured value means a degraded platform fails nothing — it just escalates more
 /// and runs slower, invisibly. This line is what keeps that visible.
 ///
@@ -145,19 +145,19 @@ fn the_measured_trig_error_bounds_the_real_one() {
     let mut angles: Vec<(i128, i128)> = (0..360).map(|d| (d, 1)).collect();
     for _ in 0..200 {
         angles.push((rng(0, 360_000), rng(1, 9973)));
-        // ★ Near an axis, where the realized cos or sin is close to zero — the region that
+        // Near an axis, where the realized cos or sin is close to zero — the region that
         // refuted the tangential tol model, and where a relative error reads worst.
         angles.push((90 * rng(0, 4) * 1000 + rng(-3, 4), 1000));
-        // ★ Past `2⁵³`, where `Rat::to_f64` leaves its fast path. The radian argument is what
+        // Past `2⁵³`, where `Rat::to_f64` leaves its fast path. The radian argument is what
         // dominates the error, so an angle whose conversion takes the other route has to be here.
         angles.push((rng(1, 1 << 62) * 360, rng(1 << 53, 1 << 62)));
     }
-    // ★ **Reported to the nearest ε, which needs a comparison rather than an octave reader.**
+    // **Reported to the nearest ε, which needs a comparison rather than an octave reader.**
     // `2^exponent` is an upper *octave*, up to 2× above the true magnitude — so a figure read
     // from it blurs exactly the range that matters. The smallest integer `k` with `x < k·ε` is
     // one comparison per candidate and says the thing plainly.
     //
-    // ★★★ **The range starts at 1, and it must**: `0·ε` is `0.0`, and astro-float's `cmp`
+    // **The range starts at 1, and it must**: `0·ε` is `0.0`, and astro-float's `cmp`
     // answers `Some(-1)` in *both* directions against a zero — so `x.cmp(&zero)` reports "less
     // than" for a positive `x`, every inexact realization reads `k = 0`, and `worst_k` is then
     // only ever raised by the *exact* ones, which read the floor. That prints a headline of
@@ -173,7 +173,7 @@ fn the_measured_trig_error_bounds_the_real_one() {
             })
             .unwrap_or(usize::MAX)
     };
-    // ★★★ **The reading is pinned before it is trusted.** Three separate figures in this
+    // **The reading is pinned before it is trusted.** Three separate figures in this
     // kernel's error work turned out to be artefacts of how they were printed rather than of
     // what was measured, and each time the tell was a number that would not move. A reading
     // that cannot be shown to respond to a known input is not evidence.
@@ -206,7 +206,7 @@ fn the_measured_trig_error_bounds_the_real_one() {
                      f = {f:e}, reported {reported:e}, true error 2^{:?}",
                 truth.exponent(),
             );
-            // ★ The worst is tracked over the *inexact* realizations only. An exact one has
+            // The worst is tracked over the *inexact* realizations only. An exact one has
             // error zero, which reads as the floor `k = 1` — and since the corpus opens at 0°,
             // including them let the family claim the headline and named an angle with no
             // error at all as this platform's worst case.

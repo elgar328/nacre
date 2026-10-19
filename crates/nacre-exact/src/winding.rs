@@ -63,7 +63,7 @@ pub struct QuarterArc {
 /// r·(C × u′) + r²` dt). With every `φ` a multiple of `π/2` the total is `a + b·π`, whose sign
 /// [`sign_a_plus_b_pi_int`] decides.
 ///
-/// ★ **Integers, not `Rat`.** Every coordinate goes over one common denominator and the sums run
+/// **Integers, not `Rat`.** Every coordinate goes over one common denominator and the sums run
 /// in `BigInt`: two 17-digit decimals multiplied already leave `i128` (the reason [`orient2d_rat`]
 /// carries a `BigInt` arm), and a winding read that failed open on overflow would build a solid
 /// inside out. The area is doubled so `r²·k/2` stays integral. `None` for an arc that is not a

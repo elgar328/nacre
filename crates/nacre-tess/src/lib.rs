@@ -6,7 +6,7 @@
 //! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
 //! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
 //!
-//! ★★★★★ **One, and only one.** A second writer that fan-triangulates planar faces **from
+//! **One, and only one.** A second writer that fan-triangulates planar faces **from
 //! half-edge start vertices** silently turns an arc into a chord. The projection rule
 //! (Newell → drop axis → repair handedness) lives once, in `planar_chart`; the sweep below it
 //! is shared.
@@ -37,15 +37,15 @@ pub enum TessError {
     /// band no generator cuts so that it stays one polygon — every generator crosses some hole
     /// other than twice (`cut_seamless_bands`).
     ///
-    /// ★ **The cases where two vertices meet in *coordinates* are not here** but
+    /// **The cases where two vertices meet in *coordinates* are not here** but
     /// [`Self::SelfTouchingBoundary`] — a different proposition: those rings are exactly what the
     /// b-rep asked for, and it is this decomposition that has no answer for them.
     ///
-    /// ☑ **The crossing clause covers a hole crossing its outer ring**, not only a ring crossing
+    /// **The crossing clause covers a hole crossing its outer ring**, not only a ring crossing
     /// itself: without `monotone`'s `self_touch` that input comes back `Ok` with eight confident,
     /// wrong triangles (measured).
     ///
-    /// ★ **A crossing that is only the chords' doing is not here**: where an arc's chords sag past
+    /// **A crossing that is only the chords' doing is not here**: where an arc's chords sag past
     /// a curve near it, the arcs there are cut finer before the sweep sees the rings
     /// (`separate_crossing_chords`). What comes back under this name is a crossing of straight
     /// segments, or one that arcs cut as finely as `FINEST_CIRCLE` lets them still have.
@@ -60,7 +60,7 @@ pub enum TessError {
     /// non-adjacent part of its own. The region is pinched there, so it is not a disk with sibling
     /// holes and this decomposition has no triangulation of it *as two rings*.
     ///
-    /// ★★★★★ **The common case is drawn, not refused.** A hole whose sample sits
+    /// **The common case is drawn, not refused.** A hole whose sample sits
     /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
     /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
     /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
@@ -74,7 +74,7 @@ pub enum TessError {
     /// beside a curved face, two touches on one segment or at one point, two lobes meeting only at
     /// a point, a point passed three times, and a bridge beside any other bridge or pinch.
     ///
-    /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
+    /// **This does not say the solid is wrong — and that is now measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
     /// sampled circle vertex lands on the touch. Both fixtures are `validate`-clean with volumes
     /// exact to `1e-9`, and
@@ -84,12 +84,12 @@ pub enum TessError {
     /// volume, area and face count. What is pinched is the **face**, not the surface, so the
     /// capability that owes an answer is **not** the non-manifold test (it was right) but this
     /// layer's own: a consistent symbolic order for coincident vertices in the sweep — which
-    /// `polygon::sos` supplies. ★ For what is still refused, the
+    /// `polygon::sos` supplies. For what is still refused, the
     /// loss is larger than one face: a mesh stops at the first refusal in its range ([`tessellate`]
     /// — every live solid — or [`tessellate_solids`]), and the playground's drawing stops at the
     /// first value whose mesh is refused, so one pinched face erases every body of that run.
     ///
-    /// ★ The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
+    /// The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
     /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been
     /// there all along and calls the same thing a *pinch*; this is the spelling a chart actually
     /// produces, since `face_rings` gives every ring its own index range.
@@ -138,13 +138,13 @@ pub struct TessTriangle {
 /// incremental `stale` set is deferred — this is from-scratch, like
 /// `Adjacency`.)
 ///
-/// ★★★★★ **A closed edge's polyline does not repeat its first point — the closure is
+/// **A closed edge's polyline does not repeat its first point — the closure is
 /// implicit.** [`sample_edge`]'s full-rim arm samples a circle at `0 .. (n−1)τ/n` and stops,
 /// and `boundary_ring` drops the wrap-around duplicate for the same reason: these are mesh
 /// vertices, and repeating a handle would give the face a degenerate triangle. So a consumer
 /// that walks a polyline **pairwise** gets `n − 1` steps for a ring of `n`, and must add the
 /// closing step itself; `edge.vertices[0] == edge.vertices[1]` is the fact to branch on — the
-/// very test `sample_edge` uses. ⚠ Written here because a consumer that does not know it draws
+/// very test `sample_edge` uses. Written here because a consumer that does not know it draws
 /// every uncut rim with a gap in it (measured in the playground's viewport).
 #[derive(Debug, Default)]
 pub struct Tessellation {
@@ -197,7 +197,7 @@ impl Tessellation {
     /// What it holds is decided when it is built — every live solid ([`tessellate`]) or the ones
     /// given ([`tessellate_solids`]).
     ///
-    /// ★ **Each corner carries its face's outward normal** (`vn`, `f a//na b//nb c//nc`) —
+    /// **Each corner carries its face's outward normal** (`vn`, `f a//na b//nb c//nc`) —
     /// [`nacre_props::face_normal_at`], the one the playground's viewport lights with. Without it a
     /// viewer either shades each triangle flat, and a cylinder reads as bands, or averages the
     /// normals of a shared vertex — and a rim's points *are* shared, cap and side meeting on the
@@ -356,7 +356,7 @@ fn sample_live_edges<'m>(
         .collect()
 }
 
-/// ★★★★ **Where two chords of a planar face pass through each other, cut the arcs there finer** —
+/// **Where two chords of a planar face pass through each other, cut the arcs there finer** —
 /// and hand back the face's chart and how its boundary meets itself once nothing more is cut.
 ///
 /// A face's boundary curves do not meet — the b-rep says so — but each is drawn as chords, and an
@@ -379,20 +379,20 @@ fn sample_live_edges<'m>(
 /// the way round wants whole circles cut finely — twice as fine at a gap of `1e-4`, about 2,300
 /// samples a circle at `1e-6` — and at `1e-8` the cap is reached and the face refused by name.
 ///
-/// ★ **One scan, two readers.** The last round's answer is the boundary as it now stands, which is
+/// **One scan, two readers.** The last round's answer is the boundary as it now stands, which is
 /// what the bridge pre-pass reads its touches off ([`bridge_shared_edges`] calls this) — asked once,
 /// not again by a second pass over the same polylines. Measured as a separate pass, the second ask
 /// was 7.7% of the census's meshing time.
 ///
-/// ★ **Faces that cannot cross are scanned once and not cut**: one with no circle edge (straight
+/// **Faces that cannot cross are scanned once and not cut**: one with no circle edge (straight
 /// segments do not sag), and one bounded by one whole circle alone — its samples lie on the circle
 /// in angular order, a convex polygon.
 ///
-/// ★ **Nothing that meshes today is touched** — a boundary with no crossing gets no sample.
+/// **Nothing that meshes today is touched** — a boundary with no crossing gets no sample.
 /// Measured over the workspace suite, the census, the ignored sweep, nacre-kit and the
 /// playground's suite: no face.
 ///
-/// ★ A crossing that lands on a vertex (`Crossing::Through`) cuts the chord it passes through and
+/// A crossing that lands on a vertex (`Crossing::Through`) cuts the chord it passes through and
 /// both chords at the vertex. Every crossing measured was `Segments` — that arm is argued, its
 /// population zero.
 fn separate_crossing_chords(
@@ -483,7 +483,7 @@ fn separate_crossing_chords(
 /// walked forward and the arrival walked backward; θ is read off both ends with
 /// `Circle::angle_of`, the one spelling of θ, and the new sample stands halfway round between.
 ///
-/// ★ **At the `f64` floor the midpoint need not lie between its ends** — for chords under about
+/// **At the `f64` floor the midpoint need not lie between its ends** — for chords under about
 /// `1e-12` rad about 1% of the midpoints land outside them, whatever the formula (the angle
 /// difference here, the turn read off both ends, or the chord's midpoint pushed out to the circle;
 /// measured over random chords on three circles). Cutting reaches that only where two curves meet
@@ -554,7 +554,7 @@ pub struct BridgeReport {
     pub declined: Vec<(Handle<Face>, Declined)>,
 }
 
-/// ★★★★★ **The bridge pre-pass — a tangency's sample becomes a sample of the edge it touches.**
+/// **The bridge pre-pass — a tangency's sample becomes a sample of the edge it touches.**
 ///
 /// A planar face whose hole touches another ring at exactly one point is a valid solid the
 /// sweep cannot decompose: the touching vertex is a sample of the *curved* edge, and the
@@ -636,7 +636,7 @@ fn bridge_shared_edges(
         .map(|&(fh, f)| {
             (
                 fh,
-                // ★ The **truth**, path-qualified: in this file the bare `Surface` is geom's
+                // The **truth**, path-qualified: in this file the bare `Surface` is geom's
                 // (the cache), and aliasing the topo one in would give the truth a second
                 // vocabulary here. A face's kind is a fact about what it is, so the truth
                 // answers it — and a new surface kind lands there first.
@@ -748,7 +748,7 @@ pub struct Leaning {
 /// that has no area. Test-only (`test-util`): the mesh locks call it with the budget's
 /// `max_angle_deg`.
 ///
-/// ★ **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
+/// **Why the budget bounds it.** Each edge of a lateral triangle turns about the axis by at most
 /// the budget — an arc's chord by [`circle_segments`], an interior chord by `within_budget`, a
 /// ruling not at all — so its three corners lie within one budget's turn of each other, and so does
 /// its facet's normal of the surface's. A sliver the chart made out of a lattice point standing a few
@@ -933,7 +933,7 @@ fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex
 /// A face's boundary in the **chart its surface is meshed in**: `uv[i]` is where `handles[i]`
 /// sits, and `rings` indexes into both — the outer ring first, then the holes.
 ///
-/// ★★★★ **One road, one chart per surface.** Every face — planar or curved — is triangulated by
+/// **One road, one chart per surface.** Every face — planar or curved — is triangulated by
 /// the same sweep ([`polygon::triangulate_uv`]); what differs per surface is only how
 /// its boundary is laid flat. A plane drops an axis; a cylinder unrolls to `(z, r·θ)`. When a
 /// cone or a sphere arrives it adds a chart here and nothing else.
@@ -1068,17 +1068,17 @@ fn planar_chart(
 
 /// A cylindrical face's chart: unroll to `(u, v) = (z, r·θ)` about the axis.
 ///
-/// ★★ **`r·θ`, not `θ`.** A cylinder is developable, so scaling the angle by the radius makes
+/// **`r·θ`, not `θ`.** A cylinder is developable, so scaling the angle by the radius makes
 /// this an **isometry** — lengths and angles in the chart are lengths and angles on the surface.
 /// That is what lets the Lawson pass ([`polygon`]'s flip) improve the mesh *on the surface* and
 /// not merely in a distorted picture of it.
 ///
-/// ★★ **`v` is the sweep axis, so the handedness repair negates `u` instead of swapping.**
+/// **`v` is the sweep axis, so the handedness repair negates `u` instead of swapping.**
 /// Swapping would send the sweep along the axis instead of around it, and its diagonals would
 /// then span wide arcs — chords that leave the surface. Negating `u` mirrors the frame just as
 /// well and leaves the sweep going around.
 ///
-/// ★ **θ is unwrapped along each loop, never taken absolutely.** A band is bounded by its two rims,
+/// **θ is unwrapped along each loop, never taken absolutely.** A band is bounded by its two rims,
 /// each turning once around the axis, and unrolled alone they are two open lines; `cut` joins
 /// them at the generator [`cut_seamless_bands`] chose — first rim, its cut point again, up the
 /// generator through any hole it crosses, the second rim, its cut point again, and back down
@@ -1086,7 +1086,7 @@ fn planar_chart(
 /// rectangle rather than a degenerate line. The other holes are then shifted by whole turns into
 /// the outer ring's range so they lie inside it.
 ///
-/// ★ **`u` of a circle's point is the circle's place**, [`station`], not the point's own axial
+/// **`u` of a circle's point is the circle's place**, [`station`], not the point's own axial
 /// coordinate — so every arc is level in the chart, at the height the lattice lays its row
 /// ([`interior_nodes`]). Only a point on no circle — measured: none, over the lib suite and the
 /// census; a ruling broken at a vertex by another face's edge would be one — reads its own.
@@ -1213,7 +1213,7 @@ fn traced_ring(t: &Tessellation, lp: &Loop) -> (Vec<Traced>, Option<Traced>) {
 /// Where the step from position `k` of a [`traced_ring`] arrives: the next position, the closing
 /// one, or — `true` — the first, through the closing step of a ring with no closing position.
 ///
-/// ★ **That last is one closed edge**, whose polyline does not repeat its first sample: the step
+/// **That last is one closed edge**, whose polyline does not repeat its first sample: the step
 /// from its last sample back to the first. A new sample there goes at the polyline's end
 /// ([`between`]).
 fn arriving(positions: &[Traced], closing: Option<Traced>, k: usize) -> (Traced, bool) {
@@ -1279,7 +1279,7 @@ fn unwrapped_thetas(
     (out, total)
 }
 
-/// ★★★★★ **The band-cut pre-pass — a lateral face that wraps the axis gets one generator to be cut
+/// **The band-cut pre-pass — a lateral face that wraps the axis gets one generator to be cut
 /// along.**
 ///
 /// A lateral face that wraps the axis is bounded by two rims that each turn once around it, and
@@ -1477,7 +1477,7 @@ struct Cut {
 /// as [`band_generator`] admits, a crossed step is not an arc, or two points on the generator do
 /// not lie strictly in order along the axis.
 ///
-/// ★ **Along the axis, by the circle's centre.** Every crossing lies on an arc (a ruling is
+/// **Along the axis, by the circle's centre.** Every crossing lies on an arc (a ruling is
 /// parallel to the generator, and `c` lies off every sample), and an arc's axial place is its
 /// circle's — read from the curve, where every arc of one circle agrees bitwise, rather than from
 /// the computed point, which carries rounding. Two points at one place would be two loops touching
@@ -1584,7 +1584,7 @@ type ChartRings = (Vec<Handle<TessVertex>>, Vec<Vec<usize>>);
 /// appears at both of its `θ`s ([`cylinder_chart`]).
 /// Uncrossed rings (holes) follow unchanged.
 ///
-/// ★ **Which run of a hole the climb takes is forced, not chosen.** The material lies on the left
+/// **Which run of a hole the climb takes is forced, not chosen.** The material lies on the left
 /// of every loop, the hole's included, so leaving the generator at the hole's nearer point the walk
 /// must follow the hole's own direction; the descent takes the other run the same way. A hole wound
 /// against that would make the ring cross itself, which the sweep refuses.
@@ -1651,7 +1651,7 @@ fn joined_band(
 
 /// The axial place of `circle` on `cyl`: its centre, measured along the axis.
 ///
-/// ★★ **One spelling, three readers** — the band cut orders its points along the generator by it,
+/// **One spelling, three readers** — the band cut orders its points along the generator by it,
 /// the chart gives every point of a circle's polyline it as `u`, and the lattice lays its rows at
 /// it. Read from the curve, never from a point on it: every arc of one circle agrees on it bitwise
 /// (see [`interior_nodes`]), while a point's own axial coordinate carries its rounding — on a
@@ -1662,7 +1662,7 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
     (circle.center() - cyl.axis().origin()).dot(cyl.axis().direction())
 }
 
-/// ★★★★★ **The points a cylindrical face's boundary does not supply, and the mesh needs.**
+/// **The points a cylindrical face's boundary does not supply, and the mesh needs.**
 ///
 /// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
 /// closely-sampled arc, so the interior is fine for free. It stops being free where a face's
@@ -1681,13 +1681,13 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
 ///   that circle's points. Read from the curve, never from the sampled points: one rim's points
 ///   agree on that coordinate mathematically and differ by ulps in `f64`, so deduplicating *those*
 ///   would turn one rim into 181 stations.
-///   ★ Two arcs of one circle share a centre **bitwise**, and that is a guarantee rather than luck:
+///   Two arcs of one circle share a centre **bitwise**, and that is a guarantee rather than luck:
 ///   [`Model::push_edge`] derives the curve from the **canonicalized carrier pair alone** — the
 ///   circle arm never reads the endpoints — so two edges cut from the same circle by the same two
 ///   surfaces are handed identical inputs. The station count is therefore the number of planes the
 ///   face actually crosses, which is why `dedup` may compare `f64` with `==` here.
 ///
-/// ★★★ **Where the boundary already stands, no lattice point enters the mesh** — a row lies at an
+/// **Where the boundary already stands, no lattice point enters the mesh** — a row lies at an
 /// arc's height on purpose, so part of every row is boundary, and a point placed there a few ulps
 /// into the material is a sliver leaning off the lateral (up to 90°). Two cases, and only one is a
 /// tolerance:
@@ -1701,7 +1701,7 @@ fn station(cyl: &Cylinder, circle: &Circle) -> f64 {
 ///   equal, and no one computation gives both — so a column within [`ON_RULING`] of a rising step
 ///   (a ruling, or a band's cut generator; the arcs are level) is withheld.
 ///
-/// ★★ **The lowest and highest stations are not laid at all** — they are the face's own two rims,
+/// **The lowest and highest stations are not laid at all** — they are the face's own two rims,
 /// where every row point lies on a rim's chord or outside the face (a ruling's ends lie on arcs, so
 /// the arcs bound the `u` range). Laid anyway, an ordinary band is offered 358 points and the sweep
 /// drops every one (measured): the mesh is the same, the work is not.
@@ -1754,7 +1754,7 @@ fn interior_nodes(
 /// How close to a rising boundary step (a ruling) a lattice point may stand and still be offered,
 /// in units of the lattice's own step — see [`interior_nodes`].
 ///
-/// ★ **Not a knob**: over the lib suite's meshes and the census, every point withheld stands
+/// **Not a knob**: over the lib suite's meshes and the census, every point withheld stands
 /// within 2.8e-13 steps of a ruling and every point kept at least 0.095 steps from one, and the
 /// census meshes are the same at `1e-12`, `1e-9`, `1e-6` and `1e-3`; at `1e-1` the kept 0.095
 /// goes too and a mesh fails its budget. `1e-6` sits in the middle of that gap.
@@ -1781,7 +1781,7 @@ fn triangulate_face(
     face: &Face,
     cut: Option<BandCut>,
 ) -> Result<(), TessError> {
-    // ★ The cache: a chart is sampled geometry for a mesh, which is what the realization is
+    // The cache: a chart is sampled geometry for a mesh, which is what the realization is
     // for. Nothing here classifies — the kind was decided upstream, on the truth.
     let surface = model.surface_cache(face.surface);
     let Chart {
@@ -1856,7 +1856,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
     out
 }
 
-/// ★★★★★ **The mesh's one rule, asked of the face's *interior* — where it was never asked.**
+/// **The mesh's one rule, asked of the face's *interior* — where it was never asked.**
 ///
 /// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
 /// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine
@@ -1874,7 +1874,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
 /// answers zero to both without anyone declaring that a plane is flat, and a new surface kind is a
 /// compile error rather than a missing case.
 ///
-/// ★★ **A boundary edge cannot fail, so it is not asked.** An arc is cut into `circle_segments`
+/// **A boundary edge cannot fail, so it is not asked.** An arc is cut into `circle_segments`
 /// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, a
 /// plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
 /// there — which is why this checks only what the sweep chose, never what the sampler laid down.

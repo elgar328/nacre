@@ -1,4 +1,4 @@
-/// ★★★★ **Nothing carries plane coefficients through a frame, and that is the design, not an
+/// **Nothing carries plane coefficients through a frame, and that is the design, not an
 /// omission.**
 ///
 /// A plane that passes through a motion has two descriptions — coefficients and a witness

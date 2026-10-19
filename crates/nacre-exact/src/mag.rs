@@ -70,7 +70,7 @@ fn pow2_f64(k: i64) -> f64 {
 /// reader does with the result (`(… + upper) · (1 + 2ε)`) would not hold there;
 /// [`crate::Bounded::round_off`] floors the same way.
 ///
-/// ⚠ Not `2f64.powi(e)`: with a runtime `e` that is `1 / 2^|e|`, whose denominator is infinite
+/// Not `2f64.powi(e)`: with a runtime `e` that is `1 / 2^|e|`, whose denominator is infinite
 /// below `2^-1023` — a zero, which says the bound is exact.
 fn pow2_upper_f64(e: i64) -> f64 {
     match e {

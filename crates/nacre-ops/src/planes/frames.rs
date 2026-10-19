@@ -73,7 +73,7 @@ impl BaseFrame {
             Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
         };
         let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
-        // ★ **An improper chain is corrected here, on the points, before anything is derived
+        // **An improper chain is corrected here, on the points, before anything is derived
         // from them.** An odd number of reflections leaves the base frame with the opposite
         // handedness, and the shortcuts' whole licence is that the motion preserves the
         // determinants they take. One more reflection puts the handedness back, and then the base
@@ -89,14 +89,14 @@ impl BaseFrame {
         } else {
             tri
         };
-        // ★ The base plane must carry the **stored** orientation, not the triangle's. A class's
+        // The base plane must carry the **stored** orientation, not the triangle's. A class's
         // stored normal and its witness triangle's `cross` can oppose — that is exactly what
         // `frame_sign` records — and `through_points` gives the triangle's. A proper motion
         // preserves the cross product (`det = 1`), so multiplying by `frame_sign` reproduces the
         // same relation in the base frame. Without it the exact path answers with a flipped sign,
         // which the suite caught immediately.
         //
-        // ★ **And it is derived from the corrected triangle, not corrected afterwards.** A plane
+        // **And it is derived from the corrected triangle, not corrected afterwards.** A plane
         // is not a bag of points: reflecting a triangle and re-deriving its normal is *not* the
         // same as reflecting the normal, because the cross product is a pseudovector — the two
         // differ by a global sign, and `plane_pair_dir_sign` reads exactly that sign. Deriving
@@ -113,7 +113,7 @@ impl BaseFrame {
             let k = f64::from(frame_sign);
             [a * k, b * k, c * k, d * k]
         });
-        // ★★★ **Take the plane from the record, not from the triangle.**
+        // **Take the plane from the record, not from the triangle.**
         //
         // The derivation above is the two-descriptions problem in miniature: `d` comes out of an
         // f64 dot product, so the plane it names is not quite the one `tri` lies on — measured, for
@@ -121,14 +121,14 @@ impl BaseFrame {
         // pre-motion coefficients (`Model::surface_name`) *are* that plane, exactly, with no
         // triangle in the derivation at all.
         //
-        // ★ **And its direction from σ**, which reads the same record against the witness exactly
+        // **And its direction from σ**, which reads the same record against the witness exactly
         // ([`nacre_judge::predicate::witness_name_sense`] — the fold `name_ints` makes). The record
         // is canonical, so its sign is a normal form, not this face's orientation; σ is what
         // relates the two.
         let exact_coeffs = name.and_then(|name| {
             let c = *name.narrow()?;
             let sigma = nacre_judge::predicate::witness_name_sense(name, tri_pt3, frame_sign)?;
-            // ★ **The same correction, applied to the plane.** When the chain is improper the
+            // **The same correction, applied to the plane.** When the chain is improper the
             // triangle above was reflected in `x`, so everything derived from it lives in the
             // reflected base frame — and the record does not. An unreflected plane and a
             // reflected one are *different planes*, not one plane spelled with the opposite sign,
@@ -194,7 +194,7 @@ pub(crate) struct WorkingPlane {
     /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
     /// two `debug_assert`s that guard the convention run once, at construction.
     ///
-    /// ★★★ **And it is the chart's frame.** The arrangement's cell walk keeps a cell **on the
+    /// **And it is the chart's frame.** The arrangement's cell walk keeps a cell **on the
     /// left of its boundary's travel in the root face's outward frame**, `n_out = frame_sign ·
     /// n_P` — so any rule that turns a 3D fact stated against the stored normal into *which
     /// half-edge's cell* multiplies by this sign exactly once. Two rules do (the ⊥ road's
@@ -209,7 +209,7 @@ pub(crate) struct WorkingPlane {
     /// ([`nacre_judge::predicate::name_stored_ints`]), and their `f64` row where it is exact.
     /// `None` when the root's surface has no name.
     ///
-    /// ★★★ **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
+    /// **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
     /// impl in `tolerant`). The name is derived from the plane's defining points without
     /// rounding, so a predicate over its row answers for the truth. The plane cache's
     /// coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
@@ -240,7 +240,7 @@ impl WorkingPlane {
     /// ([`nacre_judge::plane_hp`]) turned by `frame_sign`: the triangle runs outward
     /// (`n_out = frame_sign · n_P`), so `frame_sign` carries it back to the stored normal.
     ///
-    /// ★ For a class with no world statement this **is** its canonical direction too: such a class
+    /// For a class with no world statement this **is** its canonical direction too: such a class
     /// has no name whose sign could disagree, so the one direction it has — the stored one — is the
     /// one a pierce name's roots are ordered along (`n₁ × n₂`). A named class orders them along its
     /// name instead ([`Self::world_rat`]), which is why [`Self::canon_hp`] is a separate door.
@@ -314,11 +314,11 @@ impl WorkingPlane {
     /// `q`. A signed distance to a plane is affine, so all of `q` on one side puts its whole convex
     /// hull there.
     ///
-    /// ★ **It never escalates**: it reads `nacre_judge::orient3d_filter`, which answers only where
+    /// **It never escalates**: it reads `nacre_judge::orient3d_filter`, which answers only where
     /// its error bound certifies the sign. A missed proof sends the caller back to the work it
     /// hoped to skip; it never changes an answer.
     ///
-    /// ★★ **The side is spelled as [`crate::combinatorics::side_of`] spells it** — the side
+    /// **The side is spelled as [`crate::combinatorics::side_of`] spells it** — the side
     /// `Judge::orient3d` gives a point named by three planes, about this class's witness
     /// triangle. `orient3d_filter(t₀, t₁, t₂, v)` is `det[t₀ − v, t₁ − v, t₂ − v]`; the judge's
     /// sign for the same point is that of `(v − t₂)·((t₀ − t₂) × (t₁ − t₂))`, the same

@@ -20,23 +20,23 @@ impl EdgeDir {
 /// **An edge's direction on plane `p`** — its carrier is `wall` and its sense is `+1` when the edge
 /// runs along `d = n_p × n_wall`, `-1` against it. The one place a direction is made.
 ///
-/// ★ It returns the sense **paired with the carrier it belongs to** ([`EdgeDir`]) rather than a
+/// It returns the sense **paired with the carrier it belongs to** ([`EdgeDir`]) rather than a
 /// bare `i8`, so no caller pairs them by hand. (`EdgeDir::new`
 /// still states a pair directly — that is for fixtures, and it is the one place a wrong pairing is
 /// still spellable.)
 ///
-/// ★★ **Made once.** `order_along` is `sign((V_i − V_j)·d)`, so the direction of travel is either
+/// **Made once.** `order_along` is `sign((V_i − V_j)·d)`, so the direction of travel is either
 /// `−order_along(from, to)` (invert the result) or `order_along(to, from)` (swap the arguments) —
 /// the same value by the antisymmetry of a difference. Two spellings would agree only because two
 /// independent inversions cancel, and a change to `order_along`'s convention would move one and
 /// not the other.
 ///
-/// ★ **The zero policy lives here, and that is not a matter of taste**: both callers answered a
+/// **The zero policy lives here, and that is not a matter of taste**: both callers answered a
 /// coincidence the same way (`CoincidentNodes`). Where two consumers want *different* answers —
 /// the turn's zero, which is a rejection to one and a bucket to the other — the policy stays with
 /// them and only the sign is shared (see [`turn`]).
 ///
-/// ★★ **Both ends arrive as a name *and* a pin, because a cylinder-pinned one needs both.** The
+/// **Both ends arrive as a name *and* a pin, because a cylinder-pinned one needs both.** The
 /// pin says which kind of thing holds the point on `L`; the name says which point. A plane pin
 /// carries its own name in its payload, so for it one argument would do — but
 /// [`EndPin::Cylinder`] has no payload by design ("the name is read from beside it"), and beside it
@@ -49,7 +49,7 @@ pub(crate) fn edge_dir(
     from: (NodeId, EndPin),
     to: (NodeId, EndPin),
 ) -> Result<EdgeDir, BoolError> {
-    // ★★ **`None` is `WitnessNotRational`, not `RingNaming`.** A cylinder-pinned end is answered,
+    // **`None` is `WitnessNotRational`, not `RingNaming`.** A cylinder-pinned end is answered,
     // so what reaches here is [`order_pinned`]'s own `None`: a class with no narrow rational
     // description, a coordinate past `Rat`. The names chain perfectly; the *value* could not be
     // formed. That is the sentence `arc_at` next door uses for the same cause.
@@ -65,7 +65,7 @@ pub(crate) fn edge_dir(
 /// **An edge's direction of travel, read at one of its ends** — and the only way a direction is
 /// made.
 ///
-/// ★★★★ **`node` is not decoration.** A straight edge's tangent is the same at both ends, so
+/// **`node` is not decoration.** A straight edge's tangent is the same at both ends, so
 /// "the edge's direction" and "the direction *at* this end" have always been one thing and no
 /// caller had to say which it meant. An arc's two ends differ — and worse, a direction taken at a
 /// node the edge does not even touch is a perfectly legal call that returns a confident, wrong
@@ -78,7 +78,7 @@ pub(crate) fn edge_dir(
 /// *producer's* invariant, not an input's: the census runs in both profiles, so the debug one is
 /// the instrument.
 ///
-/// ★ **The hoist survives.** `angular_order` builds one direction per outgoing half-edge and sorts
+/// **The hoist survives.** `angular_order` builds one direction per outgoing half-edge and sorts
 /// on those values; building them inside the comparison instead would re-run `order_along` per
 /// comparison (measured on `split_at_crossings`, which asks the same kind of question: 1.5M
 /// `dir_sign` calls where 113k are distinct).
@@ -95,12 +95,12 @@ pub(crate) fn dir_at(
          or the caller paired two edges that do not meet"
     );
     match &e.carrier {
-        // ★ The carried sense first, and only then the endpoints. This used to say the endpoints
+        // The carried sense first, and only then the endpoints. This used to say the endpoints
         // *cannot* answer a cut end — that was true while a pierce point had no order, and
         // [`order_pinned`] has since given it one. What is left is the better reason: the sense is
         // the **splitter's own statement** about a piece it made, taken once for the whole segment
         // and handed to every sub-segment, rather than re-derived per piece from two names.
-        // ★ The coincident-endpoint check `edge_dir` makes is not lost with it: the split refuses
+        // The coincident-endpoint check `edge_dir` makes is not lost with it: the split refuses
         // two crossings at one parameter (`CoincidentNodes`) before any sub-segment is built, which
         // is the only way a carried sense can exist at all.
         Carrier::Plane {
@@ -135,14 +135,14 @@ fn arc_at(
     node: NodeId,
 ) -> Result<EdgeDir, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    // ★★ **Two causes, two names.** `pierce_meet` folds four causes into one `None` (its doc), and
+    // **Two causes, two names.** `pierce_meet` folds four causes into one `None` (its doc), and
     // one of them is a *naming* fact: a three-plane node on an arc means the split shipped the
     // two-names case it exists to refuse. Asking the kind first is what keeps `RingNaming`'s
     // sentence true where it is raised.
     //
-    // ★ The other three do not reach here: they would have stopped the split that built this arc,
+    // The other three do not reach here: they would have stopped the split that built this arc,
     // since it re-solves the same pair of classes for the same cylinder.
-    // ★ A `match` and not a fallback: a third variant must light this up rather than be
+    // A `match` and not a fallback: a third variant must light this up rather than be
     // rejected under a name that is not its own (`winding`'s `coord_key` states the rule).
     match node.kind() {
         NodeKind::Pierce { .. } => {}
@@ -152,7 +152,7 @@ fn arc_at(
         .and_then(PierceMeet::into_exact)
         .ok_or_else(undecided)?;
     let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
-    // The circle's centre: where the axis pierces this plane. ★ The canonical sign the coefficients
+    // The circle's centre: where the axis pierces this plane. The canonical sign the coefficients
     // carry cancels in the parameter (numerator and denominator both flip), so this one does not
     // need the stored-frame turn that `arc_side` does.
     let t = crate::planes::axis_param_of_plane(&coeffs, &a.def).ok_or_else(undecided)?;
@@ -182,7 +182,7 @@ fn arc_at(
 /// direction sign in this file is written in ([`turn`]'s `frame_sign` bridge, the cell labels'
 /// «above»).
 ///
-/// ★★★ [`class_coeffs_rat`] hands back the class's *canonical* name — first nonzero component
+/// [`class_coeffs_rat`] hands back the class's *canonical* name — first nonzero component
 /// positive — which points the **other way** from the plane on half the classes, so a rule spelled
 /// against it reads backwards on exactly those classes. The turn is the truth's
 /// ([`WorkingPlane::stored_world_rat`] — the world name's sense, read off the plane's `sense` and
@@ -200,7 +200,7 @@ pub(crate) fn stored_coeffs_rat(
 /// spelling for every reader that needs the line's direction as a vector rather than as a sign
 /// against a third plane: the quadratic order's axis, an arc's tangency, an arc's side.
 ///
-/// ★★ **Rational, never read off the plane caches.** A component the truth makes exactly `0`
+/// **Rational, never read off the plane caches.** A component the truth makes exactly `0`
 /// stays `0` here; a cross product of the rounded caches can leave it at a few ulps, and a reader
 /// that picks "the first nonzero component" as its axis then compares points that all share that
 /// coordinate — two distinct points read as one. `None` when a class has no world description or
@@ -219,13 +219,13 @@ pub(crate) fn stored_line_dir(
 /// **No point is materialized, and no coordinate is read** — the algebra that makes that true
 /// lives with the atom, [`turn`], and is not repeated here.
 ///
-/// ★ **It is `0` exactly when the two walls name the same plane.** The node is `P ∩ A ∩ B`, and a
+/// **It is `0` exactly when the two walls name the same plane.** The node is `P ∩ A ∩ B`, and a
 /// point exists there only if the three normals are independent — so with two genuinely different
 /// planes the determinant cannot vanish. Two edges through one node whose lines are parallel are
 /// two edges on **one** line, and that is the straight stretch a ring can arrive as (the
 /// arrangement names a point wherever a feature crosses an edge).
 ///
-/// ★★ **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
+/// **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
 /// `angular_order` folds them (`Aliases::union_wall`) and still keeps an honest `UnorderedEdges`
 /// for the pair aliasing did not reach. (The older wording here said "never `0`" — a claim about
 /// the predicate, where the truth is a claim about the two walls.)
@@ -243,7 +243,7 @@ pub(crate) fn turn_at(
     i: usize,
 ) -> Result<i8, BoolError> {
     let n = ring.len();
-    // ★ Both read **at this node** — the one they share. For a straight edge that is today's
+    // Both read **at this node** — the one they share. For a straight edge that is today's
     // answer either way; naming it is what makes an arc's two ends tellable apart.
     let arriving = dir_at(jd, cyls, p, &ring[(i + n - 1) % n], ring[i].node)?;
     let leaving = dir_at(jd, cyls, p, &ring[i], ring[i].node)?;
@@ -255,12 +255,12 @@ pub(crate) fn turn_at(
 
 /// **Do two carriers give one direction on `P`?** — `P ∩ a` and `P ∩ b` are parallel.
 ///
-/// ★ **`parallel`, not `collinear`, and the difference is the caller's.** Two parallel lines are
+/// **`parallel`, not `collinear`, and the difference is the caller's.** Two parallel lines are
 /// the same line only when they share a point; `arrangement`'s wall direction families ask it of
 /// walls that share none — their own comment says so: *"Same family ⇒ the two lines are parallel
 /// and meet in no point."* The premise belongs to whoever has it.
 ///
-/// ★★ **The same primitive answers a different question elsewhere and that is left alone.**
+/// **The same primitive answers a different question elsewhere and that is left alone.**
 /// `plane_pair_dir_sign(p, wall, c) != 0` also spells "does this third plane *cut* the line" — a
 /// fact about whether a **point** can be named on it, not about an edge's direction. Same
 /// arithmetic, different sentence; folding them would put one name on two propositions.
@@ -275,11 +275,11 @@ pub(crate) fn parallel_carriers(
 
 /// **Two directions along one carrier, running opposite ways** — the `π` end of the angular order.
 ///
-/// ★ **It is not "the angle is π"**, and the guard that makes it one stays with the caller:
+/// **It is not "the angle is π"**, and the guard that makes it one stays with the caller:
 /// [`angular_order`] asks this only inside the bucket where the turn already came
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
-/// reach), and those belong in the `0` bucket rather than the `π` one. ★ For two directions at one
+/// reach), and those belong in the `0` bucket rather than the `π` one. For two directions at one
 /// node it needs no guard to be true when it says yes — one carrier through a shared point is one
 /// line or one circle — which is how [`loop_winding`] reads it, through [`one_carrier_pole`]: an
 /// outgoing departure that is the reverse of an arrival on one carrier is an antenna.
@@ -295,7 +295,7 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
                 sense: sb,
             },
         ) => ca == cb && sa != sb,
-        // ★ The two arcs of one circle meeting at one node are tangent by construction, so the
+        // The two arcs of one circle meeting at one node are tangent by construction, so the
         // only question left is which way each travels. **They are at one node by construction**
         // too — a fan is built from a single vertex — which is why nothing here has to compare
         // positions (an earlier attempt used the sign of `s` as a stand-in for "same node", and
@@ -307,7 +307,7 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
         (EdgeDir::Ruling(x), EdgeDir::Ruling(y)) => {
             x.cyl == y.cyl && x.side == y.side && x.up != y.up
         }
-        // ★★ **A line and an arc are never the π pole here, and the reason is upstream**: this is
+        // **A line and an arc are never the π pole here, and the reason is upstream**: this is
         // asked only where the turn already came back `0`, and a `0` turn against an arc means the
         // segment is *tangent* at that node — while the split cuts only at **transversal**
         // crossings. So `false` is not a shrug: it sends the pair to the `0` bucket, where
@@ -330,23 +330,23 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
 ///     ⇒  turn = s_a · s_b · sign(det[n_p, n_a, n_b]) · orient_sign(p)
 /// ```
 ///
-/// where `sign(det[…])` is `plane_pair_dir_sign`, already exact. ★ The derivation is spelled
+/// where `sign(det[…])` is `plane_pair_dir_sign`, already exact. The derivation is spelled
 /// **here and nowhere else**, and this function is the one place the product computes it.
 ///
-/// ★★ **`0` comes back as `0`, on purpose.** [`angular_order`] (through [`departure_turn`])
+/// **`0` comes back as `0`, on purpose.** [`angular_order`] (through [`departure_turn`])
 /// buckets it as the `0`/π pole and only rejects a *pair* of them; the test-only `turn_at` calls it
 /// a [`RejectReason::StraightAngle`]. Deciding here would hand one caller a rule that is not its
 /// own. By the same test, [`edge_dir`]'s zero *does* live in the
 /// atom — both of its callers answer it identically.
 ///
-/// ★★ **What arcs will widen, and what they will not.** A circle's tangent rides no plane, so an
+/// **What arcs will widen, and what they will not.** A circle's tangent rides no plane, so an
 /// arc arrives as a direction this signature cannot spell: what grows is the **input type**, not
 /// the skeleton around it — the identity above becomes a cross product with one quadratic factor,
 /// whose sign closes over `QuadVal::sign` (the tangent `m × (p − o)` is *linear* in the pierce
 /// point, so no biquadratic is needed; two tangents at one vertex would be quadratic, and that is
 /// two circles meeting, already refused as `CylinderPairContact`).
 ///
-/// ★★★ **What catches a mistake here, measured.** Negating this product fails **83** tests — but
+/// **What catches a mistake here, measured.** Negating this product fails **83** tests — but
 /// *not* `arrangement`'s `angular_order_…_ccw` nor `a_reflex_node_turns_against_its_ring`, the two
 /// that look like its unit goldens. Those build their fixture's ring with the same rule they then
 /// read, so a global sign error flips twice and cancels: they pin relative structure, not the
@@ -357,7 +357,7 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
 /// assertion is sensitive to that factor**, which is not the same as "no unit fixture reaches a
 /// reversed face".)
 ///
-/// ★★★ **Three more places read the direction's representation, and they are not this atom.** Each
+/// **Three more places read the direction's representation, and they are not this atom.** Each
 /// is a named function beside this one, so the next widening is a `match` the compiler points at
 /// rather than a list a reader has to trust:
 /// - [`antiparallel`] — the π pole in `angular_order` ("same wall, opposite sign"), which for arcs
@@ -365,7 +365,7 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
 /// - [`parallel_carriers`] — `arrangement::split_at_crossings`' **wall direction families**
 ///   (`Wall.dir`), asked of walls that share no point.
 ///
-/// ★ **All three now answer for arcs, and the arity question is settled where it belonged.** For a
+/// **All three now answer for arcs, and the arity question is settled where it belonged.** For a
 /// straight edge the tangent is the same at both ends, so "the edge's direction" and "the direction
 /// *at* this endpoint" coincide and nothing ever had to tell them apart; an arc's two ends differ.
 /// That is [`dir_at`]'s `node`, not a wider argument list here — the direction arrives already
@@ -388,7 +388,7 @@ pub(crate) fn turn(
                 sense: sb,
             },
         ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
-        // ★★★ **A segment against an arc needs no new primitive, and the algebra says why.**
+        // **A segment against an arc needs no new primitive, and the algebra says why.**
         // A circle bound's plane is ⊥ to the axis, so `n_P ∥ m` — see
         // [`class_carries_circle`] for what actually holds that (the gate, not this module). The
         // arc's tangent is
@@ -411,7 +411,7 @@ pub(crate) fn turn(
         // gate, per face pair, and one valid operand's own faces do not cross —
         // the sketch refuses an arc–arc join, `ArcsMeetAtVertex`.)
         (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
-        // ★★ **A segment against a ruling collapses the same way the arc arm did.** The ruling's
+        // **A segment against a ruling collapses the same way the arc arm did.** The ruling's
         // direction is `±m` and it lies *in* the class (`m · n_P = 0`), so BAC-CAB leaves
         //
         //   (d × m) · n_out = ((n_P × n_ca) × m) · n_out = (n_ca (m·n_P) − n_P (m·n_ca)) · n_out
@@ -445,7 +445,7 @@ pub(crate) fn turn(
 /// `turn(line, ruling)` with the line's sense factored out — the `−sign(m · n_carrier)` the
 /// derivation above collapses to, times the ruling's travel.
 ///
-/// ★ **The overall sign is measured**: negating it turns the through-boss volume
+/// **The overall sign is measured**: negating it turns the through-boss volume
 /// oracles red (all five production fixtures). The BAC-CAB derivation alone would not lock it —
 /// the walk's both-handedness try
 /// absorbs a global flip; the panel population reads it for real.
@@ -463,7 +463,7 @@ fn ruling_line_turn(
             .unwrap_or(true),
         "a ruling direction on a class its axis does not lie in"
     );
-    // ★ The **stored** spelling, like every factor the walk's atoms read (`arc_side`'s
+    // The **stored** spelling, like every factor the walk's atoms read (`arc_side`'s
     // canonical→stored turn is measured-locked): `sense` is made against the stored frame, so
     // the carrier coefficients here must be too — the canonical name opposes it on half the
     // classes.
@@ -485,12 +485,12 @@ fn ruling_line_turn(
 /// `turn(line, arc)` with the line's sense factored out — the `sign(d·(x−c))` above, times the two
 /// frame factors.
 ///
-/// ★★ **It is a `Result`, and that is deliberate.** The first attempt returned `0` both for
+/// **It is a `Result`, and that is deliberate.** The first attempt returned `0` both for
 /// "collinear" and for "the arithmetic ran out", and the callers read `0` as collinear — so a
 /// width failure came back as a *shape* answer and the diagnosis took an extra measurement. The
 /// two are different facts and this says so.
 ///
-/// ★★★ **Which of its factors the corpus actually locks, measured by red probe** — because "the
+/// **Which of its factors the corpus actually locks, measured by red probe** — because "the
 /// suite is green" says nothing about a sign no fixture can see:
 ///
 /// | factor | probe | verdict |
@@ -498,18 +498,18 @@ fn ruling_line_turn(
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
 /// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus
-/// disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ The contour
+/// disagrees, and that class's walk merges four cells into one 8-half-edge orbit. The contour
 /// count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
 /// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
 /// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
 ///
-/// The last two are derived, not guessed (the algebra is above). ★ Both rows read
+/// The last two are derived, not guessed (the algebra is above). Both rows read
 /// «unexercised — `+1`/`true` on every class reached» without a fixture made for them: a face
 /// lies on a seed plane
 /// with its outward along +axis under a translation as ordinary as `t(−4,−4,−2)`, but the
 /// corpus does not contain the population a rule needs until a fixture adds it.
 ///
-/// ★★★ **The `sense` a split carries is locked too.** Flipping the sense a
+/// **The `sense` a split carries is locked too.** Flipping the sense a
 /// split carries onto its sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong
 /// cells, and nothing in the walk sees it — the cell count and the contour count both come out
 /// right. Its first reader is neither `nest_cells`' root choice nor
@@ -517,7 +517,7 @@ fn ruling_line_turn(
 /// because the two 3-cells *swap* labels). It is `emit_faces`, where the ring comes out the exact
 /// reverse, and `bands`' arc fence pins it there through `ClassAudit::outer_rings`.
 ///
-/// ★ The table's first row holds against that lock too: negating the
+/// The table's first row holds against that lock too: negating the
 /// whole result leaves the whole crate green. A global flip really is absorbed.
 /// **At a node where a line and an arc are tangent, do their travel directions agree?** — the
 /// sign of `d · t`: `d` the line's travel direction (`sense` along [`stored_line_dir`] — the
@@ -532,7 +532,7 @@ fn ruling_line_turn(
 /// then which comes first is curvature's answer ([`tangent_codirected_turn`]). `None` is a zero
 /// dot (not tangent after all) or overflow.
 ///
-/// ★ A fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
+/// A fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
 /// root is `Double`; the angular order reads the pair as a tie (`UnorderedEdges`) and the winding
 /// walk as doubling back (`StraightAngle`) because [`antiparallel`] has no line–arc arm — the
 /// structure cannot tell, only the geometry can, and this is where it is asked once.
@@ -719,7 +719,7 @@ fn arc_side(
         ccw,
         ..
     } = arc;
-    // ★★ **Stored-frame normals, not the canonical ones.** `d` is compared against `frame_sign`
+    // **Stored-frame normals, not the canonical ones.** `d` is compared against `frame_sign`
     // below, which speaks the stored frame; `class_coeffs_rat` speaks the canonical one and points
     // the other way on half the classes. See [`stored_coeffs_rat`].
     let d = stored_line_dir(jd, p, carrier).ok_or_else(wide)?;
@@ -763,7 +763,7 @@ fn arc_side(
 /// so they arrive under a single `fp`. Collinear same-direction overlap is resolved earlier
 /// still, by `split_at_crossings`.
 ///
-/// ★ **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more
+/// **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more
 /// planes meet at a point, and that every same-line wall pair meets such a point is not
 /// established — so a `0` turn that survives to here is an honest `UnorderedEdges` reject rather
 /// than an order picked arbitrarily. Measured: it fires nowhere in the suite, and disabling
@@ -774,7 +774,7 @@ pub(crate) fn angular_order(
     w: usize,
     edges: &[EdgeDir],
 ) -> Result<Vec<usize>, BoolError> {
-    // ★ The comparator the winding reads too ([`departure_turn`]), which is what keeps the two
+    // The comparator the winding reads too ([`departure_turn`]), which is what keeps the two
     // from drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π
     // pole.
     let cross = |i: usize, j: usize| departure_turn(jd, w, &edges[i], &edges[j]);
@@ -783,7 +783,7 @@ pub(crate) fn angular_order(
         match cross(0, i)? {
             c if c > 0 => pos.push(i),
             c if c < 0 => neg.push(i),
-            // Collinear with the reference: angle 0 (same ray) or π (opposite ray). ★ A line and
+            // Collinear with the reference: angle 0 (same ray) or π (opposite ray). A line and
             // an arc tangent at this vertex with the arc leaving the other way (a fillet's smooth
             // corner) are π apart too — the structural test cannot see it, the geometric
             // one can ([`tangent_pole`]) — and so are a line and a ruling that are
@@ -792,13 +792,13 @@ pub(crate) fn angular_order(
             _ => zero.push(i),
         }
     }
-    // ★★ **The π pole is a question about the direction's *representation*, not about the turn**
+    // **The π pole is a question about the direction's *representation*, not about the turn**
     // — "same wall class, opposite travel sign", and for arcs "same circle, opposite tangent".
-    // Both live in [`antiparallel`]. ★ Measured: the arc/arc arm never fires here,
+    // Both live in [`antiparallel`]. Measured: the arc/arc arm never fires here,
     // because segments are numbered before arcs and every crossing has one, so `edges[0]` is always
     // a line; the two arcs at a node sit π apart and land in the two *open* buckets instead.
     //
-    // ★★★ **The order below exists only if no two edges share an angle, and that is an
+    // **The order below exists only if no two edges share an angle, and that is an
     // assumption about *upstream*, not about this function.** Two edges leaving one vertex whose
     // turn is zero are on one line — parallel plus a shared point — so their cyclic order has no
     // answer, and `next` is built from exactly that order: a guess there is a wrong face, with
@@ -807,7 +807,7 @@ pub(crate) fn angular_order(
     // Upstream is supposed to make it impossible, in two places, and both are load-bearing:
     // `merge_coincident` folds an edge that was traced twice (its own doc names this bucket as
     // the reason), and `Aliases::union_wall` folds two walls that carry one line. Measured, the
-    // second fires 122 times over the coverage suite and this check never does — but ★ **"measured
+    // second fires 122 times over the coverage suite and this check never does — but **"measured
     // never" is not "cannot"**: `Aliases::record` only folds where four or more planes meet at a
     // point (`s.len() < 4` returns early), and that every same-line wall pair meets such a point
     // is *not* established. So the assumption is checked rather than trusted, and a failure is an

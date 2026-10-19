@@ -1,19 +1,19 @@
 use super::*;
 /// **The per-class stages, in one place** — the walk and the nesting.
 ///
-/// ★★★★ **It exists because the sequence was written twice.** `trace_result_faces`' `arrange` and
+/// **It exists because the sequence was written twice.** `trace_result_faces`' `arrange` and
 /// `frame_audit`'s replay ran the same stages against the same edges, and the second is what makes
 /// a reject debuggable — so a drift between them is, in `decline_to_reject`'s words, *"the worst
 /// possible time to be lying"*. One copy, and the audit is auditing what the boolean ran.
 ///
-/// ★★★ **And it puts every stage behind one `Result`, which is the failure this shape is really
+/// **And it puts every stage behind one `Result`, which is the failure this shape is really
 /// for.** While a stopper occupies the caller's socket, it must run before this `Result` is
 /// unwrapped, so an out-of-coverage class carries the same name out however far the pipeline
 /// got. With the stages held separately that order had to be repeated per stage, and getting it
 /// wrong is silent — the suite stays green and only the reject's *name* changes. One `Result`
 /// leaves one place to put the `?`, and it is after the socket.
 ///
-/// ★ **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
+/// **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
 /// `Result`; this one returns its product outright — so a probe of the socket's interception
 /// cannot be planted from outside by failing this stage.
 pub(super) fn per_class(
@@ -25,7 +25,7 @@ pub(super) fn per_class(
 ) -> Result<Staged, BoolError> {
     let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, cyls, wc, edges))?;
     let nesting = timed!(C_NEST, nest_cells(jd, cyls, wc, &cells, edges))?;
-    // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
+    // **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
     // arrangement covers all of space, so its unbounded cells reach infinity, where neither solid
     // is. That is a fact about arranging the *whole* model — restrict the input to a region of
     // space and the unbounded cells become an artifact of the restriction, which is what the
@@ -38,7 +38,7 @@ pub(super) fn per_class(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
-    // ★ **A sectioned class's rulings close its own section and nothing else.** The gate proved
+    // **A sectioned class's rulings close its own section and nothing else.** The gate proved
     // every face on the class apart from the lateral boxes (`Silence::Sectioned`), so no face this
     // class emits borders one of those rulings — and the lateral chart is not told of them below,
     // so a face that did would have no lateral partner. Checked here, where the stage can refuse.
@@ -56,7 +56,7 @@ pub(super) fn per_class(
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
     // so it is dropped here and **counted** by the chart's own census rather than guessed at.
-    // ★ Walked by index rather than `enumerate`: the half-edge number below is `2·(ns+na) + 2i`,
+    // Walked by index rather than `enumerate`: the half-edge number below is `2·(ns+na) + 2i`,
     // and indexing keeps `i` used in every build (a discarded `enumerate` index is a lint, and an
     // `allow` for it would be a second thing to keep true).
     let ruling_extents: Vec<(usize, RulingExtent)> = (0..edges.rulings.len())
@@ -71,7 +71,7 @@ pub(super) fn per_class(
                 node_axis_param(jd, &r.def, r.end[0])?,
                 node_axis_param(jd, &r.def, r.end[1])?,
             ];
-            // ★★ The chart's vertical answer — see [`RulingExtent::label`] and
+            // The chart's vertical answer — see [`RulingExtent::label`] and
             // [`RulingExtent::outer`], the two cells beside the ruling. Each is an `Option` rather
             // than a `?` deliberately: dropping the piece here would make the recorded population
             // differ between a test build and a release one, and then the census would be measuring
@@ -81,7 +81,7 @@ pub(super) fn per_class(
                 let cell_at = |even: bool| -> Option<Label> {
                     Some(labels[*face_of.get(&(base + 2 * i + usize::from(!even)))?])
                 };
-                // ★ A **tangent** ruling (`side == 0`) has no interior side on this class:
+                // A **tangent** ruling (`side == 0`) has no interior side on this class:
                 // the plane touches the cylinder, and both cells beside the line lie outside its
                 // disk. Its extent carries no label — the chart reads it as a station where the
                 // face ends, not as a wall with a chamber behind it.
@@ -94,12 +94,12 @@ pub(super) fn per_class(
                 let outer = inside.and_then(|inside| cell_at(!inside));
                 #[cfg(test)]
                 {
-                    // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
-                    // ★★ It asks whether a **cell** carries the lateral's solid, not whether the two
+                    // The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
+                    // It asks whether a **cell** carries the lateral's solid, not whether the two
                     // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
-                    // differ always (☑ measured while designing this rung: every piece, without
+                    // differ always (measured while designing this rung: every piece, without
                     // exception) and that says nothing about the side.
-                    // ★ Recorded only where a label was formed, so `None` means one thing — the content
+                    // Recorded only where a label was formed, so `None` means one thing — the content
                     // did not distinguish — and never "there was nothing to check".
                     if let Some(s) = r.merged.first().map(|m| m.0) {
                         let has = |l: Label| {
@@ -110,7 +110,7 @@ pub(super) fn per_class(
                             l[b] || l[b + 1]
                         };
                         if let (Some(i_l), Some(e_l)) = (out, outer) {
-                            // ★ The lateral's material is inside the cylinder for a boss and
+                            // The lateral's material is inside the cylinder for a boss and
                             // **outside** for a bore or a notch (`orient` — re-operated Cut
                             // results are such a population on a through-axis class), so
                             // the content agrees with the derivation when the cell on the material's
@@ -120,7 +120,7 @@ pub(super) fn per_class(
                                 (a, b) if a != b => Some(a == material_inside),
                                 _ => None,
                             };
-                            // ★★★★★ **Asserted where the fact is made**, so the coverage is total and
+                            // **Asserted where the fact is made**, so the coverage is total and
                             // the panic names the offending test — a test reading the ledger afterwards
                             // sees only what ran before it (this ladder measured that hole twice).
                             assert_ne!(
@@ -172,9 +172,9 @@ pub(super) fn per_class(
 
 /// **Does this circle actually meet that ruling?** — asked of the class's own tables.
 ///
-/// ★ This is the check `RejectReason::CircleCrossesRuling` is raised from, so it ships.
+/// This is the check `RejectReason::CircleCrossesRuling` is raised from, so it ships.
 ///
-/// ★★ The comparison is exactly
+/// The comparison is exactly
 /// [`nacre_exact::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
 /// against the one named ruling — so the net asks the predicate the gate asks, and there is
 /// one derivation rather than two. `None` stays "could not be measured", never "no".
@@ -208,12 +208,12 @@ fn circle_crosses_ruling(
             &o,
             &m,
             r2,
-            // ★ **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
+            // **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
             // (`ruling_side_signed`), and the scalar family writes its sides about `n × m`. The
             // restatement is one negation, and it belongs here — at the boundary between the two
             // index spaces — rather than inside a predicate that would then have to guess.
             -ruling.side,
-            // ★★★ **A touch is not what this asks about**. The node no road mints is a
+            // **A touch is not what this asks about**. The node no road mints is a
             // **crossing**; an arc tangent to a ruling divides nothing, which is the same sentence
             // as for a tangency at a vertex. Measured: a slab wall at `x = ±12` puts a
             // `d 30` cylinder's rulings exactly on a `d 18` tool's circle, and the boolean that
@@ -221,7 +221,7 @@ fn circle_crosses_ruling(
             false,
         ))
     };
-    // ★★★★★ **The question is about the arc, not the circle**. A contribution states the
+    // **The question is about the arc, not the circle**. A contribution states the
     // angular extent its face covers, and *that* is the edge — the rest of the circle is a
     // continuation no face uses. Asking the whole circle refuses a plate whose corner
     // fillets never come near the drill's rulings.
@@ -338,14 +338,14 @@ impl<'a> ClassEdges<'a> {
         aliases: &Aliases,
     ) -> Result<Self, BoolError> {
         use std::borrow::Cow;
-        // ★★★★★ **A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's)
+        // **A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's)
         // at once, and that is not a refusal**. What would be unarrangeable is the two
         // **meeting**: neither split cuts the other's kind — [`split_circles`] cuts circles
         // against segments, [`split_rulings`] cuts rulings against segments — so a crossing they
         // both walked past would be a node no road ever mints, and the point itself is
         // `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
         //
-        // ★★★ **That population cannot reach here, by two layers.** A circle only becomes an edge
+        // **That population cannot reach here, by two layers.** A circle only becomes an edge
         // *whole* (a partial trace forces its own cut, and `PartialCircleUncut` names the
         // alternative) and a ruling is a segment of a **face**, so two such edges meeting means
         // two lateral **faces** share a point — exactly what [`crate::planes::lateral_faces_clear`]
@@ -358,19 +358,19 @@ impl<'a> ClassEdges<'a> {
         // circles in one sketch do make one body with intersecting cylinders — with **parallel**
         // axes, which never put a circle and a ruling on one class.)
         //
-        // ★★★ **So the check below is a net over an argument, not a filter over a population**,
+        // **So the check below is a net over an argument, not a filter over a population**,
         // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair
         // refusal opens, this population becomes real, and the obligation to carry a shipped check
         // then is written at that refusal, where it would be read.
         //
-        // ★ **The question is asked of the arc a contribution states**, not of the whole circle —
+        // **The question is asked of the arc a contribution states**, not of the whole circle —
         // which is not an edge of any face when the face uses a quarter of it, and reading it that
         // way refuses a plate whose corner fillets never come near a crosswise drill. With the
         // arc's reading the argument holds: an arc reaching a ruling is inside the other
         // cylinder's own reach (a ruling sits at `√(r² − h²) < r` from its axis), so the pair rule
         // speaks first.
         //
-        // ★★ **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
+        // **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
         // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
         // class's edge is some face's boundary**, so two of them from different cylinders meeting
         // puts two lateral faces on one point. Only this pair carries a check, because only this
@@ -409,7 +409,7 @@ impl<'a> ClassEdges<'a> {
         let (segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
             match split_circles(jd, cyls, wc, segs, circles, aliases)? {
                 Some((s, c, a, r)) => {
-                    // ★ The names below rest on this: `split_circles` answers `Some` only when some
+                    // The names below rest on this: `split_circles` answers `Some` only when some
                     // circle collected a crossing, and a crossing yields at least one arc (a tangency
                     // is skipped before it is collected). So "was split" and "has arcs" are one fact.
                     debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
@@ -471,12 +471,12 @@ impl<'a> ClassEdges<'a> {
 
     /// **The one place a `RingEdge` is made from a half-edge.**
     ///
-    /// ★★★★ **One spelling, so there is nothing to drift.** A second one that passes
+    /// **One spelling, so there is nothing to drift.** A second one that passes
     /// `Carrier::plane(wall)` — that is, `sense: None` — drops the sense a split carries onto its
     /// sub-segments, the one fact the endpoints cannot supply.
     pub(super) fn edge_at(&self, he: usize) -> combinatorics::RingEdge {
         let carrier = match self.kind(he) {
-            // ★ `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
+            // `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
             // travels that way and its twin the other. The convention is stated once, at the
             // split; this is the only place it is read.
             HalfEdgeKind::Arc(i) => {
@@ -491,7 +491,7 @@ impl<'a> ClassEdges<'a> {
                 wall: self.segs[i].wall,
                 sense: self.segs[i].sense.map(|s| if he % 2 == 0 { s } else { -s }),
             },
-            // ★ `MergedRuling::end` runs along `+m`, so the even half-edge travels up and its
+            // `MergedRuling::end` runs along `+m`, so the even half-edge travels up and its
             // twin down — the straight reading of the arc convention above.
             HalfEdgeKind::Ruling(i) => {
                 let r = &self.rulings[i];
@@ -509,7 +509,7 @@ impl<'a> ClassEdges<'a> {
         };
         // The endpoints as handles on this edge's line, carried by the producer. Not recovered from
         // the names: a canonical name need not mention `wc` or the wall (see
-        // `combinatorics::RingEdge`). ★ An arc's ends are pierce points by construction — and a
+        // `combinatorics::RingEdge`). An arc's ends are pierce points by construction — and a
         // ruling's too — which is what `EndPin::Cylinder` says.
         let (from_h, to_h) = match self.kind(he) {
             HalfEdgeKind::Seg(i) => (self.segs[i].end_h[he % 2], self.segs[i].end_h[1 - he % 2]),

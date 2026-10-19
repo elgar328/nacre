@@ -47,7 +47,7 @@ fn rounded_plate_volume() -> f64 {
     (90.0 * 50.0 - 4.0 * (25.0 - pi * 25.0 / 4.0)) * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0
 }
 
-/// ★ **A fully rounded plate enters a boolean**, in every operation and either operand
+/// **A fully rounded plate enters a boolean**, in every operation and either operand
 /// order. Its cap ring has no three-plane corner at all, so an arm that asks for one against a
 /// bore's disk finds no witness and refuses; the engine asks for the witnesses the ring actually
 /// has. The partner stands on the plate's top face and overlaps it nowhere, so every
@@ -98,12 +98,12 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
     }
 }
 
-/// ★ **The user's script fuses**: the rounded, bored plate and two stepped ribs standing
+/// **The user's script fuses**: the rounded, bored plate and two stepped ribs standing
 /// on it. This is the model that reported the wall (a `witness_not_rational` on the very first
 /// fuse, with the cylinder that comes later having nothing to do with it). The ribs stand on the
 /// plate and overlap nothing, so the volume is the sum of the parts.
 ///
-/// ★ The `cut` that follows in the script is **not** here: it meets the next wall, a class that
+/// The `cut` that follows in the script is **not** here: it meets the next wall, a class that
 /// carries a circle and rulings at once — measured to be the plate's own side plane `x = 45`,
 /// tangent to its corner fillets and crossed by the cylinder. The census row `roundplate user
 /// script` holds that hand-off by name.
@@ -130,13 +130,13 @@ fn the_users_rib_plate_fuses() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ **The witnesses a ring offers are a fact about the ring, not about its bores.**
+/// **The witnesses a ring offers are a fact about the ring, not about its bores.**
 ///
 /// The supply is read from the corners' own names and solves, so under a rigid motion the rounded
 /// plate must fare exactly as it did — and, more to the point, **exactly as the same plate without
 /// bores does**: the two sets of refusals are equal.
 ///
-/// ★★ **Both sets are empty.** Every ray from a *filleted* outline's three-plane corners grazes
+/// **Both sets are empty.** Every ray from a *filleted* outline's three-plane corners grazes
 /// under **six** of the group's rotations, with and without bores alike; giving a component the
 /// points its **edges** name (not only its corners) decides those depths, and all six build.
 /// **They are checked, not merely accepted** —
@@ -199,7 +199,7 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
             "and the wall that remains is the filleted outline's own, not this cell's: {a}"
         );
     }
-    // ★ The population, held as a number so a change in it is loud: **none**.
+    // The population, held as a number so a change in it is loud: **none**.
     assert_eq!(bored.len(), 0, "{bored:?}");
 }
 
@@ -219,7 +219,7 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (abc, tool)
 }
 
-/// ★★★★★ **The user's script builds, `cut` and all.**
+/// **The user's script builds, `cut` and all.**
 ///
 /// The rounded, bored plate with both ribs fused on, and the cylinder that bores across them. It
 /// rests on the footprint reader reading a **disk** — the tool's own cap,
@@ -229,7 +229,7 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 ///
 /// The volume is the oracle: the fuse's `100695.2213` less the two rib bores `2·π·10²·11`.
 ///
-/// ★ **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing
+/// **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing
 /// unless the instrument looked: this asserts it measured pairs, failed to measure none, and found
 /// no circle sitting inside a ruling strip — the shape the walk has never been handed.
 #[test]
@@ -269,7 +269,7 @@ fn the_users_script_builds() {
     }
 }
 
-/// ★★★★ **And it builds the same body wherever it stands.**
+/// **And it builds the same body wherever it stands.**
 ///
 /// Two newly-admitted paths meet in this model (the mixed class, arranged for real, and the
 /// disk read from its own plane's exact statement), and a newly-admitted path is exactly

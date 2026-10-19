@@ -40,7 +40,7 @@ pub(crate) use topology::*;
 /// may share a handle, two faces in different groups never do. Every question asked here is asked
 /// of `LocalFace`/`NodeId`/`jd` alone — none of it reads the arena — which is what lets it run first.
 ///
-/// ★★ **The group, not the component, is the right unit.** A cavity that touches its host's outer
+/// **The group, not the component, is the right unit.** A cavity that touches its host's outer
 /// shell is one solid with a pinch, and a pinch is counted on *handles* ([`check_result_topology`],
 /// `validate`): split the handles there and the defect stops being visible while the model keeps
 /// its zero-thickness material. Grouping keeps a cavity with its host, so that case still reaches

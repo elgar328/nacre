@@ -67,7 +67,7 @@ fn oracle_biquad(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Orient {
 
 fn bigfloat_sign(val: &BigFloat) -> Orient {
     const P: usize = 512;
-    // ★ Never compare against a `from_f64(0.0)` zero: astro-float's comparison against zero
+    // Never compare against a `from_f64(0.0)` zero: astro-float's comparison against zero
     // is a known upstream issue (hit in this project before; measured here again — 0.414
     // answered "< 0" against a from_f64 zero while `sign()` and a nonzero-eps comparison
     // stayed consistent). The sign is read from `sign()` directly.
@@ -268,7 +268,7 @@ fn the_oracle_actually_resolves_the_adversarial_gap() {
 
 #[test]
 fn arithmetic_agrees_with_the_oracle() {
-    // ★ The differential runs against the **inputs' realizations** — the first spelling fed
+    // The differential runs against the **inputs' realizations** — the first spelling fed
     // the result's own coefficients back to the oracle, which verifies `sign()` but lets a
     // wrong `checked_mul` coefficient pass unseen (the shared-derivation trap): the oracle
     // must derive the product from x and y, never from the thing under test.
@@ -775,7 +775,7 @@ fn parallel_axes_clear_compares_against_the_radius_sum() {
     );
 }
 
-/// ★ **Radii with no rational root** — the population the squared truth opens. `r² = 2` beside
+/// **Radii with no rational root** — the population the squared truth opens. `r² = 2` beside
 /// `r² = 3`: `√2 + √3 ≈ 3.146`, so parallel axes `3` apart overlap and `4` apart clear; and the
 /// same pair nests when the axes stand closer than `√3 − √2 ≈ 0.318`. An `r: Rat` door cannot
 /// state either cylinder.
@@ -816,7 +816,7 @@ fn non_square_radii_are_compared_without_a_root_being_formed() {
     );
 }
 
-/// ★★ **Axes that are not parallel are the case a parallel-only check refuses outright.** The
+/// **Axes that are not parallel are the case a parallel-only check refuses outright.** The
 /// distance between two skew lines is their common perpendicular, and the same comparison
 /// against `r₁ + r₂` decides the pair — a drill crossing a bore six apart with radii summing to
 /// four does not touch it, whatever the angle between them.
@@ -892,7 +892,7 @@ fn a_chord_meets_though_both_ends_are_outside() {
     assert!(seg_meets([-10, 1, 0], [10, 1, 0], 3));
 }
 
-/// ★★ **The case the whole check turns on.** The line passes within `r`, but the segment stops
+/// **The case the whole check turns on.** The line passes within `r`, but the segment stops
 /// before it gets there — the perpendicular foot lies outside `[0,1]`. Ten edges of today's
 /// corpus are exactly this shape (a boss standing far away whose wall plane, extended, crosses a
 /// bore), and answering "meets" here would close the family opened for them.
@@ -932,7 +932,7 @@ fn the_answer_does_not_depend_on_scale() {
     assert_eq!(plain, scaled);
 }
 
-/// ★ **The negative control.** The same segment, the same radius — move the axis and the answer
+/// **The negative control.** The same segment, the same radius — move the axis and the answer
 /// must change. Without it every assertion above could be passing for a reason that has nothing
 /// to do with the cylinder.
 #[test]
@@ -957,14 +957,14 @@ fn moving_the_axis_moves_the_answer() {
 
 // ---- One ruler for two kinds of point ----
 //
-// ★★ An arrangement that carries arcs holds vertices of two shapes: a three-plane node, whose
+// An arrangement that carries arcs holds vertices of two shapes: a three-plane node, whose
 // coordinate is rational, and a plane·plane·cylinder node, whose coordinate is `a + b√c`. The
 // winding is read at the ring's lexicographically least node, so the two must be comparable —
 // and the comparison must never decline, because a "cannot order" would leave a valid solid
 // unbuilt for a reason about arithmetic rather than about shape.
 
 /// The unit z-cylinder cut by `x = 0` gives `(0, ±1, z)` — **rational** roots, so the same two
-/// points can be named the other way too, by three planes. ★ That is the only place the
+/// points can be named the other way too, by three planes. That is the only place the
 /// `a + b√c` road and the three-plane road answer about the *same value*, which makes it the one
 /// independent oracle
 /// available: everything else about `a + b√c` has no three-plane spelling at all.
@@ -978,7 +978,7 @@ fn the_two_roads_agree_where_a_crossing_is_rational() {
     else {
         panic!("x = 0 crosses the unit cylinder twice");
     };
-    // ★ Which root is which is **derived, not read back**: `plane_plane_cylinder` orders along
+    // Which root is which is **derived, not read back**: `plane_plane_cylinder` orders along
     // `d = n_cut × n_lid = (1,0,0) × (0,0,1) = (0,-1,0)`, so ascending `s` runs toward −y and
     // `s[0]` is the `+y` end.
     for (sv, want_y) in s.iter().zip([1.0, -1.0]) {
@@ -1004,7 +1004,7 @@ fn the_two_roads_agree_where_a_crossing_is_rational() {
             );
         }
     }
-    // ★★ **Coincidence alone cannot see a reversed subtraction** — `Zero` is symmetric. So the
+    // **Coincidence alone cannot see a reversed subtraction** — `Zero` is symmetric. So the
     // same cross-road fixture also asserts a *direction*: the `y = +1` three-plane point against
     // the `y = −1` root, where the answer has a sign to get wrong.
     let top = crate::three_planes_big([
@@ -1038,7 +1038,7 @@ fn a_rational_point_is_placed_between_two_irrational_ones() {
         &crate::PlaneName::Narrow(plane(0, 1, 0, 0)), // y = 0
     ])
     .expect("independent");
-    // ★ Which root is which is **derived from the two normals**, not read back: the roots ascend
+    // Which root is which is **derived from the two normals**, not read back: the roots ascend
     // along `d = n_cut × n_lid = (2,0,0) × (0,0,1) = (0,−2,0)`, so `s[0]` is the `+√3/2` end.
     // Hence `y`: `s[1] = −√3/2  <  mid = 0  <  s[0] = +√3/2`.
     assert_eq!(
@@ -1090,7 +1090,7 @@ fn two_points_from_different_cuts_order_on_the_second_storey() {
         s_third[1].c(),
         "the fixture must really reach the second storey"
     );
-    // ★ Both lines order toward −y (`d = (b,0,0) × (0,0,1) = (0,−b,0)`), so `s[0]` is the upper
+    // Both lines order toward −y (`d = (b,0,0) × (0,0,1) = (0,−b,0)`), so `s[0]` is the upper
     // root. √8/3 > √3/2 because 8/9 > 3/4 — derived from the radii, not read back.
     assert_eq!(
         cmp_coord_branch((&l_third, &s_third[0]), (&l_half, &s_half[0]), 1),
@@ -1103,7 +1103,7 @@ fn two_points_from_different_cuts_order_on_the_second_storey() {
     );
 }
 
-/// ★ **A point too wide for `Rat` still answers.** Three planes whose meet needs a numerator past
+/// **A point too wide for `Rat` still answers.** Three planes whose meet needs a numerator past
 /// `i128` give a [`MeetPoint::Wide`]; the road that narrows to `Rat` would have declined here, and
 /// declining is what this whole design exists to avoid.
 #[test]
@@ -1177,7 +1177,7 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
     );
 }
 
-/// ★★★★★ **The footprint predicates asked of a branch point — the same questions, a wider
+/// **The footprint predicates asked of a branch point — the same questions, a wider
 /// vocabulary for the point.**
 ///
 /// The gate's clearance test walks a face's corners and asks each one two things: which side of a
@@ -1222,7 +1222,7 @@ fn the_branch_footprint_predicates_include_the_rational_ones() {
             orients.push(got);
         }
     }
-    // ★ A sweep that only ever produced one answer would agree with anything.
+    // A sweep that only ever produced one answer would agree with anything.
     for want in [
         crate::StripSide::Inside,
         crate::StripSide::Plus,
@@ -1238,7 +1238,7 @@ fn the_branch_footprint_predicates_include_the_rational_ones() {
     }
 }
 
-/// ★★★★ **And on a point that is genuinely irrational** — where the rational spelling has nothing
+/// **And on a point that is genuinely irrational** — where the rational spelling has nothing
 /// to say at all.
 ///
 /// Cylinder `A` (`z` axis, radius 1) cut by `y = 1/2` gives the two branch points
@@ -1305,11 +1305,11 @@ fn a_gap_beyond_two_roots() {
     assert_eq!(exceeds_root_sum(ri(1), ri(3), ri(0)), Some(false));
     assert_eq!(exceeds_root_sum(ri(0), ri(0), ri(0)), Some(false));
     assert_eq!(exceeds_root_sum(ri(1), ri(0), ri(0)), Some(true));
-    // ★ **Exactly on the boundary is not beyond it** — a touch is not a clearance. `4 = √4 + √4`.
+    // **Exactly on the boundary is not beyond it** — a touch is not a clearance. `4 = √4 + √4`.
     assert_eq!(exceeds_root_sum(ri(4), ri(4), ri(4)), Some(false));
     // A negative gap never clears, whatever the roots.
     assert_eq!(exceeds_root_sum(ri(-1), ri(0), ri(0)), Some(false));
-    // ★ The two calls the cylinder pair's own shape makes, and they are not the same door: a fillet whose
+    // The two calls the cylinder pair's own shape makes, and they are not the same door: a fillet whose
     // reach is `5 + √25` against a drill's `0 ± √(49/4)`. One way round the gap is `5` against
     // the drill's root alone (the fillet's near end carries none) — one radical; the other way
     // it is `−5` against both — two, and negative, so it never had a chance.

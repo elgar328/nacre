@@ -50,7 +50,7 @@ mod strip {
         assert_eq!(side(&wall(10), &at(12, 10, 0), 8), StripSide::Plus);
     }
 
-    /// ★ **The negative control.** The same point, the same plane — move the axis under it
+    /// **The negative control.** The same point, the same plane — move the axis under it
     /// and the answer must change. Without this, every assertion above could be passing for
     /// a reason that has nothing to do with the cylinder.
     #[test]
@@ -101,7 +101,7 @@ mod strip {
         assert!(!point_on_plane_exact(&wall(12), &off));
     }
 
-    /// ★★ **The one case the `U = 0` early answer exists for, and the only one that measures
+    /// **The one case the `U = 0` early answer exists for, and the only one that measures
     /// it.** On a plane that clears the axis the strip is *empty*, so `U² > (negative)` holds
     /// even at `U = 0` — and a "which side" read off a zero would **invent** one. Removing the
     /// early answer makes this say `Minus` for a point that has no side at all; every other
@@ -128,7 +128,7 @@ mod strip {
         assert_eq!(plain, scaled);
     }
 
-    /// ★ **A point too wide for `Rat` gets the same answer.** This is why the predicate takes
+    /// **A point too wide for `Rat` gets the same answer.** This is why the predicate takes
     /// a `MeetPoint`: a meet that overflows `Rat` is an ordinary point of the geometry, and a
     /// gate that declined it would put a width limit inside a refusal that claims to be about
     /// shape.
@@ -169,7 +169,7 @@ mod axis {
         assert_eq!(side(&at(8, 10, 0), Rat::from_int(5)), Orient::Negative);
     }
 
-    /// ★★ **The `Zero` this predicate exists to distinguish.** A face resting exactly on a
+    /// **The `Zero` this predicate exists to distinguish.** A face resting exactly on a
     /// band's cap plane is what the footprint reading calls *clear* — the uniform-slab theorem
     /// speaks of the **open** slab. A predicate that folded this into one of the sides would
     /// decide that question here, out of sight of the rule that owns it.
@@ -188,7 +188,7 @@ mod axis {
         assert_eq!(side(&at(8, 10, 4), t), Orient::Negative);
     }
 
-    /// ★ **The direction's scale is part of the parameter's meaning, and the predicate honours
+    /// **The direction's scale is part of the parameter's meaning, and the predicate honours
     /// it.** `axis(t) = o + t·m` with the *raw* `m`, so stretching `m` sevenfold divides every
     /// parameter by seven — and the same plane keeps the same answer.
     #[test]
@@ -199,7 +199,7 @@ mod axis {
         let stretched = point_axis_side(&p, &o, &r3([0, 0, 7]), Rat::from_int(1));
         assert_eq!(plain, stretched, "both name the plane z = 6");
         assert_eq!(plain, Orient::Positive);
-        // ★ And reading the stretched axis on the *unstretched* scale gets it wrong — which is
+        // And reading the stretched axis on the *unstretched* scale gets it wrong — which is
         // what proves the scale is doing work here rather than cancelling out.
         assert_eq!(
             point_axis_side(&p, &o, &r3([0, 0, 7]), Rat::from_int(7)),
@@ -208,7 +208,7 @@ mod axis {
         );
     }
 
-    /// ★ **The negative control.** The same point and the same `t` — move the origin and the
+    /// **The negative control.** The same point and the same `t` — move the origin and the
     /// answer must change, or every assertion above could be passing for some other reason.
     #[test]
     fn moving_the_origin_moves_the_answer() {
@@ -222,7 +222,7 @@ mod axis {
         );
     }
 
-    /// ★★ **A negative parameter is ordinary, and the sign rides in the numerator.** The
+    /// **A negative parameter is ordinary, and the sign rides in the numerator.** The
     /// derivation clears `dp·d_o·d_m²·td` as a *positive* factor; `Rat` guarantees that by
     /// normalising a negative denominator into the numerator (`Rat::new(11, -2)` is `-11/2`),
     /// and `axis_param_of_plane` builds parameters by inverting a ratio whose numerator may

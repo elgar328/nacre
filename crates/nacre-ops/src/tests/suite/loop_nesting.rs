@@ -128,7 +128,7 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
     }
 }
 
-/// ★★ **A ring pinched at its extreme node winds by its outermost passage.** Two rings on the plane
+/// **A ring pinched at its extreme node winds by its outermost passage.** Two rings on the plane
 /// `z = 1`, each passing `P = (2, 2)` — their lexicographically smallest point, no arc anywhere —
 /// twice, built straight from names so the shape is exactly this:
 ///
@@ -261,7 +261,7 @@ fn a_loop_passes_twice(m: &Model, solid: Handle<Solid>, p: [f64; 3]) -> bool {
     })
 }
 
-/// ★★★★★ **A plate pinched where a hole meets a boss builds, and its top meshes.** A `6 × 6 × 1`
+/// **A plate pinched where a hole meets a boss builds, and its top meshes.** A `6 × 6 × 1`
 /// plate, a triangular hole `(2,2) (4,3) (4,4)` through it, and a triangular boss of height 1 on
 /// its top with a corner at `(2, 2)` too. The arrangement names `(2, 2, 1)` once, and the top
 /// face's boundary passes it twice — with the boss inside the plate, one hole ring around both
@@ -316,7 +316,7 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
     }
 }
 
-/// ★★★ **A pinched body is an operand like any other.** The plate with a boss corner on its edge
+/// **A pinched body is an operand like any other.** The plate with a boss corner on its edge
 /// (`P1`: the top face's one ring passes `(4, 0, 1)` twice) and the same plate with a bore through
 /// it (`P3`, so a circle's chord stations share the top face's line with the pinch), each against
 /// boxes placed where the pinch matters: far from it, around it, with a wall `x = 4` through it,
@@ -328,7 +328,7 @@ fn a_plate_pinched_where_a_hole_meets_a_boss_meshes() {
 /// written by hand from `A`, `B` and `A ∩ B` (`Fuse = A + B − I`, `Common = I`, `A − B = A − I`,
 /// `B − A = B − I`).
 ///
-/// ★ Every line through the pinch is a class here — the boss's walls `x = 4` and `x + y = 4` and
+/// Every line through the pinch is a class here — the boss's walls `x = 4` and `x + y = 4` and
 /// the plate's `y = 0` — and on each the two passes of the ring leave one name twice at one
 /// station (a run's end and a touch, or two runs meeting end to start). That is the reading
 /// [`crate::arrangement`]'s line sweep exists for.
@@ -528,13 +528,13 @@ fn a_pinched_body_is_an_operand_like_any_other() {
     }
 }
 
-/// ★★ **A face pinched at its lowest point meshes on a mirrored chart.** A triangular plate
+/// **A face pinched at its lowest point meshes on a mirrored chart.** A triangular plate
 /// `(0,0) (4,4) (−2,4)` over `z ∈ [0, 1]` with a triangular boss `(0,0) (1,2) (−0.5,2)` under it
 /// over `z ∈ [−1, 0]`, sharing the plate's corner: the plate's underside is the triangle less the
 /// boss's footprint, so its outer ring passes `(0, 0, 0)` twice, and that corner is the ring's
 /// lowest point. The underside faces `−z`, so its loop is clockwise in the chart the mesher
 /// projects it to and the chart must swap its axes — a decision `ring_orientation` makes at that
-/// very point. ★ Which pass comes first is not this test's to vary: the arrangement starts this
+/// very point. Which pass comes first is not this test's to vary: the arrangement starts this
 /// loop at the pinched corner with the reflex pass first (four plate and boss shapes, measured), so
 /// a reading of the first pass alone would mesh it too. That the answer does not depend on the
 /// order is held where the rings are built by hand
@@ -557,7 +557,7 @@ fn a_face_pinched_at_its_lowest_point_meshes_on_a_mirrored_chart() {
     mesh_covers_faces("triangular plate pinched at its corner", &m, &out);
 }
 
-/// ★ **An antenna at the extreme node cancels — its tip or its base.** Same plane table as
+/// **An antenna at the extreme node cancels — its tip or its base.** Same plane table as
 /// [`a_ring_pinched_at_its_extreme_node_winds_by_its_outermost_passage`]: a clockwise triangle
 /// `P (4,4) (4,3)` with an antenna out of `P` to `(4,1)` and back — the antenna's two departures
 /// at `P` come on different passages (out on one, back on the next), and once they cancel the
@@ -683,7 +683,7 @@ fn a_reflex_node_turns_against_its_ring() {
         1
     );
 
-    // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
+    // The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
     // Start it at the reflex node and a `turn_at(ring[0])` implementation reads the reflex
     // sign — the exact fault `outer_tri` shipped. Measured: without this rotation, such an
     // implementation passes every assertion above.
@@ -889,7 +889,7 @@ fn node_at(planes: &[WorkingPlane], ring: &Ring, x: f64, y: f64) -> [usize; 3] {
     ring[i]
 }
 
-/// ★ **A ray that grazes a corner is still a ray** — the four ways a ring can meet the ray's
+/// **A ray that grazes a corner is still a ray** — the four ways a ring can meet the ray's
 /// line, each with an answer known by hand.
 ///
 /// A ring node *on* the line makes the parity ambiguous; throwing such a candidate away, and
@@ -940,7 +940,7 @@ fn a_ray_that_grazes_a_corner_still_answers() {
     assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
     assert!(rays.iter().all(|&x| x), "and unanimous — {rays:?}");
 
-    // ★ Negative control, and the touch rule's own lock: from the outline's `(0,10)` the
+    // Negative control, and the touch rule's own lock: from the outline's `(0,10)` the
     // `y=10` line grazes the pocket's `(20,10)→(30,10)` edge, whose flanks `(30,20)` and
     // `(20,20)` are on the *same* side. Nothing crossed, so `(0,10)` is outside the pocket —
     // and counting that touch as a crossing would make this ray disagree with the `x=0` one.

@@ -45,7 +45,7 @@ fn step_of(m: &Model, s: Handle<Solid>) -> String {
     nacre_step::to_step_solids(m, &[s], crate::STAMP).expect("export")
 }
 
-/// ★★ **A face, an edge, a bound or a void written the wrong way round reads as faulty**, on a
+/// **A face, an edge, a bound or a void written the wrong way round reads as faulty**, on a
 /// curved shape too. OCCT's STEP read would turn each of them the right way round and score it
 /// valid with the right volume (a cube with a face turned over still measures 1); the helper
 /// turns that repair off, and the oracle refuses what `checkshape` then finds. The control is the

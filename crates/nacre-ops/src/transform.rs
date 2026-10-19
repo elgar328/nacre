@@ -74,14 +74,14 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// rather than abort ("honest-reject > silent-wrong"; `assemble_fuse_cut` takes the same line at
 /// its own naming failure), so the three entry points check first and reject.
 ///
-/// ★ **Every definition is checked** — the definition is
+/// **Every definition is checked** — the definition is
 /// the vertex's identity, so every def must remap. The gate is expected to fire **zero** times
 /// (every producer writes definitions from its own face surfaces — the coverage gate measures
 /// 100%), and the suite staying green is that evidence: a firing here is a new rejection, which
 /// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
 /// actually bites.
 ///
-/// ★★ **That expectation is enforced where definitions are made.** The assembly names a result
+/// **That expectation is enforced where definitions are made.** The assembly names a result
 /// vertex by the canonical triple of its incident faces' planes — not the arrangement's, which
 /// can include a plane the result keeps no face on — and refuses, in release builds too, a result
 /// whose definitions still name an absent surface (`VertexNamesAbsentSurface`). A solid that could
@@ -179,7 +179,7 @@ fn chain_motion(
     motion: &Xform<'_>,
     carry: Carry,
 ) -> Option<Handle<MotionNode>> {
-    // ★ **Record what the statements did not absorb — and everything once a history exists.**
+    // **Record what the statements did not absorb — and everything once a history exists.**
     // One decision, made per solid by [`carry_of`], answers for the whole motion, turn and
     // translation together; this function keeps no table of its own.
     let record = parent.is_some() || carry == Carry::None;
@@ -225,7 +225,7 @@ fn chain_motion(
 /// **Whether a solid carries a motion into its statements or records it** — the whole motion,
 /// one way or the other.
 ///
-/// ★ Two states, so no face ever holds part of a motion in its statement and the rest in a node
+/// Two states, so no face ever holds part of a motion in its statement and the rest in a node
 /// (a turn carried with its translation recorded would describe the datum as it was before a part
 /// the statements already absorbed). A solid can still mix faces: a face with a history records
 /// whatever `Full` says (the exception lapses — [`chain_motion`]) while a fresh face beside it
@@ -261,7 +261,7 @@ enum Carry {
 /// statement needed no new spelling.)
 fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
     let src = model.solid(solid);
-    // ★★★★★ **An exhaustive `match`, deliberately.** Adding `PlanePoints::Through` once produced
+    // **An exhaustive `match`, deliberately.** Adding `PlanePoints::Through` once produced
     // exactly two non-exhaustive-match errors and **not** one here, when this was a `let`-`else`
     // — a fallback arm would have answered for geometry it had never seen. Spelled as a match,
     // the next variant (M6's) is a compile error at exactly this decision.
@@ -578,7 +578,7 @@ fn transform_solid(
     let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>> =
         HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
-    // ★ Set when the surface the model handed back points the other way from the one built here.
+    // Set when the surface the model handed back points the other way from the one built here.
     // A copied face keeps its `Orientation` because its surface moved with it — but a *shared*
     // surface did not, so the same outward direction has to be spelled the other way. This is a
     // different field from the mirror's rewind below, which turns loop *winding*; the two do not
@@ -593,7 +593,7 @@ fn transform_solid(
             .surface(model.surface_cache(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let src_truth = model.surface(s).clone();
-        // ★ **A motion that fixes this plane restates nothing — the source statement already
+        // **A motion that fixes this plane restates nothing — the source statement already
         // states the image.** The per-plane sibling of `carry_of`'s whole-solid
         // decision: a rigid motion mapping this plane onto itself *as a set* (axis ∥
         // normal, in-plane translation — `Isometry::fixes_plane`, exact) leaves the same
@@ -633,14 +633,14 @@ fn transform_solid(
             Xform::Rigid(_) => sense,
             Xform::Mirror { .. } => sense.flipped(),
         };
-        // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
+        // **Only the points move.** The image's canonical name is derived from them by
         // `Model::push_plane`, so there is no second description to keep in step.
         //
         // A recorded node states its plane **before** the motion, and the image's base is the
         // source's base — `moved_surface_motion` chains from the source's own leaf for the same
         // reason — so the triple is inherited verbatim. Otherwise the motion moves the points in
         // the world; the transport is the very function `carry_of` asked, so it cannot fail here.
-        // ★★ A `Through` plane's statement is *handles*, and handles do not move. Its image keeps
+        // A `Through` plane's statement is *handles*, and handles do not move. Its image keeps
         // the same three vertices and gains the node — the definition composes as "the plane
         // through those, then this motion". Transporting them is not an option (they may not even
         // belong to this solid), and leaving them without a node would move the cache while the
@@ -655,7 +655,7 @@ fn transform_solid(
                     ..
                 },
             ) => {
-                // ★ Verbatim when the motion fixes the plane (`invariant` — the statement is
+                // Verbatim when the motion fixes the plane (`invariant` — the statement is
                 // already the image's, and re-pushing it interns back onto the source handle),
                 // when the statement already has a history (the node hangs off it and says the
                 // plane before this motion), or when the motion is recorded; otherwise the whole
@@ -685,14 +685,14 @@ fn transform_solid(
                     ..
                 },
             ) => {
-                // ★ `new_motion` may be `None`, and only for a motion that moves nothing —
+                // `new_motion` may be `None`, and only for a motion that moves nothing —
                 // `Copy` is `transform_solid` with the identity. Then the plane is unchanged, the
                 // same statement re-pushed interns back onto the source handle, and that is the
                 // right answer. `points_move` refusing the transporting path is what rules out
                 // the other case, where a node is missing because the walk thought it could carry
                 // points that do not exist.
                 //
-                // ★★ The `invariant` road above is `Known`-only, so it never hands this arm `None`:
+                // The `invariant` road above is `Known`-only, so it never hands this arm `None`:
                 // `new_motion` chains from the source's own leaf (`moved_surface_motion`), which is
                 // `None` only for a source that records none and a motion that records nothing.
                 // The same chaining keeps the door's assertion — a named statement's motion
@@ -781,7 +781,7 @@ fn transform_solid(
         let def = match *model.vertex(vh) {
             Vertex::ThreePlane(planes) => Vertex::ThreePlane(planes.map(remap)),
             Vertex::OnSeam(pair) => Vertex::OnSeam(pair.map(remap)),
-            // ★ `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
+            // `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
             // face-traversal order, so the two planes' handle order can invert, and the root is
             // defined against the meet line of the *stored* order. `QuadRoot::canonical` owns
             // that restatement — including the tangency, whose single point a swap fixes — and
@@ -791,7 +791,7 @@ fn transform_solid(
                 cylinder,
                 root,
             } => {
-                // ★★★ **The sign half.** `canonical` counts
+                // **The sign half.** `canonical` counts
                 // the swap; but a restatement may spell a moved plane with the *opposite* normal
                 // (its world name is canonical over four coefficients), and a reflection reverses
                 // every cross product — each reverses `ℓ = n₁ × n₂`, and `Lo`/`Hi` trade names
@@ -820,14 +820,14 @@ fn transform_solid(
             }
         };
         let coord = motion.point(model.vertex_point(vh));
-        // ★ **The moved figure is a fallback, and only a fallback.** A *measured residual* would
+        // **The moved figure is a fallback, and only a fallback.** A *measured residual* would
         // survive a rigid motion, but the cache holds a *bound*, which does not — so there is
         // nothing to carry across: this coordinate is `f64` arithmetic on the old one, never the
         // nearest `f64` of the moved definition, so "no realization stands behind it" is the whole
         // truth about it.
         // The realization of the moved definition runs next and replaces it wherever it answers.
         let cache = PointCache::Unrealized { coord };
-        // ★ The one site that extends a chain: this vertex *is* the image of `vh`, so the prefix
+        // The one site that extends a chain: this vertex *is* the image of `vh`, so the prefix
         // `vh` already folded is exactly what this realization would otherwise walk again.
         vert_map.insert(
             vh,

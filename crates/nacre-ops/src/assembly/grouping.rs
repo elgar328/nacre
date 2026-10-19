@@ -2,7 +2,7 @@ use super::*;
 /// **A result face as the ray reads it** — its surface's truth and every boundary in the
 /// engine's own vocabulary.
 ///
-/// ★ **Every boundary travels** — not `poly_rings()` only, which would silently drop a face's
+/// **Every boundary travels** — not `poly_rings()` only, which would silently drop a face's
 /// circular and banded bounds, and a ray that counts an incomplete component answers confidently
 /// and wrongly.
 ///
@@ -62,7 +62,7 @@ pub(crate) fn comp_face(
                 }
             }
             Ok(combinatorics::CompFace {
-                // ★ The truth travels, not the index — the probe should not have to hold the
+                // The truth travels, not the index — the probe should not have to hold the
                 // class table to solve a crossing.
                 surf: combinatorics::CompSurf::Cylinder(Box::new(cyls[k].def.clone())),
                 outer: combinatorics::BoundEdges::Lateral(loops),
@@ -76,7 +76,7 @@ pub(crate) fn comp_face(
 /// whole result; several mean either an enclosed void (a cavity — an inward-oriented shell) or a
 /// severed operand (two or more material-enclosing shells).
 ///
-/// ★ **Deciding early is not the same as *rejecting* early.** [`reconstruct`] holds this `Result`
+/// **Deciding early is not the same as *rejecting* early.** [`reconstruct`] holds this `Result`
 /// and raises it late, past the minting; the arena a declining boolean leaves is the quantity
 /// `replay::a_late_reject_is_not_index_neutral` measures.
 pub(super) fn group_faces(
@@ -92,7 +92,7 @@ pub(super) fn group_faces(
     // A component as `(plane, rings)` per face, and its nodes — what the containment predicate
     // takes. Both the material/void label below and the cavity-owner search further down ask the
     // same question of them.
-    // ★ **Only when there is something to compare.** One component is the whole result — depth 0,
+    // **Only when there is something to compare.** One component is the whole result — depth 0,
     // material, nothing to ask — and that is nearly every boolean. Building these rings costs an
     // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
     // (measured). Built once per component rather than once per query for the same reason: the
@@ -108,14 +108,14 @@ pub(super) fn group_faces(
     // A **probe list**, so a pierce node may be dropped: `first_deciding` below tries each in
     // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
     //
-    // ★★★ **Coordinates only when there is no vertex to name.** A named probe is exact without
+    // **Coordinates only when there is no vertex to name.** A named probe is exact without
     // coordinates at all, so it keeps working where no rational one exists (a rotated class), and
     // it is the answer for every component that has a polygon anywhere on it. What has none is a
     // lone cylinder, whose boundary is two disks and a band and whose vertex count is therefore
     // **zero**. `coord_probes` names a
     // point on that boundary instead of a vertex of it.
     let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
-        // ★ Each name once, in first-seen order: a vertex sits on three faces' rings and used
+        // Each name once, in first-seen order: a vertex sits on three faces' rings and used
         // to be offered three times, so an exhausted list cast the same rays three times over
         // (the corner Commons: six probes for two points). The first deciding probe is the same,
         // so the answers are.
@@ -130,7 +130,7 @@ pub(super) fn group_faces(
         .map(combinatorics::Probe::Named)
         .collect();
         if named.is_empty() {
-            // ★ Rational pierce corners first (a slot or a fillet-cornered prism has
+            // Rational pierce corners first (a slot or a fillet-cornered prism has
             // no other vertex), then the caps' derived points.
             let mut out = combinatorics::corner_probes(
                 jd,
@@ -145,7 +145,7 @@ pub(super) fn group_faces(
             named
         }
     };
-    // ★★★★★ **The supply a component's *edges* name, tried only when its corners are exhausted**.
+    // **The supply a component's *edges* name, tried only when its corners are exhausted**.
     // `probes_of` above offers a polyhedral component nothing but its **vertices** — the
     // two fallbacks beside it both need a cylinder (`corner_probes` wants pierce corners,
     // `coord_probes` a cap's circle), so a planar component has none. A void whose every corner
@@ -159,7 +159,7 @@ pub(super) fn group_faces(
     // witness supply reads, not a second spelling of it — so each is **on** this component's
     // boundary, which is [`combinatorics::Probe`]'s invariant.
     //
-    // ★ **Built only on exhaustion**, because `probes_of` is eager and asked at three sites: a
+    // **Built only on exhaustion**, because `probes_of` is eager and asked at three sites: a
     // component with 8 vertices has some 30 edge points behind it, and paying for them where a
     // vertex answers first is waste.
     let edge_probes_of = |c: usize| -> Vec<combinatorics::Probe> {
@@ -204,7 +204,7 @@ pub(super) fn group_faces(
     // a real cause masquerade as `NoClearRay` once every node hit it. `Ok(None)` here means every
     // node abstained; that being a reject is the *caller's*
     // proposition to raise.
-    /// ★★ **Two stages, the second built only on exhaustion**: `more` is the supply that
+    /// **Two stages, the second built only on exhaustion**: `more` is the supply that
     /// costs something to derive, and a component whose first corner decides never pays for it.
     /// Trying it **after** the primary list means every question the primary list decides is
     /// decided on the same probe, in the same order; the second stage answers only questions the
@@ -226,12 +226,12 @@ pub(super) fn group_faces(
         }
         Ok(None)
     }
-    // ★ A list that **started empty** is not a list that ran out: a component whose
+    // A list that **started empty** is not a list that ran out: a component whose
     // every corner is a pierce name and whose caps offer no candidate their ring says is inside
     // — a thin segment of a disk — has no witness at all, and says so by the name the rings use
     // for the same proposition.
     ///
-    /// ⚠ **Asked of both stages**: a component whose corners are all pierce names *and*
+    /// **Asked of both stages**: a component whose corners are all pierce names *and*
     /// whose edges name no interior point has started empty; one whose edges did offer points has
     /// run out.
     fn no_witness(primary: &[combinatorics::Probe], extra: usize) -> RejectReason {
@@ -241,7 +241,7 @@ pub(super) fn group_faces(
             RejectReason::NoClearRay
         }
     }
-    // ★★ **Material or void is a question about nesting, not about normals.**
+    // **Material or void is a question about nesting, not about normals.**
     //
     // Not at the component's lexicographically-minimal vertex `v*` ("outward iff *some* face there
     // has an outward normal with `n_x < 0`"): that existential is a shortcut for "the face with the
@@ -312,7 +312,7 @@ pub(super) fn group_faces(
             // material whose outer shell nests it — the innermost, if materials themselves nest —
             // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
             // and every material emits cavity-free (the plain sever, unchanged).
-            // ★ The rings hand over their walls; nothing here derives one from a name —
+            // The rings hand over their walls; nothing here derives one from a name —
             // `comp_faces`/`probes_of` are the same pair the material/void label above uses.
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin

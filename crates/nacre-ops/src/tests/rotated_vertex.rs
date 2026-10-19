@@ -86,7 +86,7 @@ fn transformed(
 /// (`reuse::solid_points`): counted, per chain.
 #[test]
 fn a_moved_corner_is_its_realization_and_replays_near_it() {
-    // ★ Chains, not one turn, and none of them "nice": pivots off the origin, angles whose
+    // Chains, not one turn, and none of them "nice": pivots off the origin, angles whose
     // realization is nowhere near a quadrantal one, translations and reflections between turns.
     let mv = |iso| Step::Move(Box::new(iso));
     let chains: [Vec<Step>; 5] = [
@@ -102,16 +102,16 @@ fn a_moved_corner_is_its_realization_and_replays_near_it() {
                 R::from_int(-2),
                 R::from_int(0),
             ])),
-            // ★ A reflection between two turns, the node whose parity the chain has to carry.
+            // A reflection between two turns, the node whose parity the chain has to carry.
             Step::Flip(Axis::X, R::new(1, 2).unwrap()),
             mv(turn(Axis::Z, [0, 0, 0], (271, 4))),
         ],
-        // ★ A same-axis depth-2 chain: the caps are fixed by *both* turns (restated
+        // A same-axis depth-2 chain: the caps are fixed by *both* turns (restated
         // twice, still world-stated), so their corners exercise the fixed-carrier
         // licence at depth 2 — walls [Z, Z], caps None, `chain_fixes_plane` proving
         // the caps ride the whole chain.
         vec![mv(rot30z()), mv(turn(Axis::Z, [2, -1, 3], (2749, 71)))],
-        // ★ A reflection **last** — the node a definition and its coordinate are easiest to part
+        // A reflection **last** — the node a definition and its coordinate are easiest to part
         // on — at an offset that is not zero, where the mirror's `2c` term would vanish. The caps
         // are fixed by the Z turn and by an X mirror alike, so every corner rides the walls' one
         // [Z, M] chain through the licence.
@@ -326,7 +326,7 @@ fn assert_frame_shape(
     );
 }
 
-/// ★★★★★ **A `Wide` name opens a frame.** The population that fails
+/// **A `Wide` name opens a frame.** The population that fails
 /// `narrow()` — a plane whose canonical answer exceeds `i128` — realizes its canonical
 /// placement through the arbitrary-precision road, and the basis is a real frame on the
 /// real plane. (What stays closed for `Wide` is the *narrow shortcuts* — `base_rat`,
@@ -349,7 +349,7 @@ fn a_wide_plane_hosts_a_canonical_frame() {
     assert_frame_shape(&m, h, &nacre_topo::FramePlacement::Canonical, "wide plane");
 }
 
-/// ★★★★ **A narrow name whose squared lengths overflow `i128` opens too** — the
+/// **A narrow name whose squared lengths overflow `i128` opens too** — the
 /// measured 1.6% population (`n·n` is a square, so it overflows long before the name).
 /// On the narrow road alone this is `plane_frame_named`'s hard `None`.
 #[test]
@@ -381,12 +381,12 @@ fn a_narrow_name_with_wide_squares_hosts_a_frame() {
     );
 }
 
-/// ★★★ **A `Named` placement opens on a `Wide` name too.** The locks above cover the
+/// **A `Named` placement opens on a `Wide` name too.** The locks above cover the
 /// canonical road; the axes-only population (`from_axes`, a tilted full-width frame) is
 /// exactly the other pairing — a caller-stated origin/`ref_dir` on a plane whose canonical
 /// name exceeds `i128` — and it goes through `WideFrame::named_of`.
 ///
-/// ★ The fixture is that population, not the `2^90` triple above: full-width *decimal* axes at
+/// The fixture is that population, not the `2^90` triple above: full-width *decimal* axes at
 /// CAD scale. Their cross runs the denominators to `10^48`, so the canonical name is
 /// genuinely `Wide` (asserted), while the geometry stays near `1` — which matters, because
 /// a frame's unit axes are invisible in f64 next to a `2^90` origin (an ulp there is
@@ -454,7 +454,7 @@ fn chain_basis(chain: &[MoveNode]) -> WorldBasis {
     (o, axis([1, 0, 0]), axis([0, 1, 0]), axis([0, 0, 1]))
 }
 
-/// ★★★ **One name, one placement, one `flip` — one frame, whichever road builds it.**
+/// **One name, one placement, one `flip` — one frame, whichever road builds it.**
 ///
 /// The narrow road (`frame_chain`), the wide road (`WideFrame`, forced here on a name the narrow
 /// road also takes) and the judged road (`FrameThrough` over the plane's own three points —
@@ -463,7 +463,7 @@ fn chain_basis(chain: &[MoveNode]) -> WorldBasis {
 /// other over every placement × `flip`, rather than each against a property of its own: a new
 /// disagreement between any two is red here whichever cell it lands in.
 ///
-/// ★ The anchor that keeps the three from agreeing on the wrong thing: a `Canonical` frame's `û`
+/// The anchor that keeps the three from agreeing on the wrong thing: a `Canonical` frame's `û`
 /// is the arbitrary axis of **its own** `ŵ` — `ẑ × ŵ`, or `ŷ × ŵ` on a horizontal plane — in
 /// either `flip`, compared with its sign. That is the convention every road can spell: the
 /// judged road proves no coefficient's sign, so a `û` tied to the canonical name's sign (first

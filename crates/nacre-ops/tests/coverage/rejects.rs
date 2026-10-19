@@ -36,7 +36,7 @@ fn user_message(err: BoolError) -> String {
 /// pair of solids to hand back. The caller learns that much — the reason, its class, and a message
 /// — from the returned error alone.
 ///
-/// ★ The fixture is a shape that cannot part — two cubes touching at a corner are two bodies —
+/// The fixture is a shape that cannot part — two cubes touching at a corner are two bodies —
 /// because what this test is about is the error *surface*.
 #[test]
 fn a_pinched_fuse_tells_the_caller_why() {
@@ -75,7 +75,7 @@ fn a_pinched_fuse_tells_the_caller_why() {
 /// overlapping both takes the material around the contact. Four faces use that segment and the body
 /// cannot be parted there, which no 2-manifold boundary allows — `Impossible`, not a coverage limit.
 ///
-/// ★ Not two cubes sharing one whole edge: those are two bodies, and the grid proptest scores
+/// Not two cubes sharing one whole edge: those are two bodies, and the grid proptest scores
 /// them.
 #[test]
 fn a_pinched_fuse_is_impossible_not_unsupported() {
@@ -148,7 +148,7 @@ fn a_stale_operand_is_not_a_reject_reason() {
 /// there, unreachable — the arena is append-only by design and superseded solids leave the same
 /// residue.
 ///
-/// ★ **What this cannot show today, stated rather than implied.** Every reject the kernel currently
+/// **What this cannot show today, stated rather than implied.** Every reject the kernel currently
 /// raises happens *before* the retire, so the restore this locks is not what keeps these particular
 /// cases whole — they were never at risk. The assertion is here because the property is the
 /// contract, and because the next reject to be added is the first one that sits after the retire.

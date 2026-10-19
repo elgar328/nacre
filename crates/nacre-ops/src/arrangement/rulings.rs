@@ -27,7 +27,7 @@ pub(super) fn rulings_on_class(
     crossings: &std::collections::HashSet<(usize, usize)>,
     aliases: &Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
-    // ★ **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
+    // **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
     // listed there was proven clear (or never in question), and contributing its rectangle
     // anyway breaks the straddling family: the boss's own wall class is a d=0 pair, and its
     // coplanar bottom cap's chord lands on a line the plate already traces. Unlisted pairs are
@@ -41,7 +41,7 @@ pub(super) fn rulings_on_class(
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
-    // ★ The record is the crossing statement: a listed pair's plane runs within the
+    // The record is the crossing statement: a listed pair's plane runs within the
     // radius, so the wall meets the lateral in two rulings; the sweep reads the face's cycles
     // and says where. The premise is the gate's, asserted rather than re-derived — and it survived
     // the tangent wall opening precisely because a tangency is written to `tangencies`
@@ -144,7 +144,7 @@ fn ruling_sweep(
     aliases: &Aliases,
 ) -> Result<SweepOut, DeclineKind> {
     use crate::combinatorics::Wall;
-    // ★ **The lateral's half of a plane-pair line.** An edge of this cycle can lie on
+    // **The lateral's half of a plane-pair line.** An edge of this cycle can lie on
     // this ruling with the face *across* it being another plane `t` — the fillet's tangent edge,
     // when `wc` passes through the axis and so contains the tangent ruling. That line is a
     // plane-pair line (`wc ∩ t`), and the lateral **ends** there, so the plane vocabulary states
@@ -160,7 +160,7 @@ fn ruling_sweep(
     // The side is read exactly as a run's on this ruling is (`body_side`): the same cycle, the
     // same ruling, the same traversal.
     let mut grazes: Vec<Seg> = Vec::new();
-    // ★ **Identity is the table's** — a station made here (`wc`'s crossing with a cap)
+    // **Identity is the table's** — a station made here (`wc`'s crossing with a cap)
     // and a corner the cycle carries can be one point under two names, and the plane roads have
     // already told the table so (`Aliases::record_on_cylinder`). Every "same node?" below asks
     // through it; the sweep never decides coincidence on its own.
@@ -347,7 +347,7 @@ fn ruling_sweep(
 /// denotes. The one spelling:
 /// the chart's `ruling_name` reads it too.
 ///
-/// ★ The `0` is asked of the point, not read off the name's root (`Double`): see
+/// The `0` is asked of the point, not read off the name's root (`Double`): see
 /// [`crate::combinatorics::ruling_side_signed`] for why the two do not agree.
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
@@ -363,7 +363,7 @@ pub(crate) fn node_ruling_side(
 /// rim), and **that class's** parameter is the point's — a rational, so the ordering along a
 /// ruling needs no quadratic comparison at all.
 ///
-/// ★ The name need not carry `wc` (a station the sweep minted does). A corner the
+/// The name need not carry `wc` (a station the sweep minted does). A corner the
 /// operand named (`Pierce{[cap, t], Double}`, a fillet's tangent corner) lies on `wc`'s ruling
 /// too when `wc` contains it, and its parameter is read the same way: from its cap.
 pub(super) fn node_axis_param(

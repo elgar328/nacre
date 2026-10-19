@@ -18,7 +18,7 @@ pub(crate) enum End<'a> {
     /// The circle is cut and the sector still has no arcs to read: its two rulings are one and the
     /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
     /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
-    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. ☑ Counted
+    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. Counted
     /// (`end_other`); a sector that merely spans several arcs is not here — it is an
     /// [`End::Exact`] run. Carries the refusal its cause is, written where the cause is known
     /// ([`Chart::arc_around`]) and read only if the cell turns out present and unread.
@@ -65,7 +65,7 @@ impl End<'_> {
     /// includes a run of arcs that do not agree ([`agreement`]'s `Split` inside one end). The read
     /// is [`read_bits`], the one spelling.
     ///
-    /// ☑ **Measured: the run case is read but decides nothing.** The suite reads a run of two or
+    /// **Measured: the run case is read but decides nothing.** The suite reads a run of two or
     /// more arcs 40 times, and making this answer `None` for every such run leaves all 825
     /// `nacre-ops` tests green — the cells a run reaches are decided **absent** by the existence
     /// read below, and an absent cell is never asked for its chamber. This stays the general rule rather than a written-out
@@ -91,7 +91,7 @@ impl End<'_> {
 /// rulings ladder's), or with the cause [`End::Other`] carries; a present cell with no circle at
 /// an end is the stages disagreeing («a face that is here has a circle at both its ends»).
 ///
-/// ★ Where the two ends are silent for different reasons, **a defect wins**: one end's stages
+/// Where the two ends are silent for different reasons, **a defect wins**: one end's stages
 /// disagreeing makes the cell's other reads untrustworthy too, and naming the cell «not yet» would
 /// hide it. Otherwise the lower end's.
 fn silence(ends: &[End<'_>], side: SolidSide, above: [bool; 2]) -> RejectReason {
@@ -154,7 +154,7 @@ impl Chart {
     /// meets on the line alone. `false` for every station one wall states — there is no chamber
     /// between.
     ///
-    /// ★ **Both sides are read off one wall**, the one that bounds the `+θ` sector inside
+    /// **Both sides are read off one wall**, the one that bounds the `+θ` sector inside
     /// ([`StationTwin::bounds_plus`]): its inside cell holds the chamber beside `+θ` on the near
     /// side and the chamber between the chords on the far side, and its outside cell holds the
     /// chamber between the walls' outer halves on the near side — the two «between» chambers are
@@ -164,16 +164,16 @@ impl Chart {
     /// emits, and an emitted `+θ` cell keeps one side of the lateral and not the other. One
     /// boolean keeps a lateral's material on one side all round a line: `keep` is monotone in each
     /// operand, and an operand, being a manifold, has its own material on one side of the
-    /// cylinder on both sides of the line (☑ measured: no station with its two cells emitted keeps
+    /// cylinder on both sides of the line (measured: no station with its two cells emitted keeps
     /// different sides, in the suite or the census).
     ///
-    /// ☑ Both halves carry an answer (`edge_on_a_ruling`): the inside chamber read where the
+    /// Both halves carry an answer (`edge_on_a_ruling`): the inside chamber read where the
     /// material is outside cuts the lateral of a box less the wedge fused on a rim, across the
     /// pinch — the chamber between the chords is the wedge's own — and no chamber read there
     /// builds a box with a V-notch whose apex lies on the lateral, less the cylinder, as a body
     /// touching itself along the line.
     ///
-    /// ★ **What a station cannot answer**: a result face on the line from the lateral's *other*
+    /// **What a station cannot answer**: a result face on the line from the lateral's *other*
     /// side — the walls' halves where the lateral keeps nothing (the inside chamber kept where the
     /// material is outside, the outside chamber kept where it is inside). The line is then an
     /// edge of those faces while the lateral runs on across it, which is right when they belong
@@ -228,7 +228,7 @@ impl Chart {
 
     /// **The run of arcs of a cut rim that covers the sector `[x, y)`** when the sector's rulings
     /// are not themselves an adjacent node pair of that rim — a wall whose *face* stops short of this
-    /// line leaves a ruling on the chart but no node on the circle (☑ the corner boss: two chords
+    /// line leaves a ruling on the chart but no node on the circle (the corner boss: two chords
     /// end at the plate's corner inside the footprint, so the rim has two nodes while the chart
     /// has four rulings, and three sectors lie inside the long arc).
     ///
@@ -239,7 +239,7 @@ impl Chart {
     /// is searched by name equality, so no point is handed to the order twice. The run is the
     /// rim nodes from the nearest one at or before `x` to the nearest at or after `y`, walked
     /// CCW — one arc when no rim node lies strictly inside the sector, and every arc it spans
-    /// when some do. ★ A rim of **one** node has one arc, from that node back to itself (a
+    /// when some do. A rim of **one** node has one arc, from that node back to itself (a
     /// polygon vertex cut the circle there and nothing else did — `combinatorics::ring_floor`),
     /// and it covers every sector, so it is the run whatever `x` and `y` are and neither station
     /// is asked for. `Err` when the walk yields no arc to read, naming why where the cause is
@@ -278,7 +278,7 @@ impl Chart {
         let mut index_of = |i: usize| -> Result<usize, RejectReason> {
             // A station the rim's own arc decomposition does not hold — the wall's face stops
             // short of the rim — joins the order as itself, under its canonical name, and the
-            // search below asks which arc contains it. ★ Not under a node of *another* line
+            // search below asks which arc contains it. Not under a node of *another* line
             // ([`Chart::station_on`]'s note): the order refuses that wherever the rim does hold
             // the station.
             let n = match self.node_on(i, t) {
@@ -319,7 +319,7 @@ impl Chart {
         while !is_rim(b) {
             b = (b + 1) % n;
         }
-        // ★★★★★ **A sector may span several arcs, and then the answer is all of them.** A rim node
+        // **A sector may span several arcs, and then the answer is all of them.** A rim node
         // strictly inside the sector is a θ the *rim* knows and the chart does not — the chart's
         // vertical lines come from `ruling_sweep`, which states a piece only where the lateral
         // face is, so a wall's ruling on the side the face does not reach is absent and the cell
@@ -342,7 +342,7 @@ impl Chart {
             let (na, nb) = (list[order[cur]], list[order[nxt]]);
             match arcs.iter().find(|arc| arc.ends == [na, nb]) {
                 Some(arc) => run.push(arc),
-                // ★ A piece no contribution covers has no arc (the split keeps no
+                // A piece no contribution covers has no arc (the split keeps no
                 // phantom). A run made of nothing but such pieces is a sector the face is not
                 // over; a run with some of each is the split and the labels disagreeing.
                 None => missing += 1,
@@ -402,7 +402,7 @@ impl Chart {
             for &c in lines.classes(t[e]) {
                 // The band leaves the low line toward `+t` and arrives at the high line from
                 // `−t`.
-                // ★ Bound to the class whose label is read, not to whichever class the loop
+                // Bound to the class whose label is read, not to whichever class the loop
                 // visited last: one `t` is one plane and so one class today, but the sign and
                 // the label must come from the same row the day that stops being true.
                 let world = jd.planes[c]
@@ -445,7 +445,7 @@ impl Chart {
                         };
                         match nodes {
                             (Some(nx), Some(ny)) if adjacent(nx, ny) => {
-                                // ★ Adjacent rim nodes with no arc between them: the piece no face
+                                // Adjacent rim nodes with no arc between them: the piece no face
                                 // covers — the face ends before this sector.
                                 match arcs.iter().find(|a| a.ends == [nx, ny]) {
                                     Some(arc) => End::Exact(vec![arc]),
@@ -486,18 +486,18 @@ impl Chart {
 
         // ── Membership: every side that speaks must say the same. ──
         //
-        // ★★★★★ **A `Label` carries the material on both sides of its own plane**, so a
+        // **A `Label` carries the material on both sides of its own plane**, so a
         // **ruling**'s label answers the cells beside it exactly as a rim's answers the cells
         // above and below — the chart's two axes state one chamber, and the rule is one for all
         // four sides: the chamber stands when every side that speaks says the same, and two sides
         // that contradict each other leave none (the emitter then refuses a present cell by name).
         // A contradiction is an arrangement label defect, and reading one side over the other would
         // hide it — the `corner Common` boss once read its rulings against its rims so, before its
-        // plate labels were right. ☑ Measured over the suite, the ignored sweep and the census:
+        // plate labels were right. Measured over the suite, the ignored sweep and the census:
         // on present cells both axes speak on 21,006 / 27,300 / 1,026 and the horizontal alone on
         // 4,048 / 3,260 / 978; no side has contradicted another anywhere.
         //
-        // ★ The symmetry is the chamber's: existence below is the rims' marks and the rows'
+        // The symmetry is the chamber's: existence below is the rims' marks and the rows'
         // span, and a ruling's own marks are an instrument's field, so a wall says nothing there.
         let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
             let seg = self.theta.get(i)?;
@@ -506,9 +506,9 @@ impl Chart {
             if seg.side == 0 {
                 return None;
             }
-            // ★ A station two walls state answers each side from the wall that bounds the
+            // A station two walls state answers each side from the wall that bounds the
             // chamber there (`StationTwin::bounds_plus`); `starts_here` is the `+θ` side.
-            // ☑ Held here as well as in `slit_at`, which reads the same `bounds_plus` (and that
+            // Held here as well as in `slit_at`, which reads the same `bounds_plus` (and that
             // wall's outside cell too): swapping the two walls turns the corner and inward-wedge
             // families of `edge_on_a_ruling` red, where the rims speak too and the swapped wall
             // contradicts them.
@@ -527,7 +527,7 @@ impl Chart {
             let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
             Some(read_bits(&l, side, above))
         };
-        // ★ A cell whose two walls are **one** ruling (a circle opened at a single point) lies
+        // A cell whose two walls are **one** ruling (a circle opened at a single point) lies
         // on both sides of that wall, so the vertical line says nothing about it — the two
         // readings would contradict by construction. A wall that cannot be read (a tangent
         // station, a side it cannot name) is silent: it checks the chamber, it does not decide it —
@@ -559,11 +559,11 @@ impl Chart {
         let mut by_marks: Option<bool> = None;
         for e in 0..2 {
             let End::Exact(arcs) = &ends[e] else { continue };
-            // ★ **Existence asks the same run membership does.** A sector spanning several arcs
+            // **Existence asks the same run membership does.** A sector spanning several arcs
             // is present only if every one of them says so; arcs that disagree mean the cell
             // straddles a boundary the chart has no line for, and that is the refusal below.
             //
-            // ☑ This is the half that moves results, and what it answers is **absent**: every run
+            // This is the half that moves results, and what it answers is **absent**: every run
             // the crossing corpus builds is over arcs whose `marks` are empty, which is the
             // geometry (the quadrant the chart could not name lies on the side the panel does not
             // reach). Forcing the run's answer to `true` here trips the record-site assertion
@@ -586,7 +586,7 @@ impl Chart {
                 return Err(reject(RejectReason::CylinderFaceUndecided));
             }
         }
-        // ★★★★★ **Two silent ends and a span that says «present» is not read as present**.
+        // **Two silent ends and a span that says «present» is not read as present**.
         // The span knows no θ, so over a cell whose both cut ends could not be paired with
         // their rims it would claim the face is there — the guess that puts a face over a hole
         // in the corner boss × mid slab. With stations placed by name (`station_on`) no cell in
@@ -596,11 +596,11 @@ impl Chart {
         if by_marks.is_none() && by_span && ends.iter().all(|e| matches!(e, End::Other(_))) {
             return Err(reject(silence(&ends, side, above)));
         }
-        // ★ The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
+        // The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
         // what says the face is *not* there (the `exist_marks_false` population). So the
         // disagreement that would be a defect is only the other direction: the trace claiming a
         // face where no row spans.
-        // ★ An uncovered rim piece decides existence outright: the face's own rim does
+        // An uncovered rim piece decides existence outright: the face's own rim does
         // not run along this sector at that line, so the face is not over this cell — whatever
         // the row's axial span says.
         let uncovered = ends.iter().any(|e| matches!(e, End::Uncovered));
@@ -653,16 +653,16 @@ impl Chart {
 /// derivation of "which way is the band" here, deliberately: a sign re-derived one call away from
 /// its twin is where the two drift apart.
 ///
-/// ★ [`SegKind::Seated`] is skipped because it is a *planar* face's word — see [`ArcLabel::marks`],
+/// [`SegKind::Seated`] is skipped because it is a *planar* face's word — see [`ArcLabel::marks`],
 /// where the type is what rules a lateral out, not a convention.
 ///
-/// ★★ **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
+/// **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
 /// gets `true` from this same test — one sentence about every rim. What is out of reach is only
 /// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
 /// `DiskLabels` and the band road), so today only cut rims ask here.
 ///
-/// ☑ **How often each row actually fires** (whole binary, production calls only):
+/// **How often each row actually fires** (whole binary, production calls only):
 /// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
 /// do not · nothing at all **0**. The chart reads it once per cut end (`cyl_chart::census`'s
 /// `arcs_read`, 756 over the lib suite).
@@ -682,7 +682,7 @@ pub(crate) fn face_spans(
             SegKind::Transversal { .. } => true,
             SegKind::Graze { body_above } => body_above == band_is_above,
         };
-        // ★★★ **Two of this solid's faces meeting at one arc and *disagreeing*: refused, and the
+        // **Two of this solid's faces meeting at one arc and *disagreeing*: refused, and the
         // refusal is a placeholder.** It takes one cylinder class carrying several faces that
         // share a rim — reachable geometry (a split bore whose two bands touch), just not
         // reachable today. The answer that day is almost certainly `.any()`: if any of the
@@ -701,12 +701,12 @@ pub(crate) fn face_spans(
 /// solid's bit and the counterpart's, on the side of the plane the cell occupies. Read for a disk
 /// end and an arc end alike (`Chart::read_cell`), so the two cannot drift.
 ///
-/// ★★ **The chamber is read off the arrangement, not measured.** The plane arrangement already
+/// **The chamber is read off the arrangement, not measured.** The plane arrangement already
 /// makes a **disk cell** for every circle a cylinder leaves on a class, and `label_cells` writes
 /// four bits on it: which solid's material lies immediately above and below that plane *inside the
 /// circle*. That is the band's chamber, stated by the engine that decided it.
 ///
-/// ★ This replaced a witness ray (`point_in_faces_rat`): a rational point on the axis, cast
+/// This replaced a witness ray (`point_in_faces_rat`): a rational point on the axis, cast
 /// through the counterpart's faces, counting crossings. It gave the same answers, but it answered
 /// a **3D containment** question — the shape the *component* probe asks — when the band's question
 /// is the same shape as "does this face survive": two chambers either side of a boundary. Reading

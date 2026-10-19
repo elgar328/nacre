@@ -54,11 +54,11 @@ fn ring_area_centroid(points: &[Point3]) -> Option<(f64, Point3)> {
     let mut weighted = Vector3::zero();
     let mut weight = 0.0;
     for pair in points[1..].windows(2) {
-        // ★ Weighted by the **un-normalized** area vector. `normalize` divides by a square root,
+        // Weighted by the **un-normalized** area vector. `normalize` divides by a square root,
         // so every `signed` carried that rounding; the centroid is a *ratio* of these weights, so
         // the common `|area_vec|` factor cancels and the normalization only ever added error.
         let signed = (pair[0] - base).cross(pair[1] - base).dot(area_vec);
-        // ★ The `1/3` is **not** applied here. `1.0 / 3.0` is not an exact `f64`, so folding it
+        // The `1/3` is **not** applied here. `1.0 / 3.0` is not an exact `f64`, so folding it
         // into every triangle rounds once per triangle and the terms of a symmetric ring stop
         // cancelling — a rectangle centred on the origin came out at `−1.1e-16` instead of `0`,
         // which then moved a sketch placed in that frame by one ulp. Factored out, the loop is
@@ -81,7 +81,7 @@ fn ring_area_centroid(points: &[Point3]) -> Option<(f64, Point3)> {
 mod tests {
     use super::*;
 
-    /// ★★★ **A ring symmetric about the origin has its centroid exactly at the origin.**
+    /// **A ring symmetric about the origin has its centroid exactly at the origin.**
     ///
     /// It did not. `ring_area_centroid` folded `1.0 / 3.0` — not an exact `f64` — into every
     /// triangle of its fan, and weighted each by a dot with the **normalized** area vector, so a
@@ -98,7 +98,7 @@ mod tests {
     /// is a *ratio* of those weights, so the common `|area_vec|` cancels and normalizing only ever
     /// added error.
     ///
-    /// ★★★★ **Exactness here is not general and this test does not claim it is.** Removing two
+    /// **Exactness here is not general and this test does not claim it is.** Removing two
     /// roundings makes the answer exact whenever what remains is exactly representable — as it is
     /// for the fixture that exposed the defect. `±0.1 × ±7.7` still lands one ulp off, because the
     /// weighted sum itself rounds. Closing that needs the centroid derived in `Rat` from the face's

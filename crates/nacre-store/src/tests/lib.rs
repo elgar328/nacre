@@ -97,7 +97,7 @@ fn handle_at_past_the_end_is_none() {
     assert_eq!(s.handle_at(u32::MAX), None);
 }
 
-/// ★ **The new door grants no new power** — `iter().nth(i)` already minted this handle, so
+/// **The new door grants no new power** — `iter().nth(i)` already minted this handle, so
 /// `handle_at` is a name and an `O(1)` path, not an escape hatch. If these two ever
 /// disagree, one of them is lying about which store it belongs to.
 #[test]
@@ -115,7 +115,7 @@ fn handle_at_agrees_with_iter() {
     }
 }
 
-/// ★ **The positive control for re-anchoring**: an index taken from store A names *B's*
+/// **The positive control for re-anchoring**: an index taken from store A names *B's*
 /// item when re-anchored on B — no panic, because the handle `handle_at` returns is B's by
 /// construction. Its twin is [`cross_store_handle_panics_in_debug`] above: without the
 /// re-anchoring the very same index still dies at the guard. (They cannot share a body —

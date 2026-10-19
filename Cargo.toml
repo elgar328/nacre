@@ -20,7 +20,7 @@ rayon = "1"
 # written here once per layer. This file is the only one a version bump touches
 # (`docs/RELEASING.md`).
 #
-# ★ Normal dependencies only. Dev-dependencies between siblings stay `{ path = "..." }` and
+# Normal dependencies only. Dev-dependencies between siblings stay `{ path = "..." }` and
 # must not inherit from here: a dev-dependency with a version is kept in the published
 # manifest, and the layers' tests depend on each other in a cycle (`nacre-ops`'s tests use
 # the layers above it, and theirs use `nacre-ops`), which would leave no valid publish order.
@@ -38,7 +38,7 @@ nacre-step = { path = "crates/nacre-step", version = "0.0.2-dev" }
 nacre-tess = { path = "crates/nacre-tess", version = "0.0.2-dev" }
 nacre-validate = { path = "crates/nacre-validate", version = "0.0.2-dev" }
 
-# ★★★★★ **The tests are the slow thing, and they are slow for one reason: the optimizer level.**
+# **The tests are the slow thing, and they are slow for one reason: the optimizer level.**
 #
 # This kernel's inner loop is exact arithmetic — `i128` rationals, `BigInt` towers, sign
 # predicates evaluated hundreds of thousands of times per boolean — and at `opt-level = 0` that
@@ -48,11 +48,11 @@ nacre-validate = { path = "crates/nacre-validate", version = "0.0.2-dev" }
 #   opt-level 0 : 68.4s to run     debug 2 : a 32 MB test binary
 #   opt-level 2 :  7.9s to run     debug 1 : a 11.7 MB one
 #
-# ★ **And it costs nothing where it would hurt.** The edit-compile loop is what a session actually
+# **And it costs nothing where it would hurt.** The edit-compile loop is what a session actually
 # spends its time in, and incremental compilation keeps it flat: 1.22s at `opt-level 0`, **1.14s**
 # at 2, for the same one-line edit. The optimizer is paid for once per cold build, not per edit.
 #
-# ★★ `debug = 1` is line tables without the full DWARF. A panic still names its file and line —
+# `debug = 1` is line tables without the full DWARF. A panic still names its file and line —
 # that comes from `Location`, which the compiler bakes in whatever this says — and a backtrace
 # still resolves frames. What goes is the variable-level detail a debugger wants, and with it most
 # of the artifact size: `target/debug` was measured to grow **9.1 GB in a single session**, of

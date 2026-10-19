@@ -16,12 +16,12 @@ use nacre_store::Handle;
 pub struct Edge {
     /// **The two surfaces whose faces this edge bounds** — the carriers.
     ///
-    /// ★ Not derivable from the endpoints' surface triples: where four planes pass through one
+    /// Not derivable from the endpoints' surface triples: where four planes pass through one
     /// point, the triples' intersection can name a plane the edge does *not* ride — silently
     /// (the four-plane concurrency trap, `nacre-ops`' `RingEdge`/`Ring.walls` doc). Every
     /// producer states the pair from the faces it is building, never derives it.
     ///
-    /// ★ Nor is it "every plane containing the line": where three planes share a LINE (the
+    /// Nor is it "every plane containing the line": where three planes share a LINE (the
     /// resolved four-plane concurrency), a third plane legitimately contains the edge without
     /// bounding it here — measured, each side's arrangement named that third plane as its wall.
     /// The pair is the *adjacency* answer: the two faces that use the edge.
@@ -76,7 +76,7 @@ impl Edge {
 /// `forward == true` traverses the edge start→end (`vertices[0]` → `vertices[1]`);
 /// `false` traverses it in reverse.
 ///
-/// ★ **A closed rim starts where it ends**, so those vertices settle nothing for it:
+/// **A closed rim starts where it ends**, so those vertices settle nothing for it:
 /// there, `forward` reads as *along the curve's own parameterization* — CCW about the
 /// circle's normal, which is the cylinder's axis direction. That is the only reading
 /// available and the one every producer writes (a bottom cap's rim is `false`, and its

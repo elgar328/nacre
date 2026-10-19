@@ -22,7 +22,7 @@ fn a_cylinder_frame_is_unit_and_perpendicular_or_it_is_nothing() {
         u2,
         [Rat::new(-4, 5).unwrap(), Rat::new(3, 5).unwrap(), q(0)]
     );
-    // ★ Not perpendicular: declined, **not** projected. The projecting recipe would answer
+    // Not perpendicular: declined, **not** projected. The projecting recipe would answer
     // here, and its `û₁` would carry an axis component — a "rim" point off the cap plane.
     assert!(cyl_unit_frame(&v(0, 0, 1), &v(3, 0, 4)).is_none());
     // Parallel, and the zero vector with it (`parallel_rat` says a zero is parallel to all).
@@ -212,7 +212,7 @@ mod name_from_meets {
         three_planes_big([&a, &b, &c]).expect("the fixture carriers meet")
     }
 
-    /// ★ Narrow-name output: three **wide** meets on the hand-known plane
+    /// Narrow-name output: three **wide** meets on the hand-known plane
     /// `T: 7x + 11y − 13z + 1 = 0` (already canonical — gcd 1, first coefficient
     /// positive) name exactly `T`.
     #[test]
@@ -236,7 +236,7 @@ mod name_from_meets {
         );
     }
 
-    /// ★ Wide-name output — the other side of the derivation's fork. `T_w: 2⁷⁰·x + y/5³⁰
+    /// Wide-name output — the other side of the derivation's fork. `T_w: 2⁷⁰·x + y/5³⁰
     /// − z + 1 = 0` has all-`Rat` coefficients but its canonical integers are `×5³⁰`:
     /// `(2⁷⁰·5³⁰, 1, −5³⁰, 5³⁰)`, whose largest is ~2¹⁴⁰ — a `Wide` name, still known by
     /// hand.
@@ -468,7 +468,7 @@ fn a_plane_pushed_along_its_normal_moves_by_that_distance() {
     }
 }
 
-/// ★★★ **Two steps compose into one, exactly.** This is the property the whole thing exists for:
+/// **Two steps compose into one, exactly.** This is the property the whole thing exists for:
 /// a cap raised `7.7` and a cap raised `1.1` then `6.6` record the *same* plane, because
 /// `11/10 + 66/10 = 77/10` holds in rationals where it does not in `f64`.
 #[test]
@@ -538,7 +538,7 @@ fn the_projected_origin_lies_exactly_on_its_plane() {
     }
 }
 
-/// ★★★ **One plane, three spellings, one point.** The design rests on this: the canonical form
+/// **One plane, three spellings, one point.** The design rests on this: the canonical form
 /// carries no direction (`Model::push_plane` returns a `flipped` flag for exactly that
 /// reason), and a plane is scale-invariant, so an origin derived from the coefficients would be
 /// worthless if it moved when the coefficients were negated or scaled.
@@ -624,7 +624,7 @@ fn the_sign_convention_picks_the_first_nonzero_component() {
     );
 }
 
-/// ★★★ **The rule this function cannot enforce, made executable.**
+/// **The rule this function cannot enforce, made executable.**
 ///
 /// Two faces of the plane `x = 3` reach `nacre_geom::Plane::coefficients()` as these two f64
 /// vectors, because the un-normalized normal scales with the face's size and `d` is a rounded
@@ -644,7 +644,7 @@ fn lifting_rounded_f64_coefficients_does_not_merge_them() {
     // Built from what the user *wrote*, and multiplied **in the rationals**, the same two
     // faces agree exactly.
     //
-    // ★★ The `d` in `−3·k` has to be a `Rat` product. Writing `d(-3.0 * k)` instead puts the
+    // The `d` in `−3·k` has to be a `Rat` product. Writing `d(-3.0 * k)` instead puts the
     // multiplication back in f64, `−3.0 × 2.2` comes out `−6.6000000000000005`, and its
     // shortest decimal is that — not `−6.6`. A value the caller computed is not a value the
     // caller wrote, and `from_decimal` cannot tell them apart.
@@ -673,7 +673,7 @@ fn on_plane(c: [Rat; 4], p: [Rat; 3]) -> bool {
     acc == Rat::from_int(0)
 }
 
-/// ★ **The moved plane must contain the moved points** — checked against a *separate*
+/// **The moved plane must contain the moved points** — checked against a *separate*
 /// point transform, so this cannot pass by restating the plane formula.
 #[test]
 fn a_moved_plane_still_contains_its_moved_points() {
@@ -729,7 +729,7 @@ fn a_mirrored_plane_still_contains_its_mirrored_points() {
 }
 
 /// A non-90° rotation has no rational `cos`/`sin`, so there is nothing exact to return —
-/// ★ **for the point as well as the plane**. A caller that could move one description and
+/// **for the point as well as the plane**. A caller that could move one description and
 /// silently drop the other would leave a plane whose stored points are no longer on it.
 #[test]
 fn an_inexact_rotation_declines() {

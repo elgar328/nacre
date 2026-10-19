@@ -59,7 +59,7 @@ fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
     }
     let mut bad = Vec::new();
     for v in vertices_of(m, s) {
-        // ★ `carriers()` is total over the variants by construction — the question here is
+        // `carriers()` is total over the variants by construction — the question here is
         // exactly "every surface the definition references", never a per-variant read.
         for t in m.vertex(v).carriers() {
             if !own.contains(&t) {
@@ -72,7 +72,7 @@ fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
 
 /// ① Two cubes sharing exactly the vertical line `x = 1, y = 1`.
 ///
-/// ★ **`validate` is the strong check here.** It counts edge uses over the *whole model*, so a
+/// **`validate` is the strong check here.** It counts edge uses over the *whole model*, so a
 /// contact edge left welded between the two bodies would come back `NonManifoldEdge` — its silence
 /// is the evidence that each body got its own copy. The disjoint handle sets say the same thing in
 /// one specific proposition, so a future change cannot make both vacuous at once.
@@ -112,7 +112,7 @@ fn two_cubes_touching_at_a_corner_come_back_as_two_bodies() {
     assert_eq!(nacre_validate::validate(&m), Vec::new());
 }
 
-/// ③ ★★ **The negative control, along a line.** A and B meet only along `x = 2, y = 2`, but a
+/// ③ **The negative control, along a line.** A and B meet only along `x = 2, y = 2`, but a
 /// bridge overlaps both, so the material loops around the contact: cut it there and one piece
 /// remains. There is no pair of solids to return, and the reject stays.
 ///
@@ -148,7 +148,7 @@ fn a_body_pinched_along_a_line_is_still_a_reject() {
     }
 }
 
-/// ④ ★★ **The negative control, at a point.** The same loop, closed through two bridge pieces that
+/// ④ **The negative control, at a point.** The same loop, closed through two bridge pieces that
 /// go around the contact rather than through it, so `(2,2,1)` stays a pinch.
 #[test]
 fn a_body_pinched_at_a_point_is_still_a_reject() {
@@ -220,7 +220,7 @@ fn block(m: &mut Model) -> Handle<Solid> {
     )
 }
 
-/// ⑤ ★★★ **The control that tells the *unit* apart.** Two square voids inside one block, meeting
+/// ⑤ **The control that tells the *unit* apart.** Two square voids inside one block, meeting
 /// along the vertical line `x = 2, y = 2`. Four faces use that segment — two from each void — and
 /// the count is what says no 2-manifold contains it.
 ///
@@ -291,7 +291,7 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     assert!(hit, "witness off the corner edge: {seg:?}");
 }
 
-/// ⑤c ★★★★★ **Every candidate node grazes — and the shape still has a name**.
+/// ⑤c **Every candidate node grazes — and the shape still has a name**.
 ///
 /// A diamond void whose four corners sit on the four walls. A component's nesting depth is cast
 /// from one of its own nodes, and here **every one of them** lies on the block's boundary, so the
@@ -302,7 +302,7 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
 /// is a fact about the witness supply and not about the geometry; giving the component the points
 /// its **edges** name lets the same self-touch test speak for both.
 ///
-/// ⚠ **"It decided" is not "it decided right."** A flipped depth would label the cavity material
+/// **"It decided" is not "it decided right."** A flipped depth would label the cavity material
 /// and the self-touch test could still ring, so the two operations whose answers are *valid solids*
 /// are checked against exact volumes here too: `Fuse` is the block and `Common` is the diamond
 /// prism, and neither number survives a depth read the wrong way round.
@@ -324,7 +324,7 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
     else {
         panic!("expected the self-touch, got {err:?}");
     };
-    // ⚠ **Which** corner is not a proposition of this shape. ⑤b's triangle grazes at one point, so
+    // **Which** corner is not a proposition of this shape. ⑤b's triangle grazes at one point, so
     // its witness is that one; this diamond touches **all four** walls, and which of the four
     // vertical corner edges the scan reports first is a fact about the walk's order. So the
     // assertion is the one the geometry makes: the witness *is* one of them, `z` from 1 to 2, read
@@ -344,7 +344,7 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
         });
     assert!(corner, "witness off every corner edge: {seg:?}");
 
-    // ★ The depths, checked by value. `Fuse` is the block (4·4·3) and `Common` is the diamond prism
+    // The depths, checked by value. `Fuse` is the block (4·4·3) and `Common` is the diamond prism
     // (the square's diagonals are 4 and 4, so its area is 8, times a height of 1).
     for (kind, want) in [(BoolKind::Fuse, 48.0), (BoolKind::Common, 8.0)] {
         let mut m = Model::new();
@@ -370,12 +370,12 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
     }
 }
 
-/// ⑤d ★★ **The all-grazing population, not one shape of it**. ⑤c's diamond was `n = 1`
+/// ⑤d **The all-grazing population, not one shape of it**. ⑤c's diamond was `n = 1`
 /// evidence that the new supply decides *and* decides right; these are the rest of the axis.
 ///
 /// Each void's every corner sits on a wall of the host, so the vertex supply is exhausted in every
 /// one — and each is checked the same way: the `Cut` is a refusal whose name is the shape's own,
-/// while `Fuse` and `Common` are valid solids whose volumes are exact. ☑ The hypothesis this
+/// while `Fuse` and `Common` are valid solids whose volumes are exact. The hypothesis this
 /// settles: an all-grazing cavity is **intrinsically** degenerate, so the `Cut` is always a
 /// refusal — no shape here produces a solid, and the win is the *name*, not a new answer.
 #[test]
@@ -427,7 +427,7 @@ fn every_all_grazing_void_names_its_shape_and_keeps_its_volumes() {
     }
 }
 
-/// ⑥ ★ Each body names itself by **its own** planes. The definition triple is derived per solid, so
+/// ⑥ Each body names itself by **its own** planes. The definition triple is derived per solid, so
 /// a contact vertex of one body can never be named by a plane only the other body has a face on —
 /// the defect `reconstruct`'s `debug_assert` catches in debug builds and this catches in release.
 #[test]

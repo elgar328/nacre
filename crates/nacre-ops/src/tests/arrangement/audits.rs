@@ -118,7 +118,7 @@ pub(crate) fn concurrency_audit(
         ) {
             names.extend(s.end);
         }
-        // ★ And the input the *trace's* rule actually sees: the operand faces' ring vertices.
+        // And the input the *trace's* rule actually sees: the operand faces' ring vertices.
         // Emitted segment endpoints are named `[wc, wall, r]`, so they always mention `wc` and can
         // never exercise the `wc ∉ t` branch — collecting only those measured nothing, which is
         // what the "was the rule exercised?" counter in the driver test caught.
@@ -145,18 +145,18 @@ pub(crate) fn concurrency_audit(
                 // Only vertices the class would actually name: those lying on it (`side == 0`),
                 // which is exactly the run condition the trace's rule fires under.
                 //
-                // ★ No re-canonicalization around this filter: a ring's nodes are `NodeId`s, and
+                // No re-canonicalization around this filter: a ring's nodes are `NodeId`s, and
                 // the only constructor sorts.
-                // ★★ **No `expect` on the projection.** A corner a cylinder made is *excluded* —
+                // **No `expect` on the projection.** A corner a cylinder made is *excluded* —
                 // the honest answer for a four-plane concurrency hunt — instead of panicking.
-                // ★★★★★ **And the exclusion is said, not left to an argument value.** Left to an
+                // **And the exclusion is said, not left to an argument value.** Left to an
                 // empty cylinder table handed to `side_of` (which declines a pierce node without
                 // one), giving that call a real table "for consistency" would turn the `expect`
                 // below into a panic. A concurrency is a fact about plane triples,
                 // so scope is the reason and it belongs in the filter — after which `&[]` is
                 // provably never read, which is what the other two sites say by wrapping their own
                 // triple.
-                // ☑ Measured: it drops **0** nodes across the workspace suite — this audit's own
+                // Measured: it drops **0** nodes across the workspace suite — this audit's own
                 // corpus is plane-only, so the filter is a precondition made explicit.
                 names.extend(
                     rings
@@ -623,7 +623,7 @@ pub(crate) struct ClassAudit {
     /// **What the arrangement produced, before anything refused it** — cells walked, arcs the
     /// split cut, and the nesting's two counts.
     ///
-    /// ★★★ Born while the arc stopper swallowed every arrangement stage's answer (a probe was
+    /// Born while the arc stopper swallowed every arrangement stage's answer (a probe was
     /// the only way to see the population, and a probe is deleted before the commit); the
     /// population is green now, and this stays as the audit's direct read of what a class
     /// produced. `None` when the class stopped before those stages ran.
@@ -633,29 +633,29 @@ pub(crate) struct ClassAudit {
     /// nothing), sorted by their rotation-normalized first coordinate. `None` when the class
     /// stopped before `emit_faces`.
     ///
-    /// ★★★★★ **Coordinates, not node identities, and the reason is that the lock must not be
+    /// **Coordinates, not node identities, and the reason is that the lock must not be
     /// circular.** A node name is `ThreePlane([0, 2, 5])` — plane **class** indices, which no
     /// fixture derives; writing the expected value means running the engine and copying what it
     /// said, and a test whose oracle is its subject measures nothing. Coordinates come from the
     /// fixture's own numbers.
     ///
-    /// ★★★★★ **Rotation is normalized, reversal deliberately is not.** The walk tries both
+    /// **Rotation is normalized, reversal deliberately is not.** The walk tries both
     /// handednesses and pushes cells in its own order, so *which* vertex a ring starts at is not a
     /// fact about the geometry — the minimum coordinate goes first. Reversal *is* a fact: it is
     /// what a wrong `sense` on a split segment produces, and it is invisible in every
     /// order-independent summary (cell counts, nesting, sorted labels). Folding it here would
     /// delete the one thing this field exists to see.
     ///
-    /// ★★★ **And rotation-normalization is itself reversal-blind at `n <= 2`**: reversing a
+    /// **And rotation-normalization is itself reversal-blind at `n <= 2`**: reversing a
     /// two-cycle *is* a rotation of it. Such a ring cannot carry this lock at all — which is why
     /// the fence's red probe is read on the turned boss (5- and 3-rings), not the straddling one
     /// (6- and **2**-rings).
     ///
-    /// ★ It is a sibling of [`Produced`] rather than a field in it because `[f64; 3]` is not `Eq`
+    /// It is a sibling of [`Produced`] rather than a field in it because `[f64; 3]` is not `Eq`
     /// (the derive would break) and one of these coordinates is irrational, so it needs `near()`
     /// rather than `==` — the two could not ride the same `assert_eq!` regardless.
     ///
-    /// ★★★ **Two things are left out on purpose, and saying so is the point** — a silent omission
+    /// **Two things are left out on purpose, and saying so is the point** — a silent omission
     /// reads as an oversight to whoever comes next:
     /// - **`flip`.** It is `keep_above == (frame_sign > 0)`, so it turns on the *class's stored
     ///   normal direction* — an implementation fact, not one of the fixture's numbers. Carrying it
@@ -676,7 +676,7 @@ pub(crate) struct Produced {
     /// Every `+1` cell's label, **sorted** — the labelling stage's answer, in a form the walk's
     /// handedness cannot reorder.
     ///
-    /// ★★ `Copy` goes with this, and that was the choice rather than the discovery: a sibling field
+    /// `Copy` goes with this, and that was the choice rather than the discovery: a sibling field
     /// on [`ClassAudit`] would keep it, but then one class's two facts live in two places and the
     /// fence has to join them by index — a seam where they can drift. `PartialEq` stays, so the
     /// fence remains a single `assert_eq!` against a value derived from the geometry.
@@ -696,13 +696,13 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 /// Every emitted face's outer ring as coordinates, for [`ClassAudit::outer_rings`] — that field
 /// carries the argument for coordinates, for normalizing rotation, and for leaving reversal alone.
 ///
-/// ★★ **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
+/// **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
 /// and two are pierce points — and the dispatch between them lives in
 /// [`combinatorics::node_point_approx`], not here: spelling a [`combinatorics::NodeId`] variant
 /// outside that file is what `three_plane_name`'s gate forbids, and the first draft of this
 /// function broke it with the suite green.
 ///
-/// ★ A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
+/// A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
 /// length, so the fence reads "this vertex had no coordinate" instead of "the ring is short".
 fn face_ring_coords(
     jd: &Judge<'_, WorkingPlane>,
@@ -731,7 +731,7 @@ fn face_ring_coords(
     // Between faces the order *is* the walk's, so it is normalized — lexicographically over the
     // whole (already rotated) sequence.
     //
-    // ★ **Total on purpose, not just "by the first vertex".** Two faces of one class can share
+    // **Total on purpose, not just "by the first vertex".** Two faces of one class can share
     // their minimum vertex — they meet there — and ordering on that alone would leave such a pair
     // in walk order, which is a handedness coin flip inside an instrument whose whole job is to be
     // stable. Today's two fixtures have distinct minima, so this costs nothing and removes the
@@ -842,7 +842,7 @@ pub(crate) fn frame_audit(
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls, &local)?;
                 let rulings = merge_rulings(&tr.rulings, &cyls, &local);
-                // ★★★★ **The same edges the boolean uses.** This copy of the pipeline is what
+                // **The same edges the boolean uses.** This copy of the pipeline is what
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —
                 // *"the worst possible time to be lying"* (`decline_to_reject`). The arc fence

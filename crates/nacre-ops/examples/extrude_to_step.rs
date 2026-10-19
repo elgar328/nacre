@@ -12,7 +12,7 @@
 //! A regular hexagon, for no reason but familiarity: the tessellator sweeps every face, holes
 //! and all, so a concave profile would mesh correctly too.
 //!
-//! ★ This used to read *"`to_obj` ear-clips planar faces and bridges their holes"* — both halves
+//! This used to read *"`to_obj` ear-clips planar faces and bridges their holes"* — both halves
 //! died when the monotone sweep replaced ear clipping (it **never merges rings**, which is the
 //! whole reason bridging went), and the comment outlived them by two cells.
 

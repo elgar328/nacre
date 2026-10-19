@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// ★★★★★ **The negative control — the net can see a crossing.**
+/// **The negative control — the net can see a crossing.**
 ///
 /// The audit reports zero circle–ruling crossings over the corpus, and that number means
 /// «none there» only if the instrument can say «there». This drives the rational net directly,
@@ -11,7 +11,7 @@ use super::*;
 /// `z` at `x = 3` with radius `5` — so its two rulings stand at `y = ±4` — and a circle centred
 /// on that plane whose radius is walked across each of them.
 ///
-/// ★★★★★ **The extent form and the disk form are one door.**
+/// **The extent form and the disk form are one door.**
 ///
 /// [`nacre_exact::cylinder_ruling_reached_extent`] answers for a piece stated by its two ends;
 /// a disk is that piece with both ends the same. Handing it the **same** point and margin twice
@@ -19,7 +19,7 @@ use super::*;
 /// it generalizes, and every arc reading rests on it. Swept over centres, radii and both sides so
 /// the agreement is a population, not a sample.
 ///
-/// ★ And the last block is what the generalization is *for*: two **different** ends read a reach
+/// And the last block is what the generalization is *for*: two **different** ends read a reach
 /// the symmetric form cannot state, and they answer differently.
 #[test]
 fn the_extent_form_agrees_with_the_disk_it_generalizes() {
@@ -57,7 +57,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                             true,
                         );
                         assert_eq!(disk, both, "ox {ox} rad {rad} y {y} rho {rho} side {side}");
-                        // ★★ **Crossing implies reaching, everywhere.** The open
+                        // **Crossing implies reaching, everywhere.** The open
                         // reading is the closed one minus its boundary, so it can never say
                         // *more*. This is what sweeps the hand-written arms of the sign table
                         // the named boundary threads through; nothing else exercises them in bulk.
@@ -82,7 +82,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
             }
         }
     }
-    // ★ A reach from `y = 4` to `y = 6` with no margin: it holds the `−` ruling at `y = 4`
+    // A reach from `y = 4` to `y = 6` with no margin: it holds the `−` ruling at `y = 4`
     // (closed, a touch counts) and misses the `+` one at `y = −4` entirely — which no single
     // centre-and-radius could say, because a disk covering `[4, 6]` is centred at `5`.
     let lo = MeetPoint::Narrow([r(0), r(4), r(0)]);
@@ -108,12 +108,12 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
         "the reach ends on the ruling, and a touch counts"
     );
     assert!(!reach(1, true), "and never comes near the other one");
-    // ★★ **And the same reach does not *cross* it.** The arrangement's net asks about a
+    // **And the same reach does not *cross* it.** The arrangement's net asks about a
     // crossing, because a node no road mints is one; an edge tangent to another divides nothing,
     // which is the same sentence as for a tangency at a vertex.
     assert!(!reach(-1, false), "ending on the ruling is not crossing it");
     assert!(!reach(1, false));
-    // ★ And for a **disk**, where the two readings are the only thing separating a tangency from
+    // And for a **disk**, where the two readings are the only thing separating a tangency from
     // an overlap: the same rulings at `y = ±4`, and a disk covering `[4, 8]` about `y = 6`.
     let tangent = MeetPoint::Narrow([r(0), r(6), r(0)]);
     let touching = |touch_counts| {
@@ -162,7 +162,7 @@ fn a_circle_and_a_ruling_meet_or_clear() {
             side,
         )
     };
-    // ★ Sides here are the **scalar** family's: the sign of `(p − o)·(n × m)`, which for this
+    // Sides here are the **scalar** family's: the sign of `(p − o)·(n × m)`, which for this
     // wall and axis points along `−y`. So a circle centred at `y = 5` sits on the `−` side, and
     // the ruling it reaches is the `−` one.
     assert!(meets(3, 5, 5, 2, -1));
@@ -179,19 +179,19 @@ fn a_circle_and_a_ruling_meet_or_clear() {
     assert!(!meets(5, 5, 5, 2, 0));
     // A plane that clears the cylinder carries no ruling to meet.
     assert!(!meets(10, 5, 0, 2, 1));
-    // ★ The precondition (a class parallel to the axis) is the caller's to check — the arrangement
+    // The precondition (a class parallel to the axis) is the caller's to check — the arrangement
     // wrapper asks it and answers `None`; here it is a `debug_assert`, so this test does not drive
     // an off-axis class through the door.
 }
 
-/// ★★★★★ **A disk clears the strip, spans it, or floats inside it, and the three are
+/// **A disk clears the strip, spans it, or floats inside it, and the three are
 /// told apart.** The gate's disk arm rests on this, and a predicate that answered one of them
 /// always would still pass every model in the corpus.
 ///
 /// The class `x = 0`; a cylinder about `z` at `x = 3` with radius 5, so the strip runs `|U| ≤ 4`
 /// in the `n × m` coordinate — which for this wall and axis points along `−y`.
 ///
-/// ★ The last case is the one the vocabulary exists for: a **point** on a ruling spans nothing, so
+/// The last case is the one the vocabulary exists for: a **point** on a ruling spans nothing, so
 /// `Crosses` needs width and never comes back from the spellings a vertex takes.
 #[test]
 fn a_disk_clears_a_strip_or_spans_it() {
@@ -222,7 +222,7 @@ fn a_disk_clears_a_strip_or_spans_it() {
     assert_eq!(disk(0, 3), StripSide::Inside);
     // Touching is not spanning, on either side of the boundary.
     assert_eq!(disk(6, 2), StripSide::Inside);
-    // ★ A point has no width, so it can never span: on the ruling it is `Inside`, as it was
+    // A point has no width, so it can never span: on the ruling it is `Inside`, as it was
     // before this cell and as `cylinder_strip_side` still answers.
     assert_eq!(disk(4, 0), StripSide::Inside);
     assert_eq!(
@@ -237,7 +237,7 @@ fn a_disk_clears_a_strip_or_spans_it() {
     );
 }
 
-/// ★★★★★ **Why the net's population is empty today, frozen by name.**
+/// **Why the net's population is empty today, frozen by name.**
 ///
 /// A circle and a ruling of one class meet only if two lateral faces share a point, and the
 /// cylinder-pair gate refuses that before any arrangement runs. This is that gate seen from
@@ -280,7 +280,7 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
     }
 }
 
-/// ★★★★ **The one shape the walk has never seen, and why no fixture stands for it.**
+/// **The one shape the walk has never seen, and why no fixture stands for it.**
 ///
 /// A class carrying a circle **inside** a ruling cylinder's strip would put a disk afloat in a
 /// ruling-bounded region: the arrangement's four edge kinds allow it, and nothing downstream has
@@ -289,12 +289,12 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
 /// **inside** it, which is exactly the placement whose cap plane would carry its own circle and
 /// the big cylinder's rulings, the circle well within them.
 ///
-/// ☑ Measured: it does not reach the arrangement at all — the operand gate speaks first, for both
+/// Measured: it does not reach the arrangement at all — the operand gate speaks first, for both
 /// kinds. So «zero inside» is not an instrument that failed to look; it is a shape the gate does
 /// not admit yet. One placement is not a population claim, which is why this freezes the placement
 /// by name rather than asserting anything wider.
 ///
-/// ★ With the caps readable the plane-level questions
+/// With the caps readable the plane-level questions
 /// are answered instead of declined, and the pair rule gets to speak: these two cylinders really
 /// do share points, so `CylinderPairContact` is the true name and `CylinderGateUndecided` would be
 /// the road running out before reaching it.
@@ -340,7 +340,7 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
     }
 }
 
-/// ★★★★ **The shape that makes a disk *span* a tangent line, and why no verdict sees it
+/// **The shape that makes a disk *span* a tangent line, and why no verdict sees it
 /// yet.**
 ///
 /// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
@@ -349,13 +349,13 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// along the disk's open chord, which only [`nacre_exact::StripSide::Crosses`] opens), and then the
 /// cylinder-pair rule speaks first and the operation stops.
 ///
-/// ☑ **The two cannot be separated today.** For the row to be written at all the disk must overlap
+/// **The two cannot be separated today.** For the row to be written at all the disk must overlap
 /// the boss's axis span; overlapping it puts the bar's own lateral inside the boss's reach, which
 /// is exactly what `lateral_faces_clear` denies. So the spanning fold is exercised but no
 /// *outcome* depends on it — the same shape as the «circle inside a strip». This freezes the
 /// geometry so the work that opens `CylinderPairContact` finds it waiting.
 ///
-/// ★ The pair rule can clear by a third separating direction and a reader stands in front of it,
+/// The pair rule can clear by a third separating direction and a reader stands in front of it,
 /// so «cannot be separated today» is a statement about *this* geometry
 /// and not about the rule in general. The freeze is what says so if that changes.
 #[test]
@@ -405,7 +405,7 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     }
 }
 
-/// ★ **The push funnel realizes; the fallback stands only where the realization declines** (cell
+/// **The push funnel realizes; the fallback stands only where the realization declines** (cell
 /// 52). Pushing a realizable definition again with a fallback that is wrong by three ulp gives a
 /// `Realized` cache holding the realization, not the fallback; a definition the road declines by
 /// name — a pierce corner on a cylinder under an irrational turn, whose meet no road solves off
@@ -512,7 +512,7 @@ fn slanted_wedge(m: &mut Model) -> Handle<Solid> {
     solid
 }
 
-/// ★★★★ **A lateral bounded by two cut rims states its axis span from both.**
+/// **A lateral bounded by two cut rims states its axis span from both.**
 ///
 /// [`crate::fixtures::cut_at_both_rims`]'s lateral wraps the axis between two cut rims and has no
 /// seam edge, so its upper rim is an **inner** loop. Its span is `[0, 4]`; read off the outer loop
@@ -549,7 +549,7 @@ fn a_lateral_cut_at_both_rims_reads_its_span_from_both() {
     }
 }
 
-/// ★★★ **A lateral bounded by two cut rims is an operand like any other.** Fed back to a boolean
+/// **A lateral bounded by two cut rims is an operand like any other.** Fed back to a boolean
 /// with a box slicing it through the middle (`x ∈ [−0.5, 3]`, `|y| ≤ 2`, `z ∈ [1.5, 2.5]`), every
 /// kind builds a clean model of the analytic volume — the disk part with `x > −0.5`, one tall,
 /// is `π − s` for `s` the segment past `|x| = 0.5`.

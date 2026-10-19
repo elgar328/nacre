@@ -72,7 +72,7 @@ fn cylinder_caps_face_outward() {
     }
 }
 
-/// ★★ **A seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
+/// **A seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
 /// The pair pins the rim circle; the cylinder's `ref_dir` truth pins the point
 /// (see `Vertex::OnSeam`). The lateral surface must be the cylinder, the other its cap.
 #[test]
@@ -153,7 +153,7 @@ fn an_edge_on_one_cylinder_twice_is_refused() {
     );
 }
 
-/// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
+/// The «discard and regenerate» warrant: the edge-curve cache rebuilt from the carriers and
 /// endpoints — on the push's own budget (`nacre_ops::rebuild_edges_cheap`) — is bit-identical to
 /// the one the push filled eagerly — proof that nothing in it was truth. A tilted cylinder beside a
 /// box and a box turned 37°, so circles, straight edges on named planes and straight edges
@@ -233,7 +233,7 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
     };
     let before = snapshot(&m);
     nacre_ops::rebuild_edges_cheap(&mut m);
-    // ⚠ True of a model nothing has refined. `nacre_ops::refine_caches` moves coordinates,
+    // True of a model nothing has refined. `nacre_ops::refine_caches` moves coordinates,
     // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
     // re-derives. This asserts the derivation is stable, not that rebuilding is always free.
     assert_eq!(
@@ -243,13 +243,13 @@ fn edge_cache_discard_and_regenerate_bit_identical() {
     );
 }
 
-/// ★★ **A rim's frame is its cylinder's, to the bit** — normal, `ref_dir` and radius are the
+/// **A rim's frame is its cylinder's, to the bit** — normal, `ref_dir` and radius are the
 /// cylinder cache's, which is the truth's correctly rounded frame. Asked where re-deriving it in
 /// `f64` moves it: a cylinder on a tilted frame node (axis `(1,1,1)`) turned 37° about `z` — its
 /// seam direction has a component whose truth is exactly `0`, which a renormalization brings back
 /// as a residue — and a `+z` cylinder turned 37° about `y` then 11° about `x`.
 ///
-/// ★ The sweep also counts the rims whose frame a renormalization *would* move, and requires one:
+/// The sweep also counts the rims whose frame a renormalization *would* move, and requires one:
 /// a fixture whose frame survives `Circle::from_center_normal` bit for bit cannot tell the two
 /// constructors apart, and this lock would pass with either.
 #[test]
@@ -333,7 +333,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
     );
 }
 
-/// ★★ **A stated rim's centre is the truth's nearest `f64`** — the cylinder's axis met with its
+/// **A stated rim's centre is the truth's nearest `f64`** — the cylinder's axis met with its
 /// cap, exactly, then rounded. The oracle is this test's own: the fixture's decimals (the base and
 /// the height, read as the decimals they spell) and an axis whose unit vector is rational by hand
 /// (`3-4-0 / 5`, `0-3-4 / 5`, `12-0-5 / 13`, and `+z`), so the bottom rim's centre is the base and
@@ -342,7 +342,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
 /// has no rational perpendicular frame and is built on a frame node, where the centre is not yet
 /// the truth's.
 ///
-/// ★ The sweep also counts the rims where the caches' `f64` meet (`line_plane` of the cylinder
+/// The sweep also counts the rims where the caches' `f64` meet (`line_plane` of the cylinder
 /// cache's axis and the cap cache) misses the truth, and requires one — otherwise this lock could
 /// not tell the two roads apart.
 #[test]
@@ -468,7 +468,7 @@ fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
     );
 }
 
-/// ★★ **A nameless `Through` statement interns by its statement.** Two seam vertices and a box
+/// **A nameless `Through` statement interns by its statement.** Two seam vertices and a box
 /// corner span a plane no name road reaches (`plane_name_through` is `None`), so the door stores
 /// the statement itself — once — and a second statement of it is the same handle: facing the
 /// other way reports `flipped`, and a different motion is a different statement. The door's
@@ -597,7 +597,7 @@ fn edge_kinds(m: &Model, s: Handle<nacre_topo::Solid>) -> (usize, usize) {
     (circles, lines)
 }
 
-/// ★★ **A moved cylinder keeps its edges' kinds** — asked of two populations whose carriers do
+/// **A moved cylinder keeps its edges' kinds** — asked of two populations whose carriers do
 /// not share one chain after the move: a cylinder on a tilted frame (a frame node) moved by a
 /// non-dyadic translation, recorded behind that history, and a `+z` cylinder turned 30° about `z`
 /// (its seam reference goes irrational, so the turn is recorded) then moved along its axis — the
@@ -678,7 +678,7 @@ proptest! {
     /// those leaves `i128`. The sketch plane states itself from basis crosses of the written
     /// decimals (`SketchPlane::from_origin_normal`), which is what keeps this family built.
     ///
-    /// ★ The sibling above cannot stand in for this: its uniform axis reaches this family
+    /// The sibling above cannot stand in for this: its uniform axis reaches this family
     /// about **0.01%** of the time (measured). Here it is ~80%.
     #[test]
     fn prop_cylinder_near_axis_aligned_is_built_not_refused(

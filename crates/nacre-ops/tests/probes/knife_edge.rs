@@ -160,7 +160,7 @@ fn axis_aligned_knife_edge_fuses_to_two_bodies() {
 /// checked the way the criterion has to be checked: **by volume**. 4000 + 500 with nothing
 /// removed means the interiors are disjoint, which is what "two bodies" claims.
 ///
-/// ★ Not a `NonManifoldVertex` reject: "the material sectors on the two sides of the plane are
+/// Not a `NonManifoldVertex` reject: "the material sectors on the two sides of the plane are
 /// not adjacent — the union is genuinely non-manifold along the line" is true of a *single* union
 /// body, and two bodies is the answer.
 #[test]

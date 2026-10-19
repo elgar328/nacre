@@ -453,7 +453,7 @@ fn fillet_plate(m: &mut Model) -> Handle<Solid> {
     solid
 }
 
-/// ★ **A box resting on a cap across its rim leaves what it cuts whole.** `B` touches `A`'s cap
+/// **A box resting on a cap across its rim leaves what it cuts whole.** `B` touches `A`'s cap
 /// face to face and nowhere else, and the contact's boundary crosses the cap's rim, so the cap
 /// class splits the rim at `B`'s planes and the cut merges the cap back. `A − B` is `A` itself —
 /// the same vertices to the bit, the same faces — `B − A` is `B`, the Fuse is one body of both

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """필독 문서가 «커널 코드에 없는» 식별자를 드는 자리 — 후보 스윕.
 
-★ 이 계기는 «판정에서» 제외하지 않는다. 한 물음만 답한다 — **`crates/` 에 비주석 사용이 0인가**.
-  ⚠ 후보를 «만들 때»의 필터는 둘 있다(정직하게 적는다): 불용어 STOP 과 **3자 미만 배제**.
+이 계기는 «판정에서» 제외하지 않는다. 한 물음만 답한다 — **`crates/` 에 비주석 사용이 0인가**.
+  후보를 «만들 때»의 필터는 둘 있다(정직하게 적는다): 불용어 STOP 과 **3자 미만 배제**.
     실측(**기본값 세 문서**): STOP 19낱말은 전부 crates 에 살아 있어 가리는 것이 0.
-    ⚠ **길이 하한은 13개를 가리고 그중 셋은 진짜 식별자다** — `At` ·
+    **길이 하한은 13개를 가리고 그중 셋은 진짜 식별자다** — `At` ·
     `Hp` · `Iv`(은퇴한 타입명). 나머지 열(`C`·`D0`~`D2`·`Q1`~`Q3`·`NN`·`PP`·`y2`)은 수식·질문 기호다.
     ⇒ **2자 이하 이름을 쫓을 때는 이 필터를 끄고 돌려라.** 「안 적은 제외」가 이 도구가 경계하는
     바로 그것이고, 처음엔 이 문장도 «두 문서»에서만 재서 「전부 수식 기호」라 적었다.
@@ -20,7 +20,7 @@ import io,re,subprocess,glob,os,sys
 W=r'[A-Za-z0-9_]'
 STOP={'the','and','pub','fn','let','mut','vec','usize','f64','i8','bool','true','false','none',
       'some','self','str','rust','impl','match','for','if','else','type','use','mod','crate'}
-SIB=('../step-io','../brep-to-step','../nacre-kit','../nacre-playground/wasm')  # ⚠ playground 는 wasm 크레이트만:
+SIB=('../step-io','../brep-to-step','../nacre-kit','../nacre-playground/wasm')  # playground 는 wasm 크레이트만:
 #   web/ 은 node_modules 를 들어 `Intersection` 같은 이름이 @types/three 에서 12건으로 잡힌다(잡음).
 # `target/` is build output, not source: the sibling repos' come to gigabytes (a sweep of the three
 # documents went past half an hour walking them), and a name met only there is no use of it.

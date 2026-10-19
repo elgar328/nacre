@@ -9,7 +9,7 @@ use nacre_topo::Model;
 /// The real claim — "a chart covers its own class's rows" — is asserted in `census`, where the
 /// fact is made.
 ///
-/// ★★★★★ **The shape assertions are universal over every chart in the binary**, which is a
+/// **The shape assertions are universal over every chart in the binary**, which is a
 /// stronger statement than one about this fixture and which no interleaving can break. What is
 /// this fixture's alone — how many charts it recorded — is counted on its own rows
 /// (`ledger::owned`), and a row of another test's can neither add to that count nor stand in
@@ -47,7 +47,7 @@ fn the_chart_census_is_running() {
         crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore")
     });
     let rows = ROWS.all();
-    // ★ **This bore's own charts, counted.** One cylinder means one class, and a class is one
+    // **This bore's own charts, counted.** One cylinder means one class, and a class is one
     // chart row — a count the ledger could not state while every test's rows shared the list.
     assert_eq!(ROWS.mine().len(), 1, "a through bore records one chart");
     for r in &rows {
@@ -61,7 +61,7 @@ fn the_chart_census_is_running() {
         } = *r;
         assert!(n >= 1, "a class with no row: {r:?}");
         assert!(z_lines >= 2, "a band needs two boundaries: {r:?}");
-        // ★ `theta % 2 == 0` ("a wall cuts two rulings") is not asserted: a
+        // `theta % 2 == 0` ("a wall cuts two rulings") is not asserted: a
         // band's lateral reaches both rulings of a wall, a panel's or a chain's may reach one.
         let _ = theta;
         assert!(!refused, "a chart's theta order could not be formed: {r:?}");
@@ -81,22 +81,22 @@ fn the_chart_census_is_running() {
 /// the chart with a label, and the walk around each interval returns to where it started.
 /// What this holds is that the reading is **live** and that its counters are not vacuous.
 ///
-/// ★★★★★ **What the vertical answer settled, which no label alone could.** 82
+/// **What the vertical answer settled, which no label alone could.** 82
 /// emitted bands span more than one θ-sector, and the cells alone cannot say what the extra
 /// line is. With a label on the vertical lines there are three answers, and the third is
-/// existence — the ruling may not be on this face at all. ☑ Measured over the suite:
+/// existence — the ruling may not be on this face at all. Measured over the suite:
 /// **absent 0 · a
 /// boundary the band road misses 0 · harmless 84**. The band road is calling those strips
 /// uniform and the chart agrees they *are*: the walls crossing them change nothing at the
 /// lateral there.
 ///
-/// ☑ Beside it, over **450 alive-ruling observations** — a piece counts once per interval it
+/// Beside it, over **450 alive-ruling observations** — a piece counts once per interval it
 /// spans, so this is **not** the 862-piece denominator above: **122 whose wall does change the
 /// material** (so the counter has a population), **61 intervals** carrying at least one, **12
 /// whose every mark is a graze** — the existence question is not empty either — and **201
 /// intervals closing, 0 not**.
 ///
-/// ★★ **The first spelling of the existence counter was vacuous**: it asked whether a ruling's
+/// **The first spelling of the existence counter was vacuous**: it asked whether a ruling's
 /// mark list was *empty*, and a `MergedRuling` exists only because a lateral traced it. It
 /// measured `0` because nothing was being looked at. The signal `face_spans` actually reads is
 /// the **kind** (`Graze` = the face stops here), and that has 12.
@@ -123,7 +123,7 @@ fn the_charts_vertical_answers_close() {
     });
     let rows = super::probe::rulings::ROWS.all();
     let mine = super::probe::rulings::ROWS.mine();
-    // ★ Universal over every recorded chart, so no interleaving can break it.
+    // Universal over every recorded chart, so no interleaving can break it.
     for r in &rows {
         // Both counts are subsets of the same denominator, in the same table.
         assert!(r.wall_flips <= r.rulings, "more flips than rulings: {r:?}");
@@ -136,7 +136,7 @@ fn the_charts_vertical_answers_close() {
             "more flipping intervals than walked ones: {r:?}"
         );
     }
-    // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
+    // And the counters are not vacuous — a zero above must mean "the population is
     // empty here", never "nothing was looked at". Counted on **this fixture's own rows**: the
     // boss's lateral is one class, so one chart; its four z lines (the boss's two rims and the
     // plate's two faces) make three intervals, and the wall through the axis cuts two rulings
@@ -213,9 +213,9 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             m.rebuild_adjacency();
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
         }
-        // ★ A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
+        // A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
         // lateral along two rulings — and the chart has a θ line for only the one the face
-        // reaches. The **Cut** is the kind this test builds through it. ★★ It reads **no run of
+        // reaches. The **Cut** is the kind this test builds through it. It reads **no run of
         // arcs**: measured over this test's own rows, `exact_run_arcs` is 0 here, and the run
         // population belongs to the crossing census's through-axis walls instead.
         {
@@ -273,7 +273,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             r.read_refused, 0,
             "the reader refused a cell by name: {r:?}"
         );
-        // ★★★★★ **A run is why this is not `arcs_read == end_exact`.** A sector may span several
+        // **A run is why this is not `arcs_read == end_exact`.** A sector may span several
         // of the rim's arcs, and the proposition that holds over every row in the binary — the
         // runs among them — carries the run's extra arcs by name.
         assert_eq!(
@@ -287,7 +287,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
             "more dropped cells than cells: {r:?}"
         );
     }
-    // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing was
+    // Non-vacuity — a zero above must mean "the population is empty", never "nothing was
     // looked at" — and on **this test's own rows**, so no neighbour's fixture can stand in for
     // one of these.
     assert_eq!(mine.len(), 20, "the fixtures' charts");
@@ -296,7 +296,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
     assert_eq!(sum(&mine, |r| r.end_nocircle), 10, "lines with no circle");
     assert_eq!(sum(&mine, |r| r.emit), 80, "cells the reader emitted");
     assert_eq!(sum(&mine, |r| r.arcs_read), 132, "cut ends read");
-    // ★ A sector spanning the **phantom** pieces of a half rim (a wall boss) reads `Uncovered`:
+    // A sector spanning the **phantom** pieces of a half rim (a wall boss) reads `Uncovered`:
     // those pieces are no edges.
     assert_eq!(sum(&mine, |r| r.end_uncovered), 2, "uncovered rim pieces");
     assert_eq!(
@@ -310,7 +310,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
         5,
         "sectors dropped for existence"
     );
-    // ★★ **The run population is not this test's.** `exact_run_arcs` is 0 over every row here,
+    // **The run population is not this test's.** `exact_run_arcs` is 0 over every row here,
     // including the through-axis wall's — the sector that spans a rim node is built by the
     // crossing census's walls, and that is what keeps the equality above from being
     // `arcs_read == end_exact` over the binary.
@@ -323,7 +323,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
 
 /// **The derivation, on an axis that is not `+z`** — both roads, on a genuinely tilted one.
 ///
-/// ★★★★★ **Why this fixture had to be built.** Everything above is derived from the gate's
+/// **Why this fixture had to be built.** Everything above is derived from the gate's
 /// branch table and depends on no axis direction, but every number beside it was measured on
 /// a corpus that is effectively axis-aligned: the kit builder raises cylinders on world XY
 /// (`+z` only), the ops corpus is `+z`/`+x`/`+y`, and all three *tilted* cylinders in it are
@@ -331,7 +331,7 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
 /// axis-aligned box a class's axis parameter is just a `z` coordinate and the division in
 /// `bands::axis_param` is trivial; tilted, it is a real rational one.
 ///
-/// ★★★★ **Both halves are stated on the exact road, and that is the whole trick.**
+/// **Both halves are stated on the exact road, and that is the whole trick.**
 /// A *Pythagorean frame* — `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)` — lifts to axes that
 /// are exactly orthonormal in the rationals, so `SketchPlane::from_axes` takes the
 /// world-rational path and every face of the prism raised on it states narrow coefficients
@@ -339,12 +339,12 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
 /// and the frame's own `u` is a **unit rational perpendicular** to it — so the bore, sketched on
 /// that frame moved to its centre, is stated in the world too.
 ///
-/// ★★★★★ **The cylinder's axis being tilted is not the cylinder being irrational.** A cylinder
+/// **The cylinder's axis being tilted is not the cylinder being irrational.** A cylinder
 /// sketched on a frame with an exact orthonormal basis states every point exactly; only a frame
 /// without one (an axis like `(0, 1, 1)`) rides a frame node, and the population gate refuses that
 /// as having no world statement.
 ///
-/// ☑ What this establishes: the chart's two axes are built, and the axes' universal claims
+/// What this establishes: the chart's two axes are built, and the axes' universal claims
 /// hold,
 /// on an axis with no zero component — through-bore (circles only) **and** a wall holding the
 /// axis (rulings).
@@ -398,7 +398,7 @@ fn the_chart_stands_on_a_tilted_axis() {
         .expect("the tilted prism") else {
             unreachable!()
         };
-        // ★★★★ **The fixture qualifies its own population**: every face must state narrow
+        // **The fixture qualifies its own population**: every face must state narrow
         // world coefficients, and
         // each must be either ⊥ or ∥ to the axis **exactly** — otherwise the gate would be
         // answering the oblique branch and the chart would never be reached.
@@ -417,7 +417,7 @@ fn the_chart_stands_on_a_tilted_axis() {
                 "a face neither ⊥ nor ∥ to the axis would be the oblique branch"
             );
         }
-        // ★ The seam on the frame's own `u`: unit, and `u · axis = 0.384 − 0.384 = 0` exactly;
+        // The seam on the frame's own `u`: unit, and `u · axis = 0.384 − 0.384 = 0` exactly;
         // `axis × u = (−0.48, 0.36, 0.8)` is the frame's `v`, so the bore's sketch frame is the
         // prism's, moved — Pythagorean, world-rational.
         let cyl = crate::fixtures::cylinder_with_seam(
@@ -438,7 +438,7 @@ fn the_chart_stands_on_a_tilted_axis() {
             nacre_validate::validate(&m).is_empty(),
             "{name}: the tilted result must be sound"
         );
-        // ★★★★★ **The oracle is on this model, derived from the inputs.** Green plus a clean
+        // **The oracle is on this model, derived from the inputs.** Green plus a clean
         // `validate` would say only that *some* solid was built; the volume says the tilted
         // boolean removed the right material, and it is computed from the prism's and bore's
         // own dimensions rather than from anything the kernel answered.
@@ -452,7 +452,7 @@ fn the_chart_stands_on_a_tilted_axis() {
         );
         let mine = ROWS.mine_since(before);
         let want = if want_rulings { 6 } else { 0 };
-        // ★ This fixture's own charts, read as a count — a shared ledger could only say the
+        // This fixture's own charts, read as a count — a shared ledger could only say the
         // shape existed somewhere. The volume above is the other half: it proves the tilted
         // boolean removed the right material, on this model.
         assert_eq!(mine.len(), 1, "{name}: one tilted class, one chart");

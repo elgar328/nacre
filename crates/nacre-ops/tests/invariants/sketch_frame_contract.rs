@@ -13,7 +13,7 @@
 //! > For every planar face, `face_sketch_frame` returns a frame whose realization
 //! > (`frame_plane`) is **bit-identical** to `face_plane` — the frame the pad sketches in.
 //!
-//! ★ It holds by construction: the face's frame is chosen once (`face_sketch_frame`), the pad's
+//! It holds by construction: the face's frame is chosen once (`face_sketch_frame`), the pad's
 //! extrude builds in it, and `face_plane` is its realization. The lock keeps a second derivation from coming back;
 //! the round trip below is the operation's own witness. The flavours include the faces a
 //! derivation from the cached normal could not spell — a lift to a plane with no short decimal,
@@ -176,7 +176,7 @@ fn the_returned_frame_realizes_to_the_pads() {
     );
 }
 
-/// ★★ **A face whose world equation the model states sketches in the arbitrary-axis frame of its
+/// **A face whose world equation the model states sketches in the arbitrary-axis frame of its
 /// outward normal** — `+u = ẑ × n` (`ŷ × n` when `n` is vertical), whatever motion carried the
 /// plane there and whichever way its canonical name happens to face.
 ///

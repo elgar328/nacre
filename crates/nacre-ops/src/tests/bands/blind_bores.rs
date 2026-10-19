@@ -3,7 +3,7 @@
 use super::*;
 
 //
-// ★★ A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
+// A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
 // same as any planar wall meeting a class along an edge, and `edge_mask`'s `Graze > Seated`
 // precedence exists exactly for the corner where the two disagree — a **blind bore's ceiling**.
 // Without the graze, the cap's seated rule flipped the wrong label bit, the band's two ends
@@ -63,7 +63,7 @@ fn a_blind_bore_can_be_fused_onto_afterwards() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// The `Cut` twin. ★ The tool is sunk into the plate (`z` from 3): a body merely *resting* on
+/// The `Cut` twin. The tool is sunk into the plate (`z` from 3): a body merely *resting* on
 /// the top face is a coplanar contact that meets `StraightAngle`, a different refusal
 /// entirely, and this fixture would then be measuring that instead of the bore.
 #[test]
@@ -87,7 +87,7 @@ fn a_blind_bore_can_be_cut_afterwards() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★ **The script a person actually writes**: a blind hole, then a second hole somewhere
+/// **The script a person actually writes**: a blind hole, then a second hole somewhere
 /// else. It goes through the cylinder-pair rule and two lateral surfaces at once — a road the
 /// boss fixtures above do not take.
 #[test]
@@ -120,7 +120,7 @@ fn a_blind_bore_can_be_drilled_beside() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ **The control**: a through bore and an overshooting one already worked, and must keep
+/// **The control**: a through bore and an overshooting one already worked, and must keep
 /// working. Without this, a change that merely made *any* second boolean succeed would look
 /// like the repair.
 #[test]
@@ -144,7 +144,7 @@ fn a_through_bore_is_unaffected() {
 /// radius-`0.5`, height-`2` cylinder wholly inside it: the boolean's two components are the
 /// box's shell and the void's, and the void must come back **depth 1** — odd, so a hole.
 ///
-/// ★★★ **This is the population the coordinate probe exists for, and the only one that makes
+/// **This is the population the coordinate probe exists for, and the only one that makes
 /// it say `true`.** The void's boundary is two disks and a band, so it carries no vertex at
 /// all and `nodes_of` comes back empty.
 /// Two *disjoint* bodies exercise the same road, but their answer is "outside" either way, so
@@ -194,7 +194,7 @@ fn an_enclosed_cylindrical_void_is_a_cavity() {
 /// **A bore and a sealed void in one body.** `[0,8]×[0,4]×[0,4]` with a through bore at
 /// `(2,2)` and, `4` away, a wholly enclosed cylinder at `(6,2)` — `128 − π − π/2`.
 ///
-/// ★ It is the only fixture where the **coordinate** probe meets a face with a hole: the
+/// It is the only fixture where the **coordinate** probe meets a face with a hole: the
 /// void has no vertex, so it is probed from a cap centre, and the body it asks about has
 /// annular caps. Two cylinders in one boolean also need `cylinders_clear`, which the `4`
 /// between the axes supplies.
@@ -246,7 +246,7 @@ fn a_bore_and_a_sealed_void_live_in_one_body() {
 /// fused with a distant second box, and the void must still come back as the **hollow box's**
 /// cavity rather than a third body.
 ///
-/// ★ It is the only fixture that runs `first_deciding` over a **coordinate** probe in the
+/// It is the only fixture that runs `first_deciding` over a **coordinate** probe in the
 /// cavity-owner search: the void has no vertex, and every other multi-material case in the
 /// suite has cavities with corners.
 #[test]
@@ -331,13 +331,13 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     let v = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
     assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
 
-    // ★★ **The fuse this test's name promises.** Two disjoint bodies means `n = 2`, so each is
+    // **The fuse this test's name promises.** Two disjoint bodies means `n = 2`, so each is
     // classified by a ray probe — one that must not ask a band face for its plane class (a
     // panic): the ray counts a cylinder's crossings, and the bare cylinder — whose boundary
     // carries **no vertex at all** — is probed from a cap
     // disk's centre instead of from a corner.
     //
-    // ★ The values are derived from the inputs, not read back from the result: a `[0,2]³` box
+    // The values are derived from the inputs, not read back from the result: a `[0,2]³` box
     // is `8`, and a radius-`0.5`, height-`1` cylinder is `π/4`. Two separate bodies, each a
     // sphere topologically (`χ = 2`), and `validate` clean.
     let mut m2 = Model::new();
@@ -400,7 +400,7 @@ fn a_blind_hole_is_built_and_measures_what_it_should() {
     assert!((v - want).abs() < 1e-9, "volume {v} vs {want}");
 }
 
-/// ★ **The uniform-slab theorem's counterexample, as a band case.** A cylinder standing in an
+/// **The uniform-slab theorem's counterexample, as a band case.** A cylinder standing in an
 /// L-prism's notch is clear of every wall by more than `r` — the refuted "z-range" rule would
 /// keep its wall — but it is outside the material, so `Cut` changes nothing and no band
 /// survives.
@@ -434,7 +434,7 @@ fn a_cylinder_in_the_notch_keeps_no_band() {
         "the notch is void — nothing to cut: {out:?}"
     );
 
-    // ★ …and end to end: `Cut` returns the prism untouched. That is the counterexample's real
+    // …and end to end: `Cut` returns the prism untouched. That is the counterexample's real
     // assertion — a band pass answering by z-range would run a wall through the notch, and
     // this volume would move.
     let before = nacre_props::mass_props(&m, a).expect("props").volume;

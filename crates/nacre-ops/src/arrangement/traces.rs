@@ -8,7 +8,7 @@ use super::*;
 /// turns it into the label flip. It is the BRep spelling of a Nef local pyramid restricted to two
 /// planes, and the flip itself is binary winding propagation (Zhou et al. 2016).
 ///
-/// ★ **The occupancy is a fact about the sub-interval, not about the face.** One face can fill both
+/// **The occupancy is a fact about the sub-interval, not about the face.** One face can fill both
 /// arcs over one stretch of `W ∩ fp` and one arc over the next — a notched or holed face does
 /// exactly that where its boundary rides the line. So a segment must be *homogeneous* in this kind:
 /// [`split_at_crossings`] subdivides segments later and every piece inherits the kind verbatim, so
@@ -62,7 +62,7 @@ pub(crate) struct Seg {
 /// faces and circular holes lying in the class; transversal circles from a lateral surface
 /// crossing it, and circles join the arrangement only at the cell stage.
 ///
-/// ★★ **That it is *full* is checked, not inherited.** [`split_circles`] asks it of the segments
+/// **That it is *full* is checked, not inherited.** [`split_circles`] asks it of the segments
 /// themselves, so a crossed circle is **split into arcs** rather than treated as the closed cell
 /// it is not. Inheriting it from the population gate's wall rule would make a promise about
 /// *circles* rest on a rule about *walls*.
@@ -75,7 +75,7 @@ pub(crate) struct CircleTrace {
     /// **The angular extent this contribution covers**, counter-clockwise `[from, to]` about the
     /// cylinder's axis — `None` for the whole circle.
     ///
-    /// ★★ A lateral face with a **hole** contributes over part of its circle and nothing over the
+    /// A lateral face with a **hole** contributes over part of its circle and nothing over the
     /// rest, and a rim of that hole contributes a *different* kind from the band around it. The
     /// straight sibling [`RulingTrace`] has carried ends since it was written, for the same
     /// reason; a circle carried none because before holes there was no partial circle to state.
@@ -100,7 +100,7 @@ pub(crate) struct MergedCircle {
 impl MergedCircle {
     /// The contributions as `edge_mask` reads them.
     ///
-    /// ★ A circle only reaches a mask **uncut**, and a partial contribution forces its own cut
+    /// A circle only reaches a mask **uncut**, and a partial contribution forces its own cut
     /// ([`split_circles`] feeds every extent end into the split), so every extent here is `None`.
     /// A `Some` would mean a whole-circle mask was about to be built from a partial trace — the
     /// silently wrong answer this vessel exists to prevent — so it is refused by name.
@@ -117,12 +117,12 @@ impl MergedCircle {
 
 /// **One arc of a circle a segment cut** — the DCEL edge a crossed circle becomes.
 ///
-/// ★★ **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
+/// **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
 /// the orbit walk cannot express (orbits need ≥ 2 half-edges and a vertex to turn at), which is why
 /// [`walk_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
 /// an ordinary edge of the walk.
 ///
-/// ★ `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
+/// `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
 /// circle's normal. That is not a convention this crate invents: STEP's `EDGE_CURVE` runs from
 /// `edge_start` to `edge_end` along increasing parameter, and `nacre-step` already writes a
 /// circular edge that way — so the exporter needs nothing, and the STEP round-trip measures it.
@@ -133,11 +133,11 @@ pub(crate) struct MergedArc {
     pub end: [NodeId; 2],
     /// The contributions that **cover this arc** — not the circle's list entire.
     ///
-    /// ★★ Not inherited whole from the circle: a face with a **hole** is not there at all over
+    /// Not inherited whole from the circle: a face with a **hole** is not there at all over
     /// the hole, and along the hole's rim it grazes where the band around it crosses.
     /// [`split_circles`] selects per arc; `edge_mask` reads the result unchanged.
     ///
-    /// ★ Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
+    /// Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
     /// would, which is what "a piece of the same trace" means. (It was carried before that consumer
     /// existed, because the split is the only place that knows which circle an arc came from.)
     pub merged: Vec<(SolidSide, SegKind)>,
@@ -148,7 +148,7 @@ pub(crate) struct MergedArc {
 /// lateral surface in up to two axis-parallel lines, and a piece of one is an ordinary two-ended
 /// edge whose carrier is the cylinder, not a plane pair.
 ///
-/// ★ `end` is in the piece's **own travel order**: `end[0]` → `end[1]` runs along `+m` (the
+/// `end` is in the piece's **own travel order**: `end[0]` → `end[1]` runs along `+m` (the
 /// cylinder's axis direction) — the straight reading of [`MergedArc`]'s CCW convention, read the
 /// same way (`edge_at`: the even half-edge travels the stated way, its twin the other).
 ///
@@ -176,7 +176,7 @@ pub(super) fn merge_circles(
     cyls: &[crate::planes::WorkingCyl],
     aliases: &Aliases,
 ) -> Result<Vec<MergedCircle>, BoolError> {
-    // ★ The merge layer is where names become canonical — `merge_coincident` for a
+    // The merge layer is where names become canonical — `merge_coincident` for a
     // segment's ends, here for an extent's, `merge_rulings` for a ruling's — so everything after
     // it (splits, the walk, the chart, assembly) sees one name per point.
     let canon = |e: [NodeId; 2]| [aliases.canon_point(e[0]), aliases.canon_point(e[1])];
@@ -190,7 +190,7 @@ pub(super) fn merge_circles(
                 continue;
             }
         }
-        // ★ The class table answers directly. This used to scan the face rows for a lateral face
+        // The class table answers directly. This used to scan the face rows for a lateral face
         // of the same class and `expect` one — a runtime claim where the truth is structural: a
         // `ClassIx::Cyl` index is an index *into this table*, built from the same map that issued
         // it ("rebuilt from the same map so the two cannot drift", `dense_planes`).
@@ -210,7 +210,7 @@ pub(super) fn merge_circles(
 /// `end[0]` → `end[1]` ascends the axis, and both are Pierce names (`{wc, ⊥ plane, cyl, root}` —
 /// real classes, found by the tracer).
 ///
-/// ★★ **Not "spanning the face's own rims" — a hole makes that false.** Where the
+/// **Not "spanning the face's own rims" — a hole makes that false.** Where the
 /// face is buried in the other body it does not *cross* the wall its hole's vertical edges lie on
 /// — it ends at it — so one ruling comes in pieces of different [`SegKind`]s and each is its own
 /// trace. See [`ruling_sweep`]. A face with no hole still yields exactly one piece per ruling,
@@ -234,7 +234,7 @@ pub(crate) struct RulingTrace {
 /// contributions, def from the class table. Deterministic order: `(cyl, side descending, extent)` —
 /// a fixed rule, ascending cyl with the `+1` ruling first.
 ///
-/// ★★★★★ **The extent is part of the key, and leaving it out is a silent duplicate waiting for a
+/// **The extent is part of the key, and leaving it out is a silent duplicate waiting for a
 /// population.** The fold below is *adjacency*-based: it merges a trace into the previous one when
 /// the two name the same edge. While each `(cyl, side)` carries exactly one trace per operand, the
 /// sort puts those two side by side and the fold works. The moment one ruling comes in **pieces** —
@@ -244,7 +244,7 @@ pub(crate) struct RulingTrace {
 /// with half its contributions each. Sorting by the extent too puts identical pieces together
 /// whatever order the tracer emitted them in.
 ///
-/// ☑ Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
+/// Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
 /// fold below never actually fires. Both facts are written for
 /// the population that has not arrived yet — a cylinder belongs to one operand, so two statements
 /// of one ruling need a shape nothing builds so far.

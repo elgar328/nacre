@@ -94,7 +94,7 @@ pub(crate) use cells::*;
 pub(crate) use cyl_trace::*;
 use emit::*;
 use line_sweep::sweep_line;
-// ★ Not a glob, because the two names crossing here cross for different reasons. The stage
+// Not a glob, because the two names crossing here cross for different reasons. The stage
 // entry is this module's own (`pub(super)`), so a plain `use` carries it to the children.
 // The mixed-class audit leaves `arrangement` for exactly one reader -- a test, and one that
 // only runs where `debug_assert!` does -- so it is re-exported under both conditions. A
@@ -151,7 +151,7 @@ struct LateralShape {
 
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
 ///
-/// ★ `arc` is `None` for the whole circle, and `Some([a, b])` runs **counter-clockwise** from `a`
+/// `arc` is `None` for the whole circle, and `Some([a, b])` runs **counter-clockwise** from `a`
 /// to `b` about the cylinder's axis direction — [`MergedArc::end`]'s convention, because these are
 /// what that becomes.
 #[derive(Clone, Copy, Debug)]
@@ -193,7 +193,7 @@ struct Carved {
 /// Two walls' lines meet in a point iff their families **differ**, which is why the crossing
 /// collector compares `dir` instead of asking a predicate per pair (see [`split_at_crossings`]).
 ///
-/// ★ Everything a wall knows travels with it. The alternative — a `Vec<usize>` of classes beside a
+/// Everything a wall knows travels with it. The alternative — a `Vec<usize>` of classes beside a
 /// `HashMap<class, Vec<usize>>` of segments beside a `Vec<usize>` of families indexed by *position* —
 /// is two or three index spaces read in one breath, which is the shape this crate has been bitten by
 /// four times (`combinatorics`'s "One `usize`, two meanings"). Same rule as `draft::Ring` carrying
@@ -206,7 +206,7 @@ struct Wall {
 
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
-/// ★★★ **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
+/// **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
 /// was never the law.** When `label_cells` moved in, `face_of` stopped crossing the boundary and
 /// that read like a sign the boundary was right. It was not a general rule — that field simply had
 /// one consumer. Here production reads only `faces` and `disk_labels`, but `frame_audit` is a
@@ -239,13 +239,13 @@ struct Staged {
 /// - **uncut circles**, on pseudo-half-edges `2·(ns+na) + 2i` — a closed curve with no vertex is
 ///   not an orbit the walk can express, so [`walk_cells`] appends those cells *after* the walk.
 ///
-/// ★★★★ **The kind is a `match`, not `he >= 2 * segs.len()`.** There are three ranges, not two —
+/// **The kind is a `match`, not `he >= 2 * segs.len()`.** There are three ranges, not two —
 /// a cut circle's arcs sit between — so the arithmetic comparison reads an arc as a circle, and
 /// indexing `segs[he / 2]` with it is not a wrong answer but an **index out of bounds**
 /// (measured). One type owns the numbering, so the question is a `match` the compiler checks
 /// rather than an arithmetic comparison each reader restates.
 ///
-/// ★★ **It borrows or owns** (`Cow`). The split makes new `Vec`s; if this only borrowed, the
+/// **It borrows or owns** (`Cow`). The split makes new `Vec`s; if this only borrowed, the
 /// caller would have to keep them alive and the whole preamble — split, build, walk — would be
 /// written once per caller, which is the shape `decline_to_reject`'s doc calls *"two copies … would
 /// let them drift"*. Owning lets [`ClassEdges::of`] be the single constructor both callers use.
@@ -342,7 +342,7 @@ pub(crate) fn boolean(
     // `Judge::planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
-    // ★ **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
+    // **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
     // may reject, and every one of those rejects has to pass through `undecided_reject` first —
     // otherwise a symptom is reported where a precision failure is the cause. Returning early from
     // the function body would be exactly that bug.
@@ -417,7 +417,7 @@ pub(crate) fn boolean(
                 &plain_in,
             );
             match &plain {
-                // ★ **Faces only.** The disk labels are the same arrangement's product, so
+                // **Faces only.** The disk labels are the same arrangement's product, so
                 // comparing them would widen this differential's proposition ("reuse does not
                 // change the faces") into one it was not built to make.
                 Ok((p, _, _)) => assert_eq!(
@@ -431,7 +431,7 @@ pub(crate) fn boolean(
                 Err(e) => panic!("reuse turned a {e:?} into a result"),
             }
         }
-        // ★★★ **The seam stretch, held as one closed result — the deferred stopper's second
+        // **The seam stretch, held as one closed result — the deferred stopper's second
         // interception layer.** Everything from the cleaning pass to the seam table runs even for
         // an arc input (that is the point: the seam's pierce arm is exercised), and then the
         // deferred reject wins over whatever the stretch produced, `Ok` *or* `Err`. Without the
@@ -452,12 +452,12 @@ pub(crate) fn boolean(
                 UNIFY,
                 crate::assembly::unify_coplanar_faces(faces, &jd, &cyls)
             )?;
-            // ★ **The result's rims, read off the cleaned faces** — the cleaning just dissolved
+            // **The result's rims, read off the cleaned faces** — the cleaning just dissolved
             // the split's nodes a merged cap no longer turns at, and the lateral and the assembly
             // must meet on the rims the faces hold, not on the split (`draft::HeldRims`).
             let rims = crate::draft::held_rims(&faces, &curved.split_rims);
 
-            // ★ **The lateral bands, appended after the differential above**: reuse can
+            // **The lateral bands, appended after the differential above**: reuse can
             // only change what the *plane* arrangement emits, so the two routes are compared on that
             // list; the bands are a separate pass over the same operands and belong to neither route.
             // From here on there is one face list — the grouping, the closed-shell guard and the
@@ -466,21 +466,21 @@ pub(crate) fn boolean(
                 faces
             } else {
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-                // ★ **The lateral faces come from the chart**: every cylinder
+                // **The lateral faces come from the chart**: every cylinder
                 // class's cells, read off the plane arrangement's own labels and emitted in the
                 // band road's vocabulary.
                 let lateral =
                     cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows, &rims);
-                // ★★ The census sits *before* the curved cleaning pass on purpose: the cleaning
+                // The census sits *before* the curved cleaning pass on purpose: the cleaning
                 // merges pieces, which would blur the face-by-face question being asked.
-                // ★ The census holds the chart against its own rules (and the emitter against
+                // The census holds the chart against its own rules (and the emitter against
                 // the census's independent count), in test builds; the emitter's refusal is
                 // handed to it before `?` decides, so a refused class is still recorded.
                 #[cfg(test)]
                 cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &rims, &lateral);
                 let mut faces = faces;
                 faces.extend(lateral?);
-                // ★ No curved cleaning pass follows: the emitter's lateral faces are the
+                // No curved cleaning pass follows: the emitter's lateral faces are the
                 // regions of each chart already, so there is no phantom seam to erase (measured:
                 // a cleaning pass here merges nothing over the suite).
                 faces
@@ -489,7 +489,7 @@ pub(crate) fn boolean(
             let seam = seam_table(model, &faces, &cyls, &jd, &mut memo)?;
             Ok((faces, seam, rims))
         };
-        // ★ The raise moved into `reconstruct` (after the vertex naming, before any minting);
+        // The raise moved into `reconstruct` (after the vertex naming, before any minting);
         // what stays here is the interception — a stretch failure on an arc input still carries
         // the stopper's name out, not its own.
         let (faces, seam, rims) = match stretch() {

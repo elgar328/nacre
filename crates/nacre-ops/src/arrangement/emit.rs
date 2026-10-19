@@ -28,7 +28,7 @@ pub(super) fn emit_faces(
     // [`combinatorics::NodeId`] is the vertex-identity enum; the local `Node` (this module's
     // three-valued-scan struct, a *different* type that happens to share the word) shadows the
     // glob-imported name here, which is why the identity is always spelled out in full.
-    // ★ The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
+    // The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
     // that is the one fact a name cannot always give back (see `draft::Ring`). A circle cell
     // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
     // class itself.
@@ -40,7 +40,7 @@ pub(super) fn emit_faces(
                 cyl: edges.circles[i].cyl,
             };
         }
-        // ★★ `Ring.walls` is a carrier (`combinatorics::Wall`), so an arc half-edge states its
+        // `Ring.walls` is a carrier (`combinatorics::Wall`), so an arc half-edge states its
         // cylinder class, its rim's plane and which way this side travels — what the assembly
         // mints it by (`EdgeKey::Arc`, the ordered circle key).
         crate::draft::Bound::Ring(crate::draft::Ring::new(
@@ -99,12 +99,12 @@ pub(super) fn emit_faces(
             flip,
         });
     }
-    // ★★ **Every circle's disk label, whether or not a face was kept**. The four bits
+    // **Every circle's disk label, whether or not a face was kept**. The four bits
     // of a disk cell say which solid's material lies immediately above and below this plane
     // *inside the circle* — which is exactly the chamber of the cylinder slab that starts here,
     // so the band pass reads them instead of casting a witness ray.
     //
-    // ★ Collected from the **cells**, deliberately outside the keep filter above. A through
+    // Collected from the **cells**, deliberately outside the keep filter above. A through
     // hole's outermost bands end on the cylinder's own cap classes, and `Cut` drops those cap
     // faces — following the faces would leave those bands with no label to read, while the cell
     // (and its label) is right here.
@@ -127,10 +127,10 @@ pub(super) fn emit_faces(
             Some((mc.cyl, labels[c]))
         })
         .collect();
-    // ★ **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
+    // **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
     // above: collected from the cells, outside the keep filter.
     //
-    // ★★★★★ **Which half-edge borders the disk side, derived.**
+    // **Which half-edge borders the disk side, derived.**
     // `MergedArc::end` runs counter-clockwise about the *axis*, so the even half-edge travels
     // `+θ̂`. The walk keeps a cell on the **left of its travel in the root face's frame**, whose
     // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`] — the
@@ -145,7 +145,7 @@ pub(super) fn emit_faces(
     // `smooth_extremum_winding` computes `winding = ccw · axis_up · frame_sign`, and a circle
     // cell's boundary winds `+1` on the disk side, which is this statement rearranged.
     //
-    // ★★★★★ **The same rule missing `frame_sign` is refuted.** Reading `axis_up` alone is
+    // **The same rule missing `frame_sign` is refuted.** Reading `axis_up` alone is
     // wrong. Measured: a boss cutting a plate and
     // the **notch it leaves** put the same plane (z = 1), the same stored normal and the same two
     // arcs on **opposite** half-edges — the boss's top cap is `Forward` there and the notch's
@@ -154,7 +154,7 @@ pub(super) fn emit_faces(
     // can be. Over the lib suite the factor decides **112** of some 4,300 arcs, and without it
     // every one of them is wrong silently — the only consumer is the chart's `read_cell`.
     //
-    // ★★ **The geometry still watches it, on every arc** ([`disk_side_probe`]): a cell cannot
+    // **The geometry still watches it, on every arc** ([`disk_side_probe`]): a cell cannot
     // straddle the circle, so a rational corner's radial side names the side that whole cell is
     // on — and where a corner speaks it must agree with this rule. Measured 3,260 of 3,260 on the
     // census corpus. That check is what makes this a *derivation* rather than a third guess.
@@ -167,7 +167,7 @@ pub(super) fn emit_faces(
         .iter()
         .enumerate()
         .filter_map(|(i, ma)| {
-            // ★ `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
+            // `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
             // here would be that function's second spelling.
             let axis_up = crate::planes::plus_t_is_above(
                 world.expect("an arc is split only on a class with a world statement"),
@@ -199,7 +199,7 @@ pub(super) fn emit_faces(
                 ma.merged,
                 labels[c]
             );
-            // ★ The label and the trace that made it, **from one visit to one arc** — see
+            // The label and the trace that made it, **from one visit to one arc** — see
             // [`ArcLabel`] for why they may not become two maps.
             Some((
                 ma.cyl,

@@ -39,7 +39,7 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "target/cylinder".to_string());
 
-    // ★ Both budgets, because either one alone can be the binding constraint: the
+    // Both budgets, because either one alone can be the binding constraint: the
     // angular one decides for ordinary radii and the sagitta one for very large
     // circles. Varying only `tol` would leave this example silently showing the same
     // mesh twice.

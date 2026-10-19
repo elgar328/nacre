@@ -63,7 +63,7 @@ pub(super) fn trace_on_class_of(
 /// One solid only — the second operand slot is filled with the same solid, whose loops are
 /// identical, and only `faces[0]` is read.
 ///
-/// ★ It carries the cylinder table: a disk cap's chord is two pierce-pinned nodes of
+/// It carries the cylinder table: a disk cap's chord is two pierce-pinned nodes of
 /// the parity sweep, and ordering them along the line asks the cylinder's statement.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -164,7 +164,7 @@ pub(super) fn merge_coincident(
                     // The canonical name of the line, so every producer on it agrees. A handle
                     // stays as recorded while the endpoint's name does: an aliased wall carries
                     // the *same* line, so a handle that pinned an endpoint there still pins it
-                    // here. ★ When the **name** folds (a tangent corner's `Pierce` onto
+                    // here. When the **name** folds (a tangent corner's `Pierce` onto
                     // the `ThreePlane` of its planes with this class) the pin is derived again
                     // from the representative and the line — [`combinatorics::pin_for`], the one
                     // rule — because a pin is a fact about the name beside it, not luggage.

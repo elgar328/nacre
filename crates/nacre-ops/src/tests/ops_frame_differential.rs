@@ -175,7 +175,7 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
     ]
 }
 
-/// ★★ **The gate.** Same plane, said two ways, one arena.
+/// **The gate.** Same plane, said two ways, one arena.
 #[test]
 fn the_two_roads_build_the_same_prism() {
     for profile_name in ["rect", "washer"] {
@@ -216,7 +216,7 @@ fn the_two_roads_build_the_same_prism() {
             extrude_on_frame(&mut by_frame, &frame, &profile(), 1.5)
                 .unwrap_or_else(|e| panic!("{what}: frame road failed: {e:?}"));
 
-            // ★ Which road, first. A frame-node road is a valid model too, so an equality check
+            // Which road, first. A frame-node road is a valid model too, so an equality check
             // alone would report the difference without naming its cause.
             assert_eq!(
                 nodes(&by_frame),
@@ -238,7 +238,7 @@ fn the_two_roads_build_the_same_prism() {
     }
 }
 
-/// ★★ **The negative control: the ZX trap is real, and the sugar is what avoids it.**
+/// **The negative control: the ZX trap is real, and the sugar is what avoids it.**
 ///
 /// The arbitrary-axis rule gives the ZX plane `+u = −x̂` while the convention — and
 /// `SketchPlane::world_zx` — says `+u = +ẑ`. So reaching for `SketchFrame::canonical` on the

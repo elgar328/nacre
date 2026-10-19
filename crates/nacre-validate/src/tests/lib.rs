@@ -242,7 +242,7 @@ const TETRA_FACES: [TetraFace; 4] = [
 struct TetraOpts {
     /// (vertex index, coordinate delta) — moves a vertex off its (un-moved) surfaces.
     ///
-    /// ⚠ No third element (a per-vertex tolerance): nothing stores one — every vertex is held to
+    /// No third element (a per-vertex tolerance): nothing stores one — every vertex is held to
     /// [`EPS_CONSTRUCTED`] — so a per-vertex knob would drive nothing.
     nudge: Option<(usize, [f64; 3])>,
     drop_face: Option<usize>,
@@ -444,7 +444,7 @@ fn negative_genus_two_tetra_one_shell() {
     );
 }
 
-/// ★ Positive control for the **all-vertex** definition check: a vertex with *no* measured
+/// Positive control for the **all-vertex** definition check: a vertex with *no* measured
 /// tolerance — the constructed population — is caught when its
 /// coordinate drifts off the surfaces its definition names. Without this, "the check
 /// fired zero times across the suite" could equally mean "the check sees nothing there".
@@ -486,7 +486,7 @@ fn vertex_off_surface_when_nudged() {
     );
 }
 
-/// ★ Negative control: an edge whose stated carriers disagree with the two faces
+/// Negative control: an edge whose stated carriers disagree with the two faces
 /// actually using it is flagged — and so is a self-adjacent pair (no edge separates a surface
 /// from itself). Hand-built open surface: other violations fire too; the
 /// assertion is only that the carrier one is among them.
@@ -627,7 +627,7 @@ fn edge_carrier_mismatch_is_flagged() {
     );
 }
 
-/// ★ The same-surface arm (the cylinder panel population): two faces on **one**
+/// The same-surface arm (the cylinder panel population): two faces on **one**
 /// surface sharing an edge cannot spell the carrier pair between them, so the rule there is
 /// membership — the shared surface must be one of the stated two (the *other* stated
 /// carrier is what the curve derivation crosses it with). Both directions: membership
@@ -747,7 +747,7 @@ fn same_surface_users_check_membership_not_equality() {
     );
 }
 
-/// ★ Negative controls: a definition variant whose carrier kinds contradict it is
+/// Negative controls: a definition variant whose carrier kinds contradict it is
 /// flagged — `ThreePlane` naming a cylinder, and `OnSeam` naming two planes.
 #[test]
 fn a_contradictory_vertex_def_is_flagged() {
@@ -793,7 +793,7 @@ fn a_contradictory_vertex_def_is_flagged() {
     }
 }
 
-/// ★ **A three-plane definition that names no point is flagged** — three planes sharing a line
+/// **A three-plane definition that names no point is flagged** — three planes sharing a line
 /// (`x = 0`, `y = 0`, `x + y = 0`) and two parallel planes with a third (`z = 0`, `z = 1`,
 /// `x = 0`), each pushed with a figure at the origin, which lies on every plane of the first. The
 /// box's own corners, which do name their points, are not.
@@ -847,7 +847,7 @@ fn a_vertex_whose_planes_meet_in_no_point_is_flagged() {
     );
 }
 
-/// ★★ **The positive control for a cap** — the loop with no polygon in it.
+/// **The positive control for a cap** — the loop with no polygon in it.
 ///
 /// A cylinder cap's boundary is one closed rim, so the Newell path above has
 /// nothing to wind. Skipping it would let a cylinder ship with
@@ -910,7 +910,7 @@ fn an_honest_cylinder_passes_the_rim_check() {
     assert!(validate(&m).is_empty(), "{:?}", validate(&m));
 }
 
-/// ★ The positive control for `FaceMisoriented`. The stores are sealed against
+/// The positive control for `FaceMisoriented`. The stores are sealed against
 /// mutation, so the defect is *built*: a twin of one cuboid wall pushed with its
 /// orientation flag flipped, seated in a hand-made shell that supersedes the
 /// original solid. Every other cell is shared and the twin traverses the same
@@ -949,7 +949,7 @@ fn a_flipped_orientation_flag_is_caught() {
     );
 }
 
-/// ★ Positive control: the def–cache net (`CylinderTruthCacheMismatch`) actually
+/// Positive control: the def–cache net (`CylinderTruthCacheMismatch`) actually
 /// bites. The stores are sealed, so the defect is *built* the `FaceMisoriented` way: a twin
 /// of the lateral face whose surface is the same cache pushed under a **lying def** (radius
 /// 2 where the cache says 1). Every geometric check still passes — the loop's vertices sit
@@ -1010,7 +1010,7 @@ fn a_lying_cylinder_def_is_caught() {
     );
 }
 
-/// ★ A well-formed `Pierce` vertex passes every check, and its coordinate is held
+/// A well-formed `Pierce` vertex passes every check, and its coordinate is held
 /// to **all three** carriers — the cylinder included, which is the carrier the variant
 /// adds. The pierce points of {z = 0} ∧ {x = 0} against the r = 2 z-cylinder are
 /// (0, ∓2, 0); the good one is clean, the one 1e−3 off the cylinder is flagged by
@@ -1101,7 +1101,7 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
     );
 }
 
-/// ★ Negative controls: a `Pierce` whose carrier kinds contradict the structure is
+/// Negative controls: a `Pierce` whose carrier kinds contradict the structure is
 /// flagged — a cylinder in a plane slot, and a plane in the cylinder slot.
 #[test]
 fn a_contradictory_pierce_def_is_flagged() {
@@ -1146,7 +1146,7 @@ fn a_contradictory_pierce_def_is_flagged() {
     }
 }
 
-/// ★ The population that refutes an ulp-based metric for the net, pinned. A
+/// The population that refutes an ulp-based metric for the net, pinned. A
 /// full-width random axis makes the cache's Gram–Schmidt smear ~1e−17 into the component
 /// the def's shuffle keeps at exactly `0.0` — ulps are meaningless across zero, so the
 /// bound is mixed absolute/relative ([`CYL_TRUTH_EPS`]). This exact axis is a proptest
@@ -1166,7 +1166,7 @@ fn a_full_width_axis_survives_the_truth_net() {
     assert_eq!(validate(&m), vec![]);
 }
 
-/// ★ The check `VertexOffCurve` has teeth where the curve does NOT derive from
+/// The check `VertexOffCurve` has teeth where the curve does NOT derive from
 /// the vertex — a rim circle comes from the carriers (cylinder axis × cap), so a seam
 /// vertex off the rim is caught (a line's far vertex likewise, its direction being the
 /// carriers' — `vertex_off_surface_when_nudged`). The stores are sealed against mutation, so the defect is

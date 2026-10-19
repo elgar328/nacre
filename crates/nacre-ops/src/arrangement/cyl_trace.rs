@@ -50,7 +50,7 @@ pub(super) fn circle_on_class(
     if !nacre_exact::parallel_rat(&n, &m) {
         return Ok(Vec::new());
     }
-    // ★★★★★ **The face's boundary as the tracer names it — its cycles — and nothing else.** A
+    // **The face's boundary as the tracer names it — its cycles — and nothing else.** A
     // band's two rims and its holes are its loops (`combinatorics::lateral_cycles`); a panel or a
     // chain rim is a cycle like a hole, carved out of an outer answer that may be **absent**
     // rather than out of a whole circle.
@@ -65,7 +65,7 @@ pub(super) fn circle_on_class(
     // The **outer** answer, which the holes below carve out of. Unchanged from when it was the
     // whole answer:
     //
-    // ★★ **A rim is a graze, not a miss.** This used to answer "the lateral does not reach this
+    // **A rim is a graze, not a miss.** This used to answer "the lateral does not reach this
     // plane", on the premise that coplanarity would have folded a rim into a seated class — but a
     // *cylinder* face never becomes seated on a plane class, so the touch was simply dropped.
     // Every planar wall meeting a class along an edge contributes a `Graze`; the lateral
@@ -83,12 +83,12 @@ pub(super) fn circle_on_class(
         // range, so there is nothing for the walk below to find either.
         return Ok(Vec::new());
     }
-    // ★★★★★ **The outer answer is optional.** A whole rim at this station grazes as a
+    // **The outer answer is optional.** A whole rim at this station grazes as a
     // whole circle; strictly inside the range the face crosses the class *somewhere* — a
     // connected face covers every interior station at some θ — and the cycles below carve out
     // where it does not; at an end of the range that is **no** rim (a panel's arc, a chain's top)
     // nothing stands: only the runs the cycles lay on the class speak, and the rest is absent.
-    // ★ `Crosses` is exact only because a run whose flanks differ is declined below
+    // `Crosses` is exact only because a run whose flanks differ is declined below
     // (`cycle_on_class`): such a run is a parity boundary in θ, and the face beyond it at this
     // station would be absent with no crossing to carve it — a staircase chain, not today's
     // population. Pairing run ends with crossings is that road's generalization, not this one.
@@ -101,7 +101,7 @@ pub(super) fn circle_on_class(
     } else {
         None
     };
-    // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
+    // **The hole is read by the walk every other face's boundary is read by** — the face's
     // own loop, against this class, through [`combinatorics::ring_against_plane`]. An interval
     // derived from the loop's ⊥ carriers would be exact for a chart rectangle and a *premise* for
     // anything else; the walk asks the ring and needs no premise about the hole's shape.
@@ -205,7 +205,7 @@ pub(super) fn lateral_shape(
 
 /// **Lay the carved extents over the outer answer and hand back *exclusive* spans.**
 ///
-/// ★★★★★ **Exclusive, not "the whole circle plus overrides".** The cheaper spelling would emit the
+/// **Exclusive, not "the whole circle plus overrides".** The cheaper spelling would emit the
 /// outer answer over the whole circle and let the hole's arcs sit on top, leaning on `edge_mask`'s
 /// `Graze > Transversal` precedence to pick the winner. That precedence is for **different faces
 /// meeting on one edge**, not for one face's own extent — borrowing it would be a category error,
@@ -310,14 +310,14 @@ pub(super) fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
 /// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
 /// leaving a ruling counter-clockwise about the axis enters the side the wall's plane faces.
 ///
-/// ★★★ **One atom, three readers.** [`combinatorics::RulingCarrier::side`] is
+/// **One atom, three readers.** [`combinatorics::RulingCarrier::side`] is
 /// `sign((x − o) · (m̂ × n̂_r))` against the class's *rational* name, and the scalar triple product
 /// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
 /// the world name's sense (`κ`, [`crate::planes::WorldName`] — the truth's, since the name alone
 /// carries no direction and the plane cache is a rounded image) carries that to the plane's own
 /// facing. The three consumers are the
 /// ruling sweep's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
-/// whole point of naming it is that none of them spells the product a second time. ★ Two of them
+/// whole point of naming it is that none of them spells the product a second time. Two of them
 /// read a **label** and stay in the stored frame; the one that picks a **cell** —
 /// [`ruling_interior_is_even`] — crosses into the chart's frame with `frame_sign`, and it is the
 /// only reader that does.
@@ -340,7 +340,7 @@ pub(crate) fn plus_theta_is_above(
 /// chain is carved out of one that may be absent — the same arms, because neither reads
 /// "inside" or "outside": only the ring's winding, below.
 ///
-/// ★★★★★ **Which way round is decided by the ring's own winding, and by nothing else.** A plane
+/// **Which way round is decided by the ring's own winding, and by nothing else.** A plane
 /// cuts a circle in two points, and "which of the two arcs is the hole" is the whole difficulty:
 /// a hole whose two ruling edges lie on **one** plane cannot be told apart by that plane's sides.
 /// The universal boundary convention answers it locally instead — *material is on the left of the
@@ -382,7 +382,7 @@ fn cycle_on_class(
     let _ = inner; // the ledger's, under test
     #[cfg(test)]
     let start = out.len();
-    // ★★ **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
+    // **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
     // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
     // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
@@ -430,7 +430,7 @@ fn cycle_on_class(
                 if len < 2 {
                     continue;
                 }
-                // ★★★★★ **Which way the arc runs, and so which side the face is on, is the
+                // **Which way the arc runs, and so which side the face is on, is the
                 // producer's to say — not the flank's.** The flank (the side the ring's
                 // off-class neighbours sit on) gives the ring's *interior* side — right for a
                 // convex hole and wrong for a wrapping rim, whose highest arc has both
@@ -439,10 +439,10 @@ fn cycle_on_class(
                 // producer's convention) settles both: walked with sense `ν`, material lies
                 // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
                 // the class's stored normal (`up`), and the carved extent is the arc as walked.
-                // ☑ Measured: this reading and the flank's are equal on every on-class arc of
+                // Measured: this reading and the flank's are equal on every on-class arc of
                 // today's holes (50 of 50).
                 for k in 0..len - 1 {
-                    // ★★★★★ **"Both ends on the class" is not "the edge is on the circle."** The
+                    // **"Both ends on the class" is not "the edge is on the circle."** The
                     // walk reads a run off its *nodes* and this road's blanket `On`; on a plane the
                     // edge between two on-line nodes
                     // follows, and on a **cylinder** it does not — a tilted carrier meets the
@@ -450,7 +450,7 @@ fn cycle_on_class(
                     // lying on it. Taking that for a rim arc would state an extent along a curve
                     // that is not there. The carrier says it directly: an edge on the circle
                     // `wc ∩ cylinder` is an arc whose rim's plane is that class.
-                    // ★ The check belongs here, per edge, where the answer is used — not on the
+                    // The check belongs here, per edge, where the answer is used — not on the
                     // row ("neither ⊥ nor ∥: an ellipse, outside this vocabulary").
                     let edge = (first + k) % n;
                     let crate::combinatorics::Wall::Arc { ccw: nu, plane, .. } = nr.walls[edge]
@@ -475,7 +475,7 @@ fn cycle_on_class(
             combinatorics::Feature::Crossing { edge, from, .. } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
-                // ★ The ruling is read off the wall alone — its cylinder, its side and the plane the
+                // The ruling is read off the wall alone — its cylinder, its side and the plane the
                 // side was measured against — not off the corner's name: a corner on three planes
                 // is named by the pair its definition chose, which need not hold `j`.
                 let crate::combinatorics::Wall::Ruling {
@@ -487,7 +487,7 @@ fn cycle_on_class(
                 else {
                     return Err(DeclineKind::CylHoleFeature);
                 };
-                // ★★★★★ **The crossing is the *same ruling*, restated for this class — through
+                // **The crossing is the *same ruling*, restated for this class — through
                 // the one door the planar scan uses** ([`combinatorics::crossing_on_ruling`]): the ruling's side,
                 // measured against its wall `j` at the hole's own corner — the side the wall
                 // carries (`curved_wall`) — picks the root of `{wc, j}` on the cylinder; restating

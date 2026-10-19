@@ -5,7 +5,7 @@ use super::*;
 /// **outward** side, since the class table winds that witness (`tri_pt3`) to the face's outward by
 /// the plane's own truth.
 ///
-/// ★ **That is not the frame the arrangement's labels are stated in.** A plane class's
+/// **That is not the frame the arrangement's labels are stated in.** A plane class's
 /// `[*_above, *_below]` labels are about the class root's **stored surface normal** — the convention
 /// `SegKind::Seated{body_above}` and `emit_faces`' `flip` are written against — and the two frames
 /// differ by [`crate::planes::FaceInfo::orient_sign`], which is `-1` exactly when the root face
@@ -14,12 +14,12 @@ use super::*;
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-/// ★★ **Both kinds of node answer.** A three-plane node reads `orient3d`; a [`NodeKind::Pierce`]
+/// **Both kinds of node answer.** A three-plane node reads `orient3d`; a [`NodeKind::Pierce`]
 /// reads one `a + b√c` sign (its arm below). `None` is a missing description, which callers turn
 /// into their own vocabulary (the tracer a [`crate::DeclineKind`], the ray caster a reject) —
 /// which is why it is not a reject here.
 ///
-/// ★★★★★ **The pierce arm is exercised, and its sign is not its neighbours'.** The scan road walks
+/// **The pierce arm is exercised, and its sign is not its neighbours'.** The scan road walks
 /// rings whose corners a cylinder made, and a pierce corner can sit on the *opposite* side of its
 /// own face's plane from its plane-named neighbours (measured: `sides = [1, -1, -1, -1, -1, 1]`,
 /// the two `1`s being the pierce nodes). Read wrongly, those are crossings that are not there,
@@ -32,7 +32,7 @@ pub(crate) fn side_of(
 ) -> Option<i8> {
     match n.kind() {
         NodeKind::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
-        // ★★ **A pierce point's side of a plane is one `a + b√c` sign.** The point is
+        // **A pierce point's side of a plane is one `a + b√c` sign.** The point is
         // `line.base() + s·line.dir()`, the plane's coefficients are rational, and
         // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. A class the
         // gate passed as silent about the cylinder answers from its record. `None` is a missing
@@ -53,11 +53,11 @@ pub(crate) fn side_of(
 /// **What [`ring_against_plane`] found** — three outcomes, and they are three because collapsing
 /// any two would put one name on unlike facts.
 ///
-/// ★ `AllOn` is not the walk's `None`, which a node it cannot read would then have to share.
+/// `AllOn` is not the walk's `None`, which a node it cannot read would then have to share.
 /// One says *the ring lies in the plane* (a shape), the other *this walk has no vocabulary for a
 /// node* (a road) — and the four callers do different things with each.
 ///
-/// ★ A ring leaving the meet along a curved edge between two on-meet nodes is not an outcome of
+/// A ring leaving the meet along a curved edge between two on-meet nodes is not an outcome of
 /// its own: the caller names its side ([`EdgeMeet::Departs`]), and the walk reads the departure as
 /// one more off-line entry.
 pub(crate) enum RingWalk {
@@ -66,7 +66,7 @@ pub(crate) enum RingWalk {
     /// Every node **and every edge** lies on `q`: a ring in the plane has no flanks to be decided
     /// by.
     ///
-    /// ★★ **The second half is new and it is not pedantry.** This used to fire on "every node lies
+    /// **The second half is new and it is not pedantry.** This used to fire on "every node lies
     /// on `q`", which a ring with a curved edge satisfies while *leaving* the plane — and one
     /// consumer ([`every_ray`]) skips such a ring entirely, dropping its crossings from a parity
     /// count. A ring whose nodes are all on `q` while an edge departs is `Met` instead: the
@@ -76,7 +76,7 @@ pub(crate) enum RingWalk {
     /// caller cannot state (`on_meet` answering `None`), or an edge whose interior crossings the
     /// caller cannot count (`crossings` answering `None`, or a count its ends make impossible).
     ///
-    /// ★★ **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
+    /// **A [`NodeKind::Pierce`] corner is unnameable whenever the caller brings no cylinder
     /// table.** Given one, [`side_of`]'s pierce arm answers (short of a class with no narrow
     /// rational description or a cylinder missing from the table) and the corner is read like any
     /// other; `every_ray` passes none against a class with a world statement (`silent_table`), so on
@@ -100,7 +100,7 @@ pub(crate) enum Feature {
     /// `len` consecutive nodes from `first` lie *on* `q`, **and so do the edges between them** —
     /// an on-line interval rather than a point.
     ///
-    /// ★★★★★ **That second half is a fact the walk establishes, not one it assumes.** Two points
+    /// **That second half is a fact the walk establishes, not one it assumes.** Two points
     /// fix a straight line, so a straight edge between two on-`q` nodes is on it — and a **curved**
     /// one departs and comes back, touching `q` only at its ends: read as one interval, a boundary
     /// running `… → node → arc → node → …` would state a graze over ground it does not bound. The
@@ -111,7 +111,7 @@ pub(crate) enum Feature {
     /// **opposite** sides, so the ring genuinely crosses the line here; equal sides mean it touched
     /// and turned back, and nothing crossed.
     ///
-    /// ★★★ **`flank` is the side itself, and it travels here because asking again is a second
+    /// **`flank` is the side itself, and it travels here because asking again is a second
     /// walk.** A consumer that needs *which* side (not just whether the two agree) would otherwise
     /// call [`side_of`] over a ring member of its own — which is exactly the shape this walk exists
     /// to prevent, and `clippy.toml` disallows that call outside the walk and the point questions
@@ -119,7 +119,7 @@ pub(crate) enum Feature {
     /// of the off-line neighbour **before** the run; with `flanks_differ` false the one after is the
     /// same, and with it true the other is its negation, so one number carries both. Never `0`.
     ///
-    /// ★ A stretch that begins where the ring *returned* to the meet is preceded by the departure
+    /// A stretch that begins where the ring *returned* to the meet is preceded by the departure
     /// itself, and that side is the departure's σ ([`EdgeMeet::Departs`]); one an edge reached
     /// after crossing on its way in is preceded by that edge's last piece — so there is always a
     /// neighbour to read, and the number is never a plausible stand-in.
@@ -145,7 +145,7 @@ pub(crate) enum EdgeMeet {
 
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
-/// ★ **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring
+/// **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring
 /// against a cut plane, `arrangement::cycle_on_class` reads a lateral's cycle against a circle,
 /// [`every_ray`] casts a parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a
 /// segment against a face; all must answer the same question first — *does the boundary cross
@@ -170,7 +170,7 @@ pub(crate) enum EdgeMeet {
 /// naming step records aliases into a union-find as it goes, so the order is contract, not
 /// incident.
 ///
-/// ★★ **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here, and if not, which side
+/// **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here, and if not, which side
 /// does it leave to?"** — edge `i` runs from `nodes[i]` to `nodes[i + 1]`, and it is asked only
 /// where both ends are on `q`. Two on-`q` nodes do **not** settle it: two points fix a straight
 /// line, so a straight edge between them is on it, and a **curved** one leaves and comes back —
@@ -181,14 +181,14 @@ pub(crate) enum EdgeMeet {
 /// tangent points, [`arc_departure_side`]) and a lateral face in a **circle** (so an arc carried
 /// by that very class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
 ///
-/// ★★★★★ **A departing edge is read as one more off-line entry, of the departure's side.**
+/// **A departing edge is read as one more off-line entry, of the departure's side.**
 /// The ring's sign sequence is then nodes and departures alike, and the two rules the walk has
 /// always had — a sign change between neighbours is a crossing, a maximal run of zeros is an
 /// on-line interval flanked by its neighbours — apply unchanged: a run is cut where the ring
 /// leaves, each piece's flanks are the departures beside it, and a ring whose every node is on
 /// `q` (a half-disk cap: its chord and its arc) is a run flanked by its own arc on both sides.
 ///
-/// ★★★★★ **`crossings(i, on_end)` answers how often edge `i` crosses the meet strictly inside
+/// **`crossings(i, on_end)` answers how often edge `i` crosses the meet strictly inside
 /// it, where its two ends cannot say** — and it is asked only there. A circle meets a line in at
 /// most two points, so ends on opposite sides are exactly one crossing (not asked); ends on one
 /// side are none or two, and one end on the line (`on_end`, that end's node) none or one. A
@@ -237,7 +237,7 @@ pub(crate) fn ring_against_plane(
             match on_meet(i) {
                 None => return RingWalk::Unnameable,
                 Some(EdgeMeet::On) => {}
-                // ★ Two on-`q` ends settle the count only when they are two points: a circle
+                // Two on-`q` ends settle the count only when they are two points: a circle
                 // meets a line twice, so an arc between them is wholly on one side. A **closed**
                 // arc's two ends are one node, and its whole turn meets the line again at the
                 // other root — asked like any edge whose ends cannot say, the departure's side

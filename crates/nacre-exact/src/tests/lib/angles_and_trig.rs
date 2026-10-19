@@ -106,7 +106,7 @@ fn exact_cos_sin_only_for_quadrantal_angles() {
 /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0`, and the exactly-representable
 /// values Niven allows off that family come out exact too.
 ///
-/// ★★ **`cos 60° == 0.5` is the visible proof that libm left.** `1/2` is one of the three
+/// **`cos 60° == 0.5` is the visible proof that libm left.** `1/2` is one of the three
 /// rational values a rational-degree cosine can take, and it *is* an f64 — but reaching it
 /// through `(60.0 * PI / 180.0).cos()` does not land on it. Rounding the high-precision value
 /// does.
@@ -147,7 +147,7 @@ fn only_the_quadrantal_family_realizes_exactly() {
     for d in [0, 90, 180, 270] {
         assert_eq!(err(deg(d, 1)), (0.0, 0.0), "{d} deg");
     }
-    // ★ And the zero is of the *pair*, not of the angle: hand a 90°-family angle some other
+    // And the zero is of the *pair*, not of the angle: hand a 90°-family angle some other
     // realization and it must be measured like anything else. Otherwise a caller that got its
     // cos/sin from somewhere other than `cos_sin_f64` would be handed an exactness claim that
     // does not hold of what it is holding.
@@ -307,7 +307,7 @@ fn the_realization_error_memo_keys_on_the_angle_and_the_pair() {
         before + 1,
         "the key is the angle, not its spelling"
     );
-    // ★ A neighbouring realization of that same angle is a *different question* and must get
+    // A neighbouring realization of that same angle is a *different question* and must get
     // its own answer — an entry keyed on the angle alone would hand back `first`, an error
     // measured against a pair this caller is not holding.
     let nudged = f64::from_bits(c.to_bits() + 1);
@@ -417,7 +417,7 @@ fn a_huge_angle_normalizes_without_counting_turns() {
 /// already realized, and nothing but a measurement would say so.
 ///
 /// - **It does not memoize** (a rewrite drops the lookup): asking twice would insert twice.
-/// - ★ **The key fragments**: `90/1` and `180/2` are the same angle. If they hashed apart the
+/// - **The key fragments**: `90/1` and `180/2` are the same angle. If they hashed apart the
 ///   memo would still be *correct* and still show a high hit rate, while paying twice for every
 ///   angle a caller happened to spell in two ways. `Angle::from_deg` reduces through
 ///   `Rat::new`, so they are one entry — this is the guard on that.
@@ -445,7 +445,7 @@ fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
         "and answered with the same value"
     );
 
-    // ★ The same angle, spelled as an unreduced ratio, is the same entry.
+    // The same angle, spelled as an unreduced ratio, is the same entry.
     let spelled = deg(74, 2).cos_sin_hp(prec);
     assert_eq!(
         trig_entries(),
@@ -625,7 +625,7 @@ fn the_inverse_sqrt_bound_holds_against_a_far_deeper_realization() {
                 "1/sqrt({num}/{den}) at {prec} bits: error 2^{de} exceeds its bound 2^{:?}",
                 bound.exp2()
             );
-            // ★★ Slack is only meaningful where the observation actually *measures* this
+            // Slack is only meaningful where the observation actually *measures* this
             // bound. A `prec`-bit realization of a value of magnitude `2^zexp` must carry an
             // error near `2^(zexp − prec)`; when the observed gap is far below that, the two
             // realizations agreed better than either one's own accuracy warrants — measured,
@@ -655,7 +655,7 @@ fn the_inverse_sqrt_bound_holds_against_a_far_deeper_realization() {
     }
 }
 
-/// ★ The claim the axis-aligned corpus rests on: a frame whose normal is a coordinate
+/// The claim the axis-aligned corpus rests on: a frame whose normal is a coordinate
 /// direction realizes its `1/|n|` **exactly**, so it never reaches arbitrary precision and
 /// carries no realization error at all.
 #[test]
@@ -706,7 +706,7 @@ fn inv_sqrt_f64_lands_on_the_nearest_f64() {
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
     let (at_256, past_256) = (after.0 - before.0, after.1 - before.1);
     eprintln!("[cip] inverse-sqrt climbs: {at_256} decided at 256, {past_256} past it");
-    // ★ Measured: 128 bits decides every case here.
+    // Measured: 128 bits decides every case here.
     assert_eq!(
         (at_256, past_256),
         (0, 0),
@@ -733,7 +733,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
         // `2^(e−1) ≤ |f − deep| < 2^e` — the *lower* end is what a bound has to clear. Using
         // `2^e` would demand the reported value exceed an over-estimate.
         //
-        // ★ **And the reference is not exact either**, so its own radius comes off:
+        // **And the reference is not exact either**, so its own radius comes off:
         // `|f − true| ≥ |f − deep| − rad`. Without that, `1/√(1/10⁶)` — which is exactly
         // `1000.0`, correctly reported as a zero error — fails against the 1024-bit
         // realization's `2⁻¹⁰¹³` residue, and the test would be measuring its own ruler.
@@ -751,7 +751,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
             worst = (true_err, format!("{num}/{den}"));
         }
     }
-    // ★★★★ **Exact is not the same as dyadic, and only dyadic earns the zero.** An
+    // **Exact is not the same as dyadic, and only dyadic earns the zero.** An
     // axis-aligned frame lands on `1`/`½` and must report a literal `0.0` — that is what keeps
     // it on the exact predicate path. A Pythagorean one lands on `1/5` or `5/3`, which are
     // exactly rational and still not f64, so they must report the rounding that really
@@ -778,7 +778,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
     );
 }
 
-/// ★★ **The naive f64 route is not good enough, measured** — `1.0 / v.to_f64().sqrt()` is
+/// **The naive f64 route is not good enough, measured** — `1.0 / v.to_f64().sqrt()` is
 /// three roundings and lands on the wrong `f64` often enough to see. Without a case that
 /// actually differs, the exact realization above would be a cost with no effect, and this
 /// test would be indistinguishable from one that is not running.

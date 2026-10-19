@@ -10,7 +10,7 @@ use nacre_math::{Point3, Vector3};
 /// may assume unit length without re-checking. `origin` is any point on the plane and
 /// is not canonicalized.
 ///
-/// ★★ **This is a rounded image of a plane, never a description to decide on.** Its own
+/// **This is a rounded image of a plane, never a description to decide on.** Its own
 /// defining points need not satisfy it exactly (`z = 0.1` is not `fl(0.1)`), and two different
 /// planes can share one image. Judging reads the plane's name, derived from its defining points
 /// without rounding — the exact shortcuts and the plane-class merge alike.
@@ -135,7 +135,7 @@ impl Plane {
     /// Three differences, three products and two sums, each round-to-nearest at `≤ ε/2` of its own
     /// magnitude; with `|normal| = 1` an over-estimate of the whole is `3ε · Σ|pᵢ − oᵢ|`.
     ///
-    /// ★ A loose vertex tolerance absorbs an under-estimate here. The one place it shows — a
+    /// A loose vertex tolerance absorbs an under-estimate here. The one place it shows — a
     /// four-plane concurrency whose vertex is genuinely *on* the plane — puts the residual *exactly
     /// equal* to the claimed tolerance, saved only by the comparison being strict.
     #[inline]

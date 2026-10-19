@@ -4,7 +4,7 @@
 use super::*;
 use proptest::prelude::*;
 
-/// ★★ **The population the narrow route cannot reach — and the reason the sign is total.**
+/// **The population the narrow route cannot reach — and the reason the sign is total.**
 ///
 /// Two decimal-window denominators of `10^22` put the determinant's product denominator at
 /// `10^44`, past `i128` — precisely what `from_decimal`'d profile coordinates produce. The

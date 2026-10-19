@@ -8,7 +8,7 @@
 //! faces keep ([`HeldRims`]). Alongside them the two terms that decide whether a draft face survives at all --
 //! [`BoolKind`] and [`keep`], one predicate on one chamber's `(inA, inB)`.
 //!
-//! ★ **This module is under the engine, not beside it.** It names `combinatorics` (a ring is a ring
+//! **This module is under the engine, not beside it.** It names `combinatorics` (a ring is a ring
 //! of names) and `planes` (a face lives in a class table) and nothing else in this crate -- no
 //! `arrangement`, no `assembly`, no `ops`. That is what a shared vocabulary means here, and the
 //! module-graph gate asserts exactly it.
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 /// **A result vertex's definition, in class space** — what becomes a `Vertex` once the classes
 /// are read as surface handles ([`Def::vertex`]).
 ///
-/// ★ Two readers ask for it, and they must ask the same thing: the seam table realizes a node's
+/// Two readers ask for it, and they must ask the same thing: the seam table realizes a node's
 /// coordinate from the definition the minting will push, so the two cannot describe one vertex
 /// two ways. `Three` is a triple the naming derives from the faces through the node (or, in the
 /// seam table, the node's own triple — the same point); `Pierce` is a **declaration, not a
@@ -58,12 +58,12 @@ impl Def {
 
     /// The model's vertex for this definition — the class → handle mapping and nothing else.
     ///
-    /// ★★★ **That mapping is where `QuadRoot::canonical` answers a second time**: `NodeId::Pierce`
+    /// **That mapping is where `QuadRoot::canonical` answers a second time**: `NodeId::Pierce`
     /// is canonical in *class* order, `Vertex::Pierce` in *handle* order, and the class → handle
     /// map is not monotone in general — a re-sort must carry the root through (`transform`'s
     /// remap already locks the same rule on the way back out).
-    /// ★ The flip is unexercised **at the minting**: dropping it leaves every fence green, because
-    /// both fixtures' class order happens to match their handle order. ★★★★★ **The rule is not
+    /// The flip is unexercised **at the minting**: dropping it leaves every fence green, because
+    /// both fixtures' class order happens to match their handle order. **The rule is not
     /// unexercised, though — its inverse is red.** The population that exercises it is a
     /// boolean's *result used as the next operand*, where a second boolean builds its classes
     /// afresh and their order is not the handles': dropping the same restatement in
@@ -100,7 +100,7 @@ impl Def {
 /// A seam vertex — a point on both `∂A` and `∂B` (a three-plane corner or a pierce point), shared
 /// (one `Handle`) by every incident result piece.
 ///
-/// ★ **It carries the cache its vertex receives, and nothing measured beside it.** `Realized`
+/// **It carries the cache its vertex receives, and nothing measured beside it.** `Realized`
 /// says the truth lies within `coord ± bound` — the one thing the self-touch sieve needs to keep
 /// its boxes conservative — and any other variant says no bound is proven, which the sieve reads
 /// as "cannot rule this out". A residual (the point's distance to its carriers' `f64` planes) is
@@ -115,7 +115,7 @@ pub(crate) struct SeamVertex {
 
 /// One ring of a result face: its nodes, and **the plane each edge rides**.
 ///
-/// ★ **The walls are carried, not derived.** Reading an edge's supporting plane back out of its two
+/// **The walls are carried, not derived.** Reading an edge's supporting plane back out of its two
 /// endpoint names is sound only while every vertex lies on exactly three planes — see
 /// [`Ring::edges`]. Every producer here knows the wall (the arrangement's
 /// half-edge was told it; a pass-through face reads it off the edge's other face), so it hands it
@@ -213,7 +213,7 @@ impl Ring {
         }
         let pin = |n: NodeId, wall: &Wall| -> Result<combinatorics::EndPin, BoolError> {
             if combinatorics::pierce_name(n).is_some() {
-                // ★ A pierce end is pinned by its cylinder only on the line its pair spells; a
+                // A pierce end is pinned by its cylinder only on the line its pair spells; a
                 // point on a line two classes share on the cylinder can arrive under the other
                 // pair's name, and on a plane edge its pin is then derived — `pin_for`, the one
                 // rule («a pin is a function of the name and the line»).
@@ -469,7 +469,7 @@ impl HeldRims {
 /// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
 /// — the lateral's corner there — and moved that `A − B`'s refusal to `ArcBoundNotYet` (measured).
 ///
-/// ★ A circle left **one** node — the split cut it at one point, or the cleaning dissolved all its
+/// A circle left **one** node — the split cut it at one point, or the cleaning dissolved all its
 /// others — is cut at that one node: the cap holds it as the arc from it back to itself
 /// (`dissolve_straight_angles`), and the lateral reads the rim the same way.
 pub(crate) fn held_rims(faces: &[LocalFace], split: &CutRims) -> HeldRims {

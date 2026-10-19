@@ -218,7 +218,7 @@ pub(crate) fn nearest_normal_f64(num: &num_bigint::BigInt, den: &num_bigint::Big
 /// because widening the interval can only cost an escalation, never buy a wrong acceptance, and
 /// `Mag` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
 ///
-/// ★★★ **Built in `BigFloat`, not through `f64`.** An earlier spelling wrote
+/// **Built in `BigFloat`, not through `f64`.** An earlier spelling wrote
 /// `BigFloat::from_f64(2f64.powi(e))` and refused `|e| > 1000` — safe, because flushing a radius
 /// to zero would read as a *tighter* interval than the realization earned. But a realization at
 /// 1024 bits carries a radius near `2⁻¹⁰¹⁹`, so that refusal turned **more** precision into
@@ -338,7 +338,7 @@ fn bits_of(x: &BigFloat) -> usize {
 /// the mantissa normalized into `[0.5, 1)`, which makes the integer the words spell equal to
 /// `m · 2^bits` and the value `± words · 2^(e - bits)`.
 ///
-/// ★ **The scale comes from the words being read, not from `as_raw_parts`' second field.**
+/// **The scale comes from the words being read, not from `as_raw_parts`' second field.**
 /// Measured (6 precisions x 6 values, including 53 and 100): astro-float pads the mantissa to
 /// whole words and reports that padded length, so the two agree everywhere. Deriving it from the
 /// same words the integer is assembled from keeps them agreeing by construction rather than by
@@ -366,7 +366,7 @@ fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)
 
 /// Round `q + r/den` to an integer, **ties to even** — IEEE's rule, and the kernel's.
 ///
-/// ⚠★★★ **Not "away from zero", which is what this crate shipped first.** At `2⁵² + ½` both
+/// **Not "away from zero", which is what this crate shipped first.** At `2⁵² + ½` both
 /// neighbours are representable, so the tie rule decides, and half-away answered
 /// `4503599627370497` where [`Rat::to_f64`] — the road the point cache is built on — answers
 /// `4503599627370496`. Two roads for one quantity disagreeing at a tie is exactly what the
@@ -509,7 +509,7 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
 
 /// `places` decimal places of the **exact** rational `num/den` (`den` positive).
 ///
-/// ★ For a value that really is rational — a three-plane meet, a `QuadVal` whose radical vanishes
+/// For a value that really is rational — a three-plane meet, a `QuadVal` whose radical vanishes
 /// — every digit this prints is a digit of the coordinate itself, not of an approximation to it.
 /// That is the thing an exact kernel can say and a floating-point one cannot.
 pub fn decimals_of_ratio(
@@ -536,7 +536,7 @@ pub fn decimals_of_ratio(
 /// `places` decimal places of the realization `mid ± rad`, or `None` when `prec` bits **do not
 /// decide them** — the twin of [`round_to_f64`], and `None` means the same thing there.
 ///
-/// ★ The caller's move on `None` is to realize again at higher precision, exactly as
+/// The caller's move on `None` is to realize again at higher precision, exactly as
 /// `ladder_f64` climbs. That is why this reports undecided rather than picking:
 /// a digit invented here would be indistinguishable, to everything downstream, from one the
 /// definition actually determines.
@@ -596,7 +596,7 @@ pub fn sqrt_hp_big(v: &BigRat, prec: usize) -> Option<HpBounded> {
 
 /// **A quadratic algebraic scalar `a + b√c` realized at `prec` bits, with its error.**
 ///
-/// ★ Exact when the radical vanishes or resolves ([`quad::QuadVal::as_rat`]) — the value is asked,
+/// Exact when the radical vanishes or resolves ([`quad::QuadVal::as_rat`]) — the value is asked,
 /// not its provenance, so a tangency's rational root takes the rational road even though it
 /// arrived through the same variant as an irrational one.
 pub fn quad_hp(q: &quad::QuadVal, prec: usize) -> Option<HpBounded> {

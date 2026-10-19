@@ -287,7 +287,7 @@ fn nurbs_surface() -> impl Strategy<Value = NurbsSurface> {
 
 /// **Is `t` far enough from every interior knot for a central difference to be second-order?**
 ///
-/// ★★★ **The oracle, not the surface, is what a knot breaks.** A central difference is
+/// **The oracle, not the surface, is what a knot breaks.** A central difference is
 /// second-order only where the function is C²; at a simple interior knot a degree-`p` spline is
 /// only C^(p−1), so a sample within `h` of one differences *across* the break and the error
 /// degrades to O(h) — larger than these tests' tolerance, while `derivative`/`du`/`dv`
@@ -299,7 +299,7 @@ fn nurbs_surface() -> impl Strategy<Value = NurbsSurface> {
 /// the shape a fixed corpus never finds and a proptest eventually does. Loosening the tolerance
 /// instead would blind the check everywhere to buy nothing here.
 ///
-/// ★ Both derivative oracles read this. The curve one had the same latent flaw and had simply
+/// Both derivative oracles read this. The curve one had the same latent flaw and had simply
 /// not been hit — one rule, one place.
 fn clear_of_knots(t: f64, knots: &[f64], degree: usize, h: f64) -> bool {
     knots[degree + 1..knots.len() - degree - 1]

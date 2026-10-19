@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// ★★★★ **Two cylinder operations in a row — measured for the first time.**
+/// **Two cylinder operations in a row — measured for the first time.**
 ///
 /// The corpus had **no chained-cylinder fixture at all**: every boss and bore stood on a plain
 /// plate. So "a plate takes a second cylinder" was neither locked nor known, and it turned out to
@@ -60,11 +60,11 @@ fn chained_cylinder_operations_that_build_today_still_build() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★ A wall boss as a *middle* operation builds; its volumes live in
+    // A wall boss as a *middle* operation builds; its volumes live in
     // `a_chained_cylinder_bounded_by_the_first_builds`, beside the mechanism that opens it.
 }
 
-/// ★★★★★ **The gate decides a boss-seated wall, and records the pair — and nothing else in the
+/// **The gate decides a boss-seated wall, and records the pair — and nothing else in the
 /// crate would notice if it stopped.**
 ///
 /// The clearance test's whole content is a `bool`, and on a chained operand its answer travels
@@ -75,7 +75,7 @@ fn chained_cylinder_operations_that_build_today_still_build() {
 /// green with the pierce corner's answer thrown away entirely**. Measured, by throwing it away:
 /// 316 green. This is the lock that sees it.
 ///
-/// ★★ **What it sees is that the corner is *readable*, not what it says** — recorded rather than
+/// **What it sees is that the corner is *readable*, not what it says** — recorded rather than
 /// claimed. Forcing every pierce corner to one strip side leaves even this lock green, because the
 /// verdict here is settled on the *other* separating axis: the wall's plate corners already sit
 /// inside the boss's axial span, so `along` fails whatever the strip half answers. The corner's
@@ -114,13 +114,13 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     )
     .solid;
     m.rebuild_adjacency();
-    // ★ The gate *deciding* is half the claim — past the first corner the boss makes.
+    // The gate *deciding* is half the claim — past the first corner the boss makes.
     let setup = crate::arrangement::plane_index_setup(&m, first, b).expect("the gate decides");
-    // ★★ And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
+    // And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
     // clear of it; that is what the record-and-pass arm is for, and a missing entry here means the
     // clearance test answered "clear" about a wall a cylinder is standing in.
     //
-    // ★ The pair is checked by **what it means**, not by its indices: the arm records exactly the
+    // The pair is checked by **what it means**, not by its indices: the arm records exactly the
     // classes whose plane the cylinder's axis lies *on*, so that is the assertion — renumbering
     // the classes cannot make it pass or fail for the wrong reason.
     assert_eq!(setup.crossings.len(), 1, "one seated pair, not more");
@@ -138,17 +138,17 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     }
 }
 
-/// ★★★★★ **A holed lateral's ruling comes out in three pieces, and the middle one grazes.**
+/// **A holed lateral's ruling comes out in three pieces, and the middle one grazes.**
 ///
 /// A wall through the boss's axis meets its lateral in two rulings, and where the boss is buried in
 /// the plate the lateral does not *cross* that wall — it ends at it. So the mark is
 /// `Transversal · Graze · Transversal` along the axis, not one full-height crossing.
 ///
-/// ★★ **Held at the trace**: the operation builds, but a result says only that a ruling went
+/// **Held at the trace**: the operation builds, but a result says only that a ruling went
 /// wrong, not which piece of it; the trace's own answer says that, the way `arrangement`'s
 /// `sides == [-1, 1]` lock holds the hole-free case.
 ///
-/// ★ The claim is over every ruling **this fixture** carves on its boss, counted on the rows its
+/// The claim is over every ruling **this fixture** carves on its boss, counted on the rows its
 /// own operation recorded.
 #[test]
 fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
@@ -183,7 +183,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     .solid;
     m.rebuild_adjacency();
     crate::ledger::owned(|| boolean(&mut m, BoolKind::Cut, first, b).expect("the bore builds"));
-    // ★ This operation's own carvings — but it carves other classes of the same model too (a
+    // This operation's own carvings — but it carves other classes of the same model too (a
     // panel's ruling is one graze, a chain's a transversal then a graze), so the boss is still
     // named: origin `(2, 0, −1)`, rulings spanning `t ∈ [0, 4]`.
     let carved: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
@@ -209,19 +209,19 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
             "a carved ruling came out as {kinds:?}"
         );
     }
-    // ★ Both rulings are carved, not just one: the hole has a vertical edge on each. A floor,
+    // Both rulings are carved, not just one: the hole has a vertical edge on each. A floor,
     // not a count: a `debug_assertions` build traces the arrangement twice (the reuse-off
     // reference).
     assert!(carved.len() >= 2, "only {} ruling carved", carved.len());
-    // ★★★★★ **And which side the face occupies, against the fixture's own geometry.** The buried
+    // **And which side the face occupies, against the fixture's own geometry.** The buried
     // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
-    // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
+    // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. Flipping any
     // factor of the derivation turns this red; flipping `body_above` itself also fails the tests
     // of the booleans it feeds.
     let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
         .mine()
         .iter()
-        // ★ Only the **hole's** runs: this same operation puts a *panel* on the same wall and
+        // Only the **hole's** runs: this same operation puts a *panel* on the same wall and
         // span, and its face lies on the other side — measured (`body_above` false against the
         // hole's true), which is what a filter by origin alone let in.
         .filter(|g| g.inner && g.origin == [2.0, 0.0, -1.0] && g.span[1] - g.span[0] == 2.0)
@@ -241,7 +241,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     }
 }
 
-/// ★★★★★ **Which of the two arcs is the hole — measured, not argued.**
+/// **Which of the two arcs is the hole — measured, not argued.**
 ///
 /// A plane cuts a circle in two points, and the whole difficulty of a lateral face's hole is which
 /// of the two arcs it is: the hole's two ruling edges lie on **one** plane here, so that plane's
@@ -251,23 +251,23 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 /// axis. Reversed, the answer is not approximate but **exactly opposite**: the graze would sit on
 /// the band and the crossing inside the hole.
 ///
-/// ★★ **Downstream notices only the symptom** — reversed, a chained operation is refused as
+/// **Downstream notices only the symptom** — reversed, a chained operation is refused as
 /// `LabelConflict` and emission's disk-side check fires, neither naming the arc — so the arc is
 /// realized and judged here as well. The kernel reads no coordinate to choose it; this reads one
 /// afterwards.
 ///
-/// ☑ **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
+/// **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
 /// winding is **red**, dropping `plus_t_is_above` is **red**, and dropping the root restatement
 /// (the ruling named for a different ⊥ plane) is **red**. Dropping `frame_sign` or the face's
 /// `orient_sign` is **green** here — both are `+1` on a boss's holed lateral — and
 /// [`a_bores_lateral_with_a_hole_takes_a_second_cylinder`] is the lock that turns them.
 ///
-/// ★ The claim is over this test's own arcs on the wall boss (origin `(2, 0, −1)`): the plate
+/// The claim is over this test's own arcs on the wall boss (origin `(2, 0, −1)`): the plate
 /// stands on `y > 0` and the boss is centred on the wall `y = 0`, so the buried half — the hole —
 /// is the `y > 0` one.
 #[test]
 fn a_holes_arcs_run_the_way_the_hole_lies() {
-    // ★ Two second operands, because they reach **different arms** of the walk. A cylinder rising
+    // Two second operands, because they reach **different arms** of the walk. A cylinder rising
     // from `z = −1` puts its cap on `z = 0`, which is the hole's own low rim — an on-line *run*.
     // One rising from `z = 1` puts a cap **strictly inside** the hole's `z ∈ (0, 2)`, where the
     // ring crosses the class on its two ruling edges instead — the *crossing* arm, whose extra
@@ -307,7 +307,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
             let _ = boolean(&mut m, BoolKind::Cut, first, b);
         });
     }
-    // ★ This test's own carvings, and among them only this boss (`(2, 0, −1)`) and only its
+    // This test's own carvings, and among them only this boss (`(2, 0, −1)`) and only its
     // **hole** — the same models carve panels' and chains' arcs, which face any way, and the
     // sentence is about holes.
     let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
@@ -326,7 +326,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
     );
 }
 
-/// ★★★★ **A bore's lateral with a hole takes a second cylinder — the two signs the boss family
+/// **A bore's lateral with a hole takes a second cylinder — the two signs the boss family
 /// cannot turn.**
 ///
 /// A tongue fused into a bored plate fills a patch of the bore's lateral, so that face comes back
@@ -338,12 +338,12 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// `z = 0` facing `+z`, which makes it a `Reversed` face — and the crossing class carries
 /// `frame_sign = −1`, which the crossing arm reads to tell the travel's axis sense.
 ///
-/// ☑ Measured by dropping each factor in `cycle_on_class`: without `orient_sign` every row is
+/// Measured by dropping each factor in `cycle_on_class`: without `orient_sign` every row is
 /// refused (`LabelConflict`) and the hole's arcs come back on the `−y` side; without the class's
 /// `frame_sign` the third row is refused (`CylinderFaceUndecided`), and it is the only row in the
 /// suite, the ignored sweep and the census whose crossing arm meets a `frame_sign = −1` class.
 ///
-/// ★ The volumes are derived: the plate is 96, the bore removes `2π`, and the tongue adds the part
+/// The volumes are derived: the plate is 96, the bore removes `2π`, and the tongue adds the part
 /// of the bore it fills — the strip `|x − 6| ≤ 0.6` of the half disk `y ≥ 2`, `0.6·0.8 + asin 0.6`,
 /// one high (`0.6` is a 3-4-5 chord, so the rulings are rational). The second cylinder removes
 /// `π/4` per unit of the plate it passes.
@@ -447,14 +447,14 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
     }
 }
 
-/// ★★★★ **A cycle that carves two extents on one class has both read.** The wall `[9,11]×[0,40]×[5,15]`
+/// **A cycle that carves two extents on one class has both read.** The wall `[9,11]×[0,40]×[5,15]`
 /// fused across the bored plate ([`walled_bore`]) opens two windows in the bore's lateral, one on
 /// either side of the axis, from `z = 5` up to the plate's top, and the lateral's boundary around
 /// them is one cycle. `cycle_on_class` reads it against each ⊥ class: on `z = 10` and on `z = 5` it
 /// lays two arcs (the run arm), and a box standing on `z = 8` — far from the bore, there only for
 /// its plane — crosses its four rulings, two stretches, one per window (the crossing arm).
 ///
-/// ☑ Measured by dropping the last extent of a call that carved two or more: with only the arcs'
+/// Measured by dropping the last extent of a call that carved two or more: with only the arcs'
 /// or only the stretches' dropped, every operation here is refused (`LabelConflict`). The
 /// `nth ≥ 1` rows are the fixture's premise rather than a claim about the kernel — a change that
 /// rightly read this cycle in one extent per class would turn them red without anything being
@@ -502,7 +502,7 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
     }
 }
 
-/// ★★★★★ **A boolean's own result takes a second cylinder — the whole road, end to end.**
+/// **A boolean's own result takes a second cylinder — the whole road, end to end.**
 ///
 /// A boss standing on a **wall** was the one chained operand that did not build. It buries half the
 /// boss's lateral in the plate, so that face comes back as a band with a **hole**, and every layer
@@ -513,7 +513,7 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
 /// `OpenResultShell` again with the arrangement whole — and this lock was the map of that walk.
 /// It is now the map of the far side.
 ///
-/// ★★★★★ **The last false sentence was that a label answers two questions.** A label says where
+/// **The last false sentence was that a label answers two questions.** A label says where
 /// *material* is; the panel road also read it as saying whether the lateral face is **there**. On
 /// the first fusion the two sectors of the holed rim carry different labels (the buried one is
 /// inside the *other* solid) and the road happened to be right; on a second operation the plate is
@@ -523,10 +523,10 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
 /// `Graze` where the face ends, `Transversal` where it runs through.
 /// `cyl_chart::read_cell`'s `face_spans` asks it.
 ///
-/// ☑ Measured across these four fixtures: **four** sectors dropped for existence, exactly one per
+/// Measured across these four fixtures: **four** sectors dropped for existence, exactly one per
 /// operation — the buried half — and the volumes below are what says that count is right.
 ///
-/// ★ The volumes are derived, not copied: the plate is 96, the wall boss adds `π/4·4` with half its
+/// The volumes are derived, not copied: the plate is 96, the wall boss adds `π/4·4` with half its
 /// section buried (`−½·π/4·2`), a through bore removes `π/4·2`, a boss on top adds `π/4·1`, and a
 /// bore *on the wall* removes only the half-section the plate holds (`−½·π/4·2`).
 #[test]
@@ -563,7 +563,7 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★★★ **And that the existence gate is what did it.** The chart's census holds it where the
+    // **And that the existence gate is what did it.** The chart's census holds it where the
     // cells are read:
     // `exist_marks_false` (a sector dropped because the face is not there — the four above, held
     // as growth ≥ 4 in `cyl_chart::tests::a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total`)
@@ -571,7 +571,7 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
     // its own solid — the doc that says why the `Seated` skip is load-bearing lives on `face_spans`).
 }
 
-/// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
+/// **A boolean's result carries names the tracer's plane-only road cannot read — and it
 /// says so instead of aborting.**
 ///
 /// A boss standing on a wall leaves the plate's caps bitten by an **arc** and the wall split in two
@@ -581,7 +581,7 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
 /// accessor is right to: for its forty-odd other callers a cylinder there is an upstream filter
 /// bug. This is the caller whose input is an *operand*, so this is where the filter belongs.
 ///
-/// ★ **Without the filter this very call panics** ("a plane-only path got cylinder class 0",
+/// **Without the filter this very call panics** ("a plane-only path got cylinder class 0",
 /// measured). The population gate refuses such an operand long before the tracer sees it, so
 /// nothing in production reaches this — which is exactly why the lock calls the function
 /// **directly**, the same way the ring-naming goldens next door do.
@@ -590,7 +590,7 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
 /// and not a blanket refusal.
 #[test]
 fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
-    // ★★ **The corner boss is here because the wall boss is symmetric.** Its axis lies *on* the
+    // **The corner boss is here because the wall boss is symmetric.** Its axis lies *on* the
     // wall, so the two rulings sit either side of that plane and a root read the wrong way round
     // lands on a mirror-image point — a lock that only ever saw this fixture could pass with the
     // restatement inverted. The corner's two walls break that symmetry.
@@ -600,7 +600,7 @@ fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
         ups.extend(u);
         sides.extend(s);
     }
-    // ★★ **The direction assertions inside are only worth their ink if the fixtures move them** —
+    // **The direction assertions inside are only worth their ink if the fixtures move them** —
     // a boss whose rulings all climbed, or all sat one side, would let a constant pass for a
     // derivation. It takes **both** fixtures to move both bits, and that is the geometry rather
     // than a gap: the wall boss is symmetric about its wall, so its two rulings straddle that
@@ -718,7 +718,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     );
                     curved_walls += 1;
                 }
-                // ★★★★★ **The direction bits, against the walk and against the geometry.** The
+                // **The direction bits, against the walk and against the geometry.** The
                 // carrier alone says *which surface*; `up` and `side` say *which way* and *which
                 // of the two rulings*, and a consumer that reads them wrong builds a face wound
                 // backwards or seated on the far side of the cylinder. Both are measured off
@@ -754,7 +754,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                         "face {:?} edge {i}: `up` disagrees with the walk",
                         fh.index()
                     );
-                    // `side` is the sign of `(x − o) · (m × n̂)`. ★★ **`n̂` has to be the class's
+                    // `side` is the sign of `(x − o) · (m × n̂)`. **`n̂` has to be the class's
                     // `world_rat` normal, and no other spelling of the class's plane will do** —
                     // measured, by writing `plane.normal()` here first and watching it come out
                     // opposed (`[0,-1,0]` against `[0,1,0]`, and `frame_sign` is `+1`, so that is
@@ -785,7 +785,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 continue;
             };
             pierce_names += 1;
-            // ★★★★★ **Two roads, one point.** The name is this boolean's classes; the coordinate is
+            // **Two roads, one point.** The name is this boolean's classes; the coordinate is
             // what the *previous* boolean realized from *its* classes. Realizing the one and
             // measuring it against the other is what says the restatement — the pair's order and
             // each normal's sign — came out right: get either wrong and the name designates the
@@ -804,7 +804,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             );
         }
     }
-    // ★★★★★ **A lateral's own curved walls, against the geometry** — every loop, for a lateral's
+    // **A lateral's own curved walls, against the geometry** — every loop, for a lateral's
     // rulings sit in whichever loop meets the wall (here the hole the plate leaves). Nothing on the
     // operand side reads a lateral ruling's `up`, so this is the one lock on it; `side` is checked
     // against the plane the wall carries, and both ends of an arc or a ruling must be corners whose
@@ -923,14 +923,14 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     (ups, sides)
 }
 
-/// ★★★★★ **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
+/// **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
 ///
 /// `edge_dir` is the one place a direction is made. A pierce point has no third plane, and the
 /// integer predicate wants one, so its cylinder arm orders through the `a + b√c` tower; the 48
 /// pins below fix what the answer must be (an arm that refuses by `RingNaming` refuses every one
 /// of them, measured).
 ///
-/// ★★★ **The oracle is a second road, and only the half that matters is second.** The direction
+/// **The oracle is a second road, and only the half that matters is second.** The direction
 /// `n_p × n_q` is read from the same raw coefficients the code reads — deliberately, the way the
 /// ruling lock next door shares `world_rat`: a *label*'s reference frame has to be one spelling or
 /// the two roads are not comparing the same thing. What is independent is the part under test —
@@ -938,7 +938,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 /// against a pierce root, or two roots against each other), the oracle realizes both points in
 /// `f64` and subtracts. Measured `|t|` from 1.5 to 456, so nothing here is decided in the noise.
 ///
-/// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 48 order
+/// **The population is one-sided and that is a fact, not a blind instrument.** All 48 order
 /// `-1`: a face's outer ring travels counter-clockwise about that face's own outward normal, which
 /// is the direction `order_along` sorts by, so agreement is structural — two boss positions, one
 /// of them with its axis reversed, and three `Cut` notches do not move it. What moves is **swapping the two ends**,
@@ -956,13 +956,13 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
     ] {
         pins += pinned_ends_ordered(at, dir, kind);
     }
-    // ★ The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
+    // The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
     // ends and every assertion below would pass vacuously. **48** — eight from each of the six
     // fixtures (measured), so any one of them going quiet moves the sum.
     assert_eq!(pins, 48, "cylinder-pinned ring ends exercised");
 }
 
-/// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
+/// **A circle can be an interior boundary, and then the merge erases it.**
 ///
 /// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:
 /// a plate cut by a box resting on its top face comes back as the plate — same volume, **six
@@ -1012,7 +1012,7 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         assert_eq!(out.len(), 1, "one solid");
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
-        // ★ The merged face has to survive tessellation too: `validate` reads the topology store,
+        // The merged face has to survive tessellation too: `validate` reads the topology store,
         // and a boundary this pass rewrote is exactly the kind a mesher can drop a piece of.
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
         let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
@@ -1049,7 +1049,7 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         "{v}"
     );
 
-    // ★ Negative controls — a circle that separates *material from void* must survive.
+    // Negative controls — a circle that separates *material from void* must survive.
     // ④ A through bore: its circle is shared with the cylinder, which is not in the plane's group,
     //    so nothing joins and the hole stays a hole.
     let (v, f) = run([2.0, 2.0, -1.0], 4.0, BoolKind::Cut);
@@ -1068,7 +1068,7 @@ fn a_disk_merges_into_the_face_it_lies_in() {
     );
 }
 
-/// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
+/// **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
 /// test. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)` by 0.8 with `r = 2.12`,
 /// so the cheap test fails and each face on that class has to answer for itself; the pocket wall
 /// that carries it sits at `x ∈ [60.3, 73.2]`, nowhere near the bore, and says so. The user's
@@ -1193,7 +1193,7 @@ fn moved_face_answers_the_clearance_test(recorded: bool) {
     );
 }
 
-/// ★ The negative control: a **rotated** cylinder has no exact world description, and the gate
+/// The negative control: a **rotated** cylinder has no exact world description, and the gate
 /// says so by its own name rather than measuring across two frames. (A 90°-family turn keeps a
 /// datum exact and records nothing, so the angle here is one that does record.)
 #[test]

@@ -61,7 +61,7 @@ pub(crate) fn unify_coplanar_faces(
             }
         }
     }
-    // ★★ **A circle joins two faces too, and it is the only fact that says so.** A cap disk's
+    // **A circle joins two faces too, and it is the only fact that says so.** A cap disk's
     // boundary is a `Bound::Circle` with **no nodes at all** (the arrangement's `bound_of`: "a
     // circle cell has no nodes — its boundary is the cylinder class itself"), so the edge table
     // above cannot see it and the disk sits alone in its own component. What connects it to the
@@ -107,7 +107,7 @@ pub(crate) fn unify_coplanar_faces(
         if mem.len() < 2 {
             continue; // nothing to merge; the face (if any) is emitted as-is below
         }
-        // ★ A face whose **outer** bound is curved contributes no node edge, so the re-threading
+        // A face whose **outer** bound is curved contributes no node edge, so the re-threading
         // below has nothing of it to thread. A **disk whose circle another member holds as a
         // hole** is an interior seam `merge_component` erases; a **disk whose circle no member
         // holds** is the merged region's own outer bound, which `merge_component` states as a
@@ -173,7 +173,7 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wal
 /// An outer bound with the bounds that belong to it — what one merged region looks like before it
 /// becomes a `LocalFace`. The inner side is [`Bound`] rather than [`Ring`] because a member's
 /// **circle** hole rides through the merge (a bore under a plate the merge is unifying); it has
-/// no nodes, so it is carried rather than re-threaded. ★ The outer is a [`Bound`] too since cell
+/// no nodes, so it is carried rather than re-threaded. The outer is a [`Bound`] too since cell
 /// ⑩: a region whose boundary is a member's whole circle (a boss cap whose pin hole the pin's disk
 /// filled) has no ring to thread either, and is stated as the circle it is.
 type RegionRings = (Bound, Vec<Bound>);
@@ -189,7 +189,7 @@ type RegionRings = (Bound, Vec<Bound>);
 /// left (step 3). A region that only *touches itself* there threads too, and is the whole-result
 /// judgement's to name: the 45° fold arrives here and leaves as `SelfTouchingResult`.
 ///
-/// ★ **Why abstaining is safe is not "merging is only tidiness"** — the contact fuse refutes
+/// **Why abstaining is safe is not "merging is only tidiness"** — the contact fuse refutes
 /// that: unmerged coplanar faces leave the corners on a
 /// dropped wall naming a plane the result has no face on, and the assembly refuses the whole
 /// boolean. What makes abstention safe is narrower: emitting the group as-is leaves the pipeline
@@ -244,7 +244,7 @@ fn merge_component(
             }
         }
     }
-    // ★★ **Two faces claiming one side is an abstention, not a refusal**: this guard protects *the
+    // **Two faces claiming one side is an abstention, not a refusal**: this guard protects *the
     // merge*, not the result. Emitting the group as-is leaves the pipeline exactly where it would stand without
     // this cleaning pass, and the whole-result judgements (`self_touch_reject`, the closed-shell
     // guard, `check_result_topology`'s plane-self edge guard) name the shape with their own
@@ -287,7 +287,7 @@ fn merge_component(
         }
         // An opposed 1:1 with a curved wall on either side is two different edges — both stay
         // boundaries and thread below. (A ruling piece opposed to a plane segment of the same
-        // recorded line would be one edge; ☑ measured, no such pair reaches here in the suite or
+        // recorded line would be one edge; measured, no such pair reaches here in the suite or
         // the census.)
     }
     // 3. Re-thread what survives, keeping the material on the left. Each surviving directed edge
@@ -318,7 +318,7 @@ fn merge_component(
             .map(Vec::as_slice)
             .or_else(|| next.get(&v).map(std::slice::from_ref))
     };
-    // ★ **A node left with two ways out is a point the region passes twice** — a face pinched
+    // **A node left with two ways out is a point the region passes twice** — a face pinched
     //    there, or a hole touching the outer at a vertex, which is the same face. The next edge is
     //    the one bounding the sector the walk arrived in: with the region on the left of travel
     //    (step 4 reads an outer ring as winding +1 in `wc`'s frame), the first way out clockwise
@@ -379,7 +379,7 @@ fn merge_component(
                 }
                 cur = step;
             }
-            // ★ The floor every ring reader shares ([`combinatorics::ring_floor`]) — one arc from
+            // The floor every ring reader shares ([`combinatorics::ring_floor`]) — one arc from
             // a node back to itself is what a cap merges back to under a wedge whose apex is on
             // its rim.
             let self_loop = nodes.len() == 1 && matches!(walls[0], Wall::Arc { .. });
@@ -398,7 +398,7 @@ fn merge_component(
     let mut outers: Vec<Ring> = Vec::new();
     let mut holes: Vec<Ring> = Vec::new();
     for cyc in cycles {
-        // ★ Built from the walls the cycle carries, not from the node names, which break the
+        // Built from the walls the cycle carries, not from the node names, which break the
         // merge at a four-plane concurrency: a canonical name need not mention the plane its edge
         // rides, and two names can share nothing but `wc`.
         let ring = cyc.edges(jd, cyls, Some(wc))?;
@@ -408,13 +408,13 @@ fn merge_component(
             _ => return Err(reject(RejectReason::CoplanarMerge)),
         }
     }
-    // ★★ **A circle another member holds as its own outer bound is not a hole — it is the seam
+    // **A circle another member holds as its own outer bound is not a hole — it is the seam
     // between the two, and merging erases it.** That is the disk-into-face case: the face around
     // it holds the circle as a hole, the disk *is* the circle, and the merged region is simply the
     // face without it. Erasing here rather than in the caller keeps one rule in one place, and
     // costs the owner search below one question fewer.
     //
-    // ★ **A circle no member holds as a hole is a region's outer bound**: the disk it
+    // **A circle no member holds as a hole is a region's outer bound**: the disk it
     // bounds joined the group through its *own* holes (a boss cap whose pin hole the pin's disk
     // fills) or through node edges inside it, and what is left after the seams are erased is a
     // region bounded by that circle — stated as the circle, with no ring to thread.
@@ -467,13 +467,13 @@ fn merge_component(
         // the end — for this caller and the arrangement's alike.
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            // ★ A region bounded by a **circle** asks the disk's question of the hole's nodes —
+            // A region bounded by a **circle** asks the disk's question of the hole's nodes —
             // the one `nest_cells` asks of a ring under a disk.
             let outer = match outer {
                 Bound::Ring(o) => o,
                 Bound::Circle { cyl } => {
                     let hole_edges = hole.edges(jd, cyls, Some(wc))?;
-                    // ★ The same engine the arrangement's nesting asks, through the same
+                    // The same engine the arrangement's nesting asks, through the same
                     // door.
                     if crate::nesting::cell_inside(
                         jd,
@@ -496,16 +496,16 @@ fn merge_component(
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
             // a probe against the mixed walk, and the vocabulary is that arm's — a list
             // that ran out is `NoClearRay`, a list that was **empty** (a hole with no
-            // rational corner) is `RingHasNoWitness`. ☑ Neither has a population today
+            // rational corner) is `RingHasNoWitness`. Neither has a population today
             // (0 raises at this site); named so the first arrives under
             // the right word.
-            // ★ The rational road serves a mixed outer **and a hole with no three-plane corner**
+            // The rational road serves a mixed outer **and a hole with no three-plane corner**
             // (a slot's stadium, four tangent corners and nothing else): its witnesses
             // are the hole's rational corners, pierce ones included
             // (`combinatorics::pierce_coords_rat`). Handing an empty probe list to the ray road
             // would say `NoClearRay` for a ray never cast; the engine names an empty offer
             // `RingHasNoWitness` and an exhausted one `NoClearRay`, which are different facts.
-            // ★ The same engine the arrangement's nesting asks — one rule, one set of
+            // The same engine the arrangement's nesting asks — one rule, one set of
             // witnesses.
             let hole_edges = hole.edges(jd, cyls, Some(wc))?;
             // A hole and an outer of one coplanar group can share a node — they are pieces of one
@@ -530,13 +530,13 @@ fn merge_component(
             .1
             .push(Bound::Ring(hole));
     }
-    // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
+    // **The members' circle holes ride through.** A circle has no nodes, so the re-threading
     // above cannot see it, and without this loop the hole drops and the shell opens (measured).
-    // ★ **True of nodes, with a consequence that does not follow**: "no node" is
+    // **True of nodes, with a consequence that does not follow**: "no node" is
     // not "no boundary point that can be named" — a circle
     // has four exact ones — its rim over the cylinder's own unit frame. The kernel already mints
     // that very point as a seam vertex; what the arrangement drops is the node, not the point.
-    // ★ **The engine's precondition holds here too, for a different reason**: these bounds are
+    // **The engine's precondition holds here too, for a different reason**: these bounds are
     // faces of one *valid* solid lying on one plane, so no two of their loops cross — a crossing
     // would be a self-intersection the solid does not have.
     //
@@ -566,7 +566,7 @@ fn merge_component(
             let inside = match outer {
                 Bound::Ring(o) => {
                     let ring = o.edges(jd, cyls, Some(wc))?;
-                    // ★ A disk's only witness is its **centre**, which is an interior
+                    // A disk's only witness is its **centre**, which is an interior
                     // point — it settles «the centre is in that ring», not «the disk is inside
                     // it», because a ring inside the disk contains the centre too. So
                     // the engine also asks the converse the rule calls for.
@@ -591,7 +591,7 @@ fn merge_component(
             }
         }
         let owner = owner.ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
-        // ★ …and it must be in the region's **material**, not in one of its holes. No producer
+        // …and it must be in the region's **material**, not in one of its holes. No producer
         // makes a hole inside a hole today; asking is one call, and assuming is the shape that
         // answers about geometry that is not there.
         for hole in faces[owner].1.iter() {
@@ -616,7 +616,7 @@ fn merge_component(
 /// Drop straight-angle vertices: a node whose only two neighbours across **all** rings continue
 /// along the same line.
 ///
-/// ★ **The test is the two incident edges' walls**, which the rings carry — not combinatorial on
+/// **The test is the two incident edges' walls**, which the rings carry — not combinatorial on
 /// the names ("the node is on a line iff some pair of its planes is shared by both neighbours"),
 /// which is sound only while every vertex lies on exactly three planes. The walls say it
 /// outright — equal walls, or one line in two spellings ([`combinatorics::SharedLines`]: a ruling
@@ -629,7 +629,7 @@ fn merge_component(
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
 ///
-/// ★★ **Arc-bearing rings flow through here, and the carrier keeps equality honest**.
+/// **Arc-bearing rings flow through here, and the carrier keeps equality honest**.
 /// With one sentinel wall for every arc, two *consecutive arcs* would compare as "same wall" and
 /// the pierce vertex between them would dissolve. `Wall`'s derived equality rules that out: arcs
 /// of different circles, or of one circle in different directions, compare unequal. The one pair
@@ -641,14 +641,14 @@ fn merge_component(
 /// dissolve here — which is why the result's rims are read off these faces afterwards
 /// (`draft::held_rims`), not off the split.
 ///
-/// ★ **Deciding on the plane faces alone is enough for the rim**, though the laterals are emitted
+/// **Deciding on the plane faces alone is enough for the rim**, though the laterals are emitted
 /// after this pass: a lateral turns at a rim node only where a ruling ends there, and the node is
 /// then on its cap's ring too, whose arc gives it a neighbour off the ruling's line — three
 /// neighbours, so it stays whether or not the wall bends there (the ruling may run on above the
-/// cap as a plane segment, one line). ☑ Measured: no node the whole-result pass drops joins two
+/// cap as a plane segment, one line). Measured: no node the whole-result pass drops joins two
 /// spellings of one line, in the suite or the census.
 ///
-/// ★★ **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
+/// **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
 /// The per-solid caller hands over every face of a group — laterals included — and the wall
 /// key is `(node, ClassIx)` rather than a plane index, so a curved face compares its walls
 /// in its own key space. The drop proposition is the same sentence there: two ruling edges
@@ -665,7 +665,7 @@ pub(super) fn dissolve_straight_angles(
     which: &[usize],
     shared: &combinatorics::SharedLines,
 ) {
-    // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
+    // The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
     // that edge always sees two walls overall and would never dissolve. On each face separately it
     // sees one, which is exactly "the ring runs straight through here".
@@ -674,7 +674,7 @@ pub(super) fn dissolve_straight_angles(
     // one per node costs more than the whole pass is worth (measured: 4% of a fold).
     let mut nbrs: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
     let mut first_wall: HashMap<(NodeId, ClassIx), Wall> = HashMap::new();
-    // ★ «One line» is not transitive — a plane wall is one line with a ruling piece walked either
+    // «One line» is not transitive — a plane wall is one line with a ruling piece walked either
     // way, while the two pieces walked opposite ways are a cusp — so a key that meets a second,
     // different wall keeps every wall it meets and asks each new one against all of them. Equal
     // walls, the common case, never reach this map.
@@ -722,7 +722,7 @@ pub(super) fn dissolve_straight_angles(
     if drop.is_empty() {
         return;
     }
-    // ★ **A ring keeps one node or none only as its own circle's arcs.** A rim crossed four times
+    // **A ring keeps one node or none only as its own circle's arcs.** A rim crossed four times
     // dissolves to nothing and closes as that circle; one node left is the arc from that node back to
     // itself — the spelling of a circle the split cut at one point, which every later stage reads.
     // Any other ring the drops would leave so (another circle's arcs, the walls of a line) has no
@@ -731,7 +731,7 @@ pub(super) fn dissolve_straight_angles(
     // the rings that lose every node close. Converting inside the loop could leave a disk on one face
     // while another keeps a node on the same circle. No suite or census boolean takes a drop back.
     //
-    // ★★ **The closed circle is spelled by the face, not by the ring** — one edge, `(cylinder k,
+    // **The closed circle is spelled by the face, not by the ring** — one edge, `(cylinder k,
     // plane c)`, bounds a cap as `Bound::Circle { cyl: k }` and a lateral as `Bound::Rim { plane:
     // c, ccw }`; the lateral's `ccw` is its arcs' own, which the chart gives a whole rim too. The
     // cap's spelling on a lateral says nothing (the face *is* that cylinder; which plane it ends on
@@ -798,7 +798,7 @@ pub(super) fn dissolve_straight_angles(
             let mut walls = Vec::with_capacity(kept.len());
             for (t, &i) in kept.iter().enumerate() {
                 // Edges `i` up to the next kept node are one edge now, on one line or one arc.
-                // ★ Where one line is spelled both ways — a ruling piece along the lateral and a
+                // Where one line is spelled both ways — a ruling piece along the lateral and a
                 // plane segment past its cap — the merged edge is spelled by the plane pair: that
                 // spelling is true of the whole line, the ruling's only where the lateral is.
                 let next = kept[(t + 1) % kept.len()];

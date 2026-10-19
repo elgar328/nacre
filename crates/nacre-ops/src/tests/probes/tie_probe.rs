@@ -2,7 +2,7 @@
 //! a fixture can say the arm ran. A corner on the ray is decided by the half-open rule, and an arc
 //! whose root lands on its own end by the departure there; this counts the second.
 //!
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::combinatorics`] mounts it with `#[path]` as `tie_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 

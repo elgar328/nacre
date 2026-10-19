@@ -1,4 +1,4 @@
-//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `census`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
@@ -7,7 +7,7 @@ use super::*;
 /// rebuilds every cylinder class's chart beside the emitter, asserts the chart's invariants on
 /// it, and records the counts `cyl_chart`'s tests read.
 ///
-/// ★ Called from the one place the plane arrangement's faces and [`Curved`] are both in hand. It
+/// Called from the one place the plane arrangement's faces and [`Curved`] are both in hand. It
 /// reads; nothing downstream reads it.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -22,9 +22,9 @@ pub(crate) fn census(
     emission: &Result<Vec<LocalFace>, BoolError>,
 ) {
     for (k, _) in cyls.iter().enumerate() {
-        // ★ A class whose axis parameter cannot be stated is skipped, not recorded: `emit_lateral`
+        // A class whose axis parameter cannot be stated is skipped, not recorded: `emit_lateral`
         // refuses on the very same `chart_of`, so this is a refusal the emitter already named, not
-        // an outcome the census introduces. ☑ Measured **0** across the suite either way.
+        // an outcome the census introduces. Measured **0** across the suite either way.
         let Ok(chart) = chart_of(jd, cyls, k, plane_faces, curved) else {
             continue;
         };
@@ -32,7 +32,7 @@ pub(crate) fn census(
         // clipped span. The chart has one line set for the whole class.
         let mine: Vec<&crate::bands::CylRow> = rows.iter().filter(|r| r.class == k).collect();
         // The cell reader's inputs: the lines by parameter, and whose solid this class
-        // is. ★ One class is one solid's surface — `planes` interns cylinders by handle and
+        // is. One class is one solid's surface — `planes` interns cylinders by handle and
         // two solids share none — asserted where it is relied on rather than assumed.
         let Ok(lines) = Lines::of(jd, k, &cyls[k].def, curved) else {
             continue;
@@ -41,7 +41,7 @@ pub(crate) fn census(
         let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
             continue;
         };
-        // ★★★★★ **The chart's lines cover its own boundary rule, asserted where the fact is made.**
+        // **The chart's lines cover its own boundary rule, asserted where the fact is made.**
         // The rim half is shared with `chart_of` by construction; the load-bearing half is the
         // rows' span ends — a *different spelling* of the axis parameter (the tracer's `footprint.span`)
         // than the classes' `axis_param` — so this says every lateral face's rim lands, with exact
@@ -60,10 +60,10 @@ pub(crate) fn census(
             "one cylinder class carries rows of both solids: cyl {k}"
         );
 
-        // ★★★★★ **Every vertical line carries an answer.** A ruling without
+        // **Every vertical line carries an answer.** A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
-        // the census below would then be comparing a partial chart. ☑ Measured 862/862 across the
-        // suite; the world sense declines none of them. ★ Except a **tangent** station:
+        // the census below would then be comparing a partial chart. Measured 862/862 across the
+        // suite; the world sense declines none of them. Except a **tangent** station:
         // the wall touches the cylinder along it and nothing changes across it — the face
         // ends there. Its answer is that it has none, and `read_cell` skips it. The cell beside the
         // line outside the cylinder (`outer`) is formed with it — every half-edge of the class's
@@ -82,14 +82,14 @@ pub(crate) fn census(
             );
         }
 
-        // ★★★★★ **The premise `cells()` is built on, checked where the fact is made.** That
+        // **The premise `cells()` is built on, checked where the fact is made.** That
         // function keeps a ruling only where it spans an axis interval *whole* — so a ruling
         // ending strictly inside one would be **silently dropped**, and the cells would come out
         // wrong with nothing red. The premise is that a ruling's ends are always z-lines, which is
         // structural (a ruling node is `[wall, other plane]` and that other plane can only be ⊥ to
         // the axis, which `chart_of` collects in full) — but it joins two *different* spellings of
         // the axis parameter (`node_axis_param` for the ends, `bands::axis_param` for the lines),
-        // and the day those disagree the drop is what would happen. ☑ Measured 0 across the suite.
+        // and the day those disagree the drop is what would happen. Measured 0 across the suite.
         for t in &chart.theta {
             for e in t.z {
                 assert!(
@@ -115,7 +115,7 @@ pub(crate) fn census(
 
         // ── The cells, read off the horizontal lines. ──
         //
-        // ★ `cyl_rows` refuses a class with no row before this census runs, so a class here always
+        // `cyl_rows` refuses a class with no row before this census runs, so a class here always
         // has a side; stated as a check rather than an `unwrap` so the message names the class.
         let Some(side) = side else {
             panic!("a cylinder class reached the chart with no row: cyl {k}");
@@ -221,13 +221,13 @@ pub(crate) fn census(
             if r.present && r.ends.iter().any(|e| matches!(e, End::NoCircle)) {
                 nocircle_present += 1;
             }
-            // ★ The one-mark contract on rim reads:
+            // The one-mark contract on rim reads:
             // every cut end read carries exactly one lateral mark of its own solid (`Seated` is a
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
             for e in &r.ends {
                 let End::Exact(arcs) = e else { continue };
-                // ★ Each arc of a run is read on its own — the contract is per arc, and a run
+                // Each arc of a run is read on its own — the contract is per arc, and a run
                 // that spans several is exactly where a violation would first show.
                 for arc in arcs {
                     let lateral = arc
@@ -238,7 +238,7 @@ pub(crate) fn census(
                         })
                         .count();
                     ends.arcs_read += 1;
-                    // ★ **Not «exactly one»:** a ⊥ cap through
+                    // **Not «exactly one»:** a ⊥ cap through
                     // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
                     // there carries **no** mark — the face is absent along it, and the cell reads
                     // absent. So the contract is «at most one, and none exactly where the cell is
@@ -265,11 +265,11 @@ pub(crate) fn census(
                 Some(false) => {}
             }
         }
-        // ★★★★★ **The horizontal lines always speak for a face that is there** — asserted where
+        // **The horizontal lines always speak for a face that is there** — asserted where
         // the fact is made: `circle_on_class` leaves a circle on every ⊥ class within a lateral
         // face's span (Crosses inside, Grazes at the rims), and `emit_faces` labels every circle
         // cell and arc outside the keep filter — which is why no "which side of the wall" sign is
-        // needed to read a cell. ★ **Not a bare zero:** a cut end the reader could not pair with
+        // needed to read a cell. **Not a bare zero:** a cut end the reader could not pair with
         // its rim (`End::Other`) would leave *no* end speaking, and `present` would fall back to
         // the row's span — which cannot see a hole. The true proposition is the emitter's: over
         // such a cell it builds nothing, it refuses the class by name.
@@ -277,7 +277,7 @@ pub(crate) fn census(
             src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
         );
-        // ★★★★★ **A cell with a face never has an end that says nothing.** What `Other` means is a whole-circle interval *beyond* a face's span whose cut rim's
+        // **A cell with a face never has an end that says nothing.** What `Other` means is a whole-circle interval *beyond* a face's span whose cut rim's
         // arcs disagree about the far side (the other solid stands on one side of its own wall
         // there), and such a cell is absent. A present cell reading `Other` would be a chart with
         // a θ boundary it has no line for — named here, at the fact, not read from the other end.
@@ -285,24 +285,24 @@ pub(crate) fn census(
             other_present, 0,
             "a cell with a face has an end that says nothing: cyl {k}"
         );
-        // ★ Record-site assertions rather than counts (the suite measures them 0): a
+        // Record-site assertions rather than counts (the suite measures them 0): a
         // reporting test sees only the rows recorded before
         // it, an assertion here sees every chart and names the offending test.
         assert_eq!(
             chart.end_swapped, 0,
             "a ruling arrived with z descending: cyl {k}"
         );
-        // ★★★★★ **Over a present cell whose chamber could not be read, the emitter emits
+        // **Over a present cell whose chamber could not be read, the emitter emits
         // nothing** — the true proposition. A present cell's chamber is empty when its speaking
         // sides contradict each other — an arrangement label defect, which the emitter refuses by
         // name rather than read from either side; the guard does not hide the defect, it says no
-        // face is built over it. ★ Stated on `emit_unknown` (present cells only), not on the
+        // face is built over it. Stated on `emit_unknown` (present cells only), not on the
         // read's `disagree`, which also holds on absent cells the emitter rightly ignores.
         assert!(
             emit_unknown == 0 || emission.is_err(),
             "a present cell's chamber could not be read, yet the emitter emitted: cyl {k}"
         );
-        // ★ The premise at one end: a present cell never meets a line with no circle of its own
+        // The premise at one end: a present cell never meets a line with no circle of its own
         // cylinder (`circle_on_class` marks every ⊥ class within a face's span).
         assert_eq!(
             nocircle_present, 0,
@@ -313,7 +313,7 @@ pub(crate) fn census(
         let mut odd_k = 0usize;
         // ── The vertical answer, read. ──
         //
-        // ★★★★★ **The consistency check is «sign-free», and deliberately so.** Asking "which side
+        // **The consistency check is «sign-free», and deliberately so.** Asking "which side
         // of the wall is this sector" would need a third sign beside the two the label already
         // composes, and this ladder's defect shape is a sign spelled a second time. A ruling's
         // label states the chamber on **both** sides of its wall, so what each ruling contributes
@@ -342,7 +342,7 @@ pub(crate) fn census(
                 odd_k += 1;
             }
             rulings += n;
-            // ★ **A wall's rulings need not come in pairs any more.** A band's lateral
+            // **A wall's rulings need not come in pairs any more.** A band's lateral
             // reaches both rulings of every through-axis wall, so the walk below crossed each
             // wall twice; a panel's or a chain's boundary may run along one ruling of a wall
             // while the other is no face's edge at all (a quarter boss on a corner). Around such
@@ -361,17 +361,17 @@ pub(crate) fn census(
             let mut all_known = true;
             let mut any_flip = false;
             for t in &alive {
-                // ★★ **Existence before membership**, on the vertical axis. The
+                // **Existence before membership**, on the vertical axis. The
                 // chart holds every wall's ruling, whether or not *this* lateral face reaches it,
                 // and a label only ever answers membership. `face_spans` is the one spelling of
                 // the rule and it reads exactly this list.
-                // ★★★★★ **The first spelling of this was vacuous.** It asked whether the mark
+                // **The first spelling of this was vacuous.** It asked whether the mark
                 // list was *empty*, and a `MergedRuling` exists only because a lateral traced it —
                 // so the answer was `0` because nothing was being looked at, not because the
                 // population is empty. The signal `face_spans` actually reads is the **kind**: a
                 // face running through says `Transversal`, one whose boundary stops at the line
                 // says `Graze` and may not reach the interval at all.
-                // ☑ Measured over the suite: 412 `Transversal`, **12 `Graze`** — not empty.
+                // Measured over the suite: 412 `Transversal`, **12 `Graze`** — not empty.
                 if t.marks
                     .iter()
                     .all(|(_, k)| matches!(k, crate::arrangement::SegKind::Graze { .. }))
@@ -398,20 +398,20 @@ pub(crate) fn census(
                 unpaired += 1;
             }
             if all_known && paired {
-                // ★★★★★ **`label_cells`' final verification, on the cylinder chart.** The plane
+                // **`label_cells`' final verification, on the cylinder chart.** The plane
                 // side ends its labelling by checking every edge's flip relation and calling a
                 // failure `LabelConflict`; this is that check, stated where no orientation is
                 // needed — walk the circle, XOR what each wall changes, and come back to where you
-                // started. ☑ Measured 201 intervals, **none** failing to close.
-                // ★ It is asserted (not merely counted) because a failure would mean the chart's
+                // started. Measured 201 intervals, **none** failing to close.
+                // It is asserted (not merely counted) because a failure would mean the chart's
                 // own labels contradict each other, which is a defect on this side and not a
                 // disagreement with today's road.
                 //
-                // ★★★★★ **What it cannot see, measured rather than assumed.** A walk that XORs is
+                // **What it cannot see, measured rather than assumed.** A walk that XORs is
                 // blind to any error appearing an **even** number of times around the circle — and
                 // every interval asserted here carries an even count of rulings per wall (the
                 // `paired` guard above), so a *per-ruling*
-                // systematic flip cancels itself and passes. ☑ Probed both ways:
+                // systematic flip cancels itself and passes. Probed both ways:
                 // adding one flip per ruling stays green, seeding the accumulator wrong goes red.
                 // So this holds the labels against each other; what holds their absolute sense is
                 // `ruling_probe::SIDE_CHECK`, which compares against content and is not a walk.

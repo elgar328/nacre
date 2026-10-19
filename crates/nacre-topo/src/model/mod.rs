@@ -21,7 +21,7 @@ impl Model {
     /// an axis, a `z = 0` sketch's base cap) **interns onto the seed**: one plane, one handle,
     /// stated once.
     ///
-    /// ★ **The seed's f64 cache points down the −axis**, not up. This is the sense the dominant
+    /// **The seed's f64 cache points down the −axis**, not up. This is the sense the dominant
     /// producers push — `extrude` builds base caps with `−normal` (its comment records that
     /// pushing `+normal` "flipped the stored normal on 781 base caps … for no reason"), and an
     /// origin cuboid's bottom/left/front faces cross to `−axis` raws — so a −axis seed keeps
@@ -117,7 +117,7 @@ impl Model {
     /// single live generation without tracking generations at all. `used` is the key a reader hit,
     /// `None` when it folded from the base.
     ///
-    /// ⚠ **Only a caller that is extending a chain may insert**, which is why this is one door and
+    /// **Only a caller that is extending a chain may insert**, which is why this is one door and
     /// not two: a vertex minted fresh by an arrangement is nobody's prefix, and remembering it
     /// would grow the table by one entry per boolean, forever.
     pub fn hand_over_prefix_hp(
@@ -135,7 +135,7 @@ impl Model {
     /// Drop every remembered prefix. Costs nothing but time: the next realization folds from the
     /// base and reaches the same bits (`Model::prefix_hp`'s contract).
     ///
-    /// ☑ Production-facing on purpose even though nothing in this workspace calls it yet: it is
+    /// Production-facing on purpose even though nothing in this workspace calls it yet: it is
     /// the door that makes "empty is always correct" usable rather than merely true, and a
     /// consumer holding a long-lived model is the caller it is for.
     #[cfg(any(test, feature = "test-util"))]
@@ -146,7 +146,7 @@ impl Model {
     /// How many prefixes are remembered — the instrument behind "the table stays bounded by the
     /// live generation, not by history length".
     ///
-    /// ⚠ **Test-gated because it has no production consumer**, the same reason
+    /// **Test-gated because it has no production consumer**, the same reason
     /// [`Model::push_plane_unregistered`] is: this counts an accelerator's internals, which is a
     /// thing to assert about, not a thing to build on. An ungated `pub` here would ship a
     /// permanent public API through the `nacre` facade for a caller that does not exist.
@@ -183,13 +183,13 @@ impl Model {
 
     /// **Drop these solids from the live set** — supersede, the editing ops' half.
     ///
-    /// ⚠★★★ **Order-preserving on the survivors, and that is load-bearing, not incidental.**
+    /// **Order-preserving on the survivors, and that is load-bearing, not incidental.**
     /// `nacre_step::to_step` exports the live set **in order**, so permuting it here would
     /// silently permute the exported STEP entities — and nothing would catch that: the census
     /// reads the arena (it never sees live order) and there is no golden STEP text anywhere.
     /// `Vec::retain` keeps relative order, which is why this is spelled with it.
     ///
-    /// ★ Takes what to **drop**, not a keep-predicate: every caller reads "supersede these", and a
+    /// Takes what to **drop**, not a keep-predicate: every caller reads "supersede these", and a
     /// predicate would make the call site say the opposite of the name.
     pub fn supersede_live(&mut self, drop: &[Handle<Solid>]) {
         self.live_solids.retain(|h| !drop.contains(h));
@@ -197,7 +197,7 @@ impl Model {
 
     /// **Put the live set back** — the rollback half of a rejected operation.
     ///
-    /// ★ This exists so the transaction has a name. The idiom it replaces (`let snapshot =
+    /// This exists so the transaction has a name. The idiom it replaces (`let snapshot =
     /// …clone()` … `model.live_solids = snapshot`) is syntactically just an assignment and says
     /// nothing about what it is for; it is there because a rejected op once left the model changed.
     pub fn restore_live(&mut self, snapshot: Vec<Handle<Solid>>) {

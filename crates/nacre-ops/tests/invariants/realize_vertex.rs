@@ -13,7 +13,7 @@
 //! | box, boolean'd twice    | 7 bits  | 32 | 32/32 |
 //! | prism on a tilted frame | 59 bits | 12 | **0/12** — every one off, by up to 4 ulp |
 //!
-//! ⚠★★★ **The split is not representability, and saying it was is a mistake worth keeping
+//! **The split is not representability, and saying it was is a mistake worth keeping
 //! written down.** The first reading of this table said "7 bits land in an `f64` exactly, 59 do
 //! not". Measured per coordinate: of `boolean_corner`'s 48, only **32** are dyadic — 16 are exact
 //! rationals no `f64` can hold (the fixture cuts at 3.3 and 7.7, and `33/10` is not a binary
@@ -225,7 +225,7 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
     out
 }
 
-/// ★★★ **Lock 0 — the negative control, and the one that cannot be argued with.**
+/// **Lock 0 — the negative control, and the one that cannot be argued with.**
 ///
 /// An axis-aligned box's corners are 7-bit rationals, so the truth *is* an `f64` and any correct
 /// realization must reproduce the cache bit for bit. A door that quietly re-derived a slightly
@@ -243,7 +243,7 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
         let (v, e) = r.to_f64().expect("an exact value names an f64");
         let cached = m.vertex_point(vh).as_array();
         assert_eq!(v, cached, "vertex {vh:?}");
-        // ⚠ **Width is not representability.** These corners are 7 bits wide by
+        // **Width is not representability.** These corners are 7 bits wide by
         // `tests/instruments/point_width.rs`'s metric, and `boolean_corner` cuts at 3.3 and 7.7 —
         // `33/10` is
         // an exact `Rat` and no `f64` at all. So the readout rounds, and the error says so; a
@@ -266,7 +266,7 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
     );
 }
 
-/// ★★★ **Lock 1 — idempotent and unique.** Realizing at more bits cannot change a decided answer,
+/// **Lock 1 — idempotent and unique.** Realizing at more bits cannot change a decided answer,
 /// because correct rounding makes the realization unique.
 #[test]
 fn more_bits_do_not_change_a_decided_answer() {
@@ -296,7 +296,7 @@ fn more_bits_do_not_change_a_decided_answer() {
     );
 }
 
-/// ★★ **Lock 1's negative control.** A realization that cannot decide a digit must say so rather
+/// **Lock 1's negative control.** A realization that cannot decide a digit must say so rather
 /// than invent it. Without this, "always `Some`" passes every other test in this file.
 #[test]
 fn too_few_bits_report_undecided_rather_than_guessing() {
@@ -322,12 +322,12 @@ fn too_few_bits_report_undecided_rather_than_guessing() {
     );
 }
 
-/// ★★ **Lock 1′ — the door's own contract: ask for `places`, get `places`.**
+/// **Lock 1′ — the door's own contract: ask for `places`, get `places`.**
 ///
 /// The `None` on `to_decimal` is a rung-to-rung signal. A caller must never see it, and an
 /// implementation that always reported undecided would satisfy every other lock but this one.
 ///
-/// ★★★ **Counted per fixture, and refusals are counted too.** An earlier spelling wrote
+/// **Counted per fixture, and refusals are counted too.** An earlier spelling wrote
 /// `let Ok(d) = … else { continue }` and asserted a total — which drops exactly the vertices a
 /// broken ladder would fail on, and stays green while the population shrinks under it. That is the
 /// failure `tests/instruments/point_width.rs` records in its own module doc; this shape cannot
@@ -369,7 +369,7 @@ fn the_door_returns_the_places_it_was_asked_for() {
     }
 }
 
-/// ★★ **Lock 2 — every variant answers, and it is raised for real rather than tabulated.**
+/// **Lock 2 — every variant answers, and it is raised for real rather than tabulated.**
 ///
 /// A table of variants proves nothing about a dispatch; these fixtures actually mint an `OnSeam`
 /// rim corner and a `Pierce` wall crossing, and the test fails if a population goes empty — which
@@ -408,7 +408,7 @@ fn every_vertex_variant_answers() {
                 for s in &d {
                     assert_eq!(s.split_once('.').expect("a point").1.len(), 25);
                 }
-                // ★ An oracle that owes nothing to the derivation: a pierce point is a point
+                // An oracle that owes nothing to the derivation: a pierce point is a point
                 // **on the cylinder**, so its distance from the axis is the radius. The fixture's
                 // bore is radius 3 about `(2, 2)` on the world Z axis.
                 let (x, y) = (
@@ -422,7 +422,7 @@ fn every_vertex_variant_answers() {
                 );
                 pierce += 1;
             }
-            // ★ **Which refusal, not just that there was one.** A plane pair whose meet line
+            // **Which refusal, not just that there was one.** A plane pair whose meet line
             // misses the cylinder is a *curved* definition failing to resolve; `vertex_meet` is
             // never called on this road, so answering `NoMeet` would name a decline that did not
             // happen. Planted: swapping the two left every other test here green.
@@ -452,7 +452,7 @@ fn every_vertex_variant_answers() {
     );
 }
 
-/// ★★★ **The curved arms are checked against a route that shares nothing with them.**
+/// **The curved arms are checked against a route that shares nothing with them.**
 ///
 /// A seam or pierce coordinate is assembled here out of `inv_sqrt_hp` and exact rational
 /// arithmetic; the cached one was computed at boolean time by different code entirely. Agreement
@@ -487,7 +487,7 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
     );
 }
 
-/// ★★★ **An operation's cache is the realization.** Every vertex the push funnel could realize
+/// **An operation's cache is the realization.** Every vertex the push funnel could realize
 /// on the ladder's first two rungs carries `Realized` with that realization bit for bit; every one
 /// it could not carries the variant that says why (`nacre_ops::audit_vertex_caches`).
 #[test]
@@ -515,12 +515,12 @@ fn an_operations_cache_is_the_realization() {
     }
 }
 
-/// ★ **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
+/// **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
 /// after its vertices, so the push anchors its line at a realized coordinate (and, where no truth
 /// gives the direction, runs it along realized coordinates); rebuilding every edge curve afterwards
 /// changes nothing — the derivation, standing on realized endpoints.
 ///
-/// ⚠ This is a statement about a model **nothing has refined**. `refine_caches` moves
+/// This is a statement about a model **nothing has refined**. `refine_caches` moves
 /// coordinates, and after it a rebuild is emphatically not a no-op — which is why that door
 /// re-derives the curves itself, and why `the_refine_door_carries_the_edges_with_it` asserts the
 /// rebuild is a no-op only *after* the door has already run.
@@ -541,7 +541,7 @@ fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
     assert_eq!(before, after);
 }
 
-/// ★ **A moved solid is realized from its moved definition** — not from the moved `f64`. A
+/// **A moved solid is realized from its moved definition** — not from the moved `f64`. A
 /// rational translation of the tilted prism: every moved vertex the road can realize is `Realized`
 /// and bit for bit the realization; the rest keep the construction's figure, counted.
 #[test]
@@ -575,7 +575,7 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
                     .expect("decided");
                 assert_eq!(coord.as_array(), v);
             }
-            // ★ Named, not a catch-all: `Ceiling` and `Unrealized` are different reports, and a
+            // Named, not a catch-all: `Ceiling` and `Unrealized` are different reports, and a
             // `_` here would have counted a cost-capped vertex as a refused one.
             PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => kept += 1,
         }
@@ -587,7 +587,7 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
     );
 }
 
-/// ★★★ **A realized coordinate never reports the error an exact one does.**
+/// **A realized coordinate never reports the error an exact one does.**
 ///
 /// `to_f64` hands back `(value, error)`, and `0.0` there means *exact* — the rational arm's
 /// promise. An approached coordinate must not be able to say it: at 4096 bits the radius is near
@@ -609,7 +609,7 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
                 };
                 let Some((v, e)) = r.to_f64() else { continue };
                 if r.is_exact() {
-                    // ⚠ **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
+                    // **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
                     // at 53 bits, and the tilted family's coordinates are 59 bits wide. Zero is
                     // allowed only where the rational really is an `f64`; where it is not, the error
                     // must be positive and no wider than half an ulp. An earlier spelling of this
@@ -642,7 +642,7 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
                     exact += 1;
                     continue;
                 }
-                // ★ A zero radius is allowed on this arm only where it is earned, and the machine
+                // A zero radius is allowed on this arm only where it is earned, and the machine
                 // can earn exactly one value: zero. Every `add`/`mul` charges `round_off(result)`,
                 // which `Mag::above`'s zero guard makes zero only for a zero result — so a seam
                 // point's axis coordinate (exact centre 0, exact direction 0) is exact and says
@@ -674,7 +674,7 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
     );
 }
 
-/// ★★★ **A `Realized` cache contains its truth** — `coord ± bound` holds the coordinate the
+/// **A `Realized` cache contains its truth** — `coord ± bound` holds the coordinate the
 /// definition names, on the arm that approaches it.
 ///
 /// A box turned 30° realizes its corners by replaying the turn, so every coordinate is an interval
@@ -733,7 +733,7 @@ fn a_bounded_cache_contains_the_coordinate_its_definition_names() {
     assert!(off > 8, "only {off} of {checked} coordinates are inexact");
 }
 
-/// ★★★ **A corner whose carriers' motions differ is realized, not solved on plane caches.**
+/// **A corner whose carriers' motions differ is realized, not solved on plane caches.**
 ///
 /// `B` is a box turned 30° about `z`, so its `y = 0` wall becomes the plane through the axis at
 /// 30°; `A` is an unturned slab whose wall `x = 1` and floor `z = 0` cross that plane at
@@ -777,7 +777,7 @@ fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
     );
 }
 
-/// ★★ **Refusals are named, and never fall back to the cache.**
+/// **Refusals are named, and never fall back to the cache.**
 ///
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
 /// everything would pass it.
@@ -802,7 +802,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
         match realize_vertex(m, vh, Precision::NearestF64) {
             Ok(_) => ok += 1,
             Err(e) => {
-                // ★★★ **Exhaustive `match`, not `matches!`** — and the difference is not style.
+                // **Exhaustive `match`, not `matches!`** — and the difference is not style.
                 // This site exists to notice when a refusal arrives without a name, so it has to
                 // be the thing that breaks when a variant is added. `matches!(e, A | B | C)`
                 // compiles happily forever: a new variant (`Unrepresentable`, say) leaves the list
@@ -830,7 +830,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
     );
 }
 
-/// ★ A rational vertex prints digits that are **the coordinate's own**, not an approximation's.
+/// A rational vertex prints digits that are **the coordinate's own**, not an approximation's.
 #[test]
 fn an_exact_vertex_prints_exact_digits() {
     let m = boolean_corner();
@@ -848,7 +848,7 @@ fn an_exact_vertex_prints_exact_digits() {
     }
 }
 
-/// ★★★★ **The deepest claim this door makes: a decided digit is a true digit.**
+/// **The deepest claim this door makes: a decided digit is a true digit.**
 ///
 /// Everything else rests on the error radius really bounding the error — under-report it and
 /// `round_to_digits` accepts a place the definition never determined, which is a *wrong digit
@@ -859,7 +859,7 @@ fn an_exact_vertex_prints_exact_digits() {
 /// collapses every difference a high-precision radius is about, and an earlier spelling of this
 /// probe reported "0 violations" while measuring nothing.
 ///
-/// ★★ **Calibrated, because "0 wrong" is only worth what the instrument can see.** Shrinking the
+/// **Calibrated, because "0 wrong" is only worth what the instrument can see.** Shrinking the
 /// radius by 2⁻²⁰ already produces 12 wrong digits here; 2⁻⁶⁰ gives 48, 2⁻¹²⁰ gives 192. So the
 /// bound is honest to within about 20 bits of the true error — tight, not vacuously wide. (Three
 /// smaller mutations — dropping the product's rounding, the operand cross-terms, or the rational
@@ -925,7 +925,7 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
     })
 }
 
-/// ★★★★ **A motion chain is held back for the bits it costs, never for its length** — the two
+/// **A motion chain is held back for the bits it costs, never for its length** — the two
 /// shapes that prove the difference.
 ///
 /// The cheap road's limit is a **cost** limit (`CHEAP_REPLAY_COST_CAP`, sized from measured cost
@@ -938,11 +938,11 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// by the hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the
 /// ladder's first rung decides; these two come back `Realized`.
 ///
-/// ★ Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
+/// Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
 /// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice
 /// while this was written*.
 ///
-/// ⚠ **A chain that folds is not a row here.** Quarter turns, rational translations and axis
+/// **A chain that folds is not a row here.** Quarter turns, rational translations and axis
 /// reflections compose to a rational map, so a vertex under such a recorded chain is read from the
 /// fold exactly and nothing is replayed — the guard below would find no replayed vertex. The
 /// translation row therefore starts with one 7° turn, which does not fold (`translated_chain`).
@@ -1278,7 +1278,7 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
     );
 }
 
-/// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
+/// **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
 /// population at all to be wrong about (the census corpus measures **zero** of it: every real model
 /// there is two motions deep at most, and every coordinate decides on the first rung).
 ///
@@ -1290,12 +1290,12 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
 ///   carrying 120 turns of radius — more than the cheap road's two rungs can shrink below `2⁻¹⁸⁰` —
 ///   `RealizeError::Undecided`. (A coordinate that is not `0` decides inside the cap at 256 bits.)
 ///
-/// ★★ **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
+/// **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
 /// answers. That is the whole difference between `Ceiling` and `Unrealized` — one says "ask again
 /// with a bigger budget", the other says "there is no road" — and without this line the two would
 /// be distinguishable only by which branch produced them.
 ///
-/// ⚠ `validate` runs on the cost-capped model too. Its vertices carry the construction's figure
+/// `validate` runs on the cost-capped model too. Its vertices carry the construction's figure
 /// rather than a realization, which is exactly the population whose tolerance loosened when the
 /// cache stopped storing a measured residual; the checker must still find it clean.
 #[test]
@@ -1412,7 +1412,7 @@ fn seventy_turns_of_thirty_seven_degrees_are_realized_on_the_second_rung() {
     }
 }
 
-/// ★★ **A frame node costs what it unfolds to.** A sketch on a face rides a frame node that names the
+/// **A frame node costs what it unfolds to.** A sketch on a face rides a frame node that names the
 /// face's plane, and a replay walks that plane's whole chain behind it. On a wall of the 7°-and-200-
 /// translations box the chain is past the cost cap, so the prism's corners are `Ceiling` on the cache
 /// road — by cost, by name — and the paid door realizes every one of them.
@@ -1472,7 +1472,7 @@ fn a_sketch_on_a_deep_face_waits_for_the_paid_door() {
     }
 }
 
-/// ★★ **A nameless datum costs what its vertices' chains cost.** Its witness — the plane the
+/// **A nameless datum costs what its vertices' chains cost.** Its witness — the plane the
 /// judging table and the realization roads read — realizes its defining vertices through their own
 /// carriers' chains, so a datum through a corner of the 7°-and-200-translations box and two corners
 /// of a box that never moved sits behind that history. On the cheap road the datum's own cache and
@@ -1559,7 +1559,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
     }
 }
 
-/// ★★ **A nameless datum costs all three of its vertices' chains, not the deepest one.** Its witness
+/// **A nameless datum costs all three of its vertices' chains, not the deepest one.** Its witness
 /// replays each defining vertex through its own chain, so three boxes turned by different angles and
 /// each moved 70 times give three corners well under the cost cap that together are over it: the
 /// datum's cache and the corners of a prism on it stop by cost on the cheap road, and the paid door
@@ -1672,7 +1672,7 @@ fn translated_chain(n: usize) -> Model {
     m
 }
 
-/// ★★★★ **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
+/// **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
 /// touches nothing else.**
 ///
 /// The fixture is a 7° turn and 300 rational translations: past the cheap road's cost cap, so every
@@ -1723,7 +1723,7 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     );
 }
 
-/// ★★★ **`refine_caches_of` pays for the solids it is given, and leaves the others' cells alone.**
+/// **`refine_caches_of` pays for the solids it is given, and leaves the others' cells alone.**
 ///
 /// The shape an application makes: a solid and a copy of it (a script layer copies before every
 /// consumption, so its intermediates stay live). The copy restates its source's surfaces — so the
@@ -1787,7 +1787,7 @@ fn the_refine_door_pays_for_the_solids_it_is_given() {
     );
 }
 
-/// ★★★★ **The door raises every surface `Ceiling` too, and the planes it writes agree with the
+/// **The door raises every surface `Ceiling` too, and the planes it writes agree with the
 /// vertices it writes** — two roads to one geometry: a plane cache from the carried name of its
 /// statement, a vertex from the meet of its three carriers.
 ///
@@ -1894,7 +1894,7 @@ fn the_refine_door_raises_every_surface_ceiling_onto_its_corners() {
     );
 }
 
-/// ★★ **Same log, same door, same file — and the door shows in the file.** Two models built by
+/// **Same log, same door, same file — and the door shows in the file.** Two models built by
 /// the same operations and refined export byte-identical STEP: the door is a function of the
 /// definitions, so it cannot make two agreeing models disagree on the way out. And the refined
 /// file is not the unrefined one — otherwise the agreement would say nothing about the door (the
@@ -1911,7 +1911,7 @@ fn a_refined_model_exports_the_same_bytes_twice() {
     assert_ne!(data(&a), unrefined, "the door must reach the file");
 }
 
-/// ★★★ **The door raises a cylinder too** — a cylinder solid turned 7° and carried 300 recorded
+/// **The door raises a cylinder too** — a cylinder solid turned 7° and carried 300 recorded
 /// translations is past the cheap road's cost cap, so its lateral cache is the producer's figure,
 /// `Ceiling`. After the door it is `Realized`, and the seam corners — realized beforehand on the
 /// expensive road, as the oracle — lie at the radius from its axis within what the roundings allow
@@ -1996,7 +1996,7 @@ fn the_refine_door_raises_a_deep_cylinder() {
     );
 }
 
-/// ★★★★ **The door carries the edges with it** — the order problem, back again.
+/// **The door carries the edges with it** — the order problem, back again.
 ///
 /// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That was
 /// safe while coordinates never moved after the fact; this door moves them. So the door re-derives,
@@ -2066,14 +2066,14 @@ fn translated_chain_cold(n: usize) -> Model {
     m
 }
 
-/// ★★★★ **The accelerator changes the clock and nothing else.**
+/// **The accelerator changes the clock and nothing else.**
 ///
 /// Two builds of one chain — one carrying prefixes forward, one emptying the table before every
 /// step so each realization folds from the base — and every live vertex's cache must agree bit for
 /// bit. That is the whole contract: the fold is a left fold, so resuming from the value after `k`
 /// nodes reaches what folding all of them reaches.
 ///
-/// ⚠ This lock is worth only as much as the accelerator's reach, so it also asserts the table was
+/// This lock is worth only as much as the accelerator's reach, so it also asserts the table was
 /// **used**: a run where nothing was ever remembered would pass while measuring nothing.
 #[test]
 fn the_prefix_table_changes_no_coordinate() {
@@ -2116,7 +2116,7 @@ fn clearing_the_prefix_table_costs_only_time() {
     }
 }
 
-/// ★★★ **The table is bounded by the live generation, on both axes.**
+/// **The table is bounded by the live generation, on both axes.**
 ///
 /// Depth does not grow it: a prefix is read by exactly one successor, so the entry that was used is
 /// taken as the new one is left. Nor do booleans: an arrangement's vertex is nobody's prefix, and
@@ -2171,7 +2171,7 @@ fn the_prefix_table_stays_one_generation() {
 /// about a box's own normal (which fixes each plane, so `transform` restates rather than records).
 /// Both must give the same coordinates as the same build with the table emptied throughout.
 ///
-/// ⚠ The third — a triple that straddles two histories and solves through the world road, whose
+/// The third — a triple that straddles two histories and solves through the world road, whose
 /// answer carries no leaf — is **not built here**. It needs two operands with different recorded
 /// chains meeting on one corner, and I did not get a fixture to stand; saying so is better than a
 /// lock that quietly covers two cases while claiming three.
@@ -2201,7 +2201,7 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
             m
         };
         let (warm, cold) = (build(false), build(true));
-        // ★ The guard that keeps this from being a third copy of the lock above. Neither motion
+        // The guard that keeps this from being a third copy of the lock above. Neither motion
         // records a node — one is absorbed into the statements, the other fixes every plane it
         // touches — so there is no chain, nothing is ever filed, and the miss is structural rather
         // than incidental. If either premise were wrong the table would be non-empty here and this
@@ -2224,7 +2224,7 @@ fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
     }
 }
 
-/// ★★ **The surface lock holds where the door derives and the cheap road would stop** — a block
+/// **The surface lock holds where the door derives and the cheap road would stop** — a block
 /// with a `Through` face carried by 250 recorded quarter turns: every chain folds, so the push door
 /// derives every surface cache from the truth (`Realized`) at a depth the cheap road would not
 /// walk. The census's question (`realize_surface_cache`) must agree there too, or it cries wolf on

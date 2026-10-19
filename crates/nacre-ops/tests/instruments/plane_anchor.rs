@@ -24,7 +24,7 @@
 //! 4. **Do the two models' surface caches agree?**
 //!    (`which_surface_caches_two_anchors_leave_disagreeing`)
 //!
-//! ★★ The fourth is the only one that **sees** the disagreement. The
+//! The fourth is the only one that **sees** the disagreement. The
 //! first three all answer about things a boolean derives — topology, coordinates, volume — and
 //! those are bit-identical whichever anchor states the plane. Without the fourth the cache
 //! itself is never compared, and nothing in this repository witnesses the defect.
@@ -52,12 +52,12 @@ use crate::fixtures::datum_frame;
 /// the origin either way) and **handle 3 is the `wf` datum itself** — which is why the answer is
 /// `[3]` rather than something larger.
 ///
-/// ☑ **Both rows are `[]` because the anchor is derived from the truth's first point.** Without
+/// **Both rows are `[]` because the anchor is derived from the truth's first point.** Without
 /// the derivation `worst_ring` is `[3]`, and removing it turns this red before anything else.
-/// ★ The `sketch_origin` row is the control that ships with the fixture: it is `[]` **today**, so
+/// The `sketch_origin` row is the control that ships with the fixture: it is `[]` **today**, so
 /// the file shows what a lucky pass looks like beside the case that actually disagrees — the same
 /// service `an_axis_aligned_plane_is_anchor_blind` does for the other questions.
-/// ★ Counts are asserted **before** the element comparison: zipping two different lengths would
+/// Counts are asserted **before** the element comparison: zipping two different lengths would
 /// silently stop at the shorter one, which is the trap `a_pre_pushed_plane_does_not_move_the_model`
 /// already records against itself.
 #[test]
@@ -195,7 +195,7 @@ fn ulps(a: f64, b: f64) -> i64 {
 /// The implicit form's `d = −n·anchor` for a plane anchored at `anchor` with the sweep-facing
 /// normal the kernel uses.
 ///
-/// ★ **`−normal`, always.** Pushing `+normal` would change `flipped` as well, and then a moved
+/// **`−normal`, always.** Pushing `+normal` would change `flipped` as well, and then a moved
 /// result could not be attributed to `d` alone. With `−normal` on both sides the intern reports
 /// `flipped == false` and the anchor is the only variable.
 fn d_at(anchor: Point3, sp: &SketchPlane) -> f64 {
@@ -216,7 +216,7 @@ fn d_at(anchor: Point3, sp: &SketchPlane) -> f64 {
 /// first point — which reversing the ring changes. So which `d` a *producer* hands in depends on a
 /// winding decision made inside the prism builder, with no datum operation in sight.
 ///
-/// ⚠ **The stored `d` does not inherit this.** This test builds its planes with
+/// **The stored `d` does not inherit this.** This test builds its planes with
 /// `Plane::from_point_normal` and never pushes one, so it measures two anchors, two `d`s.
 /// The *stored* `d` does not inherit the producer's choice: `push_plane_raw` derives the anchor
 /// from the truth, so the model keeps one `d` per plane however many anchors are offered;
@@ -330,14 +330,14 @@ fn topo_sig(m: &Model) -> Vec<String> {
 /// Build the `wf` prism and fuse a second body onto it, optionally stating the sketch plane
 /// **before** the extrude — which is exactly what a datum-plane operation will do.
 ///
-/// ★ The boolean is not decoration. A prism's vertices come from its own rational swept ring, so a
+/// The boolean is not decoration. A prism's vertices come from its own rational swept ring, so a
 /// plain extrude's geometry cannot depend on the stored plane at all; `three_planes` — the only
 /// consumer of a plane's f64 cache — runs in the arrangement. A fixture that stops at the extrude
 /// measures nothing.
 fn wf_model(pre_state_at: Option<Point3>) -> Model {
     let mut m = Model::new();
     let sp = wf_plane();
-    // ★★ **Both arms now state the plane** — an extrude names its plane, so "without a
+    // **Both arms now state the plane** — an extrude names its plane, so "without a
     // pre-existing plane" is not expressible. What still varies, and what this
     // file measures, is **which point anchors the cache**: `None` lets the datum anchor at the
     // caller's sketch origin, `Some(p)` plants the same plane at `p` first so the datum interns
@@ -402,7 +402,7 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
     m
 }
 
-/// ★★ **The gate: which point anchors a plane's cache does not move the model.**
+/// **The gate: which point anchors a plane's cache does not move the model.**
 ///
 /// An extrude *names* its plane, so "the plane did not exist yet" is not a thing that can happen
 /// — both arms below state it. What varies is the anchor: the datum's own (the caller's sketch
@@ -416,7 +416,7 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 /// road (see the module doc). It is to derive the cache's anchor from the definition, which is
 /// what ships.
 ///
-/// ⚠★★★ **But not from the foot of perpendicular** — "the
+/// **But not from the foot of perpendicular** — "the
 /// minimum-norm point, therefore the smallest rounding available" — which was measured out:
 /// the foot minimizes the rounding of `d`, not the residual at the face's own points, and it puts
 /// the anchor near the *world origin* while every consumer of an anchor (conditioning, STEP's
@@ -432,7 +432,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
     // Two pre-statements. The first is what a datum operation will actually do; the second exists
     // so the gate has teeth.
     //
-    // ★★ **The realistic anchor alone would be a lucky pass.** Measured: stating the plane at the
+    // **The realistic anchor alone would be a lucky pass.** Measured: stating the plane at the
     // sketch origin *does* change the stored `Plane`'s anchor point (from the oriented ring's first
     // point to the origin) — but on this fixture the two round to the **same `d`**, so nothing
     // downstream could move whatever the answer was. A gate that only ever sees a zero-difference

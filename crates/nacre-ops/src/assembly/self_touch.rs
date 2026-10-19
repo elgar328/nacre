@@ -10,7 +10,7 @@ pub(crate) struct Tangencies<'a> {
 }
 
 impl Tangencies<'_> {
-    /// For the roads that assemble without a gate run (the band-road fixtures). ★ The `kind` here
+    /// For the roads that assemble without a gate run (the band-road fixtures). The `kind` here
     /// is a placeholder, not a choice: with no rows the verdict returns before reading it, which is
     /// why naming an operation at this one site is not the casework the rule forbids.
     #[cfg(test)]
@@ -36,7 +36,7 @@ pub(crate) enum Pinch {
 /// **Does the material near a tangent line fall into more than one piece, and which?** — the three
 /// regions and their two adjacencies, asked through [`crate::draft::keep`] and nothing else.
 ///
-/// ★★★★★ **The operation enters here and only here.** Near the tangent line the material is three
+/// **The operation enters here and only here.** Near the tangent line the material is three
 /// regions — the lens `L` inside the cylinder, the **two** wedges `W2` between the parabola and the
 /// plane, and the far half-space `F` — and the adjacencies are `L–W2` and `F–W2` only: `L` and `F`
 /// meet along the line itself and nowhere else, because at `v = 0` the wedges are *inside* the
@@ -88,7 +88,7 @@ pub(crate) fn pinch(
 /// **A tangency pinches the result when the material it leaves is two lumps that meet only along
 /// the line — and both lumps end up in one solid.**
 ///
-/// ★★ **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
+/// **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
 /// wall *from outside* leaves the lens and the far side, and the honest answer is **two solids
 /// touching along a line**, which the engine produces (`Ok(2)`, `validate` clean, and it meshes).
 /// What makes it a defect is the two lumps landing in **one** body — and the [`Pinch`] says how to
@@ -110,7 +110,7 @@ pub(crate) fn pinch(
 ///   kernel sees. (Bodies are face components joined across edges two faces use — where that
 ///   differs from the material, at an edge four faces use, another guard refuses first.)
 ///
-/// ★ **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
+/// **The shape is the whole verdict — no body is asked which classes it holds.** A row states a
 /// real contact: the gate writes one only for a wall face that touches the line where the lateral
 /// face lies on it, and `runs_through` says the line crosses that face's interior there
 /// (holes and gaps read, `planes::cylinder_gate`'s `line_runs_through_face`). The wedges then lie
@@ -119,13 +119,13 @@ pub(crate) fn pinch(
 /// on the cylinder's is not the rule: read alone, it convicted the lens and the far side of two
 /// bodies whenever one of them had a face anywhere on the wall's plane.
 ///
-/// ★ **Every row here is one this verdict can read.** A row that could not be stated, or whose line
+/// **Every row here is one this verdict can read.** A row that could not be stated, or whose line
 /// a third plane holds other than as an edge (six regions, not three), was refused by the gate
 /// before anything was arranged (`planes::cylinder_gate`); what reaches here is stated, and its
 /// line is held by no other plane or is such an edge.
 pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), BoolError> {
     for t in tg.rows {
-        // ★ The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
+        // The line is an edge here (`Tangency::line_is_an_edge`): two lumps meeting on it meet
         // on an edge four faces use, and the shell guard names that — this row has nothing to
         // add, and the six regions around a line in a third plane are not its to judge. Said here
         // rather than left to the `!runs_through` acquittal below, which such a row also meets: that
@@ -157,7 +157,7 @@ pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), B
 
 /// Push the reconstructed result and supersede the inputs.
 ///
-/// ★ **The operands retire in exactly one place, and it is after the result is accepted.** Copied
+/// **The operands retire in exactly one place, and it is after the result is accepted.** Copied
 /// into each arm that produces solids, every reject would have to know whether it stands before or
 /// after its arm's copy; in one place, "a reject leaves the model alone" is true of the *shape* of
 /// this function rather than of where the rejects happen to sit. [`reconstruct`] does the work and
@@ -194,10 +194,10 @@ pub(crate) fn assemble_fuse_cut(
 ///
 /// **Three sieves, cheapest first**, because the exact question is the expensive one:
 ///
-/// 1. ★ **Which faces are near** — a box per face against the edge's box (its two ends' reach),
+/// 1. **Which faces are near** — a box per face against the edge's box (its two ends' reach),
 ///    the faces filed in a grid over their boxes ([`FaceGrid`]). Over the perf folds, 666,653
 ///    pairs.
-/// 2. ★ **Which of those lie under the edge** — both ends exactly on the face's plane
+/// 2. **Which of those lie under the edge** — both ends exactly on the face's plane
 ///    (`side_of`), 1,583 of those pairs. Not the planes the two ends' **names** share: a name
 ///    carries three of the planes through its point, and where three planes hold the edge's line (a
 ///    pencil) it carries two of them, which two decided by class order — that is, by operand
@@ -208,13 +208,13 @@ pub(crate) fn assemble_fuse_cut(
 ///    the interior, and a point test reads both ends as "on the boundary, not inside" and passes a
 ///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent).
 ///
-/// ★ **One judge, not two.** The endpoint test was here first and is *subsumed* — an endpoint
+/// **One judge, not two.** The endpoint test was here first and is *subsumed* — an endpoint
 /// strictly inside puts that end in an inside stretch of the line, so the segment test answers it
 /// too. Measured across the corpus: 1,696 candidate pairs, the two verdicts agreed on every one,
 /// and no pair was undecidable. Keeping both would have left the same question answered in two
 /// places.
 ///
-/// ★ **The boxes hold where the truth can be, so they can only over-keep.** They are built from
+/// **The boxes hold where the truth can be, so they can only over-keep.** They are built from
 /// realized `f64` coordinates, which are rounded; a box used to *reject* a candidate before an
 /// exact test must therefore be conservative, or a real self-contact is dropped in silence. Each
 /// vertex contributes its [`reach`] — the interval its cache proves the truth lies in — so the box
@@ -226,12 +226,12 @@ pub(crate) fn assemble_fuse_cut(
 /// face**: `Ring::edges` spends an exact predicate per node, and building them for every result
 /// face is the same unconditional cost that put 12x on the star when the void label did it.
 ///
-/// ★ **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
+/// **The curved arm** asks the same proposition of a **lateral** face, for the one edge family
 /// that can lie inside it: an edge two of the solid's plane faces share along a ruling of that
 /// cylinder. The sieve is the gate's record of such lines (`SharedLines::on_cylinder` — a line on
 /// a lateral *face* of an operand, which every result lateral lies within), so a boolean whose
 /// cylinders record none skips the arm, and the census asks it of no edge at all. The exact test is
-/// [`combinatorics::ruling_meets_lateral`]. ☑ The shapes it refuses are ones no other guard can
+/// [`combinatorics::ruling_meets_lateral`]. The shapes it refuses are ones no other guard can
 /// see — each one body whose counts, `validate` and volume are all right: a plate's bore with a
 /// wedge whose apex edge lies along the bore wall and that crosses the hole into the plate beyond,
 /// and a cylinder with a C-shaped prism touching it from outside and running through it
@@ -256,7 +256,7 @@ pub(super) fn self_touch_reject(
             )
         })
         .collect();
-    // ★ **The witness is the smallest offending edge, else the smallest offending vertex**, not
+    // **The witness is the smallest offending edge, else the smallest offending vertex**, not
     // the first a hash map hands over — the rejection's `at` is a census key's neighbour and must
     // not move between runs. Only the rejecting path keeps scanning, so a result that builds pays
     // nothing for it.
@@ -264,7 +264,7 @@ pub(super) fn self_touch_reject(
     let mut found_at = |e: Touch| {
         found = Some(found.map_or(e, |f| f.min(e)));
     };
-    // ★ **A proof beats a «cannot tell».** A candidate whose exact test cannot be formed (a ring
+    // **A proof beats a «cannot tell».** A candidate whose exact test cannot be formed (a ring
     // the walk cannot name, a ray it cannot cast) is held, not raised: the scan goes on, and a
     // self-touch found anywhere is the answer. Only a result with none raises the held error —
     // the one met at the smallest edge or vertex, so its kind does not follow the hash map's order
@@ -279,7 +279,7 @@ pub(super) fn self_touch_reject(
     let mut shared: Option<combinatorics::SharedLines> = None;
     let any_shared = cyls.iter().any(|c| !c.shared.is_empty());
     for g in groups {
-        // ★ **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
+        // **Two arms, one proposition** — "an edge of this solid lies in the interior of one of
         // its own faces". The planar arm asks it of plane faces, through boxes and exact plane
         // membership. The curved arm asks it of a lateral face, for the edges two of the
         // solid's plane faces share along a ruling of that cylinder (the gate's record,
@@ -367,7 +367,7 @@ pub(super) fn self_touch_reject(
         };
         let mut read: HashMap<usize, combinatorics::CompFace> = HashMap::new();
         'edges: for (&[u, v], own) in &owners {
-            // ★ **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
+            // **Abstain on an edge with a pierce endpoint.** It has no three-plane name to
             // intersect, and this is a *rejection guard*: declining here would turn "I cannot
             // check this edge" into "this model is invalid" — a reject on a possibly-sound solid.
             // The curved arm below asks the one such population it can read (an edge along a
@@ -390,7 +390,7 @@ pub(super) fn self_touch_reject(
                 if own.contains(&j) {
                     continue;
                 }
-                // ★ **Which faces: the ones on whose plane both ends lie.** Not the planes the two
+                // **Which faces: the ones on whose plane both ends lie.** Not the planes the two
                 // ends' names share — a name carries three of the planes through its point, and
                 // where three planes hold the edge's line (a pencil) it carries two of them, which
                 // two decided by class order, that is by operand order.
@@ -398,7 +398,7 @@ pub(super) fn self_touch_reject(
                 if !(on(u, q) && on(v, q)) {
                     continue;
                 }
-                // ★ A face bounded outside by a circle — a cap disk — is not asked. Its plane is
+                // A face bounded outside by a circle — a cap disk — is not asked. Its plane is
                 // ⊥ to the cylinder's axis, and an edge of the same body lying on it from
                 // outside needs a plane slanted to that axis through a point of the disk,
                 // which cannot clear the cylinder's side: `ObliqueCylinderCut` refuses first.
@@ -416,7 +416,7 @@ pub(super) fn self_touch_reject(
                         }
                     }
                 }
-                // ★ The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
+                // The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
                 // from the endpoint names and not from the ring's recorded wall. Both of those
                 // fail, measured: an edge can lie on a pencil of three planes and the ring is
                 // free to call it by any of them — including `q` itself — and where four planes
@@ -436,13 +436,13 @@ pub(super) fn self_touch_reject(
                 }
             }
         }
-        // ★ **The point arm** — a vertex of this solid on the closed region of one of its own plane
+        // **The point arm** — a vertex of this solid on the closed region of one of its own plane
         // faces it does not bound: a corner of one part resting on a face of another part the body
         // joins elsewhere. No edge of it lies on that face, so the edges above never ask; inside the
         // face or on its boundary, the surface touches itself at that point. The faces are the
         // edges' sieve's: near the vertex's reach, its plane exactly through the vertex.
         //
-        // ★ `OnBoundary` counts: a vertex on another face's ring where it is no node of it touches
+        // `OnBoundary` counts: a vertex on another face's ring where it is no node of it touches
         // there whether the arrangement split one of the two faces at it (the edge-use guard would
         // name the open shell further on) or neither (the counts close and nothing else sees it).
         // The cost: a producer's T-junction — a node one face lists and its neighbour across the

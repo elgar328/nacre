@@ -21,7 +21,7 @@ use nacre_geom::intersect::RingSide;
 /// "no clear ray" once every node hit it.
 /// One boundary of a component's face, with a polygon's edges already derived.
 ///
-/// ★★★ **It mirrors [`crate::draft::Bound`] on purpose.** The probe used to read a *flattened*
+/// **It mirrors [`crate::draft::Bound`] on purpose.** The probe used to read a *flattened*
 /// projection — `Vec<Vec<RingEdge>>`, which can only spell a polygon — so every circular and
 /// banded boundary was **dropped on the way in** (`LocalFace::poly_rings`) and the component the
 /// ray counted was not the component. Reading the engine's own boundary vocabulary is what lets
@@ -36,7 +36,7 @@ pub(crate) enum BoundEdges {
     /// A lateral face's **whole** boundary as loops on the cylinder's chart — a band's two rims,
     /// a panel's ring, a chain rim, the holes — outer and holes alike in one list.
     ///
-    /// ★ One list and not «outer, then holes» because the chart is an annulus: a loop that
+    /// One list and not «outer, then holes» because the chart is an annulus: a loop that
     /// wraps the cylinder has no inside, and a face between two chain rims is emitted as
     /// `Ring(outer)` + `inner = [the other chain]` by the region walk. What is true for every
     /// shape is the parity: a point of the cylinder is on the face iff the ray up the axis from
@@ -55,7 +55,7 @@ pub(crate) enum LateralLoop {
 
 /// A component face's surface, as the ray needs it.
 ///
-/// ★ A cylinder carries its **truth**, not its class index: the crossings are solved against
+/// A cylinder carries its **truth**, not its class index: the crossings are solved against
 /// `origin/dir/radius`, and the producer (`boolean`) is the one holding the class table. The
 /// consumer should not have to look anything up — the same rule `RingEdge` states about walls.
 #[derive(Clone, Debug)]
@@ -77,7 +77,7 @@ pub(crate) struct CompFace {
 /// How a ray met one cylindrical face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CurvedHit {
-    /// This many crossings lie on the **counted half** of the ray. ★ Which half that is belongs to
+    /// This many crossings lie on the **counted half** of the ray. Which half that is belongs to
     /// the caller, not here: it hands in the plane, and this counts that plane's negative side.
     /// The two roads pick opposite halves — the named one counts behind its query, the coordinate
     /// one ahead of its origin — and the parity is the same either way, so a name that said
@@ -92,14 +92,14 @@ pub(crate) enum CurvedHit {
 /// **Is a face's material there**, given a way to ask one of its bounds — inside the outer bound
 /// and outside every hole.
 ///
-/// ★★★ **The combination is one rule; only the *asking* is two.** A named point answers a polygon
+/// **The combination is one rule; only the *asking* is two.** A named point answers a polygon
 /// by a ring walk and a circle by its radial side; a rational one projects through a chart. Those
 /// genuinely differ — the point arrives differently. But "outer and not any hole, and stop the
 /// moment a bound says *on me*" is the same sentence for both roads, and a sentence written twice
 /// is one that drifts ([[rule-lives-inline-next-door]] is this repository's most-repeated defect).
 /// It was written twice for one commit; this is that commit's correction.
 ///
-/// ★★ **The hole clause is locked.** Stubbing the loop turns five tests red (measured) — among them
+/// **The hole clause is locked.** Stubbing the loop turns five tests red (measured) — among them
 /// the pin standing flush in a blind round hole (`a_pin_flush_in_a_round_hole_is_one_body`), whose
 /// top corners lie on the plate's top plane inside the hole: read without the hole they are inside
 /// the plate's face, and the body would be refused as touching itself.
@@ -138,12 +138,12 @@ pub(super) fn decided(side: Option<RingSide>) -> Option<bool> {
 
 /// **A component's probe** — a point to ask "how deep is this component nested" from.
 ///
-/// ★ The two variants are two *descriptions of a point*, not two policies: a three-plane name is
+/// The two variants are two *descriptions of a point*, not two policies: a three-plane name is
 /// exact without coordinates at all (so it survives a rotated class, where no rational coordinate
 /// exists), and rational coordinates are what a component describes when **none of its faces
 /// carries a vertex** — a lone cylinder's boundary is two disks and a band.
 ///
-/// ★★ **Both are points *on* the component's boundary**, which is what makes their depths
+/// **Both are points *on* the component's boundary**, which is what makes their depths
 /// comparable: today's named probe is a face vertex, and [`coord_probes`] takes a cap disk's
 /// **centre**, which lies on that face. An *interior* witness — the axis midpoint, say — would
 /// also answer containment, but it is a different kind of point and could be separated from the

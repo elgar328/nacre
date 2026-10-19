@@ -175,7 +175,7 @@ fn a_translated_bored_body_fuses() {
     assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
 }
 
-/// ★★ **Two bored plates meeting face to face fuse.** The shared wall is interior, so the result
+/// **Two bored plates meeting face to face fuse.** The shared wall is interior, so the result
 /// keeps no face on it — and the corners that sat on it have to *dissolve*, which they can only do
 /// once each cell's bottom (and top) become **one** face. Skipping that merge whenever a member
 /// carries a circle hole leaves the corners corners, naming the dropped wall, and the assembly
@@ -183,7 +183,7 @@ fn a_translated_bored_body_fuses() {
 /// carries the circles through, and this pins the result: right volume, clean `validate`,
 /// watertight mesh.
 ///
-/// ★ **The merged face holds two circle holes** (one bore per cell), so the owner-assignment loop
+/// **The merged face holds two circle holes** (one bore per cell), so the owner-assignment loop
 /// actually runs rather than falling out on a single candidate.
 #[test]
 fn two_bored_plates_fuse_face_to_face() {
@@ -243,7 +243,7 @@ fn two_bored_plates_fuse_face_to_face() {
     );
 }
 
-/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again**, on both roads a move
+/// **A 2×2 grid: an array fused in x, then moved in y and fused again**, on both roads a move
 /// takes.
 ///
 /// Plain, every move is exact on the cells' statements, so each is carried: the second generation
@@ -342,7 +342,7 @@ fn two_by_two_grid_fuses(recorded: bool) {
     let d = shift(&mut m, d, [86.0, 0.0, 0.0]);
     let row2 = boolean(&mut m, BoolKind::Fuse, c, d).expect("the second row fuses")[0];
     m.rebuild_adjacency();
-    // ★ The second generation: a row that already mixes two provenances, moved again.
+    // The second generation: a row that already mixes two provenances, moved again.
     let row2 = shift(&mut m, row2, [0.0, 86.0, 0.0]);
     assert_eq!(carries_motion(&m, row2), recorded, "recorded {recorded}");
     let out = boolean(&mut m, BoolKind::Fuse, row, row2).expect("the grid fuses");
@@ -369,7 +369,7 @@ fn two_by_two_grid_fuses(recorded: bool) {
         "the mesh is watertight"
     );
 
-    // ★★ **The grid's corners are a datum's carriers too, so the ledger says so here.** Carried,
+    // **The grid's corners are a datum's carriers too, so the ledger says so here.** Carried,
     // every corner answers in the world (its carriers each state it) and none in a frame;
     // recorded, the corners of two chains answer in the world and the rest in a frame — both
     // must be present, or the fixture is not the mixed body it claims to be. A datum through
@@ -417,7 +417,7 @@ fn two_by_two_grid_fuses(recorded: bool) {
     );
 }
 
-/// ★★★★ **A part does not care which side of itself a boss sits on.**
+/// **A part does not care which side of itself a boss sits on.**
 ///
 /// With the axis exactly on a wall, the `+x` and `+y` walls built and the `-x` and `-y` walls
 /// answered `RingOrientation` — a **SuspectedDefect** name, on an input a script writes by
@@ -427,7 +427,7 @@ fn two_by_two_grid_fuses(recorded: bool) {
 /// sense flipped, one cell of six (the overhang below the plate) came back wound the other way,
 /// and the walk found two outer contours where a one-component class has one.
 ///
-/// ★ **The lock the code asked for.** That site's own comment said the `wc` half "is still
+/// **The lock the code asked for.** That site's own comment said the `wc` half "is still
 /// lock-invisible … so that half stands on the convention argument, recorded rather than
 /// assumed". This is the fixture that sees it: the four walls have to weigh the same, and the
 /// value is hand-derived rather than copied from a run.
@@ -480,7 +480,7 @@ fn a_boss_on_any_wall_weighs_the_same() {
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
     let mut fuse_faces: Vec<usize> = Vec::new();
-    // ★★ **All four walls, all three kinds** — each a different relation to the seam's `θ = 0`,
+    // **All four walls, all three kinds** — each a different relation to the seam's `θ = 0`,
     // and every row exact against the same closed forms.
     for base in [
         [0.0, 2.0, -1.0], // -x wall
@@ -499,14 +499,14 @@ fn a_boss_on_any_wall_weighs_the_same() {
         let (v, _) = run(base, BoolKind::Common);
         assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
     }
-    // ★★ **The mirror invariant a volume cannot state.** Four congruent solids must also be built
+    // **The mirror invariant a volume cannot state.** Four congruent solids must also be built
     // out of the same number of faces: a volume can come out right while a face is split or merged
     // away, and a face wound the wrong way is exactly the shape of what went wrong here.
     assert!(
         fuse_faces.windows(2).all(|w| w[0] == w[1]),
         "the four walls give congruent solids, so their face counts must agree: {fuse_faces:?}"
     );
-    // ★ The control that says the defect needed the cylinder: the same straddle with a box tool
+    // The control that says the defect needed the cylinder: the same straddle with a box tool
     // built on every wall before this fix and must go on doing so.
     for (lo, hi) in [
         ([-0.5, 1.5, -1.0], [0.5, 2.5, 3.0]),
@@ -554,7 +554,7 @@ fn the_mesh_covers_the_faces_it_approximates() {
         m.rebuild_adjacency();
         check("plate", &m, &[a]);
     }
-    // ★ The pinched caps: a stud tangent to the cube's wall. Blind (base anchored,
+    // The pinched caps: a stud tangent to the cube's wall. Blind (base anchored,
     // one cap pinched) and through (`center` anchored — the user's own script — both caps
     // pinched). These are the first solids whose caps are triangulated across a bridge, and
     // this oracle is the only thing that would see a bridged cap come out the wrong shape.
@@ -622,7 +622,7 @@ fn the_mesh_covers_the_faces_it_approximates() {
     }
 }
 
-/// ★★★ **A boss standing on a wall has ONE lateral face, not three.**
+/// **A boss standing on a wall has ONE lateral face, not three.**
 ///
 /// Emitted in as many pieces as the arrangement cuts it into — the band under the plate, the
 /// half-band beside it, the band above — a lateral surface draws two circles between those pieces
@@ -698,7 +698,7 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
     // The plate is 32; the boss (r = 0.5, h = 4) runs clear through it with half its section
     // buried, so a wall boss weighs `32 + π/4·4 − ½·π/4·2` and a corner one buries a quarter.
     let quarter = std::f64::consts::PI * 0.25;
-    // ★★ **The four congruent walls come out alike.** `ref_dir` is a function of the axis alone,
+    // **The four congruent walls come out alike.** `ref_dir` is a function of the axis alone,
     // so the four walls stand in four different relations to θ = 0; with no seam edge that
     // relation reaches nothing — the notch is a hole in the one lateral face, and there are
     // exactly two faces fewer, on every one of them.
@@ -728,7 +728,7 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
         "corner: {v}"
     );
     assert_eq!((lateral, holes, total), (1, vec![1], 9), "corner");
-    // ★★ **The negative controls — seams that are real must survive untouched.**
+    // **The negative controls — seams that are real must survive untouched.**
     for (name, base, h, kind, lateral, total) in [
         // The plate genuinely interrupts this one: two lateral faces, and neither has a hole.
         ("through boss", [2.0, 2.0, -1.0], 4.0, BoolKind::Fuse, 2, 10),
@@ -1136,7 +1136,7 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
 /// begun by a later non-fixing motion) — the forest's story lives on the faces that
 /// genuinely moved. `None` when no face carries a rotation.
 ///
-/// ★ There is no third field `base_is_rotated` — "does this vertex's base vertex itself
+/// There is no third field `base_is_rotated` — "does this vertex's base vertex itself
 /// carry a motion?", the one-hop invariant that kept a replay from applying the same motion
 /// twice. There is no base vertex any more (a moved corner is the intersection of its moved
 /// planes), so double application is **unrepresentable** rather than merely untrue: the type

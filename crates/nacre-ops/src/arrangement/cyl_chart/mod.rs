@@ -9,7 +9,7 @@
 //! its cycles as they stand, the outer one picked by its winding (its arc units), with no seam
 //! edge written anywhere.
 //!
-//! ★ **Same stages, not same code.** The chart is an annulus and rectilinear where the plane
+//! **Same stages, not same code.** The chart is an annulus and rectilinear where the plane
 //! side is an unbounded DCEL ordered by angle, so it runs the stages on its own grid rather
 //! than calling the plane side's — `regions` states what that costs and why.
 //!
@@ -18,7 +18,7 @@
 //! The population gate (`planes`) sorts every `(plane class, cylinder class)` pair into
 //! five, and only two leave a mark on the lateral:
 //!
-//! | plane vs axis | distance | on the lateral | ☑ suite |
+//! | plane vs axis | distance | on the lateral | suite |
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 1128 |
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
@@ -30,16 +30,16 @@
 //! a ruling exists over a finite axis interval and a cut circle is arcs, so the cells are what
 //! rectilinear *segments* cut out — which is why building them is its own rung.
 //!
-//! ★ The gate is the reason, so when the gate changes this does too; the counts above predate
+//! The gate is the reason, so when the gate changes this does too; the counts above predate
 //! the offset and tangent walls. The **offset** wall (`0 < d < r`) adds
 //! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
 //! nothing breaks. The **tangent** wall (`d = r`)
 //! adds nothing at all: a grazing line stations no sector, so the gate records no
-//! crossing and this table's third row is «nothing», not «one vertical». ★ The row's
+//! crossing and this table's third row is «nothing», not «one vertical». The row's
 //! other half: a fillet's or a slot's wall is tangent to its **own** cylinder, and that ruling is
 //! not a crossing but the face's edge — a station of `side = 0` carrying no label (the seated
 //! face states the piece itself, `SegKind::Tangent`), which the cell reader takes as «the face
-//! ends here» and the vertical-answer assertion exempts. ★ And a third reading: when the
+//! ends here» and the vertical-answer assertion exempts. And a third reading: when the
 //! *other* solid's plane runs through the axis, one of its two verticals **is** that tangent
 //! ruling — a line two planes and the cylinder share. Its ends have one name (the alias table's,
 //! seeded from the operands — `Curved::aliases` is what this chart's stations are canonicalized
@@ -82,7 +82,7 @@ pub(crate) use read_cell::*;
 
 /// One **horizontal** line: a ⊥ plane class, and where it crosses the axis.
 ///
-/// ★ `t` is exact (`Rat`) — a ⊥ class's axis parameter is a rational, and `bands::axis_param` is
+/// `t` is exact (`Rat`) — a ⊥ class's axis parameter is a rational, and `bands::axis_param` is
 /// the one spelling of it. A class whose parameter is too wide for `Rat` refuses rather than being
 /// skipped, as the band road did: a missing band boundary merges two regions whose membership
 /// differs, which is a closed and wrong answer.
@@ -97,7 +97,7 @@ pub(crate) struct ZLine {
 /// Carried straight from [`RulingExtent`] — the plane pass decides this and the chart must not
 /// decide it again.
 ///
-/// ★ No `side` stored: a ruling is named `(wall class, side)` by [`Chart::ruling_name`] — see
+/// No `side` stored: a ruling is named `(wall class, side)` by [`Chart::ruling_name`] — see
 /// [`RulingExtent`], which dropped its own copy for the same reason.
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
@@ -166,7 +166,7 @@ pub(crate) struct Chart {
 
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
 ///
-/// ★ One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
+/// One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
 /// pair (`combinatorics::ruling_side`); a second spelling of one identity is where two copies
 /// drift apart.
 type RulingName = (usize, i8);
@@ -176,10 +176,10 @@ type RulingName = (usize, i8);
 /// `plane` the wall it was asked against. A copy of that function's body here (the same
 /// `pierce_meet` + `ruling_side`) would be a second spelling one module apart.
 ///
-/// ★★★★★ **Not the node's `QuadRoot`.** A `Pierce` name's root is `Lo`/`Hi` along
+/// **Not the node's `QuadRoot`.** A `Pierce` name's root is `Lo`/`Hi` along
 /// `ℓ = n₁ × n₂` of *its own* plane pair, so the same physical ruling reads `Hi` where its node
 /// pairs the wall with the plate's top and `Lo` where it pairs it with the boss's cap (the pair
-/// order and the ⊥ normal's sense both reverse `ℓ` — `QuadRoot::canonical`'s doc). ☑ Measured on
+/// order and the ⊥ normal's sense both reverse `ℓ` — `QuadRoot::canonical`'s doc). Measured on
 /// the corner boss: two different rulings of one wall carried one name and
 /// the panel join claimed the wrong sectors. The side is a fact about the *point*, so every piece
 /// of one ruling answers alike, whatever its end nodes pair it with.
@@ -205,12 +205,12 @@ fn ruling_side_of(
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.
 ///
-/// ★★★ Addressed by `(interval, sector)` rather than kept as a flat list, because the next rung
+/// Addressed by `(interval, sector)` rather than kept as a flat list, because the next rung
 /// asks for **neighbours**: crossing a horizontal line moves to the interval above or below,
 /// crossing a ruling to the sector beside. That adjacency is *derivable* from this address, and
 /// deriving it is the reader's job — building it here would be a field with no consumer.
 ///
-/// ☑ The adjacency is not 1:1 and the address already says so: an interval carrying one cell sits
+/// The adjacency is not 1:1 and the address already says so: an interval carrying one cell sits
 /// against every sector of a neighbour that carries six.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Cell {
@@ -222,7 +222,7 @@ pub(crate) struct Cell {
     /// interval carries none and the cell is the whole circle. For a single cut the circle opens
     /// at one point and both are that ruling.
     ///
-    /// ★★★ **Indices, not names.** Kept as `(wall, side)` names, the ruling's *label* could not be
+    /// **Indices, not names.** Kept as `(wall, side)` names, the ruling's *label* could not be
     /// reached from a cell without searching for it. The name is one call away
     /// ([`Chart::ruling_name`]).
     pub(crate) walls: Option<[usize; 2]>,
@@ -231,16 +231,16 @@ pub(crate) struct Cell {
 impl Chart {
     /// **The cells the two axes cut** — `Err` names why a θ order could not be formed.
     ///
-    /// ★★★★★ **Every ruling's axis endpoints are themselves z-lines** — measured across the suite
+    /// **Every ruling's axis endpoints are themselves z-lines** — measured across the suite
     /// (263 charts, 0 exceptions) and structural besides: a ruling's node is named
     /// `[wall, other plane]`, and a plane that meets the lateral while the wall holds the axis can
     /// only be ⊥ to it, which is exactly what `chart_of` collects. So the arrangement **splits at
     /// every axis interval**, and inside one interval a cell is just a θ-sector: no face walk, no
     /// angular order at a vertex.
     ///
-    /// ★★★★ **A refusal loses the whole chart, not one interval.** Skipping the interval that
+    /// **A refusal loses the whole chart, not one interval.** Skipping the interval that
     /// refused would leave a *partial* chart that the census then compares as if it were whole —
-    /// the exact shape in which a counting claim goes blind. ☑ Measured 0 refusals; the shape is
+    /// the exact shape in which a counting claim goes blind. Measured 0 refusals; the shape is
     /// not left to that.
     pub(crate) fn cells(
         &self,
@@ -264,7 +264,7 @@ impl Chart {
                 });
                 continue;
             }
-            // ★★★★★ **One node per ruling.** A ruling is vertical, so its two ends share a θ —
+            // **One node per ruling.** A ruling is vertical, so its two ends share a θ —
             // handing both to `circular_order` asks it to rank one point twice, and it honestly
             // refuses that as the two-names-for-one-point it checks for. The order is a property
             // of the *segment*, and one endpoint states it.
@@ -306,7 +306,7 @@ impl Chart {
     /// station» is **name equality**, and a station the rim does not carry joins the θ order under
     /// the name a piece ending there would have worn.
     ///
-    /// ★★★★★ **Not a node of another line**. Placing such a station by
+    /// **Not a node of another line**. Placing such a station by
     /// its piece's `end[0]` — a node on a *different* z-line at the same θ — would, where the rim
     /// does carry the station (a tool wall crossing the circle there), hand `circular_order` one
     /// point under two names, which it refuses as the coincidence it checks for. Every one of
@@ -392,7 +392,7 @@ pub(crate) fn boundary_lines(
 
 /// **Every ⊥ class that cuts this cylinder, and every ruling on it** — per cylinder *class*.
 ///
-/// ★★★★★ **The sources are the band road's, and one thing that road did is
+/// **The sources are the band road's, and one thing that road did is
 /// deliberately *not* done here.** It ended with `keyed.retain(|(t, _)| t ∈ row.span)`:
 /// it clipped to the **face** it was asked about, because its row was a face and not a class. A
 /// class has no such span — one lateral
@@ -402,7 +402,7 @@ pub(crate) fn boundary_lines(
 /// face at all**, and on a chart that gap is simply a cell that keeps nothing — the argument the
 /// plane side already makes for its unbounded cells.
 ///
-/// ★ The cylinder class itself is one solid's surface, not both operands': `planes` interns
+/// The cylinder class itself is one solid's surface, not both operands': `planes` interns
 /// cylinders by `Handle<Surface>` (planes by geometry), and two solids share no handles. That is
 /// sound here only because a **coincident pair is refused** — one handle carrying rows of both
 /// solids, or one surface stated under two handles (`same_surface`), both `CylinderPairContact` at
@@ -437,13 +437,13 @@ pub(crate) fn chart_of(
         .map(|class| crate::bands::axis_param(jd, class, def).map(|t| ZLine { class, t }))
         .collect::<Result<_, BoolError>>()?;
     z_lines.sort_by_key(|l| l.t);
-    // ★ Deduped by **parameter**, and that is exact rather than lucky: two classes ⊥ to this axis
+    // Deduped by **parameter**, and that is exact rather than lucky: two classes ⊥ to this axis
     // at one `t` are the *same plane*, which is why span ends match against `t` without a
     // tolerance (`boundary_lines`). So one of the two indices survives arbitrarily — which is
     // why everything downstream compares `t`, never the class index.
     z_lines.dedup_by_key(|l| l.t);
 
-    // ★★ **`end` travels with `z`.** `per_class` states `z[e]` as the axis parameter of `end[e]`,
+    // **`end` travels with `z`.** `per_class` states `z[e]` as the axis parameter of `end[e]`,
     // so sorting `z` alone would silently break that pairing — and the cell reader asks
     // "this ruling's node *on this z-line*" of exactly that pairing. Swapping both keeps it a
     // carried fact rather than a rule spelled a second time (`node_axis_param` is not re-asked).
@@ -596,7 +596,7 @@ impl Lines {
             if kk != k {
                 continue;
             }
-            // ★ Not swallowed: `axis_param` refuses through `reject()`, which a test build's
+            // Not swallowed: `axis_param` refuses through `reject()`, which a test build's
             // reject census records at the raise whether or not the caller looks. `chart_of`
             // (iii) already asked this of every ⊥ class, so a refusal here cannot be reached after
             // a chart was built — the `?` removes a silent arm rather than adding a population.

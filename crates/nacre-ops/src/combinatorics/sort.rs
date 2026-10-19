@@ -3,17 +3,17 @@ use core::cmp::Ordering;
 /// **A stable sort by a comparison that can fail** — the first failure is returned at once,
 /// before any order is formed from it.
 ///
-/// ★ **Not `sort_by` with a flag.** A comparison that reads «could not tell» as `Equal` is not a
+/// **Not `sort_by` with a flag.** A comparison that reads «could not tell» as `Equal` is not a
 /// total order, and the standard sort may panic on one past twenty elements — measured: 1,896 of
 /// 2,000 sorts of forty, with one element in ten failing every comparison it takes part in. An
 /// exact comparison here can fail (a cylinder-pinned point against a class with no world
 /// statement), so the sort has to stop rather than carry on with a guess.
 ///
-/// ★ On a comparison that never fails the result is the standard stable sort's — a stable order
+/// On a comparison that never fails the result is the standard stable sort's — a stable order
 /// is unique — so ties a caller reads (one point under two names, kept in the order it gave them)
 /// come out as they did.
 ///
-/// ★ **On `Err` the slice is a permutation of its input**: a merge is written to scratch and
+/// **On `Err` the slice is a permutation of its input**: a merge is written to scratch and
 /// copied back only whole, and an insertion moves by swaps. A caller may read the slice to name
 /// the failure (`split_at_crossings` asks which classes it holds).
 ///

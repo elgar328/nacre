@@ -67,7 +67,7 @@ fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★ **Using it.** The two-banded solid as an operand. Letting the first lateral face speak for
+/// **Using it.** The two-banded solid as an operand. Letting the first lateral face speak for
 /// the class clips the second band's span away — the result shell comes back open
 /// (`OpenResultShell`), naming a symptom of our own omission rather than anything about the input.
 #[test]
@@ -86,7 +86,7 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
         "{:?}",
         nacre_validate::validate(&m)
     );
-    // ★ The property under repair, counted directly — a volume alone does not say "two bands
+    // The property under repair, counted directly — a volume alone does not say "two bands
     // came out", and this defect is exactly one band going missing.
     assert_eq!(
         lateral_face_counts(&m, out[0]),
@@ -99,7 +99,7 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
         - (72.0 - std::f64::consts::PI * 8.0)
         - (200.0 - std::f64::consts::PI * 8.0);
     assert!((p.volume - want).abs() < 1e-9, "{} vs {want}", p.volume);
-    // ★★ **Area is the sharper oracle for this defect.** A missing band does not change the
+    // **Area is the sharper oracle for this defect.** A missing band does not change the
     // volume — the boolean simply refuses — but it takes its `2πr·h` out of the surface. The
     // two bands here are `z ∈ [0,4]` and `[6,8]`, so `16π + 8π` of lateral area must be in
     // this number: 640 + 8π once every planar face is counted.
@@ -111,7 +111,7 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
     );
 }
 
-/// ★ **The negative control.** Move the middle cut into a corner, away from the bore: the wall
+/// **The negative control.** Move the middle cut into a corner, away from the bore: the wall
 /// stays **one** face and the same three steps work whatever the lateral rows say. Without this, a
 /// change that merely made *any* third boolean succeed would look like a repair.
 #[test]
@@ -177,7 +177,7 @@ fn a_cylinder_class_no_face_row_names_is_a_defect() {
     );
 }
 
-/// ★★ **The band pass makes nothing in the gap.** This is where the right fix parts company
+/// **The band pass makes nothing in the gap.** This is where the right fix parts company
 /// with the plausible one: merging the two faces' spans into a single `min..max` would put a
 /// band across `z ∈ [4,6]`, where the solid has no lateral face at all.
 #[test]
@@ -189,7 +189,7 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
     spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     for (lo, hi) in &spans {
         // Disjoint from the open gap (4, 6): a band either ends at or below 4, or starts at or
-        // above 6. ★ Measured: with the spans merged into one `min..max` this fires with
+        // above 6. Measured: with the spans merged into one `min..max` this fires with
         // "a band 4..6 crosses the gap", which is the whole reason the clause is here.
         assert!(
             *hi <= 4.0 || *lo >= 6.0,
@@ -207,12 +207,12 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 }
 
 //
-// ★★ A wall parallel to the axis meets the cylinder in a **rectangle** of the wall's own
+// A wall parallel to the axis meets the cylinder in a **rectangle** of the wall's own
 // plane — the strip across, a lateral face's span along — so "does this face miss it" is one
 // question with two separating axes. Reading only the first refuses every wall that stands
 // clear of the cylinder along its length.
 //
-// ★ With several lateral faces there are several rectangles: the strip is shared, the spans
+// With several lateral faces there are several rectangles: the strip is shared, the spans
 // are not. That is why the gap between two bands is passable at all, and it is not a special
 // case bolted on — a row's span is the existence truth at an uncut end, so no band is ever
 // built in a gap and there is no premise there for a wall to break.
@@ -251,7 +251,7 @@ fn a_wall_face_in_the_gap_between_two_bands_clears() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★ **The two axes are one judgement, measured as one.** The same tool three ways against
+/// **The two axes are one judgement, measured as one.** The same tool three ways against
 /// the same two-banded bore, with only the numbers moved: clearing *either* axis is enough,
 /// and clearing neither is the **record**, not a refusal. A rule that
 /// had merely gained a second, independent test would pass (a) and (b) too — what this pins
@@ -263,7 +263,7 @@ fn a_wall_face_in_the_gap_between_two_bands_clears() {
 fn either_axis_clears_the_footprint_and_neither_does_not() {
     // (a) Across only: the `y = 6` face sits at `x ∈ [0, 2.5]`, clear of the strip
     //     `x ∈ [3.27, 6.73]`, while its plane still crosses the bore. Along the axis it runs
-    //     `t ∈ [4,8]`, straddling both bands. ★ The `x = 2.5` wall must stand clear of the axis
+    //     `t ∈ [4,8]`, straddling both bands. The `x = 2.5` wall must stand clear of the axis
     //     by more than `r`, or *it* becomes the face under test — at `x = 3` it is exactly
     //     tangent, and this arm would then measure the tangency instead of the clearance.
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);

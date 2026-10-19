@@ -1,7 +1,7 @@
 use super::*;
 /// **The circle a planar face's boundary rides**, when its ring has one.
 ///
-/// ★★★★★ **The question `ring_own_circle` asks, minus the part that made it too narrow.** That one
+/// **The question `ring_own_circle` asks, minus the part that made it too narrow.** That one
 /// answers "is this ring *the whole* circle" — every edge an arc, chained the whole way round — and
 /// so says `None` for a **cut** cap, which is a disk just the same with a chord across it. What a
 /// face needs in order to name a point of its own interior is only *which circle bounds it*, and
@@ -13,14 +13,14 @@ use super::*;
 /// `ring_own_circle` is the special case with no chords; the two are kept apart because they answer
 /// different questions — "is the ring a circle" versus "which circle bounds the face".
 ///
-/// ☑ **Measured over the lib suite: 40 acceptances, and the only clause that ever refuses is the
+/// **Measured over the lib suite: 40 acceptances, and the only clause that ever refuses is the
 /// first** — 20 rings with no arc at all (the wall panels). Two cylinders' arcs on one planar face
 /// and a plane that is *not* perpendicular to the axis both refuse **0 times**, and they stay: the
 /// first would take a circle that bounds only part of the ring, the second would call an ellipse a
 /// circle and put the "centre" off the face — and a producer that stops holding either proposition
 /// should be caught here rather than two layers down.
 ///
-/// ⚠ **"The gate refuses an oblique cylinder cut" is false as a blanket sentence**:
+/// **"The gate refuses an oblique cylinder cut" is false as a blanket sentence**:
 /// the gate lets an oblique plane through when every lateral face
 /// of the cylinder provably misses it. The conclusion stands on a narrower fact: this ring holds
 /// an **arc** of that cylinder, so the plane does not miss it, and an oblique pair that meets is
@@ -58,7 +58,7 @@ fn face_circle<'a>(
 /// inequality, no magic constant and no halving loop. Which of them is inside the **face** is the
 /// ring's question, not this one's.
 ///
-/// ★ **And two points per chord**: a cap the wall cuts *off* the diameter can be a
+/// **And two points per chord**: a cap the wall cuts *off* the diameter can be a
 /// segment thinner than any step from the centre reaches (an offset boss's Common, 0.2 deep
 /// against `r/2 = 0.25`), and its corners are pierce names the vertex probe drops — the first
 /// face with no witness at all. On the line through the centre along a chord's normal `n`,
@@ -84,10 +84,10 @@ fn ring_interior_candidates(
     let (e1, e2) = chart.axes();
     let mut out = vec![*centre];
     let r2 = def.r2();
-    // ★★★★★ **The chart's own two axes, not a search.** A chord can lie *along* one of them (that
+    // **The chart's own two axes, not a search.** A chord can lie *along* one of them (that
     // step then stays on the boundary), and the other's ray meets the circle where the ring
     // answers whatever lies there — a root on the seam included, which is the cyclic order's first
-    // point ([`nacre_exact::quad::SeamOrder::seam_first`]). ☑ Read as a tie instead, a root on the
+    // point ([`nacre_exact::quad::SeamOrder::seam_first`]). Read as a tie instead, a root on the
     // seam left sixteen cap faces with `None` for every axis candidate, split exactly that way, and
     // diagonal steps `e1 ± e2` were needed to step off both; ordered, no face of the suite or the
     // census needs one (measured: no diagonal candidate was ever the first inside).
@@ -190,7 +190,7 @@ fn ring_interior_candidates(
 /// a class's position along an axis with ([`axis_param_of_plane`](crate::planes::axis_param_of_plane)).
 /// It is strictly inside the circle for any positive radius, so nothing needs to test that.
 ///
-/// ★ **A holed cap names a point between its rims** ([`holed_cap_witness`]). The centre
+/// **A holed cap names a point between its rims** ([`holed_cap_witness`]). The centre
 /// of an annulus is in its hole, not on the face, and a witness that is not on the boundary is a
 /// confidently wrong depth rather than an abstention — but passing a holed cap over
 /// leaves a **tube** (two annular caps, two bands, no vertex anywhere) with no witness at all and
@@ -213,7 +213,7 @@ pub(crate) fn coord_probes(
         let CompSurf::Plane(q) = &f.surf else {
             continue;
         };
-        // ★★★★★ **A cut cap is a disk too, and it names its own interior the same way.** The
+        // **A cut cap is a disk too, and it names its own interior the same way.** The
         // witness is the circle's centre, and a face whose boundary a wall has cut still *has* a
         // circle ([`face_circle`]); its centre may then
         // lie **on** the chord rather than inside the face — exactly what happens when the axis
@@ -250,19 +250,19 @@ pub(crate) fn coord_probes(
                 // A whole circle: the centre is strictly inside for any positive radius, and asking
                 // would only add a road where none is needed. Today's answer, unchanged.
                 BoundEdges::Circle(_) => centre,
-                // ★ **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
+                // **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
                 // rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis of this
                 // plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for `x = |e|²`, and
                 // `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly inside the circle —
                 // a rational inequality, no magic constant and no halving loop.
                 //
-                // ★★★★★ **Which one is inside the *face* is asked, not derived.** Deriving it would
+                // **Which one is inside the *face* is asked, not derived.** Deriving it would
                 // mean spelling "the material side of the chord" in some frame, and this road has no
                 // oracle for that sign; the ring already answers the question exactly
                 // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
                 // centre goes first, so a cap the wall cuts off-centre still answers with it.
                 //
-                // ☑ Measured: the centre and the axis steps answer 40 of 40 faces of the
+                // Measured: the centre and the axis steps answer 40 of 40 faces of the
                 // through-axis corpus; the offset wall's thin segment answers by a chord point (8
                 // faces), and the fall-through below is the named residual — a segment cut again
                 // along the chord's own normal line.
@@ -463,7 +463,7 @@ fn holed_cap_witness(
 
 /// **Two rational planes whose meet is the line through `p` along `dir`.**
 ///
-/// ★ The normals are **basis crosses** (`ê_k × dir`), whose components are a shuffle of `dir`'s —
+/// The normals are **basis crosses** (`ê_k × dir`), whose components are a shuffle of `dir`'s —
 /// no products, nothing to overflow. That is the same rule `SketchPlane::normal_def` states, and
 /// for the same reason: the "obvious" second direction `n × u` squares the inputs' widths.
 pub(super) fn planes_through_line(

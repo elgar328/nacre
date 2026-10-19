@@ -7,7 +7,7 @@ use super::*;
 /// folding the prefix again. That is what lets a caller who kept the previous generation's value
 /// pay for one node instead of the whole history.
 ///
-/// ⚠ **One fold, not two.** The per-node arithmetic lives in [`fold_one`] and nothing else spells
+/// **One fold, not two.** The per-node arithmetic lives in [`fold_one`] and nothing else spells
 /// it, because two copies of a rounding rule are two rules that drift.
 pub fn fold_suffix(prefix: [HpBounded; 3], nodes: &[MoveNode], prec: usize) -> [HpBounded; 3] {
     nodes.iter().fold(prefix, |p, n| fold_one(p, n, prec))
@@ -15,7 +15,7 @@ pub fn fold_suffix(prefix: [HpBounded; 3], nodes: &[MoveNode], prec: usize) -> [
 
 /// One node applied to a realized point — the body of the fold, spelled once.
 ///
-/// ⚠ The degenerate arms **return `p` untouched**. They read as `continue` when this was a loop
+/// The degenerate arms **return `p` untouched**. They read as `continue` when this was a loop
 /// body, and "skip this node" is what they meant; extracted, the same meaning is "this node moves
 /// nothing". All three are unreachable (their producers refuse a non-positive squared length), and
 /// they stay total rather than inventing a bound.

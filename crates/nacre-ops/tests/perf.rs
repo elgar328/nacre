@@ -5,12 +5,12 @@
 //! commit message of whatever change moved them, next to the census diff that says the
 //! answers did not change.
 //!
-//! ★★★ **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
+//! **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
 //! Measured: this file's two tests were **1673 of the sweep's 1802 seconds — 93%** — and they ran
 //! in a *debug* build, so the numbers they printed were not the ones anyone wants. `--release`
 //! turns 28 minutes into 4, and the gate skips them by name (`overview.md` carries the command).
 //!
-//! ★★ **But they are coverage, not only measurement, and that is what the split costs.** Nothing
+//! **But they are coverage, not only measurement, and that is what the split costs.** Nothing
 //! here asserts a duration, yet every boolean is `.expect("fuse")`ed and every fold's volume is
 //! taken — so a large *rotated* fold that stopped building would panic here and nowhere else in
 //! the suite at this scale. What `--release` gives up is the **`debug_assert!`** net over exactly

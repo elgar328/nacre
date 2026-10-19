@@ -17,7 +17,7 @@
 //! `2·prec`) agreeing on a nonzero sign, not from any bound the judge also ships. A question the
 //! two precisions do not agree on is skipped, not scored.
 //!
-//! ★★ **Agreement between two precisions cannot tell a zero.** Where the true value is exactly
+//! **Agreement between two precisions cannot tell a zero.** Where the true value is exactly
 //! zero, each precision leaves a rounding residue, and two residues share a sign about half the
 //! time — measured, an agreement oracle reads a confident sign on roughly half of the constructed
 //! zeros (1,108 of 2,259 for a three-plane side test), and on the other half two such oracles

@@ -24,14 +24,14 @@ impl CircleOrderFail {
 /// **Order nodes around one circle by θ, the seam first** — the nodes' reading of the cyclic order
 /// [`nacre_exact::quad::SeamOrder::seam_first`] states once (the arcs' spans read it too).
 ///
-/// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
+/// **A crossing on the seam is ordered, not refused — it is the cut point.** (Measured: the
 /// very first fixture puts a crossing there — a boss on a plate's edge cuts its own rim exactly on
 /// the seam generator, so this is the common case, not an exotic one.)
 ///
-/// ★ At most one node can be seam-incident: two would be the same point, which the adjacency check
+/// At most one node can be seam-incident: two would be the same point, which the adjacency check
 /// below refuses as the two-names-for-one-point it is.
 ///
-/// ★★ **Two names for one point.** Two walls crossing the circle at one point are two *different*
+/// **Two names for one point.** Two walls crossing the circle at one point are two *different*
 /// pierce names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
 /// length would follow. The segment side asks this question already; asking it here too is what
 /// keeps the two sides from disagreeing about what "one point" means.
@@ -61,7 +61,7 @@ pub(crate) fn circular_order(
             (&meets[j].0, &meets[j].1),
         )
     };
-    // ★ Counted before the sort, so two seam nodes are `Coincident` ahead of any order the sort
+    // Counted before the sort, so two seam nodes are `Coincident` ahead of any order the sort
     // could not form (`Undecided`).
     let mut seam_nodes = 0usize;
     for i in 0..meets.len() {
@@ -98,7 +98,7 @@ pub(crate) fn circular_order(
 /// be formed or two of the three are one point wearing two names — the caller's population, not
 /// a tie to shrug at.
 ///
-/// ★ **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
+/// **`lo == hi` is the closed arc**: one node cuts the circle and the arc runs its whole turn
 /// from that node back to it, so every other point of the circle is inside — and the node itself,
 /// under its own name or another (`Coincident`), is not. Read as the three-point order it would be
 /// two points, and refuse.
@@ -138,7 +138,7 @@ pub(crate) fn theta_between(
     };
     let (p_lo, p_hi, p_n) = (pos(0), pos(1), pos(2));
     let inside = (p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3;
-    // ★ The interval reading's turn convention, checked against the name road wherever both answer.
+    // The interval reading's turn convention, checked against the name road wherever both answer.
     debug_assert!(
         between_on_circle_hp(jd, k, def, lo, hi, node).is_none_or(|b| b == inside),
         "the interval turn about the axis disagrees with the circular order"
@@ -161,14 +161,14 @@ pub(crate) fn theta_between(
 ///   contains it ([`theta_between`], the ruling sweep's containment);
 /// - overflow, or a meet this shape cannot produce, is `None`.
 ///
-/// ★★ **A root at the arc's end on `L` is that end, not a crossing.** With `on_end` — the end
+/// **A root at the arc's end on `L` is that end, not a crossing.** With `on_end` — the end
 /// the walk found on `L` — one root *is* that end, under the same name or another (a fillet's
 /// tangent corner is named by its own two planes, the root by `{wc, fc}`). That is asked of the two
 /// points alone: equal names, or the circle's order answering "one point" ([`circular_order`]'s
 /// `Coincident`). The containment is then asked of three **distinct** points, so its `None` is a
 /// real failure — never a coincidence mistaken for one.
 ///
-/// ★ The same canonical name the lateral's ruling sweep gives this point as a station
+/// The same canonical name the lateral's ruling sweep gives this point as a station
 /// (`crossing_on_ruling(fc, wc, …)` — [`NodeId::pierce`] folds the pair and root together), so
 /// the arrangement's `merge_coincident` reads one point, not two.
 #[allow(clippy::too_many_arguments)]
@@ -230,7 +230,7 @@ pub(crate) fn arc_crossings(
             inside.swap(0, 1);
         }
     }
-    // ★ The interval road's contract (which roots, in what travel order), checked against the
+    // The interval road's contract (which roots, in what travel order), checked against the
     // exact one wherever both answer — the road a class with no world statement takes.
     debug_assert!(
         arc_crossings_hp(jd, def, wc, fc, cyl, ccw, [a, b], on_end).is_none_or(|hp| hp == inside),
@@ -275,7 +275,7 @@ pub(crate) fn arc_crossings_of(
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).
 ///
-/// ★ Solved in the caller's order `(wc, fc)`, as `rulings_on_class` and `chord_stations`
+/// Solved in the caller's order `(wc, fc)`, as `rulings_on_class` and `chord_stations`
 /// spell it — [`NodeId::pierce`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
 /// crosses the class (`cycle_on_class`'s crossing arm restates the hole corner's own root to
@@ -298,7 +298,7 @@ pub(crate) fn crossing_on_ruling(
 ) -> Result<NodeId, RulingNameFail> {
     use RulingNameFail::{NoCrossing, Undecided, Width};
     use nacre_exact::quad::CylinderMeet;
-    // ★ **A wall with no world statement picks its root by the same predicate, read off boxes.**
+    // **A wall with no world statement picks its root by the same predicate, read off boxes.**
     // The class `wc` crossing the ruling is ⊥ the axis and named; the wall sections the cylinder,
     // so its two rulings are two distinct lines and each root is on one of them
     // ([`PierceMeet::ruling_side`]).
@@ -326,7 +326,7 @@ pub(crate) fn crossing_on_ruling(
     if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m) {
         return Err(NoCrossing);
     }
-    // ★ A **tangent** wall (`side == 0`) has one ruling and one root — `Double`.
+    // A **tangent** wall (`side == 0`) has one ruling and one root — `Double`.
     let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2).ok_or(Width)?;
     if side == 0 {
         return match meet {

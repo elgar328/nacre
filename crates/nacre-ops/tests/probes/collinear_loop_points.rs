@@ -12,11 +12,11 @@
 //! that is the face's `orient_sign`, the winding of the exact witness triangle every predicate
 //! borrows, and "which side of this plane is material".
 //!
-//! ★ **Two ingredients are needed to trigger it**, which is why it is easy to miss: rotation (an
+//! **Two ingredients are needed to trigger it**, which is why it is easy to miss: rotation (an
 //! axis-aligned loop's collinear cross is exactly `0.0`, which that rule skips correctly) and the
 //! collinear run happening to come first in the loop's half-edge order.
 //!
-//! ★★ The proposition below is deliberately **not** "every cell builds": some angles may decline
+//! The proposition below is deliberately **not** "every cell builds": some angles may decline
 //! for their own good reasons, now or later. It is that no cell comes back carrying a face whose
 //! stored plane disagrees with its own outward direction — build correctly, or decline by name.
 
@@ -149,7 +149,7 @@ fn cell(
 
 /// **The sweep.** Three axes × twelve angles × three insets.
 ///
-/// ★ A single hand-picked case would only say "this one works". The population is every
+/// A single hand-picked case would only say "this one works". The population is every
 /// partially-covering pad, so the band is what has to be swept — the same shape
 /// `rotation_sweep.rs` uses for its own band.
 #[test]
@@ -169,14 +169,14 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
                         // And it is a solid, not merely a shape.
                         let bad = nacre_validate::validate(&m);
                         assert!(bad.is_empty(), "{name}: {bad:?}");
-                        // ★ A bound from the definition, not an independent answer: a pad never
+                        // A bound from the definition, not an independent answer: a pad never
                         // removes material and cannot add more than the tool prism holds. The
                         // second boss stands on what is left of the first one's face, centred on
                         // that remainder, so it overlaps the first boss by an amount each cell
                         // decides — there is no hand-computable volume to compare against. This
                         // catches a grossly wrong answer and says so rather than implying more.
                         //
-                        // ★★ The lower bound is `>=`, not `>`: a footprint that lands entirely
+                        // The lower bound is `>=`, not `>`: a footprint that lands entirely
                         // inside material adds *nothing*, and that is a correct answer. Measured
                         // (`Z/100deg/inset0`), and it is why the first draft of this assertion
                         // failed on a cell that was right.
@@ -193,14 +193,14 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
         }
     }
 
-    // ★★ Measured with the `outer_tri` fix removed: 32 cells built and **14 of them came back
+    // Measured with the `outer_tri` fix removed: 32 cells built and **14 of them came back
     // with a volume a pad cannot produce** — `Z/5deg/inset0.5` went 5.0 → 3.21, a boss that ate
     // 1.79 of material, with `validate` clean. That is what this file is for, and it is why the
     // volume bound above is not decoration: the face-normal check cannot see it (its own normal
     // is the Newell sum, which was never the broken part), so the bound is the instrument that
     // moved.
     //
-    // ★ **All 108 cells build.** The X- and Y-turned cells (72 of them) are the ones a report
+    // **All 108 cells build.** The X- and Y-turned cells (72 of them) are the ones a report
     // spelling `flip` apart from the realization breaks: `face_plane` reports a frame
     // point-symmetric to the one the pad realizes in, so a footprint centred on the face through
     // `face_plane`'s own coordinates is built on the opposite side, outside the face, and the cell

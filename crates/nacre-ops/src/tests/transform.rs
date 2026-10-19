@@ -1,7 +1,7 @@
 use super::*;
 use nacre_exact::Angle;
 
-/// ★★ **A moved pierce vertex names the crossing it moved to.** A definition's root is an
+/// **A moved pierce vertex names the crossing it moved to.** A definition's root is an
 /// order along `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite
 /// normal — one reversal, trading `Lo` and `Hi`. Found by the commutation oracle the moment
 /// the cache started reading the definition: under a 90° turn a boss's four pierce
@@ -141,7 +141,7 @@ fn deep_topped_cube(
     [[Rat; 3]; 3],
     nacre_store::Handle<nacre_topo::Surface>,
 ) {
-    // ★★★ **State the deep plane first and let the cuboid intern onto it.** The three points
+    // **State the deep plane first and let the cuboid intern onto it.** The three points
     // below name `z = 1` — the same plane the cuboid's top cap names — so the box's extrude
     // finds this handle by canonical name and the cap carries *this* statement. No test-only door
     // and no mutation: the arena holds the truth, and interning is the production road onto it.
@@ -179,7 +179,7 @@ fn deep_topped_cube(
     (s, deep, pts, deep_surf)
 }
 
-/// ★★★ **A move whose rational point transport would overflow records a node instead of
+/// **A move whose rational point transport would overflow records a node instead of
 /// dropping the points.** One surface's stored triple has a `5⁴²` denominator, so `q + t` with
 /// `t = 2⁻³⁰` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. Taking the no-node path would push the moved
 /// surface point-less; `carry_of` puts the whole solid on the recorded path, and the original
@@ -225,7 +225,7 @@ fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
     );
 }
 
-/// ★★★ **Where one rigid motion and its two halves store differently, the world is still the
+/// **Where one rigid motion and its two halves store differently, the world is still the
 /// same.** `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` holds as a statement about the
 /// world; how it is stored follows what each step can carry. On the deep-topped cube with
 /// `R = rz90` about the origin and `t = (2⁻³⁰, 0, 1)`:
@@ -304,9 +304,9 @@ fn an_overflow_splits_the_representation_not_the_world() {
     assert_eq!(bits_a, bits_b, "and one realization");
 }
 
-/// ★★ **A moved cylinder records its history instead of silently degrading.**
+/// **A moved cylinder records its history instead of silently degrading.**
 /// The truth variant has a motion slot of its own, and this is it working.
-/// ★ Positive control: the remap gate **bites** — a walkable solid whose vertex
+/// Positive control: the remap gate **bites** — a walkable solid whose vertex
 /// definition names a foreign surface is rejected with `OriginNotOnSolid`.
 /// Without it, "the gate fired zero times across the
 /// suite" would be indistinguishable from "the gate checks nothing".
@@ -375,7 +375,7 @@ fn a_foreign_definition_is_rejected() {
     );
 }
 
-/// ★★ A moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
+/// A moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
 /// surfaces — the carrier pair moves with the solid, like every other definition.
 #[test]
 fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
@@ -460,7 +460,7 @@ fn a_rotated_cylinder_records_its_motion() {
         }
         other => panic!("a moved cylinder's truth must carry the motion, got {other:?}"),
     }
-    // ★ **`validate` on the *moved* cylinder population.** The net's rule that reads a cap's
+    // **`validate` on the *moved* cylinder population.** The net's rule that reads a cap's
     // rim circle against its plane reads two caches that a motion carries together. If they
     // ever stopped travelling together this is where it would show.
     assert!(
@@ -470,7 +470,7 @@ fn a_rotated_cylinder_records_its_motion() {
     );
 }
 
-/// ★ The remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
+/// The remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
 /// surface handles in face-traversal order, so the two planes' handle order can invert,
 /// and re-sorting flips the canonical line direction ℓ = n₁×n₂, so the root must toggle
 /// with the swap or `Lo` silently names the other point.
