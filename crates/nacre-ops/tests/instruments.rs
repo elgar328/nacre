@@ -15,6 +15,8 @@ mod comparators;
 mod disallowed;
 #[path = "instruments/manifest.rs"]
 mod manifest;
+#[path = "instruments/markers.rs"]
+mod markers;
 #[path = "instruments/module_graph.rs"]
 mod module_graph;
 #[path = "instruments/plane_anchor.rs"]
