@@ -2,8 +2,7 @@
 //!
 //! overview's document rule 8: a risk is stated as a risk and a premise as a premise, not flagged
 //! with a mark. The marks are the black star (U+2605), the white star (U+2606), the warning sign
-//! (U+26A0) and the ballot box with check (U+2611) — the ones this repository's comments carried,
-//! on lines that always held the sentence the mark stood beside. A check mark (U+2713, U+2714) is
+//! (U+26A0) and the ballot box with check (U+2611). A check mark (U+2713, U+2714) is
 //! content where it appears — the README's milestone legend, a cell of the table the deadname sweep
 //! prints — and is not on the list. This file spells the marks as escapes, so it does not trip
 //! itself.
