@@ -228,7 +228,7 @@ fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
 /// ★ **Correct rounding is what keeps debug and release the same.** The value is a function of `v`
 /// alone, whatever route or precision computed it; a value that depended on the computation would
 /// let two builds disagree by an ulp, which is the failure this crate already paid for once in the
-/// trig path (libm, whose result moved with constant evaluation).
+/// trig path.
 pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
@@ -276,7 +276,7 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 ///
 /// The twin of [`sqrt_f64`], under the same correct-rounding contract, so the answer is unique and
 /// asking at more bits cannot move it. The exact branch runs first: when `n·n` is a perfect square
-/// every component is a rational, rounded once ([`nearest_f64_big`]) — an axis-aligned or
+/// every component is a rational, rounded once (`nearest_normal_f64`) — an axis-aligned or
 /// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized on the
 /// ladder (`ladder_f64`) — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
 /// [`inv_sqrt_hp_big`] where it does not — and each product rounded; with `n·n` not a square, a
@@ -328,10 +328,6 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 ///
 /// Callers rely on that zero: a frame whose realization carries no error also performs no rounding
 /// downstream, which is what keeps an axis-aligned sketch at tol 0.
-///
-/// ★ **This measures rather than assumes even though [`inv_sqrt_f64`] is correctly rounded.** The
-/// claim is about the value the caller hands in, which this cannot know came from
-/// [`inv_sqrt_f64`]; measuring it is what makes the zero above a fact about that value.
 ///
 /// The reading is at octave granularity, so it can sit up to 2× above the true error —
 /// conservative in the sound direction, and still a measurement. `None` when `v ≤ 0`.

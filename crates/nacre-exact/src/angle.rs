@@ -166,11 +166,11 @@ impl Angle {
     /// crate's one ladder (`ladder_f64`).
     ///
     /// **Why the ladder decides it.** The angle is a non-quadrantal rational number of degrees in
-    /// `[0, 360)` — `from_deg` is the only door and normalizes, and `cos_sin_rat` takes 0/90/180/270°.
-    /// By Niven's theorem the only rational values its cosine or sine can take are `±½`, which are
-    /// `f64`s and so not rounding boundaries; every other value is irrational. And neither is ever
-    /// below about `2⁻¹²⁵` in magnitude — `from_deg` keeps `360·denominator` in `i128`, so the angle
-    /// stays that far from a multiple of 90° — far inside `f64`'s normal range.
+    /// `[0, 360)` — `from_deg` is the only door and normalizes, and `cos_sin_rat` takes 0/90/180/270°
+    /// — so by the Niven argument above its cosine and sine are irrational or `±½`, an `f64` and not
+    /// a rounding boundary. Neither is ever below about `2⁻¹²⁵` in magnitude — `from_deg` keeps
+    /// `360·denominator` in `i128`, so the angle stays that far from a multiple of 90° — far inside
+    /// `f64`'s normal range.
     ///
     /// **How deep it goes.** The realization's error is dominated by the degrees→radians conversion,
     /// not by the cosine: `≈ 30 · 2⁻ᵖʳᵉᶜ`, against a half-ulp of `2^(e-54)` for a result of magnitude

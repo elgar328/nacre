@@ -486,6 +486,30 @@ fn the_ladder_climbs_until_each_value_is_decided() {
             (0, 0),
         ),
         (
+            // Across zero at 128 bits with both ends subnormal, of two signs — refused like a value
+            // below the range, but not on one side — and wholly below the range at 256. (A radius
+            // past `2⁻¹⁰²²` would make the ends normal and test nothing about the sign.)
+            "across zero, then below the range",
+            climb(|p| {
+                let r = if p == 128 { -1050 } else { -1100 - p as i64 };
+                Some([hp(pow2(-1100, p), r)])
+            }),
+            bits(&[nan]),
+            (1, 0),
+        ),
+        (
+            // Across the bottom edge of the normal range at 128 bits (one end subnormal, one
+            // normal) — undecided, not outside — and inside it at 256.
+            "across the normal range's edge, then inside it",
+            climb(|p| {
+                let v = pow2(-1022, p).add(&pow2(-1032, p), p, HP_RM);
+                let r = if p == 128 { -1030 } else { -1022 - p as i64 };
+                Some([hp(v, r)])
+            }),
+            bits(&[f64::MIN_POSITIVE * (1.0 + p2(-10))]),
+            (1, 0),
+        ),
+        (
             // Past the exponent guard of the radius `round_to_f64` assembles (`2^±10⁶`): the range
             // is read off the exponents, so these decide too.
             "past the radius' exponent guard",
@@ -518,7 +542,7 @@ fn the_ladder_climbs_until_each_value_is_decided() {
 /// A value **on** a rounding boundary never decides, and the ladder says its caller's premise broke
 /// rather than climbing forever or handing back a midpoint.
 #[test]
-#[should_panic(expected = "passed its cap")]
+#[should_panic(expected = "reached its cap (32768 bits) undecided")]
 fn a_value_on_a_rounding_boundary_trips_the_cap() {
     let b = |p: usize| pow2(0, p).add(&pow2(-53, p), p, HP_RM);
     let _ = ladder_f64(|p| Some([HpBounded::new(b(p), Mag::pow2(-60))]));

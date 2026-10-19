@@ -82,15 +82,16 @@ fn outside_normal_range(mid: &BigFloat, rad: Mag, prec: usize) -> bool {
 /// Every value a caller hands the ladder is decided at some depth (see there), so the cap is not
 /// a precision the answer needs but an **alarm**: reaching it means a caller's premise broke. It is
 /// as high as cost allows, measured (native release, one realization): `cos_sin_hp` takes 68 ms at
-/// 2¹⁵ bits and 281 ms at 2¹⁶, so a climb to the cap costs about 92 ms in all and one to 2¹⁶ about
-/// 373 ms; `inv_sqrt_hp` and `sqrt_hp_big` stay near a millisecond. The product runs as wasm,
-/// slower than native, which is why the sum and not the last rung is held under a third of a second.
+/// 2¹⁵ bits and 281 ms at 2¹⁶, so a climb to the cap costs about 92 ms over all its rungs and one to
+/// 2¹⁶ about 373 ms; `inv_sqrt_hp` and `sqrt_hp_big` of a narrow radicand stay near a millisecond. A
+/// broken premise should cost a third of a second, not stall the page — and the product runs as
+/// wasm, slower than native — so the cap is the last power of two whose climb stays well under it.
 const LADDER_CAP: usize = 1 << 15;
 
 /// **The `f64`s nearest the true values a realization encloses**, climbing `128, 256, 512, …` bits
 /// until each value is decided. The one ladder for a value this crate can only approach
-/// (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`, `unit_vector_f64` — an exact rational is
-/// rounded once, by `Rat::to_f64` or [`nearest_f64_big`]).
+/// (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`, `unit_vector_f64` — their exact branches round
+/// a rational once, by `Rat::to_f64` or [`nearest_normal_f64`]).
 ///
 /// `realize(prec)` gives the values at `prec` bits. A value is decided when [`round_to_f64`] names
 /// its nearest `f64`, or when its interval lies wholly outside `f64`'s normal range on one side
@@ -98,19 +99,19 @@ const LADDER_CAP: usize = 1 << 15;
 /// decides every value. `None` when a realization is `None`.
 ///
 /// ★ **Why it terminates.** A rung fails to decide only a value within its radius of a rounding
-/// boundary (the midpoint between two neighbouring `f64`s) or of a normal-range edge — both dyadic
-/// rationals. Each caller hands the ladder only values that are none of those: its exact branch
-/// takes every rational the value could be, so what reaches the ladder is irrational or a rational
+/// boundary (the midpoint between two neighbouring `f64`s), of a normal-range edge — both dyadic
+/// rationals — or of zero (an interval across zero has subnormal ends of two signs). Each caller
+/// hands the ladder only values that are none of those, or an exact zero with a zero radius: its
+/// exact branch takes every value that could be one, and what is left is irrational or a rational
 /// that is neither (each caller says which). Every realization's radius shrinks as `c · 2⁻ᵖʳᵉᶜ` —
 /// relative to the value, or for a cosine near an axis absolute (its error comes through the
 /// derivative) — so some rung clears the gap. How deep is not bounded by that argument — hence
 /// [`LADDER_CAP`], which panics rather than climbing forever or handing back a guess.
 ///
-/// **Doubling, not a computed jump.** Judging climbs straight to the precision a condition number
-/// asks for, because there an undecided sign at enough bits is a structural zero and more bits do
-/// not help. Here the structural cases are gone before the ladder, an undecided rung is a genuine
-/// lack of bits, and the distance to the nearest boundary is not known until it is computed — so
-/// each rung doubles, and a value that needs `n` bits pays at most about `2n`.
+/// **Doubling, not the computed jump judging makes.** The structural cases are gone before the
+/// ladder, so an undecided rung is a genuine lack of bits, and the distance to the nearest boundary
+/// is not known until it is computed — so each rung doubles, and a value that needs `n` bits is
+/// realized at no more than about `2n`.
 ///
 /// **128 is `nacre_judge`'s trial precision**, so a memoized realization (`cos_sin_hp`,
 /// `inv_sqrt_hp`) a judgement also asks for is shared rather than paid twice — which is why the
@@ -129,13 +130,12 @@ pub(crate) fn ladder_f64<const N: usize>(
         let r = realize(prec)?;
         let mut out = [0.0; N];
         let decided = out.iter_mut().zip(&r).all(|(o, x)| {
-            let v = if outside_normal_range(&x.value, x.error, prec) {
-                f64::NAN
-            } else {
-                let Some(v) = round_to_f64(&x.value, x.error, prec) else {
-                    return false;
-                };
-                v
+            // Rounding first: a decided value has both ends normal (or zero), so it is never also
+            // wholly outside the range, and the common case forms its ends once.
+            let v = match round_to_f64(&x.value, x.error, prec) {
+                Some(v) => v,
+                None if outside_normal_range(&x.value, x.error, prec) => f64::NAN,
+                None => return false,
             };
             *o = v;
             true
@@ -151,8 +151,8 @@ pub(crate) fn ladder_f64<const N: usize>(
         }
         assert!(
             prec < LADDER_CAP,
-            "the nearest-f64 ladder passed its cap ({LADDER_CAP} bits): its caller's premise — no \
-             value on a rounding boundary or a normal-range edge — broke"
+            "the nearest-f64 ladder reached its cap ({LADDER_CAP} bits) undecided: its caller's \
+             premise — no value on a rounding boundary or a normal-range edge — broke"
         );
         prec *= 2;
     }
