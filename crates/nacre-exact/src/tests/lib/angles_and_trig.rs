@@ -690,7 +690,7 @@ fn an_axis_aligned_frame_needs_no_arbitrary_precision() {
 /// that its own rounding cannot reach the 53rd bit.
 #[test]
 fn inv_sqrt_f64_lands_on_the_nearest_f64() {
-    // Deltas, not absolute counts: the memo is a `thread_local` and the harness may have run
+    // Deltas, not absolute counts: the counter is a `thread_local` and the harness may have run
     // other tests on this thread first.
     let before = LADDER_CLIMBED.with_borrow(|c| *c);
     for (num, den) in INV_SQRT_CASES {

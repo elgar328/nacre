@@ -133,7 +133,8 @@ pub enum MoveNode {
 
 /// A high-precision interval narrowed to an `f64` interval — how a wide or judged frame's
 /// realization reaches the f64 cache. Correctly rounded when the interval decides it (then the
-/// error is the radius plus the value's own half-ulp); an undecided or out-of-normal-range value
+/// error is the radius plus the value's own half-ulp, which covers the `MIN_POSITIVE` a value just
+/// under the range rounds up to); an undecided value, or one whose nearest `f64` is not normal,
 /// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
 /// components below f64's normal floor.
 fn narrow_hp(x: &HpBounded) -> Bounded {

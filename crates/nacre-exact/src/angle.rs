@@ -175,9 +175,11 @@ impl Angle {
     /// **How deep it goes.** The realization's error is dominated by the degrees→radians conversion,
     /// not by the cosine: `≈ 30 · 2⁻ᵖʳᵉᶜ`, against a half-ulp of `2^(e-54)` for a result of magnitude
     /// `2^e`. So 128 bits decides every `|cos| > 2⁻⁶⁹` that is not within that error of a boundary —
-    /// every angle a model has held — and the ladder climbs only for a value closer than that.
+    /// every angle a model has held — and the ladder climbs only for a value closer than that. How
+    /// far it may climb is a cost alarm, not a proof (`TRIG_LADDER_CAP`): a cosine has no
+    /// separation bound to give.
     fn cos_sin_f64_uncached(self) -> (f64, f64) {
-        let [c, s] = ladder_f64(|prec| {
+        let [c, s] = ladder_f64(TRIG_LADDER_CAP, |prec| {
             let (c, s) = self.cos_sin_hp(prec);
             Some([c, s])
         })

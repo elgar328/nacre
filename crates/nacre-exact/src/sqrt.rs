@@ -146,7 +146,7 @@ pub fn inv_sqrt_hp(v: Rat, prec: usize) -> Option<HpBounded> {
     Some(out)
 }
 
-/// An arbitrary-precision integer as a `BigFloat`, **exactly** — the working precision is the
+/// An arbitrary-precision integer as a `BigFloat`, **exactly** — the precision is at least the
 /// integer's own bit length, so no digit is ever rounded away.
 ///
 /// The wide-frame realization feeds plane data wider than `i128` through this; keeping the
@@ -154,21 +154,38 @@ pub fn inv_sqrt_hp(v: Rat, prec: usize) -> Option<HpBounded> {
 /// [`inv_sqrt_hp`]'s: every rounding still happens *after* the value has entered whole,
 /// exactly as the narrow twin's `i128`s do.
 ///
-/// Horner over the base-2⁶⁴ digits: the scale multiply is an exponent shift (exact), and each
-/// add lands in a mantissa wide enough for the whole running value (exact).
+/// Built from the integer's words in one pass: the words are the mantissa, padded below with zero
+/// words to `max(bits, prec_floor, 128)` bits rounded up to whole words, and astro-float
+/// normalizes it. Measured on an 80,001-bit integer (native release): a Horner loop at full width
+/// takes 0.18 s — paid on every rung of a wide radicand's climb — and the words under 0.1 ms.
 pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat {
+    use astro_float::{Exponent, WORD_BIT_SIZE, Word};
     let bits = x.magnitude().bits() as usize;
     let p = bits.max(prec_floor).max(128);
-    let scale = BigFloat::from_i128(1i128 << 64, p);
-    let mut acc = BigFloat::from_i128(0, p);
-    for d in x.magnitude().iter_u64_digits().rev() {
-        acc = acc.mul(&scale, p, HP_RM);
-        acc = acc.add(&BigFloat::from_i128(d as i128, p), p, HP_RM);
-    }
-    if x.sign() == num_bigint::Sign::Minus {
-        acc = acc.neg();
-    }
-    acc
+    let sign = match x.sign() {
+        num_bigint::Sign::NoSign => return BigFloat::from_i128(0, p),
+        num_bigint::Sign::Minus => astro_float::Sign::Neg,
+        num_bigint::Sign::Plus => astro_float::Sign::Pos,
+    };
+    // Least significant first, as astro-float reads them. `Word` is `u32` on 32-bit targets (wasm,
+    // where this kernel ships) and `u64` elsewhere, so the 32-bit digits are packed per word; the
+    // widening is a no-op where `Word` is `u32`, which clippy on a 64-bit host cannot see.
+    #[allow(clippy::useless_conversion)]
+    let value: Vec<Word> = x
+        .magnitude()
+        .to_u32_digits()
+        .chunks(WORD_BIT_SIZE / 32)
+        .map(|c| {
+            c.iter().rev().fold(0, |acc: Word, d| {
+                acc.checked_shl(32).unwrap_or(0) | Word::from(*d)
+            })
+        })
+        .collect();
+    let mut words = vec![0; p.div_ceil(WORD_BIT_SIZE) - value.len()];
+    words.extend_from_slice(&value);
+    // The mantissa reads as `0.words`, so the integer the value words spell needs `2^(their bits)`.
+    let e = (value.len() * WORD_BIT_SIZE) as Exponent;
+    BigFloat::from_words(&words, sign, e)
 }
 
 /// [`inv_sqrt_hp`] for a squared length wider than `i128` — the wide-frame twin.
@@ -213,19 +230,20 @@ fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
 
 /// **`1/√v` as the `f64` nearest the true value**, or `None` when `v ≤ 0`.
 ///
-/// ★★ **The exact branch runs first** ([`inv_sqrt_rat`]) and covers every axis-aligned frame,
+/// **The exact branch runs first** ([`inv_sqrt_rat`]) and covers every axis-aligned frame,
 /// plus the Pythagorean ones a CAD user actually draws — a `(3, 4, 0)` normal has `n·n = 25` and
 /// `1/|n| = 1/5`. Only a genuinely irrational length reaches the ladder.
 ///
-/// ★ **Exact does not mean free of rounding**: `1/5` is exactly rational and still not an `f64`,
+/// **Exact does not mean free of rounding**: `1/5` is exactly rational and still not an `f64`,
 /// so that branch returns the *nearest* f64 to a known-exact value. [`inv_sqrt_error_of`] reports
 /// what that rounding cost, and returns a literal zero only where there was none.
 ///
 /// **The ladder decides it** (`ladder_f64`). What reaches it is irrational — [`inv_sqrt_rat`] takes
-/// every rational root of a `Rat` — so it is never a rounding boundary, and `1/√v` of a `Rat` lies in
-/// `[2⁻⁶⁴, 2⁶⁴]`, far inside `f64`'s normal range.
+/// every rational root of a `Rat` — so it is never a rounding boundary, and `1/√v` of a `Rat` lies
+/// in `[2⁻⁶⁴, 2⁶⁴]`, far inside `f64`'s normal range. Its square `d/n` has terms of at most 127
+/// bits, so the separation bound (`separation_cap`) proves 256 bits decide it.
 ///
-/// ★ **Correct rounding is what keeps debug and release the same.** The value is a function of `v`
+/// **Correct rounding is what keeps debug and release the same.** The value is a function of `v`
 /// alone, whatever route or precision computed it; a value that depended on the computation would
 /// let two builds disagree by an ulp, which is the failure this crate already paid for once in the
 /// trig path.
@@ -247,8 +265,9 @@ pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
 
 /// [`inv_sqrt_f64`]'s general branch without the memo or the exact test.
 fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
-    let [z] =
-        ladder_f64(|prec| inv_sqrt_hp(v, prec).map(|z| [z])).expect("v > 0 checked by the caller");
+    let cap = separation_cap(u64::from(v.bit_width()));
+    let [z] = ladder_f64(cap, |prec| inv_sqrt_hp(v, prec).map(|z| [z]))
+        .expect("v > 0 checked by the caller");
     z
 }
 
@@ -258,8 +277,9 @@ fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
 /// The twin of [`inv_sqrt_f64`]: the exact branch runs first — every rational root, at any width
 /// (every radius a user writes as a decimal lands here, and comes back as the nearest `f64` to the
 /// rational it always was) — and only an irrational root reaches the ladder (`ladder_f64`), which
-/// decides it: an irrational number is never a rounding boundary. A nonzero root outside `f64`'s
-/// normal range is `NaN` on either road.
+/// decides it: an irrational number is never a rounding boundary, and the separation bound
+/// (`separation_cap`) proves the depth its radicand's width earns is enough. A nonzero root whose
+/// nearest `f64` is not normal is `NaN` on either road.
 pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if v.is_negative() {
         return None;
@@ -267,7 +287,8 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if let Some((rn, rd)) = exact_root(v) {
         return Some(nearest_normal_f64(&rn, &rd));
     }
-    let [z] = ladder_f64(|prec| sqrt_hp_big(v, prec).map(|z| [z]))?;
+    let cap = separation_cap(v.numer().bits().max(v.denom().bits()));
+    let [z] = ladder_f64(cap, |prec| sqrt_hp_big(v, prec).map(|z| [z]))?;
     Some(z)
 }
 
@@ -280,10 +301,11 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 /// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized on the
 /// ladder (`ladder_f64`) — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
 /// [`inv_sqrt_hp_big`] where it does not — and each product rounded; with `n·n` not a square, a
-/// nonzero component is irrational and a zero one is an exact zero, so the ladder decides both. A
-/// nonzero component outside `f64`'s normal range is `NaN` on either road.
+/// nonzero component is irrational and a zero one is an exact zero, so the ladder decides both, at
+/// the depth the separation bound (`separation_cap`) proves for `nₖ²/(n·n)`: `n·n`'s width. A
+/// nonzero component whose nearest `f64` is not normal is `NaN` on either road.
 ///
-/// ★ **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
+/// **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
 /// a caller that turns the direction negates them before asking — negating the `f64` afterwards
 /// would write `-0.0`, a different bit pattern for the same value.
 pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
@@ -301,7 +323,7 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
         Some(v) => inv_sqrt_hp(Rat::from_int(v), prec),
         None => inv_sqrt_hp_big(&nn, prec),
     };
-    ladder_f64(|prec| {
+    ladder_f64(separation_cap(nn.bits()), |prec| {
         let s = inv(prec)?;
         Some(core::array::from_fn(|k| {
             HpBounded::of_bigint(&n[k], prec).mul(&s, prec)

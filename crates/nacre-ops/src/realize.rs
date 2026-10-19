@@ -104,13 +104,13 @@ pub enum RealizeError {
     NoCurvedPoint,
     /// The realization ladder reached its ceiling without deciding what was asked.
     Undecided,
-    /// The value is an exact rational, and **no `f64` names it**: it is outside the range one can
-    /// hold. More bits cannot help — this is the one refusal a taller ladder does not answer.
+    /// The value is an exact rational, and **no `f64` names it**: it overflows. More bits cannot
+    /// help — this is the one refusal a taller ladder does not answer.
     ///
-    /// ⚠ Measured at both ends (`nacre_exact`'s own lock): the large end refuses at `2^1024`,
-    /// where the scaled value stops being finite, and the small end at `2^-1149`. A carrier name
-    /// cannot reach either — the widest this repository has measured is 168 bits — so the
-    /// population is zero today. It has a name anyway, because the branch is real and
+    /// Measured (`nacre_exact`'s own lock): it refuses from `2^1024`, where the scaled value stops
+    /// being finite. There is no small end — below the subnormals the nearest `f64` is `±0.0`. A
+    /// carrier name cannot reach the overflow — the widest this repository has measured is 168 bits
+    /// — so the population is zero today. It has a name anyway, because the branch is real and
     /// [`Self::Undecided`] would be a lie about it ("more bits would do it" — they would not).
     Unrepresentable,
 }

@@ -134,7 +134,7 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
             ),
             (1.0 + 2f64.powi(-52)).to_bits(),
         ),
-        // An exact root outside `f64`'s normal range: `NaN`, as the ladder decides one.
+        // An exact root whose nearest `f64` is not normal: `NaN`, as the ladder decides one.
         ("2⁻²²⁰⁰", big(BigInt::from(1), two(2200)), nan),
     ]
     .into_iter()
@@ -143,6 +143,122 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
         (got != Some(want)).then(|| format!("{what}: got {got:?}, want {want}"))
     })
     .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// **A radicand's width bounds its climb.** `(1+2⁻⁵³)² + 2⁻⁴⁰⁰⁰⁰` has its root about `2⁻⁴⁰⁰⁰¹`
+/// above the rounding boundary `1 + 2⁻⁵³`, so it needs some forty thousand bits; its own width — a
+/// 40,001-bit denominator — is what earns them. A test of its own, so a climb that stops short
+/// cannot hide another row.
+#[test]
+fn a_wide_radicand_climbs_as_deep_as_its_width_needs() {
+    let two = |e: usize| BigInt::from(1) << e;
+    let v = BigRat(Ratio::new(
+        BigInt::from((1i64 << 53) + 1).pow(2) * two(39894) + 1,
+        two(40000),
+    ));
+    assert_eq!(
+        sqrt_f64(&v).map(f64::to_bits),
+        Some((1.0 + 2f64.powi(-52)).to_bits())
+    );
+}
+
+/// **The separation bound at its tightest.** `p·2¹⁰⁸ − q·(2⁵⁴−1)² = 1` with `p` a square and `q`
+/// not, both 108 bits, so `√(p/q)` sits a relative `2⁻²¹⁷` above the boundary `1 − 2⁻⁵⁴` — two
+/// bits inside the bound `2^-(108+111)`. 128 bits cannot see that gap and 256 can, and 256 is
+/// exactly the depth 108-bit terms earn; `1/√` of the reciprocal is the same number.
+#[test]
+fn the_tightest_radicand_needs_the_whole_separation_margin() {
+    let p: i128 = 324518553658426654725561982648324;
+    let q: i128 = 324518553658426690754359001612287;
+    let before = LADDER_CLIMBED.with_borrow(|c| *c);
+    let got = [
+        sqrt_f64(&BigRat::from(Rat::new(p, q).unwrap())),
+        inv_sqrt_f64(Rat::new(q, p).unwrap()),
+    ];
+    let after = LADDER_CLIMBED.with_borrow(|c| *c);
+    assert_eq!(got, [Some(1.0), Some(1.0)]);
+    assert_eq!(
+        (after.0 - before.0, after.1 - before.1),
+        (2, 0),
+        "both decided at 256"
+    );
+}
+
+/// **The bottom of the range is where the nearest `f64` stops being normal**, on every road.
+/// `x₀ = 2⁻¹⁰²² − 2⁻¹⁰⁷⁵` is the subnormal-grid midpoint below `MIN_POSITIVE` and ties up to it, so
+/// `x₀` and the band above it read `MIN_POSITIVE` and a value below it reads `NaN` — through an
+/// exact root (`v = x²`), through `round_to_f64` itself (`None` there), and through the ladder.
+#[test]
+fn the_bottom_edge_is_where_the_nearest_f64_stops_being_normal() {
+    let mp = f64::MIN_POSITIVE;
+    let n0: BigInt = ((BigInt::from(1) << 53) - 1) << 25; // x₀ · 2¹¹⁰⁰
+    // `x₀` is a boundary itself, so only a zero radius decides it.
+    let rows = [
+        ("x₀", n0.clone(), Mag::ZERO, Some(mp)),
+        ("x₀ + 2⁻¹¹⁰⁰", &n0 + 1, Mag::pow2(-1140), Some(mp)),
+        ("x₀ − 2⁻¹¹⁰⁰", &n0 - 1, Mag::pow2(-1140), None),
+        ("−x₀", -n0.clone(), Mag::ZERO, Some(-mp)),
+    ];
+    let at = |n: &BigInt, p: usize| bigint_to_bigfloat(n, p).mul(&pow2(-1100, p), p, HP_RM);
+    let mut wrong = Vec::new();
+    for (what, n, rad, want) in &rows {
+        let read = want.unwrap_or(f64::NAN).to_bits();
+        if n.sign() == num_bigint::Sign::Plus {
+            let v = BigRat(Ratio::new(n * n, BigInt::from(1) << 2200));
+            let got = sqrt_f64(&v).map(f64::to_bits);
+            if got != Some(read) {
+                wrong.push(format!("sqrt_f64 {what}: got {got:?}, want {read}"));
+            }
+        }
+        let got = round_to_f64(&at(n, 256), *rad, 128);
+        if got.map(f64::to_bits) != want.map(f64::to_bits) {
+            wrong.push(format!("round_to_f64 {what}: got {got:?}, want {want:?}"));
+        }
+        let got = climb(|p| Some([HpBounded::new(at(n, p), *rad)]));
+        if got != (Some(vec![read]), (0, 0)) {
+            wrong.push(format!("ladder {what}: got {got:?}, want {read}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// **A subnormal is rounded once, on its own grid.** `((2j+1)/2 ± 2⁻⁶⁰)·2⁻¹⁰⁷⁴` lies just off a
+/// midpoint of the subnormal grid: rounding to 53 bits first would land on the midpoint, and a
+/// second rounding would then pick the even side — wrong for half of these rows. The expected value
+/// is built from its bits (a subnormal's bits are its grid index), not by rounding again;
+/// `j = 2⁵² − 1` rounds up into `MIN_POSITIVE`. A tiny negative keeps its sign, and a value below
+/// the grid is `0.0`, never exact.
+#[test]
+fn a_subnormal_rounds_once_on_its_own_grid() {
+    let den = BigInt::from(1) << 1134;
+    let mut wrong = Vec::new();
+    let bits = |r: Option<(f64, bool)>| r.map(|(v, x)| (v.to_bits(), x));
+    for j in [2u64, 3, (1 << 51) + 6, (1 << 51) + 7, (1 << 52) - 1] {
+        let mid: BigInt = BigInt::from(2 * j + 1) << 59;
+        let even = if j % 2 == 0 { j } else { j + 1 };
+        for (what, num, m) in [
+            ("+ε", &mid + 1, j + 1),
+            ("−ε", &mid - 1, j),
+            ("tie", mid.clone(), even),
+        ] {
+            let got = bits(nearest_f64_big(&num, &den));
+            if got != Some((m, false)) {
+                wrong.push(format!("j = {j} {what}: got {got:?}, want bits {m}"));
+            }
+        }
+    }
+    let one = BigInt::from(1);
+    for (what, num, e, want) in [
+        ("−2⁻¹¹⁰⁰", -one.clone(), 1100usize, (-0.0f64).to_bits()),
+        ("2⁻¹¹⁵⁰", one.clone(), 1150, 0),
+        ("2⁻²⁰⁰⁰", one.clone(), 2000, 0),
+    ] {
+        let got = bits(nearest_f64_big(&num, &(BigInt::from(1) << e)));
+        if got != Some((want, false)) {
+            wrong.push(format!("{what}: got {got:?}, want bits {want}"));
+        }
+    }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
@@ -279,6 +395,34 @@ fn the_big_road_agrees_with_the_rat_road() {
     assert!(n > 50, "oracle swept {n} pairs");
 }
 
+/// **A wide integer enters a `BigFloat` whole**, from its words: it reads back exactly
+/// (`big_to_ratio` is the inverse reading) at `max(bits, floor, 128)` bits in whole words — across
+/// word boundaries, for both signs, and for powers of two whose low words are all zero.
+#[test]
+fn a_wide_integer_enters_a_bigfloat_whole() {
+    let wb = astro_float::WORD_BIT_SIZE;
+    let mut xs = vec![BigInt::from(0), BigInt::from(1), BigInt::from(3)];
+    for b in [31usize, 32, 33, 63, 64, 65, 127, 128, 129, 200, 1000, 4097] {
+        let p = BigInt::from(1) << b;
+        xs.extend([&p - 1, p.clone(), &p + 12345]);
+    }
+    let mut wrong = Vec::new();
+    for x in xs.iter().flat_map(|x| [x.clone(), -x]) {
+        for floor in [0usize, 128, 300] {
+            let f = bigint_to_bigfloat(&x, floor);
+            let exact = big_to_ratio(&f).is_some_and(|(n, d)| n == &x * d);
+            let want = (x.bits() as usize).max(floor).max(128).div_ceil(wb) * wb;
+            if !exact || bits_of(&f) != want {
+                wrong.push(format!(
+                    "{x} at floor {floor}: exact {exact}, {} bits",
+                    bits_of(&f)
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// Does `big_to_ratio` really spell the value? Exact f64s have known ratios.
 #[test]
 fn a_binary_float_lifts_to_the_ratio_it_is() {
@@ -328,59 +472,56 @@ fn too_few_bits_report_undecided() {
     assert_eq!(round_to_digits(&mid, fuzzy, 1).as_deref(), Some("0.1"));
 }
 
-/// **Both ends of the exact door, and the band in the middle where its flag was lying.**
-///
-/// This door had **no direct test at all** — its two callers only ever hand it coordinates
-/// from the middle of the range, so nothing exercised either end. The ends here were *found*
-/// by scanning, not computed from the `k` guard, and computing them would have been wrong:
-///
-/// - **Large end is `2^1024`, not `2^1252`.** The `|k| > 1200` guard never gets to decide it:
-///   the scaled value goes infinite first and `is_finite` refuses. Reading the guard and
-///   solving for the value describes a branch nothing reaches.
-/// - **Small end is `2^-1149`.** There the guard really is what refuses.
-/// - ⚠ **Between `2^-1075` and that end, the flag lied.** The value is right — below the
-///   smallest subnormal the nearest `f64` genuinely is `0.0`, and
-///   `a_tiny_rational_still_names_its_f64` locks exactly that — but it came back marked
-///   *exact*, and [`Realization::to_f64`] turns that mark into a proven zero bound. The value
-///   stays; the claim is gone.
+/// **The exact door ends only above.** The large end is `2^1024`, where the scaled value stops
+/// being finite. Below there is no end: exact down to the smallest subnormal, and under it `0.0` —
+/// the nearest `f64` at any depth, never marked exact, because `Realization::to_f64` turns that
+/// mark into a proven zero bound. `a_tiny_rational_still_names_its_f64` locks the values; this
+/// locks the ends and the flag.
 #[test]
-fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
+fn the_exact_door_ends_only_above_and_never_claims_a_rounded_zero() {
     let one = BigInt::from(1);
     let small = |e: usize| nearest_f64_big(&one, &(BigInt::from(1) << e));
     let big = |e: usize| nearest_f64_big(&(BigInt::from(1) << e), &one);
-
-    // Large end: the last power of two that names an `f64`, and the first that does not.
-    assert_eq!(big(1023), Some((8.98846567431158e307, true)));
-    assert_eq!(
-        big(1024),
-        None,
-        "2^1024 overflows — finiteness refuses first"
-    );
-    // Small end: exact all the way down to the smallest subnormal.
-    assert_eq!(small(1074), Some((f64::from_bits(1), true)));
-    // Below it the nearest `f64` is zero — the value is kept, the exactness claim is not.
-    for e in [1075usize, 1100, 1148] {
-        assert_eq!(
-            small(e),
-            Some((0.0, false)),
-            "1/2^{e} rounds to zero, and zero does not name it exactly"
-        );
+    let mut rows = vec![
+        // The last power of two that names an `f64`, and the first that does not.
+        (
+            "2^1023".to_string(),
+            big(1023),
+            Some((8.98846567431158e307, true)),
+        ),
+        ("2^1024".to_string(), big(1024), None),
+        (
+            "2^-1074".to_string(),
+            small(1074),
+            Some((f64::from_bits(1), true)),
+        ),
+        // A real zero is exactly zero, and the flag tells exact from rounded.
+        (
+            "0/5".to_string(),
+            nearest_f64_big(&BigInt::from(0), &BigInt::from(5)),
+            Some((0.0, true)),
+        ),
+        (
+            "1/4".to_string(),
+            nearest_f64_big(&one, &BigInt::from(4)),
+            Some((0.25, true)),
+        ),
+        (
+            "1/3".to_string(),
+            nearest_f64_big(&one, &BigInt::from(3)),
+            Some((1.0 / 3.0, false)),
+        ),
+    ];
+    for e in [1075usize, 1100, 1148, 1149, 1150, 4000] {
+        rows.push((format!("2^-{e}"), small(e), Some((0.0, false))));
     }
-    assert_eq!(
-        small(1149),
-        None,
-        "past the guard there is no answer at all"
-    );
-
-    // A real zero is still exactly zero, and the flag still tells exact from rounded.
-    assert_eq!(
-        nearest_f64_big(&BigInt::from(0), &BigInt::from(5)),
-        Some((0.0, true))
-    );
-    assert_eq!(nearest_f64_big(&one, &BigInt::from(4)), Some((0.25, true)));
-    let (third, exact) = nearest_f64_big(&one, &BigInt::from(3)).expect("1/3 is in range");
-    assert!(!exact, "1/3 is not an f64");
-    assert_eq!(third, 1.0 / 3.0);
+    let bits = |r: Option<(f64, bool)>| r.map(|(v, x)| (v.to_bits(), x));
+    let wrong: Vec<_> = rows
+        .iter()
+        .filter(|(_, got, want)| bits(*got) != bits(*want))
+        .map(|(what, got, want)| format!("{what}: got {got:?}, want {want:?}"))
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 /// What one climb gave, as bits — `NaN` equals itself and `+0.0` differs from `-0.0` — and how much
@@ -390,7 +531,7 @@ type Climbed = (Option<Vec<u64>>, (usize, usize));
 /// The answer [`ladder_f64`] gives for `realize`, with the counts it moved.
 fn climb<const N: usize>(realize: impl FnMut(usize) -> Option<[HpBounded; N]>) -> Climbed {
     let before = LADDER_CLIMBED.with_borrow(|c| *c);
-    let got = ladder_f64(realize).map(|v| v.iter().map(|x| x.to_bits()).collect());
+    let got = ladder_f64(TRIG_LADDER_CAP, realize).map(|v| v.iter().map(|x| x.to_bits()).collect());
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
     (got, (after.0 - before.0, after.1 - before.1))
 }
@@ -539,11 +680,13 @@ fn the_ladder_climbs_until_each_value_is_decided() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
-/// A value **on** a rounding boundary never decides, and the ladder says its caller's premise broke
-/// rather than climbing forever or handing back a midpoint.
+/// A value **on** a rounding boundary never decides, and the ladder panics at its cap rather than
+/// climbing forever or handing back a midpoint.
 #[test]
 #[should_panic(expected = "reached its cap (32768 bits) undecided")]
 fn a_value_on_a_rounding_boundary_trips_the_cap() {
     let b = |p: usize| pow2(0, p).add(&pow2(-53, p), p, HP_RM);
-    let _ = ladder_f64(|p| Some([HpBounded::new(b(p), Mag::pow2(-60))]));
+    let _ = ladder_f64(TRIG_LADDER_CAP, |p| {
+        Some([HpBounded::new(b(p), Mag::pow2(-60))])
+    });
 }
