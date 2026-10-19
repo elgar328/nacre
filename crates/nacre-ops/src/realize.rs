@@ -108,10 +108,11 @@ pub enum RealizeError {
     /// help — this is the one refusal a taller ladder does not answer.
     ///
     /// Measured (`nacre_exact`'s own lock): it refuses from `2^1024`, where the scaled value stops
-    /// being finite. There is no small end — below the subnormals the nearest `f64` is `±0.0`. A
-    /// carrier name cannot reach the overflow — the widest this repository has measured is 168 bits
-    /// — so the population is zero today. It has a name anyway, because the branch is real and
-    /// [`Self::Undecided`] would be a lie about it ("more bits would do it" — they would not).
+    /// being finite. There is no small end — below the subnormals the nearest `f64` is `±0.0`, and
+    /// its error says so. A carrier name cannot reach the overflow — the widest this repository has
+    /// measured is 168 bits — so the population is zero today. It has a name anyway, because the
+    /// branch is real and [`Self::Undecided`] would be a lie about it ("more bits would do it" —
+    /// they would not).
     Unrepresentable,
 }
 
@@ -259,12 +260,16 @@ impl Realization {
 }
 
 /// **How far a correctly rounded `f64` can sit from the value it rounds** — `|v| · 2⁻⁵³`, which is
-/// at least half an ulp of `v` on either side of a binade edge. As a [`Mag`], so the bound of a tiny
+/// at least half an ulp of a normal `v` on either side of a binade edge, floored at the smallest
+/// normal as every rounding bound in this kernel is (`Bounded::round_off`): below the range the
+/// grid is the subnormals', whose half step `2⁻¹⁰⁷⁵` is fixed rather than relative, and a value
+/// rounded to `0.0` would otherwise carry a proven zero. As a [`Mag`], so the bound of a tiny
 /// coordinate cannot vanish on the way out. One rule for both arms of [`Realization::to_f64`]: an
-/// exact rational read at 53 bits and an interval that decided its `f64` are both a correct
-/// rounding.
+/// exact rational read once and an interval that decided its `f64` are both a correct rounding.
 fn half_ulp(v: f64) -> Mag {
-    Mag::of(v).times(Mag::pow2(-53))
+    let relative = Mag::of(v).times(Mag::pow2(-53));
+    let floor = Mag::of(f64::MIN_POSITIVE);
+    if relative.lt(floor) { floor } else { relative }
 }
 
 /// Realize one vertex's coordinate from its definition.
@@ -1655,11 +1660,13 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     // Half an ulp per coordinate; a coordinate read as `+0.0` stands within the coincidence limit
     // instead (`Realization::to_f64`: `max(1, the point's largest |coordinate|)·2⁻¹⁸⁰`).
     let scale = c.iter().fold(1f64, |m, v| m.max(v.abs()));
+    // Floored at the smallest normal, as `half_ulp` is: from the lowest normal binade down the step
+    // is `2⁻¹⁰⁷⁴`, and halving it in `f64` rounds `2⁻¹⁰⁷⁵` to `0`.
     let half = |v: f64| -> f64 {
         if v == 0.0 {
             nacre_judge::coincidence_for(Mag::of(scale)).upper_f64()
         } else {
-            (f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0
+            ((f64::from_bits(v.abs().to_bits() + 1) - v.abs()) / 2.0).max(f64::MIN_POSITIVE)
         }
     };
     let h: [HpBounded; 3] = [exact(half(c[0]))?, exact(half(c[1]))?, exact(half(c[2]))?];
@@ -2654,5 +2661,47 @@ mod tests {
             let rr = ((p[0] - 2.0).powi(2) + (p[1] - 2.0).powi(2)).sqrt();
             assert!((rr - 3.0).abs() < 1e-9, "{p:?} is {rr} from the axis");
         }
+    }
+
+    /// **A read-out coordinate's error covers its rounding, at any size.** An exact arm whose
+    /// coordinate is subnormal (`3·2⁻¹⁰⁷⁴ + 2⁻¹¹⁰⁰`) or rounds to `0.0` (`2⁻¹¹⁰⁰`) carries an error
+    /// no smaller than its distance to the truth, as an ordinary one (`1/3`) does. The bound is
+    /// read at its lower end — `Mag::exp2` is an upper exponent, and reading it there would pass a
+    /// bound short of the gap.
+    #[test]
+    fn a_read_out_coordinate_s_error_covers_its_rounding_at_any_size() {
+        // Over the common denominator `3·2¹¹⁰⁰`.
+        let d = BigInt::from(3) << 1100usize;
+        let n = [
+            (BigInt::from(9) << 26usize) + 3,
+            BigInt::from(3),
+            BigInt::from(1) << 1100usize,
+        ];
+        let (v, e) = Realization(Arm::Exact(n.clone(), d.clone()))
+            .to_f64()
+            .expect("every coordinate names an f64");
+        // `|n/d − v| ≤ 2^(x−1)`, cleared of denominators: `v = m·2^s` exactly from its bits.
+        const A: usize = 2300;
+        let mut wrong = Vec::new();
+        for k in 0..3 {
+            let b = v[k].to_bits();
+            let raw = ((b >> 52) & 0x7ff) as i64;
+            let frac = b & ((1u64 << 52) - 1);
+            let (m, s) = match raw {
+                0 => (frac, -1074),
+                _ => (frac | (1u64 << 52), raw - 1075),
+            };
+            let gap = ((&n[k] << A) - ((BigInt::from(m) * &d) << (A as i64 + s) as usize))
+                .magnitude()
+                .clone();
+            let ok = match e[k].exp2() {
+                None => gap == num_bigint::BigUint::from(0u8),
+                Some(x) => gap <= (d.magnitude() << (A as i64 + x - 1) as usize),
+            };
+            if !ok {
+                wrong.push(format!("axis {k}: value {:e}, error {:?}", v[k], e[k]));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
     }
 }
