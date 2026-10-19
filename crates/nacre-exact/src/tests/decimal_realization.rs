@@ -1,5 +1,6 @@
 use super::*;
 use num_bigint::BigInt;
+use num_rational::Ratio;
 
 /// A radical realized at precision must agree with the digits of √2, and with itself.
 #[test]
@@ -108,6 +109,41 @@ fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
         sqrt_f64(&BigRat::square_of(wide)).map(f64::to_bits),
         Some(wide.to_f64().to_bits())
     );
+
+    // The edges, collected so that one wrong row does not hide the next.
+    let big = |n: BigInt, d: BigInt| BigRat(Ratio::new(n, d));
+    let two = |e: usize| BigInt::from(1) << e;
+    let nan = f64::NAN.to_bits();
+    let wrong: Vec<_> = [
+        (
+            // An exact root too wide for `Rat`, sitting exactly on a rounding boundary: the
+            // exact branch rounds it once, ties to even.
+            "((2⁵³+1)·2²⁰⁰)²",
+            big(
+                (BigInt::from((1i64 << 53) + 1) * two(200)).pow(2),
+                BigInt::from(1),
+            ),
+            2f64.powi(253).to_bits(),
+        ),
+        (
+            // Irrational, `2⁻⁴⁰¹` above the boundary `1 + 2⁻⁵³`: 256 bits cannot see the gap.
+            "(1+2⁻⁵³)² + 2⁻⁴⁰⁰",
+            big(
+                BigInt::from((1i64 << 53) + 1).pow(2) * two(294) + 1,
+                two(400),
+            ),
+            (1.0 + 2f64.powi(-52)).to_bits(),
+        ),
+        // An exact root outside `f64`'s normal range: `NaN`, as the ladder decides one.
+        ("2⁻²²⁰⁰", big(BigInt::from(1), two(2200)), nan),
+    ]
+    .into_iter()
+    .filter_map(|(what, v, want)| {
+        let got = sqrt_f64(&v).map(f64::to_bits);
+        (got != Some(want)).then(|| format!("{what}: got {got:?}, want {want}"))
+    })
+    .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 /// A perfect square has its root found at **any** width `Rat` holds — the roots past `2⁵⁵` an
@@ -347,98 +383,143 @@ fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
     assert_eq!(third, 1.0 / 3.0);
 }
 
-/// What one climb gave, and how much it moved [`LADDER_CLIMBED`] — `(second rung, midpoint)`.
-type Climbed = (Option<Vec<f64>>, (usize, usize));
+/// What one climb gave, as bits — `NaN` equals itself and `+0.0` differs from `-0.0` — and how much
+/// it moved [`LADDER_CLIMBED`]: `(decided at 256, decided past 256)`.
+type Climbed = (Option<Vec<u64>>, (usize, usize));
 
 /// The answer [`ladder_f64`] gives for `realize`, with the counts it moved.
 fn climb<const N: usize>(realize: impl FnMut(usize) -> Option<[HpBounded; N]>) -> Climbed {
     let before = LADDER_CLIMBED.with_borrow(|c| *c);
-    let got = ladder_f64(realize).map(|v| v.to_vec());
+    let got = ladder_f64(realize).map(|v| v.iter().map(|x| x.to_bits()).collect());
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
     (got, (after.0 - before.0, after.1 - before.1))
 }
 
-/// **The ladder's rungs and its fallback, driven directly** — the fallback runs nowhere in the
-/// corpus (no realization there leaves 256 bits undecided), so only a realization built to sit on
-/// a rounding boundary can show what it returns.
+/// `±2^e` at `prec` bits, exactly, for any `e` — `2f64.powi` is `0.0` or `inf` past `f64`'s range.
+fn pow2(e: i64, prec: usize) -> BigFloat {
+    let mut v = BigFloat::from_f64(1.0, prec);
+    let mut rem = e;
+    while rem != 0 {
+        let step = rem.clamp(-1000, 1000);
+        v = v.mul(
+            &BigFloat::from_f64(2f64.powi(step as i32), prec),
+            prec,
+            HP_RM,
+        );
+        rem -= step;
+    }
+    v
+}
+
+/// `b + 2^e` for the rounding boundary `b = 1 + 2⁻⁵³`, exact at `prec` bits.
+fn above_boundary(e: i64, prec: usize) -> BigFloat {
+    pow2(0, prec)
+        .add(&pow2(-53, prec), prec, HP_RM)
+        .add(&pow2(e, prec), prec, HP_RM)
+}
+
+/// **The ladder climbs until each value is decided** — driven through realizations built to sit near
+/// a rounding boundary, since nothing in the corpus climbs past 256 bits.
 ///
-/// The boundary is `1 + 2⁻⁵³`, exactly between two `f64`s: with a radius of `2⁻⁶⁰` its ends round
-/// apart at every rung, and its midpoint rounds to the even neighbour, `1.0`. A boundary at zero
-/// would not do — its midpoint is `0.0`, which a fallback answering `0.0` would also give.
+/// The boundary is `b = 1 + 2⁻⁵³`, exactly between `1.0` and `1 + 2⁻⁵²`. The 512-bit row is honest
+/// but unlucky: each rung's midpoint lies below the boundary by more than the truth lies above it,
+/// within its radius, so a ladder that stopped at 256 and read the midpoint would say `1.0`; its
+/// midpoints are built at `p + 64` bits so that offset survives. A value outside `f64`'s normal
+/// range is decided as `NaN` at the first rung its interval clears the range on one side.
 #[test]
-fn the_ladder_climbs_two_rungs_then_stands_on_the_last_midpoint() {
-    // `x + 2^e` at `prec` bits, exactly.
-    let at = |x: f64, e: Option<i32>, prec: usize| {
-        let v = BigFloat::from_f64(x, prec);
-        match e {
-            Some(e) => v.add(&BigFloat::from_f64(2f64.powi(e), prec), prec, HP_RM),
-            None => v,
-        }
-    };
+fn the_ladder_climbs_until_each_value_is_decided() {
     let hp = |v: BigFloat, radius: i64| HpBounded::new(v, Mag::pow2(radius));
+    let bits = |v: &[f64]| Some(v.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
     let p2 = |e: i32| 2f64.powi(e);
+    let nan = f64::NAN;
+    // 128 bits' radius straddles `b`, 256 bits' does not.
+    let late = |p: usize| {
+        hp(
+            above_boundary(-70, p + 64),
+            if p == 128 { -60 } else { -100 },
+        )
+    };
     let cases = [
         (
             "decided at 128",
-            climb(|p| Some([hp(at(1.5, None, p), -100)])),
-            Some(vec![1.5]),
+            climb(|p| Some([hp(pow2(0, p).add(&pow2(-1, p), p, HP_RM), -100)])),
+            bits(&[1.5]),
             (0, 0),
         ),
         (
-            // Just above the boundary: 128 bits' radius straddles it, 256 bits' does not.
             "decided at 256",
-            climb(|p| {
-                let r = if p == 128 { -60 } else { -100 };
-                let v = at(1.0, Some(-53), p).add(&at(0.0, Some(-70), p), p, HP_RM);
-                Some([hp(v, r)])
-            }),
-            Some(vec![1.0 + p2(-52)]),
+            climb(|p| Some([late(p)])),
+            bits(&[1.0 + p2(-52)]),
             (1, 0),
         ),
         (
-            "on the boundary: the midpoint",
-            climb(|p| Some([hp(at(1.0, Some(-53), p), -60)])),
-            Some(vec![1.0]),
+            "decided at 512",
+            climb(|p| {
+                let w = p + 64;
+                let mid = above_boundary(-300, w).sub(&pow2(-(p as i64) - 4, w), w, HP_RM);
+                Some([hp(mid, -(p as i64))])
+            }),
+            bits(&[1.0 + p2(-52)]),
             (0, 1),
         ),
         (
-            // One of three undecided: all three stand on midpoints, and the two the rung decided
-            // keep their answers.
-            "one of three undecided",
+            "one of three decided at 256",
+            climb(|p| Some([hp(pow2(0, p), -100), late(p), hp(pow2(-2, p), -100)])),
+            bits(&[1.0, 1.0 + p2(-52), 0.25]),
+            (1, 0),
+        ),
+        (
+            "outside the normal range, both sides and both signs",
             climb(|p| {
+                let rel = |e: i64, neg: bool| {
+                    let v = pow2(e, p);
+                    hp(if neg { v.neg() } else { v }, e - p as i64)
+                };
                 Some([
-                    hp(at(1.5, None, p), -100),
-                    hp(at(1.0, Some(-53), p), -60),
-                    hp(at(0.25, None, p), -100),
+                    rel(-1100, false),
+                    rel(-1100, true),
+                    rel(1030, false),
+                    rel(1030, true),
                 ])
             }),
-            Some(vec![1.5, 1.0, 0.25]),
-            (0, 1),
+            bits(&[nan, nan, nan, nan]),
+            (0, 0),
         ),
         (
-            // The midpoint is the last rung's: 128 gives `1 + 2⁻⁵³` (→ `1.0`), 256 gives
-            // `1 + 3·2⁻⁵³`, the boundary between `1 + 2⁻⁵²` and `1 + 2⁻⁵¹`, whose even neighbour is
-            // the latter.
-            "the last rung's midpoint",
+            // Past the exponent guard of the radius `round_to_f64` assembles (`2^±10⁶`): the range
+            // is read off the exponents, so these decide too.
+            "past the radius' exponent guard",
             climb(|p| {
-                let v = if p == 128 {
-                    at(1.0, Some(-53), p)
-                } else {
-                    at(1.0, Some(-53), p).add(&at(0.0, Some(-52), p), p, HP_RM)
-                };
-                Some([hp(v, -60)])
+                let rel = |e: i64| hp(pow2(e, p), e - p as i64);
+                Some([rel(-1_000_100), rel(1_000_100)])
             }),
-            Some(vec![1.0 + p2(-51)]),
-            (0, 1),
+            bits(&[nan, nan]),
+            (0, 0),
         ),
         ("no realization", climb::<1>(|_| None), None, (0, 0)),
     ];
-    let wrong: Vec<_> = cases
+    let mut wrong: Vec<_> = cases
         .iter()
         .filter(|(_, got, want, counted)| got != &(want.clone(), *counted))
         .map(|(what, got, want, counted)| {
             format!("{what}: got {got:?}, want {:?}", (want, counted))
         })
         .collect();
+    // A zero component is an exact zero — radius `0` — and the first rung decides it as `+0.0`.
+    let before = LADDER_CLIMBED.with_borrow(|c| *c);
+    let n = [BigInt::from(1), BigInt::from(1), BigInt::from(0)];
+    let got = unit_vector_f64(&n).map(|v| v[2].to_bits());
+    if got != Some(0f64.to_bits()) || LADDER_CLIMBED.with_borrow(|c| *c) != before {
+        wrong.push(format!("zero component of (1, 1, 0): got {got:?}"));
+    }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// A value **on** a rounding boundary never decides, and the ladder says its caller's premise broke
+/// rather than climbing forever or handing back a midpoint.
+#[test]
+#[should_panic(expected = "passed its cap")]
+fn a_value_on_a_rounding_boundary_trips_the_cap() {
+    let b = |p: usize| pow2(0, p).add(&pow2(-53, p), p, HP_RM);
+    let _ = ladder_f64(|p| Some([HpBounded::new(b(p), Mag::pow2(-60))]));
 }

@@ -62,15 +62,20 @@ impl From<Rat> for BigRat {
 /// [`sqrt_rat`] for a wide radicand: the root, when it is rational **and** fits `Rat` —
 /// which every stated radius does, its square being what widened.
 pub fn sqrt_rat_big(v: &BigRat) -> Option<Rat> {
+    let (rn, rd) = exact_root(v)?;
+    BigRat(Ratio::new_raw(rn, rd)).narrow()
+}
+
+/// The exact root of a non-negative wide rational, as `(numerator, denominator)` at any width —
+/// `None` when it is irrational (a fraction in lowest terms is a square exactly when both of its
+/// parts are) or `v < 0`.
+fn exact_root(v: &BigRat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
     if v.is_negative() {
         return None;
     }
     let (n, d) = (v.numer(), v.denom());
     let (rn, rd) = (n.sqrt(), d.sqrt());
-    if &rn * &rn != *n || &rd * &rd != *d {
-        return None;
-    }
-    BigRat(Ratio::new_raw(rn, rd)).narrow()
+    (&rn * &rn == *n && &rd * &rd == *d).then_some((rn, rd))
 }
 
 /// The exact `√v` of a rational, or `None` when it is irrational (or `v < 0`).
@@ -216,13 +221,14 @@ fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
 /// so that branch returns the *nearest* f64 to a known-exact value. [`inv_sqrt_error_of`] reports
 /// what that rounding cost, and returns a literal zero only where there was none.
 ///
-/// **The ladder terminates.** It is the crate's one ladder (`ladder_f64`: 128 then 256 bits), and
-/// unlike `cos 90°`, `1/√v` is never zero for a positive `v`, so its interval never straddles zero
-/// and [`round_to_f64`] cannot answer `None` forever.
+/// **The ladder decides it** (`ladder_f64`). What reaches it is irrational — [`inv_sqrt_rat`] takes
+/// every rational root of a `Rat` — so it is never a rounding boundary, and `1/√v` of a `Rat` lies in
+/// `[2⁻⁶⁴, 2⁶⁴]`, far inside `f64`'s normal range.
 ///
-/// ★ **Correct rounding is what keeps debug and release the same.** A faithfully-rounded value
-/// would let the two builds disagree by an ulp, which is the failure this crate already paid for
-/// once in the trig path.
+/// ★ **Correct rounding is what keeps debug and release the same.** The value is a function of `v`
+/// alone, whatever route or precision computed it; a value that depended on the computation would
+/// let two builds disagree by an ulp, which is the failure this crate already paid for once in the
+/// trig path (libm, whose result moved with constant evaluation).
 pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
@@ -249,17 +255,17 @@ fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
 /// **`√v` as the `f64` nearest the true value**, or `None` when `v < 0` — the f64 realization of
 /// a radius stated as its square, at any width.
 ///
-/// The twin of [`inv_sqrt_f64`]: the exact branch runs first ([`sqrt_rat`] — every radius a
-/// user writes as a decimal lands here, and comes back as the `to_f64` of the rational it always
-/// was, bit for bit), and only a genuinely irrational root reaches the ladder (`ladder_f64`), under
-/// the same correct-rounding contract. `√v` is nonzero for `v > 0`, so the interval never
-/// straddles zero and [`round_to_f64`] cannot decline forever.
+/// The twin of [`inv_sqrt_f64`]: the exact branch runs first — every rational root, at any width
+/// (every radius a user writes as a decimal lands here, and comes back as the nearest `f64` to the
+/// rational it always was) — and only an irrational root reaches the ladder (`ladder_f64`), which
+/// decides it: an irrational number is never a rounding boundary. A nonzero root outside `f64`'s
+/// normal range is `NaN` on either road.
 pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if v.is_negative() {
         return None;
     }
-    if let Some(r) = sqrt_rat_big(v) {
-        return Some(r.to_f64());
+    if let Some((rn, rd)) = exact_root(v) {
+        return Some(nearest_normal_f64(&rn, &rd));
     }
     let [z] = ladder_f64(|prec| sqrt_hp_big(v, prec).map(|z| [z]))?;
     Some(z)
@@ -273,7 +279,9 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 /// every component is a rational, rounded once ([`nearest_f64_big`]) — an axis-aligned or
 /// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized on the
 /// ladder (`ladder_f64`) — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
-/// [`inv_sqrt_hp_big`] where it does not — and each product rounded.
+/// [`inv_sqrt_hp_big`] where it does not — and each product rounded; with `n·n` not a square, a
+/// nonzero component is irrational and a zero one is an exact zero, so the ladder decides both. A
+/// nonzero component outside `f64`'s normal range is `NaN` on either road.
 ///
 /// ★ **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
 /// a caller that turns the direction negates them before asking — negating the `f64` afterwards
@@ -286,8 +294,8 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
     }
     let root = nn.sqrt();
     if &root * &root == nn {
-        let c = |k: usize| nearest_f64_big(&n[k], &root).map(|(v, _)| v);
-        return Some([c(0)?, c(1)?, c(2)?]);
+        let c = |k: usize| nearest_normal_f64(&n[k], &root);
+        return Some([c(0), c(1), c(2)]);
     }
     let inv = |prec: usize| match nn.to_i128() {
         Some(v) => inv_sqrt_hp(Rat::from_int(v), prec),
@@ -321,11 +329,9 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 /// Callers rely on that zero: a frame whose realization carries no error also performs no rounding
 /// downstream, which is what keeps an axis-aligned sketch at tol 0.
 ///
-/// ★ **This measures rather than assumes even though [`inv_sqrt_f64`] is correctly rounded.**
-/// `round_to_f64` returning `Some` *is* a certificate, so `½ ulp` would be defensible — but the
-/// ladder has a documented fallback for an undecided rounding at 256 bits, and a term derived from
-/// a guarantee that has an escape hatch is exactly the kind that goes quietly wrong. Measuring
-/// covers the fallback for free.
+/// ★ **This measures rather than assumes even though [`inv_sqrt_f64`] is correctly rounded.** The
+/// claim is about the value the caller hands in, which this cannot know came from
+/// [`inv_sqrt_f64`]; measuring it is what makes the zero above a fact about that value.
 ///
 /// The reading is at octave granularity, so it can sit up to 2× above the true error —
 /// conservative in the sound direction, and still a measurement. `None` when `v ≤ 0`.

@@ -690,8 +690,8 @@ impl CylinderDef {
         nacre_exact::sqrt_rat_big(&self.r2)
     }
 
-    /// The radius realized as an `f64`, correctly rounded — a rational radius' own `to_f64`,
-    /// otherwise `√r²` at 128 → 256 bits (`nacre_exact::sqrt_f64`). The cache's number.
+    /// The radius realized as an `f64`, correctly rounded — `√r²`'s nearest `f64`, exact or
+    /// approached (`nacre_exact::sqrt_f64`). The cache's number.
     pub fn radius_f64(&self) -> f64 {
         nacre_exact::sqrt_f64(&self.r2).expect("r² > 0 by construction")
     }

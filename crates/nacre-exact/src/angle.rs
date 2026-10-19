@@ -163,17 +163,19 @@ impl Angle {
     }
 
     /// [`cos_sin_f64`](Self::cos_sin_f64)'s general branch without the memo — the pair on the
-    /// crate's one ladder (`ladder_f64`, which says why it starts at 128 bits and what it returns
-    /// past 256).
+    /// crate's one ladder (`ladder_f64`).
     ///
-    /// **Why 256 bits is enough here.** The realization's error is dominated by the
-    /// degrees→radians conversion, not by the cosine: `≈ 30 · 2⁻ᵖʳᵉᶜ`. Against a result of
-    /// magnitude `2^e` that has to clear a half-ulp of `2^(e-54)`, so `prec > 54 - e + 5`. 128 bits
-    /// covers every `|cos| > 2⁻⁶⁹`, which is every angle a model has ever held; 256 is the proven
-    /// cap — an `Angle` holds `Ratio<i128>`, so a normalized angle cannot come closer to 90° than
-    /// `1/denominator ≥ 5.9e-39` degrees, `|cos|` is never below `~2⁻¹³³`, and that needs
-    /// `prec > 192`. A value the ladder still leaves to its midpoint is measured, not assumed:
-    /// [`cos_sin_error_of`](Self::cos_sin_error_of) reads the error actually there.
+    /// **Why the ladder decides it.** The angle is a non-quadrantal rational number of degrees in
+    /// `[0, 360)` — `from_deg` is the only door and normalizes, and `cos_sin_rat` takes 0/90/180/270°.
+    /// By Niven's theorem the only rational values its cosine or sine can take are `±½`, which are
+    /// `f64`s and so not rounding boundaries; every other value is irrational. And neither is ever
+    /// below about `2⁻¹²⁵` in magnitude — `from_deg` keeps `360·denominator` in `i128`, so the angle
+    /// stays that far from a multiple of 90° — far inside `f64`'s normal range.
+    ///
+    /// **How deep it goes.** The realization's error is dominated by the degrees→radians conversion,
+    /// not by the cosine: `≈ 30 · 2⁻ᵖʳᵉᶜ`, against a half-ulp of `2^(e-54)` for a result of magnitude
+    /// `2^e`. So 128 bits decides every `|cos| > 2⁻⁶⁹` that is not within that error of a boundary —
+    /// every angle a model has held — and the ladder climbs only for a value closer than that.
     fn cos_sin_f64_uncached(self) -> (f64, f64) {
         let [c, s] = ladder_f64(|prec| {
             let (c, s) = self.cos_sin_hp(prec);

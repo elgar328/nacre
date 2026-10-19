@@ -39,22 +39,78 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
     if mid.is_nan() || mid.is_inf() {
         return None;
     }
-    let p = prec + 64;
-    let r = rad_upper_bigfloat(rad, p)?;
-    let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
+    let (lo, hi) = interval_ends(mid, rad, prec)?;
     let (rlo, rhi) = (bigfloat_to_f64(&lo)?, bigfloat_to_f64(&hi)?);
     (rlo == rhi && !rlo.is_nan()).then_some(rlo)
 }
 
-/// **The `f64`s nearest the true values a realization encloses** — 128 bits, then 256 where 128
-/// does not decide every value, then the 256-bit midpoints. The one ladder for a value this crate
-/// can only approach (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`, `unit_vector_f64` — an
-/// exact rational is rounded once, by `Rat::to_f64` or [`nearest_f64_big`]); each caller says
-/// what it realizes and what it knows about that value.
+/// `mid ± rad`, formed at `prec + 64` bits — see [`round_to_f64`] for why the guard digits.
+fn interval_ends(mid: &BigFloat, rad: Mag, prec: usize) -> Option<(BigFloat, BigFloat)> {
+    let p = prec + 64;
+    let r = rad_upper_bigfloat(rad, p)?;
+    Some((mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM)))
+}
+
+/// Does all of `mid ± rad` lie outside `f64`'s normal range, **on one side** — below it or above it,
+/// with one sign? Then no precision makes [`round_to_f64`] decide it, and [`ladder_f64`] decides it
+/// as `NaN` instead.
 ///
-/// `realize(prec)` gives the values at `prec` bits, and a rung answers only when
-/// [`round_to_f64`] decides **all** of them, so the values of one answer come from one rung.
-/// `None` when a realization is `None`.
+/// Near the range the ends are formed as [`round_to_f64`] forms them and read the way
+/// [`bigfloat_to_f64`] reads them: both refused, both on the same side. Far from it (`|exponent| >
+/// 2048`) they are not formed — the radius there can sit past [`rad_upper_bigfloat`]'s exponent
+/// guard — and a radius below a quarter of `|mid|` keeps the whole interval on `mid`'s side.
+fn outside_normal_range(mid: &BigFloat, rad: Mag, prec: usize) -> bool {
+    let Some(e) = mid.exponent().filter(|_| !mid.is_zero()) else {
+        return false;
+    };
+    let e = i64::from(e);
+    if e.abs() > 2048 {
+        return rad.exp2().is_none_or(|r| r < e - 2);
+    }
+    let Some((lo, hi)) = interval_ends(mid, rad, prec) else {
+        return false;
+    };
+    let side = |x: &BigFloat| match (bigfloat_to_f64(x), x.exponent()) {
+        (None, Some(xe)) if !x.is_zero() => Some((xe > 0, x.is_negative())),
+        _ => None,
+    };
+    matches!((side(&lo), side(&hi)), (Some(a), Some(b)) if a == b)
+}
+
+/// The cap past which [`ladder_f64`] does not climb — `2¹⁵` bits.
+///
+/// Every value a caller hands the ladder is decided at some depth (see there), so the cap is not
+/// a precision the answer needs but an **alarm**: reaching it means a caller's premise broke. It is
+/// as high as cost allows, measured (native release, one realization): `cos_sin_hp` takes 68 ms at
+/// 2¹⁵ bits and 281 ms at 2¹⁶, so a climb to the cap costs about 92 ms in all and one to 2¹⁶ about
+/// 373 ms; `inv_sqrt_hp` and `sqrt_hp_big` stay near a millisecond. The product runs as wasm,
+/// slower than native, which is why the sum and not the last rung is held under a third of a second.
+const LADDER_CAP: usize = 1 << 15;
+
+/// **The `f64`s nearest the true values a realization encloses**, climbing `128, 256, 512, …` bits
+/// until each value is decided. The one ladder for a value this crate can only approach
+/// (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`, `unit_vector_f64` — an exact rational is
+/// rounded once, by `Rat::to_f64` or [`nearest_f64_big`]).
+///
+/// `realize(prec)` gives the values at `prec` bits. A value is decided when [`round_to_f64`] names
+/// its nearest `f64`, or when its interval lies wholly outside `f64`'s normal range on one side
+/// ([`outside_normal_range`]) — then it is `NaN`, a value an `f64` cannot say. A rung answers when it
+/// decides every value. `None` when a realization is `None`.
+///
+/// ★ **Why it terminates.** A rung fails to decide only a value within its radius of a rounding
+/// boundary (the midpoint between two neighbouring `f64`s) or of a normal-range edge — both dyadic
+/// rationals. Each caller hands the ladder only values that are none of those: its exact branch
+/// takes every rational the value could be, so what reaches the ladder is irrational or a rational
+/// that is neither (each caller says which). Every realization's radius shrinks as `c · 2⁻ᵖʳᵉᶜ` —
+/// relative to the value, or for a cosine near an axis absolute (its error comes through the
+/// derivative) — so some rung clears the gap. How deep is not bounded by that argument — hence
+/// [`LADDER_CAP`], which panics rather than climbing forever or handing back a guess.
+///
+/// **Doubling, not a computed jump.** Judging climbs straight to the precision a condition number
+/// asks for, because there an undecided sign at enough bits is a structural zero and more bits do
+/// not help. Here the structural cases are gone before the ladder, an undecided rung is a genuine
+/// lack of bits, and the distance to the nearest boundary is not known until it is computed — so
+/// each rung doubles, and a value that needs `n` bits pays at most about `2n`.
 ///
 /// **128 is `nacre_judge`'s trial precision**, so a memoized realization (`cos_sin_hp`,
 /// `inv_sqrt_hp`) a judgement also asks for is shared rather than paid twice — which is why the
@@ -63,45 +119,57 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
 /// The wide realizations (`sqrt_hp_big`, `inv_sqrt_hp_big`) keep no memo; they climb the same
 /// rungs so that all four answer under one rule.
 ///
-/// ★ **If even 256 leaves a value undecided, the midpoints are returned, not a panic.** Such a
-/// value is then *faithfully* rounded (within an ulp) instead of correctly rounded, and
-/// deterministic, because a 256-bit midpoint is. Where a consumer accounts for the error, that
-/// stays sound: `Angle::cos_sin_error_of` and `inv_sqrt_error_of` measure the error actually
-/// there. A value the last rung did decide keeps its answer: its midpoint lies between two ends
-/// that both rounded to it. A nonzero value outside `f64`'s normal range decides at no rung, and
-/// its midpoint reads as `NaN` ([`bigfloat_to_f64`] cannot say it). A test build
-/// counts both events (`LADDER_CLIMBED`), so "cannot happen" does not quietly become "happens".
+/// A test build counts the answers decided at 256 bits and past them (`LADDER_CLIMBED`), so a climb
+/// nothing in the corpus needs stays visible when something starts to.
 pub(crate) fn ladder_f64<const N: usize>(
     mut realize: impl FnMut(usize) -> Option<[HpBounded; N]>,
 ) -> Option<[f64; N]> {
-    let mut last = None;
-    for (i, prec) in [128usize, 256].into_iter().enumerate() {
+    let mut prec = 128;
+    loop {
         let r = realize(prec)?;
         let mut out = [0.0; N];
         let decided = out.iter_mut().zip(&r).all(|(o, x)| {
-            let Some(v) = round_to_f64(&x.value, x.error, prec) else {
-                return false;
+            let v = if outside_normal_range(&x.value, x.error, prec) {
+                f64::NAN
+            } else {
+                let Some(v) = round_to_f64(&x.value, x.error, prec) else {
+                    return false;
+                };
+                v
             };
             *o = v;
             true
         });
         if decided {
             #[cfg(test)]
-            if i > 0 {
-                LADDER_CLIMBED.with_borrow_mut(|(e, _)| *e += 1);
+            match prec {
+                128 => {}
+                256 => LADDER_CLIMBED.with_borrow_mut(|(at, _)| *at += 1),
+                _ => LADDER_CLIMBED.with_borrow_mut(|(_, past)| *past += 1),
             }
-            #[cfg(not(test))]
-            let _ = i;
             return Some(out);
         }
-        last = Some(r);
+        assert!(
+            prec < LADDER_CAP,
+            "the nearest-f64 ladder passed its cap ({LADDER_CAP} bits): its caller's premise — no \
+             value on a rounding boundary or a normal-range edge — broke"
+        );
+        prec *= 2;
     }
-    #[cfg(test)]
-    LADDER_CLIMBED.with_borrow_mut(|(_, f)| *f += 1);
-    let r = last?; // `Some`: the loop ran both rungs
-    Some(core::array::from_fn(|k| {
-        bigfloat_to_f64(&r[k].value).unwrap_or(f64::NAN)
-    }))
+}
+
+/// The nearest `f64` to the exact rational `num/den`, or `NaN` when it is nonzero and outside
+/// `f64`'s normal range — the exact branches' reading, so a value of one size gets one answer
+/// whether a caller's exact branch or [`ladder_f64`] decided it. Zero is read off the numerator, not
+/// the result: [`nearest_f64_big`] rounds a nonzero value below the subnormals to `0.0`.
+pub(crate) fn nearest_normal_f64(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> f64 {
+    if num.sign() == num_bigint::Sign::NoSign {
+        return 0.0;
+    }
+    match nearest_f64_big(num, den) {
+        Some((v, _)) if v.is_normal() => v,
+        _ => f64::NAN,
+    }
 }
 
 /// `2^exp2()` as a `BigFloat` — an **upper bound** on the radius, exactly representable.
@@ -148,7 +216,7 @@ fn rad_upper_bigfloat(rad: Mag, prec: usize) -> Option<BigFloat> {
 ///
 /// Restricted to the normal range on purpose: an `f64` cannot hold a subnormal at full precision
 /// nor an overflow at all, and `None` says so rather than handing back a rounded-away answer.
-/// [`round_to_f64`] then decides at no precision, and [`ladder_f64`] writes the midpoint as `NaN`.
+/// [`round_to_f64`] then decides at no precision, and [`ladder_f64`] decides such a value as `NaN`.
 pub(super) fn bigfloat_to_f64(x: &BigFloat) -> Option<f64> {
     if x.is_zero() {
         return Some(0.0);
@@ -180,7 +248,7 @@ pub(super) fn bigfloat_to_f64(x: &BigFloat) -> Option<f64> {
     }
     top <<= 64 - filled.min(64);
     // `e` is astro-float's exponent for a mantissa in `[0.5, 1)`; f64's biased exponent for the
-    // same value is `e - 1 + 1023`. Anything outside the normal range is a broken premise.
+    // same value is `e - 1 + 1023`. Outside the normal range an `f64` cannot say the value.
     let biased = i64::from(e) + 1022;
     if !(1..=2046).contains(&biased) {
         return None;

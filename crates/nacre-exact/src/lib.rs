@@ -154,10 +154,10 @@ thread_local! {
     /// is a cost question only.
     static F64_INV_SQRT: RefCell<HashMap<Rat, f64>> = RefCell::new(HashMap::new());
 
-    /// How often [`ladder_f64`] needed its second rung, and how often even that left the rounding
-    /// undecided so the midpoint stood. **Read by tests**: a checker that never fires is
-    /// indistinguishable from one that is not running. Its only readers are this crate's unit
-    /// tests, so a product build carries none of it.
+    /// How many answers [`ladder_f64`] decided at 256 bits, and how many past 256 — counts, so a
+    /// test reads its own work as the difference across it. **Read by tests**: a checker that never
+    /// fires is indistinguishable from one that is not running. Its only readers are this crate's
+    /// unit tests, so a product build carries none of it.
     #[cfg(test)]
     static LADDER_CLIMBED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }

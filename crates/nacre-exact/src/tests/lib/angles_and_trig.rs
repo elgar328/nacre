@@ -235,14 +235,14 @@ fn the_rounding_check_refuses_an_undecidable_interval() {
     }
 }
 
-/// The escalation and fallback rungs, counted — over a corpus that reaches for them.
+/// The rungs past 128 bits, counted — over a corpus that reaches for them.
 ///
 /// Near an axis `|cos|` is tiny while its error bound is absolute, so the relative radius grows
-/// and 128 bits stops being enough; that is the only place the second rung is reachable. **The
-/// count is reported rather than asserted nonzero**: with `Rat` bounded by `i128` an angle
-/// cannot get closer to 90° than ~6e-39 degrees, so it is entirely possible that nothing in a
-/// finite corpus needs it — but a silent zero and an unreachable branch look identical, and
-/// this at least says which corpus produced the zero.
+/// and 128 bits stops being enough; that is where the second rung is reached. **The count is
+/// reported rather than asserted nonzero**: with `Rat` bounded by `i128` an angle cannot get closer
+/// to 90° than ~6e-39 degrees, so it is entirely possible that nothing in a finite corpus needs it
+/// — but a silent zero and an unreachable branch look identical, and this at least says which
+/// corpus produced the zero. That nothing here climbs past 256 bits is measured, and held.
 #[test]
 fn the_escalation_rung_is_reachable() {
     let before = LADDER_CLIMBED.with_borrow(|c| *c);
@@ -270,14 +270,14 @@ fn the_escalation_rung_is_reachable() {
     }
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
     eprintln!(
-        "[round_to_f64] {} escalated to 256, {} fell back, over {asked} near-axis angles",
+        "[round_to_f64] {} decided at 256, {} past it, over {asked} near-axis angles",
         after.0 - before.0,
         after.1 - before.1
     );
     assert!(asked > 500, "corpus shrank to {asked}");
     assert_eq!(
         after.1, before.1,
-        "the undecidable fallback fired, which is derived not to"
+        "an angle in this corpus climbed past 256 bits, which none has measured to"
     );
 }
 
@@ -704,13 +704,11 @@ fn inv_sqrt_f64_lands_on_the_nearest_f64() {
         );
     }
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
-    let (deeper, undecided) = (after.0 - before.0, after.1 - before.1);
-    eprintln!("[cip] inverse-sqrt escalations: {deeper} deeper, {undecided} undecided");
-    // ★ 128 bits sufficed for every case here, and the second rung is a proven cap rather
-    // than a rung anything reaches: `1/√v` is never zero for a positive `v`, so its interval
-    // cannot straddle zero the way `cos 90°`'s does and the rounding always decides.
+    let (at_256, past_256) = (after.0 - before.0, after.1 - before.1);
+    eprintln!("[cip] inverse-sqrt climbs: {at_256} decided at 256, {past_256} past it");
+    // ★ Measured: 128 bits decides every case here.
     assert_eq!(
-        (deeper, undecided),
+        (at_256, past_256),
         (0, 0),
         "a case escalated — the ladder's first rung no longer covers the population"
     );
