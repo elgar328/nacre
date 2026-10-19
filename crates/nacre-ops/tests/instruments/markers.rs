@@ -48,6 +48,8 @@ fn prose_files() -> Vec<(String, PathBuf)> {
         .parent()
         .and_then(Path::parent)
         .expect("the repository root, two above this crate");
+    // Asked twice, of two kinds of name: the walk asks it of folders it might enter, this loop of
+    // the files it hands back — a `.DS_Store` is a file, so the folder rule never sees it.
     let local = |name: &str| name.starts_with('.') || name == "__pycache__";
     let mut paths = Vec::new();
     for dir in ["crates", "docs", "tools"] {
