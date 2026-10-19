@@ -756,25 +756,6 @@ fn overflow_demotes_instead_of_panicking() {
     assert_eq!(canonical_plane_coeffs(coeffs), None);
 }
 
-/// `try_from_f64` is the exact rational of the f64: it round-trips (`to_f64` gives
-/// back the same bits) for finite values in range, handles 0/integers/dyadic
-/// fractions exactly, and returns `None` for non-finite or overflowing inputs.
-#[test]
-fn try_from_f64_is_exact_and_round_trips() {
-    assert_eq!(Rat::try_from_f64(0.0), Some(Rat::from_int(0)));
-    assert_eq!(Rat::try_from_f64(6.0), Some(Rat::from_int(6)));
-    assert_eq!(Rat::try_from_f64(-2.0), Some(Rat::from_int(-2)));
-    assert_eq!(Rat::try_from_f64(0.5), Rat::new(1, 2));
-    assert_eq!(Rat::try_from_f64(-0.75), Rat::new(-3, 4));
-    assert_eq!(Rat::try_from_f64(f64::NAN), None);
-    assert_eq!(Rat::try_from_f64(f64::INFINITY), None);
-    assert_eq!(Rat::try_from_f64(1e300), None); // exponent overflows i128
-    // round-trip over a spread of normal-range values (incl. non-dyadic f64s).
-    for &x in &[0.1, 1.0 / 3.0, 2.0, 1000.0, -6.1, 4_503.7, 1e-6, 1e6] {
-        assert_eq!(Rat::try_from_f64(x).unwrap().to_f64(), x, "round-trip {x}");
-    }
-}
-
 /// A triple's sense, exactly — against an independent `Rat` derivation, and across widths.
 mod triple_sense {
     use crate::{MeetPoint, Orient, Rat, normal_sense, same_sense, triple_normal};

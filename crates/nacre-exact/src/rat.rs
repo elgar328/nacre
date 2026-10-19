@@ -72,10 +72,6 @@ impl Rat {
     /// denominator is a power of two and the numerator's odd part fits the 53-bit significand.
     /// Every nonzero `Rat` lies in `[2⁻¹²⁷, 2¹²⁷]`, inside `f64`'s normal range, so no exponent
     /// condition joins those two.
-    ///
-    /// ★ Not `try_from_f64(r.to_f64()) == Some(r)`: that lift measures the `f64`'s exponent before
-    /// reducing, so it refuses values `Rat` holds exactly (`2⁻⁸⁰` is `2⁵²/2¹³²` to it) and the
-    /// comparison reads "not an `f64`" for a number that is one.
     pub fn as_f64(self) -> Option<f64> {
         let (n, d) = (*self.0.numer(), *self.0.denom());
         if n == 0 {
@@ -127,11 +123,14 @@ impl Rat {
         }
     }
 
-    /// The **exact** rational value of an f64 (`mantissa · 2^exp`). `None` for a
-    /// non-finite input or when the exact numerator/denominator overflows i128
-    /// (subnormals, extreme exponents — the downgrade trigger). Round-trips:
-    /// `to_f64(try_from_f64(x).unwrap()) == x` for finite f64 in the normal CAD range.
-    /// The bridge from an f64 coordinate cache to an exact `[Rat]` definition.
+    /// The **exact** value of an `f64` (`mantissa · 2^exp`). `None` exactly when that value is
+    /// not a `Rat` — a non-finite input, or a value whose lowest-terms numerator or denominator
+    /// leaves `i128`. `Some(r)` has `r.to_f64() == x`, and for a `Rat` `r`,
+    /// `r.as_f64() == Some(f)` ⇔ `try_from_f64(f) == Some(r)`.
+    ///
+    /// An `f64` read exactly — to compare or check it against rationals (a gap, a bound, a chosen
+    /// witness), or to carry a figure, where only nearness matters, through an exact replay. Not a
+    /// way to make a cache the truth: the rounding would be baked in.
     pub fn try_from_f64(x: f64) -> Option<Self> {
         if x == 0.0 {
             return Some(Rat::from_int(0));
@@ -150,20 +149,25 @@ impl Rat {
         } else {
             (frac | 0x0010_0000_0000_0000, exp_field - 1075)
         };
-        let m = mantissa as i128;
-        let (numer, denom) = if exp >= 0 {
-            if exp > 126 {
-                return None;
-            }
-            (m.checked_mul(1i128 << exp)?, 1i128)
-        } else {
-            let k = (-exp) as u32;
-            if k > 126 {
-                return None;
-            }
-            (m, 1i128 << k)
-        };
-        Rat::new(if neg { -numer } else { numer }, denom)
+        // Lowest terms first: the significand's trailing zeros belong to the power of two, and
+        // only the reduced exponent says whether the value fits (`2⁻⁸⁰` reads as `2⁵²·2⁻¹³²` off
+        // the bits). `x ≠ 0` here, so the significand has a set bit.
+        let tz = mantissa.trailing_zeros();
+        let m = (mantissa >> tz) as i128;
+        let m = if neg { -m } else { m };
+        let exp = exp + tz as i32;
+        if exp >= 0 {
+            // The numerator is the value; the shift is exact iff it shifts back
+            // (`−2¹²⁷` = `i128::MIN` fits). `checked_shl` refuses only a shift of 128 or more.
+            let v = m.checked_shl(exp as u32)?;
+            return (v >> exp == m).then(|| Rat::from_int(v));
+        }
+        let k = (-exp) as u32;
+        // The denominator is positive, so `2¹²⁶` is the deepest it reaches.
+        if k > 126 {
+            return None;
+        }
+        Rat::new(m, 1i128 << k)
     }
 
     /// Reduced numerator (denominator is always positive after reduction).

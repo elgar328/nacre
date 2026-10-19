@@ -1,4 +1,5 @@
-//! Decimal realization and the wide (arbitrary-precision) twins of the narrow solves.
+//! Decimal realization, the exact lift, and the wide (arbitrary-precision) twins of the narrow
+//! solves.
 
 use super::*;
 
@@ -156,19 +157,118 @@ fn a_split_dimension_stacks_back_to_the_whole_one() {
     );
 }
 
-/// `as_f64` reads "is this rational an `f64`" off the number — including where the lift
-/// `try_from_f64` refuses a value `Rat` holds exactly, which is why the round-trip comparison is
-/// not that question.
+/// `try_from_f64` is the exact rational of the f64, and `None` exactly when that value is not a
+/// `Rat`: it round-trips (`to_f64` gives back the same bits), handles 0/integers/dyadic fractions
+/// exactly, and refuses non-finite input and values whose lowest terms leave `i128`. The rows near
+/// the edges are examples of that contract; `try_from_f64_is_the_exact_value_of_every_f64` is its
+/// proof.
+#[test]
+fn try_from_f64_is_exact_and_round_trips() {
+    assert_eq!(Rat::try_from_f64(0.0), Some(Rat::from_int(0)));
+    assert_eq!(Rat::try_from_f64(6.0), Some(Rat::from_int(6)));
+    assert_eq!(Rat::try_from_f64(-2.0), Some(Rat::from_int(-2)));
+    assert_eq!(Rat::try_from_f64(0.5), Rat::new(1, 2));
+    assert_eq!(Rat::try_from_f64(-0.75), Rat::new(-3, 4));
+    assert_eq!(Rat::try_from_f64(f64::NAN), None);
+    assert_eq!(Rat::try_from_f64(f64::INFINITY), None);
+    assert_eq!(Rat::try_from_f64(1e300), None); // the numerator leaves i128
+    // round-trip over a spread of normal-range values (incl. non-dyadic f64s).
+    for &x in &[0.1, 1.0 / 3.0, 2.0, 1000.0, -6.1, 4_503.7, 1e-6, 1e6] {
+        assert_eq!(Rat::try_from_f64(x).unwrap().to_f64(), x, "round-trip {x}");
+    }
+    // The edges, collected so that one wrong row does not hide the next.
+    let p2 = |e: i32| 2f64.powi(e);
+    let wrong: Vec<_> = [
+        (p2(-80), Rat::new(1, 1 << 80)), // below 2⁻⁷⁴, but one significant bit
+        (3.0 * p2(-100), Rat::new(3, 1 << 100)),
+        (p2(-126), Rat::new(1, 1 << 126)), // the deepest denominator
+        (p2(-127), None),                  // a denominator of 2¹²⁷ leaves i128
+        (1e-30, None),                     // a full significand needs 2¹⁴⁷
+        (-p2(127), Some(Rat::from_int(i128::MIN))),
+        (p2(127), None),
+    ]
+    .into_iter()
+    .filter_map(|(x, want)| {
+        let got = Rat::try_from_f64(x);
+        (got != want).then_some((x, got, want))
+    })
+    .collect();
+    assert!(wrong.is_empty(), "(x, got, want): {wrong:?}");
+}
+
+/// **`try_from_f64` is the exact value of every `f64` that is a `Rat`, and `None` for the rest** —
+/// held to `BigRational::from_float`, an independent derivation with no width limit that reduces
+/// as it goes, so "its numerator and denominator fit `i128`" is "the value is a `Rat`".
+///
+/// The inputs are built on the two variables the lift reads: the exponent field and the number of
+/// trailing zeros in the significand. Reducing moves those zeros into the exponent, and a sweep over
+/// random significands — which almost never end in a run of zeros — meets no value whose fit turns
+/// on them (`2⁻⁸⁰`, `3·2⁻¹⁰⁰`). Every exponent field × every trailing-zero count × both signs.
+#[test]
+fn try_from_f64_is_the_exact_value_of_every_f64() {
+    use num_rational::BigRational;
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let exact = |x: f64| -> Option<Rat> {
+        let e = BigRational::from_float(x)?;
+        Rat::new(
+            i128::try_from(e.numer()).ok()?,
+            i128::try_from(e.denom()).ok()?,
+        )
+    };
+    let (mut tried, mut wrong) = (0, Vec::new());
+    for field in 0u64..=2046 {
+        for t in 0..=52u32 {
+            // `t` trailing zeros in the fraction field; at `t = 52` the field is empty, which is a
+            // pure power of two for a normal and zero for a subnormal (left to the rows below).
+            let frac = if t < 52 {
+                ((next() | 1) << t) & ((1 << 52) - 1)
+            } else {
+                0
+            };
+            if field == 0 && frac == 0 {
+                continue;
+            }
+            for sign in [0, 1u64 << 63] {
+                let x = f64::from_bits(sign | field << 52 | frac);
+                tried += 1;
+                let (got, want) = (Rat::try_from_f64(x), exact(x));
+                if got != want {
+                    wrong.push((x, got, want));
+                }
+            }
+        }
+    }
+    for x in [0.0, -0.0] {
+        assert_eq!(Rat::try_from_f64(x), Some(Rat::from_int(0)), "{x}");
+    }
+    for x in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        assert_eq!(Rat::try_from_f64(x), None, "{x}");
+    }
+    assert!(tried > 200_000, "{tried} tried");
+    let tiny = wrong.iter().filter(|w| w.0.abs() < 2f64.powi(-74)).count();
+    let huge = wrong.iter().filter(|w| w.0.abs() >= 2f64.powi(127)).count();
+    assert!(
+        wrong.is_empty(),
+        "{} wrong of {tried} ({tiny} below 2⁻⁷⁴, {huge} at or above 2¹²⁷); (x, got, want), first \
+         of each: {:?} {:?}",
+        wrong.len(),
+        wrong.iter().find(|w| w.0.abs() < 2f64.powi(-74)),
+        wrong.iter().find(|w| w.0.abs() >= 2f64.powi(127)),
+    );
+}
+
+/// `as_f64` reads "is this rational an `f64`" off the number.
 #[test]
 fn as_f64_is_some_exactly_for_the_rationals_that_are_f64s() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let tiny = r(1, 1 << 80);
     assert_eq!(tiny.as_f64(), Some(2f64.powi(-80)));
-    assert_eq!(
-        Rat::try_from_f64(2f64.powi(-80)),
-        None,
-        "the lift measures the unreduced exponent"
-    );
     for (q, want) in [
         (Rat::from_int(0), Some(0.0)),
         (r(-5, 8), Some(-0.625)),
@@ -201,18 +301,20 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// Where the lift speaks, the round trip and `as_f64` answer alike — the old spelling is the
-    /// oracle on its own range, and `as_f64` only adds answers past it.
+    /// `as_f64` is `Some` exactly where the lift round-trips — the lift is its oracle on every
+    /// `Rat`, and is itself held to the exact value by `try_from_f64_is_the_exact_value_of_every_f64`.
+    /// The small numerators over power-of-two denominators reach below `2⁻⁷⁴`, where a short
+    /// significand still fits.
     #[test]
-    fn as_f64_agrees_with_the_round_trip_where_the_lift_speaks(
-        n in -(1i128 << 70)..(1i128 << 70),
-        k in 0u32..100,
-        odd in 1i128..1000,
+    fn as_f64_is_some_exactly_where_the_lift_round_trips(
+        n in prop_oneof![-(1i128 << 70)..(1i128 << 70), -(1i128 << 20)..(1i128 << 20)],
+        k in 0u32..=126,
+        odd in prop_oneof![Just(1i128), 1i128..1000],
     ) {
-        let r = Rat::new(n, (1i128 << k) * odd).unwrap();
-        if let Some(back) = Rat::try_from_f64(r.to_f64()) {
-            prop_assert_eq!(r.as_f64().is_some(), back == r, "{:?}", r);
-        }
+        let d = (1i128 << k).checked_mul(odd);
+        prop_assume!(d.is_some());
+        let r = Rat::new(n, d.unwrap()).unwrap();
+        prop_assert_eq!(r.as_f64().is_some(), Rat::try_from_f64(r.to_f64()) == Some(r), "{:?}", r);
     }
 }
 

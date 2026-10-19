@@ -1589,27 +1589,24 @@ fn quadrantal_origin_chain_is_tol_zero() {
 }
 
 /// **A representable base is tol `0`** — read off the number (`Rat::as_f64`), so the stated
-/// zero skips arithmetic rather than changing geometry. The corpus includes a coordinate the lift
-/// `try_from_f64` refuses (`2⁻⁸⁰`): it is an `f64` all the same, and `at` says so.
+/// zero skips arithmetic rather than changing geometry. The corpus includes `2⁻⁸⁰`, below `2⁻⁷⁴`
+/// with one significant bit: it is an `f64` all the same, and `at` says so.
 #[test]
 fn a_representable_base_is_tol_zero() {
     let lift = |c: [f64; 3]| c.map(|x| Rat::try_from_f64(x).expect("representable"));
     for c in [
-        [0.0, 1.0, -1.0],         // integers, both signs
-        [0.5, 0.25, -0.125],      // dyadic fractions
-        [4.0, 0.2, 3.0],          // 0.2 is not decimal-exact but *is* an exact f64
-        [1e-8, -2.5e-9, 7.5e-7],  // small
-        [1e18, -4e17, 3.5e19],    // large, still inside Rat's exponent range
-        [1e-20, -2.5e-21, 5e-18], // small, still inside the lift's range
+        [0.0, 1.0, -1.0],           // integers, both signs
+        [0.5, 0.25, -0.125],        // dyadic fractions
+        [4.0, 0.2, 3.0],            // 0.2 is not decimal-exact but *is* an exact f64
+        [1e-8, -2.5e-9, 7.5e-7],    // small
+        [1e18, -4e17, 3.5e19],      // large
+        [1e-20, -2.5e-21, 5e-18],   // small
+        [2f64.powi(-80), 0.0, 0.0], // tiny, one significant bit
     ] {
         let p = WitnessPoint::at(lift(c));
         assert_eq!(p.coord_approx(), c, "the coordinates round-trip: {c:?}");
         assert_eq!(p.tol(), [0.0; 3], "an f64 base is tol 0: {c:?}");
     }
-    let tiny = Rat::new(1, 1 << 80).unwrap();
-    let p = WitnessPoint::at([tiny, Rat::from_int(0), Rat::from_int(0)]);
-    assert_eq!(p.coord_approx(), [2f64.powi(-80), 0.0, 0.0]);
-    assert_eq!(p.tol(), [0.0; 3], "2⁻⁸⁰ is an f64");
 }
 
 /// **`at` states the tol from `Rat::to_f64`'s contract, per axis**: zero on a coordinate that is
@@ -1659,7 +1656,12 @@ fn an_exact_point_demands_no_precision() {
         [1e18, -4e17, 3.5e19],    // large
         [1e38, -1.5e38, 1.0],     // ★ near Rat's ceiling: the widest numerator, ~127 bits
         [1e-20, -2.5e-21, 5e-18], // small
-        [1e-22, -2e-22, 1.0],     // ★ near Rat's floor (2^-74): the deepest denominator
+        // ★ the deepest denominator (`2¹²⁶`), with a full significand and with one bit
+        [
+            ((1u64 << 53) - 1) as f64 * 2f64.powi(-126),
+            2f64.powi(-126),
+            1.0,
+        ],
     ] {
         let p = exact(c).expect("representable");
         assert!(
@@ -1670,19 +1672,26 @@ fn an_exact_point_demands_no_precision() {
     }
 }
 
-/// Outside `Rat`'s exponent range there is no exact base, and `Rat::try_from_f64` says so
+/// A coordinate whose value is not a `Rat` has no exact base, and `Rat::try_from_f64` says so
 /// instead of panicking — the caller decides (an operation turns it into a named reject).
 ///
-/// **The range is much narrower than f64's, at both ends** — easy to get wrong, and I did
-/// on the first attempt. `Rat` is `Ratio<i128>`, so `mantissa · 2^exp` must fit `i128`
-/// (`|x| ≲ 1.7e38`) *and* the denominator `2^k` must (`k = 1075 − exp_field ≤ 126`, i.e.
-/// `|x| ≳ 2^-74 ≈ 5.3e-23`). Exact zero is special-cased and always representable.
+/// **Which `f64`s are `Rat`s is much narrower than f64's range, at both ends.** `Rat` is
+/// `Ratio<i128>`, so the value in lowest terms must fit: the numerator (`|x| < 2¹²⁷ ≈ 1.7e38`)
+/// *and* the reduced denominator `2^(1075 − exp_field − tz)`, with `tz` the significand's trailing
+/// zeros, at most `2¹²⁶` — every `|x| ≥ 2⁻⁷⁴` fits, below that only a value with few significant
+/// bits, and nothing below `2⁻¹²⁶`. Exact zero is special-cased and always representable.
 /// A CAD model at either extreme is not real; the limit is.
 #[test]
-fn a_coordinate_outside_rats_range_has_no_exact_base() {
+fn a_coordinate_that_is_not_a_rat_has_no_exact_base() {
     assert!(exact([1e300, 0.0, 0.0]).is_none(), "too large");
-    assert!(exact([1e-30, 0.0, 0.0]).is_none(), "below the 2^-74 floor");
-    assert!(exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(), "subnormal");
+    assert!(
+        exact([1e-30, 0.0, 0.0]).is_none(),
+        "a full significand at 1e-30 needs 2^147"
+    );
+    assert!(
+        exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(),
+        "the smallest normal"
+    );
     // Zero is not a boundary case — it is special-cased and exact.
     assert_eq!(exact([0.0; 3]).expect("zero is exact").tol(), [0.0; 3]);
 }
