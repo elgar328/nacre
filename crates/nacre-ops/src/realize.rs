@@ -57,7 +57,8 @@ pub enum Precision {
     Bits(usize),
 }
 
-/// A coordinate that has been realized, together with what it cost.
+/// A coordinate that has been realized — an exact rational, or intervals at the precision they were
+/// realized at.
 ///
 /// Opaque: the arms are an implementation detail, and a caller that could see them would be
 /// coupled to astro-float's types through this crate as well as through `nacre-exact`.
