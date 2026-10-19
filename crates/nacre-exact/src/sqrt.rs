@@ -216,17 +216,13 @@ fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
 /// so that branch returns the *nearest* f64 to a known-exact value. [`inv_sqrt_error_of`] reports
 /// what that rounding cost, and returns a literal zero only where there was none.
 ///
-/// **The ladder is 128 then 256 bits, and it terminates.** Unlike `cos 90°`, `1/√v` is never zero
-/// for a positive `v`, so its interval never straddles zero and [`round_to_f64`] cannot answer
-/// `None` forever. The rungs match [`Angle::cos_sin_f64_uncached`]'s so a judgement at
-/// `nacre_judge`'s trial precision shares this realization instead of paying for a second one.
+/// **The ladder terminates.** It is the crate's one ladder (`ladder_f64`: 128 then 256 bits), and
+/// unlike `cos 90°`, `1/√v` is never zero for a positive `v`, so its interval never straddles zero
+/// and [`round_to_f64`] cannot answer `None` forever.
 ///
 /// ★ **Correct rounding is what keeps debug and release the same.** A faithfully-rounded value
 /// would let the two builds disagree by an ulp, which is the failure this crate already paid for
 /// once in the trig path.
-///
-/// If even 256 bits leave the rounding undecided the midpoint is returned rather than a panic, and
-/// a test build counts the event (`INV_SQRT_ESCALATED`).
 pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
@@ -245,27 +241,9 @@ pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
 
 /// [`inv_sqrt_f64`]'s general branch without the memo or the exact test.
 fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
-    for (i, prec) in [128usize, 256].into_iter().enumerate() {
-        let HpBounded {
-            value: z,
-            error: rad,
-        } = inv_sqrt_hp(v, prec).expect("v > 0 checked by the caller");
-        if let Some(f) = round_to_f64(&z, rad, prec) {
-            #[cfg(test)]
-            if i > 0 {
-                INV_SQRT_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
-            }
-            #[cfg(not(test))]
-            let _ = i;
-            return f;
-        }
-    }
-    #[cfg(test)]
-    INV_SQRT_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-    let z = inv_sqrt_hp(v, 256)
-        .expect("v > 0 checked by the caller")
-        .value;
-    bigfloat_to_f64(&z).unwrap_or(f64::NAN)
+    let [z] =
+        ladder_f64(|prec| inv_sqrt_hp(v, prec).map(|z| [z])).expect("v > 0 checked by the caller");
+    z
 }
 
 /// **`√v` as the `f64` nearest the true value**, or `None` when `v < 0` — the f64 realization of
@@ -273,10 +251,9 @@ fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
 ///
 /// The twin of [`inv_sqrt_f64`]: the exact branch runs first ([`sqrt_rat`] — every radius a
 /// user writes as a decimal lands here, and comes back as the `to_f64` of the rational it always
-/// was, bit for bit), and only a genuinely irrational root reaches the 128 → 256 bit ladder, under
+/// was, bit for bit), and only a genuinely irrational root reaches the ladder (`ladder_f64`), under
 /// the same correct-rounding contract. `√v` is nonzero for `v > 0`, so the interval never
-/// straddles zero and [`round_to_f64`] cannot decline forever; the documented fallback to the
-/// midpoint is kept for the same reason the inverse has it.
+/// straddles zero and [`round_to_f64`] cannot decline forever.
 pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if v.is_negative() {
         return None;
@@ -284,17 +261,8 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
     if let Some(r) = sqrt_rat_big(v) {
         return Some(r.to_f64());
     }
-    for prec in [128usize, 256] {
-        let HpBounded {
-            value: z,
-            error: rad,
-        } = sqrt_hp_big(v, prec)?;
-        if let Some(f) = round_to_f64(&z, rad, prec) {
-            return Some(f);
-        }
-    }
-    let z = sqrt_hp_big(v, 256)?.value;
-    Some(bigfloat_to_f64(&z).unwrap_or(f64::NAN))
+    let [z] = ladder_f64(|prec| sqrt_hp_big(v, prec).map(|z| [z]))?;
+    Some(z)
 }
 
 /// **The unit direction of an integer vector, each component the `f64` nearest `nₖ/|n|`**, or
@@ -303,10 +271,9 @@ pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
 /// The twin of [`sqrt_f64`], under the same correct-rounding contract, so the answer is unique and
 /// asking at more bits cannot move it. The exact branch runs first: when `n·n` is a perfect square
 /// every component is a rational, rounded once ([`nearest_f64_big`]) — an axis-aligned or
-/// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized at 128 and
-/// then 256 bits — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
-/// [`inv_sqrt_hp_big`] where it does not — and each product rounded; the midpoint stands
-/// if even 256 bits leave a component undecided, as in [`sqrt_f64`].
+/// Pythagorean normal never touches arbitrary precision. Otherwise `1/|n|` is realized on the
+/// ladder (`ladder_f64`) — through the memoized [`inv_sqrt_hp`] where `n·n` fits `Rat`, and
+/// [`inv_sqrt_hp_big`] where it does not — and each product rounded.
 ///
 /// ★ **A zero component is `+0.0`.** The sign of the vector belongs to the integers handed in, so
 /// a caller that turns the direction negates them before asking — negating the `f64` afterwards
@@ -326,22 +293,12 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
         Some(v) => inv_sqrt_hp(Rat::from_int(v), prec),
         None => inv_sqrt_hp_big(&nn, prec),
     };
-    for prec in [128usize, 256] {
+    ladder_f64(|prec| {
         let s = inv(prec)?;
-        let c = |k: usize| {
-            let v = HpBounded::of_bigint(&n[k], prec).mul(&s, prec);
-            round_to_f64(&v.value, v.error, prec)
-        };
-        if let (Some(x), Some(y), Some(z)) = (c(0), c(1), c(2)) {
-            return Some([x, y, z]);
-        }
-    }
-    let s = inv(256)?;
-    let c = |k: usize| {
-        let v = HpBounded::of_bigint(&n[k], 256).mul(&s, 256).value;
-        bigfloat_to_f64(&v).unwrap_or(f64::NAN)
-    };
-    Some([c(0), c(1), c(2)])
+        Some(core::array::from_fn(|k| {
+            HpBounded::of_bigint(&n[k], prec).mul(&s, prec)
+        }))
+    })
 }
 
 /// **How far the `1/√v` the caller was handed sits from the true one** — measured against an

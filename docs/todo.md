@@ -317,14 +317,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 `x.error` 항과 배수 2 는 군더더기다. 값은 그대로이고 반지름만 좁아지는 변경이라, 고치면 wide·판정 프레임의 tol 이 줄고
 (wide 잠금의 최악 0.319) 판정은 상승이 같거나 준다 — census `c` 행과 상승 수로 잰다.
 
-### 최근접 `f64` 사다리가 네 벌이다
-
-정확한 값을 최근접 `f64` 로 읽는 사다리 — 128비트에서 `round_to_f64`, 못 정하면 256비트, 그래도 반올림 경계를 못 가르면
-256비트 중점(충실 반올림) — 가 `nacre-exact` 에 네 벌 있다. `Angle::cos_sin_f64_uncached`·`inv_sqrt_f64_uncached` 는 함수이고
-memo 와 상승 카운터를 갖는다. `sqrt_f64`·`unit_vector_f64` 는 같은 사다리를 본문에 풀어 쓰고 memo·카운터가 없다. ops 의
-`on_rungs`(곡면 캐시)도 칸을 차례로 오르지만, 읽기가 `Realization::to_f64`(일치 정밀도 안의 0 규칙)이고 칸은 `Budget` 이 정하므로 같은
-함수가 아니다. 한 사다리로 접으면 칸·폴백·카운터가 한 곳에 산다. 접기 전에 네 자리의 폴백(중점, `NaN`)이 모두 같은지부터 본다.
-
 ### `surface_name` 곁표 접기
 
 **무엇이 문제인가.** `pub surface_name: HashMap<Handle<Surface>, PlaneName>` 은 `Model` 의 마지막 공개

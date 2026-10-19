@@ -245,7 +245,7 @@ fn the_rounding_check_refuses_an_undecidable_interval() {
 /// this at least says which corpus produced the zero.
 #[test]
 fn the_escalation_rung_is_reachable() {
-    let before = ROUND_ESCALATED.with_borrow(|c| *c);
+    let before = LADDER_CLIMBED.with_borrow(|c| *c);
     let mut asked = 0usize;
     for k in 1..400i128 {
         // Just off 90 degrees, by ever smaller amounts.
@@ -268,7 +268,7 @@ fn the_escalation_rung_is_reachable() {
             }
         }
     }
-    let after = ROUND_ESCALATED.with_borrow(|c| *c);
+    let after = LADDER_CLIMBED.with_borrow(|c| *c);
     eprintln!(
         "[round_to_f64] {} escalated to 256, {} fell back, over {asked} near-axis angles",
         after.0 - before.0,
@@ -692,7 +692,7 @@ fn an_axis_aligned_frame_needs_no_arbitrary_precision() {
 fn inv_sqrt_f64_lands_on_the_nearest_f64() {
     // Deltas, not absolute counts: the memo is a `thread_local` and the harness may have run
     // other tests on this thread first.
-    let before = INV_SQRT_ESCALATED.with_borrow(|c| *c);
+    let before = LADDER_CLIMBED.with_borrow(|c| *c);
     for (num, den) in INV_SQRT_CASES {
         let v = Rat::new(num, den).unwrap();
         let deep = inv_sqrt_hp(v, 1024).unwrap().value;
@@ -703,7 +703,7 @@ fn inv_sqrt_f64_lands_on_the_nearest_f64() {
             "1/sqrt({num}/{den}) is not the nearest f64"
         );
     }
-    let after = INV_SQRT_ESCALATED.with_borrow(|c| *c);
+    let after = LADDER_CLIMBED.with_borrow(|c| *c);
     let (deeper, undecided) = (after.0 - before.0, after.1 - before.1);
     eprintln!("[cip] inverse-sqrt escalations: {deeper} deeper, {undecided} undecided");
     // ★ 128 bits sufficed for every case here, and the second rung is a proven cap rather

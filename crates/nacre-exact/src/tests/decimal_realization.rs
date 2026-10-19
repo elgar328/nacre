@@ -346,3 +346,99 @@ fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
     assert!(!exact, "1/3 is not an f64");
     assert_eq!(third, 1.0 / 3.0);
 }
+
+/// What one climb gave, and how much it moved [`LADDER_CLIMBED`] — `(second rung, midpoint)`.
+type Climbed = (Option<Vec<f64>>, (usize, usize));
+
+/// The answer [`ladder_f64`] gives for `realize`, with the counts it moved.
+fn climb<const N: usize>(realize: impl FnMut(usize) -> Option<[HpBounded; N]>) -> Climbed {
+    let before = LADDER_CLIMBED.with_borrow(|c| *c);
+    let got = ladder_f64(realize).map(|v| v.to_vec());
+    let after = LADDER_CLIMBED.with_borrow(|c| *c);
+    (got, (after.0 - before.0, after.1 - before.1))
+}
+
+/// **The ladder's rungs and its fallback, driven directly** — the fallback runs nowhere in the
+/// corpus (no realization there leaves 256 bits undecided), so only a realization built to sit on
+/// a rounding boundary can show what it returns.
+///
+/// The boundary is `1 + 2⁻⁵³`, exactly between two `f64`s: with a radius of `2⁻⁶⁰` its ends round
+/// apart at every rung, and its midpoint rounds to the even neighbour, `1.0`. A boundary at zero
+/// would not do — its midpoint is `0.0`, which a fallback answering `0.0` would also give.
+#[test]
+fn the_ladder_climbs_two_rungs_then_stands_on_the_last_midpoint() {
+    // `x + 2^e` at `prec` bits, exactly.
+    let at = |x: f64, e: Option<i32>, prec: usize| {
+        let v = BigFloat::from_f64(x, prec);
+        match e {
+            Some(e) => v.add(&BigFloat::from_f64(2f64.powi(e), prec), prec, HP_RM),
+            None => v,
+        }
+    };
+    let hp = |v: BigFloat, radius: i64| HpBounded::new(v, Mag::pow2(radius));
+    let p2 = |e: i32| 2f64.powi(e);
+    let cases = [
+        (
+            "decided at 128",
+            climb(|p| Some([hp(at(1.5, None, p), -100)])),
+            Some(vec![1.5]),
+            (0, 0),
+        ),
+        (
+            // Just above the boundary: 128 bits' radius straddles it, 256 bits' does not.
+            "decided at 256",
+            climb(|p| {
+                let r = if p == 128 { -60 } else { -100 };
+                let v = at(1.0, Some(-53), p).add(&at(0.0, Some(-70), p), p, HP_RM);
+                Some([hp(v, r)])
+            }),
+            Some(vec![1.0 + p2(-52)]),
+            (1, 0),
+        ),
+        (
+            "on the boundary: the midpoint",
+            climb(|p| Some([hp(at(1.0, Some(-53), p), -60)])),
+            Some(vec![1.0]),
+            (0, 1),
+        ),
+        (
+            // One of three undecided: all three stand on midpoints, and the two the rung decided
+            // keep their answers.
+            "one of three undecided",
+            climb(|p| {
+                Some([
+                    hp(at(1.5, None, p), -100),
+                    hp(at(1.0, Some(-53), p), -60),
+                    hp(at(0.25, None, p), -100),
+                ])
+            }),
+            Some(vec![1.5, 1.0, 0.25]),
+            (0, 1),
+        ),
+        (
+            // The midpoint is the last rung's: 128 gives `1 + 2⁻⁵³` (→ `1.0`), 256 gives
+            // `1 + 3·2⁻⁵³`, the boundary between `1 + 2⁻⁵²` and `1 + 2⁻⁵¹`, whose even neighbour is
+            // the latter.
+            "the last rung's midpoint",
+            climb(|p| {
+                let v = if p == 128 {
+                    at(1.0, Some(-53), p)
+                } else {
+                    at(1.0, Some(-53), p).add(&at(0.0, Some(-52), p), p, HP_RM)
+                };
+                Some([hp(v, -60)])
+            }),
+            Some(vec![1.0 + p2(-51)]),
+            (0, 1),
+        ),
+        ("no realization", climb::<1>(|_| None), None, (0, 0)),
+    ];
+    let wrong: Vec<_> = cases
+        .iter()
+        .filter(|(_, got, want, counted)| got != &(want.clone(), *counted))
+        .map(|(what, got, want, counted)| {
+            format!("{what}: got {got:?}, want {:?}", (want, counted))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

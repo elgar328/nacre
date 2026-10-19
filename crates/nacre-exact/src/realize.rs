@@ -46,6 +46,62 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
     (rlo == rhi && !rlo.is_nan()).then_some(rlo)
 }
 
+/// **The `f64`s nearest the true values a realization encloses** — 128 bits, then 256 where 128
+/// does not decide every value, then the 256-bit midpoints. The one ladder this crate's
+/// nearest-`f64` realizations climb (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`,
+/// `unit_vector_f64`); each says what it realizes, and why its value needs no deeper rung.
+///
+/// `realize(prec)` gives the values at `prec` bits, and a rung answers only when
+/// [`round_to_f64`] decides **all** of them, so the values of one answer come from one rung.
+/// `None` when a realization is `None`.
+///
+/// **128 is `nacre_judge`'s trial precision**, so a memoized realization (`cos_sin_hp`,
+/// `inv_sqrt_hp`) a judgement also asks for is shared rather than paid twice — which is why the
+/// ladder does not start lower: 64 bits measured no cheaper for the trigonometric realization
+/// (31.9µs against 32.3µs — the cost is setup, not bit count) and would be a different memo key.
+/// The wide realizations (`sqrt_hp_big`, `inv_sqrt_hp_big`) keep no memo; they climb the same
+/// rungs so that all four answer under one rule.
+///
+/// ★ **If even 256 leaves a value undecided, the midpoints are returned, not a panic.** Such a
+/// value is then *faithfully* rounded (within an ulp) instead of correctly rounded — sound,
+/// because each caller's `…_error_of` measures the error actually there, and deterministic,
+/// because a 256-bit midpoint is. A value the last rung did decide keeps its answer: its midpoint
+/// lies between two ends that both rounded to it. A value outside `f64`'s normal range decides at
+/// no rung, and its midpoint reads as `NaN` ([`bigfloat_to_f64`] cannot say it). A test build
+/// counts both events (`LADDER_CLIMBED`), so "cannot happen" does not quietly become "happens".
+pub(crate) fn ladder_f64<const N: usize>(
+    mut realize: impl FnMut(usize) -> Option<[HpBounded; N]>,
+) -> Option<[f64; N]> {
+    let mut last = None;
+    for (i, prec) in [128usize, 256].into_iter().enumerate() {
+        let r = realize(prec)?;
+        let mut out = [0.0; N];
+        let decided = out.iter_mut().zip(&r).all(|(o, x)| {
+            let Some(v) = round_to_f64(&x.value, x.error, prec) else {
+                return false;
+            };
+            *o = v;
+            true
+        });
+        if decided {
+            #[cfg(test)]
+            if i > 0 {
+                LADDER_CLIMBED.with_borrow_mut(|(e, _)| *e += 1);
+            }
+            #[cfg(not(test))]
+            let _ = i;
+            return Some(out);
+        }
+        last = Some(r);
+    }
+    #[cfg(test)]
+    LADDER_CLIMBED.with_borrow_mut(|(_, f)| *f += 1);
+    let r = last?; // `Some`: the loop ran both rungs
+    Some(core::array::from_fn(|k| {
+        bigfloat_to_f64(&r[k].value).unwrap_or(f64::NAN)
+    }))
+}
+
 /// `2^exp2()` as a `BigFloat` — an **upper bound** on the radius, exactly representable.
 ///
 /// [`Mag`] is `m · 2^e` with `m ∈ [0.5, 1)`, so `2^e` is above it; the mantissa is left out
@@ -88,9 +144,9 @@ fn rad_upper_bigfloat(rad: Mag, prec: usize) -> Option<BigFloat> {
 /// is the only place a value loses bits), and the assembly below is a pure re-encoding of what
 /// that produced. Splitting them is why the caller can round two interval ends and compare.
 ///
-/// Restricted to the normal range on purpose — every caller here holds a `cos`/`sin` of a
-/// non-quadrantal rational-degree angle, whose magnitude is between `2⁻¹³³` and `1`, so a subnormal
-/// or an overflow means a premise broke rather than an input being unusual. `None` says so.
+/// Restricted to the normal range on purpose: a subnormal or an overflow is a value an `f64` cannot
+/// say to its full precision, and `None` says so rather than handing back a rounded-away answer.
+/// [`round_to_f64`] then decides at no precision, and [`ladder_f64`] writes the midpoint as `NaN`.
 pub(super) fn bigfloat_to_f64(x: &BigFloat) -> Option<f64> {
     if x.is_zero() {
         return Some(0.0);
@@ -346,7 +402,7 @@ pub fn decimals_of_ratio(
 /// decide them** — the twin of [`round_to_f64`], and `None` means the same thing there.
 ///
 /// ★ The caller's move on `None` is to realize again at higher precision, exactly as
-/// `inv_sqrt_f64_uncached` escalates. That is why this reports undecided rather than picking:
+/// `ladder_f64` climbs. That is why this reports undecided rather than picking:
 /// a digit invented here would be indistinguishable, to everything downstream, from one the
 /// definition actually determines.
 pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String> {

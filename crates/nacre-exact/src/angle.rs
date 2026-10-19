@@ -162,52 +162,25 @@ impl Angle {
         out
     }
 
-    /// [`cos_sin_f64`](Self::cos_sin_f64)'s general branch without the memo.
+    /// [`cos_sin_f64`](Self::cos_sin_f64)'s general branch without the memo — the pair on the
+    /// crate's one ladder (`ladder_f64`, which says why it starts at 128 bits and what it returns
+    /// past 256).
     ///
-    /// **The ladder is `TRIAL_PREC` then twice that, and both rungs are derived rather than tried.**
-    /// The realization's error is dominated by the degrees→radians conversion, not by the cosine:
-    /// `≈ 30 · 2⁻ᵖʳᵉᶜ`. Against a result of magnitude `2^e` that has to clear a half-ulp of `2^(e-54)`,
-    /// so `prec > 54 - e + 5`.
-    ///
-    /// - **128** covers every `|cos| > 2⁻⁶⁹`, which is every angle a model has ever held. It is also
-    ///   `nacre_judge`'s trial precision, so a model that goes on to be judged **shares this exact
-    ///   realization** rather than paying for a second one at a different depth. That sharing is
-    ///   why the ladder does not start lower: 64 bits would satisfy the inequality and measured no
-    ///   cheaper (31.9µs against 32.3µs — the cost is setup, not bit count), but it would be a
-    ///   different `TRIG` key and so pure duplication for anything judged.
-    /// - **256** is the proven cap. An `Angle` holds `Ratio<i128>`, so a normalized angle cannot
-    ///   come closer to 90° than `1/denominator ≥ 5.9e-39` degrees; `|cos|` is therefore never
-    ///   below `~2⁻¹³³`, which needs `prec > 192`.
-    ///
-    /// ★ **If even 256 leaves it undecided the answer is still returned, not a panic.** The value is
-    /// then *faithfully* rounded (within an ulp) instead of correctly rounded, which stays sound
-    /// because [`cos_sin_error_of`](Self::cos_sin_error_of) measures the error that is
-    /// actually there and the tolerance grows to match — and it stays deterministic, because a
-    /// 256-bit midpoint is. A test build counts it, so that "can't happen" does not quietly become
-    /// "happens".
+    /// **Why 256 bits is enough here.** The realization's error is dominated by the
+    /// degrees→radians conversion, not by the cosine: `≈ 30 · 2⁻ᵖʳᵉᶜ`. Against a result of
+    /// magnitude `2^e` that has to clear a half-ulp of `2^(e-54)`, so `prec > 54 - e + 5`. 128 bits
+    /// covers every `|cos| > 2⁻⁶⁹`, which is every angle a model has ever held; 256 is the proven
+    /// cap — an `Angle` holds `Ratio<i128>`, so a normalized angle cannot come closer to 90° than
+    /// `1/denominator ≥ 5.9e-39` degrees, `|cos|` is never below `~2⁻¹³³`, and that needs
+    /// `prec > 192`. A value the ladder still leaves to its midpoint is measured, not assumed:
+    /// [`cos_sin_error_of`](Self::cos_sin_error_of) reads the error actually there.
     fn cos_sin_f64_uncached(self) -> (f64, f64) {
-        for (i, prec) in [128usize, 256].into_iter().enumerate() {
+        let [c, s] = ladder_f64(|prec| {
             let (c, s) = self.cos_sin_hp(prec);
-            if let (Some(cf), Some(sf)) = (
-                round_to_f64(&c.value, c.error, prec),
-                round_to_f64(&s.value, s.error, prec),
-            ) {
-                #[cfg(test)]
-                if i > 0 {
-                    ROUND_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
-                }
-                #[cfg(not(test))]
-                let _ = i;
-                return (cf, sf);
-            }
-        }
-        #[cfg(test)]
-        ROUND_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-        let (c, s) = self.cos_sin_hp(256);
-        (
-            bigfloat_to_f64(&c.value).unwrap_or(f64::NAN),
-            bigfloat_to_f64(&s.value).unwrap_or(f64::NAN),
-        )
+            Some([c, s])
+        })
+        .expect("cos_sin_hp always realizes");
+        (c, s)
     }
 
     /// **How far the `(cos, sin)` the caller was handed sits from the true ones** — measured

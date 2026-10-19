@@ -138,13 +138,6 @@ thread_local! {
     /// libm's 22ns, and `Isometry::point_approx` runs per vertex.
     static F64_TRIG: RefCell<HashMap<Angle, (f64, f64)>> = RefCell::new(HashMap::new());
 
-    /// How often the f64 realization needed a second, deeper pass, and how often even that left
-    /// the rounding undecided — see [`Angle::cos_sin_f64`]. **Read by tests**: a checker that
-    /// never fires is indistinguishable from one that is not running. Its only readers are this
-    /// crate's unit tests, so a product build carries none of it.
-    #[cfg(test)]
-    static ROUND_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
-
     /// **Realized `1/√v` per `(rational, precision)`** — see [`inv_sqrt_hp`].
     ///
     /// The same argument that makes [`TRIG`] sound applies unchanged: the key is a *value*, not a
@@ -161,11 +154,12 @@ thread_local! {
     /// is a cost question only.
     static F64_INV_SQRT: RefCell<HashMap<Rat, f64>> = RefCell::new(HashMap::new());
 
-    /// How often `1/√v`'s f64 realization needed the deeper rung, and how often even that left the
-    /// rounding undecided — the counterpart of [`ROUND_ESCALATED`], read by tests for the same
-    /// reason.
+    /// How often [`ladder_f64`] needed its second rung, and how often even that left the rounding
+    /// undecided so the midpoint stood. **Read by tests**: a checker that never fires is
+    /// indistinguishable from one that is not running. Its only readers are this crate's unit
+    /// tests, so a product build carries none of it.
     #[cfg(test)]
-    static INV_SQRT_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
+    static LADDER_CLIMBED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
