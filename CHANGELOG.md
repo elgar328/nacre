@@ -49,6 +49,7 @@ While the version is `0.0.z`, every release may break anything.
 - **Breaking:** `topo` says the same things one way: `PointCache::Bounded` → `PointCache::Realized`, the tier `CacheStanding` already called `Realized`; `Model::motion_deeper_than` → `chain_deeper_than` and `Model::motion_depth_up_to` → `chain_depth_up_to`, beside the other questions about a chain; `Model::line_direction_from_names` → `world_line_direction_f64`; `Model::world_plane` → `seeded_plane`, the three planes a new model seeds; and `Model::plane_motion` → `surface_motion`, which answers for a cylinder too.
 - **Breaking:** `ops::Realized` → `ops::Realization`, so «Realized» names only a cache's tier; and `ops::realize_cache` — the cheap road every push takes, which only the kernel's own instruments asked — is no longer published.
 - **Breaking:** `exact::round_to_f64` takes no precision: it forms the interval's ends at the value's own precision, as `exact::round_to_digits` does.
+- `judge::WitnessPoint`'s wide and judged frame steps charge a narrowed axis or origin component half an ulp — floored at the smallest normal `f64`, and nothing for an exact component — where they charged the realization's radius plus a whole ulp.
 
 ### Removed
 
@@ -89,6 +90,7 @@ While the version is `0.0.z`, every release may break anything.
 - `exact::round_to_f64` decides a value just below `2⁻¹⁰²²` whose nearest `f64` is `f64::MIN_POSITIVE` — from `2⁻¹⁰²² − 2⁻¹⁰⁷⁵` up — where it answered `None`.
 - `exact::nearest_f64_big` rounds a subnormal once, on the subnormal grid; it rounded to 53 bits first and then again, which could land a step off the nearest (`(5/2 + 2⁻⁶⁰)·2⁻¹⁰⁷⁴` gave `2·2⁻¹⁰⁷⁴`, not `3·2⁻¹⁰⁷⁴`) and marked some rounded subnormals exact.
 - `exact::round_to_f64` rounds a value once, at its own width; given a precision below the value's, it first rounded a value with a zero radius to that precision — `1 + 2⁻⁵³ + 2⁻²⁵⁰` at 128 bits gave `1.0`, where the nearest is `1 + 2⁻⁵²`.
+- `judge::WitnessPoint`'s wide and judged frame steps round up the bound of a component their realization leaves undecided; the `f64` sum of its radius and magnitude could fall below the value's reach — `1 − 2⁻⁶⁰ ± 2⁻⁵⁵` was bounded by `1.0`.
 
 ## [0.0.1] - 2026-10-02
 

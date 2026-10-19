@@ -1760,3 +1760,55 @@ fn bundling_is_tighter_than_incremental() {
         incr.tol()
     );
 }
+
+/// **A narrowing charges what its proof leaves open, and no more.** A decided interval proves its
+/// `f64` is the nearest, so the error is the rounding's: at most half an ulp (`Bounded::round_off`),
+/// floored at the smallest normal. An exact input that is its own `f64` — `0`, or `½`, which no
+/// frame produces but the rule covers — keeps a zero radius, so `in_frame`'s exact shortcuts see
+/// it. An undecided interval flushes to zero with a bound at least its whole reach, `|value| +
+/// radius` — here `1 − 2⁻⁶⁰ ± 2⁻⁵⁵`, whose reach `1 + 2⁻⁵⁵ − 2⁻⁶⁰` an unrounded-up `f64` sum of the
+/// two bounds (`1.0`) misses. Every containment is read exactly, at 2048 bits.
+#[test]
+fn a_narrowing_charges_half_an_ulp_and_an_exact_value_nothing() {
+    const P: usize = 128;
+    const GT: usize = 2048;
+    let big = |x: f64| BigFloat::from_f64(x, GT);
+    // `|a − b| ≤ c`, all read exactly.
+    let within = |a: &BigFloat, b: &BigFloat, c: f64| {
+        let gap = a.sub(b, GT, HP_RM).abs();
+        gap.cmp(&big(c)).is_some_and(|o| o <= 0)
+    };
+    let mut wrong = Vec::new();
+
+    for x in [0.0, 0.5] {
+        let n = narrow_hp(&HpBounded::exact(BigFloat::from_f64(x, P)));
+        if n.value != x || n.error != 0.0 {
+            wrong.push(format!("exact {x}: {n:?}, want a zero radius"));
+        }
+    }
+
+    // `1/3` decided at 128 bits: `|1 − 3v| ≤ 3e`, and `e` no more than half an ulp.
+    let n = narrow_hp(&HpBounded::of_rat(Rat::new(1, 3).expect("1/3"), P));
+    let three_v = big(n.value).mul(&big(3.0), GT, HP_RM);
+    if !within(&big(1.0), &three_v, 3.0 * n.error) || n.error > Bounded::round_off(n.value) {
+        wrong.push(format!("1/3: {n:?}"));
+    }
+
+    // Just under the normal range: `2⁻¹⁰²² − 2⁻¹⁰⁸⁰` rounds up to `MIN_POSITIVE`.
+    let tiny = big(2f64.powi(-540)).mul(&big(2f64.powi(-540)), GT, HP_RM);
+    let below = big(f64::MIN_POSITIVE).sub(&tiny, GT, HP_RM);
+    let n = narrow_hp(&HpBounded::exact(below.clone()));
+    if n.value != f64::MIN_POSITIVE || !within(&below, &big(n.value), n.error) {
+        wrong.push(format!("2⁻¹⁰²² − 2⁻¹⁰⁸⁰: {n:?}"));
+    }
+
+    // Undecided: the bound must reach `|value| + radius`.
+    let value = big(1.0).sub(&big(2f64.powi(-60)), GT, HP_RM);
+    let n = narrow_hp(&HpBounded::new(value.clone(), Mag::pow2(-55)));
+    let reach = value.add(&big(2f64.powi(-55)), GT, HP_RM);
+    if n.value != 0.0 || big(n.error).cmp(&reach).is_none_or(|o| o < 0) {
+        wrong.push(format!("1 − 2⁻⁶⁰ ± 2⁻⁵⁵: {n:?}, short of its reach"));
+    }
+
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

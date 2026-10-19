@@ -341,11 +341,13 @@ impl WitnessPoint {
     /// instead of `inv_sqrt_f64` over a rational. Every rounding on the way to them is inside an
     /// `HpBounded`, and the narrowing to `f64` charges itself.
     ///
-    /// ★ The axes are realized per applied point. The wide population is a fraction of a percent
+    /// The axes are realized per applied point. The wide population is a fraction of a percent
     /// of pushes, so that cost is accepted rather than memoized — a measure-later item.
     ///
-    /// ★ A wide frame is never an axis permutation (its squared lengths exceed `i128`), so its
-    /// components are never the exact `0`/`±1` that keep an axis-aligned `frame` at tol 0.
+    /// An exact zero component (`ẑ × n`'s third) narrows to an exact zero and keeps tol 0 through
+    /// `in_frame`. Every other component carries the rounding of `inv_sqrt` and `mul`, even where
+    /// the frame is a signed permutation (a name wide only in its offset, normal `(0, 0, 1)`), so a
+    /// wide frame never keeps a nonzero coordinate at tol 0 the way an axis-aligned `frame` does.
     pub fn frame_wide(self, f: &WideFrame) -> Option<Self> {
         let mut p = self.framed_wide(f)?;
         p.remember(MoveNode::FrameWide(f.clone()));

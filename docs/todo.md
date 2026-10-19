@@ -316,13 +316,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### `narrow_hp` 는 증명된 반올림에 반지름을 한 번 더 청구한다
-
-고정밀 구간을 `f64` 구간으로 좁히는 `narrow_hp`(wide·판정 프레임의 기저와 원점)는 `round_to_f64` 가 `Some(v)` 를 내면
-`x.error + |v|·ε` 를 반지름으로 둔다. 그런데 `Some` 은 구간 전체가 `v` 로 반올림된다는 증명이라 참값까지는 `|v|·ε/2` 면 족하다 —
-`x.error` 항과 배수 2 는 군더더기다. 값은 그대로이고 반지름만 좁아지는 변경이라, 고치면 wide·판정 프레임의 tol 이 줄고
-(wide 잠금의 최악 0.319) 판정은 상승이 같거나 준다 — census `c` 행과 상승 수로 잰다.
-
 ### `surface_name` 곁표 접기
 
 **무엇이 문제인가.** `pub surface_name: HashMap<Handle<Surface>, PlaneName>` 은 `Model` 의 마지막 공개

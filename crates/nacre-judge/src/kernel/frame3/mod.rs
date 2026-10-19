@@ -132,15 +132,28 @@ pub enum MoveNode {
 }
 
 /// A high-precision interval narrowed to an `f64` interval — how a wide or judged frame's
-/// realization reaches the f64 cache. Correctly rounded when the interval decides it (then the
-/// error is the radius plus the value's own half-ulp, which covers the `MIN_POSITIVE` a value just
-/// under the range rounds up to); an undecided value, or one whose nearest `f64` is not normal,
-/// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
-/// components below f64's normal floor.
+/// realization reaches the f64 cache.
+///
+/// When the interval decides its `f64`, every value in it rounds to `v`, the truth among them, so
+/// the error is the rounding's alone: [`Bounded::round_off`], half an ulp floored at the smallest
+/// normal — the floor also covers a value just under the range that rounds up to `MIN_POSITIVE`.
+/// The interval's own radius is not charged on top; it is inside that proof. An exact input that is
+/// its own `f64` keeps a zero radius, as [`Bounded::of_rat`] gives one: a frame's exact zero
+/// component (`ẑ × n` has one) then stays exact through `in_frame`'s shortcuts.
+///
+/// An undecided interval flushes to zero with its whole reach charged, `radius + |value|`, the
+/// `f64` sum rounded up as the other bounds read off an exponent are. The road reaches it with
+/// components whose interval holds zero — a true zero carried with a radius.
 fn narrow_hp(x: &HpBounded) -> Bounded {
     match nacre_exact::round_to_f64(&x.value, x.error) {
-        Some(v) => Bounded::new(v, x.error.upper_f64() + v.abs() * f64::EPSILON),
-        None => Bounded::new(0.0, x.error.upper_f64() + bigfloat_upper_f64(&x.value)),
+        Some(v) => {
+            let exact = x.error.is_zero() && x.value == BigFloat::from_f64(v, 64);
+            Bounded::new(v, if exact { 0.0 } else { Bounded::round_off(v) })
+        }
+        None => Bounded::new(
+            0.0,
+            (x.error.upper_f64() + bigfloat_upper_f64(&x.value)) * (1.0 + 2.0 * f64::EPSILON),
+        ),
     }
 }
 
