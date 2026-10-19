@@ -78,8 +78,8 @@ fn one_pass_equals_node_by_node() {
         {
             assert_eq!(a.error, b.error, "chain {i}: realization radius");
             assert_eq!(
-                nacre_exact::round_to_f64(&a.value, a.error, 256),
-                nacre_exact::round_to_f64(&b.value, b.error, 256),
+                nacre_exact::round_to_f64(&a.value, a.error),
+                nacre_exact::round_to_f64(&b.value, b.error),
                 "chain {i}: realized coordinate"
             );
         }

@@ -1672,7 +1672,7 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
         let inv = nacre_exact::inv_sqrt_hp_big(&nn, P).expect("a nonzero normal");
         let want = n.each_ref().map(|k| {
             let v = nacre_exact::bounded::HpBounded::of_bigint(k, P).mul(&inv, P);
-            nacre_exact::round_to_f64(&v.value, v.error, P).expect("decided at 512 bits")
+            nacre_exact::round_to_f64(&v.value, v.error).expect("decided at 512 bits")
         });
         let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             unreachable!()

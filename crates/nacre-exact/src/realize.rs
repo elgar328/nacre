@@ -9,10 +9,17 @@ use super::*;
 /// them cannot round anywhere else, whatever it is. `None` says "realize deeper and ask again",
 /// which is the same shape as `precision_for` escalating a judgement.
 ///
-/// **The ends are formed at `prec + 64`, and that line is load-bearing.** `rad` is about
-/// `2⁻ᵖʳᵉᶜ` of `mid`, so forming `mid ± rad` *at* `prec` rounds the radius away, both ends collapse
-/// onto `mid`, and the comparison then passes for every input — a check that runs, reports success,
-/// and verifies nothing. The guard digits keep the perturbation alive.
+/// **The ends are formed at `mid`'s own precision plus 64 bits, and that line is load-bearing** —
+/// the working precision is read off the value, never taken from the caller, and
+/// [`round_to_digits`] forms its ends here too. Fewer bits than `mid` has round `mid` itself first:
+/// with a zero radius both ends are then that rounding, and a value just past a rounding boundary
+/// reads as the boundary and ties the other way (at 192 bits `1 + 2⁻⁵³ + 2⁻²⁵⁰` reads as `1.0`,
+/// where the nearest is `1 + 2⁻⁵²`). No guard bits at all round the radius away instead — `rad` is
+/// about `2⁻ᵖ` of a `p`-bit `mid` — so both ends collapse onto `mid` and the comparison passes for
+/// every input, a check that verifies nothing. With the guard bits the sums are exact whenever `rad`
+/// is zero, or no finer than `2⁻⁶⁴` of `mid`'s last bit (the rounding every `HpBounded` operation
+/// charges its own result keeps it above that) and no wider than `mid` (a wider one reaches across
+/// zero, where the ends never agree) — and then `Some` is a proof.
 ///
 /// **Not for a value whose true magnitude may be zero.** `cos 90°` is exactly `0`, so its interval
 /// straddles zero, the two ends have opposite signs, and no precision ever makes them agree — this
@@ -35,18 +42,18 @@ use super::*;
 /// a link.) Cheaper ways to shrink that arithmetic (an FMA, a compensated
 /// evaluation) stay in `f64` and keep the laziness, so they are the candidates if the term ever
 /// needs to move.
-pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
+pub fn round_to_f64(mid: &BigFloat, rad: Mag) -> Option<f64> {
     if mid.is_nan() || mid.is_inf() {
         return None;
     }
-    let (lo, hi) = interval_ends(mid, rad, prec)?;
+    let (lo, hi) = interval_ends(mid, rad)?;
     let (rlo, rhi) = (bigfloat_to_f64(&lo)?, bigfloat_to_f64(&hi)?);
     (rlo == rhi && !rlo.is_nan()).then_some(rlo)
 }
 
-/// `mid ± rad`, formed at `prec + 64` bits — see [`round_to_f64`] for why the guard digits.
-fn interval_ends(mid: &BigFloat, rad: Mag, prec: usize) -> Option<(BigFloat, BigFloat)> {
-    let p = prec + 64;
+/// `mid ± rad`, formed at `mid`'s own precision plus 64 bits — see [`round_to_f64`] for why.
+fn interval_ends(mid: &BigFloat, rad: Mag) -> Option<(BigFloat, BigFloat)> {
+    let p = bits_of(mid) + 64;
     let r = rad_upper_bigfloat(rad, p)?;
     Some((mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM)))
 }
@@ -59,7 +66,7 @@ fn interval_ends(mid: &BigFloat, rad: Mag, prec: usize) -> Option<(BigFloat, Big
 /// [`bigfloat_to_f64`] reads them: both refused, both on the same side. Far from it (`|exponent| >
 /// 2048`) they are not formed — the radius there can sit past [`rad_upper_bigfloat`]'s exponent
 /// guard — and a radius below a quarter of `|mid|` keeps the whole interval on `mid`'s side.
-fn outside_normal_range(mid: &BigFloat, rad: Mag, prec: usize) -> bool {
+fn outside_normal_range(mid: &BigFloat, rad: Mag) -> bool {
     let Some(e) = mid.exponent().filter(|_| !mid.is_zero()) else {
         return false;
     };
@@ -67,7 +74,7 @@ fn outside_normal_range(mid: &BigFloat, rad: Mag, prec: usize) -> bool {
     if e.abs() > 2048 {
         return rad.exp2().is_none_or(|r| r < e - 2);
     }
-    let Some((lo, hi)) = interval_ends(mid, rad, prec) else {
+    let Some((lo, hi)) = interval_ends(mid, rad) else {
         return false;
     };
     let side = |x: &BigFloat| match (bigfloat_to_f64(x), x.exponent()) {
@@ -162,9 +169,9 @@ pub(crate) fn ladder_f64<const N: usize>(
         let decided = out.iter_mut().zip(&r).all(|(o, x)| {
             // Rounding first: a decided value has both ends normal (or zero), so it is never also
             // wholly outside the range, and the common case forms its ends once.
-            let v = match round_to_f64(&x.value, x.error, prec) {
+            let v = match round_to_f64(&x.value, x.error) {
                 Some(v) => v,
-                None if outside_normal_range(&x.value, x.error, prec) => f64::NAN,
+                None if outside_normal_range(&x.value, x.error) => f64::NAN,
                 None => return false,
             };
             *o = v;
@@ -537,15 +544,9 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
     if mid.is_nan() || mid.is_inf() {
         return None;
     }
-    // ★★★ **The working precision is `mid`'s own, not a parameter.** An earlier spelling took one,
-    // and a caller that climbed a ladder and then passed the bottom rung would widen `mid` back
-    // down to it — printing digits of a 192-bit rounding as if they were the value's. With a zero
-    // radius that is silent (the interval ends agree, because they are the same rounded number),
-    // which makes it worse than a refusal. Reading the precision off the value it is about is the
-    // one spelling that cannot disagree with itself.
-    let p = bits_of(mid) + 64;
-    let r = rad_upper_bigfloat(rad, p)?;
-    let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
+    // The ends `round_to_f64` forms, at `mid`'s own precision: one taken from the caller would round
+    // `mid` first and, with a zero radius, print that rounding's digits as the value's.
+    let (lo, hi) = interval_ends(mid, rad)?;
     let (nlo, dlo) = big_to_ratio(&lo)?;
     let (nhi, dhi) = big_to_ratio(&hi)?;
     let (slo, shi) = (

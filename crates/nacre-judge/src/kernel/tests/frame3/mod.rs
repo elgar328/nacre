@@ -78,7 +78,7 @@ fn abs_err(f: f64, truth: &HpBounded, gt: usize) -> f64 {
     if d.is_zero() {
         return radius;
     }
-    let near = nacre_exact::round_to_f64(&d, Mag::ZERO, gt).expect("an exact value rounds");
+    let near = nacre_exact::round_to_f64(&d, Mag::ZERO).expect("an exact value rounds");
     f64::from_bits(near.to_bits() + 1) + radius
 }
 

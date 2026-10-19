@@ -211,13 +211,35 @@ fn the_bottom_edge_is_where_the_nearest_f64_stops_being_normal() {
                 wrong.push(format!("sqrt_f64 {what}: got {got:?}, want {read}"));
             }
         }
-        let got = round_to_f64(&at(n, 256), *rad, 128);
+        let got = round_to_f64(&at(n, 256), *rad);
         if got.map(f64::to_bits) != want.map(f64::to_bits) {
             wrong.push(format!("round_to_f64 {what}: got {got:?}, want {want:?}"));
         }
         let got = climb(|p| Some([HpBounded::new(at(n, p), *rad)]));
         if got != (Some(vec![read]), (0, 0)) {
             wrong.push(format!("ladder {what}: got {got:?}, want {read}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// **A value is rounded once, at its own width.** `1 + 2⁻⁵³ + 2⁻²⁵⁰` with a zero radius lies just
+/// above the midpoint between `1` and `1 + 2⁻⁵²`, so its nearest `f64` is `1 + 2⁻⁵²`. Its ends formed
+/// at fewer bits than it has (192, a 128-bit caller's guard) are the midpoint itself, which ties to
+/// the even side, `1.0`. The value is built at 320 bits; both signs.
+#[test]
+fn a_value_wider_than_any_caller_is_rounded_at_its_own_width() {
+    let p = 320;
+    let up = 1.0 + f64::EPSILON;
+    let mut wrong = Vec::new();
+    for sign in [1.0, -1.0] {
+        let signed = |e: i64| pow2(e, p).mul(&BigFloat::from_f64(sign, p), p, HP_RM);
+        let x = signed(0)
+            .add(&signed(-53), p, HP_RM)
+            .add(&signed(-250), p, HP_RM);
+        let got = round_to_f64(&x, Mag::ZERO);
+        if got != Some(sign * up) {
+            wrong.push(format!("sign {sign}: got {got:?}, want {}", sign * up));
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");

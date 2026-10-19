@@ -138,7 +138,7 @@ pub enum MoveNode {
 /// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
 /// components below f64's normal floor.
 fn narrow_hp(x: &HpBounded) -> Bounded {
-    match nacre_exact::round_to_f64(&x.value, x.error, 128) {
+    match nacre_exact::round_to_f64(&x.value, x.error) {
         Some(v) => Bounded::new(v, x.error.upper_f64() + v.abs() * f64::EPSILON),
         None => Bounded::new(0.0, x.error.upper_f64() + bigfloat_upper_f64(&x.value)),
     }

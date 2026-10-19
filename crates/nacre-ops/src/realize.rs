@@ -69,10 +69,9 @@ enum Arm {
     /// Exact: three numerators over one positive denominator ([`MeetPoint::lift`]'s shape, which
     /// is why a coordinate too wide for `Rat` is not a refusal here).
     Exact([BigInt; 3], BigInt),
-    /// Approached: value and error radius per coordinate, **with the precision that produced
-    /// them** — the rounding predicates need it, and re-deriving it at the rounding site is how a
-    /// climbed ladder silently rounds at the bottom rung.
-    Approached([HpBounded; 3], usize),
+    /// Approached: value and error radius per coordinate. The rounding predicates read the
+    /// precision off the values themselves, so a climbed ladder cannot be rounded at a lower rung.
+    Approached([HpBounded; 3]),
 }
 
 /// Why a vertex could not be realized. **Never falls back to the cache** — a measurement that
@@ -196,7 +195,7 @@ impl Realization {
                 }
                 Some((v, e))
             }
-            Arm::Approached(p, prec) => {
+            Arm::Approached(p) => {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
                 let scale = p.iter().fold(Mag::of(1.0), |s, c| {
@@ -210,7 +209,7 @@ impl Realization {
                         e[k] = reach;
                         continue;
                     }
-                    v[k] = nacre_exact::round_to_f64(&p[k].value, p[k].error, *prec)?;
+                    v[k] = nacre_exact::round_to_f64(&p[k].value, p[k].error)?;
                     e[k] = half_ulp(v[k]);
                 }
                 Some((v, e))
@@ -225,7 +224,7 @@ impl Realization {
             Arm::Exact(n, d) => Some(core::array::from_fn(|k| {
                 nacre_exact::decimals_of_ratio(&n[k], d, places)
             })),
-            Arm::Approached(p, _) => {
+            Arm::Approached(p) => {
                 let mut out = [const { String::new() }; 3];
                 for k in 0..3 {
                     out[k] = nacre_exact::round_to_digits(&p[k].value, p[k].error, places)?;
@@ -240,7 +239,7 @@ impl Realization {
     /// once. `None` where a division leaves no bounded value.
     pub(crate) fn hp(&self, bits: usize) -> Option<[HpBounded; 3]> {
         match &self.0 {
-            Arm::Approached(p, _) => Some(p.clone()),
+            Arm::Approached(p) => Some(p.clone()),
             Arm::Exact(n, d) => {
                 let d = HpBounded::of_bigint(d, bits);
                 let mut out = Vec::with_capacity(3);
@@ -813,19 +812,15 @@ fn cylinder_realization(
     {
         return Half::Stopped;
     }
-    let read = |v: [HpBounded; 3], bits: usize| {
-        Realization(Arm::Approached(v, bits))
-            .to_f64()
-            .map(|(v, _)| v)
-    };
+    let read = |v: [HpBounded; 3]| Realization(Arm::Approached(v)).to_f64().map(|(v, _)| v);
     for &bits in budget.rungs() {
         let Some(hp) = world_cylinder_hp(model, def, motion, bits) else {
             return Half::NoRoad;
         };
         let frame = (|| {
-            let origin = read(hp.origin, bits)?;
-            let axis = read(unit(hp.axis, bits)?, bits)?;
-            let ref_dir = read(unit(hp.seam, bits)?, bits)?;
+            let origin = read(hp.origin)?;
+            let axis = read(unit(hp.axis, bits)?)?;
+            let ref_dir = read(unit(hp.seam, bits)?)?;
             nacre_geom::Cylinder::from_unit_frame(
                 Point3::from_array(origin),
                 nacre_math::Vector3::from_array(axis),
@@ -1160,7 +1155,7 @@ fn on_rungs(
     realize: impl Fn(usize) -> Option<[HpBounded; 3]>,
 ) -> Option<[f64; 3]> {
     rungs.iter().find_map(|&bits| {
-        Realization(Arm::Approached(realize(bits)?, bits))
+        Realization(Arm::Approached(realize(bits)?))
             .to_f64()
             .map(|(v, _)| v)
     })
@@ -1381,7 +1376,7 @@ fn rim_centre(
         let Some(c) = line_meets_plane_hp(&origin, &axis, &plane, bits) else {
             continue;
         };
-        if let Some((v, _)) = Realization(Arm::Approached(c, bits)).to_f64() {
+        if let Some((v, _)) = Realization(Arm::Approached(c)).to_f64() {
             return Some(v);
         }
     }
@@ -1420,7 +1415,7 @@ fn line_direction(
         let Some(u) = unit([x(1, 2), x(2, 0), x(0, 1)], bits) else {
             continue;
         };
-        if let Some((v, _)) = Realization(Arm::Approached(u, bits)).to_f64() {
+        if let Some((v, _)) = Realization(Arm::Approached(u)).to_f64() {
             return Some(v);
         }
     }
@@ -1633,7 +1628,7 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let (o, a) = axis_hp(def, &chain, bits)?;
     let n = plane_coeffs_hp(model, cap, bits, &mut PlaneMemo::default()).ok()?;
     let centre = line_meets_plane_hp(&o, &a, &n, bits)
-        .and_then(|c| Realization(Arm::Approached(c, bits)).to_f64())
+        .and_then(|c| Realization(Arm::Approached(c)).to_f64())
         .map(|(v, _)| v);
     // The cached `f64`s, exactly, read off their bits: `±mantissa · 2^exponent`.
     let exact = |v: f64| -> Option<HpBounded> {
@@ -1723,7 +1718,7 @@ pub fn line_direction_from_endpoints(
             .vertex_meet_of(model.vertex(v))
             .is_some_and(|(meet, _)| meet.narrow().is_some())
     });
-    Some((Realization(Arm::Approached(u, bits)).to_f64()?.0, shared))
+    Some((Realization(Arm::Approached(u)).to_f64()?.0, shared))
 }
 
 /// `places` decimal places, escalating until the realization determines them.
@@ -1783,20 +1778,19 @@ fn build(
     match *def {
         nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, acc),
         nacre_topo::Vertex::OnSeam([cyl, cap]) => {
-            seam_point(model, cyl, cap, bits).map(|p| Realization(Arm::Approached(p, bits)))
+            seam_point(model, cyl, cap, bits).map(|p| Realization(Arm::Approached(p)))
         }
         nacre_topo::Vertex::Pierce {
             planes,
             cylinder,
             root,
-        } => curved(pierce_point(model, planes, cylinder, root, bits), bits),
+        } => curved(pierce_point(model, planes, cylinder, root, bits)),
     }
 }
 
-fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realization, RealizeError> {
+fn curved(p: Option<[HpBounded; 3]>) -> Result<Realization, RealizeError> {
     Ok(Realization(Arm::Approached(
         p.ok_or(RealizeError::NoCurvedPoint)?,
-        bits,
     )))
 }
 
@@ -1940,7 +1934,7 @@ fn build_three_plane(
         key: (base, node, bits),
         value: (chain.len(), point.clone()),
     });
-    Ok(Realization(Arm::Approached(point, bits)))
+    Ok(Realization(Arm::Approached(point)))
 }
 
 /// **A meet no shared frame states** — carriers whose motion histories differ (a turned block's
@@ -1973,7 +1967,7 @@ fn build_meet(
     };
     let planes = [plane(tri[0])?, plane(tri[1])?, plane(tri[2])?];
     let p = nacre_judge::meet_hp(&planes, bits).ok_or(RealizeError::Undecided)?;
-    Ok(Realization(Arm::Approached(p, bits)))
+    Ok(Realization(Arm::Approached(p)))
 }
 
 /// One carrier plane's coefficients at `bits`, from its witness triangle. `NoMeet` for a carrier
@@ -2274,7 +2268,7 @@ mod tests {
                 "{axis:?}"
             );
             let hp = world_cylinder_hp(&m, &def, motion, 512).expect("the chain");
-            let read = |v: [HpBounded; 3]| Realization(Arm::Approached(v, 512)).to_f64().unwrap().0;
+            let read = |v: [HpBounded; 3]| Realization(Arm::Approached(v)).to_f64().unwrap().0;
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(lateral) else {
                 unreachable!()
             };
@@ -2346,7 +2340,7 @@ mod tests {
                         && !out.iter().any(|&(v, _)| v == vh)
                     {
                         let p = seam_point_met(m, cyl, cap, 512).expect("the seam meets its cap");
-                        out.push((vh, Realization(Arm::Approached(p, 512)).to_f64().unwrap().0));
+                        out.push((vh, Realization(Arm::Approached(p)).to_f64().unwrap().0));
                     }
                 }
             }
@@ -2380,10 +2374,7 @@ mod tests {
                 );
                 let stated = seam_point_stated(&m, cyl, cap, 512).expect("the stated road");
                 assert_eq!(
-                    Realization(Arm::Approached(stated, 512))
-                        .to_f64()
-                        .unwrap()
-                        .0,
+                    Realization(Arm::Approached(stated)).to_f64().unwrap().0,
                     met,
                     "{axis:?}"
                 );

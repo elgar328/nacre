@@ -217,11 +217,11 @@ fn the_rounding_check_refuses_an_undecidable_interval() {
     let (c, _) = a.cos_sin_hp(128);
     let (c, rc) = (c.value, c.error);
     assert!(
-        round_to_f64(&c, rc, 128).is_some(),
+        round_to_f64(&c, rc).is_some(),
         "a 2^-128 radius is decidable"
     );
     // An ulp-wide radius cannot be: it reaches both neighbours.
-    assert!(round_to_f64(&c, Mag::pow2(-52), 128).is_none());
+    assert!(round_to_f64(&c, Mag::pow2(-52)).is_none());
     // And zero is the case no precision resolves — cos 90 is exactly 0, so its interval
     // straddles zero forever. This is why `cos_sin_f64` resolves the family first.
     let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
@@ -229,7 +229,7 @@ fn the_rounding_check_refuses_an_undecidable_interval() {
         let (c90, _) = a90.cos_sin_hp(prec);
         let (c90, r90) = (c90.value, c90.error);
         assert!(
-            round_to_f64(&c90, r90, prec).is_none(),
+            round_to_f64(&c90, r90).is_none(),
             "cos 90 became decidable at {prec}, which would make the quadrantal branch optional"
         );
     }
