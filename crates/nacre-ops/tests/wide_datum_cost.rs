@@ -1,27 +1,14 @@
 //! **What a wide-named datum costs the judge.**
 //!
-//! A rational-closure datum is meant to judge exactly and for free: a `Wide` name *is* the exact
-//! coefficients, so clearing denominators gives an exact `Expansion` judgement.
-//!
-//! ★★★ **When this file was written that route did not exist** — the predicates asked for
-//! coefficients through `exact_coeffs()`/`base_coeffs()`, both of which read
-//! `PlaneName::narrow()`, so a `Wide` name answered `None` to every one and the judgement took
-//! the toleranced route that climbs.
-//!
-//! ☑ **It exists now**: `nacre_judge::predicate::NameInts { ints, wide }` and
-//! `Judge::name_rescue` carry a wide name's integer coefficients into the three sign predicates
-//! that read coefficients at all — `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — and the
-//! gate is written so that an all-narrow question keeps its existing route to the bit.
-//! `planes_coplanar` is **not** a gap in that rescue: it runs *before* a plane table exists,
-//! asks only for a [`Witness`], and compares two world names whole — a wide one included — before
-//! it reads any definition. ⇒ **the decision this file's header asks for has been made and shipped**,
-//! and what the numbers below measure is not "the missing exact route" but the cost of the
-//! toleranced route an **irrational motion** still takes. Re-measured: `narrow_name` 240
-//! climbs against `wide_name` 475 — **2.0×**, not the 3.2× recorded below.
-//!
-//! So the number below is not "how many `Expansion` pieces": it is **what the missing exact route
-//! costs**, and it is the input to a decision the doc does not currently list — whether the
-//! predicates should learn to read `Wide` coefficients at all.
+//! A rational-closure datum can judge exactly: a `Wide` name *is* the exact coefficients, and
+//! `nacre_judge::predicate::NameInts { ints, wide }` with `Judge::name_rescue` carry a wide name's
+//! integer coefficients into the three sign predicates that read coefficients at all —
+//! `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — while an all-narrow question keeps its
+//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it runs before a plane table
+//! exists, asks only for a [`Witness`], and compares two world names whole, a wide one included.
+//! What the numbers below measure is the cost of the toleranced route an **irrational motion** —
+//! here the tilted frame the prism sits on — still takes, with the datum's name narrow, wide, or
+//! absent.
 //!
 //! ```text
 //! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
@@ -53,19 +40,21 @@
 //! own frame a tilted prism is axis-aligned, so its far cap is `w = dist`. Frames exist to make
 //! that true; the width lives in what a *boolean* discovers, not in what a frame states.
 //!
-//! | the datum's name | climbs | mean bits | exhausted |
-//! |---|---|---|---|
-//! | `Narrow` | 278 | 256 | 0 |
-//! | **`Wide`** | **887** | 256 | 0 |
+//! | the datum's name | climbs, release | climbs, debug | mean bits | exhausted |
+//! |---|---|---|---|---|
+//! | `Narrow` | 167 | 496 | 256 | 0 |
+//! | **`Wide`** | **468** | **915** | 256 | 0 |
+//! | none (a judged frame) | 565 | 1,109 | 320 | 0 |
 //!
-//! ⇒ **~3.2× the escalations** when the exact shortcuts decline. Both cuts still succeed and
-//! nothing exhausts the budget, so this is a cost, not a cliff.
+//! ⇒ A wide name costs **about 2.8× the escalations** of a narrow one in release (1.8× in debug,
+//! the build the gate's ignored sweep runs). Every cut succeeds and nothing exhausts the budget, so
+//! this is a cost, not a cliff.
 //!
-//! ★★ **The residual confound, stated:** the two arms pick *different* vertex triples (that is
-//! what makes one name wide and the other narrow), so their tools stand in different places. The
-//! shape, size and motion history of the target are shared and the tool profile is identical, but
-//! this is not a one-variable experiment — read 3.2× as "the same order of magnitude, several
-//! times", not as a coefficient. A one-variable version would need one plane whose name is wide
+//! **The residual confound, stated:** the arms pick *different* vertex triples (that is what makes
+//! one name wide and the other narrow), so their tools stand in different places. The shape, size
+//! and motion history of the target are shared and the tool profile is identical, but this is not a
+//! one-variable experiment — read the ratio as "the same order of magnitude, several times", not as
+//! a coefficient. A one-variable version would need one plane whose name is wide
 //! and narrow at once, which is a contradiction.
 //!
 //! ★ Two earlier versions of this measurement reported **nothing** and looked fine doing it:
