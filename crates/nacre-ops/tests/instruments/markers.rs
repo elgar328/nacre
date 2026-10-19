@@ -8,12 +8,13 @@
 //! itself.
 //!
 //! What it reads: every file under `crates/`, `docs/` and `tools/`, and the root's prose files by
-//! name ([`ROOT_FILES`]). A name starting with a dot, and `__pycache__`, are skipped — what lives
-//! there is local (a `.DS_Store`, a bytecode cache). Not the whole repository and not every root
-//! file: what exists only on one machine (`target/`, an index folder, an ignored `CLAUDE.md`) would
-//! make this red there alone. So a new prose file at the root has to be added to [`ROOT_FILES`]. A
-//! file that does not read as UTF-8 fails the check instead of being skipped: a scan that quietly
-//! reads less is how this one would fail.
+//! name ([`ROOT_FILES`]). Inside those three folders a name starting with a dot, and `__pycache__`,
+//! are skipped — what lives there is local (a `.DS_Store`, a bytecode cache); the named root files
+//! are read as named, `.cargo-husky/hooks/pre-commit` included. Not the whole repository and not
+//! every root file: what exists only on one machine (`target/`, an index folder, an ignored
+//! `CLAUDE.md`) would make this red there alone. So a new prose file at the root has to be added to
+//! [`ROOT_FILES`]. A file that does not read as UTF-8 fails the check instead of being skipped: a
+//! scan that quietly reads less is how this one would fail.
 //!
 //! Being textual it is a tripwire, not a proof — so [`the_scan_reads_what_it_should`] pins the rule
 //! against literal lines rather than against files.
