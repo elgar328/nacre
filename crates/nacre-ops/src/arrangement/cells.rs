@@ -311,8 +311,8 @@ fn innermost_host(
 
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
 ///
-/// **"Above" is the side of the class's *stored* plane normal** — `trace_one`'s `w_normal`,
-/// which is what every `body_above` in this file is measured against. Not the class's canonical
+/// **"Above" is the side of the class's *stored* plane normal** — which is what every
+/// `body_above` in this file is measured against. Not the class's canonical
 /// rational name (that points the other way on half the classes) and not the root face's outward
 /// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in). The absence of
 /// this sentence is what let a lateral face's rim contribution be written in the wrong frame.

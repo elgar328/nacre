@@ -18,10 +18,10 @@ pub(crate) enum End<'a> {
     /// The circle is cut and the sector still has no arcs to read: its two rulings are one and the
     /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
     /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
-    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. Counted
-    /// (`end_other`); a sector that merely spans several arcs is not here — it is an
-    /// [`End::Exact`] run. Carries the refusal its cause is, written where the cause is known
-    /// ([`Chart::arc_around`]) and read only if the cell turns out present and unread.
+    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. A sector that
+    /// merely spans several arcs is not here — it is an [`End::Exact`] run. Carries the refusal its
+    /// cause is, written where the cause is known ([`Chart::arc_around`]) and read only if the cell
+    /// turns out present and unread.
     Other(RejectReason),
     /// The circle is cut, the cell's sector runs between two **adjacent** rim nodes, and no arc
     /// covers it: the piece of the circle no face of this class has as a rim (the three
@@ -65,10 +65,10 @@ impl End<'_> {
     /// includes a run of arcs that do not agree ([`agreement`]'s `Split` inside one end). The read
     /// is [`read_bits`], the one spelling.
     ///
-    /// **Measured: the run case is read but decides nothing.** The suite reads a run of two or
-    /// more arcs 40 times, and making this answer `None` for every such run leaves all 825
-    /// `nacre-ops` tests green — the cells a run reaches are decided **absent** by the existence
-    /// read below, and an absent cell is never asked for its chamber. This stays the general rule rather than a written-out
+    /// **Measured: the run case is read but decides nothing.** The suite reads runs of two or more
+    /// arcs, and making this answer `None` for every such run leaves the `nacre-ops` suite green —
+    /// the cells a run reaches are decided **absent** by the existence read below, and an absent
+    /// cell is never asked for its chamber. This stays the general rule rather than a written-out
     /// refusal because it *is* the whole-circle arm's rule (see [`End::Disk`]'s site) with the
     /// sector's own arcs in place of the circle's; narrowing it would be the second spelling.
     fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {

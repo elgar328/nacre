@@ -38,7 +38,7 @@ name it does not know prints an error and runs on with exit 0, so the helper cou
 took). The schema and exit codes are identical across commands, so the Rust side
 (`nacre-oracle`) shares one parser.
 
-Inputs must be **single-solid** STEP files (nacre's `to_step_solid`): a STEP with
+Inputs must be **single-solid** STEP files (nacre's `to_step_solids` with one solid): a STEP with
 multiple transferable roots reads as `x_1, x_2, …` and the boolean would use only
 `x_1`. nacre's per-solid export always emits one root.
 

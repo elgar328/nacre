@@ -222,7 +222,8 @@ pub(crate) fn census(
                 nocircle_present += 1;
             }
             // The one-mark contract on rim reads:
-            // every cut end read carries exactly one lateral mark of its own solid (`Seated` is a
+            // every cut end read carries at most one lateral mark of its own solid, and none only
+            // where the cell is absent (`Seated` is a
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
             for e in &r.ends {

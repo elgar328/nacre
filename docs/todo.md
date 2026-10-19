@@ -441,8 +441,8 @@ tess 는 원통 옆면(띠)을 한 생성선에서 잘라 펼친다(`cut_seamles
 `Ring2d::circle_rat` 은 반지름의 제곱을 `Rat` 으로 든다(`Edge2d::Arc { r2: Rat }`). 17자리 반지름이 `1e-4`
 아래로 가면(`8.333333333333334e-6`, `5.000000000000001e-8`) 분모의 제곱이 `i128` 을 넘어 스케치가 원을
 거절한다(`SketchError::Undecidable`) — 원통의 진실은 `r2: BigRat` 라 같은 반지름을 든다. 응용이 긴 소수 반지름의
-작은 원을 그리면 솔리드가 생기기 전에 멈춘다. `tests/reject_census.rs` 의 넓은 축 드릴과 `a_bored_cube_builds_at_any_size`
-는 이 때문에 반지름만 짧은 소수로 적는다.
+작은 원을 그리면 솔리드가 생기기 전에 멈춘다. `tests/reject_census.rs` 의 넓은 축 드릴과
+`a_bored_cube_builds_at_any_size_and_its_volume_is_right` 는 이 때문에 반지름만 짧은 소수로 적는다.
 
 ### `SeamAlias` 는 두 원인을 한 딱지로 거절한다
 

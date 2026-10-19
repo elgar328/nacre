@@ -1,4 +1,4 @@
-# Time OCCT on the same fold `tests/perf.rs` times, on the same machine.
+# Time OCCT on the same fold `crates/nacre-ops/tests/perf.rs` times, on the same machine.
 #
 #   DRAWEXE -f tools/occt-bench.tcl
 #
@@ -34,8 +34,8 @@
 pload MODELING
 set N 80
 
-# Exactly `perf.rs::fin_fold`: a 6x6x2 hub with N fins arrayed around it. Keep the two in
-# step -- a benchmark comparing two different shapes says nothing.
+# Exactly `crates/nacre-ops/tests/perf.rs::fin_fold`: a 6x6x2 hub with N fins arrayed around it.
+# Keep the two in step -- a benchmark comparing two different shapes says nothing.
 box hub -3 -3 0 6 6 2
 for {set i 0} {$i < $N} {incr i} {
     box fin$i 2 -0.4 0 6 0.8 1

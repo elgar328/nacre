@@ -805,10 +805,10 @@ pub struct Model {
     /// one writer is the private funnel every surface door calls (`intern`), and the key is
     /// [`Model::surface_key`]'s answer about the stated truth.
     ///
-    /// **The witness is not in the key.** Two faces of one plane sharing one moved
-    /// witness is already how this works — `collect_planes` says the witness "was captured from
-    /// whichever face first reached this surface" and winds it to *each* face's own outward
-    /// normal — so it is not part of what makes two planes the same.
+    /// **The witness is not in the key.** Faces of one plane share one witness —
+    /// `plane_witness` reads it off the surface — and the judging table (`collect_planes`) winds
+    /// it to *each* face's own outward normal, so it is not part of what makes two planes the
+    /// same.
     interned: HashMap<SurfaceKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     vertices: Store<Vertex>,

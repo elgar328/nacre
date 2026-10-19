@@ -55,8 +55,7 @@ pub fn plane_frame_default(coeffs: [Rat; 4]) -> Option<([Rat; 3], [Rat; 3])> {
 ///
 /// `ref_dir` must lie in the plane and not be zero; it need **not** be a unit vector, and it is
 /// reduced to its primitive form here so that two spellings of one direction (`[10,10,0]` and
-/// `[20,20,0]`) name **one** frame. That reduction is what makes a frame node interning-friendly
-/// — the document's blocker 6.
+/// `[20,20,0]`) name **one** frame. That reduction is what makes a frame node interning-friendly.
 ///
 /// `None` on a degenerate plane or direction, when the origin projection is not rational, or when
 /// the squared lengths the realization divides by do not fit `i128`.

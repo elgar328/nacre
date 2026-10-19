@@ -478,9 +478,8 @@ fn fuse_blind_dimple() {
 }
 
 /// The first time a boolean result is fed back as an operand: the overlap box
-/// (arrangement-named corners) stacked on a third box merges through the
-/// coincident-interface path — which runs `is_convex` on that operand. Volume is the sum and the
-/// shell stays closed.
+/// (arrangement-named corners) stacked on a third box shares a coplanar interface
+/// with it. Volume is the sum and the shell stays closed.
 #[test]
 fn a_boolean_result_stacks_as_an_operand() {
     let mut m = Model::new();

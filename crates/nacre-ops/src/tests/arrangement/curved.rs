@@ -6,7 +6,7 @@ use super::*;
 /// **The production path, run on a cylinder-bearing model.**
 ///
 /// A `.plane()` call on the production road with cylinder rows flowing into it —
-/// the `work` class list, the decline witness, the report's `class_of` — aborts the
+/// the `work` class list, the decline witness — aborts the
 /// kernel on the first drill, and reading the ~30 call sites does not find one. **Running
 /// the road is what finds them**, which is why this test exists.
 ///

@@ -685,11 +685,11 @@ fn transform_solid(
                     ..
                 },
             ) => {
-                // `new_motion` may be `None`, and only for a motion that moves nothing —
-                // `Copy` is `transform_solid` with the identity. Then the plane is unchanged, the
-                // same statement re-pushed interns back onto the source handle, and that is the
-                // right answer. `points_move` refusing the transporting path is what rules out
-                // the other case, where a node is missing because the walk thought it could carry
+                // `new_motion` may be `None`, and only for a motion that moves nothing — `Copy` is
+                // `transform_solid` with the identity. Then the plane is unchanged, the same
+                // statement re-pushed interns back onto the source handle, and that is the right
+                // answer. `carry_of`'s `moves` refusing the transporting path is what rules out the
+                // other case, where a node is missing because the walk thought it could carry
                 // points that do not exist.
                 //
                 // The `invariant` road above is `Known`-only, so it never hands this arm `None`:

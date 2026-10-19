@@ -567,8 +567,9 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
     // cells are read:
     // `exist_marks_false` (a sector dropped because the face is not there — the four above, held
     // as growth ≥ 4 in `cyl_chart::tests::a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total`)
-    // and `arcs_no_mark`/`arcs_multi_mark` (every cut end read carries exactly one lateral mark of
-    // its own solid — the doc that says why the `Seated` skip is load-bearing lives on `face_spans`).
+    // and the census's one-mark assertions (a cut end read carries at most one lateral mark of
+    // its own solid, and none only where the cell is absent — the doc that says why the `Seated`
+    // skip is load-bearing lives on `face_spans`).
 }
 
 /// **A boolean's result carries names the tracer's plane-only road cannot read — and it

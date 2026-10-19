@@ -205,9 +205,9 @@ pub(crate) fn class_plans(
 /// Every plane class incident to each vertex of one operand — the name an arrangement vertex
 /// carries, read off the solid that already has it.
 ///
-/// The arrangement names a vertex `sorted3([w, f, third])`: the three plane classes that meet
-/// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
-/// is available without arranging anything.
+/// The arrangement names a vertex by the three plane classes that meet there, canonically ordered
+/// (`Canon3::three`). A vertex of a solid meets exactly the classes of the faces around it, so the
+/// same name is available without arranging anything.
 ///
 /// That is *a* name, not the only one — the arrangement also names pierce points
 /// ([`crate::combinatorics::NodeKind::Pierce`]). This table stays three-plane by construction: its

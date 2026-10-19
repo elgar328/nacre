@@ -193,24 +193,6 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThreePlane(pub [[f64; 4]; 3]);
 
-/// The exact sign of `orient3d(p, q, r, s)` where `p` is the implicit point at
-/// which the three planes `p` meet and `q, r, s` are explicit points — same sign
-/// convention as [`orient3d`] (`+1` ⇒ `p` on the negative side of the plane
-/// through `q, r, s`; `0` ⇒ the four are coplanar).
-///
-/// By Cramer the implicit point is `(Dx/D, Dy/D, Dz/D)` where `D` is the
-/// determinant of the plane-normal matrix and `Dx/Dy/Dz` replace its column
-/// `0/1/2` with `−d`. Factoring `1/D` out of the first row of
-/// `det[p−s, q−s, r−s]` gives `orient3d = (1/D)·M`, hence the sign is
-/// `sign(D)·sign(M)` with `M = det[(Dx−D·sx, …), q−s, r−s]`. Every part is an
-/// exact polynomial in the inputs, evaluated through [`Expansion`], so the sign
-/// is exact.
-///
-/// **Precondition:** the three planes meet in a point (`D ≠ 0`). `D = 0`
-/// (parallel or coincident planes) leaves the point undefined; the result is
-/// then `0` (unspecified), which falls out of `sign(D)·sign(M)` with no branch —
-/// `M` is division-free, so it stays finite even when `D = 0`. `PolyhedralBoolean`
-/// (M5-c) only forms valid vertices, guaranteeing `D ≠ 0` in practice.
 /// The implicit point's exact rational coordinates: numerators `(Dx, Dy, Dz)` over the
 /// common denominator `D`, by Cramer. `D` is the determinant of the plane-normal matrix;
 /// `Dx/Dy/Dz` replace its column `0/1/2` with `−d`.
@@ -277,7 +259,7 @@ fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
 }
 
 /// The floating-point filter for [`indirect_cmp_coord`] — the same construction as
-/// [`indirect_orient3d_filter`]. Both points' `D` and numerators are determinants (`≈ 5u`), and
+/// [`indirect_plane_side_filter`]. Both points' `D` and numerators are determinants (`≈ 5u`), and
 /// `V = Na·Db − Nb·Da` multiplies two of them and subtracts:
 ///
 /// | value | derived εₓ | constant used | margin |
@@ -401,7 +383,7 @@ fn indirect_plane_side_exact(p: &ThreePlane, c: [f64; 4]) -> i8 {
 }
 
 /// The floating-point filter for [`indirect_plane_side`] — the same shape as
-/// [`indirect_orient3d_filter`], whose table this extends: `D` and the numerators are the same
+/// [`indirect_cmp_coord_filter`]: `D` and the numerators are the same
 /// determinants (`≈ 5u` each), and `S = c·N + c₃·D` adds one product and three additions on exact
 /// `c`:
 ///

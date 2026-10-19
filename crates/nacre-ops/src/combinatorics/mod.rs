@@ -74,11 +74,10 @@ pub(crate) use witnesses::*;
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
 ///
 /// **The fields are private, and that is the whole point.** Every rule that reads this
-/// representation — [`turn`], [`antiparallel`], [`parallel_carriers`] via [`continuation`] — lives
-/// in this module, and Rust's module privacy is what keeps it that way: a sibling module cannot
-/// reach in even by accident. The node identity needs a `rg` gate (it caught fifteen bypasses)
-/// because it is an enum whose variants are nameable everywhere; here
-/// the boundary is a compile error instead of a grep.
+/// representation — [`turn`], [`antiparallel`] and [`ruling_pole`] — lives in this module, and
+/// Rust's module privacy is what keeps it that way: a sibling module cannot reach in even by
+/// accident. The node identity needs a `rg` gate (it caught fifteen bypasses) because it is an enum
+/// whose variants are nameable everywhere; here the boundary is a compile error instead of a grep.
 ///
 /// **A test that must read a direction is not a violation — it is an oracle.** It should read
 /// **its own** inputs (the `(carrier, sense)` it built) rather than this type, both because that
@@ -130,8 +129,8 @@ impl EdgeDir {
 #[derive(Clone, Debug)]
 pub(crate) struct RulingDir {
     cyl: usize,
-    /// Which of the two parallel rulings ([`RulingCarrier::side`]) — read by [`antiparallel`] and
-    /// [`continuation`], where "one carrier" means one line, not one cylinder.
+    /// Which of the two parallel rulings ([`RulingCarrier::side`]) — read by [`antiparallel`],
+    /// where "one carrier" means one line, not one cylinder.
     side: i8,
     /// The axis direction `m`, rational — the one geometric fact [`turn`] needs.
     axis: [nacre_exact::Rat; 3],

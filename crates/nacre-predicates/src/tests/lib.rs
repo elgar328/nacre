@@ -228,7 +228,7 @@ proptest! {
     ))]
 }
 
-// ---- indirect orient3d (M5-a2) ----
+// ---- indirect_cmp_coord ----
 
 /// The sign of an f64, `+1`/`-1`/`0`. Not `f64::signum`, which maps `0.0` to
 /// `+1.0` — a coplanar `orient3d` (exactly `0.0`) must read as `0`.

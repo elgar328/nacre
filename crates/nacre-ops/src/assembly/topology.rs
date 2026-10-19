@@ -145,7 +145,7 @@ pub(crate) fn check_result_topology(
 /// **itself** the material still runs around the contact, every edge of that path is used twice,
 /// and the component stays one: the guard fires exactly where no pair of solids exists.
 ///
-/// This is the 3D reading of a rule this file already applies one dimension down:
+/// This is the 3D reading of a rule the assembly stage already applies one dimension down:
 /// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because
 /// faces that merely lie on the same plane without touching must each survive on their own".
 ///

@@ -144,12 +144,12 @@ fn a_through_bore_is_unaffected() {
 /// radius-`0.5`, height-`2` cylinder wholly inside it: the boolean's two components are the
 /// box's shell and the void's, and the void must come back **depth 1** — odd, so a hole.
 ///
-/// **This is the population the coordinate probe exists for, and the only one that makes
-/// it say `true`.** The void's boundary is two disks and a band, so it carries no vertex at
-/// all and `nodes_of` comes back empty.
-/// Two *disjoint* bodies exercise the same road, but their answer is "outside" either way, so
-/// a road that always said `false` would pass them; here it would make the void a **second
-/// solid** and the box's volume whole.
+/// **This is the population the coordinate probe exists for, and the only one that makes it say
+/// `true`.** The void's boundary is two disks and a band, so it carries no vertex at all, and its
+/// witness is a cap disk's centre ([`coord_probes`](crate::combinatorics::coord_probes)). Two
+/// *disjoint* bodies exercise the same road, but their answer is "outside" either way, so a road
+/// that always said `false` would pass them; here it would make the void a **second solid** and the
+/// box's volume whole.
 #[test]
 fn an_enclosed_cylindrical_void_is_a_cavity() {
     let mut m = Model::new();

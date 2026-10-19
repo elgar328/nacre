@@ -375,9 +375,8 @@ fn no_module_edge_appears_that_is_not_recorded() {
     );
 }
 
-/// The graph as it stands, printed for a reader. No assertion yet — this is the census the
-/// restructure is measured against, and the gate that freezes it comes once the edges it is
-/// meant to forbid are actually gone.
+/// The graph as it stands, printed for a reader — the table `RECORDED` is copied from; the
+/// assertions are `the_pipeline_runs_one_way` and `no_module_edge_appears_that_is_not_recorded`.
 #[test]
 #[ignore = "census: prints the module graph, asserts nothing"]
 fn measure_module_graph() {

@@ -1276,7 +1276,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
 ///
 /// **And two spellings of one direction are one frame.** `ref_dir` is reduced to its
 /// primitive form, so `[0,0,1]` and `[0,0,5]` build the identical `PlaneFrame` — which is what
-/// lets a motion node intern (the document's blocker 6).
+/// lets a motion node intern.
 #[test]
 fn a_named_frame_takes_its_own_origin_and_u() {
     let coeffs = [0, 1, 0, 0].map(Rat::from_int); // the ZX plane, y = 0
@@ -1492,7 +1492,7 @@ fn a_wide_frame_s_tol_bounds_its_own_realization() {
 /// **A frame on an axis-aligned plane through the origin costs nothing at all** — the
 /// basis is a signed permutation, so every product and every sum is exact and `tol` stays a
 /// literal zero. That is what keeps such a sketch on the exact predicate path, and it is the
-/// case the `perm` gate in [`WitnessPoint::frame`] exists for.
+/// case [`WitnessPoint::frame`]'s `Bounded` products and sums carry exactly.
 #[test]
 fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
     for c in [[0i128, 0, 1, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 2, 0]] {
