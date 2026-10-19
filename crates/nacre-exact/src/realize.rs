@@ -47,9 +47,10 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
 }
 
 /// **The `f64`s nearest the true values a realization encloses** — 128 bits, then 256 where 128
-/// does not decide every value, then the 256-bit midpoints. The one ladder this crate's
-/// nearest-`f64` realizations climb (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`,
-/// `unit_vector_f64`); each says what it realizes, and why its value needs no deeper rung.
+/// does not decide every value, then the 256-bit midpoints. The one ladder for a value this crate
+/// can only approach (`Angle::cos_sin_f64`, `inv_sqrt_f64`, `sqrt_f64`, `unit_vector_f64` — an
+/// exact rational is rounded once, by `Rat::to_f64` or [`nearest_f64_big`]); each caller says
+/// what it realizes and what it knows about that value.
 ///
 /// `realize(prec)` gives the values at `prec` bits, and a rung answers only when
 /// [`round_to_f64`] decides **all** of them, so the values of one answer come from one rung.
@@ -63,11 +64,12 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
 /// rungs so that all four answer under one rule.
 ///
 /// ★ **If even 256 leaves a value undecided, the midpoints are returned, not a panic.** Such a
-/// value is then *faithfully* rounded (within an ulp) instead of correctly rounded — sound,
-/// because each caller's `…_error_of` measures the error actually there, and deterministic,
-/// because a 256-bit midpoint is. A value the last rung did decide keeps its answer: its midpoint
-/// lies between two ends that both rounded to it. A value outside `f64`'s normal range decides at
-/// no rung, and its midpoint reads as `NaN` ([`bigfloat_to_f64`] cannot say it). A test build
+/// value is then *faithfully* rounded (within an ulp) instead of correctly rounded, and
+/// deterministic, because a 256-bit midpoint is. Where a consumer accounts for the error, that
+/// stays sound: `Angle::cos_sin_error_of` and `inv_sqrt_error_of` measure the error actually
+/// there. A value the last rung did decide keeps its answer: its midpoint lies between two ends
+/// that both rounded to it. A nonzero value outside `f64`'s normal range decides at no rung, and
+/// its midpoint reads as `NaN` ([`bigfloat_to_f64`] cannot say it). A test build
 /// counts both events (`LADDER_CLIMBED`), so "cannot happen" does not quietly become "happens".
 pub(crate) fn ladder_f64<const N: usize>(
     mut realize: impl FnMut(usize) -> Option<[HpBounded; N]>,
@@ -144,8 +146,8 @@ fn rad_upper_bigfloat(rad: Mag, prec: usize) -> Option<BigFloat> {
 /// is the only place a value loses bits), and the assembly below is a pure re-encoding of what
 /// that produced. Splitting them is why the caller can round two interval ends and compare.
 ///
-/// Restricted to the normal range on purpose: a subnormal or an overflow is a value an `f64` cannot
-/// say to its full precision, and `None` says so rather than handing back a rounded-away answer.
+/// Restricted to the normal range on purpose: an `f64` cannot hold a subnormal at full precision
+/// nor an overflow at all, and `None` says so rather than handing back a rounded-away answer.
 /// [`round_to_f64`] then decides at no precision, and [`ladder_f64`] writes the midpoint as `NaN`.
 pub(super) fn bigfloat_to_f64(x: &BigFloat) -> Option<f64> {
     if x.is_zero() {
