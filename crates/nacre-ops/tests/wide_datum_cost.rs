@@ -4,11 +4,12 @@
 //! `nacre_judge::predicate::NameInts { ints, wide }` with `Judge::name_rescue` carry a wide name's
 //! integer coefficients into the three sign predicates that read coefficients at all —
 //! `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — while an all-narrow question keeps its
-//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it runs before a plane table
-//! exists, asks only for a [`Witness`], and compares two world names whole, a wide one included.
-//! What the numbers below measure is the cost of the toleranced route an **irrational motion** —
-//! here the tilted frame the prism sits on — still takes, with the datum's name narrow, wide, or
-//! absent.
+//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it compares two world
+//! names whole, a wide one included, before it reads any definition.
+//! What the numbers below measure is the cost of the toleranced route an **irrational motion**
+//! still takes — here the frame nodes of the pocket's wall and of the tool raised on the datum (the
+//! prism's own decimal orthonormal frame is exact and makes no node) — with the datum's name
+//! narrow, wide, or absent.
 //!
 //! ```text
 //! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
