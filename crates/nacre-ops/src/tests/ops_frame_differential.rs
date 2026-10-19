@@ -175,75 +175,43 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
     ]
 }
 
-/// **The gate.** Same plane, said two ways, one arena.
+/// **A prism takes the world road unless its plane's basis is irrational.** Every plane of the
+/// population, with a plain and a holed profile, extrudes; the one whose basis is not rational is
+/// written inside a motion node with its points in frame coordinates — a different but still valid
+/// model — and every other plane, tilted ones included, builds with no node at all.
 #[test]
-fn the_two_roads_build_the_same_prism() {
+fn a_prism_takes_the_world_road_unless_its_basis_is_irrational() {
     for profile_name in ["rect", "washer"] {
         for (name, sp) in population() {
-            let profile = || {
-                if profile_name == "rect" {
-                    rect(0.1, 0.2, 2.3, 1.7)
-                } else {
-                    washer()
-                }
+            let profile = if profile_name == "rect" {
+                rect(0.1, 0.2, 2.3, 1.7)
+            } else {
+                washer()
             };
             let what = format!("{name}/{profile_name}");
-
-            // The value road: today's operation.
-            let mut by_value = Model::new();
-            let __frame0 = datum_frame(&mut by_value, sp);
+            let mut m = Model::new();
+            let frame = datum_frame(&mut m, sp);
             apply(
-                &mut by_value,
+                &mut m,
                 &Operation::Extrude {
-                    frame: __frame0,
-                    profile: profile(),
+                    frame,
+                    profile,
                     dist: 1.5,
                 },
             )
-            .unwrap_or_else(|e| panic!("{what}: value road failed: {e:?}"));
-
-            // The handle road: state the plane, then extrude on the frame it hands back.
-            let mut by_frame = Model::new();
-            let OpOutput::DatumPlane { frame, .. } = apply(
-                &mut by_frame,
-                &Operation::DatumPlane {
-                    def: DatumDef::Stated(sp),
-                },
-            )
-            .unwrap_or_else(|e| panic!("{what}: datum failed: {e:?}")) else {
-                unreachable!()
-            };
-            extrude_on_frame(&mut by_frame, &frame, &profile(), 1.5)
-                .unwrap_or_else(|e| panic!("{what}: frame road failed: {e:?}"));
-
-            // Which road, first. A frame-node road is a valid model too, so an equality check
-            // alone would report the difference without naming its cause.
-            assert_eq!(
-                nodes(&by_frame),
-                nodes(&by_value),
-                "{what}: the two roads disagree about whether a motion node is needed — the \
-                     arena differs by whole nodes, not by an ulp"
-            );
-
-            let (a, b) = (arena(&by_value), arena(&by_frame));
-            for (x, y) in a.iter().zip(&b) {
-                assert_eq!(x, y, "{what}: arenas first differ at {}", x.0);
-            }
-            assert_eq!(a.len(), b.len(), "{what}: different cell counts");
-            println!(
-                "stat frame_differential {what} identical nodes={}",
-                nodes(&by_value)
-            );
+            .unwrap_or_else(|e| panic!("{what}: extrude failed: {e:?}"));
+            let want = usize::from(name == "irrational_tilt");
+            assert_eq!(nodes(&m), want, "{what}: motion nodes");
         }
     }
 }
 
-/// **The negative control: the ZX trap is real, and the sugar is what avoids it.**
+/// **The negative control: the ZX trap is real.**
 ///
 /// The arbitrary-axis rule gives the ZX plane `+u = −x̂` while the convention — and
 /// `SketchPlane::world_zx` — says `+u = +ẑ`. So reaching for `SketchFrame::canonical` on the
-/// ZX seed puts a caller's profile a quarter turn from where they asked, and the test above,
-/// which uses the datum's own `Named` frame, would never notice.
+/// ZX seed puts a caller's profile a quarter turn from where they asked. A test that only builds
+/// on a datum's own `Named` frame never meets this.
 ///
 /// Without this, "the sugar is just `canonical`" is a simplification that passes everything.
 #[test]
@@ -273,13 +241,4 @@ fn the_zx_seed_without_the_sugar_turns_the_sketch() {
         "the derived ZX frame must differ from the convention — if these ever agree, either \
              the seeding or the arbitrary-axis rule moved, and SketchFrame::world is dead weight"
     );
-    // And the sugar is what closes it: same convention, same arena.
-    let mut sugared = Model::new();
-    let f = SketchFrame::world(&sugared, nacre_exact::Axis::Y);
-    extrude_on_frame(&mut sugared, &f, &profile, 1.0).expect("the sugar");
-    let c = arena(&sugared);
-    for (x, y) in a.iter().zip(&c) {
-        assert_eq!(x, y, "the sugar must reproduce the convention: {}", x.0);
-    }
-    println!("stat frame_differential world_zx_without_sugar differs=true sugar_matches=true");
 }

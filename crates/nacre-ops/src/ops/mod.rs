@@ -571,18 +571,13 @@ impl SketchFrame {
     }
 }
 
-/// **The handle road and the value road build the same prism.**
+/// **Which road a prism takes, and the frame its sketch is laid in.**
 ///
-/// [`Operation::Extrude`] still carries a [`SketchPlane`]; [`extrude_on_frame`] is the road it is
-/// about to take, and nothing calls it yet. Before the call sites move, this asks the only
-/// question that matters: given the *same* plane said two ways, do the two roads leave the same
-/// arena behind?
-///
-/// The first assertion is **which road was taken**, not whether the models match. A frame whose
-/// basis is not rational is written inside a motion node with its points in frame coordinates — a
-/// different but still valid model, and an equality check would report that without naming it.
-/// [`prism::frame_road`] measured that this used to happen for rational-tilt planes; here it must not
-/// happen at all.
+/// A plane whose basis is not rational is written inside a motion node with its points in frame
+/// coordinates — a different but still valid model; every other plane the test states, tilted
+/// ones included, builds with no node. And the ZX seed's derived frame is a quarter turn from the
+/// convention, which is why [`SketchFrame::world`] exists; the negative control shows the trap is
+/// real.
 #[cfg(test)]
 #[path = "../tests/ops_frame_differential.rs"]
 mod frame_differential;
