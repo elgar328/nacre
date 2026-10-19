@@ -1676,10 +1676,10 @@ fn an_exact_point_demands_no_precision() {
 /// instead of panicking — the caller decides (an operation turns it into a named reject).
 ///
 /// **Which `f64`s are `Rat`s is much narrower than f64's range, at both ends.** `Rat` is
-/// `Ratio<i128>`, so the value in lowest terms must fit: the numerator (`|x| < 2¹²⁷ ≈ 1.7e38`)
-/// *and* the reduced denominator `2^(1075 − exp_field − tz)`, with `tz` the significand's trailing
-/// zeros, at most `2¹²⁶` — every `|x| ≥ 2⁻⁷⁴` fits, below that only a value with few significant
-/// bits, and nothing below `2⁻¹²⁶`. Exact zero is special-cased and always representable.
+/// `Ratio<i128>`, so the value in lowest terms must fit: the numerator (`−2¹²⁷ ≤ x < 2¹²⁷`, about
+/// ±1.7e38) *and* the reduced denominator `2^(1075 − exp_field − tz)`, with `tz` the significand's
+/// trailing zeros, at most `2¹²⁶` — every `|x| ≥ 2⁻⁷⁴` fits, below that only a value with few
+/// significant bits, and nothing below `2⁻¹²⁶`. Exact zero is special-cased and always representable.
 /// A CAD model at either extreme is not real; the limit is.
 #[test]
 fn a_coordinate_that_is_not_a_rat_has_no_exact_base() {
