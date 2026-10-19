@@ -107,24 +107,14 @@ fn targets(line: &str, owner: &str, mods: &BTreeSet<String>) -> Vec<String> {
 fn sources_of(module: &str) -> Vec<std::path::PathBuf> {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let base = src.join(module);
-    let mut files = Vec::new();
-    if base.is_dir() {
-        let mut dirs = vec![base];
-        while let Some(dir) = dirs.pop() {
-            for entry in std::fs::read_dir(&dir).expect("module folder") {
-                let path = entry.expect("entry").path();
-                if path.is_dir() {
-                    if path.file_name().is_some_and(|f| f != "tests") {
-                        dirs.push(path);
-                    }
-                } else if path.extension().is_some_and(|e| e == "rs") {
-                    files.push(path);
-                }
-            }
-        }
+    let mut files = if base.is_dir() {
+        crate::walk::files_under(&base, |name| name != "tests")
+            .into_iter()
+            .filter(|p| p.extension().is_some_and(|e| e == "rs"))
+            .collect()
     } else {
-        files.push(src.join(format!("{module}.rs")));
-    }
+        vec![src.join(format!("{module}.rs"))]
+    };
     files.sort();
     files
 }

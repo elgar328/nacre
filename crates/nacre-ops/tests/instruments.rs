@@ -23,3 +23,5 @@ mod plane_anchor;
 mod point_width;
 #[path = "instruments/silencers.rs"]
 mod silencers;
+#[path = "instruments/walk.rs"]
+mod walk;

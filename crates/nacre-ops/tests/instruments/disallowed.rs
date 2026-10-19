@@ -228,28 +228,22 @@ fn workspace_sources() -> Vec<(String, std::path::PathBuf)> {
         .parent()
         .expect("crates/")
         .to_path_buf();
-    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    let mut out = Vec::new();
     for entry in std::fs::read_dir(&crates).expect("crates/") {
         let krate = entry.expect("entry").path();
         for sub in ["src", "tests"] {
-            if krate.join(sub).is_dir() {
-                dirs.push(krate.join(sub));
+            if !krate.join(sub).is_dir() {
+                continue;
             }
-        }
-    }
-    let mut out = Vec::new();
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).expect("dir") {
-            let path = entry.expect("entry").path();
-            if path.is_dir() {
-                dirs.push(path);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                let rel = path
-                    .strip_prefix(&crates)
-                    .expect("under crates/")
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push((rel, path));
+            for path in crate::walk::files_under(&krate.join(sub), |_| true) {
+                if path.extension().is_some_and(|e| e == "rs") {
+                    let rel = path
+                        .strip_prefix(&crates)
+                        .expect("under crates/")
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    out.push((rel, path));
+                }
             }
         }
     }

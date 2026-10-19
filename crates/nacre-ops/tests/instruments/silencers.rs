@@ -38,18 +38,10 @@ fn justified(lines: &[&str], at: usize) -> bool {
 
 fn sources() -> Vec<std::path::PathBuf> {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut out = Vec::new();
-    let mut dirs = vec![src];
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).expect("src") {
-            let path = entry.expect("entry").path();
-            if path.is_dir() {
-                dirs.push(path);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                out.push(path);
-            }
-        }
-    }
+    let mut out: Vec<_> = crate::walk::files_under(&src, |_| true)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "rs"))
+        .collect();
     out.sort();
     out
 }

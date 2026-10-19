@@ -122,19 +122,13 @@ fn product_sources() -> Vec<(String, std::path::PathBuf)> {
         .expect("crates/")
         .to_path_buf();
     let mut out = Vec::new();
-    let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir(&crates)
-        .expect("crates/")
-        .map(|e| e.expect("entry").path().join("src"))
-        .filter(|p| p.is_dir())
-        .collect();
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).expect("src") {
-            let path = entry.expect("entry").path();
-            if path.is_dir() {
-                if path.file_name().is_some_and(|n| n != "tests") {
-                    dirs.push(path);
-                }
-            } else if path.extension().is_some_and(|e| e == "rs") {
+    for entry in std::fs::read_dir(&crates).expect("crates/") {
+        let src = entry.expect("entry").path().join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        for path in crate::walk::files_under(&src, |name| name != "tests") {
+            if path.extension().is_some_and(|e| e == "rs") {
                 let rel = path
                     .strip_prefix(&crates)
                     .expect("under crates/")
