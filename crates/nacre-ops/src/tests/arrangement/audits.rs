@@ -118,10 +118,9 @@ pub(crate) fn concurrency_audit(
         ) {
             names.extend(s.end);
         }
-        // And the input the *trace's* rule actually sees: the operand faces' ring vertices.
-        // Emitted segment endpoints are named `[wc, wall, r]`, so they always mention `wc` and can
-        // never exercise the `wc ∉ t` branch — collecting only those measured nothing, which is
-        // what the "was the rule exercised?" counter in the driver test caught.
+        // And the input the *trace's* rule actually sees: the operand faces' ring vertices. Emitted
+        // segment endpoints are named `[wc, wall, r]`, so they always mention `wc` and can never
+        // exercise the `wc ∉ t` branch — collecting only those would measure nothing.
         for (solid, inc) in [(a, &inc_a), (b, &inc_b)] {
             let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
                 .into_iter()
@@ -607,7 +606,7 @@ pub(crate) fn operand_vertex_audit(
 pub(crate) struct ClassAudit {
     pub wc: usize,
     /// The root plane resolved to real coordinates — a point on it and its stored normal. Plane
-    /// indices alone have twice carried a wrong geometric story into a write-up.
+    /// indices alone can carry a wrong geometric story into a write-up.
     pub root_point: [f64; 3],
     pub root_normal: [f64; 3],
     /// `sign(stored normal · n_out)` — `-1` exactly when the class root face is `Reversed`, which
@@ -623,10 +622,8 @@ pub(crate) struct ClassAudit {
     /// **What the arrangement produced, before anything refused it** — cells walked, arcs the
     /// split cut, and the nesting's two counts.
     ///
-    /// Born while the arc stopper swallowed every arrangement stage's answer (a probe was
-    /// the only way to see the population, and a probe is deleted before the commit); the
-    /// population is green now, and this stays as the audit's direct read of what a class
-    /// produced. `None` when the class stopped before those stages ran.
+    /// This is the audit's direct read of what a class produced. `None` when the class stopped
+    /// before those stages ran.
     pub produced: Option<Produced>,
     /// **Every emitted face's outer ring, as coordinates** — one `Vec` per emitted face whose outer
     /// bound is a polygon ring (a face bounded by an uncut circle has no nodes and contributes
@@ -676,10 +673,10 @@ pub(crate) struct Produced {
     /// Every `+1` cell's label, **sorted** — the labelling stage's answer, in a form the walk's
     /// handedness cannot reorder.
     ///
-    /// `Copy` goes with this, and that was the choice rather than the discovery: a sibling field
-    /// on [`ClassAudit`] would keep it, but then one class's two facts live in two places and the
-    /// fence has to join them by index — a seam where they can drift. `PartialEq` stays, so the
-    /// fence remains a single `assert_eq!` against a value derived from the geometry.
+    /// `Copy` goes with this, by choice: a sibling field on [`ClassAudit`] would keep it, but then
+    /// one class's two facts live in two places and the fence has to join them by index — a seam
+    /// where they can drift. `PartialEq` stays, so the fence remains a single `assert_eq!` against
+    /// a value derived from the geometry.
     pub pos_labels: Vec<Label>,
 }
 
@@ -696,11 +693,11 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 /// Every emitted face's outer ring as coordinates, for [`ClassAudit::outer_rings`] — that field
 /// carries the argument for coordinates, for normalizing rotation, and for leaving reversal alone.
 ///
-/// **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
-/// and two are pierce points — and the dispatch between them lives in
+/// **A ring here can need both roads to a coordinate** — three of its nodes are plane triples and
+/// two are pierce points — and the dispatch between them lives in
 /// [`combinatorics::node_point_approx`], not here: spelling a [`combinatorics::NodeId`] variant
-/// outside that file is what `three_plane_name`'s gate forbids, and the first draft of this
-/// function broke it with the suite green.
+/// outside that file is what `three_plane_name`'s gate forbids — a rule this function could break
+/// with the suite green.
 ///
 /// A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
 /// length, so the fence reads "this vertex had no coordinate" instead of "the ring is short".
@@ -716,7 +713,7 @@ fn face_ring_coords(
         .map(|r| {
             let pts: Vec<[f64; 3]> = r.nodes.iter().map(|&n| point(n)).collect();
             // Rotation only. Where the walk started is not a fact about the geometry; which way it
-            // went is, and it is the one this instrument was added to see.
+            // went is, and it is the one this instrument exists to see.
             match pts
                 .iter()
                 .enumerate()
@@ -778,10 +775,10 @@ pub(crate) fn frame_audit(
         &cyls,
         crossings.clone(),
     );
-    // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names
-    // for one another's features, so auditing each class against an empty table is auditing a
-    // *different* pipeline — it diverged from the boolean's answer the day the rounds arrived,
-    // and the divergence surfaced when this file's test moved to a fixture that needs them.
+    // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names for
+    // one another's features, so auditing each class against an empty table is auditing a
+    // *different* pipeline — on a fixture that needs the rounds, its answer diverges from the
+    // boolean's.
     let mut aliases = Aliases::default();
     loop {
         let before = aliases.len();

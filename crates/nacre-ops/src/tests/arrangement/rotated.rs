@@ -9,11 +9,10 @@ use super::*;
 /// tool used to debug a reject — disagree with the reject being debugged, which is the worst
 /// possible time to be lying.
 ///
-/// The model is **chosen by measurement, not by taste**: a sweep over the fixture corpus found
-/// no boolean that declines inside the arrangement at all (every fixture builds), so the
-/// agreement had to be pinned on an input that still stops after the classes have run. If a
-/// later capability makes it build, the fix is to take whatever still declines — not to weaken
-/// the assertion.
+/// The model is **chosen by measurement, not by taste**: no fixture in the corpus declines inside
+/// the arrangement (every fixture builds — measured by a sweep), so the agreement is pinned on an
+/// input that stops after the classes have run. If a later capability makes it build, the fix is to
+/// take whatever still declines — not to weaken the assertion.
 #[test]
 fn the_audit_does_not_invent_failures() {
     // The audit's scope is the per-class pipeline, and its duty is to run **the pipeline the
@@ -108,10 +107,10 @@ fn rotated_overlapping_cubes_all_three() {
     );
 }
 
-/// The through-tunnel Cut is invariant under every orientation: single Z, X, Y, and compound
-/// Z∘X. The axis-DEPENDENCE was the tell of the bug (Y worked; Z/X declined before the
-/// `Judge::orient3d` on-plane fix), so all four orientations returning 24 is the fix's direct
-/// regression lock. The cube's own z=0/z=3 caps exercise the seated path under rotation.
+/// The through-tunnel Cut is invariant under every orientation: single Z, X, Y, and compound Z∘X.
+/// An axis-dependent orientation decision shows as some orientations declining, so all four
+/// returning 24 is its direct lock. The cube's own z=0/z=3 caps exercise the seated path under
+/// rotation.
 #[test]
 fn rotated_tunnel_cut_all_orientations() {
     use nacre_exact::Axis;
@@ -263,9 +262,9 @@ fn rotated_tunnel_area_and_faces() {
 }
 
 /// The sharp tripwire: a compound-tilted tunnel must decline nothing, exactly like the axis
-/// baseline `axis_aligned_cubes_decline_nothing`. This is the EXACT site the bug broke
-/// (`coincident-features` from a `wall == wc` degenerate), so it fails immediately if the
-/// `Judge::orient3d` on-plane fix is reverted.
+/// baseline `axis_aligned_cubes_decline_nothing`. This is the exact site an axis-dependent on-plane
+/// decision in `Judge::orient3d` breaks (`coincident-features` from a `wall == wc` degenerate), so
+/// it fails immediately if that decision regresses.
 #[test]
 fn rotated_tunnel_declines_nothing() {
     use nacre_exact::Axis;

@@ -90,10 +90,9 @@ fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
 /// that can reach here, and the only one whose point carries no radical (`(11, 10, 5)`,
 /// rational).
 ///
-/// **And a touch is not a break**: the circle keeps its closed cell, so nothing about the
-/// arrangement had to change for this to work. It was refused only because the guard's
-/// sentence was wider than its proposition — measured before the narrowing landed, with the
-/// whole guard off, this already produced exactly the solid asserted below.
+/// **And a touch is not a break**: the circle keeps its closed cell, so the arrangement needs
+/// nothing special here. With the whole guard off it would produce exactly the solid asserted below
+/// (measured); a guard whose sentence is wider than its proposition refuses it.
 #[test]
 fn a_segment_tangent_to_the_rim_builds() {
     let mut m = Model::new();
@@ -213,30 +212,26 @@ fn a_crossing_on_a_segments_endpoint_is_inside_it() {
     crate::tests::mesh_covers_faces("corner on the rim", &m, &out);
 }
 
-/// **The population where the naming rule actually fires — and the first non-`+Z`
-/// cylinder in this repository.**
+/// **The population where the naming rule actually fires — on a non-`+Z` cylinder.**
 ///
-/// Almost every cylinder in the suite stands on `[0, 0, 1]`, and that is not an accident of
-/// taste — a fixture box and `build_prism` both push "base cap, top cap, then walls", so a `+Z`
-/// cylinder's circle always lives on a class interned **before** the wall that crosses it.
-/// Measured over the whole ops suite while its boxes came from a topo door that also pushed the
-/// caps first: 463 of the 2060 `(class, wall)` pairs the gate examines were descending, but **all
-/// nine that reached the locator were ascending** — `NodeId::pierce`'s canonicalization
+/// Almost every cylinder in the suite stands on `[0, 0, 1]`, and that is not an accident of taste —
+/// a fixture box and `build_prism` both push "base cap, top cap, then walls", so a `+Z` cylinder's
+/// circle always lives on a class interned **before** the wall that crosses it. Measured over the
+/// whole ops suite: 463 of the 2060 `(class, wall)` pairs the gate examines were descending, but
+/// **all nine that reached the locator were ascending** — `NodeId::pierce`'s canonicalization
 /// (re-sorting the pair and restating the root with it) was exercised by no other fixture.
 ///
 /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` wall (interned after
 /// the caps) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
 ///
-/// **A tangency, so there is exactly one root** — and that also means the
-/// circle is not separated, so this **builds** rather than refusing. The single root is still
-/// what makes the naming rule visible here (it is what the fixture was written for), and the
-/// witness it once asserted is now the *split point that never happens*. That matters: the
-/// straddling fixtures deliberately
-/// accept either of their two crossings, and a fixture copied from that template would be green
-/// whether or not the root rule is right. Here `disc = 0` — the rim (`x = 4`, centre
-/// `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2` at the single point `(4, 2, 2)`, solved from the
-/// fixture's own numbers — and the name it must take is `QuadRoot::Double`, which a swap must
-/// **not** toggle.
+/// **A tangency, so there is exactly one root** — and that also means the circle is not separated,
+/// so this **builds** rather than refusing. The single root is still what makes the naming rule
+/// visible here (it is what the fixture is for), and the witness is the *split point that never
+/// happens*. That matters: the straddling fixtures deliberately accept either of their two
+/// crossings, and a fixture copied from that template would be green whether or not the root rule
+/// is right. Here `disc = 0` — the rim (`x = 4`, centre `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2`
+/// at the single point `(4, 2, 2)`, solved from the fixture's own numbers — and the name it must
+/// take is `QuadRoot::Double`, which a swap must **not** toggle.
 #[test]
 fn a_turned_boss_tangent_to_the_plate_top_builds() {
     let mut m = Model::new();
@@ -295,13 +290,12 @@ fn a_turned_boss_tangent_to_the_plate_top_builds() {
 
 /// **The turned boss builds — and its crescent is the winding witness's red switch.**
 ///
-/// The near cap's circle is cut by two different plate edges (top and corner), so this
-/// result carries the arc-dominated crescent face whose chord Newell reads **backwards**
-/// (`cos = −1`, the measured wall) — `validate == []` here is what pins `loop_winding`'s
-/// segment witnesses. The old fence's proposition — a root that fails to follow its pair
-/// through the sort names the wrong crossing — did not retire with the reject: the mint
-/// fence asserts the pierce vertices sit **on the derived crossings**, and a wrong root
-/// moves the minted point itself.
+/// The near cap's circle is cut by two different plate edges (top and corner), so this result
+/// carries the arc-dominated crescent face whose chord Newell reads **backwards** (`cos = −1`, the
+/// measured wall) — `validate == []` here is what pins `loop_winding`'s segment witnesses. The
+/// proposition that a root failing to follow its pair through the sort names the wrong crossing is
+/// locked here too: the mint fence asserts the pierce vertices sit **on the derived crossings**,
+/// and a wrong root moves the minted point itself.
 #[test]
 fn a_turned_boss_over_the_plates_corner_builds() {
     let mut m = Model::new();
@@ -339,7 +333,7 @@ fn a_turned_boss_over_the_plates_corner_builds() {
 /// **The audit and the boolean say the same thing about an arc class — and it says what the
 /// arrangement produced.**
 ///
-/// Three things are pinned here and none had a fence before.
+/// Three things are pinned here.
 ///
 /// **One: the two copies of the per-class pipeline agree.** `frame_audit` re-runs pass A inline
 /// (trace, merge, split, the class's edges) and shares pass B (`per_class`) with `arrange`, so a
@@ -440,8 +434,8 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the arc class assembles");
         let (m, plate, boss) = build();
         let audits = crate::arrangement::frame_audit(&m, BoolKind::Fuse, plate, boss).unwrap();
-        // The agreement, now that the population is green: the boolean built, and the audit's
-        // replay of the same pipeline stops nowhere either.
+        // The agreement: the boolean built, and the audit's replay of the same pipeline stops
+        // nowhere either.
         let stopped: Vec<_> = audits.iter().filter(|a| a.failed_at.is_some()).collect();
         assert!(stopped.is_empty(), "no class stops: {stopped:?}");
         // The whole audit, not just `produced`: the ring coordinates are a sibling field, and
@@ -525,12 +519,10 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
 /// **The seam realizes a pierce vertex from its definition — seen through the door production
 /// uses, because nothing else can see it at all.**
 ///
-/// The deferred stopper intercepts the whole seam stretch, so with the pierce arm
-/// deleted the seam fails `PierceVertexUnnamed`, the interception swallows it, and **every
-/// boolean-level fence stays green** (measured — that probe is what forced this test). The
-/// arm's only witness is a direct second consumer of `seam_table` on the very faces
-/// production feeds it, so this walks production's stretch step for step: trace, clean,
-/// append the bands, build the seam.
+/// With the pierce arm deleted the seam fails `PierceVertexUnnamed` and **every boolean-level fence
+/// stays green** (measured). The arm's only witness is a direct second consumer of `seam_table` on
+/// the very faces production feeds it, so this walks production's stretch step for step: trace,
+/// clean, append the bands, build the seam.
 ///
 /// The cache is asserted **`Realized` within rounding**, never a copied value; the pierce
 /// coordinates themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point`
@@ -601,7 +593,7 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
             &trace_in,
         )
         .expect("the arc population traces");
-        // The stopper socket is empty since the population went green — nothing defers.
+        // The stopper socket is empty for this population — nothing defers.
         assert!(deferred.is_none(), "{deferred:?}");
         let faces =
             crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
@@ -647,17 +639,15 @@ fn the_seam_realizes_a_pierce_vertex_from_its_definition() {
 /// **Every ring node of the arc population's result faces earns a definition — measured
 /// through the door production uses.**
 ///
-/// Same instrument shape as the seam fence, same reason: the deferred stopper stands
-/// behind `name_result_vertices` (at the assembly's very end now) and intercepts
-/// everything, so no reject name can testify the naming completed — a direct second consumer
-/// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
-/// and asserts on its product.
+/// Same instrument shape as the seam fence: a direct second consumer of the naming is the witness,
+/// so this walks production's road (trace → clean → bands → seam → naming) and asserts on its
+/// product.
 ///
-/// Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a
-/// pierce def past its arc-carrier guard). The fallback itself went **zero-population** when
-/// the split-twin subdivision landed — the bitten corner's twins match now, so its def comes
-/// down the far-plane road and no probe reddens on the fallback alone; the subdivision has
-/// its own fence (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
+/// Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a pierce def
+/// past its arc-carrier guard). The fallback itself has **zero population**: under the split-twin
+/// subdivision the bitten corner's twins match, so its def comes down the far-plane road and no
+/// probe reddens on the fallback alone; the subdivision has its own fence
+/// (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
 #[test]
 fn every_result_vertex_of_the_arc_population_is_named() {
     for (origin, axis, bites_corner) in [
@@ -1003,17 +993,16 @@ fn a_pierce_vertex_is_minted_and_measured() {
 
 /// **The two complementary arcs are two edges, and the cut rim is none.**
 ///
-/// The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle
-/// arm): between one pair of pierce vertices a circle offers two pieces, the endpoints
-/// alone cannot tell them apart, and the *vertex order* is the bit that does — so the store
-/// must hold **two** circle-carrier edges whose vertex pairs are each other's reverse.
-/// Erase the order from the welding key and they fold into one edge (the red probe this
-/// fence was built against).
+/// The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle arm): between
+/// one pair of pierce vertices a circle offers two pieces, the endpoints alone cannot tell them
+/// apart, and the *vertex order* is the bit that does — so the store must hold **two**
+/// circle-carrier edges whose vertex pairs are each other's reverse. Erase the order from the
+/// welding key and they fold into one edge.
 ///
-/// The rim skip's two sides, on one store: the **cut** circle mints no closed `[v, v]`
-/// edge (before the skip, both fixtures minted one that only the reject discarded), while
-/// the **uncut** far rim still mints exactly one — the skip's negative control, pinned to
-/// the far cap's axis coordinate so a skip that turned into "skip every rim" reddens here.
+/// The rim skip's two sides, on one store: the **cut** circle mints no closed `[v, v]` edge
+/// (without the skip, both fixtures would mint one that only the reject discards), while the
+/// **uncut** far rim still mints exactly one — the skip's negative control, pinned to the far cap's
+/// axis coordinate so a skip that turned into "skip every rim" reddens here.
 ///
 /// The two populations differ on the chord, deliberately: the straddling boss's pierce
 /// pair is joined by the plate-top chord (welded with the subdivided middle piece into
@@ -1073,9 +1062,9 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
         // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral).
         let on_circle = |e: &nacre_topo::Edge| is_cyl(e.surfaces[0]) != is_cyl(e.surfaces[1]);
 
-        // The cut circle's pieces: their directed vertex pairs chain into **one** cycle —
-        // the observable of the `[A, B]`-CCW convention (for two pieces the cycle *is* the
-        // mutually-reversed pair the first version of this fence asserted).
+        // The cut circle's pieces: their directed vertex pairs chain into **one** cycle — the
+        // observable of the `[A, B]`-CCW convention (for two pieces the cycle *is* a
+        // mutually-reversed pair).
         let arcs: Vec<_> = minted
             .iter()
             .filter(|(_, e)| on_circle(e) && e.vertices[0] != e.vertices[1])
@@ -1253,11 +1242,11 @@ fn the_bands_loop_is_one_continuous_cycle() {
 
 /// **The grouping joins across a cut rim — through the door production uses.**
 ///
-/// A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the
-/// unordered node rule cannot either: on a 2-node circle the chord and both complementary
-/// arcs fold into one `norm_edge` pair (six users where each piece has two). The `JoinKey`'s
-/// ordered arc pairs — "a line is unordered, a circle is ordered", third appearance — give
-/// every piece exactly its cap and the band, so the result comes back as **one** component.
+/// A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the unordered node
+/// rule cannot either: on a 2-node circle the chord and both complementary arcs fold into one
+/// `norm_edge` pair (six users where each piece has two). The `JoinKey`'s ordered arc pairs — "a
+/// line is unordered, a circle is ordered" — give every piece exactly its cap and the band, so the
+/// result comes back as **one** component.
 ///
 /// Asserted on `name_result_vertices`' own product (the subdivision must run first for the
 /// chord's line key to match), across all three fixtures. red: the band's registration
@@ -1502,11 +1491,11 @@ fn measure_dump_straddling_boss_obj() {
     }
 }
 
-/// The chained bore-then-boss body: `cut` a through-bore at `(12,12)`, then `fuse` a boss
-/// whose rim the plate's edge cuts. The chain is what the milestone fence could not ask:
-/// nesting must place the bore's rim circle inside a **bitten** top ring — two pierce
-/// corners and an arc step — where the chart road's parity had no rational corners to read
-/// (`WitnessNotRational`, chaining wall 3) and the mixed parity answers in ℚ(√c).
+/// The chained bore-then-boss body: `cut` a through-bore at `(12,12)`, then `fuse` a boss whose rim
+/// the plate's edge cuts. The chain asks what a single boolean cannot: nesting must place the
+/// bore's rim circle inside a **bitten** top ring — two pierce corners and an arc step — where a
+/// parity reading only rational corners has none (`WitnessNotRational`) and the mixed parity
+/// answers in ℚ(√c).
 fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
     let mut m = Model::new();
     let plate = crate::fixtures::cuboid(
@@ -1624,10 +1613,10 @@ fn a_chained_contact_cut_builds_clean() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
-/// the same two planes, which is what once made them look like a seating problem; what was
-/// actually hard was classifying **two curved bodies**, and both are now probed from a cap
-/// disk's centre — neither has a vertex to probe from.
+/// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in the
+/// same two planes, which makes them look like a seating problem; what is actually hard is
+/// classifying **two curved bodies**, and both are probed from a cap disk's centre — neither has a
+/// vertex to probe from.
 ///
 /// Both volumes are the same number derived the same way (`π·0.5²·2`), so the assertion
 /// cannot pass by matching one body against the other.

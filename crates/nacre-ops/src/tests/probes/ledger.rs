@@ -1,9 +1,9 @@
 //! **Every probe row says whose work made it**, so a test can count its own.
 //!
 //! The probes are process-global: one list per question, written by every test in this binary at
-//! once. A reader that takes the whole list, or a window of it, sees other tests' rows too — which
-//! is why a count could not be asserted, only existence or a universal. A row carries its
-//! [`Owner`] instead: the test the work belongs to. [`Ledger::all`] is still the binary's, for the
+//! once. A reader that takes the whole list, or a window of it, sees other tests' rows too — so
+//! over it a count cannot be asserted, only existence or a universal. A row carries its [`Owner`]
+//! for that: the test the work belongs to. [`Ledger::all`] is still the binary's, for the
 //! universals; [`Ledger::mine`] is this test's alone, and a count over it is a fact about the
 //! fixture.
 //!

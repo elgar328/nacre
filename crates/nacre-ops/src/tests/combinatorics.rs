@@ -79,10 +79,9 @@ fn a_pierce_is_one_name_however_the_pair_is_handed_in() {
 
 /// **The door tells the two variants apart, and `Ord` places them deterministically.**
 ///
-/// The order itself is a *choice* — derived `Ord` puts every `ThreePlane` before every
-/// `Pierce`, so "the smallest name wins" gains a systematic lean toward three-plane names at
-/// the six rules that read it. Nothing can observe it yet (no ring holds a pierce node), which
-/// is exactly why it is written down here rather than left to be discovered.
+/// The order itself is a *choice* — derived `Ord` puts every `ThreePlane` before every `Pierce`, so
+/// "the smallest name wins" gains a systematic lean toward three-plane names at the six rules that
+/// read it. It is written down here rather than left to be discovered.
 #[test]
 fn the_two_variants_are_told_apart_and_ordered() {
     let three = NodeId::three_planes(Canon3::three([9, 2, 5]));
@@ -111,11 +110,10 @@ fn the_two_variants_are_told_apart_and_ordered() {
 /// whose square leaves `i128`, so an unrescaled `e2` is `None`) and **tilted** (`n_k != 0` for
 /// the chosen `k`, without which two of the four clauses below cannot fail).
 ///
-/// **The expected axes are written out by hand from `e1 = ê_k × n`, `e2 = n × e1`, never by
-/// calling `of_normal` a second time.** An earlier draft of this lock compared
-/// `of_normal(K·n)` against `of_normal(n)` — which a chart that ignores magnitude entirely
-/// (dropping a coordinate) passes on both sides while regressing the census by nine rows. An
-/// oracle has to come from the inputs.
+/// **The expected axes are written out by hand from `e1 = ê_k × n`, `e2 = n × e1`, never by calling
+/// `of_normal` a second time.** Comparing `of_normal(K·n)` against `of_normal(n)` would let a chart
+/// that ignores magnitude entirely (dropping a coordinate) pass on both sides while regressing the
+/// census by nine rows (measured). An oracle has to come from the inputs.
 ///
 /// Cross-check on `e2`: `n × (ê₀ × n) = |n|²ê₀ − n₀n = 14(1,0,0) − (1,2,3) = (13, −2, −3)`,
 /// the same vector the cross product gives — two derivations, one answer.
@@ -159,8 +157,8 @@ fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() 
 ///
 /// The class's facing ([`stored_coeffs_rat`]) and the canonical → outward sign
 /// ([`loops::outward_fix`]) come out the same: they read the world name and its sense. Comparing
-/// the name's first nonzero component with the cache's — the spelling `outward_fix` and two
-/// siblings had — reads the flipped sign, which the contrast below states.
+/// the name's first nonzero component with the cache's reads the flipped sign, which the contrast
+/// below states.
 #[test]
 fn a_direction_sign_does_not_read_the_plane_cache() {
     use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
@@ -217,8 +215,8 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     )
     .expect("a plane");
     planes[c].plane = lying;
-    // The contrast: the first nonzero component of the name, compared with the cache's, now reads
-    // the other way — the spelling this test retires would have flipped.
+    // The contrast: with the lying cache planted, the first nonzero component of the name, compared
+    // with the cache's, reads the other way — a direction sign computed that way would flip.
     assert_ne!(
         (w[0] > zero) == (lying.normal().as_array()[0] > 0.0),
         (w[0] > zero) == (n[0] > 0.0),
@@ -695,7 +693,7 @@ fn a_failing_comparison_stops_the_sort_and_keeps_every_element() {
 /// The same, failing **inside a merge**: each half holds one marked element and the comparison
 /// fails only where two marked ones meet, so both halves sort and the merge is what stops. (With
 /// failures spread as above, the insertions of the halves meet them first and no merge is ever
-/// interrupted — writing a merge straight into the slice passed that test.)
+/// interrupted — a merge written straight into the slice would pass that test.)
 #[test]
 fn a_comparison_failing_mid_merge_keeps_every_element() {
     // Evens then odds, `20` and `21` marked: the halves sort without meeting a second mark, and

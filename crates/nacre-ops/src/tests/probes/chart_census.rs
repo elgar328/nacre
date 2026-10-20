@@ -1,6 +1,7 @@
 //! **An instrument, so the file lives in the test tree and the module does not.**
-//! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `census`, which is what keeps `super::`
-//! here meaning that module — moving this file did not move what it belongs to.
+//! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `census`, which is what keeps
+//! `super::` here meaning that module — the file's place in the tree does not change what it
+//! belongs to.
 
 use super::*;
 /// **The chart's lines and cells, checked where they are made.** It ships no capability: it
@@ -343,13 +344,13 @@ pub(crate) fn census(
                 odd_k += 1;
             }
             rulings += n;
-            // **A wall's rulings need not come in pairs any more.** A band's lateral
-            // reaches both rulings of every through-axis wall, so the walk below crossed each
-            // wall twice; a panel's or a chain's boundary may run along one ruling of a wall
-            // while the other is no face's edge at all (a quarter boss on a corner). Around such
-            // an interval the walk crosses that wall once and cannot return to its start — not a
-            // contradiction, a walk with an open end — so the closure is asserted only where every
-            // wall is crossed an even number of times, and the rest are counted (`unpaired`).
+            // **A wall's rulings need not come in pairs.** A band's lateral reaches both rulings of
+            // every through-axis wall, so the walk below crosses each such wall twice; a panel's or
+            // a chain's boundary may run along one ruling of a wall while the other is no face's
+            // edge at all (a quarter boss on a corner). Around such an interval the walk crosses
+            // that wall once and cannot return to its start — not a contradiction, a walk with an
+            // open end — so the closure is asserted only where every wall is crossed an even number
+            // of times, and the rest are counted (`unpaired`).
             let paired = {
                 let mut walls: Vec<usize> = alive.iter().map(|t| t.wall).collect();
                 walls.sort_unstable();
@@ -366,12 +367,12 @@ pub(crate) fn census(
                 // chart holds every wall's ruling, whether or not *this* lateral face reaches it,
                 // and a label only ever answers membership. `face_spans` is the one spelling of
                 // the rule and it reads exactly this list.
-                // **The first spelling of this was vacuous.** It asked whether the mark
-                // list was *empty*, and a `MergedRuling` exists only because a lateral traced it —
-                // so the answer was `0` because nothing was being looked at, not because the
-                // population is empty. The signal `face_spans` actually reads is the **kind**: a
-                // face running through says `Transversal`, one whose boundary stops at the line
-                // says `Graze` and may not reach the interval at all.
+                // **Asking whether the mark list is *empty* would be vacuous**: a `MergedRuling`
+                // exists only because a lateral traced it — so the answer would be `0` because
+                // nothing is being looked at, not because the population is empty. The signal
+                // `face_spans` actually reads is the **kind**: a face running through says
+                // `Transversal`, one whose boundary stops at the line says `Graze` and may not
+                // reach the interval at all.
                 // Measured over the suite: 412 `Transversal`, **12 `Graze`** — not empty.
                 if t.marks
                     .iter()

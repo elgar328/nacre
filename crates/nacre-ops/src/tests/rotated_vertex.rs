@@ -229,11 +229,10 @@ fn a_chain_reads_root_to_leaf() {
             angle: Angle::from_deg(R::from_int(45)).unwrap(),
         }),
     );
-    // The motion is the *face's* (surfaces record it; vertices follow their planes).
-    // Faces carry different depths since the restatement — the caps were fixed by the
-    // Z turn (restated) and only joined at the X turn — so the order lock reads every
-    // face: the walls' `[Z, X]` (never `[X, Z]` — the reversal this test exists to
-    // forbid) and the caps' `[X]`.
+    // The motion is the *face's* (surfaces record it; vertices follow their planes). Faces carry
+    // different depths under restatement — the caps are fixed by the Z turn (restated) and join
+    // only at the X turn — so the order lock reads every face: the walls' `[Z, X]` (never `[X, Z]`
+    // — the reversal this test exists to forbid) and the caps' `[X]`.
     let sh = m.solid(r).outer;
     let mut counts: std::collections::HashMap<Vec<Axis>, usize> = Default::default();
     for &fh in &m.shell(sh).faces {

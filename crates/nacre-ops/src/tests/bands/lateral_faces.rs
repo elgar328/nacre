@@ -45,9 +45,8 @@ fn add_lid(m: &mut Model) -> Handle<Solid> {
     lid
 }
 
-/// **Making it.** The split bore is an ordinary, correct solid — and nothing measured that
-/// until this defect was found, which is why it is its own test: if building it ever breaks,
-/// the test below (which *uses* it) must not be the one that goes red.
+/// **Making it.** The split bore is an ordinary, correct solid, and this is its own test: if
+/// building it ever breaks, the test below (which *uses* it) must not be the one that goes red.
 #[test]
 fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
     let (m, s) = plate_with_a_split_bore(2.0, 8.0);
@@ -86,8 +85,8 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
         "{:?}",
         nacre_validate::validate(&m)
     );
-    // The property under repair, counted directly — a volume alone does not say "two bands
-    // came out", and this defect is exactly one band going missing.
+    // The property, counted directly — a volume alone does not say "two bands came out", and the
+    // defect it guards is exactly one band going missing.
     assert_eq!(
         lateral_face_counts(&m, out[0]),
         vec![2],
@@ -99,10 +98,10 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
         - (72.0 - std::f64::consts::PI * 8.0)
         - (200.0 - std::f64::consts::PI * 8.0);
     assert!((p.volume - want).abs() < 1e-9, "{} vs {want}", p.volume);
-    // **Area is the sharper oracle for this defect.** A missing band does not change the
-    // volume — the boolean simply refuses — but it takes its `2πr·h` out of the surface. The
-    // two bands here are `z ∈ [0,4]` and `[6,8]`, so `16π + 8π` of lateral area must be in
-    // this number: 640 + 8π once every planar face is counted.
+    // **Area is the sharper oracle for a missing band.** A missing band does not change the volume
+    // — the boolean simply refuses — but it takes its `2πr·h` out of the surface. The two bands
+    // here are `z ∈ [0,4]` and `[6,8]`, so `16π + 8π` of lateral area must be in this number:
+    // `640 + 8π` once every planar face is counted.
     let want_area = 640.0 + std::f64::consts::PI * 8.0;
     assert!(
         (p.area - want_area).abs() < 1e-9,

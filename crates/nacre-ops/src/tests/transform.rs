@@ -1,14 +1,13 @@
 use super::*;
 use nacre_exact::Angle;
 
-/// **A moved pierce vertex names the crossing it moved to.** A definition's root is an
-/// order along `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite
-/// normal — one reversal, trading `Lo` and `Hi`. Found by the commutation oracle the moment
-/// the cache started reading the definition: under a 90° turn a boss's four pierce
-/// vertices realized to the *other* crossing, half a boss away, and the stored `f64` had hidden
-/// the wrong label since it was written. Locked on three quadrantal turns; the reflection half
-/// of the rule is paid at the same site but a mirrored cylinder has no exact world statement
-/// yet, so its pierce vertices keep the construction's figure and cannot be asked here.
+/// **A moved pierce vertex names the crossing it moved to.** A definition's root is an order along
+/// `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite normal — one
+/// reversal, trading `Lo` and `Hi`. Without the trade, under a 90° turn a boss's four pierce
+/// vertices would realize to the *other* crossing, half a boss away — the commutation oracle
+/// catches that, and a stored `f64` alone would hide it. Locked on three quadrantal turns; the
+/// reflection half of the rule is paid at the same site but a cylinder has no mirror image
+/// (`Surface::mirrored` is `None`), so it cannot be asked here.
 #[test]
 fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
     use nacre_exact::{Isometry, Rotation};
@@ -536,9 +535,9 @@ fn a_pierce_definition_swap_toggles_its_root() {
     let franken = m.push_face(Face {
         surface: x0,
         outer: Loop {
-            // A closed degenerate loop: v_lo -> v_hi -> v_lo. One half-edge would not
-            // close, and `Model::push_face` now says so — the scaffold this test needs is a
-            // face that *names the carriers*, never a malformed one.
+            // A closed degenerate loop: v_lo -> v_hi -> v_lo. One half-edge would not close, and
+            // `Model::push_face` says so — the scaffold this test needs is a face that *names the
+            // carriers*, never a malformed one.
             half_edges: vec![
                 HalfEdge {
                     edge,

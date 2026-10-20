@@ -97,13 +97,13 @@ fn square(lo: f64, hi: f64) -> crate::Profile2d {
         .remove(0)
 }
 
-/// **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's
-/// sketch frame is carried by a motion chain with a reflection in it, and the exact winding
-/// read on the profile's 2-D coordinates is the *opposite* sense once the chain has carried
-/// the ring into the world — so [`SweptRat::winding`] folds the chain's parity in. Without
-/// that the prism went up inside-out (a generated session found it: rotate, mirror, pad; the
-/// f64 cross-check in `oriented_ring` fired). The control is the same solid without the
-/// mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a 1×1×½ pocket.
+/// **A pad on a mirrored solid's tilted face stands up, and a pocket goes down.** The face's sketch
+/// frame is carried by a motion chain with a reflection in it, and the exact winding read on the
+/// profile's 2-D coordinates is the *opposite* sense once the chain has carried the ring into the
+/// world — so [`SweptRat::winding`] folds the chain's parity in. Without that the prism would go up
+/// inside-out (rotate, mirror, pad; the f64 cross-check in `oriented_ring` would fire). The control
+/// is the same solid without the mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a
+/// 1×1×½ pocket.
 #[test]
 fn a_pad_on_a_mirrored_tilted_face_stands_up() {
     let volume = |m: &nacre_topo::Model, s| nacre_props::mass_props(m, s).unwrap().volume;
@@ -198,11 +198,11 @@ fn axis_aligned_frames_lift_and_rotated_ones_decline() {
     for deg in [45.0, 30.0, 1.0, 0.1] {
         assert!(rotated(deg).exact().is_none(), "{deg}°");
     }
-    // **And a quarter turn built through f64 trig declines too**, which is worth
-    // knowing rather than assuming otherwise: `(90°).to_radians().sin_cos()` gives
-    // `cos = 6.1e-17`, not `0`, so the axes are not orthonormal and there is nothing
-    // here to recover — the exactness was lost before this module saw the frame.
-    // The kernel's exact quarter turns come from `Angle` (Niven), not from `f64::cos`.
+    // **And a quarter turn built through f64 trig declines too**, which is worth knowing rather
+    // than assuming otherwise: `(90°).to_radians().sin_cos()` gives `cos = 6.1e-17`, not `0`, so
+    // the axes are not orthonormal and there is nothing here to recover — the exactness is lost
+    // before this module sees the frame. The kernel's exact quarter turns come from `Angle`
+    // (Niven), not from `f64::cos`.
     for deg in [90.0, 180.0, 270.0] {
         assert!(rotated(deg).exact().is_none(), "{deg}° through f64 trig");
     }
@@ -255,7 +255,7 @@ fn a_split_sweep_lands_on_the_same_points_as_the_whole_one() {
     assert_eq!(points_f64(&whole), points_f64(&split), "realized");
     assert_eq!(points_f64(&whole)[0][2], 7.7);
 
-    // The f64 arithmetic this replaces does not agree with itself.
+    // Plain f64 arithmetic does not agree with itself.
     assert_ne!(0.0 + 1.1 + 6.6, 0.0 + 7.7);
 }
 

@@ -222,11 +222,10 @@ fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
         straight > 0,
         "no face carries a split edge — the fixture stopped reaching the population"
     );
-    // The lock is on the *winding* side now: `n_out` is read off the stored
-    // orientation, so `plane.normal()·n_out` is ±1 by construction and asserts
-    // nothing. What the widest-corner rule still owns is the triangle — revert
-    // `outer_tri` to "first non-flat corner" and the cross below is rounding
-    // noise again, failing this in release.
+    // The lock is on the *winding* side: `n_out` is read off the stored orientation, so
+    // `plane.normal()·n_out` is ±1 by construction and asserts nothing. What the widest-corner rule
+    // still owns is the triangle — with `outer_tri` reading the first non-flat corner the cross
+    // below would be rounding noise, failing this in release.
     for row in &faces {
         let f = row.plane();
         let (tri, _) = outer_tri(&m, m.face(f.face.expect("a model face"))).expect("a corner");

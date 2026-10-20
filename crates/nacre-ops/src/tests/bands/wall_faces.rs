@@ -52,13 +52,12 @@ fn a_boss_whose_wall_plane_crosses_a_distant_bore_still_fuses() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// **The d = 0 member of the family: the wall plane runs exactly through the bore's
-/// axis.** The gate passes it the same way (the boss's face clears the
-/// footprint along the span), and the rulings road stays **silent** — its trigger is the
-/// gate's carried `crossings` record, which is empty for every gate-passed pair. This
-/// geometry had no corpus row (its siblings are all d = 2), and it is the population an
-/// unconditionally-firing contribution arm broke — measured, 14 arc tests red — so it locks
-/// "an empty record changes nothing".
+/// **The d = 0 member of the family: the wall plane runs exactly through the bore's axis.** The
+/// gate passes it the same way (the boss's face clears the footprint along the span), and the
+/// rulings road stays **silent** — its trigger is the gate's carried `crossings` record, which is
+/// empty for every gate-passed pair. Its corpus siblings are all d = 2, and this is the population
+/// an unconditionally-firing contribution arm would break — measured, 14 arc tests red — so it
+/// locks "an empty record changes nothing".
 #[test]
 fn a_boss_whose_wall_plane_holds_the_bores_axis_still_fuses() {
     let (mut m, holed, boss) = plate_bore_and_boss(12.0, 5.0);
@@ -331,11 +330,10 @@ fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
     );
 }
 
-/// **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`
-/// — and its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through
-/// the cube and is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are
-/// pinched (the stud's circle touches each square's edge at one point) — and
-/// both are bridged and drawn: this is the model the tessellator was opened for.
+/// **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})` — and
+/// its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through the cube and
+/// is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are pinched (the
+/// stud's circle touches each square's edge at one point) — and both are bridged and drawn.
 ///
 /// Volumes derived: the stud is `π r² · 2`, the part inside the cube `π r² · 1`.
 #[test]
@@ -751,9 +749,9 @@ fn a_boss_tangent_from_outside_is_two_bodies() {
 /// overlaps the block in `y` (the notch is `0.8` wide, the boss `1.0`). So the lens and the far
 /// side are the same body, and the tangent line is where that body's surface meets itself.
 ///
-/// This is why the verdict asks the **grouping** and not only the geometry: without it, the
-/// answer here would be the one the fixture above earns, and this solid shipped `Ok` with
-/// `validate` clean and a mesh — measured before the check existed.
+/// This is why the verdict asks the **grouping** and not only the geometry: without it, the answer
+/// here would be the one the fixture above earns — this solid would ship `Ok` with `validate` clean
+/// and a mesh (measured).
 #[test]
 fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
     let mut m = Model::new();
@@ -896,12 +894,12 @@ fn two_bodies_touching_on_a_line(
     }
 }
 
-/// **A face far away on the wall's plane joins nothing.** The boss touches the box's wall
-/// `x = 0` from outside along `(0, 0)` — the lens and the far side, two bodies — and it is joined
-/// by a bar to a block whose face lies on that same plane at `y ∈ [10, 12]`, nowhere near the box.
-/// The union is still the two operands touching along the line. Read by the plane's class, the
-/// verdict found the wall's class and the cylinder's in the boss's body and refused
-/// `SelfTouchingResult`; the lens and the far side are in one body only when the result is one.
+/// **A face far away on the wall's plane joins nothing.** The boss touches the box's wall `x = 0`
+/// from outside along `(0, 0)` — the lens and the far side, two bodies — and it is joined by a bar
+/// to a block whose face lies on that same plane at `y ∈ [10, 12]`, nowhere near the box. The union
+/// is still the two operands touching along the line. Read by the plane's class, the verdict would
+/// find the wall's class and the cylinder's in the boss's body and refuse `SelfTouchingResult`; the
+/// lens and the far side are in one body only when the result is one.
 #[test]
 fn a_far_face_on_the_walls_plane_joins_nothing() {
     two_bodies_touching_on_a_line("boss, bar and block", || {
@@ -1139,9 +1137,9 @@ fn the_pinch_formula_is_a_truth_table() {
 /// (a rule reading vertices alone would find "every vertex on one side" true
 /// of a **single point**) but one that turns away the true answer along with the false one.
 ///
-/// The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on
-/// `y = 4` of half-width `√(9 − 1) ≈ 2.83`. Six apart, so it clears by more than its radius —
-/// and now says so. The volume is the oracle that the answer is not merely *an* answer.
+/// The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on `y = 4` of
+/// half-width `√(9 − 1) ≈ 2.83`. Six apart, so it clears by more than its radius — and says so. The
+/// volume is the oracle that the answer is not merely *an* answer.
 #[test]
 fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     let mut m = Model::new();
@@ -1191,15 +1189,15 @@ fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// **The same boss's `Common` is two thin pieces, and their depths are decided.** What the
-/// boss and the block share is the two circular segments past `|y| = 2` (and, with the slot's
-/// edge on the tangent line, the boss's half disk `y < 0` beside one of them) — two components,
-/// and the depth of each is asked of the other by rays (`assembly::grouping`). The rays from the
-/// chords' middles run in the plane through the boss's axis and its seam, so every arc root they
-/// meet sits on the seam: those are ordered as the cyclic order's first point
-/// (`nacre_exact::quad::SeamOrder::seam_first`), and a root at the probe on the circle off the
-/// arc is no boundary of that ring. Read as ties instead, every probe abstained and the boolean
-/// was refused `NoClearRay` here, in both orders (measured).
+/// **The same boss's `Common` is two thin pieces, and their depths are decided.** What the boss and
+/// the block share is the two circular segments past `|y| = 2` (and, with the slot's edge on the
+/// tangent line, the boss's half disk `y < 0` beside one of them) — two components, and the depth
+/// of each is asked of the other by rays (`assembly::grouping`). The rays from the chords' middles
+/// run in the plane through the boss's axis and its seam, so every arc root they meet sits on the
+/// seam: those are ordered as the cyclic order's first point
+/// (`nacre_exact::quad::SeamOrder::seam_first`), and a root at the probe on the circle off the arc
+/// is no boundary of that ring. Read as ties instead, every probe would abstain and the boolean
+/// would be refused `NoClearRay` here, in both orders (measured).
 ///
 /// The oracle is the inputs': a segment is `h(r²·acos(d/r) − d·√(r² − d²))` with `d = 2`, the half
 /// disk `h·πr²/2`.

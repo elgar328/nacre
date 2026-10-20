@@ -1,8 +1,8 @@
 use super::*;
 use crate::construct::RatFrame;
 
-/// The frame road's realized basis, wrapped so `exact()` can be asked of it — the same two
-/// lines `extrude_on_frame` will run.
+/// The realized basis, wrapped so `exact()` can be asked of it — the same two lines
+/// `ops::frame_plane` runs.
 fn realized(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
     let (o, u, v, _) = crate::rotated_vertex::frame_world_basis(
         model,
@@ -29,13 +29,13 @@ fn both(model: &mut Model, sp: SketchPlane) -> (Option<RatFrame>, Option<RatFram
         unreachable!()
     };
     let by_value = sp.exact();
-    // The repaired road: ask in `Rat`, never realize.
+    // Asked in `Rat`, never realized.
     let by_frame = exact_frame(model, &frame);
     (by_value, by_frame)
 }
 
-/// The road as it was before the repair — realize the axes, then lift them back. Kept so the
-/// repair is visibly a different *question* rather than a refactor of the same one.
+/// The realized road — realize the axes, then lift them back. Kept so asking in `Rat` is visibly a
+/// different *question* rather than a refactor of the same one.
 fn both_realized(model: &mut Model, sp: SketchPlane) -> (Option<RatFrame>, Option<RatFrame>) {
     let OpOutput::DatumPlane { frame, .. } = apply(
         model,
@@ -109,18 +109,18 @@ fn population() -> Vec<(&'static str, SketchPlane)> {
 
 /// **They agree — once the question is asked in rationals.**
 ///
-/// Before the repair two families diverged (`rational_tilt_wf`, `rational_tilt_345`): an axis
-/// survived the frame road only when it needed no normalizing, because `reduce_direction`
-/// turns a `(0.6, 0.8, 0)` axis into the primitive `(3, 4, 0)` with `uu = 25` and a
-/// *realization* multiplies by a numerically computed `1/5`, landing on `0.6000000000000001`.
-/// `Rat::from_decimal` lifted that, orthonormality failed, and a perfectly rational plane
-/// took the frame-node road — a different arena, not an ulp.
+/// On the realized road two families diverge (`rational_tilt_wf`, `rational_tilt_345`): an axis
+/// survives it only when it needs no normalizing, because `reduce_direction` turns a
+/// `(0.6, 0.8, 0)` axis into the primitive `(3, 4, 0)` with `uu = 25` and a *realization*
+/// multiplies by a numerically computed `1/5`, landing on `0.6000000000000001`. `Rat::from_decimal`
+/// lifts that, orthonormality fails, and a perfectly rational plane would take the frame-node road
+/// — a different arena, not an ulp.
 ///
-/// Two hypotheses died on the way, and both were mine. **Origin cancellation** (`1.6 − 1.0`)
-/// is not the cause: a unit axis at `(1, 2, 3)` survives, which
-/// [`a_realized_axis_survives_only_when_it_needs_no_normalizing`] pins. And the planning
-/// argument "`|u_raw|² = 1`, so `inv_sqrt_rat` returns exactly one" held only for axes that
-/// are *already* unit; I generalized it to every rational axis and predicted agreement.
+/// Two explanations do not hold. **Origin cancellation** (`1.6 − 1.0`) is not the cause: a unit
+/// axis at `(1, 2, 3)` survives, which
+/// [`a_realized_axis_survives_only_when_it_needs_no_normalizing`] pins. And "`|u_raw|² = 1`, so
+/// `inv_sqrt_rat` returns exactly one" holds only for axes that are *already* unit, not for every
+/// rational axis.
 ///
 /// [`RatFrame::of_plane_frame`] asks in `Rat` and never realizes — the same rule
 /// `plane_frame_named` already states for `v̂`, one level up.
@@ -144,13 +144,13 @@ fn the_two_roads_take_the_same_road() {
     }
 }
 
-/// **The road the repair replaced, kept as a positive control.**
+/// **The realized road, kept as a positive control.**
 ///
-/// Realizing the axes and lifting them back still loses exactly the two families whose axes
-/// need normalizing. Without this the repair would read as a refactor of one question; with
-/// it, the two routes are visibly different questions and the fix is visibly load-bearing.
+/// Realizing the axes and lifting them back loses exactly the two families whose axes need
+/// normalizing. Without this, asking in `Rat` would read as a refactor of one question; with it,
+/// the two routes are visibly different questions and asking in `Rat` is visibly load-bearing.
 #[test]
-fn realizing_the_axes_first_still_loses_them() {
+fn realizing_the_axes_first_loses_them() {
     let mut lost = Vec::new();
     for (name, sp) in population() {
         let mut m = Model::new();
@@ -162,16 +162,16 @@ fn realizing_the_axes_first_still_loses_them() {
     assert_eq!(
         lost,
         vec!["rational_tilt_wf", "rational_tilt_345"],
-        "the realized route is what the repair stopped using; if this list changed, the \
-             measurement the repair was built on moved with it"
+        "the realized route is the one asking in `Rat` replaces; if this list changed, the \
+             measurement that choice rests on moved with it"
     );
 }
 
-/// **The mechanism, isolated** — so the repair is checked against the cause, not the symptom.
+/// **The mechanism, isolated** — so asking in `Rat` is checked against the cause, not the symptom.
 ///
-/// On the realized route an axis survives exactly when its reduced form is already unit;
-/// moving the frame's origin changes nothing, which is what ruled out the "differencing two
-/// realized points cancels the origin" explanation. Asked in `Rat`, all four are rational.
+/// On the realized route an axis survives exactly when its reduced form is already unit; moving the
+/// frame's origin changes nothing, which rules out the "differencing two realized points cancels
+/// the origin" explanation. Asked in `Rat`, all four are rational.
 #[test]
 fn a_realized_axis_survives_only_when_it_needs_no_normalizing() {
     let p3 = Point3::from_array;
@@ -239,13 +239,12 @@ fn the_two_roads_realize_the_same_axes_where_they_agree_on_the_road() {
 
 /// **The invariant the agreement above quietly rests on, stated.**
 ///
-/// `exact()` lifts the frame's *realized* origin with `Rat::from_decimal`, so a `Named`
-/// placement's origin has to survive a round trip through `f64` to come back as the same
-/// rational. Every `Named` origin today came from `Rat::from_decimal` in the first place
-/// (`SketchFrame::named` lifts an `f64`; a datum takes `PlaneDef`'s lifted points), so it
-/// does — but that is a property of the current producers, **not of the type**. A future
-/// producer that *computes* an origin would break the round trip, and the plane would move to
-/// the frame-node road without anything failing.
+/// `exact()` lifts the frame's *realized* origin with `Rat::from_decimal`, so a `Named` placement's
+/// origin has to survive a round trip through `f64` to come back as the same rational. Every
+/// `Named` origin comes from `Rat::from_decimal` in the first place (`SketchFrame::named` lifts an
+/// `f64`; a datum takes `PlaneDef`'s lifted points), so it does — but that is a property of the
+/// current producers, **not of the type**. A future producer that *computes* an origin would break
+/// the round trip, and the plane would move to the frame-node road without anything failing.
 #[test]
 fn every_named_origin_survives_the_round_trip_it_is_relied_on_for() {
     for (name, sp) in population() {

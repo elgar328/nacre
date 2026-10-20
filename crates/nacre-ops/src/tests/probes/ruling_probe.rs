@@ -6,7 +6,7 @@
 //!
 //! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `ruling_probe`, which is what keeps `super::`
-//! here meaning that module — moving this file did not move what it belongs to.
+//! here meaning that module — the file's place in the tree does not change what it belongs to.
 
 use super::SegKind;
 use crate::ledger::Ledger;

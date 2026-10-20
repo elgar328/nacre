@@ -70,9 +70,9 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
         .map(|sh| m.shell(sh).faces.len())
         .sum::<usize>();
     assert_eq!(faces, 7, "4 walls + 2 drilled caps + the bore's wall");
-    // **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
-    // from memory; the counts are measured here and what is asserted is the relation
-    // (`χ = V − E + F − L = 2(S − G)`, so one shell with one through hole gives `χ = 0`).
+    // **Genus 1, derived rather than quoted.** The counts are measured here and what is asserted is
+    // the relation (`χ = V − E + F − L = 2(S − G)`, so one shell with one through hole gives
+    // `χ = 0`).
     let (v_n, e_n, f_n, l_n) = euler_counts(&m, s);
     assert_eq!(
         v_n - e_n + f_n - l_n,
@@ -101,17 +101,16 @@ fn a_through_hole_is_built_and_measures_what_it_should() {
     assert!(v < plain_v, "the bore removes material: {v} vs {plain_v}");
 }
 
-/// **Two bores in one plate — the case the band pass was rebuilt for.**
+/// **Two bores in one plate.**
 ///
-/// The second cut's counterpart already carries a cylinder face (the first bore's wall), and
-/// the old witness road could not describe such a body, so this used to decline by name. The
-/// band pass now reads the arrangement's own disk labels, and a curved counterpart is no
-/// longer a question anyone has to answer.
+/// The second cut's counterpart already carries a cylinder face (the first bore's wall); the band
+/// pass reads the arrangement's own disk labels, so a curved counterpart is not a question it has
+/// to answer.
 ///
-/// It is also where the wall's **own** membership stopped being assumed: the first bore's
-/// wall bounds the *plate*, and inside that circle the plate has no material — the opposite of
-/// a drill, which fills its own cylinder. Assuming the drill's case (as the pass did while
-/// only drills were tested) puts the second bore's `keep` on the wrong chamber.
+/// It is also where the wall's **own** membership is not assumed: the first bore's wall bounds the
+/// *plate*, and inside that circle the plate has no material — the opposite of a drill, which fills
+/// its own cylinder. Assuming the drill's case would put the second bore's `keep` on the wrong
+/// chamber.
 #[test]
 fn a_two_hole_plate_drills_both() {
     let mut m = Model::new();
@@ -166,9 +165,8 @@ fn a_two_hole_plate_drills_both() {
     assert_eq!(chi, -2, "two handles: χ = 2(1 − 2)");
 }
 
-/// **Three bores.** Two was the case the label route was built for; three is the check that
-/// nothing in it counts to two — each cut's counterpart carries one more cylinder face than
-/// the last.
+/// **Three bores** — the check that nothing in the label route counts to two: each cut's
+/// counterpart carries one more cylinder face than the last.
 #[test]
 fn three_bores_in_a_row() {
     let mut m = Model::new();

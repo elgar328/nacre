@@ -8,10 +8,10 @@ use super::*;
 /// in it — and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
 
-/// The graze rows of `edge_mask`'s algebra, one by one. The missing row was the
-/// same-side pair: a knife edge's two faces both leave `W` upward, the material
-/// between them pinches to measure zero at the plane, and flipping anything there
-/// hands the label propagation a contradiction it reports two layers later.
+/// The graze rows of `edge_mask`'s algebra, one by one, the same-side pair among them: a knife
+/// edge's two faces both leave `W` upward, the material between them pinches to measure zero at the
+/// plane, and flipping anything there hands the label propagation a contradiction it reports two
+/// layers later.
 #[test]
 fn edge_mask_graze_algebra() {
     let g = |above: bool| (SolidSide::A, SegKind::Graze { body_above: above });
@@ -732,7 +732,7 @@ fn split_cuts_the_cross_into_the_right_pieces() {
     assert_eq!(incident.len(), 4, "degree-4 at (1,1,1): {}", incident.len());
     let mut keys = std::collections::HashSet::new();
     for s in &incident {
-        // The far end as a handle on this edge's own line — carried by the segment now.
+        // The far end as a handle on this edge's own line — carried by the segment.
         let far_h = if is_v(s.end[0]) {
             s.end_h[1]
         } else {
@@ -1034,12 +1034,12 @@ fn the_cross_arrangement_has_six_cells() {
 
     // **An independent reading of every winding: the shoelace sign.**
     //
-    // `loop_winding` reads the turn at one extreme node, which is correct only if the
-    // comparison it picks that node with is an order. When it was not, exactly one ring of
-    // five came back with the wrong sign and stayed *confident* about it — the engine only
-    // noticed two layers later, as "no outer contour", and named the symptom. Realizing the
-    // nodes and summing cross products says the same thing directly, so a disagreement points
-    // at the ring rather than at the count.
+    // `loop_winding` reads the turn at one extreme node, which is correct only if the comparison it
+    // picks that node with is an order. With a comparison that is not an order, a ring would come
+    // back with the wrong sign and stay *confident* about it (measured: one ring of five) — the
+    // engine would notice only two layers later, as "no outer contour", and name the symptom.
+    // Realizing the nodes and summing cross products says the same thing directly, so a
+    // disagreement points at the ring rather than at the count.
     {
         let pl = &jd.planes[wc].plane;
         let n = pl.normal();
@@ -1633,11 +1633,11 @@ fn tunnel_vol_area(kind: BoolKind) -> (f64, f64) {
     })
 }
 
-/// The first result with a hole. On the z=0/z=3 caps the arrangement is two disjoint loops
-/// (cube rim `O`, tunnel mouth `I`); the mouth is a hole of the annular cap, which cannot fall
-/// out as an absent cell (tiling the annulus needs a rim node the adjacent wall lacks) — it
-/// must emit as an inner ring. Cut volume 24 (27−3); AREA 64 (not 54) proves a bore, not a
-/// filled cap — volume alone cannot tell a through-hole from a blind dent.
+/// A result with a hole. On the z=0/z=3 caps the arrangement is two disjoint loops (cube rim `O`,
+/// tunnel mouth `I`); the mouth is a hole of the annular cap, which cannot fall out as an absent
+/// cell (tiling the annulus needs a rim node the adjacent wall lacks) — it must emit as an inner
+/// ring. Cut volume 24 (27−3); AREA 64 (not 54) proves a bore, not a filled cap — volume alone
+/// cannot tell a through-hole from a blind dent.
 #[test]
 fn tunnel_cut_is_bored_not_dented() {
     let (v, area) = tunnel_vol_area(BoolKind::Cut);

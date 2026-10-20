@@ -3,12 +3,12 @@
 use super::*;
 
 //
-// A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
-// same as any planar wall meeting a class along an edge, and `edge_mask`'s `Graze > Seated`
-// precedence exists exactly for the corner where the two disagree — a **blind bore's ceiling**.
-// Without the graze, the cap's seated rule flipped the wrong label bit, the band's two ends
-// contradicted each other, and the *next* boolean on that solid came back
-// `CylinderGateUndecided`. A through bore has no ceiling.
+// A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the same as
+// any planar wall meeting a class along an edge, and `edge_mask`'s `Graze > Seated` precedence
+// exists exactly for the corner where the two disagree — a **blind bore's ceiling**. Without the
+// graze, the cap's seated rule would flip the wrong label bit, the band's two ends would contradict
+// each other, and the *next* boolean on that solid would come back `CylinderGateUndecided`. A
+// through bore has no ceiling.
 
 /// A plate bored to `hole_h` deep, ready to be operated on again.
 fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
@@ -120,9 +120,8 @@ fn a_blind_bore_can_be_drilled_beside() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// **The control**: a through bore and an overshooting one already worked, and must keep
-/// working. Without this, a change that merely made *any* second boolean succeed would look
-/// like the repair.
+/// **The control**: a through bore and an overshooting one build too. Without this, a change that
+/// merely made *any* second boolean succeed would look like the graze at work.
 #[test]
 fn a_through_bore_is_unaffected() {
     for h in [5.0, 7.0] {

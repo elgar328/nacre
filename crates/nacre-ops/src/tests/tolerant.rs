@@ -156,10 +156,10 @@ fn orient3d_is_rotation_invariant() {
 /// `collect_planes` on a rotated solid fills each plane's exact `WitnessPoint` triple, whose
 /// coordinates **span the face's own plane** and whose definition is rotated (tol > 0).
 ///
-/// The witness is the surface's recorded triple, which is the *first pusher's* —
-/// an origin cuboid's axis faces intern onto the seeded world planes, so the witness is the
-/// seed's `[0, u, v]` (rotated along), not this face's corners. "Matches `tri`" was a
-/// first-push coincidence, never the contract; on-plane is.
+/// The witness is the surface's recorded triple, which is the *first pusher's* — an origin cuboid's
+/// axis faces intern onto the seeded world planes, so the witness is the seed's `[0, u, v]`
+/// (rotated along), not this face's corners. Matching `tri` would be a first-push coincidence, not
+/// the contract; on-plane is.
 #[test]
 fn plane_def_from_face() {
     let on_plane = |pi: &crate::planes::WorkingPlane| {
@@ -172,9 +172,9 @@ fn plane_def_from_face() {
     let r = rotated(&mut m, s);
     let planes = plane_table(&m, r);
     for pi in &planes {
-        // The caps' *truth* is world-stated since the invariant-plane restatement, but
-        // the table re-chains a chain-fixed plane (the mirror takes the strongest
-        // description), so every plane of a uniformly-turned solid reads rotated here.
+        // The caps' *truth* is world-stated under the invariant-plane restatement, but the table
+        // re-chains a chain-fixed plane (the mirror takes the strongest description), so every
+        // plane of a uniformly-turned solid reads rotated here.
         assert!(pi.rotated, "a rotated solid's planes are flagged rotated");
         on_plane(pi);
         assert!(
@@ -182,9 +182,8 @@ fn plane_def_from_face() {
             "a rotated plane's def carries rotation tol"
         );
     }
-    // The axis-aligned original also carries a def now — that is the change this test used
-    // to forbid. What distinguishes it is the flag, not the presence of a definition, and
-    // its def is exact: tol 0, on the plane.
+    // The axis-aligned original also carries a def. What distinguishes it is the flag, not the
+    // presence of a definition, and its def is exact: tol 0, on the plane.
     let pu = plane_table(&m, s);
     assert!(pu.iter().all(|pi| !pi.rotated));
     for pi in &pu {
@@ -619,9 +618,9 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 /// the triangles has to change nothing — that is the property,
 /// not an accident, so it is asserted rather than left untested.
 ///
-/// A caution the first draft of this test walked into: not every perturbation is detectable.
-/// Reflecting the base triangles *and* re-deriving their planes changes nothing at all — the
-/// two sign flips cancel, which is the same pseudovector identity this whole cell is about.
+/// A caution: not every perturbation is detectable. Reflecting the base triangles *and* re-deriving
+/// their planes changes nothing at all — the two sign flips cancel, which is the same pseudovector
+/// identity this test is about.
 #[test]
 fn the_base_frame_is_actually_consulted() {
     let (pa, pb) = two_spellings();
@@ -796,12 +795,12 @@ fn a_reflected_spelling_compares_coordinates_the_same_way() {
 
 /// How each column reaches `7.7` — the only thing that varies between a run and its control.
 ///
-/// **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
-/// hold the shape fixed and change only the coincidence question, but it cannot be built: the
-/// two columns' shoulders are then one plane and the second column's upper pad is refused with
-/// `Rejected { SeamAlias }` — the same family of defect, one level down. `Single` differs by
-/// one shoulder at height `3.1`, which is nowhere near the caps at `9.7`, so the third control
-/// (the plate over one cap only) carries the isolation instead.
+/// **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would hold
+/// the shape fixed and change only the coincidence question, but it cannot be built: the two
+/// columns' shoulders are then one plane and the second column's upper pad is refused with
+/// `Rejected { SeamAlias }` — a refusal of the same family, one level down. `Single` differs by one
+/// shoulder at height `3.1`, which is nowhere near the caps at `9.7`, so the third control (the
+/// plate over one cap only) carries the isolation instead.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Recipe {
     /// A: one `7.7`. B: `1.1` then `6.6`. The caps land one ulp apart.
@@ -988,15 +987,15 @@ fn two_caps_reached_by_different_arithmetic_are_one_plane() {
 
 /// **A plate laid across both caps builds a well-formed solid.**
 ///
-/// This is what the split cost, and it is why the split was not merely conservative. With the
-/// caps in different classes the result came back carrying a face whose stored surface normal
-/// was **76° off its own outward normal** — the invariant `collect_planes` asserts, so the
-/// solid could not be used as an operand again, and in release `orient_sign` would have been
-/// read off that dot. **Nothing reported it**: the volume was right and `validate` was clean.
+/// This is why two caps one ulp apart share a class. With the caps in different classes the result
+/// would carry a face whose stored surface normal is **76° off its own outward normal** (measured)
+/// — the invariant `collect_planes` asserts, so the solid could not be used as an operand again,
+/// and in release `orient_sign` would be read off that dot. **Nothing would report it**: the volume
+/// is right and `validate` clean.
 ///
-/// The cause was isolated with three controls, and the malformed face appeared only in the one
-/// cell where a plate spanned two caps in different classes. All four are kept: they are what
-/// says the fix closed the cause rather than the symptom.
+/// With the caps in different classes the malformed face would appear only in the case where a
+/// plate spans both caps; the three controls stay beside it, and they are what says the cause is
+/// closed rather than the symptom.
 #[test]
 fn a_plate_across_both_caps_builds_a_well_formed_solid() {
     for (recipe, span, want_bad) in [
@@ -1263,12 +1262,11 @@ fn two_caps_described_exactly_are_one_plane() {
     );
 }
 
-/// **How many planes now carry an exact point triple, and do the triples describe the
-/// plane they are filed under?**
+/// **How many planes carry an exact point triple, and do the triples describe the plane they are
+/// filed under?**
 ///
-/// The points are written but nothing reads them yet, so this is what says the producers were
-/// wired — and the residual check is what says they were wired *correctly*: a triple filed
-/// under the wrong surface would still be exact and still be three points.
+/// This says the producers are wired — and the residual check says they are wired *correctly*: a
+/// triple filed under the wrong surface would still be exact and still be three points.
 #[test]
 fn every_plane_that_can_records_its_three_exact_points() {
     for (name, recipe) in [("split", Recipe::Split), ("single", Recipe::Single)] {
@@ -1524,15 +1522,15 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
 /// **One plane, one handle — the gain, stated as something that can fail.**
 ///
 /// Everything else in this suite says *"nothing broke"*. This says what the wide derivation
-/// **bought**: a U-shaped footprint has two walls on one plane, and until the kernel could name
-/// that plane they were two `Surface` handles for one thing. Handle identity is what
-/// `plane_classes` merges on in O(1) and what a coplanar contact is recognised by, so a plane it
-/// cannot name is a plane the engine has to rediscover geometrically every time.
+/// **buys**: a U-shaped footprint has two walls on one plane, and a kernel that could not name that
+/// plane would hold two `Surface` handles for one thing. Handle identity is what `plane_classes`
+/// merges on in O(1) and what a coplanar contact is recognised by, so a plane it cannot name is a
+/// plane the engine has to rediscover geometrically every time.
 ///
-/// **The coordinates have to be full-width.** On short decimals (`1.0`, `0.5`) the narrow
-/// `Rat` route already names every wall and the two already share a handle — a version of this
-/// test written that way passes before the change and proves nothing. These are seventeen
-/// digits, which is what a slider, a computed dimension or a proptest actually produces.
+/// **The coordinates have to be full-width.** On short decimals (`1.0`, `0.5`) the narrow `Rat`
+/// route names every wall and the two share a handle without the wide derivation — a version of
+/// this test written that way would pass without it and prove nothing. These are seventeen digits,
+/// which is what a slider, a computed dimension or a proptest actually produces.
 #[test]
 fn two_walls_of_one_plane_become_one_surface() {
     use crate::{OpOutput, Profile2d, SketchFrame};
@@ -1702,13 +1700,12 @@ mod wide_name_rescue {
         out
     }
 
-    /// A tool raised on a **wide** vertex-named datum of `m` — the first triple whose
-    /// canonical name needs the wide vessel and whose datum carries an extrude
-    /// (`half`-sized square profile, `dist` deep). The carriers are the pocket's
-    /// *discovered* vertices, which carry no motion chain, so the datum names the
-    /// **world** — the probe below (`the wide plane names the world`) is what taught this
-    /// module that fact, and it is why the populations under test are the world gate and a
-    /// later whole-solid motion, not the boolean that first makes the wide plane.
+    /// A tool raised on a **wide** vertex-named datum of `m` — the first triple whose canonical
+    /// name needs the wide vessel and whose datum carries an extrude (`half`-sized square profile,
+    /// `dist` deep). The carriers are the pocket's *discovered* vertices, which carry no motion
+    /// chain, so the datum names the **world** — the probe below (`the wide plane names the world`)
+    /// pins that fact, and it is why the populations under test are the world gate and a later
+    /// whole-solid motion, not the boolean that first makes the wide plane.
     fn wide_datum_tool(m: &mut Model, half: f64, dist: f64) -> Option<Handle<Solid>> {
         let verts = live_verts(m);
         for i in 0..verts.len() {
@@ -1783,14 +1780,12 @@ mod wide_name_rescue {
                         .all(|&k| t[k].base.chain_id == t[idx[0]].base.chain_id)))
     }
 
-    /// **The probe that corrected the plan's population claim.** The wide datum's
-    /// carriers are the pocket's *discovered* vertices — solved world rationals with no
-    /// motion chain — so the wide name is a **world** description (`chain = []`,
-    /// `rotated = false`), not a moved one. The boolean that first makes the wide plane
-    /// therefore asks mixed-frame questions (world-wide cap × frame-moved prism walls ×
-    /// `FrameWide`-raised tool walls) that *neither* gate can speak to; the name's real
-    /// populations are the world gate and a later solid moved **whole**. Kept as its own
-    /// test because the wrong claim survived investigation and review twice.
+    /// **The wide name describes the world.** The wide datum's carriers are the pocket's
+    /// *discovered* vertices — solved world rationals with no motion chain — so the wide name is a
+    /// **world** description (`chain = []`, `rotated = false`), not a moved one. The boolean that
+    /// first makes the wide plane therefore asks mixed-frame questions (world-wide cap ×
+    /// frame-moved prism walls × `FrameWide`-raised tool walls) that *neither* gate can speak to;
+    /// the name's real populations are the world gate and a later solid moved **whole**.
     #[test]
     fn the_wide_plane_names_the_world() {
         let mut m = wf_pocket_model();

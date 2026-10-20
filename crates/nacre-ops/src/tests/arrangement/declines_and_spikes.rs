@@ -68,12 +68,12 @@ fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Sol
 
 /// **The crossing collector's direction families really are equivalence classes.**
 ///
-/// `split_at_crossings` replaced a predicate per wall pair with "same family?", which is sound
+/// `split_at_crossings` asks "same family?" instead of a predicate per wall pair, which is sound
 /// only because `wc ∩ w ∥ wc ∩ r` is transitive. The argument is in [`direction_partition`]; this
-/// is the **check**, over every wall pair of every class of a rotated and an axis-aligned fold:
-/// the partition **that function builds** must agree with the predicate's own answer, everywhere.
-/// It calls the producer rather than rebuilding it, so a partition that drifted from the
-/// predicate — the way one family's representative is chosen, say — shows up here.
+/// is the **check**, over every wall pair of every class of a rotated and an axis-aligned fold: the
+/// partition **that function builds** must agree with the predicate's own answer, everywhere. It
+/// calls the producer rather than rebuilding it, so a partition that drifted from the predicate —
+/// the way one family's representative is chosen, say — shows up here.
 ///
 /// It matters that this is a test and not a spike. A violation would not reject or panic — it
 /// would invent a crossing point where the lines never meet, or lose one where they do, and the
@@ -186,15 +186,14 @@ fn direction_families_partition_the_walls() {
     }
 }
 
-/// **Where does a whole boolean's time go?** Every earlier profile answered a share *of a
-/// phase* — and the one that mattered was never taken.
+/// **Where does a whole boolean's time go?** Not a share *of a phase* — a share of the whole.
 ///
-/// Two ways to be wrong that this is built against:
+/// Three ways to be wrong that this is built against:
 ///
-/// 1. **Mixed clocks.** The last breakdown summed per-thread timers (CPU) and read the result
-///    against the fold's wall clock. The part came out larger than the whole — 3,719ms of a
-///    2,540ms fold — and the ratio it implied was meaningless. **Run this with
-///    `--no-default-features`**, where every phase and the total are the same clock.
+/// 1. **Mixed clocks.** Summing per-thread timers (CPU) and reading the result against the fold's
+///    wall clock would make the part larger than the whole — 3,719ms of a 2,540ms fold (measured) —
+///    and the ratio meaningless. **Run this with `--no-default-features`**, where every phase and
+///    the total are the same clock.
 /// 2. **Phases that do not add up.** The sum is printed against the measured whole, so anything
 ///    unaccounted for shows as a gap rather than hiding inside a phase's share.
 /// 3. **Another test adding to the same counters.** `phase::` are process-global atomics
@@ -316,7 +315,7 @@ fn spend(n: i128, rotated: bool) {
     );
     println!("  {:<32} {whole:>8.1?}  100.0%   ← measured", "the fold");
     println!(
-        "\n  split_at_crossings is {:.1}% of the whole boolean. The plan continues at 25%.",
+        "\n  split_at_crossings is {:.1}% of the whole boolean.",
         100.0
             * rows
                 .iter()
@@ -326,14 +325,14 @@ fn spend(n: i128, rotated: bool) {
             / total as f64
     );
 
-    // **Scale, which decides whether the structural fixes are worth building.** A hull test
-    // over wall *pairs* replaces `2 × |segs on r|` predicate calls with `2` — worth nothing when
-    // a wall carries one segment, and worth the ratio when it carries many.
+    // **Scale, which says whether a pair hull pays.** A hull test over wall *pairs* would replace
+    // `2 × |segs on r|` predicate calls with `2` — worth nothing when a wall carries one segment,
+    // and worth the ratio when it carries many.
     use phase::scale as sc;
     let (segs, walls) = (sc::get(&sc::SEGS), sc::get(&sc::WALLS));
     println!("\n  scale, summed over every class of every boolean:");
     println!(
-        "    segments / walls        {segs:>10} / {walls:<10} = {:.2}   ← S3b lives or dies here",
+        "    segments / walls        {segs:>10} / {walls:<10} = {:.2}   ← a pair hull pays if high",
         segs as f64 / walls.max(1) as f64
     );
     println!("    split points (reps)     {:>10}", sc::get(&sc::PTS));
@@ -348,12 +347,12 @@ fn spend(n: i128, rotated: bool) {
     );
 }
 
-/// The loop-invariant hoist's gate: **what did hoisting it do to the evidence?** `plane_pair_dir_sign`
-/// records on the rotated path, and `BoolReport::coincidences` is a *count*, so asking the same
-/// question fewer times moves it. The answer must not move; the count may.
+/// **Does hoisting the loop invariant move the evidence?** `plane_pair_dir_sign` records on the
+/// rotated path, and `BoolReport::coincidences` is a *count*, so asking the same question fewer
+/// times moves it. The answer must not move; the count may.
 #[test]
 #[ignore = "spike"]
-fn measure_spike_report_after_hoisting() {
+fn measure_spike_report_under_hoisting() {
     let n = 24i128;
     let mut m = Model::new();
     let mut acc = crate::fixtures::cuboid(
@@ -388,11 +387,10 @@ fn measure_spike_report_after_hoisting() {
 
 /// What is actually left to save, **in production's configuration**?
 ///
-/// The earlier phase timing used `ClassReuse::Off`, so it counted work production never does —
-/// `reuse.rs` skips most classes outright. This counts what survives that, how much of it a
-/// per-class bounding box would cull, and how often the two things that would make the cull
-/// unsound actually occur. Counting only; nothing is built and nothing is timed (the machine is
-/// not quiet).
+/// A phase timing under `ClassReuse::Off` counts work production never does — `reuse.rs` skips most
+/// classes outright. This counts what survives that, how much of it a per-class bounding box would
+/// cull, and how often the two things that would make the cull unsound actually occur. Counting
+/// only; nothing is built and nothing is timed (the machine is not quiet).
 #[test]
 #[ignore = "spike"]
 fn measure_spike_cull_potential() {
@@ -439,12 +437,12 @@ fn measure_spike_cull_potential() {
         "  seated footprint is one piece: {} of {} arranged classes",
         tot.one_piece, tot.arranged
     );
-    // Recorded, and **not** the operative number. The plan restricted the cull to classes
-    // whose seated footprint is one connected piece, fearing that several pieces would need
-    // several seeds. They do not: what the correction needs is that the culled chords' parity
-    // be *constant over the footprint*, and the cull criterion (`box(F)` disjoint from the
-    // footprint box) already guarantees no culled chord enters that box. A box is connected, so
-    // the parity is one constant however many pieces the seated faces form.
+    // Recorded, and **not** the operative number. Restricting the cull to classes whose seated
+    // footprint is one connected piece would guard against several pieces needing several seeds.
+    // They do not: what the correction needs is that the culled chords' parity be *constant over
+    // the footprint*, and the cull criterion (`box(F)` disjoint from the footprint box) already
+    // guarantees no culled chord enters that box. A box is connected, so the parity is one constant
+    // however many pieces the seated faces form.
     println!(
         "  (one-piece classes only:  {:>6}  of {} — not the limit, see the note)",
         tot.cullable_1p, tot.pairs_1p

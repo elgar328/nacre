@@ -81,13 +81,11 @@ fn the_chart_census_is_running() {
 /// the chart with a label, and the walk around each interval returns to where it started.
 /// What this holds is that the reading is **live** and that its counters are not vacuous.
 ///
-/// **What the vertical answer settled, which no label alone could.** 82
-/// emitted bands span more than one θ-sector, and the cells alone cannot say what the extra
-/// line is. With a label on the vertical lines there are three answers, and the third is
-/// existence — the ruling may not be on this face at all. Measured over the suite:
-/// **absent 0 · a
-/// boundary the band road misses 0 · harmless 84**. The band road is calling those strips
-/// uniform and the chart agrees they *are*: the walls crossing them change nothing at the
+/// **What the vertical answer settled, which no label alone could.** 82 emitted bands span more
+/// than one θ-sector, and the cells alone cannot say what the extra line is. With a label on the
+/// vertical lines there are three answers, and the third is existence — the ruling may not be on
+/// this face at all. Measured over the suite: **absent 0 · a boundary the bands miss 0 · harmless
+/// 84**. The chart reads those strips as uniform: the walls crossing them change nothing at the
 /// lateral there.
 ///
 /// Beside it, over **450 alive-ruling observations** — a piece counts once per interval it
@@ -96,10 +94,10 @@ fn the_chart_census_is_running() {
 /// whose every mark is a graze** — the existence question is not empty either — and **201
 /// intervals closing, 0 not**.
 ///
-/// **The first spelling of the existence counter was vacuous**: it asked whether a ruling's
-/// mark list was *empty*, and a `MergedRuling` exists only because a lateral traced it. It
-/// measured `0` because nothing was being looked at. The signal `face_spans` actually reads is
-/// the **kind** (`Graze` = the face stops here), and that has 12.
+/// **Asking whether a ruling's mark list is *empty* would be vacuous**: a `MergedRuling` exists
+/// only because a lateral traced it, so that counter would read `0` because nothing is being looked
+/// at. The signal `face_spans` actually reads is the **kind** (`Graze` = the face stops here), and
+/// that has 12.
 #[test]
 fn the_charts_vertical_answers_close() {
     let mut m = Model::new();
@@ -323,13 +321,13 @@ fn a_present_cell_has_a_horizontal_answer_and_the_ledger_is_total() {
 
 /// **The derivation, on an axis that is not `+z`** — both roads, on a genuinely tilted one.
 ///
-/// **Why this fixture had to be built.** Everything above is derived from the gate's
-/// branch table and depends on no axis direction, but every number beside it was measured on
-/// a corpus that is effectively axis-aligned: the kit builder raises cylinders on world XY
-/// (`+z` only), the ops corpus is `+z`/`+x`/`+y`, and all three *tilted* cylinders in it are
-/// **reject** fixtures — so no tilted axis had ever reached the chart. On `+z` against an
-/// axis-aligned box a class's axis parameter is just a `z` coordinate and the division in
-/// `bands::axis_param` is trivial; tilted, it is a real rational one.
+/// **Why this fixture exists.** Everything above is derived from the gate's branch table and
+/// depends on no axis direction, but every number beside it was measured on a corpus that is
+/// effectively axis-aligned: the kit builder raises cylinders on world XY (`+z` only), the ops
+/// corpus is `+z`/`+x`/`+y`, and all three *tilted* cylinders in it are **reject** fixtures — so
+/// without this fixture no tilted axis reaches the chart. On `+z` against an axis-aligned box a
+/// class's axis parameter is just a `z` coordinate and the division in `bands::axis_param` is
+/// trivial; tilted, it is a real rational one.
 ///
 /// **Both halves are stated on the exact road, and that is the whole trick.**
 /// A *Pythagorean frame* — `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)` — lifts to axes that

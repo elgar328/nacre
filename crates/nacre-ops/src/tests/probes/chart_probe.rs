@@ -1,6 +1,7 @@
 //! **An instrument, so the file lives in the test tree and the module does not.**
-//! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `probe`, which is what keeps `super::`
-//! here meaning that module — moving this file did not move what it belongs to.
+//! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `probe`, which is what keeps
+//! `super::` here meaning that module — the file's place in the tree does not change what it
+//! belongs to.
 
 use crate::ledger::Ledger;
 

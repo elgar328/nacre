@@ -4,8 +4,8 @@ use crate::SketchFrame;
 
 use nacre_exact::Axis;
 
-/// The engine entry with the evidence dropped — these tests assert geometry, and the report
-/// has its own tests. Shadows [`super::boolean`] so the call sites read as they always did.
+/// The engine entry with the evidence dropped — these tests assert geometry, and the report has its
+/// own tests. Shadows [`super::boolean`] so each call site stays one call.
 fn boolean(
     model: &mut Model,
     kind: BoolKind,

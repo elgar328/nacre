@@ -1,4 +1,4 @@
-//! **Can the kernel's own output be drawn?** — asked here because nowhere else asked it.
+//! **Can the kernel's own output be drawn?** — asked here because nowhere else asks it.
 //!
 //! Every other census in this crate watches a decision the boolean makes ([`crate::reject_census`],
 //! `ruling_probe`, `cyl_chart::probe`); this one asks whether the solid that comes out can be
@@ -19,7 +19,7 @@
 //!
 //! **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::assembly`] mounts it with `#[path]` as `tess_census`, which is what keeps `super::`
-//! here meaning that module — moving this file did not move what it belongs to.
+//! here meaning that module — the file's place in the tree does not change what it belongs to.
 
 use crate::ledger::Ledger;
 use nacre_topo::Model;

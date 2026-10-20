@@ -61,7 +61,7 @@ fn the_production_road_survives_a_cylinder_past_the_stopper() {
     .expect("the drill population traces");
     assert!(
         faces.iter().all(|f| matches!(f.surf, ClassIx::Plane(_))),
-        "the plane arrangement emits plane faces only; bands are C4b-2"
+        "the plane arrangement emits plane faces only; bands come from `bands`"
     );
     // The box: 4 walls + 2 caps, and each cap carries the drill's circular hole.
     assert_eq!(faces.len(), 6, "{faces:?}");
@@ -245,13 +245,12 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
     }
 }
 
-/// **The gate's record arms the rulings road — and only the record.** With the
-/// through-boss pair listed, the boss's trace on the wall class is the rectangle: two
-/// rulings (one per side, Pierce-named ends, no plain segments) and two cap chords
-/// (`Lo`/`Hi` roots on the cap classes). With the record empty — every production call
-/// today — the same trace is empty: the negative control that pins "an empty record
-/// changes nothing", which is the very population an unconditionally-firing arm broke
-/// (14 arc-family tests red, measured).
+/// **The gate's record arms the rulings road — and only the record.** With the through-boss pair
+/// listed, the boss's trace on the wall class is the rectangle: two rulings (one per side,
+/// Pierce-named ends, no plain segments) and two cap chords (`Lo`/`Hi` roots on the cap classes).
+/// With the record empty — every production call today — the same trace is empty: the negative
+/// control that pins "an empty record changes nothing", which is the population an
+/// unconditionally-firing arm would break (14 arc-family tests red, measured).
 #[test]
 fn the_gates_record_arms_the_ruling_trace() {
     let (m, _plate, boss, setup, wc, crossings) = armed_through_boss();
@@ -809,18 +808,17 @@ fn armed_curved(
     (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi])
 }
 
-/// **A cut circle is a band boundary**. On the armed
-/// through-boss, the per-class products of the four ⊥ classes are collected the production
-/// way (`per_class` on each), and the chart must break the lateral at the two **cut**
-/// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
-/// (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle interval is
-/// both-cut and is emitted as panel rings. Three controls on the reader: blinding only the
-/// arcs still answers, because the vertical lines speak in their place; blinding **both** of
+/// **A cut circle is a band boundary**. On the armed through-boss, the per-class products of the
+/// four ⊥ classes are collected the production way (`per_class` on each), and the chart must break
+/// the lateral at the two **cut** circles (z = 0, z = 20) as well as the rims: three intervals, not
+/// one full-height band (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle
+/// interval is both-cut and is emitted as panel rings. Three controls on the reader: blinding only
+/// the arcs still answers, because the vertical lines speak in their place; blinding **both** of
 /// the chart's axes (the arc labels and the rulings') leaves the reader no answer there; and
 /// turning every ruling label inside out while the arcs stand makes two sides of each cell
 /// contradict each other — `emit_lateral` refuses both by name, neither side believed over the
-/// other: a cell no side reads — its blinded ends read no circle, which a present cell always
-/// has (`CylinderStagesDisagree`) — and labels that disagree (`LabelConflict`).
+/// other: a cell no side reads — its blinded ends read no circle, which a present cell always has
+/// (`CylinderStagesDisagree`) — and labels that disagree (`LabelConflict`).
 #[test]
 fn a_cut_circle_bounds_the_bands() {
     let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
@@ -834,8 +832,8 @@ fn a_cut_circle_bounds_the_bands() {
     assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
     assert_eq!(arc_labels[&(0, z20)].len(), 2);
     assert_eq!(rows.len(), 1);
-    // A cut circle is a band boundary (the rulings ladder): the chart's boundary rule names
-    // the two cut rims beside the caps, and the chart's own lines are exactly those four.
+    // A cut circle is a band boundary: the chart's boundary rule names the two cut rims beside the
+    // caps, and the chart's own lines are exactly those four.
     let def = &setup.cyls[0].def;
     let t_of = |c: usize| crate::bands::axis_param(&jd, c, def).unwrap();
     let expect: Vec<Rat> = [cap_lo, z0, z20, cap_hi].map(t_of).to_vec();
@@ -2062,11 +2060,9 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     );
 }
 
-/// The hole arm of the seated tracer: a face whose inner loop is a circle (a two-hole
-/// plate's input shape — a bore `Cut` builds one in production now, so the hand-doctored
-/// loops this arm was written against have company) emits its polygon segments **and** a
-/// seated circle that inherits the face's own
-/// body side.
+/// The hole arm of the seated tracer: a face whose inner loop is a circle (a two-hole plate's input
+/// shape, which a bore `Cut` builds in production) emits its polygon segments **and** a seated
+/// circle that inherits the face's own body side.
 #[test]
 fn a_circular_hole_ring_traces_as_a_seated_circle() {
     let mut m = Model::new();
@@ -2247,13 +2243,13 @@ fn no_ghost_circle_outside_the_rim_span() {
     );
 }
 
-/// **The corner the graze exists for.** On a convex cap the lateral's rim-graze and the
-/// cap's seated circle say the same thing, so carrying both changes nothing — the test above
-/// locks that. Here they **disagree**: at a blind bore's ceiling the plate's material is above
-/// the cap while the bore's wall hangs below it, a reflex dihedral in the plane. `edge_mask`'s
-/// `Graze > Seated` precedence then picks the wall's side, which is the whole mechanism of the
-/// repair; before the graze existed, the seated rule flipped the wrong label bit and the next
-/// boolean on that solid came back `CylinderGateUndecided`.
+/// **The corner the graze exists for.** On a convex cap the lateral's rim-graze and the cap's
+/// seated circle say the same thing, so carrying both changes nothing — the test above locks that.
+/// Here they **disagree**: at a blind bore's ceiling the plate's material is above the cap while
+/// the bore's wall hangs below it, a reflex dihedral in the plane. `edge_mask`'s `Graze > Seated`
+/// precedence then picks the wall's side, which is the whole mechanism; without the graze, the
+/// seated rule would flip the wrong label bit and the next boolean on that solid would come back
+/// `CylinderGateUndecided`.
 #[test]
 fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     let mut m = Model::new();
@@ -2407,11 +2403,11 @@ fn partial_overlap_is_not_merged() {
 /// **An arc that crosses the cut line once on its way into an end lying on it** — the half disk
 /// over the arc `(1, 0) → (−1, 0)` (unit radius, `z ∈ [0, 2]`) traced on the slanted class
 /// `x + y = 1`, which runs through the arc's end `(1, 0)` and crosses it again at `(0, 1)`. Each
-/// cap's ring is read as the walk now reads it: the end on the line is flanked by the arc's last
-/// piece, which lies across it, so the end is a crossing and the arc's interior crossing is
-/// another — one chord per cap, from `(1, 0)` to `(0, 1)`. Read off the arc's two ends, the end
-/// looked like a touch and the chord was not there. (The booleans on this pair stop at
-/// `RulingBoundNotYet` before they reach the arrangement, so the trace is where this is read.)
+/// cap's ring is read by the walk: the end on the line is flanked by the arc's last piece, which
+/// lies across it, so the end is a crossing and the arc's interior crossing is another — one chord
+/// per cap, from `(1, 0)` to `(0, 1)`. Read off the arc's two ends, the end would look like a touch
+/// and the chord would not be there. (The booleans on this pair stop at `RulingBoundNotYet` before
+/// they reach the arrangement, so the trace is where this is read.)
 #[test]
 fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
     use nacre_exact::Rat;

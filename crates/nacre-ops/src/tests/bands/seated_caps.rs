@@ -12,12 +12,11 @@ use super::*;
 // what still stands at the end of this block is the oblique cut that does meet a face and the
 // cylinder pair whose faces do meet.
 //
-// **Measured against the pre-deletion kernel, all seven of these came back
-// `SeatedCylinderCap` — the two fences included.** The rule stood before the wall and the
-// curved-depth rules and answered for them: an overhanging boss and a pair of coplanar-capped
-// cylinders are refused for reasons that have nothing to do with seating, and the sentence a
-// user got named the seating anyway. Deleting it does not only open the five; it lets the two
-// that stay shut say what is actually in the way.
+// **A seated-cap refusal standing before the wall and curved-depth rules would refuse all seven of
+// these as a seating problem — the two fences included (measured).** It would answer for those
+// rules: an overhanging boss and a pair of coplanar-capped cylinders are refused for reasons that
+// have nothing to do with seating, and the sentence would name the seating anyway. Without it the
+// five build, and the two that stay shut say what is actually in the way.
 
 /// **(a) A through hole whose two caps are flush with the plate's own faces.** The drill neither
 /// overshoots nor stops short: both cap planes coincide with the plate's, and every ⊥ class in
@@ -239,11 +238,10 @@ fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
     );
 }
 
-/// **The through-boss builds** — the rulings ladder's milestone: a boss standing through
-/// the plate's wall (axis exactly on the `x = 40` plane). Fuse keeps the outer half
-/// (plate + the boss outside it), cut
-/// carves the notch, common keeps the inner half-cylinder — each an exact closed form, and
-/// the three exercise both complementary θ-sectors.
+/// **The through-boss builds**: a boss standing through the plate's wall (axis exactly on the
+/// `x = 40` plane). Fuse keeps the outer half (plate + the boss outside it), cut carves the notch,
+/// common keeps the inner half-cylinder — each an exact closed form, and the three exercise both
+/// complementary θ-sectors.
 #[test]
 fn a_through_boss_fuses() {
     let pi = std::f64::consts::PI;
@@ -262,10 +260,9 @@ fn a_through_boss_common_is_the_inner_half() {
     through_boss_builds(BoolKind::Common, [40.0, 20.0, -10.0], 250.0 * pi);
 }
 
-/// A boss on the plate's **corner** — its axis on *two* wall planes, both recorded, each
-/// circle cut by both walls: the rim pairing (`(wall class, root)`) and the θ-panel
-/// machinery quarter the lateral. Measured to assemble in the lift probe; the volume pins
-/// it (plate + three quarters of the cylinder outside).
+/// A boss on the plate's **corner** — its axis on *two* wall planes, both recorded, each circle cut
+/// by both walls: the rim pairing (`(wall class, root)`) and the θ-panel machinery quarter the
+/// lateral. The volume pins it (plate + three quarters of the cylinder outside).
 #[test]
 fn a_corner_boss_fuses() {
     let pi = std::f64::consts::PI;
@@ -321,14 +318,12 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
     }
 }
 
-/// **The half-height boss builds.** A boss
-/// through the plate's wall whose upper cap (z = 10) sits inside the plate: below the plate
-/// the lateral is a whole band, beside it only the outer sector survives, and the cap is a
-/// half-disk. The band road refused this end (`RulingBoundNotYet`); the chart's cells read
-/// it off the same labels. Volumes derived, not copied: the boss outside the plate is the
-/// outer half-cylinder over the full height (`π·25·20/2 = 250π`) plus the inner half below
-/// the plate (`π·25·10/2 = 125π`); the boss inside the plate is the inner half over
-/// `z ∈ [0, 10]` (`125π`).
+/// **The half-height boss builds.** A boss through the plate's wall whose upper cap (z = 10) sits
+/// inside the plate: below the plate the lateral is a whole band, beside it only the outer sector
+/// survives, and the cap is a half-disk. The chart's cells read this end off the labels. Volumes
+/// derived, not copied: the boss outside the plate is the outer half-cylinder over the full height
+/// (`π·25·20/2 = 250π`) plus the inner half below the plate (`π·25·10/2 = 125π`); the boss inside
+/// the plate is the inner half over `z ∈ [0, 10]` (`125π`).
 ///
 /// The lateral is **one** face: the band and the outer panel merge into a band whose
 /// upper rim is a **wrapping chain** (the z = 0 inner arc, a ruling, the z = 10 outer arc,
@@ -404,9 +399,9 @@ fn a_half_height_boss_builds() {
 /// valid solid.
 ///
 /// The volume and the mixed-loop integrals are pinned by
-/// [`Self::a_cut_rim_boolean_builds_a_complete_solid`]; here the result answers the two
-/// whole-model judges: `validate` (whose winding check reads the arcs as witnesses now) and
-/// the tessellation (watertight, arcs sampled as sub-arcs).
+/// [`Self::a_cut_rim_boolean_builds_a_complete_solid`]; here the result answers the two whole-model
+/// judges: `validate` (whose winding check reads the arcs as witnesses) and the tessellation
+/// (watertight, arcs sampled as sub-arcs).
 #[test]
 fn a_boss_overhanging_the_plates_edge_builds() {
     let mut m = Model::new();
@@ -452,12 +447,11 @@ fn a_boss_overhanging_the_plates_edge_builds() {
 /// the circle, so the circle keeps its closed cell — what the shape really asks is that the
 /// **disk cell host a polygon**, which `nest_cells` does.
 ///
-/// **The population immediately found a live defect in the nesting predicate.** With the
-/// disk allowed to host, the *circle*'s contour came back as a hole of the **square** — the
-/// footprint `[7,9]×[9,11]` straddles the axis `(8,10)`, so "the circle's centre is inside the
-/// ring" is true in the nesting that does not hold. One witness point says *whether* two
-/// disjoint loops nest, never *which way*; the other direction is what settles it
-/// (`cell_in_cell`).
+/// **This population needs the nesting asked both ways.** With the disk allowed to host, a single
+/// witness would read the *circle*'s contour as a hole of the **square** — the footprint
+/// `[7,9]×[9,11]` straddles the axis `(8,10)`, so "the circle's centre is inside the ring" is true
+/// in the nesting that does not hold. One witness point says *whether* two disjoint loops nest,
+/// never *which way*; the other direction is what settles it (`cell_in_cell`).
 #[test]
 fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
     let mut m = Model::new();

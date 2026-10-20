@@ -21,7 +21,7 @@ fn the_ray_roads_refusals_are_read_by_whose_they_are() {
             assert!(matches!(said(PointOnRing), Ok(Said::Abstain)), "{at}");
             assert!(matches!(said(NoClearRay), Ok(Said::Abstain)), "{at}");
             // A pierce corner no ray plane can side: the ring's, so the road declines. Without one
-            // the name came from an arc on the ray's own plane, which the witness chose.
+            // the name would come from an arc on the ray's own plane, which the witness chooses.
             if has_pierce {
                 assert!(
                     matches!(said(PierceVertexUnnamed), Ok(Said::Declines)),
