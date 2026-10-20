@@ -13,7 +13,7 @@ nacre-topo = { workspace = true }
 nacre-store = { workspace = true }
 nacre-math = { workspace = true }
 # Geometry is below topo (no cycle). The cavity-orientation check reads a planar
-# face's normal to sign its signed volume; the M1 checks reach geom's
+# face's normal to sign its signed volume; the other checks reach geom's
 # distance/normal transitively, this makes that dependency explicit.
 nacre-geom = { workspace = true }
 
@@ -26,9 +26,7 @@ nacre-exact = { path = "../nacre-exact" }
 # Enables topo's planting doors — the self-tests plant the defective models validate must catch.
 nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 proptest.workspace = true
-# Tests hand-build tetrahedra, so they NAME geom's Curve/Line/Plane/Surface.
-# The library itself never names them (method calls only), so geom stays a
-# dev-only dependency.
+# Tests hand-build tetrahedra, naming geom's Curve/Line/Plane/Surface.
 nacre-geom = { path = "../nacre-geom" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

@@ -74,7 +74,7 @@ pub enum TessError {
     /// beside a curved face, two touches on one segment or at one point, two lobes meeting only at
     /// a point, a point passed three times, and a bridge beside any other bridge or pinch.
     ///
-    /// **This does not say the solid is wrong — and that is now measured, not hoped.** The
+    /// **This does not say the solid is wrong — and that is measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
     /// sampled circle vertex lands on the touch. Both fixtures are `validate`-clean with volumes
     /// exact to `1e-9`, and
@@ -89,10 +89,10 @@ pub enum TessError {
     /// — every live solid — or [`tessellate_solids`]), and the playground's drawing stops at the
     /// first value whose mesh is refused, so one pinched face erases every body of that run.
     ///
-    /// The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
-    /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been
-    /// there all along and calls the same thing a *pinch*; this is the spelling a chart actually
-    /// produces, since `face_rings` gives every ring its own index range.
+    /// The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier, by
+    /// `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check calls the same
+    /// thing a *pinch*; this is the spelling a chart actually produces, since `face_rings` gives
+    /// every ring its own index range.
     SelfTouchingBoundary,
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
@@ -951,7 +951,7 @@ struct Chart {
 /// **A chart is a bijection, and this is the other direction** — from a point in the chart to the
 /// surface parameters that name it and the position they evaluate to.
 ///
-/// It exists because the chart is now allowed to *invent* a point ([`Chart::interior`]), and an
+/// It exists because the chart may *invent* a point ([`Chart::interior`]), and an
 /// invented point has no model vertex to read a position off. Both arms therefore have to undo the
 /// same handedness repair their forward direction applied, which is the one thing here that can be
 /// silently wrong: the round-trip is measured on the boundary, where the forward answer is known.
@@ -1856,7 +1856,7 @@ fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<
     out
 }
 
-/// **The mesh's one rule, asked of the face's *interior* — where it was never asked.**
+/// **The mesh's one rule, asked of the face's *interior*.**
 ///
 /// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
 /// polyline. A face's interior otherwise inherits whatever sampling its boundary supplies: fine

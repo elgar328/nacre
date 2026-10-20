@@ -1260,7 +1260,7 @@ fn a_vertex_nudged_off_its_definition_flags() {
     );
 }
 
-// --- cavity orientation (M5 containment) ---
+// --- cavity orientation ---
 
 /// A hollow `outer`-cube with a concentric `inner`-cube void. `reverse`
 /// selects a correct inward cavity (`reversed_shell`) or a mis-oriented one

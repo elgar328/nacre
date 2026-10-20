@@ -453,7 +453,7 @@ fn pocket_mass() {
 }
 
 /// Build a hollow solid: an `outer`-cube with a concentric `inner`-cube void,
-/// the inner cube's shell reversed inward (M5 containment). Returns its mass.
+/// the inner cube's shell reversed inward. Returns its mass.
 fn cube_in_cube(min: Point3, outer: f64, inner: f64) -> MassProps {
     let mut m = Model::new();
     let ext = |s: f64| Vector3::from_array([s, s, s]);

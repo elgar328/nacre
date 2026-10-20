@@ -15,9 +15,7 @@ use nacre_math::{Point3, Vector3};
 /// planes can share one image. Judging reads the plane's name, derived from its defining points
 /// without rounding — the exact shortcuts and the plane-class merge alike.
 ///
-/// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
-/// parametric frame (two in-plane basis vectors) arrives in M3, when tess
-/// uv-tagging and NURBS need surface parameters.
+/// Minimal by design: no uv-frame or parametric `evaluate(u, v)`.
 ///
 /// `PartialEq` is exact `f64` comparison — for tests and
 /// literal coincidence only. "Is this point on the plane?" goes through

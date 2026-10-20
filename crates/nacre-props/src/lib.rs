@@ -416,10 +416,10 @@ struct LateralMoments {
 
 /// A lateral face's moments, by **one line integral over every loop it has**.
 ///
-/// **This is where the rectangle assumption died.** The old spelling found the loop's two
-/// rims, read one `Δθ` and one height off them, and multiplied — true only for a `(θ, z)`
-/// *rectangle*, so a face with a hole, or one whose outer walk detours around a notch, had to be
-/// refused (`UnsupportedInnerLoop`, `UnsupportedBoundary`). Green's theorem asks the boundary
+/// **No rectangle assumption.** Reading one `Δθ` and one height off the loop's two rims and
+/// multiplying holds only for a `(θ, z)` *rectangle*, so a face with a hole, or one whose outer
+/// walk detours around a notch, would have to be refused (`UnsupportedInnerLoop`,
+/// `UnsupportedBoundary`). Green's theorem asks the boundary
 /// instead: for any region `R` in the chart and any `g` with `∂G/∂z = g`,
 ///
 /// ```text
@@ -483,9 +483,8 @@ fn lateral_moments(
             // boss standing on a wall cuts its own rim into exactly two half turns, so the
             // ambiguous case is not a corner of the population, it *is* the population.
             let (travel, t_start, t_end) = if va == vb {
-                // A closed rim: one full turn, and its trig moments are **exactly** zero —
-                // written as zero rather than differenced, which is what keeps the full-band
-                // populations on their old numbers.
+                // A closed rim: one full turn, and its trig moments are **exactly** zero — written
+                // as zero rather than differenced, so a full band carries no differencing error.
                 let turn = std::f64::consts::TAU;
                 (if he.forward { turn } else { -turn }, 0.0, 0.0)
             } else {
@@ -503,8 +502,7 @@ fn lateral_moments(
             j1 -= z * travel;
             jz -= 0.5 * z * z * travel;
             if va != vb {
-                // `sin`/`cos` are periodic, so these need no unwrapping — the same argument the
-                // chain-end spelling rested on.
+                // `sin`/`cos` are periodic, so these need no unwrapping.
                 jc -= z * (t_end.sin() - t_start.sin());
                 js += z * (t_end.cos() - t_start.cos());
             }
@@ -530,9 +528,8 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
         .collect()
 }
 
-/// [`Model::he_start`], kept as a local name. (The `Result` is always `Ok`: every
-/// edge is bounded by type, so the unsupported-boundary arm has nothing to catch. The wrapper
-/// stays because five callers still `?` it; collapsing it is a separate change.)
+/// [`Model::he_start`], kept as a local name. (The `Result` is always `Ok`: every edge is bounded
+/// by type, so the unsupported-boundary arm has nothing to catch. Five callers `?` it.)
 fn he_start(
     model: &Model,
     he: nacre_topo::HalfEdge,

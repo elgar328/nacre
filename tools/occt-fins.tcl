@@ -25,7 +25,7 @@
 # `part = hub; for fin { part = fuse(part, fin) }` -- so the cheap structure is already what we
 # get. nacre shows the same effect, smaller: 14.88 s fins-only vs 11.0 s hub-first.
 #
-# Threads, since it was assumed once and the assumption was wrong: DRAWEXE's default really is
+# Threads, measured rather than assumed: DRAWEXE's default is
 # single-threaded (CPU == wall), and `brunparallel 1` buys 1.05x for 4x the CPU -- almost all of
 # those cores spin. FreeCAD's PolarPattern shows the same shape (wall 3.74 s, CPU 21.0 s). So
 # FreeCAD is not quick here because it is parallel; its single-threaded logic is. Like for like

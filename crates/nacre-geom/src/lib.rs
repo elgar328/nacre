@@ -99,8 +99,8 @@ pub enum Surface {
 impl Surface {
     /// Unsigned distance from `p` to the surface (the tolerance-free residual).
     ///
-    /// Note: closed-form and always finite for analytic surfaces (planes,
-    /// cylinders, and the M6 quadrics). When iterative surfaces (NURBS) arrive
+    /// Note: closed-form and always finite for analytic surfaces (planes
+    /// and cylinders). When iterative surfaces (NURBS) arrive
     /// this may gain fallibility/cost (a `Result` or a separate `try_distance`).
     #[inline]
     pub fn distance(&self, p: Point3) -> f64 {
@@ -184,7 +184,7 @@ pub enum Curve {
 
 impl Curve {
     /// Unsigned distance from `p` to the curve (the tolerance-free residual).
-    /// See [`Surface::distance`] for the M3 fallibility note.
+    /// See [`Surface::distance`] for the fallibility note.
     #[inline]
     pub fn distance(&self, p: Point3) -> f64 {
         match self {

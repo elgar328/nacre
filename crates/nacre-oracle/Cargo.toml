@@ -23,7 +23,7 @@ nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 nacre-props = { path = "../nacre-props" }
 # Builds a padded boss to diff against OCCT.
 nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
-# The Isometry carried by the Transform op (stage-1a translated-solid diff).
+# The exact motions (`Isometry`, `Rotation`, `Angle`) the oracle tests move solids with.
 nacre-exact = { path = "../nacre-exact" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

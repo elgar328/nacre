@@ -95,14 +95,12 @@ fn read_obj(text: &str) -> ObjText {
     out
 }
 
-/// **What the OBJ writer owes, now that it is the only one.**
+/// **What the OBJ writer owes.**
 ///
-/// This used to run the bootstrap `to_obj(&Model)`, whose contract was *"every model vertex
-/// is written in store order, so an OBJ index stays a vertex handle's index"*. That writer is
-/// gone and the contract with it — an index is now a **mesh** vertex, and a mesh vertex says
-/// far more than a handle did ([`TessOrigin`] names the vertex, edge or face it came from).
-/// What is left to check here is the text: one `v` per mesh vertex, one `f` per triangle,
-/// 1-based, and nothing referenced that was not written.
+/// An OBJ index is a **mesh** vertex, not a vertex handle's index, and a mesh vertex says far more
+/// than a handle ([`TessOrigin`] names the vertex, edge or face it came from). What is checked here
+/// is the text: one `v` per mesh vertex, one `f` per triangle, 1-based, and nothing referenced that
+/// was not written.
 #[test]
 fn unit_cube_obj_shape() {
     let m = cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
@@ -382,7 +380,7 @@ fn every_planar_face_meshes_about_its_own_normal() {
 
 /// **A chart is a bijection, and the way back has to be the way back.**
 ///
-/// The chart may now invent an interior point, and an invented point's position comes from
+/// The chart may invent an interior point, and an invented point's position comes from
 /// nowhere else — so [`ChartMap`] is load-bearing. Both arms undo a **handedness repair**, and
 /// that is exactly the sort of thing that is silently wrong: a plane swaps its two axes, a
 /// cylinder negates its height, and either undone in the wrong direction still produces a
@@ -1374,20 +1372,19 @@ fn obj_normals_round_a_cylinder_and_keep_its_rims_sharp() {
 ///
 /// The chart's lattice lays rows at the heights of the circles a lateral crosses, so part of every
 /// row lies on the face's own arcs, and the exact predicates drop those points as on the boundary —
-/// only if the two agree to the bit. Two shapes are where they did not:
+/// only if the two agree to the bit. Two shapes are where they can disagree:
 ///
 /// * **A tilted axis**: a circle's place read off the curve and off a point on it differ by ulps.
-///   A window through a boss and a lateral cut at both rims, turned 37° and 23°, meshed with 2, 8
-///   and 50 slivers leaning more than 25° — the worst lying in a cap plane, 90° off (none
-///   untilted) — gone now that a circle's points stand
-///   at the circle's own place ([`station`]), which shows here as the tilted mesh having exactly
-///   the untilted triangle count.
+///   Read off a point, a window through a boss and a lateral cut at both rims, turned 37° and
+///   23°, would mesh with 2, 8 and 50 slivers leaning more than 25° — the worst lying in a cap
+///   plane, 90° off (none untilted). A circle's points stand at the circle's own place
+///   ([`station`]), which shows here as the tilted mesh having exactly the untilted triangle count.
 /// * **A ruling on a lattice column**: a box wall at `x = 0.5` against `r = 1` meets the lateral
-///   at 30°, which is the 2° lattice's fifteenth column — the census's `bothrims … slab` rows, ten
-///   slivers each, leaning 30° to 34°. Not one number computed twice, so it cannot be computed once: the chart
-///   withholds the column within `ON_RULING` of a rising boundary step. Kept here although the
-///   census asserts the same, because the census is a gate-only binary and this runs with every
-///   `cargo test`.
+///   at 30°, the 2° lattice's fifteenth column; without the withholding the census's
+///   `bothrims … slab` rows would carry ten slivers each, leaning 30° to 34°. Not one number
+///   computed twice, so it cannot be computed once: the chart withholds the column within
+///   `ON_RULING` of a rising boundary step. Kept here although the census asserts the same,
+///   because the census is a gate-only binary and this runs with every `cargo test`.
 #[test]
 fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -1545,8 +1542,8 @@ fn before_cutting(m: &Model) -> usize {
 }
 
 /// **A boundary nearer another than a chord sags is drawn** ([`separate_crossing_chords`]).
-/// Each of these is a valid solid whose cap the sweep refused before the arcs there were cut
-/// finer — the chords of two curves `1e-8` to `5e-4` apart passing through each other:
+/// Each of these is a valid solid whose cap the sweep would refuse with the arcs there left uncut —
+/// the chords of two curves `1e-8` to `5e-4` apart passing through each other:
 ///
 /// * the playground's `d: 9.999` hole at `(3, 4)` in a disk of radius 10, its rim `0.0005` from the
 ///   disk's — cut, and fused with a column standing past both caps;
@@ -1618,8 +1615,8 @@ fn a_boundary_nearer_than_a_chord_sags_is_drawn() {
 /// disk, its seam turned off the disk's (`(0.6, 0.8)`) so the two circles' samples do not line up:
 /// the chords cross all the way round, and every arc must be cut until its sagitta is under the
 /// gap. At `1e-6` that is about 2,300 samples a circle and the cap is drawn; at `1e-8` it would be
-/// over 20,000, past [`FINEST_CIRCLE`], and the face comes back [`TessError::DegenerateRing`] as it
-/// did before any arc was cut — in about 0.9 s (release), where cutting on draws it in about 20.
+/// over 20,000, past [`FINEST_CIRCLE`], and the face comes back [`TessError::DegenerateRing`] — in
+/// about 0.9 s (release), where cutting on would draw it in about 20.
 #[test]
 fn near_contact_past_the_finest_sampling_is_refused_by_name() {
     use nacre_ops::{BoolKind, boolean, fixtures};

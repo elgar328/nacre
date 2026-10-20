@@ -186,7 +186,7 @@ impl Circle {
     ///
     /// Magnitude is `radius` (**not** unit) and never zero — it is the velocity
     /// along the curve, the quantity a finite difference of [`point_at`] returns.
-    /// (Term follows *The NURBS Book*, the M3 reference.)
+    /// (Term follows *The NURBS Book*.)
     ///
     /// [`point_at`]: Circle::point_at
     #[inline]

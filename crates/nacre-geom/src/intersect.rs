@@ -29,7 +29,7 @@ const PARALLEL_EPS: f64 = 1e-16;
 ///
 /// Closed form — no SSI march or spline cache. Direction is
 /// `n1 × n2`; the base point is the point of the line closest to the origin.
-/// Returns a bare [`Line`] (the closed form), not a marched approximation — the M7
+/// Returns a bare [`Line`] (the closed form), not a marched approximation — the
 /// shape for those is an open question this crate cannot spell (see the crate doc).
 ///
 /// The base point is `p0 = (h1·(n2×d) + h2·(d×n1)) / (d·d)` with `d = n1×n2` and
@@ -93,7 +93,7 @@ const COPLANAR_DET_EPS: f64 = 1e-9;
 /// exact `det3_sign`: an exact-nonzero determinant can still round its f64
 /// counterpart to ~0 and blow the coordinate up, and this function's output is
 /// an inexact coordinate, so an exact existence test would be the wrong gate.
-/// (The exact predicate is used where a *decision* must be exact — M5-c's
+/// (The exact predicate is used where a *decision* must be exact — the
 /// combinatorial "do these meet".)
 pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
     let n1 = a.normal();

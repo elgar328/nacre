@@ -79,7 +79,8 @@ pub(super) fn decompose(
     }
     // A pair of twins — a bridge's or a pinch's — touch each other's outgoing segment at their
     // shared point: exactly two `AtEnd` records, `(o on h→…)` and `(h on o→…)`, and those are the
-    // boundary this decomposition *was* given an order for. Any other touch is what it always was.
+    // boundary this decomposition *was* given an order for. Any other touch is a boundary this
+    // decomposition cannot draw.
     let sanctioned =
         |tc: &Touch| tc.kind == TouchKind::AtEnd && is_pair_any(twins, tc.vertex, tc.segment);
     if meets.touches.iter().any(|tc| !sanctioned(tc)) {
@@ -161,11 +162,11 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 /// the segments meet the line only there, which
 /// the touch scan already names; a straddle needs four non-zero signs.
 ///
-/// **That branch is here because the gap was measured, not imagined.** A self-crossing single
-/// ring (a bow-tie) already came back `DegenerateRing` from the sweep, but a **hole crossing its
-/// outer ring** came back `Ok` — eight confident, wrong triangles. This file's charter is that a
-/// wrong cache is worse than none, so the check that was going to *document* that gap closes it
-/// instead.
+/// **That branch is here because the gap was measured, not imagined.** A self-crossing single ring
+/// (a bow-tie) comes back `DegenerateRing` either way — from this branch, or without it from the
+/// sweep — but without the branch a **hole crossing its outer ring** would come back `Ok`: eight
+/// confident, wrong triangles. This file's charter is that a wrong cache is worse than none, so the
+/// gap is closed rather than documented.
 pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
     let box_misses = |p: P2, u: P2, v: P2| {
         p[0] < u[0].min(v[0])
@@ -563,7 +564,7 @@ fn trace(
 /// **Winding is normalized at emission rather than reasoned about per case.** Which of
 /// the four cases produced a triangle does not change what it *is*, only the order the
 /// three indices arrive in, and one `orient2d` settles that. A triangle that comes out
-/// with no area at all is not a presentation problem — the algorithm was not supposed
+/// with no area at all is not a presentation problem — the algorithm is not supposed
 /// to make one — so it is an error.
 pub(super) fn triangulate_monotone(
     uv: &[P2],

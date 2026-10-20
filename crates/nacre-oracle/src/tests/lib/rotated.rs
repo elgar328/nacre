@@ -324,7 +324,7 @@ fn common_result_volume_matches_occt() {
 }
 
 /// nacre's `Fuse` and `Cut` results diffed against OCCT for two overlapping
-/// cubes (M5-c4 face clipping).
+/// cubes (face clipping).
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn fuse_cut_result_volume_matches_occt() {

@@ -13,11 +13,10 @@ nacre-topo = { workspace = true }
 nacre-geom = { workspace = true }
 nacre-math = { workspace = true }
 nacre-store = { workspace = true }
-# Rational scalars + the Isometry carried by the Transform op (overhaul stage 1).
+# Rational scalars + the Isometry carried by the Transform op.
 nacre-exact = { workspace = true }
 # Read-only CIP analysis (rotated-vertex WitnessPoint + indirect judges) for the toleranced
-# boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
-# target), so the lib dependency graph stays acyclic.
+# boolean predicates.
 nacre-judge = { workspace = true }
 # Data-parallel evaluation of the boolean's three independent phases: the arrangement's
 # per-plane-class trace/split and cell build (`arrangement::trace_result_faces`), and the
@@ -52,7 +51,7 @@ reject-trace = []
 # skipped because its lateral face does not hold the line (`TSKIP`), and one per wall face the
 # footprint reader could not read. Off by default, and behind a feature rather than `cfg(test)`
 # because the population worth counting lives in the **integration** corpus (`tests/census.rs`),
-# where `cfg(test)` is not set for this crate — a trap this repo has hit twice:
+# where `cfg(test)` is not set for this crate:
 #   cargo test --workspace --features nacre-ops/tangency-trace -- --nocapture 2>&1 | grep -E '^(TROW|TSKIP) '
 tangency-trace = []
 # Test-only doors for the measurements in this crate's integration tests (`tests/census.rs`,

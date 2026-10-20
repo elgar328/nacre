@@ -280,11 +280,10 @@ fn non_convex_overhang_cut_matches_occt() {
 
 /// **The four-plane result, scored by a kernel that has never heard of our substrate.**
 ///
-/// A bar spun 45° whose bottom corner edge lands exactly in the plane `x = 0.5` that a fused
-/// block supplies: three planes share that edge's line, so every plane crossing it makes a
-/// vertex with **four** planes through it. Naming such a vertex is what the arrangement could
-/// not do until the concurrency work, and the coverage suite checks the answer against a hand
-/// figure and against the models one ULP away.
+/// A bar spun 45° whose bottom corner edge lands exactly in the plane `x = 0.5` that a fused block
+/// supplies: three planes share that edge's line, so every plane crossing it makes a vertex with
+/// **four** planes through it. The arrangement names such a vertex, and the coverage suite checks
+/// the answer against a hand figure and against the models one ULP away.
 ///
 /// Neither of those is independent. This is: OCCT builds the same cut from the same two
 /// solids, through STEP, with its own arithmetic and its own idea of what a vertex is. A
@@ -789,15 +788,14 @@ fn the_fin_array_matches_occt() {
 ///
 /// The 30° step is where `sin 30° = ½` puts a rotated copy's corner exactly on one of the
 /// original's face planes, and the union's vertex there is named by four concurrent planes. That
-/// fuse *always* built — what it could not do was describe itself in its own surfaces, so the
-/// next rotation refused it. Nothing ever checked whether the shape it built was **right**: the
-/// defect was in the naming, the labelling sat one step away, and a wrong answer here would have
-/// looked exactly like the correct one to every test that existed.
+/// fuse builds; whether the shape is **right** is a separate question: a defect in the naming, or
+/// in the labelling one step away, would look exactly like the correct answer to a test that only
+/// checks the build succeeds.
 ///
 /// So OCCT scores every step of the sweep from the same operands, before nacre consumes them.
 ///
 /// 38°, 40° and 44° are here for the same reason at one remove: those are the sweeps that
-/// only run at all because a ray is now allowed to graze a ring corner, and the containment
+/// only run at all because a ray may graze a ring corner, and the containment
 /// answers that ray gives are checked by **nothing else**. A hole hung on the wrong face is a
 /// topology error, and volume and centroid see it.
 #[test]

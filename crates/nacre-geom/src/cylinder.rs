@@ -159,7 +159,7 @@ impl Cylinder {
     ///
     /// Magnitude is `radius` (**not** unit) and independent of `v`. The axial
     /// partial `∂P/∂v` is the constant `axis().direction()`, so it has no method.
-    /// (Term follows *The NURBS Book*, the M3 reference.)
+    /// (Term follows *The NURBS Book*.)
     #[inline]
     pub fn du(self, u: f64) -> Vector3 {
         let (sin, cos) = u.sin_cos();

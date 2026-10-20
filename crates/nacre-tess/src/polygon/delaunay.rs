@@ -28,7 +28,7 @@
 //! Second — and this is why no other algorithm would do better either — **the sliver is
 //! forced**. A 315-gon's interior angle is `180·313/315 = 178.86°`, and *every*
 //! triangulation has at least two **ears**, vertices belonging to a single triangle
-//! (the same two-ears theorem whose failure on bridged rings started this cell). An
+//! (the same two-ears theorem that fails on bridged rings). An
 //! ear's whole interior angle goes to that one triangle, leaving `1.14°` for the other
 //! two, so some angle is below `0.57°`. The measured worst is `0.457°`: at the floor,
 //! not short of it.

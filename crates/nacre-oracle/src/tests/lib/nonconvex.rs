@@ -3,7 +3,7 @@
 use super::*;
 
 /// The box bites the L's convex corner `(2, 0)`: a single chord, monotone bends.
-/// The non-convex overlap fixture of M5-d2.
+/// The non-convex overlap fixture.
 fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     l_prism_and_box([1.3, -0.3, 0.2], [2.4, 0.4, 1.4])
 }
@@ -594,7 +594,7 @@ fn corner_overhang_common_matches_occt() {
     );
 }
 
-/// A blind pocket carved by a non-convex (L-shaped) cutter — the contained-coplanar Cut now
+/// A blind pocket carved by a non-convex (L-shaped) cutter — the contained-coplanar Cut
 /// admits non-convex operands. OCCT scores the L pocket.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -672,7 +672,7 @@ fn pocket_into_non_convex_solid_matches_occt() {
     );
 }
 
-/// A boss raised by a non-convex (L-shaped) prism — the contained-coplanar Fuse now admits
+/// A boss raised by a non-convex (L-shaped) prism — the contained-coplanar Fuse admits
 /// non-convex operands. The base's top sits at z = 0, the L boss extrudes onto it flush.
 /// OCCT scores the L boss.
 #[test]
@@ -723,7 +723,7 @@ fn non_convex_profile_boss_matches_occt() {
 }
 
 /// A boss cantilevers off the side face of a top-pocketed cube (a non-convex solid). The
-/// overhang Fuse now admits a non-convex solid when the contact face is convex; OCCT scores the
+/// overhang Fuse admits a non-convex solid when the contact face is convex; OCCT scores the
 /// cantilever on the concave part.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -1460,7 +1460,7 @@ fn pocketed_cut_in_the_void_matches_occt() {
     );
 }
 
-/// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
+/// nacre's coincident-coplanar merge vs OCCT: two cubes stacked on a
 /// shared z=1 face fuse to a 1×1×2 box.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]

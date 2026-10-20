@@ -541,11 +541,10 @@ fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
     }
 }
 
-/// **Two bores in one plate, scored independently**. The second cut's counterpart
-/// already carries a cylinder face, which is the case the band pass was rebuilt for — and the
-/// case where assuming "a wall's own solid fills its cylinder" puts `keep` on the wrong
-/// chamber. Volume catches that directly; OCCT reading the STEP back catches a topology that
-/// merely *measures* right.
+/// **Two bores in one plate, scored independently**. The second cut's counterpart already carries a
+/// cylinder face — the case where assuming "a wall's own solid fills its cylinder" puts `keep` on
+/// the wrong chamber. Volume catches that directly; OCCT reading the STEP back catches a topology
+/// that merely *measures* right.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn two_bores_match_occt() {

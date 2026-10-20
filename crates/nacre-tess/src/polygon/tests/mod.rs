@@ -378,10 +378,11 @@ fn degenerate_rings_are_errors() {
 /// triangulation at all: any one would be wrong. Different claims about *the mesh*, different
 /// names — neither is a verdict on the solid, which is `validate`'s to give.
 ///
-/// **The crossing branch exists because the gap was measured.** A bow-tie already came back
-/// `DegenerateRing` from the sweep, but the hole below — crossing the outer ring with no
-/// vertex at either crossing — came back **`Ok` with eight confident, wrong triangles**. That
-/// is the one thing this layer may not do.
+/// **The crossing branch exists because the gap was measured.** A bow-tie comes back
+/// `DegenerateRing` either way — from this branch, or without it from the sweep — but without the
+/// branch the hole below — crossing the outer ring with no vertex at either crossing — would
+/// come back **`Ok` with eight confident, wrong triangles**. That is the one thing this layer may
+/// not do.
 #[test]
 fn a_boundary_that_meets_itself_is_named_by_how() {
     // A hole's apex exactly on an outer edge: a touch.
@@ -399,7 +400,7 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
         Err(TessError::SelfTouchingBoundary)
     ));
     // A hole hanging out through the outer ring's right edge: two crossings, no vertex at
-    // either. This used to mesh.
+    // either.
     let cross = pts(&[
         [0.0, 0.0],
         [4.0, 0.0],
@@ -414,7 +415,7 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
         tri(&cross, &[0, 1, 2, 3], &[&[4, 5, 6, 7]]),
         Err(TessError::DegenerateRing)
     ));
-    // And a single ring crossing itself — the sweep caught this one all along.
+    // And a single ring crossing itself.
     let bowtie = pts(&[[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]);
     assert!(matches!(
         tri(&bowtie, &[0, 1, 2, 3], &[]),
@@ -430,12 +431,9 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
 ///
 /// **A touch hides a crossing elsewhere.** A hole whose apex sits exactly on the outer ring's
 /// bottom edge (a genuine tangency — its two neighbours are both inside) *and* whose far side
-/// pokes out through the right edge with no vertex at the crossing. The touch was found first
-/// and the crossing never looked at, so the answer was `SelfTouchingBoundary` — "a boundary
-/// this decomposition cannot draw" — when the true answer is `DegenerateRing`: any
-/// triangulation of this ring set would be wrong.
-///
-/// Measured red first (`SelfTouchingBoundary`), then fixed.
+/// pokes out through the right edge with no vertex at the crossing. Stopping at the touch, found
+/// first, would answer `SelfTouchingBoundary` — "a boundary this decomposition cannot draw" — when
+/// the true answer is `DegenerateRing`: any triangulation of this ring set would be wrong.
 #[test]
 fn a_touch_must_not_hide_a_crossing_elsewhere() {
     // A real tangency at (2,0) plus a real crossing of x = 4 at y = 2.25.
@@ -454,13 +452,11 @@ fn a_touch_must_not_hide_a_crossing_elsewhere() {
 }
 
 /// **A touch *is* a crossing.** A diamond hole poking out through the right edge whose two
-/// crossings land exactly on its own vertices `(4,3)` and `(4,1)`. Both were recorded as
-/// touches and the crossing scan never ran. The one `orient2d` pair that tells them apart:
+/// crossings land exactly on its own vertices `(4,3)` and `(4,1)`. Read as touches, both
+/// would keep the crossing scan from running. The one `orient2d` pair that tells them apart:
 /// at a vertex touching a segment, its two neighbours lie on the **same** side of that
 /// segment's line for a tangency (the boundary turns back) and on **opposite** sides for a
 /// crossing (the boundary passes through). Here `(3,2)` and `(5,2)` straddle `x = 4`.
-///
-/// Measured red first (`SelfTouchingBoundary`), then fixed.
 #[test]
 fn a_touch_that_is_really_a_crossing_is_named_so() {
     let p = pts(&[
@@ -525,7 +521,7 @@ fn a_bridged_touch_meshes_the_pinched_face() {
     )
     .expect("the bridged face meshes");
     check(&p, &tris2, 6, 16.0 - 2.0);
-    // And without the bridge the same rings are what they always were: a touch.
+    // And without the bridge the same rings are a touch.
     let r = tri(&p, &[0, 1, 2, 3, 4], &[&[5, 6, 7]]);
     assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
 }
@@ -1081,7 +1077,7 @@ const GRID_SAMPLES: usize = 20_000;
 /// is one face pinched where cells touch at corners — it must mesh, a genuine triangulation of
 /// the cells; one ring over cells in several pieces is lobes meeting only at points —
 /// `SelfTouchingBoundary`; and two rings sharing a corner (`AtEnd`, no straight edge to splice
-/// into) stay what they were, `SelfTouchingBoundary`.
+/// into) are `SelfTouchingBoundary`.
 #[test]
 fn random_pinched_grid_faces_triangulate() {
     let mut rng = lcg(0x9E37_79B9_7F4A_7C15);

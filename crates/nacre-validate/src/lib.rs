@@ -171,7 +171,7 @@ pub enum Violation {
     /// A cavity (inner void) shell's faces do not point their outward normals
     /// into the void: its signed self-volume is `≥ 0` (a correct inward void is
     /// negative). Such a cavity would *add* to the solid's volume instead of
-    /// subtracting it (M5 containment). The other checks miss it — a
+    /// subtracting it. The other checks miss it — a
     /// globally-reversed shell keeps edge opposition (so `check_manifold`
     /// passes) and the same V/E/F/S (so Euler passes). Planar cavities only; a
     /// non-planar void is not checked here.
@@ -240,7 +240,7 @@ pub enum Violation {
 /// on the nonzero components); the defects the net exists for move a component by ~10¹⁵·ε.
 pub const CYL_TRUTH_EPS: f64 = 8.0 * f64::EPSILON;
 
-/// Check every M1 invariant of `model`, returning all violations (empty = valid).
+/// Check `model`'s invariants, returning all violations (empty = valid).
 ///
 /// Reference integrity runs first and short-circuits: it uses only `.index()` /
 /// `.len()` (never `Store::get`), so it is safe on a corrupt model; the later
@@ -663,8 +663,8 @@ fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
 /// shell-local reference `R` (the closed-surface identity `∮ n̂ dA = 0` makes it
 /// `R`-independent; a local `R` avoids the cancellation an origin-far shell
 /// would suffer). Outward-oriented shell ⇒ `+V`; a correct inward cavity ⇒ `−V`.
-/// `None` if any face is non-planar or a loop is unbounded (M5 cavities are
-/// planar; a curved void is simply not checked). Mirrors `nacre-props`'
+/// `None` if any face is non-planar or a loop is unbounded (only a planar
+/// cavity is checked; a curved void is not). Mirrors `nacre-props`'
 /// `face_contribution`, duplicated to keep validate off the props layer.
 fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let faces = &m.shell(shell).faces;
@@ -676,7 +676,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
         let face = m.face(fh);
         let plane = match m.surface_cache(face.surface) {
             nacre_geom::Surface::Plane(plane) => plane,
-            // M5 cavities are planar; a curved void is simply not checked. An arm rather than an
+            // Only a planar cavity is checked; a curved void is not. An arm rather than an
             // `else`, so a third surface kind is a compile error here and its author decides
             // whether its flux can be summed.
             nacre_geom::Surface::Cylinder(_) => return None,
@@ -981,10 +981,9 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     // Plus what the residual's *own* arithmetic can produce. The epsilon says
                     // where the vertex may sit; it says nothing about `Surface::distance`, so a
                     // vertex exactly on the surface can still report a machine-scale residual and
-                    // be flagged for it. Measured: a four-plane concurrency whose vertex is
-                    // genuinely on the plane sat at residual *exactly equal* to its tolerance, and
-                    // passed only because the comparison is strict — the slack that had been
-                    // covering this term was the loose measured tolerances of the day.
+                    // be flagged for it. Measured: without that term, a four-plane concurrency
+                    // whose vertex is genuinely on the plane sits at residual *exactly equal* to
+                    // `EPS_CONSTRUCTED` and passes only because the comparison is strict.
                     let tol = EPS_CONSTRUCTED + surface.distance_eps(m.vertex_point(vh));
                     if residual > tol {
                         out.push(Violation::VertexOffSurface {

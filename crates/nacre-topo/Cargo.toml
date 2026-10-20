@@ -12,7 +12,8 @@ readme = "../LAYER-README.md"
 nacre-store = { workspace = true }
 nacre-geom = { workspace = true }
 nacre-math = { workspace = true }
-# The rotation definition (Axis/Angle) stored in a vertex's Origin (overhaul stage 1b).
+# The exact truth the topology stores: rational coordinates, plane names and meets, and the
+# motions' axes and angles.
 nacre-exact = { workspace = true }
 
 [features]
