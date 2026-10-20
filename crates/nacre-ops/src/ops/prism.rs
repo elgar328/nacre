@@ -611,7 +611,7 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
 /// hole. The winding is read exactly ([`crate::construct::SweptRat::winding`], about the ring's world
 /// normal — the frame's motion, a reflection included, already folded in) and turned to the
 /// sweep's sense by `sweep_up`; a ring with arcs has no f64 polygon area to read, and a polygon's
-/// reads the same as before (`debug_assert`ed — the check that caught the mirrored pad).
+/// f64 area agrees with the exact winding (`debug_assert`ed).
 fn oriented_ring(ring: Swept, sweep_up: bool, ccw: bool) -> Result<Swept, OpError> {
     let about_normal = ring.exact.winding;
     if about_normal == nacre_exact::Orient::Zero {

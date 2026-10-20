@@ -19,10 +19,10 @@
 //! > the lateral. So membership in the other operand is **uniform** over that slab, and one
 //! > witness decides the whole band.
 //!
-//! **Faces, because that is what a boundary is made of.** The gate long tested each ∥ wall's
-//! infinite *plane*, which is a cheaper sufficient condition and reads almost the same — but it
-//! refused bodies standing well clear of the cylinder whose plane, extended, crossed it. The
-//! theorem never asked for that; it asks about the boundary, and the gate now does too.
+//! **Faces, because that is what a boundary is made of.** Testing each ∥ wall's infinite *plane*
+//! instead is a cheaper sufficient condition and reads almost the same — but it refuses bodies
+//! standing well clear of the cylinder whose plane, extended, crosses it. The theorem asks about
+//! the boundary, and so does the gate.
 //!
 //! **A wall face is asked about a rectangle, and the "consecutive cuts" above are per face.**
 //! What a ∥ plane meets of the solid cylinder is a rectangle of that plane: the strip across, a
@@ -34,11 +34,11 @@
 //! wall sitting in such a gap breaks no premise — there is none there to break. Reading the spans
 //! as one `min..max` would invent both the band and the refusal.
 //!
-//! The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
-//! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
-//! while sitting outside the material. Asking the arrangement is what fixes it, and the
-//! counterexample is a fixture of this pass (`a_cylinder_in_the_notch_keeps_no_band`, with its
-//! end-to-end twin: cutting with a drill standing in the notch removes nothing).
+//! "The band is in the other solid iff its z-range is" reads plausibly and is **false**: an
+//! L-notch's inner corner is clear of every wall by more than `r` while sitting outside the
+//! material. Asking the arrangement is what answers it, and the counterexample is a fixture
+//! (`a_cylinder_in_the_notch_keeps_no_band`, with its end-to-end twin: cutting with a drill
+//! standing in the notch removes nothing).
 
 #[cfg(test)]
 use crate::BoolKind;
@@ -59,10 +59,10 @@ use nacre_exact::Rat;
 /// two disjoint bands. "Which parts survive" is a question about a face; the class only says which
 /// surface that face lies on.
 ///
-/// This used to be one row per class, with the first face speaking for the rest. The others' spans
-/// were then clipped away by the band road and their bands never emitted, which left the result
-/// shell open — the boolean came back `OpenResultShell`, naming a symptom of our own omission.
-/// The chart reads the same span as the cell's existence at an uncut end (`Chart::read_cell`).
+/// One row per class, with the first face speaking for the rest, would clip the others' spans away
+/// on the band road and never emit their bands, leaving the result shell open — the boolean would
+/// come back `OpenResultShell`, naming a symptom of the omission. The chart reads the same span as
+/// the cell's existence at an uncut end (`Chart::read_cell`).
 ///
 /// **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
 /// the gap where the solid has no face at all.
@@ -86,7 +86,7 @@ pub(crate) struct CylRow {
 /// **That disjointness holds where every lateral face that reaches here is a
 /// band** — two whole rims and holes. The tracer states a panel and a chain rim too
 /// (`arrangement::lateral_shape`), so two faces of one class *can* share a `t`; the tie then
-/// falls to the stable sort's face order — still deterministic, and the corpus so far carries one
+/// falls to the stable sort's face order — still deterministic, and the corpus carries one
 /// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
 /// the day it is exercised is a thing a reader can check, not a surprise.
 ///

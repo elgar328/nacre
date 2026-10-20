@@ -1,10 +1,10 @@
 //! **Asking a vertex for its coordinate at a precision you choose.**
 //!
 //! Everything the kernel shows — the viewport, the tessellation, a report row, the STEP file —
-//! reads the f64 point cache. Since the cache became this module's memo (`push_vertex_realized`:
-//! a vertex is realized from its definition the moment an operation pushes it) that cache *is* the
-//! nearest f64 wherever the first rung decides it; printing more digits of it would still print
-//! the rounding, not the point, which is what `realize_vertex_decimal` is for.
+//! reads the f64 point cache. The cache is this module's memo (`push_vertex_realized`: a vertex is
+//! realized from its definition the moment an operation pushes it), so it *is* the nearest f64
+//! wherever the first rung decides it; printing more digits of it would still print the rounding,
+//! not the point, which is what `realize_vertex_decimal` is for.
 //!
 //! This module goes the other way: it takes the vertex's **definition** and realizes a coordinate
 //! from it, rounding exactly once at the end. Two roads meet here and they are chosen by the
@@ -20,12 +20,8 @@
 //!
 //! **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
 //! `vertex_meet → WitnessPoint::at → replay → realize` cannot live on `Model`; `nacre-ops` is the
-//! first crate that sees both. The rounding itself lives one layer further down, in
-//! `nacre-exact`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
-//!
-//! **Migration 3b.** [`nacre_topo::Vertex::OnSeam`]'s doc records the missing piece as *"the
-//! machinery that regenerates the cached coordinate"*, deferred with row 3b. This is the asking
-//! half of it. It does **not** overwrite the cache — that is the row's other half.
+//! first crate that sees both. The rounding itself lives one layer further down, in `nacre-exact`,
+//! beside `round_to_f64` — `nacre-judge` realizes, `nacre-exact` rounds, this module composes.
 
 #![expect(
     clippy::disallowed_methods,
@@ -170,8 +166,8 @@ impl Realization {
     /// **The error comes back as [`Mag`], not `f64`.** `nacre-exact`'s own test says why: *"a
     /// radius the ladder actually produces must not become zero. An `f64` cannot hold
     /// `2⁻²⁰⁴⁸`."* The coincidence arm carries exactly such a radius (an interval around `0` at
-    /// 4096 bits), and an earlier spelling that converted it reported `0e0` — indistinguishable
-    /// from the exact arm's honest zero.
+    /// 4096 bits); converted to `f64` it reads `0e0` — indistinguishable from the exact arm's
+    /// honest zero.
     ///
     /// The *value* is an `f64` because that is what the caller asked for. The *bound* on it need
     /// not be one, and on the coincidence arm cannot be.
@@ -181,12 +177,11 @@ impl Realization {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
-                    // **An exact realization is not an exact `f64`.** The rational is the
-                    // truth; reading it out at 53 bits rounds, and a 59-bit coordinate does not
-                    // fit — measured on the tilted-frame family, where the value is
-                    // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. An
-                    // earlier spelling reported `[0.0; 3]` here, which is the cache's own lie in
-                    // a new place, and the audit lock written for it *enforced* the lie.
+                    // **An exact realization is not an exact `f64`.** The rational is the truth;
+                    // reading it out at 53 bits rounds, and a 59-bit coordinate does not fit —
+                    // measured on the tilted-frame family, where the value is
+                    // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. Reporting
+                    // `[0.0; 3]` as the error here would be the cache's own lie in a new place.
                     let (val, no_loss) = nacre_exact::nearest_f64_big(&n[k], d)?;
                     v[k] = val;
                     e[k] = match no_loss {
@@ -2144,12 +2139,12 @@ mod tests {
         Rat::from_int(n)
     }
 
-    /// **A definition that names no point is refused as such, not stopped as a cost.** Three
-    /// planes sharing a line and two parallel planes with a third: every road answers
-    /// `NoPoint` — the cheap road, the paid road on the pushed vertex, and a cheap road stopped
-    /// past the replay budget — and the funnel files the vertex `Unrealized`, so the refine door
-    /// counts it as having no way rather than as undecided. Before the names were read for it, the
-    /// mixed road met the planes rung after rung and the cache said `Ceiling`.
+    /// **A definition that names no point is refused as such, not stopped as a cost.** Three planes
+    /// sharing a line and two parallel planes with a third: every road answers `NoPoint` — the
+    /// cheap road, the paid road on the pushed vertex, and a cheap road stopped past the replay
+    /// budget — and the funnel files the vertex `Unrealized`, so the refine door counts it as
+    /// having no way rather than as undecided. Without reading the names, the mixed road would meet
+    /// the planes rung after rung and the cache would say `Ceiling`.
     #[test]
     fn a_definition_that_names_no_point_is_refused_as_such() {
         let mut m = Model::new();

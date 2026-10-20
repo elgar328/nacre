@@ -1,8 +1,8 @@
 //! **Phase timers, on the production path.**
 //!
 //! They live *inside* `boolean` rather than in a spike that replays it, because a replica measures
-//! the proposition next to the one that matters — the last profile of these phases was taken with
-//! `ClassReuse::Off` and read as if it were production's.
+//! the proposition next to the one that matters — a profile of these phases taken with
+//! `ClassReuse::Off` reads like production's and is not.
 //!
 //! **One table, so it sits under everything that charges it.** Two stages write here — the
 //! arrangement (`timed!`/`watch!`, and the scale counters in its split) and the plane setup
@@ -10,9 +10,9 @@
 //! the spike test's whole output. A table split per stage could not produce that report, so the
 //! table is one and lives below both rather than inside either.
 //!
-//! Read them with `--no-default-features`: parallel accumulation would sum CPU across threads, and a
-//! share of a wall-clock whole computed from a CPU sum is not a share of anything. (That mistake
-//! once made a part measure larger than its whole.) `cfg(test)` so release binaries carry nothing.
+//! Read them with `--no-default-features`: parallel accumulation would sum CPU across threads, and
+//! a share of a wall-clock whole computed from a CPU sum is not a share of anything. (Read that
+//! way, a part can measure larger than its whole.) `cfg(test)` so release binaries carry nothing.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

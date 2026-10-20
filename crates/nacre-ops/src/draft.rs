@@ -132,7 +132,7 @@ pub(crate) struct Ring {
 /// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
 /// (`Wall` is the type half).
 ///
-/// Keys live in *handle* space, the space `edge_of` always keyed. A **straight** piece is its
+/// Keys live in *handle* space, the space `edge_of` keys. A **straight** piece is its
 /// unordered endpoint pair — a plane-pair line and a ruling alike: two points bound one straight
 /// segment, so a line one face states in the plane vocabulary and the face across states as a
 /// ruling (a tangent wall ending on a cylinder's ruling) is one edge, and its carriers are read
@@ -346,9 +346,9 @@ pub(super) type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Handl
 /// flip it (cut's inside-A B-pieces).
 #[derive(Clone, Debug)]
 pub(crate) struct LocalFace {
-    /// Which class table this face's surface lives in — a plane class, or a cylinder
-    /// class whose band this face is. Plane-only consumers project with [`ClassIx::plane`], whose
-    /// panic is the upstream-filter-bug detector the type was introduced with.
+    /// Which class table this face's surface lives in — a plane class, or a cylinder class whose
+    /// band this face is. Plane-only consumers project with [`ClassIx::plane`], whose panic is an
+    /// upstream-filter-bug detector.
     pub(crate) surf: crate::planes::ClassIx,
     pub(crate) outer: Bound,
     /// Hole boundaries, each already wound so the kept material stays on its left
@@ -411,12 +411,12 @@ pub(crate) struct CutRim {
 pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
 /// **The result's cut rims — the split's nodes that the cleaned faces still hold.** Presence here
-/// is the one source of "this rim is cut" for everything that builds the result (the lateral's
-/// rim pieces, and per solid the assembly's rim skip — [`HeldRims::cut_per_group`]). A type of
-/// its own because the defect it closes was one of two same-typed tables read in the wrong place:
-/// a Cut whose tool rests on a cap across its rim merged the cap back into one arc while the
-/// lateral, reading the split, still cut its rim at the tool's planes — one arc on the cap, three
-/// on the lateral, an edge used once.
+/// is the one source of "this rim is cut" for everything that builds the result (the lateral's rim
+/// pieces, and per solid the assembly's rim skip — [`HeldRims::cut_per_group`]). A type of its own,
+/// apart from [`CutRims`]: with two same-typed tables, the one read in the wrong place would let a
+/// Cut whose tool rests on a cap across its rim merge the cap back into one arc while the lateral,
+/// reading the split, would still cut its rim at the tool's planes — one arc on the cap, three on
+/// the lateral, an edge used once.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HeldRims(CutRims);
 
@@ -465,9 +465,9 @@ impl HeldRims {
 /// nodes survive is **whole** again and
 /// leaves the table — the lateral emits its rim as the closed edge, the cap holds it as a circle.
 ///
-/// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the
-/// seam has the cap turn at the apex between two lines, and the arc-ends rule dropped that node
-/// — the lateral's corner there — and moved that `A − B`'s refusal to `ArcBoundNotYet` (measured).
+/// Any node of a class-`c` ring, not only an arc's ends: the inward wedge with its apex on the seam
+/// has the cap turn at the apex between two lines, and an arc-ends rule would drop that node — the
+/// lateral's corner there — moving that `A − B`'s refusal to `ArcBoundNotYet` (measured).
 ///
 /// A circle left **one** node — the split cut it at one point, or the cleaning dissolved all its
 /// others — is cut at that one node: the cap holds it as the arc from it back to itself

@@ -218,17 +218,17 @@ pub(crate) fn through_judged_points(
                 return None;
             }
         };
-        // **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). This was
-        // the last of the four places that compared `surface_motion(tri[0])` against the other two
-        // itself, and that reading calls a turned solid's corner a straddle: the invariant-plane
-        // restatement leaves its cap world-stated while the walls carry a node, and only the
-        // chain-fixes licence tells that apart from a real straddle. Here the copy cost no
-        // *capability* — a corner it misread still gets a correct `Meet` — but it made the judged
-        // road hand out a weaker witness than it had to.
+        // **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). Comparing
+        // `surface_motion(tri[0])` against the other two here would call a turned solid's corner a
+        // straddle: the invariant-plane restatement leaves its cap world-stated while the walls
+        // carry a node, and only the chain-fixes licence tells that apart from a real straddle.
+        // Here such a copy would cost no *capability* — a corner it misreads would still get a
+        // correct `Meet` — but it would make the judged road hand out a weaker witness than it
+        // has to.
         //
-        // The old spelling also let one vertex's non-meeting `?` out of the whole call. A fact
-        // about one vertex is not a fact about the triple; a vertex without a rational meet falls
-        // to `Meet`, which is exactly what that variant is for.
+        // One vertex's non-meeting is not `?`-propagated out of the whole call: a fact about one
+        // vertex is not a fact about the triple, and a vertex without a rational meet falls to
+        // `Meet`, which is exactly what that variant is for.
         let pure = model.vertex_meet(vh).and_then(|(meet, frame)| {
             meet.narrow()
                 .map(|p| WitnessPoint::at(*p))
@@ -506,12 +506,12 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 /// **The world image of a frame's origin and axes** — what a caller sees as the sketch plane, and
 /// what the operation places its profile in. `(origin, û, v̂, ŵ)`.
 ///
-/// **Replayed, not read off the coefficients.** They are canonical (no direction) *and*
-/// written in the plane's pre-motion frame, so a dot product of them against a world normal
-/// compares two different frames — the mistake that made a pad miss its face on a twice-turned
-/// fixture, and one that reads as perfectly plausible right up until the plane has a motion. Which
-/// way `ŵ` faces is a truth question and is answered from the truth ([`frame_normal_sense`],
-/// with the chain's handedness); where the axes *land* is what this replays.
+/// **Replayed, not read off the coefficients.** They are canonical (no direction) *and* written in
+/// the plane's pre-motion frame, so a dot product of them against a world normal compares two
+/// different frames — on a twice-turned fixture that mistake makes a pad miss its face, and it
+/// reads as perfectly plausible right up until the plane has a motion. Which way `ŵ` faces is a
+/// truth question and is answered from the truth ([`frame_normal_sense`], with the chain's
+/// handedness); where the axes *land* is what this replays.
 ///
 /// The axes are differences of replayed points, so the origin and every translation cancel and
 /// only the linear part is left.

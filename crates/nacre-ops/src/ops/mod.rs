@@ -82,7 +82,7 @@ pub enum Operation {
         profile: Profile2d,
         dist: f64,
     },
-    /// Boolean of two live solids (M5). Inputs the engine cannot answer are
+    /// Boolean of two live solids. Inputs the engine cannot answer are
     /// rejected with [`BoolError`].
     Boolean {
         kind: BoolKind,
@@ -118,10 +118,10 @@ pub enum OpError {
     /// A profile ring with fewer than 3 points.
     DegenerateProfile,
     /// A profile coordinate outside the decimal window (`Rat::from_decimal` — `~1e38` above,
-    /// `~1e-22` below for a full-width value), so it has no rational truth for the kernel to
-    /// keep. Named **at construction**: the alternative was a silent fall to the f64 path, whose
-    /// prism records no exact points and whose surfaces cannot survive a motion undemoted.
-    /// CAD dimensions live nowhere near the window's edges; reaching this is an input mistake.
+    /// `~1e-22` below for a full-width value), so it has no rational truth for the kernel to keep.
+    /// Named **at construction**: the alternative is a silent fall to an f64 prism, which records
+    /// no exact points and whose surfaces cannot survive a motion undemoted. CAD dimensions live
+    /// nowhere near the window's edges; reaching this is an input mistake.
     ProfileOutsideDecimalWindow {
         /// Which ring of the profile.
         ring: ProfileRing,
@@ -192,7 +192,7 @@ pub enum OpError {
     /// An extrusion distance outside the decimal window (`Rat::from_decimal` — `~1e38` above,
     /// `~1e-22` below for a full-width value): it has no rational truth for the sweep to be
     /// computed in. The sibling of [`OpError::ProfileOutsideDecimalWindow`], named at the
-    /// operation's door — this used to fall silently to a point-less f64 prism.
+    /// operation's door rather than falling silently to a point-less f64 prism.
     DistOutsideDecimalWindow,
     /// The sketch plane (or the frame chain carrying it) has no exact form to build in: its
     /// axes fell outside the decimal window or were degenerate, or the placement arithmetic
@@ -219,7 +219,7 @@ pub enum OpError {
     /// A face asked for its sketch frame belongs to no live solid's outer shell (a stale or
     /// non-live handle).
     FaceNotInLiveSolid,
-    /// A boolean operation failed (M5).
+    /// A boolean operation failed.
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
     SolidNotLive,
@@ -496,7 +496,7 @@ impl SketchFrame {
     ///   value); the claim cannot even be stated exactly.
     /// * [`OpError::PlaneWithoutExactForm`] — the plane carries no name: the same proposition as
     ///   everywhere this error fires, "there is no exact statement to check against". Not a
-    ///   test-only population, as this used to say — [`Model::push_plane`] is public and leaves a
+    ///   test-only population: [`Model::push_plane`] is public and leaves a
     ///   nameless plane behind for a collinear triple, so a caller outside this crate can reach
     ///   it. Every production push passes a non-collinearity gate first, which is why
     ///   `every_plane_still_has_a_name` holds; that is *we do not*, not *it cannot*.

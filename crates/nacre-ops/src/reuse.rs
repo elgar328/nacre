@@ -10,12 +10,11 @@
 //! and those faces are restated in the arrangement's own vocabulary — plane-class triples — so
 //! nothing downstream can tell which route a face came by.
 //!
-//! **The proof is the whole design.** Separation is established with
-//! [`WorkingPlane::misses`] — `nacre_judge::orient3d_filter`, which returns a sign only when its
-//! error bound clears zero and `None` otherwise; `None` means "arrange it after all", which is
-//! what the engine did before this module existed. **So a missed proof costs time and nothing
-//! else, and no tolerance enters** — the same reason the kernel is allowed to have a fast path at
-//! all.
+//! **The proof is the whole design.** Separation is established with [`WorkingPlane::misses`] —
+//! `nacre_judge::orient3d_filter`, which returns a sign only when its error bound clears zero and
+//! `None` otherwise; `None` means "arrange it after all" — the ordinary path. **So a missed proof
+//! costs time and nothing else, and no tolerance enters** — the same reason the kernel is allowed
+//! to have a fast path at all.
 
 use crate::combinatorics::{Canon3, NodeId};
 // `NodeKind` is read by `CanonNode::of` alone, and that impl is `cfg(any(debug_assertions,
@@ -73,15 +72,14 @@ pub(crate) enum ClassPlan {
 /// at most 316 of a census corpus's 6,988 operand vertices, `0.3` among them). A boolean's own
 /// result vertices take the road too: their definition has a rational base.
 ///
-/// **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
-/// invariant-plane restatement, a turned block's corner is a restated world cap × two
-/// chained walls; the cap's world equation is *also* its equation in the walls' pre-motion
-/// frame precisely when the chain fixes the plane ([`nacre_topo::Model::chain_fixes_plane`]
-/// — the consumer-side twin of the producer's own gate), so the triple solves in that
-/// frame and the chain replays as before. A mixed corner the chain does **not** fix — a
-/// prism's base ring under a caller-stated world plane, the frame realization being
-/// irrational — still has no rational pullback and declines honestly (Arrange — slower,
-/// never wrong).
+/// **Mixed frames decline — unless the odd carrier is provably fixed.** A turned block's corner is
+/// a restated world cap × two chained walls (the invariant-plane restatement); the cap's world
+/// equation is *also* its equation in the walls' pre-motion frame precisely when the chain fixes
+/// the plane ([`nacre_topo::Model::chain_fixes_plane`] — the consumer-side twin of the producer's
+/// own gate), so the triple solves in that frame and the chain replays. A mixed corner the chain
+/// does **not** fix — a prism's base ring under a caller-stated world plane, the frame realization
+/// being irrational — still has no rational pullback and declines honestly (Arrange — slower, never
+/// wrong).
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     use nacre_topo::Vertex;
 
@@ -369,8 +367,8 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
 
 /// The faces `side` already has on class `wc`, restated as arrangement output.
 ///
-/// `None` when any vertex cannot be named — the class is then arranged, which is what the engine
-/// did before and is never wrong.
+/// `None` when any vertex cannot be named — the class is then arranged: the ordinary path, and
+/// never wrong.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn pass_through(
     model: &Model,

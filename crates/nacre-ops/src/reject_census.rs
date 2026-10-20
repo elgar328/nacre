@@ -5,14 +5,13 @@
 //! that raised it, and separately the reasons that actually left a public entry point.
 //!
 //! **The two columns are not the same population, and reading one for the other is how this
-//! measurement goes wrong.** Measured over the whole workspace suite while `point_in_component`
-//! still raised `no_clear_ray` and its caller retried other nodes: 119 raises, 20 surfaced — 97
-//! of them that one swallowed guard. A census keyed on raises alone would
-//! have reported it as 82% of all rejects, which was false about everything a caller ever saw.
-//! **That population is gone on purpose** — the probe's "this node cannot
-//! decide" is a typed abstention now, not an error to swallow — so the columns' gap reads the
-//! other way: it is the count of *remaining* swallowed raises, near-zero is the goal state, and a
-//! gap reopening is news of a new swallow.
+//! measurement goes wrong.** A raise its caller swallows counts in the first column only: measured
+//! over the whole workspace suite with `point_in_component` raising `no_clear_ray` and its caller
+//! retrying other nodes, 119 raises against 20 surfaced — 97 of them that one swallowed guard — so
+//! a census keyed on raises alone would report it as 82% of all rejects, false about everything a
+//! caller saw. The probe's "this node cannot decide" is a typed abstention, not an error to
+//! swallow, so the columns' gap is the count of swallowed raises: near-zero is the goal state, and
+//! a gap opening is news of a new swallow.
 //!
 //! **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker
 //! and returned from the main thread, so nothing cheap connects the two (a thread-local cannot
@@ -54,12 +53,12 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 /// A reason as the census keys it: the stable identifier, plus the **categorical** part of its
 /// payload.
 ///
-/// `detail` exists because [`RejectReason::TraceDeclined`]'s eleven
-/// [`crate::DeclineKind`]s are all raised from **one line**. Keyed by `as_str()` alone they would
-/// collapse into a single row — the census reproducing the very defect it is here to find (ten
-/// causes reported under one label is what `TraceDeclined` was split out of). The rule: **the key
-/// must be as fine as the reason's own vocabulary.** `PrecisionBudget`'s `needed`/`cap` are
-/// measurements rather than a category, so they stay out of the key.
+/// `detail` exists because the tracer's [`crate::DeclineKind`]s are all raised from **one line**
+/// (`decline_to_reject`'s call in `arrangement/result.rs`). Keyed by `as_str()` alone they would
+/// collapse into a single row — the census reproducing the very defect it is here to find, several
+/// causes under one label. The rule: **the key must be as fine as the reason's own vocabulary.**
+/// `PrecisionBudget`'s `needed`/`cap` are measurements rather than a category, so they stay out of
+/// the key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ReasonId {
     /// [`RejectReason::as_str`].
@@ -120,8 +119,8 @@ pub(crate) fn raised(reason: RejectReason, loc: &'static Location<'static>) {
     *lock(&RAISED).entry(site).or_insert(0) += 1;
 }
 
-/// Record a rejection leaving the kernel. Called at the public boolean entry points — the
-/// boundary the earlier one-shot census settled on, for the reason above.
+/// Record a rejection leaving the kernel. Called at the public boolean entry points — what a caller
+/// sees, for the reason above.
 pub(crate) fn surfaced(reason: RejectReason) {
     trace_surface(reason);
     *lock(&SURFACED).entry(ReasonId::of(reason)).or_insert(0) += 1;
@@ -226,9 +225,9 @@ mod tests {
     use nacre_math::Point3;
     use nacre_topo::Model;
 
-    /// **The eleven [`DeclineKind`]s all ring from one line**, so `file:line` cannot tell them
-    /// apart — `detail` is the only thing that can, and without it the census would report ten
-    /// different causes as one row, which is the defect `TraceDeclined` was split out of.
+    /// **The tracer's [`DeclineKind`]s all ring from one line**, so `file:line` cannot tell them
+    /// apart — `detail` is the only thing that can, and without it the census would report those
+    /// causes as one row.
     ///
     /// Asserted on the key function rather than on a fixture because `trace_declined` has never
     /// fired anywhere in the suite: there is no shape to run. Pure — it reads no static, so it is

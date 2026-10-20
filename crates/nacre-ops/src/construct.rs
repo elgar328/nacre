@@ -131,12 +131,12 @@ impl RatFrame {
     /// rational orthonormal axes, and which.
     ///
     /// **Realizing the axes first and lifting them back does not answer it.** Measured
-    /// (`ops::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the primitive
-    /// `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically* computed `1/5`,
-    /// landing on `0.6000000000000001`. `Rat::from_decimal` lifts that, orthonormality fails, and
-    /// a plane that is perfectly rational takes the frame-node road — a different arena, not an
-    /// ulp. Here `inv_sqrt_rat` answers in `Rat`: `Some` exactly when the axis lands on a
-    /// rational, which is the whole question.
+    /// (`ops::prism::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the
+    /// primitive `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically*
+    /// computed `1/5`, landing on `0.6000000000000001`. `Rat::from_decimal` lifts that,
+    /// orthonormality fails, and a plane that is perfectly rational takes the frame-node road — a
+    /// different arena, not an ulp. Here `inv_sqrt_rat` answers in `Rat`: `Some` exactly when the
+    /// axis lands on a rational, which is the whole question.
     ///
     /// It is the same rule [`nacre_exact::plane_frame_named`] states for `v̂`, applied one level
     /// up: `v_raw` is carried exactly for this reason, so use it rather than crossing `ŵ × û`.
@@ -359,16 +359,16 @@ pub(crate) struct SweptRat {
     /// in the chain reverses every loop's sense, so the 2-D reading is multiplied by the chain's
     /// parity ([`nacre_judge::chain_parity`]). Flipped by [`Swept::reversed`].
     ///
-    /// Written in the frame's coordinates alone it was wrong for every pad on a mirrored
-    /// solid's tilted face: the ring realized clockwise about its world normal while this said
-    /// counter-clockwise, and the prism went up inside-out (measured, a generated session —
-    /// rotate, mirror, pad; the f64 cross-check in `oriented_ring` is what caught it).
+    /// Read in the frame's coordinates alone it would be wrong for every pad on a mirrored solid's
+    /// tilted face: the ring realizes clockwise about its world normal while this would say
+    /// counter-clockwise, and the prism would go up inside-out (measured on a generated session —
+    /// rotate, mirror, pad; the f64 cross-check in `oriented_ring`, a `debug_assert` on arc-free
+    /// rings, fires on it).
     pub winding: Orient,
-    /// **Which frame the rationals above are written in.** `None` is the world, which is
-    /// every case that existed before tilted faces became exact. `Some` says they are the
-    /// coordinates of a plane's own frame, and that this motion is what carries them out — so
-    /// every plane derived from them states itself *in that frame* and every vertex is
-    /// written against it (its planes record the motion).
+    /// **Which frame the rationals above are written in.** `None` is the world. `Some` says they
+    /// are the coordinates of a plane's own frame, and that this motion is what carries them out —
+    /// so every plane derived from them states itself *in that frame* and every vertex is written
+    /// against it (its planes record the motion).
     pub motion: Option<Handle<MotionNode>>,
 }
 

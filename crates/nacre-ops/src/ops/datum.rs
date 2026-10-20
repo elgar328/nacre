@@ -119,23 +119,6 @@ pub(super) fn datum_plane(
     model: &mut Model,
     def: &DatumDef,
 ) -> Result<(Handle<Surface>, SketchFrame), OpError> {
-    /// The same solve `Model::through_points_rat` performs, with its single `None` split into the
-    /// causes that have different owners.
-    ///
-    /// The split is the point. `three_planes_rat`'s one `None` hid two different facts for as
-    /// long as it existed, and the measurement that found it is the reason this variant is being
-    /// added at all — repeating the shape here would make the next stage unable to read how much
-    /// of the population it is opening.
-    ///
-    /// A carrier triple that does not meet is **not** on the list: those three planes met, or
-    /// the vertex would not exist. That is asserted, not rejected, so a broken invariant cannot
-    /// arrive disguised as a user error.
-    ///
-    /// **The motion comes back with the points, because it *is* which frame they are
-    /// written in.** Returning the points alone is what produced the defect this function was
-    /// rewritten for: the caller then chose a motion, chose `None`, and a plane stated in a frame
-    /// was filed as a world plane. `DatumDef::Offset` has always returned `(points, motion)` from
-    /// one decision for exactly this reason.
     /// What the three vertices state, once the causes are told apart.
     ///
     /// (`Named` is 288 B beside a unit variant — the same shape and the same verdict as
@@ -155,6 +138,19 @@ pub(super) fn datum_plane(
         Nameless,
     }
 
+    /// The same solve `Model::through_points_rat` performs, with its single `None` split into the
+    /// causes that have different owners.
+    ///
+    /// The split is the point. One `None` standing for two different facts hides how much of the
+    /// population each one is, so a change that opens one of them could not read how much it opens.
+    ///
+    /// A carrier triple that does not meet is **not** on the list: those three planes met, or the
+    /// vertex would not exist.
+    ///
+    /// **The motion comes back with the points, because it *is* which frame they are written in.**
+    /// Returned alone, the points leave the caller to choose a motion — and choosing `None` files a
+    /// plane stated in a frame as a world plane. `DatumDef::Offset` returns `(points, motion)` from
+    /// one decision for the same reason.
     #[allow(clippy::type_complexity)]
     fn through_points_by_cause(
         model: &Model,
@@ -166,8 +162,8 @@ pub(super) fn datum_plane(
         // restatement leaves its cap world-stated while the walls carry a node — and, worse,
         // could *disagree* with the door: `push_plane_through` derives the interning name through
         // `vertex_meet` and asserts the statement's motion carries that frame, so a producer that
-        // says "no frame" while the door says "this one" stops there (it once filed a frame-local
-        // name as a world plane — `a_datum_through_frame_local_vertices_is_not_a_world_plane`).
+        // says "no frame" while the door says "this one" stops there (a frame-local name filed as a
+        // world plane — `a_datum_through_frame_local_vertices_is_not_a_world_plane`).
         // One decision, one place.
         // **Every vertex is asked what it is before any is solved.** A straddling vertex makes
         // the statement nameless on the spot (below), so a refusal asked inside the same pass would
@@ -200,14 +196,13 @@ pub(super) fn datum_plane(
                 // definition (the meet of its carriers). The judged road takes it, as
                 // long as every carrier can hand out a witness triangle of its own.
                 //
-                // **"The carriers meet" is not assertable here, and finding that out cost a
-                // red run.** The old pass two `expect`ed it, and rightly: it ran only after the
-                // frames agreed. Solving three names *stated in different frames* is not the
+                // **"The carriers meet" is not assertable here.** An `expect` is right only after
+                // the frames agree. Solving three names *stated in different frames* is not the
                 // same question — they are not three planes in one coordinate system, so
                 // `three_planes_big` declines for a straddling vertex as a matter of course. An
-                // assertion here would measure the proposition next door. The invariant now
-                // lives where it is meaningful: past this `else`, every `pts[i]` is `Some`, so
-                // the named road below has the meets by construction rather than by `expect`.
+                // assertion here would measure the proposition next door. The invariant lives where
+                // it is meaningful: past this `else`, every `pts[i]` is `Some`, so the named road
+                // below has the meets by construction rather than by `expect`.
                 return Ok(ThroughStatement::Nameless);
             };
             pts[i] = Some(meet);
@@ -465,9 +460,8 @@ pub(super) fn datum_plane(
             // `−normal` convention `Stated` and every base cap keep.
             //
             // **`d` here is the *signed* distance, not the caller's `dist`.** Using the raw one
-            // puts the cache on the far side of the plane its own truth names whenever the
-            // caller's frame is flipped — an incoherent surface, and one that a `flip` positive
-            // control caught rather than any amount of reading.
+            // puts the cache on the far side of the plane its own truth names whenever the caller's
+            // frame is flipped — an incoherent surface.
             let signed = d.to_f64();
             let anchor = Point3::from_array(core::array::from_fn(|k| cb.0[k] + signed * cb.3[k]));
             let w = Vector3::from_array(cb.3);

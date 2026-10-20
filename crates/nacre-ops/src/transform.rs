@@ -258,13 +258,13 @@ enum Carry {
 /// (The per-plane **surface-statement** exemption — pass 1's `invariant` flag, a plane the
 /// motion fixes as a set — is a different question and does not touch this one: the vertices
 /// of such a plane still move and still share the solid's node story; only the plane's own
-/// statement needed no new spelling.)
+/// statement needs no new spelling.)
 fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
     let src = model.solid(solid);
-    // **An exhaustive `match`, deliberately.** Adding `PlanePoints::Through` once produced
-    // exactly two non-exhaustive-match errors and **not** one here, when this was a `let`-`else`
-    // — a fallback arm would have answered for geometry it had never seen. Spelled as a match,
-    // the next variant (M6's) is a compile error at exactly this decision.
+    // **An exhaustive `match`, deliberately.** As a `let`-`else`, this decision would raise no
+    // error for a new `PlanePoints` variant — measured with `Through`: two non-exhaustive-match
+    // errors elsewhere, none here — and its fallback arm would answer for geometry it has never
+    // seen. Spelled as a match, the next variant is a compile error at exactly this decision.
     let moves = |s: Handle<Surface>| -> bool {
         match model.surface(s) {
             nacre_topo::Surface::Plane {

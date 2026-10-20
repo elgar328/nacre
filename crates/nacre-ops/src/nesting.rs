@@ -1,19 +1,18 @@
 //! **Is this cell of a plane class inside that one?** — the one engine, and the one place a
 //! witness for it is named.
 //!
-//! **Why a module of its own.** The question is answered from two roads — the
-//! arrangement's nesting (`arrangement::nest_cells`, `innermost_host`) and the coplanar merge's
-//! ownership (`assembly::unify_coplanar_faces`) — and each had grown its own copy: five spellings
-//! of «what point may I use as a witness», four of «what does that point say about the target»,
-//! three of «try them until one decides, and name the failure honestly», and two of the four-arm
-//! dispatch itself. The copies drifted, and the shortest of them — the arm that asks a **ring**
-//! against a **disk** — was one witness kind wide. A plate with every corner filleted has a cap
-//! ring of eight tangencies and no three-plane corner at all, so that arm found nothing and
-//! refused, and the plate could not enter any boolean at all.
+//! **Why a module of its own.** The question is answered from two roads — the arrangement's nesting
+//! (`arrangement::nest_cells`, `innermost_host`) and the coplanar merge's ownership
+//! (`assembly::unify_coplanar_faces`) — and when each road had its own copy, the copies drifted:
+//! five spellings of «what point may I use as a witness», four of «what does that point say about
+//! the target», three of «try them until one decides, and name the failure honestly», and two of
+//! the four-arm dispatch itself; the shortest — the arm that asks a **ring** against a **disk** —
+//! was one witness kind wide. A plate with every corner filleted has a cap ring of eight tangencies
+//! and no three-plane corner at all, so such an arm would find nothing and refuse, and the plate
+//! could not enter any boolean.
 //!
-//! Nothing here is new geometry: every predicate below is one the kernel already had. What is new
-//! is that there is **one** of each, behind a module wall, so the sixth copy cannot be written
-//! outside it.
+//! Nothing here is new geometry. There is **one** of each predicate, behind a module wall, so
+//! another copy cannot be written outside it.
 
 use super::*;
 use crate::combinatorics::{self, NodeId};
@@ -51,11 +50,11 @@ use crate::tolerant::Judge;
 /// ([`crate::planes::cylinder_gate`], else `CylinderPairContact`) — so two
 /// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
 /// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
-/// it exactly once. Measured before this was written: **every** ring the road refused for an
-/// empty probe list is either such a chain — and each of those the circle's own centre answers —
-/// or a wall panel with no circle at all, which still refuses and now by its own name
-/// ([`crate::RejectReason::RingHasNoWitness`]). In cells: the crossing census's `NoClearRay` 44
-/// became **8 built** and **20 renamed**, the rest being the other road's (`boolean`).
+/// it exactly once. Measured: **every** ring with an empty probe list is either such a chain — and
+/// each of those the circle's own centre answers — or a wall panel with no circle at all, which
+/// refuses by its own name ([`crate::RejectReason::RingHasNoWitness`]). Against refusing every
+/// empty probe list as `NoClearRay`, in cells: of the crossing census's 44, **8** build and **20**
+/// are renamed, the rest being the other road's (`boolean`).
 /// Counted as *cells*, not as raises — a traced boolean runs twice in `debug`, and
 /// `reject_census`'s own note forbids reading raise counts as populations.
 fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
@@ -389,7 +388,7 @@ fn rim_and_centre<'a>(
                 "a rim witness is on its own rim"
             );
             // The guard above makes this unreachable **for its own cause** — a class that
-            // is not ⊥ never gets here now. It stays because it also catches a broken frame or a
+            // is not ⊥ never gets here. It stays because it also catches a broken frame or a
             // centre that is not the axis' meet, which no guard above asks about.
             debug_assert!(
                 combinatorics::class_coeffs_rat(jd, wc).is_none_or(|c| {
@@ -449,8 +448,8 @@ fn witnesses<'a>(
     cell: Cell<'a>,
 ) -> Box<dyn Iterator<Item = Witness> + 'a> {
     // A disk's interior witness, wherever the disk came from — the cell itself, or a ring that
-    // turned out to be a whole circle. Written once because this module is about supplies that were
-    // written twice.
+    // turned out to be a whole circle. Written once: this module is where each supply has one
+    // spelling.
     let centre_of =
         |def: &nacre_topo::CylinderDef| match combinatorics::circle_centre_rat(jd, wc, def) {
             Some(c) => Witness::In(Where::Coord(c)),
@@ -649,7 +648,7 @@ fn inside(
     //     skipped where they would put the same question to the same road: every one whose name
     //     holds no class the gate passed silent (measured over the suite, the ignored sweep, the
     //     census and the kit: of 39,040 skips, the 38,992 without a silent class would each have
-    //     declined again, and the 48 with one, which are asked now, each answered);
+    //     declined again, and the 48 with one, which are asked, each answered);
     //   · answering a plain ring target on names **alone** once it names any probe, which refuses
     //     a ring whose every ray grazed with coordinates still in hand.
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
@@ -882,7 +881,7 @@ pub(crate) enum Route {
     Engine,
 }
 
-/// **What every nesting question was asked with** (test-only).
+/// **What every nesting question is asked with** (test-only).
 ///
 /// **A row is not a population, and for two reasons — both measured.**
 /// 1. **Most rows are about questions no witness was asked for.** This pushes from
@@ -896,11 +895,10 @@ pub(crate) enum Route {
 ///    questions never pass here at all — sampled at **~1% of engine questions in the lib suite and
 ///    ~3% in census**, which is why this is a footnote rather than the headline.
 ///
-/// The defect this instrument exists for is invisible for one reason: the corpus never put a
-/// **ring with no
-/// three-plane corner** against a **disk**, so the arm whose witness supply was truncated to that
-/// one kind never fired. A reject count could not have seen it. So the instrument measures the
-/// **population**: for each question, what the source cell had to offer and which road could answer.
+/// **The defect this instrument watches for is invisible to a reject count**: a corpus that never
+/// puts a **ring with no three-plane corner** against a **disk** never fires an arm whose witness
+/// supply is truncated to that one kind. So the instrument measures the **population**: for each
+/// question, what the source cell had to offer and which road could answer.
 ///
 /// Recorded only for work a test asked to own (`ledger::owned`) — the road-agreement column runs
 /// *both* roads where both are available, which is work no ordinary test should pay for.
@@ -925,13 +923,12 @@ pub(crate) mod nesting_probe {
         pub edge: usize,
         pub circle: bool,
         /// A **disk's** supply, which the five ring counts above cannot describe: how many rim
-        /// witnesses it offered. `0` for a ring, including one that is a whole circle —
-        /// until that arm gets its rim too.
+        /// witnesses it offered. `0` for a ring, including one that is a whole circle.
         pub rim: usize,
-        /// **Which road answered.** Only [`super::Route::Engine`] rows ever had a witness asked
-        /// of them; the counts above describe an offer nobody read on the other two. 85% of the
-        /// rows this probe used to push were of that kind (189,662 against 28,000 engine
-        /// questions, lib suite), which is why a population read off them was wrong.
+        /// **Which road answered.** Only [`super::Route::Engine`] rows have a witness asked of
+        /// them; the counts above describe an offer nobody read on the other two. 85% of the rows
+        /// this probe pushes are of that kind (189,662 against 28,000 engine questions, lib suite),
+        /// which is why a population read off them unfiltered is wrong.
         pub route: super::Route,
         /// Where **both** roads could answer, what each said — the direct measurement of the
         /// engine's premise, that any witness gives the same answer.

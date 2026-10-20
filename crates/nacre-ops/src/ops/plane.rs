@@ -81,7 +81,7 @@ impl SketchPlane {
     /// form — the caller's `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`, while `normalize` of it
     /// squares to `0.9999999999999999…`. The unit axes below stay the f64 cache; the definition
     /// records what was handed in. A normal outside the decimal window simply leaves `def` empty,
-    /// so this constructor is **never stricter than it was**.
+    /// so the definition adds no refusal of its own.
     pub fn from_origin_normal(origin: Point3, normal: Vector3) -> Option<Self> {
         let n = normal.normalize()?;
         let (x_axis, y_axis) = frame_axes(n)?;
@@ -232,7 +232,7 @@ impl SketchPlane {
     /// outside [`SketchPlane`]'s contract; the frame realization drops the skew.
     ///
     /// `def` stays `None` only for axes outside the decimal window or a degenerate pair
-    /// (`x × y = 0` in the decimals) — those keep the f64 path they had.
+    /// (`x × y = 0` in the decimals) — those take the f64 path.
     pub fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
         let def = (|| {
             let lift = |p: [f64; 3]| {
@@ -297,10 +297,10 @@ impl SketchPlane {
 
 /// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
 ///
-/// **One field, and the invariants are structural.** This used to carry coefficients, an
-/// origin, and a reference direction as three halves that every constructor had to keep agreeing
-/// ("an origin that is not on `coeffs` is a definition describing two different planes", which
-/// cost 0.04 of volume the one time it happened). Now the definition is the three points alone:
+/// **One field, and the invariants are structural.** Coefficients, an origin and a reference
+/// direction carried as three halves would leave every constructor to keep them agreeing ("an
+/// origin that is not on `coeffs` is a definition describing two different planes" — measured, 0.04
+/// of volume). The definition is the three points alone:
 ///
 /// - the sketch's `(0, 0)` **is** `points[0]`,
 /// - `+u` **is** `points[1] − points[0]` — a difference of two points of the plane, so it lies in

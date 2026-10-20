@@ -21,11 +21,10 @@ pub enum BoolError {
     /// `at` is where the guard was looking when it spoke — a witness for diagnostics
     /// ([`RejectWhere`]), `None` when the reason has no meaningful single location.
     ///
-    /// Not `Unsupported`: that name would assert every reject is a
-    /// coverage limit, which is false for two of the three [`RejectClass`]es —
-    /// `Impossible` (no milestone will build this input) and `SuspectedDefect` (ours, not
-    /// the caller's). The variant states what happened; *what kind* of answer it is stays
-    /// where it always was, in [`RejectReason::class`].
+    /// Not `Unsupported`: that name would assert every reject is a coverage limit, which is false
+    /// for two of the three [`RejectClass`]es — `Impossible` (no milestone will build this input)
+    /// and `SuspectedDefect` (ours, not the caller's). The variant states what happened; *what
+    /// kind* of answer it is lives in [`RejectReason::class`].
     Rejected {
         reason: RejectReason,
         at: Option<RejectWhere>,
@@ -198,17 +197,17 @@ pub enum RejectReason {
     ///   winding from. The half-cylinder family of `tests/coverage/edge_on_a_ruling.rs` meets it
     ///   (a wall ending on the flat's edge, inside `A`'s span and past its top).
     /// * The assembly's vertex naming — a node that is a corner of one body and a straight run of
-    ///   the other. No fixture: its one subject (two overlapping unit boxes, one turned 60° about
-    ///   Z) went away when the naming was scoped per solid, and the sweep over that family — three
-    ///   axes, seventeen angles, four overlaps, all three kinds, 612 booleans — declines nowhere.
-    ///   The check stays wired: a corpus is not a proof.
+    ///   the other. No fixture: with the naming scoped per solid, its one known subject (two
+    ///   overlapping unit boxes, one turned 60° about Z) does not reach it, and the sweep over that
+    ///   family — three axes, seventeen angles, four overlaps, all three kinds, 612 booleans —
+    ///   declines nowhere. The check stays wired: a corpus is not a proof.
     StraightAngle,
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
     ///
     /// A line and an arc **tangent** at the vertex are not this when the arc
     /// leaves the other way (a fillet's smooth corner is a half turn, read by geometry). What is
-    /// still this: the same way — two edges tangent *and* co-directed, whose order is a matter of
+    /// this: the same way — two edges tangent *and* co-directed, whose order is a matter of
     /// **curvature** (two tangent circles, the shape M6b's cylinder pairs will bring).
     ///
     /// Their lines are then identical (parallel plus a shared point), which upstream is supposed
@@ -331,14 +330,14 @@ pub enum RejectReason {
     /// faces and the target's one), so every point of the line already lies on three planes and a
     /// fourth turns it into a vertex: each plane crossing the line yields a four-plane point.
     ///
-    /// **The model this was written for now builds, and this has no firing test.** That model —
-    /// a bar spun **45°** about an axis in the plane, whose bottom corner edge lands back in it
-    /// because half-width equals the pivot-to-bottom offset — is `nacre-oracle`'s
+    /// **The model behind this builds, and this has no firing test.** That model — a bar spun
+    /// **45°** about an axis in the plane, whose bottom corner edge lands back in it because
+    /// half-width equals the pivot-to-bottom offset — is `nacre-oracle`'s
     /// `the_four_plane_cut_matches_occt`, where OCCT scores the result and agrees on volume and
-    /// centroid. Vertex identity was normalised (names identify, structures carry geometry), and
+    /// centroid. Vertex identity is normalised (names identify, structures carry geometry), and
     /// `coverage/rotation.rs` keeps the near misses around it building.
     ///
-    /// What survives is the guard, at one site: a run whose candidate handles are all parallel to
+    /// The guard remains, at one site: a run whose candidate handles are all parallel to
     /// the line they must cut (`arrangement`). It has no reproduction. It stays because a
     /// substrate that cannot name a point must say so rather than pick one of the names — and
     /// because an unfired reject costs nothing, while a missing one costs a wrong solid.
@@ -348,12 +347,12 @@ pub enum RejectReason {
     /// one function (`combinatorics::canonical_triple`), and an operand vertex names itself
     /// from the classes its topology knows.
     ///
-    /// **Exact, not toleranced.** Measured on that model: perturbing an operand coordinate by
-    /// **one ULP** in either direction removed the concurrency. The judgement returned zero
-    /// because the determinant *is* zero at 200 bits, not because it fell below the coincidence
-    /// limit (~55 orders of magnitude lower). Exact rational input would produce the same
-    /// concurrency — this was never an artefact of `f64` construction, which is why exact
-    /// rational construction (`crate::construct`) left it exactly where it was.
+    /// **Exact, not toleranced.** Measured on that model: perturbing an operand coordinate by **one
+    /// ULP** in either direction removed the concurrency. The judgement returned zero because the
+    /// determinant *is* zero at 200 bits, not because it fell below the coincidence limit (~55
+    /// orders of magnitude lower). Exact rational input would produce the same concurrency — it is
+    /// not an artefact of `f64` construction, so exact rational construction (`crate::construct`)
+    /// leaves it exactly where it is.
     FourPlane,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **pierce
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
@@ -401,13 +400,12 @@ pub enum RejectReason {
     /// boundary is an ellipse and every rule that reads a *radius* as that boundary's width is
     /// wrong there.
     ///
-    /// **A backstop, deliberately, and it is classified as one.** [`Self::ObliqueCylinderCut`]
-    /// says *the kernel's coverage ends here* and judges nothing about the input; this says
-    /// something stronger and different — the gate promised no oblique class would carry a circle
-    /// (see [`crate::combinatorics::class_carries_circle`]) and the promise did not hold. Sharing
-    /// the older name would have put two sentences under one label, which is the shape this
-    /// kernel keeps re-learning. The vessel-guard precedent is [`Self::PartialCircleUncut`], and
-    /// it takes the same class.
+    /// **A backstop, deliberately, and it is classified as one.** [`Self::ObliqueCylinderCut`] says
+    /// *the kernel's coverage ends here* and judges nothing about the input; this says something
+    /// stronger and different — the gate promised no oblique class would carry a circle (see
+    /// [`crate::combinatorics::class_carries_circle`]) and the promise did not hold. Sharing
+    /// [`Self::ObliqueCylinderCut`] would put two sentences under one label. The vessel-guard
+    /// precedent is [`Self::PartialCircleUncut`], and it takes the same class.
     ///
     /// Nothing raises it today, and that is the point: the alternative at its two sites is not a
     /// refusal but a **silently wrong containment answer** — a rim witness off the cell's own
@@ -667,7 +665,7 @@ pub enum RejectReason {
     /// name means there is the honest cause — a description past `Rat` — and not a shape the road
     /// cannot spell. A chained cylinder operand does not stop here.
     ///
-    /// **Distinct from the gate's own name on purpose.** The population gate's *signs* were made
+    /// **Distinct from the gate's own name on purpose.** The population gate's *signs* are
     /// total (they clear denominators and answer in `BigInt`), so [`Self::CylinderGateUndecided`]
     /// means the geometry — a rotated class, a cylinder on a chain that does not fold. This one
     /// means the arithmetic, and the gate raises it too where its descriptions are wider than
@@ -735,7 +733,7 @@ pub enum RejectReason {
     ///   **That second site is a backstop with no firings, and deliberately so.** The ring
     ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
     ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
-    ///   declined — measured, zero raises from this site across the whole suite. What can still
+    ///   declined — measured, zero raises from this site across the whole suite. What can
     ///   reach it: a corner whose def is not `Pierce`, a plane with no *narrow* world
     ///   description (a wide or rotated chain), a definition plane that is none of the corner's
     ///   incident classes, and two laterals meeting at one corner (M6b's). Measured with the

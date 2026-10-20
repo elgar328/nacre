@@ -76,7 +76,7 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
 }
 
 /// The operation with its handles re-anchored onto `model` — borrowed when there is nothing to
-/// re-anchor, which since the plane-handle vocabulary landed is only a `Stated` datum.
+/// re-anchor, which is only a `Stated` datum.
 fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, OpError> {
     let surface = |h: Handle<Surface>| {
         model
