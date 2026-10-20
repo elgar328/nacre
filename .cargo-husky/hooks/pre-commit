@@ -19,7 +19,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 echo '+cargo test --workspace'
 cargo test --workspace
 # Private items too: the public build does not render their docs, so a broken link there would
-# pass. A broken or ambiguous link is an error; the 52 "public documentation links to private item"
-# warnings stay warnings (overview's gate paragraph on `cargo doc`).
-echo '+RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items'
-RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items
+# pass. Every doc warning is an error except a public doc linking a private item, which stays a
+# link so a rename still breaks it (overview's gate paragraph on `cargo doc`; the gate also runs
+# the same line with --all-features).
+echo '+RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --no-deps --document-private-items'
+RUSTDOCFLAGS="-D warnings -A rustdoc::private_intra_doc_links" cargo doc --workspace --no-deps --document-private-items

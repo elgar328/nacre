@@ -85,8 +85,8 @@ moved, and a version number published to crates.io can never be reused.
    git log --oneline origin/main..    # prints nothing
    ```
 
-2. **Run every gate** listed in `overview.md` 「관문」 (gates), including the `cargo doc`
-   baseline. If nacre-kit is being released as well, run its gates too.
+2. **Run every gate** listed in `overview.md` 「관문」 (gates), including both `cargo doc`
+   lines. If nacre-kit is being released as well, run its gates too.
 
 3. **Finalize the version and the CHANGELOG.**
    - Change `X.Y.Z-dev` to `X.Y.Z` as described in
