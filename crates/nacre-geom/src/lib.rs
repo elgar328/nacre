@@ -158,9 +158,8 @@ impl Surface {
     ///
     /// A reflection reverses the sense of a circle: `R(n × ref) = −(R(n) × R(ref))`, so the image
     /// of a cylinder's parametrisation runs the opposite way round its axis. Which convention a
-    /// mirrored quadric should take is decided with the curved-geometry milestone rather than
-    /// guessed here, so the function does not exist for that variant instead of existing and
-    /// being wrong.
+    /// mirrored quadric should take is not decided, and is not guessed here, so the function does
+    /// not exist for that variant instead of existing and being wrong.
     #[inline]
     pub fn mirrored(&self, m: AxisMirror) -> Option<Surface> {
         match self {

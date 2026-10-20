@@ -95,7 +95,7 @@ fn a_shared_wall_interns_one_plane_though_its_f64_images_differ() {
 /// The control for the test above, over offsets whose two roundings agree and ones where they
 /// disagree: the statements do not round, so the answer does not depend on which.
 #[test]
-fn most_placements_still_build_one_body() {
+fn most_placements_build_one_body() {
     for (n, d) in [
         (1i128, 2i128),
         (1, 3),
@@ -220,8 +220,8 @@ fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
 }
 
 /// The box's corner edge lies on the prism's wall `y = k·x` in rationals and off it in `f64`, so
-/// `common` is the triangular prism over `(0,0),(xs,0),(xs,ys)` — five faces, volume `xs·ys/2`.
-/// A judge that answered for the rounded model refused the first case as `ZeroLengthEdge`; the
+/// `common` is the triangular prism over `(0,0),(xs,0),(xs,ys)` — five faces, volume `xs·ys/2`. A
+/// judge that answered for the rounded model would refuse the first case as `ZeroLengthEdge`; the
 /// last two are controls whose images keep the coincidence (`2·fl(0.1) = fl(0.2)` is a binary
 /// shift, `0.5` and `1.5` are dyadic).
 #[test]
@@ -314,9 +314,9 @@ fn a_wall_keeps_its_plane_when_another_walls_rounded_image_matches() {
 
 /// **The seam point of two walls whose plane caches are the same bits is where the walls meet.**
 /// `Common(B, C)` over [`rounded_twin_walls`] asks for the corner where the two walls cross
-/// (`x = 1`). Solved from the three classes' plane caches, two of them read as parallel and the
-/// corner was refused (`ThreePlanes`); realized from its definition it is the corner, and the
-/// result is the one the other operand order returns — same faces, same volume.
+/// (`x = 1`). Solved from the three classes' plane caches, two of them would read as parallel and
+/// the corner would be refused (`ThreePlanes`); realized from its definition it is the corner, and
+/// the result is the one the other operand order returns — same faces, same volume.
 #[test]
 fn the_seam_point_of_two_twin_cached_walls_is_realized() {
     let (mut m, b, c) = rounded_twin_walls();
@@ -331,7 +331,7 @@ fn the_seam_point_of_two_twin_cached_walls_is_realized() {
 /// **Two points on a line are ordered along its true direction**, not along an axis the rounding
 /// invents. In [`a_tilted_bore_and_an_axial_wall`] the wall's line across the cylinder's cap runs
 /// along `(0, 3, 2.4)`: an axis picked off the plane caches, where that `0` is a few ulps, compares
-/// two rim points on `x` — which they share — and every boolean was refused
+/// two rim points on `x` — which they share — and every boolean would be refused
 /// (`TraceDeclined { CoincidentFeatures }`). On the truth each is built, and the volumes are the
 /// analytic ones: the wall halves the unit cylinder of height 2, and `B` has area 9 and height 1.
 #[test]

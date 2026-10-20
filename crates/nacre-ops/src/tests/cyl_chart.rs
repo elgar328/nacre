@@ -88,11 +88,10 @@ fn the_chart_census_is_running() {
 /// 84**. The chart reads those strips as uniform: the walls crossing them change nothing at the
 /// lateral there.
 ///
-/// Beside it, over **450 alive-ruling observations** — a piece counts once per interval it
-/// spans, so this is **not** the 862-piece denominator above: **122 whose wall does change the
-/// material** (so the counter has a population), **61 intervals** carrying at least one, **12
-/// whose every mark is a graze** — the existence question is not empty either — and **201
-/// intervals closing, 0 not**.
+/// Beside it, over **450 alive-ruling observations** — a piece counts once per interval it spans,
+/// so this is **not** a count of pieces: **122 whose wall does change the material** (so the
+/// counter has a population), **61 intervals** carrying at least one, **12 whose every mark is a
+/// graze** — the existence question is not empty either — and **201 intervals closing, 0 not**.
 ///
 /// **Asking whether a ruling's mark list is *empty* would be vacuous**: a `MergedRuling` exists
 /// only because a lateral traced it, so that counter would read `0` because nothing is being looked

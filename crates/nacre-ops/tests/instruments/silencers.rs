@@ -7,14 +7,14 @@
 //! `#[cfg(test)]` rides into a release library, and this attribute silences the one warning a
 //! product build raises about it.
 //!
-//! **The attribute is not the tell; the sentence above it is.** Of the nine sites that existed
-//! when this was written, seven said why in the line above ("Read by the census only…", "Used by
-//! `loop_winding`'s tests…") and the two that said nothing were the two defects. The population
-//! separated perfectly, so that is what this pins: silencing the compiler is allowed, silencing it
+//! **The attribute is not the tell; the sentence above it is.** Calibrated over nine sites, two of
+//! them defects: seven said why in the line above ("Read by the census only…", "Used by
+//! `loop_winding`'s tests…"), and the two that said nothing were the defects. The population
+//! separates perfectly, so that is what this pins: silencing the compiler is allowed, silencing it
 //! without a word is not.
 //!
-//! **The window is four lines, and it was calibrated against the real population.** At three or
-//! more it flags exactly the two defects; at two it also flags `cyl_chart::regions`' second field,
+//! **The window is four lines, and it is calibrated against that population.** A window of three or
+//! more would flag exactly those two; at two it also flags `cyl_chart::regions`' second field,
 //! which shares the comment written above its sibling. Four leaves a line of margin over the
 //! narrowest width that works.
 //!
@@ -46,8 +46,8 @@ fn sources() -> Vec<std::path::PathBuf> {
     out
 }
 
-/// No exemptions, and that is the point: the list is empty because the two that could not have
-/// been written down were the defect, not because every awkward case was excused.
+/// No exemptions, and that is the point: the list is empty because a silencer whose reason cannot
+/// be written down is the defect, not because every awkward case is excused.
 #[test]
 fn a_silenced_warning_states_its_reason() {
     let mut offenders = Vec::new();

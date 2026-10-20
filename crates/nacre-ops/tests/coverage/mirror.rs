@@ -1,11 +1,10 @@
 //! `Operation::Mirror` — reflection in a coordinate plane.
 //!
-//! Driven through the public front door (`apply`). A reflection is the one motion the kernel
-//! could not express: `Isometry` holds proper motions only, so no amount of rotating and moving
-//! produces a mirror image. What has to be right is the **orientation algebra** — reflecting the
-//! coordinates alone turns a solid inside out, because the winding that defines "outward" flips
-//! with `det = −1` — and `validate` cannot see that mistake, so the nets here are the *signed*
-//! volume and the boolean.
+//! Driven through the public front door (`apply`). A reflection is the one motion `Isometry` cannot
+//! express: it holds proper motions only, so no amount of rotating and moving produces a mirror
+//! image. What has to be right is the **orientation algebra** — reflecting the coordinates alone
+//! turns a solid inside out, because the winding that defines "outward" flips with `det = −1` — and
+//! `validate` cannot see that mistake, so the nets here are the *signed* volume and the boolean.
 
 use crate::common::*;
 use nacre_exact::{Axis, Rat};
@@ -322,7 +321,7 @@ fn a_mirror_is_carried_when_every_statement_moves_exactly() {
 }
 
 /// Curved geometry is declined rather than guessed: a reflection reverses a circle's
-/// parametrisation, and that convention is settled with the curved-geometry milestone.
+/// parametrisation, and the convention for a mirrored circle is not settled.
 #[test]
 fn mirroring_a_cylinder_is_declined() {
     let mut m = Model::new();
@@ -377,9 +376,9 @@ fn a_rotated_solid_mirrors() {
             let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                 return false;
             };
-            // `any`, not `all`: the Z-fixed caps are world-stated since the invariant-plane
-            // restatement (and stay so through this mirror — normal ⊥ X), so the moved
-            // provenance lives on the walls each corner also names.
+            // `any`, not `all`: the Z-fixed caps are world-stated under the invariant-plane
+            // restatement (and stay so through this mirror — normal ⊥ X), so the moved provenance
+            // lives on the walls each corner also names.
             tri.iter().any(|&h| {
                 !matches!(
                     m.surface(h),

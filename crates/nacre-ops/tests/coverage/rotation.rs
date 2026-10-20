@@ -235,19 +235,18 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
 
 /// The near misses around the four-plane concurrency.
 ///
-/// It needs **four** coincidences at once: 45°, a bar whose half-width equals its
-/// pivot-to-bottom offset, a pivot in the plane those two measure from, and the fused block — which
-/// is what supplies the plane `x = 0.5` that the bar's bottom corner edge lands in. Break any single
-/// one and the concurrency is gone. Each row here was measured, and together they are what says the
-/// case was a genuine concurrency rather than a rotation the engine could not handle: 44° and 46°
-/// are every bit as irrational as 45°.
+/// It needs **four** coincidences at once: 45°, a bar whose half-width equals its pivot-to-bottom
+/// offset, a pivot in the plane those two measure from, and the fused block — which is what
+/// supplies the plane `x = 0.5` that the bar's bottom corner edge lands in. Break any single one
+/// and the concurrency is gone. Each row here is measured, and together they say the case is a
+/// genuine concurrency rather than a rotation the engine cannot handle: 44° and 46° are every bit
+/// as irrational as 45°.
 ///
-/// **The concurrent model itself builds now** (`nacre-oracle`'s `the_four_plane_cut_matches_occt`,
-/// where OCCT agrees on volume and centroid), so these rows have changed job: they were the near
-/// misses around a reject, and they are now the net that says normalising vertex identity did not
-/// break the neighbourhood it was reached through.
+/// **The concurrent model itself builds** (`nacre-oracle`'s `the_four_plane_cut_matches_occt`,
+/// where OCCT agrees on volume and centroid), and these rows are the net that says normalising
+/// vertex identity does not break its neighbourhood.
 #[test]
-fn the_near_misses_around_the_four_plane_reject_all_build() {
+fn the_near_misses_around_the_four_plane_concurrency_all_build() {
     use nacre_exact::Rat;
     let on_plane = Rat::from_int(1);
     for (what, half_z, deg, pivot_z, fuse) in [
@@ -313,18 +312,17 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
 /// **The four-plane model builds.**
 ///
 /// A bar spun 45° whose bottom corner edge lands exactly in the plane the fused block supplies
-/// (`x = 0.5`): three planes then share that edge's line, and every plane crossing it makes a vertex
-/// with four planes through it. Naming such a vertex is what the substrate could not do.
+/// (`x = 0.5`): three planes then share that edge's line, and every plane crossing it makes a
+/// vertex with four planes through it.
 ///
-/// **Two independent things are asserted, because this is the first time the engine answers here
-/// rather than declining, and "it stopped rejecting" is not the same as "it is right".**
+/// **Two independent things are asserted, because "it does not reject" is not the same as "it is
+/// right".**
 ///
 /// 1. The result is a **valid** 2-manifold and its volume is the hand figure `1.38` — the target is
 ///    `1 + 0.5` and the bar removes `0.12`.
 /// 2. **It agrees with its non-degenerate neighbours.** Moving one operand coordinate by a single
-///    ULP either way destroys the concurrency, and those two models already built before any of
-///    this work. A degenerate answer that did not match them would be a discontinuity, and this is
-///    the cheapest way to notice one.
+///    ULP either way destroys the concurrency, and those two models build too. A degenerate answer
+///    that did not match them would be a discontinuity, and this is the cheapest way to notice one.
 #[test]
 fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
     use nacre_exact::Rat;
@@ -395,21 +393,21 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
 
 /// **A 40-fin ring, whose mirror-pair fins are exactly symmetric, builds.**
 ///
-/// It did not, once the trig realization became correctly rounded: `cos 288° == cos 72°` exactly,
-/// so mirror-pair fins landed on genuinely mirrored coordinates where `libm` had broken every such
-/// pair by an ulp, and the arrangement met the symmetry for the first time. What it met there was
-/// **not a symmetry problem** — it was a plane described two ways.
+/// The trig realization is correctly rounded: `cos 288° == cos 72°` exactly, so mirror-pair fins
+/// land on genuinely mirrored coordinates (a realization off by an ulp would break every such
+/// pair). What the arrangement meets there is **not a symmetry problem** — it is a plane that can
+/// be described two ways.
 ///
 /// A plane stated with coefficients *and* a witness triangle can hold two that do not describe the
 /// same plane: `d = −(raw·origin)` is an `f64` product, and `3.5 × 0.2` lands on
-/// `0.7000000000000001`. Predicates chose between the two descriptions by *the question* (does any
-/// plane in it rotate?), so one plane sat in two places depending on what was asked, and comparisons
-/// composed across the two were not even transitive. `loop_winding` then read its turn at a node
-/// that was not extreme and returned a **confident wrong winding**; the `RingOrientation` reject
-/// two layers later was the symptom.
+/// `0.7000000000000001`. Predicates choosing between the two descriptions by *the question* (does
+/// any plane in it rotate?) would put one plane in two places depending on what was asked, and
+/// comparisons composed across the two would not even be transitive: `loop_winding` would read its
+/// turn at a node that is not extreme and return a **confident wrong winding**, with the
+/// `RingOrientation` reject two layers later as the symptom.
 ///
-/// The route now requires the descriptions to agree, so this builds. **It is a regression test for
-/// the transitivity, not for the fins** — any model that puts two descriptions of one plane into a
+/// The route requires the descriptions to agree, so this builds. **It is a regression test for the
+/// transitivity, not for the fins** — any model that puts two descriptions of one plane into a
 /// single ordering would fail the same way.
 #[test]
 fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {

@@ -6,12 +6,12 @@
 //! and the first pusher's survives. So the moment a plane exists before the operation that would
 //! have created it, that operation inherits someone else's `d`.
 //!
-//! A volume was measured going wrong when `extrude` was made to issue its base-cap surface up
-//! front, and the tempting response is "hand coefficients, not a handle". But `build_prism`
-//! still takes a surface handle and **pad/pocket passes one every day**
-//! — the two roads are the same road: `Some(h)` picks its orientation from `n_h·(−N) > 0`, and the
-//! `None` road gets `flipped = n_h·(−N) < 0` back from the intern and flips. So "pass points, not a
-//! handle" is not an escape. It never was.
+//! Anchored wherever the first pusher held, a volume would go wrong when `extrude` issues its
+//! base-cap surface up front (measured), and the tempting response is "hand coefficients, not a
+//! handle". But `build_prism` takes a surface handle and **pad/pocket passes one every day** — the
+//! two roads are the same road: `Some(h)` picks its orientation from `n_h·(−N) > 0`, and the `None`
+//! road gets `flipped = n_h·(−N) < 0` back from the intern and flips. So "pass points, not a
+//! handle" is not an escape.
 //!
 //! This file measures what is actually at stake, because a datum-plane operation
 //! makes "the plane already exists" ordinary rather than exotic.
@@ -240,12 +240,12 @@ fn which_point_states_a_plane_changes_its_stored_d() {
     );
 }
 
-/// **The control that says why the population had to be tilted.**
+/// **The control that says why the population has to be tilted.**
 ///
 /// `d = −n·origin`. When `n` has a single nonzero component that is one exact multiply, so two
 /// anchors on the plane — which by definition agree in that coordinate — produce **bit-identical**
-/// `d`. An axis-aligned fixture, however far apart its anchors, measures nothing at all. (This is
-/// the trap the plan for this work walked into three times: the obvious fixture is the blind one.)
+/// `d`. An axis-aligned fixture, however far apart its anchors, measures nothing at all. (The
+/// obvious fixture is the blind one.)
 #[test]
 fn an_axis_aligned_plane_is_anchor_blind() {
     let sp = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
@@ -328,7 +328,7 @@ fn topo_sig(m: &Model) -> Vec<String> {
 }
 
 /// Build the `wf` prism and fuse a second body onto it, optionally stating the sketch plane
-/// **before** the extrude — which is exactly what a datum-plane operation will do.
+/// **before** the extrude — which is exactly what a datum-plane operation does.
 ///
 /// The boolean is not decoration. A prism's vertices come from its own rational swept ring, so a
 /// plain extrude's geometry cannot depend on the stored plane at all; `three_planes` — the only
@@ -337,11 +337,11 @@ fn topo_sig(m: &Model) -> Vec<String> {
 fn wf_model(pre_state_at: Option<Point3>) -> Model {
     let mut m = Model::new();
     let sp = wf_plane();
-    // **Both arms now state the plane** — an extrude names its plane, so "without a
-    // pre-existing plane" is not expressible. What still varies, and what this
-    // file measures, is **which point anchors the cache**: `None` lets the datum anchor at the
-    // caller's sketch origin, `Some(p)` plants the same plane at `p` first so the datum interns
-    // onto it and inherits that anchor. Two production roads, one of them deliberately worse.
+    // **Both arms state the plane** — an extrude names its plane, so "without a pre-existing plane"
+    // is not expressible. What still varies, and what this file measures, is **which point anchors
+    // the cache**: `None` lets the datum anchor at the caller's sketch origin, `Some(p)` plants the
+    // same plane at `p` first so the datum interns onto it and inherits that anchor. Two production
+    // roads, one of them deliberately worse.
     if let Some(anchor) = pre_state_at {
         let (_h, flipped) = m.push_plane(
             Plane::from_point_normal(anchor, -sp.normal()).expect("nonzero normal"),
@@ -416,21 +416,21 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 /// road (see the module doc). It is to derive the cache's anchor from the definition, which is
 /// what ships.
 ///
-/// **But not from the foot of perpendicular** — "the
-/// minimum-norm point, therefore the smallest rounding available" — which was measured out:
-/// the foot minimizes the rounding of `d`, not the residual at the face's own points, and it puts
-/// the anchor near the *world origin* while every consumer of an anchor (conditioning, STEP's
-/// required point, tess's chart) wants it near the **face**. Wired, it moved 32 census result
-/// rows, closed an exact-coefficient road, and overflowed `i128` on 8 planes because the
-/// projection squares the coefficients. What shipped is the truth's **first point**: 0 rows moved,
-/// 61 caches changed. See `which_surface_caches_two_anchors_leave_disagreeing` below.
+/// **But not from the foot of perpendicular** — "the minimum-norm point, therefore the smallest
+/// rounding available" — measured: the foot minimizes the rounding of `d`, not the residual at the
+/// face's own points, and it puts the anchor near the *world origin* while every consumer of an
+/// anchor (conditioning, STEP's required point, tess's chart) wants it near the **face**. Wired, it
+/// would move 32 census result rows, close an exact-coefficient road, and overflow `i128` on 8
+/// planes because the projection squares the coefficients. The anchor is the truth's **first
+/// point**; against the pusher's own point it moves 0 census rows and changes 61 caches (measured).
+/// See `which_surface_caches_two_anchors_leave_disagreeing` below.
 #[test]
 fn a_pre_pushed_plane_does_not_move_the_model() {
     let plain = wf_model(None);
     let sp = wf_plane();
 
-    // Two pre-statements. The first is what a datum operation will actually do; the second exists
-    // so the gate has teeth.
+    // Two pre-statements. The first is what a datum operation actually does; the second exists so
+    // the gate has teeth.
     //
     // **The realistic anchor alone would be a lucky pass.** Measured: stating the plane at the
     // sketch origin *does* change the stored `Plane`'s anchor point (from the oriented ring's first

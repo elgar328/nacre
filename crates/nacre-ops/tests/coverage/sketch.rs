@@ -126,8 +126,8 @@ fn a_donut_prism_is_a_valid_genus_one_solid() {
 /// A hole is only a hole if the mesh and the exchange format agree it is one. The tessellator
 /// sweeps the cap with its hole as a sibling ring, and STEP writes it as an inner face bound.
 ///
-/// This used to say tessellation *"bridges"* cap holes. It does not, and has not since the
-/// monotone sweep landed — bridging is exactly what that sweep exists to avoid.
+/// Tessellation does not *bridge* cap holes — bridging is exactly what the monotone sweep exists to
+/// avoid.
 #[test]
 fn a_donut_prism_tessellates_and_exports() {
     let mut m = Model::new();
@@ -200,12 +200,12 @@ fn a_swept_hole_is_a_boolean_operand() {
 /// the way in — the one path where "which way is counter-clockwise" differs from every extrude
 /// above.
 ///
-/// It was written expecting to be the only test that catches a mis-wound hole, and measurement
-/// said otherwise: winding each hole opposite to the *normalized* outer ring and winding it
-/// clockwise about the sweep are the same rule, because the outer ring is always normalized
-/// counter-clockwise about the sweep. There is no second rule to get wrong. What remains real is
-/// the hazard the design removed — deciding winding in two places (the frame's 2-D area *and* the
-/// sweep's) — and this test is the end-to-end cover for the direction where those two disagree.
+/// It is not the only test that catches a mis-wound hole (measured): winding each hole opposite to
+/// the *normalized* outer ring and winding it clockwise about the sweep are the same rule, because
+/// the outer ring is always normalized counter-clockwise about the sweep. There is no second rule
+/// to get wrong. What remains real is the hazard the design removes — deciding winding in two
+/// places (the frame's 2-D area *and* the sweep's) — and this test is the end-to-end cover for the
+/// direction where those two would disagree.
 #[test]
 fn a_pocket_with_a_hole_sweeps_the_other_way() {
     let mut m = Model::new();
@@ -403,13 +403,13 @@ fn try_extrude(profile: Profile2d) -> Result<(), nacre_ops::OpError> {
     .map(|_| ())
 }
 
-/// **The measurement this whole contract exists for.** Before the check, each of these built a
-/// solid that `validate` called clean and `nacre-step` happily exported. The bowtie's volume came
-/// out `NaN`; the two nesting mistakes came out as *plausible numbers* — 12.0 for a hole that
-/// lies nowhere near the outline (it should be 16), and 20.0 where even-odd says 52. A wrong
-/// number that looks right is the failure mode the kernel exists to prevent.
+/// **The measurement this whole contract exists for.** Without the check, each of these would build
+/// a solid that `validate` calls clean and `nacre-step` exports: the bowtie's volume `NaN`, the two
+/// nesting mistakes *plausible numbers* — 12.0 for a hole that lies nowhere near the outline (it
+/// should be 16), and 20.0 where even-odd says 52 (measured). A wrong number that looks right is
+/// the failure mode the kernel exists to prevent.
 #[test]
-fn profiles_the_kernel_used_to_build_silently_wrong_are_now_refused() {
+fn silently_wrong_profiles_are_refused() {
     let bowtie = vec![
         Point2::from_array([0.0, 0.0]),
         Point2::from_array([4.0, 4.0]),
@@ -743,9 +743,8 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
 }
 
 /// The boolean road carries `r² = 2` end to end: the segment prism above, cut by a box covering
-/// `x ≥ 0`, leaves the left half of the segment — validate clean, volume `(π/2 − 1)/2`. Written as
-/// the cell's probe («which named refusal is the first wall?») and promoted to a lock when it came
-/// back green; a refusal is still reported in the panic so a regression names itself.
+/// `x ≥ 0`, leaves the left half of the segment — validate clean, volume `(π/2 − 1)/2`. A refusal
+/// is reported in the panic so a regression names itself.
 #[test]
 fn a_non_pythagorean_prism_is_cut_by_a_box() {
     use nacre_exact::Rat;

@@ -3,9 +3,8 @@
 //! A comparison that reads «could not tell» as `Equal` is not a total order, and since Rust 1.81
 //! the standard sorts may **panic** on one past twenty elements (measured: 1,896 of 2,000 sorts of
 //! forty, one element in ten failing every comparison it took part in; and on the arrangement's own
-//! split sort, a single failing point). That idiom had been copied to seven places in `nacre-ops`,
-//! one of them with a comment calling the result «any permutation». Where an exact comparison can
-//! fail, `combinatorics::try_sort_by` sorts and stops at the failure.
+//! split sort, a single failing point). Where an exact comparison can fail,
+//! `combinatorics::try_sort_by` sorts and stops at the failure.
 //!
 //! So every product use of the entries a comparison rides into — `sort_by`, `sort_unstable_by`,
 //! `select_nth_unstable_by` and their rayon twins, and a hand-written `Ord`/`PartialOrd` (which

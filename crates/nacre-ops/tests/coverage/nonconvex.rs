@@ -244,9 +244,8 @@ fn cut_staircase_seam_arc() {
     // staircase whose two bends turn opposite ways — a reflex turn, not an arc folded back
     // on itself.
     //
-    // The reconstructed face there is (0.5,0.5) → (0.5,1.5) → (1,1.5) → (1,1) →
-    // (2,1) → (2,0.5): the overlap footprint, area 1.0, reflex at (1,1). A correct
-    // simple polygon. `strict` was rejecting a right answer.
+    // The reconstructed face there is (0.5,0.5) → (0.5,1.5) → (1,1.5) → (1,1) → (2,1) → (2,0.5):
+    // the overlap footprint, area 1.0, reflex at (1,1). A correct simple polygon.
     //
     // Overlap = footprint 1.0 × z∈[0.2,1] = 0.8.
     let (mut m, l, bx) = l_and_popup_box();
@@ -293,10 +292,9 @@ fn cut_ell_dimple() {
 
 #[test]
 fn cut_l_staple() {
-    // A loop beside an arc, resolved. The cap's kept region is the hexagon minus the
-    // corner bite, and the near leg's rectangle sits inside it — so the loop is a
-    // **hole** of that region. The winding says clockwise, which is only a cross-check
-    // now: containment decided.
+    // A loop beside an arc, resolved. The cap's kept region is the hexagon minus the corner bite,
+    // and the near leg's rectangle sits inside it — so the loop is a **hole** of that region. The
+    // winding says clockwise, which is only a cross-check: containment decided.
     //
     // `V_∩ = 0.5·0.5·0.65 + 0.27·0.55 = 0.311`, the two legs' parts inside the L.
     let (mut m, l, st) = l_and_staple();
@@ -418,10 +416,9 @@ fn a_flipped_hole_loop_is_caught() {
     let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
     m.rebuild_adjacency();
 
-    // The dimple is blind, so exactly one face carries a hole. Counted, not assumed:
-    // its sibling in `pipeline.rs` said "the only face …" in prose, used `find`, and
-    // silently flipped a different face once the engine stopped making the predicate
-    // unique.
+    // The dimple is blind, so exactly one face carries a hole. Counted, not assumed: a `find`
+    // resting on "the only face" in prose would silently flip a different face if the predicate
+    // stopped being unique.
     let faces = m.shell(m.solid(r).outer).faces.clone();
     let holed_faces: Vec<_> = faces
         .iter()
@@ -477,9 +474,8 @@ fn fuse_blind_dimple() {
     assert!((vol - (3.0 + 0.16 - 0.08)).abs() < 1e-9, "volume {vol}");
 }
 
-/// The first time a boolean result is fed back as an operand: the overlap box
-/// (arrangement-named corners) stacked on a third box shares a coplanar interface
-/// with it. Volume is the sum and the shell stays closed.
+/// A boolean result fed back as an operand: the overlap box (arrangement-named corners) stacked on
+/// a third box shares a coplanar interface with it. Volume is the sum and the shell stays closed.
 #[test]
 fn a_boolean_result_stacks_as_an_operand() {
     let mut m = Model::new();
@@ -605,8 +601,8 @@ fn degenerate_inputs_are_rejected() {
         apply(&mut Model::new(), &extrude_op(&m, square(), 0.0)),
         Err(OpError::ZeroDistance)
     );
-    // A repeated point. This used to surface as `DegenerateGeometry` from `Line::through_points`
-    // failing deep in the prism builder; the profile contract now names it at the input instead.
+    // A repeated point: the profile contract names it at the input, rather than
+    // `Line::through_points` failing deep in the prism builder as `DegenerateGeometry`.
     let dup = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)]).unwrap();
     assert_eq!(
         apply(

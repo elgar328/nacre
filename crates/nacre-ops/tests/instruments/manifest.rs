@@ -1,15 +1,15 @@
 //! **A self dev-dependency takes no default features.**
 //!
-//! A crate's integration tests link the non-test library, so a crate that wants its own
-//! `test-util` there names itself as a dev-dependency (`nacre-ops`, `nacre-topo`). Written with the
-//! defaults, that one line also turns the crate's default features back on under
-//! `--no-default-features`: `nacre-ops`'s did, so `cargo test -p nacre-ops --no-default-features`
-//! — the serial build the wasm playground takes — ran the parallel build instead, green, for as
-//! long as the line stood. The property lives in `Cargo.toml` and the pre-commit hook builds only the
-//! defaults, so it is asserted against the manifests themselves, the facade's shape
-//! (`the_ops_dependency_stays_default_free_so_consumers_can_drop_rayon`). The `cargo tree` gate line
-//! in `overview.md` is the other half: it asks cargo's own resolution, which also sees a path that
-//! does not go through a manifest line.
+//! A crate's integration tests link the non-test library, so a crate that wants its own `test-util`
+//! there names itself as a dev-dependency (`nacre-ops`, `nacre-topo`). Written with the defaults,
+//! that one line also turns the crate's default features back on under `--no-default-features`: in
+//! `nacre-ops` that would make `cargo test -p nacre-ops --no-default-features` — the serial build
+//! the wasm playground takes — run the parallel build instead, green. The property lives in
+//! `Cargo.toml` and the pre-commit hook builds only the defaults, so it is asserted against the
+//! manifests themselves, the facade's shape
+//! (`the_ops_dependency_stays_default_free_so_consumers_can_drop_rayon`). The `cargo tree` gate
+//! line in `overview.md` is the other half: it asks cargo's own resolution, which also sees a path
+//! that does not go through a manifest line.
 
 use std::path::{Path, PathBuf};
 

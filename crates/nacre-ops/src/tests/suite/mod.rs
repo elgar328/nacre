@@ -768,10 +768,11 @@ fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) 
 // (frame +1), so the two classes are complementary. The recorded road is the `recorded block`
 // family's: every motion of it is a node.
 //
-// `KNOWN` is the ledger of cells the kernel does not commute on **today**, each named by the
-// sentence of the assertion that catches it — the crossing census's discipline: a fix flips its
-// rows to commuting and the count lock says how many are left. A known cell is **run**, and must
-// panic at one of its named sites; commuting instead is red, and so is a panic somewhere else.
+// `KNOWN` is the ledger of cells the kernel does not commute on **today**, each named by where it
+// fails — an assertion's sentence, a reject's reason, or `DIVERGES` for a silent divergence — the
+// crossing census's discipline: a fix flips its rows to commuting and the count lock says how many
+// are left. A known cell is **run**, and must fail at one of its named sites; commuting instead is
+// red, and so is failing somewhere else.
 
 /// What «the same answer» can mean under a motion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -467,13 +467,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        // **`j` is asked by its coefficients, not by its triangle.** The rows are the planes'
-        // names in `f64`, derived from their defining points without rounding; `tri` is the face's
+        // **`j` is asked by its coefficients, not by its triangle.** The rows are the planes' names
+        // in `f64`, derived from their defining points without rounding; `tri` is the face's
         // corners' `f64` caches, which a decimal plane does not pass through (`z = 0.1` is not
-        // `fl(0.1)`). Asking `j` by `tri` answered for the rounded model — measured, a box whose
-        // corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and the common refused as
-        // `ZeroLengthEdge`. `frame_sign` carries `j`'s stored normal to its triangle's winding, the
-        // bridge the shared-motion arm below already uses.
+        // `fl(0.1)`). Asking `j` by `tri` would answer for the rounded model — measured, a box
+        // whose corner lies on a wall exactly (`3·0.1 = 0.3`) would be judged off it and the common
+        // refused as `ZeroLengthEdge`. `frame_sign` carries `j`'s stored normal to its triangle's
+        // winding, the bridge the shared-motion arm below already uses.
         if let (Some(cp), Some(cq), Some(cr), Some(cj)) = (
             self.planes[p].exact_coeffs(),
             self.planes[q].exact_coeffs(),

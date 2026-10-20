@@ -1,9 +1,9 @@
 //! `Operation::Copy` — the one operation that adds to the live set without removing anything.
 //!
-//! Driven through the public front door (`apply`), the way a consumer uses it: the kernel could
-//! *move* a solid but never *copy* one, so "cut with the same tool twice" and pattern/mirror sugar
-//! had no expression. What matters here is that the twin is genuinely independent (no shared
-//! cells) and that a vertex's exact definition survives the duplication.
+//! Driven through the public front door (`apply`), the way a consumer uses it: copying is what
+//! gives "cut with the same tool twice" and pattern/mirror sugar an expression — moving alone never
+//! duplicates. What matters here is that the twin is genuinely independent (no shared cells) and
+//! that a vertex's exact definition survives the duplication.
 
 use crate::common::*;
 use nacre_math::Point3;
@@ -188,9 +188,9 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
                 let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                     return false;
                 };
-                // `any`, not `all`: since the invariant-plane restatement the caps a
-                // rotation fixes are world-stated, so every corner names two moved walls
-                // and one restated cap — the moved provenance lives on the walls.
+                // `any`, not `all`: under the invariant-plane restatement the caps a rotation fixes
+                // are world-stated, so every corner names two moved walls and one restated cap —
+                // the moved provenance lives on the walls.
                 tri.iter().any(|&h| {
                     !matches!(
                         m.surface(h),
@@ -226,8 +226,7 @@ fn a_rotated_boolean_result_copies_and_stays_usable() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A cavity is a second shell hanging off the solid; the walk has to carry it, and nothing tested
-/// that before (not even for `transform`).
+/// A cavity is a second shell hanging off the solid; the walk has to carry it.
 #[test]
 fn a_hollow_solid_copies_with_its_cavity() {
     let mut m = Model::new();

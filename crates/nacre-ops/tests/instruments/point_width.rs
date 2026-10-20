@@ -227,11 +227,10 @@ fn measure(m: &Model) -> Tally {
         }
 
         // **The kernel says which vertices have a frame; this table only labels the rest.**
-        // Comparing the three carriers' motions here would be `vertex_meet`'s rule written a
-        // second time — and with the invariant-plane restatement such a copy says "mixed" for
-        // every corner of a turned solid and **drops them out of the width table entirely**,
-        // green while measuring a smaller population than it claims. Asking the door keeps the
-        // two in step.
+        // Comparing the three carriers' motions here would be `vertex_meet`'s rule written a second
+        // time — and under the invariant-plane restatement such a copy would say "mixed" for every
+        // corner of a turned solid and **drop them out of the width table entirely**, green while
+        // measuring a smaller population than it claims. Asking the door keeps the two in step.
         let Some((point, _frame)) = m.vertex_meet(vh) else {
             // Two causes are left (the def kind and a missing name were handled above): no
             // shared frame, or — same frame, no meet — carriers on one line. The split is for
@@ -402,10 +401,9 @@ fn datum_reach(m: &Model) -> Reach {
             if names.len() != 3 {
                 return VertexReach::Undefined;
             }
-            // **Ask the door, do not re-derive its rule.** `VertexReach::Pure` carries
-            // exactly `vertex_meet`'s return — this classifier *was* that function, written a
-            // second time, and the copy is what kept reporting yesterday's kernel after the
-            // invariant-plane restatement moved the line.
+            // **Ask the door, do not re-derive its rule.** `VertexReach::Pure` carries exactly
+            // `vertex_meet`'s return — a classifier that re-spelled that function would go on
+            // reporting the kernel as it was whenever the line moves.
             match m.vertex_meet(vh) {
                 Some((p, f)) => VertexReach::Pure(f, p),
                 // The label only; the capability answer is the kernel's above.
@@ -643,9 +641,8 @@ fn tilted_frame(passes: usize) -> Model {
 fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
     let mut out = Vec::new();
     for vh in live_vertices(m) {
-        // Stated positively on purpose. This read "not the bare figure" while there were two
-        // ways to be vouched for; with `Ceiling` in the enum the negative form would quietly admit
-        // a vertex nothing has proven anything about.
+        // Stated positively on purpose: with `Ceiling` in the enum the negative form ("not the bare
+        // figure") would quietly admit a vertex nothing has proven anything about.
         if !matches!(m.vertex_cache(vh), PointCache::Realized { .. }) {
             continue; // the construction's bare figure — the control lives in its own fixture below
         }
@@ -922,18 +919,16 @@ fn how_wide_a_discovered_coordinate_is() {
 /// all-pure combination count is only an upper bound, and `pure_frames` is what says whether it is
 /// reached.
 ///
-/// **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion,
-/// so "zero mixed" there is true by construction and measures nothing.
-/// [`turned_after_the_cut`] has motion on every surface that the turn moves, and every carrier
-/// solvable in that one frame — the caps stay world-stated because the turn **fixes** them, and a
-/// fixed plane's world equation is its pre-motion equation. That is the arm where a zero is
-/// evidence, and it is the arm that went red for 169 commits when the kernel read the caps'
-/// `motion: None` as a straddle (see the module doc's regression section).
-/// **Not `#[ignore]`d, unlike its two neighbours** — this one carries an *assertion*, and
-/// hiding an assertion behind a flag the commit hook never passes is how the regression above
-/// lived for 169 commits. It costs ~0.3s and its table is captured unless it fails, so the price
-/// of the hook seeing it is nothing. The other two measurements print and assert nothing, so they
-/// stay where they are.
+/// **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion, so
+/// "zero mixed" there is true by construction and measures nothing. [`turned_after_the_cut`] has
+/// motion on every surface that the turn moves, and every carrier solvable in that one frame — the
+/// caps stay world-stated because the turn **fixes** them, and a fixed plane's world equation is
+/// its pre-motion equation. That is the arm where a zero is evidence: it goes red when the kernel
+/// reads the caps' `motion: None` as a straddle. **Not `#[ignore]`d, unlike its two neighbours** —
+/// this one carries an *assertion*, and an assertion behind a flag the commit hook never passes
+/// would let that misreading stand unseen. It costs ~0.3s and its table is captured unless it
+/// fails, so the price of the hook seeing it is nothing. The other two measurements print and
+/// assert nothing, so they stay where they are.
 #[test]
 fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
     let mut blocked_somewhere = false;

@@ -1,18 +1,17 @@
 //! **Which top-level module names which** — the crate's own dependency graph, read off the source.
 //!
-//! This crate is 35k lines of product code in twenty top-level modules, and the question
-//! "can this be split" is really "is the graph acyclic". Nothing in `fmt`, `clippy` or the suite
-//! answers it, so the graph was invisible until it was measured: nine module pairs pointed at
-//! each other, and only two of those were *behaviour* — the rest named a type, or took an
-//! argument, that lived on the wrong side. The difference is the whole finding, and it is only
-//! visible if something counts. One pair is left, and it is not a defect.
+//! This crate is 35k lines of product code in twenty top-level modules, and the question "can this
+//! be split" is really "is the graph acyclic". Nothing in `fmt`, `clippy` or the suite answers it,
+//! so this measures it. A pair of modules pointing at each other is either *behaviour* or a type or
+//! argument living on the wrong side, and the difference is only visible if something counts. One
+//! pair points both ways, and it is not a defect.
 //!
-//! **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
-//! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
-//! `ops` module, then over-corrected and counted almost nothing, then broke on a lookbehind. So
-//! [`targets`] is exercised against **literal lines** in [`the_parser_reads_what_it_should`]. Those
-//! fixtures are strings on purpose: a fixture that named a file would go red the moment a module
-//! moves, and that red would mean nothing while looking exactly like a real one.
+//! **The parser is what gets calibrated, not the files.** A parser can count `std::ops::Deref` as a
+//! reference to this crate's `ops` module, over-correct and count almost nothing, or break on a
+//! lookbehind — so [`targets`] is exercised against **literal lines** in
+//! [`the_parser_reads_what_it_should`]. Those fixtures are strings on purpose: a fixture that named
+//! a file would go red the moment a module moves, and that red would mean nothing while looking
+//! exactly like a real one.
 //!
 //! Being textual it can be talked around (a path inside a string literal counts, a module reached
 //! through a `use super::*` glob does not). It is a tripwire on the ordinary way to name another
@@ -102,8 +101,8 @@ fn targets(line: &str, owner: &str, mods: &BTreeSet<String>) -> Vec<String> {
     out
 }
 
-/// Product source files of one top-level module, test trees excluded — a module that became a
-/// folder is still one module, and a scan that stopped at the top level would go quiet about it.
+/// Product source files of one top-level module, test trees excluded — a module that is a folder is
+/// still one module, and a scan that stopped at the top level would go quiet about it.
 fn sources_of(module: &str) -> Vec<std::path::PathBuf> {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let base = src.join(module);
@@ -145,19 +144,17 @@ fn edges() -> BTreeMap<String, BTreeMap<String, usize>> {
 
 /// **The calibration, and why its module names are made up.**
 ///
-/// The subject under test is [`targets`], and it does not know this crate: it takes the module
-/// set as an argument. So the fixtures name `alpha`/`beta`/`gamma`, which exist nowhere. That is
-/// not tidiness — it is the second thing that went wrong here.
+/// The subject under test is [`targets`], and it does not know this crate: it takes the module set
+/// as an argument. So the fixtures name `alpha`/`beta`/`gamma`, which exist nowhere. That is not
+/// tidiness.
 ///
-/// The first was pinning fixtures to *files*: a fixture that points at `assembly/naming.rs` goes
-/// red the moment that file moves, and that red means nothing while looking exactly like a real
-/// one. So they became string literals. Then a bulk path rewrite (`crate::assembly::Wall` ->
-/// `crate::draft::Wall`) swept every `.rs` file in the crate and **edited the literals**, because
-/// a fixture that looks like code is code to a script. Names that no module has are immune to
-/// both.
+/// A fixture pinned to a *file* goes red the moment that file moves, and that red means nothing
+/// while looking exactly like a real one; a string literal naming a real path is edited by a bulk
+/// path rewrite (`crate::assembly::Wall` -> `crate::draft::Wall`), because a fixture that looks
+/// like code is code to a script. Names that no module has are immune to both.
 ///
 /// The `std::ops::Deref` case keeps a real name on purpose: `ops` is a module of this crate, and
-/// reading that line as a reference to it put three phantom edges into the first measurement.
+/// reading that line as a reference to it would put three phantom edges into the graph (measured).
 #[test]
 fn the_parser_reads_what_it_should() {
     let mods: BTreeSet<String> = ["alpha", "beta", "gamma", "ops"]
@@ -198,14 +195,13 @@ fn the_parser_reads_what_it_should() {
     }
 }
 
-/// **What this restructure established, asserted — and only that.**
+/// **The pipeline's direction, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: `construct` and `ops` still
-/// point at each other -- the ops layer's construction arithmetic and the layer it serves,
-/// which is a formality rather than a layering fault. What is settled is the boolean pipeline's shape and the direction of
-/// everything under the engine, so that is what is locked. Each of these was a real edge before
-/// the work and is zero after it; an editor who reintroduces one is undoing something, not
-/// adding to it.
+/// The graph is **not** a DAG and this does not pretend otherwise: `construct` and `ops` point at
+/// each other -- the ops layer's construction arithmetic and the layer it serves, which is a
+/// formality rather than a layering fault. What is settled is the boolean pipeline's shape and the
+/// direction of everything under the engine, so that is what is locked. Each of these edges is
+/// zero; an editor who introduces one is undoing a layering, not adding to it.
 #[test]
 fn the_pipeline_runs_one_way() {
     let e = edges();
@@ -283,17 +279,16 @@ fn the_pipeline_runs_one_way() {
     );
 }
 
-/// **Everything else, frozen.** The seven surviving cycles are not claimed to be right -- they are
-/// claimed to be *known*, and this is the list.
+/// **Everything else, frozen.** The seven cycles are not claimed to be right -- they are claimed to
+/// be *known*, and this is the list.
 ///
 /// When it fires there are two answers and no third. Either the edge goes away, or it joins the
 /// table **and the commit body says why that direction is correct**. A gate that people only ever
 /// add to is a list, not a gate.
 #[test]
 fn no_module_edge_appears_that_is_not_recorded() {
-    // owner -> the modules it may name. Measured on the commit that split the front door from the
-    // assembly; counts deliberately left out, because a count that must be updated to add a call
-    // is a gate that gets edited until it is quiet.
+    // owner -> the modules it may name. Measured; counts deliberately left out, because a count
+    // that must be updated to add a call is a gate that gets edited until it is quiet.
     const RECORDED: &[(&str, &[&str])] = &[
         (
             "arrangement",

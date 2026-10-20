@@ -18,26 +18,25 @@
 //! cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 //! ```
 //!
-//! **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
-//! lines must come out — they do, measured (398 of them at one count; the claim is *the same
-//! lines*, not a number, because the corpus grows). That is not a formality: `Angle`'s f64 route is
-//! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
-//! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
-//! mean the coordinates a model stores depend on how it was compiled.
+//! **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same lines
+//! must come out — they do, measured (398 of them at one count; the claim is *the same lines*, not
+//! a number, because the corpus grows). That is not a formality: a route like
+//! `(deg.to_f64() * PI / 180.0).cos()` would differ between builds (`Angle::cos_sin_f64` says why
+//! it is not used). What keeps them equal is that the realization is correctly rounded, so its bits
+//! do not depend on where it is evaluated. Two builds disagreeing here would mean the coordinates a
+//! model stores depend on how it was compiled.
 //!
-//! **What keeps them equal is that an angle crosses the model store** before anything realizes
-//! it — written into an `Operation`, pushed, read back — and no optimiser propagates a constant
-//! through a heap structure. So this is a real check with a real way to fail, and no in-process
-//! test can express it: a test runs in one profile. It belongs here, next to the diff it extends.
+//! So this is a real check with a real way to fail, and no in-process test can express it: a test
+//! runs in one profile. It belongs here, next to the diff it extends.
 //!
-//! **What a census can and cannot see.** Every case is built from coordinates written here,
-//! so it sees a change that moves a coordinate — and it is **blind by construction** to a change in
-//! a population it does not contain. The first 130 lines are all *short* decimals, which is why a
-//! regression that closed the exact path for every arbitrarily-tilted plane crossed this file
-//! bit-identical, twice. The `fw` (full-width coordinates) and `tp` (tilted sketch plane) families
-//! exist for that reason, and so does `mot` (the boss corpus under rigid motion):
-//! without it, no row holds a **rotated** cylinder boolean at all. **Read "bit-identical"
-//! as evidence only about the population present.**
+//! **What a census can and cannot see.** Every case is built from coordinates written here, so it
+//! sees a change that moves a coordinate — and it is **blind by construction** to a change in a
+//! population it does not contain. The first 130 lines are all *short* decimals, so a regression
+//! that closes the exact path for every arbitrarily-tilted plane would cross them bit-identical
+//! (measured). The `fw` (full-width coordinates) and `tp` (tilted sketch plane) families exist for
+//! that reason, and so does `mot` (the boss corpus under rigid motion): without it, no row holds a
+//! **rotated** cylinder boolean at all. **Read "bit-identical" as evidence only about the
+//! population present.**
 
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
@@ -67,8 +66,8 @@ fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
 /// an extrude ([`nacre_ops::fixtures::cylinder_with_seam`]) — with the seam on
 /// `axis.any_perpendicular()`.
 ///
-/// **The seam is stated, not left to the frame**, because rows here were built around where it
-/// falls (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
+/// **The seam is stated, not left to the frame**, because rows here are built around where it falls
+/// (`arc straddle` puts it on the pierce point) and this corpus is frozen by holding its own
 /// fixture. The axes stated here are integer vectors or a 3-4-5 triple, so the seam and the frame
 /// are exact decimals.
 fn cylinder(
@@ -116,11 +115,11 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
 /// A hash of the solid's **plane caches** — origin and unit normal — sorted by bits, the other
 /// half of what a boolean actually reads.
 ///
-/// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples
-/// (a measured `Vertex::ThreePlane`), so the result carries *no* trace of the operands' vertex
+/// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples (a
+/// measured `Vertex::ThreePlane`), so the result carries *no* trace of the operands' vertex
 /// coordinates. A change that moves operand vertices but leaves the planes alone is therefore
-/// invisible in the result — which is exactly what happened the first time this census was used.
-/// Recording the operands is what makes the census see the change it exists to see.
+/// invisible in the result. Recording the operands is what makes the census see the change it
+/// exists to see.
 fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     use std::hash::{Hash, Hasher};
     let mut bits: Vec<[u64; 6]> = Vec::new();
@@ -497,9 +496,9 @@ fn record(
             "{tag}: a boolean built a solid the mesher refuses: {:?}",
             mesh.err()
         );
-        // And no lateral triangle leans off its cylinder past the budget (worst over this
-        // corpus 0.345°). The `bothrims … slab` rows were where a lattice point on a ruling made
-        // ten slivers each, leaning 30° to 34°.
+        // And no lateral triangle leans off its cylinder past the budget (worst over this corpus
+        // 0.345°). The `bothrims … slab` rows are where a lattice point on a ruling would make ten
+        // slivers each, leaning 30° to 34° (measured).
         if let Ok(t) = &mesh {
             let leaning = nacre_tess::leaning_laterals(m, t, cfg.max_angle_deg);
             assert!(
@@ -517,12 +516,11 @@ fn record(
             let mut parts = Vec::new();
             for &s in v {
                 let p = nacre_props::mass_props(m, s).expect("props");
-                // **A curved result has no centroid to print, and that is a record, not a
-                // crash.** `centroid` refuses a face it cannot integrate a first moment over
-                // (`CentroidOfCurvedFace`), which the census met the moment cylinder booleans
-                // started returning solids. Volume and area still measure the whole body, so the
-                // row keeps its comparable numbers and marks the missing field rather than
-                // taking the process down.
+                // **A curved result has no centroid to print, and that is a record, not a crash.**
+                // `centroid` refuses a face it cannot integrate a first moment over
+                // (`CentroidOfCurvedFace`). Volume and area still measure the whole body, so the
+                // row keeps its comparable numbers and marks the missing field rather than taking
+                // the process down.
                 let (n, d) = coord_digest(m, s);
                 let centroid = match nacre_props::centroid(m, s) {
                     Ok(c) => format!(
@@ -828,9 +826,8 @@ fn measure_census() {
     // rational derived from one stays far inside `i128`. So a change to what the kernel can and
     // cannot **name** leaves all 130 lines bit-identical, and this census reports nothing.
     //
-    // That is not hypothetical: a regression that closed the exact path for every
-    // arbitrarily-tilted plane shipped, and the census was bit-identical across it — **twice**,
-    // because the same blindness had already been recorded once.
+    // That is not hypothetical: a regression that closes the exact path for every
+    // arbitrarily-tilted plane leaves them bit-identical (measured).
     //
     // **Measured, and it picks the right target.** A cuboid on seventeen-digit corners
     // overflows `plane_through_points`' *intermediates* on two of its six faces — the
@@ -995,11 +992,8 @@ fn measure_census() {
 
     // ── **Contact — two bodies that meet along a line or at a point, and one pair that cannot part.**
     //
-    // The population this file was blind to. Before the contact work every one of these was a
-    // reject, and census carried **no reject line at all** (measured: 152 lines, 7 `EMPTY`, zero
-    // `ERR`), so the whole family was invisible to the gate that reads every commit. It records
-    // *both* halves on purpose: the separable contacts coming back as the bodies they are, and the
-    // pinch that stays a reject because the material loops around it.
+    // It records *both* halves on purpose: the separable contacts coming back as the bodies they
+    // are, and the pinch that stays a reject because the material loops around it.
     for (kn, k) in KINDS {
         // Two cubes sharing exactly the vertical line x=1, y=1.
         let mut m = Model::new();
@@ -1209,10 +1203,10 @@ fn measure_census() {
                 record(&format!("arc {pn} {kn}"), &m, &inputs, &out);
             }
         }
-        // ── **A bored plate, then a straddling boss** (chaining wall 3): the second boolean's
-        // nesting reads a bitten top ring — pierce corners and an arc step — so the containment
-        // parity runs the mixed road instead of the rational chart. The first boolean is fixed
-        // (`cut` the through-bore); the second varies by kind.
+        // ── **A bored plate, then a straddling boss**: the second boolean's nesting reads a bitten
+        // top ring — pierce corners and an arc step — so the containment parity runs the mixed road
+        // instead of the rational chart. The first boolean is fixed (`cut` the through-bore); the
+        // second varies by kind.
         for (kn, k) in KINDS {
             let mut m = Model::new();
             let plate = nacre_ops::fixtures::cuboid(
@@ -1279,10 +1273,10 @@ fn measure_census() {
         }
     }
     // ── **Face-to-face contact** (`ct2`): two cells meeting on a full wall, which is what a
-    // pattern of parts is made of. The shared wall is interior, so the corners on it must
-    // dissolve — and they only can once each cell's caps merge, which is what the coplanar
-    // merge's circle carry opened. Bored, pocketed+bored, and a three-cell chain (the second
-    // fuse meets a result that already carries merged caps).
+    // pattern of parts is made of. The shared wall is interior, so the corners on it must dissolve,
+    // and they can because each cell's caps merge (the coplanar merge carries circles). Bored,
+    // pocketed+bored, and a three-cell chain (the second fuse meets a result that already carries
+    // merged caps).
     {
         let cell = |m: &mut Model, x0: f64, pocket: bool| {
             let plate = nacre_ops::fixtures::cuboid(
@@ -1452,10 +1446,9 @@ fn measure_census() {
         }
     }
     // ── **The same boss, on each of the four walls** (`wal`). A part does not care which side of
-    // itself a boss sits on, and neither should the kernel — but the rulings road was built and
-    // measured on the `+x` wall alone, and the corpus inherited that: every `rul` row above puts
-    // the axis on a max-side wall. These rows put the same solid on all four, so the table can
-    // see a rule that holds on one side and not the other.
+    // itself a boss sits on, and neither should the kernel — but every `rul` row above puts the
+    // axis on a max-side wall. These rows put the same solid on all four, so the table can see a
+    // rule that holds on one side and not the other.
     //
     // The box twins are the control: the same straddle with a cuboid tool builds on every wall,
     // volume 35 exactly, so a row that breaks here needs the **cylinder's** edges. Which *kind*
@@ -1519,11 +1512,11 @@ fn measure_census() {
     // translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
     // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
     // z = 0), and the offset boss under a rigid motion and a non-dyadic translation, whose `f64`
-    // images round while the statements move exactly. Rows were added only where **both**
-    // profiles dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the
-    // transport law — without it, `world_cylinder_def`'s postcondition (a `debug_assert`) takes the
-    // dev census down there while release answers «disjoint» (Fuse 2 bodies, Cut the plate
-    // untouched, Common empty): the silent wrong answer the law closes.
+    // images round while the statements move exactly. Rows stand only where **both** profiles dump
+    // them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the transport law —
+    // without it, `world_cylinder_def`'s postcondition (a `debug_assert`) takes the dev census down
+    // there while release answers «disjoint» (Fuse 2 bodies, Cut the plate untouched, Common
+    // empty): the silent wrong answer the law closes.
     {
         let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
             let plate = nacre_ops::fixtures::cuboid(
@@ -1630,15 +1623,13 @@ fn measure_census() {
     }
     // ── **A cap that lies in another face's plane** (`cap`): the population where a *disk* is a
     // face of the result and the face around it holds the same circle as a hole. The two are
-    // adjacent across that circle and nothing else — a disk has no nodes — so before the merge
-    // learned to read circles, this table could not have held the answer: every row here either
-    // was refused outright or came back with a plane split in two.
+    // adjacent across that circle and nothing else — a disk has no nodes — so a merge that does not
+    // read circles would refuse every row here outright or return a plane split in two.
     //
-    // **Why the census had nothing to say about that change**: it contained no such fixture at
-    // all (measured — the diff over the whole table was empty), which is the same lesson three
-    // cells running: **the corpus does not contain the population a cell opens until the cell
-    // adds it.** These rows are that addition. The bore row is the negative control: its circle
-    // is shared with a *cylinder* face, which is not in the plane's group, so it must stay a hole.
+    // **A census sees only the populations it contains**: without these rows the diff over the
+    // whole table would be empty across such a change (measured). These rows are that population.
+    // The bore row is the negative control: its circle is shared with a *cylinder* face, which is
+    // not in the plane's group, so it must stay a hole.
     for (pn, base, h) in [
         ("ontop", [2.0, 2.0, 2.0], 1.0), // a boss standing on the top face (contact)
         ("sunk", [2.0, 2.0, 1.0], 1.0),  // a boss whose cap is flush with the top, inside
@@ -1841,12 +1832,10 @@ fn measure_census() {
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //
-    // **This family exists because its absence hid a regression for 169 commits.** Every
-    // datum above is `DatumDef::Stated`; nothing in this corpus stated one **through vertices**,
-    // so when the invariant-plane restatement made `vertex_meet` read a turned solid's corners as
-    // straddling — costing every one of them the named datum road — the census crossed it
-    // bit-identical and said nothing. The rule is to put the
-    // population a change touches into the ledger, and this is that population.
+    // **Every datum above is `DatumDef::Stated`; this family states one through vertices.** Without
+    // it, the census would cross a `vertex_meet` that reads a turned solid's corners as straddling
+    // — costing every one of them the named datum road — bit-identical (measured). The rule is to
+    // put the population a change touches into the ledger, and this is that population.
     //
     // **It does not stop at making the datum.** The plane a `ThroughVertices` datum mints is
     // where `collect_planes` has to choose between the exact witness road and the judged one, and
@@ -2035,11 +2024,11 @@ fn measure_census() {
         }
     }
 
-    // ── **Arc walls**: the user's first assembly and its controls. A filleted plate
-    // with two holes (XY), a standing plate with a slot window (ZX, moved to y ∈ [3, 4]) and two
-    // triangular gussets (YZ) met three walls at once — same-solid parallel cylinder pairs, the
-    // oblique gusset plane, and the fillets' tangent rulings. Every row is a pair the assembly's
-    // fold visits or a control that isolates one wall.
+    // ── **Arc walls**: a user's assembly and its controls. A filleted plate with two holes (XY), a
+    // standing plate with a slot window (ZX, moved to y ∈ [3, 4]) and two triangular gussets (YZ)
+    // put three hard cases in one model — same-solid parallel cylinder pairs, the oblique gusset
+    // plane, and the fillets' tangent rulings. Every row is a pair the assembly's fold visits or a
+    // control that isolates one case.
     {
         // Helpers as items, not closures: the shape builders below are boxed and `move`d, and a
         // closure they borrowed would not live long enough.
@@ -2635,13 +2624,12 @@ fn measure_census() {
             }
         }
     }
-    // ── **A fully rounded outline**: fillet *every* corner of a plate and its cap ring
-    // has no three-plane corner left — eight tangencies and nothing else. The predicate that asks
-    // "is this ring inside that bore's disk" looks for a witness among three-plane names only, so
-    // it finds none and refuses, and the plate cannot enter **any** boolean. The rows say exactly
-    // that: three partners that share nothing but the plate (one standing on it, one overlapping,
-    // one a hundred units away), and two controls that differ in one thing each — one corner left
-    // sharp, and no bores. The last row carries the user's own script.
+    // ── **A fully rounded outline**: fillet *every* corner of a plate and its cap ring has no
+    // three-plane corner left — eight tangencies and nothing else. A predicate that asks "is this
+    // ring inside that bore's disk" and looks for a witness among three-plane names only would find
+    // none. The rows are three partners that share nothing but the plate (one standing on it, one
+    // overlapping, one a hundred units away), and two controls that differ in one thing each — one
+    // corner left sharp, and no bores. The last row carries the user's own script.
     {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
@@ -2786,10 +2774,9 @@ fn measure_census() {
             ),
             // The rib the user's script builds, on one side.
             ("rib", Box::new(|m| (plate(m, 4, 4), rib(m, 17.5)))),
-            // The user's own script — plate, both ribs, then the cylinder that bores across
-            // them. It could not be a row until the fuse built; now it is one, and the name it
-            // lands on is the **next** wall, a class carrying a circle and rulings at once. That
-            // is the hand-off to the cell after this one, held in the corpus so it cannot be lost.
+            // The user's own script — plate, both ribs, then the cylinder that bores across them.
+            // Its cut meets a class carrying a circle and rulings at once (the plate's side plane
+            // `x = 45`), and its cap clears the footprint by both axes.
             (
                 "user script",
                 Box::new(|m| {
