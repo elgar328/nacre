@@ -1,7 +1,9 @@
 #!/bin/sh
 #
 # Installed by cargo-husky's `user-hooks` feature: this file is copied verbatim to
-# `.git/hooks/pre-commit` on `cargo test`, so edit it here, not there.
+# `.git/hooks/pre-commit` when cargo-husky's build script runs -- the first `cargo test` of a
+# clone -- so edit it here, not there. An edit is not re-copied on its own: `cargo clean -p
+# cargo-husky` and a `cargo test` copy it again.
 #
 # Why not the built-in `run-cargo-clippy` feature: it runs `cargo clippy -- -D warnings`, which
 # lints only the default target — the library. Anything under `#[cfg(test)]` is invisible to it,
@@ -16,3 +18,8 @@ echo '+cargo clippy --workspace --all-targets -- -D warnings'
 cargo clippy --workspace --all-targets -- -D warnings
 echo '+cargo test --workspace'
 cargo test --workspace
+# Private items too: the public build does not render their docs, so a broken link there would
+# pass. A broken or ambiguous link is an error; the 52 "public documentation links to private item"
+# warnings stay warnings (overview's gate paragraph on `cargo doc`).
+echo '+RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items'
+RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --workspace --no-deps --document-private-items
