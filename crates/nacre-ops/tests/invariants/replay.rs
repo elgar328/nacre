@@ -24,8 +24,8 @@ fn square(a: f64, b: f64) -> Profile2d {
     .expect("a square is a fair profile")
 }
 
-/// A world-XY extrude **for `m`** — an extrude names its plane now, and a handle only means
-/// something in its own arena until `replay` re-anchors it.
+/// A world-XY extrude **for `m`** — an extrude names its plane, and a handle only means something
+/// in its own arena until `replay` re-anchors it.
 fn extrude_op(m: &Model, a: f64, b: f64, dist: f64) -> Operation {
     Operation::Extrude {
         frame: SketchFrame::world(m, Axis::Z),
@@ -89,9 +89,9 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                 p[2].to_bits()
             ),
         );
-        // The variant, not a stored tolerance: what the cache *knows* is now part of the
-        // signature, so a replay that produced the same coordinate by a different road — realized
-        // here, fallback there — is caught rather than passing on the coordinate alone.
+        // The variant, not a stored tolerance: what the cache *knows* is part of the signature, so
+        // a replay that produced the same coordinate by a different road — realized here, fallback
+        // there — is caught rather than passing on the coordinate alone.
         push(
             "vertex.cache",
             i,
@@ -621,13 +621,12 @@ fn vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log() {
     );
 }
 
-/// **The profiles agree now** — and that is the whole shape of the repair.
+/// **The profiles agree.**
 ///
-/// `StoreId` is `#[cfg(debug_assertions)]`, so before the repair release was quietly correct
-/// (the index had been right all along) while debug panicked. Re-anchoring makes debug reach
-/// the same answer *by construction* rather than by the guard happening to be compiled out, so
-/// this assertion is profile-independent and replaces the release-only twin that measured the
-/// divergence.
+/// `StoreId` is `#[cfg(debug_assertions)]`, so without re-anchoring release would be quietly
+/// correct (the index is right) while debug would panic. Re-anchoring makes debug reach the same
+/// answer *by construction* rather than by the guard happening to be compiled out, so this
+/// assertion is profile-independent.
 #[test]
 fn both_profiles_replay_a_handle_carrying_log_the_same_way() {
     for (name, (log, scratch)) in [
@@ -784,10 +783,9 @@ enum Step {
     /// Re-anchoring is a bounds check, and a bounds check cannot see an in-range index that names
     /// the *wrong* cell. Every earlier handle-carrying step names a face, a solid or a surface —
     /// few, and little disturbed by a reject. Vertices are neither: a late reject leaves 63–84
-    /// cells behind (measured, R), and most of them are vertices, so a log recorded across one
-    /// and replayed would re-anchor a datum onto three different corners with no error at all.
-    /// Only a generated session that actually places this step after a reject can say it does
-    /// not happen.
+    /// cells behind (measured), and most of them are vertices, so a log recorded across one and
+    /// replayed would re-anchor a datum onto three different corners with no error at all. Only a
+    /// generated session that actually places this step after a reject can say it does not happen.
     DatumThroughVertices {
         solid: usize,
         a: usize,
@@ -1059,11 +1057,9 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         }
     }
 
-    // Property (4) needs no fallback here: there is no operation that carries no handle —
-    // `Extrude` names its plane, so the seed alone satisfies it. The counter below stays
-    // because the *report* is still worth having.
-    // The seed extrude names the world plane, so `handle_carrying >= 1` holds before any
-    // generated step runs — property (4) is satisfied by construction rather than by a fallback.
+    // The seed extrude names the world plane, so `handle_carrying >= 1` holds before any generated
+    // step runs — property (4) is satisfied by construction rather than by a fallback. The counter
+    // is for the report.
     st.handle_carrying += 1;
 
     model.rebuild_adjacency();
@@ -1080,7 +1076,7 @@ const CASE_COUNT: u32 = 32;
 proptest! {
     #![proptest_config(ProptestConfig { cases: CASE_COUNT, ..ProptestConfig::default() })]
 
-    /// **The gate of this stage.** Four properties on one generated session:
+    /// **The replay gate.** Four properties on one generated session:
     ///
     /// 1. the session model is a valid b-rep,
     /// 2. `replay` is **idempotent** — replaying twice lands on the same arena,
@@ -1354,9 +1350,9 @@ fn a_late_reject_is_not_index_neutral() {
         let before = arena_lengths(&m);
         let live_before: Vec<_> = m.live_solids().to_vec();
         let err = apply(&mut m, &op).err()?;
-        // Every reject, early or late, leaves the live model exactly as it was — this is the
-        // half of the contract `ops` names ("no reject-after-commit") and the half that is
-        // repaired. What follows measures the half that is not.
+        // Every reject, early or late, leaves the live model exactly as it was — this is the half
+        // of the contract `ops` names ("no reject-after-commit") that holds. What follows measures
+        // the other half.
         assert_eq!(
             m.live_solids().to_vec(),
             live_before,
@@ -1613,13 +1609,13 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     }
 }
 
-/// **The positive control for the repair: re-anchoring did not weaken the door.**
+/// **The positive control for re-anchoring: it does not weaken the door.**
 ///
-/// `replay` now launders a log's indices into its own model on purpose. The risk of a laundering
-/// step is that it launders everything — so this checks the case it must *not* touch: a handle
-/// from another model handed straight to `apply` still dies in `Store::get`'s cross-store guard.
-/// `apply`'s model belongs to the caller, so its handles do too, and a re-anchor there would turn
-/// a caller bug into a silently different answer.
+/// `replay` launders a log's indices into its own model on purpose. The risk of a laundering step
+/// is that it launders everything — so this checks the case it must *not* touch: a handle from
+/// another model handed straight to `apply` dies in `Store::get`'s cross-store guard. `apply`'s
+/// model belongs to the caller, so its handles do too, and a re-anchor there would turn a caller
+/// bug into a silently different answer.
 ///
 /// Note what this test is really pinning: the guard is not the first thing the handle meets.
 /// `live_solids.contains(&h)` compares by index and answers "yes, live" for the foreigner; the
@@ -1629,7 +1625,7 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "different Store")]
-fn a_foreign_handle_still_dies_at_the_door() {
+fn a_foreign_handle_dies_at_the_door() {
     let mut a = Model::new();
     let op_a = extrude_op(&a, 0.0, 2.0, 1.0);
     let OpOutput::Extrude { solid, .. } = apply(&mut a, &op_a).expect("a") else {
@@ -1712,11 +1708,11 @@ fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
 
 /// **A vertex-naming datum, recorded after the session already rejected something.**
 ///
-/// This is the one shape where re-anchoring could go wrong without any error: a late reject
-/// leaves cells in the arena (measured here, and 63–84 in R's census), so a replay that rebuilt
-/// from the log would find its vertices at *different indices* than the recording session did.
-/// A bounds check cannot see that — the wrong index is still in range — so the only witness is a
-/// session that contains both and an arena comparison afterwards.
+/// This is the one shape where re-anchoring could go wrong without any error: a late reject leaves
+/// cells in the arena (measured here), so a replay that rebuilt from the log would find its
+/// vertices at *different indices* than the recording session did. A bounds check cannot see that —
+/// the wrong index is still in range — so the only witness is a session that contains both and an
+/// arena comparison afterwards.
 ///
 /// The session follows the discipline (`docs/design.md`): after a reject it throws its model away
 /// and rebuilds from the log, which is what makes the indices agree. The point of the test is

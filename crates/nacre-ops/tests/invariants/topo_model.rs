@@ -70,12 +70,11 @@ fn a_foreign_handle_cannot_read_a_cache() {
 /// **The write doors bite** — the negative control for [`Model::push_face`] and
 /// [`Model::push_shell`].
 ///
-/// It is measured that *every face the product builds closes its loop*: one temporary
-/// assertion, the whole suite, 1324 tests, a single red — and that one was a fixture whose
-/// own comment called it a franken-face. That is a **different proposition** from *the
-/// assertion refuses a face that does not close*. The first says the population is clean;
-/// the second says the door has teeth. Only this test says the second, and without it the
-/// doors could assert nothing at all and every green would still be green.
+/// *Every face the product builds closes its loop* (measured over the whole suite; the one
+/// exception is the hand-built franken-face in `src/tests/transform.rs`). That is a **different
+/// proposition** from *the assertion refuses a face that does not close*. The first says the
+/// population is clean; the second says the door has teeth. Only this test says the second, and
+/// without it the doors could assert nothing at all and every green would still be green.
 ///
 /// Each case violates **exactly one** assertion and the panic **message is checked**, because
 /// asking only "did it panic" lets a case go green for the wrong reason: a face
@@ -328,7 +327,7 @@ fn supersede_live_preserves_the_order_of_the_survivors() {
         "the middle solid goes and the order stays"
     );
 
-    // It drops sets, not only singletons — that is what the 19 `retain` call sites ask for.
+    // It drops sets, not only singletons — `self_touch` supersedes both operands at once.
     m.supersede_live(&[a, c]);
     assert!(m.live_solids().is_empty());
 }

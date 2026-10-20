@@ -499,7 +499,7 @@ impl SketchFrame {
     ///   test-only population: [`Model::push_plane`] is public and leaves a
     ///   nameless plane behind for a collinear triple, so a caller outside this crate can reach
     ///   it. Every production push passes a non-collinearity gate first, which is why
-    ///   `every_plane_still_has_a_name` holds; that is *we do not*, not *it cannot*.
+    ///   `every_plane_has_a_name_or_a_statement` holds; that is *we do not*, not *it cannot*.
     ///   [`SketchFrame::canonical`] makes no claim and so cannot answer here — the same plane
     ///   reaches this error one step later, inside the operation, and
     ///   `a_plane_with_no_name_cannot_host_a_sketch` pins that the two doors agree.

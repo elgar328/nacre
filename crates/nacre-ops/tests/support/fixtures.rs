@@ -42,9 +42,8 @@ pub fn volume(m: &Model, s: Handle<Solid>) -> f64 {
     nacre_props::mass_props(m, s).unwrap().volume
 }
 
-/// A boolean whose result is exactly one solid (the common single-body case),
-/// over the public `boolean`. Asserts the single-solid shape so call sites read
-/// as before.
+/// A boolean whose result is exactly one solid (the common single-body case), over the public
+/// `boolean`. Asserts the single-solid shape so call sites read as a single result.
 pub fn boolean_one(
     model: &mut Model,
     kind: BoolKind,
@@ -81,9 +80,9 @@ pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
 
 /// A world-XY extrude **for `m`** — the frame names that model's seeded plane.
 ///
-/// It takes the model because an extrude now *names* its plane rather than carrying it, and a
-/// handle is only valid in its own arena. For a log that will be `replay`ed rather than applied,
-/// see [`extrude_log_op`].
+/// It takes the model because an extrude *names* its plane rather than carrying it, and a handle is
+/// only valid in its own arena. For a log that will be `replay`ed rather than applied, see
+/// [`extrude_log_op`].
 pub fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
     Operation::Extrude {
         frame: SketchFrame::world(m, Axis::Z),
@@ -372,9 +371,9 @@ fn prism_z(m: &mut Model, pts: &[[f64; 2]]) -> Handle<Solid> {
 /// `(0.1,0.3)·(1.1,3.3)·(0.1,3.3)` has its wall on `y = 3x`; prism `C` over `(0,−c)·(1,3)·(0,3)`,
 /// `c = 5.551115123125783e-17`, has its wall on `y = (3+c)x − c` — a different plane, crossing
 /// `B`'s at `x = 1`. A wall's cache is its producer's row with the truth's first point as anchor:
-/// both rows round to `(3, −1, 0)`, and the `d` of both is `fl(3·fl(0.1)) − fl(0.3) = 2⁻⁵⁴ =
-/// fl(c)`. So `[3, −1, 0, −c]` describes both, bit for bit, and a class merge that read the cache
-/// made them one plane. Returns `(model, b, c)`.
+/// both rows round to `(3, −1, 0)`, and the `d` of both is
+/// `fl(3·fl(0.1)) − fl(0.3) = 2⁻⁵⁴ = fl(c)`. So `[3, −1, 0, −c]` describes both, bit for bit, and a
+/// class merge that read the cache would make them one plane. Returns `(model, b, c)`.
 pub fn rounded_twin_walls() -> (Model, Handle<Solid>, Handle<Solid>) {
     let c = 5.551115123125783e-17;
     let mut m = Model::new();

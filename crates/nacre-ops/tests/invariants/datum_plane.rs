@@ -226,16 +226,15 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// no name → frame_chain declines → no SketchFrame → never a base cap → never in a plane table
 /// ```
 ///
-/// so a nameless plane never reaches a plane table. That was read out of the code; this runs
-/// it.
+/// so a nameless plane never reaches a plane table. This runs it.
 ///
-/// **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
-/// plane behind for a collinear triple (`Model::surface_key` gives it no key), and `SketchFrame::canonical`
-/// is `pub` and checks nothing — so the pair is reachable from outside this crate today and had no
-/// test. Production is safe because every push passes a non-collinearity gate first (`PlaneDef`'s
-/// constructors call `plane_name_exact`; the prism's caps and walls gate on
+/// **Not a hypothetical.** `Model::push_plane` is `pub` and leaves a nameless plane behind for a
+/// collinear triple (`Model::surface_key` gives it no key), and `SketchFrame::canonical` is `pub`
+/// and checks nothing — so the pair is reachable from outside this crate. Production is safe
+/// because every push passes a non-collinearity gate first (`PlaneDef`'s constructors call
+/// `plane_name_exact`; the prism's caps and walls gate on
 /// `Plane::from_point_normal`/`through_points` and `Profile2d::check`), which is what
-/// `every_plane_still_has_a_name` observes — but that is *we do not*, not *it cannot*.
+/// `every_plane_has_a_name_or_a_statement` observes — but that is *we do not*, not *it cannot*.
 ///
 /// **The control is half the test.** An unregistered plane's name is *derivable* and merely
 /// absent from the side table; a mixed-frame `Through` plane's name **does not exist**. Different
@@ -277,8 +276,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         "a refusal must leave the model alone"
     );
 
-    // The other door onto the same plane answers the same way. One failure, one description —
-    // two descriptions of one thing is the shape this kernel has been bitten by repeatedly.
+    // The other door onto the same plane answers the same way. One failure, one description.
     assert_eq!(
         SketchFrame::named(&m, nameless, origin, Vector3::from_array([1.0, 0.0, 0.0])).unwrap_err(),
         OpError::PlaneWithoutExactForm,
@@ -302,7 +300,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         .expect("the same plane, named, hosts the same sketch");
 }
 
-/// **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
+/// **An extrude's base cap *is* the frame's plane.**
 ///
 /// An extrude names its plane, and there is no road where the plane is absent. What
 /// remains, and is not free, is the claim underneath: the operation **reuses** the
@@ -310,7 +308,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
 /// plane again afterwards mints nothing.
 ///
 /// (The other half — that which point anchored the plane's cache does not move the result — is
-/// `tests/instruments/plane_anchor.rs`, where both arms are now production roads.)
+/// `tests/instruments/plane_anchor.rs`, where both arms are production roads.)
 #[test]
 fn an_extrudes_base_cap_is_the_frame_it_was_given() {
     let sp = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
@@ -364,10 +362,9 @@ fn an_extrudes_base_cap_is_the_frame_it_was_given() {
 
 /// A log carrying a datum replays, and an orphan datum is not a validation failure.
 ///
-/// A datum nothing sketches on is reachable from no face — exactly like the three seeds, which
-/// have been permanent orphans since `Model::new` began planting them. `validate` counts the live
-/// reachable set, and neither `nacre-step` nor `nacre-tess` walks the surface store at all, so an
-/// unused datum cannot leak into output either.
+/// A datum nothing sketches on is reachable from no face — exactly like the three seeds
+/// `Model::new` plants. `validate` counts the live reachable set, and neither `nacre-step` nor
+/// `nacre-tess` walks the surface store at all, so an unused datum cannot leak into output either.
 #[test]
 fn a_log_with_a_datum_replays_and_validates() {
     let sp = SketchPlane::from_origin_normal(
@@ -779,7 +776,7 @@ fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 
     core::array::from_fn(|k| b[k] - a[k])
 }
 
-/// **The measurement this whole stage rests on.**
+/// **The measurement the datum road rests on.**
 ///
 /// A plane's canonical name has no direction and planes intern, so stating `z = 0` facing `+ẑ`
 /// and stating it facing `−ẑ` produce **one handle**. If the frame handed back carried
@@ -1153,9 +1150,8 @@ fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
     );
 }
 
-/// **Each refusal has its own name, and each name has a fixture that fires it.** A cause with
-/// no fixture is a cause that was never measured — and `VerticesInMixedFrames` in particular is
-/// how the next stage will count what it is opening.
+/// **Each refusal has its own name, and each name has a fixture that fires it.** A cause with no
+/// fixture is a cause that was never measured.
 ///
 /// There is no `VertexPointTooWide` to list: a meet wider than `Rat` names its plane through
 /// `plane_name_from_meets`, locked by `a_datum_through_wide_meets_keeps_its_name` below.
@@ -1417,7 +1413,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
             def: DatumDef::ThroughVertices(vs),
         },
     )
-    .expect("the pure-mixed datum is accepted now") else {
+    .expect("the pure-mixed datum is accepted") else {
         unreachable!()
     };
     assert!(
@@ -1543,7 +1539,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
 ///
 /// The prism's base cap *is* the nameless datum surface, so `collect_planes` meets a `Through`
 /// truth with no rational solve and builds the witness triangle from the vertices' own chains —
-/// three exact points whose chains differ, which the judging layer never forbade. Every wall of
+/// three exact points whose chains differ, which the judging layer does not forbid. Every wall of
 /// the prism also realizes through the judged frame node (`Motion::Frame` → the nameless plane →
 /// `FrameThrough`), so this exercises the recursion end to end without a separate probe.
 ///
@@ -1642,12 +1638,11 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
 /// two frames.**
 ///
 /// `a_datum_through_vertices_refuses_by_cause` fires `VerticesInMixedFrames` by combining two
-/// *solids*, which a caller chooses to do. The population that actually dominates is the other
-/// one: a boolean between a turned operand and a still one hands back **one** solid whose corners
-/// are the meeting of an unmoved wall and two turned ones, so a single vertex straddles. Measured,
-/// **12 of that solid's 20 vertices** are in that state (`tests/instruments/point_width.rs`), and
-/// until this
-/// there was no fixture for it — the label was only ever fired by the caller-error shape.
+/// *solids*, which a caller chooses to do. The population that actually dominates is the other one:
+/// a boolean between a turned operand and a still one hands back **one** solid whose corners are
+/// the meeting of an unmoved wall and two turned ones, so a single vertex straddles. Measured, **8
+/// of that solid's 20 vertices** are in that state (`tests/instruments/point_width.rs`); this is
+/// its fixture, beside the caller-error shape that fires the same label.
 ///
 /// **The control is the minimal difference**: three vertices that solve, and the same triple with
 /// one of them swapped for a straddler. Nothing else about the model changes, so the swap is the
@@ -1736,11 +1731,10 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "a turned-against-still cut must leave carriers straddling — the fixture stopped measuring"
     );
     assert!(pure.len() >= 3, "and some corners must still be pure");
-    // **Both lists come out of a `HashSet` walk, so order them before choosing.** Picking the
-    // first of a hash-ordered list is a coin flip dressed as a fixture: it made this test fail
-    // about once in twenty when the straddling pool shrank (measured), because some straddler is
-    // collinear with the two pure corners and the op then answers `CollinearVertices` — a real
-    // refusal about a fixture the test never meant to build.
+    // **Both lists come out of a `HashSet` walk, so order them before choosing.** Picking the first
+    // of a hash-ordered list is a coin flip dressed as a fixture: some straddler is collinear with
+    // the two pure corners and the op then answers `CollinearVertices` — a real refusal about a
+    // fixture the test never meant to build.
     pure.sort_by_key(|v| v.index());
     straddling.sort_by_key(|v| v.index());
 
@@ -2067,7 +2061,7 @@ fn a_solid_on_a_vertex_named_datum_can_be_copied() {
 /// nameless planes at all (the datum here is rational-closure), so the sweep also proves the
 /// named road did not lose anyone.
 #[test]
-fn every_plane_still_has_a_name() {
+fn every_plane_has_a_name_or_a_statement() {
     let mut m = tilted_prism_with_pocket();
     let vs = three_solvable(&m);
     apply(
@@ -2088,7 +2082,7 @@ fn every_plane_still_has_a_name() {
             assert!(
                 m.surface_name.contains_key(&h) || matches!(points, PlanePoints::Through(_)),
                 "a plane with no name that is not a Through statement — \
-                 the record-less population S2 drained is back"
+                 a record-less plane exists"
             );
         }
     }
@@ -2248,9 +2242,9 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         "a datum whose vertices live in a frame must record that frame"
     );
 
-    // And the f64 cache is a *world* description of that same plane: put the cache's own
-    // anchor back through the definition and the residual must vanish. A cache built from frame
-    // coordinates would land far off, which is the other half of the defect.
+    // And the f64 cache is a *world* description of that same plane: put the cache's own anchor
+    // back through the definition and the residual must vanish. A cache built from frame
+    // coordinates would land far off, which is the other half of the harm.
     let sp = nacre_ops::face_plane(&m, {
         *m.shell(m.solid(solid).outer)
             .faces
@@ -2275,12 +2269,11 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
     }
 }
 
-/// **A `Through` statement whose motion leaves out the frame its vertices meet in is
-/// refused at the door** — the producer bug the test above caught once, now stopped where the name
-/// is made. The far cap's corners meet in the prism's frame, so their name `w = dist` speaks that
-/// frame; stated with no motion it would read as the world plane `z = dist` and intern onto the box
-/// top. The door cannot tell "the frame left out" from "the frame put in another way", so it does
-/// not pick one.
+/// **A `Through` statement whose motion leaves out the frame its vertices meet in is refused at the
+/// door** — the producer bug the test above catches, stopped where the name is made. The far cap's
+/// corners meet in the prism's frame, so their name `w = dist` speaks that frame; stated with no
+/// motion it would read as the world plane `z = dist` and intern onto the box top. The door cannot
+/// tell "the frame left out" from "the frame put in another way", so it does not pick one.
 #[test]
 #[should_panic(expected = "does not carry that frame")]
 fn a_through_statement_whose_motion_omits_its_frame_is_refused() {
@@ -2777,15 +2770,14 @@ fn a_frame_says_where_it_is() {
     // nacre-kit's `sketch_lines` tests.
 }
 
-/// **A turn does not cost a solid its datum vocabulary** — the regression `point_width`
-/// caught, locked where a caller can see it.
+/// **A turn does not cost a solid its datum vocabulary** — locked where a caller can see it.
 ///
-/// The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
-/// motion *fixes*, so a Z-turned block's caps stay world-stated while its walls carry a node.
-/// Every corner is two walls and one cap, and the door read that mismatch as "these carriers
-/// straddle frames" — so **every corner of every turned solid** lost the named datum road and
-/// fell to the judged one: a nameless plane, no interning, a predicate answering every question
-/// a name would have closed. Nothing was wrong, and everything was worse.
+/// Under the invariant-plane restatement a motion mints no node for a plane it *fixes*, so a
+/// Z-turned block's caps stay world-stated while its walls carry a node. Every corner is two walls
+/// and one cap; a door that read that mismatch as "these carriers straddle frames" would cost
+/// **every corner of every turned solid** the named datum road and drop it to the judged one: a
+/// nameless plane, no interning, a predicate answering every question a name would have closed.
+/// Nothing would be wrong, and everything would be worse.
 ///
 /// The three assertions are the three things that road buys, and nothing else says them: the
 /// plane has a **name**, the same statement comes back as the **same handle**, and the whole
@@ -2860,9 +2852,9 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         plane, again,
         "one plane, one handle — that is what the name is for"
     );
-    // ③ And the road stays open under a further motion. This is also the first time a *named*
-    // `Through` plane meets `transform`'s invariant arm (which reads the plane's name to decide),
-    // so this line walks a path that was unreachable while these planes had no name.
+    // ③ And the road stays open under a further motion. This is also where a *named* `Through`
+    // plane meets `transform`'s invariant arm (which reads the plane's name to decide), a path a
+    // nameless plane does not reach.
     let OpOutput::Transform { .. } = apply(
         &mut m,
         &Operation::Transform {
@@ -2983,14 +2975,13 @@ fn offset_of_the_top_lands_outward(
 
 /// **An offset of a moved plane is the exact plane, not the decimal its realization prints.**
 ///
-/// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3` — a rational with no short
-/// decimal — carried into the plain block's statements, recorded on the `Through` block's (its
-/// every motion is a node). Asking the realized frame whether it is rational means lifting
-/// `to_f64(h + 1/3)` back with
-/// `Rat::from_decimal`, which answers with the decimal that f64 prints: measured, the plane one
-/// above `17/35` came out `14857142857142857/10¹⁶` instead of `52/35`. The oracle comes from the
-/// inputs, not from the offset road: a block `h + 1` tall lifted the same way names its top
-/// through the transform.
+/// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3` — a rational with no short decimal
+/// — carried into the plain block's statements, recorded on the `Through` block's (its every motion
+/// is a node). Asking the realized frame whether it is rational would mean lifting
+/// `to_f64(h + 1/3)` back with `Rat::from_decimal`, which answers with the decimal that f64 prints:
+/// measured, the plane one above `17/35` would come out `14857142857142857/10¹⁶` instead of
+/// `52/35`. The oracle comes from the inputs, not from the offset road: a block `h + 1` tall lifted
+/// the same way names its top through the transform.
 #[test]
 fn an_offset_of_a_moved_plane_is_the_exact_plane() {
     let roads: [(&str, Lift, bool); 2] = [
@@ -3037,11 +3028,10 @@ type Lift = fn(&mut Model, f64, nacre_exact::Rat) -> nacre_store::Handle<nacre_t
 /// the two in-plane axes to `L(u) × L(v) = −L(w)`. The prism must still run along `ŵ` (`dist` is a
 /// thickness in the frame's direction), and a ring read counter-clockwise in `(x, y)` turns the
 /// other way about `ŵ`: the arcs of a circle and the caps' loops have to agree with that, or the
-/// solid comes out inside out (`FaceMisoriented`, a negative volume — the failure this crate once
-/// measured for a mirrored circle on the frame-node road). The plain block's lift and mirror are
-/// carried, so its cap is world-stated and right-handed — the control. A polygon and a whole
-/// circle, each against its analytic volume, the exact plane its far cap lands on, and the road it
-/// took.
+/// solid comes out inside out (`FaceMisoriented`, a negative volume — measured for a mirrored
+/// circle on the frame-node road). The plain block's lift and mirror are carried, so its cap is
+/// world-stated and right-handed — the control. A polygon and a whole circle, each against its
+/// analytic volume, the exact plane its far cap lands on, and the road it took.
 #[test]
 fn an_extrude_on_a_mirrored_planes_frame_is_exact_and_right_side_out() {
     let lift = nacre_exact::Rat::new(1, 3).expect("a lift");

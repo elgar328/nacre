@@ -347,13 +347,12 @@ type Lift = fn(&mut Model, f64, Rat) -> nacre_store::Handle<nacre_topo::Solid>;
 
 /// **A pad on a lifted face lands its top on the exact plane.**
 ///
-/// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3`, a rational with no short
-/// decimal. The pad's frame origin used to be that plane's cache realized and lifted back with
-/// `Rat::from_decimal` — the decimal the `f64` prints — so the pad's far cap stood on
-/// `28666666666666667/2·10¹⁶` instead of `43/30` (measured, 6/6 lifts). Two roads to that top:
-/// the plain block, which carries the lift into its statements, and the `Through` block, whose
-/// every motion is a node. The oracle is the transform's own: a block `h + 1` tall lifted the
-/// same way.
+/// A block `h` tall lifted by `1/3` has its top on `z = h + 1/3`, a rational with no short decimal.
+/// A pad frame origin taken as that plane's cache realized and lifted back with `Rat::from_decimal`
+/// — the decimal the `f64` prints — would put the pad's far cap on `28666666666666667/2·10¹⁶`
+/// instead of `43/30` (measured, 6/6 lifts). Two roads to that top: the plain block, which carries
+/// the lift into its statements, and the `Through` block, whose every motion is a node. The oracle
+/// is the transform's own: a block `h + 1` tall lifted the same way.
 #[test]
 fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
     let roads: [(&str, Lift, bool); 2] = [
@@ -387,10 +386,10 @@ fn a_pad_on_a_lifted_face_lands_on_the_exact_plane() {
 /// **A pad on a rational tilted face stays on the world road, so its top is the plane every
 /// other statement of it names.**
 ///
-/// The far cap of a prism on a `(3, 4, 0)` datum has rational axes, but its cached normal
-/// realizes to `0.6000000000000001`, and the pad used to ask whether those realized axes lift back
-/// to orthonormal rationals — they do not, so it sketched inside a frame node and its top landed
-/// under a `(name, node)` key: one plane, two handles. The frame is asked of the name now.
+/// The far cap of a prism on a `(3, 4, 0)` datum has rational axes, but its cached normal realizes
+/// to `0.6000000000000001`, and a pad that asked whether those realized axes lift back to
+/// orthonormal rationals would find they do not, sketch inside a frame node and land its top under
+/// a `(name, node)` key: one plane, two handles. The frame is asked of the name.
 #[test]
 fn a_pad_on_a_rational_tilted_face_shares_the_plane_with_an_extrude() {
     let mut m = Model::new();
@@ -426,9 +425,9 @@ fn a_pad_on_a_rational_tilted_face_shares_the_plane_with_an_extrude() {
 /// **A plane whose origin has no short decimal is framed exactly.**
 ///
 /// `3x + 4y + 12z = 12` through three corners of a `4 × 3 × 1` box has rational axes
-/// (`(−4, 3, 0)/5`, a `v̂` over `65`) and its world origin `12/169·(3, 4, 12)` has no short
-/// decimal — the realization the pad used to lift back could not be the plane's own point. A pad
-/// on a prism raised off it must land where the prism twice as high does.
+/// (`(−4, 3, 0)/5`, a `v̂` over `65`) and its world origin `12/169·(3, 4, 12)` has no short decimal
+/// — a realization lifted back from `f64` cannot be the plane's own point. A pad on a prism raised
+/// off it must land where the prism twice as high does.
 #[test]
 fn a_pad_on_a_plane_with_a_long_origin_shares_the_plane_with_an_extrude() {
     let mut m = Model::new();

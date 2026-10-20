@@ -89,8 +89,8 @@ fn every_live_planar_face_records_its_points() {
         Vector3::from_array([0.7123456789012345, 0.5876543210987654, 0.4098765432101234]),
         Vector3::from_array([-0.5876543210987654, 0.7123456789012345, 0.1234567890123456]),
     );
-    // (The def's presence and wideness are pinned by the terminal lock in `nacre-ops`'s own
-    // tests; here the sweep below is the assertion.)
+    // (The def's presence and wideness are pinned in `nacre-ops`'s own tests; here the sweep below
+    // is the assertion.)
     extrude(&mut m, axes_only, square(0.1, 1.6), 0.7);
     assert_all_planes_record_points(&m, "frame roads");
 

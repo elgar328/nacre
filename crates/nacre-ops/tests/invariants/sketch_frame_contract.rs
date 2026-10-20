@@ -1,12 +1,11 @@
 //! **`face_sketch_frame` speaks the pad's frame — on every planar face, never a third thing.**
 //!
-//! The returned `SketchFrame` is not a report to read and discard: it is a value the kernel
-//! accepts back (`Operation::Extrude { frame }`, `DatumDef::Offset { frame }`), so a wrong one is
-//! worse than a wrong number — a sketch built in it lands somewhere the caller did not ask for.
-//! The failure this file locks: a returned frame derived by a second road from the one the pad
-//! builds in (measured when the returned frame half-turned about `û` and the pad took the world
-//! axes of the outward normal: on a plain axis-aligned block the same footprint landed
-//! point-symmetric to the pad's, 2.55 apart).
+//! The returned `SketchFrame` is not a report to read and discard: it is a value the kernel accepts
+//! back (`Operation::Extrude { frame }`, `DatumDef::Offset { frame }`), so a wrong one is worse
+//! than a wrong number — a sketch built in it lands somewhere the caller did not ask for. The
+//! failure this file locks: a returned frame derived by a second road would land a sketch elsewhere
+//! (measured: a frame half-turned about `û` against the pad's world axes puts the same footprint
+//! point-symmetric to the pad's, 2.55 apart, on a plain axis-aligned block).
 //!
 //! The contract asserted here is the realization itself, bit for bit:
 //!
@@ -14,10 +13,10 @@
 //! > (`frame_plane`) is **bit-identical** to `face_plane` — the frame the pad sketches in.
 //!
 //! It holds by construction: the face's frame is chosen once (`face_sketch_frame`), the pad's
-//! extrude builds in it, and `face_plane` is its realization. The lock keeps a second derivation from coming back;
-//! the round trip below is the operation's own witness. The flavours include the faces a
-//! derivation from the cached normal could not spell — a lift to a plane with no short decimal,
-//! and a mirror behind it, carried into the statements and recorded as a chain.
+//! extrude builds in it, and `face_plane` is its realization. The lock refuses a second derivation;
+//! the round trip below is the operation's own witness. The flavours include the faces a derivation
+//! from the cached normal could not spell — a lift to a plane with no short decimal, and a mirror
+//! behind it, carried into the statements and recorded as a chain.
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;
 use nacre_ops::{

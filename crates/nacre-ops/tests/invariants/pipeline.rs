@@ -308,8 +308,8 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
     (m, r)
 }
 
-/// The L-prism with an L-shaped stub standing wholly inside its cap: a blind pocket whose
-/// lid carries a **non-convex** inner loop, the first the bridging triangulator has seen.
+/// The L-prism with an L-shaped stub standing wholly inside its cap: a blind pocket whose lid
+/// carries a **non-convex** inner loop.
 fn ell_dimple_cut() -> (Model, Handle<Solid>) {
     let l = Profile2d::polygon(vec![
         p2(0.0, 0.0),
@@ -453,8 +453,8 @@ fn stacked_fuse() -> (Model, Handle<Solid>) {
 
 #[test]
 fn a_convex_hole_free_solid_meshes_exactly() {
-    // The shape the fan was written for. Nothing to catch here — this pins the gate
-    // itself, so a later failure means the gate moved, not the mesh.
+    // The simplest shape. Nothing to catch here — this pins the gate itself, so a later failure
+    // means the gate moved, not the mesh.
     let mut m = Model::new();
     let c = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -468,12 +468,11 @@ fn a_convex_hole_free_solid_meshes_exactly() {
 
 #[test]
 fn a_non_star_shaped_cap_meshes_exactly() {
-    // A fan drags a triangle across the U's notch: clockwise, so the unsigned sum
-    // counts its 2.6 forwards instead of backwards, once per cap ⇒ +5.2.
-    // Watertightness sees nothing — the fan's edges still pair up. Only area
-    // speaks, which is why both checks are here.
+    // A fan would drag a triangle across the U's notch: clockwise, so the unsigned sum would count
+    // its 2.6 forwards instead of backwards, once per cap ⇒ +5.2. Watertightness would see nothing
+    // — the fan's edges would still pair up. Only area speaks, which is why both checks are here.
     //
-    // Ear clipping owes nothing to `ring[0]`. Each cap is `8 − 2 = 6` triangles.
+    // The sweep owes nothing to `ring[0]`. Each cap is `8 − 2 = 6` triangles.
     let (m, s) = u_prism();
     let g = mesh_vs_props(&m, s);
     assert_eq!(g.tris, 28);
@@ -482,10 +481,9 @@ fn a_non_star_shaped_cap_meshes_exactly() {
 
 #[test]
 fn a_pocket_lid_carries_its_hole() {
-    // Meshed solid, the lid is off by Δ +0.16, and its four rim edges are used once
-    // by a pocket wall and never by the lid — the one defect watertightness
-    // catches. Bridged and ear-clipped, the lid is `4 + 4 + 2·1 − 2 = 8` triangles;
-    // the solid comes to 28.
+    // Meshed as if solid, the lid would be off by Δ +0.16, and its four rim edges would be used
+    // once by a pocket wall and never by the lid — the one defect watertightness catches. The holed
+    // lid is `4 + 4 + 2·1 − 2 = 8` triangles; the solid comes to 28.
     let (m, s) = pocketed_cube();
     let g = mesh_vs_props(&m, s);
     assert_eq!(g.tris, 28);
@@ -504,8 +502,8 @@ fn a_boolean_result_carries_its_hole() {
     // agree — the same 14.8 = `(8·1 + 2·3) − 0.16 + 4·0.4·0.5 + 0.16`, though the
     // solids differ (2.92 against 3.08, pinned in the boolean suite).
     //
-    // Meshing the lid solid would overshoot the area by the hole's 0.16 while staying
-    // watertight; that is the fault this catches, and the fan had it until the tess cell.
+    // Meshing the lid solid would overshoot the area by the hole's 0.16 while staying watertight;
+    // that is the fault this catches.
     for kind in [BoolKind::Cut, BoolKind::Fuse] {
         let (m, s) = l_and_dimple(kind);
         let g = mesh_vs_props(&m, s);
@@ -561,10 +559,8 @@ fn a_split_face_meshes_like_two() {
 }
 
 #[test]
-fn a_non_convex_hole_bridges_and_meshes() {
-    // Every inner loop the triangulator has met was a rectangle. This one has a reflex
-    // node, so the bridge must find a mutually-visible pair across a ring that is not
-    // star-shaped from anywhere obvious, and ear clipping must survive the slit.
+fn a_non_convex_hole_meshes() {
+    // This inner loop has a reflex node, in a ring that is not star-shaped from anywhere obvious.
     //
     // 44 triangles: the bitten lid is `6 + 6 + 2·1 − 2 = 12`, the bottom cap `6 − 2 = 4`,
     // 2 apiece for the L's six walls and the pocket's six, and `6 − 2 = 4` for the floor.
@@ -603,9 +599,8 @@ fn two_islands_from_one_face_mesh_like_two() {
 #[test]
 fn an_island_beside_an_arc_meshes() {
     // An island beside a kept region, on the gate. One input face — the L's cap — gives the result
-    // a kept region
-    // *and* an island, and the two were told apart by containment alone. Both are flipped
-    // (`Cut`'s B-piece), and the signed mesh volume is the only check in this file that
+    // a kept region *and* an island, and the two are told apart by containment alone. Both are
+    // flipped (`Cut`'s B-piece), and the signed mesh volume is the only check in this file that
     // compares each face's `Orientation` against its own ring.
     let (m, s) = staple_cut_by_l();
     let g = mesh_vs_props(&m, s);
@@ -697,9 +692,9 @@ fn only_the_signed_volume_sees_a_reversed_face() {
 
 #[test]
 fn an_island_face_meshes_like_any_other() {
-    // The gate's first run on a face whose outer loop is *all* seam. It is a plain box —
-    // 12 triangles, `2·0.16 + 4·0.4·0.5 = 1.12` of surface, 0.08 of volume — and that is
-    // the claim: an island is not a special kind of face downstream.
+    // The gate on a face whose outer loop is *all* seam. It is a plain box — 12 triangles,
+    // `2·0.16 + 4·0.4·0.5 = 1.12` of surface, 0.08 of volume — and that is the claim: an island is
+    // not a special kind of face downstream.
     //
     // The signed volume is the one check with something new to say. `props` reads
     // `Face.orientation`, which `assemble_fuse_cut` set from the `flip` flag; `tess`
@@ -724,11 +719,10 @@ fn a_flipped_island_loop_is_caught() {
     // by `tessellate` (geometrically, `HoleWinding`), while volume and OCCT see nothing.
     // The island inverts that, and the inversion was measured rather than assumed.
     //
-    // `tessellate` never looks at an outer ring's winding — it takes its normal *from*
-    // the ring — so it returns `Ok` and its triangles simply face inward. `props` never
-    // looks at a ring at all, so its volume is still exactly 0.08. Watertight and the
-    // unsigned area are blind by construction. `validate` speaks, and until this cell it
-    // was the only thing that did.
+    // `tessellate` never looks at an outer ring's winding — it takes its normal *from* the ring —
+    // so it returns `Ok` and its triangles simply face inward. `props` never looks at a ring at
+    // all, so its volume is still exactly 0.08. Watertight and the unsigned area are blind by
+    // construction. `validate` speaks, and so does the signed volume below.
     //
     // The signed volume moves by `2 · 0.16 / 3`: the island is the `z = 1` floor, area
     // 0.16, outward normal `−z`, flux `−0.16`, so its contribution goes from `−0.0533`
@@ -805,10 +799,10 @@ fn a_flipped_island_loop_is_caught() {
 
 #[test]
 fn a_boolean_result_meshes_only_the_live_solid() {
-    // `Store` is append-only; `boolean` supersedes rather than deletes. Walking the
-    // face store meshed both original cubes (6 + 6) alongside the union. The union is a
-    // clean 6-face 1×1×2 box (cell fuse-coplanar-merge dissolves the interface corners),
-    // so 12 triangles — not the superseded operands' faces.
+    // `Store` is append-only; `boolean` supersedes rather than deletes. Walking the face store
+    // would mesh both original cubes (6 + 6) alongside the union. The union is a clean 6-face 1×1×2
+    // box (the fuse dissolves the interface corners), so 12 triangles — not the superseded
+    // operands' faces.
     let (m, s) = stacked_fuse();
     let g = mesh_vs_props(&m, s);
     assert_eq!(g.tris, 12);
@@ -823,11 +817,10 @@ fn a_boolean_result_meshes_only_the_live_solid() {
 /// props.volume` is the only one of the four that can see a hole ring reversed, since
 /// `props` reads the face's `orientation` and never the ring's winding.
 ///
-/// The bite is the symmetric `[0.85,1.15]³`: its vertical edge pierces
-/// the lid at `(0.85, 0.85)`, a point on the lid's fan diagonal from every apex, so the
-/// boolean's exact crossing test is what carries it here. The lid that comes out is holed
-/// *and* notched, and `nacre-tess` clips ears rather than fanning, so the gate is a second
-/// opinion from machinery that never shared the fan's blind spot.
+/// The bite is the symmetric `[0.85,1.15]³`: its vertical edge pierces the lid at `(0.85, 0.85)`, a
+/// point on the diagonal a fan from any apex would draw, so the boolean's exact crossing test is
+/// what carries it here. The lid that comes out is holed *and* notched, and `nacre-tess` sweeps
+/// rather than fans, so the gate is a second opinion from machinery without a fan's blind spot.
 #[test]
 fn a_holed_operand_keeps_its_hole_through_a_cut() {
     for (name, box_lo, box_hi) in [
@@ -849,10 +842,9 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
     }
 }
 
-/// A `Cut`'s inside-B piece with a hole in it: the pocket's lid, kept, reversed, hole and
-/// all. `flip` and `inner` had never met. Only the signed volume tells a hole reversed
-/// with its face from a hole reversed alone, and it is the one check `props` cannot make
-/// for itself.
+/// A `Cut`'s inside-B piece with a hole in it: the pocket's lid, kept, reversed, hole and all. Only
+/// the signed volume tells a hole reversed with its face from a hole reversed alone, and it is the
+/// one check `props` cannot make for itself.
 #[test]
 fn a_flipped_face_keeps_its_hole() {
     let (mut m, pc) = pocketed_cube();
@@ -873,10 +865,10 @@ fn a_flipped_face_keeps_its_hole() {
     );
 }
 
-/// The gate on a solid of genus 1 — the first this kernel makes. A rod drilled clean
-/// through the L's bar leaves each cap holed and the four tunnel walls joining the two
-/// rims, so `watertight` is what proves the rims are shared rather than duplicated, and
-/// `Σ|area| == props.area` is what proves neither hole was filled in.
+/// The gate on a solid of genus 1. A rod drilled clean through the L's bar leaves each cap holed
+/// and the four tunnel walls joining the two rims, so `watertight` is what proves the rims are
+/// shared rather than duplicated, and `Σ|area| == props.area` is what proves neither hole was
+/// filled in.
 ///
 /// `mesh_volume == props.volume` has the sharpest teeth here. A tunnel is a hole ring on
 /// one cap and a hole ring on the other, wound oppositely about their own faces' normals;
@@ -918,9 +910,7 @@ fn a_drilled_solid_meshes_watertight() {
 }
 
 /// A notch bitten from one edge of a cube. The kept region's boundary is a seam chord plus part of
-/// one
-/// edge — a run with no vertex — and that shape is new to the mesh gate, which had only
-/// ever fanned squares-with-square-holes and reflex caps. `10³ − 4·1.4·1.2`.
+/// one edge — a run with no vertex. `10³ − 4·1.4·1.2`.
 #[test]
 fn a_notched_cube_meshes() {
     let mut m = Model::new();
@@ -944,21 +934,18 @@ fn a_notched_cube_meshes() {
 
 /// **A wall with two windows — the case ear clipping cannot mesh.**
 ///
-/// A hub box and two bars crossing its `x = −1` face, so that face carries two inner
-/// loops. The b-rep was always fine here (`validate` clean, analytic mass properties);
-/// only the mesh failed, and it failed by stalling.
+/// A hub box and two bars crossing its `x = −1` face, so that face carries two inner loops. The
+/// b-rep is fine here (`validate` clean, analytic mass properties); what is at stake is the mesh.
 ///
-/// The cause was a ring the triangulator built for itself: each hole was merged into
-/// the outer ring by a zero-width bridge to the first mutually visible vertex, and both
-/// holes picked the *same* corner, so the ring visited it three times. A repeated vertex
-/// makes the ring non-simple, and Meisters' two-ears theorem — the only reason ear
-/// clipping terminates — does not apply. Measured: all six convex vertices had a
-/// diagonal that genuinely crossed the other hole.
+/// Ear clipping would merge each hole into the outer ring by a zero-width bridge to the first
+/// mutually visible vertex, and both holes would pick the *same* corner, so the ring would visit it
+/// three times. A repeated vertex makes the ring non-simple, and Meisters' two-ears theorem — the
+/// only reason ear clipping terminates — does not apply, so it would stall (measured: all six
+/// convex vertices would have a diagonal that genuinely crosses the other hole).
 ///
-/// **Nothing here is rotated.** The model that started the cell had seven fins at
-/// 360/7°, which made it look like a precision problem; three boxes and two fuses are
-/// enough. The monotone sweep never merges the rings, so the pinch is never built, and
-/// the face now meshes into the same watertight surface everything else does.
+/// **Nothing here is rotated**: three boxes and two fuses are enough. No two rings here share a
+/// vertex, so no bridge is laid and the pinch is never built, and the face meshes into the same
+/// watertight surface everything else does.
 #[test]
 fn a_wall_with_two_windows_meshes() {
     let mut m = Model::new();
@@ -993,17 +980,15 @@ fn a_wall_with_two_windows_meshes() {
     assert_agrees(&g, "wall with two windows");
 }
 
-/// **The model that started the cell**, meshed end to end.
+/// **Seven fins around a hub**, meshed end to end.
 ///
-/// Seven fins arrayed at 360/7° around a hub, then a square bore crossed with a 45°
-/// copy — a code-CAD playground script that died on `tessellate` while `validate` and
-/// `mass_props` were both happy. Two of the fins cross the same hub wall, which is how
-/// that face ended up with the two holes whose bridges collided.
+/// Seven fins arrayed at 360/7° around a hub, then a square bore crossed with a 45° copy — a
+/// code-CAD playground script whose b-rep `validate` and `mass_props` accept. Two of the fins cross
+/// the same hub wall, so that face carries two holes.
 ///
-/// It is here for the shape, not the arithmetic: the two-window fixture above is the
-/// minimal reproduction and the one that explains the bug. This one proves the fix
-/// survives 22 booleans, rotations by an angle with no exact `f64`, and a face set built
-/// entirely from arrangement-named vertices.
+/// It is here for the shape, not the arithmetic: the two-window fixture above is the minimal case
+/// and the one that explains the hazard. This one shows the mesh survives the booleans, rotations
+/// by an angle with no exact `f64`, and a face set built entirely from arrangement-named vertices.
 #[test]
 fn the_fin_array_with_a_star_bore_meshes() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -1072,12 +1057,12 @@ fn the_fin_array_with_a_star_bore_meshes() {
 /// below the `7.7` that the block beside it reaches in a single step: two planes where the model
 /// has one.
 ///
-/// **That failure did not split anything and was not wrong**, which is what made it worth
-/// fixing: the volume came out exactly right and the fuse yielded one body — a body carrying a
-/// face of area `8.9e-16` and two faces more than the shape has. Nothing rejected, nothing
-/// reported, and every later boolean, STEP export and mesh carried the sliver along.
+/// **That failure would not split anything and would not be wrong** — the volume exactly right and
+/// the fuse one body, but a body carrying a face of area `8.9e-16` and two faces more than the
+/// shape has (measured), with nothing rejected, nothing reported, and every later boolean, STEP
+/// export and mesh carrying the sliver along.
 ///
-/// Now the placement and the sweep are done in rationals read from the decimals as written
+/// The placement and the sweep are done in rationals read from the decimals as written
 /// (`11/10 + 66/10 = 77/10`), so both paths reach the same plane and the fuse has one plane to
 /// merge. Six faces, no sliver.
 #[test]
@@ -1146,9 +1131,9 @@ fn a_split_dimension_meets_the_undivided_one() {
 /// face's sketch frame (`face_sketch_frame`) — whose axes the kernel chooses, not the caller — so
 /// it has to be measured on that path rather than inferred from the world-plane extrude.
 ///
-/// **The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against
-/// one padded `7.7`, agrees *already* in f64: `(2.0 + 1.1) + 6.6 == 2.0 + 7.7`. That test
-/// passed on the unfixed kernel. The numbers below are chosen because they do not.
+/// **The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against one
+/// padded `7.7`, agrees *already* in f64: `(2.0 + 1.1) + 6.6 == 2.0 + 7.7`. That fixture would pass
+/// on a kernel that adds in f64. The numbers below are chosen because they do not.
 #[test]
 fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     fn base(m: &mut Model) -> Handle<Solid> {
@@ -1196,7 +1181,7 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     assert_ne!(
         (1.0f64 + 0.1) + 0.1,
         1.0f64 + 0.2,
-        "the fixture must discriminate, or it passes on the unfixed kernel too"
+        "the fixture must discriminate, or it passes on an f64-adding kernel too"
     );
 
     let (mut m1, mut m2) = (Model::new(), Model::new());
@@ -1220,9 +1205,8 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
 /// prism builder.
 ///
 /// `SketchPlane`'s fields are private and every public constructor states a *plane*, so the
-/// degeneracies a caller can express are the ones checked here: a normal
-/// with no direction, and three points that do not span one. The inner guard still stands for the
-/// crate's own `from_axes`, but nothing outside can reach it.
+/// degeneracies a caller can express are the ones checked here: a normal with no direction, and
+/// three points that do not span one.
 #[test]
 fn a_degenerate_frame_cannot_be_built() {
     let o = Point3::origin();

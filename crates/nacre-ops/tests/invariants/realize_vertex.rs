@@ -13,12 +13,11 @@
 //! | box, boolean'd twice    | 7 bits  | 32 | 32/32 |
 //! | prism on a tilted frame | 59 bits | 12 | **0/12** — every one off, by up to 4 ulp |
 //!
-//! **The split is not representability, and saying it was is a mistake worth keeping
-//! written down.** The first reading of this table said "7 bits land in an `f64` exactly, 59 do
-//! not". Measured per coordinate: of `boolean_corner`'s 48, only **32** are dyadic — 16 are exact
-//! rationals no `f64` can hold (the fixture cuts at 3.3 and 7.7, and `33/10` is not a binary
-//! fraction) — and the cache agrees on **all 48**. So being unrepresentable does not make a
-//! coordinate disagree.
+//! **The split is not representability.** Reading this table as "7 bits land in an `f64` exactly,
+//! 59 do not" would be wrong. Measured per coordinate: of `boolean_corner`'s 48, only **32** are
+//! dyadic — 16 are exact rationals no `f64` can hold (the fixture cuts at 3.3 and 7.7, and `33/10`
+//! is not a binary fraction) — and the cache agrees on **all 48**. So being unrepresentable does
+//! not make a coordinate disagree.
 //!
 //! What actually separates the families: on the narrow ones both roads round *the same rational*
 //! the same way, so they cannot differ. On the tilted ones the cached coordinate comes out of a
@@ -327,11 +326,9 @@ fn too_few_bits_report_undecided_rather_than_guessing() {
 /// The `None` on `to_decimal` is a rung-to-rung signal. A caller must never see it, and an
 /// implementation that always reported undecided would satisfy every other lock but this one.
 ///
-/// **Counted per fixture, and refusals are counted too.** An earlier spelling wrote
-/// `let Ok(d) = … else { continue }` and asserted a total — which drops exactly the vertices a
-/// broken ladder would fail on, and stays green while the population shrinks under it. That is the
-/// failure `tests/instruments/point_width.rs` records in its own module doc; this shape cannot
-/// have it.
+/// **Counted per fixture, and refusals are counted too.** `let Ok(d) = … else { continue }` with an
+/// asserted total would drop exactly the vertices a broken ladder fails on, and stay green while
+/// the population shrinks under it; this shape can do neither.
 #[test]
 fn the_door_returns_the_places_it_was_asked_for() {
     // 120 places is past what the first rung decides (128 bits is ~38 decimal digits), so the
@@ -422,10 +419,10 @@ fn every_vertex_variant_answers() {
                 );
                 pierce += 1;
             }
-            // **Which refusal, not just that there was one.** A plane pair whose meet line
-            // misses the cylinder is a *curved* definition failing to resolve; `vertex_meet` is
-            // never called on this road, so answering `NoMeet` would name a decline that did not
-            // happen. Planted: swapping the two left every other test here green.
+            // **Which refusal, not just that there was one.** A plane pair whose meet line misses
+            // the cylinder is a *curved* definition failing to resolve; `vertex_meet` is never
+            // called on this road, so answering `NoMeet` would name a decline that did not happen.
+            // Swapping the two would leave every other test here green (planted).
             Err(e) => {
                 assert_eq!(
                     e,
@@ -455,9 +452,9 @@ fn every_vertex_variant_answers() {
 /// **The curved arms are checked against a route that shares nothing with them.**
 ///
 /// A seam or pierce coordinate is assembled here out of `inv_sqrt_hp` and exact rational
-/// arithmetic; the cached one was computed at boolean time by different code entirely. Agreement
-/// to the cache's own accuracy is therefore evidence, where comparing two spellings of the same
-/// derivation would not be (`tests/` has that failure on record).
+/// arithmetic; the cached one was computed at boolean time by different code entirely. Agreement to
+/// the cache's own accuracy is therefore evidence, where comparing two spellings of the same
+/// derivation would not be.
 #[test]
 fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
     use nacre_topo::Vertex;
@@ -591,8 +588,8 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
 ///
 /// `to_f64` hands back `(value, error)`, and `0.0` there means *exact* — the rational arm's
 /// promise. An approached coordinate must not be able to say it: at 4096 bits the radius is near
-/// `2⁻⁴⁰⁹¹`, and reading it out through `2f64.powi` flushed every coordinate to `0e0`. Measured,
-/// shipped, and caught only by this file's audit — so the lock lives here now.
+/// `2⁻⁴⁰⁹¹`, and reading it out through `2f64.powi` would flush every coordinate to `0e0`
+/// (measured) — only this file's audit sees it, so the lock lives here.
 ///
 /// One exception, earned rather than claimed: a coordinate that is exactly zero from
 /// exact inputs carries a zero radius honestly — `Mag::above`'s zero guard leaves nothing to
@@ -611,9 +608,9 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
                 if r.is_exact() {
                     // **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
                     // at 53 bits, and the tilted family's coordinates are 59 bits wide. Zero is
-                    // allowed only where the rational really is an `f64`; where it is not, the error
-                    // must be positive and no wider than half an ulp. An earlier spelling of this
-                    // lock asserted zero and so pinned the lie it was written to catch.
+                    // allowed only where the rational really is an `f64`; where it is not, the
+                    // error must be positive and no wider than half an ulp. Asserting zero here
+                    // would pin the lie the lock is written to catch.
                     let d = r
                         .to_decimal(60)
                         .expect("an exact realization prints every place");
@@ -855,9 +852,9 @@ fn an_exact_vertex_prints_exact_digits() {
 /// printed confidently*, the worst thing this feature could do. The radius comes from
 /// `HpBounded`'s arithmetic, so it is not something to take on faith.
 ///
-/// The oracle is the same door at 8192 bits. Compared in **decimal**: an `f64` comparison
-/// collapses every difference a high-precision radius is about, and an earlier spelling of this
-/// probe reported "0 violations" while measuring nothing.
+/// The oracle is the same door at 8192 bits. Compared in **decimal**: an `f64` comparison collapses
+/// every difference a high-precision radius is about, and such a comparison would report "0
+/// violations" while measuring nothing.
 ///
 /// **Calibrated, because "0 wrong" is only worth what the instrument can see.** Shrinking the
 /// radius by 2⁻²⁰ already produces 12 wrong digits here; 2⁻⁶⁰ gives 48, 2⁻¹²⁰ gives 192. So the
@@ -931,16 +928,15 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// The cheap road's limit is a **cost** limit (`CHEAP_REPLAY_COST_CAP`, sized from measured cost
 /// against a stated per-vertex budget), not a depth constant. A depth constant does **two jobs**
 /// and only one of them is true: as a *cost* limit it is load-bearing — a 4,200-turn history
-/// realized on every push turns a 5.6 s test into 30 s — but as a *precision* rule it is
+/// realized on every push would turn a 5.6 s test into 30 s — but as a *precision* rule it is
 /// measurably wrong: what costs precision is an **irrational turn**, and a rational translation
-/// costs nothing at all (`Angle::cos_sin_rat` answers only 0/90/180/270 — Niven, so those
-/// add no radius). A depth of 64 holds back chains that decide perfectly: rational translations
-/// by the hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the
-/// ladder's first rung decides; these two come back `Realized`.
+/// costs nothing at all (`Angle::cos_sin_rat` answers only 0/90/180/270 — Niven, so those add no
+/// radius). A depth of 64 holds back chains that decide perfectly: rational translations by the
+/// hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the ladder's first
+/// rung decides; these two come back `Realized`.
 ///
-/// Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
-/// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice
-/// while this was written*.
+/// Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture whose
+/// motion was folded away would pass this while measuring nothing.
 ///
 /// **A chain that folds is not a row here.** Quarter turns, rational translations and axis
 /// reflections compose to a rational map, so a vertex under such a recorded chain is read from the
@@ -991,8 +987,8 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
 /// **A vertex under a recorded chain that folds is read from the fold, exactly** — including a
 /// coordinate that is exactly `0`. The `Through` block records every motion, and a quarter turn
 /// about `x` folds; replaying that chain cannot decide such a zero (its interval straddles `0` at
-/// every rung), so the vertex stayed on the construction's figure. Read from the fold, every
-/// vertex is an exact rational, its cache `Realized`.
+/// every rung), so replay alone would leave the vertex on the construction's figure. Read from the
+/// fold, every vertex is an exact rational, its cache `Realized`.
 #[test]
 fn a_vertex_under_a_folding_chain_is_read_exactly_from_the_fold() {
     let mut m = Model::new();
@@ -1296,8 +1292,8 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
 /// be distinguishable only by which branch produced them.
 ///
 /// `validate` runs on the cost-capped model too. Its vertices carry the construction's figure
-/// rather than a realization, which is exactly the population whose tolerance loosened when the
-/// cache stopped storing a measured residual; the checker must still find it clean.
+/// rather than a realization, which is exactly the population whose tolerance carries no measured
+/// residual; the checker must still find it clean.
 #[test]
 fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
     // ── the cost wall ──────────────────────────────────────────────────────────────────────
@@ -1996,11 +1992,12 @@ fn the_refine_door_raises_a_deep_cylinder() {
     );
 }
 
-/// **The door carries the edges with it** — the order problem, back again.
+/// **The door carries the edges with it** — the order problem.
 ///
-/// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That was
-/// safe while coordinates never moved after the fact; this door moves them. So the door re-derives,
-/// and the proof is that a rebuild *afterwards*, on the door's own budget, finds nothing left to do.
+/// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That is safe
+/// only while coordinates never move after the fact; this door moves them. So the door re-derives,
+/// and the proof is that a rebuild *afterwards*, on the door's own budget, finds nothing left to
+/// do.
 #[test]
 fn the_refine_door_carries_the_edges_with_it() {
     let mut m = translated_chain(300);
@@ -2046,7 +2043,7 @@ fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
 }
 
 /// The same chain, built with the prefix table emptied before every step — so every realization
-/// folds from the base, the way it did before the accelerator existed.
+/// folds from the base, without the accelerator.
 fn translated_chain_cold(n: usize) -> Model {
     let mut m = Model::new();
     let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
@@ -2173,8 +2170,8 @@ fn the_prefix_table_stays_one_generation() {
 ///
 /// The third — a triple that straddles two histories and solves through the world road, whose
 /// answer carries no leaf — is **not built here**. It needs two operands with different recorded
-/// chains meeting on one corner, and I did not get a fixture to stand; saying so is better than a
-/// lock that quietly covers two cases while claiming three.
+/// chains meeting on one corner, and no fixture here builds one; saying so is better than a lock
+/// that quietly covers two cases while claiming three.
 #[test]
 fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
     for (what, exact_shift) in [("absorbed translation", true), ("quarter turn", false)] {

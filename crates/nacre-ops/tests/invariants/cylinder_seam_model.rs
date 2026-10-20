@@ -672,11 +672,11 @@ proptest! {
         prop_assert!(every_edge_used_twice_opposite(&m).is_ok());
     }
 
-    /// The same structure over the population that **actually stressed the exact
-    /// arithmetic**: an axis a hair off `ẑ`, whose tiny components carry a full f64's worth
-    /// of decimal digits and so lift to rationals with ~10²⁰ denominators — squaring one of
-    /// those leaves `i128`. The sketch plane states itself from basis crosses of the written
-    /// decimals (`SketchPlane::from_origin_normal`), which is what keeps this family built.
+    /// The same structure over the population that **stresses the exact arithmetic**: an axis a
+    /// hair off `ẑ`, whose tiny components carry a full f64's worth of decimal digits and so lift
+    /// to rationals with ~10²⁰ denominators — squaring one of those leaves `i128`. The sketch plane
+    /// states itself from basis crosses of the written decimals
+    /// (`SketchPlane::from_origin_normal`), which is what keeps this family built.
     ///
     /// The sibling above cannot stand in for this: its uniform axis reaches this family
     /// about **0.01%** of the time (measured). Here it is ~80%.
