@@ -734,10 +734,10 @@ fn inside(
 /// DCEL, and the split gave every crossing a vertex — so two of their loops cannot cross, they can
 /// only nest or share nodes.
 ///
-/// **Asked from two directions here and a third elsewhere.** [`crate::arrangement::nest_cells`]
-/// asks it of (contour, `+1` cell) to find hosts and `innermost_host` of (host, host) to order
-/// them; the coplanar merge asks the same question of its own bounds, through this engine
-/// rather than a copy of this dispatch.
+/// **Asked from two directions here and a third elsewhere.**
+/// `crate::arrangement::cells::nest_cells` asks it of (contour, `+1` cell) to find hosts and
+/// `innermost_host` of (host, host) to order them; the coplanar merge asks the same question of its
+/// own bounds, through this engine rather than a copy of this dispatch.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cell_in_cell(
     jd: &Judge<'_, WorkingPlane>,
@@ -869,7 +869,7 @@ pub(crate) fn cell_in_cell(
 
 /// **Which road answers a nesting question** — named because the instrument has to say so, and
 /// because a rule spelled at the pierce and again at the probe is two rules
-/// ([`nesting_probe::Row::route`]).
+/// (`nesting_probe::Row::route`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Route {
     /// Two loops that share a node touch rather than nest: not comparable, no witness asked.

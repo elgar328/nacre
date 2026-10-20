@@ -73,7 +73,7 @@ impl NodeId {
     ///
     /// It does **not** check for a collapsed triple. Two names being equal is a real condition
     /// with *different answers at different callers* — `arrangement::plane_ring` declines
-    /// (`CollapsedTriple`), [`loop_triples`] falls back to naming the vertex from every plane
+    /// (`CollapsedTriple`), `loops::loop_triples` falls back to naming the vertex from every plane
     /// touching it — so making the constructor fallible would copy that fork to all eight minting
     /// sites.
     pub(crate) fn three_planes(t: Canon3) -> NodeId {
@@ -307,7 +307,7 @@ pub(crate) enum Wall {
     /// A ruling piece: straight on the lateral, so like a line its ends
     /// order it — but its carriers are the cylinder and `plane`, the plane class that holds the
     /// ruling, and `side` names which of that plane's two rulings it is
-    /// ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's single ruling).
+    /// ([`RulingCarrier::side`]; `0` is a **tangent** wall's single ruling).
     /// `side` is measured against `plane` and means nothing without it: one line held by a
     /// tangent plane and a plane through the axis is `0` against the first and `±1` against the
     /// second. Every producer states the plane it measured against — on a plane face the face's

@@ -484,8 +484,8 @@ pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> 
 /// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
 /// (`ruling_side` reads zero) or a description is missing — the walk answers `Unnameable`.
 ///
-/// Not [`arc_side`], which is the *turn* of an arc against a segment in the face's own plane
-/// (the winding walk's question, in the stored frame); this is a half-space of `q`.
+/// Not `direction::arc_side`, which is the *turn* of an arc against a segment in the face's own
+/// plane (the winding walk's question, in the stored frame); this is a half-space of `q`.
 pub(crate) fn arc_departure_side(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

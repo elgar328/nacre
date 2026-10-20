@@ -30,7 +30,7 @@ use super::*;
 /// clear", which is true. Completing the test means adding the face's own edge normals as further
 /// axes — the same test with more axes, not a different machine — and waits for a shape that
 /// needs it. The cylinder **pair**'s version of this sentence is closed
-/// ([`separating_dirs`]); this arm, the plane's, still waits.
+/// (`cyl_gate::separating_dirs`); this arm, the plane's, still waits.
 ///
 /// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
 /// its outer loop's **pieces** (a vertex is the piece with no width), a half-space is convex, and
@@ -44,7 +44,7 @@ use super::*;
 /// side" would be satisfied by a single **point** and would pass a disk that crosses the strip.
 /// A barrier that stops it also stops every disk that genuinely clears, and folded to
 /// «did not clear» writes tangency rows for contacts that are not there. So the piece answers for
-/// its own **extent** ([`Corner::Disk`]): the hull statement below holds because a face is
+/// its own **extent** ([`Corner::Round`]): the hull statement below holds because a face is
 /// contained in the hull of its boundary, and each boundary piece reports how far it reaches.
 /// Anything else curved is still refused — an arc that is only part of a loop bulges past a hull
 /// this road cannot state.
@@ -122,9 +122,9 @@ impl Corner {
     /// **both** questions false and let a face that covers the station be read as clearing it.
     /// So the question is named instead of inferred.
     ///
-    /// **The span is read open** (`face_clears_footprint`'s own note: a corner sitting exactly
-    /// on a cap plane must not be dropped), which is why the disk's comparison is spelled here
-    /// rather than borrowed from [`reach_clears`] — that one is closed against closed, and folding
+    /// **The span is read open** (`face_clears_footprint`'s own note: a corner sitting exactly on a
+    /// cap plane must not be dropped), which is why the disk's comparison is spelled here rather
+    /// than borrowed from `cyl_gate::reach_clears` — that one is closed against closed, and folding
     /// the two together would move one convention silently.
     fn reaches(
         &self,

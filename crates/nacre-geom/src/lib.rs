@@ -25,9 +25,6 @@ mod line;
 mod nurbs;
 mod plane;
 
-/// Closed-form intersections. The design isolates robustness-sensitive
-/// intersection/classification code in one module. Kept as `pub mod` — callers
-/// write `intersect::plane_plane(..)`, keeping that isolation visible.
 pub mod intersect;
 pub mod mixed;
 

@@ -160,8 +160,8 @@ pub(super) fn tangency_reject(tg: &Tangencies<'_>, g: &Grouping) -> Result<(), B
 /// **The operands retire in exactly one place, and it is after the result is accepted.** Copied
 /// into each arm that produces solids, every reject would have to know whether it stands before or
 /// after its arm's copy; in one place, "a reject leaves the model alone" is true of the *shape* of
-/// this function rather than of where the rejects happen to sit. [`reconstruct`] does the work and
-/// never touches the live set.
+/// this function rather than of where the rejects happen to sit. [`reconstruct`](fn@reconstruct)
+/// does the work and never touches the live set.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_fuse_cut(
     model: &mut Model,
@@ -217,10 +217,10 @@ pub(crate) fn assemble_fuse_cut(
 /// **The boxes hold where the truth can be, so they can only over-keep.** They are built from
 /// realized `f64` coordinates, which are rounded; a box used to *reject* a candidate before an
 /// exact test must therefore be conservative, or a real self-contact is dropped in silence. Each
-/// vertex contributes its [`reach`] — the interval its cache proves the truth lies in — so the box
-/// holds the true face, and a query asks whether the endpoint's reach meets it. The case this
-/// protects is not hypothetical: the wedge that motivated this check touches at exactly `x = 1`,
-/// which is a face of its own box.
+/// vertex contributes its reach ([`crate::planes::cache_reach`]) — the interval its cache proves
+/// the truth lies in — so the box holds the true face, and a query asks whether the endpoint's
+/// reach meets it. The case this protects is not hypothetical: the wedge that motivated this check
+/// touches at exactly `x = 1`, which is a face of its own box.
 ///
 /// A face's bounds — its rings and its circles (`comp_face`) — are read **lazily and once per
 /// face**: `Ring::edges` spends an exact predicate per node, and building them for every result

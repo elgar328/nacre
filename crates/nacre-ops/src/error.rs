@@ -1217,7 +1217,7 @@ impl std::fmt::Display for RejectReason {
 /// alternative path (several sites try another route on `Err`) can never be mistaken for the
 /// one that actually surfaced.
 ///
-/// The pair being the only funnel is also what makes a test build's [`reject_census`] possible:
+/// The pair being the only funnel is also what makes a test build's `reject_census` possible:
 /// `#[track_caller]` here records *which* guard rang, at its own line, for every call site
 /// at once. A product build carries neither the census nor the attribute.
 #[inline]

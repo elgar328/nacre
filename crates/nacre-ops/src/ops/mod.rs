@@ -1,5 +1,5 @@
-//! Feature operations: the public sketch/extrude API and the `apply`/
-//! `replay` driver. The top layer — it composes the boolean engine ([`crate::boolean`]) and rigid
+//! Feature operations: the public sketch/extrude API and the `apply`/`replay` driver. The top
+//! layer — it composes the boolean engine ([`crate::boolean`](fn@crate::boolean)) and rigid
 //! transform ([`crate::transform`]) over the plane substrate below.
 
 use crate::BoolError;

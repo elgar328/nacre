@@ -78,12 +78,12 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
     signs.iter().filter(|positive| !**positive).count() % 2 == 1
 }
 
-/// **The plane through three points that have no coordinates** — the projective join, the dual
-/// of [`cramer_hp`]: that one meets three planes into a homogeneous point `[Dvec : D]`, this
-/// joins three such points back into a plane. Both are the same 3×3 determinant expansion read
-/// the other way round, which is why the whole thing is four [`det3_refs_hp`] calls and no new
-/// arithmetic. Consumed by [`judged_coeffs`]' homogeneous route (a judged frame whose defining
-/// point is a [`JudgedPoint::Meet`]).
+/// **The plane through three points that have no coordinates** — the projective join, the dual of
+/// [`cramer_hp`]: that one meets three planes into a homogeneous point `[Dvec : D]`, this joins
+/// three such points back into a plane. Both are the same 3×3 determinant expansion read the other
+/// way round, which is why the whole thing is four [`det3_refs_hp`] calls and no new arithmetic.
+/// Consumed by `frames::judged_coeffs`' homogeneous route (a judged frame whose defining point is a
+/// [`JudgedPoint::Meet`]).
 ///
 /// **Nothing is divided, and that is the point.** A point named as an intersection has no
 /// rational coordinates to hand out — dividing `Dvec/D` would manufacture an irrational and bake
@@ -154,7 +154,7 @@ fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
 /// The interval Cramer parts of an implicit point `V = ∩(planes)`: `D = det(normals)`
 /// and the numerator vector `Dvec` (column `j` replaced by `h = −d`), so `V[j] =
 /// Dvec[j]/D` (no division taken here). Shared by `indirect_filter` (orient3d) and
-/// [`cmp_filter`] (cmp_coord).
+/// `coord::cmp_filter` (cmp_coord).
 pub(crate) fn cramer_iv(planes: [[Bounded; 4]; 3]) -> (Bounded, [Bounded; 3]) {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
     let h = |k: usize| Bounded::new(0.0, 0.0).sub(planes[k][3]); // n·X = h, h = −d

@@ -1,10 +1,10 @@
 use super::*;
 /// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
-/// [`circle_crossings`], same machinery ([`nacre_exact::quad::plane_plane_cylinder`], the same
-/// fences, the same names), different reachable arms: on a class **parallel** to the axis the
-/// meet can be tangent to the lateral — **skipped**, because a touch divides nothing and cutting
-/// there would make a zero-length piece — or lie on it, which the ladder refuses by name rather
-/// than reasoning it unreachable.
+/// `split_circles::circle_crossings`, same machinery ([`nacre_exact::quad::plane_plane_cylinder`],
+/// the same fences, the same names), different reachable arms: on a class **parallel** to the axis
+/// the meet can be tangent to the lateral — **skipped**, because a touch divides nothing and
+/// cutting there would make a zero-length piece — or lie on it, which the ladder refuses by name
+/// rather than reasoning it unreachable.
 ///
 /// Returns each crossing with the meet it was solved as ([`combinatorics::PierceMeet`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it
@@ -196,7 +196,7 @@ impl AxisCoord {
 type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 
 /// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
-/// twin of [`split_circles`], run after it.
+/// twin of [`split_circles`](fn@split_circles), run after it.
 ///
 /// **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
 /// circles against segments and not against rulings. One class *can* carry both populations

@@ -135,9 +135,9 @@ impl Model {
     /// Drop every remembered prefix. Costs nothing but time: the next realization folds from the
     /// base and reaches the same bits (`Model::prefix_hp`'s contract).
     ///
-    /// Production-facing on purpose even though nothing in this workspace calls it yet: it is
-    /// the door that makes "empty is always correct" usable rather than merely true, and a
-    /// consumer holding a long-lived model is the caller it is for.
+    /// A test build's door (`test-util`): the realization invariants
+    /// (`tests/invariants/realize_vertex.rs`) empty the table to compare a build with the same
+    /// build folded from the base, and to show that emptying it costs only time.
     #[cfg(any(test, feature = "test-util"))]
     pub fn clear_prefix_hp(&mut self) {
         self.prefix_hp.clear();

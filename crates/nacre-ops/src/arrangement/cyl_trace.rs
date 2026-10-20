@@ -289,11 +289,12 @@ fn assemble_spans(
 /// **Which way round a lateral face's material lies, for a boundary edge travelling along the
 /// axis** — the one place that sign is made, and the third application of one convention.
 ///
-/// *Material is on the left of the ring's direction of travel* — the sentence [`run_body_above`]
-/// states for a planar face's on-line run. On a lateral face, with `r̂` the outward radial
-/// direction, `m̂` the axis and `θ̂` increasing θ (counter-clockwise about `m̂`), cylindrical
-/// coordinates are right-handed so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The face's outward is `σ·r̂`
-/// with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], travel is `τ·m̂`, and left of travel is
+/// *Material is on the left of the ring's direction of travel* — the sentence
+/// `trace_plane::run_body_above` states for a planar face's on-line run. On a lateral face, with
+/// `r̂` the outward radial direction, `m̂` the axis and `θ̂` increasing θ (counter-clockwise about
+/// `m̂`), cylindrical coordinates are right-handed so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The
+/// face's outward is `σ·r̂` with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], travel is
+/// `τ·m̂`, and left of travel is
 ///
 /// ```text
 ///   n_out × travel = (σ·r̂) × (τ·m̂) = σ·τ·(r̂ × m̂) = −σ·τ·θ̂
@@ -340,12 +341,13 @@ pub(crate) fn plus_theta_is_above(
 /// chain is carved out of one that may be absent — the same arms, because neither reads
 /// "inside" or "outside": only the ring's winding, below.
 ///
-/// **Which way round is decided by the ring's own winding, and by nothing else.** A plane
-/// cuts a circle in two points, and "which of the two arcs is the hole" is the whole difficulty:
-/// a hole whose two ruling edges lie on **one** plane cannot be told apart by that plane's sides.
-/// The universal boundary convention answers it locally instead — *material is on the left of the
-/// ring's direction of travel* — the same sentence [`run_body_above`] states for a planar face's
-/// on-line run, and it holds for an outer ring, a hole ring, a notch and a reflex corner alike.
+/// **Which way round is decided by the ring's own winding, and by nothing else.** A plane cuts a
+/// circle in two points, and "which of the two arcs is the hole" is the whole difficulty: a hole
+/// whose two ruling edges lie on **one** plane cannot be told apart by that plane's sides. The
+/// universal boundary convention answers it locally instead — *material is on the left of the
+/// ring's direction of travel* — the same sentence `trace_plane::run_body_above` states for a
+/// planar face's on-line run, and it holds for an outer ring, a hole ring, a notch and a reflex
+/// corner alike.
 ///
 /// **Derivation.** Write `r̂` for the cylinder's outward radial direction, `m̂` for its axis and `θ̂`
 /// for increasing θ (counter-clockwise about `m̂`, which is what

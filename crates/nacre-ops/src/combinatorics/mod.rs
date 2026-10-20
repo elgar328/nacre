@@ -20,7 +20,7 @@
 //!
 //! That is held by the type, not by a naming convention (`fp` / `fc`): the predicates here take
 //! [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
-//! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
+//! `plane_ix` is the one place a face index becomes a plane index (in `loops::loop_triples`).
 //!
 //! **Exception:** the code that *defines* the classes (`planes::plane_classes` →
 //! `Judge::planes_coplanar`) necessarily runs before a
@@ -152,9 +152,9 @@ pub(crate) struct ArcDir {
     axis: [nacre_exact::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
-    /// Measured: [`smooth_extremum_winding`] reads it `false` on half its firings, and
+    /// Measured: `winding::smooth_extremum_winding` reads it `false` on half its firings, and
     /// dropping it there moves the chained fixtures' wall. No *fixture* forced the factor into
-    /// being — the algebra did — and [`arc_side`] records which factors its own population
+    /// being — the algebra did — and `direction::arc_side` records which factors its own population
     /// locks.
     axis_up: bool,
     /// Travel runs counter-clockwise about the circle's own normal (the axis).

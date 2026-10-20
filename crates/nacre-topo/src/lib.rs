@@ -841,7 +841,7 @@ pub struct Model {
     ///
     /// **Empty is always correct.** Nothing here is needed for an answer — drop it, and the next
     /// realization folds from the base as it always did, to the same bits. That is what makes it
-    /// safe to evict on a hit, and why [`Model::clear_prefix_hp`] owes no one an explanation.
+    /// safe to evict on a hit, and why `Model::clear_prefix_hp` owes no one an explanation.
     prefix_hp: HashMap<PrefixKey, PrefixValue>,
 }
 

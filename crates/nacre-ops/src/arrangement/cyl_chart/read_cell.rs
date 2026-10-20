@@ -658,9 +658,9 @@ impl Chart {
 ///
 /// **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
-/// gets `true` from this same test — one sentence about every rim. What is out of reach is only
-/// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
-/// `DiskLabels` and the band road), so today only cut rims ask here.
+/// gets `true` from this same test — one sentence about every rim. What is out of reach is only an **uncut**
+/// outer rim: it never becomes an [`ArcLabels`](crate::arrangement::ArcLabels) entry at all (a
+/// whole circle goes to `DiskLabels` and the band road), so today only cut rims ask here.
 ///
 /// **How often each row actually fires** (whole binary, production calls only):
 /// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**

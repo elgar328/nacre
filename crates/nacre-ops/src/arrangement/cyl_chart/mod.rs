@@ -56,7 +56,7 @@
 //! ([`emit_lateral`]) — the **region walk** ([`regions`]): emitted cells → connected
 //! components → each component's boundary on the chart's grid → runs cut into the neighbouring
 //! class's own pieces → cycles → a `Bound`. The census holds the chart against its own rules
-//! and the emitter's faces against the reads they came from ([`census`]).
+//! and the emitter's faces against the reads they came from (`census`).
 
 use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent, SegKind};
 use crate::draft::{Bound, LocalFace};

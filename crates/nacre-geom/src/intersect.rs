@@ -1,7 +1,8 @@
 //! Closed-form intersections among analytic surfaces.
 //!
-//! Robustness-sensitive intersection code is isolated in this one module
-//! Everything here is the **construction (coordinate)** side of the
+//! Robustness-sensitive intersection and classification code is isolated in this one module,
+//! kept as `pub mod` so callers write `intersect::plane_plane(..)` and the isolation stays
+//! visible. Everything here is the **construction (coordinate)** side of the
 //! precision split: the returned `Line`/`Point3` are f64 *caches* —
 //! the defining surfaces are the truth. So near-degenerate inputs are gated by a
 //! conditioning threshold (there is no exact answer to cache), whereas exact

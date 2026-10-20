@@ -1190,9 +1190,9 @@ fn primitive_normal(n: &[nacre_exact::Rat; 3]) -> [nacre_exact::Rat; 3] {
 ///   the **degeneracy pattern is not**, and a corner on the ray is what the census is made of.
 /// - **`e₂ = ê_k`** (zero arithmetic, `e₁` untouched, and on the plane `p·e₂_old = |n|²p_k + n_k·d`
 ///   is a *positive affine* image of `p_k`, so every comparison and `orient2d` sign is identical):
-///   refuted because [`ring_interior_candidates`] walks these axes as **3-D directions in the
-///   plane** to mint cap witnesses, and `ê_k·n = n_k ≠ 0` leaves it. An axis here is a direction,
-///   not only a coordinate functional.
+///   refuted because `witnesses::ring_interior_candidates` walks these axes as **3-D directions in
+///   the plane** to mint cap witnesses, and `ê_k·n = n_k ≠ 0` leaves it. An axis here is a
+///   direction, not only a coordinate functional.
 /// - **`e₂ = ê_j × n`** (degree 1 in `n`, so no squaring, and it *is* in the plane): not
 ///   orthogonal to `e₁`, so it rotates the ray's level set — the same axis the first one died on.
 ///

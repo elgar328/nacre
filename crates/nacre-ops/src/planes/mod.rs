@@ -593,25 +593,25 @@ pub(crate) fn silent_among(cyls: &[WorkingCyl], classes: &[usize]) -> bool {
 ///
 /// A point of the face is `p = o + s·m + r·u` with `u ⊥ m` a unit vector and `s` over the face's
 /// own span, so `d·p = d·o + s·(d·m) + r·(d·u)` with `(d·u)² ≤ |d⊥|² = d·d − (d·m)²/(m·m)`: the
-/// face's projected span widened by a radial reach `ρ = r·|d⊥|`, carried as its square so no
-/// root is ever formed. It is the one clearance question a lateral face answers for any other
-/// surface: a cylinder pair asks two of these against each other, once per direction its shape
-/// can state ([`separating_dirs`], [`reaches_apart`]); an oblique plane reads `d = n` against its
-/// single station.
+/// face's projected span widened by a radial reach `ρ = r·|d⊥|`, carried as its square so no root
+/// is ever formed. It is the one clearance question a lateral face answers for any other surface: a
+/// cylinder pair asks two of these against each other, once per direction its shape can state
+/// (`cyl_gate::separating_dirs`, `cyl_gate::reaches_apart`); an oblique plane reads `d = n` against
+/// its single station.
 ///
-/// `span = None` is a face whose span could not be stated ([`lateral_spans`] empty). The reach
-/// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
-/// otherwise, which is `None`: nothing proved. That `d·m = 0` case is not a branch of its own;
-/// it is the general formula with the `s` term vanishing — and it is what makes the **common
-/// perpendicular** answerable at all (`d ⊥ m` for both cylinders, so neither needs a span).
-/// The `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`) and what a cylinder
-/// reads along **its own** axis, where the radial term vanishes instead and the reach is the span
-/// itself. `None` is also `Rat` overflow.
-/// The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a rational base and a radical the
-/// arc may or may not add. With an angular extent the radial term `r·(d·û)` over the
-/// face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as before — and at an
-/// **end** of the arc otherwise, where it is `d·v` for the end's radial vector, a rational folded
-/// into the base with a zero radical. One root at most on each end, and no new arithmetic.
+/// `span = None` is a face whose span could not be stated (`cyl_gate::lateral_spans` empty). The
+/// reach is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and
+/// unbounded otherwise, which is `None`: nothing proved. That `d·m = 0` case is not a branch of its
+/// own; it is the general formula with the `s` term vanishing — and it is what makes the **common
+/// perpendicular** answerable at all (`d ⊥ m` for both cylinders, so neither needs a span). The
+/// `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`) and what a cylinder reads along
+/// **its own** axis, where the radial term vanishes instead and the reach is the span itself.
+/// `None` is also `Rat` overflow. The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a
+/// rational base and a radical the arc may or may not add. With an angular extent the radial term
+/// `r·(d·û)` over the face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as
+/// before — and at an **end** of the arc otherwise, where it is `d·v` for the end's radial vector,
+/// a rational folded into the base with a zero radical. One root at most on each end, and no new
+/// arithmetic.
 struct Reach {
     lo: nacre_exact::Rat,
     hi: nacre_exact::Rat,

@@ -237,10 +237,10 @@ impl Model {
     /// `None` — the caller keeps the cache it has — for a plane with no world name: an unnamed
     /// one, a chain that does not fold, a moved `Wide` name, or an overflow in the carry.
     ///
-    /// **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
+    /// **One door still bypasses this entirely** — `Model::push_plane_unregistered`, which
     /// skips the name and therefore the derivation. It is the only remaining way for a surface's
-    /// truth and its cache to disagree, and it is `cfg(test)`: every call site is a fixture that
-    /// wants one geometric plane held as two handles.
+    /// truth and its cache to disagree, and it is a test build's door (`test-util`): every call
+    /// site is a fixture that wants one geometric plane held as two handles.
     ///
     /// The `bool` says whether every part is the truth's — `false` where the anchor is the pusher's.
     pub(crate) fn derive_surface_cache(

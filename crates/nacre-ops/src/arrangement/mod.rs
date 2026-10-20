@@ -1,4 +1,4 @@
-//! The arrangement engine — the sole boolean path ([`boolean`], which `crate::boolean`
+//! The arrangement engine — the sole boolean path ([`boolean`](fn@boolean), which `crate::boolean`
 //! delegates to). It has **two arms on one job**: every plane class here, and every cylinder
 //! class on its own chart ([`cyl_chart`]). Both end at the same `LocalFace` list.
 //!
@@ -63,8 +63,6 @@ mod cells;
 #[cfg(test)]
 #[path = "../tests/probes/crossing_probe.rs"]
 pub(crate) mod crossing_probe;
-/// The cylinder chart: the lateral faces' arrangement, emitted from cells —
-/// this engine's second arm, run on the cylinder's own chart rather than a plane class.
 pub(crate) mod cyl_chart;
 mod cyl_trace;
 #[cfg(test)]
@@ -116,7 +114,7 @@ pub(crate) use traces::*;
 
 /// **What happens to a face at one station of a line it is traced onto** — the vocabulary of
 /// [`sweep_line`], spoken by both roads that trace a face onto a line: a plane face onto a class
-/// line ([`trace_transversal_face`]) and a lateral face onto one of a wall's rulings
+/// line (`trace_plane::trace_transversal_face`) and a lateral face onto one of a wall's rulings
 /// ([`rulings_on_class`]).
 ///
 /// The variant order is the order the events apply at one station — a run ends, the face toggles,
@@ -287,7 +285,7 @@ enum HalfEdgeKind {
 /// `c` may lie inside **several** `+1` rings at once, and that is not a degeneracy: nesting two
 /// levels deep (`A⁺ ⊃ D⁻ ⊃ B⁺ ⊃ c⁻`) puts `c` inside `B`'s ring *and* `A`'s, because
 /// [`combinatorics::point_in_ring`] asks about a ring, not about the material it bounds. The owner is the
-/// **innermost** candidate ([`innermost_host`]).
+/// **innermost** candidate (`cells::innermost_host`).
 struct Nesting {
     /// `group_of[cell]` = the cell's group representative (the `+1` host for a hole group, else
     /// the cell itself).

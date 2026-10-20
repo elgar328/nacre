@@ -1,9 +1,9 @@
 //! Boolean assembly: turn the arrangement engine's per-face output (`LocalFace`, named by
 //! `NodeId` seam triples) into result solids, and the mandatory coplanar-face cleaning pass.
 //!
-//! The public [`boolean`] entry lives here and delegates the cell-complex work to
-//! [`crate::arrangement`]; the engine calls back into [`assemble_fuse_cut`] and
-//! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
+//! The public [`boolean`](fn@crate::boolean) entry runs the arrangement engine
+//! ([`crate::arrangement`]), and the engine calls [`assemble_fuse_cut`] and
+//! [`unify_coplanar_faces`] here to build and clean the shells; nothing here calls the engine.
 
 use crate::combinatorics::{self, NodeId, Wall};
 use crate::draft::*;
@@ -36,9 +36,10 @@ pub(crate) use topology::*;
 /// **Which faces make one output solid — decided before any topology exists.**
 ///
 /// A result solid is a *material* component plus the cavity components nested in it, and that
-/// grouping is the unit [`reconstruct`] mints vertex and edge handles per: two faces in one group
-/// may share a handle, two faces in different groups never do. Every question asked here is asked
-/// of `LocalFace`/`NodeId`/`jd` alone — none of it reads the arena — which is what lets it run first.
+/// grouping is the unit [`reconstruct`](fn@reconstruct) mints vertex and edge handles per: two
+/// faces in one group may share a handle, two faces in different groups never do. Every question
+/// asked here is asked of `LocalFace`/`NodeId`/`jd` alone — none of it reads the arena — which is
+/// what lets it run first.
 ///
 /// **The group, not the component, is the right unit.** A cavity that touches its host's outer
 /// shell is one solid with a pinch, and a pinch is counted on *handles* ([`check_result_topology`],
