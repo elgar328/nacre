@@ -178,8 +178,6 @@ impl WitnessPoint {
         //
         // **The error is measured of `c` and `s` — the values that reach `coord_approx` — not
         // of the angle**, so it bounds the number this kernel stores, whatever route produced it.
-        // Measured here rather than taken as a constant: a platform whose trig lands further out
-        // reports a bigger number.
         let (c, s) = angle.cos_sin_f64();
         let (dc, ds) = angle.cos_sin_error_of(c, s);
         let (c, s) = (Bounded::new(c, dc), Bounded::new(s, ds));

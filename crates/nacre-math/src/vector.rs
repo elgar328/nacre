@@ -72,8 +72,8 @@ impl<const D: usize> Vector<D> {
     /// Returns `None` iff `norm_squared` is not positive. Ordered `> 0.0` (not
     /// `== 0.0`) both avoids `clippy::float_cmp` and reads as "only normalize a
     /// positive-length vector". Note: components so small that `norm_squared`
-    /// underflows to `0.0` also yield `None` — out of scope for M1's finite,
-    /// normally-scaled inputs.
+    /// underflows to `0.0` also yield `None` — outside the finite,
+    /// normally-scaled inputs in scope.
     #[inline]
     pub fn normalize(self) -> Option<Vector<D>> {
         let n2 = self.norm_squared();

@@ -51,7 +51,7 @@ fn a_seam_point_lands_on_the_rim() {
     let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
     assert_eq!(x, "1.41421356237309504880");
     // A wide square: `r = 5.000000000000001e-8` has a square no `Rat` holds, and the seam is
-    // its exact `r` again — the road a stated radius always took.
+    // its exact `r` again.
     let wide = Rat::from_decimal(5.000000000000001e-8).expect("in the window");
     assert!(
         wide.checked_mul(wide).is_none(),
@@ -361,8 +361,8 @@ fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {
 
 /// A value below `2⁻¹⁰²²` is still a value — the scale must not underflow before it does.
 ///
-/// `2⁻¹⁰⁰⁰` is an ordinary normal `f64`; an earlier spelling answered `0.0` for it and for
-/// every subnormal, because `2f64.powi(-k)` flushed before the product did.
+/// `2⁻¹⁰⁰⁰` is an ordinary normal `f64`; a scale built as `2f64.powi(-k)` would answer `0.0` for it
+/// and for every subnormal, flushing before the product does.
 #[test]
 fn a_tiny_rational_still_names_its_f64() {
     let one = BigInt::from(1);
@@ -393,9 +393,9 @@ fn the_big_road_agrees_with_the_rat_road() {
             n += 1;
         }
     }
-    // **The tie, which a random sweep can never reach.** At `2⁵² + ½` both neighbours
-    // are representable, so this is where a tie rule is visible — and where half-away-from-zero
-    // (what this shipped first) disagreed with the road the point cache is built on.
+    // **The tie, which a random sweep can never reach.** At `2⁵² + ½` both neighbours are
+    // representable, so this is where a tie rule is visible — and where half-away-from-zero would
+    // disagree with the road the point cache is built on.
     for e in [50u32, 51, 52, 53] {
         let two_e = 1i128 << e;
         let (num, den) = (two_e * 2 + 1, 2i128);

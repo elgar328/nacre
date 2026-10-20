@@ -13,10 +13,10 @@ use super::*;
 /// this is an independent oracle
 /// and not the two routes agreeing with each other.
 ///
-/// The private narrow route still declines here (asserted), so the fixture keeps proving
+/// The private narrow route declines here (asserted), so the fixture keeps proving
 /// the fallback is *reached*, not merely present.
 #[test]
-fn an_overflowing_intermediate_no_longer_costs_the_answer() {
+fn an_overflowing_intermediate_does_not_cost_the_answer() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let rows = [
         [r(1, 1 << 53), r(0, 1), r(0, 1), r(-1, 1 << 53)],
@@ -37,7 +37,7 @@ fn an_overflowing_intermediate_no_longer_costs_the_answer() {
     assert_eq!(
         three_planes_rat(rows),
         Some([Rat::from_int(1); 3]),
-        "the point fits `Rat`, and the solve now says so"
+        "the point fits `Rat`, and the solve says so"
     );
     let names = rows.map(PlaneName::Narrow);
     let found = three_planes_big([&names[0], &names[1], &names[2]])

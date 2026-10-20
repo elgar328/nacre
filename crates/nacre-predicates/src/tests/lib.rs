@@ -50,7 +50,7 @@ fn orient3d_coplanar_is_exactly_zero() {
 }
 
 // Smoke test: the adaptive-arithmetic primitives the indirect predicates
-// (M5-a) will be built from are exposed and usable. `two_product` / `two_sum`
+// are built from are exposed and usable. `two_product` / `two_sum`
 // return `[lo, hi]` (tail first) with `hi` the rounded result and `hi + lo`
 // the exact value — the roundoff tail is what makes exact expansions possible.
 #[test]
@@ -118,10 +118,10 @@ proptest! {
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
     /// The two machines agree on the sign of a determinant: `det3`'s exact
-    /// expansion and `det3_sign`'s adaptive `orient3d`. Since `det3_sign` is now
+    /// expansion and `det3_sign`'s adaptive `orient3d`. Since `det3_sign` is
     /// *defined* as `sgn(orient3d(..))`, comparing it to `orient3d` directly would
     /// be a tautology — so this compares it to the **expansion**, which `cramer`
-    /// still depends on. Two paths, one sign.
+    /// depends on. Two paths, one sign.
     #[test]
     fn prop_det3_sign_matches_the_expansion(
         m in prop::array::uniform3(prop::array::uniform3(-1e6f64..1e6)),
@@ -346,7 +346,7 @@ proptest! {
     /// triple's planes negates `D`, so this also says the comparator is invariant
     /// under the representation.
     ///
-    /// It does **not** guard the `sign(Da)·sign(Db)` factor, which was measured: with
+    /// It does **not** guard the `sign(Da)·sign(Db)` factor — measured: with
     /// two descriptions of one point the numerator is exactly zero, and zero times a
     /// wrong sign is still zero. `opposite_denominators_keep_the_order` below is what
     /// catches that, along with both cross-checks against the i128 and materialized
@@ -415,7 +415,7 @@ proptest! {
     }
 }
 
-// ---- ray / segment vs triangle (M5-d1) ----
+// ---- ray / segment vs triangle ----
 //
 // Reference triangle in z = 0, wound CCW so its right-hand normal is +z:
 //   v0 = (0,0,0), v1 = (1,0,0), v2 = (0,1,0).
@@ -485,7 +485,7 @@ fn segment_crossing_and_contacts() {
     );
     // Parallel-coplanar to edge v0-v1 (both in plane y = 0) but above the
     // triangle's plane: no plane crossing ⇒ Miss, NOT a false Degenerate
-    // (the ordering fix that matters for axis-aligned input).
+    // (the ordering that matters for axis-aligned input).
     assert_eq!(
         segment_triangle_cross([0.2, 0.0, 0.5], [0.8, 0.0, 0.5], T0, T1, T2),
         SegCross::Miss
@@ -544,7 +544,7 @@ proptest! {
 
 // ---- the filters of indirect_plane_side and indirect_cmp_coord ----
 
-/// Both halves of each new filter: a clear sign is answered here, and an exact zero — a point
+/// Both halves of each filter: a clear sign is answered here, and an exact zero — a point
 /// on the plane, two points sharing a coordinate — is declined to the expansions.
 #[test]
 fn the_side_and_cmp_filters_answer_a_clear_sign_and_decline_a_zero() {

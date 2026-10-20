@@ -101,12 +101,12 @@ mod strip {
         assert!(!point_on_plane_exact(&wall(12), &off));
     }
 
-    /// **The one case the `U = 0` early answer exists for, and the only one that measures
-    /// it.** On a plane that clears the axis the strip is *empty*, so `U² > (negative)` holds
-    /// even at `U = 0` — and a "which side" read off a zero would **invent** one. Removing the
-    /// early answer makes this say `Minus` for a point that has no side at all; every other
-    /// test in this module stays green through that change (measured), which is why it is
-    /// written out rather than assumed to be covered.
+    /// **The one case the `U = 0` early answer exists for, and the only one that measures it.** On
+    /// a plane that clears the axis the strip is *empty*, so `U² > (negative)` holds even at
+    /// `U = 0` — and a "which side" read off a zero would **invent** one. Removing the early answer
+    /// would make this say `Minus` for a point that has no side at all; every other test in this
+    /// module would stay green through that change (measured), which is why it is written out
+    /// rather than assumed to be covered.
     #[test]
     fn a_point_with_no_side_is_never_given_one() {
         assert_eq!(side(&wall(14), &at(8, 14, 0), 8), StripSide::Inside);

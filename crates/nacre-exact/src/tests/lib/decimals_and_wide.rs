@@ -43,7 +43,7 @@ fn a_shortest_decimal_realizes_back_to_its_own_f64() {
 /// band: subnormals, `MIN_POSITIVE`, `MAX`, and the whole exponent range in between.
 /// Where the power of ten leaves i128 the answer is `None` and the caller keeps its
 /// f64 — what must never happen is a `Some` that realizes back to a *different*
-/// number, because that would move a coordinate this cell has no business moving.
+/// number, because that would move a coordinate `from_decimal` has no business moving.
 #[test]
 fn from_decimal_never_lies_anywhere_in_the_finite_range() {
     let mut state = 0x9e37_79b9_7f4a_7c15u64;
@@ -110,10 +110,10 @@ fn the_decimal_window_is_wide_and_its_edges_are_where_they_should_be() {
 
 /// The ends of the `i128` range, where the two operands' bounds differ.
 ///
-/// `i128::MIN.unsigned_abs()` is `2¹²⁷` **exactly**, one past what the denominator
-/// may be — an asymmetry easy to assert away and, when it was, a debug-only panic
-/// on a value the algorithm handles correctly. The answers here are exact powers of
-/// two and their neighbours, so they can be written down rather than approximated.
+/// `i128::MIN.unsigned_abs()` is `2¹²⁷` **exactly**, one past what the denominator may be — an
+/// asymmetry easy to assert away, and asserting it away is a debug-only panic on a value the
+/// algorithm handles correctly. The answers here are exact powers of two and their neighbours, so
+/// they can be written down rather than approximated.
 #[test]
 fn the_ends_of_the_range_realize_exactly() {
     assert_eq!(Rat::from_int(i128::MIN).to_f64(), -(2f64.powi(127)));
@@ -336,11 +336,11 @@ proptest! {
             let e = Rat::try_from_f64(y).and_then(|yr| r.checked_sub(yr))?;
             if e < zero { zero.checked_sub(e) } else { Some(e) }
         };
-        // The *check* has a range, and it is narrower than the generator: comparing exactly
-        // needs `r`'s denominator times `q`'s power of two, which for a small enough value
-        // leaves `i128` (measured: `n = 1, d = 500930446045` — 2^39 · 2^91). The two
-        // neighbours below have always skipped on the same limit; `here` said `expect` and
-        // so turned a limit of the instrument into a failure of the thing measured.
+        // The *check* has a range, and it is narrower than the generator: comparing exactly needs
+        // `r`'s denominator times `q`'s power of two, which for a small enough value leaves `i128`
+        // (measured: `n = 1, d = 500930446045` — 2^39 · 2^91). The two neighbours below skip on the
+        // same limit, and so does `here`: an unguarded `expect` would turn a limit of the
+        // instrument into a failure of the thing measured.
         prop_assume!(err(q).is_some());
         let here = err(q).expect("just assumed representable");
         for nb in [f64::from_bits(q.to_bits() + 1), f64::from_bits(q.to_bits() - 1)] {
@@ -362,24 +362,23 @@ proptest! {
     /// derivation, not a call back into the code under test — and compared on every input it
     /// can answer.
     ///
-    /// **The width is drawn, not fixed**, because both halves of the range have to be
-    /// visited: at `bits ≈ 30` the checked cross answers everything (so the two must agree),
-    /// past `bits ≈ 63` its products leave `i128` and it falls silent (so the total one is
-    /// alone). Measured with a counter before this spelling settled — a fixed narrow range
-    /// left the oracle answering 100% of the time (differential, no coverage of the new
-    /// behaviour) and a fixed wide one left it silent 100% of the time (coverage, no
-    /// differential). Either way the test would have been half a test.
+    /// **The width is drawn, not fixed**, because both halves of the range have to be visited: at
+    /// `bits ≈ 30` the checked cross answers everything (so the two must agree), past `bits ≈ 63`
+    /// its products leave `i128` and it falls silent (so the total one is alone). Measured with a
+    /// counter: a fixed narrow range would leave the oracle answering 100% of the time
+    /// (differential, no coverage of what only the total one answers) and a fixed wide one would
+    /// leave it silent 100% of the time (coverage, no differential) — either way half a test.
     #[test]
     fn the_total_cross_answers_what_the_checked_one_did(
         m in 0u32..40,
         xs in prop::array::uniform6(-(1i128 << 20)..(1i128 << 20)),
         ds in prop::array::uniform6(1i128..(1i128 << 20)),
     ) {
-        // The denominator's width is what decides whether the checked route survives, and
-        // it is **drawn** so both halves of the range are visited. The scale is a power of
-        // **three**, not two: scaling numerator and denominator by the same power of two
-        // reduces straight back out (measured — the first spelling did exactly that and left
-        // every case narrow), so the fraction has to be widened where the gcd cannot undo it.
+        // The denominator's width is what decides whether the checked route survives, and it is
+        // **drawn** so both halves of the range are visited. The scale is a power of **three**, not
+        // two: scaling numerator and denominator by the same power of two reduces straight back out
+        // (measured: every case would stay narrow), so the fraction has to be widened where the gcd
+        // cannot undo it.
         let scale = 3i128.saturating_pow(m);
         let r = |i: usize| {
             Rat::new(xs[i], (2 * ds[i] + 1).saturating_mul(scale)).unwrap()
@@ -426,13 +425,12 @@ proptest! {
         rn in 1i128..100,
         rd in 1i128..100_000,
     ) {
-        // The generator is aimed at the **straddle**: an integer normal through the
-        // origin, a point a hair off the plane (denominators up to 2²⁴), and a radius of
-        // comparable size — so the answer is genuinely `Negative` about as often as
-        // `Positive`. A generator whose points sit far outside every radius would compare
-        // two implementations that always say `Positive`, which is how the first spelling
-        // of this test passed while the scale-dropping defect was installed (measured: the
-        // probe went green here and was caught only by a fixture two crates away).
+        // The generator is aimed at the **straddle**: an integer normal through the origin, a point
+        // a hair off the plane (denominators up to 2²⁴), and a radius of comparable size — so the
+        // answer is genuinely `Negative` about as often as `Positive`. A generator whose points sit
+        // far outside every radius would compare two implementations that always say `Positive`,
+        // and would pass with a scale-dropping defect installed — measured: only a fixture two
+        // crates away would catch it.
         let coeffs: [Rat; 4] = [
             Rat::from_int(ns[0]),
             Rat::from_int(ns[1]),
@@ -565,10 +563,9 @@ proptest! {
         // And the wide one, whenever it answers narrowly at all, answers about a plane
         // these points are actually on — checked in the rationals, no tolerance.
         //
-        // **The residual can overflow even when the name and the points both fit**, and
-        // this test found that by asserting it could not. `c · p` multiplies a canonical
-        // coefficient by a point coordinate, so it needs the *sum* of their widths — which is
-        // exactly the population `Model::push_plane` cannot verify either. An
+        // **The residual can overflow even when the name and the points both fit**. `c · p`
+        // multiplies a canonical coefficient by a point coordinate, so it needs the *sum* of their
+        // widths — which is exactly the population `Model::push_plane` cannot verify either. An
         // unevaluable check is not a failed one, here as there: skip it, never fail on it.
         if let Some(w) = wide.as_ref().and_then(|n| n.narrow()) {
             for p in [a, b, c] {
@@ -718,12 +715,12 @@ proptest! {
     #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
-    /// Totality: wherever the integer core answers `Narrow`, [`three_planes_rat`] answers
-    /// the same. A **wiring** lock, stated as such: after the refactor both routes
-    /// converge on `three_planes_int`, so this pins the `.or_else` plumbing (lift,
-    /// `narrow()` return) rather than serving as an independent oracle — that role belongs
-    /// to `an_overflowing_intermediate_no_longer_costs_the_answer`'s hand-known point and
-    /// to the agreement direction the ops-side `point_width` invariant keeps.
+    /// Totality: wherever the integer core answers `Narrow`, [`three_planes_rat`] answers the same.
+    /// A **wiring** lock, stated as such: `three_planes_big` and [`three_planes_rat`]'s fallback
+    /// both run `three_planes_int`, so this pins the `.or_else` plumbing (lift, `narrow()` return)
+    /// rather than serving as an independent oracle — that role belongs to
+    /// `an_overflowing_intermediate_does_not_cost_the_answer`'s hand-known point and to the
+    /// agreement direction the ops-side `point_width` invariant keeps.
     #[test]
     fn the_solve_answers_wherever_the_answer_is_narrow(
         rows in proptest::array::uniform3(proptest::array::uniform4((-9i128..=9, 1u32..=60))),
@@ -766,9 +763,8 @@ fn the_width_meter_reports_a_point_no_rat_can_hold() {
     assert_eq!(found.narrow(), None);
 }
 
-/// **A canonical answer wider than `i128` is a name now, not a `None`** — and two
-/// statements of that plane are one value. The
-/// interning consequence is locked on the model side
+/// **A canonical answer wider than `i128` is a name, not a `None`** — and two statements of that
+/// plane are one value. The interning consequence is locked on the model side
 /// (`a_wide_plane_interns_but_opens_no_narrow_shortcut` in nacre-topo).
 #[test]
 fn a_plane_too_wide_for_i128_is_named_wide() {

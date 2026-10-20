@@ -15,8 +15,7 @@
 //! **Pure numeric layer.** Everything here
 //! takes plane coefficients and coordinates as plain `[f64; N]` arrays — never a
 //! kernel `Handle`/`Surface`. This keeps the crate free of `nacre-geom`/`-topo`
-//! (no `geom → predicates → geom` cycle) and extractable as a standalone crate
-//! (the goal of being Rust's first open-source indirect-predicates crate).
+//! (no `geom → predicates → geom` cycle) and extractable as a standalone crate.
 //! Callers (`nacre-geom`) convert their types to arrays at the boundary.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -27,7 +26,7 @@
 /// Robust to rounding (adaptive precision), so the sign is always exact.
 ///
 /// A thin wrapper over [`geometry_predicates::orient3d`] — the seam where nacre
-/// pins the base and the sign convention (which propagates to all M5 in/out
+/// pins the base and the sign convention (which propagates to all in/out
 /// classification).
 #[inline]
 pub fn orient3d(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
@@ -63,7 +62,7 @@ pub fn incircle(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
 /// A Shewchuk **nonoverlapping expansion**: a list of f64 components whose exact
 /// sum is the represented value, most-significant last. Built from
 /// [`geometry_predicates`]' adaptive-arithmetic primitives, it lets us evaluate
-/// determinant polynomials *exactly* — the value the indirect predicates (M5-a2)
+/// determinant polynomials *exactly* — the value the indirect predicates
 /// combine (a mere sign would not compose).
 ///
 /// The value is always exact — the expansions carry every bit. The *sign* is what
@@ -157,7 +156,7 @@ impl Expansion {
 /// an [`Expansion`]. Cofactor expansion along the first row:
 /// `m₀₀·(m₁₁m₂₂ − m₁₂m₂₁) − m₀₁·(m₁₀m₂₂ − m₁₂m₂₀) + m₀₂·(m₁₀m₂₁ − m₁₁m₂₀)`.
 ///
-/// This is the building block of the M5 indirect predicates: a three-plane
+/// This is the building block of the indirect predicates: a three-plane
 /// implicit point is `(Dx/D, Dy/D, Dz/D)` (Cramer), and each of `D, Dx, Dy, Dz`
 /// is a 3×3 determinant whose exact *value* the indirect `orient3d` combines.
 pub fn det3(m: [[f64; 3]; 3]) -> Expansion {
@@ -269,9 +268,9 @@ fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
 ///
 /// **Why it exists** (measured): the exact route builds two Cramer expansions and a degree-six
 /// product on every call — `≈ 2.7 µs`, against the filtered certified route's `≈ 1 µs` — and it
-/// allocates, so under rayon the workers queue on the allocator. It was the largest single judging
-/// cost of the axis-aligned fold (460 ms of about 1 s, one thread); with this filter that fold runs
-/// in about 70% of its time.
+/// allocates, so under rayon the workers queue on the allocator. Without the filter, the exact
+/// route would be the largest single judging cost of the axis-aligned fold (460 ms of about 1 s,
+/// one thread).
 #[inline]
 fn indirect_cmp_coord_filter(a: &ThreePlane, b: &ThreePlane, axis: usize) -> Option<i8> {
     let (na, da, na_mag, da_mag) = cramer_val(a);
@@ -392,9 +391,9 @@ fn indirect_plane_side_exact(p: &ThreePlane, c: [f64; 4]) -> i8 {
 /// | `D` | `≈ 5u` | `32·U` | 6× |
 /// | `S = c·N + c₃·D` | `≈ 5u + u + 3u = 9u` | `64·U` | 7× |
 ///
-/// **Why it exists** (measured): without it every call builds expansions, and once an unmoved
-/// plane's `orient3d` asked its fourth plane by coefficients the axis-aligned fold ran **14×**
-/// slower; with it 21.8 M calls of that fold decided here and none reached the expansions.
+/// **Why it exists** (measured): an unmoved plane's `orient3d` asks its fourth plane by
+/// coefficients, and without the filter every such call builds expansions — the axis-aligned fold
+/// would run **14×** slower; with it, that fold's calls decide here rather than in the expansions.
 #[inline]
 fn indirect_plane_side_filter(p: &ThreePlane, c: [f64; 4]) -> Option<i8> {
     let (num, d, num_mag, d_mag) = cramer_val(p);

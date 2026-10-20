@@ -78,8 +78,6 @@ impl Angle {
                 .mul(&pi, prec, HP_RM)
                 .div(&d180, prec, HP_RM);
             let u = Mag::pow2(-(prec as i64));
-            // Relative error of the argument: the two `i128 → f64` conversions, then four
-            // rounded high-precision operations (the division, the product, the division, and π).
             // Four rounded operations build the argument (the division, the product, the
             // division, and π itself). The integers contribute nothing — they go in exactly.
             let rel = u.times(Mag::of(4.0));
@@ -97,7 +95,7 @@ impl Angle {
 
     /// Exact `(cos, sin)` as rationals — `Some` only for the quadrantal angles
     /// (0/90/180/270°), the sole angles where *both* are rational (`{0, ±1}`, by
-    /// Niven); `None` otherwise, so the caller falls to the f64/dd realization.
+    /// Niven); `None` otherwise, so the caller falls to the correctly rounded realization.
     ///
     /// The values `0`/`±1` are exact in f64 too, so this returns `Rat` not for
     /// representability but to keep a rotated *point* exact: `x·cos − y·sin` must
@@ -129,11 +127,11 @@ impl Angle {
     ///
     /// **No libm.** `(deg.to_f64() * PI / 180.0).cos()` has an error nobody contracts: neither Rust
     /// nor any platform promises an accuracy for `f64::cos`, measured here at `< 5ε`. Worse, it is
-    /// not a function of the angle — `sin 27°`
-    /// came out one ulp apart between a debug and a release build, and between two call sites
-    /// *within one release build*, because LLVM evaluates a visible constant angle at compile time
-    /// and its answer differs from the runtime library's. Rounding the high-precision realization
-    /// instead makes the result **unique**: the same bits on every platform, profile and call site.
+    /// not a function of the angle — `sin 27°` would come out one ulp apart between a debug and a
+    /// release build, and between two call sites *within one release build*, because LLVM evaluates
+    /// a visible constant angle at compile time and its answer differs from the runtime library's.
+    /// Rounding the high-precision realization instead makes the result **unique**: the same bits
+    /// on every platform, profile and call site.
     ///
     /// **The 90°-family branch is not an optimization, it is what makes this terminate.**
     /// `cos 90°` is exactly `0`, so its interval straddles zero and the two ends never round to the

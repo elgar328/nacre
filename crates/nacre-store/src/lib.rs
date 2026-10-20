@@ -9,10 +9,9 @@
 //! nothing of geometry or topology, and everything above it — `nacre-topo`'s arenas,
 //! `nacre-ops`, `nacre-validate`, `nacre-step` — names handles freely.
 //!
-//! (The older note here gave a different reason — that `nacre-geom` would need `Handle`
-//! for a `Curve::Intersection` variant. It will not: a handle names an arena entry, and
-//! the surface arena holds the **truth**, a `nacre-topo` type. A crate below topo cannot
-//! name it, so geom stays `Handle`-free.)
+//! `nacre-geom` stays `Handle`-free even so: a curve-intersection variant cannot hold one, because
+//! a handle names an arena entry and the surface arena holds the **truth**, a `nacre-topo` type,
+//! which a crate below topo cannot name.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use core::cmp::Ordering;
@@ -154,10 +153,9 @@ impl<T> Store<T> {
     /// each of the log's indices onto the model it is building — this is that re-anchoring.
     ///
     /// **It does not weaken [`Store::get`]'s guard.** The handle returned is this store's by
-    /// construction, so nothing crosses models here; and the ability itself is not new —
-    /// `iter().nth(i)` already mints exactly this handle. What this adds is a name, `O(1)`,
-    /// an `Option` where `nth` gives one for a different reason, and somewhere to write the
-    /// contract down.
+    /// construction, so nothing crosses models here; and the ability itself is `iter().nth(i)`'s —
+    /// it mints exactly this handle. What this adds is a name, `O(1)`, an `Option` where `nth`
+    /// gives one for a different reason, and somewhere to write the contract down.
     ///
     /// **The one legitimate shape is "re-anchor a log's index onto the model I am building".**
     /// Reaching for this because a cross-store panic fired is hiding the bug it caught. (The

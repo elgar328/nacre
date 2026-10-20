@@ -1397,7 +1397,7 @@ fn a_frame_s_tol_bounds_its_own_realization() {
             }
         }
     }
-    eprintln!("[cip] worst frame tol usage: {worst:.3} of the bound ({worst_at})");
+    eprintln!("[frame tol] worst frame tol usage: {worst:.3} of the bound ({worst_at})");
     // A bound nothing ever approaches is a bound nobody derived — the rotation tests hold
     // themselves to the same reading.
     assert!(worst > 1e-6, "the frame tol is never approached: {worst:e}");
@@ -1479,7 +1479,7 @@ fn a_wide_frame_s_tol_bounds_its_own_realization() {
             }
         }
     }
-    eprintln!("[cip] worst wide-frame tol usage: {worst:.3} of the bound ({worst_at})");
+    eprintln!("[frame tol] worst wide-frame tol usage: {worst:.3} of the bound ({worst_at})");
     assert!(
         worst > 1e-6,
         "the wide-frame tol is never approached: {worst:e}"

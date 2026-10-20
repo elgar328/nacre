@@ -277,7 +277,7 @@ mod name_from_meets {
         #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
             proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
         ))]
-        /// All-narrow meets: the new derivation answers exactly what [`plane_name_exact`]
+        /// All-narrow meets: [`plane_name_from_meets`] answers exactly what [`plane_name_exact`]
         /// answers — the independent oracle for the lift being a pure generalization.
         #[test]
         fn narrow_meets_agree_with_the_point_derivation(

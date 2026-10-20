@@ -97,9 +97,9 @@ fn handle_at_past_the_end_is_none() {
     assert_eq!(s.handle_at(u32::MAX), None);
 }
 
-/// **The new door grants no new power** — `iter().nth(i)` already minted this handle, so
-/// `handle_at` is a name and an `O(1)` path, not an escape hatch. If these two ever
-/// disagree, one of them is lying about which store it belongs to.
+/// **`handle_at` grants no power `iter().nth(i)` lacks** — `nth` mints the same handle, so
+/// `handle_at` is a name and an `O(1)` path, not an escape hatch. If these two ever disagree, one
+/// of them is lying about which store it belongs to.
 #[test]
 fn handle_at_agrees_with_iter() {
     let mut s: Store<char> = Store::new();
@@ -140,7 +140,7 @@ proptest! {
         proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
     ))]
     /// `handle_at` and `iter` agree over arbitrary stores — the property form of
-    /// `handle_at_agrees_with_iter`, which is what makes «no new power» a claim about the
+    /// `handle_at_agrees_with_iter`, which is what makes «no power `nth` lacks» a claim about the
     /// API rather than about one fixture.
     #[test]
     fn handle_at_agrees_with_iter_everywhere(items in prop::collection::vec(any::<i64>(), 0..64)) {

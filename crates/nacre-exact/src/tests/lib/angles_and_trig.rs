@@ -40,9 +40,9 @@ fn many_small_steps_close_to_zero() {
     assert_eq!(a, Angle::from_deg(Rat::from_int(0)).unwrap());
 }
 
-/// The angle value stays exact, and its cos/sin realization is f64 — but a *correctly rounded*
-/// one, so the irrational-realization boundary now costs at most half an ulp rather than
-/// whatever the platform's libm happened to do.
+/// The angle value stays exact, and its cos/sin realization is f64 — but a *correctly rounded* one,
+/// so the irrational-realization boundary costs at most half an ulp rather than whatever a
+/// platform's libm does.
 ///
 /// **`cos 45°` is the case to look at**: `√2/2` cannot be an f64, so the realization is
 /// genuinely lossy, and it must land on the nearest f64 to the truth. Checked by asking a far
@@ -72,8 +72,8 @@ fn realization_is_f64_while_angle_stays_exact() {
 /// A 90°-family angle yields exact rational cos/sin, so rotating a rational
 /// point stays exact (tol 0): `(x, y)` rotated 90° is `(-y, x)`. A 45° angle
 /// has no exact rational cos/sin (√2/2), so it returns `None` and would fall
-/// to the f64/dd realization. Note the f64 path is *not* exact here:
-/// `cos 90°` realizes to ~6e-17, not `0`.
+/// to the correctly rounded realization. Note the high-precision path is *not*
+/// exact here: `cos 90°` realizes to ~2⁻¹²⁸, not `0`.
 #[test]
 fn exact_cos_sin_only_for_quadrantal_angles() {
     let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
@@ -106,9 +106,9 @@ fn exact_cos_sin_only_for_quadrantal_angles() {
 /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0`, and the exactly-representable
 /// values Niven allows off that family come out exact too.
 ///
-/// **`cos 60° == 0.5` is the visible proof that libm left.** `1/2` is one of the three
-/// rational values a rational-degree cosine can take, and it *is* an f64 — but reaching it
-/// through `(60.0 * PI / 180.0).cos()` does not land on it. Rounding the high-precision value
+/// **`cos 60° == 0.5` is the visible proof that the realization is not libm's.** `1/2` is one of
+/// the three rational values a rational-degree cosine can take, and it *is* an f64 — but reaching
+/// it through `(60.0 * PI / 180.0).cos()` does not land on it. Rounding the high-precision value
 /// does.
 #[test]
 fn cos_sin_f64_is_exact_where_the_true_value_is_representable() {
@@ -133,10 +133,10 @@ fn cos_sin_f64_is_exact_where_the_true_value_is_representable() {
 /// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.
 /// A nonzero here would not fail loudly; it would quietly move those models.
 ///
-/// Everything else must report *something* — but only where the true value is *not*
-/// representable. Since the realization became correctly rounded, `cos 60°` really is `0.5`
-/// exactly, so the corpus below has to avoid the four angles where that happens or it would be
-/// asserting a nonzero error that does not exist.
+/// Everything else must report *something* — but only where the true value is *not* representable.
+/// The realization is correctly rounded, so `cos 60°` really is `0.5` exactly, and the corpus below
+/// has to avoid the four angles where that happens or it would be asserting a nonzero error that
+/// does not exist.
 #[test]
 fn only_the_quadrantal_family_realizes_exactly() {
     let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
@@ -159,7 +159,7 @@ fn only_the_quadrantal_family_realizes_exactly() {
             dc > 0.0 && ds > 0.0,
             "{n}/{d} deg claimed an exact realization"
         );
-        // ε-scale: a bound this large would mean the measurement, not the platform, is wrong.
+        // ε-scale: a bound this large would mean the measurement is wrong.
         assert!(
             dc < 64.0 * f64::EPSILON && ds < 64.0 * f64::EPSILON,
             "{n}/{d} deg: {dc:e}"
@@ -350,10 +350,9 @@ fn apply_point_exact_for_quadrantal() {
     );
 }
 
-/// The arbitrary-precision cos/sin realization must be far more accurate
-/// than any f64/double-double — the accuracy gate astro-float passes and the
-/// double-double `twofloat` failed (its trig degraded to ~1e-16 near zero-
-/// crossings). Error at rational angles must beat `2^-100` (~1e-30).
+/// The arbitrary-precision cos/sin realization must be far more accurate than any f64/double-double
+/// — the accuracy gate astro-float passes and the double-double `twofloat` would not (its trig
+/// degrades to ~1e-16 near zero-crossings). Error at rational angles must beat `2^-100` (~1e-30).
 #[test]
 fn high_precision_trig_meets_gate() {
     const GATE_EXP: i32 = -100; // 2^-100 ≈ 7.9e-31
@@ -378,7 +377,9 @@ fn high_precision_trig_meets_gate() {
             worst = worst.max(es);
         }
     }
-    eprintln!("[H1.5] astro-float {GT_PREC}-bit worst cos/sin error at rational angles: 2^{worst}");
+    eprintln!(
+        "[trig hp] astro-float {GT_PREC}-bit worst cos/sin error at rational angles: 2^{worst}"
+    );
 }
 
 /// A large angle normalizes in one step, not one step per turn.
@@ -411,10 +412,10 @@ fn a_huge_angle_normalizes_without_counting_turns() {
 
 /// **The memo memoizes, and its key is the *value* of the angle rather than its spelling.**
 ///
-/// Two failure modes, and neither shows up as a wrong answer — [`Angle::cos_sin_hp`] is a
-/// pure function either way, so a broken memo is only slow. That is exactly why it needs a
-/// test: a rotated boolean spent 22% of its time re-running Ziv's loop for angles it had
-/// already realized, and nothing but a measurement would say so.
+/// Two failure modes, and neither shows up as a wrong answer — [`Angle::cos_sin_hp`] is a pure
+/// function either way, so a broken memo is only slow. That is exactly why it needs a test: a
+/// broken memo would have a rotated boolean spend 22% of its time re-running Ziv's loop for angles
+/// it has already realized, and nothing but a measurement would say so.
 ///
 /// - **It does not memoize** (a rewrite drops the lookup): asking twice would insert twice.
 /// - **The key fragments**: `90/1` and `180/2` are the same angle. If they hashed apart the
@@ -557,7 +558,7 @@ fn the_trig_bound_holds_against_a_far_deeper_realization() {
         }
     }
     for (prec, (slack, at)) in &worst {
-        eprintln!("[cip] {prec}-bit trig bound slack: 2^{slack}  ({at})");
+        eprintln!("[trig bound] {prec}-bit trig bound slack: 2^{slack}  ({at})");
     }
     for (&prec, (slack, at)) in &worst {
         if prec % 64 == 0 {
@@ -644,7 +645,7 @@ fn the_inverse_sqrt_bound_holds_against_a_far_deeper_realization() {
         }
     }
     for (prec, (slack, at)) in &worst {
-        eprintln!("[cip] {prec}-bit inverse-sqrt bound slack: 2^{slack}  ({at})");
+        eprintln!("[inverse-sqrt bound] {prec}-bit inverse-sqrt bound slack: 2^{slack}  ({at})");
     }
     for (prec, (slack, at)) in &worst {
         assert!(
@@ -685,9 +686,8 @@ fn an_axis_aligned_frame_needs_no_arbitrary_precision() {
     }
 }
 
-/// **Correctly rounded, which is what keeps debug and release identical** — the failure this
-/// crate already paid for once in the trig path. Checked against a realization deep enough
-/// that its own rounding cannot reach the 53rd bit.
+/// **Correctly rounded, which is what keeps debug and release identical.** Checked against a
+/// realization deep enough that its own rounding cannot reach the 53rd bit.
 #[test]
 fn inv_sqrt_f64_lands_on_the_nearest_f64() {
     // Deltas, not absolute counts: the counter is a `thread_local` and the harness may have run
@@ -705,7 +705,7 @@ fn inv_sqrt_f64_lands_on_the_nearest_f64() {
     }
     let after = LADDER_CLIMBED.with_borrow(|c| *c);
     let (at_256, past_256) = (after.0 - before.0, after.1 - before.1);
-    eprintln!("[cip] inverse-sqrt climbs: {at_256} decided at 256, {past_256} past it");
+    eprintln!("[inverse-sqrt] inverse-sqrt climbs: {at_256} decided at 256, {past_256} past it");
     // Measured: 128 bits decides every case here.
     assert_eq!(
         (at_256, past_256),
@@ -773,7 +773,7 @@ fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
         );
     }
     eprintln!(
-        "[cip] worst inverse-sqrt f64 realization error: 2^{} ({})",
+        "[inverse-sqrt] worst inverse-sqrt f64 realization error: 2^{} ({})",
         worst.0, worst.1
     );
 }
@@ -795,7 +795,7 @@ fn the_naive_f64_route_gets_the_last_bit_wrong() {
             }
         }
     }
-    eprintln!("[cip] naive 1/sqrt disagrees with the correctly rounded one: {differ}/{n}");
+    eprintln!("[inverse-sqrt] naive 1/sqrt disagrees with the correctly rounded one: {differ}/{n}");
     assert!(
         differ > 0,
         "the naive route agreed everywhere on {n} cases — either the correctly rounded path \

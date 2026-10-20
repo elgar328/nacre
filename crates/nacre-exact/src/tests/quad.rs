@@ -3,7 +3,7 @@
 //! Two instruments, deliberately different: the case fixtures carry **hand-derived** expected
 //! signs (the spec's ladder, exercised arm by arm), and the differential tests compare against
 //! a 512-bit astro-float realization — an oracle whose own resolving power is verified by a
-//! negative control before it is trusted ([instrument-decides-the-answer]).
+//! negative control before it is trusted.
 
 use super::*;
 use crate::HP_RM;
@@ -67,10 +67,10 @@ fn oracle_biquad(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Orient {
 
 fn bigfloat_sign(val: &BigFloat) -> Orient {
     const P: usize = 512;
-    // Never compare against a `from_f64(0.0)` zero: astro-float's comparison against zero
-    // is a known upstream issue (hit in this project before; measured here again — 0.414
-    // answered "< 0" against a from_f64 zero while `sign()` and a nonzero-eps comparison
-    // stayed consistent). The sign is read from `sign()` directly.
+    // Never compare against a `from_f64(0.0)` zero: astro-float's comparison against zero is a
+    // known upstream issue (measured here: 0.414 answers "< 0" against a from_f64 zero while
+    // `sign()` and a nonzero-eps comparison stay consistent). The sign is read from `sign()`
+    // directly.
     let eps = BigFloat::from_f64(1e-120, P);
     if val.abs().cmp(&eps).is_some_and(|s| s < 0) {
         return Orient::Zero;
@@ -81,8 +81,8 @@ fn bigfloat_sign(val: &BigFloat) -> Orient {
     }
 }
 
-/// The spec's case ladder, arm by arm, with hand-derived answers — including the two arms the
-/// plan reviews had to correct on paper (c = 0 first; the opposite-sign arm is a *product*).
+/// The spec's case ladder, arm by arm, with hand-derived answers — including `c = 0` first and the
+/// opposite-sign arm, which is a *product*.
 #[test]
 fn the_sign_cases_are_exhaustive() {
     let cases: [(Rat, Rat, Rat, Orient); 18] = [
@@ -268,10 +268,10 @@ fn the_oracle_actually_resolves_the_adversarial_gap() {
 
 #[test]
 fn arithmetic_agrees_with_the_oracle() {
-    // The differential runs against the **inputs' realizations** — the first spelling fed
-    // the result's own coefficients back to the oracle, which verifies `sign()` but lets a
-    // wrong `checked_mul` coefficient pass unseen (the shared-derivation trap): the oracle
-    // must derive the product from x and y, never from the thing under test.
+    // The differential runs against the **inputs' realizations** — feeding the result's own
+    // coefficients back to the oracle would verify `sign()` but let a wrong `checked_mul`
+    // coefficient pass unseen (the shared-derivation trap): the oracle must derive the product from
+    // x and y, never from the thing under test.
     const P: usize = 512;
     for a1 in -2..=2i128 {
         for b1 in -2..=2i128 {
@@ -355,7 +355,7 @@ mod props {
     }
 }
 
-// ──────────────────── plane · plane · cylinder (commit 2) ────────────────────
+// ──────────────────── plane · plane · cylinder ────────────────────
 
 /// The unit z-cylinder at the origin, radius 1 — the degenerate ladder's stage.
 fn zcyl() -> ([Rat; 3], [Rat; 3], crate::BigRat) {
@@ -677,16 +677,16 @@ fn the_radial_side_knows_its_shell() {
     }
 }
 
-/// **The radial side answers where the checked spelling had to give up.** A point and an axis
+/// **The radial side answers where a checked spelling has to give up.** A point and an axis
 /// whose coordinates carry ~10²³ denominators: `|w|²|m|²` alone leaves `i128`, so a checked
 /// `Option` spelling returns `None` and its callers reject for the arithmetic. The total one
 /// answers, and the answer is checked against the geometry by hand — the point sits `2·r` from
 /// the axis, so it is outside; one fifth of that puts it inside. The radius itself is a short
 /// decimal (the truth holds it squared, which a 16-digit decimal this small could not fit into
 /// `Rat`); the width is the **points'** own — each is a full-digit literal whose difference from
-/// the axis point still carries the 10²³ denominator, so `|w|²` leaves `i128` as before.
+/// the axis point carries the 10²³ denominator, so `|w|²` leaves `i128`.
 #[test]
-fn the_radial_side_answers_where_the_checked_one_could_not() {
+fn the_radial_side_answers_where_the_checked_one_cannot() {
     let wide = |x: f64| Rat::from_decimal(x).expect("in the decimal window");
     // A sub-micron cylinder on ẑ: radius 5e-8, axis through (1e-7, 1e-7).
     let o = [
@@ -728,7 +728,7 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
     assert_eq!(
         checked(&outside),
         None,
-        "the fixture must actually overflow the old road"
+        "the fixture must actually overflow the checked road"
     );
     assert_eq!(checked(&inside), None, "…on both witnesses");
     assert_eq!(
@@ -892,10 +892,10 @@ fn a_chord_meets_though_both_ends_are_outside() {
     assert!(seg_meets([-10, 1, 0], [10, 1, 0], 3));
 }
 
-/// **The case the whole check turns on.** The line passes within `r`, but the segment stops
-/// before it gets there — the perpendicular foot lies outside `[0,1]`. Ten edges of today's
-/// corpus are exactly this shape (a boss standing far away whose wall plane, extended, crosses a
-/// bore), and answering "meets" here would close the family opened for them.
+/// **The case the whole check turns on.** The line passes within `r`, but the segment stops before
+/// it gets there — the perpendicular foot lies outside `[0,1]`. This shape occurs in the corpus —
+/// the edges of a boss standing far away whose wall plane, extended, crosses a bore — and answering
+/// "meets" here would close the family opened for those edges.
 #[test]
 fn a_near_line_whose_foot_is_off_the_segment_does_not_meet() {
     // The line y = 1 passes 1 from the axis; this piece of it lives at x ∈ [20, 30].

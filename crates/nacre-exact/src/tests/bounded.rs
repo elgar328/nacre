@@ -6,10 +6,10 @@ fn resid(x: &BigFloat, y: &BigFloat, prec: usize) -> f64 {
     crate::bigfloat_upper_f64(&x.sub(y, prec, HP_RM))
 }
 
-/// The differential the two new interval operations are locked by: on **exact** inputs they
-/// must agree with the exact routes that already exist, and on **interval** inputs the radius
-/// must contain the truth — probed at the interval's endpoints, which is where a monotone
-/// function's image is extreme (so the corners are the whole question, not a sample).
+/// The differential the two interval operations are locked by: on **exact** inputs they must agree
+/// with the exact routes, and on **interval** inputs the radius must contain the truth — probed at
+/// the interval's endpoints, which is where a monotone function's image is extreme (so the corners
+/// are the whole question, not a sample).
 #[test]
 fn the_interval_division_agrees_with_the_exact_route_and_contains_the_corners() {
     let prec = 192;
@@ -98,26 +98,22 @@ fn big(x: f64, prec: usize) -> BigFloat {
 
 /// **Does the error `Angle::cos_sin_error_of` reports actually bound the real one?**
 ///
-/// `WitnessPoint::rotate_about` charges that number for the one input here without a rounding contract:
-/// neither Rust nor any libm promises an accuracy for `f64::cos`. It measures rather than charging
-/// a constant measured once — sound only on machines like the one it was taken on, which a kernel
-/// that ships to browsers cannot assume — so **a worse platform reports a bigger number and the
-/// tolerance grows to match** rather than silently under-stating.
+/// `WitnessPoint::rotate_about` charges that number for the realized `cos`/`sin`. The pair
+/// `cos_sin_f64` hands out is correctly rounded, but what is charged is the error measured for the
+/// pair actually held, so what has to hold is that the measurement is an *upper* bound.
 ///
-/// That moves the question. There is no budget left to overrun; what has to hold is that the
-/// measurement is an *upper* bound. So this compares production's answer — taken at 128 bits —
-/// against a realization 384 bits deeper.
+/// This compares production's answer — taken at 128 bits — against a realization 384 bits deeper.
 ///
 /// **Not `#[ignore]`d, and that is the point.** The slow astro-float suites are skipped because
 /// they are slow; this one exists so that *every build checks its own platform*, and a few
 /// hundred angles is milliseconds.
 ///
-/// **It asks about the pair, because that is what the answer is about.** The values go in
-/// as arguments — the same ones `rotate_about` writes into `coord_approx` — rather than being
-/// re-derived inside. Written the other way, this test asked whether the error of *some*
-/// realization bounded the error of *another*, and it failed at 27°: a debug and a release build
-/// realize `sin 27°` one ulp apart, and so do two call sites within one release build. That
-/// divergence is a real and separate defect in the kernel's determinism story; what this test now
+/// **It asks about the pair, because that is what the answer is about.** The values go in as
+/// arguments — the same ones `rotate_about` writes into `coord_approx` — rather than being
+/// re-derived inside. Re-deriving them would make the test ask whether the error of *some*
+/// realization bounds the error of *another* — which would fail on a route that is not a function
+/// of the angle: `f64::sin` would realize `sin 27°` one ulp apart between a debug and a release
+/// build, and between two call sites within one release build (see [`Angle::cos_sin_f64`]). What it
 /// checks is the property `tol` actually needs, which is about the pair in hand.
 ///
 /// **The 90°-family is included, not skipped, and that is the load-bearing part.** There
@@ -126,9 +122,9 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// axis-aligned models on the exact predicate path. A claimed zero that was not really zero
 /// would not fail loudly; it would quietly move those models. Here it has to be real.
 ///
-/// **It also still reports the worst error, though nothing depends on it.** Charging a
-/// measured value means a degraded platform fails nothing — it just escalates more
-/// and runs slower, invisibly. This line is what keeps that visible.
+/// **It also reports the worst error, though nothing depends on it.** Charging a measured value
+/// means a worse realization fails nothing — it just escalates more and runs slower, invisibly.
+/// This line is what keeps that visible.
 ///
 /// What it does not do: it checks one input. `nacre-judge`'s `tol_bounds_error_over_random_chains`
 /// checks the conclusion — that `tol` bounds the error, second-order terms and all.
@@ -145,11 +141,12 @@ fn the_measured_trig_error_bounds_the_real_one() {
     let mut angles: Vec<(i128, i128)> = (0..360).map(|d| (d, 1)).collect();
     for _ in 0..200 {
         angles.push((rng(0, 360_000), rng(1, 9973)));
-        // Near an axis, where the realized cos or sin is close to zero — the region that
-        // refuted the tangential tol model, and where a relative error reads worst.
+        // Near an axis, where the realized cos or sin is close to zero — the region where a
+        // tangential tol model would fail, and where a relative error reads worst.
         angles.push((90 * rng(0, 4) * 1000 + rng(-3, 4), 1000));
-        // Past `2⁵³`, where `Rat::to_f64` leaves its fast path. The radian argument is what
-        // dominates the error, so an angle whose conversion takes the other route has to be here.
+        // Past `2⁵³`, where the angle's numerator and denominator are not exact in `f64`. The
+        // radian argument is what dominates the error, and the realization takes them as `i128` —
+        // an angle that would lose bits through `f64` has to be here.
         angles.push((rng(1, 1 << 62) * 360, rng(1 << 53, 1 << 62)));
     }
     // **Reported to the nearest ε, which needs a comparison rather than an octave reader.**
@@ -157,12 +154,12 @@ fn the_measured_trig_error_bounds_the_real_one() {
     // from it blurs exactly the range that matters. The smallest integer `k` with `x < k·ε` is
     // one comparison per candidate and says the thing plainly.
     //
-    // **The range starts at 1, and it must**: `0·ε` is `0.0`, and astro-float's `cmp`
-    // answers `Some(-1)` in *both* directions against a zero — so `x.cmp(&zero)` reports "less
-    // than" for a positive `x`, every inexact realization reads `k = 0`, and `worst_k` is then
-    // only ever raised by the *exact* ones, which read the floor. That prints a headline of
-    // "worst < 1ε" for a platform whose real figure is several times that. A `k` of 0 would be
-    // meaningless anyway — nothing is below `0·ε` — which is what makes the widening look free.
+    // **The range starts at 1, and it must**: `0·ε` is `0.0`, and astro-float's `cmp` answers
+    // `Some(-1)` in *both* directions against a zero — so `x.cmp(&zero)` reports "less than" for a
+    // positive `x`, every inexact realization reads `k = 0`, and `worst_k` is then only ever raised
+    // by the *exact* ones, which read the floor. That prints a headline of "worst < 1ε" whatever
+    // the real figure. A `k` of 0 would be meaningless anyway — nothing is below `0·ε` — which is
+    // what makes the widening look free.
     let eps_multiple = |x: &BigFloat| -> usize {
         (1..=64)
             .find(|k| {
@@ -173,10 +170,9 @@ fn the_measured_trig_error_bounds_the_real_one() {
             })
             .unwrap_or(usize::MAX)
     };
-    // **The reading is pinned before it is trusted.** Three separate figures in this
-    // kernel's error work turned out to be artefacts of how they were printed rather than of
-    // what was measured, and each time the tell was a number that would not move. A reading
-    // that cannot be shown to respond to a known input is not evidence.
+    // **The reading is pinned before it is trusted.** A figure can be an artefact of how it is
+    // printed rather than of what was measured, and the tell is a number that does not move; a
+    // reading that cannot be shown to respond to a known input is not evidence.
     assert_eq!(eps_multiple(&big(0.0, GT)), 1, "zero reads as the floor");
     assert_eq!(eps_multiple(&big(3.5 * f64::EPSILON, GT)), 4);
     assert_eq!(eps_multiple(&big(-9.0 * f64::EPSILON, GT)), 10);
@@ -206,10 +202,10 @@ fn the_measured_trig_error_bounds_the_real_one() {
                      f = {f:e}, reported {reported:e}, true error 2^{:?}",
                 truth.exponent(),
             );
-            // The worst is tracked over the *inexact* realizations only. An exact one has
-            // error zero, which reads as the floor `k = 1` — and since the corpus opens at 0°,
-            // including them let the family claim the headline and named an angle with no
-            // error at all as this platform's worst case.
+            // The worst is tracked over the *inexact* realizations only. An exact one has error
+            // zero, which reads as the floor `k = 1` — and since the corpus opens at 0°, including
+            // them would let the family claim the headline and name an angle with no error at all
+            // as this platform's worst case.
             let k = eps_multiple(&truth);
             if reported != 0.0 && k > worst_k {
                 (worst_k, worst_at) = (k, (n, d));
