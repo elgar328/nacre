@@ -1,9 +1,9 @@
 /// **Nothing carries plane coefficients through a frame, and that is the design, not an
 /// omission.**
 ///
-/// A plane that passes through a motion has two descriptions — coefficients and a witness
-/// triangle — and mixing them is what once produced intransitive comparisons and a confident
-/// wrong winding. The frame design sidesteps the whole question: a plane built in a frame
+/// A plane that passes through a motion has two descriptions — coefficients and a witness triangle
+/// — and mixing them can produce intransitive comparisons and a confident wrong winding. The frame
+/// design sidesteps the whole question: a plane built in a frame
 /// states itself **in that frame**, `BaseFrame` keeps its triangle and its coefficients in the
 /// *same* frame, and every judgement downstream is a determinant question a rigid motion
 /// preserves. So no `d` transformation term is needed anywhere.
@@ -308,9 +308,8 @@ use nacre_exact::{Angle, Axis};
 /// is the only one available, because the shortcut's whole point is to *not* do what the
 /// judge does.
 ///
-/// The fixtures turn about a **non-origin pivot**, which is the step the original comment
-/// missed: a rotation about `c` is `x ↦ R(x−c)+c`, and the `+c` cancels in a difference. If
-/// it did not, every answer here would be wrong.
+/// The fixtures turn about a **non-origin pivot**: a rotation about `c` is `x ↦ R(x−c)+c`, and the
+/// `+c` cancels in a difference. If it did not, every answer here would be wrong.
 #[test]
 fn the_pre_rotation_shortcut_agrees_with_the_escalation() {
     for deg in [30i128, 37, 120, 200] {

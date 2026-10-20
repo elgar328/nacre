@@ -225,8 +225,7 @@ impl Vertex {
 pub enum Motion {
     /// One axis-aligned rotation about the line through the rational `pivot`.
     ///
-    /// The field was called `point` while this very sentence called it the pivot — `Axis` gives
-    /// only a direction, so a rotation needs *which line*, and that is what this names.
+    /// `Axis` gives only a direction, so a rotation needs *which line*, and `pivot` names it.
     Rotate {
         axis: Axis,
         pivot: [Rat; 3],
@@ -545,9 +544,8 @@ pub enum Surface {
         /// negation; a face's outward is the plane's normal times the face's own
         /// [`Orientation`].
         ///
-        /// **The sense is truth, not cache.** It used to live only in the f64 cache's normal,
-        /// so the faces' flags leaned on a cache. The producer states it exactly — it cannot be
-        /// read back off the cache without an `f64 → truth` arrow.
+        /// **The sense is truth, not cache.** The faces' flags lean on it, and the producer states
+        /// it exactly — it cannot be read back off the f64 cache without an `f64 → truth` arrow.
         ///
         /// **Not part of any interning key.** One plane is one handle whichever way it was
         /// asked for; the first statement's sense stands and later askers learn how theirs

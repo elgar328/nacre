@@ -15,9 +15,8 @@ pub fn fold_suffix(prefix: [HpBounded; 3], nodes: &[MoveNode], prec: usize) -> [
 
 /// One node applied to a realized point — the body of the fold, spelled once.
 ///
-/// The degenerate arms **return `p` untouched**. They read as `continue` when this was a loop
-/// body, and "skip this node" is what they meant; extracted, the same meaning is "this node moves
-/// nothing". All three are unreachable (their producers refuse a non-positive squared length), and
+/// The degenerate arms **return `p` untouched**: the node moves nothing, which is what skipping it
+/// means. All three are unreachable (their producers refuse a non-positive squared length), and
 /// they stay total rather than inventing a bound.
 fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 3] {
     match node {

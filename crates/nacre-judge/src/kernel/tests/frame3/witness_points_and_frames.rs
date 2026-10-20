@@ -209,15 +209,14 @@ fn a_degenerate_witness_is_told_apart_from_an_exhausted_one() {
 /// Four points that are coplanar *before* a rotation stay coplanar after it, but the judge
 /// cannot see that: one base is `1/3`, so the pre-rotation shortcut cannot hand the question
 /// to the exact predicate and the determinant is a transcendental zero no finite precision
-/// separates. Before the gap was wired in, that came back `Orient::Zero` with nothing behind
-/// it. Now it comes back with the distance it established — and that distance has to be
-/// **below the coincidence limit**, which is what makes "these are the same plane" a proof
-/// rather than a shrug.
+/// separates. That comes back with the distance it established — and that distance has to be
+/// **below the coincidence limit**, which is what makes "these are the same plane" a proof rather
+/// than a bare `Orient::Zero`.
 ///
-/// The plane is **tilted** (`z = x`), which the first version of this fixture was not: a plane
-/// perpendicular to the rotation axis keeps its `z` coordinate exactly, so every error term
-/// meets an exactly-zero factor and the determinant comes back a *proved* zero instead — a
-/// real outcome (and one this loop reports), but not the one under test here.
+/// The plane is **tilted** (`z = x`) on purpose: a plane perpendicular to the rotation axis keeps
+/// its `z` coordinate exactly, so every error term meets an exactly-zero factor and the determinant
+/// comes back a *proved* zero instead — a real outcome (and one this loop reports), but not the one
+/// under test here.
 #[test]
 fn a_structural_zero_comes_back_proved_not_assumed() {
     // The plane `z = x` through four points, one of them irrational, all turned together.
@@ -269,9 +268,9 @@ fn a_structural_zero_comes_back_proved_not_assumed() {
 
 /// **The design principle, as a test: raising the precision must actually narrow the bound.**
 ///
-/// The old declare-0 floor was a constant, so a deeper escalation bought a smaller threshold
-/// only because `2⁻ᵖʳᵉᶜ` appeared in it — the *estimate* it multiplied never improved. A
-/// computed radius has to do better than that, and if it did not, every "a deeper rung settles
+/// A constant declare-0 floor buys a smaller threshold at a deeper escalation only because `2⁻ᵖʳᵉᶜ`
+/// appears in it — the *estimate* it multiplies never improves. A computed radius has to do better
+/// than that, and if it did not, every "a deeper rung settles
 /// nothing" measurement would be reporting a broken radius rather than a fact about the
 /// geometry. So this pins the response directly: doubling the precision must take roughly a
 /// factor of `2⁻ᵖʳᵉᶜ` off the radius, both for a realized coordinate and for a determinant
@@ -1083,11 +1082,10 @@ fn tol_bounds_error_over_random_chains() {
         let hp = p.coord_hp(GT);
         for (axis, hp_a) in hp.iter().enumerate() {
             let err = abs_err(p.coord_iv[axis].value, hp_a, GT);
-            // **The chain belongs in the failure, not only in the summary below.** An
-            // exceeded bound means a term is missing, and the first thing needed is which
-            // links were involved — but the panic aborts before any summary prints, so the
-            // shape has to travel with the message. It is how the asymmetry in `rot` was
-            // found: the offending chain was `R M`, and nothing else was.
+            // **The chain belongs in the failure, not only in the summary below.** An exceeded
+            // bound means a term is missing, and the first thing needed is which links were
+            // involved — but the panic aborts before any summary prints, so the shape has to travel
+            // with the message.
             assert!(
                 err <= p.coord_iv[axis].error || err < 1e-100,
                 "tol must bound the error: axis {axis}, err {err:e} > tol {:e}, links:{}",
@@ -1155,15 +1153,14 @@ fn tol_bounds_error_over_random_chains() {
 /// A 90°-family chain about the origin stays exactly tol 0 (Niven exact realization).
 /// **Why the tol is a coordinate *mixing* term and not a tangential one.**
 ///
-/// The design's first directional tol was tangential — `tol_x = da·|y|`, `tol_y = da·|x|` —
-/// on the reasoning that rotation moves a point along its circle. It is **not sound**: `cos`
+/// A tangential directional tol — `tol_x = da·|y|`, `tol_y = da·|x|`, on the reasoning that
+/// rotation moves a point along its circle — is **not sound**: `cos`
 /// and `sin` round independently, which puts a *radial* component into the error, and near an
 /// axis the tangential prediction goes to zero while the real error does not. The adopted
 /// `(|bx|+|by|)·da` per component covers both.
 ///
-/// This is the standing guard on that shape. It moved here when the 2D frame it was written
-/// in was deleted (nothing consumed that frame), because the *invariant* is about the tol
-/// formula, which 3D uses verbatim — a rotation about Z is the 2D case with `z` carried along.
+/// This is the standing guard on that shape, on a rotation about Z — the 2D case with `z` carried
+/// along — because the *invariant* is about the tol formula, which 3D uses verbatim.
 #[test]
 fn the_tangential_tol_is_unsound_and_the_mixing_one_is_not() {
     const GT: usize = 256;
@@ -1318,9 +1315,9 @@ fn a_named_frame_takes_its_own_origin_and_u() {
 /// **The `v̂` fallback is taken, and the frame is still a frame.**
 ///
 /// `|v_raw|² = |n|²·|u_raw|²` needs twice the width the lengths themselves do, so a plane with
-/// wide coefficients cannot carry it — and the realization takes `v̂ = ŵ × û` instead. That
-/// route is what this crate had before `v_raw` existed; what must not change is that the basis
-/// is still a basis. Checked by the property that matters: a point drawn at `w = 0` is *on*
+/// wide coefficients cannot carry it — and the realization takes `v̂ = ŵ × û` instead, and what
+/// must hold on that route is that the basis is still a basis. Checked by the property that
+/// matters: a point drawn at `w = 0` is *on*
 /// the plane, and `tol` still bounds the coordinate it wrote.
 ///
 /// **A fallback nothing takes is indistinguishable from one that is not there**, so the
@@ -1521,11 +1518,10 @@ fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
 /// can never prove a determinant *is* zero, so `Some(Orient::Zero)` here is the cancellation
 /// firing and nothing else.
 ///
-/// **`shared_base` needed no change for this**, and that is worth pinning rather than
-/// leaving to luck: it was written against a *property* (all chains structurally equal, and
-/// the motion preserves the determinant) rather than against a list of variants, so a new
-/// proper motion joined it for free. A test is what tells "it is right" from "it happens to
-/// be right".
+/// **`shared_base` needs no change for this**, and that is worth pinning rather than leaving to
+/// luck: it is written against a *property* (all chains structurally equal, and the motion
+/// preserves the determinant) rather than against a list of variants, so a new proper motion joins
+/// it for free. A test is what tells "it is right" from "it happens to be right".
 #[test]
 fn four_points_sharing_one_frame_are_judged_exactly() {
     let fr = frame_of([2, -3, 7, 11]);

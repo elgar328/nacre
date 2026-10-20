@@ -48,9 +48,8 @@ impl Model {
     /// `orientation` is toggled. Pushes fresh [`Face`] cells and a fresh
     /// [`Shell`], but **reuses** `src`'s surfaces, edges, curves, and vertices —
     /// which stay valid handles after the source solid is superseded
-    /// (append-only). This is the building block for a cavity (void) shell: the
-    /// boundary of a solid whose interior becomes empty space (M5
-    /// containment). The reversed winding keeps each shared edge used with
+    /// (append-only). This is the building block for a cavity (void) shell: the boundary of a solid
+    /// whose interior becomes empty space. The reversed winding keeps each shared edge used with
     /// opposed half-edges (a valid 2-manifold), and the toggled orientation makes
     /// the outward normal point into the void.
     #[cfg(any(test, feature = "test-util"))]

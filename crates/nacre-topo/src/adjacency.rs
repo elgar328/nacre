@@ -11,8 +11,8 @@ use std::collections::HashMap;
 /// and regenerate any time. Validation ("every edge used by exactly two faces
 /// in opposite directions") and adjacency queries read this.
 ///
-/// Uses plain `Vec` rather than the design's `SmallVec<[_; 2]>` / `[_; 4]` for
-/// now — one fewer dependency; the inline-storage win is a future perf tweak.
+/// Uses plain `Vec` rather than the design's `SmallVec<[_; 2]>` / `[_; 4]`: one fewer dependency,
+/// and the inline-storage win is left for a profile to ask for.
 #[derive(Clone, Debug, Default)]
 pub struct Adjacency {
     /// Edge → every `(face, half-edge.forward)` that uses it. A manifold edge
@@ -27,10 +27,9 @@ impl Adjacency {
     /// outer + inner loops → half-edges → edges (recording `forward`), and every
     /// bounded edge → its two endpoint vertices. From scratch — cheap, always correct.
     ///
-    /// **Rebuild is the whole story.** An earlier note promised incremental maintenance
-    /// "with the operation log (M2)"; the log arrived and the incremental path did not, and
-    /// nothing has needed it: [`Model::rebuild_adjacency`] replaces the index wholesale and
-    /// callers run it once after a batch. Build it when a profile asks for it, not before.
+    /// **Rebuild is the whole story.** There is no incremental path, and nothing needs one:
+    /// [`Model::rebuild_adjacency`] replaces the index wholesale and callers run it once after a
+    /// batch. Build it when a profile asks for it, not before.
     pub fn rebuild(model: &Model) -> Adjacency {
         // Only the live model is indexed: superseded cells left in
         // the arena must not pollute edge use-counts. Iterate the stores in

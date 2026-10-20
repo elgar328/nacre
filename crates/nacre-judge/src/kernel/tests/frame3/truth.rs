@@ -28,7 +28,7 @@
 //! shape of the cancellation bug `indirect_hp`'s doc records. Planted in the judge's
 //! high-precision path, that defect passes an agreement oracle and fails these.
 //!
-//! What was *not* shown: that this oracle catches a defect on a **nonzero** answer that an oracle
+//! What is *not* shown: that this oracle catches a defect on a **nonzero** answer that an oracle
 //! built from the judge's own functions would miss. The judge jumps straight to the precision its
 //! condition number asks for, so a nonzero
 //! case is decided with a margin no radius-sized planted error (even 256× the radius) reached — no

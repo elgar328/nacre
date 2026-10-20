@@ -31,9 +31,9 @@ impl Model {
     /// There is no `rebuild_vertex_cache` that *replaces* what is here: an operation realizes the
     /// definition *before* it pushes (`nacre_ops`'s push funnel), so what arrives is already the
     /// realization's memo ([`PointCache::Realized`]) or a named reason it is not
-    /// ([`PointCache::Ceiling`], [`PointCache::Unrealized`]). The old warrant for the absence
-    /// (*"238 of 1,992 differ from a naive re-solve"*) compared against a naive re-solve; the
-    /// exact-rounding realization is not one: the census says so vertex by vertex, and nacre-ops'
+    /// ([`PointCache::Ceiling`], [`PointCache::Unrealized`]). A rebuild would matter only if a
+    /// re-solve could disagree with what is here, and the exact-rounding realization does not: the
+    /// census says so vertex by vertex, and nacre-ops'
     /// `vertex_caches_regenerate_from_their_definitions_at_the_end_of_a_log` asks every vertex of
     /// an arena again once its log has ended.
     ///
@@ -135,10 +135,8 @@ impl Model {
     /// door is worth is therefore the **invariant**, not cache-sync: a face whose loops do not
     /// close is a face no consumer can walk, and this says so at the moment it is built.
     ///
-    /// **Measured before it shipped** — every face the production road builds satisfies this,
-    /// live or superseded, across the boolean / twice-cut / cylinder / tilted-frame fixtures. The
-    /// one fixture that did not was a deliberately malformed «franken» face in a `transform` test,
-    /// and it was reshaped rather than exempted, so the invariant holds with no hole behind it.
+    /// **Measured**: every face the production road builds satisfies this, live or superseded,
+    /// across the boolean / twice-cut / cylinder / tilted-frame fixtures, with no fixture exempted.
     pub fn push_face(&mut self, face: Face) -> Handle<Face> {
         debug_assert!(
             (face.surface.index() as usize) < self.surfaces.len(),
@@ -242,10 +240,9 @@ impl Model {
     /// The vertex a half-edge starts at: its edge's `vertices[0]` when the use runs
     /// forward, `vertices[1]` when it runs back.
     ///
-    /// A traversal accessor, not an analysis — the same kind of thing as
-    /// [`Model::reachable`], and the reason it lives here: walking a loop's
-    /// corners is the first thing every consumer above does, and it was written
-    /// twice (with two different failure policies) before this existed.
+    /// A traversal accessor, not an analysis — the same kind of thing as [`Model::reachable`], and
+    /// the reason it lives here: walking a loop's corners is the first thing every consumer above
+    /// does, and one walk is one failure policy.
     ///
     /// Total: every edge has both endpoints by type, and a closed rim
     /// states that by repeating its seam vertex — `[v, v]`, so the start is `v` either way.

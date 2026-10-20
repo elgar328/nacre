@@ -598,8 +598,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// On the certified route a point's Cramer parts are four determinants that do not mention the
     /// query at all — `(D, Dvec)` *is* the point. Naming the point makes sharing them a property of
     /// the value, so a caller with several questions about one point needs no "pair" entry point at
-    /// every layer (there were three, one per crate boundary, and they capped the sharing at exactly
-    /// two questions).
+    /// every layer — one per crate boundary, each capping the sharing at exactly two questions.
     ///
     /// **Hoist the handle as far as the point is constant.** In the arrangement's crossing collector
     /// that is the *wall pair*, so every segment on one wall shares it — not just one segment's two
@@ -856,10 +855,10 @@ fn borrow_triple(d: [&[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, 
 
 /// `cmp_coord` answered exactly in the pre-rotation frame, when it can be.
 ///
-/// **Cancelling a rotation out of a one-coordinate comparison is not the same move as cancelling
-/// it out of a determinant**, and the difference is why this used to be left undone: a rotation
-/// mixes the axes, so `(Ra)[k] − (Rb)[k]` is not `(a − b)[k]` and the pre-rotation *order* along
-/// an axis says nothing about the rotated one. That much is still true. What it misses is that
+/// **Cancelling a rotation out of a one-coordinate comparison is not the same move as cancelling it
+/// out of a determinant**: a rotation mixes the axes, so `(Ra)[k] − (Rb)[k]` is not `(a − b)[k]`
+/// and the pre-rotation *order* along an axis says nothing about the rotated one. That much is
+/// true. What it misses is that
 /// the comparison only ever sees the **difference** `d = a − b`, and a rotation about a pivot `c`
 /// is `x ↦ R(x−c) + c`, so the pivots cancel and `Ra − Rb = R d` exactly — for a whole chain,
 /// with a different pivot per node. Only the product of the rotations survives.

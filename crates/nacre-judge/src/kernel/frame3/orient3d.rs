@@ -7,10 +7,10 @@ use super::*;
 /// `None` sends it back to doing the work, a missed proof costs time and nothing else. So this
 /// can only ever lose an optimization — never change an answer.
 ///
-/// Split out of [`orient3d_judge`] rather than written beside it: two implementations of one
-/// filter would be two error budgets to keep in step, and this kernel has already been bitten
-/// twice by a question with two answering sites. The judge calls this, so they cannot drift, and
-/// soundness here is not a property to test but a consequence of being the same code.
+/// Split out of [`orient3d_judge`] rather than written beside it: two implementations of one filter
+/// would be two error budgets to keep in step — two answering sites for one question, which drift.
+/// The judge calls this, so they cannot drift, and soundness here is not a property to test but a
+/// consequence of being the same code.
 pub fn orient3d_filter(
     pa: &WitnessPoint,
     pb: &WitnessPoint,

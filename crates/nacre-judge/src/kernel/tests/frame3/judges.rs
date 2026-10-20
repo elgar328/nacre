@@ -256,10 +256,10 @@ fn one_concurrency_read_four_ways_gives_one_answer() {
             {
                 continue;
             }
-            // `p` goes in the **third** slot: `indirect_hp` forms `row1 = Dvec − D·s` from
-            // that one, so putting the shared point there is what makes the subtraction cancel
-            // — the configuration the engine actually hit. With `p` first the term stays
-            // healthy and the corpus measures nothing.
+            // `p` goes in the **third** slot: `indirect_hp` forms `row1 = Dvec − D·s` from that
+            // one, so putting the shared point there is what makes the subtraction cancel — the
+            // configuration the engine meets. With `p` first the term stays healthy and the corpus
+            // measures nothing.
             let t = plane(q);
             verdicts.push(
                 indirect_orient3d_judge(
@@ -443,11 +443,10 @@ fn indirect_orient3d_soundness() {
     }
 
     // Corpus C — a **constructed** four-plane concurrency, because a random one never happens
-    // and this is the configuration that matters: every plane is spanned by one shared point
-    // `p` and two others, so `p` is both the meet of any three and a defining point of the
-    // fourth. With `p` in the third slot, `indirect_hp`'s `row1 = Dvec − D·s` cancels to
-    // nothing — the shape a tool edge lying in a target plane produces, and the one that let a
-    // wrong sign through a suite of random corpora.
+    // and this is the configuration that matters: every plane is spanned by one shared point `p`
+    // and two others, so `p` is both the meet of any three and a defining point of the fourth. With
+    // `p` in the third slot, `indirect_hp`'s `row1 = Dvec − D·s` cancels to nothing — the shape a
+    // tool edge lying in a target plane produces, and one random corpora miss.
     for _ in 0..400 {
         let axis = axis_of(rng(&mut st, 0, 2));
         let ang = deg(rng(&mut st, 1, 359_000), rng(&mut st, 1, 997)); // inexact

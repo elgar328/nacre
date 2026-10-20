@@ -405,8 +405,8 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     }
 }
 
-/// **The push funnel realizes; the fallback stands only where the realization declines** (cell
-/// 52). Pushing a realizable definition again with a fallback that is wrong by three ulp gives a
+/// **The push funnel realizes; the fallback stands only where the realization declines**. Pushing a
+/// realizable definition again with a fallback that is wrong by three ulp gives a
 /// `Realized` cache holding the realization, not the fallback; a definition the road declines by
 /// name — a pierce corner on a cylinder under an irrational turn, whose meet no road solves off
 /// the world statement — keeps the fallback it was handed. The same turned cylinder's seam

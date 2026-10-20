@@ -131,9 +131,8 @@ impl Model {
     ///
     /// **It lives here, below `nacre-ops`, because [`Model::vertex_meet`] needs it.** Without
     /// the rescue that door reads a turned solid's corner as straddling frames — every carrier
-    /// but the fixed cap moved — and the datum road it gates loses its named form. Keeping the
-    /// rule in `nacre-ops` would mean a second walk down here, and this rule already cost the
-    /// kernel a regression by existing in more than one spelling.
+    /// but the fixed cap moved — and the datum road it gates loses its named form. Keeping the rule
+    /// in `nacre-ops` would mean a second walk down here — one rule in two spellings, which drift.
     ///
     /// Conservative by construction — `Frame` nodes are never fixed (their basis is
     /// irrational), and the scalar atoms answer `false` on overflow.

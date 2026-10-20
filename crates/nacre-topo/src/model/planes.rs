@@ -95,11 +95,10 @@ impl Model {
 
     /// **Interning, once — the funnel every surface door calls.**
     ///
-    /// A door differs only in *what it states*. Everything after that — the key, the
-    /// already-issued reply and its `flipped`, the arena push, the side tables, the two counters
-    /// — is here, so a door cannot reach the arena without the table, and the counters cannot be
-    /// lost on a new road (they once were, when this tail was duplicated: `WIDE_PLANES` and
-    /// `SEEDED_HITS` were simply absent from the copy). The counters live here and not in
+    /// A door differs only in *what it states*. Everything after that — the key, the already-issued
+    /// reply and its `flipped`, the arena push, the side tables, the two counters — is here, so a
+    /// door cannot reach the arena without the table, and a new road cannot lose the counters (a
+    /// duplicated tail can drop `WIDE_PLANES` and `SEEDED_HITS`). The counters live here and not in
     /// [`Model::surface_key`], which `validate` also calls.
     fn intern(&mut self, stated: Stated) -> (Handle<Surface>, bool) {
         let key = match &stated {
@@ -310,7 +309,7 @@ impl Model {
     /// each vertex is placed in the world by its own chain and `motion` is what comes after. A
     /// named statement whose motion does not continue the frame is therefore ambiguous — the frame
     /// left out, or the frame put in some other way — and reading it either way can file a wrong
-    /// plane silently (it once did: a tilted cap and a world box top became one handle). The
+    /// plane silently (a tilted cap and a world box top as one handle). The
     /// producers keep this; the door **asserts** it, in release too: the check is one comparison
     /// on the common roads (the frame is the world, or is `motion` itself), a `Through` push is
     /// rare, and a release build that skipped it would merge planes silently.

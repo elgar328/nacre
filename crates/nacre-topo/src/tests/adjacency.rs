@@ -183,8 +183,8 @@ fn rebuild_indexes_a_shared_edge() {
         ],
     );
 
-    // Wrap the two faces in a live solid — adjacency now indexes only the
-    // reachable closure, so loose faces would be invisible. This
+    // Wrap the two faces in a live solid — adjacency indexes only the reachable closure, so loose
+    // faces are invisible. This
     // pair is an open surface (validate would flag it), but the test only
     // inspects the rebuilt adjacency, which needs the faces reachable.
     let shell = m.shells.push(Shell {

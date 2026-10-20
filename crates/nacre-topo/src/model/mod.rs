@@ -196,9 +196,9 @@ impl Model {
 
     /// **Put the live set back** — the rollback half of a rejected operation.
     ///
-    /// This exists so the transaction has a name. The idiom it replaces (`let snapshot =
-    /// …clone()` … `model.live_solids = snapshot`) is syntactically just an assignment and says
-    /// nothing about what it is for; it is there because a rejected op once left the model changed.
+    /// This exists so the transaction has a name: a bare `let snapshot = …clone()` …
+    /// `model.live_solids = snapshot` is syntactically just an assignment and says nothing about
+    /// what it is for.
     pub fn restore_live(&mut self, snapshot: Vec<Handle<Solid>>) {
         self.live_solids = snapshot;
     }

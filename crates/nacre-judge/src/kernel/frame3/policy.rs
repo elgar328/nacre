@@ -86,10 +86,9 @@ pub(super) enum Gap {
     /// wide. Collapsing it into the case below is what would make the kernel quietly merge two
     /// things it never looked at closely enough.
     Unresolved { short: usize },
-    /// A cofactor came out **exactly zero**, so there is no distance to sharpen: a witness
-    /// triangle with no plane, or three planes with no meeting point. Depth does not change it —
-    /// measured directly on the case this distinction was found in, where the determinant was
-    /// still bit-exactly zero 8192 bits deeper.
+    /// A cofactor came out **exactly zero**, so there is no distance to sharpen: a witness triangle
+    /// with no plane, or three planes with no meeting point. Depth does not change it — measured:
+    /// the determinant stays bit-exactly zero 8192 bits deeper.
     Vanished,
 }
 
@@ -141,9 +140,9 @@ pub(super) fn escalate(
         j.prec > 0,
         "escalate at zero precision — unstamped ProofStandard"
     );
-    // Charged on **every** way out, not just the resolved one: most climbs end in `Coincident`
-    // or a proved zero, and counting only the `Ok` path reported a mean of exactly 0 bits — a
-    // number that looked like "no cost" and was really "no instrument".
+    // Charged on **every** way out, not just the resolved one: most climbs end in `Coincident` or a
+    // proved zero, and counting only the `Ok` path reports a mean of exactly 0 bits — "no
+    // instrument" reading as "no cost".
     let done = |p: usize, d: Decision| -> Decision {
         #[cfg(any(test, feature = "test-util"))]
         climb_census::BITS.fetch_add(p as u64, std::sync::atomic::Ordering::Relaxed);

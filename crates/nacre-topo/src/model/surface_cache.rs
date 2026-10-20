@@ -24,9 +24,9 @@ impl Model {
     /// the door instead of asserting the fact.
     ///
     /// **No lock here, and this is why.** The proposition is the signature itself, and a
-    /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
-    /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
-    /// was wide was this crate-internal one. Recorded rather than locked.
+    /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public doors
+    /// ([`Model::push_plane`], [`Model::push_cylinder`]) take narrow types, and so does this
+    /// crate-internal one. Recorded rather than locked.
     ///
     /// **The name enters here too**, for the same reason the cache does: this is
     /// the one place a plane reaches the arena, so it is the one place that can derive a cache
@@ -222,7 +222,7 @@ impl Model {
     /// **Why the anchor and not a canonical row** (measured). A canonical row is the
     /// tidier answer, but it moved 32 census result rows while the judge's exact shortcut still
     /// read the cache's coefficients (a rescaled row failed that road's check against the face
-    /// corners — the road now reads the plane's name and not this cache), and it makes
+    /// corners; that road reads the plane's name, not this cache), and it makes
     /// `plane_origin_projection` square the coefficients — which overflows for
     /// 8 of this corpus's planes and spends half the `i128` width budget. The anchor costs none
     /// of that: **0** census rows move, and the arithmetic is one

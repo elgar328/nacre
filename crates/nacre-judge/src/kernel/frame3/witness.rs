@@ -199,12 +199,11 @@ impl WitnessPoint {
     /// which the judgment path does hundreds of thousands of times. The price is here: appending
     /// copies the slice, so applying `n` nodes one at a time costs `O(n²)`.
     ///
-    /// **That price was measured against the wrong caller, and the comment said so**: *"this
-    /// runs when a solid is transformed, never on the judgment path, so the copy is not hot."* Cell
-    /// 52 broke the premise — a vertex is now realized as it is pushed, which **replays a chain per
-    /// push** — and the copy became the dominant cost of a long history: a 4,200-turn fixture went
-    /// from 5.6 s to 563 s, and a 1,600-turn loop from 17 ms to 114 s. A caller holding a whole
-    /// chain must therefore use [`Self::apply_chain`], which folds the numbers and appends **once**.
+    /// **That cost is hot.** A vertex is realized as it is pushed, which **replays a chain per
+    /// push**, so applying a long chain one node at a time is quadratic where it hurts — applied
+    /// that way, a 4,200-turn fixture took 563 s and a 1,600-turn loop 114 s. A caller holding a
+    /// whole chain therefore uses [`Self::apply_chain`], which folds the numbers and appends
+    /// **once**.
     fn remember(&mut self, node: MoveNode) {
         let mut nodes = self.chain.to_vec();
         nodes.push(node);

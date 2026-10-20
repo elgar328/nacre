@@ -16,7 +16,7 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
     let (sb, flipped) = plane_through(&mut m, [[3.0, 0.0, 0.0], [3.0, 0.0, 1.0], [3.0, 13.2, 0.0]]);
     assert!(flipped, "the second statement faces the other way");
 
-    // **They are one handle now** — that is what the rational coefficients bought.
+    // **They are one handle** — that is what the rational coefficients buy.
     assert_eq!(sa, sb, "one plane, one surface");
     assert!(m.surface_name.contains_key(&sa), "and it is recorded");
 
@@ -40,7 +40,7 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
 ///
 /// Built synthetically — three planes, two of them carrying **different** translation chains —
 /// because waiting for a boolean to produce the shape would measure "what passed" rather than
-/// "what was fixed". The two older doors want one frame (all-world, or one shared chain) and
+/// "what was fixed". The other two doors want one frame (all-world, or one shared chain) and
 /// neither holds here; the world road transports each carrier's *name* and meets the three in
 /// the world, so the answer carries no leaf and the caller replays nothing.
 ///
@@ -364,8 +364,8 @@ fn a_plane_is_named_by_its_points() {
         Orientation::Forward,
     );
     // The stored value carries the proposition — `Narrow` says "fits i128" directly.
-    // (This used to compare the global counter before/after, which races against other
-    // tests pushing wide planes in parallel; the value cannot.)
+    // (Comparing the global counter before and after would race against other tests pushing wide
+    // planes in parallel; the value cannot.)
     let name = *m
         .surface_name
         .get(&wide)
@@ -452,7 +452,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
         "a wide name must not open the narrow shortcuts (base_rat, Shewchuk)"
     );
 
-    // The same plane stated again — permuted, even — is the same handle now.
+    // The same plane stated again — permuted, even — is the same handle.
     let (second, _) = m.push_plane(
         pl,
         crate::CacheStanding::Unrealized,
@@ -524,7 +524,7 @@ fn a_new_model_carries_the_three_world_planes() {
 ///
 /// One truth, two producers: each builds its own `Plane` at a different point of that same
 /// plane, facing the same way. Their values differ — asserted first, on what the *producers*
-/// built, because the door now overwrites what it is handed and reading it back would compare
+/// built, because the door overwrites what it is handed and reading it back would compare
 /// the derivation against itself.
 ///
 /// **The stronger claim is not made, deliberately** — one
@@ -870,12 +870,11 @@ fn box_corner_vertices() -> (Model, [Handle<Vertex>; 3]) {
 }
 /// **Both counters see the second producer too.**
 ///
-/// `push_plane_through` began as a copy of `push_plane`'s tail and the copy silently dropped
-/// [`WIDE_PLANES`] and [`SEEDED_HITS`] — the census bridges `stat wide_planes` and
-/// `stat seeded_hits` went blind on a road that *feeds* them — a datum plane's name can be
-/// `Wide`. Sharing one interning tail is
-/// the fix; this is the observation that it worked, and it is two assertions because a
-/// counter that cannot move is indistinguishable from a population that never arrives.
+/// A second producer with its own copy of the interning tail can drop [`WIDE_PLANES`] and
+/// [`SEEDED_HITS`] — the census bridges `stat wide_planes` and `stat seeded_hits` go blind on a
+/// road that *feeds* them, since a datum plane's name can be `Wide`. Sharing one interning tail is
+/// the fix; this is the observation that it holds, and it is two assertions because a counter that
+/// cannot move is indistinguishable from a population that never arrives.
 #[test]
 fn a_through_plane_is_counted_by_both_bridges() {
     use std::sync::atomic::Ordering::Relaxed;
