@@ -1,14 +1,13 @@
 //! **A datum is a plane the model holds because someone named it.**
 //!
-//! Before this, a log could name exactly two kinds of plane: the three world planes `Model::new`
-//! seeds (handles 0/1/2) and the plane of a face it had already built (`face_sketch_frame`).
-//! Every other plane lived *inside* `Operation::Extrude` as a value, which is why that variant is
-//! the last one still carrying a `SketchPlane` — and why the vocabulary swap that replaces it
-//! needs this operation first.
+//! A log names a plane three ways: a world plane `Model::new` seeds (handles 0/1/2), the plane of
+//! a face it has built (`face_sketch_frame`), and a datum — every other plane, stated once and held
+//! by handle, so an `Operation::Extrude` refers to it through a `SketchFrame` rather than carrying
+//! it as a value.
 //!
-//! What the tests here pin is not that the call works but that the **arena answers the same way it
-//! always did**: the same plane keeps one handle, the stored truth is the caller's own points, and
-//! the whole thing replays.
+//! What the tests here pin is not that the call works but **how the arena answers**: the same
+//! plane keeps one handle, the stored truth is the caller's own points, and the whole thing
+//! replays.
 
 use nacre_exact::Axis;
 use nacre_math::{Point2, Point3, Vector3};
@@ -38,13 +37,11 @@ fn square(a: f64, b: f64) -> Profile2d {
 
 /// **Stating a world plane returns the seed, and the arena does not grow.**
 ///
-/// This is the lock on the cache-normal convention. `Model::new` seeds the world planes facing
-/// `−axis` (`+axis` flips 781 stored cap normals for nothing), `extrude` pushes
-/// its base cap as `−plane.normal()`, and `WorkingPlane::frame_sign` reads a stored normal against a
-/// root face's outward — which for a base cap is `−N`. A datum that pushed `+normal` would still
-/// intern, but it would come back `flipped`, and every face built on it afterwards would have to
-/// be spelled the other way round to compensate. `flipped == false` here says the datum joined the
-/// convention rather than starting a second one.
+/// `Model::new` seeds the world planes with the facing every datum states, `−normal` (why:
+/// `ops::datum`), so a world plane stated again interns onto its seed unflipped. A datum that
+/// pushed `+normal` would still intern, but it would come back `flipped`, and every face built on
+/// it afterwards would have to be spelled the other way round to compensate. The seed's cache
+/// facing `−axis` here says the datum joined the convention rather than starting a second one.
 #[test]
 fn stating_a_world_plane_returns_the_seed_it_already_is() {
     for (axis, plane) in [
@@ -79,6 +76,75 @@ fn stating_a_world_plane_returns_the_seed_it_already_is() {
             p.normal().dot(Vector3::from_array(axis_v)) < 0.0,
             "{axis:?}: the stored cache faces −axis, as the seeds and base caps do"
         );
+    }
+}
+
+/// **A positive extrude on a stated plane holds its base cap `Forward`; a negative one,
+/// `Reversed`.** The reason `ops::datum` gives for the facing every datum and seed states: the
+/// frame's `ŵ` is the stated normal, the base cap's outward is `−ŵ` for a sweep along it, and the
+/// plane faces `−normal` — so the cap and its plane agree, and only a sweep against `ŵ` spells
+/// the cap the other way round. Asserted on the world seeds both as seeds and as datums, and on
+/// planes no seed holds.
+#[test]
+fn a_positive_extrude_on_a_stated_plane_holds_its_base_cap_forward() {
+    let p3 = Point3::from_array;
+    let v3 = Vector3::from_array;
+    let stated = [
+        ("world_xy", SketchPlane::world_xy()),
+        ("world_yz", SketchPlane::world_yz()),
+        ("world_zx", SketchPlane::world_zx()),
+        (
+            "offset_xy",
+            SketchPlane::world_xy().with_origin(p3([0.0, 0.0, 0.5])),
+        ),
+        (
+            "rational_tilt",
+            SketchPlane::from_axes(
+                p3([1.0, 2.0, 3.0]),
+                v3([0.6, 0.8, 0.0]),
+                v3([0.0, 0.0, 1.0]),
+            ),
+        ),
+        (
+            "negative_normal",
+            SketchPlane::from_origin_normal(p3([0.0, 1.3, 0.0]), v3([0.0, -1.0, 0.0]))
+                .expect("a plane"),
+        ),
+    ];
+    let check = |name: &str, frame_of: &dyn Fn(&mut Model) -> SketchFrame| {
+        for (dist, want) in [
+            (1.5, nacre_topo::Orientation::Forward),
+            (-1.5, nacre_topo::Orientation::Reversed),
+        ] {
+            let mut m = Model::new();
+            let frame = frame_of(&mut m);
+            let OpOutput::Extrude { faces, .. } = apply(
+                &mut m,
+                &Operation::Extrude {
+                    frame,
+                    profile: square(0.0, 1.0),
+                    dist,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name}, dist {dist}: {e:?}")) else {
+                unreachable!()
+            };
+            assert_eq!(
+                m.face(faces[0]).orientation,
+                want,
+                "{name}, dist {dist}: the base cap against its plane"
+            );
+        }
+    };
+    for (name, sp) in stated {
+        check(name, &|m| datum_frame(m, sp));
+    }
+    for (name, axis) in [
+        ("seed_z", Axis::Z),
+        ("seed_x", Axis::X),
+        ("seed_y", Axis::Y),
+    ] {
+        check(name, &|m| SketchFrame::world(m, axis));
     }
 }
 

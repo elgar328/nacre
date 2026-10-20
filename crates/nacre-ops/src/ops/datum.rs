@@ -97,13 +97,18 @@ pub(super) fn push_line_edge(
 
 /// Put a stated plane in the arena and hand back its handle and the frame the statement implies.
 ///
-/// **The cache faces `−normal`, and that is a convention with two independent reasons.**
-/// (i) It is the sense a base cap gets: `extrude` pushes `−plane.normal()` and `Model::new` seeds
-/// the world planes along `−axis`; measured, seeding `+axis` instead flips 781 stored
-/// cap normals for nothing. (ii) `WorkingPlane::frame_sign` records whether a plane's *stored* normal
-/// agrees with its root face's outward normal, and a base cap's outward is `−N` — so `−normal`
-/// leaves that sign exactly where it is today. A datum that later becomes a base cap therefore
-/// interns with `flipped == false` and nothing downstream has to compensate.
+/// **The statement faces `−normal`** (and the f64 cache with it), a convention every datum arm
+/// and `Model::new`'s seeds share, for two reasons. (i) A positive extrude on a datum or seed frame
+/// sweeps along `ŵ`, the stated normal, and its base cap faces `−ŵ`
+/// (`prism::base_cap_orientation`), so the plane holds that cap `Forward` — locked by
+/// `a_positive_extrude_on_a_stated_plane_holds_its_base_cap_forward`. (ii)
+/// `WorkingPlane::frame_sign` — a plane's *stored* normal against its root face's outward — is
+/// then `+1` for such a cap. A world plane stated again interns onto its seed unflipped.
+///
+/// **The convention is spelled in several places** — the seeds, `stated_side` below, the
+/// through-vertices arm's `through_sense`, the offset arm's `parity` — and they flip together or
+/// not at all: flipping only the seeds and the stated arm turns the frames round, and 574
+/// `nacre-ops` tests fail.
 ///
 /// Which point anchors the cache is a choice the arena keeps (interning discards the newcomer's
 /// cache), and `tests/instruments/plane_anchor.rs` measures what that choice costs: on the tilted

@@ -21,11 +21,10 @@ impl Model {
     /// an axis, a `z = 0` sketch's base cap) **interns onto the seed**: one plane, one handle,
     /// stated once.
     ///
-    /// **The seed's f64 cache points down the −axis**, not up. This is the sense the dominant
-    /// producers push — `extrude` builds base caps with `−normal` (its comment records that
-    /// pushing `+normal` "flipped the stored normal on 781 base caps … for no reason"), and an
-    /// origin cuboid's bottom/left/front faces cross to `−axis` raws — so a −axis seed keeps
-    /// their `flipped` bits false and their `Orientation` spellings unchanged. The *sketch*
+    /// **The seed faces the −axis** (and its f64 cache with it), not up: the facing every datum
+    /// states, for the reasons `nacre_ops::ops::datum` gives. So a world plane stated again, or an
+    /// origin cuboid's left and front walls (pushed facing `−x` and `−y`), intern onto the seed
+    /// with their `flipped` bits false and their `Orientation` spellings unchanged. The *sketch*
     /// convention ("`world_xy`'s normal is `+ẑ`") is about the frame, not the stored cache;
     /// frame derivation goes through the canonical name plus a measured `flip`, so the cache's
     /// direction never leaks to a caller.
