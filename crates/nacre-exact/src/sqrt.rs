@@ -82,8 +82,8 @@ fn exact_root(v: &BigRat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
 ///
 /// An integer square root, as [`sqrt_rat_big`] takes one — the same question at `Rat`'s
 /// width. An `f64` estimate searched over a few neighbours is the rejected alternative: its error
-/// grows with the root, past `2⁵⁵` it left the ±2 window that was searched, and it answered
-/// «irrational» for 168 of 20,000 radii written to f64's last digit.
+/// grows with the root, past `2⁵⁵` it would leave the ±2 window searched, and it would
+/// answer «irrational» for 168 of 20,000 radii written to f64's last digit (measured).
 pub fn sqrt_rat(v: Rat) -> Option<Rat> {
     let (num, den) = (*v.0.numer(), *v.0.denom());
     if num < 0 {
@@ -245,8 +245,8 @@ fn inv_sqrt_hp_uncached(v: Rat, prec: usize) -> HpBounded {
 ///
 /// **Correct rounding is what keeps debug and release the same.** The value is a function of `v`
 /// alone, whatever route or precision computed it; a value that depended on the computation would
-/// let two builds disagree by an ulp, which is the failure this crate already paid for once in the
-/// trig path.
+/// let two builds disagree by an ulp, which is the failure `f64::sin` shows (`sin 27°`, see
+/// [`Angle::cos_sin_f64`]).
 pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
     if v <= Rat::from_int(0) {
         return None;
@@ -276,7 +276,7 @@ fn inv_sqrt_f64_uncached(v: Rat) -> f64 {
 ///
 /// The twin of [`inv_sqrt_f64`]: the exact branch runs first — every rational root, at any width
 /// (every radius a user writes as a decimal lands here, and comes back as the nearest `f64` to the
-/// rational it always was) — and only an irrational root reaches the ladder (`ladder_f64`), which
+/// rational it is) — and only an irrational root reaches the ladder (`ladder_f64`), which
 /// decides it: an irrational number is never a rounding boundary, and the separation bound
 /// (`separation_cap`) proves the depth its radicand's width earns is enough. A nonzero root whose
 /// nearest `f64` is not normal is `NaN` on either road.
@@ -343,8 +343,8 @@ pub fn unit_vector_f64(n: &[num_bigint::BigInt; 3]) -> Option<[f64; 3]> {
 /// as being exact.** [`Angle::cos_sin_error_of`] can return a flat `0` for its exact family
 /// because `{0, ±1}` are f64 values; `1/√v` cannot. A **Pythagorean** normal like `(3, 4, 0)` has
 /// `n·n = 25` and an exactly rational `1/|n| = 1/5` — which is *not* an f64, so the realization
-/// still rounds. Copying the trig zero here reported `0` for a real `2⁻⁵³` error, and
-/// `the_inverse_sqrt_realization_error_covers_the_error_that_is_there` caught it. So the exact
+/// still rounds. Copying the trig zero here would report `0` for a real `2⁻⁵³` error, which
+/// `the_inverse_sqrt_realization_error_covers_the_error_that_is_there` checks. So the exact
 /// branch **measures the rational's own rounding** instead, in exact arithmetic, and reaches `0`
 /// where it genuinely belongs: an axis-aligned frame, whose `1/|n|` is `1`, `½`, `¼`, …
 ///

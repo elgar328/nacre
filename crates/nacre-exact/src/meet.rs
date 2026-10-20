@@ -57,9 +57,9 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
 /// The fallback runs only on the decline path, so the narrow
 /// route's cost and answers are untouched.
 ///
-/// This is what replaces a dissolved sketch-frame base vertex: the frame-shared triple of a
-/// prism corner, solved in the frame the planes are stated in, is the corner's exact base —
-/// measured bit-identical to the stored base-and-replay road (8/8).
+/// **A prism corner's exact base.** The frame-shared triple of a prism corner, solved in the frame
+/// the planes are stated in, is the corner's exact base — measured bit-identical to the stored
+/// base-and-replay road (8/8).
 pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     three_planes_rat_narrow(p).or_else(|| {
         use num_bigint::BigInt;
@@ -197,8 +197,8 @@ impl MeetPoint {
 }
 
 /// **The same meeting point [`three_planes_rat`] computes, without the `i128` ceiling** — the
-/// wide twin that [`plane_name_exact`] has had on the plane-*name* side all along and the vertex
-/// solve did not.
+/// vertex-side counterpart of the wide arm [`plane_name_exact`] has on the plane-*name* side
+/// (`plane_name_big`).
 ///
 /// [`three_planes_rat`] is `checked_*` throughout, so its `None` conflates two different facts:
 /// the point does not fit `Rat`, and an **intermediate** of the rational cofactor expansion

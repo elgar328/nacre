@@ -383,8 +383,8 @@ pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 ///
 /// **A test build's instrument** (`test-util`), like the two counters beside it: a product
 /// build pushes surfaces without counting, and computes no derivation it does not apply. It
-/// retires with the migration it measures — when `declined` is zero or justified, the producer's
-/// cache leaves the push doors and nothing is left to count.
+/// has nothing left to count once `declined` is zero or justified and the producer's cache leaves
+/// the push doors.
 #[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SurfaceDeriveCounts {
@@ -413,7 +413,7 @@ pub struct SurfaceDeriveCounts {
     /// refuses would land here too; none has been seen.)
     pub declined_cylinder: u64,
     /// Of `derived`, how many differ bit-for-bit from what the producer stated — the census
-    /// `in:` diff this cell predicts before it causes it.
+    /// `in:` diff, predicted before it is caused.
     pub differs: u64,
 }
 

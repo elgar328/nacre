@@ -234,8 +234,8 @@ impl Isometry {
         canonical_plane_coeffs([n2[0], n2[1], n2[2], d])
     }
 
-    /// **This isometry applied to a rational point**, exactly — the rational twin
-    /// [`point_approx`](Isometry::point_approx) never had, and the map
+    /// **This isometry applied to a rational point**, exactly — the rational twin of
+    /// [`point_approx`](Isometry::point_approx), and the map
     /// [`plane_coeffs`](Isometry::plane_coeffs) is described against.
     ///
     /// `x ↦ R(x − p) + p + t`, with `R` read from [`Angle::cos_sin_rat`]. `None` under the
@@ -246,7 +246,7 @@ impl Isometry {
     /// three points on it (its stated points): its coefficients are a product of two point
     /// differences and overflow `i128` far sooner than the points do. Moving such a plane means
     /// moving its points, and carrying them through f64 would put a rounded coordinate back into a
-    /// definition — the thing storing points was meant to stop.
+    /// definition — which storing points is there to stop.
     pub fn point_rat(&self, x: [Rat; 3]) -> Option<[Rat; 3]> {
         let turned = match self.rotate {
             None => x,

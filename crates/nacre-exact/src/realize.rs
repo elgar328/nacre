@@ -35,7 +35,7 @@ use super::*;
 ///
 /// **Not for the coordinates the kernel works with.** Rounding `px + u·c − v·s` as a whole
 /// would make every `WitnessPoint::coord_approx` literally `round(coord_hp_uncached)` and take
-/// `tol` to a half-ulp, and it was **declined**: that is arbitrary precision *per vertex*, where
+/// `tol` to a half-ulp, and it is **declined**: that is arbitrary precision *per vertex*, where
 /// [`Angle::cos_sin_f64`]'s is per *angle* and memoised, so it would pay at construction for a
 /// precision that `WitnessPoint`'s lazy `coord_hp_uncached` already buys **only where a judgement
 /// actually needs it**. (`nacre-judge` depends on this crate, so that type cannot be named here as
@@ -218,12 +218,12 @@ pub(crate) fn nearest_normal_f64(num: &num_bigint::BigInt, den: &num_bigint::Big
 /// because widening the interval can only cost an escalation, never buy a wrong acceptance, and
 /// `Mag` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
 ///
-/// **Built in `BigFloat`, not through `f64`.** An earlier spelling wrote
-/// `BigFloat::from_f64(2f64.powi(e))` and refused `|e| > 1000` — safe, because flushing a radius
-/// to zero would read as a *tighter* interval than the realization earned. But a realization at
-/// 1024 bits carries a radius near `2⁻¹⁰¹⁹`, so that refusal turned **more** precision into
-/// "undecided": climbing a ladder made the answer worse, measured. A power of two is exact in
-/// `BigFloat` at any precision, so the bound is assembled there and the range guard is gone.
+/// **Built in `BigFloat`, not through `f64`.** `BigFloat::from_f64(2f64.powi(e))` would have to
+/// refuse `|e| > 1000` — safe, because flushing a radius to zero would read as a *tighter* interval
+/// than the realization earned. But a realization at 1024 bits carries a radius near `2⁻¹⁰¹⁹`, so
+/// that refusal would turn **more** precision into "undecided": climbing a ladder made the answer
+/// worse, measured. A power of two is exact in `BigFloat` at any precision, so the bound is
+/// assembled there, with no `|e| > 1000` refusal.
 ///
 /// `None` only when the exponent is absurd enough that the multiply loop would not terminate
 /// usefully — far outside anything a realization produces.
@@ -366,12 +366,11 @@ fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)
 
 /// Round `q + r/den` to an integer, **ties to even** — IEEE's rule, and the kernel's.
 ///
-/// **Not "away from zero", which is what this crate shipped first.** At `2⁵² + ½` both
-/// neighbours are representable, so the tie rule decides, and half-away answered
-/// `4503599627370497` where [`Rat::to_f64`] — the road the point cache is built on — answers
-/// `4503599627370496`. Two roads for one quantity disagreeing at a tie is exactly what the
-/// vertex door exists to rule out. A 20,000-pair sweep missed it: random pairs are never ties,
-/// and the boundary family it was checked against (`2ᵏ⁺¹ − 1` over 2) lands on the one tie both
+/// **Not "away from zero".** At `2⁵² + ½` both neighbours are representable, so the tie rule
+/// decides, and half-away answers `4503599627370497` where [`Rat::to_f64`] — the road the point
+/// cache is built on — answers `4503599627370496`. Two roads for one quantity disagreeing at a tie
+/// is exactly what the vertex door exists to rule out. A 20,000-pair sweep would miss it: random
+/// pairs are never ties, and the boundary family (`2ᵏ⁺¹ − 1` over 2) lands on the one tie both
 /// rules resolve the same way.
 ///
 /// Both roundings this crate hands out — binary ([`round_shifted`]) and decimal
@@ -460,8 +459,8 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     // A carry out of the top bit needs no correction, measured. Rounding can push `q` to exactly
     // `2^53` (from `2^53 - ½`, the only way), or on the grid to `2^52`, and `q · 2^-k` is
     // representable exactly either way, so the wide `q` still spells the right `f64`. A branch for
-    // it was written, planted against a 20,000-pair sweep plus a power-of-two boundary family, and
-    // never changed an answer.
+    // it, planted against a 20,000-pair sweep plus a power-of-two boundary family, never changed
+    // an answer.
     const SUBNORMAL_SCALE: i64 = 1074;
     let e = num.magnitude().bits() as i64 - den.magnitude().bits() as i64;
     let mut k = (52 - e).min(SUBNORMAL_SCALE);
@@ -625,8 +624,8 @@ pub fn affine_hp(base: Rat, dir: Rat, s: &HpBounded, prec: usize) -> Option<HpBo
 /// `centre + r · e₁/|e₁|`, where `e₁` is the reference direction's component perpendicular to the
 /// axis and the radius is stated as its square `r2` (the cylinder truth's form). `centre`, `e₁`
 /// and `r2` are exact rationals. When `r2` is a rational's square — every radius a user writes —
-/// the single irrational step is `1/|e₁|`, one `inv_sqrt_hp` with exact arithmetic around it,
-/// the road this always took; otherwise `√r2` is realized beside it.
+/// the single irrational step is `1/|e₁|`, one `inv_sqrt_hp` with exact arithmetic around it;
+/// otherwise `√r2` is realized beside it.
 pub fn seam_point_hp(
     centre: [Rat; 3],
     e1: [Rat; 3],

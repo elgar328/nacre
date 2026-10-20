@@ -353,12 +353,12 @@ pub struct StripReach<'a> {
 /// extent reaches further one way than the other.
 ///
 /// **`Plus`/`Minus` are exact for every shape; `Crosses` is claimed only where it is proved.**
-/// Spanning a boundary is a *positive* fact the tangency road acts on, so under-reporting it is
-/// the safe direction — and for an asymmetric extent this door reports [`StripSide::Inside`]
-/// rather than prove it. The symmetric case (`hi = None`) keeps the complete answer it always
-/// had. An arc that genuinely spans a ruling is therefore "reached the strip, spanned nothing",
-/// which every consumer folds as "did not clear"; the day a caller needs the stronger claim from
-/// an arc, the proof is `A < W < B` on the two ends and it goes here.
+/// Spanning a boundary is a *positive* fact the tangency road acts on, so under-reporting it is the
+/// safe direction — and for an asymmetric extent this door reports [`StripSide::Inside`] rather
+/// than prove it. The symmetric case (`hi = None`) keeps its complete answer. An arc that genuinely
+/// spans a ruling is therefore "reached the strip, spanned nothing", which every consumer folds as
+/// "did not clear"; the day a caller needs the stronger claim from an arc, the proof is `A < W < B`
+/// on the two ends and it goes here.
 pub fn cylinder_strip_side_extent(
     coeffs: &[Rat; 4],
     reach: &StripReach<'_>,
@@ -452,10 +452,9 @@ pub fn cylinder_ruling_reached(
 /// — each a signed sum of three roots, and each falling to [`quad::sqrt_root_sum_cmp`] once the
 /// signs of `U` and `σ` say which term goes where.
 ///
-/// `hi = None` is the symmetric piece (a point, a disk), which is what this door has always been
-/// handed; then one scale answers both ends and the verdict is the one it always gave.
+/// `hi = None` is the symmetric piece (a point, a disk); then one scale answers both ends.
 ///
-/// **`touch_counts` names the boundary rather than assuming one**. Its predecessor is
+/// **`touch_counts` names the boundary rather than assuming one**. [`cylinder_ruling_reached`] is
 /// closed — a piece touching the ruling at one point has *reached* it — and that is the right
 /// reading for a clearance. The arrangement's net wants the other one: what it cannot mint is a
 /// **crossing**, and an edge tangent to another divides nothing. Two propositions, one door, and
@@ -656,7 +655,7 @@ pub fn cylinder_strip_side_branch(
     let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
         (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
     };
-    // Exactly the rational road's `e` and `w`, with `w` now a **pair**: the point's rational part
+    // Exactly the rational road's `e` and `w`, with `w` a **pair**: the point's rational part
     // and its `√C` part travel together through every linear step.
     let e: [BigInt; 3] = core::array::from_fn(|i| {
         let (j, k) = ((i + 1) % 3, (i + 2) % 3);

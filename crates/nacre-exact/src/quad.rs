@@ -118,10 +118,9 @@ impl QuadVal {
         QuadVal::new(self.a.checked_sub(rhs.a)?, self.b.checked_sub(rhs.b)?, c)
     }
 
-    /// Exact negation; `None` on overflow. Checked, not infallible — the first spelling
-    /// claimed "a reduced `Ratio` never holds `i128::MIN`", and that is false (measured:
-    /// `Rat::from_int(i128::MIN)` is a legal reduced value whose negation overflows). The
-    /// claim was a panic path dressed as a proof; the checked contract is the honest one.
+    /// Exact negation; `None` on overflow. Checked, not infallible: a reduced `Ratio` can hold
+    /// `i128::MIN` (measured: `Rat::from_int(i128::MIN)` is a legal reduced value whose negation
+    /// overflows), so claiming otherwise would be a panic path dressed as a proof.
     pub fn checked_neg(&self) -> Option<QuadVal> {
         let zero = Rat::from_int(0);
         QuadVal::new(zero.checked_sub(self.a)?, zero.checked_sub(self.b)?, self.c)
@@ -291,9 +290,9 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
 ///
 /// Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
 /// answering. A caller that assembled the same expression in `QuadVal` would lose the point
-/// instead — which is what this replaces.
+/// instead.
 ///
-/// **And the division cannot go to `inf/inf`.** That was the worry worth checking: both parts
+/// **And the division cannot go to `inf/inf`.** That is the worry worth checking: both parts
 /// are `BigInt` and `f64` runs out at `10^308`. It cannot happen *because of the input type* —
 /// every part comes from a `Rat` (i128, under `10^38`), and the products here reach at most five
 /// of them, so nothing exceeds about `10^190`. ⇒ the bound is the argument type's, not this
@@ -314,7 +313,7 @@ pub fn branch_point_approx(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
 /// **Which side of a plane·plane·cylinder point a three-plane point lies on, along one axis** —
 /// `Positive` when the three-plane point's coordinate is the larger. Exact and **total**.
 ///
-/// The two vertices an arrangement can hold once arcs arrive are named in different worlds: a
+/// The two vertices an arrangement holds are named in different worlds: a
 /// three-plane node is a rational point ([`MeetPoint`], `Narrow` or `Wide`), a branch node is
 /// `a + b√c`. `loop_winding` needs the lexicographically least node of a ring, so it must compare
 /// across them — and this is that comparison, reduced to one first-storey sign:
@@ -384,8 +383,8 @@ fn orient_mul(x: Orient, y: Orient) -> Orient {
 /// `sign(A + B·√C)` for integers, `C ≥ 0` — the base of the tower.
 ///
 /// Case ladder (each case *first* — the order is load-bearing):
-/// - `C = 0` → `sign(A)` (`B·√0 = 0` whatever `B` is — answering `sign(B)` here was the
-///   spec-level bug the plan review caught).
+/// - `C = 0` → `sign(A)` (`B·√0 = 0` whatever `B` is — answering `sign(B)` here would be
+///   wrong).
 /// - `B = 0` → `sign(A)`; `A = 0` → `sign(B)` (√C > 0 here).
 /// - same sign → that sign.
 /// - opposite signs → `sign(A) · sign(A² − B²·C)`: the comparison alone does not carry the
@@ -1055,10 +1054,10 @@ fn root_sum_side(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> Orient {
 /// one squaring in integers — which is also what keeps an `i128` ceiling out of a question that
 /// has no width.
 ///
-/// Why this is one function rather than a parallel-only one plus a precondition: the caller
-/// that had to establish "these are parallel" answered the *other* case by refusing it, which
-/// turned a limit of the arithmetic into a limit of the kernel — a drill crossing a bore at a
-/// safe distance was declined as "touching".
+/// Why this is one function rather than a parallel-only one plus a precondition: a caller that has
+/// to establish "these are parallel" would answer the *other* case by refusing it, turning a limit
+/// of the arithmetic into a limit of the kernel — a drill crossing a bore at a safe distance would
+/// be declined as "touching".
 ///
 /// This is a statement about two **infinite surfaces**, and a sufficient condition only: the
 /// gate asks it first, and a non-parallel pair it cannot clear is then asked about its faces —
@@ -1158,10 +1157,10 @@ fn skew_axes_clear(o_a: &V3, m_a: &V3, r2_a: &BigRat, o_b: &V3, m_b: &V3, r2_b: 
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, then the sign
 /// tower. Exact and **total**.
 ///
-/// **The arithmetic runs in `BigInt`, and that is the point.** The first spelling built the
-/// value in checked `Rat` and answered `None` on overflow, which put a width limit inside a
-/// *shape* question — the thing this crate exists to keep out. Its consumers are the arrangement's
-/// containment tests, where a decline is not a smaller answer but a refused solid.
+/// **The arithmetic runs in `BigInt`, and that is the point.** In checked `Rat` the value would
+/// answer `None` on overflow, putting a width limit inside a *shape* question — the thing this
+/// crate exists to keep out. Its consumers are the arrangement's containment tests, where a decline
+/// is not a smaller answer but a refused solid.
 ///
 /// Denominators are cleared as positive factors, so only the numerator's sign survives:
 /// `sign(P + Q·√c)` with `P`, `Q` rational becomes `sign1_int` on

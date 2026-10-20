@@ -79,15 +79,15 @@ pub fn plane_frame_named(
     //
     // Its components are bounded by `|n|·|u_raw|`, so the one `checked_mul` below covers them:
     // if the squared length fits, so does every component.
-    // `v̂` exactly when it fits, and an honest fallback when it does not.
     //
+    // `v̂` exactly when it fits, and an honest fallback when it does not.
     // `|v_raw|² = |n|²·|u_raw|²` is a product of two squared lengths, so it needs **twice** the
     // width they do — measured, that halves the per-component budget from ~62 bits to ~31 and
     // declines 774 of 780 planes built from a wide normal. When it does not fit, the realization
-    // falls back to `v̂ = ŵ × û`, which costs two roundings that do not cancel instead of one.
-    // That is the accuracy this crate had before `v_raw` existed — a graceful step down, never
-    // a wrong frame. (Filling `vv` with something else would not be a fallback but a corruption:
-    // `v̂` would come out the wrong *length* and the basis would not be orthonormal.)
+    // falls back to `v̂ = ŵ × û`, which costs two roundings that do not cancel instead of one. A
+    // graceful step down in accuracy, never a wrong frame. (Filling `vv` with something else would
+    // not be a fallback but a corruption: `v̂` would come out the wrong *length* and the basis
+    // would not be orthonormal.)
     let cx = |i: usize, j: usize| {
         n[i].checked_mul(u_raw[j])?
             .checked_sub(n[j].checked_mul(u_raw[i])?)

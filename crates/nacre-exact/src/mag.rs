@@ -50,10 +50,10 @@ const GAP: i64 = 60;
 
 /// Exactly `2^k`, built from the exponent field.
 ///
-/// `2f64.powi(k)` is what this replaces, and with a **runtime** `k` that is not a constant fold —
-/// it is `__powidf2`, a square-and-multiply loop, which a profile of a rotated boolean found at
-/// **2.1% of the whole run** (`Mag`'s arithmetic totalled 7.6%, for a type that is two f64s of
-/// bookkeeping). A power of two is one exponent field, so this is a shift and a load.
+/// `2f64.powi(k)` with a **runtime** `k` is not a constant fold — it is `__powidf2`, a
+/// square-and-multiply loop, which a profile of a rotated boolean found at **2.1% of the whole
+/// run** (`Mag`'s arithmetic totalled 7.6%, for a type that is two f64s of bookkeeping). A power of
+/// two is one exponent field, so this is a shift and a load.
 ///
 /// Callers stay inside `|k| <= GAP`, far from the subnormal edge, so the result is always normal
 /// and always exact — the value is identical to `powi`'s, only cheaper.
@@ -311,10 +311,7 @@ mod tests {
     fn a_deep_ladder_radius_does_not_underflow_to_zero() {
         let r = Mag::pow2(-2048);
         assert!(!r.is_zero(), "a 2048-bit rung's radius vanished");
-        assert!(
-            2f64.powi(-2048) == 0.0,
-            "the f64 this replaces does underflow"
-        );
+        assert!(2f64.powi(-2048) == 0.0, "an f64 radius would underflow");
         // …and it still orders correctly against an even smaller one.
         assert!(Mag::pow2(-4096).lt(r));
         assert!(!r.lt(Mag::pow2(-4096)));
@@ -345,7 +342,7 @@ mod tests {
         assert!(s.lt(Mag::scaled(0.8, -99)), "the sum overshot");
     }
 
-    /// `pow2_f64` is a *replacement*, so what matters is that it replaces exactly — every
+    /// `pow2_f64` stands in for `2f64.powi`, so what matters is that it agrees exactly — every
     /// exponent a caller can reach must give the bit-identical `powi` value.
     #[test]
     fn the_power_of_two_shortcut_is_bit_identical() {
@@ -359,9 +356,9 @@ mod tests {
     }
 
     /// `upper_f64` answers `2^e` itself over the normal range and floors at the smallest normal
-    /// below it. `black_box` keeps `e` a runtime value: folded as a constant, `2f64.powi` was right
-    /// and its runtime zero did not show. The oracle doubles or halves `1.0`, exact for every power
-    /// of two an `f64` holds.
+    /// below it. `black_box` keeps `e` a runtime value: folded as a constant, `2f64.powi` is right
+    /// and its runtime zero does not show. The oracle doubles or halves `1.0`, exact for every
+    /// power of two an `f64` holds.
     #[test]
     fn an_upper_bound_below_the_normal_range_floors_at_the_smallest_normal() {
         for e in [1023i64, 0, -1021, -1022] {
@@ -378,7 +375,7 @@ mod tests {
 
     /// A `BigFloat`'s size reads the same way: its octave's top `2^exponent` (so a power of two
     /// reads one octave high), the smallest normal below the normal range, and infinity for a
-    /// value with no exponent. `2^-1050` is the case the replaced spelling got wrong: its octave's
+    /// value with no exponent. `2^-1050` is the case `2f64.powi` gets wrong: its octave's
     /// top `2^-1049` is an `f64` (a subnormal), yet `2f64.powi(-1049)` with a runtime exponent reads
     /// `0.0`. `2^-1100` is past every `f64`, so there any `f64` reading of `2^e` is `0.0`.
     #[test]
@@ -396,7 +393,7 @@ mod tests {
             if k == 28 {
                 let top = f64::MIN_POSITIVE * 2f64.powi(e + 1022); // 2^-1049, exactly
                 assert!(top > 0.0, "the octave's top is an f64");
-                assert_eq!(2f64.powi(e), 0.0, "the replaced spelling read it as zero");
+                assert_eq!(2f64.powi(e), 0.0, "runtime 2f64.powi reads it as zero");
             }
             assert_eq!(
                 bigfloat_upper_f64(&tiny),

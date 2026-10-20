@@ -1,6 +1,5 @@
-//! Exact rational scalars — the overhaul's exact rational value engine (`Rat`/`Angle`) and
-//! the axis/rotation/isometry value types the kernel builds on. (The toleranced-sign frame
-//! judgment this value engine enables now lives in `nacre-judge`.)
+//! Exact rational scalars — the exact rational value engine (`Rat`/`Angle`) and the
+//! axis/rotation/isometry value types the kernel builds on.
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
 //! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
@@ -134,7 +133,7 @@ thread_local! {
     /// the pair, and it is the correctly rounded one, which is unique. This memo therefore cannot
     /// change an answer — it only stops the arbitrary-precision realization from running per vertex.
     ///
-    /// **Measured, which is why it is here from the start**: one realization costs ~32µs against
+    /// **Measured, which is why it is here**: one realization costs ~32µs against
     /// libm's 22ns, and `Isometry::point_approx` runs per vertex.
     static F64_TRIG: RefCell<HashMap<Angle, (f64, f64)>> = RefCell::new(HashMap::new());
 

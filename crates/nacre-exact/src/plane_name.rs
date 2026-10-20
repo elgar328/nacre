@@ -39,9 +39,8 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
 /// structurally equal (`==`/`Hash`) across representations. That is what makes this the
 /// interning key: identity never depends on which route derived the name.
 ///
-/// `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports,
-/// `base_rat`) read [`PlaneName::narrow`] and decline on `None`, exactly as they declined on a
-/// missing name before — a wide name does not open a frame.
+/// `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports, `base_rat`)
+/// read [`PlaneName::narrow`] and decline on `None` — a wide name does not open a frame.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PlaneName {
     Narrow([Rat; 4]),
@@ -90,13 +89,14 @@ impl PlaneName {
 /// not. `None` means exactly one thing — the points are collinear and name no plane. It is
 /// never a shrug about an intermediate, nor about the answer's width.
 ///
-/// **The distinction is not academic — it was most of the failures.** `plane_through_points`
-/// works in `Rat`, so `(b − a) × (c − a)` multiplies the points' denominators together and
-/// `−n · a` multiplies once more. Measured on the failing cases, that peak needs **271 bits** while
-/// the canonical answer, after the content is divided out, comes back to about **50**. Recomputing
-/// those at unbounded precision reproduced the stored name **1,545 times out of 1,545** — the two
-/// vectors differ by a scalar factor and `canonical_plane_coeffs` removes exactly that freedom. So
-/// what overflowed was the road, not the destination.
+/// **The distinction is not academic — measured, it is most of the failures.**
+/// `plane_through_points` works in `Rat`, so `(b − a) × (c − a)` multiplies the points'
+/// denominators together and `−n · a` multiplies once more. Measured on the cases that road fails,
+/// that peak needs **271 bits** while the canonical answer, after the content is divided out, comes
+/// back to about **50**. Recomputing those at unbounded precision reproduced the stored name
+/// **1,545 times out of 1,545** — the two vectors differ by a scalar factor and
+/// `canonical_plane_coeffs` removes exactly that freedom. So what overflowed was the road, not the
+/// destination.
 ///
 /// **Why a second function rather than widening the first.** `plane_through_points` is what a
 /// *caller* uses to state a plane they wrote down ([`crate::plane_frame`]'s callers, a sketch, a
@@ -123,10 +123,10 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneNa
 /// is what holds it. `None` is collinearity, or a canonical component that does not fit `Rat`.
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
     // **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
-    // `plane_through_points` term for term — and that is how this started. But `Ratio` reduces by a
-    // gcd on *every* multiply and subtract, and there are a dozen of them, so the reduction work
-    // dominates. Clearing each point's denominators once up front leaves plain integer arithmetic
-    // and exactly one gcd at the end, where the content has to come out anyway.
+    // `plane_through_points` term for term. But `Ratio` reduces by a gcd on *every* multiply and
+    // subtract, and there are a dozen of them, so the reduction work dominates. Clearing each
+    // point's denominators once up front leaves plain integer arithmetic and exactly one gcd at the
+    // end, where the content has to come out anyway.
     //
     // **A plane is scale-free, which is what makes this legal.** Each point is scaled by its own
     // `D_k`, so `u'` and `v'` are the true edges times `D_a·D_b` and `D_a·D_c`; their cross product
@@ -171,7 +171,7 @@ fn plane_name_from_lifted(
 
     // The normalization invariant lives here: narrow whenever the canonical answer fits
     // `i128`, `Wide` only when it does not — so equal planes are structurally equal whichever
-    // route derived them. (This used to be the one honest failure; now it is the fork.)
+    // route derived them.
     let mut out = [Rat::from_int(0); 4];
     for (o, x) in out.iter_mut().zip(&num) {
         match x.to_i128() {

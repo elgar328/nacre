@@ -127,9 +127,9 @@ impl Angle {
     /// realizing a rotation angle into f64: every path that turns a point or direction by an angle
     /// goes through here.
     ///
-    /// **No libm.** This used to be `(deg.to_f64() * PI / 180.0).cos()`, and the error of that
-    /// is not something anyone contracts: neither Rust nor any platform promises an accuracy for
-    /// `f64::cos`, measured here at `< 5ε`. Worse, it was not a function of the angle — `sin 27°`
+    /// **No libm.** `(deg.to_f64() * PI / 180.0).cos()` has an error nobody contracts: neither Rust
+    /// nor any platform promises an accuracy for `f64::cos`, measured here at `< 5ε`. Worse, it is
+    /// not a function of the angle — `sin 27°`
     /// came out one ulp apart between a debug and a release build, and between two call sites
     /// *within one release build*, because LLVM evaluates a visible constant angle at compile time
     /// and its answer differs from the runtime library's. Rounding the high-precision realization
@@ -251,7 +251,7 @@ impl Angle {
             // it usually sits well above the truth — but when `|diff|` is itself a power of two the
             // slack is exactly zero, and then `mag + rad` rounds back down to `mag` in f64 and the
             // "bound" is short by the radius. `sin 30°` is that case: it misses 0.5 by exactly
-            // `2⁻⁵⁴`, and the ground-truth test caught the missing ulp the day this was written.
+            // `2⁻⁵⁴` — a ground-truth test measured the missing ulp.
             (mag + rad.upper_f64()) * (1.0 + 2.0 * f64::EPSILON)
         };
         (gap(c, &hc, rc), gap(s, &hs, rs))

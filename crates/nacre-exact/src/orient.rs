@@ -4,8 +4,8 @@ use super::*;
 /// (same convention), for coordinates that *are* rational rather than f64.
 ///
 /// **Total.** Unlike every other `Rat` derivation here, this cannot decline: a sign consumed by
-/// a simplicity check that failed open on overflow would read "no intersection" where there is
-/// one — silent-wrong, the exact shape [`plane_name_exact`] was built to kill. So the `Rat` route
+/// a simplicity check that fails open on overflow would read "no intersection" where there is
+/// one — silent-wrong, the exact shape [`plane_name_exact`] exists to kill. So the `Rat` route
 /// runs first and an overflow falls through to integer arithmetic that cannot overflow.
 ///
 /// **The `BigInt` arm is load-bearing, not a corner case.** [`Rat::from_decimal`] denominators
