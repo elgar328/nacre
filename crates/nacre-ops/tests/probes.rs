@@ -1,4 +1,5 @@
-//! Regression probes: each file is one shape that once broke the kernel, kept as a named test.
+//! Regression probes: each file is one shape the kernel must get right, with its controls, kept as
+//! named tests.
 
 #[path = "support/fixtures.rs"]
 mod common;

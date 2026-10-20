@@ -1,12 +1,12 @@
-//! Fusing a part with rotated copies of itself — and the naming rule that made 30° fail.
+//! Fusing a part with rotated copies of itself — and the vertex naming 30° depends on.
 //!
-//! At 30° the arithmetic conspires: `sin 30° = ½` exactly, so a rotated copy's profile corner
-//! lands *precisely* on one of the original's face planes, and four planes concur at that point.
-//! The arrangement named it by its canonical (lexicographically first) triple, which included a
-//! plane the union keeps no face on — the copy's wall, buried inside the material. The fuse then
-//! succeeded while returning a solid that could not describe itself, and the failure surfaced two
-//! operations later, when the next `rotateZ` refused to remap a definition pointing at a surface
-//! this solid has no face on.
+//! At 30° the arithmetic conspires: `sin 30° = ½` exactly, so a rotated copy's profile corner lands
+//! *precisely* on one of the original's face planes, and four planes concur at that point. Naming
+//! it by its canonical (lexicographically first) triple would include a plane the union keeps no
+//! face on — the copy's wall, buried inside the material. The fuse would then succeed while
+//! returning a solid that cannot describe itself, and the failure would surface two operations
+//! later, when the next `rotateZ` refuses to remap a definition pointing at a surface this solid
+//! has no face on.
 //!
 //! So the propositions here are about **what a result says about itself**, not about volume.
 
@@ -129,8 +129,8 @@ fn foreign_definitions(m: &Model, solid: Handle<Solid>) -> Vec<String> {
     bad
 }
 
-/// ① The fuse that started it: it always built, and what it built was unusable. Both halves are
-/// asserted, because the second is the one that was silently false.
+/// ① The 30° fuse: it must build, and what it builds must be usable. Both halves are asserted,
+/// because the second is the one that can fail silently.
 #[test]
 fn a_fused_result_names_itself_in_its_own_surfaces() {
     let mut m = Model::new();
@@ -176,42 +176,42 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
 /// The band one arbitrary probe vertex costs.
 ///
 /// "Is this hole inside that ring" is answered by casting a ray from a vertex, and a ring node on
-/// the ray's line makes the parity ambiguous, so that candidate is dropped. The cleaning pass
-/// probed the hole's *first* node and gave up if it was spoiled — while the arrangement, asking
-/// the same question, tried every node. A small change of angle leaves the topology alone, so the
-/// same unlucky first node persisted across a whole band of angles and took all of them down.
+/// the ray's line makes the parity ambiguous, so that candidate is dropped. Probing only the hole's
+/// *first* node and giving up if it is spoiled — where the arrangement, asking the same question,
+/// tries every node — would lose a whole band: a small change of angle leaves the topology alone,
+/// so the same unlucky first node would persist across the band and take all of it down.
 ///
 /// 41° is the cheapest angle in the band, so it is the one the default suite runs; the
 /// rest of the band lives in the sweep below, which is slow enough to be opt-in.
 #[test]
-fn the_band_of_angles_a_single_probe_used_to_cost() {
+fn the_band_of_angles_a_single_probe_costs() {
     if let Err((deg, e)) = sweep(41) {
         panic!("the 41° sweep died at the {deg}° copy: {e:?}");
     }
 }
 
-/// The angles the retry alone could not save — where **every** candidate ray was blocked.
+/// The angles where **every** candidate ray is blocked, so trying every node is not enough.
 ///
 /// A ring node sitting on the ray's line is judged, not abandoned: at 38–40° the arrangement puts
 /// one on every line a probe can cast along — five isolated corners and one whole edge,
 /// measured. The node's two off-line neighbours settle it — opposite sides is a crossing, equal
 /// sides a touch — the tracer's own rule.
 ///
-/// This carries the *second* fix the way the test above carries the first; they lock different
-/// things, so both stay in the default suite.
+/// This carries the on-line judgement the way the test above carries the every-node retry; they
+/// lock different things, so both stay in the default suite.
 #[test]
-fn the_angles_where_no_ray_was_left_unblocked() {
+fn the_angles_where_no_ray_is_left_unblocked() {
     if let Err((deg, e)) = sweep(38) {
         panic!("the 38° sweep died at the {deg}° copy: {e:?}");
     }
 }
 
-/// The whole band, plus the boundaries that never failed and must not start (37°, 46°) and the
-/// long 20° sweep — seventeen chained fuses, each on the result of the last.
+/// The whole band, plus the boundaries either side of it, which must build (37°, 46°), and the long
+/// 20° sweep — seventeen chained fuses, each on the result of the last.
 ///
 /// `#[ignore]`: about eighty booleans on a solid that grows with every one, minutes in a debug
-/// build. The population is what the two fixes were judged by, so it is written down; the default
-/// suite carries one angle from each.
+/// build. The population is what the two rules answer to, so it is written down; the default suite
+/// carries one angle from each.
 #[test]
 #[ignore = "slow angle sweep (run with --ignored)"]
 fn the_whole_band_of_angles() {
@@ -221,7 +221,7 @@ fn the_whole_band_of_angles() {
             died.push(format!("{step}° at the {deg}° copy: {e:?}"));
         }
     }
-    assert!(died.is_empty(), "the failing population changed: {died:?}");
+    assert!(died.is_empty(), "an angle in the band died: {died:?}");
 }
 
 /// ② The whole 30° sweep — eleven chained fuses, each on the result of the last.
@@ -248,19 +248,17 @@ fn the_thirty_degree_sweep_runs_to_completion() {
     }
 }
 
-/// ③ The negative control: a step angle that rejects for an *other* reason, which renaming
-/// vertices must not touch. If it moves, the fix reached further than its argument says it does.
+/// ③ The negative control: a step angle that rejects for an *other* reason, which the vertex naming
+/// must not touch. If it moves, the naming reaches further than its argument says it does.
 ///
 /// Not `120°`: two bodies meeting along one line are two bodies, and that copy comes back as
 /// two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`).
 ///
-/// **45° says its truth**: the arm landing coplanar on its own body is a
-/// self-touch, and since the whole-result judgement runs before minting, the reject is
-/// `SelfTouchingResult` — `Impossible`,
-/// with the touching edge itself as the witness — not `CoplanarPinch` (`NotSupported`, a
-/// capability-limit name raised by a site that could not see the whole result).
+/// **45° says its truth**: the arm landing coplanar on its own body is a self-touch, and since the
+/// whole-result judgement runs before minting, the reject is `SelfTouchingResult` — `Impossible`,
+/// with the touching edge itself as the witness.
 #[test]
-fn the_other_rejections_are_untouched() {
+fn another_rejection_keeps_its_own_reason() {
     let cases: [(usize, RejectReason); 1] = [(45, RejectReason::SelfTouchingResult)];
     for (step, expected) in cases {
         let mut m = Model::new();
@@ -270,7 +268,7 @@ fn the_other_rejections_are_untouched() {
         for deg in (step..360).step_by(step) {
             let c = copy_of(&mut m, u);
             let Ok(c) = rot_z(&mut m, c, deg as i128) else {
-                panic!("{step}°: a copy stopped being movable — that is this fix's own subject")
+                panic!("{step}°: a copy stopped being movable — that is this file's own subject")
             };
             match boolean(&mut m, BoolKind::Fuse, part, c) {
                 Ok(out) => {
@@ -316,8 +314,8 @@ fn the_other_rejections_are_untouched() {
 /// else, so the fuse is the two bodies it was handed — on a real part, not a pair of cubes.
 ///
 /// Written as its own statement rather than through `sweep`, because `sweep` is a *fold* and
-/// asserts its result stays one solid. That assertion is what caught the first draft of this test,
-/// which claimed the fold ran to completion: it does not, and the first step is why.
+/// asserts its result stays one solid. The 120° fold does not stay one solid, and the first step is
+/// why.
 #[test]
 fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
     let mut m = Model::new();

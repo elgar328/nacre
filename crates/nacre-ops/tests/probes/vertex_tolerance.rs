@@ -8,12 +8,12 @@
 //! wherever four planes concur — not against the triple the arrangement computed the point with.
 //!
 //! On an axis-aligned plane the two agree exactly. A rotated plane passes within an ulp or two, so
-//! a figure measured against the computing triple bounds a distance nobody checks while the checker
-//! measures a different one: 454 of 91,394 result vertices in the corpus, short by at most 2.1e-14
-//! (about two ulps at these coordinates), and a `replay` proptest run drew one.
+//! a figure measured against the computing triple would bound a distance nobody checks while the
+//! checker measures a different one: 454 of 91,394 result vertices in the corpus would be short by
+//! at most 2.1e-14 (about two ulps at these coordinates, measured).
 //!
-//! The proptest seed that found it is kept, but a seed is a lucky draw. What this file asserts is
-//! the **proposition**, on shapes chosen because they must exercise it.
+//! The `replay` proptest keeps a seed that draws one, but a seed is a lucky draw. What this file
+//! asserts is the **proposition**, on shapes chosen because they must exercise it.
 
 use nacre_exact::Axis;
 use nacre_math::{Point2, Point3};
@@ -102,7 +102,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
 /// apex edge pierces the staircase's step face, four planes meet at that point, and the assembly
 /// re-names the vertex.
 ///
-/// Measured against the computing triple instead, this goes red. A lock that stays green either
+/// Measured against the computing triple instead, this would go red. A lock that stays green either
 /// way measures nothing.
 #[test]
 fn a_pierced_step_realizes_on_its_defining_planes() {
@@ -155,7 +155,7 @@ fn a_pierced_step_realizes_on_its_defining_planes() {
 /// The negative control: axis-aligned, where the computing triple and the re-named one agree
 /// exactly. If this fails, the ordinary case broke rather than the rotated one.
 #[test]
-fn an_axis_aligned_fuse_is_unchanged() {
+fn an_axis_aligned_fuse_matches_its_definitions() {
     let mut m = Model::new();
     let a = nacre_ops::fixtures::cuboid(
         &mut m,

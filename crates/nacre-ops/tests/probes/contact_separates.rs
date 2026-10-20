@@ -4,7 +4,7 @@
 //! The kernel already returns several solids (disjoint operands do, `knife_edge.rs`), Cut and
 //! Common already accept these contacts, and OCCT answers `SOLID 2` for all of them. What it must
 //! *not* do is separate a body from itself: where the material loops around the contact, cutting
-//! there leaves one piece and no 2-manifold contains it, so the reject stays.
+//! there leaves one piece and no 2-manifold contains it, so that fuse is refused.
 //!
 //! The criterion is connectivity through **manifold contacts only** — an edge two faces use. It is
 //! the 3D reading of the rule `unify_coplanar_faces` already applies to coplanar faces one
@@ -112,11 +112,11 @@ fn two_cubes_touching_at_a_corner_come_back_as_two_bodies() {
     assert_eq!(nacre_validate::validate(&m), Vec::new());
 }
 
-/// ③ **The negative control, along a line.** A and B meet only along `x = 2, y = 2`, but a
-/// bridge overlaps both, so the material loops around the contact: cut it there and one piece
-/// remains. There is no pair of solids to return, and the reject stays.
+/// ③ **The negative control, along a line.** A and B meet only along `x = 2, y = 2`, but a bridge
+/// overlaps both, so the material loops around the contact: cut it there and one piece remains.
+/// There is no pair of solids to return, and it is refused.
 ///
-/// Without this the change is indistinguishable from deleting the reject.
+/// Without this, accepting contacts is indistinguishable from deleting the reject.
 #[test]
 fn a_body_pinched_along_a_line_is_still_a_reject() {
     let mut m = Model::new();
@@ -262,8 +262,8 @@ fn two_cavities_meeting_along_a_line_are_still_a_reject() {
 
 /// ⑤b **A void touching a wall from inside** — its corner on the face, not on an edge, so the
 /// contact is a line in the *interior* of the block's wall. Every edge is still used twice and the
-/// count sees nothing; the self-touch test is what names it. Kept because it is the cavity twin of
-/// the self-touching solids, and it must not start passing when contacts learn to separate.
+/// count sees nothing; the self-touch test is what names it. It is the cavity twin of the
+/// self-touching solids, and separating contacts must not let it pass.
 #[test]
 fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     let mut m = Model::new();
@@ -370,8 +370,8 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
     }
 }
 
-/// ⑤d **The all-grazing population, not one shape of it**. ⑤c's diamond was `n = 1`
-/// evidence that the new supply decides *and* decides right; these are the rest of the axis.
+/// ⑤d **The all-grazing population, not one shape of it**. ⑤c's diamond is `n = 1` evidence that
+/// the edge-named supply decides *and* decides right; these are the rest of the axis.
 ///
 /// Each void's every corner sits on a wall of the host, so the vertex supply is exhausted in every
 /// one — and each is checked the same way: the `Cut` is a refusal whose name is the shape's own,
@@ -446,9 +446,9 @@ fn each_body_names_itself_by_its_own_planes() {
     }
 }
 
-/// ⑦ Cut and Common were already accepting these contacts and must not move.
+/// ⑦ Cut and Common accept these contacts: the cut removes nothing and the common is empty.
 #[test]
-fn cut_and_common_are_unchanged_by_a_contact() {
+fn cut_and_common_accept_a_contact() {
     for (lo, hi) in [
         ([1.0, 1.0, 0.0], [2.0, 2.0, 1.0]), // line
         ([1.0, 1.0, 1.0], [2.0, 2.0, 2.0]), // point

@@ -4,12 +4,11 @@
 //! `nacre_judge::predicate::NameInts { ints, wide }` with `Judge::name_rescue` carry a wide name's
 //! integer coefficients into the three sign predicates that read coefficients at all —
 //! `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — while an all-narrow question keeps its
-//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it compares two world
-//! names whole, a wide one included, before it reads any definition.
-//! What the numbers below measure is the cost of the toleranced route an **irrational motion**
-//! still takes — here the frame nodes of the pocket's wall and of the tool raised on the datum (the
-//! prism's own decimal orthonormal frame is exact and makes no node) — with the datum's name
-//! narrow, wide, or absent.
+//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it compares two world names
+//! whole, a wide one included, before it reads any definition. What the numbers below measure is
+//! the cost of the toleranced route an **irrational motion** takes — here the frame nodes of the
+//! pocket's wall and of the tool raised on the datum (the prism's own decimal orthonormal frame is
+//! exact and makes no node) — with the datum's name narrow, wide, or absent.
 //!
 //! ```text
 //! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
@@ -19,23 +18,23 @@
 //! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
 //! bracket their own boolean with it. Run side by side — the test harness's default — one test's
 //! `take()` walks off with the other's accumulated climbs, and every printed number is still
-//! plausible while being attributed to the wrong arm. Measured without the lock: the same tree
-//! printed `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 /
-//! wide_name=917` on the next, which is how a comparison against a saved baseline invents a change
-//! that never happened — and how an assertion that the census moved goes red by luck. Serialized,
-//! the same tree prints the same table twice. Every test here that runs a boolean takes it;
+//! plausible while being attributed to the wrong arm. Measured without the lock, the same tree
+//! prints `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917`
+//! on the next, which is how a comparison against a saved baseline invents a change that never
+//! happened — and how an assertion that the census moved goes red by luck. Serialized, the same
+//! tree prints the same table twice. Every test here that runs a boolean takes it;
 //! `does_a_vertex_named_datum_produce_a_wide_name` runs none.
 //!
 //! What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
 //! build" does not apply to that half.
 //!
-//! # What it measured
+//! # What it measures
 //!
-//! **The population exists, and the datum is its first producer.**
+//! **The population exists, and the datum produces it.**
 //! Of 60 triples over the `wf` family's discovered vertices, **24 name a plane the wide vessel has
-//! to hold**, the widest at **168 bits**. No construction path had ever produced one (`stat
-//! wide_planes` is 0 across the corpus).
+//! to hold**, the widest at **168 bits**. No construction path produces one (`stat wide_planes` is
+//! 0 across the corpus).
 //!
 //! And the framed prism is the *wrong* place to look — 4 triples, **0 wide**, 5 bits. Inside its
 //! own frame a tilted prism is axis-aligned, so its far cap is `w = dist`. Frames exist to make
@@ -58,10 +57,10 @@
 //! a coefficient. A one-variable version would need one plane whose name is wide
 //! and narrow at once, which is a contradiction.
 //!
-//! Two earlier versions of this measurement reported **nothing** and looked fine doing it:
-//! "datum vs no datum" gave identical climb counts, because a datum nobody cuts with never reaches
-//! a plane table; and counting bits only on the resolved return path gave a mean of exactly 0,
-//! because most climbs end in `Coincident` or a proved zero.
+//! Two other spellings of this measurement would report **nothing** and look fine doing it: "datum
+//! vs no datum" gives identical climb counts, because a datum nobody cuts with never reaches a
+//! plane table; and counting bits only on the resolved return path gives a mean of exactly 0,
+//! because most climbs end in `Coincident` or a proved zero (measured).
 
 use nacre_math::{Point3, Vector3};
 use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchPlane};
@@ -100,13 +99,12 @@ fn assert_the_census_moved(climbs: u64, bits: u64) {
 }
 
 /// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
-/// definition**. A boolean's vertices
-/// realize, and so do a prism's, so the population this file draws triples from is wider than
-/// the one its numbers were measured on.
+/// definition**. A boolean's vertices realize, and so do a prism's, so the population this file
+/// draws triples from is wider than the one its numbers were measured on.
 ///
-/// Stated positively. It read "not the bare figure" while two variants counted as vouched for;
-/// with `Ceiling` in the enum that negative form would admit a vertex whose coordinate nothing has
-/// proven anything about — the cheap road stopped on it.
+/// Stated positively: with `Ceiling` in the enum, the negative form "not the bare figure" would
+/// admit a vertex whose coordinate nothing has proven anything about — the cheap road stopped on
+/// it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
     matches!(m.vertex_cache(v), PointCache::Realized { .. })
 }
@@ -144,9 +142,8 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
 /// **First: is there a population at all?**
 ///
 /// A vertex-named datum's coefficients come from three solved points, so they are roughly three
-/// times as wide as a coordinate — the prediction is that this is the kernel's first producer of a
-/// `Wide` *name*, which no
-/// construction path has ever reached (`stat wide_planes` is 0 across the corpus).
+/// times as wide as a coordinate — the prediction is that this produces a `Wide` *name*, which no
+/// construction path reaches (`stat wide_planes` is 0 across the corpus).
 ///
 /// If it turns out narrow, this file stops here and says so rather than inventing a cost for a
 /// population that does not exist.
@@ -208,10 +205,9 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     // frame the tilted geometry is axis-aligned, so the far cap is `w = dist` and its name is a
     // handful of bits. Frames exist to make exactly that true.
     //
-    // The widest coordinates this kernel produces came from the decimal `wf` family's **discovered**
-    // vertices (59 bits, `tests/instruments/point_width.rs`). Three of those should give a name
-    // near three
-    // times as wide — that is the population to ask.
+    // The widest coordinates this kernel produces come from the decimal `wf` family's
+    // **discovered** vertices (59 bits, `tests/instruments/point_width.rs`). Three of those should
+    // give a name near three times as wide — that is the population to ask.
     let m = wf_family_with_pocket();
     let mut widths = Vec::new();
     let mut wide = 0usize;
@@ -330,15 +326,15 @@ fn what_a_datum_bearing_boolean_costs() {
     // The control is **wide name vs narrow name**, not "datum vs no datum".
     //
     // The same fixture offers both (60 triples: 24 wide, 36 narrow), so the two runs share the
-    // shape, the size and the motion history and differ only in whether the datum's canonical
-    // name fits `Rat` — which is exactly the fork that decides whether the exact shortcuts run.
-    // "Datum vs no datum" was the first attempt and it measured nothing: the two arms reported
-    // identical climb counts, because a datum nobody cuts with never reaches a plane table.
+    // shape, the size and the motion history and differ only in whether the datum's canonical name
+    // fits `Rat` — which is exactly the fork that decides whether the exact shortcuts run. "Datum
+    // vs no datum" would measure nothing: the two arms would report identical climb counts, because
+    // a datum nobody cuts with never reaches a plane table (measured).
     let run = |mode: &str| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();
         let target = m.live_solids()[0];
-        // The named arms measure over **discovered** vertices (their original question was the
-        // width of discovered coordinates). The nameless arm lifts that filter: this family's
+        // The named arms measure over **discovered** vertices (their question is the width of
+        // discovered coordinates). The nameless arm lifts that filter: this family's
         // differ-population lives on *constructed* corners (prism corners in one frame, pocket
         // corners in another) — the discovered ones here all straddle, which is a different
         // population (a datum through a straddler is accepted through the judged meet,
@@ -505,12 +501,11 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
 ///   measurement's scope (the unit differential covers its correctness).
 ///
 /// Two arms, one shape: the cuboid sliced by a **wide**-named datum plane vs a **narrow**-named
-/// one, each then cut by the same world column. Before the rescue the wide arm had no exact
-/// route at all; after it, the wide arm's cap-vs-column questions answer from the name's
-/// integers. (The narrow arm's cap has a name too, but its *witness* is deep-rational, so its
-/// f64 shortcuts may decline on rounding — the coefficient-mismatch population the plan lists
-/// as its own follow-up. The gate deliberately requires a wide participant, so the narrow arm
-/// measures the status quo.)
+/// one, each then cut by the same world column. Without the rescue the wide arm would have no exact
+/// route at all; with it, the wide arm's cap-vs-column questions answer from the name's integers.
+/// (The narrow arm's cap has a name too, but its *witness* is deep-rational, so its f64 shortcuts
+/// may decline on rounding — the coefficient-mismatch population. The gate deliberately requires a
+/// wide participant, so the narrow arm measures the route without the rescue.)
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
 fn what_a_second_generation_boolean_costs() {

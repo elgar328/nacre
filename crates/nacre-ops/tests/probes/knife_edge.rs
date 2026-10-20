@@ -1,15 +1,16 @@
-//! A knife edge on a foreign face plane — the tangency that broke the arrangement.
+//! A knife edge on a foreign face plane — a tangency the arrangement must survive.
 //!
-//! The failing population is not "rotation": it is an operand **edge** lying exactly in the
-//! other operand's face plane with both incident faces leaving that plane to one side. An
-//! axis-aligned box pair can never produce it (a box edge on a plane always brings a face with
-//! it — a seated contact), which is why the corpus missed it; a rotation's fixed line and a
-//! slanted sketch both produce it routinely.
+//! The population is not "rotation": it is an operand **edge** lying exactly in the other operand's
+//! face plane with both incident faces leaving that plane to one side. An axis-aligned box pair can
+//! never produce it (a box edge on a plane always brings a face with it — a seated contact), which
+//! is why a corpus of box pairs misses it; a rotation's fixed line and a slanted sketch both
+//! produce it routinely.
 //!
-//! Before the fix the same root wore two names, two layers from its cause: the tangency's two
-//! same-side `Graze` segments were combined by union into a flip that changes nothing (caught by
-//! label propagation as `LabelConflict`), and where the tangency was far from everything it
-//! dangled in the skeleton and broke the face walk (`RingOrientation`).
+//! A same-side pair must flip nothing. Combining the tangency's two same-side `Graze` segments by
+//! union would make a flip that changes nothing (which label propagation would catch as
+//! `LabelConflict`), and where the tangency is far from everything the segment would dangle in the
+//! skeleton and break the face walk (`RingOrientation`) — one root wearing two names, two layers
+//! from its cause (measured).
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point3;
@@ -136,8 +137,8 @@ fn prism(m: &mut Model, x: f64, y: f64) -> Handle<Solid> {
 }
 
 /// ③ No rotation anywhere: a prism whose sharp edge lies in the *plane* of a box's wall but far
-/// outside its face — the phantom again, produced by a plain axis-aligned model. The lock that
-/// this never was a rotation bug: the knife edge is the whole story.
+/// outside its face — the phantom again, produced by a plain axis-aligned model. The lock that the
+/// knife edge, not rotation, is the whole story.
 #[test]
 fn axis_aligned_knife_edge_fuses_to_two_bodies() {
     let mut m = Model::new();
@@ -191,10 +192,10 @@ fn edge_only_contact_separates_into_two_bodies() {
     );
 }
 
-/// ⑤ The negative control: the centred pair (the pivot is interior, no edge meets a foreign
-/// plane), whose volume must not move.
+/// ⑤ The negative control: the centred pair (the pivot is interior, no edge meets a foreign plane),
+/// whose union lies strictly between one box and two.
 #[test]
-fn centred_rotated_copy_is_untouched() {
+fn centred_rotated_copy_fuses() {
     let mut m = Model::new();
     let a = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -209,7 +210,7 @@ fn centred_rotated_copy_is_untouched() {
     );
     m.rebuild_adjacency();
     let b = rot_z(&mut m, b, 40);
-    let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("was ok before, stays ok");
+    let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("the centred pair fuses");
     let v: f64 = fused
         .iter()
         .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)

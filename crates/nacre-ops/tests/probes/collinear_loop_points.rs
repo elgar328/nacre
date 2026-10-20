@@ -75,11 +75,11 @@ fn every_face_knows_which_way_it_faces(m: &Model, s: Handle<Solid>, cell: &str) 
     }
 }
 
-/// A 1×1 footprint **centred on the face, then shifted by `off`** — the placement idiom the rest
-/// of the suite uses (`tests/census.rs`'s `wf` family). A profile stated in raw sketch coordinates
+/// A 1×1 footprint **centred on the face, then shifted by `off`** — the placement idiom the rest of
+/// the suite uses (`tests/census.rs`'s `wf` family). A profile stated in raw sketch coordinates
 /// lands wherever the face's frame origin happens to be, which for a turned solid is usually off
-/// the face entirely: the first draft of this sweep declined 84 of 108 cells as a pad that missed
-/// its face ([`FeatureError::Missed`]) and was measuring nothing.
+/// the face entirely: a sweep stated that way would decline 84 of 108 cells as a pad that missed
+/// its face ([`FeatureError::Missed`]) and measure nothing (measured).
 fn footprint_on(m: &Model, face: Handle<Face>, off: f64) -> Profile2d {
     let sp = face_plane(m, face).expect("planar");
     let d = nacre_props::face_props(m, face).expect("props").centroid - sp.origin();
@@ -176,10 +176,9 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
                         // decides — there is no hand-computable volume to compare against. This
                         // catches a grossly wrong answer and says so rather than implying more.
                         //
-                        // The lower bound is `>=`, not `>`: a footprint that lands entirely
-                        // inside material adds *nothing*, and that is a correct answer. Measured
-                        // (`Z/100deg/inset0`), and it is why the first draft of this assertion
-                        // failed on a cell that was right.
+                        // The lower bound is `>=`, not `>`: a footprint that lands entirely inside
+                        // material adds *nothing*, and that is a correct answer. Measured
+                        // (`Z/100deg/inset0`): a strict `>` would fail on a cell that is right.
                         assert!(
                             after >= before - 1e-9 && after <= before + 1.0 + 1e-9,
                             "{name}: {before} -> {after} is outside what one 1x1x1 tool can add"
@@ -193,19 +192,19 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
         }
     }
 
-    // Measured with the `outer_tri` fix removed: 32 cells built and **14 of them came back
-    // with a volume a pad cannot produce** — `Z/5deg/inset0.5` went 5.0 → 3.21, a boss that ate
-    // 1.79 of material, with `validate` clean. That is what this file is for, and it is why the
-    // volume bound above is not decoration: the face-normal check cannot see it (its own normal
-    // is the Newell sum, which was never the broken part), so the bound is the instrument that
-    // moved.
+    // With `outer_tri` taking the first corner whose triangle is not exactly flat, 32 cells would
+    // build and **14 of them would come back with a volume a pad cannot produce** —
+    // `Z/5deg/inset0.5` would go 5.0 → 3.21, a boss that eats 1.79 of material, with `validate`
+    // clean (measured). That is what this file is for, and it is why the volume bound above is not
+    // decoration: the face-normal check cannot see it (its own normal is the Newell sum, which does
+    // not share that rule), so the bound is the instrument that would move.
     //
     // **All 108 cells build.** The X- and Y-turned cells (72 of them) are the ones a report
-    // spelling `flip` apart from the realization breaks: `face_plane` reports a frame
+    // spelling `flip` apart from the realization would break: `face_plane` would report a frame
     // point-symmetric to the one the pad realizes in, so a footprint centred on the face through
-    // `face_plane`'s own coordinates is built on the opposite side, outside the face, and the cell
-    // declines as a pad that missed its face (`FeatureError::Missed`; measured, all 72). The report reads the realization itself, and a
-    // decline reappearing here is news, not noise.
+    // `face_plane`'s own coordinates would be built on the opposite side, outside the face, and the
+    // cell would decline as a pad that missed its face (`FeatureError::Missed`; measured, all 72).
+    // The report reads the realization itself, and a decline reappearing here is news, not noise.
     assert_eq!(
         built, 108,
         "cells stopped building — a decline reappeared in this sweep: {declined:?}"

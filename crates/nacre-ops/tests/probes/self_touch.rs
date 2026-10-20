@@ -7,9 +7,9 @@
 //!
 //! The everyday way in is a dimension that makes two surfaces meet exactly: a pocket whose wedge
 //! tip lands on the far wall. Parasolid fails the same bodies (`PK_FACE_state_bad_face_face_c`);
-//! OCCT accepts them, and this kernel follows Parasolid. The cost is that a plain modelling move
-//! is now refused — and the reject says only *what* is wrong, since which coincidence was
-//! unintended is design intent the kernel cannot see.
+//! OCCT accepts them, and this kernel follows Parasolid. The cost is that a plain modelling move is
+//! refused — and the reject says only *what* is wrong, since which coincidence was unintended is
+//! design intent the kernel cannot see.
 //!
 //! The propositions here are paired: every fixture that must reject sits next to one that must
 //! build, because a check that rejects the wedge by rejecting *everything* would pass half of them.
@@ -151,19 +151,19 @@ fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &s
     assert_eq!(
         RejectReason::SelfTouchingResult.class(),
         RejectClass::Impossible,
-        "a body cannot be made valid by a later milestone"
+        "a body cannot be made valid by a later capability"
     );
-    // This is the kernel's first reject raised on a fully assembled result, so it is the first
-    // one that could have handed back a model with its operands consumed. It must not.
+    // This reject is raised on a fully assembled result, so it could hand back a model with its
+    // operands consumed. It must not.
     assert_eq!(m.live_solids(), live, "a reject retired the operands");
 }
 
 /// **The case the reject is for.** The wedge's tip lands on `x = 1`; the cut leaves one body
 /// whose cavity meets its outer shell along the line `(1, 0.5, 0.2)–(1, 0.5, 0.8)`.
 ///
-/// Before this check the kernel returned it: one solid, volume 0.784, `validate` silent — the
+/// Without this check the kernel would return it: one solid, volume 0.784, `validate` silent — the
 /// contact is invisible to every count, because the wall is *not split* at the line and so every
-/// edge is still used exactly twice.
+/// edge is used exactly twice (measured).
 #[test]
 fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
     let (mut m, a, b) = cube_and_wedge(1.0);
@@ -175,12 +175,13 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
 /// Extrude the same wedge through the whole cube instead of stopping inside it. The contact line
 /// now spans the wall's full height, so **both of its ends land on the wall's ring** rather than
 /// inside it, and a test that asks about endpoints reads "on the boundary, not inside" twice and
-/// lets the body through. It did: `Ok(n=1)`, volume `0.64` exactly, `validate` silent — the wall is
-/// not split at the line, so every edge is still used twice and no count sees anything.
+/// lets the body through. It would: `Ok(n=1)`, volume `0.64` exactly, `validate` silent (measured)
+/// — the wall is not split at the line, so every edge is used twice and no count sees anything.
 ///
-/// The wall's ring is a hexagon visiting both contact points **non-adjacently**; the contact line is
-/// its **chord**. Nothing about that is exotic — a through slot is a more ordinary modelling move
-/// than a blind pocket, which is why the blind spot was worth closing rather than documenting.
+/// The wall's ring is a hexagon visiting both contact points **non-adjacently**; the contact line
+/// is its **chord**. Nothing about that is exotic — a through slot is a more ordinary modelling
+/// move than a blind pocket, which is why the chord is checked rather than left as a documented
+/// blind spot.
 #[test]
 fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     let mut m = Model::new();
@@ -268,8 +269,8 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
 ///
 /// The failure worth catching is the two questions **collapsing into one**: a self-touch check that
 /// fired on this pair would be answering "is there a contact" when the question is "whose surface
-/// is it". That failure now shows as an error where there should be none, which is a stronger
-/// statement than the reject-name equality this used to make.
+/// is it". That failure shows as an error where there should be none, which is a stronger statement
+/// than reject-name equality.
 #[test]
 fn a_contact_between_two_bodies_keeps_its_own_name() {
     let mut m = Model::new();
@@ -300,7 +301,7 @@ fn a_contact_between_two_bodies_keeps_its_own_name() {
 /// carry — four planes through the corner, a pencil of three through the edge's line — so the
 /// grouping's ray asks a point on a plane through it named without that plane. Ordering along that
 /// ray takes a plane of the name that cuts the line ([`pin_on_line`]'s rule); one of the name's
-/// planes holds the ray and orders nothing, and reading it read the point as on the ring.
+/// planes holds the ray and orders nothing, and reading it would read the point as on the ring.
 #[test]
 fn two_bodies_touching_at_a_corner_or_an_edge_build_in_either_order() {
     type Case = (
@@ -463,12 +464,12 @@ fn a_body_standing_on_itself_at_a_corner_is_refused() {
     }
 }
 
-/// **A bar resting on a notched face of its own block is refused** — the face's outline carries
-/// the arc a cylinder cut at its far corner; the bar's bottom edge lies inside the face, so the
-/// edge test reads it against that ring (its arc and pierce corners) and the point arm reads the
-/// edge's ends on the rational road. The cylinder sits where no slanted plane of the bar meets its side, so the gate passes
-/// the pair. The twin without the leg is two bodies. On the world frame and a 3-4-5 one, in either
-/// operand order.
+/// **A bar resting on a notched face of its own block is refused** — the face's outline carries the
+/// arc a cylinder cut at its far corner; the bar's bottom edge lies inside the face, so the edge
+/// test reads it against that ring (its arc and pierce corners) and the point arm reads the edge's
+/// ends on the rational road. The cylinder sits where no slanted plane of the bar meets its side,
+/// so the gate passes the pair. The twin without the leg is two bodies. On the world frame and a
+/// 3-4-5 one, in either operand order.
 #[test]
 fn a_bar_resting_on_its_own_notched_block_is_refused() {
     let bar: &[[f64; 2]] = &[[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]];
@@ -659,7 +660,7 @@ fn a_pin_flush_in_a_round_hole_is_one_body() {
 ///
 /// This check looks for an edge inside a face, which is a line contact; two faces of one solid
 /// overlapping *in area* could in principle escape it, since the boundaries might coincide with no
-/// edge strictly interior to anything. So the question was put to the kernel rather than reasoned
+/// edge strictly interior to anything. So the question is put to the kernel rather than reasoned
 /// about: give the wedge a **flat** tip lying exactly on the far wall.
 ///
 /// The answer is that the situation does not arise. The cut comes back as one body with **no
@@ -730,10 +731,9 @@ fn an_ordinary_fuse_is_untouched() {
 /// **A face with a hole, so the even-odd rule is exercised and not merely present.**
 ///
 /// The judge folds *every* ring of a face into one bag and reads even-odd, because a point inside a
-/// hole has crossed the boundary twice. Writing it as "inside the outer ring **and** outside each
-/// hole" was one of the two shapes that got the earlier drafts wrong, so the rule needs a fixture
-/// rather than a corpus that happens to cover it: the census's edges reach the exact test against
-/// 214 faces, none of them holed (measured).
+/// hole has crossed the boundary twice. The rule needs a fixture rather than a corpus that happens
+/// to cover it: the census's edges reach the exact test against 214 faces, none of them holed
+/// (measured).
 ///
 /// A plate with a square hole, and a wedge cut whose tip lands exactly on the hole's wall: the
 /// contact line lies on a plane the plate carries, and the point is on the **hole's** ring, not the
@@ -1111,12 +1111,12 @@ fn a_chord_across_a_face_trimmed_by_a_cylinder_is_refused() {
 /// faces either side of it, and an edge in front of the mouth overlaps neither face's box — the
 /// sieve drops it before the ring is read.
 ///
-/// Measured by breaking each arm in the chord test alone: a ruling crossing left unnamed refuses
-/// the column and the bracket (`RingNaming`); named at the other ruling's root, the column is
-/// refused as touching itself; an arc's departure left unread refuses the flush column
-/// (`PierceVertexUnnamed`), and turned the other way, as touching itself. The rows hold only the
-/// answer: a sieve that stopped asking these faces would leave them green and the arms unread, so
-/// a change to the sieve measures this again by breaking the arms.
+/// Measured by breaking each arm in the chord test alone: a ruling crossing left unnamed would
+/// refuse the column and the bracket (`RingNaming`); named at the other ruling's root, the column
+/// would be refused as touching itself; an arc's departure left unread would refuse the flush
+/// column (`PierceVertexUnnamed`), and turned the other way, it would be refused as touching
+/// itself. The rows hold only the answer: a sieve that stopped asking these faces would leave them
+/// green and the arms unread, so a change to the sieve measures this again by breaking the arms.
 ///
 /// No row here touches: for the line to cross a ruling, the edge's faces must be one ⊥ to the axis
 /// and one on the wall's plane facing the other way (a face slanted to the axis passes a point of

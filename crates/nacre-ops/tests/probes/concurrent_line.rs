@@ -5,16 +5,15 @@
 //! sees two vertices at one coordinate and refuses (`SeamAlias`, a `SuspectedDefect`: the kernel
 //! blaming itself).
 //!
-//! The fold happened for concurrencies at *input* vertices and for the ones where two planes
-//! **cross** a line at a point. It did not happen for a plane that **contains** the line: such a
-//! plane is in that line's own direction family, so it never becomes a handle and never orders
-//! against anything — there was nothing to notice. `Aliases::wall` already recorded it (folding two
-//! walls onto one line *is* the statement that a second plane carries it), and the report now reads
-//! that back out.
+//! The fold covers concurrencies at *input* vertices and the ones where two planes **cross** a line
+//! at a point. A plane that **contains** the line is the other case: such a plane is in that line's
+//! own direction family, so it never becomes a handle and never orders against anything — nothing
+//! there notices it. `Aliases::wall` records it (folding two walls onto one line *is* the statement
+//! that a second plane carries it), and the report reads that back out.
 //!
-//! The shapes here are the ones a user hit in the playground, reduced. What made them worth a
-//! file is that the refused model is **valid** — the prism stops at `y = 0.9` and the wall it is
-//! coplanar with lives at `y ∈ [1,2]`, so nothing touches anything.
+//! The shapes here are reduced from a playground model, and what makes them worth a file is that
+//! the model is **valid** — the prism stops at `y = 0.9` and the wall it is coplanar with lives at
+//! `y ∈ [1,2]`, so nothing touches anything.
 
 use nacre_exact::Axis;
 use nacre_math::Point2;
@@ -73,9 +72,9 @@ fn stair_and_prism(step: f64, apex: f64, dist: f64) -> (Model, Handle<Solid>, Ha
     (m, a, b)
 }
 
-/// **Every case in this file validates, with no skip.** A copy of this helper that skips
-/// `validate` would make this file quiet the next time a vertex lands off one of its defining
-/// planes (`apex = 0.7` is where a tolerance measured against the wrong triple did, measured).
+/// **Every case in this file validates, with no skip.** A copy of this helper that skips `validate`
+/// would make this file quiet the next time a vertex lands off one of its defining planes
+/// (`apex = 0.7` is where a tolerance measured against the wrong triple would put one, measured).
 fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
     let (mut m, a, b) = stair_and_prism(step, apex, dist);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
@@ -89,15 +88,16 @@ fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
 /// wall, and the edge pierces the staircase's `y = 0.5` face — four planes at that point, three of
 /// them sharing the apex line.
 ///
-/// Before the report this was `SeamAlias`: one class named the point with the folded wall
-/// (`[3,6,11]`), another with the two slanted planes (`[3,11,12]`), and the seam table saw two
-/// vertices at one coordinate. **The body is valid** — the prism ends at `y = 0.9` and the wall it
-/// shares a plane with is at `y ∈ [1,2]`, so they never meet.
+/// Without the report this would be `SeamAlias`: one class would name the point with the folded
+/// wall (`[3,6,11]`), another with the two slanted planes (`[3,11,12]`), and the seam table would
+/// see two vertices at one coordinate (measured). **The body is valid** — the prism ends at
+/// `y = 0.9` and the wall it shares a plane with is at `y ∈ [1,2]`, so they never meet.
 #[test]
 fn a_prism_coplanar_with_a_far_away_wall_still_builds() {
     let v = fused_volume(1.0, 1.0, 0.9);
     // The staircase is 1×(2·1 + 0.5·1 + 0.5·1) = 1.75 by area × height 1; the prism adds the part
-    // of its triangle that is outside the staircase. Locked as a number so a silent change speaks.
+    // of its triangle that is outside the staircase. Bounded below by the staircase, and told apart
+    // from the 1.05 step so the fixture keeps varying.
     assert!(v > 1.75, "the fuse must add material: volume {v}");
     assert!(
         (v - fused_volume(1.05, 1.0, 0.9)).abs() > 1e-12,
@@ -105,26 +105,26 @@ fn a_prism_coplanar_with_a_far_away_wall_still_builds() {
     );
 }
 
-/// The negative control the fix is paired with: nudge the step off the apex's plane and nothing is
-/// concurrent. It built before and must keep building.
+/// The negative control: nudge the step off the apex's plane and nothing is concurrent. It must
+/// build.
 #[test]
-fn a_step_off_the_apex_plane_is_unchanged() {
+fn a_step_off_the_apex_plane_builds() {
     let v = fused_volume(1.05, 1.0, 0.9);
     assert!(v > 1.75, "volume {v}");
 }
 
 /// The same coplanarity, but the prism stops **before** the face its apex would pierce — so there
-/// is no arrangement vertex on the shared line and nothing to name twice. Built before, builds now.
+/// is no arrangement vertex on the shared line and nothing to name twice. It builds.
 #[test]
-fn a_prism_that_stops_short_of_the_crossing_is_unchanged() {
+fn a_prism_that_stops_short_of_the_crossing_builds() {
     let v = fused_volume(1.0, 1.0, 0.4);
     assert!(v > 1.75, "volume {v}");
 }
 
-/// **The lock that matters most.** Put the apex on `x = 0.5` instead and the staircase really
-/// does have a face there covering the point: the fused surface touches itself along the apex line.
-/// That body cannot be built, and this fix must not have widened its way into accepting it —
-/// opening a valid model is worth nothing if it also lets an impossible one through.
+/// **The lock that matters most.** Put the apex on `x = 0.5` instead and the staircase really does
+/// have a face there covering the point: the fused surface touches itself along the apex line. That
+/// body cannot be built, and the report must not widen its way into accepting it — opening a valid
+/// model is worth nothing if it also lets an impossible one through.
 #[test]
 fn a_genuine_self_touch_on_a_shared_line_is_still_refused() {
     let (mut m, a, b) = stair_and_prism(1.0, 0.5, 0.9);
@@ -140,10 +140,9 @@ fn a_genuine_self_touch_on_a_shared_line_is_still_refused() {
     );
 }
 
-/// And an apex on no plane of the staircase at all — the ordinary case, which must be untouched by
-/// any of this.
+/// And an apex on no plane of the staircase at all — the ordinary case, which must build.
 #[test]
-fn an_apex_on_no_shared_plane_is_unchanged() {
+fn an_apex_on_no_shared_plane_builds() {
     let v = fused_volume(1.0, 0.7, 0.9);
     assert!(v > 1.75, "volume {v}");
 }

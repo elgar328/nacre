@@ -3,14 +3,13 @@
 //! The label is not read off the normals at the component's lexicographically-minimal vertex
 //! ("outward iff *some* face there faces −x"): that existential is a shortcut for "the face with
 //! the largest `|n_x|` faces −x", and the shortcut only holds while the normals are
-//! **axis-aligned**. A slanted sketch breaks it with no rotation in sight — a void comes back as
-//! its own *material* solid of negative volume, with the operand unchanged beside it, and
-//! `validate` has nothing to say about it, which is why the propositions here are about **what the
-//! model is**,
-//! not about whether the boolean returned `Ok`.
+//! **axis-aligned**. A slanted sketch breaks it with no rotation in sight — a void would come back
+//! as its own *material* solid of negative volume, with the operand unchanged beside it, and
+//! `validate` would have nothing to say about it, which is why the propositions here are about
+//! **what the model is**, not about whether the boolean returned `Ok`.
 //!
-//! The label is containment depth now — even is material, odd is a void — the rule
-//! `sketch::from_rings` already uses one dimension down.
+//! The label is containment depth — even is material, odd is a void — the rule `sketch::from_rings`
+//! already uses one dimension down.
 
 use nacre_exact::{Axis, Isometry, Rat};
 use nacre_math::{Point2, Point3};
@@ -57,9 +56,9 @@ fn lift(m: &mut Model, s: Handle<Solid>, num: i128, den: i128) -> Handle<Solid> 
     solid
 }
 
-/// One solid, one cavity, the volume the set difference has — and **no body wound inside out**.
-/// The last one is the proposition a normal-reading label breaks: it returns the cavity as a
-/// second "solid" whose volume is negative, and every other check is happy with that.
+/// One solid, one cavity, the volume the set difference has — and **no body wound inside out**. The
+/// last one is the proposition a normal-reading label breaks: it would return the cavity as a
+/// second "solid" whose volume is negative, and every other check would be happy with that.
 fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) {
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1, "one body, not the operand plus its own void");
@@ -74,9 +73,9 @@ fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) 
     assert!(nacre_validate::validate(m).is_empty());
 }
 
-/// The defect: a **slanted** wedge cut wholly inside a cube, touching nothing at all. Before the
-/// parity label this returned two bodies — the untouched cube (volume 1) and the wedge wound
-/// inside out (volume −0.108) — whose volumes still summed to the right answer.
+/// The case: a **slanted** wedge cut wholly inside a cube, touching nothing at all. A
+/// normal-reading label would return two bodies — the untouched cube (volume 1) and the wedge wound
+/// inside out (volume −0.108) — whose volumes would still sum to the right answer (measured).
 #[test]
 fn a_slanted_void_is_a_cavity_not_a_second_body() {
     let mut m = Model::new();
@@ -95,7 +94,7 @@ fn a_slanted_void_is_a_cavity_not_a_second_body() {
 /// The negative control: the **axis-aligned** void, which a normal-reading rule gets right. If
 /// this moves, the label is wrong in the easy direction.
 #[test]
-fn an_axis_aligned_void_is_unchanged() {
+fn an_axis_aligned_void_is_one_solid_with_a_cavity() {
     let mut m = Model::new();
     let a = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -112,14 +111,13 @@ fn an_axis_aligned_void_is_unchanged() {
     one_solid_with_a_cavity(&mut m, got, 1.0 - 0.6 * 0.6 * 0.6);
 }
 
-/// The wedge whose sharp tip stops just **short** of the cube's wall — a plain modelling move, and
-/// the shape that showed the defect first.
+/// The wedge whose sharp tip stops just **short** of the cube's wall — a plain modelling move.
 ///
-/// The tip was at `1.0`, *on* the wall, until the kernel learned to refuse a solid whose surface
-/// touches itself: that version is now `SelfTouchingResult`, and it lives in `self_touch.rs` as the
-/// case that reject is for. Moving it to `0.999` keeps this file asking what it was always asking —
-/// that a cut wholly inside a body comes back as one body with a cavity, whatever the sketch's
-/// angles — without also asserting the self-contact rule, which belongs next door.
+/// The tip is at `0.999`, not `1.0`: on the wall the solid's surface touches itself, which is
+/// `SelfTouchingResult`, and it lives in `self_touch.rs` as the case that reject is for. At `0.999`
+/// this file asks its own question — that a cut wholly inside a body comes back as one body with a
+/// cavity, whatever the sketch's angles — without also asserting the self-contact rule, which
+/// belongs next door.
 #[test]
 fn a_wedge_whose_tip_nearly_reaches_the_wall_is_still_one_body() {
     let mut m = Model::new();

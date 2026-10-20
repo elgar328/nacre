@@ -6,21 +6,22 @@
 //! answers did not change.
 //!
 //! **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
-//! Measured: this file's two tests were **1673 of the sweep's 1802 seconds — 93%** — and they ran
-//! in a *debug* build, so the numbers they printed were not the ones anyone wants. `--release`
-//! turns 28 minutes into 4, and the gate skips them by name (`overview.md` carries the command).
+//! Measured in a *debug* build, this file's two tests would take **1673 of the sweep's 1802 seconds
+//! — 93%** — and debug numbers are not the ones anyone wants. `--release` turns 28 minutes into 4,
+//! and the gate skips them by name (`overview.md` carries the command).
 //!
-//! **But they are coverage, not only measurement, and that is what the split costs.** Nothing
-//! here asserts a duration, yet every boolean is `.expect("fuse")`ed and every fold's volume is
-//! taken — so a large *rotated* fold that stopped building would panic here and nowhere else in
-//! the suite at this scale. What `--release` gives up is the **`debug_assert!`** net over exactly
-//! those folds. So run this file in **debug** now and then (`cargo test -p nacre-ops --test perf
-//! -- --ignored`, ~28 min) — not every cell, but before believing the rotated path is healthy.
+//! **But they are coverage, not only measurement, and that is what the split costs.** Nothing here
+//! asserts a duration, yet every boolean is `.expect("fuse")`ed and every fold's volume is taken —
+//! so a large *rotated* fold that stopped building would panic here and nowhere else in the suite
+//! at this scale. What `--release` gives up is the **`debug_assert!`** net over exactly those
+//! folds. So run this file in **debug** now and then
+//! (`cargo test -p nacre-ops --test perf -- --ignored`, ~28 min) — not on every change, but before
+//! believing the rotated path is healthy.
 //!
 //! Two workloads, because parallelism pulls them in opposite directions:
 //!
 //! - **Rotated fold** — a hub with `n` fins arrayed around it. Rotation puts every judgement
-//!   on the toleranced CIP path, plane classes grow into the dozens, and per-class work is
+//!   on the toleranced path, plane classes grow into the dozens, and per-class work is
 //!   milliseconds. This is where more cores help.
 //! - **Axis-aligned tooth fold** — the same fold with exact coordinates, so the pair brackets
 //!   what the certified path costs (measured 2-4x) against what the *algorithm* costs. Both
@@ -152,15 +153,15 @@ fn fin_fold_full(n: i128) -> (std::time::Duration, usize, f64) {
 }
 
 /// The playground's fin model, folded **two ways**, because the order is a variable and
-/// `tools/occt-fins.tcl` found it to be a bigger one than n-ary.
+/// `tools/occt-fins.tcl` measures it as a bigger one than n-ary.
 ///
 /// - `hub_first = false` — the 80 fins fused to each other, nothing in the middle.
 /// - `hub_first = true`  — the hub fused first, which is what the script a person writes does.
 ///
-/// Both produce the same fins; the hub only adds itself. Measured on OCCT, fusing the hub
-/// first makes the *pairwise* fold 2.3x faster and leaves n-ary buying 4% — so the cheap
-/// structure is already the one a `for` loop produces, and n-ary is not the lever it looked
-/// like. nacre shows the same effect, smaller.
+/// Both produce the same fins; the hub only adds itself. Measured on OCCT, fusing the hub first
+/// makes the *pairwise* fold 2.3x faster and leaves n-ary buying 4% — so the cheap structure is
+/// already the one a `for` loop produces, and n-ary is not the lever. nacre shows the same effect,
+/// smaller.
 fn fin_ring(n: i128, hub_first: bool) -> (std::time::Duration, usize, f64) {
     let mut m = Model::new();
     let fin_ring =
