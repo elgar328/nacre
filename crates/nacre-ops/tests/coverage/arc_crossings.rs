@@ -13,9 +13,9 @@
 //!
 //! The second shape — one crossing into an end on the wall — is the three-quarter disk's cap read
 //! against its own radius class `x = 0`, which every boolean of that disk traces; it is locked
-//! there end to end, and where it is read (the walk's table in `curved_nesting`, the trace of a
-//! half disk's cap against `x + y = 1` in `tests::arrangement::curved` — the booleans on that
-//! pair stop at `RulingBoundNotYet` first).
+//! there end to end, and so are the places it is read (the walk's table in `curved_nesting`, the
+//! trace of a half disk's cap against `x + y = 1` in `tests::arrangement::curved` — the booleans on
+//! that pair stop at `RulingBoundNotYet` first).
 
 use crate::common::*;
 use crate::stated::*;
@@ -283,10 +283,10 @@ fn a_surd_radius_sector() -> Profile2d {
     .remove(0)
 }
 
-/// **A sector whose radius is a surd, on the world frame.** Its cap's smallest node is the
-/// reflex centre, and the arc bulges past it at `x = −√2` — irrational with the axis upright, so
-/// this is the same misread winding as the tilted frame's without any tilt. The wall `x = −0.5`
-/// cuts the circle's segment beyond it, clear of the missing wedge, so `A ∩ B` is that segment,
+/// **A sector whose radius is a surd, on the world frame.** Its cap's smallest node is the reflex
+/// centre, and the arc bulges past it at `x = −√2`, irrational with the axis upright: the tilted
+/// frame's case — a winding a node would misread — without any tilt. The wall `x = −0.5` cuts the
+/// circle's segment beyond it, clear of the missing wedge, so `A ∩ B` is that segment,
 /// `r²·acos(d/r) − d·√(r² − d²)`. Every boolean builds one body on every frame.
 #[test]
 fn a_sector_of_surd_radius_builds() {

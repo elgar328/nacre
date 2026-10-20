@@ -6,9 +6,9 @@
 //! contact / corner-edge-face touch / containment / separation all occur with positive probability.
 //!
 //! A reject is never a silent-wrong (those are `Ok(invalid)` or `Ok(wrong volume)`), so the net is:
-//! on `Ok`, the result must `validate` clean and satisfy the algebra; on `Err`, skip. `family #3`
-//! (never assume rejects away) is honored by the explicit `.expect(Ok)` success pins below — if the
-//! engine ever starts rejecting the core cases, those fail rather than the net going vacuously green.
+//! on `Ok`, the result must `validate` clean and satisfy the algebra; on `Err`, skip. No reject is
+//! assumed away: that is what the explicit `.expect(Ok)` success pins below are for — if the engine
+//! ever starts rejecting the core cases, those fail rather than the net going vacuously green.
 
 #![allow(unused_imports)]
 use crate::common::*;
@@ -140,13 +140,13 @@ proptest! {
         }
     }
 
-    /// Fuse and Common commute: `f(a,b)` and `f(b,a)` agree on **both** the Ok/Err verdict and, when
-    /// Ok, the volume. An order-dependent volume is a silent-wrong; an order-dependent *verdict* is a
-    /// robustness defect (the arrangement is a function of the geometry, not the operand order). A
-    /// measure-zero contact — two boxes meeting only at an edge or corner — is the sharp case: it is
-    /// empty either way, and both orders must now agree on that (they once didn't, when a pinched
-    /// unbounded contour was rejected or accepted depending on its ring's start index; see
-    /// `loop_winding`).
+    /// Fuse and Common commute: `f(a,b)` and `f(b,a)` agree on **both** the Ok/Err verdict and,
+    /// when Ok, the volume. An order-dependent volume is a silent-wrong; an order-dependent
+    /// *verdict* is a robustness defect (the arrangement is a function of the geometry, not the
+    /// operand order). A measure-zero contact — two boxes meeting only at an edge or corner — is
+    /// the sharp case: it is empty either way, and both orders must agree on that (a winding read
+    /// from the ring's start index would reject or accept a pinched unbounded contour depending on
+    /// that index; see `loop_winding`).
     #[test]
     fn fuse_common_commute(
         alo in prop::array::uniform3(0i64..5), aext in prop::array::uniform3(1i64..5),
@@ -175,7 +175,7 @@ proptest! {
 
 proptest! {
     /// Non-convex operand: an extruded L-prism cut by a grid box still satisfies
-    /// `vol(L) = vol(L∩box) + vol(L∖box)` — the reflex corner and holed footprint don't break the
+    /// `vol(L) = vol(L∩box) + vol(L∖box)` — the reflex corner doesn't break the
     /// difference/intersection split. `vol(L)` is the independent profile-area × depth.
     #[test]
     fn l_prism_cut_identity(
@@ -209,9 +209,9 @@ proptest! {
     }
 }
 
-/// Idempotence — capability probe first (identical operands are a full coplanar coincidence, not a
-/// measure-zero one). If this succeeds, the property holds for any grid box; if the engine cannot
-/// do identical operands, this test documents the gap rather than a proptest going permanently red.
+/// Idempotence on identical operands — a full coplanar coincidence, not a measure-zero one.
+/// `Fuse(A, A)` and `Common(A, A)` must both build: if they do, the property holds for any grid
+/// box.
 #[test]
 fn idempotence_of_identical_boxes() {
     let build = || {
@@ -229,8 +229,8 @@ fn idempotence_of_identical_boxes() {
     assert!(approx(vc, va), "Common(A,A) volume {vc} vs {va}");
 }
 
-/// Vacuousness pins (family #3): representative in-coverage grid configs must succeed, so the
-/// property net above cannot go quietly green by the engine rejecting the core cases.
+/// Vacuousness pins: representative in-coverage grid configs must succeed, so the property net
+/// above cannot go quietly green by the engine rejecting the core cases.
 #[test]
 fn core_configs_succeed() {
     // partial overlap, containment, face-contact stack.

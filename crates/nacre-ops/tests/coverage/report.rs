@@ -55,7 +55,7 @@ fn a_shared_rotation_still_assumes_nothing() {
 ///
 /// **The fixture is a difference the composition cannot cancel.** Same-axis rotations compose
 /// (`coplanar_by_composed_rotation` sums same-axis angles), so `30°` against `10°` then `20°` is
-/// exact — that pair is pinned in [`the_same_motion_two_ways_is_now_proved`].
+/// exact — that pair is pinned in [`the_same_motion_two_ways_is_proved`].
 #[test]
 fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
     use nacre_exact::{Isometry, Rat};
@@ -93,7 +93,7 @@ fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
     }
 }
 
-/// **One motion spelled two ways is now *proved*, not judged.**
+/// **One motion spelled two ways is *proved*, not judged.**
 ///
 /// `30°` about X against `10°` then `20°` about the same axis and pivot: the chains differ
 /// structurally, but they amount to the same rotation, and summing same-axis angles is exact
@@ -104,7 +104,7 @@ fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
 /// proves the report speaks when the kernel assumed something, this one proves it stays quiet when
 /// the kernel proved it instead. Neither is worth much alone.
 #[test]
-fn the_same_motion_two_ways_is_now_proved() {
+fn the_same_motion_two_ways_is_proved() {
     let (mut m, a, b) = stacked_cubes();
     let a = xf(&mut m, a, rot_iso(Axis::X, 30));
     let b = xf(&mut m, b, rot_iso(Axis::X, 10));

@@ -113,10 +113,9 @@ fn pocket_through_the_solid() {
 
 #[test]
 fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
-    // The box sits wholly in the void, so the solids are disjoint and `A − B = A`.
-    // Reading the lid as filled instead classified the box's eight corners five
-    // Inside and three Outside, and the seam-free path's own `debug_assert`
-    // ("classification must be consistent per solid") caught it.
+    // The box sits wholly in the void, so the solids are disjoint and `A − B = A`. Reading the lid
+    // as filled instead would classify the box's eight corners five Inside and three Outside
+    // (measured).
     let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let bx = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -134,10 +133,10 @@ fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
 
 #[test]
 fn pad_an_overhanging_boss() {
-    // The profile reaches past one face edge: part of the boss sits on the face, part
-    // cantilevers into the air. Relaxing the containment gate routes it to the overhang Fuse
-    // sidecar (Ok here proves the routing — a contained-only pad would reject). The boss lives
-    // wholly above z=1, so vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
+    // The profile reaches past one face edge: part of the boss sits on the face, part cantilevers
+    // into the air. Nothing checks containment, so the boss reaches the boolean like any other (Ok
+    // here proves it — a contained-only pad would reject). The boss lives wholly above z=1, so
+    // vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
     let (mut m, top) = cube_with_top();
     let feat = nacre_ops::fixtures::pad(&mut m, top, edge_overhang_profile(), 1.0).unwrap();
     let (solid, top_face) = (feat.solid(), feat.cap_face(&m));
@@ -250,12 +249,12 @@ fn pad_step_exports() {
     assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
 }
 
-/// A prism raised on a `(1,1,1)`-slanted sketch plane, its far cap holding a blind pocket. The
-/// cap and its two anti-parallel side walls meet in a triple whose `raw` coefficients are
-/// exactly dependent (`det = 0`); before family #3's dir-sign fix the guard read `sqrt`-rounded
-/// unit normals, called that triple non-degenerate, and the consumer aborted on `D = 0`. Now
-/// the guard reads the same coefficients the consumer does, so the arrangement runs. Volume:
-/// a `2×2` base × `2` deep block is `8`, less the `0.4²×0.5` pocket.
+/// A prism raised on a `(1,1,1)`-slanted sketch plane, its far cap holding a blind pocket. The cap
+/// and its two anti-parallel side walls meet in a triple whose `raw` coefficients are exactly
+/// dependent (`det = 0`); a guard reading `sqrt`-rounded unit normals would call that triple
+/// non-degenerate and the consumer would abort on `D = 0` (measured). The guard reads the same
+/// coefficients the consumer does, so the arrangement runs. Volume: a `2×2` base × `2` deep block
+/// is `8`, less the `0.4²×0.5` pocket.
 #[test]
 fn a_pocket_on_a_slanted_face() {
     let plane =
@@ -516,9 +515,8 @@ fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
 #[test]
 fn cut_a_blind_pocket_into_a_non_convex_solid() {
     // A blind pocket carved into an already-pocketed (non-convex) cube: a second contained
-    // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex,
-    // which the pocket contact now admits (the gates are convexity-agnostic). Removed
-    // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
+    // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex.
+    // Removed 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
     let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
     let corner = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -535,10 +533,9 @@ fn cut_a_blind_pocket_into_a_non_convex_solid() {
 
 #[test]
 fn cut_a_non_convex_blind_pocket() {
-    // A blind pocket with a non-convex (L-shaped) footprint: the cutter prism is non-convex,
-    // which the pocket contact now admits. The L extrudes to z∈[0,0.5], top-flush on the base's
-    // z=0.5 face, blind. L area = 0.6² − 0.3² = 0.27, depth 0.5 → removed 0.135; base 3²·1.5 =
-    // 13.5 → 13.365.
+    // A blind pocket with a non-convex (L-shaped) footprint: the cutter prism is non-convex. The L
+    // extrudes to z∈[0,0.5], top-flush on the base's z=0.5 face, blind. L area = 0.6² − 0.3² =
+    // 0.27, depth 0.5 → removed 0.135; base 3²·1.5 = 13.5 → 13.365.
     let mut m = Model::new();
     let base = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -568,11 +565,10 @@ fn cut_a_non_convex_blind_pocket() {
 
 #[test]
 fn a_pocket_that_punches_through_drills_a_bore() {
-    // A top-flush tool that pokes out the base's bottom: the pocket becomes a through hole.
-    // The exit face has to come out annular, and until the coplanar reconstruct learned to
-    // emit a hole it came out whole instead, leaving the bore's walls nothing to close
-    // against — an open shell the assembly guard rejected. (Honest reject, never a wrong
-    // answer; the previous cell pinned it as such.)
+    // A top-flush tool that pokes out the base's bottom: the pocket becomes a through hole. The
+    // exit face has to come out annular: emitted whole, it would leave the bore's walls nothing to
+    // close against — an open shell the assembly guard would reject (an honest reject, never a
+    // wrong answer).
     //
     // Area is the assertion that matters here: volume alone cannot tell a bore from a shape
     // that merely displaces the same material. 0.75 (top) + 0.75 (bottom) + 4 (sides) +
@@ -613,10 +609,9 @@ fn a_pocket_that_punches_through_drills_a_bore() {
 
 #[test]
 fn a_boss_that_punches_through_keeps_the_stub() {
-    // The Fuse twin, and the same emission path: the tool's a-side face keeps `P∖Q`, so the
-    // base's bottom needs the same hole for the stub below it to join on. Volume
-    // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75
-    // (bottom) + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
+    // The Fuse twin: the base's bottom needs the same hole for the stub below it to join on. Volume
+    // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75 (bottom)
+    // + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
     let mut m = Model::new();
     let base = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -684,17 +679,16 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
 
 /// **The same contract, on a turned solid — the population the test above cannot reach.**
 ///
-/// An axis-aligned face never goes near the flip/sketch-frame branch, so the pin above cannot see
-/// a report that spells `flip` apart from the realization. On a turned face it can: a report that
-/// half-turned about one axis while the realization (`frame_chain`) half-turned about the other
-/// left the two point-symmetric in the plane, a footprint centred on the face through
-/// `face_plane`'s own coordinates was built on the opposite side — outside the face — and a legal
-/// pad missed its face (measured: 2 of 6 faces of a 30°-turned block, every axis).
+/// An axis-aligned face never goes near the flip/sketch-frame branch, so the pin above cannot see a
+/// report that spells `flip` apart from the realization. On a turned face it can. If the report
+/// half-turned about one axis while the realization (`frame_chain`) half-turns about the other, the
+/// two would sit point-symmetric in the plane: a footprint centred on the face through
+/// `face_plane`'s own coordinates would be built on the opposite side — outside the face — and a
+/// legal pad would miss its face (measured: 2 of 6 faces of a 30°-turned block, every axis).
 ///
-/// All six faces, deliberately: the two flip=true walls are where the two spellings part, the two
-/// flip=false walls are the contrast, and the two rotation-invariant planes take the world-axis
-/// branch — three populations under one assertion, so none can drift out of the contract
-/// unnoticed.
+/// All six faces, deliberately: the two flip=true walls are where the two spellings would part, the
+/// two flip=false walls are the contrast, and the two rotation-invariant planes take the world-axis
+/// branch — three populations under one assertion, so none can drift out of the contract unnoticed.
 #[test]
 fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
     use nacre_exact::{Angle, Isometry, Rat, Rotation};
@@ -762,12 +756,11 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
 /// outward normal — pinned so a change to `any_perpendicular` cannot quietly
 /// rotate every sketch on such a face.
 ///
-/// This face is **not** the discontinuous case, though the first draft of this
-/// test claimed it was: `any_perpendicular` picks the *least*-aligned world axis,
-/// and for a normal of (0.707, 0.707, 0) that is z by a mile. The genuine tie is a
-/// normal whose two **smallest** components are equal, which axis-aligned rotation
-/// by a rational angle cannot even produce here — so it is pinned where the rule
-/// lives, in `nacre_math`'s own tests, not through a face.
+/// This face is **not** the discontinuous case: `any_perpendicular` picks the *least*-aligned world
+/// axis, and for a normal of (0.707, 0.707, 0) that is z by a mile. The genuine tie is a normal
+/// whose two **smallest** components are equal, which axis-aligned rotation by a rational angle
+/// cannot even produce here — so it is pinned where the rule lives, in `nacre_math`'s own tests,
+/// not through a face.
 #[test]
 fn a_rotated_face_has_a_pinned_sketch_axis() {
     let (mut m, _) = cube_with_top();
@@ -803,16 +796,16 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
 
 /// **Why the sketch origin does not come from the face at all.**
 ///
-/// A mean of the outer loop's corners drags sideways when a vertex is added along a straight edge
-/// — the same face would then seat a boss somewhere else — and the face region's area centroid,
-/// which does not move under subdivision, still reads the face's `f64` vertices: `construct.rs`
-/// lifts the frame origin with `Rat::from_decimal`, so a rounded cache becomes the truth, and
-/// padding one footprint twice leaves faces of area `2.2e-16`. The origin is the **world origin
-/// projected onto the plane**, which does not read the face at all.
+/// A mean of the outer loop's corners would drag sideways when a vertex is added along a straight
+/// edge — the same face would then seat a boss somewhere else — and the face region's area
+/// centroid, which does not move under subdivision, would still read the face's `f64` vertices:
+/// lifted to rationals with `Rat::from_decimal`, a rounded cache would become the truth, and
+/// padding one footprint twice would leave faces of area `2.2e-16` (measured). The origin is the
+/// **world origin projected onto the plane**, which does not read the face at all.
 ///
 /// That is strictly stronger, and this test says so: subdividing an edge cannot move it, and
-/// neither can replacing the outline with a different shape on the same plane. The old rule fails
-/// the second of those, and a corner mean fails both.
+/// neither can replacing the outline with a different shape on the same plane. The area-centroid
+/// rule would fail the second of those, and a corner mean would fail both.
 #[test]
 fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
     // An L, the same L with two extra points along its bottom edge, and a wholly different
@@ -861,9 +854,9 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
     // It is the world origin projected onto the cap's plane — exactly, not nearly.
     assert_eq!(a.as_array(), [0.0, 0.0, 1.0], "{a:?}");
 
-    // An outline-reading rule fails above, either one: the area centroid of
-    // the L is (5/3, 5/3) and of the far rectangle (8, 8.25); the corner mean sits at (2, 2) on
-    // the plain L and moves to (1.75, 1.5) once subdivided.
+    // An outline-reading rule, either one, would fail above: the area centroid of the L is
+    // (5/3, 5/3) and of the far rectangle (8, 8.25); the corner mean sits at (2, 2) on the plain L
+    // and moves to (1.75, 1.5) once subdivided.
     let mean = |pts: &[Point2]| {
         let (sx, sy) = pts
             .iter()

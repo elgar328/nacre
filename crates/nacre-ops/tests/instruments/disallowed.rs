@@ -4,17 +4,17 @@
 //! write doors (product code reaches them through `nacre-ops`' realization funnel alone), rayon's
 //! parallel entry points (`par.rs` alone), and the two ring predicates a shared rule sits above
 //! (`point_in_ring` under `cell_inside`'s retry, `side_of` under `ring_against_plane`'s walk) — and
-//! the pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one attribute
-//! (`allow`, `expect`, a `cfg_attr` around either), so a caller who meets the lint could add one
-//! and be through. This makes that a second, visible step: every exemption in the workspace's
-//! sources is counted per file against [`ALLOWED`], and a new one fails here until it is written
-//! into the table with why it is not a way around the rule. A lint *group* that would silence the
-//! lint without naming it (`clippy::all`, `clippy::style`, `warnings`) is held to zero everywhere.
-//! [`the_config_still_names_every_call`] holds the other end: a path dropped from `clippy.toml`
-//! is as quiet a way through as an exemption. And a level set outside the sources — a `[lints]`
-//! table in a `Cargo.toml`, `rustflags` in a cargo config — silences the lint with no attribute
-//! at all, measured: one `disallowed_methods = "allow"` line in `nacre-ops`'s manifest let a
-//! planted door call through clippy and this table both; so none is set
+//! the pre-commit hook's `clippy -D warnings` refuses one anywhere else. An exemption is one
+//! attribute (`allow`, `expect`, a `cfg_attr` around either), so a caller who meets the lint could
+//! add one and be through. This makes that a second, visible step: every exemption in the
+//! workspace's sources is counted per file against [`ALLOWED`], and a new one fails here until it
+//! is written into the table with why it is not a way around the rule. A lint *group* that would
+//! silence the lint without naming it (`clippy::all`, `clippy::style`, `warnings`) is held to zero
+//! everywhere. [`the_config_names_every_call`] holds the other end: a path dropped from
+//! `clippy.toml` is as quiet a way through as an exemption. And a level set outside the sources — a
+//! `[lints]` table in a `Cargo.toml`, `rustflags` in a cargo config — silences the lint with no
+//! attribute at all: one `disallowed_methods = "allow"` line in `nacre-ops`'s manifest would let a
+//! planted door call through clippy and this table both (measured); so none is set
 //! ([`no_manifest_or_cargo_config_sets_the_lints_level`]).
 //!
 //! A second `clippy.toml` in a crate replaces the root's for it, so there is only the root's
@@ -286,10 +286,10 @@ fn every_exemption_from_a_disallowed_call_is_listed() {
     );
 }
 
-/// `clippy.toml` still disallows every path, and nothing else: dropping one is as quiet a way
-/// through as an exemption, and one added there belongs in [`DISALLOWED`] with its exemptions here.
+/// `clippy.toml` disallows every path, and nothing else: dropping one is as quiet a way through as
+/// an exemption, and one added there belongs in [`DISALLOWED`] with its exemptions here.
 #[test]
-fn the_config_still_names_every_call() {
+fn the_config_names_every_call() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|c| c.parent())
@@ -373,8 +373,9 @@ fn no_manifest_or_cargo_config_sets_the_lints_level() {
 
 /// The root's `clippy.toml` is the only one. clippy reads the nearest config from a crate's own
 /// folder upward, so a `clippy.toml` in a crate (or in `crates/`) — even an empty one — replaces
-/// the root's for that crate and drops every disallowed path with it, measured: an empty
-/// `crates/nacre-ops/clippy.toml` let a planted door call through clippy and every other test here.
+/// the root's for that crate and drops every disallowed path with it: an empty
+/// `crates/nacre-ops/clippy.toml` would let a planted door call through clippy and every other test
+/// here (measured).
 #[test]
 fn the_root_clippy_toml_is_the_only_one() {
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

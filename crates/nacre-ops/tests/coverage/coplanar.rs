@@ -12,11 +12,10 @@ use nacre_ops::{
 use nacre_store::Handle;
 use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 
-/// A holed operand already survives the arrangement — it names holes as inner rings rather
-/// than guarding against them, so the pocket rides through untouched. Nothing tested it.
-/// Pin it before the guard comes down.
+/// A holed operand survives the arrangement — it names holes as inner rings rather than guarding
+/// against them, so the pocket rides through untouched.
 #[test]
-fn containment_boolean_already_keeps_a_pocket() {
+fn containment_boolean_keeps_a_pocket() {
     for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
         let (mut m, pc) = nacre_ops::fixtures::pocketed_cube();
         let bx = nacre_ops::fixtures::cuboid(
@@ -35,11 +34,10 @@ fn containment_boolean_already_keeps_a_pocket() {
 
 #[test]
 fn cut_with_a_hollow_operand_far_from_the_void() {
-    // A cavitied operand whose seam misses the void: the corner cut is far from
-    // the [1,2]³ void, so the void is carried through and preserved.
-    // Every shell is walked, so the void does not vanish (dropping it reads as convex and
-    // returns vol 26.875, cavities 0): 25.875 (27 − 1 void − 0.125 corner) with the cavity
-    // intact.
+    // A cavitied operand whose seam misses the void: the corner cut is far from the [1,2]³ void, so
+    // the void is carried through and preserved. Every shell is walked, so the void does not vanish
+    // (dropping it would read as convex and return vol 26.875, cavities 0 — measured):
+    // 25.875 (27 − 1 void − 0.125 corner) with the cavity intact.
     let mut m = Model::new();
     let big = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -106,11 +104,11 @@ fn a_slab_splits_a_hollow_box_into_two() {
     assert!((vol - 24.4).abs() < 1e-9, "total volume {vol}");
 }
 
-// A hollow operand in a COPLANAR contact. The cavity goldens above take transversal cuts and
-// every coplanar golden uses solid operands, so this is the intersection of the two. Emitting
-// only outer-shell faces loses the void: the fuse reads 27.0625 — the *un-hollowed* cube plus the
-// boss — with `cavities: 0` and a clean `validate`, because what remains is still a closed
-// shell. Silent-wrong, invisible to every guard; every shell is walked.
+// A hollow operand in a COPLANAR contact. The cavity goldens above take transversal cuts and the
+// other coplanar goldens use solid operands, so this is the intersection of the two. Emitting only
+// outer-shell faces would lose the void: the fuse would read 27.0625 — the *un-hollowed* cube plus
+// the boss — with `cavities: 0` and a clean `validate`, because what remains would still be a
+// closed shell (measured). Silent-wrong, invisible to every guard; every shell is walked.
 #[test]
 fn a_hollow_part_takes_a_coplanar_boss() {
     let mut m = Model::new();
@@ -145,8 +143,8 @@ fn a_hollow_part_takes_a_coplanar_boss() {
 
 #[test]
 fn a_hollow_part_takes_a_coplanar_pocket() {
-    // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Same blind
-    // spot, same silent-wrong with outer shells only (26.96875 with the void gone).
+    // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Emitting outer
+    // shells only would lose the void here too (26.96875 — measured).
     let mut m = Model::new();
     let big = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -178,12 +176,11 @@ fn a_hollow_part_takes_a_coplanar_pocket() {
 
 #[test]
 fn a_coplanar_boss_over_a_void_plane_is_solved() {
-    // The boss straddles the void's x=1 and y=1 planes (it spans [0.9,1.1]²), so classifying
-    // the void's walls against it is not the clean whole-face case. This was pinned as an
-    // honest reject with the standing instruction that a future change may "turn it into a
-    // correct 26.04, never a silent answer" — and family #3 did: once one geometric plane is
-    // one class whatever the two faces' sizes, the arrangement solves it. 26 (hollow) + 0.04
-    // (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint); void intact.
+    // The boss straddles the void's x=1 and y=1 planes (it spans [0.9,1.1]²), so classifying the
+    // void's walls against it is not the clean whole-face case. One geometric plane is one class
+    // whatever the two faces' sizes, so the arrangement solves it: a correct 26.04.
+    // 26 (hollow) + 0.04 (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint);
+    // void intact.
     let mut m = Model::new();
     let big = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -459,14 +456,14 @@ fn fillet_plate(m: &mut Model) -> Handle<Solid> {
 /// the same vertices to the bit, the same faces — `B − A` is `B`, the Fuse is one body of both
 /// volumes and Common is empty; every result valid, in both operand orders.
 ///
-/// What it holds, two rules. The lateral and the assembly meet on the rim as the cleaned faces
-/// hold it (`draft::HeldRims`), not as the arrangement split it — the split cut the lateral's rim
-/// at nodes the merged cap had dissolved (an edge used once, `OpenResultShell`; the fillet
-/// cells). And a whole rim a tool crossed dissolves back into its circle: crossed twice, the cap
-/// ring is two arcs whose nodes have one neighbour each (they stayed, naming the box's planes —
-/// `VertexNamesAbsentSurface`); crossed four times it dissolved to no node at all (an empty loop).
-/// The fillet slab runs flush with the plate's bottom wall on one row and stops short of it on
-/// the other: the wall plane is not what the rim meets.
+/// What it holds, two rules. The lateral and the assembly meet on the rim as the cleaned faces hold
+/// it (`draft::HeldRims`), not as the arrangement split it — the split would cut the lateral's rim
+/// at nodes the merged cap has dissolved (an edge used once, `OpenResultShell`). And a whole rim a
+/// tool crossed dissolves back into its circle: kept as arcs, a rim crossed twice would leave two
+/// arcs whose nodes have one neighbour each (they would stay, naming the box's planes —
+/// `VertexNamesAbsentSurface`), and one crossed four times would come out as an empty loop
+/// (measured). The fillet slab runs flush with the plate's bottom wall on one row and stops short
+/// of it on the other: the wall plane is not what the rim meets.
 #[test]
 fn a_box_resting_across_a_rim_leaves_what_it_cuts_whole() {
     type Build = fn(&mut Model) -> Handle<Solid>;

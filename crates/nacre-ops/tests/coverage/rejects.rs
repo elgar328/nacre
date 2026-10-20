@@ -1,9 +1,9 @@
 //! What a **consumer** sees when the engine declines.
 //!
-//! The reason rides in the returned value, so an application can say *why* instead of "it
-//! failed". This module is that application's job written as a test — the shape `nacre-kit`
-//! will take — and it exists to keep the error surface usable from outside the crate, which
-//! is the only place that can prove it.
+//! The reason rides in the returned value, so an application can say *why* instead of "it failed".
+//! This module is that application's job written as a test — the shape `nacre-kit` takes — and it
+//! exists to keep the error surface usable from outside the crate, which is the only place that can
+//! prove it.
 
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, RejectClass, RejectReason, boolean};
@@ -63,7 +63,7 @@ fn a_pinched_fuse_tells_the_caller_why() {
     assert_eq!(reason, RejectReason::NonManifoldVertex);
     // Not a coverage limit and not a defect: no milestone will make this input buildable.
     assert_eq!(reason.class(), RejectClass::Impossible);
-    // The identifier is stable across the tag→enum move, so logs and reports keep their meaning.
+    // The identifier is stable, so logs and reports keep their meaning.
     assert_eq!(reason.as_str(), "non_manifold_vertex");
     assert_eq!(
         user_message(err),
@@ -148,11 +148,12 @@ fn a_stale_operand_is_not_a_reject_reason() {
 /// there, unreachable — the arena is append-only by design and superseded solids leave the same
 /// residue.
 ///
-/// **What this cannot show today, stated rather than implied.** Every reject the kernel currently
-/// raises happens *before* the retire, so the restore this locks is not what keeps these particular
-/// cases whole — they were never at risk. The assertion is here because the property is the
-/// contract, and because the next reject to be added is the first one that sits after the retire.
-/// The `!= 0` count below is what stops the loop from passing on an empty set of rejects.
+/// **What this fixture cannot show, stated rather than implied.** Its reject
+/// (`NonManifoldResultEdge`, raised in `reconstruct`) happens *before* the retire, so the restore
+/// this locks is not what keeps this case whole. The assertion is here because the property is the
+/// contract: `check_result_topology` runs after the retire, so its rejects are the cases the
+/// restore keeps whole. The `!= 0` count below is what stops the loop from passing on an empty set
+/// of rejects.
 #[test]
 fn a_rejected_boolean_leaves_the_operands_live() {
     // A pinched pair: A and B meet only along `x = 2, y = 2`, and a bridge overlapping both runs

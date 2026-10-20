@@ -452,18 +452,18 @@ fn an_inward_wedge_on_a_lateral_builds_or_is_refused_by_name() {
     }
 }
 
-/// **A V-notch whose apex lies on the lateral** — `B` a box round `A` with a notch opening
-/// away from the axis, its two walls meeting on a ruling of `A` at the seam and off it: the
-/// inward wedge's walls turned inside out. `A` lies inside `B` but for that line, so `B − A` keeps
-/// the material **outside** the cylinder on both sides of the line and none in the notch between
-/// the walls — two lobes meeting on the line alone, one solid touching itself, refused
+/// **A V-notch whose apex lies on the lateral** — `B` a box round `A` with a notch opening away
+/// from the axis, its two walls meeting on a ruling of `A` at the seam and off it: the inward
+/// wedge's walls turned inside out. `A` lies inside `B` but for that line, so `B − A` keeps the
+/// material **outside** the cylinder on both sides of the line and none in the notch between the
+/// walls — two lobes meeting on the line alone, one solid touching itself, refused
 /// (`NonManifoldResultEdge`). The lateral keeps the outside here, so whether it runs on across the
-/// line is asked of the chamber between the walls outside the cylinder (`cyl_chart::Chart::slit_at`);
-/// read off the chamber inside, which is `A`'s and gone, the answer is right by accident, and
-/// read off no chamber the lateral runs through the line as one face over a body touching itself
-/// — `validate` clean and the volumes right. Everything else builds: `A ∩ B` is `A` over the
-/// height the two share, `A − B` the rest of `A` (two bodies with `B` inside `A`'s span, none
-/// with `B` past both caps).
+/// line is asked of the chamber between the walls outside the cylinder
+/// (`cyl_chart::Chart::slit_at`); read off the chamber inside, which is `A`'s and gone, the answer
+/// would be right by accident, and read off no chamber the lateral would run through the line as
+/// one face over a body touching itself — `validate` clean and the volumes right. Everything else
+/// builds: `A ∩ B` is `A` over the height the two share, `A − B` the rest of `A` (two bodies with
+/// `B` inside `A`'s span, none with `B` past both caps).
 #[test]
 fn a_notch_whose_apex_is_on_a_lateral_builds_or_is_refused_by_name() {
     let on_the_seam: &[[f64; 2]] = &[

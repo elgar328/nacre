@@ -3,10 +3,11 @@
 //! A hub with bars fused around it is the shape a code-CAD user writes in a loop. Three fins
 //! reproduce it: fuse a diametric pair, then a third at an angle.
 //!
-//! All five were one root: a boolean's *result* carried no rotation provenance, so its faces were
-//! described by their rounded coordinates and one wall became two plane classes on the next fuse.
-//! Surfaces state their own provenance (their truth: points + motion), so a chained boolean keeps its faces exact and the
-//! whole population builds. This file is the population, kept as the regression.
+//! A boolean's *result* without rotation provenance would describe its faces by their rounded
+//! coordinates, and one wall would become two plane classes on the next fuse — one root under five
+//! reject names (measured). Surfaces state their own provenance (their truth: points + motion), so
+//! a chained boolean keeps its faces exact and the whole population builds. This file is the
+//! population.
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -63,12 +64,13 @@ fn fuse_fins(angles: &[f64]) -> Result<f64, BoolError> {
     Ok(nacre_props::mass_props(&m, part).expect("props").volume)
 }
 
-/// **Three arrangements, each of which a narrower engine declines by a different name.**
+/// **Three arrangements, each of which an engine without provenance would decline under a different
+/// name.**
 ///
-/// All three are the same shape of input — a diametric pair, then a third fin — and all three
-/// failed on that third fuse, under `TraceDeclined{RunSplit}`, `CoincidentNodes` and
-/// `UnreachedCell`. Three symptoms, one cause; they build now, and their volumes agree with the
-/// answer a (throwaway) forced plane merge produced independently, bit for bit.
+/// All three are the same shape of input — a diametric pair, then a third fin — and without
+/// provenance all three would fail on that third fuse, under `TraceDeclined{RunSplit}`,
+/// `CoincidentNodes` and `UnreachedCell` (measured). Three symptoms, one cause; they build, and
+/// their volumes agree bit for bit with what a forced plane merge would give (measured).
 #[test]
 fn three_fins_build() {
     // Each fin adds `2.4` to the hub's `12` where it does not overlap its neighbours; the pair at
@@ -82,14 +84,15 @@ fn three_fins_build() {
         let v = fuse_fins(&angles).unwrap_or_else(|e| panic!("{angles:?}: {e:?}"));
         assert!((v - want).abs() < 1e-12, "{angles:?}: {v} != {want}");
     }
-    // …and the same arrangement with exact (90°-family) rotations still builds, unchanged.
+    // …and at θ = 0, where the diametric pair turns by exact (90°-family) rotations, it builds too.
     assert!(fuse_fins(&[0.0, 180.0, 198.0]).is_ok());
 }
 
 /// **The census: how much of a smooth sweep fails, and of what.**
 ///
 /// `#[ignore]`: 90 booleans of three fuses each. This population — not "the script builds" — is
-/// what the fix was judged by: 8 rejects under five names before, none after.
+/// what provenance answers to: without it 8 of the 90 would reject under five names (measured);
+/// with it none do.
 #[test]
 #[ignore = "slow census sweep (run with --ignored)"]
 fn theta_sweep_census() {
@@ -106,14 +109,13 @@ fn theta_sweep_census() {
     }
     let total: usize = census.values().map(|v| v.len()).sum();
     eprintln!("[fin census] {total}/90 reject: {census:?}");
-    assert_eq!(total, 0, "the failing population changed: {census:?}");
+    assert_eq!(total, 0, "the sweep rejects: {census:?}");
 }
 
-///
-/// This is the playground script a user actually wrote — a loop of `fuse`, then `cut` — and it
-/// died on the fourteenth fin. Twenty fins is not twenty chances to hit one unlucky angle; it is
-/// twenty *chained* booleans, each one reasoning about the faces the previous nineteen produced.
-/// That is precisely what a result with no provenance could not survive.
+/// This is a playground script — a loop of `fuse`, then `cut` — and without provenance it would die
+/// on the fourteenth fin (measured). Twenty fins is not twenty chances to hit one unlucky angle; it
+/// is twenty *chained* booleans, each one reasoning about the faces the previous nineteen produced.
+/// That is precisely what a result with no provenance cannot survive.
 ///
 /// `#[ignore]`: 22 booleans over a solid that grows to ~90 faces.
 #[test]

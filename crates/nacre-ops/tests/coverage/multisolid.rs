@@ -95,10 +95,10 @@ fn cut_rod_by_l_severs_into_two() {
     assert!((vol - 0.06).abs() < 1e-9, "total volume {vol}");
 }
 
-/// An edge of one convex solid, threading the other, severs it. The bar runs through the
-/// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids,
-/// each a clean genus-0 box (`validate` clean, pieces share nothing). The seam path returns
-/// both pieces. (The non-convex sibling is `Cut(rod, L)`.)
+/// An edge of one convex solid, threading the other, severs it. The bar runs through the cube and
+/// out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids, each a clean
+/// genus-0 box (`validate` clean, pieces share nothing). The boolean returns both pieces. (The
+/// non-convex sibling is `Cut(rod, L)`.)
 #[test]
 fn a_convex_cut_severs_its_operand() {
     let mut m = Model::new();
@@ -124,9 +124,8 @@ fn a_convex_cut_severs_its_operand() {
 
 #[test]
 fn cut_a_seated_block_by_the_part_below_it() {
-    // The operands swapped: now the canonical contact face is the upper block's *lower* cap, so
-    // the separation test runs with the plane's normal the other way round. Same answer — the
-    // block keeps its volume.
+    // The operands swapped: the seated block is the cut's `a`, so the shared plane `z = 1` is its
+    // *lower* cap. Same answer — the block keeps its volume.
     let mut m = Model::new();
     let block = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -147,11 +146,11 @@ fn cut_a_seated_block_by_the_part_below_it() {
     assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
 }
 
-/// **An empty result is an answer.** Two solids that miss each other have no intersection, and
-/// that is what `Common` reports: `Ok` with no solids, both operands consumed like any other
-/// successful boolean. Stated on its own because the name is the contract — if someone makes
-/// this an error again, the failure points straight at what was decided, and the
-/// `live_solids` assertion pins the retire that an early return would otherwise skip.
+/// **An empty result is an answer.** Two solids that miss each other have no intersection, and that
+/// is what `Common` reports: `Ok` with no solids, both operands consumed like any other successful
+/// boolean. Stated on its own because the name is the contract — if someone makes this an error,
+/// the failure points straight at what was decided, and the `live_solids` assertion pins the retire
+/// that an early return would otherwise skip.
 #[test]
 fn a_disjoint_common_is_empty_not_an_error() {
     let mut m = Model::new();
