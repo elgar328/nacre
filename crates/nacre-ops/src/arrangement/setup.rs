@@ -6,9 +6,10 @@ use nacre_topo::Surface;
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
 /// [`crate::combinatorics::EdgeFaces`]. Built once and shared: indices into the returned `planes`/`surf_ix`
 /// are common to both solids, so a vertex of `a` and a face of `b` compose in one index space.
-/// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, plane_ix, .. } = …`):
-/// the tables here grow as the arrangement learns to say "plane" and "face" in different index
-/// spaces, and a positional tuple made every one of those steps touch all ~25 call sites.
+/// Destructure it with `..`
+/// (`let PlaneSetup { planes: faces_tab, geom: planes, plane_ix, .. } = …`): fields can be added
+/// without touching every call site, where a positional tuple would make each addition touch every
+/// one of them.
 ///
 /// The plane classes (`canon`) are computed here to build `geom`/`plane_ix` and then dropped — the
 /// dense `plane_ix` is the only face→plane map anything downstream needs, so the sparse union-find
@@ -18,9 +19,8 @@ pub(crate) struct PlaneSetup {
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
     pub(crate) inc_a: EdgeFaces,
     pub(crate) inc_b: EdgeFaces,
-    /// Where `a`'s faces end and `b`'s begin in `planes`. The concatenation always created this
-    /// boundary; it was just never written down, so every later "whose face is this?" had to
-    /// rebuild it.
+    /// Where `a`'s faces end and `b`'s begin in `planes` — the boundary the concatenation creates,
+    /// written down so a "whose face is this?" need not rebuild it.
     pub(crate) n_a: usize,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<WorkingPlane>,
@@ -30,8 +30,8 @@ pub(crate) struct PlaneSetup {
     /// Whose faces each plane class carries — see [`class_owners`].
     pub(crate) class_owner: Vec<Option<SolidSide>>,
     /// The cylinder classes, in [`ClassIx::Cyl`] numbering order — empty for an all-planar
-    /// boolean. Filled by the population gate, which is also what refuses the interactions this
-    /// milestone does not build.
+    /// boolean. Filled by the population gate, which is also what refuses the interactions the
+    /// kernel does not build.
     pub(crate) cyls: Vec<WorkingCyl>,
     /// The gate's carried answer for the rulings road: `(plane class, cylinder class)`
     /// pairs allowed through **without** a clearance proof — see
@@ -58,7 +58,7 @@ pub(crate) fn plane_index_setup(
 ) -> Result<PlaneSetup, BoolError> {
     let (mut setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
     // The cylinder door: the population gate decides **by name** what stands in the way (an
-    // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes now
+    // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes
     // goes on to be arranged.
     if !cyl_surfs.is_empty() {
         let (cyls, crossings, tangencies) = cylinder_gate(

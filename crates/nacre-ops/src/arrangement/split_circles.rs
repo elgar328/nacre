@@ -10,13 +10,12 @@ type SplitCircles = Option<(
 
 /// **Cut every circle a segment crosses into arcs, and the segments with it.**
 ///
-/// This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
-/// names them.
-/// The work here is ordering: around the circle (θ, [`nacre_exact::quad::circular_order_about_seam`])
-/// to make arcs, and along each segment (the line parameter, [`nacre_exact::QuadVal::cmp_value`])
-/// to make sub-segments.
+/// This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`] names
+/// them. The work here is ordering: around the circle (θ,
+/// [`nacre_exact::quad::circular_order_about_seam`]) to make arcs, and along each segment
+/// ([`combinatorics::order_located`]) to make sub-segments.
 ///
-/// A circle nothing crosses is returned **whole**, on the road it has always taken. The parallel
+/// A circle nothing crosses is returned **whole**, on its own road. The parallel
 /// road shrinks to the population it is actually about.
 pub(super) fn split_circles(
     jd: &Judge<'_, WorkingPlane>,
@@ -27,11 +26,10 @@ pub(super) fn split_circles(
     aliases: &Aliases,
 ) -> Result<SplitCircles, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    // Nothing to cross. This used to be answered further down, after the loop had asked every
-    // segment for nothing; the ends below are built for the whole slice at once, so the empty case
-    // has to be answered before them or an empty class would start declining. `split_rulings`
-    // opens with the same line. Measured: **61993** times over the suite — this is the common
-    // case, not an edge one.
+    // Nothing to cross. The ends below are built for the whole slice at once, so the empty case has
+    // to be answered before them or an empty class would start declining. `split_rulings` opens
+    // with the same line. Measured: **61993** times over the suite — this is the common case, not
+    // an edge one.
     if circles.is_empty() {
         return Ok(None);
     }
@@ -111,18 +109,16 @@ pub(super) fn split_circles(
                 // A tangency touches without separating — `segment_meets_cylinder` above already
                 // let that shape through, and cutting there would make a zero-length arc.
                 //
-                // **That question is answered: the skip is right, and a tangency mints no
-                // vertex** — the circle it grazes stays whole, so a circle the split leaves with
-                // one node is always one a vertex lies on (`combinatorics::ring_floor`). Three
-                // reasons the skip is right: measured,
-                // the link at such a touch is a *single* circle and that OCCT returns the same
-                // body, so minting a vertex would invent structure that is not there; the
-                // `UnorderedEdges` this skip's lifting once reached is the **rulings** vocabulary
-                // (`side` ±1), which the tangent wall never enters because the gate records no
-                // crossing for it; and this arm is not gated on `crossings`, so ⊥ classes behave
-                // exactly as they always did once the gate opens. 15 of 21 measured cells
-                // assemble with it in place (the other 6 hold a third plane on the tangent line
-                // and are refused earlier, by `CoincidentNodes`).
+                // **The skip is right, and a tangency mints no vertex** — the circle it grazes
+                // stays whole, so a circle the split leaves with one node is always one a vertex
+                // lies on (`combinatorics::ring_floor`). Three reasons: measured, the link at such
+                // a touch is a *single* circle and OCCT returns the same body, so minting a vertex
+                // would invent structure that is not there; the `UnorderedEdges` that lifting this
+                // skip would reach is the **rulings** vocabulary (`side` ±1), which the tangent
+                // wall never enters because the gate records no crossing for it; and this arm is
+                // not gated on `crossings`, so a ⊥ class takes the same road whatever the gate
+                // recorded. 15 of 21 measured cells assemble with it in place (the other 6 hold a
+                // third plane on the tangent line and are refused earlier, by `CoincidentNodes`).
                 if matches!(
                     combinatorics::pierce_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))
@@ -177,9 +173,9 @@ pub(super) fn split_circles(
     // piece of circle before or after it is covered — being on an arc's boundary is being its
     // end, and ends are kept by name.
     //
-    // The old order — segments first, "the sharper question before the vaguer one" — was
-    // unmeasured and said so; both halves refuse a point wearing two names with the same reject,
-    // and identity on both halves is now the alias table's (`canon`), so what reaches either
+    // Segments first ("the sharper question before the vaguer one") would be an unmeasured order,
+    // and the order changes no refusal: both halves refuse a point wearing two names with the same
+    // reject, and identity on both halves is the alias table's (`canon`), so what reaches either
     // refusal is a coincidence no discovery event recorded — the honest floor.
     struct Ordered {
         nodes: Vec<NodeId>,
@@ -347,12 +343,11 @@ pub(super) fn split_circles(
 /// **Cut every segment at the points collected on it** — the one emitter the arc split and the
 /// ruling split share.
 ///
-/// **It was written twice, almost to the character.** Both roads collect crossings onto their
-/// segments and then have to put them in order, refuse the ones that coincide, and hand each piece
-/// the sense the whole segment ran in; the two copies drifted only in the names of their locals. One
-/// consequence of joining them is that the arc split's rung is the ruling split's rung too — an end
-/// a cylinder pins passes both or neither, rather than one road being taught and the other
-/// forgotten, which is the shape of defect this file has already had.
+/// **One emitter for both splits.** Both roads collect crossings onto their segments and then have
+/// to put them in order, refuse the ones that coincide, and hand each piece the sense the whole
+/// segment ran in — one piece of work, so one copy. One consequence of sharing it: an end a
+/// cylinder pins passes both splits or neither, rather than one road being taught and the other
+/// forgotten.
 ///
 /// `on_seg[si]` is drained: a segment nobody crossed is passed through untouched, and the common
 /// case copies nothing.
@@ -375,24 +370,21 @@ pub(super) fn split_segments_at(
         nodes.sort_unstable();
         // Identity is the table's — two crossings the table knows as one point are one.
         nodes.dedup_by(|a, b| aliases.canon_point(*a) == aliases.canon_point(*b));
-        // **The ruler is gone; the points are ordered by the rule, not by a parameter.**
-        // This used to solve every crossing's `(line, s)`, put both endpoints on that same line with
-        // `along`, and sort the parameters — which is why an end a cylinder pinned stopped it: it
-        // has no rational coordinate for `along` to take. [`combinatorics::order_located`] answers
-        // the same question from the pair `{wc, sg.wall}` and the points' own names, so there is no
-        // ruler to lay and nothing to convert.
+        // **No ruler: the points are ordered by the rule, not by a parameter.** Solving every
+        // crossing's `(line, s)`, putting both endpoints on that same line with `along`, and
+        // sorting the parameters would stop at an end a cylinder pinned: it has no rational
+        // coordinate for `along` to take. [`combinatorics::order_located`] answers the same
+        // question from the pair `{wc, sg.wall}` and the points' own names, so there is no ruler to
+        // lay and nothing to convert.
         //
         // **The pair is the sorted one, and that is not cosmetic.** `pierce_meet`'s canonical
         // line runs along `n_min × n_max`; asking in call order would flip every comparison on a
         // class where `wc > wall`, taking the emitted pieces and the sense with it.
         //
-        // **The guard that checked all crossings share one line becomes a check on their
-        // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
-        // there is no ruler now, but the proposition it stood for — every crossing on this segment
-        // is a point of `wc ∩ sg.wall` — still has to hold, and the name says so more cheaply than
-        // two `MeetLine` comparisons did. Measured **unexercised** over the suite, like the ruler
-        // check before it: it is here because the sort has no way to notice, not because a fixture
-        // is red.
+        // **The guard is a check on the crossings' *names*.** Every crossing on this segment must
+        // be a point of `wc ∩ sg.wall`, and the name says so more cheaply than two `MeetLine`
+        // comparisons. Measured **unexercised** over the suite: it is here because the sort has no
+        // way to notice, not because a fixture is red.
         let pair = {
             let mut p = [wc, sg.wall];
             p.sort_unstable();
@@ -414,13 +406,13 @@ pub(super) fn split_segments_at(
             };
             keyed.push((Split::of(n, pin).on(wc, sg.wall), n, pin));
         }
-        // **A crossing that *is* an endpoint is one point with one name, so it is deduped
-        // rather than refused.** The old sentence here — "one point wearing two names, a three-plane
-        // one and a pierce one" — is still true and still refused, but only for the case it
-        // describes: a crossing at a *three-plane* end really does carry a second name, and the
-        // equality check below catches it. Where the end was pinned by a cylinder, its name **is**
-        // the crossing's `Pierce{planes, cyl, root}` — the same vertex, arrived at twice — and
-        // shipping it twice would put a zero-length piece between a point and itself.
+        // **A crossing that *is* an endpoint is one point with one name, so it is deduped rather
+        // than refused.** "One point wearing two names, a three-plane one and a pierce one" is true
+        // and refused, but only for the case it describes: a crossing at a *three-plane* end really
+        // does carry a second name, and the equality check below catches it. Where the end was
+        // pinned by a cylinder, its name **is** the crossing's `Pierce{planes, cyl, root}` — the
+        // same vertex, arrived at twice — and shipping it twice would put a zero-length piece
+        // between a point and itself.
         //
         // **"the same name" is asked of the alias table.** A tangent corner is a point
         // the cylinder crossing names `Pierce{[cap, wc], root}` and the plane road names
@@ -547,7 +539,7 @@ pub(super) fn split_segments_at(
 /// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_exact::quad::plane_plane_cylinder`]
 /// answers and
 /// [`nacre_topo::Vertex::Pierce`] names. Solving along the segment instead would be shorter and
-/// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
+/// would yield a point with **no name**, which the next stage (splitting the circle into arcs)
 /// would have to re-derive.
 ///
 /// **Only three of `CylinderMeet`'s variants can arrive here, and that is provable.** A plane

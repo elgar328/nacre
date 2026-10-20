@@ -154,10 +154,11 @@ pub(super) fn emit_faces(
     // can be. Over the lib suite the factor decides **112** of some 4,300 arcs, and without it
     // every one of them is wrong silently — the only consumer is the chart's `read_cell`.
     //
-    // **The geometry still watches it, on every arc** ([`disk_side_probe`]): a cell cannot
-    // straddle the circle, so a rational corner's radial side names the side that whole cell is
-    // on — and where a corner speaks it must agree with this rule. Measured 3,260 of 3,260 on the
-    // census corpus. That check is what makes this a *derivation* rather than a third guess.
+    // **The geometry watches it** ([`disk_side_probe`]): where a cell's rational corners agree on a
+    // side of the circle — and the arc's two cells do not claim the same one — that side must agree
+    // with this rule; a convex arc, whose cells' corners can all fall outside, goes unchecked.
+    // Measured 3,260 of 3,260 on the census corpus. That check is what makes this a *derivation*
+    // rather than a third guess.
     let ns_arcs = 2 * edges.segs.len();
     // Arcs are split only on a class with a world statement — `split_circles` reads the class's
     // world coefficients before it cuts a circle (`circle_crossings`) — so every arc below has one.

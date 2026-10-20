@@ -69,29 +69,9 @@ pub(super) fn chord_stations(
     ]))
 }
 
-/// The scan's crossings on rulings, realized — the second road to the sign
-/// [`crossing_on_ruling`] chooses by. One entry per crossing named in this binary: the point,
-/// how far it sits from the class plane, the face plane and the cylinder (all should be 0), and
-/// the ruling side read off the realization beside the side the ring carried.
-/// **The disk-side rule's premise, watched where the rule is applied** (`emit_faces`' arc labels).
-///
-/// A cut circle's per-arc label must be the cell on the arc's **disk** side, and that side is read
-/// off the cells themselves: a cell cannot straddle the circle — the circle is an arrangement edge
-/// — so any rational corner of a cell with a definite radial side names the side the whole cell is
-/// on. This watches the premise rather than the conclusion: **no cell has corners on both sides**,
-/// and **an arc's two cells are never on the same side**. Both would make the answer a coin toss,
-/// and neither is checkable from the label afterwards (a holed lateral's two sectors can carry a
-/// literally identical label — see [`ArcLabel`]).
-///
-/// It replaced a rule derived from the class's **stored** frame (`axis_up`), which two classes
-/// with identical stored *and* canonical normals were measured to disagree about — the same plane,
-/// the same circle, the same two arcs, opposite half-edges. That rule had been set by measuring
-/// two fixtures and generalising; this one asks the geometry every time.
-/// **Which side of a circle a cell lies on, from its own corners** — the geometry that watches
-/// the disk-side rule. A cell cannot straddle the circle (the circle is an arrangement edge), so
-/// any rational corner with a definite radial side names the side the whole cell is on; a pierce
-/// corner sits *on* the circle and says nothing, and so does a three-plane corner that happens to
-/// land there.
+/// **The radial side of each rational corner of a cell** — what [`cell_side`] reads to watch the
+/// disk-side rule. A pierce corner sits *on* the circle and says nothing, and so does a three-plane
+/// corner that happens to land there.
 #[cfg(test)]
 fn corner_sides<'a>(
     jd: &'a Judge<'_, WorkingPlane>,

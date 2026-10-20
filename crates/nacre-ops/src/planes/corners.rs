@@ -59,9 +59,9 @@ pub(super) enum Corner {
     /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
     /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`).
     ///
-    /// The name «corner» is historical: what this type carries is a **boundary piece's reach**,
-    /// and a vertex is the piece with no width. Written this way the loops below do not learn a
-    /// new shape; they ask the same three questions and one of the answers now has extent.
+    /// The name «corner» is narrower than the type: what it carries is a **boundary piece's
+    /// reach**, and a vertex is the piece with no width. Written this way the loops below do not
+    /// learn a new shape; they ask the same three questions and one of the answers has extent.
     ///
     /// `axis` is the **carrier cylinder's** axis, and `arc`'s `from → to` is counter-clockwise
     /// about it ([`lateral_theta_extent`] states that convention). The face's own normal may run
@@ -104,7 +104,7 @@ impl Corner {
             }
             // The strip runs along `e = n × m`, so **that** is the direction the piece's extent
             // is asked for. A whole circle reaches `±ρ|e|` alike and takes the symmetric door,
-            // which is the complete answer it always had; an arc's two ends differ and take the
+            // which is its complete answer; an arc's two ends differ and take the
             // general one. `None` from the extent is `Inside` — reached the strip, spanned
             // nothing — which is the safe reading for both consumers.
             Self::Round { .. } => {
@@ -609,7 +609,7 @@ pub(super) fn face_clears_footprint(
     // whose ring runs along a cylinder that sentence is **false**: the gate can decide, and what
     // cannot read the shape is the road behind it — `combinatorics::loop_triples` declines such a
     // ring by name (`CurvedOperandBoundary`). This population is a boolean's result fed back in as
-    // an operand, which is why a *gate* was the first thing to meet it.
+    // an operand, which is why a *gate* is the first thing to meet it.
     //
     // **An edge's carriers are the adjacency answer** — [`nacre_topo::Edge::surfaces`] says so
     // in its own doc ("the two faces that use the edge"), so a cylinder among them is exactly "the
@@ -619,7 +619,7 @@ pub(super) fn face_clears_footprint(
     // **And it carries that road's exception with it — a *single-edge* loop is a full circle,
     // which the road does speak** (`LoopRing::Circle`, named by the cylinder's class). Measured:
     // without the `len() > 1`, the crosswise bore's cap face — one arc and one seam vertex — took
-    // the new name, and for that face the new name's sentence is simply false. The two conditions
+    // `CurvedOperandBoundary`, and for that face its sentence is simply false. The two conditions
     // have to agree, or this one is claiming a limit the other does not have.
     let curved = face.outer.half_edges.len() > 1
         && face.outer.half_edges.iter().any(|he| {
@@ -636,7 +636,7 @@ pub(super) fn face_clears_footprint(
     // fold) is geometry, [`RejectReason::CylinderGateUndecided`]; one the world holds and `Rat`
     // does not (a `Wide` name, an overflow) is width, [`RejectReason::WitnessNotRational`]
     // ([`CornerFail::stated_reason`]). Neither depends on what the boundary looks like, because the
-    // road behind has nothing to do with them — and since a **pierce corner is now readable**,
+    // road behind has nothing to do with them — and since a **pierce corner is readable**,
     // calling them "curved" would put a false sentence on a true refusal. A class whose
     // coefficients miss its own face is the gate's own (`misfit` below).
     let unreadable = || {

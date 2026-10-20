@@ -5,10 +5,10 @@ use super::*;
 /// **Not a restatement of the row.** A moved plane's `rotated` flag is the licence the exact
 /// shortcuts read before taking the plane's *name* as a world statement, and a moved plane's name
 /// speaks its pre-motion frame — so the flag stays set whatever this answers, and the world
-/// description rides *beside* it. Clearing the flag once sent a merge through an exact-`f64`
-/// triangle test on the face corners, and two unit cubes shifted by `7/11` and `18/11`, sharing a
-/// wall whose two `f64` images differ in the last place, came back as two bodies; the class merge
-/// reads world names now, never those corners.
+/// description rides *beside* it. Clearing the flag would send a merge through an exact-`f64`
+/// triangle test on the face corners — measured: two unit cubes shifted by `7/11` and `18/11`,
+/// sharing a wall whose two `f64` images differ in the last place, came back as two bodies; the
+/// class merge reads world names, never those corners.
 pub(crate) fn world_plane_coeffs(
     model: &Model,
     surf: Handle<Surface>,
@@ -25,8 +25,8 @@ pub(crate) fn world_plane_coeffs(
 ///
 /// **Ask this, do not re-derive it from the class's rational name alone.** The name is
 /// *canonical* (first nonzero component positive), which points the other way from the plane on
-/// half the classes; a rule spelled against it reads "above" backwards exactly there. That mistake,
-/// made while adding the second consumer below, turned 36 tests red at once.
+/// half the classes; a rule spelled against it reads "above" backwards exactly there. Spelled that
+/// way, it turned 36 tests red at once (measured).
 ///
 /// This is only asked of a class ⊥ to the axis, so the product never vanishes.
 pub(crate) fn plus_t_is_above(world: &WorldName, def: &nacre_topo::CylinderDef) -> bool {
@@ -102,16 +102,13 @@ pub(super) fn lateral_t_range(
     (lo < hi).then_some([*lo, *hi])
 }
 
-/// All shells of a solid — outer first, then cavities. The boolean seam
-/// front-end walks these so a cavitied operand's void walls are seen;
-/// a non-hollow solid yields just its outer shell, unchanged.
 /// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
 /// edges trace on the cross-section, as one counter-clockwise arc of radial vectors
 /// ([`RimArc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two
 /// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
 /// B counter-clockwise about the axis). A whole rim (`[v, v]`), an irrational corner, a carrier
 /// this road cannot translate into the world, or rims that do not chain into one arc give `None`
-/// — the whole circle, the reading before this existed. The outer loop is enough: a band's outer
+/// — the whole circle. The outer loop is enough: a band's outer
 /// loop is a wrapping rim, and that rim's arcs alone close the circle.
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the

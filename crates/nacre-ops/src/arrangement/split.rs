@@ -33,12 +33,12 @@ impl Split {
     /// this panics rather than naming a refusal.** Every site that writes an `EndPin::Cylinder`
     /// writes the `NodeId::Pierce` beside it — the seated walk, the arc split, the chord pass — so
     /// the two disagreeing is a defect in *this* kernel, not a property of the model. The
-    /// alternative was `PierceVertexUnnamed`, and its sentence is the mirror image of this case:
+    /// alternative would be `PierceVertexUnnamed`, whose sentence is the mirror image of this case:
     /// *"the point is exactly named; what is missing is that these paths have no other name to
     /// carry it by."* Here the point is **not** exactly named — its two halves contradict. A false
     /// sentence in a reject is worse than a loud stop, which is what `ClassIx::plane` says one
     /// door over: *"a loud panic beats a silently wrong plane."*
-    /// Measured unexercised over the whole suite and the ignored sweep before it was made loud.
+    /// Measured unexercised over the whole suite and the ignored sweep.
     pub(super) fn of(name: NodeId, pin: combinatorics::EndPin) -> Split {
         match (name.kind(), pin) {
             (_, combinatorics::EndPin::Class(r)) => Split::Class(r),

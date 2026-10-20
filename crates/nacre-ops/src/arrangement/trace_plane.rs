@@ -1,14 +1,12 @@
 use super::*;
 /// Why a ring of names could not be carried.
 ///
-/// **It had three variants and now has one, and that is the shape of what changed.** The
-/// other two — a corner with no three-plane name, a carrier riding a cylinder — were never
-/// *decisions*: the ring came out as plane ids and a curved ring could not be **described** in it,
-/// so the type ran out and the refusal was dressed up as a cause. Two rungs widened the vessel and
-/// both refusals went with the projections they were standing in for.
+/// **One variant.** A corner with no three-plane name and a carrier riding a cylinder are not
+/// *decisions*: a ring spelled as plane ids cannot **describe** a curved ring, so refusing there
+/// would dress a vocabulary limit up as a cause, and the ring vocabulary describes both.
 ///
 /// What is left is a name that is degenerate **as a name**, which is a fact about the triple and
-/// has nothing to do with cylinders — so it survives, alone, and says only itself.
+/// has nothing to do with cylinders — so it stands alone and says only itself.
 #[derive(Debug)]
 enum RingFail {
     /// Two of a vertex's three planes coincide, so the name denotes no point.
@@ -33,7 +31,7 @@ fn plane_ring(
     nr: &combinatorics::NamedRing,
 ) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>), RingFail> {
     // **No refusal here, because the vessel can describe a curved ring.** Projected to
-    // `[usize; 3]` corners and plane-class carriers, a ring a cylinder touches could not be
+    // `[usize; 3]` corners and plane-class carriers, a ring a cylinder touches would not be
     // *described*, and a refusal here would be the type running out, dressed as a decision. What
     // a curved ring meets is the roads themselves, which answer or decline on their own terms.
     let ts: Vec<combinatorics::NodeId> = nr
@@ -301,7 +299,7 @@ fn trace_transversal_face(
                 declined = Some(DeclineKind::AllOnPlane);
                 break;
             }
-            // Not "a corner a cylinder made" any more — the walk reads those. This is the
+            // Not "a corner a cylinder made" — the walk reads those. This is the
             // walk's own `None`: a side it could not form exactly, an arc between two on-line
             // nodes tangent to the class at its end, or an arc whose crossings could not be
             // counted (`arc_crossings`' `None`, or a count its ends make impossible). Measured
@@ -598,8 +596,8 @@ pub(super) fn trace_one(
         // deciding that before the emitting closure exists keeps the two borrows apart.
         // A **circular** boundary — a disk face's outer, or a circular drill hole — is a
         // closed trace element ([`CircleTrace`]) rather than a segment ring.
-        // The **walls travel with the triples**. `plane_ring` has handed both back since the
-        // vessel widened, and this caller dropped one of them on the floor.
+        // The **walls travel with the triples**. `plane_ring` hands both back, and this caller
+        // keeps both.
         let mut rings: Vec<(Vec<NodeId>, Vec<crate::combinatorics::Wall>)> = Vec::new();
         match &fl.outer {
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
@@ -662,7 +660,7 @@ pub(super) fn trace_one(
             // suite: the two agree 810,925 times and differ 0, and the carried one also answers 40
             // edges the derivation cannot name at all.
             //
-            // The corner keeps its own name too: `NodeId::three_planes(t)` was a round trip
+            // The corner keeps its own name too: `NodeId::three_planes(t)` would be a round trip
             // through a projection, and `three_plane_name` is pure extraction of an already-sorted
             // triple, so the two are the same value.
             let n = ns.len();
@@ -723,12 +721,12 @@ pub(super) fn trace_one(
                 // `plane_pair_dir_sign(fc, fc, ·)` is a determinant with two equal rows — zero
                 // against every candidate. Ask the pin first and the pencil case arrives wearing
                 // `NoPinOnLine`, which is the wrong sentence for it.
-                // Measured 0 in the corpus. The derivation this replaced could not produce it
-                // (it filtered `c != fc`), so the guard is what carries that property across.
-                // This arm and the pin's below were both made `unreachable!()` with the workspace
-                // suite and the ignored sweep green — that is what "unexercised" means here, rather
-                // than an argument that they cannot fire. (The curved arm above is *not* in that
-                // set: it fires, 20 times, and `curves_owed` is what checks it.)
+                // Measured 0 in the corpus. A derivation filtering `c != fc` cannot produce it, so
+                // the guard is what carries that property. Measured: made `unreachable!()`, this
+                // arm and the pin's below left the workspace suite and the ignored sweep green —
+                // that is what "unexercised" means here, rather than an argument that they cannot
+                // fire. (The curved arm above is *not* in that set: it fires, 20 times, and
+                // `curves_owed` is what checks it.)
                 if wall == fc {
                     out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                     continue;

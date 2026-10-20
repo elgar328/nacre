@@ -78,8 +78,7 @@ pub(crate) struct CircleTrace {
     ///
     /// A lateral face with a **hole** contributes over part of its circle and nothing over the
     /// rest, and a rim of that hole contributes a *different* kind from the band around it. The
-    /// straight sibling [`RulingTrace`] has carried ends since it was written, for the same reason;
-    /// a circle carried none because before holes there was no partial circle to state.
+    /// straight sibling [`RulingTrace`] carries ends for the same reason.
     /// [`split_circles`](fn@split_circles) cuts at these ends and hands each arc only the
     /// contributions that cover it.
     pub arc: Option<[NodeId; 2]>,
@@ -93,8 +92,7 @@ pub(crate) struct MergedCircle {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     /// Each contribution with the **angular extent** it covers — see [`CircleTrace::arc`]. `None`
-    /// is the whole circle, which is what every contribution was before a lateral face could have
-    /// a hole.
+    /// is the whole circle.
     pub merged: Vec<(SolidSide, SegKind, Option<[NodeId; 2]>)>,
 }
 
@@ -139,8 +137,8 @@ pub(crate) struct MergedArc {
     /// [`split_circles`](fn@split_circles) selects per arc; `edge_mask` reads the result unchanged.
     ///
     /// Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
-    /// would, which is what "a piece of the same trace" means. (It was carried before that consumer
-    /// existed, because the split is the only place that knows which circle an arc came from.)
+    /// would, which is what "a piece of the same trace" means. (It is carried here because the
+    /// split is the only place that knows which circle an arc came from.)
     pub merged: Vec<(SolidSide, SegKind)>,
 }
 
@@ -191,10 +189,10 @@ pub(super) fn merge_circles(
                 continue;
             }
         }
-        // The class table answers directly. This used to scan the face rows for a lateral face
-        // of the same class and `expect` one — a runtime claim where the truth is structural: a
-        // `ClassIx::Cyl` index is an index *into this table*, built from the same map that issued
-        // it ("rebuilt from the same map so the two cannot drift", `dense_planes`).
+        // The class table answers directly, without scanning the face rows for a lateral face of
+        // the same class and `expect`ing one — that would be a runtime claim where the truth is
+        // structural: a `ClassIx::Cyl` index is an index *into this table*, built from the same map
+        // that issued it ("rebuilt from the same map so the two cannot drift", `dense_planes`).
         let def = cyls[c.cyl].def.clone();
         out.push(MergedCircle {
             cyl: c.cyl,
@@ -247,8 +245,8 @@ pub(crate) struct RulingTrace {
 ///
 /// Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
 /// fold below never actually fires. Both facts are written for
-/// the population that has not arrived yet — a cylinder belongs to one operand, so two statements
-/// of one ruling need a shape nothing builds so far.
+/// a population that does not exist yet — a cylinder belongs to one operand, so two statements
+/// of one ruling need a shape nothing builds.
 pub(super) fn merge_rulings(
     rulings: &[RulingTrace],
     cyls: &[crate::planes::WorkingCyl],

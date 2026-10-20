@@ -41,10 +41,10 @@ impl BaseFrame {
         frame_sign: i8,
         name: Option<&nacre_exact::PlaneName>,
     ) -> Self {
-        // **Identity by handle, not by hash.** This used to fold the chain into a 64-bit
-        // `DefaultHasher` digest and compare digests — and a collision does not make a judgement
-        // slow, it makes `shared_base` hand the *exact* predicate two incompatible pre-motion
-        // frames and answer a different question with full confidence. The motion-history leaf is
+        // **Identity by handle, not by hash.** A 64-bit `DefaultHasher` digest of the chain would
+        // do worse than slow a judgement on a collision: it would make `shared_base` hand the
+        // *exact* predicate two incompatible pre-motion frames, answering a different question with
+        // full confidence. The motion-history leaf is
         // the canonical name of "which motion": equal handles are the same chain by construction,
         // and two structurally-equal chains under different handles are a conservative miss.
         //
@@ -93,17 +93,16 @@ impl BaseFrame {
         // stored normal and its witness triangle's `cross` can oppose — that is exactly what
         // `frame_sign` records — and `through_points` gives the triangle's. A proper motion
         // preserves the cross product (`det = 1`), so multiplying by `frame_sign` reproduces the
-        // same relation in the base frame. Without it the exact path answers with a flipped sign,
-        // which the suite caught immediately.
+        // same relation in the base frame. Without it the exact path would answer with a flipped
+        // sign (the suite fails at once).
         //
         // **And it is derived from the corrected triangle, not corrected afterwards.** A plane
         // is not a bag of points: reflecting a triangle and re-deriving its normal is *not* the
         // same as reflecting the normal, because the cross product is a pseudovector — the two
         // differ by a global sign, and `plane_pair_dir_sign` reads exactly that sign. Deriving
         // last removes the question: the points are corrected once, and everything downstream is
-        // the ordinary derivation from them. (The earlier spelling corrected the plane separately
-        // and was off by that one sign; `a_reflected_spelling_takes_the_same_direction_signs`
-        // is what found it.)
+        // the ordinary derivation from them. (Correcting the plane separately is off by that one
+        // sign; `a_reflected_spelling_takes_the_same_direction_signs` locks it.)
         // The implicit form `[n, −n·a]` of the plane through `a, b, c`, `n = (b − a) × (c − a)`
         // un-normalized; a cross whose square underflows spans nothing.
         let cross = (tri[1] - tri[0]).cross(tri[2] - tri[0]);

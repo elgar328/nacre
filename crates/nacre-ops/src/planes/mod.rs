@@ -112,13 +112,12 @@ pub(crate) struct CylFaceInfo {
     /// plane. `None` when a ⊥ carrier has no narrow rational name, or the loop has fewer than two
     /// distinct ⊥ stations.
     ///
-    /// **This is a range, not a promise about the loop's shape.** Whether the face is a
-    /// band — two whole rims and holes — is `combinatorics::FaceLoops::cycles`' question
-    /// (`arrangement::lateral_shape`), and the two lateral roads ask it there before they read anything; a face
-    /// that is not a band (a panel, a chain rim) declines by name (`CylSpan`) until the chart can
-    /// hold it. The range is what the population gate's rectangle reads
-    /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
-    /// once the tracer has cut every circle the face covers only partly.
+    /// **This is a range, not a promise about the loop's shape.** The face's shape — its whole rims
+    /// and every other cycle (a panel, a chain rim, a hole) — is
+    /// `combinatorics::FaceLoops::cycles`' question (`arrangement::lateral_shape`), and the two
+    /// lateral roads ask it there before they read anything. The range is what the population
+    /// gate's rectangle reads (`lateral_spans`) — a wider rectangle only refuses more — and what
+    /// the chart's rows carry once the tracer has cut every circle the face covers only partly.
     ///
     /// It is read from the ⊥ carriers' stations, not from "the face's two whole rims": a panel
     /// or a chain rim has no such pair.
@@ -343,7 +342,7 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 /// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
 /// point came from — ordered so their right-hand normal points **out** of the solid: the way the
 /// whole loop winds, its arcs read with its chords (see the fold below).
-/// No production consumer reads the handles any more (the toleranced predicates take their
+/// No production consumer reads the handles (the toleranced predicates take their
 /// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
 /// the `None` of a loop that spreads no three points is answered by the caller — the plane's
 /// truth points for a circle-bounded face (`collect_planes`).
@@ -468,14 +467,13 @@ pub(crate) fn class_owners(
 }
 
 /// A face's class in the arrangement — **which index space the face's surface lives in**.
-/// The old `plane_ix: Vec<usize>` presumed every class is a plane; the enum makes a cylinder
+/// Not a `Vec<usize>`, which would presume every class is a plane: the enum makes a cylinder
 /// class unrepresentable as a plane index instead of smuggling it through a sentinel.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum ClassIx {
     /// An index into the dense plane-class table (`arrangement::PlaneSetup::geom`).
     Plane(usize),
-    /// An index into the cylinder-class table. The index space predates the table — it
-    /// existed first so the type was total before the table had entries.
+    /// An index into the cylinder-class table.
     Cyl(usize),
 }
 

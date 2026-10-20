@@ -95,8 +95,8 @@ pub(crate) fn collect_planes(
                     // The points are stated in the frame the plane's motion names — a disk cap
                     // on a slanted wall's frame is in that frame's coordinates. Realized through
                     // the motion, as every other witness here is, before being wound to the
-                    // face's *world* outward; naive f64 of the frame-stated points compared a
-                    // frame triangle against a world normal and asserts on the first such face
+                    // face's *world* outward; naive f64 of the frame-stated points would compare a
+                    // frame triangle against a world normal and assert on the first such face
                     // (a circle padded on a slanted wall).
                     let mut tri = match disk_motion {
                         None => pts.map(|p| Point3::from_array(p.map(|x| x.to_f64()))),

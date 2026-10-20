@@ -3,8 +3,8 @@ use super::*;
 /// `split_circles::circle_crossings`, same machinery ([`nacre_exact::quad::plane_plane_cylinder`],
 /// the same fences, the same names), different reachable arms: on a class **parallel** to the axis
 /// the meet can be tangent to the lateral — **skipped**, because a touch divides nothing and
-/// cutting there would make a zero-length piece — or lie on it, which the ladder refuses by name
-/// rather than reasoning it unreachable.
+/// cutting there would make a zero-length piece — or lie on it, which the ruling split refuses by
+/// name rather than reasoning it unreachable.
 ///
 /// Returns each crossing with the meet it was solved as ([`combinatorics::PierceMeet`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it
@@ -83,7 +83,7 @@ fn lateral_crossings(
         // The segment's line lies on the lateral: a line the gate recorded
         // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
         // [`split_rulings`] states it there. Anywhere else, and where the planes degenerate, the
-        // ladder does not arrange the shape yet.
+        // ruling split does not arrange the shape yet.
         Some(CylinderMeet::OnRuling(_)) if on_a_shared_line => return Ok(Some(Vec::new())),
         Some(CylinderMeet::OnRuling(_))
         | Some(CylinderMeet::CoincidentPlanes)
@@ -92,7 +92,7 @@ fn lateral_crossings(
         }
         None => return Ok(None),
     };
-    // Whether a crossing is **on this segment** is the caller's question now, asked in the one
+    // Whether a crossing is **on this segment** is the caller's question, asked in the one
     // vocabulary that answers it for both kinds of end — the same move the circle side makes.
     Ok(Some(
         roots
@@ -301,8 +301,8 @@ pub(super) fn split_rulings(
                 return Err(undecided());
             };
             for (n, meet) in xs {
-                // On this segment? The caller's question since the fences went — same rule, same
-                // vocabulary as the circle side.
+                // On this segment? The caller's question — same rule, same vocabulary as the circle
+                // side.
                 let at =
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;

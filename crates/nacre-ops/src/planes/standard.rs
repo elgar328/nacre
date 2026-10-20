@@ -166,10 +166,9 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
 
 /// [`standard_for`] over a bare set of definitions, with no plane table — **a test helper.**
 ///
-/// It once served witness selection in `rotated_vertex`; that consumer is gone, and splitting
-/// [`worst_trial`] out of [`standard_from`] is what surfaced it. Kept because a fixture that asks
-/// "what precision does *this* point demand" wants exactly the two halves in order, and spelling
-/// them out at every call site says less than the name does.
+/// No production caller: a fixture that asks "what precision does *this* point demand" wants
+/// exactly the two halves in order, and spelling them out at every call site says less than the
+/// name does.
 #[cfg(test)]
 pub(crate) fn standard_for_points<'a>(
     pts: impl IntoIterator<Item = &'a WitnessPoint> + Clone,
@@ -184,11 +183,10 @@ pub(crate) fn standard_for_points<'a>(
 /// arithmetic on already-known numbers. Keeping them apart is what lets a caller that already knows
 /// this maximum skip straight to the second half.
 ///
-/// **This is where a boolean spends most of what is left after the arrangement went parallel**
-/// (measured: 76% of setup, and setup is 43% of the largest booleans once the trace is off the
-/// critical path). Each point's trial realization is independent and they combine by **maximum**,
-/// which is associative and exact — so evaluating them across cores cannot move the answer the way
-/// a reassociated sum would.
+/// **This is where a boolean spends most of its setup** (measured: 76% of setup, and setup is 43%
+/// of the largest booleans once the trace is off the critical path). Each point's trial realization
+/// is independent and they combine by **maximum**, which is associative and exact — so evaluating
+/// them across cores cannot move the answer the way a reassociated sum would.
 fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>) -> Mag {
     let pts: Vec<&WitnessPoint> = pts.into_iter().collect();
     let bounds = crate::par::map_range(pts.len(), |i| nacre_judge::trial_bound(pts[i]));

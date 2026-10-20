@@ -65,9 +65,9 @@ pub(crate) fn cylinder_gate(
     ),
     BoolError,
 > {
-    // Every question below is a **sign**, and the scalar layer answers signs totally: the
-    // local checked-`Rat` closures this used to carry declined on overflow, which put a width
-    // limit inside `CylinderGateUndecided` and made that name say less than it claimed.
+    // Every question below is a **sign**, and the scalar layer answers signs totally:
+    // local checked-`Rat` closures would decline on overflow, putting a width limit inside
+    // `CylinderGateUndecided` and making that name say less than it claims.
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
@@ -77,12 +77,11 @@ pub(crate) fn cylinder_gate(
     // tangent line)` for every tangent class carrying a face of the cylinder's other operand —
     // collected where the clearance is asked, not where rows are written (see the record below).
     let mut tangent_walls: Vec<(usize, usize, Vec<usize>)> = Vec::new();
-    // **Two more records, read once each**: the (plane, cylinder) pairs the oblique
-    // arm could not show apart, and the cylinder pairs the pair rule could not. Today their one
-    // reader is the refusal below each loop; the day the ellipse road and the
-    // cylinder–cylinder road (M6b) arrive, that reader becomes a hand-over — the graduation
-    // `crossings` and `tangencies` already made from a refusal to a record.
-    // They stay local: nothing downstream reads them yet, and a field no one reads is not built.
+    // **Two more records, read once each**: the (plane, cylinder) pairs the oblique arm could not
+    // show apart, and the cylinder pairs the pair rule could not. Their one reader is the refusal
+    // below each loop; when the ellipse road and the cylinder–cylinder road (M6b) arrive, that
+    // reader becomes a hand-over, as `crossings` and `tangencies` are. They stay local: nothing
+    // downstream reads them, and a field no one reads is not built.
     let mut oblique: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
@@ -172,9 +171,9 @@ pub(crate) fn cylinder_gate(
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
         // not depend on the plane class the loop below walks, but almost no boolean ever asks for
-        // it — the plane-level test decides first. Measured before this was made lazy: one cut
-        // over a plate with 16 bores built the table 16 times and read it 0, which is exactly the
-        // shape `wall_faces_clear` warns about two doc comments below.
+        // it — the plane-level test decides first. Measured with it eager: one cut
+        // over a plate with 16 bores built the table 16 times and read it 0, which is the shape
+        // [`wall_faces_clear`]'s doc warns about.
         let mut footprints: Option<Vec<Footprint>> = None;
         for (c, wp) in geom.iter().enumerate() {
             // **A world description, or the proof that none is needed** — the question this loop
@@ -225,15 +224,14 @@ pub(crate) fn cylinder_gate(
             // fuse, common, drilling a pocket floor): every one exact and validating clean.
             //
             // **Nothing downstream has to catch a degenerate seating, because this gate still
-            // does** — by the two rules below rather than by a rule about seating. A seated
-            // circle can only reach the counterpart's boundary through a plane parallel to the
-            // axis (which must clear the radius, cross it, or touch it) or an oblique one (refused
-            // outright) or another cylinder's rim (the pair rule), so a tangency or a crossing is
-            // **named** before the arrangement ever sees it. Named, not refused: since the
-            // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
-            // `assembly::tangency_reject`'s — refused here only where that verdict could not
-            // judge the row. What the sentence guarantees is unchanged — no degenerate seating
-            // reaches the arrangement unnamed.
+            // does** — by the two rules below rather than by a rule about seating. A seated circle
+            // can only reach the counterpart's boundary through a plane parallel to the axis (which
+            // must clear the radius, cross it, or touch it) or an oblique one (refused outright) or
+            // another cylinder's rim (the pair rule), so a tangency or a crossing is **named**
+            // before the arrangement ever sees it. Named, not refused: a touch passes with a
+            // [`Tangency`] row and the *verdict* is `assembly::tangency_reject`'s — refused here
+            // only where that verdict could not judge the row. What the sentence guarantees holds —
+            // no degenerate seating reaches the arrangement unnamed.
             // The one relation rule ([`nacre_exact::axis_relation`]) — the same one that decides an
             // edge's curve (`Model::derive_edge_curve`), so the gate and the edges cannot part.
             let relation = nacre_exact::axis_relation(&n, &m);
@@ -290,8 +288,8 @@ pub(crate) fn cylinder_gate(
                 if clearance != Orient::Positive {
                     // The face-level test reads each face's own vertices, which are realized
                     // world coordinates — so it needs no frame guard of its own; `coeffs` above is
-                    // already the world description (a class without one never reaches here). The
-                    // guard this replaces refused every moved class outright, which is what kept a
+                    // already the world description (a class without one never reaches here). A
+                    // frame guard here would refuse every moved class outright and keep a
                     // translated body out of the cylinder roads.
                     let spans: Vec<[nacre_exact::Rat; 2]> = footprints
                         .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
@@ -576,13 +574,13 @@ pub(crate) fn cylinder_gate(
 /// cylinder's own solid is its smooth edge — a fillet — and stays out, by the sentence
 /// `tangency_rows` already stands on: a valid solid's faces do not meet.
 ///
-/// **And the line must lie on a lateral *face*, not only on the surface** — the four sites of
-/// this gate speak about faces, and so does this record. A fillet is a quarter of its cylinder:
-/// a slab standing on the plate beside it, with a face through the fillet's axis and another
-/// tangent to the cylinder at the quarter turn the fillet does not have, puts its corner line on
-/// the infinite cylinder and nowhere near the lateral face
-/// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, the pair recorded
-/// before this condition). The line is asked of each lateral face's angular extent
+/// **And the line must lie on a lateral *face*, not only on the surface** — the four sites of this
+/// gate speak about faces, and so does this record. A fillet is a quarter of its cylinder: a slab
+/// standing on the plate beside it, with a face through the fillet's axis and another tangent to
+/// the cylinder at the quarter turn the fillet does not have, puts its corner line on the infinite
+/// cylinder and nowhere near the lateral face
+/// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, without this condition
+/// the pair would be recorded). The line is asked of each lateral face's angular extent
 /// ([`Footprint::theta_holds_line`], ends included — a line on a face's end ruling is the face's
 /// edge, the half-cylinder family) — the one predicate [`Tangency`]'s rows ask too.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -933,7 +931,7 @@ fn tangency_rows(
         .and_then(|_| plane_side_of_rat(coeffs, &o))
         .filter(|&s| s != 0);
     // Built **once**, not once per face — the same warning `wall_faces_clear`'s caller carries
-    // (a cut over a plate with 16 bores once built this table 16 times and read it 0).
+    // (built eagerly, a cut over a plate with 16 bores would build it 16 times and read it 0).
     let spans = lateral_spans(faces, surf);
     // The lateral faces of this cylinder, with their own orientation and span — and where each
     // lies on the tangent line, read once per pair (the line is the pair's, not a wall face's).
@@ -1232,12 +1230,11 @@ enum LoopOnLine {
 /// meet with the wall, a cylinder neighbour's ruling. That is linear in the end's coordinates, so
 /// a pierce corner's value keeps its own one radical.
 ///
-/// `None` is «could not read the face»: a step whose crossing could not be placed, an arc in a
-/// loop the line reaches, an outer piece [`corner_of`] cannot spell or that is off the class's
-/// plane. The caller reads that as a
-/// contact through the interior — the answer the outer loop's two sides gave before this read
-/// holes and spans, never a silent acquittal. A **hole** that cannot be read is left out
-/// instead: the face only grows, so the answer can only lean towards a contact.
+/// `None` is «could not read the face»: a step whose crossing could not be placed, an arc in a loop
+/// the line reaches, an outer piece [`corner_of`] cannot spell or that is off the class's plane.
+/// The caller reads that as a contact through the interior, never a silent acquittal. A **hole**
+/// that cannot be read is left out instead: the face only grows, so the answer can only lean
+/// towards a contact.
 #[allow(clippy::too_many_arguments)]
 fn line_runs_through_face(
     model: &Model,
