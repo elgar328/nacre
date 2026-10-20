@@ -400,12 +400,11 @@ fn disk_in_rect_is_the_closed_form() {
 /// boss `πr²h`, and their overlap (the disk clipped by the plate's footprint, times the axial
 /// overlap): `Fuse = plate + boss − both`, `Cut = plate − both`, `Common = both`.
 ///
-/// **`removed_by` never checked this.** It locks what a *tool* removes from the first
-/// result, taking that result's own volume as the baseline — so a first operation could be wrong
-/// by a whole feature and every row would still agree with itself. The day `corner-lo` opened is
-/// the day that mattered: a family that had only ever been refused arrived with no independent
-/// number of its own. Its three kinds land on 34.748893572 / 31.607300918 / 0.392699082, to
-/// 7e-15 or exactly.
+/// **`removed_by` never checked this.** It locks what a *tool* removes from the first result,
+/// taking that result's own volume as the baseline — so a first operation could be wrong by a whole
+/// feature and every row would still agree with itself. That matters most for a family like
+/// `corner-lo`, whose first operation has no independent number otherwise. Its three kinds land on
+/// 34.748893572 / 31.607300918 / 0.392699082, to 7e-15 or exactly.
 fn first_volume(kind: BoolKind, base: [f64; 3], h: f64) -> f64 {
     let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
     let len = |a: [f64; 2]| (a[1] - a[0]).max(0.0);
@@ -1059,13 +1058,12 @@ fn a_closed_arc_on_the_line_is_asked_its_crossing() {
     });
 }
 
-/// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions
-/// in `arrangement::disk_side_probe`, which fire where the fact is made and so see every chart in
-/// the binary. Those say the geometry never contradicts the rule; what a test adds is the other
-/// half: that the population is large, that the geometry actually speaks for most of it, and —
-/// the one that would have caught the original defect — that the **`frame_sign` factor is
-/// exercised**. A rule whose deciding factor is constant over the corpus is a rule nothing has
-/// tested, which is exactly how it shipped wrong the first time.
+/// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions in
+/// `arrangement::disk_side_probe`, which fire where the fact is made and so see every chart in the
+/// binary. Those say the geometry never contradicts the rule; what a test adds is the other half:
+/// that the population is large, that the geometry actually speaks for most of it, and that the
+/// **`frame_sign` factor is exercised**. A rule whose deciding factor is constant over the corpus
+/// is a rule nothing has tested.
 ///
 /// Read as floors, not literals: the shape of the population is held, not its size, which moves
 /// with the boss corpus.
@@ -1124,9 +1122,9 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
 /// **The corner boss builds, and only the extremum road makes it.** Its axis sits exactly on
 /// **both** plate walls, so the chords through its circle are radii and the sector outside the
 /// plate is reflex at the centre — the ring's smallest **node**, with the arc reaching further.
-/// Reading the turn there inverted the sign, the void seed landed on a bounded sector, and one
-/// solid's material was flipped across the whole component; the emitter then refused every one of
-/// this family's booleans.
+/// Reading the turn there would invert the sign, land the void seed on a bounded sector and flip
+/// one solid's material across the whole component; the emitter would then refuse every one of this
+/// family's booleans.
 ///
 /// **The lock is the outcome, not a counter.** A process-global counter snapshotted around
 /// this body would not measure it: every other test's booleans write to the same counter in
@@ -1653,9 +1651,8 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         assert!(!r.circle, "and the ring is not a circle: {r:?}");
         assert!(!r.b_mixed, "a disk target is not a mixed ring: {r:?}");
     }
-    // A disk source describes its own supply. Before the rim
-    // it read all zeros in a ring's vocabulary, so no row ever said what that arm had to offer —
-    // which is how a population counted off these rows came out wrong.
+    // A disk source describes its own supply. Read in a ring's vocabulary it would be all zeros,
+    // and no row would say what that arm has to offer.
     let disks: Vec<_> = rows
         .iter()
         .filter(|r| r.route == nesting::Route::Engine && r.a_disk)
@@ -1711,9 +1708,9 @@ fn the_two_roads_never_disagree() {
     );
 }
 
-/// **An island standing inside a round hole**, a shape the corpus did not hold: two
-/// bodies whose top faces are coplanar, one of them a ring that lies inside the other's circular
-/// hole and covers its centre.
+/// **An island standing inside a round hole**, a shape no other fixture holds: two bodies whose top
+/// faces are coplanar, one of them a ring that lies inside the other's circular hole and covers its
+/// centre.
 ///
 /// **It does not walk the merge road's converse clause** — measured, and recorded rather than
 /// dressed up. That road has a converse clause («a centre inside a ring does not mean the disk is

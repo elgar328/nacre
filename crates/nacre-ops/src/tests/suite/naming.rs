@@ -691,10 +691,10 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
 ///
 /// The overhang chain puts the base's exposed top and the cantilever's underside on one plane
 /// (`z = 1`, opposite normals — `unify` rightly keeps them apart, `canon` rightly calls them one
-/// class). At `(1, 0.25, 1)` the side wall's loop runs straight through their shared line, so the
-/// old rule named that vertex with the same plane twice: a triple defining no point, which the
-/// exact predicates — whose precondition is `D ≠ 0` — aborted on. Measured as the only
-/// path a degenerate triple reached them (16 arrivals in the OCCT suite, now 0).
+/// class). At `(1, 0.25, 1)` the side wall's loop runs straight through their shared line, so
+/// naming it by the loop's two neighbours would name the same plane twice: a triple defining no
+/// point, on which the exact predicates — whose precondition is `D ≠ 0` — abort; measured, that is
+/// the only path by which a degenerate triple would reach them (16 arrivals in the OCCT suite).
 #[test]
 fn a_vertex_is_named_by_the_planes_that_touch_it() {
     let mut m = Model::new();
@@ -764,9 +764,8 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
 /// **Dense plane ids are order-isomorphic to the sparse roots.** `dense_planes` ranks the class
 /// roots, so any comparison, sort or lex-min over plane indices reads the same either way.
 ///
-/// This is a **migration gate, not a permanent invariant**: it exists so the claim is measured
-/// before the split rides on it, and it retires with `canon` — its subject, not its coverage,
-/// is what goes away.
+/// This locks a property of `canon`, not a lasting invariant of the table: without `canon` it has
+/// no subject.
 #[test]
 fn dense_plane_ids_are_monotone_in_canon() {
     let mut m = Model::new();
@@ -819,10 +818,10 @@ fn dense_plane_ids_are_monotone_in_canon() {
     }
 }
 
-/// **A plane triple is always in class form.** `planes` is a per-face table, so the same
-/// `usize` could mean "face" or "plane"; producers settle it by emitting class roots, and a
-/// consumer's raw `==` then means "same plane". Four silent-wrong bugs on this branch came from
-/// the two meanings meeting in one comparison, so the invariant is asserted, not assumed.
+/// **A plane triple is always in class form.** `planes` is a per-face table, so the same `usize`
+/// could mean "face" or "plane"; producers settle it by emitting class roots, and a consumer's raw
+/// `==` then means "same plane". The two meanings meeting in one comparison are silent-wrong, so
+/// the invariant is asserted, not assumed.
 #[test]
 fn plane_triples_are_always_canon() {
     let mut m = Model::new();
@@ -862,9 +861,9 @@ fn plane_triples_are_always_canon() {
         planes.len() < faces_tab.len(),
         "fixture has no split plane — the invariant would be vacuous"
     );
-    // A producer hands out dense plane ids (`loop_triples` maps face indices through
-    // `plane_ix`), so "every element is a plane, not a face" is now the type, not a runtime
-    // check. What remains testable is that the ids are in range and sorted-distinct.
+    // A producer hands out dense plane ids (`loop_triples` maps face indices through `plane_ix`),
+    // so "every element is a plane, not a face" is the type, not a runtime check. What remains
+    // testable is that the ids are in range and sorted-distinct.
     let mut checked = 0usize;
     for sh in solid_shell_handles(&m, chained) {
         for &fh in &m.shell(sh).faces {
@@ -939,7 +938,7 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     let jd = Judge::new(&planes, standard, &notes);
     assert!(
         planes.len() < faces_tab.len(),
-        "fixture has no split plane — the sibling faces this used to distinguish"
+        "fixture has no split plane — no sibling faces to distinguish"
     );
     let mut on_plane = 0usize;
     for sh in solid_shell_handles(&m, chained) {

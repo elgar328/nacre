@@ -148,10 +148,10 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
         ("planar", BoolKind::Fuse) => 8.0 + 5.76 - 2.88,
         ("planar", BoolKind::Cut) => 8.0 - 2.88,
         ("planar", BoolKind::Common) => 2.88,
-        // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored plate.
-        // The two fuses build (the slab's wall halves the bore's rim; the pieces
-        // the split keeps and the witnesses the nesting has now read it): the bored plate plus
-        // the slab's share of the bore.
+        // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored
+        // plate. The two fuses build (the slab's wall halves the bore's rim; the pieces the split
+        // keeps and the witnesses the nesting has read it): the bored plate plus the slab's share
+        // of the bore.
         ("bore offset", BoolKind::Fuse) => bored + 5.0 * seg(2.0, 3.0),
         ("bore offset", BoolKind::Cut) => bored - (1600.0 - 5.0 * seg(2.0, 3.0)),
         ("bore offset", BoolKind::Common) => 1600.0 - 5.0 * seg(2.0, 3.0),
@@ -336,9 +336,8 @@ const DIVERGES: &str = "<diverges silently>";
 /// somewhere else.
 ///
 /// The ledger is empty: every cell of the whole group commutes, the recorded quarter turns
-/// included (the cylinder families refused them by name until a cylinder's chain folded to a
-/// world statement). It stays here as the shape the next divergence is written in — a reject
-/// under the reason's name, a silent divergence under [`DIVERGES`].
+/// included. It stays here as the shape the next divergence is written in — a reject under the
+/// reason's name, a silent divergence under [`DIVERGES`].
 const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 
 /// The count lock: how many cells `KNOWN` names (three kinds per motion) — zero, since every

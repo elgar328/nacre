@@ -419,18 +419,16 @@ fn two_by_two_grid_fuses(recorded: bool) {
 
 /// **A part does not care which side of itself a boss sits on.**
 ///
-/// With the axis exactly on a wall, the `+x` and `+y` walls built and the `-x` and `-y` walls
-/// answered `RingOrientation` — a **SuspectedDefect** name, on an input a script writes by
-/// accident. The cause was one cross product reading two spellings of the same fact: the chord's
-/// sense is made against **stored** frames, and the class's *canonical* name opposes it on half
-/// the classes, so the product was right only where the two agreed. On the other half the chord's
-/// sense flipped, one cell of six (the overhang below the plate) came back wound the other way,
-/// and the walk found two outer contours where a one-component class has one.
+/// With the axis exactly on a wall, a cross product reading two spellings of the same fact would
+/// build the `+x` and `+y` walls and answer `RingOrientation` on the `-x` and `-y` ones — a
+/// **SuspectedDefect** name, on an input a script writes by accident. The chord's sense is made
+/// against **stored** frames, and the class's *canonical* name opposes it on half the classes, so
+/// such a product is right only where the two agree; on the other half the chord's sense would
+/// flip, one cell of six (the overhang below the plate) would come back wound the other way, and
+/// the walk would find two outer contours where a one-component class has one.
 ///
-/// **The lock the code asked for.** That site's own comment said the `wc` half "is still
-/// lock-invisible … so that half stands on the convention argument, recorded rather than
-/// assumed". This is the fixture that sees it: the four walls have to weigh the same, and the
-/// value is hand-derived rather than copied from a run.
+/// **The lock for the `wc` half.** This is the fixture that sees the `wc` half: the four walls have
+/// to weigh the same, and the value is hand-derived rather than copied from a run.
 #[test]
 fn a_boss_on_any_wall_weighs_the_same() {
     // plate 4×4×2 = 32; the boss (r = 0.5, h = 4) runs clear through it, half of it inside the
@@ -499,15 +497,15 @@ fn a_boss_on_any_wall_weighs_the_same() {
         let (v, _) = run(base, BoolKind::Common);
         assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
     }
-    // **The mirror invariant a volume cannot state.** Four congruent solids must also be built
-    // out of the same number of faces: a volume can come out right while a face is split or merged
-    // away, and a face wound the wrong way is exactly the shape of what went wrong here.
+    // **The mirror invariant a volume cannot state.** Four congruent solids must also be built out
+    // of the same number of faces: a volume can come out right while a face is split or merged
+    // away, and a face wound the wrong way is exactly the shape this lock guards against.
     assert!(
         fuse_faces.windows(2).all(|w| w[0] == w[1]),
         "the four walls give congruent solids, so their face counts must agree: {fuse_faces:?}"
     );
-    // The control that says the defect needed the cylinder: the same straddle with a box tool
-    // built on every wall before this fix and must go on doing so.
+    // The control that says the case needs the cylinder: the same straddle with a box tool builds
+    // on every wall.
     for (lo, hi) in [
         ([-0.5, 1.5, -1.0], [0.5, 2.5, 3.0]),
         ([3.5, 1.5, -1.0], [4.5, 2.5, 3.0]),
@@ -608,7 +606,7 @@ fn the_mesh_covers_the_faces_it_approximates() {
             )
             .solid;
             m.rebuild_adjacency();
-            // A population this ladder does not build yet is not this test's business; what it
+            // A population the kernel does not build yet is not this test's business; what it
             // *does* build has to be drawn correctly.
             let Ok(out) = boolean(&mut m, kind, a, b) else {
                 continue;
@@ -863,9 +861,9 @@ fn a_chain_of_motions_is_deterministic() {
 /// Replay determinism for the one additive operation: a copy reproduces the same
 /// geometry *and* the same handle index, and leaves the same live set behind it.
 ///
-/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
-/// legal only because `Handle`'s equality is its index — the very premise `replay` now
-/// relies on. `tests/invariants/replay.rs` measures that premise directly instead of assuming it.
+/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is legal only
+/// because `Handle`'s equality is its index — the very premise `replay` relies on.
+/// `tests/invariants/replay.rs` measures that premise directly instead of assuming it.
 #[test]
 fn copy_is_deterministic() {
     let build = || {
@@ -942,8 +940,8 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
         "corner (0,0,0) rotated to its exact image {want:?}; got {pts:?}"
     );
 
-    // A mixed-rotation cut now runs: the axis-aligned `d` sits inside the rotated `c2`, so
-    // `Cut(c2, d)` leaves `c2` with `d` carved out as a cavity (volume 24 − 1 = 23).
+    // A mixed-rotation cut runs: the axis-aligned `d` sits inside the rotated `c2`, so `Cut(c2, d)`
+    // leaves `c2` with `d` carved out as a cavity (volume 24 − 1 = 23).
     let d = crate::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.5; 3]),
@@ -1136,12 +1134,11 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
 /// begun by a later non-fixing motion) — the forest's story lives on the faces that
 /// genuinely moved. `None` when no face carries a rotation.
 ///
-/// There is no third field `base_is_rotated` — "does this vertex's base vertex itself
-/// carry a motion?", the one-hop invariant that kept a replay from applying the same motion
-/// twice. There is no base vertex any more (a moved corner is the intersection of its moved
-/// planes), so double application is **unrepresentable** rather than merely untrue: the type
-/// absorbed the invariant, and a probe field that could only ever read `false` would be
-/// theatre.
+/// There is no third field `base_is_rotated` — "does this vertex's base vertex itself carry a
+/// motion?", the one-hop invariant that would keep a replay from applying the same motion twice.
+/// There is no base vertex (a moved corner is the intersection of its moved planes), so double
+/// application is **unrepresentable** rather than merely untrue: the type holds the invariant, and
+/// a probe field that could only ever read `false` would be theatre.
 fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_exact::Axis>)> {
     let mut best: Option<Vec<nacre_exact::Axis>> = None;
     for &fh in &m.shell(m.solid(s).outer).faces {
@@ -1198,11 +1195,10 @@ fn a_chained_boolean_keeps_its_faces_exact() {
     m.rebuild_adjacency();
     let b = transform(&mut m, b, &rot_iso(Axis::Z, 30)).unwrap();
     m.rebuild_adjacency();
-    // The operands hold up: a rotated solid's faces do carry definitions. The caps'
-    // *truth* is world-stated since the invariant-plane restatement, but the judging
-    // table re-chains a chain-fixed plane (the mirror takes the strongest description),
-    // so the whole table reads rotated — exactly as it did when the twin carried the
-    // motion itself.
+    // The operands hold up: a rotated solid's faces do carry definitions. The caps' *truth* is
+    // world-stated under the invariant-plane restatement, but the judging table re-chains a
+    // chain-fixed plane (the mirror takes the strongest description), so the whole table reads
+    // rotated.
     for (name, s) in [("operand a", a), ("operand b", b)] {
         let planes = crate::planes::collect_planes(&m, s).expect("planes");
         assert!(
@@ -1226,12 +1222,11 @@ fn a_chained_boolean_keeps_its_faces_exact() {
 /// **The same motion, applied twice, is the same node.**
 ///
 /// The motion handle is the canonical name of "which motion", and judgments use it to decide
-/// whether a whole judgement can be answered exactly in the pre-motion frame. Without
-/// interning, turning two solids by the same 30° makes two nodes, their shared motion stops
-/// cancelling, and rotating a model turns its exact questions into assumed ones — which is
-/// what `a_shared_rotation_still_assumes_nothing` measures. (The identity it replaced was a
-/// 64-bit hash of the chain's contents, where a collision would have answered a *different*
-/// question with full confidence.)
+/// whether a whole judgement can be answered exactly in the pre-motion frame. Without interning,
+/// turning two solids by the same 30° makes two nodes, their shared motion stops cancelling, and
+/// rotating a model turns its exact questions into assumed ones — which is what
+/// `a_shared_rotation_still_assumes_nothing` measures. (A 64-bit hash of the chain's contents as
+/// the identity would answer a *different* question with full confidence on a collision.)
 #[test]
 fn the_same_motion_applied_twice_is_one_node() {
     use nacre_exact::Axis;
@@ -1539,10 +1534,9 @@ fn rerotate_exact_after_inexact_records_node() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A translation between two same-axis rotations forces a chain (this cell never
-/// bundles anyway): the forest records both rotations, `base` stays the root, and
-/// the result is rigid and valid — sound with no adjacency guard (each rotation is
-/// its own node).
+/// A translation between two same-axis rotations forces a chain (same-axis nodes are not bundled):
+/// the forest records both rotations, `base` stays the root, and the result is rigid and valid —
+/// sound with no adjacency guard (each rotation is its own node).
 #[test]
 fn rerotate_across_translation_chains() {
     use nacre_exact::Axis;

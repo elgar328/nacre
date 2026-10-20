@@ -38,10 +38,9 @@ fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// is *parallel* to the extrusion axis and the staple's section there falls into two
 /// pieces: one wholly inside the cap, one wrapping the corner `(1,1)`.
 ///
-/// That parallelism is the whole point. A prism cut by a plane **perpendicular** to
-/// its axis meets a face in the profile, which is connected — so every component of
-/// `profile ∩ f` reaches `∂f`, and a face can never carry both an arc and a loop. Every
-/// earlier attempt at such a fixture died on that.
+/// That parallelism is the whole point. A prism cut by a plane **perpendicular** to its axis meets
+/// a face in the profile, which is connected — so every component of `profile ∩ f` reaches `∂f`,
+/// and a face can never carry both an arc and a loop.
 ///
 /// Leg bottoms sit at `z = 0.5` and `z = 0.45`, staggered as `u_prism`'s prongs are. And
 /// the legs span `y ∈ [0.65, 1.3]`, not `[0.7, 1.3]`, because `(1.4, 0.7)` lies on the
@@ -84,10 +83,10 @@ fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// **What the corpus actually contains in the way of concurrent vertices — and whether the
 /// engine's rule for noticing them is complete.**
 ///
-/// The four-plane work rests on one premise: a point's identity can be made a function of the
-/// *set* of planes through it, because **every producer that meets the point derives the same
-/// set**. Until now that was checked on a single model. This measures it against ground truth
-/// (every plane asked, not the rule asking itself) over the whole fixture corpus.
+/// Four-plane identity rests on one premise: a point's identity can be made a function of the *set*
+/// of planes through it, because **every producer that meets the point derives the same set**. This
+/// measures it against ground truth (every plane asked, not the rule asking itself) over the whole
+/// fixture corpus, not on a single model.
 ///
 /// Two things are asserted, and the second is the load-bearing one:
 ///
@@ -221,20 +220,20 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
     println!("  of which {trace_rule_checked} exercised the trace's discovery rule");
 }
 
-/// **Every producer states its side in the label frame** — the invariant family #2 restored,
-/// swept over the whole two-solid corpus (prints the interesting classes with `--nocapture`).
+/// **Every producer states its side in the label frame** — swept over the whole two-solid corpus
+/// (prints the interesting classes with `--nocapture`).
 ///
 /// The arrangement states its cell labels as `[*_above, *_below]` about one direction per plane
-/// class: the class root's **stored surface normal** (`Seated{body_above}` and `emit_faces`'
-/// `flip` are written against it). `combinatorics::side_of` answers in the root's **outward** frame
-/// instead, and the two are opposite exactly when the root face is `Reversed`
-/// (`orient_sign == -1`) — which a fixture box's face is only where its plane was stated first
-/// facing the other way, and a face an earlier boolean re-emitted flipped is. Read raw, `side_of` flips the wrong label bit on a pocket wall. No
-/// point's side is read at all — [`arrangement::run_body_above`] derives
-/// the occupied side from the ring's travel, and the frame term cancels there because
-/// `order_along`'s direction and the label frame are defined by the same stored normal — but
-/// this class stays the corpus's only crossed-frame witness, so it is what would catch a
-/// producer that regresses to a raw `side_of`.
+/// class: the class root's **stored surface normal** (`Seated{body_above}` and `emit_faces`' `flip`
+/// are written against it). `combinatorics::side_of` answers in the root's **outward** frame
+/// instead, and the two are opposite exactly when the root face is `Reversed` (`orient_sign == -1`)
+/// — which a fixture box's face is only where its plane was stated first facing the other way, and
+/// a face an earlier boolean re-emitted flipped is. Read raw, `side_of` flips the wrong label bit
+/// on a pocket wall. No point's side is read at all — [`arrangement::run_body_above`] derives the
+/// occupied side from the ring's travel, and the frame term cancels there because `order_along`'s
+/// direction and the label frame are defined by the same stored normal — but this class stays the
+/// corpus's only crossed-frame witness, so it is what would catch a producer that regresses to a
+/// raw `side_of`.
 ///
 /// What this pins, measured with the frames crossed:
 /// - the pocket fixture has 5 `orient_sign == -1` classes carrying seated *and* graze segments

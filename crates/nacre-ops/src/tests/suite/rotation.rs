@@ -2,20 +2,19 @@
 
 use super::*;
 
-// A boolean commutes with a rigid motion, so rotating both operands by the same
-// irrational-angle isometry must give the rigid image of the unrotated result — identical
-// volume, solid count, and cavity count, and still valid. These are the first live proof
-// that the CIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
-// sound end-to-end on rotated (rounded-irrational) geometry.
+// A boolean commutes with a rigid motion, so rotating both operands by the same irrational-angle
+// isometry must give the rigid image of the unrotated result — identical volume, solid count, and
+// cavity count, and still valid. These check that the toleranced machinery (arrangement, seam,
+// in/out, outer/cavity) is sound end-to-end on rotated (rounded-irrational) geometry.
 
 /// A cutter's convex corner landing exactly on the target's concave corner — three planes
 /// (x=1,y=1,z=1) meeting at one point (1,1,1), six faces there — makes a **non-manifold pinch**
 /// (two face-fans touching at the point). No valid 2-manifold solid exists, so `boolean` rejects
-/// with the clear `NonManifoldVertex` reason (not the incidental `EulerParity`), leaving the
-/// live model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings
-/// (exact and CIP-kernel paths) hit the same pinch and reject. R = a cube minus a far-corner
-/// octant; C = a cube whose +corner is that removed octant's inner corner. (Coplanar contact away
-/// from a corner works — [`a_rotated_boolean_result_can_be_cut_again`].)
+/// with the clear `NonManifoldVertex` reason (not the incidental `EulerParity`), leaving the live
+/// model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings (exact
+/// and toleranced paths) hit the same pinch and reject. R = a cube minus a far-corner octant; C = a
+/// cube whose +corner is that removed octant's inner corner. (Coplanar contact away from a corner
+/// works — [`a_rotated_boolean_result_can_be_cut_again`].)
 #[test]
 fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -24,7 +23,8 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
-    // `rotate`: None = axis-aligned (exact path); Some = the result and cutter tilted (CIP path).
+    // `rotate`: None = axis-aligned (exact path); Some = the result and cutter tilted (toleranced
+    // path).
     let run = |rotate: bool| {
         let mut m = Model::new();
         let a = crate::fixtures::cuboid(
@@ -98,11 +98,11 @@ fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
 /// `arrangement::boolean` to obtain a malformed
 /// solid, then confirm `validate` reports a `NonManifoldVertex`.
 ///
-/// The shape has to be one that **cannot** part: two bodies touching at a corner now come
-/// back as two bodies and there is no malformed solid to obtain from them. So A and B meet only
-/// at `(2,2,1)` while two bridges run around the contact and join them elsewhere — the material
-/// loops, the pinch is real, and the vertex check (which lives in `boolean`, not in the
-/// arrangement) is the one this bypasses.
+/// The shape has to be one that **cannot** part: two bodies touching at a corner come back as two
+/// bodies and there is no malformed solid to obtain from them. So A and B meet only at `(2,2,1)`
+/// while two bridges run around the contact and join them elsewhere — the material loops, the pinch
+/// is real, and the vertex check (which lives in `boolean`, not in the arrangement) is the one this
+/// bypasses.
 #[test]
 fn validate_reports_the_non_manifold_pinch() {
     let mut m = Model::new();
@@ -413,13 +413,12 @@ fn rotated_result_reuse_stress() {
     );
 }
 
-/// Adversarial rotation stress (overhaul 3d-iii): many fixtures × kinds × rotations
-/// (single-axis, and Euler chains reaching arbitrary orientation) confirm the DNA
-/// invariant — a rotated boolean is *never silently wrong*: its result either equals the
-/// unrotated one (a boolean commutes with a rigid motion, so volume/solid-count/cavity-count
-/// are invariant) or is an honest reject. `#[ignore]`: each rotated boolean escalates its
-/// CIP predicates to astro-float and costs ~0.5–2.5 s, so this runs on demand, not per commit
-/// (the invariance regression guard is the fast `rotated_*` tests above).
+/// Adversarial rotation stress: many fixtures × kinds × rotations (single-axis, and Euler chains
+/// reaching arbitrary orientation) confirm the DNA invariant — a rotated boolean is *never silently
+/// wrong*: its result either equals the unrotated one (a boolean commutes with a rigid motion, so
+/// volume/solid-count/cavity-count are invariant) or is an honest reject. `#[ignore]`: each rotated
+/// boolean escalates its toleranced predicates to astro-float and costs ~0.5–2.5 s, so this runs on
+/// demand, not per commit (the invariance regression guard is the fast `rotated_*` tests above).
 #[test]
 #[ignore = "slow: rotated booleans ~2s each (run with --ignored)"]
 fn rotation_invariance_stress() {

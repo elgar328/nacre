@@ -5,15 +5,16 @@ use super::*;
 
 /// **Padding the same footprint twice must not leave zero-area faces.**
 ///
-/// It did, and `validate` reported nothing. Padding `1.1` and then `6.6` on the top of a
-/// cuboid left two faces of area `2.2e-16` on the plane `z = 2.1`, whose long edges sat one
-/// ulp apart (`-0.6` against `-0.6000000000000001`).
+/// Padding `1.1` and then `6.6` on the top of a cuboid places two profiles on one plane, and an ulp
+/// between their frames' origins would leave two faces of area `2.2e-16` on the plane `z = 2.1`,
+/// whose long edges sit one ulp apart (`-0.6` against `-0.6000000000000001`) — with `validate`
+/// reporting nothing.
 ///
-/// The ulp came from the sketch frame's **origin**, read off the face: an origin at the face's
-/// area centroid, with `ring_area_centroid` rounding twice more than it needed to, put the first
-/// pad's top face's centre at `-1.11e-16` instead of `0`, so the second pad placed the same
-/// profile one ulp away and the kernel — correctly — built the one-ulp-wide faces that answer
-/// describes. The origin reads no face now: it is the world origin's projection.
+/// An origin read off the face's area centroid is one such ulp: a centroid that folds `1/3` into
+/// every triangle would put the first pad's top face's centre at `-1.11e-16` instead of `0`
+/// (measured), so the second pad would place the same profile one ulp away and the kernel —
+/// correctly — build the one-ulp-wide faces that answer describes. The origin reads no face: it is
+/// the world origin's projection.
 ///
 /// `SketchPlane::exact()` does not catch this: it checks only that the axes are orthonormal,
 /// never the origin.
@@ -245,9 +246,9 @@ fn the_six_axis_directions_get_the_frames_the_convention_names() {
     }
 }
 
-/// The lid's frame and [`SketchPlane::world_xy`] name the same plane, so they must name it the
-/// same way. They did not: `any_perpendicular` gave the lid `u = −ŷ, v = +x̂`, ninety degrees
-/// round, and the kernel carried both spellings at once.
+/// The lid's frame and [`SketchPlane::world_xy`] name the same plane, so they must name it the same
+/// way. `any_perpendicular` would give the lid `u = −ŷ, v = +x̂`, ninety degrees round, and the
+/// kernel would carry both spellings at once.
 #[test]
 fn a_lid_gets_the_same_frame_as_the_world_xy_plane() {
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
@@ -524,9 +525,9 @@ fn a_boss_on_a_slanted_wall_is_correct_today() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// **A sketch on a wall raised from a sketch on a wall** — the nesting `Motion::Frame` was
-/// redesigned for. The second wall's *world* normal is irrational, so its frame cannot be
-/// written down by naming a normal; only by naming the plane.
+/// **A sketch on a wall raised from a sketch on a wall** — the nesting `Motion::Frame` exists for.
+/// The second wall's *world* normal is irrational, so its frame cannot be written down by naming a
+/// normal; only by naming the plane.
 ///
 /// It builds through f64: the raised boss's side face has no sketch frame of its own
 /// (`face_sketch_frame` declines), so the nested pad takes the realized plane. Pinned because
@@ -596,13 +597,11 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
 /// `Handle<Surface>` at construction**, before anything is compared. And every face of the
 /// result states itself exactly.
 ///
-/// **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6` — the target
-/// the plan named. Stacking sketches the second boss on the **first boss's cap**, which is a
-/// different plane and therefore a different frame, so the two caps come out `w = 7.7` and
-/// `w = 6.6` — two exact descriptions of one plane that `SurfaceKey` cannot equate. That is
-/// not a regression (before this they had no descriptions at all, and the merge still happens
-/// through the judge), but the plan's headline claim only holds for sketches sharing a frame,
-/// which is what this pins instead.
+/// **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6`. Stacking sketches the
+/// second boss on the **first boss's cap**, which is a different plane and therefore a different
+/// frame, so the two caps come out `w = 7.7` and `w = 6.6` — two exact descriptions of one plane
+/// that `SurfaceKey` cannot equate. The merge happens through the judge; one handle at construction
+/// holds only for sketches sharing a frame, which is what this pins.
 #[test]
 fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -706,9 +705,9 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
 
 /// **A plane states itself exactly, and its f64 axes are the realization of that.**
 ///
-/// This is the whole point of closing the struct: `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`,
-/// three integers, while the unit axes derived from it square to `0.9999999999999999…`. The
-/// old API stored only the axes and threw the normal away, so nothing exact survived the door.
+/// This is the whole point of closing the struct: `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`, three
+/// integers, while the unit axes derived from it square to `0.9999999999999999…`. Storing only the
+/// axes would throw the normal away, and nothing exact would survive the door.
 #[test]
 fn a_named_plane_records_what_its_caller_stated() {
     // The canonical name is *derived* from the definition's points; reading it back is how
@@ -891,7 +890,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
         Some([0.0, 0.0, 1.0, -1.0]),
         "the far cap is `w = dist` in the frame"
     );
-    // Every face now states itself — that is the whole measurement.
+    // Every face states itself — that is the whole measurement.
     for &f in &faces {
         assert!(coeffs(f, &m).is_some(), "a face with no exact plane");
     }
@@ -928,12 +927,11 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
 /// (~2^220) overflow `i128`**, past what a narrow derivation holds. The frame realizes through
 /// the wide road, and **every face of a pad on such a wall states its exact points**.
 ///
-/// Probed while building this fixture: a sketch→extrude wall's canonical name caps out
-/// around ~115 bits (the profile's decimal window bounds the products), so **`Wide`-named
-/// faces do not arise from today's construction route at all** — the `Wide` opening is
-/// locked at the basis level (`a_wide_plane_hosts_a_canonical_frame`) and the end-to-end
-/// chain here on the population that exists. The fixture qualifies itself rather than
-/// assuming its population.
+/// Measured: a sketch→extrude wall's canonical name caps out around ~115 bits (the profile's
+/// decimal window bounds the products), so **`Wide`-named faces do not arise from today's
+/// construction route at all** — the `Wide` opening is locked at the basis level
+/// (`a_wide_plane_hosts_a_canonical_frame`) and the end-to-end chain here on the population that
+/// exists. The fixture qualifies itself rather than assuming its population.
 #[test]
 fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);

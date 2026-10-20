@@ -222,8 +222,8 @@ fn a_disk_clears_a_strip_or_spans_it() {
     assert_eq!(disk(0, 3), StripSide::Inside);
     // Touching is not spanning, on either side of the boundary.
     assert_eq!(disk(6, 2), StripSide::Inside);
-    // A point has no width, so it can never span: on the ruling it is `Inside`, as it was
-    // before this cell and as `cylinder_strip_side` still answers.
+    // A point has no width, so it can never span: on the ruling it is `Inside`, as
+    // `cylinder_strip_side` answers.
     assert_eq!(disk(4, 0), StripSide::Inside);
     assert_eq!(
         disk(4, 0),
@@ -241,9 +241,9 @@ fn a_disk_clears_a_strip_or_spans_it() {
 ///
 /// A circle and a ruling of one class meet only if two lateral faces share a point, and the
 /// cylinder-pair gate refuses that before any arrangement runs. This is that gate seen from
-/// outside: two cylinders on crossing axes, one per operand, whose surfaces intersect. The
-/// refusal is `CylinderPairContact` — *not* the arrangement's name — which is the whole content
-/// of «the guard this cell deleted was standing where nothing could arrive».
+/// outside: two cylinders on crossing axes, one per operand, whose surfaces intersect. The refusal
+/// is `CylinderPairContact` — *not* the arrangement's name — so a guard for this case inside the
+/// arrangement would stand where nothing can arrive.
 #[test]
 fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
     let mut m = Model::new();

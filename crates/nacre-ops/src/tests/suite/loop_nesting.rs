@@ -683,10 +683,9 @@ fn a_reflex_node_turns_against_its_ring() {
         1
     );
 
-    // The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
-    // Start it at the reflex node and a `turn_at(ring[0])` implementation reads the reflex
-    // sign — the exact fault `outer_tri` shipped. Measured: without this rotation, such an
-    // implementation passes every assertion above.
+    // The teeth. A ring is a cycle, so its winding cannot depend on where the walk began. Start it
+    // at the reflex node and a `turn_at(ring[0])` implementation reads the reflex sign. Measured:
+    // without this rotation, such an implementation passes every assertion above.
     let mut rotated = outer.clone();
     rotated.rotate_left(reflex);
     assert_eq!(
@@ -733,7 +732,7 @@ fn a_loop_is_inside_the_face_it_was_found_on() {
 }
 
 #[test]
-fn the_older_loops_are_inside_their_faces_too() {
+fn square_and_l_holes_are_inside_their_faces_too() {
     // Two hole shapes that must not move: a square one and an L-shaped one. Both sit
     // strictly inside the same reflex hexagon, and **every** clear ray agrees — the parity
     // cannot depend on which ray was cast, which is a second machine for free.

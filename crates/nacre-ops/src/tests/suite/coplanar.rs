@@ -78,11 +78,10 @@ fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
     // Same seating, but the tool carries a pin reaching below the contact plane, so the plane
     // no longer separates the solids and the cut owes a real notch (1 − 0.2·0.2·0.5 = 0.98).
     //
-    // This used to be an honest reject: the tool's z=1 cap is an annulus-like face whose
-    // *inner* edge rides the pin's walls, and reading its occupancy off the ring's flank put
-    // the material on the wrong side, so the class would not label. With the side read from
-    // the ring's travel instead (`arrangement::run_body_above`), the notch comes out at the
-    // hand-computed volume with a clean model.
+    // The tool's z=1 cap is an annulus-like face whose *inner* edge rides the pin's walls: reading
+    // its occupancy off the ring's flank would put the material on the wrong side, and the class
+    // would not label. With the side read from the ring's travel (`arrangement::run_body_above`),
+    // the notch comes out at the hand-computed volume with a clean model.
     let mut m = Model::new();
     let base = crate::fixtures::cuboid(
         &mut m,
@@ -215,10 +214,10 @@ fn two_faces_of_one_judged_surface_are_one_class() {
                     let nacre_topo::Vertex::ThreePlane(_) = *m.vertex(vh) else {
                         continue;
                     };
-                    // The kernel says which corners it can place in one frame; comparing the
-                    // three carriers' motions here would be `vertex_meet`'s rule written twice,
-                    // and since the invariant-plane restatement that copy calls a turned solid's
-                    // corner straddling when the chain-fixes licence places it.
+                    // The kernel says which corners it can place in one frame; comparing the three
+                    // carriers' motions here would be `vertex_meet`'s rule written twice, and under
+                    // the invariant-plane restatement that copy would call a turned solid's corner
+                    // straddling when the chain-fixes licence places it.
                     if m.vertex_meet(vh).is_none() {
                         straddle.get_or_insert(vh);
                     } else if !pure.contains(&vh) {
@@ -353,7 +352,7 @@ fn overhang_boss_with_a_non_convex_footprint() {
 // holes, seam edges, and the asymmetric T-junction the global dissolve exists to prevent. ----
 
 /// An axis-aligned `FaceInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
-/// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
+/// right-hand normal is `n_out`. The merge reads more than `n_out` — `loop_winding` and
 /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
 /// dummy triangle would make those answers meaningless.
 fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingPlane {
@@ -620,9 +619,9 @@ proptest! {
 
         let (mut m1, a1, b1) = build();
         // Not `prop_assume!`: a matched-footprint stack is squarely in coverage whatever the
-        // dimensions are, so a reject here is a defect, not an uninteresting sample. Assuming
-        // it away is how this property went on passing while the kernel aborted on 2% of the
-        // space and rejected 95% of it (family #3).
+        // dimensions are, so a reject here is a defect, not an uninteresting sample. Assumed away,
+        // this property would pass while the kernel aborts on 2% of the space and rejects 95% of it
+        // (measured).
         let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1)
             .expect("stacked boxes fuse at any dimensions");
         m1.rebuild_adjacency();

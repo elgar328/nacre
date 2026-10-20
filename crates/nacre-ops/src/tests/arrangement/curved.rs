@@ -274,7 +274,7 @@ fn the_gates_record_arms_the_ruling_trace() {
     assert_eq!(
         tr.segs.len(),
         2,
-        "one chord per cap — a segment of the sweep since cell ⑩"
+        "one chord per cap — a segment of the sweep"
     );
     let mut sides: Vec<i8> = tr.rulings.iter().map(|r| r.side).collect();
     sides.sort_unstable();
@@ -1001,10 +1001,10 @@ fn a_cut_circle_bounds_the_bands() {
     ));
 }
 
-/// The armed through-boss fuse **assembled to the end of the road** — the pipeline the
-/// cell-3 lock walks, extracted so the consumer locks (props' θ-range integrals, tess's
-/// open-rim merge) measure the very same solid through one spelling: every class's
-/// arrangement, the coplanar unify, the band/panel pass, the seam table, `reconstruct`.
+/// The armed through-boss fuse **assembled to the end of the road** — the pipeline
+/// [`the_armed_assembly_welds_the_panels`] walks, extracted so the consumer locks (props' θ-range
+/// integrals, tess's open-rim merge) measure the very same solid through one spelling: every
+/// class's arrangement, the coplanar unify, the band/panel pass, the seam table, `reconstruct`.
 /// Returns the model with the one welded solid live, plus the setup and the wall class.
 fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usize) {
     let (mut m, plate, boss, setup, wc, crossings) = armed_through_boss();

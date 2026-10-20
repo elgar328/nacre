@@ -2,21 +2,20 @@
 
 use super::*;
 
-/// **Two cylinder operations in a row — measured for the first time.**
+/// **Two cylinder operations in a row.**
 ///
-/// The corpus had **no chained-cylinder fixture at all**: every boss and bore stood on a plain
-/// plate. So "a plate takes a second cylinder" was neither locked nor known, and it turned out to
-/// be *half* true — this is the half that always built, kept as its own regression guard.
+/// "A plate takes a second cylinder" has two halves, and this is the one with the first cylinder on
+/// the plate's face, kept as its own guard.
 ///
 /// A bore or a boss standing on the plate's face leaves the operand's rings plane-named (a hole is
 /// a full circle, the one curved loop the tracer's road speaks), so the next cylinder is business
-/// as usual. A boss standing on a **wall** did not, for six wall-names running; it builds now, and
+/// as usual. A boss standing on a **wall** does not;
 /// [`a_chained_cylinder_bounded_by_the_first_builds`] holds that half.
 ///
 /// The volumes are derived, not copied: the plate is 96, a bore through it removes `π/4·2`, a boss
 /// on top adds `π/4·1`, and a wall boss adds `π/4·4` with half its section buried (`−½·π/4·2`).
 #[test]
-fn chained_cylinder_operations_that_build_today_still_build() {
+fn chained_cylinder_operations_on_a_face_build() {
     let quarter = std::f64::consts::PI * 0.25;
     let bore = ([2.0, 2.0, -1.0], 4.0, BoolKind::Cut);
     let top_boss = ([2.0, 2.0, 2.0], 1.0, BoolKind::Fuse);
@@ -70,10 +69,9 @@ fn chained_cylinder_operations_that_build_today_still_build() {
 /// The clearance test's whole content is a `bool`, and on a chained operand its answer travels
 /// exactly one place: a `false` sends the seated pair to the `d = 0` record-and-pass arm, which
 /// puts it in `crossings`, which is what makes the tracer's ruling and chord arms fire at all. A
-/// wrong `true` would refuse nothing, panic nowhere and change no output — today's population
-/// declines a step later either way (`PierceNode`, the lock below) — so **the suite would stay
-/// green with the pierce corner's answer thrown away entirely**. Measured, by throwing it away:
-/// 316 green. This is the lock that sees it.
+/// wrong `true` would refuse nothing, panic nowhere and change no output, so **the suite would stay
+/// green with the pierce corner's answer thrown away entirely**. Measured, by throwing it away: 316
+/// green. This is the lock that sees it.
 ///
 /// **What it sees is that the corner is *readable*, not what it says** — recorded rather than
 /// claimed. Forcing every pierce corner to one strip side leaves even this lock green, because the
@@ -504,23 +502,16 @@ fn a_lateral_cycle_with_two_extents_on_a_class_carves_both() {
 
 /// **A boolean's own result takes a second cylinder — the whole road, end to end.**
 ///
-/// A boss standing on a **wall** was the one chained operand that did not build. It buries half the
-/// boss's lateral in the plate, so that face comes back as a band with a **hole**, and every layer
-/// downstream had a sentence that was false about it. The wall moved six times as those were
-/// closed one at a time — `TraceDeclined { PierceNode }`, `WitnessNotRational`,
-/// `CurvedStraightRun`, [`RejectReason::OpenResultShell`],
-/// [`RejectReason::LabelConflict`] when one of two cancelling falsehoods was fixed, then
-/// `OpenResultShell` again with the arrangement whole — and this lock was the map of that walk.
-/// It is now the map of the far side.
+/// A boss standing on a **wall** buries half the boss's lateral in the plate, so that face comes
+/// back as a band with a **hole**, and every layer downstream has to read that band right.
 ///
-/// **The last false sentence was that a label answers two questions.** A label says where
-/// *material* is; the panel road also read it as saying whether the lateral face is **there**. On
-/// the first fusion the two sectors of the holed rim carry different labels (the buried one is
-/// inside the *other* solid) and the road happened to be right; on a second operation the plate is
-/// already own material, the two sectors' labels are **literally identical**, and both survived —
-/// filling the hole in and leaving its four boundary edges claimed once each. The trace had said
-/// which sector was a face all along, per arc, since the hole taught it to mark by angular extent:
-/// `Graze` where the face ends, `Transversal` where it runs through.
+/// **A label does not answer two questions.** A label says where *material* is, not whether the
+/// lateral face is **there**. On the first fusion the two sectors of the holed rim carry different
+/// labels (the buried one is inside the *other* solid), so read as existence they would happen to
+/// be right; on a second operation the plate is already own material and the two sectors' labels
+/// are **literally identical** — read as existence, both would survive, filling the hole in and
+/// leaving its four boundary edges claimed once each. The trace says which sector is a face, per
+/// arc, by angular extent: `Graze` where the face ends, `Transversal` where it runs through.
 /// `cyl_chart::read_cell`'s `face_spans` asks it.
 ///
 /// Measured across these four fixtures: **four** sectors dropped for existence, exactly one per
@@ -757,15 +748,14 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     );
                     // `side` is the sign of `(x − o) · (m × n̂)`. **`n̂` has to be the class's
                     // `world_rat` normal, and no other spelling of the class's plane will do** —
-                    // measured, by writing `plane.normal()` here first and watching it come out
-                    // opposed (`[0,-1,0]` against `[0,1,0]`, and `frame_sign` is `+1`, so that is
-                    // not the reconciliation either). A class has no outward normal to agree on:
-                    // `world_rat` is the plane's *name*, whose sign is its own, while `plane` is a
-                    // stored surface's. `side` is a **label** telling the two rulings apart, so it
-                    // is well defined exactly as long as every road spells `n̂` the one way.
-                    // Sharing that input leaves the two roads independent where it counts — the
-                    // code decides in exact `quad::plane_side` on the pierce meet, this in `f64`
-                    // on the realized vertex.
+                    // measured: `plane.normal()` here would come out opposed (`[0,-1,0]` against
+                    // `[0,1,0]`, and `frame_sign` is `+1`, so that is not the reconciliation
+                    // either). A class has no outward normal to agree on: `world_rat` is the
+                    // plane's *name*, whose sign is its own, while `plane` is a stored surface's.
+                    // `side` is a **label** telling the two rulings apart, so it is well defined
+                    // exactly as long as every road spells `n̂` the one way. Sharing that input
+                    // leaves the two roads independent where it counts — the code decides in exact
+                    // `quad::plane_side` on the pierce meet, this in `f64` on the realized vertex.
                     let wr = combinatorics::class_coeffs_rat(&jd, near).expect("a named class");
                     let n_hat =
                         Vector3::from_array([wr[0].to_f64(), wr[1].to_f64(), wr[2].to_f64()]);
@@ -965,11 +955,10 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
 
 /// **A circle can be an interior boundary, and then the merge erases it.**
 ///
-/// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:
-/// a plate cut by a box resting on its top face comes back as the plate — same volume, **six
-/// faces**, no imprint left behind (measured, both for face contact and for a box straddling an
-/// edge). That measurement is the oracle here; there is no sentence in the design documents that
-/// decides it.
+/// A tool that only *touches* removes nothing, and the planar engine says so plainly: a plate cut
+/// by a box resting on its top face comes back as the plate — same volume, **six faces**, no
+/// imprint left behind (measured, both for face contact and for a box straddling an edge). That
+/// measurement is the oracle here; there is no sentence in the design documents that decides it.
 ///
 /// The cylinder twin, locked against the top plane coming back as **two** faces: the plate's top
 /// with a circular hole, and the disk filling it. A disk's boundary is a `Bound::Circle` with no
@@ -1059,8 +1048,8 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         (v - (32.0 - std::f64::consts::PI * 0.25 * 2.0)).abs() < 1e-12,
         "{v}"
     );
-    // ⑤ A boss standing on the top face, **fused**: the contact disk is interior and never was a
-    //    face, so this pass has nothing to do and the answer must not move.
+    // ⑤ A boss standing on the top face, **fused**: the contact disk is interior and is not a face,
+    // so this pass has nothing to do and the answer must not move.
     let (v, f) = run([2.0, 2.0, 2.0], 1.0, BoolKind::Fuse);
     assert_eq!(f, 8, "annulus + 5 plate faces + lateral + cap");
     assert!(

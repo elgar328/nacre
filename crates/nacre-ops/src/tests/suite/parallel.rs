@@ -121,9 +121,9 @@ fn parallel_boolean_is_thread_order_independent() {
             //
             // Measured with the tests optimized, which changes the interleaving: the same fold
             // reported 755 coincidences on one schedule and 735 on another while the 2,678
-            // characters of decisions and geometry around it were **identical**. Comparing it
-            // asserted something the kernel does not claim. What it is here for — that the report
-            // is not empty, so comparing it proves something — is the assertion below, kept.
+            // characters of decisions and geometry around it were **identical**. Comparing it would
+            // assert something the kernel does not claim. What it is here for — that the report is
+            // not empty, so comparing it proves something — is the assertion below.
             assert!(
                 i == 0 || report.coincidences > 0,
                 "the report is empty, so comparing it proves nothing"

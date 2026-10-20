@@ -98,15 +98,13 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
     }
 }
 
-/// **The user's script fuses**: the rounded, bored plate and two stepped ribs standing
-/// on it. This is the model that reported the wall (a `witness_not_rational` on the very first
-/// fuse, with the cylinder that comes later having nothing to do with it). The ribs stand on the
-/// plate and overlap nothing, so the volume is the sum of the parts.
+/// **The user's script fuses**: the rounded, bored plate and two stepped ribs standing on it. The
+/// first fuse is the one at stake; the cylinder that comes later has nothing to do with it. The
+/// ribs stand on the plate and overlap nothing, so the volume is the sum of the parts.
 ///
-/// The `cut` that follows in the script is **not** here: it meets the next wall, a class that
-/// carries a circle and rulings at once — measured to be the plate's own side plane `x = 45`,
-/// tangent to its corner fillets and crossed by the cylinder. The census row `roundplate user
-/// script` holds that hand-off by name.
+/// The `cut` that follows in the script is [`the_users_script_builds`]'s: it meets a class that
+/// carries a circle and rulings at once — the plate's own side plane `x = 45`, tangent to its
+/// corner fillets and crossed by the cylinder.
 #[test]
 fn the_users_rib_plate_fuses() {
     let mut m = Model::new();
@@ -133,8 +131,8 @@ fn the_users_rib_plate_fuses() {
 /// **The witnesses a ring offers are a fact about the ring, not about its bores.**
 ///
 /// The supply is read from the corners' own names and solves, so under a rigid motion the rounded
-/// plate must fare exactly as it did — and, more to the point, **exactly as the same plate without
-/// bores does**: the two sets of refusals are equal.
+/// plate must fare exactly as the unmoved one does — and, more to the point, **exactly as the same
+/// plate without bores does**: the two sets of refusals are equal.
 ///
 /// **Both sets are empty.** Every ray from a *filleted* outline's three-plane corners grazes
 /// under **six** of the group's rotations, with and without bores alike; giving a component the
@@ -196,7 +194,7 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
         assert_eq!(name(a), name(b), "the same motions, either way: {a} vs {b}");
         assert!(
             a.contains("NoClearRay"),
-            "and the wall that remains is the filleted outline's own, not this cell's: {a}"
+            "and the wall that remains is the filleted outline's own: {a}"
         );
     }
     // The population, held as a number so a change in it is loud: **none**.
@@ -264,17 +262,17 @@ fn the_users_script_builds() {
         );
         assert_eq!(
             inside, 0,
-            "a circle now sits inside a ruling strip — the walk's first time"
+            "a circle sits inside a ruling strip — a shape the walk has never been handed"
         );
     }
 }
 
 /// **And it builds the same body wherever it stands.**
 ///
-/// Two newly-admitted paths meet in this model (the mixed class, arranged for real, and the
-/// disk read from its own plane's exact statement), and a newly-admitted path is exactly
-/// where a frame-dependent slip would hide. So the whole assembly is carried somewhere else by an
-/// exact translation and asked again — now with a volume to answer with, not just a wall's name.
+/// Two paths meet in this model (the mixed class, arranged for real, and the disk read from its own
+/// plane's exact statement), and either is where a frame-dependent slip would hide. So the whole
+/// assembly is carried somewhere else by an exact translation and asked again — with a volume to
+/// answer with, not just a wall's name.
 #[test]
 fn the_users_script_builds_the_same_body_after_a_motion() {
     let mut m = Model::new();

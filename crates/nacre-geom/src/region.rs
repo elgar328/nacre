@@ -58,11 +58,11 @@ fn ring_area_centroid(points: &[Point3]) -> Option<(f64, Point3)> {
         // so every `signed` carried that rounding; the centroid is a *ratio* of these weights, so
         // the common `|area_vec|` factor cancels and the normalization only ever added error.
         let signed = (pair[0] - base).cross(pair[1] - base).dot(area_vec);
-        // The `1/3` is **not** applied here. `1.0 / 3.0` is not an exact `f64`, so folding it
-        // into every triangle rounds once per triangle and the terms of a symmetric ring stop
-        // cancelling — a rectangle centred on the origin came out at `−1.1e-16` instead of `0`,
-        // which then moved a sketch placed in that frame by one ulp. Factored out, the loop is
-        // exact for exactly-representable rings and one division does all the rounding.
+        // The `1/3` is **not** applied here. `1.0 / 3.0` is not an exact `f64`, so folding it into
+        // every triangle rounds once per triangle and the terms of a symmetric ring stop cancelling
+        // — a rectangle centred on the origin would come out at `−1.1e-16` instead of `0`, moving a
+        // sketch placed in that frame by one ulp. Factored out, the loop is exact for
+        // exactly-representable rings and one division does all the rounding.
         weighted += ((pair[0] - base) + (pair[1] - base)) * signed;
         weight += signed;
     }
@@ -83,10 +83,9 @@ mod tests {
 
     /// **A ring symmetric about the origin has its centroid exactly at the origin.**
     ///
-    /// It did not. `ring_area_centroid` folded `1.0 / 3.0` — not an exact `f64` — into every
-    /// triangle of its fan, and weighted each by a dot with the **normalized** area vector, so a
-    /// square root's rounding rode along too. The terms of a symmetric ring then failed to cancel
-    /// and the answer came out one ulp off zero.
+    /// Folding `1.0 / 3.0` — not an exact `f64` — into every triangle of the fan, or weighting each
+    /// by a dot with the **normalized** area vector (a square root's rounding riding along), would
+    /// make the terms of a symmetric ring fail to cancel and leave the answer one ulp off zero.
     ///
     /// That is not cosmetic. A sketch frame whose **origin** is this point lands a profile placed
     /// on such a face one ulp away from where the same profile landed on the face below it —

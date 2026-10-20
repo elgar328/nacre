@@ -450,7 +450,7 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     };
     check(&m, &faces, "stated datum");
 
-    // (c) the plane of a face that already exists — the case that was wrong
+    // (c) the plane of a face that already exists
     let mut m = Model::new();
     let extrude = Operation::Extrude {
         frame: SketchFrame::world(&m, Axis::Z),
@@ -472,7 +472,7 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     check(&m, &faces, "an existing face's plane");
 }
 
-/// **A hole must wind the other way round, and now something checks it.**
+/// **A hole must wind the other way round, and this checks it.**
 ///
 /// `build_prism` is the single place that decides winding — outer CCW about the
 /// sweep, holes the opposite — and this verifies that decision:
@@ -807,7 +807,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
         nacre_validate::validate(&m)
     );
 
-    // Straight through the bore: still refused, and by the name that now states a fact.
+    // Straight through the bore: refused, by a name that states a fact.
     let (mut m, plate, bore, tunnel) = build(0.0);
     let drilled = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
     m.rebuild_adjacency();
@@ -861,10 +861,10 @@ fn the_mesh_census_is_running() {
 
 /// **A ruling carries the label of the cell inside the cylinder** — the chart's vertical answer.
 ///
-/// The chart's horizontal lines have had their answer since the band pass: a ⊥ class's
-/// [`crate::arrangement::Label`] holds the material on **both** sides of its plane, which is why
-/// the cell reader reads two disk labels and asks them to agree. The vertical lines had none, and
-/// this is it — the label of the cell a ruling borders on the axis side of its wall.
+/// The chart's horizontal lines have an answer: a ⊥ class's [`crate::arrangement::Label`] holds the
+/// material on **both** sides of its plane, which is why the cell reader reads two disk labels and
+/// asks them to agree. This is the vertical lines' answer — the label of the cell a ruling borders
+/// on the axis side of its wall.
 ///
 /// **The side is derived, and an independent description checks it.**
 /// `ruling_interior_is_even` composes three sentences already in the crate (`RulingCarrier::side`,
@@ -874,8 +874,8 @@ fn the_mesh_census_is_running() {
 /// the lateral's own solid has material and outside it does not**, which is the same content rule
 /// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
 ///
-/// **And the check is what watches this sign — the volume oracle cannot.** Everywhere else in
-/// this ladder a side selector is guarded by the through-boss volume (a global flip passes the
+/// **And the check is what watches this sign — the volume oracle cannot.** Everywhere else among
+/// the ruling locks a side selector is guarded by the through-boss volume (a global flip passes the
 /// relative locks), but that only works for a sign production *reads*. This label is
 /// `#[cfg(test)]`, so no volume moves whatever it says. Flipping the product turns the check from
 /// every agreement into a contradiction — it has eyes on 97% of the population.
@@ -962,13 +962,13 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// while the caps do). Read at the extremum (`combinatorics::arc_extremum_winding`), all three
 /// kinds build with their exact volumes.
 ///
-/// `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut
-/// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary
-/// between a half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and
-/// its arcs collide in the node-pair edge key), and the shipped pair spelled a stated plane-self
-/// edge — validate's producer bug. The whole-result check refuses that shape by the cleaning's
-/// own name (`CoplanarMerge`, the chord's corner as witness) until the merge learns
-/// to thread mixed rings.
+/// `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut and Common
+/// assemble clean and build; the Fuse's two cap chords are each an interior boundary between a
+/// half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and its arcs
+/// collide in the node-pair edge key), and the pair the merge leaves would spell a stated
+/// plane-self edge — validate's producer bug. The whole-result check refuses that shape by the
+/// cleaning's own name (`CoplanarMerge`, the chord's corner as witness) until the merge learns to
+/// thread mixed rings.
 #[test]
 fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {

@@ -284,11 +284,11 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     mesh_covers_faces("an annulus", &m, &[solid]);
 }
 
-/// **One cylinder surface under two solids is refused, not asserted.** Cylinders intern by
-/// their exact statement, so two identical circle prisms — on a seeded world frame or on a
-/// stated datum — share one lateral surface handle, which the chart reads as one solid's. Measured
-/// before the gate learned this: the fuse reached `cyl_chart`'s "one cylinder class carries rows
-/// of both solids" assertion. Now it is the coaxial pair's refusal, by name.
+/// **One cylinder surface under two solids is refused, not asserted.** Cylinders intern by their
+/// exact statement, so two identical circle prisms — on a seeded world frame or on a stated datum —
+/// share one lateral surface handle, which the chart reads as one solid's. Without the gate the
+/// fuse would reach the chart census's "one cylinder class carries rows of both solids" assertion
+/// (measured); the gate refuses the coaxial pair by name.
 #[test]
 fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
     let refused = |r: Result<Vec<Handle<Solid>>, BoolError>| {
@@ -340,13 +340,12 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
     refused(crate::boolean(&mut m, BoolKind::Cut, s1, s2));
 }
 
-/// **A circle on a slanted wall's frame** — the measurement the plan asked for, locked at what it
-/// found. The prism alone is a valid solid: the arc wall's f64 cache is realized through the
-/// motion frame the way its vertices are, and the disk cap's winding check realizes the plane's
-/// truth points the same way (a frame triangle against a world normal would assert). Padding it
-/// onto the
-/// wall then declines by the name a tilted `cylinder()` gets today: the cylinder gate
-/// cannot state a rotated cylinder against another body yet.
+/// **A circle on a slanted wall's frame** — a measurement, locked at what it found. The prism alone
+/// is a valid solid: the arc wall's f64 cache is realized through the motion frame the way its
+/// vertices are, and the disk cap's winding check realizes the plane's truth points the same way (a
+/// frame triangle against a world normal would assert). Padding it onto the wall then declines by
+/// the name a tilted `cylinder()` gets today: the cylinder gate cannot state a rotated cylinder
+/// against another body yet.
 #[test]
 fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
     let (mut m, wall) = prism_with_a_slanted_wall();
@@ -711,14 +710,14 @@ fn a_filleted_plate_builds_beside_a_far_box() {
     assert!((v - want).abs() < 1e-9, "plate + box: {v} vs {want}");
 }
 
-/// **The user's plate, slot plate and gusset fold into one body.** The filleted,
-/// bored plate (p1), the slot-windowed vertical plate standing on it (p2) and a triangular gusset
-/// (p3) — every wall the three walls found: the fillets' tangent rulings, the slot's tangent
-/// rulings, the plate's caps crossing the gusset's side plane inside the fillet's radius, the
-/// nesting cell between a bore's and a fillet's rulings whose every corner is irrational. The
-/// slot plate and the gusset stand **on** the plate (their bottoms lie in its top face), so the
-/// volume is the sum of the parts: `48 + (34 − π/4) + 7.5` — the plate less its fillets' corners
-/// and bores, the slot plate less its window, the gusset.
+/// **The user's plate, slot plate and gusset fold into one body.** The filleted, bored plate (p1),
+/// the slot-windowed vertical plate standing on it (p2) and a triangular gusset (p3) — every wall
+/// the three plates meet: the fillets' tangent rulings, the slot's tangent rulings, the plate's
+/// caps crossing the gusset's side plane inside the fillet's radius, the nesting cell between a
+/// bore's and a fillet's rulings whose every corner is irrational. The slot plate and the gusset
+/// stand **on** the plate (their bottoms lie in its top face), so the volume is the sum of the
+/// parts: `48 + (34 − π/4) + 7.5` — the plate less its fillets' corners and bores, the slot plate
+/// less its window, the gusset.
 ///
 /// The gusset stands at `x = 1.6` here; at the user's `1.5` its side plane runs **through the
 /// fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
@@ -1425,13 +1424,11 @@ fn a_four_plane_operand_vertex_has_one_name() {
     }
 }
 
-/// **The four-plane operand vertex fuses, in either operand order.** The fused wall
-/// and gusset carry two vertices where four faces meet; fusing the second gusset onto that solid
-/// must not depend on the order (a symptom met first — `FourPlane`, `DegenerateWitness` — in one,
-/// a body in the other). Both operand orders give one valid body of volume `35 + 2 · 7.5`, every
-/// result vertex has its own
-/// coordinate (two names for one point would show here as two vertices at one place), and the
-/// apex keeps its four faces.
+/// **The four-plane operand vertex fuses, in either operand order.** The fused wall and gusset
+/// carry two vertices where four faces meet; fusing the second gusset onto that solid must not
+/// depend on the order. Both operand orders give one valid body of volume `35 + 2 · 7.5`, every
+/// result vertex has its own coordinate (two names for one point would show here as two vertices at
+/// one place), and the apex keeps its four faces.
 #[test]
 fn a_four_plane_operand_vertex_fuses_in_either_order() {
     for swapped in [false, true] {
@@ -1699,8 +1696,8 @@ fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
     }
 }
 
-/// The cell-⑫ operand: a plate with one fillet (axis at `(1.5, −2)`, tangent to the bottom wall
-/// along `x = 1.5`) and a slab standing on it whose face plane `x = 1.5` holds that axis.
+/// The fillet pair: a plate with one fillet (axis at `(1.5, −2)`, tangent to the bottom wall along
+/// `x = 1.5`) and a slab standing on it whose face plane `x = 1.5` holds that axis.
 fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();

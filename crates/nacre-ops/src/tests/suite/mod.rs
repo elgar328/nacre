@@ -127,8 +127,8 @@ fn plane_through(m: &mut Model, tri: [Point3; 3]) -> WorkingPlane {
     let name = nacre_exact::plane_name_exact(lift(tri[0]), lift(tri[1]), lift(tri[2]));
     let frame_sign = 1; // `plane` is built from the triangle's own normal, so the two agree
     WorkingPlane {
-        // A hand-built table has no recorded coefficients; the composed-rotation route
-        // declines and the fixture takes the same escalating path it always did.
+        // A hand-built table has no recorded coefficients; the composed-rotation route declines and
+        // the fixture takes the escalating path.
         base_rat: None,
         world: None,
         name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
@@ -348,8 +348,8 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
 
 /// Does any surface of this solid record a motion? **The premise every fixture below asserts
 /// first**: a translation whose `f64` landing happens to be exact records nothing, and a fixture
-/// that silently took that road would prove the opposite of what it claims (measured — a boss
-/// fixture did exactly that while the road under test was still shut).
+/// that silently took that road would prove the opposite of what it claims (measured on a boss
+/// fixture).
 fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
     crate::planes::solid_shell_handles(m, s)
         .into_iter()
@@ -359,12 +359,11 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
 
 /// **The eye on the mesh: does it actually cover the face it approximates?**
 ///
-/// A boolean result was once shipped whose lateral mesh lost **16% of its area** — four triangles
-/// spanned half a turn of the cylinder as flat chords, and the boss rendered as two cones. Every
-/// standing instrument was green at the time: `validate` clean, the mesh watertight, the **exact**
-/// volume right (`mass_props` integrates the b-rep, not the mesh), the face counts as predicted.
-/// Nothing asked the one question that mattered — whether the triangles lie on the surface they
-/// claim — so nothing answered it.
+/// A tessellation that spans half a turn of the cylinder with four flat chords would lose **16% of
+/// the lateral's area** — the boss rendering as two cones (measured) — while every other instrument
+/// would stay green: `validate` clean, the mesh watertight, the **exact** volume right
+/// (`mass_props` integrates the b-rep, not the mesh), the face counts as predicted. Only this asks
+/// whether the triangles lie on the surface they claim.
 ///
 /// Two readings, and **neither is derived from the other**: a face's triangles against
 /// [`nacre_props::face_props`] (an exact boundary integral) and the whole solid's triangles against
@@ -418,7 +417,7 @@ pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>])
     }
 }
 
-/// A plate, one cylinder op, then a second — the population the corpus did not have.
+/// A plate, one cylinder op, then a second — a population the rest of the corpus lacks.
 pub(crate) fn chained(
     first: ([f64; 3], f64, BoolKind),
     second: ([f64; 3], f64, BoolKind),
@@ -906,12 +905,12 @@ fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
 /// The four-plane operand: a wall with a gusset whose apex lands on the wall's top edge, fused —
 /// and the second gusset that will be fused onto it (the user's `1.4`/`−2.4`).
 ///
-/// It is **not** a rigid-motion oracle family, and the reason is measured: that oracle's digest
-/// is bit-exact, and a vertex realized from three planes is exact only for axis-aligned triples.
-/// With the slant `5y − 3z + 3 = 0` the moved-then-fused gusset tips came out at `z = −3.9e−16`
-/// against `0`; with a 45° slant (`y − z + 1 = 0`) and dyadic positions every rotation agreed and
-/// one translation still differed by one ULP in `x`. Same vertices, same names, different last
-/// bits — so «one name under every motion» is asked of the audit instead
+/// It is **not** a rigid-motion oracle family, and the reason is measured: that oracle's digest is
+/// bit-exact, and a vertex realized from three planes is exact only for axis-aligned triples. With
+/// the slant `5y − 3z + 3 = 0` the moved-then-fused gusset tips would come out at `z = −3.9e−16`
+/// against `0`; with a 45° slant (`y − z + 1 = 0`) and dyadic positions every rotation would agree
+/// and one translation would still differ by one ULP in `x`. Same vertices, same names, different
+/// last bits — so «one name under every motion» is asked of the audit instead
 /// (`a_four_plane_operand_vertex_has_one_name_under_rigid_motion`).
 fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (x1, x2, top) = (1.4, -2.4, 6.0);
@@ -978,9 +977,9 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, wg, g2)
 }
 
-/// The cell-13 operand: a 90 × 50 × 12 plate whose corners are filleted (r 5) and which carries
-/// four bores (d 7). With every corner rounded its cap ring has **no three-plane corner at all** —
-/// eight fillet tangencies and nothing else.
+/// The rounded plate: a 90 × 50 × 12 plate whose corners are filleted (r 5) and which carries four
+/// bores (d 7). With every corner rounded its cap ring has **no three-plane corner at all** — eight
+/// fillet tangencies and nothing else.
 fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let corner = [

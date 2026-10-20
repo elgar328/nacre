@@ -405,7 +405,7 @@ fn every_plane_faces_the_way_its_truth_says() {
         mirrored_seen += a.mirrored;
         turned_seen += a.turned;
     }
-    // The populations the fixtures were gathered for are really there.
+    // The populations the fixtures are gathered for are really there.
     assert!(mirrored_seen > 0, "no plane rode a reflection");
     assert!(turned_seen > 0, "no plane rode a turn or a frame");
 }
