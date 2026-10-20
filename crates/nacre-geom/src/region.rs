@@ -118,7 +118,7 @@ mod tests {
     }
 
     /// The same, shifted off the origin: the centroid must be exactly the rectangle's own centre,
-    /// not merely close to it. Pins that the fix is not an accident of zeros cancelling.
+    /// not merely close to it. Pins that the exactness is not an accident of zeros cancelling.
     #[test]
     fn a_shifted_rectangle_centroids_exactly_on_its_centre() {
         let p = |x: f64, y: f64| Point3::from_array([x, y, 0.0]);

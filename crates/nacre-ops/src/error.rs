@@ -833,8 +833,9 @@ pub enum RejectReason {
     /// contours are fine — one per separate body on the plane. Not raised in the whole-suite or
     /// census `reject-trace` sweeps.
     HoleRoots,
-    /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
-    /// convex path only.
+    /// Something the assembly looks up is missing from what the arrangement left — a face's node
+    /// not welded into the seam table, a cylinder's rim on a class, an edge's incidence record: a
+    /// reconstruction dropped it.
     MissingSeam,
     /// **Two stages of the cylinder road state one fact differently** — the class table and the
     /// face rows (a cylinder or plane class no face row names, or rows of both solids on one

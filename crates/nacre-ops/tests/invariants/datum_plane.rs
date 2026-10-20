@@ -2120,7 +2120,7 @@ fn frame_local_far_cap() -> (
     let mut m = Model::new();
 
     // A plane whose normal has `n·n = 3` — not a perfect square, so `exact_frame` declines and the
-    // prism is written against a recorded frame node (scalar: "it is `3` for `[1,1,1]`").
+    // prism is written against a recorded frame node (`nacre-exact`: "it is `3` for `[1,1,1]`").
     let tilted = SketchPlane::from_origin_normal(
         Point3::from_array([0.0, 0.0, 0.0]),
         Vector3::from_array([1.0, 1.0, 1.0]),

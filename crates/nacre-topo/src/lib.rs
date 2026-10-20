@@ -111,10 +111,10 @@ pub enum NamedMeet {
     NoPoint,
 }
 
-/// Which root of the two-point plane·plane·cylinder crossing a [`Vertex::Pierce`] means —
-/// ascending parameter along the canonical meet-line direction (see `Pierce`'s doc for the
-/// full convention). Definition vocabulary, so it lives here beside [`Vertex`], not in
-/// scalar (whose pair is positional).
+/// Which root of the two-point plane·plane·cylinder crossing a [`Vertex::Pierce`] means — ascending
+/// parameter along the canonical meet-line direction (see `Pierce`'s doc for the full convention).
+/// Definition vocabulary, so it lives here beside [`Vertex`], not in `nacre-exact` (whose pair is
+/// positional).
 ///
 /// **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
 /// ascending-parameter convention, and comparison keys downstream read it (the arrangement's

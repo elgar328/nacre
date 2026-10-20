@@ -293,9 +293,8 @@ fn corner_flush_common_matches_occt() {
     );
 }
 
-/// nacre's own `Common` result diffed against OCCT: build two overlapping
-/// cubes, ask OCCT for the intersection volume, and compare it to
-/// `mass_props` of the solid nacre's half-space enumeration produced.
+/// nacre's own `Common` result diffed against OCCT: build two overlapping cubes, ask OCCT for the
+/// intersection volume, and compare it to `mass_props` of the solid nacre's boolean produced.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn common_result_volume_matches_occt() {
@@ -323,8 +322,7 @@ fn common_result_volume_matches_occt() {
     );
 }
 
-/// nacre's `Fuse` and `Cut` results diffed against OCCT for two overlapping
-/// cubes (face clipping).
+/// nacre's `Fuse` and `Cut` results diffed against OCCT for two overlapping cubes.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn fuse_cut_result_volume_matches_occt() {

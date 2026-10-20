@@ -82,9 +82,9 @@ fn nonconvex_overlap_common_matches_occt() {
     );
 }
 
-/// A slotted bar — a cuboid with a full-width groove — carries two coplanar top strips
-/// that share one Surface. Cell coplanar-narrow lets it chain a second boolean; OCCT
-/// scores the blind pocket cut into one strip on the exported b-rep.
+/// A slotted bar — a cuboid with a full-width groove — carries two coplanar top strips that share
+/// one Surface, and a second boolean chains onto it; OCCT scores the blind pocket cut into one
+/// strip on the exported b-rep.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn slotted_bar_pocket_cut_matches_occt() {
@@ -145,8 +145,8 @@ fn pocket_cut_then_cut_matches_occt() {
         mass_props(&m, pocketed).unwrap().volume,
         occt_pocket.volume
     );
-    // Chain a transversal cut at a corner, away from the pocket and off its face planes
-    // (the pocketed solid is non-convex → seam path).
+    // Chain a transversal cut at a corner, away from the pocket and off its face planes (the
+    // pocketed solid is non-convex).
     let cutter = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.8, 0.8, 0.3]),
@@ -232,8 +232,8 @@ fn overhang_fuse_then_cut_matches_occt() {
         mass_props(&m, overhung).unwrap().volume,
         occt_fuse.volume
     );
-    // Chain a transversal cut drilling straight through the cantilever (the overhung solid
-    // is non-convex → seam path).
+    // Chain a transversal cut drilling straight through the cantilever (the overhung solid is
+    // non-convex).
     let cutter = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([1.1, 0.35, 0.5]),
@@ -276,8 +276,8 @@ fn edge_slot_cut_then_cut_matches_occt() {
         mass_props(&m, slotted).unwrap().volume,
         occt_slot.volume
     );
-    // Chain a transversal cut drilling through the base away from the slot (the slotted
-    // solid is non-convex → seam path).
+    // Chain a transversal cut drilling through the base away from the slot (the slotted solid is
+    // non-convex).
     let cutter = nacre_ops::fixtures::cuboid(
         &mut m,
         Point3::from_array([0.15, 0.8, -0.5]),

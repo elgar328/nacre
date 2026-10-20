@@ -65,8 +65,8 @@ pub(crate) fn cylinder_gate(
     ),
     BoolError,
 > {
-    // Every question below is a **sign**, and the scalar layer answers signs totally:
-    // local checked-`Rat` closures would decline on overflow, putting a width limit inside
+    // Every question below is a **sign**, and the `nacre-exact` layer answers signs totally: local
+    // checked-`Rat` closures would decline on overflow, putting a width limit inside
     // `CylinderGateUndecided` and making that name say less than it claims.
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
@@ -446,30 +446,28 @@ pub(crate) fn cylinder_gate(
         return Err(reject(RejectReason::ObliqueCylinderCut));
     }
 
-    // **The pair rule asks classes of different owners whether their faces share a point,
-    // and writes what it cannot prove.** The proposition is "the two classes share no face". Three
+    // **The pair rule asks classes of different owners whether their faces share a point, and
+    // writes what it cannot prove.** The proposition is "the two classes share no face". Three
     // things decide it, in order of cost. Two classes of one solid share none by construction — a
-    // valid solid's faces meet only along their edges — so those pairs are not asked (the
-    // fillets of one plate, the two half cylinders of one slot). The distance between the axes
-    // exceeding the radius **sum** proves it for the two infinite surfaces, whatever their
-    // orientation, and decides most inputs. It is not the whole rule — that would make a fact
-    // about surfaces read as a fact about faces: a stud fused through a cube and then a second stud
-    // across it would be refused because their *axes* cross, though the first stud's remaining
-    // faces
-    // sit past `|z| = 0.5` and the second's whole surface within `|z| = 0.2`. So a pair the
-    // distance cannot clear asks the faces themselves — the same question the plane–cylinder arm
-    // asks per face (`face_clears_footprint`), spelled for a lateral face's reach against the
-    // other's along every direction the pair can state ([`lateral_faces_clear`] over
-    // [`separating_dirs`] — each axis, and for skew axes the common perpendicular, which is where
-    // a fillet beside a crosswise drill is seen apart). Parallel axes take the same door, after
-    // one more surface fact — one infinite cylinder strictly **inside** the other never meets it
-    // ([`nacre_exact::cylinders_nested`]: a pin in a bore, a smaller pin stacked on a boss) —
-    // and the reach along a parallel axis has no radial term, so what is left is the axis spans.
-    // Except **one surface under
-    // two handles** — parallel axes on one line, one radius ([`same_surface`]): a `translate`d twin
-    // or a restatement with another `ref_dir`. The arrangement has no name for two classes on one
+    // valid solid's faces meet only along their edges — so those pairs are not asked (the fillets
+    // of one plate, the two half cylinders of one slot). The distance between the axes exceeding
+    // the radius **sum** proves it for the two infinite surfaces, whatever their orientation, and
+    // decides most inputs. It is not the whole rule — that would make a fact about surfaces read as
+    // a fact about faces: a stud fused through a cube and then a second stud across it would be
+    // refused because their *axes* cross, though the first stud's remaining faces sit past
+    // `|z| = 0.5` and the second's whole surface within `|z| = 0.2`. So a pair the distance cannot
+    // clear asks the faces themselves — the same question the plane–cylinder arm asks per face
+    // (`face_clears_footprint`), spelled for a lateral face's reach against the other's along every
+    // direction the pair can state ([`lateral_faces_clear`] over [`separating_dirs`] — each axis,
+    // and for skew axes the common perpendicular, which is where a fillet beside a crosswise drill
+    // is seen apart). Parallel axes take the same door, after one more surface fact — one infinite
+    // cylinder strictly **inside** the other never meets it ([`nacre_exact::cylinders_nested`]: a
+    // pin in a bore, a smaller pin stacked on a boss) — and the reach along a parallel axis has no
+    // radial term, so what is left is the axis spans. Except **one surface under two handles** —
+    // parallel axes on one line, one radius ([`same_surface`]): a `translate`d twin or a
+    // restatement with another `ref_dir`. The arrangement has no name for two classes on one
     // surface (their circles coincide on every ⊥ class), so that pair is refused as the coincident
-    // pair it is; interning cylinders by geometry is a later cell's.
+    // pair it is; nothing interns cylinders by geometry yet.
     let mut cyl_pairs: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     for (i, a) in cyls.iter().enumerate() {
         for (j, b) in cyls.iter().enumerate().skip(i + 1) {
@@ -512,14 +510,14 @@ pub(crate) fn cylinder_gate(
     }
     // The pair record's one reader: a recorded pair is refused (`CylinderPairContact`).
     //
-    // **An obligation the cell that opens this refusal inherits**. The arrangement
-    // leans on this line for a proposition of its own: a class may carry a circle (⊥ one
-    // cylinder) and rulings (∥ another) at once, and that is safe **only while the two never
-    // meet** — neither split cuts the other's kind, so a crossing they both walked past would be
-    // a node no road mints, and the point is `plane ∩ cylinder ∩ cylinder`, a nested radical with
-    // no name. Two such edges meeting means two lateral faces share a point, which is exactly what
-    // this refusal denies. `ClassEdges::of` carries the matching `debug_assert` and the derivation;
-    // when this population is admitted, that net has to become a **shipped** check there.
+    // **An obligation inherited by whatever opens this refusal.** The arrangement leans on this
+    // line for a proposition of its own: a class may carry a circle (⊥ one cylinder) and rulings (∥
+    // another) at once, and that is safe **only while the two never meet** — neither split cuts the
+    // other's kind, so a crossing they both walked past would be a node no road mints, and the
+    // point is `plane ∩ cylinder ∩ cylinder`, a nested radical with no name. Two such edges meeting
+    // means two lateral faces share a point, which is exactly what this refusal denies.
+    // `ClassEdges::of` carries the matching `debug_assert` and the derivation; when this population
+    // is admitted, that net has to become a **shipped** check there.
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }

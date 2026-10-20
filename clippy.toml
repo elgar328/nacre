@@ -1,8 +1,8 @@
 # Calls the workspace does not make outside the places that own them.
 #
 # Every exemption — an `allow` or `expect` of `clippy::disallowed_methods` — is listed, with its
-# reason, in `crates/nacre-ops/tests/instruments/disallowed.rs`, which also asserts that every
-# path below is still here. A call blocked here wants the road the reason names, not an
+# reason, in `crates/nacre-ops/tests/instruments/disallowed.rs`, which also asserts that the
+# paths below match its own list. A call blocked here wants the road the reason names, not an
 # exemption.
 
 disallowed-methods = [

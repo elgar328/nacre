@@ -184,11 +184,11 @@ fn two_holes() {
 
 /// **The wall with two windows — a case ear clipping finds no ear in.**
 ///
-/// Both holes' first mutually visible ring vertex was the *same* outer corner, so
-/// the bridged ring visited it three times and the polygon was pinched there. A
-/// pinched ring is not simple, Meisters' two-ears theorem does not apply to it, and
-/// measurement agreed: all six convex vertices had a diagonal that genuinely crossed
-/// the other hole. The sweep never merges the rings, so the pinch is not built.
+/// Both holes' first mutually visible ring vertex was the *same* outer corner, so the bridged ring
+/// visited it three times and the polygon was pinched there. A pinched ring is not simple,
+/// Meisters' two-ears theorem does not apply to it, and measurement agreed: all six convex vertices
+/// had a diagonal that genuinely crossed the other hole. No two rings here share a vertex, so the
+/// sweep lays no bridge and the pinch is not built.
 ///
 /// Everything here is transcribed from the failing model (a hub wall with two fins
 /// through it, projected to its own plane) — coordinates, index layout, and the

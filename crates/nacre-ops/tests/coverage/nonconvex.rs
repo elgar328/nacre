@@ -725,8 +725,7 @@ fn containment_symmetric_when_a_inside_b() {
 
 #[test]
 fn common_containment_is_the_inner_solid() {
-    // Either argument order ⇒ the intersection is the inner solid (handled
-    // by the existing half-space enumeration path, no cavity code).
+    // Either argument order ⇒ the intersection is the inner solid.
     for swap in [false, true] {
         let (mut m, outer, inner) = nested_boxes();
         let vol_inner = nacre_props::mass_props(&m, inner).unwrap().volume;

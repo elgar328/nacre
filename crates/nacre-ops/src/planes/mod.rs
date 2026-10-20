@@ -27,14 +27,6 @@ pub(crate) use incidence::*;
 pub(crate) use standard::*;
 pub(crate) use table::*;
 
-/// A face's supporting plane plus the exact in/out data the seam path needs.
-///
-/// An `orient3d` against a face answers `+1` when the implicit point lies on its **witness
-/// triangle's right-hand-normal side** — the convention is tied to the triangle (`tri_pt3`), never
-/// to `plane`. The triangle is wound to the face's *stated* outward — the way its plane faces (the
-/// truth's `sense`) × `orientation`, the reading props and STEP trust — by those truth bits
-/// (`collect_planes`), and `validate`'s `FaceMisoriented` holds the loop's winding to the same
-/// statement at every op.
 /// One row of the boolean's face table — the face vocabulary the engine reads.
 ///
 /// The row is an enum so a cylinder face can *sit in the table* (keeping the face-index space that
@@ -273,12 +265,20 @@ impl WorldName {
     }
 }
 
+/// A face's supporting plane plus the exact in/out data the boolean needs.
+///
+/// An `orient3d` against a face answers `+1` when the implicit point lies on its **witness
+/// triangle's right-hand-normal side** — the convention is tied to the triangle (`tri_pt3`), never
+/// to `plane`. The triangle is wound to the face's *stated* outward — the way its plane faces (the
+/// truth's `sense`) × `orientation`, the reading props and STEP trust — by those truth bits
+/// (`collect_planes`), and `validate`'s `FaceMisoriented` holds the loop's winding to the same
+/// statement at every op.
 #[derive(Clone)]
 pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
-    /// The face this plane came from. Distinguishes two coplanar faces that share one
-    /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
-    /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
+    /// The face this plane came from. Distinguishes two coplanar faces that share one `Surface` (a
+    /// Cut splits one face into disjoint pieces reusing its surface), which `surf` alone collapses.
+    /// `surf_ix` keys on this.
     ///
     /// **`None` has no producer today.** It stands for a cap a half-space clip puts on an
     /// operand — a

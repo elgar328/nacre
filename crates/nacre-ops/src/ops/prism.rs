@@ -86,8 +86,8 @@ pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError
 /// here would be a second opinion on a question `build_prism` already answers from the sweep, and
 /// two opinions is how an outer ring and its holes end up wound the same way (a negative extrude,
 /// where the sweep runs `−n` and flips the outer ring). A profile may also reach past the face
-/// boundary; an overhanging footprint routes to the overhang boolean sidecars, which reject
-/// honestly what they do not cover.
+/// boundary; the prism is built as drawn, and a boolean that meets the overhang refuses by name
+/// what it does not cover.
 pub(super) fn frame_rings(
     model: &mut Model,
     frame: &SketchFrame,

@@ -83,14 +83,14 @@ fn cut_by_a_corner_overhanging_boss_matches_occt() {
     assert!(approx(cut.volume, 1.0), "seated-boss cut {}", cut.volume);
 }
 
-/// A coplanar contact on a **cavitied** operand: a hollow box ([0,3]³ minus a [1,2]³ void,
-/// volume 26) with a top-flush boss on z=3 ([0.5,0.75]²×[3,4], volume 0.0625). The union keeps
-/// the void ⇒ 26.0625. This is the independent check that every shell is carried: emitting
-/// outer-shell faces only loses the void, and the fuse then reads 27.0625 — the un-hollowed cube
-/// plus the boss — with a clean `validate`, since what remains is still a closed shell. Hand
+/// A coplanar contact on a **cavitied** operand: a hollow box ([0,3]³ minus a [1,2]³ void, volume
+/// 26) with a top-flush boss on z=3 ([0.5,0.75]²×[3,4], volume 0.0625). The union keeps the void ⇒
+/// 26.0625. This is the independent check that every shell is carried: emitting outer-shell faces
+/// only would lose the void, and the fuse would then read 27.0625 — the un-hollowed cube plus the
+/// boss — with a clean `validate`, since what remains would still be a closed shell. Hand
 /// arithmetic and nacre agreeing would prove nothing there; OCCT is a second kernel.
-/// (`hollow_solid_step_volume_matches_occt` already pins that a void survives the
-/// STEP round trip, so a failure here is about the boolean, not the transport.)
+/// (`hollow_solid_step_volume_matches_occt` already pins that a void survives the STEP round trip,
+/// so a failure here is about the boolean, not the transport.)
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn coplanar_boss_on_a_hollow_part_matches_occt() {

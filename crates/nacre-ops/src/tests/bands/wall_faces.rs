@@ -557,12 +557,12 @@ fn a_cross_above_a_stud_is_two_solids() {
 /// (`oblique_plane_clears`): does every lateral face of the stud miss that infinite plane?
 ///
 /// Both answers, one axis apart in height. At `z = 3` the lower cap's plane `3y + 4z = 9` stands
-/// past the stud's whole reach along its normal (`3·0.2 + 4·2 = 8.6`): cleared, and the fuse is
-/// two bodies. At `z = 2.4` the plane `3y + 4z = 6.6` runs through the stud's slab, the face
-/// question cannot show a miss, and the pair is refused by its caps — a lock on today's name for
-/// the cell that opens the ellipse road. (A 3-4-5 axis, so the upper cylinder is stated in the
-/// world: an axis like `(0, 1, 1)` has no rational unit frame, rides a frame node, and the gate
-/// refuses it earlier, as having no world statement.)
+/// past the stud's whole reach along its normal (`3·0.2 + 4·2 = 8.6`): cleared, and the fuse is two
+/// bodies. At `z = 2.4` the plane `3y + 4z = 6.6` runs through the stud's slab, the face question
+/// cannot show a miss, and the pair is refused by its caps — today's name, locked, for the refusal
+/// the ellipse road would lift. (A 3-4-5 axis, so the upper cylinder is stated in the world: an
+/// axis like `(0, 1, 1)` has no rational unit frame, rides a frame node, and the gate refuses it
+/// earlier, as having no world statement.)
 #[test]
 fn an_oblique_cross_above_the_stud_is_decided_by_its_caps_planes() {
     for (z, clears) in [(3.0, true), (2.4, false)] {

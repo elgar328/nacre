@@ -139,8 +139,8 @@ fn slab_nests_pocket_cut_either_way_matches_occt() {
 
 /// `Fuse` of the same two seals the pocket into an enclosed cavity: material
 /// `2.408`, a void of `0.032`. OCCT builds the same hollow solid and its volume subtracts
-/// the void while its area adds both surfaces — the independent claim that the seam path
-/// assembled the void inward, not as a phantom outer piece.
+/// the void while its area adds both surfaces — the independent claim that the boolean
+/// assembles the void inward, not as a phantom outer piece.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn slab_seals_pocket_fuse_matches_occt() {
