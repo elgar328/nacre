@@ -9,11 +9,10 @@ pub(crate) enum End<'a> {
     /// The circle on this line is uncut (or cut, but every arc reads the same for this cell): one
     /// label for the whole disk, whatever the sector.
     Disk(Label),
-    /// The circle is cut and the cell's sector is covered by **one or more** of its arcs: the
-    /// rows the band road's `arc_at` joined on. More than one means the sector spans a rim node
-    /// the chart has no vertical line for (see [`Chart::arc_around`]), and then every arc must
-    /// answer the same or this end says nothing — the rule the [`End::Disk`] arm of a cut circle
-    /// already follows.
+    /// The circle is cut and the cell's sector is covered by **one or more** of its arcs. More than
+    /// one means the sector spans a rim node the chart has no vertical line for (see
+    /// [`Chart::arc_around`]), and then every arc must answer the same or this end says nothing —
+    /// the rule the [`End::Disk`] arm of a cut circle already follows.
     Exact(Vec<&'a ArcLabel>),
     /// The circle is cut and the sector still has no arcs to read: its two rulings are one and the
     /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
@@ -87,9 +86,10 @@ impl End<'_> {
 /// **Why no side of a cell spoke** — read off its ends, the only sides silent for a reason (a wall
 /// that cannot be read checks a chamber, it does not decide one). The one reader for both refusals
 /// that need it: the emitter's present cell with no chamber and the cell reader's two silent ends.
-/// An end of a cut circle is silent because its arcs disagree (a θ the chart has no line for — the
-/// rulings ladder's), or with the cause [`End::Other`] carries; a present cell with no circle at
-/// an end is the stages disagreeing («a face that is here has a circle at both its ends»).
+/// An end of a cut circle is silent because its arcs disagree (a θ the chart has no line for —
+/// `RulingBoundNotYet`'s case), or with the cause [`End::Other`] carries; a present cell with no
+/// circle at an end is the stages disagreeing («a face that is here has a circle at both its
+/// ends»).
 ///
 /// Where the two ends are silent for different reasons, **a defect wins**: one end's stages
 /// disagreeing makes the cell's other reads untrustworthy too, and naming the cell «not yet» would
@@ -244,7 +244,7 @@ impl Chart {
     /// and it covers every sector, so it is the run whatever `x` and `y` are and neither station
     /// is asked for. `Err` when the walk yields no arc to read, naming why where the cause is
     /// known: a sector the chart has no line for (the whole circle less one ruling, or a sector
-    /// holding every rim node) is the rulings ladder's (`RulingBoundNotYet`), a station or an
+    /// holding every rim node) is `RulingBoundNotYet`'s, a station or an
     /// order that cannot be formed its own cause, and a run of covered and missing pieces or two
     /// lines on one rim node the stages disagreeing. A run of nothing but missing pieces is the face not being over this sector
     /// ([`RunFail::AllMissing`]) — at the adjacent-pair site the same missing row reads
@@ -321,13 +321,13 @@ impl Chart {
         }
         // **A sector may span several arcs, and then the answer is all of them.** A rim node
         // strictly inside the sector is a θ the *rim* knows and the chart does not — the chart's
-        // vertical lines come from `ruling_sweep`, which states a piece only where the lateral
-        // face is, so a wall's ruling on the side the face does not reach is absent and the cell
-        // is built across it. That is a defect of the **cell**, not of this lookup, and repairing
-        // the chart is its own rung; what this can do meanwhile is refuse to pretend the sector
-        // has one arc. It hands back the whole run — the rim nodes from `a` to `b`, walked CCW —
-        // and the caller answers only when they **agree**, which is exactly what the whole-circle
-        // arm of [`Chart::read_cell`] already does with a cut circle's arcs.
+        // vertical lines come from `ruling_sweep`, which states a piece only where the lateral face
+        // is, so a wall's ruling on the side the face does not reach is absent and the cell is
+        // built across it. That is a defect of the **cell**, not of this lookup, and this lookup
+        // refuses to pretend the sector has one arc. It hands back the whole run — the rim nodes
+        // from `a` to `b`, walked CCW — and the caller answers only when they **agree**, which is
+        // exactly what the whole-circle arm of [`Chart::read_cell`] already does with a cut
+        // circle's arcs.
         let mut run: Vec<&'a ArcLabel> = Vec::new();
         let mut missing = 0usize;
         let mut cur = a;
@@ -492,8 +492,7 @@ impl Chart {
         // four sides: the chamber stands when every side that speaks says the same, and two sides
         // that contradict each other leave none (the emitter then refuses a present cell by name).
         // A contradiction is an arrangement label defect, and reading one side over the other would
-        // hide it — the `corner Common` boss once read its rulings against its rims so, before its
-        // plate labels were right. Measured over the suite, the ignored sweep and the census:
+        // hide it. Measured over the suite, the ignored sweep and the census:
         // on present cells both axes speak on 21,006 / 27,300 / 1,026 and the horizontal alone on
         // 4,048 / 3,260 / 978; no side has contradicted another anywhere.
         //
@@ -658,9 +657,10 @@ impl Chart {
 ///
 /// **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
-/// gets `true` from this same test — one sentence about every rim. What is out of reach is only an **uncut**
-/// outer rim: it never becomes an [`ArcLabels`](crate::arrangement::ArcLabels) entry at all (a
-/// whole circle goes to `DiskLabels` and the band road), so today only cut rims ask here.
+/// gets `true` from this same test — one sentence about every rim. What is out of reach is only an
+/// **uncut** outer rim: it never becomes an [`ArcLabels`](crate::arrangement::ArcLabels) entry at
+/// all (a whole circle goes to `DiskLabels`, and existence at an uncut end is the row's span), so
+/// today only cut rims ask here.
 ///
 /// **How often each row actually fires** (whole binary, production calls only):
 /// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
@@ -706,12 +706,12 @@ pub(crate) fn face_spans(
 /// four bits on it: which solid's material lies immediately above and below that plane *inside the
 /// circle*. That is the band's chamber, stated by the engine that decided it.
 ///
-/// This replaced a witness ray (`point_in_faces_rat`): a rational point on the axis, cast
-/// through the counterpart's faces, counting crossings. It gave the same answers, but it answered
-/// a **3D containment** question — the shape the *component* probe asks — when the band's question
-/// is the same shape as "does this face survive": two chambers either side of a boundary. Reading
-/// the label needs no coordinates, no ray direction, no abstention retry, and has no width
-/// ceiling, and it is why a cylinder may now stand on either side of the boolean.
+/// A witness ray (`point_in_faces_rat`) — a rational point on the axis, cast through the
+/// counterpart's faces, counting crossings — would give the same answers, but it answers a **3D
+/// containment** question — the shape the *component* probe asks — when the band's question is the
+/// same shape as "does this face survive": two chambers either side of a boundary. Reading the
+/// label needs no coordinates, no ray direction, no abstention retry, and has no width ceiling, and
+/// it is why a cylinder may stand on either side of the boolean.
 pub(crate) fn read_bits(l: &Label, side: SolidSide, band_is_above: bool) -> (bool, bool) {
     let (cyl_bit, other_bit) = match side {
         SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]

@@ -1,8 +1,8 @@
 //! **The arrangement's second arm: a cylinder's own chart.**
 //!
-//! The plane side long ago stopped walking faces by hand: each plane class gets a **cell complex**
-//! (`super`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went
-//! with it. The cylinder side does the same on its own grid: the lateral has an **isometric
+//! The plane side does not walk faces by hand: each plane class gets a **cell complex** (`super`'s
+//! `walk_cells → nest_cells → label_cells → emit_faces`) in place of per-face case-work. The
+//! cylinder side does the same on its own grid: the lateral has an **isometric
 //! chart** `(z, r·θ)` where the seam is only the chart's cut line, so notches, holes and
 //! θ-panels all become cells. This module runs the whole arm — the two axes, the cells
 //! (`read_cell`), the regions walk (`regions`) and the emit (`emit`) — and a region's bounds are
@@ -26,12 +26,12 @@
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
 //! | oblique | — | refused, `ObliqueCylinderCut` | 2 |
 //!
-//! So within this milestone the chart carries **axis-parallel segments only**. Not a grid, though:
-//! a ruling exists over a finite axis interval and a cut circle is arcs, so the cells are what
-//! rectilinear *segments* cut out — which is why building them is its own rung.
+//! So the chart carries **axis-parallel segments only**. Not a grid, though: a ruling exists over a
+//! finite axis interval and a cut circle is arcs, so the cells are what rectilinear *segments* cut
+//! out.
 //!
-//! The gate is the reason, so when the gate changes this does too; the counts above predate
-//! the offset and tangent walls. The **offset** wall (`0 < d < r`) adds
+//! The gate is the reason, so when the gate changes this does too; the counts above were
+//! measured without the offset and tangent walls. The **offset** wall (`0 < d < r`) adds
 //! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
 //! nothing breaks. The **tangent** wall (`d = r`)
 //! adds nothing at all: a grazing line stations no sector, so the gate records no
@@ -82,10 +82,10 @@ pub(crate) use read_cell::*;
 
 /// One **horizontal** line: a ⊥ plane class, and where it crosses the axis.
 ///
-/// `t` is exact (`Rat`) — a ⊥ class's axis parameter is a rational, and `bands::axis_param` is
-/// the one spelling of it. A class whose parameter is too wide for `Rat` refuses rather than being
-/// skipped, as the band road did: a missing band boundary merges two regions whose membership
-/// differs, which is a closed and wrong answer.
+/// `t` is exact (`Rat`) — a ⊥ class's axis parameter is a rational, and `bands::axis_param` is the
+/// one spelling of it. A class whose parameter is too wide for `Rat` refuses rather than being
+/// skipped: a missing band boundary merges two regions whose membership differs, which is a closed
+/// and wrong answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ZLine {
     pub(crate) class: usize,
@@ -96,9 +96,6 @@ pub(crate) struct ZLine {
 ///
 /// Carried straight from [`RulingExtent`] — the plane pass decides this and the chart must not
 /// decide it again.
-///
-/// No `side` stored: a ruling is named `(wall class, side)` by [`Chart::ruling_name`] — see
-/// [`RulingExtent`], which dropped its own copy for the same reason.
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
@@ -112,7 +109,7 @@ pub(crate) struct ThetaSeg {
     pub(crate) z: [Rat; 2],
     /// **The chart's vertical answer** — the label of the cell this ruling borders inside the
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
-    /// `DiskLabels`/`ArcLabels`; this is the half they never had, and [`Chart::read_cell`] reads
+    /// `DiskLabels`/`ArcLabels`; this is the half they do not carry, and [`Chart::read_cell`] reads
     /// it beside them — the cell's chamber stands only where the two agree.
     pub(crate) label: Option<Label>,
     /// The label of the cell beside this ruling **outside** the cylinder — [`RulingExtent::outer`].
@@ -205,10 +202,10 @@ fn ruling_side_of(
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.
 ///
-/// Addressed by `(interval, sector)` rather than kept as a flat list, because the next rung
-/// asks for **neighbours**: crossing a horizontal line moves to the interval above or below,
-/// crossing a ruling to the sector beside. That adjacency is *derivable* from this address, and
-/// deriving it is the reader's job — building it here would be a field with no consumer.
+/// Addressed by `(interval, sector)` rather than kept as a flat list, because the region walk
+/// ([`regions`]) asks for **neighbours**: crossing a horizontal line moves to the interval above or
+/// below, crossing a ruling to the sector beside. That adjacency is *derivable* from this address,
+/// and deriving it is the reader's job — building it here would be a field with no consumer.
 ///
 /// The adjacency is not 1:1 and the address already says so: an interval carrying one cell sits
 /// against every sector of a neighbour that carries six.
@@ -364,11 +361,10 @@ pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) 
     classes
 }
 
-/// **The lines a lateral face's band may not run across** — the band road's three boundary
-/// sources, as axis parameters: the rim classes ([`rim_classes`]) and
-/// every row's own span ends. A band-shaped emission may continue across any other line, so
-/// [`emit_lateral`] merges there and nowhere else, and the census asserts the chart's z-lines ⊇
-/// this list where it is made.
+/// **The lines a lateral face's band may not run across** — the rim classes (both kinds,
+/// [`rim_classes`]) and every row's own span ends, as axis parameters. A band-shaped emission may
+/// continue across any other line, so [`emit_lateral`] merges there and nowhere else, and the
+/// census asserts the chart's z-lines ⊇ this list where it is made.
 #[cfg(test)]
 pub(crate) fn boundary_lines(
     jd: &Judge<'_, WorkingPlane>,
@@ -392,15 +388,12 @@ pub(crate) fn boundary_lines(
 
 /// **Every ⊥ class that cuts this cylinder, and every ruling on it** — per cylinder *class*.
 ///
-/// **The sources are the band road's, and one thing that road did is
-/// deliberately *not* done here.** It ended with `keyed.retain(|(t, _)| t ∈ row.span)`:
-/// it clipped to the **face** it was asked about, because its row was a face and not a class. A
-/// class has no such span — one lateral
-/// surface can carry several faces with gaps between them, which is exactly why `CylRow` became
-/// per-face. So the clip is dropped, and that is a *repair* rather than a loss: `CylRow`'s own doc
-/// warns that merging the spans into one `min..max` would **invent a band where the solid has no
-/// face at all**, and on a chart that gap is simply a cell that keeps nothing — the argument the
-/// plane side already makes for its unbounded cells.
+/// **No clip to a face.** Clipping the lines to a face's span would answer about a face; a class
+/// has no such span — one lateral surface can carry several faces with gaps between them, which is
+/// why `CylRow` is per-face. So there is no clip: `CylRow`'s own doc warns that merging the spans
+/// into one `min..max` would **invent a band where the solid has no face at all**, and on a chart
+/// that gap is simply a cell that keeps nothing — the argument the plane side already makes for its
+/// unbounded cells.
 ///
 /// The cylinder class itself is one solid's surface, not both operands': `planes` interns
 /// cylinders by `Handle<Surface>` (planes by geometry), and two solids share no handles. That is
@@ -422,8 +415,8 @@ pub(crate) fn chart_of(
             v.push(c);
         }
     };
-    // (iii) every ⊥ class, full stop. The band road only took the ones that land on a face's rim
-    // because it was answering about a face; a chart covers the whole axis.
+    // (iii) every ⊥ class, full stop — not only those landing on a face's rim, which would answer
+    // about a face; a chart covers the whole axis.
     for c in 0..jd.planes.len() {
         let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
             continue;

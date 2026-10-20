@@ -62,18 +62,16 @@ pub(super) fn circle_on_class(
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
-    // The **outer** answer, which the holes below carve out of. Unchanged from when it was the
-    // whole answer:
+    // The **outer** answer, which the holes below carve out of:
     //
-    // **A rim is a graze, not a miss.** This used to answer "the lateral does not reach this
-    // plane", on the premise that coplanarity would have folded a rim into a seated class — but a
-    // *cylinder* face never becomes seated on a plane class, so the touch was simply dropped.
-    // Every planar wall meeting a class along an edge contributes a `Graze`; the lateral
-    // contributed nothing, and `edge_mask`'s precedence (`Graze > Seated`) exists exactly for the
-    // corner where the two disagree. On a convex cap they agree and the omission is invisible; at
-    // the **reflex dihedral of a blind bore's ceiling** they disagree, the seated rule then flipped
-    // the wrong label bit, and the *next* boolean on that solid came back
-    // `CylinderGateUndecided` — while a through bore, which has no ceiling, was fine.
+    // **A rim is a graze, not a miss.** Answering "the lateral does not reach this plane", on the
+    // premise that coplanarity would fold a rim into a seated class, would drop the touch: a
+    // *cylinder* face never becomes seated on a plane class. Every planar wall meeting a class
+    // along an edge contributes a `Graze`, and `edge_mask`'s precedence (`Graze > Seated`) exists
+    // exactly for the corner where the two disagree. On a convex cap they agree and the omission
+    // would be invisible; at the **reflex dihedral of a blind bore's ceiling** they disagree, the
+    // seated rule would flip the wrong label bit, and the *next* boolean on that solid would come
+    // back `CylinderGateUndecided` — while a through bore, which has no ceiling, would be fine.
     //
     // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
     // it lies toward `+t` and at the high rim toward `−t`.
@@ -258,7 +256,7 @@ fn assemble_spans(
         }
     }
     let answer = |k: usize| ans[k].unwrap_or(outer);
-    // One answer everywhere: the circle was never divided, whatever the holes touched.
+    // One answer everywhere: the circle is undivided, whatever the holes touch.
     let Some(start) = (0..n).find(|&k| answer(k) != answer((k + n - 1) % n)) else {
         return Ok(match answer(0) {
             Some(on) => vec![CircleSpan { arc: None, on }],

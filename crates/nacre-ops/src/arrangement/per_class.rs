@@ -1,15 +1,16 @@
 use super::*;
 /// **The per-class stages, in one place** — the walk and the nesting.
 ///
-/// **It exists because the sequence was written twice.** `trace_result_faces`' `arrange` and
-/// `frame_audit`'s replay ran the same stages against the same edges, and the second is what makes
-/// a reject debuggable — so a drift between them is, in `decline_to_reject`'s words, *"the worst
-/// possible time to be lying"*. One copy, and the audit is auditing what the boolean ran.
+/// **It exists because the sequence would otherwise be written twice.** `trace_result_faces`'
+/// `arrange` and `frame_audit`'s replay run the same stages against the same edges, and the second
+/// is what makes a reject debuggable — so a drift between them would be, in `decline_to_reject`'s
+/// words, *"the worst possible time to be lying"*. One copy, and the audit is auditing what the
+/// boolean ran.
 ///
 /// **And it puts every stage behind one `Result`, which is the failure this shape is really
 /// for.** While a stopper occupies the caller's socket, it must run before this `Result` is
 /// unwrapped, so an out-of-coverage class carries the same name out however far the pipeline
-/// got. With the stages held separately that order had to be repeated per stage, and getting it
+/// got. With the stages held separately that order would be repeated per stage, and getting it
 /// wrong is silent — the suite stays green and only the reject's *name* changes. One `Result`
 /// leaves one place to put the `?`, and it is after the socket.
 ///
@@ -97,7 +98,7 @@ pub(super) fn per_class(
                     // The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
                     // It asks whether a **cell** carries the lateral's solid, not whether the two
                     // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
-                    // differ always (measured while designing this rung: every piece, without
+                    // differ always (measured: every piece, without
                     // exception) and that says nothing about the side.
                     // Recorded only where a label was formed, so `None` means one thing — the content
                     // did not distinguish — and never "there was nothing to check".
@@ -122,7 +123,7 @@ pub(super) fn per_class(
                             };
                             // **Asserted where the fact is made**, so the coverage is total and
                             // the panic names the offending test — a test reading the ledger afterwards
-                            // sees only what ran before it (this ladder measured that hole twice).
+                            // sees only what ran before it.
                             assert_ne!(
                                 verdict,
                                 Some(false),

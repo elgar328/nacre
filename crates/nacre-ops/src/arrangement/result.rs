@@ -37,11 +37,11 @@ pub(crate) fn trace_result_faces_full_for_test(
 /// it, and a cylinder cuts only some classes.
 pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 
-/// **A cut circle's per-arc disk-side labels** — the sector sibling of [`DiskLabels`] (the
-/// rulings ladder): a cut circle bounds no whole disk, so "the material immediately above and
-/// below this plane inside the circle" is answered **per arc**, by the label of the cell on the
-/// arc's disk side. Keyed like `DiskLabels`; each entry lists one [`ArcLabel`] per arc in the
-/// split's own arc order. The frame is the disk labels' (the class's stored normal).
+/// **A cut circle's per-arc disk-side labels** — the sector sibling of [`DiskLabels`]: a cut circle
+/// bounds no whole disk, so "the material immediately above and below this plane inside the circle"
+/// is answered **per arc**, by the label of the cell on the arc's disk side. Keyed like
+/// `DiskLabels`; each entry lists one [`ArcLabel`] per arc in the split's own arc order. The frame
+/// is the disk labels' (the class's stored normal).
 pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<ArcLabel>>;
 
 /// One arc's row in [`ArcLabels`] — what the arc bounds, and **who traced it**.
@@ -77,10 +77,10 @@ pub(crate) struct ArcLabel {
 /// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides and the
 /// **axis interval** it spans.
 ///
-/// **Carried out rather than recomputed.** `rulings_on_class` already decides this extent
-/// (the rulings ladder), and a chart that worked it out again would be a **second source of one
-/// fact** — the defect shape this repository names first. So the value leaves by the road
-/// [`CutRims`] already takes: made per class, folded once, keyed in the global class space.
+/// **Carried out rather than recomputed.** `rulings_on_class` already decides this extent, and a
+/// chart that worked it out again would be a **second source of one fact** — the defect shape this
+/// repository names first. So the value leaves by the road [`CutRims`] already takes: made per
+/// class, folded once, keyed in the global class space.
 ///
 /// `end` is the piece's own two pierce nodes and `z` their axis parameters
 /// ([`node_axis_param`]). Both are carried because the chart needs the **order** (from the node's
@@ -88,17 +88,6 @@ pub(crate) struct ArcLabel {
 /// deriving one from the other twice is how a name loses a sign.
 /// Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
 /// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
-///
-/// **There is no `side` here, and that is the point.** Nothing would read one: a ruling's
-/// identity is `(wall class, root)`, and which of the two parallel rulings that is derives from it
-/// through the one production spelling ([`crate::combinatorics::ruling_side`], which is how
-/// `cyl_chart::emit_lateral` gets it at emission time). A carried copy of a derived value is a
-/// second spelling of it.
-///
-/// **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
-/// which is `#[cfg(test)]`, so outside a test build these fields have none — but *inside* one they
-/// must genuinely be read, and that is what caught `side`. A plain `#[allow(dead_code)]` would
-/// have kept carrying it silently, which is how the field survived a whole rung.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
@@ -189,7 +178,7 @@ pub(super) fn ruling_interior_is_even(
 /// What the arrangement learned about the curved boundary, bundled: the lateral chart reads the
 /// labels against `split_rims`, and the result's rims are derived from the cleaned faces
 /// ([`crate::draft::held_rims`]). One struct so the trace's return does not grow element by
-/// element (it was widened once already, for `deferred`).
+/// element.
 pub(crate) struct Curved {
     pub(crate) disk_labels: DiskLabels,
     pub(crate) arc_labels: ArcLabels,
@@ -322,7 +311,7 @@ pub(super) fn trace_result_faces(
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
     // **What each class contributes, for the classes the other operand cannot reach.** Everything
-    // else stays `Arrange`, which is the whole engine as it was.
+    // else stays `Arrange`, which is the whole engine.
     // **A cylinder in the operands turns the reuse shortcut off entirely**.
     // `reuse::pass_through` moves faces **per plane class** (`plane_ix[fi].plane() != wc →
     // continue`), and a lateral face belongs to no plane class — so a class decided

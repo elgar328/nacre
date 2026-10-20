@@ -779,14 +779,14 @@ pub enum RejectReason {
     /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
     /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).
     CircleCrossesRuling,
-    /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
-    /// yet. The assembly's edge road is open (a ruling edge is a straight edge, keyed by its two
-    /// ends, its carriers read off the faces using it) and so is the gate's record-and-pass arm,
-    /// so this name is **reachable from production**. A boss whose **cap sits
-    /// inside the other body's material** (the half-height variant) builds,
-    /// and so does the crossing census's whole column of 15 — a lateral region
-    /// that crosses a z-line transversally in one sector while ending on it in another
-    /// (the emitter walks regions of the chart; `cyl_chart::regions`).
+    /// The **ruling machinery's** own refusal (`arrangement::rulings`) — a configuration it does
+    /// not arrange yet. The assembly's edge road is open (a ruling edge is a straight edge, keyed
+    /// by its two ends, its carriers read off the faces using it) and so is the gate's
+    /// record-and-pass arm, so this name is **reachable from production**. A boss whose **cap sits
+    /// inside the other body's material** (the half-height variant) builds, and so does the
+    /// crossing census's whole column of 15 — a lateral region that crosses a z-line transversally
+    /// in one sector while ending on it in another (the emitter walks regions of the chart;
+    /// `cyl_chart::regions`).
     ///
     /// What raises it are **shapes the rulings split does not arrange**: a segment lying on the
     /// lateral along a line the gate did not record (`planes::SharedRuling` — the lines of two
@@ -1001,10 +1001,10 @@ pub enum DeclineKind {
     /// them is a fact about the *shape*, and none is produced by today's population; the name is
     /// what will say so when one is.
     CylHoleFeature,
-    /// A class runs **through a lateral's axis** and the ruling trace could not be stated
-    /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
-    /// (the rulings ladder). Declined whole rather than contributed partially: a
-    /// half-contributed rectangle leaves the class's 1-skeleton dangling.
+    /// A class runs **through a lateral's axis** and the ruling trace could not be stated exactly —
+    /// a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`. Declined whole
+    /// rather than contributed partially: a half-contributed rectangle leaves the class's
+    /// 1-skeleton dangling.
     ///
     /// Not its population: a class plane that holds a **tangent ruling** together with
     /// the wall tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls

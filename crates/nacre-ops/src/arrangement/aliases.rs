@@ -99,7 +99,7 @@ pub(super) fn seed_from_operands(
     }
 }
 
-/// The names that turned out to denote **one** feature, learned while tracing.
+/// The names that denote **one** feature, learned while tracing.
 ///
 /// Both kinds come from the same discovery. When a producer learns the full set `S` of planes
 /// through a point:

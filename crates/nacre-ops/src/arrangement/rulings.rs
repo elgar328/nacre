@@ -118,7 +118,7 @@ type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
 ///   crosses the line there, at the pierce node `{arc's plane, wc}` ([`combinatorics::crossing_on_ruling`], the
 ///   one door every road names such a point through);
 /// - a **run** of the cycle's own edges lying on the ruling is a `Graze` over its extent, the side
-///   the face occupies along it `σ·τ·κ·side` (the rulings ladder's derivation, unchanged), and it
+///   the face occupies along it `σ·τ·κ·side`, and it
 ///   toggles the face exactly when the arcs at its two ends lie on different θ flanks
 ///   ([`arc_flank`]) — a collinear piece the boundary passes *through* rather than touches, the
 ///   `flanks_differ` of an on-line run. A panel's arcs both lie on its own side (no toggle: absent

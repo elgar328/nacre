@@ -182,7 +182,7 @@ pub(super) fn nest_cells(
     let circles = &edges.circles;
     let n = cells.len();
     // Which circle a cell is, `None` for a cell the walk built. The range test is
-    // `ClassEdges::kind`'s now: an arc's half-edge is past the segments too, and reading one as a
+    // `ClassEdges::kind`'s: an arc's half-edge is past the segments too, and reading one as a
     // circle would ask the *disk's* exact statement about a shape that is not a disk.
     let circle_of = |c: &Cell| -> Option<usize> {
         match edges.kind(*c.half_edges.first()?) {
@@ -314,8 +314,7 @@ fn innermost_host(
 /// **"Above" is the side of the class's *stored* plane normal** — which is what every
 /// `body_above` in this file is measured against. Not the class's canonical
 /// rational name (that points the other way on half the classes) and not the root face's outward
-/// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in). The absence of
-/// this sentence is what let a lateral face's rim contribution be written in the wrong frame.
+/// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in).
 pub(crate) type Label = [bool; 4];
 
 /// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
@@ -393,8 +392,8 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
             // **same-side pair flips nothing**: whether it is a knife edge (the wedge between the
             // two faces is the material, which pinches to measure zero at `W`) or its reflex
             // complement (the wedge is the void), what is immediately above `W` is the same on
-            // both sides of this line. The union rule read that pair as one fill and flipped a
-            // bit that changes nothing — a mask the propagation check then caught two layers
+            // both sides of this line. A union rule would read that pair as one fill and flip a
+            // bit that changes nothing — a mask the propagation check would catch two layers
             // later as LabelConflict.
             for side in [true, false] {
                 if grazes.iter().filter(|&&a| a == side).count() % 2 == 1 {
@@ -422,11 +421,11 @@ pub(super) fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolEr
 /// **The disk side of a cylinder's trace carries that cylinder's own solid** — `false` when it
 /// does not, which is a labelling that cannot be right whatever the frame conventions are.
 ///
-/// **The absolute claim the arrangement had none of.** `label_cells` seeds the unbounded
+/// **An absolute claim about a label.** `label_cells` seeds the unbounded
 /// contours void and flips per edge, then verifies **every** edge — and that verification is blind
 /// to a global flip of one solid's two bits, because `l ^ mask == l'` survives flipping both sides
 /// together. So a wrong seed inverts a whole component's material for one solid and every check
-/// passes. Nothing in the crate stated an *absolute* fact about a label until this.
+/// passes.
 ///
 /// The fact: where the mask sets **both** of a solid's bits from a lone transversal
 /// (`edge_mask`'s *"the solid straddles W, flip both"*), that solid's material is on the inside of

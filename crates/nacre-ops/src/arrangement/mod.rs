@@ -204,12 +204,10 @@ struct Wall {
 
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
-/// **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
-/// was never the law.** When `label_cells` moved in, `face_of` stopped crossing the boundary and
-/// that read like a sign the boundary was right. It was not a general rule — that field simply had
-/// one consumer. Here production reads only `faces` and `disk_labels`, but `frame_audit` is a
-/// legitimate *second* consumer of `cells`, `nesting` and `labels` (the counts and the labels it
-/// pins are exactly what the previous rung locked), so they stay. The test is not "did it shrink"
+/// **Pulling `emit_faces` in makes this *wider*: moving a stage in need not shrink the interface.**
+/// Production reads `faces`, `disk_labels`, `arc_labels` and `ruling_extents`, but `frame_audit` is
+/// a legitimate *second* consumer of `cells`, `nesting` and `labels` (the counts and the labels it
+/// pins), so they stay. The test is not "did it shrink"
 /// but **"does each field have a consumer"** — and the `cfg(test)` says which consumer, since that
 /// second one is an instrument (`ClassAudit`, `#[cfg(test)]` like everything it touches).
 struct Staged {
@@ -438,7 +436,7 @@ pub(crate) fn boolean(
         // `SeamAlias` scan — happened to fail first, and the population's name would depend on
         // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
         // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
-        // "report a bug", and its own doc records having mis-named a population once before.)
+        // "report a bug".)
         // One result's carrier planes are realized once for the corners (the seam table) and the
         // edges (`reconstruct`) alike (`realize::PlaneMemo`).
         let mut memo = crate::realize::PlaneMemo::default();
@@ -465,8 +463,8 @@ pub(crate) fn boolean(
             } else {
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
                 // **The lateral faces come from the chart**: every cylinder
-                // class's cells, read off the plane arrangement's own labels and emitted in the
-                // band road's vocabulary.
+                // class's cells, read off the plane arrangement's own labels and emitted as
+                // `LocalFace`s, the type the plane side emits.
                 let lateral =
                     cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows, &rims);
                 // The census sits *before* the curved cleaning pass on purpose: the cleaning
@@ -487,9 +485,8 @@ pub(crate) fn boolean(
             let seam = seam_table(model, &faces, &cyls, &jd, &mut memo)?;
             Ok((faces, seam, rims))
         };
-        // The raise moved into `reconstruct` (after the vertex naming, before any minting);
-        // what stays here is the interception — a stretch failure on an arc input still carries
-        // the stopper's name out, not its own.
+        // The raise is at `reconstruct`'s very end; what is here is the interception — a stretch
+        // failure on an arc input still carries the stopper's name out, not its own.
         let (faces, seam, rims) = match stretch() {
             Ok(x) => x,
             Err(e) => return Err(deferred.unwrap_or(e)),
