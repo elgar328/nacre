@@ -5,16 +5,16 @@ use super::*;
 /// result vertex/edge; `Ord` gives the deterministic node order replay needs — and it is the bare
 /// [`NodeKind`]'s lexicographic order, so every "smallest name wins" rule reads unchanged.
 ///
-/// This was `assembly::Node`, spoken only by the assembler. It lives here because the arrangement
-/// names the same vertices, and the variant is spelled like [`nacre_topo::Vertex::ThreePlane`]
-/// so the arrangement, the assembler and the topology store call the thing by one name.
+/// It lives here because the arrangement and the assembler name the same vertices, and the variant
+/// is spelled like [`nacre_topo::Vertex::ThreePlane`] so the arrangement, the assembler and the
+/// topology store call the thing by one name.
 ///
 /// **A newtype, and the private half is the whole point.** The field is `pub(super)`, so
 /// outside `combinatorics` a name can be **read** ([`NodeId::kind`]) but cannot be **made** — the
 /// two constructors below are the only way one comes into being, and "two spellings of one vertex
-/// are one name" holds because nothing can go around them. This used to be a plain `enum` guarded
-/// by an `rg` command written in a comment; that command found eight sites the day it was finally
-/// run, which is what a check that nobody runs is worth.
+/// are one name" holds because nothing can go around them. A plain `enum` guarded by an `rg`
+/// command written in a comment is only as good as someone running it — and run, it found fifteen
+/// bypasses the green suite had not, and eight more on its last run.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NodeId(pub(super) NodeKind);
 
@@ -123,10 +123,6 @@ impl NodeId {
 /// door is therefore not a thing a caller can do, only a thing it can decline to *use* — and the
 /// sites that decline are the four named above.
 ///
-/// This used to be an `rg` command written here and a sentence saying it must come back empty.
-/// It found **fifteen** sites the first time it was run with the whole suite already green, and
-/// eight more the last time — which is the measure of a check nobody runs.
-///
 /// **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
 /// the sites in `arrangement` that need the `Pierce` half — two inside `split_circles`, and the
 /// seam table — go through the twin rather than
@@ -221,9 +217,9 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
 /// **What pins an endpoint on its edge's line** — the third carrier, in the vocabulary that names
 /// it.
 ///
-/// A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
-/// plane class) everywhere. The arc split puts a **cylinder** crossing in the middle of a segment,
-/// and that point has no third *plane* — what pins it is the quadric, and its name is the
+/// A traced segment's ends are plane triples, pinned by a third plane class; the arc split puts a
+/// **cylinder** crossing in the middle of a segment, and that point has no third *plane* — what
+/// pins it is the quadric, and its name is the
 /// [`NodeKind::Pierce`] the edge already carries in its endpoint list. So the pin says **which kind**
 /// and the name is read from beside it, rather than a second copy living here.
 ///
@@ -292,10 +288,10 @@ pub(crate) enum Carrier {
 /// travels that way, its twin the other), carried rather than re-derived. That bit is what lets
 /// `edge_for` tell the two complementary arcs between one pair of pierce vertices apart.
 ///
-/// Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
-/// `dissolve_straight_angles` folds equal walls (and one line's two spellings,
-/// [`SharedLines`]), and two arcs of different circles — or of one circle in different directions —
-/// now compare unequal instead of `MAX == MAX`.
+/// A variant rather than a `usize::MAX` sentinel also keeps a hazard out:
+/// `dissolve_straight_angles` folds equal walls (and one line's two spellings, [`SharedLines`]),
+/// and two arcs of different circles — or of one circle in different directions — compare unequal,
+/// where two sentinels would compare `MAX == MAX`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Wall {
     Plane(usize),
@@ -599,9 +595,9 @@ impl Carrier {
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
-/// **Why this type exists.** A vertex name is a plane triple, and for a long time the engine read
-/// an edge's supporting plane back out of its endpoints — "the class the two names share besides
-/// `P`". That works only while every vertex lies on exactly three planes. It is an accident of the
+/// **Why this type exists.** A vertex name is a plane triple, and reading an edge's supporting
+/// plane back out of its endpoints — "the class the two names share besides `P`" — works only while
+/// every vertex lies on exactly three planes. It is an accident of the
 /// corpus, not an invariant: let four planes meet at a point, give the point one canonical name, and
 /// the shared class is **some other plane than the one the edge rides**, silently. So the walker
 /// that knows the edge — the DCEL half-edge, which was told its wall — hands the geometry over
@@ -612,11 +608,12 @@ pub(crate) struct RingEdge {
     pub node: NodeId,
     /// Identity of the vertex it reaches.
     ///
-    /// **The pins were already two and the names only one, and that asymmetry was the bug's
-    /// hiding place.** A direction is a property of `(edge, node)` — for a straight edge the two
-    /// ends give the same answer, so nothing ever had to say which end it meant, and a direction
-    /// taken at the *wrong* node was unspellable-looking but perfectly legal. With both names here,
-    /// [`dir_at`] can check that the node it is asked about is actually on this edge.
+    /// **Two pins and two names, so the end a direction is read at can be checked.** A direction is
+    /// a property of `(edge, node)` — for a straight edge the two ends give the same answer, so
+    /// nothing would need to say which end it means, and a direction taken at the *wrong* node
+    /// looks unspellable but is legal; with one name beside two pins, such a call cannot be caught.
+    /// With both names here, [`dir_at`] can check that the node it is asked about is actually on
+    /// this edge.
     ///
     /// Measured: 153,798 rings in the suite, **0** where an edge's far end is not the next
     /// edge's start — so "a ring is a chain" is asserted here rather than left a producer's
@@ -630,7 +627,7 @@ pub(crate) struct RingEdge {
     pub to_h: EndPin,
 }
 
-/// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
+/// Recover a ring's edges from its vertex names — the classic derivation, in **one** place.
 ///
 /// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]).
 /// **Test-only**: the tracer's crossed-edge

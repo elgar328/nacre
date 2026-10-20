@@ -10,7 +10,7 @@ use super::*;
 /// arm is not a precision failure to be lifted, it is a different number.
 enum CoordKey {
     /// The three classes, handed to `Judge::cmp_coord` — which keeps its toleranced ladder and its
-    /// escalation, so the existing population's answers are bit-identical to before.
+    /// escalation.
     Three([usize; 3]),
     /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
@@ -34,8 +34,8 @@ fn coord_key(
 ) -> Result<CoordKey, BoolError> {
     let node = ring[i].node;
     let NodeKind::Pierce { planes, cyl, .. } = node.kind() else {
-        // A `match` and not a fallback: a third variant must light this up rather than fall in
-        // here (`let`-`else` is what hid a new variant once already).
+        // A `match` and not a fallback: a third variant must light this up rather than fall into
+        // this `else` unnamed.
         return match node.kind() {
             NodeKind::ThreePlane(t) => Ok(CoordKey::Three(t)),
             NodeKind::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
@@ -353,8 +353,8 @@ pub(crate) fn pierce_between(
 /// solved by, and a [`CoordKey::Pierce`] that [`KeyCmp::cmp`] orders against the ring's nodes and
 /// against another arc's minimum. The point is irrational whenever the axis tilts toward `ê_a` or
 /// the radius is a surd (`c_x − 3√41/25` on a Pythagorean frame; `−√2` for a sector of `r² = 2` on
-/// the world frame); a road that answered only for a rational `c − r·ê_a` left both to the node's
-/// turn, and on a sector whose centre is the smallest node that turn was the wrong one.
+/// the world frame); a road that answers only for a rational `c − r·ê_a` leaves both to the node's
+/// turn, which on a sector whose centre is the smallest node is the wrong one.
 ///
 /// **What it cannot decide it refuses by name.** A minimum this cannot place or order is a ring
 /// whose winding has no proof; reading the node's turn there would be the confident wrong sign
@@ -589,11 +589,10 @@ pub(crate) fn loop_winding(
     // where that decision belongs** — the door's single answer is the wrong one here, and
     // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
     //
-    // **The keys are materialized, and that is a change of shape, not just of type.** The old
-    // spelling read `[usize; 3]` out of the name on every comparison — free. A pierce key is a
-    // *solve* ([`pierce_meet`] re-derives the point from the name), and the scan below asks for
-    // each node's key on the order of six times, so re-solving per read would multiply the exact
-    // work by that. One pass, one `Vec`.
+    // **The keys are materialized, once.** A three-plane key is free to read out of the name, but a
+    // pierce key is a *solve* ([`pierce_meet`] re-derives the point from the name), and the scan
+    // below asks for each node's key on the order of six times, so re-solving per read would
+    // multiply the exact work by that. One pass, one `Vec`.
     let keys: Vec<CoordKey> = (0..ring.len())
         .map(|i| coord_key(jd, cyls, ring, i))
         .collect::<Result<_, BoolError>>()?;
@@ -792,8 +791,7 @@ fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir)
 /// truth. That normal is parallel to `N_R` but opposes it on a `Reversed` face, which the face's
 /// `frame_sign` corrects.
 ///
-/// The correction *is* the face's stated flag — since the stored-orientation
-/// cutover, `frame_sign` is `Forward`/`Reversed` as a sign, and
+/// The correction *is* the face's stated flag — `frame_sign` is `Forward`/`Reversed` as a sign, and
 /// "`Reversed` ⇔ `n_out = −plane.normal()`" holds by construction rather than by
 /// hope. What keeps it honest is the winding: `collect_planes` winds the witness triangle by the
 /// truth's sense and the face's orientation, and `validate` pins the loop itself as

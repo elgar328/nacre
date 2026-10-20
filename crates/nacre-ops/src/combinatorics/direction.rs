@@ -65,12 +65,10 @@ pub(crate) fn edge_dir(
 /// **An edge's direction of travel, read at one of its ends** — and the only way a direction is
 /// made.
 ///
-/// **`node` is not decoration.** A straight edge's tangent is the same at both ends, so
-/// "the edge's direction" and "the direction *at* this end" have always been one thing and no
-/// caller had to say which it meant. An arc's two ends differ — and worse, a direction taken at a
-/// node the edge does not even touch is a perfectly legal call that returns a confident, wrong
-/// sign. That is not a hypothetical: it is what the first attempt at the arc walk did, and the
-/// `turn == 0` it produced took a measurement to explain.
+/// **`node` is not decoration.** A straight edge's tangent is the same at both ends, so for it "the
+/// edge's direction" and "the direction *at* this end" are one thing. An arc's two ends differ —
+/// and worse, a direction taken at a node the edge does not even touch is a perfectly legal call
+/// that returns a confident, wrong sign.
 ///
 /// So the node comes in and is **checked here, at the one place a direction is born** — not at
 /// `turn`, which would have to become fallible and drag `Result` through two sorts, and not at the
@@ -95,11 +93,10 @@ pub(crate) fn dir_at(
          or the caller paired two edges that do not meet"
     );
     match &e.carrier {
-        // The carried sense first, and only then the endpoints. This used to say the endpoints
-        // *cannot* answer a cut end — that was true while a pierce point had no order, and
-        // [`order_pinned`] has since given it one. What is left is the better reason: the sense is
-        // the **splitter's own statement** about a piece it made, taken once for the whole segment
-        // and handed to every sub-segment, rather than re-derived per piece from two names.
+        // The carried sense first, and only then the endpoints — which can answer a cut end too
+        // ([`order_pinned`] orders a pierce point); the better reason is that the sense is the
+        // **splitter's own statement** about a piece it made, taken once for the whole segment and
+        // handed to every sub-segment, rather than re-derived per piece from two names.
         // The coincident-endpoint check `edge_dir` makes is not lost with it: the split refuses
         // two crossings at one parameter (`CoincidentNodes`) before any sub-segment is built, which
         // is the only way a carried sense can exist at all.
@@ -227,8 +224,7 @@ pub(crate) fn stored_line_dir(
 ///
 /// **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
 /// `angular_order` folds them (`Aliases::union_wall`) and still keeps an honest `UnorderedEdges`
-/// for the pair aliasing did not reach. (The older wording here said "never `0`" — a claim about
-/// the predicate, where the truth is a claim about the two walls.)
+/// for the pair aliasing did not reach.
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
@@ -298,8 +294,8 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
         // The two arcs of one circle meeting at one node are tangent by construction, so the
         // only question left is which way each travels. **They are at one node by construction**
         // too — a fan is built from a single vertex — which is why nothing here has to compare
-        // positions (an earlier attempt used the sign of `s` as a stand-in for "same node", and
-        // two different nodes can share it).
+        // positions (the sign of `s` is no stand-in for "same node": two different nodes can share
+        // it).
         (EdgeDir::Arc(x), EdgeDir::Arc(y)) => x.cyl == y.cyl && x.ccw != y.ccw,
         // One ruling, opposite travel — the straight reading of the arc arm above. Two *different*
         // rulings are parallel lines and share no node, so `(cyl, side)` identity is the "one
@@ -357,19 +353,22 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
 /// assertion is sensitive to that factor**, which is not the same as "no unit fixture reaches a
 /// reversed face".)
 ///
-/// **Three more places read the direction's representation, and they are not this atom.** Each
-/// is a named function beside this one, so the next widening is a `match` the compiler points at
-/// rather than a list a reader has to trust:
+/// **Two more places read the direction's representation, and they are not this atom.** Each is a
+/// named function beside this one, so the next widening is a `match` the compiler points at rather
+/// than a list a reader has to trust:
 /// - [`antiparallel`] — the π pole in `angular_order` ("same wall, opposite sign"), which for arcs
 ///   becomes "same circle, opposite tangent";
-/// - [`parallel_carriers`] — `arrangement::split_at_crossings`' **wall direction families**
-///   (`Wall.dir`), asked of walls that share no point.
+/// - [`ruling_pole`] — a plane-pair line and a ruling that are one line, leaving opposite ways.
 ///
-/// **All three now answer for arcs, and the arity question is settled where it belonged.** For a
-/// straight edge the tangent is the same at both ends, so "the edge's direction" and "the direction
-/// *at* this endpoint" coincide and nothing ever had to tell them apart; an arc's two ends differ.
-/// That is [`dir_at`]'s `node`, not a wider argument list here — the direction arrives already
-/// bound to the end it was read at, so the sites above compare two directions and nothing else.
+/// ([`parallel_carriers`] answers `arrangement::split_at_crossings`' wall direction families from
+/// plane classes alone, not from this representation.)
+///
+/// **[`turn`] and [`antiparallel`] answer for arcs, and the arity question is settled where it
+/// belongs.** For a straight edge the tangent is the same at both ends, so "the edge's direction"
+/// and "the direction *at* this endpoint" coincide and nothing has to tell them apart; an arc's two
+/// ends differ. That is [`dir_at`]'s `node`, not a wider argument list here — the direction arrives
+/// already bound to the end it was read at, so the sites above compare two directions and nothing
+/// else.
 pub(crate) fn turn(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -485,10 +484,9 @@ fn ruling_line_turn(
 /// `turn(line, arc)` with the line's sense factored out — the `sign(d·(x−c))` above, times the two
 /// frame factors.
 ///
-/// **It is a `Result`, and that is deliberate.** The first attempt returned `0` both for
-/// "collinear" and for "the arithmetic ran out", and the callers read `0` as collinear — so a
-/// width failure came back as a *shape* answer and the diagnosis took an extra measurement. The
-/// two are different facts and this says so.
+/// **It is a `Result`, and that is deliberate.** A `0` for both "collinear" and "the arithmetic ran
+/// out" reads to a caller as collinear, so a width failure comes back as a *shape* answer. The two
+/// are different facts and this says so.
 ///
 /// **Which of its factors the corpus actually locks, measured by red probe** — because "the
 /// suite is green" says nothing about a sign no fixture can see:

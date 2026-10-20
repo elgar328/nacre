@@ -330,8 +330,7 @@ fn curved_count(
 
 /// A rim's plane restated with the **axis** as its normal — `[m, −m·(o + t·m)]`, so
 /// [`nacre_exact::quad::plane_side`] at a point of the cylinder is the sign of `z − t` along
-/// the axis. The banded arm built it this way before the cutover; the loops road builds it for
-/// every ⊥ class it meets.
+/// the axis. The loops road builds it for every ⊥ class it meets.
 fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacre_exact::Rat; 4]> {
     let (o, m) = (def.origin(), def.dir());
     let mut d0 = nacre_exact::Rat::from_int(0);
@@ -790,8 +789,8 @@ pub(crate) fn point_in_component(
             }
         }
     }
-    // Every plane pair of this query was blocked: the node abstains. The inner `attempt`
-    // already speaks this language per pair (`Ok(None)`); the boundary now keeps it instead of
-    // dressing the abstention up as an error for the caller to catch and swallow.
+    // Every plane pair of this query was blocked: the node abstains. The inner `attempt` speaks
+    // this language per pair (`Ok(None)`); the boundary keeps it rather than dressing the
+    // abstention up as an error for the caller to catch and swallow.
     Ok(None)
 }

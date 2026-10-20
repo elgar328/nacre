@@ -4,7 +4,7 @@ use super::*;
 /// `Some(+1)` same plane same sense, `Some(-1)` same plane opposite sense, `None` different planes
 /// (or overflow). The comparison is cross-multiplication against a nonzero component — the idiom
 /// [`nacre_exact::quad::plane_plane_cylinder`]'s parallel arm already uses ("coincident iff the
-/// full 4-vectors are proportional"), spelled once here because a *second* caller now needs it.
+/// full 4-vectors are proportional"), spelled once here for this crate.
 pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) -> Option<i8> {
     let zero = nacre_exact::Rat::from_int(0);
     let i = (0..3).find(|&k| a[k] != zero)?;
@@ -106,12 +106,12 @@ pub(crate) fn pierce_name_from_def(
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
 ///
 /// **The argument is easy to misread**,
-/// which is why the two consumers that would answer *silently wrong* now ask instead of assume.
+/// which is why the two consumers that would answer *silently wrong* ask instead of assume.
 /// The relation calls a **zero** vector parallel to everything (`Across`), so a zero normal or
 /// axis answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
 /// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
-/// with no rational description), and the eight inline spellings this will replace already inherit
-/// that convention — but the name reads the convention backwards, so it is written down here.
+/// with no rational description), and the gate asks the same `axis_relation`, so it shares the
+/// convention — but the name reads the convention backwards, so it is written down here.
 pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact::Rat; 3]) -> bool {
     nacre_exact::axis_relation(n, dir) == nacre_exact::AxisRelation::Across
 }
@@ -337,11 +337,9 @@ pub(crate) fn plane_sign_hp(
 /// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of
 /// [`node_coords_rat`] and [`pierce_point`], which each answer for one variant only.
 ///
-/// **It lives here because the `match` does.** Reaching into a [`NodeId`] variant outside this
-/// file (and `reuse`) is what [`three_plane_name`]'s gate forbids, and the first draft of this
-/// function sat in `arrangement` and broke it — with the whole suite green, exactly as that gate's
-/// doc predicts. The two roads it dispatches between are already both here, so this is where the
-/// third question about the same name belongs.
+/// **It lives here because the `match` does.** It dispatches on a [`NodeId`]'s variant exactly as
+/// [`node_point_hp`] beside it does, and the two roads it dispatches between are already both here,
+/// so this is where the third question about the same name belongs.
 ///
 /// `cfg(test)` only while the audit is its one consumer. The seam table's `Vertex` minting
 /// asks for the same pair of roads and will want it in production.
@@ -1208,11 +1206,11 @@ impl Chart2dRat {
     /// leaves `i128` — which after [`primitive_normal`] means the **primitive** normal is itself
     /// past ~2⁶³, not that a spurious factor rode in on it.
     ///
-    /// **The rescale is first, and it is why this is not a behaviour change**:
-    /// `ê_k × n` cannot overflow (its factors are 0 and 1) and parallelism is scale-invariant, so
-    /// `k` is the same index either way, and both axes come out along the same directions — only
-    /// narrower. What the corpus met before was never geometry: an axis-aligned class at an offset
-    /// with a long decimal carries that offset's denominator in its normal, and `e₂` squares it.
+    /// **The rescale is first, and it changes no direction**: `ê_k × n` cannot overflow (its
+    /// factors are 0 and 1) and parallelism is scale-invariant, so `k` is the same index either
+    /// way, and both axes come out along the same directions — only narrower. What the corpus meets
+    /// without it is width, never geometry: an axis-aligned class at an offset with a long decimal
+    /// carries that offset's denominator in its normal, and `e₂` squares it.
     pub(crate) fn of_normal(n: &[nacre_exact::Rat; 3]) -> Option<Self> {
         let zero = nacre_exact::Rat::from_int(0);
         let basis = |k: usize| -> [nacre_exact::Rat; 3] {

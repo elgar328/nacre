@@ -133,10 +133,10 @@ pub(crate) fn every_ray(
 /// **One algorithm, no special cases.** The rings meet the line `P ∩ w` at a set of places; the
 /// two unbounded ends of the line are outside the face and each genuine crossing flips that, so the
 /// line reads **outside / inside / outside / …**. The answer is whether any *inside* stretch
-/// overlaps the open `(u, v)`. Written as branches — "is there a crossing between them", "is it in a
-/// hole" — it was twice wrong, because each branch re-derived a piece of that structure and lost
-/// another. Read as one alternation it also subsumes the endpoint test: an endpoint strictly inside
-/// puts `u` in an inside stretch.
+/// overlaps the open `(u, v)`. Written as branches — "is there a crossing between them", "is it in
+/// a hole" — each branch re-derives a piece of that structure and loses another. Read as one
+/// alternation it also subsumes the endpoint test: an endpoint strictly inside puts `u` in an
+/// inside stretch.
 ///
 /// **Holes come along for free.** All bounds go into one bag: the bounds of a face are disjoint, so
 /// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the

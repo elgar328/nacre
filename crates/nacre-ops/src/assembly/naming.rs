@@ -36,10 +36,9 @@ pub(crate) fn name_result_vertices(
     //
     // A pierce node lies on an edge's carrier line exactly when its plane pair *is* the edge's
     // `{own, wall}` — a name fact, no geometry — and betweenness is `pierce_between`'s exact
-    // half. An edge whose order cannot be formed is left unsplit, which is precisely the
-    // behaviour before this pass (a corner short of a plane, `StraightAngle`); the conservative
-    // arm degrades to the state this pass improves, never to something new. Identity for every non-arc input:
-    // no pierce nodes, no pairs, no rewrite.
+    // half. An edge whose order cannot be formed is left unsplit (a corner short of a plane,
+    // `StraightAngle`): the conservative arm degrades to the unsplit edge, never to something new.
+    // Identity for every non-arc input: no pierce nodes, no pairs, no rewrite.
     let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
     for lf in faces {
         for ring in lf.poly_rings() {

@@ -116,8 +116,8 @@ pub(crate) fn pinch(
 /// (holes and gaps read, `planes::cylinder_gate`'s `line_runs_through_face`). The wedges then lie
 /// against that face and the lateral in one body, and the lens and the far side are in one body
 /// exactly when the result is one. Asking whether a body holds a face on the wall's class and one
-/// on the cylinder's is not the rule: read alone, it convicted the lens and the far side of two
-/// bodies whenever one of them had a face anywhere on the wall's plane.
+/// on the cylinder's is not the rule: read alone, it convicts the lens and the far side of two
+/// bodies whenever one of them has a face anywhere on the wall's plane.
 ///
 /// **Every row here is one this verdict can read.** A row that could not be stated, or whose line
 /// a third plane holds other than as an edge (six regions, not three), was refused by the gate
@@ -208,11 +208,10 @@ pub(crate) fn assemble_fuse_cut(
 ///    the interior, and a point test reads both ends as "on the boundary, not inside" and passes a
 ///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent).
 ///
-/// **One judge, not two.** The endpoint test was here first and is *subsumed* — an endpoint
-/// strictly inside puts that end in an inside stretch of the line, so the segment test answers it
-/// too. Measured across the corpus: 1,696 candidate pairs, the two verdicts agreed on every one,
-/// and no pair was undecidable. Keeping both would have left the same question answered in two
-/// places.
+/// **One judge, not two.** The endpoint test is *subsumed* — an endpoint strictly inside puts that
+/// end in an inside stretch of the line, so the segment test answers it too. Measured across the
+/// corpus: 1,696 candidate pairs, the two verdicts agreed on every one, and no pair was
+/// undecidable. Keeping both would answer the same question in two places.
 ///
 /// **The boxes hold where the truth can be, so they can only over-keep.** They are built from
 /// realized `f64` coordinates, which are rounded; a box used to *reject* a candidate before an

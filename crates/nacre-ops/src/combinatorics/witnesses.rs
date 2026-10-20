@@ -375,8 +375,7 @@ pub(crate) fn corner_probes(
 /// candidate is *on the face* is an exact question: inside the outer (the circle's radial side,
 /// or the mixed ring's parity) and outside every hole.
 ///
-/// `None`: no rational frame, or no candidate on the face — the caller passes the face over, as
-/// it did every holed cap before this was written.
+/// `None`: no rational frame, or no candidate on the face — the caller passes the face over.
 fn holed_cap_witness(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

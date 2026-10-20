@@ -17,9 +17,9 @@ use core::cmp::Ordering;
 /// copied back only whole, and an insertion moves by swaps. A caller may read the slice to name
 /// the failure (`split_at_crossings` asks which classes it holds).
 ///
-/// Up to twenty elements this is the standard's own insertion sort, asking `cmp(tail, prev)` in
-/// the same order, so a short sort asks what it asked before; past that, a top-down merge that
-/// skips a merge whose halves already join in order.
+/// Up to twenty elements this is the standard's own insertion sort, asking `cmp(tail, prev)` in the
+/// same order it does; past that, a top-down merge that skips a merge whose halves already join in
+/// order.
 pub(crate) fn try_sort_by<T: Copy, E, F>(v: &mut [T], mut cmp: F) -> Result<(), E>
 where
     F: FnMut(&T, &T) -> Result<Ordering, E>,

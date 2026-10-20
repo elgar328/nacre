@@ -21,11 +21,11 @@ use nacre_geom::intersect::RingSide;
 /// "no clear ray" once every node hit it.
 /// One boundary of a component's face, with a polygon's edges already derived.
 ///
-/// **It mirrors [`crate::draft::Bound`] on purpose.** The probe used to read a *flattened*
-/// projection — `Vec<Vec<RingEdge>>`, which can only spell a polygon — so every circular and
-/// banded boundary was **dropped on the way in** (`LocalFace::poly_rings`) and the component the
-/// ray counted was not the component. Reading the engine's own boundary vocabulary is what lets
-/// the ray count what is actually there.
+/// **It mirrors [`crate::draft::Bound`] on purpose.** A flattened projection —
+/// `Vec<Vec<RingEdge>>`, which can only spell a polygon — drops every circular and banded boundary
+/// on the way in (`LocalFace::poly_rings`), and the component a ray counts is then not the
+/// component. Reading the engine's own boundary vocabulary is what lets the ray count what is
+/// actually there.
 #[derive(Clone, Debug)]
 pub(crate) enum BoundEdges {
     /// A polygon, its edges carrying their walls (the only shape the ray counts today).
@@ -96,8 +96,7 @@ pub(crate) enum CurvedHit {
 /// by a ring walk and a circle by its radial side; a rational one projects through a chart. Those
 /// genuinely differ — the point arrives differently. But "outer and not any hole, and stop the
 /// moment a bound says *on me*" is the same sentence for both roads, and a sentence written twice
-/// is one that drifts ([[rule-lives-inline-next-door]] is this repository's most-repeated defect).
-/// It was written twice for one commit; this is that commit's correction.
+/// is one that drifts (this repository's most-repeated defect).
 ///
 /// **The hole clause is locked.** Stubbing the loop turns five tests red (measured) — among them
 /// the pin standing flush in a blind round hole (`a_pin_flush_in_a_round_hole_is_one_body`), whose

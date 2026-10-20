@@ -208,9 +208,8 @@ fn a_lateral_faces_reach_and_what_clears_it() {
 /// geometry throughout — nothing below is copied from an engine run.
 ///
 /// Called directly rather than through the gate's ledger: a process-global read by tests
-/// running in parallel attributes one fixture's rows to another
-/// ([[nondeterministic-fixtures-and-instruments]]), and the row builder is a pure function of
-/// the setup, so the honest reading is to hand it that setup.
+/// running in parallel attributes one fixture's rows to another, and the row builder is a pure
+/// function of the setup, so the honest reading is to hand it that setup.
 #[test]
 fn the_tangent_wall_states_itself_exactly() {
     let mut m = Model::new();

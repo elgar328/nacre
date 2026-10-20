@@ -149,7 +149,7 @@ pub(crate) fn check_result_topology(
 /// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because
 /// faces that merely lie on the same plane without touching must each survive on their own".
 ///
-/// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
+/// An enclosed void is its own component — its boundary shares no edge with the outer.
 pub(super) fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {

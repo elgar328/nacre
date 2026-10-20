@@ -23,7 +23,7 @@ pub(crate) fn reconstruct(
     }
     let named = name_result_vertices(jd, seam, faces, cyls);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
-    // itself now stands at the assembly's very end below.
+    // itself stands at the assembly's very end below.
     let Named {
         grouping,
         group_of,
@@ -108,7 +108,7 @@ pub(crate) fn reconstruct(
         }
     }
     // The materialization's failure yields to the deferred stopper like the naming's above; the
-    // raise itself now stands at the assembly's very end below.
+    // raise itself stands at the assembly's very end below.
     if let Err(e) = materialized {
         return Err(deferred.unwrap_or(e));
     }
@@ -369,8 +369,8 @@ pub(crate) fn reconstruct(
         // **name**, canonicalised, and carries no direction: measured over the suite, `world_rat ·
         // m` came out positive on all 436 calls while this sign varied, so reading the name alone
         // would have inverted the winding on 203 of them. The name **with its sense**
-        // ([`crate::planes::plus_t_is_above`]) is the frame, exactly — read off the truth, where the
-        // `f64` plane and axis caches it replaced were two rounded images of it.
+        // ([`crate::planes::plus_t_is_above`]) is the frame, exactly — read off the truth, where
+        // the `f64` plane and axis caches are two rounded images of it.
         let axis_up = |k: usize| -> Result<bool, BoolError> {
             let c = lf.surf.plane();
             let world = planes[c]
@@ -452,9 +452,9 @@ pub(crate) fn reconstruct(
         if lf.flip {
             // Cut's inside-A B-pieces, and a bore's wall: reverse every loop and toggle the
             // orientation below, so the outward normal points into the removed region and
-            // each loop still keeps material on its left. One place for every bound kind —
-            // a curved loop reversed only by its own builder was how the first drilled box
-            // came out with its rim used twice in the same sense (`NonOpposedEdge`).
+            // each loop still keeps material on its left. One place for every bound kind — a curved
+            // loop reversed only by its own builder can come out with its rim used twice in the
+            // same sense (`NonOpposedEdge`).
             for lp in std::iter::once(&mut outer).chain(inner.iter_mut()) {
                 lp.half_edges.reverse();
                 for he in &mut lp.half_edges {
@@ -490,7 +490,7 @@ pub(crate) fn reconstruct(
         }));
     }
     // The face loop's failure yields to the deferred stopper like every stage before it; the
-    // raise itself now stands at the assembly's very end below (an incomplete face set has no
+    // raise itself stands at the assembly's very end below (an incomplete face set has no
     // shell to count, so an assembly failure still stops here).
     if let Err(e) = assembled {
         return Err(deferred.unwrap_or(e));

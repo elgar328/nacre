@@ -168,7 +168,7 @@ impl PointOn {
     /// for it: that one says the point *is* exactly named and only the path lacks a way to carry
     /// it. The rule is `crate::planes::ClassIx::plane`'s — *"a loud panic beats a silently wrong
     /// plane."*
-    /// Measured unexercised over the whole suite and the ignored sweep before it was made loud.
+    /// Measured unexercised over the whole suite and the ignored sweep.
     #[inline]
     pub(crate) fn of(pt: (NodeId, EndPin)) -> PointOn {
         match pt.1 {
@@ -209,9 +209,9 @@ pub(crate) enum OnLine {
     /// `ds` is read when this point is the **second** argument — the formula is
     /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
     /// **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
-    /// derivable and storing it put a 32-byte `NodeId` in a `Vec` the containment loop reads
-    /// millions of times. What it was for — identity against the other side — needs none: a
-    /// plane-pinned point can never *equal* a cylinder-pinned one, so cross-variant identity is
+    /// derivable, and storing it would put a 32-byte `NodeId` in a `Vec` the containment loop reads
+    /// millions of times. What a name would be for — identity against the other side — needs none:
+    /// a plane-pinned point can never *equal* a cylinder-pinned one, so cross-variant identity is
     /// `false` by type, and a pierce point is ordered against this one by its side of `pin`.
     Class { pin: usize, ds: i8 },
     /// A point a cylinder pins: the meet line of its two planes and the root along it.
@@ -264,14 +264,14 @@ impl PierceAt {
 /// A point in the form a comparison's **first** argument needs: an [`OnLine`] plus the Cramer
 /// handle the plane road asks `orient3d` of.
 ///
-/// **The asymmetry is measured, not assumed.** A draft made both sides `Located` for the
-/// symmetry, and the profile refused it: an endpoint's handle is **never read** — the plane road is
+/// **The asymmetry is measured, not assumed.** Making both sides `Located` for the symmetry does
+/// not pay: an endpoint's handle is **never read** — the plane road is
 /// `at_a.orient3d(b.pin) × ds_b` — while `ImplicitPoint` is wide enough (a `OnceCell` of Cramer
-/// parts) that storing two per segment moved `split_at_crossings` from 23.2% of a rotated fold to
+/// parts) that storing two per segment moves `split_at_crossings` from 23.2% of a rotated fold to
 /// 27.2%, and 12.1% of an axis-aligned one to 17.8%. First arguments are built a few times per
-/// wall; second arguments are stored per segment and asked millions of times.
-/// What the symmetry was protecting against survives: `ds` is still built beside the `pin` it
-/// belongs to, by one constructor, so it cannot disagree with the `(p, q)` it was made for.
+/// wall; second arguments are stored per segment and asked millions of times. What the symmetry
+/// would protect holds anyway: `ds` is built beside the `pin` it belongs to, by one constructor, so
+/// it cannot disagree with the `(p, q)` it was made for.
 pub(crate) enum Located<'a> {
     /// **No `ds` here, and that is the point.** The plane road is
     /// `at_a.orient3d(b.pin) × ds_b` — a *first* argument's `dir_sign` is never read. Computing it
@@ -329,7 +329,7 @@ pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
 /// **The point is a parameter, and that is what lets a caller hoist it.** The point asked about
 /// is constant for every edge on one wall, so a caller locates it once per **wall pair** and every
 /// edge there shares its Cramer parts. Taking a bare class instead would cap the sharing at one
-/// edge's two endpoints, which is what a `_pair` predicate did.
+/// edge's two endpoints.
 ///
 /// `None` is a description that could not be formed exactly, never a shape this cannot answer;
 /// the callers turn it into [`crate::RejectReason::WitnessNotRational`].

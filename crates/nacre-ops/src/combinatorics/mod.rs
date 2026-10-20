@@ -9,14 +9,14 @@
 //! appear (`three_planes`' cache) are never the basis of a decision — the truth of
 //! a seam point is its plane triple, as it is for a measured vertex.
 //!
-//! # One `usize`, two meanings — now two tables
+//! # One `usize` would mean two things — so there are two tables
 //!
 //! An arrangement reasons **per plane**, but a solid gives you **faces**: an earlier boolean can
 //! split one geometric plane between two faces (a base's exposed top and the cantilever underside
-//! above it) whose outward normals **oppose**. Both were rows of one `planes` table, so the same
-//! `usize` meant "face" here and "plane" there, and when the two meanings met in one comparison the
-//! answer was wrong *silently* — four times on this branch, most recently as 117748 predicate calls
-//! that read "different plane" for two faces of one plane and answered from rounding noise.
+//! above it) whose outward normals **oppose**. In one table the same `usize` would mean "face" here
+//! and "plane" there, and where the two meanings meet in one comparison the answer would be wrong
+//! *silently* — measured: 117748 predicate calls read "different plane" for two faces of one plane
+//! and answered from rounding noise.
 //!
 //! That is held by the type, not by a naming convention (`fp` / `fc`): the predicates here take
 //! [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
@@ -73,20 +73,19 @@ pub(crate) use witnesses::*;
 
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
 ///
-/// **The fields are private, and that is the whole point.** Every rule that reads this
-/// representation — [`turn`], [`antiparallel`] and [`ruling_pole`] — lives in this module, and
-/// Rust's module privacy is what keeps it that way: a sibling module cannot reach in even by
-/// accident. The node identity needs a `rg` gate (it caught fifteen bypasses) because it is an enum
-/// whose variants are nameable everywhere; here the boundary is a compile error instead of a grep.
+/// **The arc and ruling payloads' fields are private, and that is the point.** Every rule that
+/// reads them — [`turn`], [`antiparallel`] and [`ruling_pole`] — lives in this module, and Rust's
+/// module privacy is what keeps it that way: a sibling module cannot reach in even by accident. A
+/// straight edge's `Line { carrier, sense }` is readable anywhere: it is the pair itself.
 ///
 /// **A test that must read a direction is not a violation — it is an oracle.** It should read
 /// **its own** inputs (the `(carrier, sense)` it built) rather than this type, both because that
 /// keeps the boundary and because an oracle read back out of the value under test is an oracle
 /// derived from its own answer. Do not add accessors for it.
 ///
-/// **`carrier`, not `wall` — and it grew when arcs arrived.** A straight edge's direction is a plane carrier and a sign;
-/// an arc's is a **tangent at one end**, and the two ends differ. So the type is a sum, and the arc
-/// arm carries *everything the comparison needs* — the end as `(line, s)`, the circle's centre, and
+/// **`carrier`, not `wall`.** A straight edge's direction is a plane carrier and a sign; an arc's
+/// is a **tangent at one end**, and the two ends differ. So the type is a sum, and the arc arm
+/// carries *everything the comparison needs* — the end as `(line, s)`, the circle's centre, and
 /// which way the axis points against the class's stored normal — rather than an index a reader
 /// would have to resolve against a table. That is what keeps [`turn`] from needing one.
 #[derive(Clone, Debug)]

@@ -115,10 +115,10 @@ pub(super) fn group_faces(
     // **zero**. `coord_probes` names a
     // point on that boundary instead of a vertex of it.
     let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
-        // Each name once, in first-seen order: a vertex sits on three faces' rings and used
-        // to be offered three times, so an exhausted list cast the same rays three times over
-        // (the corner Commons: six probes for two points). The first deciding probe is the same,
-        // so the answers are.
+        // Each name once, in first-seen order: a vertex sits on three faces' rings, and offered
+        // three times it makes an exhausted list cast the same rays three times over (the corner
+        // Commons: six probes for two points). The first deciding probe is the same, so the answers
+        // are.
         let mut seen = std::collections::HashSet::new();
         let named: Vec<combinatorics::Probe> = combinatorics::three_plane_probes(
             by_comp_lf[c]

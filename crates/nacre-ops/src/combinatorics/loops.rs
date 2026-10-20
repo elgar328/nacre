@@ -61,8 +61,8 @@ pub(crate) fn lateral_cycles(
 /// **A wall is a *carrier*, not a plane index** — the same [`crate::combinatorics::Wall`] the
 /// result side's `Ring` uses, and deliberately not a second vocabulary. An operand can be a
 /// previous boolean's result, and then a face's ring runs along a cylinder: a boss on a wall bites
-/// an arc out of the plate's caps and splits the wall with its rulings. `usize` had nowhere to
-/// write that, which is why the ring was declined there rather than described.
+/// an arc out of the plate's caps and splits the wall with its rulings. `usize` has nowhere to
+/// write that, so a plane-index vocabulary would decline such a ring rather than describe it.
 #[derive(Clone, Debug)]
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
@@ -78,9 +78,7 @@ pub(crate) struct NamedRing {
 /// One loop of a face, in the vocabulary the tracer speaks: a polygon of three-plane
 /// triples, a **full circle** — one rim edge whose far face is a cylinder, named by that
 /// cylinder's class — or, on a lateral face, a **rim** — one closed rim edge whose far face is
-/// a cap plane, named by that plane's class. Neither closed loop has triples, walls or
-/// endpoints; forcing them through `NamedRing` was `RingNaming`'s job before the vocabulary
-/// existed.
+/// a cap plane, named by that plane's class. Neither closed loop has triples, walls or endpoints.
 #[derive(Clone, Debug)]
 pub(crate) enum LoopRing {
     Poly(NamedRing),
@@ -121,19 +119,19 @@ pub(crate) struct FaceLoops {
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
 /// belong to which operand.
 ///
-/// **Both fields are independent of the plane being traced onto.** They were nevertheless
-/// re-derived once per plane class — measured on an 80-fin fold at **2,280,285** calls (one per
-/// face per class) for **13,492** distinct answers, 3.3% of the boolean. Hoisting them is what
+/// **Both fields are independent of the plane being traced onto**, and re-deriving them once per
+/// plane class costs, measured on an 80-fin fold, **2,280,285** calls (one per face per class) for
+/// **13,492** distinct answers, 3.3% of the boolean. Hoisting them is what
 /// makes the tracer a function of a face table rather than of a topology store, and the 169×
 /// reduction comes along for free.
 pub(crate) struct TraceInput {
     /// Each operand's faces: the `planes`-table slot and that face's loops, in the order the
     /// shells list them.
     ///
-    /// **Compact on purpose.** This was a full-length `Vec<FaceLoops>` beside a list of slots — one
-    /// row per table slot whether or not that slot's face was in the input. Pairing the slot with
-    /// its loops makes the length the number of faces actually traced, which is what lets a caller
-    /// hand the tracer a *subset* without the table's size leaking into the cost.
+    /// **Compact on purpose.** Pairing the slot with its loops makes the length the number of faces
+    /// actually traced — a full-length `Vec<FaceLoops>` beside a list of slots would carry a row
+    /// per table slot whether or not its face is in the input — which is what lets a caller hand
+    /// the tracer a *subset* without the table's size leaking into the cost.
     pub faces: [Vec<(usize, FaceLoops)>; 2],
     /// **The population gate's own answer, carried — never re-derived**:
     /// the `(plane class, cylinder class)` pairs the gate let through **without** proving the
@@ -290,18 +288,16 @@ fn loop_triples(
         // accessor panics on a cylinder — "a loud panic beats a silently wrong plane" — and it is
         // right to, for the forty-odd callers whose upstream really does filter. This is the one
         // that has to *do* the filtering, because its input is an **operand**, and an operand can
-        // be a previous boolean's result: a boss on a wall leaves the plate's caps bitten by an
-        // arc and the wall split by two rulings, so those rings run along a cylinder. Both things
-        // read below are plane-only — the carried wall and the vertex's three-plane name — so the
-        // honest answer is to decline the ring rather than to name it wrongly or to abort.
+        // be a previous boolean's result: a boss on a wall leaves the plate's caps bitten by an arc
+        // and the wall split by two rulings, so those rings run along a cylinder.
         //
-        // **A curved neighbour is described now, not declined.** The two questions are
-        // **independent**: edge `i`'s carrier is `b`'s business, and the corner's name is both
-        // neighbours' — a ruling can arrive at this corner and a plane leave it. What this road
-        // lacked was the vertex's restatement into class space ([`pierce_name_from_def`] — the
-        // vertex already carries its own name) and somewhere to write a curved carrier
-        // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the full
-        // circle handled above.
+        // **A curved neighbour is described, not declined.** The two questions are **independent**:
+        // edge `i`'s carrier is `b`'s business, and the corner's name is both neighbours' — a
+        // ruling can arrive at this corner and a plane leave it. What this road needs is the
+        // vertex's restatement into class space ([`pierce_name_from_def`] — the vertex already
+        // carries its own name) and somewhere to write a curved carrier ([`NamedRing`]'s `Wall`).
+        // The curved loops answered before this point are the full circle and the lateral's rim,
+        // handled above.
         //
         // **And the face itself may be the cylinder.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners

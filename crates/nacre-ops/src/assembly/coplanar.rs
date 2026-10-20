@@ -117,10 +117,10 @@ pub(crate) fn unify_coplanar_faces(
         // threaded is a lateral's whole rim (no plane face carries one); spelling it keeps "a rim
         // never merges" an *invariant* rather than an accident of which producer exists.
         //
-        // Merging is a **correctness** matter, not the tidiness this pass once claimed: unmerged,
-        // the corners on the erased boundary stay corners, keep naming a surface the result drops,
-        // and the assembly refuses the whole boolean (`VertexNamesAbsentSurface`, measured on both
-        // the contact fuse and the contact cut).
+        // Merging is a **correctness** matter, not tidiness: unmerged, the corners on the erased
+        // boundary stay corners, keep naming a surface the result drops, and the assembly refuses
+        // the whole boolean (`VertexNamesAbsentSurface`, measured on both the contact fuse and the
+        // contact cut).
         if mem.iter().any(|&fi| {
             kept[fi]
                 .as_ref()
@@ -173,9 +173,9 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wal
 /// An outer bound with the bounds that belong to it — what one merged region looks like before it
 /// becomes a `LocalFace`. The inner side is [`Bound`] rather than [`Ring`] because a member's
 /// **circle** hole rides through the merge (a bore under a plate the merge is unifying); it has
-/// no nodes, so it is carried rather than re-threaded. The outer is a [`Bound`] too since cell
-/// ⑩: a region whose boundary is a member's whole circle (a boss cap whose pin hole the pin's disk
-/// filled) has no ring to thread either, and is stated as the circle it is.
+/// no nodes, so it is carried rather than re-threaded. The outer is a [`Bound`] too: a region whose
+/// boundary is a member's whole circle (a boss cap whose pin hole the pin's disk filled) has no
+/// ring to thread either, and is stated as the circle it is.
 type RegionRings = (Bound, Vec<Bound>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
@@ -253,9 +253,8 @@ fn merge_component(
     if cnt.values().any(|&c| c > 1) {
         return Ok(None);
     }
-    // (The old "carried three or more times is non-manifold" check is gone: it counted
-    // *distinct directed keys* per node pair, of which there are at most two, so it could
-    // never fire — a vacuous guard, measured vacuous by its own construction.)
+    // (A "carried three or more times" check is not here: counting *distinct directed keys* per
+    // node pair, of which there are at most two, it could never fire.)
     //
     // 2b. Second pass, wall-agnostic and **plane-only**: a pencil alias — one line under two
     //     of its planes' names — arrives opposed with two different plane walls and stays
@@ -714,7 +713,7 @@ pub(super) fn dissolve_straight_angles(
     for (&node, ns) in &nbrs {
         // Two edges, and on **every** face it appears in they ride one wall. Two edges are two
         // neighbours — or one neighbour met by both, the ring of two arcs of one circle (a rim a
-        // tool crossed twice): "two neighbours" was the proxy, and it missed that ring.
+        // tool crossed twice), which a "two neighbours" proxy misses.
         if (ns.len() == 2 || ns.len() == 1) && !bent.contains(&node) {
             drop.insert(node);
         }

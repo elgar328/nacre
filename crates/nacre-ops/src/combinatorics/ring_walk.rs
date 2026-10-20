@@ -66,10 +66,10 @@ pub(crate) enum RingWalk {
     /// Every node **and every edge** lies on `q`: a ring in the plane has no flanks to be decided
     /// by.
     ///
-    /// **The second half is new and it is not pedantry.** This used to fire on "every node lies
-    /// on `q`", which a ring with a curved edge satisfies while *leaving* the plane — and one
-    /// consumer ([`every_ray`]) skips such a ring entirely, dropping its crossings from a parity
-    /// count. A ring whose nodes are all on `q` while an edge departs is `Met` instead: the
+    /// **The second half is not pedantry.** "Every node lies on `q`" alone holds for a ring with a
+    /// curved edge that *leaves* the plane, and one consumer ([`every_ray`]) skips an `AllOn` ring
+    /// entirely, so reading such a ring as `AllOn` would drop its crossings from a parity count. A
+    /// ring whose nodes are all on `q` while an edge departs is `Met` instead: the
     /// departure is an off-line entry of its own side ([`EdgeMeet::Departs`]).
     AllOn,
     /// A node whose side this walk cannot answer, an edge between two on-`q` nodes whose meet the
@@ -150,12 +150,9 @@ pub(crate) enum EdgeMeet {
 /// [`every_ray`] casts a parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a
 /// segment against a face; all must answer the same question first — *does the boundary cross
 /// this line here?* — and its two hard parts are a node sitting **on** the line and a **curved**
-/// edge, whose ends do not say how often it crosses. The tracer
-/// had the rule (look at the node's two off-line neighbours: opposite sides is a crossing, equal
-/// sides a touch) inlined in its scan, entangled with naming, alias recording and decline kinds;
-/// the ray caster had no rule at all and threw such a candidate away. Resilience that lives in one
-/// consumer is resilience the other does not have — the same shape the nesting road's retry was in
-/// before `nesting::cell_inside` became its one loop.
+/// edge, whose ends do not say how often it crosses. The rule — look at the node's two off-line
+/// neighbours: opposite sides is a crossing, equal sides a touch — lives here once, for all four;
+/// resilience that lives in one consumer is resilience the others do not have.
 ///
 /// The three that read a plane face's ring along a line call it through [`ClassLine`], which also
 /// says what each crossing's point is; what each does *with* a feature stays its own: the tracer
@@ -345,15 +342,15 @@ pub(crate) fn ring_against_plane(
 /// for two three-plane points on one line. **No coordinate is read and no point is built.**
 ///
 /// **The flanks delete the special case, not the choice of ray.** A ring node *on* the ray's line
-/// leaves no room for "is `X` inside the edge" to decide anything, and this used to abandon the
-/// candidate; with both of `v`'s candidates abandoned the question came back `no_clear_ray`, and a
-/// band of rotation angles died of it. But the node is not ambiguous at all — its two off-line
+/// leaves no room for "is `X` inside the edge" to decide anything; abandoning the candidate there
+/// can leave both of `v`'s candidates abandoned, and then the question is `no_clear_ray` — a band
+/// of rotation angles refused. But the node is not ambiguous at all — its two off-line
 /// **neighbours** settle it: opposite sides and the boundary crossed here, equal sides and it
-/// touched and turned back. That is the rule `trace_transversal_face` has always read a ring with,
-/// and [`ring_against_plane`] is now where both get it.
+/// touched and turned back. That is the rule `trace_transversal_face` reads a ring with, and
+/// [`ring_against_plane`] is where both get it.
 ///
 /// So a `Feature::Run` — one node, or a whole edge of the ring lying on the line — contributes one
-/// crossing iff its flanks differ, and a `Feature::Crossing` contributes one where it always did.
+/// crossing iff its flanks differ, and a `Feature::Crossing` contributes one.
 /// Nothing is counted twice: a crossing is strictly inside its edge, between two stretches off the
 /// line.
 ///
