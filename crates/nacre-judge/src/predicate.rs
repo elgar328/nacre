@@ -184,10 +184,11 @@ pub trait Witness {
     /// implementation; `crate::frame3`'s `shared_base` applies the same convention (a sign flip
     /// on x, exact for every finite `f64`) to the data it derives itself.
     ///
-    /// **And a plane must be derived from the corrected points, never corrected separately** —
-    /// reflecting a triangle and re-deriving its normal differs from reflecting the normal by a
-    /// global sign, because the cross product is a pseudovector, and
-    /// [`Judge::plane_pair_dir_sign`] reads exactly that sign.
+    /// **And a plane is corrected as a plane, not as a reflected normal** — reflecting a
+    /// triangle and re-deriving its normal differs from reflecting the normal alone by a global
+    /// sign, because the cross product is a pseudovector, and [`Judge::plane_pair_dir_sign`] reads
+    /// exactly that sign. [`name_stored_ints`] applies the whole correction to a name's
+    /// coefficients.
     fn base_tri(&self) -> Option<[Point3; 3]>;
 }
 
@@ -219,8 +220,9 @@ pub trait PlaneWitness: Witness {
     /// spelling of it.
     fn frame_sign(&self) -> i8;
 
-    /// The plane's coefficients in the pre-motion frame — **derived from the canonicalised
-    /// `base_tri`**, with all the handedness caveats there.
+    /// The plane's coefficients in the pre-motion frame, **in the handedness
+    /// [`Witness::base_tri`] canonicalises to** (all the caveats there), each an `f64` exactly —
+    /// for a named plane, its name's exact row in that frame ([`NameInts::row`]).
     fn base_coeffs(&self) -> Option<[f64; 4]>;
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
@@ -288,8 +290,8 @@ pub struct NameInts {
 /// witness base is witnessed by its own frame's probes, whose bases are frame-local coordinates.
 /// Then this is `None`, as it is for collinear bases, and every consumer keeps its other road.
 ///
-/// Two consumers, one spelling: [`name_stored_ints`] folds the name by it, and `nacre-ops`'
-/// `BaseFrame` orients its pre-motion coefficients by it.
+/// One spelling: [`name_stored_ints`] folds the name by it, and `nacre-ops`' `collect_planes`
+/// checks it in debug against the truth's own σ.
 pub fn witness_name_sense(
     name: &nacre_exact::PlaneName,
     tri_pt3: &[WitnessPoint; 3],

@@ -305,7 +305,7 @@ pub(crate) fn collect_planes(
     }
     // **Two exact readings of one fact, each checking the other.** σ — the name against the
     // stored orientation — is read on the witness ([`nacre_judge::predicate::witness_name_sense`],
-    // what `name_ints` and `BaseFrame` fold by), and the truth states it outright
+    // what `name_ints` folds by), and the truth states it outright
     // ([`Model::plane_name_sense`]): the witness's order came from the truth, so the two agree,
     // save that a restated row's witness speaks the restating chain's frame, whose reflection
     // reverses the points' turn and not the name. An identity between truths, not a reachable

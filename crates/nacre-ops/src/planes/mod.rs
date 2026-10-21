@@ -318,10 +318,10 @@ pub(crate) struct FaceInfo {
     /// what `BaseFrame` cancels).
     pub(crate) world: Option<WorldName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
-    /// [`WorkingPlane::name_ints`] is folded from and [`BaseFrame`] orients its pre-motion
-    /// coefficients by. `base_rat` above is its narrow projection, kept beside it because the
-    /// narrow consumers (the composed-rotation route, the restatement mirror) read `[Rat; 4]`
-    /// directly.
+    /// [`WorkingPlane::name_ints`] is folded from, which the exact shortcuts read for the world
+    /// and for the pre-motion frame alike. `base_rat` above is its narrow projection, kept beside
+    /// it because the narrow consumers (the composed-rotation route, the restatement mirror) read
+    /// `[Rat; 4]` directly.
     pub(crate) name: Option<nacre_exact::PlaneName>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own truth (`Model::surface`).

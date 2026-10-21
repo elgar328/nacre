@@ -71,9 +71,11 @@ impl Witness for FaceRow {
 }
 
 impl PlaneWitness for WorkingPlane {
-    // `rotated` gates both: a moved plane's name speaks in its pre-motion frame, and the row
+    // `rotated` gates all three: a moved plane's name speaks in its pre-motion frame, and the row
     // is a world description only when nothing moved the plane (the table sets `rotated` from
     // that — including a `Through` plane whose vertices meet in a frame its motion does not name).
+    // A moved plane's row is its base plane instead, already in the handedness the base frame
+    // canonicalises to (`name_stored_ints`).
     fn exact_coeffs(&self) -> Option<[f64; 4]> {
         self.name_ints.as_ref().filter(|_| !self.rotated)?.row
     }
@@ -84,7 +86,7 @@ impl PlaneWitness for WorkingPlane {
         self.frame_sign
     }
     fn base_coeffs(&self) -> Option<[f64; 4]> {
-        self.base.coeffs
+        self.name_ints.as_ref().filter(|_| self.rotated)?.row
     }
     fn name_ints(&self) -> Option<&nacre_judge::predicate::NameInts> {
         self.name_ints.as_ref()

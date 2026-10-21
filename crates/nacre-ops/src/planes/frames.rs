@@ -8,18 +8,20 @@ use super::*;
 /// no direction is read off that cache) — and the only
 /// direction fact anyone needs from it is [`WorkingPlane::frame_sign`]. Everything else here is a
 /// witness: three points known to lie on this plane, used to reconstruct it exactly.
-/// The pre-rotation twin of a witness triangle: its `chain_id`, base points and base plane.
+/// The pre-rotation twin of a witness triangle: its `chain_id` and base points.
 ///
 /// A rigid motion preserves the determinants the predicates take, so a judgement whose inputs all
-/// carry **one** motion can be answered on these instead — exactly, off the toleranced path
-/// entirely. `None` for the base data when a base coordinate is not `f64`-representable, since the
-/// exact predicate takes `f64`; the judgement then stays toleranced (slower, never wrong).
+/// carry **one** motion can be answered on the pre-motion data instead — exactly, off the
+/// toleranced path entirely. The pre-motion *plane* is the class root's name, which
+/// [`WorkingPlane::name_ints`] carries in this frame and handedness; the triangle is for the
+/// questions asked of points (`Judge::planes_coplanar`). `None` for the triangle when a base
+/// coordinate is not `f64`-representable, since the exact predicate takes `f64`; that judgement
+/// then stays toleranced (slower, never wrong).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BaseFrame {
     /// `0` = no motion. Equal only for structurally identical chains.
     pub(crate) chain_id: u64,
     pub(crate) tri: Option<[Point3; 3]>,
-    pub(crate) coeffs: Option<[f64; 4]>,
 }
 
 impl BaseFrame {
@@ -31,15 +33,12 @@ impl BaseFrame {
         Self {
             chain_id: 0,
             tri: None,
-            coeffs: None,
         }
     }
 
     pub(super) fn of(
         tri_pt3: &[WitnessPoint; 3],
         motion: Option<Handle<nacre_topo::MotionNode>>,
-        frame_sign: i8,
-        name: Option<&nacre_exact::PlaneName>,
     ) -> Self {
         // **Identity by handle, not by hash.** A 64-bit `DefaultHasher` digest of the chain would
         // do worse than slow a judgement on a collision: it would make `shared_base` hand the
@@ -54,7 +53,6 @@ impl BaseFrame {
             return Self {
                 chain_id: 0,
                 tri: None,
-                coeffs: None,
             }; // no motion to cancel
         };
         // 0 is reserved for "no motion", so never hand it out as an id.
@@ -66,20 +64,19 @@ impl BaseFrame {
             return Self {
                 chain_id,
                 tri: None,
-                coeffs: None,
             };
         }
         let pt = |p: &WitnessPoint| {
             Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
         };
         let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
-        // **An improper chain is corrected here, on the points, before anything is derived
-        // from them.** An odd number of reflections leaves the base frame with the opposite
-        // handedness, and the shortcuts' whole licence is that the motion preserves the
-        // determinants they take. One more reflection puts the handedness back, and then the base
-        // is related to the moved frame by a *proper* motion again — which is what every consumer
-        // of this struct assumes. A sign flip on x is exact for every finite `f64`, and it is the
-        // same convention `nacre_judge::frame3::shared_base` applies to its own points.
+        // **An improper chain is corrected here, on the points.** An odd number of reflections
+        // leaves the base frame with the opposite handedness, and the shortcuts' whole licence is
+        // that the motion preserves the determinants they take. One more reflection puts the
+        // handedness back, and then the base is related to the moved frame by a *proper* motion
+        // again — which is what every consumer of this struct assumes. A sign flip on x is exact
+        // for every finite `f64`, and it is the same convention `nacre_judge::frame3::shared_base`
+        // applies to its own points and `name_stored_ints` to the name's coefficients.
         let improper = nacre_judge::chain_parity(&tri_pt3[0].chain) < 0;
         let tri = if improper {
             tri.map(|p| {
@@ -89,83 +86,9 @@ impl BaseFrame {
         } else {
             tri
         };
-        // The base plane must carry the **stored** orientation, not the triangle's. A class's
-        // stored normal and its witness triangle's `cross` can oppose — that is exactly what
-        // `frame_sign` records — and `through_points` gives the triangle's. A proper motion
-        // preserves the cross product (`det = 1`), so multiplying by `frame_sign` reproduces the
-        // same relation in the base frame. Without it the exact path would answer with a flipped
-        // sign (the suite fails at once).
-        //
-        // **And it is derived from the corrected triangle, not corrected afterwards.** A plane
-        // is not a bag of points: reflecting a triangle and re-deriving its normal is *not* the
-        // same as reflecting the normal, because the cross product is a pseudovector — the two
-        // differ by a global sign, and `plane_pair_dir_sign` reads exactly that sign. Deriving
-        // last removes the question: the points are corrected once, and everything downstream is
-        // the ordinary derivation from them. (Correcting the plane separately is off by that one
-        // sign; `a_reflected_spelling_takes_the_same_direction_signs` locks it.)
-        // The implicit form `[n, −n·a]` of the plane through `a, b, c`, `n = (b − a) × (c − a)`
-        // un-normalized; a cross whose square underflows spans nothing.
-        let cross = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
-        let derived = (cross.norm_squared() > 0.0).then(|| {
-            let [a, b, c] = cross.as_array();
-            let d = -cross.dot(tri[0] - Point3::origin());
-            let k = f64::from(frame_sign);
-            [a * k, b * k, c * k, d * k]
-        });
-        // **Take the plane from the record, not from the triangle.**
-        //
-        // The derivation above is the two-descriptions problem in miniature: `d` comes out of an
-        // f64 dot product, so the plane it names is not quite the one `tri` lies on — measured, for
-        // 27% of the census's rotated classes and 40% of the fin sweep's. The surface's recorded
-        // pre-motion coefficients (`Model::surface_name`) *are* that plane, exactly, with no
-        // triangle in the derivation at all.
-        //
-        // **And its direction from σ**, which reads the same record against the witness exactly
-        // ([`nacre_judge::predicate::witness_name_sense`] — the fold `name_ints` makes). The record
-        // is canonical, so its sign is a normal form, not this face's orientation; σ is what
-        // relates the two.
-        let exact_coeffs = name.and_then(|name| {
-            let c = *name.narrow()?;
-            let sigma = nacre_judge::predicate::witness_name_sense(name, tri_pt3, frame_sign)?;
-            // **The same correction, applied to the plane.** When the chain is improper the
-            // triangle above was reflected in `x`, so everything derived from it lives in the
-            // reflected base frame — and the record does not. An unreflected plane and a
-            // reflected one are *different planes*, not one plane spelled with the opposite sign,
-            // so the record is reflected too: `x ↦ −x` negates its `x` coefficient (`d` stays —
-            // the mirror is at `0`). Left uncanonical, because the sign is set next: the
-            // reflection reverses the triangle's turn (the cross product is a pseudovector) and
-            // not the record's, so the reflected record faces the reflected triangle's stored
-            // direction exactly when σ says it does not.
-            let zero = nacre_exact::Rat::from_int(0);
-            let (v, s) = if improper {
-                ([zero.checked_sub(c[0])?, c[1], c[2], c[3]], -sigma)
-            } else {
-                (c, sigma)
-            };
-            let v = if s < 0 {
-                [
-                    zero.checked_sub(v[0])?,
-                    zero.checked_sub(v[1])?,
-                    zero.checked_sub(v[2])?,
-                    zero.checked_sub(v[3])?,
-                ]
-            } else {
-                v
-            };
-            // A canonicalized vector is integral; if a coefficient is not an `f64` the realization
-            // is a rounding and buys nothing over the derivation.
-            Some([
-                v[0].as_f64()?,
-                v[1].as_f64()?,
-                v[2].as_f64()?,
-                v[3].as_f64()?,
-            ])
-        });
-        let coeffs = exact_coeffs.or(derived);
         Self {
             chain_id,
             tri: Some(tri),
-            coeffs,
         }
     }
 }
@@ -208,8 +131,9 @@ pub(crate) struct WorkingPlane {
     /// ([`nacre_judge::predicate::name_stored_ints`]), with their `f64` spellings — nearest, and
     /// exact where every integer is an `f64`. `None` when the root's surface has no name.
     ///
-    /// **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
-    /// impl in `tolerant`). The name is derived from the plane's defining points without
+    /// **The exact shortcuts read this and nothing else** (the `PlaneWitness` impl in
+    /// `tolerant`) — an unmoved plane's row for the world, a moved plane's for its pre-motion
+    /// frame. The name is derived from the plane's defining points without
     /// rounding, so a predicate over its row answers for the truth. The plane cache's
     /// coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
     /// that read them and checked them only against each other answered for the rounded model —

@@ -504,14 +504,14 @@ fn t_dir_sign_unrotated_agrees_with_the_input() {
 /// own mirror image. A reflection in `x = 1` sends an integer to an integer, so the second
 /// spelling reproduces the first **bit for bit** — same triangles, same planes,
 /// same everything a predicate reads directly. What differs is only the *provenance*: one
-/// table carries no motion (`chain_id = 0`, so every shortcut declines and the predicates run
-/// on the coordinates), the other carries a reflection (`chain_id ≠ 0`, so the shortcuts fire
-/// and answer in the pre-motion frame).
+/// table carries no motion (`chain_id = 0`, so the shared-motion shortcuts decline and the world
+/// names answer), the other carries a reflection (`chain_id ≠ 0`, so the shared-motion shortcuts
+/// fire and answer in the pre-motion frame, from the base names).
 ///
 /// **That is the whole point.** A reflection is improper, and the shortcuts' licence is that
 /// a motion preserves the determinant they take — which an improper one does not. The base
-/// frame is canonicalised for that (`BaseFrame::of`), and this test is what says the
-/// canonicalisation is right: it puts the shortcut path and the no-shortcut path side by
+/// frame is canonicalised for that (`BaseFrame::of` on the points, `name_stored_ints` on the
+/// names), and this test is what says the canonicalisation is right: it puts the shortcut path and the no-shortcut path side by
 /// side on identical geometry, with no bypass switch in between. A sign that survives one
 /// too many or one too few reflections shows up here as a disagreement.
 fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
@@ -537,23 +537,26 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
         .iter()
         .map(|row| {
             let f = row.plane();
+            let tri_pt3: [WitnessPoint; 3] = std::array::from_fn(|i| {
+                let c = f.tri_pt3[i].coord_approx();
+                let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
+                WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
+                    .mirror(Axis::X, Rat::from_int(1))
+            });
+            // The pre-motion plane's name, as the engine records it for a moved surface: the name
+            // of the base points. The shared-motion shortcuts read a moved plane by its name, so
+            // without one the reflected spelling would offer them nothing to answer from.
+            let name =
+                nacre_exact::plane_name_exact(tri_pt3[0].base, tri_pt3[1].base, tri_pt3[2].base);
             crate::planes::FaceRow::Plane(FaceInfo {
-                // A hand-built table has no surface to have recorded coefficients on, so the base
-                // frame derives as it always did. Filling this by hand is how a fixture and the
-                // engine come to route differently.
-                base_rat: None,
+                base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
                 world: None,
-                name: None,
+                name,
                 surf: f.surf,
                 face: f.face,
                 plane: f.plane,
                 orient_sign: f.orient_sign,
-                tri_pt3: std::array::from_fn(|i| {
-                    let c = f.tri_pt3[i].coord_approx();
-                    let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
-                    WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
-                        .mirror(Axis::X, Rat::from_int(1))
-                }),
+                tri_pt3,
                 motion: Some(leaf),
                 rotated: true,
             })
@@ -590,8 +593,9 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     let pa = dense_planes(&plain, &ca).0;
     let pb = dense_planes(&mirrored, &cb).0;
     assert!(
-        pb.iter()
-            .all(|g| g.base.chain_id != 0 && g.base.tri.is_some() && g.base.coeffs.is_some()),
+        pb.iter().all(|g| g.base.chain_id != 0
+            && g.base.tri.is_some()
+            && g.name_ints.as_ref().is_some_and(|n| n.row.is_some())),
         "the reflected spelling really does offer a base frame — else this proves nothing"
     );
     assert!(
@@ -607,8 +611,9 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 
 /// The three tests above compare a table that *offers* a base frame against one that does
 /// not — and agreement proves nothing unless the base frame is what answered. So corrupt it
-/// and require the answers to **change**: negating a base plane reverses both the side
-/// `indirect_plane_side` reports and the determinant `plane_pair_dir_sign` takes. If either
+/// and require the answers to **change**: negating a base plane (the name's row the base frame
+/// is read by) reverses both the side `indirect_plane_side` reports and the determinant
+/// `plane_pair_dir_sign` takes. If either
 /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
 /// gone vacuous.
 ///
@@ -631,10 +636,15 @@ fn the_base_frame_is_actually_consulted() {
         let [a, b, c] = g.base.tri.unwrap();
         g.base.tri = Some([b, a, c]);
     }
+    let negate = |t: &mut Vec<WorkingPlane>| {
+        for g in t {
+            if let Some(n) = g.name_ints.as_mut() {
+                n.row = n.row.map(|c| c.map(|v| -v));
+            }
+        }
+    };
     let mut negated_planes = two_spellings().1;
-    for g in &mut negated_planes {
-        g.base.coeffs = g.base.coeffs.map(|c| c.map(|v| -v));
-    }
+    negate(&mut negated_planes);
     let mut orient_changed = 0usize;
     let mut tri_changed = 0usize;
     for p in 0..n {
@@ -669,9 +679,7 @@ fn the_base_frame_is_actually_consulted() {
     );
 
     let mut negated = two_spellings().1;
-    for g in &mut negated {
-        g.base.coeffs = g.base.coeffs.map(|c| c.map(|v| -v));
-    }
+    negate(&mut negated);
     let mut dir_changed = 0usize;
     for p in 0..n {
         for a in 0..n {
