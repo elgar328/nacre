@@ -13,6 +13,10 @@ mod fixtures;
 mod comparators;
 #[path = "instruments/disallowed.rs"]
 mod disallowed;
+#[path = "instruments/history_words.rs"]
+mod history_words;
+#[path = "instruments/lex.rs"]
+mod lex;
 #[path = "instruments/manifest.rs"]
 mod manifest;
 #[path = "instruments/markers.rs"]

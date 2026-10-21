@@ -43,7 +43,7 @@ fn marked(line: &str) -> bool {
 }
 
 /// Every file the check reads, as `(path relative to the repository root, path)`, sorted.
-fn prose_files() -> Vec<(String, PathBuf)> {
+pub(crate) fn prose_files() -> Vec<(String, PathBuf)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)

@@ -149,50 +149,10 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ),
 ];
 
-/// `t` with its string literals emptied and any `//` comment cut, so a lint named in a reason,
-/// a message or a comment is not an exemption. A char literal (`'"'`, `'\"'`) is kept whole, so
-/// its quote does not open a string that would swallow the rest of the line.
+/// `t` with its string literals emptied and any `//` comment cut ([`crate::lex::split_line`]), so a
+/// lint named in a reason, a message or a comment is not an exemption.
 fn code_of(t: &str) -> String {
-    let chars: Vec<char> = t.chars().collect();
-    let mut out = String::new();
-    let (mut in_str, mut escaped) = (false, false);
-    let mut k = 0;
-    while k < chars.len() {
-        let c = chars[k];
-        k += 1;
-        if in_str {
-            match (escaped, c) {
-                (true, _) => escaped = false,
-                (false, '\\') => escaped = true,
-                (false, '"') => {
-                    in_str = false;
-                    out.push('"');
-                }
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '\'' => {
-                // `'x'` or `'\x'`: copy it through; anything else (a lifetime) is one char.
-                let len = match chars.get(k..) {
-                    Some([x, '\'', ..]) if *x != '\\' => 2,
-                    Some(['\\', _, '\'', ..]) => 3,
-                    _ => 0,
-                };
-                out.push(c);
-                out.extend(&chars[k..k + len]);
-                k += len;
-            }
-            '"' => {
-                in_str = true;
-                out.push('"');
-            }
-            '/' if chars.get(k) == Some(&'/') => break,
-            _ => out.push(c),
-        }
-    }
-    out
+    crate::lex::split_line(t).0
 }
 
 /// Whether `name` occurs in `code` as a whole path (not the tail or head of a longer one).
