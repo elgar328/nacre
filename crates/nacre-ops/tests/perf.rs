@@ -6,7 +6,7 @@
 //! answers did not change.
 //!
 //! **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
-//! Measured in a *debug* build, this file's two tests would take **1673 of the sweep's 1802 seconds
+//! Measured in a *debug* build, this file's two wall-clock tests would take **1673 of the sweep's 1802 seconds
 //! — 93%** — and debug numbers are not the ones anyone wants. `--release` turns 28 minutes into 4,
 //! and the gate skips them by name (`overview.md` carries the command).
 //!
