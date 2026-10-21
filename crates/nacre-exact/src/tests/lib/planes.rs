@@ -436,6 +436,138 @@ mod int_predicates {
     }
 }
 
+/// The `f64` filters on **rounded** inputs: each coefficient the nearest `f64` of an integer too
+/// wide for one, and a `Some` must be the integers' sign.
+///
+/// A random sweep of wide integers almost never lands on a tie, and a tie is exactly where a filter
+/// that forgot its inputs were rounded answers wrongly — so the ties are built. Every row is a small
+/// direction (`-9..=9`) times a per-row scale of 54–124 bits, which cannot move any answer, and then
+/// `d` nudged by `-1..=1`, which moves the true value by far less than the rounding moved the
+/// inputs. The ties come from the small directions: a fourth plane that is a combination of the
+/// three (it passes through their point), and two triples that both hold an axis plane `x = k`
+/// under different scales (their points share that coordinate). Measured: with the filters'
+/// constants set to `0` — answer whenever the `f64` value is nonzero — all three go red.
+/// At the exact-input bounds (`5·U`, `9·U`) they stay green: the rounding these ties carry stays
+/// inside even those, so this lock catches a filter that answers ties it cannot see, and the
+/// constants' margin over the input term rests on the derivation in the filters' docs.
+mod rounded_filters {
+    use super::*;
+    use nacre_predicates::{
+        ThreePlane, det3_sign_filter, indirect_cmp_coord_filter, indirect_plane_side_filter,
+    };
+    use num_bigint::BigInt;
+
+    /// How one row is scaled and nudged: bits of the scale, its low word, the nudge on `d`.
+    type Wide = (u32, u64, i32);
+
+    fn widen() -> impl Strategy<Value = Wide> {
+        (53u32..=123, any::<u64>(), -1i32..=1)
+    }
+
+    fn dir() -> impl Strategy<Value = [i32; 4]> {
+        proptest::array::uniform4(-9i32..=9)
+    }
+
+    /// The exact row: a small direction times a scale of `bits + 1` bits, then `d` nudged.
+    fn wide(c: [i32; 4], (bits, low, nudge): Wide) -> [BigInt; 4] {
+        let scale = (BigInt::from(1) << bits) + BigInt::from(low);
+        let mut r = c.map(|x| BigInt::from(x) * &scale);
+        r[3] += nudge;
+        r
+    }
+
+    fn near(r: &[BigInt; 4]) -> [f64; 4] {
+        r.each_ref().map(|x| {
+            crate::nearest_f64_big(x, &BigInt::from(1))
+                .expect("in range")
+                .0
+        })
+    }
+
+    fn rows(p: &[[BigInt; 4]; 3]) -> [&[BigInt; 4]; 3] {
+        [&p[0], &p[1], &p[2]]
+    }
+
+    proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+            proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+        ))]
+        #[test]
+        fn a_rounded_plane_side_is_answered_only_when_the_integers_agree(
+            p in proptest::array::uniform3(dir()),
+            pw in proptest::array::uniform3(widen()),
+            j in dir(),
+            jw in widen(),
+            through in any::<bool>(),
+        ) {
+            let bp: [[BigInt; 4]; 3] = core::array::from_fn(|k| wide(p[k], pw[k]));
+            prop_assume!(int_dir_sign(rows(&bp)) != 0);
+            // `p₀ − 2·p₁ + p₂` vanishes at the three planes' point, so before the nudge it is a
+            // plane through it: a tie.
+            let j = if through {
+                core::array::from_fn(|i| p[0][i] - 2 * p[1][i] + p[2][i])
+            } else {
+                j
+            };
+            let bj = wide(j, jw);
+            if let Some(s) = indirect_plane_side_filter(&ThreePlane(bp.each_ref().map(near)), near(&bj)) {
+                prop_assert_eq!(s, int_plane_side(rows(&bp), &bj));
+            }
+        }
+
+        #[test]
+        fn a_rounded_cmp_coord_is_answered_only_when_the_integers_agree(
+            a in proptest::array::uniform3(dir()),
+            aw in proptest::array::uniform3(widen()),
+            b in proptest::array::uniform3(dir()),
+            bw in proptest::array::uniform3(widen()),
+            k in -9i32..=9,
+            tie in any::<bool>(),
+            axis in 0usize..3,
+        ) {
+            let (mut a, mut b) = (a, b);
+            // Both triples hold the plane `x_axis = −k`, each under its own scale: their points
+            // share that coordinate before the nudges.
+            if tie {
+                let mut plane = [0; 4];
+                plane[axis] = 1;
+                plane[3] = k;
+                a[0] = plane;
+                b[0] = plane;
+            }
+            let ba: [[BigInt; 4]; 3] = core::array::from_fn(|i| wide(a[i], aw[i]));
+            let bb: [[BigInt; 4]; 3] = core::array::from_fn(|i| wide(b[i], bw[i]));
+            prop_assume!(int_dir_sign(rows(&ba)) != 0 && int_dir_sign(rows(&bb)) != 0);
+            let fa = ThreePlane(ba.each_ref().map(near));
+            let fb = ThreePlane(bb.each_ref().map(near));
+            if let Some(s) = indirect_cmp_coord_filter(&fa, &fb, axis) {
+                prop_assert_eq!(s, int_cmp_coord(rows(&ba), rows(&bb), axis));
+            }
+        }
+
+        #[test]
+        fn a_rounded_direction_is_answered_only_when_the_integers_agree(
+            p in proptest::array::uniform3(dir()),
+            pw in proptest::array::uniform3(widen()),
+            dependent in any::<bool>(),
+        ) {
+            let mut p = p;
+            // A third normal in the span of the first two: a zero determinant.
+            if dependent {
+                p[2] = core::array::from_fn(|i| p[0][i] + p[1][i]);
+            }
+            let bp: [[BigInt; 4]; 3] = core::array::from_fn(|k| wide(p[k], pw[k]));
+            let m = bp.each_ref().map(|r| {
+                let n = near(r);
+                [n[0], n[1], n[2]]
+            });
+            if let Some(s) = det3_sign_filter(m) {
+                prop_assert_eq!(s, int_dir_sign(rows(&bp)));
+            }
+        }
+    }
+}
+
 /// The projection lands **exactly on** the plane it came from, tilted ones included — checked
 /// as `n·p + d == 0` in rationals, not within a tolerance.
 /// A plane pushed along its own normal lands where the distance says — checked by taking the

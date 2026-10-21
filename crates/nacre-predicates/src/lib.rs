@@ -184,6 +184,22 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
     sgn(orient3d(m[0], m[1], m[2], [0.0; 3]))
 }
 
+/// The sign of the 3×3 determinant of `m` when `f64` arithmetic proves it, `None` when it cannot.
+///
+/// [`det3_sign`]'s adaptive predicate is exact *for its inputs*, so handed rounded inputs it
+/// answers exactly for the rounded matrix. This is the filter for when the inputs are each the
+/// nearest `f64` of an exact integer, under the accounting [`indirect_cmp_coord_filter`] states:
+/// `≈ 5u` for the evaluation, `+ 3u` for the rounded inputs, against `32·U` — a 4× margin.
+#[inline]
+pub fn det3_sign_filter(m: [[f64; 3]; 3]) -> Option<i8> {
+    let (v, mag) = (det3_val(m), det3_mag(m));
+    // An overflow to infinity makes the bound meaningless.
+    if !v.is_finite() || !mag.is_finite() {
+        return None;
+    }
+    (v.abs() > 32.0 * U * mag).then(|| sgn(v))
+}
+
 /// Three planes, each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`. When they
 /// meet in a single point that point is *implicit* — the indirect predicates
 /// decide signs about it without ever materializing its (generally irrational)
@@ -257,14 +273,25 @@ fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
     na[axis].mul(&db).sub(&nb[axis].mul(&da)).sign() * da.sign() * db.sign()
 }
 
-/// The floating-point filter for [`indirect_cmp_coord`] — the same construction as
-/// [`indirect_plane_side_filter`]. Both points' `D` and numerators are determinants (`≈ 5u`), and
-/// `V = Na·Db − Nb·Da` multiplies two of them and subtracts:
+/// The floating-point filter for [`indirect_cmp_coord`]: the sign when `f64` arithmetic proves it,
+/// `None` when it cannot — the same construction as [`indirect_plane_side_filter`]. Both points'
+/// `D` and numerators are determinants (`≈ 5u`), and `V = Na·Db − Nb·Da` multiplies two of them
+/// and subtracts.
 ///
-/// | value | derived εₓ | constant used | margin |
-/// |---|---|---|---|
-/// | `Da`, `Db` | `≈ 5u` | `32·U` | 6× |
-/// | `V = Na·Db − Nb·Da` | `≈ 5u + 5u + u + u = 12u` | `64·U` | 5× |
+/// **The inputs may be rounded** — each the nearest `f64` of an exact integer (a plane name too
+/// wide for one `f64`); a `Some` is then the sign for the exact integers. Rounding a degree-`k`
+/// monomial's `k` inputs moves it by at most `γₖ` of its magnitude (Higham §3.1, the same
+/// accounting as CGAL's static filter error), so the bound gains the column on the right; the
+/// magnitudes are taken of the rounded inputs, which shrinks them by `(1 − u)ᵏ` at most and is
+/// inside the margin. Integer inputs cannot underflow, and an overflow is caught below.
+///
+/// | value | derived εₓ, exact inputs | + rounded inputs | constant used | margin |
+/// |---|---|---|---|---|
+/// | `Da`, `Db` | `≈ 5u` | `+ 3u = 8u` | `32·U` | 4× |
+/// | `V = Na·Db − Nb·Da` | `≈ 5u + 5u + u + u = 12u` | `+ 6u = 18u` | `64·U` | 3.5× |
+///
+/// An exact zero is never answered: no `f64` evaluation separates it from zero, rounded inputs or
+/// not, so the caller's exact route owns every tie.
 ///
 /// **Why it exists** (measured): the exact route builds two Cramer expansions and a degree-six
 /// product on every call — `≈ 2.7 µs`, against the filtered certified route's `≈ 1 µs` — and it
@@ -272,7 +299,7 @@ fn indirect_cmp_coord_exact(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
 /// route would be the largest single judging cost of the axis-aligned fold (460 ms of about 1 s,
 /// one thread).
 #[inline]
-fn indirect_cmp_coord_filter(a: &ThreePlane, b: &ThreePlane, axis: usize) -> Option<i8> {
+pub fn indirect_cmp_coord_filter(a: &ThreePlane, b: &ThreePlane, axis: usize) -> Option<i8> {
     let (na, da, na_mag, da_mag) = cramer_val(a);
     let (nb, db, nb_mag, db_mag) = cramer_val(b);
     let v = na[axis] * db - nb[axis] * da;
@@ -381,21 +408,21 @@ fn indirect_plane_side_exact(p: &ThreePlane, c: [f64; 4]) -> i8 {
     side.sign() * d.sign()
 }
 
-/// The floating-point filter for [`indirect_plane_side`] — the same shape as
-/// [`indirect_cmp_coord_filter`]: `D` and the numerators are the same
-/// determinants (`≈ 5u` each), and `S = c·N + c₃·D` adds one product and three additions on exact
-/// `c`:
+/// The floating-point filter for [`indirect_plane_side`]: the sign when `f64` arithmetic proves
+/// it, `None` when it cannot — the same shape as [`indirect_cmp_coord_filter`], whose note on
+/// **rounded inputs** holds here verbatim. `D` and the numerators are the same determinants
+/// (`≈ 5u` each), and `S = c·N + c₃·D` adds one product and three additions:
 ///
-/// | value | derived εₓ | constant used | margin |
-/// |---|---|---|---|
-/// | `D` | `≈ 5u` | `32·U` | 6× |
-/// | `S = c·N + c₃·D` | `≈ 5u + u + 3u = 9u` | `64·U` | 7× |
+/// | value | derived εₓ, exact inputs | + rounded inputs | constant used | margin |
+/// |---|---|---|---|---|
+/// | `D` | `≈ 5u` | `+ 3u = 8u` | `32·U` | 4× |
+/// | `S = c·N + c₃·D` | `≈ 5u + u + 3u = 9u` | `+ 4u = 13u` | `64·U` | 4.9× |
 ///
 /// **Why it exists** (measured): an unmoved plane's `orient3d` asks its fourth plane by
 /// coefficients, and without the filter every such call builds expansions — the axis-aligned fold
 /// would run **14×** slower; with it, that fold's calls decide here rather than in the expansions.
 #[inline]
-fn indirect_plane_side_filter(p: &ThreePlane, c: [f64; 4]) -> Option<i8> {
+pub fn indirect_plane_side_filter(p: &ThreePlane, c: [f64; 4]) -> Option<i8> {
     let (num, d, num_mag, d_mag) = cramer_val(p);
     let side = c[0] * num[0] + c[1] * num[1] + c[2] * num[2] + c[3] * d;
     let side_mag = c[0].abs() * num_mag[0]
