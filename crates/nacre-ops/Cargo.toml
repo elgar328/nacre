@@ -80,7 +80,7 @@ nacre-step = { path = "../nacre-step" }
 nacre-tess = { path = "../nacre-tess", features = ["test-util"] }
 # Boolean tests diff result volumes against the analytic mass properties.
 nacre-props = { path = "../nacre-props" }
-# The wide-name rescue tests hand-build synthetic `PlaneName::Wide` fixtures (production code
+# The name-integer road tests hand-build synthetic `PlaneName` fixtures (production code
 # reaches BigInt only through nacre-judge's types).
 num-bigint = "0.4"
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

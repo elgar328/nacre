@@ -303,7 +303,7 @@ mod name_from_meets {
 ///   not test `f(x)` against `f(x)`;
 /// - **negation as the direction negative-control** — exactly the direction-sensitive
 ///   slots flip (`plane_side`: `j` only; `cmp_coord`: none; `dir_sign`: every row), which
-///   is the per-slot σ analysis the judging layer's rescue relies on.
+///   is the per-slot σ analysis the judging layer's name-integer road relies on.
 mod int_predicates {
     use super::*;
     use nacre_predicates::{ThreePlane, det3_sign, indirect_cmp_coord, indirect_plane_side};

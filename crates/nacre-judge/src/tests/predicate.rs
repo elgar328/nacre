@@ -460,13 +460,17 @@ fn frame_sign_from_coeffs_and_tri() {
     assert_eq!(flipped.frame_sign(), -1);
 }
 
-/// **A name's `f64` row stands exactly when every integer it holds fits 53 bits.** The row is
-/// what an unmoved plane's exact shortcuts read, so a row that stood for a wider integer would
-/// hand the predicates a value that is not the name — or, for a power of two that *is*
-/// representable, a magnitude their `Expansion` products overflow on.
+/// **A name's exact `f64` row stands where every integer it holds *is* an `f64` within 127
+/// bits; its nearest spelling stands wherever the integers are in the `f64` range.** The exact
+/// row is what an unmoved plane's exact shortcuts read, so a row that stood for an integer no
+/// `f64` holds would hand the predicates a value that is not the name. A power of two past 53
+/// bits *is* an `f64` and stands; the 127-bit cap keeps the expansions' degree-6 products in
+/// range, so a wide name has no exact row even where its integers are `f64`s. The nearest
+/// spelling is what the name-integer road's filters read, and it fails only past the `f64` range.
 #[test]
-fn a_names_f64_row_stands_only_where_every_integer_fits_53_bits() {
+fn a_names_exact_row_stands_only_where_every_integer_is_an_f64() {
     use super::{WitnessPoint, name_stored_ints};
+    use num_bigint::BigInt;
     let r = |n: i128, d: i128| Rat::new(n, d).expect("rational");
     let ints = |pts: [[Rat; 3]; 3]| {
         let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).expect("a plane");
@@ -485,16 +489,21 @@ fn a_names_f64_row_stands_only_where_every_integer_fits_53_bits() {
         tenth.normal.map(|n| n.map(f64::abs)),
         Some([0.0, 0.0, 10.0])
     );
-    // `a·x − z = 0` for `a = 2⁵³ + 1` (not an `f64`) and `a = 2⁶⁰` (an `f64`, too wide anyway).
-    for a in [(1i128 << 53) + 1, 1i128 << 60] {
-        let wide = ints([
+    assert_eq!(tenth.near, tenth.row);
+    // `a·x − z = 0`: `a = 2⁵³ + 1` is no `f64` — no exact row, a nearest one; `a = 2⁶⁰` is.
+    let slope = |a: i128| {
+        ints([
             [r(0, 1), r(0, 1), r(0, 1)],
             [r(0, 1), r(1, 1), r(0, 1)],
             [r(1, 1), r(0, 1), r(a, 1)],
-        ]);
-        assert_eq!((wide.row, wide.normal), (None, None), "a = {a}");
-    }
-    // `z = 2⁶⁰ + 1`: only `d` is wide, so the normal stands and the row does not.
+        ])
+    };
+    let odd = slope((1i128 << 53) + 1);
+    assert_eq!((odd.row, odd.normal), (None, None), "2⁵³ + 1 is no f64");
+    assert!(odd.near.is_some() && odd.near_normal.is_some());
+    let pow = slope(1i128 << 60);
+    assert!(pow.row.is_some() && pow.normal.is_some(), "2⁶⁰ is an f64");
+    // `z = 2⁶⁰ + 1`: only `d` is no `f64`, so the normal stands and the row does not.
     let far = (1i128 << 60) + 1;
     let high = ints([
         [r(0, 1), r(0, 1), r(far, 1)],
@@ -503,4 +512,25 @@ fn a_names_f64_row_stands_only_where_every_integer_fits_53_bits() {
     ]);
     assert_eq!(high.row, None);
     assert_eq!(high.normal.map(|n| n.map(f64::abs)), Some([0.0, 0.0, 1.0]));
+    // Wide names: the plane `x = 1` spelled with a scale of `2¹³⁰` or `2¹¹⁰⁰` (the predicates are
+    // row-linear, so a scale is still that plane's name). `2¹³⁰` is an `f64` but past the cap, so
+    // it has a nearest spelling and no exact row; `2¹¹⁰⁰` is past the `f64` range and has neither.
+    let scaled = |e: u32| {
+        let k = BigInt::from(1) << e;
+        let name = nacre_exact::PlaneName::Wide([k.clone(), BigInt::from(0), BigInt::from(0), -k]);
+        let on_x1 = [
+            [r(1, 1), r(0, 1), r(0, 1)],
+            [r(1, 1), r(1, 1), r(0, 1)],
+            [r(1, 1), r(0, 1), r(1, 1)],
+        ];
+        name_stored_ints(Some(&name), &on_x1.map(WitnessPoint::at), 1).expect("folded")
+    };
+    let wide = scaled(130);
+    assert_eq!((wide.row, wide.normal), (None, None), "past the cap");
+    assert!(
+        wide.near.is_some() && wide.near_normal.is_some(),
+        "inside the f64 range"
+    );
+    let huge = scaled(1100);
+    assert_eq!((huge.near, huge.near_normal, huge.row), (None, None, None));
 }

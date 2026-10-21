@@ -25,7 +25,8 @@ use crate::kernel::frame3::{
 use nacre_exact::{Orient, Rat};
 use nacre_math::Point3;
 use nacre_predicates::{
-    ThreePlane, det3_sign, indirect_cmp_coord, indirect_plane_side, orient2d, orient3d,
+    ThreePlane, det3_sign, det3_sign_filter, indirect_cmp_coord, indirect_cmp_coord_filter,
+    indirect_plane_side, indirect_plane_side_filter, orient2d, orient3d,
 };
 use num_bigint::BigInt;
 
@@ -197,8 +198,9 @@ pub trait Witness {
 /// only [`Witness`].
 pub trait PlaneWitness: Witness {
     /// **The plane itself, in `f64`** — its canonical name (derived from its defining points
-    /// without rounding) as a row, for an unmoved plane whose name fits 53 bits a coefficient;
-    /// `None` for a rotated plane, an unnamed one, or a wider name.
+    /// without rounding) as a row, for an unmoved plane whose every coefficient *is* an `f64`
+    /// ([`NameInts::row`]); `None` for a rotated plane, an unnamed one, or a name no `f64` row
+    /// spells (which [`Judge`]'s name-integer road answers instead).
     ///
     /// No other description is consulted: the face corners' `f64` caches need not lie on this
     /// plane (`z = 0.1` is not `fl(0.1)`), so a predicate asks every plane of an exact question by
@@ -223,21 +225,20 @@ pub trait PlaneWitness: Witness {
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
     /// [`name_stored_ints`] where the witness is constructed, `None` when the plane has no name
-    /// (or the fold declined). It serves twice. Its `f64` row is what an implementor hands out as
-    /// [`Self::exact_coeffs`] for an unmoved plane. And it gives a *wide* name — no `f64` row —
-    /// its exact shortcuts back through the BigInt rescue: [`Witness::base_coeffs_rat`] and
-    /// [`Self::base_coeffs`] read `PlaneName::narrow()` or `f64`, so without it a wide name answers
-    /// `None` everywhere and the judgement climbs — **2.0×** the
-    /// escalations (240 against 475; the confound
-    /// `wide_datum_cost.rs` states — the two arms pick different vertex triples — applies to
-    /// either number, so read it as "several times", not as a coefficient).
+    /// (or the fold declined). It serves twice. Its exact `f64` row is what an implementor hands
+    /// out as [`Self::exact_coeffs`] for an unmoved plane. And every name, whatever its width, is
+    /// what [`Judge`]'s **name-integer road** reads where no exact row stands: an `f64` filter over the
+    /// integers' nearest `f64`s, then the integers themselves. Without it such a plane's
+    /// judgement climbs — measured for wide names at **2.0×** the escalations (240 against 475;
+    /// the confound `wide_datum_cost.rs` states — the two arms pick different vertex triples —
+    /// applies to either number, so read it as "several times", not as a coefficient).
     fn name_ints(&self) -> Option<&NameInts> {
         None
     }
 }
 
 /// A plane's canonical name integers, **oriented as the stored coefficients are** — the exact
-/// integer description of the plane, any width.
+/// integer description of the plane, any width — with their `f64` spellings.
 ///
 /// The canonical name deliberately carries no direction (first nonzero coefficient positive),
 /// and the stored plane may hold it either way round — not a dormant case: a boss on its plate
@@ -248,39 +249,29 @@ pub trait PlaneWitness: Witness {
 /// `frame_sign` bridges apply verbatim.
 #[derive(Clone, Debug)]
 pub struct NameInts {
-    /// The integer coefficients, in the frame the name speaks (the world when unmoved, the
-    /// pre-motion frame when moved), sign-folded to the stored orientation.
+    /// The integer coefficients, in the frame the name speaks — the world when unmoved, the
+    /// pre-motion frame when moved — sign-folded to the stored orientation, and **in the
+    /// handedness [`Witness::base_tri`] canonicalises to**: on an improper chain the row is the
+    /// reflected plane's (see [`name_stored_ints`]), so a question whose planes share one motion
+    /// asks these rows exactly as an unmoved question asks its world rows.
     pub ints: [BigInt; 4],
-    /// Whether the canonical name needed the wide vessel — the rescue gate reads this: a
-    /// question whose planes are all narrow keeps its existing routes (behavior-identical),
-    /// so the corpus (`wide_planes` 0) is untouched.
-    pub wide: bool,
-    /// The same row in `f64`, `Some` only when **every** coefficient fits 53 bits — then each `f64`
-    /// *is* its integer, and a predicate over the row answers for the plane the defining points
-    /// span (the name is derived from them without rounding). This is what an unmoved plane's
-    /// exact shortcuts read ([`PlaneWitness::exact_coeffs`]). A wider integer keeps the BigInt
-    /// rescue: an `Expansion` over it overflows in `cmp_coord`'s degree-6 products, and
-    /// `nacre_exact::nearest_f64_big` alone would call `2⁶⁰` exact.
+    /// Each integer's **nearest** `f64` — what the name-integer road's filters read
+    /// ([`nacre_predicates::indirect_plane_side_filter`] and its siblings answer for the integers
+    /// from their rounded spellings). `None` when an integer is beyond the `f64` range.
+    pub near: Option<[f64; 4]>,
+    /// The first three under the same rule — what a direction question reads, which stands where
+    /// `d` alone is beyond the range.
+    pub near_normal: Option<[f64; 3]>,
+    /// The same row where every `f64` **is** its integer: each coefficient an `f64` exactly and
+    /// within 127 bits. Then a predicate over the row answers for the plane the defining points
+    /// span (the name is derived from them without rounding), through its own exact expansions —
+    /// this is what an unmoved plane's exact shortcuts read ([`PlaneWitness::exact_coeffs`]). The
+    /// width cap is the expansions' range: a degree-6 product of 127-bit integers is about
+    /// `2⁷⁶²`, inside the `f64` exponent; a wide name's integers are not.
     pub row: Option<[f64; 4]>,
     /// The first three under the same rule — what a direction question reads, which stands where
-    /// `d` alone is too wide.
+    /// `d` alone is not an `f64`.
     pub normal: Option<[f64; 3]>,
-}
-
-impl NameInts {
-    /// The sign of one coefficient: `+1`, `0`, `-1`.
-    ///
-    /// A door, so a consumer above this crate can ask which way the stored-oriented name points
-    /// without touching `BigInt`. `nacre-ops` reads it to check its own canonical→stored turn
-    /// against this exact one; giving it the integers instead would put an arbitrary-precision
-    /// type into a crate that deliberately has none.
-    pub fn coeff_sign(&self, k: usize) -> i8 {
-        match self.ints[k].sign() {
-            num_bigint::Sign::Plus => 1,
-            num_bigint::Sign::Minus => -1,
-            num_bigint::Sign::NoSign => 0,
-        }
-    }
 }
 
 /// **σ — how a plane's canonical name relates to its stored orientation**, read on its witness:
@@ -317,10 +308,20 @@ pub fn witness_name_sense(
 }
 
 /// Fold a plane's canonical name to the **stored orientation** — the one-time σ computation
-/// [`PlaneWitness::name_ints`] carries, σ from [`witness_name_sense`].
+/// [`PlaneWitness::name_ints`] carries, σ from [`witness_name_sense`] — and to the canonical
+/// handedness of its frame.
+///
+/// **The parity correction is on the coefficients, and it is not "negate x".** The
+/// canonicalised base frame reflects the *points* in `x` (see [`Witness::base_tri`]), and a
+/// plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
+/// pseudovector, so the reflection `C` (negate the x *coefficient*) arrives with one more
+/// global sign `det(C) = −1`. The two together negate `y`, `z` and `d` and keep `x`: exactly
+/// what makes these rows a positive multiple of the plane through the canonicalised base
+/// points, so every exact route transplants verbatim. An unmoved plane's chain is empty, so its
+/// rows are its world name.
 ///
 /// `None` when the plane has no name, or σ has no answer on this witness, in which case the
-/// rescue simply declines and the judgement keeps its toleranced route: slower, never wrong.
+/// name-integer road simply declines and the judgement keeps its toleranced route: slower, never wrong.
 pub fn name_stored_ints(
     name: Option<&nacre_exact::PlaneName>,
     tri_pt3: &[WitnessPoint; 3],
@@ -334,20 +335,30 @@ pub fn name_stored_ints(
             *c = -&*c;
         }
     }
-    let exact = |x: &BigInt| -> Option<f64> {
-        if x.bits() > 53 {
-            return None;
+    if chain_parity(&tri_pt3[0].chain) < 0 {
+        for c in &mut ints[1..] {
+            *c = -&*c;
         }
-        let (v, exact) = nacre_exact::nearest_f64_big(x, &BigInt::from(1))?;
-        exact.then_some(v)
+    }
+    let one = BigInt::from(1);
+    let spelled = ints
+        .each_ref()
+        .map(|x| nacre_exact::nearest_f64_big(x, &one));
+    let near_at = |k: usize| spelled[k].map(|(v, _)| v);
+    // Exact, and inside the range the exact expansions can multiply (see `row`).
+    let exact_at = |k: usize| {
+        spelled[k]
+            .filter(|&(_, exact)| exact && ints[k].bits() <= 127)
+            .map(|(v, _)| v)
     };
-    let normal = (|| Some([exact(&ints[0])?, exact(&ints[1])?, exact(&ints[2])?]))();
-    let row = normal.and_then(|[a, b, c]| Some([a, b, c, exact(&ints[3])?]));
+    let three = |at: &dyn Fn(usize) -> Option<f64>| Some([at(0)?, at(1)?, at(2)?]);
+    let four = |at: &dyn Fn(usize) -> Option<f64>| Some([at(0)?, at(1)?, at(2)?, at(3)?]);
     Some(NameInts {
+        near: four(&near_at),
+        near_normal: three(&near_at),
+        row: four(&exact_at),
+        normal: three(&exact_at),
         ints,
-        wide: name.narrow().is_none(),
-        row,
-        normal,
     })
 }
 
@@ -506,55 +517,44 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
             }
         }
-        // A wide name reaches here (no f64 spelling exists for it), and its integers are still
-        // an exact description — the same question the arm above asks, in the integer twin,
+        // **The name-integer road**: a name no exact `f64` row spells (wider than an `f64`, or wide) is
+        // still an exact description — the same question the arms above ask, filtered on the
+        // integers' nearest `f64`s and answered by the integer twin where the filter cannot,
         // with the same `frame_sign` bridge on `j` (the one direction-sensitive slot: a negated
         // `p`/`q`/`r` row negates `D` and the dot together, so only `j`'s orientation matters).
-        if let Some([bp, bq, br, bj]) = self.name_rescue([p, q, r, j], true) {
-            return Some(
-                nacre_exact::int_plane_side([&bp, &bq, &br], &bj) * self.planes[j].frame_sign(),
-            );
+        if let Some([np, nq, nr, nj]) = self.name_rows([p, q, r, j], true) {
+            let filtered = match (np.near, nq.near, nr.near, nj.near) {
+                (Some(a), Some(b), Some(c), Some(d)) => {
+                    indirect_plane_side_filter(&ThreePlane([a, b, c]), d)
+                }
+                _ => None,
+            };
+            let side = filtered.unwrap_or_else(|| {
+                nacre_exact::int_plane_side([&np.ints, &nq.ints, &nr.ints], &nj.ints)
+            });
+            return Some(side * self.planes[j].frame_sign());
         }
         None
     }
 
-    /// **The name-integer rescue gate**: the rows for a question every one of whose planes is
-    /// named, **at least one wide**, and whose frames the name can speak for — either no plane
-    /// is moved (the names are world descriptions) or all carry one motion (the names are one
-    /// shared pre-motion description, parity-corrected below). `None` keeps every existing
-    /// route exactly as it was — in particular, an all-narrow question never takes this gate,
-    /// so a corpus with no wide plane is untouched to the bit.
-    ///
-    /// **The parity correction is on the coefficients, and it is not "negate x".** The
-    /// canonicalised base frame reflects the *points* in `x` (see [`Witness::base_tri`]), and a
-    /// plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
-    /// pseudovector, so the reflection `C` (negate the x *coefficient*) arrives with one more
-    /// global sign `det(C) = −1`. The two together negate `y`, `z` and `d` and keep `x`:
-    /// exactly what makes these rows a positive multiple of what `base_coeffs` would hold if
-    /// the base were `f64`-representable, so the arms above transplant verbatim.
-    fn name_rescue<const N: usize>(
+    /// **The name-integer road's gate**: the names of a question every one of whose planes is named and
+    /// whose frames the names speak for — either no plane is moved (the names are world
+    /// descriptions) or all carry one motion (the names are one shared pre-motion description,
+    /// already in the canonical handedness — [`name_stored_ints`]). Any width: a name is exact
+    /// whether or not an `f64` row spells it, and the road's filters read the rounded spellings.
+    /// `None` leaves the question to the toleranced route.
+    fn name_rows<const N: usize>(
         &self,
         idx: [usize; N],
         allow_shared: bool,
-    ) -> Option<[[BigInt; 4]; N]> {
+    ) -> Option<[&NameInts; N]> {
         let planes = self.planes;
         let rows = idx.map(|k| planes[k].name_ints());
-        if rows.iter().any(|r| r.is_none()) || !rows.iter().flatten().any(|n| n.wide) {
+        if rows.iter().any(|r| r.is_none()) {
             return None;
         }
-        if !any_rotated(planes, &idx) {
-            return Some(rows.map(|r| r.expect("checked above").ints.clone()));
-        }
-        if allow_shared && shared_motion(planes, &idx) {
-            let odd = chain_parity(&plane_def(planes, idx[0])[0].chain) < 0;
-            return Some(rows.map(|r| {
-                let v = &r.expect("checked above").ints;
-                if odd {
-                    [v[0].clone(), -&v[1], -&v[2], -&v[3]]
-                } else {
-                    v.clone()
-                }
-            }));
+        if !any_rotated(planes, &idx) || (allow_shared && shared_motion(planes, &idx)) {
+            return Some(rows.map(|r| r.expect("checked above")));
         }
         None
     }
@@ -633,13 +633,27 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
             return s;
         }
-        // The world-gate only (`allow_shared: false`): a coordinate comparison is not
+        // The name-integer road, world gate only (`allow_shared: false`): a coordinate comparison is not
         // motion-invariant, and the rotation-axis reasoning that makes some moved cases exact
         // is `cancel_cmp_coord`'s above. Orientation-invariant, so the σ fold is harmless here.
+        // Its exact zeros — two points with one coordinate, the ties no filter separates — are
+        // much of what this road answers: the toleranced route proved them only by climbing to
+        // the coincidence standard (measured over the `nacre-ops` suite, 935k of the 1.98M calls
+        // that came here on unmoved names wider than an `f64` row).
         if let Some([a0, a1, a2, b0, b1, b2]) =
-            self.name_rescue([a[0], a[1], a[2], b[0], b[1], b[2]], false)
+            self.name_rows([a[0], a[1], a[2], b[0], b[1], b[2]], false)
         {
-            return nacre_exact::int_cmp_coord([&a0, &a1, &a2], [&b0, &b1, &b2], axis);
+            let three = |t: [&NameInts; 3]| Some(ThreePlane([t[0].near?, t[1].near?, t[2].near?]));
+            if let (Some(ta), Some(tb)) = (three([a0, a1, a2]), three([b0, b1, b2])) {
+                if let Some(s) = indirect_cmp_coord_filter(&ta, &tb, axis) {
+                    return s;
+                }
+            }
+            return nacre_exact::int_cmp_coord(
+                [&a0.ints, &a1.ints, &a2.ints],
+                [&b0.ints, &b1.ints, &b2.ints],
+                axis,
+            );
         }
         let da = a.map(|k| plane_def(planes, k));
         let db = b.map(|k| plane_def(planes, k));
@@ -677,12 +691,17 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 return det3_sign([rp, ra, rb]);
             }
         }
-        // The integer twin of both arms above, for a wide name: the rows carry the stored
-        // orientation already (the σ fold), so no `frame_sign` bridge appears — exactly as in
-        // the `det3_sign` arms, and unlike the toleranced route below, which reads the outward
-        // triangles and bridges back.
-        if let Some([bp, ba, bb]) = self.name_rescue([p, a, b], true) {
-            return nacre_exact::int_dir_sign([&bp, &ba, &bb]);
+        // The name-integer road, for names no exact `f64` normal spells: the filter on the rounded
+        // normals, then the integer twin. The rows carry the stored orientation already (the σ
+        // fold), so no `frame_sign` bridge appears — exactly as in the `det3_sign` arms, and
+        // unlike the toleranced route below, which reads the outward triangles and bridges back.
+        if let Some([np, na, nb]) = self.name_rows([p, a, b], true) {
+            if let (Some(x), Some(y), Some(z)) = (np.near_normal, na.near_normal, nb.near_normal) {
+                if let Some(s) = det3_sign_filter([x, y, z]) {
+                    return s;
+                }
+            }
+            return nacre_exact::int_dir_sign([&np.ints, &na.ints, &nb.ints]);
         }
         let (dp, da, db) = (
             plane_def(planes, p),

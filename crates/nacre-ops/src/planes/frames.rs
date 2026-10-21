@@ -205,8 +205,8 @@ pub(crate) struct WorkingPlane {
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
     /// The class root's name integers, folded to the stored orientation
-    /// ([`nacre_judge::predicate::name_stored_ints`]), and their `f64` row where it is exact.
-    /// `None` when the root's surface has no name.
+    /// ([`nacre_judge::predicate::name_stored_ints`]), with their `f64` spellings — nearest, and
+    /// exact where every integer is an `f64`. `None` when the root's surface has no name.
     ///
     /// **An unmoved plane's exact shortcuts read this and nothing else** (the `PlaneWitness`
     /// impl in `tolerant`). The name is derived from the plane's defining points without
@@ -214,7 +214,8 @@ pub(crate) struct WorkingPlane {
     /// coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
     /// that read them and checked them only against each other answered for the rounded model —
     /// measured, a box whose corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and
-    /// the common refused. A wide name has no `f64` row and keeps its BigInt rescue.
+    /// the common refused. A name no exact `f64` row spells takes the judge's name-integer road (the
+    /// filters over its nearest spellings, then its integers).
     pub(crate) name_ints: Option<nacre_judge::predicate::NameInts>,
 }
 

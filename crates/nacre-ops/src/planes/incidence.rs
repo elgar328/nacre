@@ -42,6 +42,13 @@ pub(crate) fn dense_planes(
         .iter()
         .map(|&r| {
             let pi = planes[r].plane();
+            // `name_stored_ints` puts a moved name in its chain's canonical handedness; an unmoved
+            // plane's rows are world rows only because its witness carries no chain.
+            debug_assert!(
+                pi.rotated || pi.tri_pt3.iter().all(|w| w.chain.is_empty()),
+                "an unmoved plane's witness carries a motion chain: {:?}",
+                pi.surf
+            );
             WorkingPlane {
                 base_rat: pi.base_rat,
                 world: pi.world.clone(),

@@ -1,11 +1,10 @@
 //! **What a wide-named datum costs the judge.**
 //!
 //! A rational-closure datum can judge exactly: a `Wide` name *is* the exact coefficients, and
-//! `nacre_judge::predicate::NameInts { ints, wide }` with `Judge::name_rescue` carry a wide name's
-//! integer coefficients into the three sign predicates that read coefficients at all —
-//! `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — while an all-narrow question keeps its
-//! own route to the bit. `planes_coplanar` is not a gap in that rescue: it compares two world names
-//! whole, a wide one included, before it reads any definition. What the numbers below measure is
+//! `nacre_judge::predicate::NameInts` with `Judge::name_rows` (the name-integer road) carry a name's
+//! integer coefficients, any width, into the three sign predicates that read coefficients at all —
+//! `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign`. `planes_coplanar` is not a gap in that
+//! road: it compares two world names whole, a wide one included, before it reads any definition. What the numbers below measure is
 //! the cost of the toleranced route an **irrational motion** takes — here the frame nodes of the
 //! pocket's wall and of the tool raised on the datum (the prism's own decimal orthonormal frame is
 //! exact and makes no node) — with the datum's name narrow, wide, or absent.
@@ -14,9 +13,9 @@
 //! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture
 //! ```
 //!
-//! **The two measurements take one lock ([`ONE_AT_A_TIME`]), or the labels lie.**
-//! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
-//! bracket their own boolean with it. Run side by side — the test harness's default — one test's
+//! **The tests that read the census take one lock ([`ONE_AT_A_TIME`]), or the labels lie.**
+//! `climb_census::take()` is a **process-global** take-and-reset, and each of them brackets its
+//! own booleans with it. Run side by side — the test harness's default — one test's
 //! `take()` walks off with the other's accumulated climbs, and every printed number is still
 //! plausible while being attributed to the wrong arm. Measured without the lock, the same tree
 //! prints `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917`
@@ -42,13 +41,14 @@
 //!
 //! | the datum's name | climbs, release | climbs, debug | mean bits | exhausted |
 //! |---|---|---|---|---|
-//! | `Narrow` | 167 | 496 | 256 | 0 |
-//! | **`Wide`** | **468** | **915** | 256 | 0 |
-//! | none (a judged frame) | 565 | 1,109 | 320 | 0 |
+//! | `Narrow` | 24 | 144 | 256 | 0 |
+//! | **`Wide`** | **309** | **597** | 256 | 0 |
+//! | none (a judged frame) | 406 | 791 | 320 | 0 |
 //!
-//! ⇒ A wide name costs **about 2.8× the escalations** of a narrow one in release (1.8× in debug,
-//! the build the gate's ignored sweep runs). Every cut succeeds and nothing exhausts the budget, so
-//! this is a cost, not a cliff.
+//! ⇒ A wide name costs **many times the escalations** of a narrow one — 13× in release, 4× in
+//! debug (the build the gate's ignored sweep runs). Every cut succeeds and nothing exhausts the
+//! budget, so this is a cost, not a cliff. Every arm's count leaves out the questions whose planes
+//! all have names in one frame: the name-integer road answers those, whatever the names' width.
 //!
 //! **The residual confound, stated:** the arms pick *different* vertex triples (that is what makes
 //! one name wide and the other narrow), so their tools stand in different places. The shape, size
@@ -84,7 +84,7 @@ fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// **The census moved** — over every arm that was built, something climbed and the climbs charged
-/// bits. Summed, not per arm: an arm may rightly not climb (the wide slice is the rescue's). A
+/// bits. Summed, not per arm: an arm may rightly not climb (the name-integer road answers it). A
 /// census that stopped counting — an escalation it cannot see — would otherwise print a table of
 /// zeros that reads as «free».
 fn assert_the_census_moved(climbs: u64, bits: u64) {
@@ -486,70 +486,50 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
     Some((m, sliced))
 }
 
-/// **What the name-integer rescue actually buys, measured where its gates open.**
+/// **A second-generation boolean on world-named planes never climbs, whatever its names' width.**
 ///
 /// The first datum-bearing boolean (the table above) is a **mixed-frame** table: the wide name
 /// speaks for the world (its carriers are discovered vertices — no chain), the target's walls
 /// carry the wf frame, and the tool's walls carry the datum-derived `FrameWide` — no question
-/// pairing them lives in one frame, so the integer gates stay shut there *by design* (and the
-/// `FrameWide` walls' frame is irrational, so no integer description of those questions
-/// exists to be found). The populations the rescue serves are the **second generation**:
+/// pairing them lives in one frame, so the name-integer road stays shut there *by design* (and the
+/// `FrameWide` walls' frame is irrational, so no integer description of those questions exists
+/// to be found). The population the name-integer road serves is the **second generation**: a solid whose
+/// faces are all world-named with the datum's slice among them, cut again by a world tool. Every
+/// question there is all-world and all-named, so the exact shortcut or the name-integer road answers it
+/// and nothing climbs — for the wide slice, and for the narrow one, whose name is wider than an
+/// `f64` row (the toleranced route climbed 553 times on it in debug).
 ///
-/// - a solid whose faces are all world-named with the wide slice among them, cut again by a
-///   world tool — the world gate;
-/// - the same solid moved whole (rotate/mirror), cut by a tool moved with it — out of this
-///   measurement's scope (the unit differential covers its correctness).
-///
-/// Two arms, one shape: the cuboid sliced by a **wide**-named datum plane vs a **narrow**-named
-/// one, each then cut by the same world column. Without the rescue the wide arm would have no exact
-/// route at all; with it, the wide arm's cap-vs-column questions answer from the name's integers.
-/// (The narrow arm's cap has a name too, but its *witness* is deep-rational, so its f64 shortcuts
-/// may decline on rounding — the coefficient-mismatch population. The gate deliberately requires a
-/// wide participant, so the narrow arm measures the route without the rescue.)
+/// The first cut — inside [`sliced_by_a_datum`], mixed-frame — is the positive control: it must
+/// climb, or a census that stopped counting would make this pass with nothing to say.
 #[test]
-#[ignore = "measurement — run explicitly, prints the table"]
-fn what_a_second_generation_boolean_costs() {
+fn a_second_generation_boolean_on_world_names_never_climbs() {
     use nacre_judge::kernel::frame3::climb_census;
     let _line = one_at_a_time();
 
-    let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
-        let (mut m, sliced) = sliced_by_a_datum(want_wide)?;
-        // The second generation: every face of `sliced` is world-named, one of them by the
-        // datum's name. Only this boolean is measured.
+    let mut seen = 0;
+    let mut first_cut = (0, 0);
+    for (want_wide, label) in [(false, "narrow_slice"), (true, "wide_slice")] {
+        let _ = climb_census::take();
+        let Some((mut m, sliced)) = sliced_by_a_datum(want_wide) else {
+            println!("stat cost2 {label:12} UNBUILDABLE — no such slice was cut");
+            continue;
+        };
+        let (c, b, _) = climb_census::take();
+        first_cut = (first_cut.0 + c, first_cut.1 + b);
         let column = nacre_ops::fixtures::cuboid(
             &mut m,
             Point3::from_array([0.5, 0.5, -2.0]),
             Point3::from_array([2.5, 2.5, 5.0]),
         );
         let _ = climb_census::take();
-        let out = nacre_ops::boolean(&mut m, BoolKind::Cut, sliced, column);
-        let (c, b, e) = climb_census::take();
-        println!(
-            "     (second cut {} — {:?})",
-            if out.is_ok() { "ok" } else { "declined" },
-            out.err()
-        );
-        Some((c, b, e))
-    };
-
-    let mut seen = 0;
-    let (mut climbed, mut charged) = (0, 0);
-    for (want_wide, label) in [(false, "narrow_slice"), (true, "wide_slice")] {
-        match run(want_wide) {
-            Some((climbs, bits, exhausted)) => {
-                seen += 1;
-                climbed += climbs;
-                charged += bits;
-                println!(
-                    "stat cost2 {label:12} climbs={climbs} mean_bits={} exhausted={exhausted}",
-                    bits.checked_div(climbs).unwrap_or(0)
-                );
-            }
-            None => println!("stat cost2 {label:12} UNBUILDABLE — no such slice was cut"),
-        }
+        nacre_ops::boolean(&mut m, BoolKind::Cut, sliced, column).expect("the second cut");
+        let (climbs, _, _) = climb_census::take();
+        seen += 1;
+        println!("stat cost2 {label:12} climbs={climbs}");
+        assert_eq!(climbs, 0, "{label}: a second-generation judgement climbed");
     }
-    assert!(seen > 0, "no arm built — the measurement is empty");
-    assert_the_census_moved(climbed, charged);
+    assert!(seen > 0, "no arm built — the lock is empty");
+    assert_the_census_moved(first_cut.0, first_cut.1);
 }
 
 /// **A width the gate cannot carry is refused for its width, not as a doubt about placement.**

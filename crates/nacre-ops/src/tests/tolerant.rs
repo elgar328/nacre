@@ -1584,10 +1584,11 @@ fn two_walls_of_one_plane_become_one_surface() {
     );
 }
 
-/// A **wide** name's integer rescue, locked two ways: against the climb
-/// on the real population (shared-motion gate, mirrored included), and by a starved judge
-/// that can answer *only* through the name (world gate, path proved from both sides).
-mod wide_name_rescue {
+/// The **name-integer road** for names no exact `f64` row spells, locked two ways: against the climb on
+/// the real population of wide names (shared-motion gate, mirrored included), and by a starved
+/// judge that can answer *only* through the name (world gate, path proved from both sides) — for
+/// wide names and for narrow ones wider than an `f64`.
+mod name_integer_road {
     use super::*;
     use crate::planes::WorkingPlane;
     use crate::{DatumDef, OpOutput, Profile2d};
@@ -1599,6 +1600,11 @@ mod wide_name_rescue {
 
     fn p2(x: f64, y: f64) -> Point2 {
         Point2::from_array([x, y])
+    }
+
+    /// Whether a name needed the wide vessel — an integer past `i128`'s magnitude.
+    fn is_wide(n: &nacre_judge::predicate::NameInts) -> bool {
+        n.ints.iter().any(|x| x.bits() > 127)
     }
 
     /// The census `wf` family with a pocket — the kernel's one natural producer of a wide
@@ -1765,14 +1771,14 @@ mod wide_name_rescue {
         *out.first().expect("the slice leaves material")
     }
 
-    /// Whether the name-integer gate opens for these planes — the fixture-validity probe
-    /// (mirrors `Judge::name_rescue`'s condition; a fixture where no question passes it
-    /// would run the differential against nothing).
+    /// Whether the name-integer road opens for these planes with a wide one among them — the
+    /// fixture-validity probe (`Judge::name_rows`' condition plus the wide plane this module is
+    /// about; a fixture where no question passes it would run the differential against nothing).
     fn gate_opens(t: &[WorkingPlane], idx: &[usize]) -> bool {
         idx.iter().all(|&k| t[k].name_ints.is_some())
             && idx
                 .iter()
-                .any(|&k| t[k].name_ints.as_ref().is_some_and(|n| n.wide))
+                .any(|&k| t[k].name_ints.as_ref().is_some_and(is_wide))
             && (!idx.iter().any(|&k| t[k].rotated)
                 || (t[idx[0]].base.chain_id != 0
                     && idx
@@ -1793,7 +1799,7 @@ mod wide_name_rescue {
         let table = plane_table(&m, tool);
         let wide = table
             .iter()
-            .find(|p| p.name_ints.as_ref().is_some_and(|n| n.wide))
+            .find(|p| p.name_ints.as_ref().is_some_and(is_wide))
             .expect("the tool's base cap carries the wide name");
         assert!(
             wide.tri_pt3[0].chain.is_empty() && !wide.rotated,
@@ -1808,7 +1814,7 @@ mod wide_name_rescue {
         );
     }
 
-    /// The rescue against the climb, over the populations the gates cover:
+    /// The name-integer road against the climb, over the populations its gates cover:
     ///
     /// - **world** — the wide cap beside an unmoved cuboid, one combined table (the shape
     ///   a boolean of the two would judge): every cap-and-cuboid question is all-world,
@@ -1911,7 +1917,7 @@ mod wide_name_rescue {
             if arm == "mirrored" {
                 let wide = named
                     .iter()
-                    .find(|p| p.name_ints.as_ref().is_some_and(|w| w.wide))
+                    .find(|p| p.name_ints.as_ref().is_some_and(is_wide))
                     .expect("a wide plane");
                 assert!(
                     nacre_judge::chain_parity(&wide.tri_pt3[0].chain) < 0,
@@ -1925,7 +1931,7 @@ mod wide_name_rescue {
         }
     }
 
-    /// **The rescue path itself, proved from both sides** — over questions separated
+    /// **The name-integer road itself, proved from both sides** — over questions separated
     /// by `2⁻¹⁰⁰`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
     /// a starved judge with names answers the hand-derived signs (nothing but the
     /// name-integer route can), and the same starved judge without names answers `0` for
@@ -1933,11 +1939,21 @@ mod wide_name_rescue {
     /// climb on the stripped table is the independent oracle, and the expected signs are
     /// stated by hand, so no route is compared only to itself.
     ///
+    /// Two families of names: **wide** (each scaled by a ~201-bit odd factor) and **narrow but
+    /// wider than an `f64`** (unscaled — `2¹⁰⁰ + 1` is no `f64`), so the road is proved for both
+    /// widths it serves.
+    ///
     /// Also under test: the world gate (`!any_rotated`), the σ fold (plane 3's canonical
     /// name opposes its stored orientation, `frame_sign = −1`), and σ's negative control —
     /// negating every name (and then only some) changes no answer.
     #[test]
     fn a_starved_judge_answers_only_through_the_name() {
+        for family in ["wide", "narrow"] {
+            starved_family(family);
+        }
+    }
+
+    fn starved_family(family: &str) {
         let (m, s) = cuboid();
         let donor = plane_table(&m, s)[0].surf;
         let e_den: i128 = 1 << 100;
@@ -1945,12 +1961,17 @@ mod wide_name_rescue {
         let one_minus = Rat::new(e_den - 1, e_den).unwrap();
         let r = Rat::from_int;
 
-        // Integer spellings of the five planes' canonical names, scaled by a ~201-bit odd
-        // factor so every name is genuinely wide (the predicates are row-linear, so the
-        // scale is invisible to every answer).
+        // Integer spellings of the five planes' canonical names. The wide family scales them by
+        // a ~201-bit odd factor (the predicates are row-linear, so the scale is invisible to
+        // every answer); the narrow family keeps them as they are, `2¹⁰⁰`-sized.
         let s_factor: BigInt = (BigInt::from(1) << 201) + 3;
-        let wide_name =
-            |c: [i128; 4]| -> PlaneName { PlaneName::Wide(c.map(|x| BigInt::from(x) * &s_factor)) };
+        let wide_name = |c: [i128; 4]| -> PlaneName {
+            if family == "wide" {
+                PlaneName::Wide(c.map(|x| BigInt::from(x) * &s_factor))
+            } else {
+                PlaneName::Narrow(c.map(Rat::from_int))
+            }
+        };
 
         // (witness triangle wound to the tri normal; stored normal; frame_sign; name)
         type Fixture = ([[Rat; 3]; 3], [f64; 3], i8, PlaneName);
@@ -2005,13 +2026,14 @@ mod wide_name_rescue {
                 .iter()
                 .zip(names_sign)
                 .map(|((bases, n_stored, fs, name), flip)| {
-                    let name = if flip < 0 {
-                        let PlaneName::Wide(c) = name else {
-                            unreachable!()
-                        };
-                        PlaneName::Wide(core::array::from_fn(|i| -&c[i]))
-                    } else {
-                        name.clone()
+                    let name = match (flip < 0, name) {
+                        (false, _) => name.clone(),
+                        (true, PlaneName::Wide(c)) => {
+                            PlaneName::Wide(core::array::from_fn(|i| -&c[i]))
+                        }
+                        (true, PlaneName::Narrow(c)) => PlaneName::Narrow(
+                            c.map(|x| Rat::from_int(0).checked_sub(x).expect("negated")),
+                        ),
                     };
                     let tri_pt3: [WitnessPoint; 3] = bases.map(WitnessPoint::at);
                     let tri: [Point3; 3] =
@@ -2019,9 +2041,9 @@ mod wide_name_rescue {
                     WorkingPlane {
                         base_rat: None,
                         world: None,
-                        // The exact shortcuts read the name's `f64` row, and these names are
-                        // wide (scaled past 53 bits), so there is none: every question here goes
-                        // to the BigInt rescue or the climb.
+                        // The exact shortcuts read the name's exact `f64` row, and these names
+                        // have none (wide, or narrow past an `f64`): every question here goes to
+                        // the name-integer road or the climb.
                         name_ints: keep_names
                             .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
                             .flatten(),
@@ -2041,10 +2063,17 @@ mod wide_name_rescue {
         };
         let named = build([1; 5], true);
         assert!(
+            named.iter().all(|p| p
+                .name_ints
+                .as_ref()
+                .is_some_and(|n| is_wide(n) == (family == "wide"))),
+            "{family}: every fixture name folds, at its family's width"
+        );
+        assert!(
             named
                 .iter()
-                .all(|p| p.name_ints.as_ref().is_some_and(|n| n.wide)),
-            "every fixture name folds and is wide"
+                .any(|p| p.name_ints.as_ref().is_some_and(|n| n.row.is_none())),
+            "{family}: some plane has no exact row, or the name-integer road is never asked"
         );
         let stripped = build([1; 5], false);
         let negated = build([-1; 5], true);
@@ -2082,16 +2111,20 @@ mod wide_name_rescue {
             // The name route, too starved to climb: only the integers can answer.
             for (t, arm) in [(&named, "named"), (&negated, "negated"), (&mixed, "mixed")] {
                 let jd = Judge::new(t, starved, &notes);
-                assert_eq!(ask(&jd), *expected, "{label}: starved {arm} table");
+                assert_eq!(ask(&jd), *expected, "{family} {label}: starved {arm} table");
             }
             // The independent oracle: the full-budget climb, no names anywhere.
-            assert_eq!(ask(&oracle), *expected, "{label}: full climb oracle");
+            assert_eq!(
+                ask(&oracle),
+                *expected,
+                "{family} {label}: full climb oracle"
+            );
             // The other side of the proof: starved and nameless, the judge cannot know.
             let js = Judge::new(&stripped, starved, &notes);
             assert_eq!(
                 ask(&js),
                 0,
-                "{label}: a starved judge without names must come back empty-handed"
+                "{family} {label}: a starved judge without names must come back empty-handed"
             );
         }
     }
@@ -2104,17 +2137,23 @@ mod wide_name_rescue {
 /// through its front door, whichever road it then takes — the exact shortcut or the climb — so a
 /// shortcut that answers for the rounded model (the face corners' `f64` caches, the cache's
 /// coefficients) is caught where rounding breaks a rational coincidence: `3·0.1 = 0.3` puts the
-/// box's corner on the wall `y = 3x`, and `3·fl(0.1) ≠ fl(0.3)`.
+/// box's corner on the wall `y = 3x`, and `3·fl(0.1) ≠ fl(0.3)`. The last case's caps are
+/// 17-digit decimals whose names no `f64` row spells (`x = 0.17334649809321423` is
+/// `[10¹⁷, 0, 0, −17334649809321423]`, an odd 54-bit `d`), so the name-integer road answers there too.
 #[test]
 fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
     use nacre_judge::predicate::PlaneWitness;
     use num_bigint::BigInt;
+    // Questions the exact shortcut took (orient, cmp, dir), and questions with a plane whose name
+    // has no exact row — the name-integer road's.
     let mut eligible = [0usize; 3];
+    let mut name_road = 0usize;
     for (xs, ys, k) in [
         (0.1, 0.3, 3.0),
         (0.7, 2.1, 3.0),
         (0.1, 0.2, 2.0),
         (0.5, 1.5, 3.0),
+        (0.17334649809321423, 0.34669299618642846, 2.0),
     ] {
         let case = format!("x = {xs}, y = {ys}, wall y = {k}x");
         let (m, bx, prism) = crate::tests::decimal_coincidence(xs, ys, k);
@@ -2143,6 +2182,7 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
             .filter(|&t| nacre_exact::int_dir_sign(normals(t)) != 0)
             .collect();
         let coeffs = |ks: &[usize]| ks.iter().all(|&k| planes[k].exact_coeffs().is_some());
+        let unspelled = |ks: &[usize]| ks.iter().any(|&k| planes[k].exact_coeffs().is_none());
         let mut wrong = Vec::new();
         for &t in &triples {
             let [p, a, b] = t;
@@ -2165,6 +2205,7 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
                 if coeffs(&[t[0], t[1], t[2], j]) {
                     eligible[0] += 1;
                 }
+                name_road += usize::from(unspelled(&[t[0], t[1], t[2], j]));
                 if got != want {
                     wrong.push(format!("orient {t:?} vs {j}: {got} vs {want}"));
                 }
@@ -2178,6 +2219,7 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
                     if coeffs(&a) && coeffs(&b) {
                         eligible[1] += 1;
                     }
+                    name_road += usize::from(unspelled(&a) || unspelled(&b));
                     if got != want {
                         wrong.push(format!("cmp {a:?} {b:?} axis {axis}: {got} vs {want}"));
                     }
@@ -2196,4 +2238,5 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
         eligible.iter().all(|&e| e > 0),
         "the exact shortcut answered none of some kind (orient, cmp, dir): {eligible:?}"
     );
+    assert!(name_road > 0, "no question reached the name-integer road");
 }
