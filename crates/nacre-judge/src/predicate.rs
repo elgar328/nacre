@@ -227,10 +227,11 @@ pub trait PlaneWitness: Witness {
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
     /// [`name_stored_ints`] where the witness is constructed, `None` when the plane has no name
-    /// (or the fold declined). It serves twice. Its exact `f64` row is what an implementor hands
-    /// out as [`Self::exact_coeffs`] for an unmoved plane. And every name, whatever its width, is
-    /// what [`Judge`]'s **name-integer road** reads where no exact row stands: an `f64` filter over the
-    /// integers' nearest `f64`s, then the integers themselves. Without it such a plane's
+    /// (or the fold declined). Its exact `f64` row is what an implementor hands out as
+    /// [`Self::exact_coeffs`] for an unmoved plane and as [`Self::base_coeffs`] for a moved one.
+    /// And every name, whatever its width, is what [`Judge`]'s **name-integer road** reads where
+    /// no exact row stands: an `f64` filter over the integers' nearest `f64`s, then the integers
+    /// themselves. Without it such a plane's
     /// judgement climbs — measured for wide names at **2.0×** the escalations (240 against 475;
     /// the confound `wide_datum_cost.rs` states — the two arms pick different vertex triples —
     /// applies to either number, so read it as "several times", not as a coefficient).
@@ -833,16 +834,12 @@ pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].is_rotated())
 }
 
-/// The three exact [`WitnessPoint`] defining plane `k` — **borrowed**, never rebuilt.
-///
-/// Rebuilding them per call — a clone of a rotated witness is a heap allocation — was measured at
-/// 77% of a boolean over 25 rotated fins, which called it a million times. The definitions are the same every call, so the
-/// witness owns them and this is a pure accessor.
 /// Can this judgement be answered exactly in the pre-rotation frame?
 ///
-/// Yes when every input carries **one and the same** rigid motion (`chain_id`), that motion is not
-/// the identity, and every pre-rotation witness is `f64`-representable. Then the rotation cancels
-/// out of the determinant and the exact predicate answers on the bases. A mismatch is a
+/// Yes when every input carries **one and the same** rigid motion (`chain_id`) and that motion is
+/// not the identity: then the rotation cancels out of the determinant, and the exact predicate
+/// answers on the pre-motion data — if each plane has it in a form the predicate takes (an exact
+/// row, a name, an `f64` base triangle), which every caller asks next. A mismatch is a
 /// conservative miss — the toleranced path still answers, just more slowly.
 fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     let Some(&first) = idx.first() else {
@@ -852,6 +849,11 @@ fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     id != 0 && idx.iter().all(|&k| planes[k].chain_id() == id)
 }
 
+/// The three exact [`WitnessPoint`] defining plane `k` — **borrowed**, never rebuilt.
+///
+/// Rebuilding them per call — a clone of a rotated witness is a heap allocation — was measured at
+/// 77% of a boolean over 25 rotated fins, which called it a million times. The definitions are the
+/// same every call, so the witness owns them and this is a pure accessor.
 pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[WitnessPoint; 3] {
     planes[k].tri_pt3()
 }
@@ -901,8 +903,8 @@ fn borrow_triple(d: [&[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, 
 /// Each `d[m] = 0` question is `indirect_cmp_coord(base_a, base_b, m) == 0` on the pre-rotation
 /// coefficients — the exact predicate, unchanged.
 ///
-/// Returns `None` when the shortcut does not apply (mixed axes, no shared motion, a base that is
-/// not `f64`-representable, or a provably-nonzero in-plane case), and the toleranced path answers.
+/// Returns `None` when the shortcut does not apply (mixed axes, no shared motion, a plane with no
+/// exact base row, or a provably-nonzero in-plane case), and the toleranced path answers.
 fn cancel_cmp_coord<W: PlaneWitness>(
     planes: &[W],
     a: [usize; 3],

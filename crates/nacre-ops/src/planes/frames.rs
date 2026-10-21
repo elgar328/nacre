@@ -1,13 +1,4 @@
 use super::*;
-/// One plane of the arrangement, indexed by a **dense** class id.
-///
-/// The face table cannot answer "which plane" without a convention: a class holds faces from both
-/// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
-/// outward normal. What a plane has is a **frame** — the class root's stored normal, which is the
-/// way its truth faces (`Surface::Plane::sense` against its points; the `f64` cache follows it, and
-/// no direction is read off that cache) — and the only
-/// direction fact anyone needs from it is [`WorkingPlane::frame_sign`]. Everything else here is a
-/// witness: three points known to lie on this plane, used to reconstruct it exactly.
 /// The pre-rotation twin of a witness triangle: its `chain_id` and base points.
 ///
 /// A rigid motion preserves the determinants the predicates take, so a judgement whose inputs all
@@ -93,6 +84,15 @@ impl BaseFrame {
     }
 }
 
+/// One plane of the arrangement, indexed by a **dense** class id.
+///
+/// The face table cannot answer "which plane" without a convention: a class holds faces from both
+/// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
+/// outward normal. What a plane has is a **frame** — the class root's stored normal, which is the
+/// way its truth faces (`Surface::Plane::sense` against its points; the `f64` cache follows it, and
+/// no direction is read off that cache) — and the only
+/// direction fact anyone needs from it is [`WorkingPlane::frame_sign`]. Everything else here is a
+/// witness: three points known to lie on this plane, used to reconstruct it exactly.
 #[derive(Clone)]
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,

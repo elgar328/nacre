@@ -21,8 +21,9 @@
 //! prints `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917`
 //! on the next, which is how a comparison against a saved baseline invents a change that never
 //! happened — and how an assertion that the census moved goes red by luck. Serialized, the same
-//! tree prints the same table twice. Every test here that runs a boolean takes it;
-//! `does_a_vertex_named_datum_produce_a_wide_name` runs none.
+//! tree prints the same table twice. Every test here takes it — not only the ones that run a
+//! boolean: building `does_a_vertex_named_datum_produce_a_wide_name`'s tilted prism climbs too
+//! (251 escalations measured), enough to break the second-generation lock's zero.
 //!
 //! What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
@@ -149,6 +150,7 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
 /// population that does not exist.
 #[test]
 fn does_a_vertex_named_datum_produce_a_wide_name() {
+    let _line = one_at_a_time();
     let mut m = Model::new();
     let _ = tilted_prism(&mut m, 1.7);
     let far_cap_verts: Vec<_> = live_vertices(&m)

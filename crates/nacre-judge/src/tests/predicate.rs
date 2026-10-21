@@ -4,8 +4,8 @@
 /// A plane that passes through a motion has two descriptions — coefficients and a witness triangle
 /// — and mixing them can produce intransitive comparisons and a confident wrong winding. The frame
 /// design sidesteps the whole question: a plane built in a frame
-/// states itself **in that frame**, `BaseFrame` keeps its triangle and its coefficients in the
-/// *same* frame, and every judgement downstream is a determinant question a rigid motion
+/// states itself **in that frame**, its name and its base triangle speak the *same* frame, and
+/// every judgement downstream is a determinant question a rigid motion
 /// preserves. So no `d` transformation term is needed anywhere.
 ///
 /// The one place that does transport coefficients is

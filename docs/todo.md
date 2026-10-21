@@ -341,13 +341,15 @@ it names."*
 평면 법선을 읽는다. 잘못 재철자하면 캐시의 향이 조용히 뒤집힌다(census 잠금 `audit_plane_senses` 가 그 부류를
 잰다; 판정은 향을 캐시에서 읽지 않으므로 뒤집힌 캐시는 좌표 측정과 출력에만 닿는다).
 
-### 정확 행 갈래의 꼬리를 정수 쌍둥이로
+### 정확 지름길 갈래를 이름 정수 도로 하나로
 
-모션 없는 평면의 정확 행 갈래(`exact_coeffs` → `indirect_plane_side`·`indirect_cmp_coord`)는 필터를 못 넘으면
-`Expansion` 으로 답하고, 이름 정수 도로는 같은 필터 뒤 BigInt 쌍둥이로 답한다 — 필터는 한 철자고 꼬리가 둘이다.
+세 술어의 정확 갈래는 같은 데이터를 세 번 읽는다: 무이동 정확 행(`exact_coeffs`), 공유 모션 정확 행(`base_coeffs`
+— 이제 둘 다 `NameInts::row`), 그리고 이름 정수 도로(`name_rows`). 앞의 둘은 도로 게이트의 부분집합이고 꼬리만
+다르다 — 정확 행은 `Expansion`(방향은 `det3_sign` 의 적응형), 도로는 BigInt 쌍둥이(방향은 `det3_sign_filter` 뒤).
 꼬리만 재면 BigInt 가 빠르다(release, 필터를 못 넘는 52비트 입력: `Expansion` 2,880/1,361 ns 대 BigInt 891/548 ns,
 cmp/side). 하나로 하려면 이름 없는 시험 증인(`nacre-judge` 시험의 `W`·`RW`)이 이름을 들어야 한다 — 그것들은
-`exact_coeffs`/`base_coeffs` 포트로 f64 를 준다. 먼저 잴 것: 그 갈래에서 필터를 못 넘는 호출 수와 명령어 A/B.
+`exact_coeffs`/`base_coeffs` 포트로 f64 를 준다. 그 뒤 `base_coeffs` 를 읽는 곳은 `cancel_cmp_coord` 하나다. 먼저 잴
+것: 정확 행 갈래에서 필터를 못 넘는 호출 수와 명령어 A/B.
 
 ### 관통점 이름을 «그 점을 지나는» 옆면으로 묻기
 

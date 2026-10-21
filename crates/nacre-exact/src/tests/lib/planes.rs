@@ -470,6 +470,13 @@ mod rounded_filters {
 
     /// The exact row: a small direction times a scale of `bits + 1` bits, then `d` nudged.
     fn wide(c: [i32; 4], (bits, low, nudge): Wide) -> [BigInt; 4] {
+        // The low word stays under the leading bit, so the scale is the width it says — the
+        // 54–57-bit band of 17-digit decimals included.
+        let low = if bits < 64 {
+            low & ((1u64 << bits) - 1)
+        } else {
+            low
+        };
         let scale = (BigInt::from(1) << bits) + BigInt::from(low);
         let mut r = c.map(|x| BigInt::from(x) * &scale);
         r[3] += nudge;

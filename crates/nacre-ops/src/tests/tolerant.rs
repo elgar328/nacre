@@ -511,8 +511,9 @@ fn t_dir_sign_unrotated_agrees_with_the_input() {
 /// **That is the whole point.** A reflection is improper, and the shortcuts' licence is that
 /// a motion preserves the determinant they take — which an improper one does not. The base
 /// frame is canonicalised for that (`BaseFrame::of` on the points, `name_stored_ints` on the
-/// names), and this test is what says the canonicalisation is right: it puts the shortcut path and the no-shortcut path side by
-/// side on identical geometry, with no bypass switch in between. A sign that survives one
+/// names), and this test is what says the canonicalisation is right: it puts the pre-motion path
+/// (base names under a reflection) and the world path (world names) side by side on identical
+/// geometry, with no bypass switch in between. A sign that survives one
 /// too many or one too few reflections shows up here as a disagreement.
 fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     use crate::planes::{FaceInfo, dense_planes, plane_classes};
@@ -622,10 +623,6 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 /// makes a plane whose `d` is a rounded product two planes inside one judgement — so reversing
 /// the triangles has to change nothing — that is the property,
 /// not an accident, so it is asserted rather than left untested.
-///
-/// A caution: not every perturbation is detectable. Reflecting the base triangles *and* re-deriving
-/// their planes changes nothing at all — the two sign flips cancel, which is the same pseudovector
-/// identity this test is about.
 #[test]
 fn the_base_frame_is_actually_consulted() {
     let (pa, pb) = two_spellings();
