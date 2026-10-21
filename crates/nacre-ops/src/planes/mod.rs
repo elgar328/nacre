@@ -302,7 +302,7 @@ pub(crate) struct FaceInfo {
     /// rebuilt per judgment, it dominates the boolean's runtime.
     pub(crate) tri_pt3: [WitnessPoint; 3],
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
-    /// **The canonical identity of "which motion"** — see [`BaseFrame`].
+    /// **The canonical identity of "which motion"** — see [`chain_id_of`].
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
     /// The surface's plane as **exact rational coefficients in the frame its truth names**
     /// (`Model::surface_name`) — the world when unmoved, the pre-motion frame when moved.
@@ -315,7 +315,7 @@ pub(crate) struct FaceInfo {
     /// statement exists (a turn off the quarters, a frame, a moved wide name, an overflow). The
     /// class table reads its narrow projection ([`WorkingPlane::world_rat`]); `base_rat` above
     /// answers the *other* question (the description in the frame the provenance names, which is
-    /// what `BaseFrame` cancels).
+    /// what the shared-motion shortcuts cancel).
     pub(crate) world: Option<WorldName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from, which the exact shortcuts read for the world

@@ -52,7 +52,7 @@ pub(crate) fn dense_planes(
             WorkingPlane {
                 base_rat: pi.base_rat,
                 world: pi.world.clone(),
-                base: BaseFrame::of(&pi.tri_pt3, pi.motion),
+                chain_id: chain_id_of(pi.motion),
                 name_ints: nacre_judge::predicate::name_stored_ints(
                     pi.name.as_ref(),
                     &pi.tri_pt3,

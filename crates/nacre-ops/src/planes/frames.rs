@@ -1,87 +1,17 @@
 use super::*;
-/// The pre-rotation twin of a witness triangle: its `chain_id` and base points.
+/// The identity of the motion a plane was moved by — `0` for none, else the motion-history leaf's
+/// index plus one — what [`PlaneWitness::chain_id`](nacre_judge::predicate::PlaneWitness::chain_id)
+/// reports.
 ///
-/// A rigid motion preserves the determinants the predicates take, so a judgement whose inputs all
-/// carry **one** motion can be answered on the pre-motion data instead — exactly, off the
-/// toleranced path entirely. The pre-motion *plane* is the class root's name, which
-/// [`WorkingPlane::name_ints`] carries in this frame and handedness; the triangle is for the
-/// questions asked of points (`Judge::planes_coplanar`). `None` for the triangle when a base
-/// coordinate is not `f64`-representable, since the exact predicate takes `f64`; that judgement
-/// then stays toleranced (slower, never wrong).
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BaseFrame {
-    /// `0` = no motion. Equal only for structurally identical chains.
-    pub(crate) chain_id: u64,
-    pub(crate) tri: Option<[Point3; 3]>,
-}
-
-impl BaseFrame {
-    /// No motion to cancel — for a plane with no history: a hand-built table in a test, or the
-    /// synthetic split plane a subdivided boolean cuts with. Identical to what `of` returns for an
-    /// unmoved face, so such a plane takes the same predicate routes an axis-aligned model does.
-    #[cfg(test)]
-    pub(crate) fn none() -> Self {
-        Self {
-            chain_id: 0,
-            tri: None,
-        }
-    }
-
-    pub(super) fn of(
-        tri_pt3: &[WitnessPoint; 3],
-        motion: Option<Handle<nacre_topo::MotionNode>>,
-    ) -> Self {
-        // **Identity by handle, not by hash.** A 64-bit `DefaultHasher` digest of the chain would
-        // do worse than slow a judgement on a collision: it would make `shared_base` hand the
-        // *exact* predicate two incompatible pre-motion frames, answering a different question with
-        // full confidence. The motion-history leaf is
-        // the canonical name of "which motion": equal handles are the same chain by construction,
-        // and two structurally-equal chains under different handles are a conservative miss.
-        //
-        // The three witnesses share one chain by construction — `collect_planes` builds all three
-        // from the same surface truth — so there is nothing to cross-check here either.
-        let Some(leaf) = motion else {
-            return Self {
-                chain_id: 0,
-                tri: None,
-            }; // no motion to cancel
-        };
-        // 0 is reserved for "no motion", so never hand it out as an id.
-        let chain_id = leaf.index() as u64 + 1;
-        if !tri_pt3
-            .iter()
-            .all(|p| p.base.iter().all(|r| r.as_f64().is_some()))
-        {
-            return Self {
-                chain_id,
-                tri: None,
-            };
-        }
-        let pt = |p: &WitnessPoint| {
-            Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
-        };
-        let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
-        // **An improper chain is corrected here, on the points.** An odd number of reflections
-        // leaves the base frame with the opposite handedness, and the shortcuts' whole licence is
-        // that the motion preserves the determinants they take. One more reflection puts the
-        // handedness back, and then the base is related to the moved frame by a *proper* motion
-        // again — which is what every consumer of this struct assumes. A sign flip on x is exact
-        // for every finite `f64`, and it is the same convention `nacre_judge::frame3::shared_base`
-        // applies to its own points and `name_stored_ints` to the name's coefficients.
-        let improper = nacre_judge::chain_parity(&tri_pt3[0].chain) < 0;
-        let tri = if improper {
-            tri.map(|p| {
-                let [x, y, z] = p.as_array();
-                Point3::from_array([-x, y, z])
-            })
-        } else {
-            tri
-        };
-        Self {
-            chain_id,
-            tri: Some(tri),
-        }
-    }
+/// **Identity by handle, not by hash.** A 64-bit `DefaultHasher` digest of the chain would do worse
+/// than slow a judgement on a collision: it would make the shared-motion shortcuts read two
+/// incompatible pre-motion frames as one, answering a different question with full confidence.
+/// The motion-history leaf is the canonical name of "which motion": equal handles are the same
+/// chain by construction, and two structurally-equal chains under different handles are a
+/// conservative miss. The three witnesses share one chain by construction — `collect_planes`
+/// builds all three from the same surface truth — so there is nothing to cross-check.
+pub(super) fn chain_id_of(motion: Option<Handle<nacre_topo::MotionNode>>) -> u64 {
+    motion.map_or(0, |leaf| leaf.index() as u64 + 1)
 }
 
 /// One plane of the arrangement, indexed by a **dense** class id.
@@ -125,8 +55,9 @@ pub(crate) struct WorkingPlane {
     /// outward along +axis (`Model::new` plants x = 0, y = 0, z = 0 with cache direction −axis),
     /// which a max-side face reaches by a translation or a rotation.
     pub(crate) frame_sign: i8,
-    /// The pre-rotation twin — see [`BaseFrame`].
-    pub(crate) base: BaseFrame,
+    /// Which motion the root face's plane carries — see [`chain_id_of`]. Planes with one nonzero
+    /// id share a pre-motion frame, which their names (`name_ints`) speak.
+    pub(crate) chain_id: u64,
     /// The class root's name integers, folded to the stored orientation
     /// ([`nacre_judge::predicate::name_stored_ints`]), with their `f64` spellings — nearest, and
     /// exact where every integer is an `f64`. `None` when the root's surface has no name.

@@ -12,7 +12,6 @@
 use crate::planes::{FaceRow, WorkingPlane};
 use nacre_judge::WitnessPoint;
 use nacre_judge::predicate::{PlaneWitness, Witness};
-use nacre_math::Point3;
 
 // The judging context and the helpers the engine reaches for by name. The predicates themselves
 // are methods on `Judge`, so there is nothing else to re-export.
@@ -26,12 +25,6 @@ impl Witness for WorkingPlane {
     }
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         self.world.as_ref().map(|w| &w.name)
-    }
-    fn chain_id(&self) -> u64 {
-        self.base.chain_id
-    }
-    fn base_tri(&self) -> Option<[Point3; 3]> {
-        self.base.tri
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.tri_pt3
@@ -53,15 +46,6 @@ impl Witness for FaceRow {
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
         self.plane().world.as_ref().map(|w| &w.name)
     }
-    // A face table exists before plane classes do, and the only predicate that runs on it is
-    // `Judge::planes_coplanar` during class discovery. Opting out sends a face pair past the
-    // shared-motion shortcut: its world names or its composed motions answer instead.
-    fn chain_id(&self) -> u64 {
-        0
-    }
-    fn base_tri(&self) -> Option<[Point3; 3]> {
-        None
-    }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.plane().tri_pt3
     }
@@ -71,6 +55,9 @@ impl Witness for FaceRow {
 }
 
 impl PlaneWitness for WorkingPlane {
+    fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
     // `rotated` gates all three: a moved plane's name speaks in its pre-motion frame, and the row
     // is a world description only when nothing moved the plane (the table sets `rotated` from
     // that — including a `Through` plane whose vertices meet in a frame its motion does not name).

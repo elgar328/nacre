@@ -510,8 +510,7 @@ fn t_dir_sign_unrotated_agrees_with_the_input() {
 ///
 /// **That is the whole point.** A reflection is improper, and the shortcuts' licence is that
 /// a motion preserves the determinant they take — which an improper one does not. The base
-/// frame is canonicalised for that (`BaseFrame::of` on the points, `name_stored_ints` on the
-/// names), and this test is what says the canonicalisation is right: it puts the pre-motion path
+/// frame is canonicalised for that (`name_stored_ints` on the names), and this test is what says the canonicalisation is right: it puts the pre-motion path
 /// (base names under a reflection) and the world path (world names) side by side on identical
 /// geometry, with no bypass switch in between. A sign that survives one
 /// too many or one too few reflections shows up here as a disagreement.
@@ -594,18 +593,18 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     let pa = dense_planes(&plain, &ca).0;
     let pb = dense_planes(&mirrored, &cb).0;
     assert!(
-        pb.iter().all(|g| g.base.chain_id != 0
-            && g.base.tri.is_some()
-            && g.name_ints.as_ref().is_some_and(|n| n.row.is_some())),
+        pb.iter()
+            .all(|g| g.chain_id != 0 && g.name_ints.as_ref().is_some_and(|n| n.row.is_some())),
         "the reflected spelling really does offer a base frame — else this proves nothing"
     );
     assert!(
-        pa.iter().all(|g| g.base.chain_id == 0),
+        pa.iter().all(|g| g.chain_id == 0),
         "the plain spelling really does decline"
     );
+    let row = |g: &WorkingPlane| g.name_ints.as_ref().and_then(|n| n.row);
     assert!(
-        pb.iter().any(|g| g.base.tri.unwrap() != g.witness_coords()),
-        "the base frame differs from the moved one — else the comparison is free"
+        pa.iter().zip(&pb).any(|(a, b)| row(a) != row(b)),
+        "the base frame differs from the world — else the comparison is free"
     );
     (pa, pb)
 }
@@ -617,22 +616,11 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 /// `plane_pair_dir_sign` takes. If either
 /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
 /// gone vacuous.
-///
-/// **And the base *triangle* must be inert.** `orient3d` asks all four planes in coefficients
-/// — the fourth asked with its pre-motion triangle while the other three speak in coefficients
-/// makes a plane whose `d` is a rounded product two planes inside one judgement — so reversing
-/// the triangles has to change nothing — that is the property,
-/// not an accident, so it is asserted rather than left untested.
 #[test]
 fn the_base_frame_is_actually_consulted() {
     let (pa, pb) = two_spellings();
     let n = pa.len();
 
-    let mut reversed = two_spellings().1;
-    for g in &mut reversed {
-        let [a, b, c] = g.base.tri.unwrap();
-        g.base.tri = Some([b, a, c]);
-    }
     let negate = |t: &mut Vec<WorkingPlane>| {
         for g in t {
             if let Some(n) = g.name_ints.as_mut() {
@@ -643,7 +631,6 @@ fn the_base_frame_is_actually_consulted() {
     let mut negated_planes = two_spellings().1;
     negate(&mut negated_planes);
     let mut orient_changed = 0usize;
-    let mut tri_changed = 0usize;
     for p in 0..n {
         for q in (p + 1)..n {
             for r in (q + 1)..n {
@@ -658,9 +645,6 @@ fn the_base_frame_is_actually_consulted() {
                     if want != crate::planes::test_judge(&negated_planes).orient3d(p, q, r, j) {
                         orient_changed += 1;
                     }
-                    if want != crate::planes::test_judge(&reversed).orient3d(p, q, r, j) {
-                        tri_changed += 1;
-                    }
                 }
             }
         }
@@ -668,11 +652,6 @@ fn the_base_frame_is_actually_consulted() {
     assert!(
         orient_changed > 0,
         "`orient3d` never read the base coefficients"
-    );
-    assert_eq!(
-        tri_changed, 0,
-        "`orient3d` still reads the base triangle — the fourth plane must be asked in \
-             coefficients, or one judgement holds two descriptions of it again"
     );
 
     let mut negated = two_spellings().1;
@@ -698,7 +677,7 @@ fn the_base_frame_is_actually_consulted() {
     );
 }
 
-/// `orient3d` — the shortcut ([`nacre_judge::frame3::shared_base`] via `Judge::orient3d`) is
+/// `orient3d` — the shortcut (`Judge::orient3d`'s shared-motion arm, on the base names) is
 /// answering the same question as the coordinates. See [`two_spellings`].
 #[test]
 fn a_reflected_spelling_orients_as_the_plain_one() {
@@ -1174,7 +1153,7 @@ fn two_caps_described_exactly_are_one_plane() {
             base_rat: None,
             world: None,
             name_ints: None,
-            base: crate::planes::BaseFrame::none(),
+            chain_id: 0,
             surf: faces[ia].surf(),
             plane: nacre_geom::Plane::through_points(tri[0], tri[1], tri[2])
                 .expect("non-collinear"),
@@ -1785,10 +1764,8 @@ mod name_integer_road {
                 .iter()
                 .any(|&k| t[k].name_ints.as_ref().is_some_and(is_wide))
             && (!idx.iter().any(|&k| t[k].rotated)
-                || (t[idx[0]].base.chain_id != 0
-                    && idx
-                        .iter()
-                        .all(|&k| t[k].base.chain_id == t[idx[0]].base.chain_id)))
+                || (t[idx[0]].chain_id != 0
+                    && idx.iter().all(|&k| t[k].chain_id == t[idx[0]].chain_id)))
     }
 
     /// **The wide name describes the world.** The wide datum's carriers are the pocket's
@@ -2052,7 +2029,7 @@ mod name_integer_road {
                         name_ints: keep_names
                             .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
                             .flatten(),
-                        base: crate::planes::BaseFrame::none(),
+                        chain_id: 0,
                         surf: donor,
                         plane: nacre_geom::Plane::from_point_normal(
                             tri[0],

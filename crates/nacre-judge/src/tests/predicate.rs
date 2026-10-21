@@ -52,6 +52,7 @@ fn a_chain_holding_a_frame_never_reaches_the_coefficient_transport() {
 
 use super::*;
 use nacre_exact::Mag;
+use nacre_math::Point3;
 
 /// How these fixtures judge; production chooses both per model. The coincidence limit is the
 /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
@@ -129,15 +130,12 @@ impl Witness for W {
     fn is_rotated(&self) -> bool {
         false
     }
+}
+impl PlaneWitness for W {
     // These witnesses carry no motion, so there is nothing to cancel.
     fn chain_id(&self) -> u64 {
         0
     }
-    fn base_tri(&self) -> Option<[Point3; 3]> {
-        None
-    }
-}
-impl PlaneWitness for W {
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
@@ -196,7 +194,6 @@ struct RW {
     tri: [Point3; 3],
     coeffs: [f64; 4],
     def: [WitnessPoint; 3],
-    base: [Point3; 3],
     base_coeffs: [f64; 4],
 }
 
@@ -241,7 +238,6 @@ impl RW {
             base_coeffs: plane_of(base.map(|p| p.as_array())),
             tri,
             def,
-            base,
         }
     }
 }
@@ -256,14 +252,11 @@ impl Witness for RW {
     fn is_rotated(&self) -> bool {
         true
     }
+}
+impl PlaneWitness for RW {
     fn chain_id(&self) -> u64 {
         1 // one shared motion for every witness in these fixtures
     }
-    fn base_tri(&self) -> Option<[Point3; 3]> {
-        Some(self.base)
-    }
-}
-impl PlaneWitness for RW {
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
         let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();

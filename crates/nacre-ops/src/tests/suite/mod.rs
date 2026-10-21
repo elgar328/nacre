@@ -132,7 +132,7 @@ fn plane_through(m: &mut Model, tri: [Point3; 3]) -> WorkingPlane {
         base_rat: None,
         world: None,
         name_ints: nacre_judge::predicate::name_stored_ints(name.as_ref(), &tri_pt3, frame_sign),
-        base: crate::planes::BaseFrame::none(),
+        chain_id: 0,
         surf,
         plane,
         tri_pt3,

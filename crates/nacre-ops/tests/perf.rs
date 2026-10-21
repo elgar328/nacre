@@ -18,7 +18,7 @@
 //! (`cargo test -p nacre-ops --test perf -- --ignored`, ~28 min) — not on every change, but before
 //! believing the rotated path is healthy.
 //!
-//! Two workloads, because parallelism pulls them in opposite directions:
+//! The workloads, chosen because parallelism and precision pull them in different directions:
 //!
 //! - **Rotated fold** — a hub with `n` fins arrayed around it. Rotation puts every judgement
 //!   on the toleranced path, plane classes grow into the dozens, and per-class work is
@@ -359,9 +359,6 @@ fn measure_boolean_wall_clock() {
     println!("  recorded quarter turns 2000 : build {built:>9.2?}   fuse {fuse:>9.2?}");
 }
 
-/// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
-/// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
-/// narrow-first), so this is the price of exactness-on-the-truth over f64 signs.
 /// The long-decimal line alone, with what its judgements climbed — the fixture to A/B a change to
 /// the exact roads on, since the other lines' planes all have names that fit one `f64`. One test in
 /// this binary, run alone (`--test-threads=1`), so the process-global climb counter is this
@@ -381,6 +378,9 @@ fn measure_long_decimal_boxes() {
     );
 }
 
+/// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
+/// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
+/// narrow-first), so this is the price of exactness-on-the-truth over f64 signs.
 #[test]
 #[ignore]
 fn measure_profile_check_wall_clock() {

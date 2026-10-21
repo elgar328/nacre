@@ -23,10 +23,9 @@ use crate::kernel::frame3::{
     indirect_cmp_coord_judge, orient3d_from_cramer, orient3d_judge,
 };
 use nacre_exact::{Orient, Rat};
-use nacre_math::Point3;
 use nacre_predicates::{
     ThreePlane, det3_sign, det3_sign_filter, indirect_cmp_coord, indirect_cmp_coord_filter,
-    indirect_plane_side, indirect_plane_side_filter, orient2d, orient3d,
+    indirect_plane_side, indirect_plane_side_filter,
 };
 use num_bigint::BigInt;
 
@@ -160,36 +159,6 @@ pub trait Witness {
     fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         None
     }
-
-    /// Identifies the motion this witness's definition carries — `0` for none, and equal values
-    /// **only** for structurally identical chains (same nodes, order and pivots).
-    ///
-    /// A motion preserves every determinant these predicates take *up to its own determinant*, so
-    /// when all of a judgement's inputs carry one motion the answer is the answer on their
-    /// pre-motion data — exactly, with no tolerance at all. This is what lets such a judgement
-    /// leave the toleranced path entirely.
-    fn chain_id(&self) -> u64;
-
-    /// The witness triangle in the **pre-motion frame**, or `None` when those coordinates are not
-    /// `f64`-representable and so cannot be handed to the exact predicate.
-    ///
-    /// **It is the pre-motion triangle *canonicalised for handedness*, not the raw one — and
-    /// that is the implementor's job.** A chain containing an odd number of reflections is
-    /// improper (`det = −1`), and the "up to its own determinant" above then bites: every
-    /// judgement's inputs carry the *same* chain, so the determinant flips **uniformly** and the
-    /// shortcut returns a confidently wrong sign rather than a conservative miss. An implementor
-    /// therefore reflects the pre-motion data once more when the parity is odd
-    /// ([`crate::chain_parity`]), which restores the moved frame's handedness and makes every
-    /// determinant question transfer unchanged. `nacre-ops`' `BaseFrame::of` is the reference
-    /// implementation; `crate::frame3`'s `shared_base` applies the same convention (a sign flip
-    /// on x, exact for every finite `f64`) to the data it derives itself.
-    ///
-    /// **And a plane is corrected as a plane, not as a reflected normal** — reflecting a
-    /// triangle and re-deriving its normal differs from reflecting the normal alone by a global
-    /// sign, because the cross product is a pseudovector, and [`Judge::plane_pair_dir_sign`] reads
-    /// exactly that sign. [`name_stored_ints`] applies the whole correction to a name's
-    /// coefficients.
-    fn base_tri(&self) -> Option<[Point3; 3]>;
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -212,6 +181,15 @@ pub trait PlaneWitness: Witness {
     /// so a question that reads no `d` (a direction) keeps its exact route there.
     fn exact_normal(&self) -> Option<[f64; 3]>;
 
+    /// Identifies the motion this plane's definition carries — `0` for none, and equal values
+    /// **only** for structurally identical chains (same nodes, order and pivots).
+    ///
+    /// A motion preserves every determinant these predicates take *up to its own determinant*, so
+    /// when all of a judgement's inputs carry one motion the answer is the answer on their
+    /// pre-motion data — exactly, with no tolerance at all. This is what lets such a judgement
+    /// leave the toleranced path entirely.
+    fn chain_id(&self) -> u64;
+
     /// `+1` when the stored normal agrees with the witness triangle's, `-1` when they oppose —
     /// **the relation between the two descriptions**, not a choice between them.
     ///
@@ -220,9 +198,21 @@ pub trait PlaneWitness: Witness {
     /// spelling of it.
     fn frame_sign(&self) -> i8;
 
-    /// The plane's coefficients in the pre-motion frame, **in the handedness
-    /// [`Witness::base_tri`] canonicalises to** (all the caveats there), each an `f64` exactly —
-    /// for a named plane, its name's exact row in that frame ([`NameInts::row`]).
+    /// The plane's coefficients in the pre-motion frame, each an `f64` exactly — for a named
+    /// plane, its name's exact row in that frame ([`NameInts::row`]).
+    ///
+    /// **They are the pre-motion plane *canonicalised for handedness*, not the raw one — and that
+    /// is the implementor's job.** A chain containing an odd number of reflections is improper
+    /// (`det = −1`), and [`Self::chain_id`]'s "up to its own determinant" then bites: every
+    /// judgement's inputs carry the *same* chain, so the determinant flips **uniformly** and the
+    /// shortcut returns a confidently wrong sign rather than a conservative miss. So the
+    /// pre-motion data is reflected once more when the parity is odd ([`crate::chain_parity`]),
+    /// which restores the moved frame's handedness and makes every determinant question transfer
+    /// unchanged — and a plane is reflected **as a plane**: reflecting points and re-deriving the
+    /// normal differs from reflecting the normal alone by a global sign (the cross product is a
+    /// pseudovector), and [`Judge::plane_pair_dir_sign`] reads exactly that sign.
+    /// [`name_stored_ints`] is the reference implementation; `crate::frame3`'s `shared_base`
+    /// applies the same convention to the points it derives itself.
     fn base_coeffs(&self) -> Option<[f64; 4]>;
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
@@ -231,10 +221,9 @@ pub trait PlaneWitness: Witness {
     /// [`Self::exact_coeffs`] for an unmoved plane and as [`Self::base_coeffs`] for a moved one.
     /// And every name, whatever its width, is what [`Judge`]'s **name-integer road** reads where
     /// no exact row stands: an `f64` filter over the integers' nearest `f64`s, then the integers
-    /// themselves. Without it such a plane's
-    /// judgement climbs — measured for wide names at **2.0×** the escalations (240 against 475;
-    /// the confound `wide_datum_cost.rs` states — the two arms pick different vertex triples —
-    /// applies to either number, so read it as "several times", not as a coefficient).
+    /// themselves. Without it such a plane's judgement climbs — measured on wide names at about
+    /// **2×** the escalations (240 against 475, two arms whose datum planes are different vertex
+    /// triples, so read it as "several times", not as a coefficient).
     fn name_ints(&self) -> Option<&NameInts> {
         None
     }
@@ -254,9 +243,9 @@ pub trait PlaneWitness: Witness {
 pub struct NameInts {
     /// The integer coefficients, in the frame the name speaks — the world when unmoved, the
     /// pre-motion frame when moved — sign-folded to the stored orientation, and **in the
-    /// handedness [`Witness::base_tri`] canonicalises to**: on an improper chain the row is the
-    /// reflected plane's (see [`name_stored_ints`]), so a question whose planes share one motion
-    /// asks these rows exactly as an unmoved question asks its world rows.
+    /// canonical handedness** [`PlaneWitness::base_coeffs`] asks for: on an improper chain the row
+    /// is the reflected plane's (see [`name_stored_ints`]), so a question whose planes share one
+    /// motion asks these rows exactly as an unmoved question asks its world rows.
     pub ints: [BigInt; 4],
     /// Each integer's **nearest** `f64` — what the name-integer road's filters read
     /// ([`nacre_predicates::indirect_plane_side_filter`] and its siblings answer for the integers
@@ -268,7 +257,8 @@ pub struct NameInts {
     /// The same row where every `f64` **is** its integer: each coefficient an `f64` exactly and
     /// within 127 bits. Then a predicate over the row answers for the plane the defining points
     /// span (the name is derived from them without rounding), through its own exact expansions —
-    /// this is what an unmoved plane's exact shortcuts read ([`PlaneWitness::exact_coeffs`]). The
+    /// this is what the exact shortcuts read ([`PlaneWitness::exact_coeffs`] for an unmoved plane,
+    /// [`PlaneWitness::base_coeffs`] for a moved one). The
     /// width cap is the expansions' range: a degree-6 product of 127-bit integers is about
     /// `2⁷⁶²`, inside the `f64` exponent; a wide name's integers are not.
     pub row: Option<[f64; 4]>,
@@ -315,8 +305,8 @@ pub fn witness_name_sense(
 /// handedness of its frame.
 ///
 /// **The parity correction is on the coefficients, and it is not "negate x".** The
-/// canonicalised base frame reflects the *points* in `x` (see [`Witness::base_tri`]), and a
-/// plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
+/// canonicalised base frame reflects the *points* in `x` (see [`PlaneWitness::base_coeffs`]), and
+/// a plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
 /// pseudovector, so the reflection `C` (negate the x *coefficient*) arrives with one more
 /// global sign `det(C) = −1`. The two together negate `y`, `z` and `d` and keep `x`: exactly
 /// what makes these rows a positive multiple of the plane through the canonicalised base
@@ -686,7 +676,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
             return det3_sign([np, na, nb]);
         }
         // A determinant of normals: a motion multiplies it by `det(R)`, which the canonicalised
-        // base frame has already made `+1` (see `Witness::base_tri`), so one shared motion means
+        // base frame has already made `+1` (see `PlaneWitness::base_coeffs`), so one shared motion means
         // the pre-motion normals give the same sign, exactly.
         if shared_motion(planes, &[p, a, b]) {
             let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
@@ -783,18 +773,6 @@ impl<W: Witness> Judge<'_, W> {
         if let (Some(a), Some(b)) = (planes[i].world_name(), planes[j].world_name()) {
             return a == b;
         }
-        // "Same plane" is a statement about incidence, which *any* motion preserves — proper or
-        // not — so this one shortcut would survive an improper chain even uncorrected. It reads
-        // the canonicalised base anyway, because one convention is cheaper to keep than two.
-        // The exact test on a collinear base answers zero for every point, hence the guard.
-        if shared_motion(planes, &[i, j]) {
-            if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
-                if tri_collinear(ti) || tri_collinear(tj) {
-                    return false;
-                }
-                return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
-            }
-        }
         // Compose the two motions and compare the exact planes. This is the only route that can
         // *prove* two differently-turned planes identical: everything below decides by narrowing
         // intervals, which can refute equality but never establish it, so it lands on
@@ -836,12 +814,12 @@ pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
 
 /// Can this judgement be answered exactly in the pre-rotation frame?
 ///
-/// Yes when every input carries **one and the same** rigid motion (`chain_id`) and that motion is
-/// not the identity: then the rotation cancels out of the determinant, and the exact predicate
-/// answers on the pre-motion data — if each plane has it in a form the predicate takes (an exact
-/// row, a name, an `f64` base triangle), which every caller asks next. A mismatch is a
+/// Yes when every input carries **one and the same** motion (`chain_id`, nonzero): then the motion
+/// cancels out of the determinant, and the exact predicate answers on the pre-motion data — if
+/// each plane has it in a form the predicate takes (an exact row, a name), which every caller asks
+/// next. A mismatch is a
 /// conservative miss — the toleranced path still answers, just more slowly.
-fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
+fn shared_motion<W: PlaneWitness>(planes: &[W], idx: &[usize]) -> bool {
     let Some(&first) = idx.first() else {
         return false;
     };
@@ -1081,31 +1059,6 @@ fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nac
         }
     }
     Some((axis?, total))
-}
-
-/// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
-/// projections of the cross product (each an exact `orient2d`) — asked of a pre-motion witness
-/// triangle before [`Judge::planes_coplanar`] reads it as a plane.
-fn tri_collinear(t: [Point3; 3]) -> bool {
-    let [a, b, c] = t.map(|p| p.as_array());
-    let proj = |i: usize, j: usize| orient2d([a[i], a[j]], [b[i], b[j]], [c[i], c[j]]) == 0.0;
-    proj(0, 1) && proj(1, 2) && proj(2, 0)
-}
-
-/// The exact side of triangle `tri`'s plane that the explicit point `p` lies on
-/// (`+1`/`-1`/`0`), sharing [`Judge::orient3d`]'s convention (`p` takes `V`'s slot).
-fn plane_side_exact(tri: [Point3; 3], p: Point3) -> i8 {
-    let d = orient3d(
-        p.as_array(),
-        tri[0].as_array(),
-        tri[1].as_array(),
-        tri[2].as_array(),
-    );
-    match d.partial_cmp(&0.0) {
-        Some(std::cmp::Ordering::Greater) => 1,
-        Some(std::cmp::Ordering::Less) => -1,
-        _ => 0,
-    }
 }
 
 /// Is `d` weaker evidence than `best` — the one a report should quote?

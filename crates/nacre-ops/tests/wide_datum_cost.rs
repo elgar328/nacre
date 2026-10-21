@@ -73,8 +73,8 @@ use nacre_topo::{Model, PointCache, Solid, Vertex};
 mod fixtures;
 use fixtures::{datum_frame, live_vertices, p2};
 
-/// Held for the whole body of every test here that runs a boolean — the measurements read
-/// `climb_census`, and a boolean beside them would pour its climbs into their windows (see the
+/// Held for the whole body of every test here — the census readers bracket their booleans with
+/// `climb_census`, and anything beside them that climbs would pour into their windows (see the
 /// file note). A poisoned lock is passed through, so one test failing does not turn another red.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

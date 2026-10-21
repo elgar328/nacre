@@ -345,7 +345,7 @@ it names."*
 
 두 점이 세계 법선이 그 축인 같은 평면 위에 있으면 그 좌표는 같다 — 산술 없이 0 이다(`orient3d` 의
 `j ∈ {p, q, r}` → 0 과 같은 종류의 조합 항등식). 오늘은 그 0 이 어떤 필터도 못 넘어 꼬리로 간다: 정확 행 갈래는
-`Expansion`, 이름 정수 도로는 BigInt, 회전이 섞인 질문은 상승. 잰 것(임시 계측): 직렬 스위트에서 정확 행 갈래의
+`Expansion`, 이름 정수 도로는 BigInt, 회전이 섞인 질문은 상승. 잰 것(임시 계측): 직렬 lib 시험에서 정확 행 갈래의
 정확한 0 1.64M 중 1.59M, 이름 정수 도로의 0 0.83M 중 99.8%, perf 의 회전 섞인 질문의 0 377k 중 80k 가 이 항등식이고,
 항등식이 서는데 답이 0 이 아닌 것은 0. 프로토타입(`cmp_coord` 첫머리, 되돌림): perf.rs 명령어 −9.7%, 축정렬 작은
 불리언 200개 164 → 71 ms, 축정렬 fold 80 1.21 → 1.01 s, 긴 십진 상자 66 → 39 ms, 면 수·부피 동일. 평면의 세계 법선은
@@ -355,9 +355,10 @@ it names."*
 
 ### 정확 지름길 갈래를 이름 정수 도로 하나로
 
-세 술어의 정확 갈래는 같은 데이터를 세 번 읽는다: 무이동 정확 행(`exact_coeffs`), 공유 모션 정확 행(`base_coeffs`
-— 이제 둘 다 `NameInts::row`), 그리고 이름 정수 도로(`name_rows`). 앞의 둘은 도로 게이트의 부분집합이고 꼬리만
-다르다 — 정확 행은 `Expansion`(방향은 `det3_sign` 의 적응형), 도로는 BigInt 쌍둥이(방향은 `det3_sign_filter` 뒤).
+세 술어의 정확 갈래는 같은 데이터를 거듭 읽는다: 무이동 정확 행(`exact_coeffs`), `orient3d`·방향의 공유 모션 정확 행
+(`base_coeffs` — 둘 다 `NameInts::row`), 그리고 이름 정수 도로(`name_rows`). 앞의 둘은 도로 게이트의 부분집합이고
+꼬리만 다르다 — 정확 행은 `Expansion`(방향은 `det3_sign` 의 적응형), 도로는 BigInt 쌍둥이(방향은 `det3_sign_filter`
+뒤). `cmp_coord` 의 공유 모션 갈래(`cancel_cmp_coord`)는 축 추론이라 사본이 아니다.
 꼬리만 재면 BigInt 가 빠르다(release, 필터를 못 넘는 52비트 입력: `Expansion` 2,880/1,361 ns 대 BigInt 891/548 ns,
 cmp/side). 하나로 하려면 이름 없는 시험 증인(`nacre-judge` 시험의 `W`·`RW`)이 이름을 들어야 한다 — 그것들은
 `exact_coeffs`/`base_coeffs` 포트로 f64 를 준다. 그 뒤 `base_coeffs` 를 읽는 곳은 `cancel_cmp_coord` 하나다. 먼저 잴
