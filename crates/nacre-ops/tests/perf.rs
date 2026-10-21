@@ -30,6 +30,10 @@
 //!   coordinates, ~11 plane classes, per-class work in microseconds. This is where the
 //!   scheduling overhead can cost more than it buys, so it is measured separately rather
 //!   than averaged away.
+//! - **Long-decimal boxes** — axis-aligned too, but with arbitrary `f64` corners, so the walls'
+//!   names run past 53 bits and no `f64` spells them exactly. The other lines' names all fit one
+//!   `f64`; this one measures the exact roads for names that do not
+//!   ([`measure_long_decimal_boxes`] runs it alone with its climb count).
 //!
 //! **The first run of anything here is discarded.** Under `parallel` the first boolean pays
 //! rayon's pool start-up *and* — less obviously — `nacre-exact`'s `HP_CONSTS` is a
@@ -209,6 +213,56 @@ fn small_booleans(reps: usize) -> std::time::Duration {
     spent
 }
 
+/// `pairs` diagonal overlaps of two boxes whose corners are **arbitrary `f64` values** — the
+/// shortest decimal of each is 16–17 digits, so the walls' names run past 53 bits (`x = p / 10¹⁷`
+/// is the name `[10¹⁷, 0, 0, −p]`). Each pair is fused and cut. The shape and ranges are the
+/// coplanar suite's `fuse_cut_diagonal_boxes_match_aabb`; the corners come from a fixed generator
+/// rather than proptest's, so two runs build the same booleans.
+fn long_decimal_boxes(pairs: usize) -> std::time::Duration {
+    // splitmix64: a fixed stream, so the population is the same on every run.
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = move |lo: f64, hi: f64| -> f64 {
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^= z >> 31;
+        lo + (hi - lo) * ((z >> 11) as f64 / (1u64 << 53) as f64)
+    };
+    let mut spent = std::time::Duration::ZERO;
+    for _ in 0..pairs {
+        let amin: [f64; 3] = std::array::from_fn(|_| next(-3.0, 3.0));
+        let aext: [f64; 3] = std::array::from_fn(|_| next(1.0, 3.0));
+        let t: [f64; 3] = std::array::from_fn(|_| next(0.15, 0.6));
+        let s: [f64; 3] = std::array::from_fn(|_| next(0.3, 2.0));
+        let amax: [f64; 3] = std::array::from_fn(|i| amin[i] + aext[i]);
+        let bmin: [f64; 3] = std::array::from_fn(|i| amin[i] + t[i] * aext[i]);
+        let bmax: [f64; 3] = std::array::from_fn(|i| amax[i] + s[i]);
+        for kind in [BoolKind::Fuse, BoolKind::Cut] {
+            let mut m = Model::new();
+            let a = nacre_ops::fixtures::cuboid_on(
+                &mut m,
+                [amin[0], amin[1]],
+                [amax[0], amax[1]],
+                amin[2],
+                aext[2],
+            );
+            let b = nacre_ops::fixtures::cuboid_on(
+                &mut m,
+                [bmin[0], bmin[1]],
+                [bmax[0], bmax[1]],
+                bmin[2],
+                bmax[2] - bmin[2],
+            );
+            m.rebuild_adjacency();
+            let t = std::time::Instant::now();
+            boolean(&mut m, kind, a, b).expect("a long-decimal box boolean");
+            spent += t.elapsed();
+        }
+    }
+    spent
+}
+
 /// A block whose every motion is recorded (its `Through` face — [`fixtures::through_block`])
 /// moved by a translation and then turned a quarter `n` times — every turn recorded behind the
 /// last, so the chain is `n + 1` deep and every node folds. Returns the time to build it and the
@@ -294,6 +348,13 @@ fn measure_boolean_wall_clock() {
         "  axis-aligned small   : {d:>12.2?} over {reps} booleans ({:.1?} each)",
         d / reps as u32
     );
+    let pairs = 40;
+    let d = long_decimal_boxes(pairs);
+    println!(
+        "  long-decimal boxes   : {d:>12.2?} over {} booleans ({:.1?} each)",
+        2 * pairs,
+        d / (2 * pairs) as u32
+    );
     let (built, fuse) = recorded_quarter_turns(2000);
     println!("  recorded quarter turns 2000 : build {built:>9.2?}   fuse {fuse:>9.2?}");
 }
@@ -301,6 +362,25 @@ fn measure_boolean_wall_clock() {
 /// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
 /// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
 /// narrow-first), so this is the price of exactness-on-the-truth over f64 signs.
+/// The long-decimal line alone, with what its judgements climbed — the fixture to A/B a change to
+/// the exact roads on, since the other lines' planes all have names that fit one `f64`. One test in
+/// this binary, run alone (`--test-threads=1`), so the process-global climb counter is this
+/// fixture's.
+#[test]
+#[ignore = "a measurement, not an assertion (run with --ignored --nocapture)"]
+fn measure_long_decimal_boxes() {
+    use nacre_judge::kernel::frame3::climb_census;
+    let _ = long_decimal_boxes(2);
+    let _ = climb_census::take();
+    let pairs = 40;
+    let d = long_decimal_boxes(pairs);
+    let (climbs, bits, exhausted) = climb_census::take();
+    println!(
+        "  long-decimal boxes   : {d:>12.2?} over {} booleans   climbs {climbs}  bits {bits}  exhausted {exhausted}",
+        2 * pairs
+    );
+}
+
 #[test]
 #[ignore]
 fn measure_profile_check_wall_clock() {
