@@ -8,9 +8,10 @@
 //! ([`Witness::tri_pt3`], see [`plane_def`]), judged by the [`crate::kernel`] judges.
 //!
 //! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
-//! [`any_rotated`] of just the planes it touches: all-axis-aligned → the planes' names, exactly
-//! (never builds a `WitnessPoint`); any rotated → the kernel judge. So a mixed-rotation boolean keeps the
-//! axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
+//! [`any_rotated`] of just the planes it touches: all named and unrotated, or all named and on one
+//! motion → the planes' names, exactly (never builds a `WitnessPoint`); otherwise → the kernel
+//! judge. So a mixed-rotation boolean keeps the axis-aligned operand's own predicates on the fast
+//! path, finer than a per-boolean flag.
 //!
 //! The caller (`nacre-ops`) provides the witnesses by implementing [`Witness`] (a face) and
 //! [`PlaneWitness`] (a plane class) on its own tables — the port keeps this crate free of the
@@ -406,10 +407,9 @@ impl<'a, W> Judge<'a, W> {
 
 /// The plane-class predicates — the questions the arrangement asks of a plane table.
 ///
-/// Each routes itself: named planes unmoved or on one motion are answered by their names and never
-/// build a `WitnessPoint`;
-/// any rotated plane goes to the kernel judges, under this operation's [`ProofStandard`], with what
-/// it could not prove recorded in [`Judge::notes`].
+/// Each routes itself: named planes, all unrotated or all on one motion, are answered by their
+/// names and never build a `WitnessPoint`; the rest go to the kernel judges, under this
+/// operation's [`ProofStandard`], with what they could not prove recorded in [`Judge::notes`].
 impl<W: Witness> Judge<'_, W> {
     /// Plane `k`'s interval coefficients, built once and copied thereafter.
     ///
