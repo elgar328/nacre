@@ -120,6 +120,31 @@ fn ints(v: [i128; 4]) -> [Rat; 4] {
     v.map(Rat::from_int)
 }
 
+/// [`normal_zeros`] reads exact zeros only, and a name answers the same at either width: the wide
+/// name is the narrow one's coefficients with `d` pushed past `i128`, which leaves the normal as it
+/// was.
+#[test]
+fn a_normal_zero_is_an_exact_zero_at_either_width() {
+    use crate::{PlaneName, normal_zeros};
+    use num_bigint::BigInt;
+    assert_eq!(normal_zeros(&ints([0, 0, 7, -2])), [true, true, false]);
+    assert_eq!(normal_zeros(&ints([3, 0, 4, 1])), [false, true, false]);
+    assert_eq!(normal_zeros(&ints([1, 2, 3, 0])), [false; 3]);
+    // A component a hair from zero is not zero.
+    let hair = [
+        Rat::new(1, 1 << 100).unwrap(),
+        Rat::from_int(1),
+        Rat::from_int(0),
+        Rat::from_int(0),
+    ];
+    assert_eq!(normal_zeros(&hair), [false, false, true]);
+    let narrow = PlaneName::Narrow(ints([0, 5, 0, -1]));
+    assert_eq!(narrow.normal_zeros(), [true, false, true]);
+    let far: BigInt = BigInt::from(1) << 200;
+    let wide = PlaneName::Wide([BigInt::from(0), BigInt::from(5), BigInt::from(0), -far]);
+    assert_eq!(wide.normal_zeros(), narrow.normal_zeros());
+}
+
 /// [`Isometry::fixes_plane`] — the set-invariance predicate the invariant-plane
 /// restatement gates on. Hand-known planes and motions; the overflow case locks the
 /// conservative direction (a miss records a node — slower, never wrong).

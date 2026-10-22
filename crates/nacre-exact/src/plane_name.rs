@@ -80,6 +80,34 @@ impl PlaneName {
             PlaneName::Wide(c) => c.clone(),
         }
     }
+
+    /// Which components of the named plane's normal are exactly zero — [`normal_zeros`] for a
+    /// name of either width.
+    pub fn normal_zeros(&self) -> [bool; 3] {
+        match self {
+            PlaneName::Narrow(c) => normal_zeros(c),
+            PlaneName::Wide(c) => [0, 1, 2].map(|k| c[k].sign() == num_bigint::Sign::NoSign),
+        }
+    }
+}
+
+/// Which components of the normal `(a, b, c)` of the plane `a·x + b·y + c·z + d = 0` are exactly
+/// zero: `true` at `k` when the plane runs parallel to world axis `k`.
+///
+/// Two zeros make the plane perpendicular to the remaining axis — every point on it has the same
+/// coordinate there. `d` plays no part.
+///
+/// ```
+/// use nacre_exact::{Rat, normal_zeros};
+/// let r = Rat::from_int;
+/// // x = 3: parallel to y and z.
+/// assert_eq!(normal_zeros(&[r(1), r(0), r(0), r(-3)]), [false, true, true]);
+/// // x + y = 1: parallel to z only.
+/// assert_eq!(normal_zeros(&[r(1), r(1), r(0), r(-1)]), [false, false, true]);
+/// ```
+pub fn normal_zeros(coeffs: &[Rat; 4]) -> [bool; 3] {
+    let zero = Rat::from_int(0);
+    [0, 1, 2].map(|k| coeffs[k] == zero)
 }
 
 /// **The plane three points name, computed so that the arithmetic on the way cannot lose it.**

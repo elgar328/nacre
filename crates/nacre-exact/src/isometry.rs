@@ -38,8 +38,8 @@ impl Axis {
 /// composes the first two, and a recorded motion chain is checked node by node.
 pub fn axis_rotation_fixes_plane(axis: Axis, coeffs: &[Rat; 4]) -> bool {
     let i = axis.index();
-    let zero = Rat::from_int(0);
-    coeffs[i] != zero && (0..3).all(|k| k == i || coeffs[k] == zero)
+    let z = crate::normal_zeros(coeffs);
+    !z[i] && (0..3).all(|k| k == i || z[k])
 }
 
 /// Whether the translation `offset` fixes the plane as a set: its component along the
@@ -63,10 +63,11 @@ pub fn translation_fixes_plane(offset: &[Rat; 3], coeffs: &[Rat; 4]) -> bool {
 pub fn mirror_fixes_plane(axis: Axis, offset: Rat, coeffs: &[Rat; 4]) -> bool {
     let i = axis.index();
     let zero = Rat::from_int(0);
-    if coeffs[i] == zero {
+    let z = crate::normal_zeros(coeffs);
+    if z[i] {
         return true;
     }
-    (0..3).all(|k| k == i || coeffs[k] == zero)
+    (0..3).all(|k| k == i || z[k])
         && coeffs[i]
             .checked_mul(offset)
             .and_then(|p| p.checked_add(coeffs[3]))

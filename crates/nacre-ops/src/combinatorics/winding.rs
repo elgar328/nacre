@@ -63,9 +63,8 @@ struct KeyCmp<'a> {
 /// The world axis a class's plane holds constant — the one nonzero component of its world normal.
 /// `None` for a plane no world axis is normal to, or one with no world statement.
 fn flat_axis(jd: &Judge<'_, WorkingPlane>, p: usize) -> Option<usize> {
-    let w = class_coeffs_rat(jd, p)?;
-    let zero = nacre_exact::Rat::from_int(0);
-    let mut nonzero = (0..3).filter(|&k| w[k] != zero);
+    let zeros = jd.planes[p].world.as_ref()?.name.normal_zeros();
+    let mut nonzero = (0..3).filter(|&k| !zeros[k]);
     let k = nonzero.next()?;
     nonzero.next().is_none().then_some(k)
 }
