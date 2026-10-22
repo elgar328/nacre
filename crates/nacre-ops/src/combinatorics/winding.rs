@@ -586,7 +586,7 @@ pub(crate) fn loop_winding(
     // there), and a pierce point's coordinate is `a + b√c` with its own total comparators
     // (`nacre_exact::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
     // where that decision belongs** — the door's single answer is the wrong one here, and
-    // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
+    // `Judge::cmp_coord`'s ladder speaks neither `MeetLine` nor `QuadVal`.
     //
     // **The keys are materialized, once.** A three-plane key is free to read out of the name, but a
     // pierce key is a *solve* ([`pierce_meet`] re-derives the point from the name), and the scan

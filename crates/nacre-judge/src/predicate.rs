@@ -392,6 +392,15 @@ pub struct Judge<'a, W> {
     /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
     /// who won — the same argument `HpCell` rests on.
     iv: Vec<BoundedCell>,
+    /// **Each plane's known exact zeros of its world normal**, filled on first use —
+    /// [`Judge::world_normal_zeros`].
+    ///
+    /// The same cache shape as `iv`. Filling a cell can walk the plane's witness chain, and a
+    /// chain walked per query costs the depth once per question — the cost a chain is folded once
+    /// to avoid. It is derived here rather than asked of [`PlaneWitness`] because it reads only
+    /// what that trait already hands over (the world name, the witness chain, the name integers),
+    /// so an implementor owes nothing new.
+    zeros: Vec<ZerosCell>,
 }
 
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
@@ -401,6 +410,12 @@ type BoundedCell = std::sync::OnceLock<[nacre_exact::Bounded; 4]>;
 #[cfg(not(feature = "parallel"))]
 type BoundedCell = std::cell::OnceCell<[nacre_exact::Bounded; 4]>;
 
+/// The same for one plane's known normal zeros.
+#[cfg(feature = "parallel")]
+type ZerosCell = std::sync::OnceLock<[bool; 3]>;
+#[cfg(not(feature = "parallel"))]
+type ZerosCell = std::cell::OnceCell<[bool; 3]>;
+
 impl<'a, W> Judge<'a, W> {
     pub fn new(planes: &'a [W], standard: ProofStandard, notes: &'a Notes) -> Judge<'a, W> {
         Judge {
@@ -408,6 +423,7 @@ impl<'a, W> Judge<'a, W> {
             standard,
             notes,
             iv: (0..planes.len()).map(|_| BoundedCell::new()).collect(),
+            zeros: (0..planes.len()).map(|_| ZerosCell::new()).collect(),
         }
     }
 
@@ -606,12 +622,86 @@ impl<W: PlaneWitness> Judge<'_, W> {
         }
     }
 
+    /// **Which components of plane `k`'s world normal are known to be exactly zero** — `false`
+    /// means not known, not nonzero.
+    ///
+    /// Two sources, both exact:
+    /// - the plane's world name ([`Witness::world_name`]);
+    /// - otherwise its witness chain, where that chain turns about one world axis `i` only
+    ///   ([`single_axis_motion`] — translations and pivots do not move a direction; a reflection
+    ///   or a frame ends it). Such a turn keeps a normal's `i` component, so a zero there in the
+    ///   pre-motion name ([`PlaneWitness::name_ints`]) is a zero in the world; and it keeps `e_i`,
+    ///   so a pre-motion normal along `e_i` keeps its other two zeros as well.
+    ///
+    /// The name speaks the frame the chain starts from because it exists at all:
+    /// [`name_stored_ints`] builds it only where every witness base lies on the named plane. The
+    /// chain is read off the first witness point, which is every point's chain wherever a name
+    /// stands — a named witness is built on one chain, and only a nameless one mixes them.
+    fn world_normal_zeros(&self, k: usize) -> [bool; 3] {
+        *self.zeros[k].get_or_init(|| {
+            let plane = &self.planes[k];
+            if let Some(name) = plane.world_name() {
+                return name.normal_zeros();
+            }
+            let def = plane_def(self.planes, k);
+            let (Some((axis, _)), Some(name)) = (single_axis_motion(def), plane.name_ints()) else {
+                return [false; 3];
+            };
+            debug_assert!(
+                def.iter().all(|w| w.chain == def[0].chain),
+                "a named witness whose three points carry different chains"
+            );
+            let zero = |m: usize| name.ints[m].sign() == num_bigint::Sign::NoSign;
+            let i = axis.index();
+            let (j, l) = ((i + 1) % 3, (i + 2) % 3);
+            let along = zero(j) && zero(l);
+            let mut z = [false; 3];
+            z[i] = zero(i);
+            z[j] = along;
+            z[l] = along;
+            z
+        })
+    }
+
+    /// **Whether the planes two points share hold coordinate `axis` constant**, so the two
+    /// coordinates are equal with no arithmetic at all.
+    ///
+    /// Both points lie on every shared plane, so their difference is perpendicular to every
+    /// shared normal. When the shared normals cut down to the two columns other than `axis` are
+    /// [`forced_rank_deficient`] by their known zeros ([`Self::world_normal_zeros`]), some nonzero
+    /// combination of them has an `axis` component only — and that combination is not the zero
+    /// vector, because two distinct planes through one point are not parallel and three shared
+    /// planes are one name. So `e_axis` lies in their span, and the difference has no `axis`
+    /// component. One shared plane: its normal is the axis. Two: their line runs across the axis.
+    /// Three: one point.
+    ///
+    /// Distinct indices are distinct planes — the class discovery parts two faces only on a
+    /// definite sign. The premise is the caller's: each triple meets in a point.
+    fn shared_planes_hold(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> bool {
+        let mut rows = [[false; 3]; 3];
+        let mut n = 0;
+        for (i, &k) in a.iter().enumerate() {
+            if b.contains(&k) && !a[..i].contains(&k) {
+                rows[n] = self.world_normal_zeros(k);
+                n += 1;
+            }
+        }
+        n > 0 && forced_rank_deficient(&rows[..n], &[(axis + 1) % 3, (axis + 2) % 3])
+    }
+
     /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
-    /// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). `!rotated` → the exact implicit
+    /// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). Each triple must meet in a point.
+    ///
+    /// First the combinatorial identity: where the planes the two triples share hold the
+    /// coordinate constant ([`Self::shared_planes_hold`]), the answer is `0` with no arithmetic —
+    /// the sibling of `orient3d`'s `j ∈ {p, q, r}`. Then `!rotated` → the exact implicit
     /// `cmp_coord` on the planes' name rows ([`PlaneWitness::exact_coeffs`]); `rotated` → each
     /// triple's three planes as exact
     /// `WitnessPoint` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
+        if self.shared_planes_hold(a, b, axis) {
+            return 0;
+        }
         let planes = self.planes;
         let tp = |t: [usize; 3]| {
             Some(ThreePlane([
@@ -629,10 +719,10 @@ impl<W: PlaneWitness> Judge<'_, W> {
         // The name-integer road, world gate only (`allow_shared: false`): a coordinate comparison is not
         // motion-invariant, and the rotation-axis reasoning that makes some moved cases exact
         // is `cancel_cmp_coord`'s above. Orientation-invariant, so the σ fold is harmless here.
-        // Its exact zeros — two points with one coordinate, the ties no filter separates — are
-        // much of what this road answers: the toleranced route proved them only by climbing to
-        // the coincidence standard (measured over the `nacre-ops` suite, 935k of the 1.98M calls
-        // that came here on unmoved names wider than an `f64` row).
+        // Exact zeros — two points with one coordinate, the ties no filter separates — mostly
+        // do not reach it: the shared-plane identity at the top answers them first. Measured
+        // over the `nacre-ops` lib suite, the calls reaching this road hold 144 zeros in 0.93M;
+        // with the identity switched off, 0.83M in 1.76M.
         if let Some([a0, a1, a2, b0, b1, b2]) =
             self.name_rows([a[0], a[1], a[2], b[0], b[1], b[2]], false)
         {
@@ -722,8 +812,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
 /// `Judge` behind it, borrowed immutably. (On the `Judge` this cache would need a lock, and a lock
 /// here would serialize the parallel arrangement.)
 ///
-/// One lifetime suffices: `Judge`'s fields are `&'a [W]`, `ProofStandard`, `&'a Notes` and an owned
-/// `Vec`, all covariant in `'a`, so `&'p Judge<'a, W>` coerces to `&'p Judge<'p, W>`.
+/// One lifetime suffices: `Judge`'s fields are `&'a [W]`, `ProofStandard`, `&'a Notes` and owned
+/// `Vec`s, all covariant in `'a`, so `&'p Judge<'a, W>` coerces to `&'p Judge<'p, W>`.
 pub struct ImplicitPoint<'a, W> {
     jd: &'a Judge<'a, W>,
     p: usize,
@@ -834,6 +924,35 @@ fn shared_motion<W: PlaneWitness>(planes: &[W], idx: &[usize]) -> bool {
 /// same every call, so the witness owns them and this is a pure accessor.
 pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[WitnessPoint; 3] {
     planes[k].tri_pt3()
+}
+
+/// **Whether known zeros alone force a matrix's rank below its row count.** Row `r` is a plane's
+/// normal cut down to `cols`, and `zeros[r][c]` says entry `(r, c)` is known to be exactly zero.
+/// The answer is `true` when no way of giving each row a column of its own lands every row on an
+/// entry not known to be zero.
+///
+/// A full-size minor is a sum over exactly those assignments, so if each one meets a known zero,
+/// every full-size minor vanishes: the largest assignment bounds the rank from above (the
+/// Frobenius–König theorem). More rows than columns are always deficient; no rows never are.
+/// Rows and columns number at most three, so the assignments are tried one by one.
+fn forced_rank_deficient(zeros: &[[bool; 3]], cols: &[usize]) -> bool {
+    fn assign(rows: &[[bool; 3]], cols: &[usize], taken: &mut [bool; 3]) -> bool {
+        let Some((row, rest)) = rows.split_first() else {
+            return true;
+        };
+        for (slot, &c) in cols.iter().enumerate() {
+            if !taken[slot] && !row[c] {
+                taken[slot] = true;
+                let fits = assign(rest, cols, taken);
+                taken[slot] = false;
+                if fits {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    !assign(zeros, cols, &mut [false; 3])
 }
 
 fn to_i8(o: Orient) -> i8 {

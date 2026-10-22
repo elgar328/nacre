@@ -189,12 +189,17 @@ fn cube_corner_planes() -> Vec<W> {
     ]
 }
 
-/// A plane witness carrying one shared rotation — what [`cancel_cmp_coord`] needs.
+/// A plane witness carrying one shared rotation — what [`cancel_cmp_coord`] needs. The motion
+/// identity, the names and the world statement default to "one shared motion, no names"; the
+/// builders below change them for fixtures that need a chain of their own or a name.
 struct RW {
     tri: [Point3; 3],
     coeffs: [f64; 4],
     def: [WitnessPoint; 3],
     base_coeffs: [f64; 4],
+    id: u64,
+    world: Option<nacre_exact::PlaneName>,
+    ints: Option<NameInts>,
 }
 
 /// `[a,b,c,d]` of the plane through three points (`n = e1 × e2`, `d = −n·p0`).
@@ -223,14 +228,22 @@ impl RW {
 
     /// The same, through a chain of turns — one node per `(axis, deg)`.
     fn turned(pts: [[i128; 3]; 3], nodes: &[(Axis, i128)]) -> RW {
-        let pivot = [ri(1, 3), ri(1, 7), ri(0, 1)];
-        let def: [WitnessPoint; 3] = pts.map(|q| {
-            let mut p = WitnessPoint::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)]);
-            for &(axis, deg) in nodes {
-                p = p.rotate_about(axis, Angle::from_deg(ri(deg, 1)).unwrap(), pivot);
-            }
-            p
-        });
+        RW::moved(pts, |p| {
+            nodes.iter().fold(p, |p, &(axis, deg)| {
+                p.rotate_about(axis, Angle::from_deg(ri(deg, 1)).unwrap(), RW::pivot())
+            })
+        })
+    }
+
+    /// Off the origin, so a pivot's translation is present and has to cancel in a difference.
+    fn pivot() -> [nacre_exact::Rat; 3] {
+        [ri(1, 3), ri(1, 7), ri(0, 1)]
+    }
+
+    /// Three integer points on a plane, each carried by `motion`.
+    fn moved(pts: [[i128; 3]; 3], motion: impl Fn(WitnessPoint) -> WitnessPoint) -> RW {
+        let def: [WitnessPoint; 3] =
+            pts.map(|q| motion(WitnessPoint::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)])));
         let base = pts.map(|q| Point3::from_array([q[0] as f64, q[1] as f64, q[2] as f64]));
         let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord_approx()));
         RW {
@@ -238,13 +251,47 @@ impl RW {
             base_coeffs: plane_of(base.map(|p| p.as_array())),
             tri,
             def,
+            id: 1,
+            world: None,
+            ints: None,
         }
+    }
+
+    /// …carrying a motion no other plane of the table shares (`0` for none).
+    fn chain(mut self, id: u64) -> RW {
+        self.id = id;
+        self
+    }
+
+    /// The name of the plane the bases span — before any motion.
+    fn base_name(&self) -> nacre_exact::PlaneName {
+        let b = self.def.each_ref().map(|w| w.base);
+        nacre_exact::plane_name_exact(b[0], b[1], b[2]).expect("three bases span a plane")
+    }
+
+    /// …with its pre-motion name's integers, folded as `collect_planes` folds them.
+    fn named(mut self) -> RW {
+        let name = self.base_name();
+        self.ints = name_stored_ints(Some(&name), &self.def, self.frame_sign());
+        assert!(self.ints.is_some(), "the bases lie on their own name");
+        self
+    }
+
+    /// …stated in the world, which an unmoved plane's name is.
+    fn stated(mut self) -> RW {
+        assert!(
+            self.def[0].chain.is_empty(),
+            "only an unmoved plane names the world"
+        );
+        self.world = Some(self.base_name());
+        self
     }
 }
 impl Witness for RW {
-    // A hand-built witness has no name: every same-plane question takes the definitions' road.
+    // A hand-built witness has no name unless [`RW::stated`] gave it one: every same-plane
+    // question takes the definitions' road.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
-        None
+        self.world.as_ref()
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.def
@@ -255,7 +302,10 @@ impl Witness for RW {
 }
 impl PlaneWitness for RW {
     fn chain_id(&self) -> u64 {
-        1 // one shared motion for every witness in these fixtures
+        self.id
+    }
+    fn name_ints(&self) -> Option<&NameInts> {
+        self.ints.as_ref()
     }
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
@@ -526,4 +576,168 @@ fn a_names_exact_row_stands_only_where_every_integer_is_an_f64() {
     );
     let huge = scaled(1100);
     assert_eq!((huge.near, huge.near_normal, huge.row), (None, None, None));
+}
+
+/// A judge too poor to climb: every question the exact routes and the identities cannot answer
+/// comes back `Exhausted`, so an empty collector after a question means one of those answered it.
+fn starved() -> ProofStandard {
+    ProofStandard {
+        prec: 8,
+        coincidence: Mag::pow2(-4000),
+        scale: Mag::of(16.0),
+        cap: 8,
+    }
+}
+
+/// **The table the identity locks read.** Walls turned about z by different angles, each on a
+/// chain of its own, beside two caps stated in the world — so no question here has one motion
+/// under all its planes, and the shared-motion shortcuts (`cancel_cmp_coord`, the pre-motion
+/// determinant) never answer first. A table with one shared chain would leave every lock below
+/// green with the identity switched off.
+fn identity_table() -> Vec<RW> {
+    identity_planes(true)
+}
+
+/// The same planes, the turned ones with or without their pre-motion names — without them the
+/// identity knows none of their zeros.
+fn identity_planes(named: bool) -> Vec<RW> {
+    let name = |w: RW| if named { w.named() } else { w };
+    let z = |pts, deg, id| name(RW::rotated(pts, Axis::Z, deg).chain(id));
+    vec![
+        z([[1, 0, 0], [1, 1, 0], [1, 0, 1]], 30, 1), // 0: x = 1 turned 30° about z
+        z([[0, 2, 0], [1, 2, 0], [0, 2, 1]], 37, 2), // 1: y = 2 turned 37°
+        RW::turned([[0, 0, 3], [1, 0, 3], [0, 1, 3]], &[])
+            .chain(0)
+            .stated(), // 2: z = 3
+        RW::turned([[0, 0, 7], [1, 0, 7], [0, 1, 7]], &[])
+            .chain(0)
+            .stated(), // 3: z = 7
+        z([[0, 5, 0], [1, 5, 0], [0, 5, 1]], 50, 3), // 4: y = 5 turned 50°
+        name(RW::rotated([[0, 2, 0], [1, 2, 0], [0, 2, 1]], Axis::X, 30).chain(4)), // 5: y = 2 turned 30° about x — normal (0, c, s)
+        z([[3, 0, 0], [3, 1, 0], [3, 0, 1]], 20, 5), // 6: x = 3 turned 20°
+    ]
+}
+
+/// The escalation's answer — what the identity must agree with, on no shared code.
+fn escalated(ps: &[RW], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
+    to_i8(
+        indirect_cmp_coord_judge(
+            borrow_triple(a.map(|i| plane_def(ps, i))),
+            borrow_triple(b.map(|i| plane_def(ps, i))),
+            axis,
+            fixture(),
+        )
+        .orient(),
+    )
+}
+
+/// **Where the shared planes hold a coordinate, it is equal with no arithmetic** — one shared
+/// plane whose normal is the axis, two whose line runs across it, three that are one point. The
+/// starved judge answers each `0` and records nothing, which only an answer before the
+/// escalation can do; the escalation at full budget agrees.
+#[test]
+fn the_planes_two_points_share_answer_a_held_coordinate_outright() {
+    let ps = identity_table();
+    let held: [([usize; 3], [usize; 3], usize, &str); 5] = [
+        ([0, 1, 2], [0, 1, 3], 0, "two walls' vertical line, along x"),
+        ([0, 1, 2], [0, 1, 3], 1, "two walls' vertical line, along y"),
+        ([0, 1, 2], [4, 6, 2], 2, "one cap z = 3, along z"),
+        ([0, 1, 2], [0, 1, 2], 0, "one point"),
+        (
+            [5, 0, 2],
+            [5, 6, 2],
+            2,
+            "one cap again, beside a plane turned about x",
+        ),
+    ];
+    for (a, b, axis, what) in held {
+        let notes = Notes::new();
+        let jd = Judge::new(&ps, starved(), &notes);
+        assert_eq!(jd.cmp_coord(a, b, axis), 0, "{what}");
+        assert!(
+            notes.sorted().is_empty(),
+            "{what}: the starved judge climbed"
+        );
+        assert_eq!(
+            escalated(&ps, a, b, axis),
+            0,
+            "{what}: the escalation disagrees"
+        );
+    }
+    // The control: the same true zero, with the walls' zeros unknown, is left `Exhausted` — a
+    // nonzero answer would not do, since the filter decides those at any budget.
+    let unnamed = identity_planes(false);
+    let notes = Notes::new();
+    let jd = Judge::new(&unnamed, starved(), &notes);
+    assert_eq!(jd.cmp_coord([0, 1, 2], [0, 1, 3], 0), 0);
+    assert!(
+        notes
+            .sorted()
+            .iter()
+            .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
+        "the starved judge answered without the identity, so the locks above prove nothing"
+    );
+}
+
+/// **…and nowhere else.** Each question's true answer is not zero, and each is the one a
+/// specific wrong rule would answer `0`:
+/// - the vertical line along z — the line runs along it; a rule that kept `axis` among the
+///   columns would find the two rows' only nonzero column shared, and call it held;
+/// - two points sharing only the wall turned off `x = 1`, along x — its world normal is
+///   `(cos 30°, sin 30°, 0)`; a rule that trusted every pre-motion zero, whatever axis the chain
+///   turns about, would read the wall as `x = const`;
+/// - the line of a plane turned about x (`(0, c, s)`) and a wall turned about z (`(a, b, 0)`),
+///   along z — its direction's z component is `−c·a`; of the two ways to give the rows columns
+///   `{x, y}`, one lands on the first row's zero, and a rule that tried only that one would call
+///   it held.
+#[test]
+fn a_coordinate_the_shared_planes_do_not_hold_is_left_to_the_judges() {
+    let ps = identity_table();
+    let free: [([usize; 3], [usize; 3], usize, &str); 3] = [
+        ([0, 1, 2], [0, 1, 3], 2, "the vertical line, along z"),
+        ([0, 1, 2], [0, 4, 3], 0, "the turned wall alone, along x"),
+        (
+            [5, 0, 2],
+            [5, 0, 3],
+            2,
+            "a turned-about-x plane and a wall, along z",
+        ),
+    ];
+    for (a, b, axis, what) in free {
+        let want = escalated(&ps, a, b, axis);
+        assert_ne!(want, 0, "{what}: the fixture is meant to differ there");
+        assert_eq!(jd(&ps).cmp_coord(a, b, axis), want, "{what}");
+    }
+}
+
+/// **A chain the rule cannot read is not read.** A wall turned about z and then reflected stays
+/// vertical, so its line with another wall is vertical and the x comparison really is `0` — but
+/// the reflection ends `single_axis_motion`, the rule knows none of the wall's zeros, and the
+/// starved judge is left `Exhausted` rather than handed an answer the rule did not prove.
+#[test]
+fn a_reflected_chain_lends_the_identity_nothing() {
+    let mirrored = RW::moved([[1, 0, 0], [1, 1, 0], [1, 0, 1]], |p| {
+        p.rotate_about(Axis::Z, Angle::from_deg(ri(30, 1)).unwrap(), RW::pivot())
+            .mirror(Axis::X, ri(0, 1))
+    })
+    .chain(6)
+    .named();
+    let mut ps = identity_table();
+    ps[0] = mirrored;
+    let (a, b) = ([0usize, 1, 2], [0usize, 1, 3]);
+    assert_eq!(
+        escalated(&ps, a, b, 0),
+        0,
+        "the reflected wall is still vertical"
+    );
+    let notes = Notes::new();
+    let jd = Judge::new(&ps, starved(), &notes);
+    jd.cmp_coord(a, b, 0);
+    assert!(
+        notes
+            .sorted()
+            .iter()
+            .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
+        "the identity answered across a reflection it cannot read"
+    );
 }

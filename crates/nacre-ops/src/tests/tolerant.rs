@@ -41,10 +41,15 @@ fn cuboid() -> (Model, Handle<Solid>) {
 
 /// Rotate solid `s` by 30° about Z through a rational pivot; return the new solid.
 fn rotated(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
+    rotated_by(m, s, 30)
+}
+
+/// The same turn by `deg`°.
+fn rotated_by(m: &mut Model, s: Handle<Solid>, deg: i128) -> Handle<Solid> {
     let iso = Isometry::rotation(SRot {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
-        angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
     });
     let out = apply(
         m,
@@ -442,6 +447,91 @@ fn mixed_rotation_handled() {
         }
     }
     assert!(exercised, "no mixed predicate exercised");
+}
+
+/// **The shared-plane identity reads the arrangement's own witnesses**, not only hand-built ones.
+///
+/// Two boxes turned about z by 30° and 37°, at different heights so no plane is in both tables:
+/// their walls have no world name and turn on chains of their own, and each box's caps are
+/// re-chained onto its walls' motion. Two points on one vertical edge of the first box — one on
+/// each box's cap, so no single motion runs under all six planes — share their x and y. The
+/// identity can see that only through what `collect_planes` hands the judge: each wall's
+/// pre-motion name integers and its witness chain. A judge too poor to climb answers both `0` and
+/// records nothing; with the walls' names taken away, the same question leaves it `Exhausted`.
+#[test]
+fn a_vertical_edge_holds_x_and_y_across_two_turned_boxes() {
+    use nacre_exact::Mag;
+    use nacre_judge::Decision;
+    use nacre_judge::ProofStandard;
+    use nacre_judge::predicate::{Judge, Notes};
+    let mut m = Model::new();
+    let a0 = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0, 3.0, 4.0]),
+    );
+    let b0 = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([10.0, 10.0, 10.0]),
+        Point3::from_array([12.0, 13.0, 14.0]),
+    );
+    let a = rotated_by(&mut m, a0, 30);
+    let b = rotated_by(&mut m, b0, 37);
+    let mut planes = plane_table(&m, a);
+    let na = planes.len();
+    planes.extend(plane_table(&m, b));
+    // Roles read off the caches — only to pick the fixture's planes, never to judge.
+    let vertical = |k: usize| planes[k].plane.normal().as_array()[2].abs() < 1e-9;
+    let walls: Vec<usize> = (0..na).filter(|&k| vertical(k)).collect();
+    let (wa, wb) = (
+        walls[0],
+        walls[1..]
+            .iter()
+            .copied()
+            .find(|&k| {
+                let (u, v) = (planes[walls[0]].plane.normal(), planes[k].plane.normal());
+                u.cross(v).as_array()[2].abs() > 0.5
+            })
+            .expect("two adjacent walls"),
+    );
+    let cap_a = (0..na)
+        .find(|&k| !vertical(k))
+        .expect("a cap of the first box");
+    let cap_b = (na..planes.len())
+        .find(|&k| !vertical(k))
+        .expect("a cap of the second box");
+    assert!(planes[wa].world.is_none() && planes[wb].world.is_none());
+    assert_ne!(planes[wa].chain_id, planes[cap_b].chain_id);
+    let starved = ProofStandard {
+        prec: 8,
+        coincidence: Mag::pow2(-4000),
+        scale: Mag::of(16.0),
+        cap: 8,
+    };
+    let (p, q) = ([wa, wb, cap_b], [wa, wb, cap_a]);
+    for axis in [0, 1] {
+        let notes = Notes::new();
+        let jd = Judge::new(&planes, starved, &notes);
+        assert_eq!(jd.cmp_coord(p, q, axis), 0, "axis {axis}");
+        assert!(
+            notes.sorted().is_empty(),
+            "axis {axis}: the starved judge climbed"
+        );
+    }
+    let mut nameless = planes.clone();
+    for k in [wa, wb] {
+        nameless[k].name_ints = None;
+    }
+    let notes = Notes::new();
+    let jd = Judge::new(&nameless, starved, &notes);
+    assert_eq!(jd.cmp_coord(p, q, 0), 0);
+    assert!(
+        notes
+            .sorted()
+            .iter()
+            .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
+        "without the walls' names the starved judge still answered, so the lock proves nothing"
+    );
 }
 
 /// `plane_pair_dir_sign` is a determinant of normals → rigid-rotation invariant: the

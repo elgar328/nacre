@@ -108,20 +108,17 @@ fn parallel_boolean_is_thread_order_independent() {
             m.rebuild_adjacency();
             acc = solids[0];
             // **The report's decisions travel in the signature**, not just the geometry. Measured
-            // on this fixture: up to 841 coincidences per boolean, so `loosest`'s `max_by_key` is
-            // choosing among hundreds of candidates — which is the tie-break that a schedule could
-            // otherwise decide.
+            // on this fixture: up to 114 coincidences per boolean, so `loosest`'s `max_by_key` is
+            // choosing among a hundred-odd candidates — which is the tie-break that a schedule
+            // could otherwise decide.
             //
             // **The count does not travel, because it is not an answer.**
             // `BoolReport::coincidences` is *"how many judgements were answered by a proved
             // coincidence"* — a measure of **work done**, and how much work the parallel phases do
             // is exactly what a schedule decides. The two decision fields carry their own rule
             // (`loosest`: *"Ties keep the first in sorted order, so the answer does not depend on
-            // the schedule"*); the count carries none and never could.
-            //
-            // Measured with the tests optimized, which changes the interleaving: the same fold
-            // reported 755 coincidences on one schedule and 735 on another while the 2,678
-            // characters of decisions and geometry around it were **identical**. Comparing it would
+            // the schedule"*); the count carries none and never could. On this fixture it comes out
+            // the same over fifteen builds, but nothing promises that, so comparing it would
             // assert something the kernel does not claim. What it is here for — that the report is
             // not empty, so comparing it proves something — is the assertion below.
             assert!(
