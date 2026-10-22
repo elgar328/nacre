@@ -48,9 +48,9 @@ pub enum PlaneName {
 }
 
 impl PlaneName {
-    /// The `i128` form when there is one — what the exact shortcuts (Shewchuk integer
-    /// predicates, frame derivation, `Isometry` transport) consume. `None` (`Wide`) means those
-    /// shortcuts decline and judgment takes the general route: slower, never wrong.
+    /// The coefficients as `Rat`s when the name is [`PlaneName::Narrow`] (every coefficient fits
+    /// `i128`), `None` when it is [`PlaneName::Wide`]. For the integers at any width, see
+    /// [`PlaneName::coeff_ints`].
     #[inline]
     pub fn narrow(&self) -> Option<&[Rat; 4]> {
         match self {

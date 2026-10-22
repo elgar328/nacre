@@ -98,40 +98,6 @@ impl W {
         w
     }
 }
-impl W {
-    /// The coefficients and the three points, exactly.
-    fn exact_inputs(&self) -> ([nacre_exact::Rat; 4], [[nacre_exact::Rat; 3]; 3]) {
-        let r = |x: f64| nacre_exact::Rat::try_from_f64(x).expect("test value");
-        (self.coeffs.map(r), self.tri.map(|p| p.as_array().map(r)))
-    }
-
-    /// The triangle spans a plane and the coefficients' normal is square to both its edges.
-    fn normal_spans(&self) -> bool {
-        let ([a, b, c, _], t) = self.exact_inputs();
-        let edge = |i: usize| -> [nacre_exact::Rat; 3] {
-            core::array::from_fn(|k| t[i][k].checked_sub(t[0][k]).expect("small"))
-        };
-        let (e1, e2) = (edge(1), edge(2));
-        let n = [a, b, c];
-        !nacre_exact::parallel_rat(&e1, &e2)
-            && nacre_exact::dot_sign_rat(&n, &e1) == nacre_exact::Orient::Zero
-            && nacre_exact::dot_sign_rat(&n, &e2) == nacre_exact::Orient::Zero
-    }
-
-    /// Every point satisfies `a·x + b·y + c·z + d = 0`.
-    fn points_satisfy(&self) -> bool {
-        let (c, t) = self.exact_inputs();
-        t.iter().all(|p| {
-            let mut acc = c[3];
-            for k in 0..3 {
-                acc = acc
-                    .checked_add(c[k].checked_mul(p[k]).expect("small"))
-                    .expect("small");
-            }
-            acc == nacre_exact::Rat::from_int(0)
-        })
-    }
-}
 impl Witness for W {
     // A hand-built witness has no name: every same-plane question takes the definitions' road.
     fn world_name(&self) -> Option<&nacre_exact::PlaneName> {
@@ -161,20 +127,6 @@ impl PlaneWitness for W {
         } else {
             -1
         }
-    }
-    // A synthetic witness has no name: its coefficients stand in for the plane, and they are
-    // handed out only where its triangle lies on them, so a test's two descriptions are one plane
-    // — what `exact_coeffs` promises (the plane itself). Asked of the witness's own inputs, lifted
-    // exactly (an `f64` is a binary rational).
-    fn exact_coeffs(&self) -> Option<[f64; 4]> {
-        (self.normal_spans() && self.points_satisfy()).then_some(self.coeffs)
-    }
-    fn exact_normal(&self) -> Option<[f64; 3]> {
-        self.normal_spans()
-            .then(|| [self.coeffs[0], self.coeffs[1], self.coeffs[2]])
-    }
-    fn base_coeffs(&self) -> Option<[f64; 4]> {
-        None
     }
 }
 
@@ -213,7 +165,6 @@ struct RW {
     tri: [Point3; 3],
     coeffs: [f64; 4],
     def: [WitnessPoint; 3],
-    base_coeffs: [f64; 4],
     id: u64,
     world: Option<nacre_exact::PlaneName>,
     ints: Option<NameInts>,
@@ -261,11 +212,9 @@ impl RW {
     fn moved(pts: [[i128; 3]; 3], motion: impl Fn(WitnessPoint) -> WitnessPoint) -> RW {
         let def: [WitnessPoint; 3] =
             pts.map(|q| motion(WitnessPoint::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)])));
-        let base = pts.map(|q| Point3::from_array([q[0] as f64, q[1] as f64, q[2] as f64]));
         let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord_approx()));
         RW {
             coeffs: plane_of(tri.map(|p| p.as_array())),
-            base_coeffs: plane_of(base.map(|p| p.as_array())),
             tri,
             def,
             id: 1,
@@ -333,16 +282,6 @@ impl PlaneWitness for RW {
         } else {
             -1
         }
-    }
-    // Rotated witnesses: no exact `f64` coefficients exist, as in the arrangement.
-    fn exact_coeffs(&self) -> Option<[f64; 4]> {
-        None
-    }
-    fn exact_normal(&self) -> Option<[f64; 3]> {
-        None
-    }
-    fn base_coeffs(&self) -> Option<[f64; 4]> {
-        Some(self.base_coeffs)
     }
 }
 
@@ -523,15 +462,12 @@ fn frame_sign_from_coeffs_and_tri() {
     assert_eq!(flipped.frame_sign(), -1);
 }
 
-/// **A name's exact `f64` row stands where every integer it holds *is* an `f64` within 127
-/// bits; its nearest spelling stands wherever the integers are in the `f64` range.** The exact
-/// row is what an unmoved plane's exact shortcuts read, so a row that stood for an integer no
-/// `f64` holds would hand the predicates a value that is not the name. A power of two past 53
-/// bits *is* an `f64` and stands; the 127-bit cap keeps the expansions' degree-6 products in
-/// range, so a wide name has no exact row even where its integers are `f64`s. The nearest
-/// spelling is what the name-integer road's filters read, and it fails only past the `f64` range.
+/// **A name's nearest spelling stands wherever its integers are in the `f64` range** — what the
+/// name-integer road's filters read, and the filters answer for the integers from it, so an
+/// integer no `f64` holds is spelled by its nearest one rather than refused. Past the range the
+/// spelling is `None` and the integers answer alone.
 #[test]
-fn a_names_exact_row_stands_only_where_every_integer_is_an_f64() {
+fn a_names_nearest_spelling_stands_wherever_its_integers_are_in_range() {
     use super::{WitnessPoint, name_stored_ints};
     use num_bigint::BigInt;
     let r = |n: i128, d: i128| Rat::new(n, d).expect("rational");
@@ -539,45 +475,36 @@ fn a_names_exact_row_stands_only_where_every_integer_is_an_f64() {
         let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).expect("a plane");
         name_stored_ints(Some(&name), &pts.map(WitnessPoint::at), 1).expect("folded")
     };
-    // `z = 1/10`: the name `[0, 0, 10, −1]` is small, so the row is the name exactly — the cap
-    // whose `f64` image (`fl(0.1)`) is not on it.
+    // `z = 1/10`: the name `[0, 0, 10, −1]` is small, so its spelling is the name exactly — the
+    // cap whose `f64` image (`fl(0.1)`) is not on it.
     let tenth = ints([
         [r(0, 1), r(0, 1), r(1, 10)],
         [r(1, 1), r(0, 1), r(1, 10)],
         [r(0, 1), r(1, 1), r(1, 10)],
     ]);
-    let row = tenth.row.expect("a small name has a row");
-    assert_eq!(row.map(f64::abs), [0.0, 0.0, 10.0, 1.0]);
     assert_eq!(
-        tenth.normal.map(|n| n.map(f64::abs)),
+        tenth.near.map(|n| n.map(f64::abs)),
+        Some([0.0, 0.0, 10.0, 1.0])
+    );
+    assert_eq!(
+        tenth.near_normal.map(|n| n.map(f64::abs)),
         Some([0.0, 0.0, 10.0])
     );
-    assert_eq!(tenth.near, tenth.row);
-    // `a·x − z = 0`: `a = 2⁵³ + 1` is no `f64` — no exact row, a nearest one; `a = 2⁶⁰` is.
-    let slope = |a: i128| {
-        ints([
-            [r(0, 1), r(0, 1), r(0, 1)],
-            [r(0, 1), r(1, 1), r(0, 1)],
-            [r(1, 1), r(0, 1), r(a, 1)],
-        ])
-    };
-    let odd = slope((1i128 << 53) + 1);
-    assert_eq!((odd.row, odd.normal), (None, None), "2⁵³ + 1 is no f64");
-    assert!(odd.near.is_some() && odd.near_normal.is_some());
-    let pow = slope(1i128 << 60);
-    assert!(pow.row.is_some() && pow.normal.is_some(), "2⁶⁰ is an f64");
-    // `z = 2⁶⁰ + 1`: only `d` is no `f64`, so the normal stands and the row does not.
-    let far = (1i128 << 60) + 1;
-    let high = ints([
-        [r(0, 1), r(0, 1), r(far, 1)],
-        [r(1, 1), r(0, 1), r(far, 1)],
-        [r(0, 1), r(1, 1), r(far, 1)],
+    // `a·x − z = 0` with `a = 2⁵³ + 1`, no `f64`: spelled by its nearest, `2⁵³`.
+    let odd = ints([
+        [r(0, 1), r(0, 1), r(0, 1)],
+        [r(0, 1), r(1, 1), r(0, 1)],
+        [r(1, 1), r(0, 1), r((1i128 << 53) + 1, 1)],
     ]);
-    assert_eq!(high.row, None);
-    assert_eq!(high.normal.map(|n| n.map(f64::abs)), Some([0.0, 0.0, 1.0]));
+    assert_eq!(
+        odd.near.map(|n| n[0].abs()),
+        Some(9_007_199_254_740_992.0),
+        "2⁵³ + 1 is spelled 2⁵³"
+    );
+    assert!(odd.near_normal.is_some());
     // Wide names: the plane `x = 1` spelled with a scale of `2¹³⁰` or `2¹¹⁰⁰` (the predicates are
-    // row-linear, so a scale is still that plane's name). `2¹³⁰` is an `f64` but past the cap, so
-    // it has a nearest spelling and no exact row; `2¹¹⁰⁰` is past the `f64` range and has neither.
+    // row-linear, so a scale is still that plane's name). `2¹³⁰` is inside the `f64` range;
+    // `2¹¹⁰⁰` is past it and has no spelling.
     let scaled = |e: u32| {
         let k = BigInt::from(1) << e;
         let name = nacre_exact::PlaneName::Wide([k.clone(), BigInt::from(0), BigInt::from(0), -k]);
@@ -589,13 +516,12 @@ fn a_names_exact_row_stands_only_where_every_integer_is_an_f64() {
         name_stored_ints(Some(&name), &on_x1.map(WitnessPoint::at), 1).expect("folded")
     };
     let wide = scaled(130);
-    assert_eq!((wide.row, wide.normal), (None, None), "past the cap");
     assert!(
         wide.near.is_some() && wide.near_normal.is_some(),
         "inside the f64 range"
     );
     let huge = scaled(1100);
-    assert_eq!((huge.near, huge.near_normal, huge.row), (None, None, None));
+    assert_eq!((huge.near, huge.near_normal), (None, None));
 }
 
 /// A judge too poor to climb: every question the exact routes and the identities cannot answer

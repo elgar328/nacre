@@ -654,7 +654,6 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
 | `_big` | 좁은 쌍둥이가 있을 때의 넓은 입력판, 숫자 타입 뒤에 둔다. BigFloat 출력은 `_bigfloat` | `sqrt_rat_big`·`inv_sqrt_hp_big`·`rat_to_bigfloat` |
 | `_uncached` | memo 문 뒤의 본체 | `cos_sin_hp_uncached`·`coord_hp_uncached` |
 | `_exact` | 정확함에 대한 말 — 반올림 없이 결정된 답, 정확한 변종이나 반지름 0 의 구간, 정확한 피연산자를 전제로 한 연산. 반올림하는 함수에는 쓰지 않는다 | `plane_name_exact`·`is_exact`·`HpBounded::exact`·`div_exact` |
-| `exact_` 접두사 | 값이 반올림 없이 그대로 `f64` 일 때만 답한다(아니면 `None`) — 정확 술어가 기댄다 | `PlaneWitness::exact_coeffs` |
 
 정밀도 인자는 exact·judge 에서 `prec`, ops 에서 `bits`, 십진 자릿수는 `places` 다.
 
@@ -929,8 +928,8 @@ pub enum PlaneName {
                          // 같아 Box 는 할당+간접만 더한다
 }
 impl PlaneName {
-    /// Shewchuk 정확 술어(`Expansion` 조각)·프레임 유도·지름길이 읽는다.
-    /// `None`(Wide)이면 그 지름길만 못 타고 판정이 일반 경로로 — 느릴 뿐 틀리지 않는다.
+    /// `Rat` 계수가 필요한 읽기(프레임 유도·모션 운반·실현)가 읽는다.
+    /// `None`(Wide)이면 그 읽기만 못 타고 넓은 그릇(정수)이나 일반 경로로 — 느릴 뿐 틀리지 않는다.
     pub fn narrow(&self) -> Option<&[Rat; 4]> { … }
     /// 어느 폭이든 정수 계수로 — 정수 부호 술어가 읽는 그릇 하나. 원시성은 «네» 계수에 대한
     /// 것이라 법선만 읽어 곱하는 소비자는 자기 gcd 로 먼저 나눠야 한다.
@@ -1319,8 +1318,8 @@ pub(crate) struct WorkingPlane {
     pub(crate) rotated: bool,                         // 술어 경로 선택 신호. `tri_pt3` 와 함께 복사돼 어긋날 수 없다
     pub(crate) frame_sign: i8,                        // 라벨 프레임이자 차트의 프레임(n_out = frame_sign · n_P)
     pub(crate) chain_id: u64,                         // 모션 잎의 정체(0 = 없음) — 공유 모션 지름길의 열쇠
-    pub(crate) name_ints: Option<NameInts>,           // 저장 방향으로 접힌 이름 정수 + 그 f64 철자(최근접·정확)
-                                                      //   — 정확 지름길(무이동·공유 모션)과 이름 정수 도로가 읽는 유일한 서술
+    pub(crate) name_ints: Option<NameInts>,           // 저장 방향으로 접힌 이름 정수 + 그 최근접 f64 철자
+                                                      //   — 판정자가 이름 있는 평면을 읽는 유일한 정확 서술(이름 정수 도로)
 }
 
 // 판정용 원통 클래스 — 결정은 전부 `def`(정확)를 읽고, `realized` 는 «측정»만 읽는다.
