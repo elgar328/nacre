@@ -741,3 +741,63 @@ fn a_reflected_chain_lends_the_identity_nothing() {
         "the identity answered across a reflection it cannot read"
     );
 }
+
+/// The escalation's direction sign, bridged to the stored normals as the judge bridges it.
+fn escalated_dir(ps: &[RW], p: usize, a: usize, b: usize) -> i8 {
+    let d = |k: usize| plane_def(ps, k);
+    ps[p].frame_sign()
+        * ps[a].frame_sign()
+        * ps[b].frame_sign()
+        * to_i8(dir_sign_judge(borrow3(d(p)), borrow3(d(a)), borrow3(d(b)), fixture()).orient())
+}
+
+/// **Three normals dependent by their indices or their known zeros give `0` outright** — a
+/// plane named twice, and three walls turned about z by three angles (every normal's z is `0`).
+/// The starved judge answers and records nothing; the escalation agrees. Two walls and a cap, or
+/// two walls and a plane turned about x, leave each normal a column of its own, and there the
+/// judges answer the sign they find.
+#[test]
+fn normals_dependent_by_their_zeros_answer_a_direction_outright() {
+    let ps = identity_table();
+    for (p, a, b, what) in [
+        (0, 0, 2, "a wall named twice"),
+        (0, 2, 2, "a cap named twice"),
+        (0, 1, 4, "three walls turned about z"),
+    ] {
+        let notes = Notes::new();
+        let jd = Judge::new(&ps, starved(), &notes);
+        assert_eq!(jd.plane_pair_dir_sign(p, a, b), 0, "{what}");
+        assert!(
+            notes.sorted().is_empty(),
+            "{what}: the starved judge climbed"
+        );
+        assert_eq!(
+            escalated_dir(&ps, p, a, b),
+            0,
+            "{what}: the escalation disagrees"
+        );
+    }
+    for (p, a, b, what) in [
+        (0, 1, 2, "two walls and a cap"),
+        (0, 1, 5, "two walls and a plane turned about x"),
+        // First in line, the turned-about-x plane's first column is its zero.
+        (5, 0, 1, "a plane turned about x and two walls"),
+    ] {
+        let want = escalated_dir(&ps, p, a, b);
+        assert_ne!(want, 0, "{what}: the fixture is meant to be independent");
+        assert_eq!(jd(&ps).plane_pair_dir_sign(p, a, b), want, "{what}");
+    }
+    // The control: the walls' zeros unknown, the same true zero leaves the starved judge
+    // `Exhausted`.
+    let unnamed = identity_planes(false);
+    let notes = Notes::new();
+    let jd = Judge::new(&unnamed, starved(), &notes);
+    assert_eq!(jd.plane_pair_dir_sign(0, 1, 4), 0);
+    assert!(
+        notes
+            .sorted()
+            .iter()
+            .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
+        "the starved judge answered without the identity, so the locks above prove nothing"
+    );
+}

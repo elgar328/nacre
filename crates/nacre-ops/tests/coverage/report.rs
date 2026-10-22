@@ -121,8 +121,8 @@ fn the_same_motion_two_ways_is_proved() {
 
 /// **The closest call is quoted, and it is nowhere near the limit.**
 ///
-/// Two operands turned by *different* angles share no cancellation, so dozens of judgements come
-/// down to proved coincidences. What matters is not that they happened but how close the closest
+/// Two operands turned by *different* angles share no cancellation, so some judgements come down
+/// to proved coincidences. What matters is not that they happened but how close the closest
 /// one came: the coincidence limit sits at `scale · 2⁻¹⁸⁰`, and the widest bound the kernel had to
 /// lean on is some sixty bits below that. A report that ever quoted something near the limit would
 /// be telling the model's author to go look at their dimensions.

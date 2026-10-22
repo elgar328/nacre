@@ -108,9 +108,9 @@ fn parallel_boolean_is_thread_order_independent() {
             m.rebuild_adjacency();
             acc = solids[0];
             // **The report's decisions travel in the signature**, not just the geometry. Measured
-            // on this fixture: up to 114 coincidences per boolean, so `loosest`'s `max_by_key` is
-            // choosing among a hundred-odd candidates — which is the tie-break that a schedule
-            // could otherwise decide.
+            // on this fixture: up to 25 coincidences per boolean, so `loosest`'s `max_by_key` is
+            // choosing among a couple of dozen candidates — which is the tie-break that a
+            // schedule could otherwise decide.
             //
             // **The count does not travel, because it is not an answer.**
             // `BoolReport::coincidences` is *"how many judgements were answered by a proved

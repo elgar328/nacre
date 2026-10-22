@@ -746,15 +746,38 @@ impl<W: PlaneWitness> Judge<'_, W> {
         )
     }
 
+    /// **Whether three planes' normals are dependent with no arithmetic** — a plane named twice
+    /// (two equal rows), or known zeros ([`Self::world_normal_zeros`]) that leave no way of giving
+    /// each normal a column of its own ([`forced_rank_deficient`]), so every term of the
+    /// determinant meets a zero: three walls all parallel to one axis, say.
+    fn normals_forced_dependent(&self, p: usize, a: usize, b: usize) -> bool {
+        p == a
+            || a == b
+            || p == b
+            || forced_rank_deficient(
+                &[
+                    self.world_normal_zeros(p),
+                    self.world_normal_zeros(a),
+                    self.world_normal_zeros(b),
+                ],
+                &[0, 1, 2],
+            )
+    }
+
     /// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — how the line `p ∩ a`
     /// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
     ///
+    /// First the combinatorial identity: normals dependent by their indices or their known zeros
+    /// alone ([`Self::normals_forced_dependent`]) answer `0` with no arithmetic. Then
     /// `!rotated` → `det3_sign` of the name rows' normals ([`PlaneWitness::exact_normal`], folded
     /// to the stored orientation). `rotated` → the kernel `D`
     /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
     /// convention by the per-plane [`PlaneWitness::frame_sign`]: `det(stored) =
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
     pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
+        if self.normals_forced_dependent(p, a, b) {
+            return 0;
+        }
         let planes = self.planes;
         // **Only the normals are read**, so the row's normal half is enough — a plane whose `d`
         // is too wide for `f64` keeps this route.

@@ -449,7 +449,7 @@ fn mixed_rotation_handled() {
     assert!(exercised, "no mixed predicate exercised");
 }
 
-/// **The shared-plane identity reads the arrangement's own witnesses**, not only hand-built ones.
+/// **The combinatorial identities read the arrangement's own witnesses**, not only hand-built ones.
 ///
 /// Two boxes turned about z by 30° and 37°, at different heights so no plane is in both tables:
 /// their walls have no world name and turn on chains of their own, and each box's caps are
@@ -458,6 +458,7 @@ fn mixed_rotation_handled() {
 /// identity can see that only through what `collect_planes` hands the judge: each wall's
 /// pre-motion name integers and its witness chain. A judge too poor to climb answers both `0` and
 /// records nothing; with the walls' names taken away, the same question leaves it `Exhausted`.
+/// Three of those walls, from both boxes, have dependent normals the same way.
 #[test]
 fn a_vertical_edge_holds_x_and_y_across_two_turned_boxes() {
     use nacre_exact::Mag;
@@ -518,20 +519,36 @@ fn a_vertical_edge_holds_x_and_y_across_two_turned_boxes() {
             "axis {axis}: the starved judge climbed"
         );
     }
+    // Three walls, two of one box and one of the other: every normal's z is zero, so the
+    // direction determinant is too.
+    let wc = (na..planes.len())
+        .find(|&k| vertical(k))
+        .expect("a wall of the second box");
+    let notes = Notes::new();
+    let jd = Judge::new(&planes, starved, &notes);
+    assert_eq!(jd.plane_pair_dir_sign(wa, wb, wc), 0);
+    assert!(
+        notes.sorted().is_empty(),
+        "the direction: the starved judge climbed"
+    );
     let mut nameless = planes.clone();
-    for k in [wa, wb] {
+    for k in [wa, wb, wc] {
         nameless[k].name_ints = None;
     }
-    let notes = Notes::new();
-    let jd = Judge::new(&nameless, starved, &notes);
-    assert_eq!(jd.cmp_coord(p, q, 0), 0);
-    assert!(
-        notes
-            .sorted()
-            .iter()
-            .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
-        "without the walls' names the starved judge still answered, so the lock proves nothing"
-    );
+    let exhausted = |ask: &dyn Fn(&Judge<'_, WorkingPlane>) -> i8| {
+        let notes = Notes::new();
+        let jd = Judge::new(&nameless, starved, &notes);
+        assert_eq!(ask(&jd), 0);
+        assert!(
+            notes
+                .sorted()
+                .iter()
+                .any(|e| matches!(e.outcome, Decision::Exhausted { .. })),
+            "without the walls' names the starved judge still answered, so the lock proves nothing"
+        );
+    };
+    exhausted(&|jd| jd.cmp_coord(p, q, 0));
+    exhausted(&|jd| jd.plane_pair_dir_sign(wa, wb, wc));
 }
 
 /// `plane_pair_dir_sign` is a determinant of normals → rigid-rotation invariant: the
