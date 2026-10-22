@@ -2028,7 +2028,9 @@ mod name_integer_road {
     /// by `ε`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
     /// a starved judge with names answers the hand-derived signs (nothing but the
     /// name-integer route can), and the same starved judge without names answers `0` for
-    /// every nonzero question (without the name, this judge *cannot* know). The full-budget
+    /// every nonzero question (without the name, this judge *cannot* know) — save the row
+    /// family's directions, whose `ε` the witness points carry exactly in `f64`, so that family
+    /// proves the road for comparisons and sides only (see the control below). The full-budget
     /// climb on the stripped table is the independent oracle, and the expected signs are
     /// stated by hand, so no route is compared only to itself.
     ///
