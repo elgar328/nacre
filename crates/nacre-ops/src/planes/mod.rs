@@ -318,8 +318,8 @@ pub(crate) struct FaceInfo {
     /// what the shared-motion shortcuts cancel).
     pub(crate) world: Option<WorldName>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
-    /// [`WorkingPlane::name_ints`] is folded from, which the exact shortcuts read for the world
-    /// and for the pre-motion frame alike. `base_rat` above is its narrow projection, kept beside
+    /// [`WorkingPlane::name_ints`] is folded from, which the judge's name-integer road reads for
+    /// the world and for the pre-motion frame alike. `base_rat` above is its narrow projection, kept beside
     /// it because the narrow consumers (the composed-rotation route, the restatement mirror) read
     /// `[Rat; 4]` directly.
     pub(crate) name: Option<nacre_exact::PlaneName>,

@@ -8,8 +8,8 @@
 //! ([`Witness::tri_pt3`], see [`plane_def`]), judged by the [`crate::kernel`] judges.
 //!
 //! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
-//! [`any_rotated`] of just the planes it touches: all-axis-aligned → the exact hot path (never
-//! builds a `WitnessPoint`); any rotated → the kernel judge. So a mixed-rotation boolean keeps the
+//! [`any_rotated`] of just the planes it touches: all-axis-aligned → the planes' names, exactly
+//! (never builds a `WitnessPoint`); any rotated → the kernel judge. So a mixed-rotation boolean keeps the
 //! axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
 //!
 //! The caller (`nacre-ops`) provides the witnesses by implementing [`Witness`] (a face) and
@@ -24,8 +24,7 @@ use crate::kernel::frame3::{
 };
 use nacre_exact::{Orient, Rat};
 use nacre_predicates::{
-    ThreePlane, det3_sign, det3_sign_filter, indirect_cmp_coord, indirect_cmp_coord_filter,
-    indirect_plane_side, indirect_plane_side_filter,
+    ThreePlane, det3_sign_filter, indirect_cmp_coord_filter, indirect_plane_side_filter,
 };
 use num_bigint::BigInt;
 
@@ -444,7 +443,8 @@ impl<'a, W> Judge<'a, W> {
 
 /// The plane-class predicates — the questions the arrangement asks of a plane table.
 ///
-/// Each routes itself: all-axis-aligned planes take the exact path and never build a `WitnessPoint`;
+/// Each routes itself: named planes unmoved or on one motion are answered by their names and never
+/// build a `WitnessPoint`;
 /// any rotated plane goes to the kernel judges, under this operation's [`ProofStandard`], with what
 /// it could not prove recorded in [`Judge::notes`].
 impl<W: Witness> Judge<'_, W> {
@@ -465,10 +465,10 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
     /// matching `order_along`'s shape (`+1`/`-1`/`0`).
     ///
-    /// - `!rotated`: the exact path — which side of plane `j` the implicit point lies on, all four
-    ///   planes given by their names' `f64` rows ([`PlaneWitness::exact_coeffs`]), bridged to
-    ///   `tri`'s winding by `frame_sign`.
-    /// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
+    /// - every plane named, and unmoved or all on one motion: the name-integer road — which side of
+    ///   plane `j` the implicit point lies on, all four planes given by their names' integers
+    ///   ([`PlaneWitness::name_ints`]), bridged to `tri`'s winding by `frame_sign`.
+    /// - otherwise: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
     ///   [`WitnessPoint`] ([`plane_def`]), and [`crate::indirect_orient3d_judge`] decides the sign
     ///   from the
     ///   definitions — never materializing `V` or reading the rounded `tri`.
@@ -487,50 +487,20 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        // **`j` is asked by its coefficients, not by its triangle.** The rows are the planes' names
-        // in `f64`, derived from their defining points without rounding; `tri` is the face's
-        // corners' `f64` caches, which a decimal plane does not pass through (`z = 0.1` is not
-        // `fl(0.1)`). Asking `j` by `tri` would answer for the rounded model — measured, a box
-        // whose corner lies on a wall exactly (`3·0.1 = 0.3`) would be judged off it and the common
-        // refused as `ZeroLengthEdge`. `frame_sign` carries `j`'s stored normal to its triangle's
-        // winding, the bridge the shared-motion arm below already uses.
-        if let (Some(cp), Some(cq), Some(cr), Some(cj)) = (
-            self.planes[p].exact_coeffs(),
-            self.planes[q].exact_coeffs(),
-            self.planes[r].exact_coeffs(),
-            self.planes[j].exact_coeffs(),
-        ) {
-            let tp = ThreePlane([cp, cq, cr]);
-            return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
-        }
-        // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
+        // **The name-integer road** — every plane of the question asked by its name's integers,
+        // `j` included: a plane's name is derived from its defining points without rounding, so
+        // the question is the truth's. The face corners' `f64` caches are not on the plane
+        // (`z = 0.1` is not `fl(0.1)`), so asking `j` by its triangle would answer for the rounded
+        // model — measured, a box whose corner lies on a wall exactly (`3·0.1 = 0.3`) would be
+        // judged off it and the common refused as `ZeroLengthEdge`. And asking `j` by its
+        // pre-motion *triangle* while `p, q, r` speak in coefficients describes `j` twice, the two
+        // parting whenever its `d` is a rounded product — measured at 27% of the census's rotated
+        // classes and 40% of the fin sweep's. One vocabulary removes the mismatch instead of
+        // detecting it.
         //
-        // **All four planes are asked for coefficients, `j` included** — the branch above's
-        // rule. Asking `j` by its pre-motion *triangle* while the other three speak in
-        // coefficients describes `j` twice, and the two part whenever its `d` is a rounded product
-        // — measured at 27% of the census's rotated classes and 40% of the fin sweep's, answering
-        // 30% and 75% of this branch's judgements under the mismatch. One vocabulary removes the
-        // mismatch instead of detecting it.
-        //
-        // `frame_sign` is what carries the convention across: `indirect_plane_side` answers
-        // about the plane's own normal, while this predicate's contract is the *triangle's*
-        // right-hand normal, and `frame_sign` is exactly the relation between the two.
-        if shared_motion(self.planes, &[p, q, r, j]) {
-            if let (Some(cp), Some(cq), Some(cr), Some(cj)) = (
-                self.planes[p].base_coeffs(),
-                self.planes[q].base_coeffs(),
-                self.planes[r].base_coeffs(),
-                self.planes[j].base_coeffs(),
-            ) {
-                let tp = ThreePlane([cp, cq, cr]);
-                return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
-            }
-        }
-        // **The name-integer road**: a name no exact `f64` row spells (wider than an `f64`, or wide) is
-        // still an exact description — the same question the arms above ask, filtered on the
-        // integers' nearest `f64`s and answered by the integer twin where the filter cannot,
-        // with the same `frame_sign` bridge on `j` (the one direction-sensitive slot: a negated
-        // `p`/`q`/`r` row negates `D` and the dot together, so only `j`'s orientation matters).
+        // The filter reads the integers' nearest `f64`s and the integer twin answers what it
+        // cannot. `frame_sign` carries `j`'s stored normal to its triangle's winding — the one
+        // direction-sensitive slot: a negated `p`/`q`/`r` row negates `D` and the dot together.
         if let Some([np, nq, nr, nj]) = self.name_rows([p, q, r, j], true) {
             let filtered = match (np.near, nq.near, nr.near, nj.near) {
                 (Some(a), Some(b), Some(c), Some(d)) => {
@@ -694,49 +664,29 @@ impl<W: PlaneWitness> Judge<'_, W> {
     ///
     /// First the combinatorial identity: where the planes the two triples share hold the
     /// coordinate constant ([`Self::shared_planes_hold`]), the answer is `0` with no arithmetic —
-    /// the sibling of `orient3d`'s `j ∈ {p, q, r}`. Then `!rotated` → the exact implicit
-    /// `cmp_coord` on the planes' name rows ([`PlaneWitness::exact_coeffs`]); `rotated` → each
-    /// triple's three planes as exact
-    /// `WitnessPoint` → [`indirect_cmp_coord_judge`].
+    /// the sibling of `orient3d`'s `j ∈ {p, q, r}`. Then one motion about one axis shared by all six
+    /// planes → [`cancel_cmp_coord`] on their pre-motion names; every plane named and unmoved → the
+    /// name-integer road on their names ([`PlaneWitness::name_ints`]); otherwise each triple's three
+    /// planes as exact `WitnessPoint` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
         if self.shared_planes_hold(a, b, axis) {
             return 0;
         }
         let planes = self.planes;
-        let tp = |t: [usize; 3]| {
-            Some(ThreePlane([
-                planes[t[0]].exact_coeffs()?,
-                planes[t[1]].exact_coeffs()?,
-                planes[t[2]].exact_coeffs()?,
-            ]))
-        };
-        if let (Some(ta), Some(tb)) = (tp(a), tp(b)) {
-            return indirect_cmp_coord(&ta, &tb, axis);
-        }
         if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
             return s;
         }
         // The name-integer road, world gate only (`allow_shared: false`): a coordinate comparison is not
         // motion-invariant, and the rotation-axis reasoning that makes some moved cases exact
-        // is `cancel_cmp_coord`'s above. Orientation-invariant, so the σ fold is harmless here.
+        // is `cancel_cmp_coord`'s above.
         // Exact zeros — two points with one coordinate, the ties no filter separates — mostly
         // do not reach it: the shared-plane identity at the top answers them first. Measured
-        // over the `nacre-ops` lib suite, the calls reaching this road hold 144 zeros in 0.93M;
-        // with the identity switched off, 0.83M in 1.76M.
+        // over the `nacre-ops` lib suite (serial), the calls reaching this road hold 10,514 zeros
+        // in 2.52M; with the identity switched off, 2.47M in 4.98M.
         if let Some([a0, a1, a2, b0, b1, b2]) =
             self.name_rows([a[0], a[1], a[2], b[0], b[1], b[2]], false)
         {
-            let three = |t: [&NameInts; 3]| Some(ThreePlane([t[0].near?, t[1].near?, t[2].near?]));
-            if let (Some(ta), Some(tb)) = (three([a0, a1, a2]), three([b0, b1, b2])) {
-                if let Some(s) = indirect_cmp_coord_filter(&ta, &tb, axis) {
-                    return s;
-                }
-            }
-            return nacre_exact::int_cmp_coord(
-                [&a0.ints, &a1.ints, &a2.ints],
-                [&b0.ints, &b1.ints, &b2.ints],
-                axis,
-            );
+            return name_cmp([a0, a1, a2], [b0, b1, b2], axis);
         }
         let da = a.map(|k| plane_def(planes, k));
         let db = b.map(|k| plane_def(planes, k));
@@ -768,9 +718,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
     ///
     /// First the combinatorial identity: normals dependent by their indices or their known zeros
-    /// alone ([`Self::normals_forced_dependent`]) answer `0` with no arithmetic. Then
-    /// `!rotated` → `det3_sign` of the name rows' normals ([`PlaneWitness::exact_normal`], folded
-    /// to the stored orientation). `rotated` → the kernel `D`
+    /// alone ([`Self::normals_forced_dependent`]) answer `0` with no arithmetic. Then every plane
+    /// named, and unmoved or all on one motion → the name-integer road on the names' normals
+    /// ([`PlaneWitness::name_ints`], folded to the stored orientation). Otherwise → the kernel `D`
     /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
     /// convention by the per-plane [`PlaneWitness::frame_sign`]: `det(stored) =
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
@@ -779,28 +729,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
             return 0;
         }
         let planes = self.planes;
-        // **Only the normals are read**, so the row's normal half is enough — a plane whose `d`
-        // is too wide for `f64` keeps this route.
-        if let (Some(np), Some(na), Some(nb)) = (
-            planes[p].exact_normal(),
-            planes[a].exact_normal(),
-            planes[b].exact_normal(),
-        ) {
-            return det3_sign([np, na, nb]);
-        }
-        // A determinant of normals: a motion multiplies it by `det(R)`, which the canonicalised
-        // base frame has already made `+1` (see `PlaneWitness::base_coeffs`), so one shared motion means
-        // the pre-motion normals give the same sign, exactly.
-        if shared_motion(planes, &[p, a, b]) {
-            let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
-            if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
-                return det3_sign([rp, ra, rb]);
-            }
-        }
-        // The name-integer road, for names no exact `f64` normal spells: the filter on the rounded
-        // normals, then the integer twin. The rows carry the stored orientation already (the σ
-        // fold), so no `frame_sign` bridge appears — exactly as in the `det3_sign` arms, and
-        // unlike the toleranced route below, which reads the outward triangles and bridges back.
+        // The name-integer road: the filter on the rounded normals, then the integer twin. Only the
+        // normals are read, so a name whose `d` alone is past the `f64` range keeps this route.
+        // A determinant of normals is multiplied by a shared motion's `det(R)`, which the
+        // canonical handedness the names are folded to has already made `+1` (`name_stored_ints`),
+        // so one shared motion means the pre-motion normals give the same sign. The rows carry the
+        // stored orientation already (the σ fold), so no `frame_sign` bridge appears — unlike the
+        // toleranced route below, which reads the outward triangles and bridges back.
         if let Some([np, na, nb]) = self.name_rows([p, a, b], true) {
             if let (Some(x), Some(y), Some(z)) = (np.near_normal, na.near_normal, nb.near_normal) {
                 if let Some(s) = det3_sign_filter([x, y, z]) {
@@ -854,7 +789,7 @@ impl<W: PlaneWitness> ImplicitPoint<'_, W> {
     /// sharing this point's Cramer parts with every other question asked of this handle.
     ///
     /// A cheap route answers without touching the cell, so a handle whose questions all take the
-    /// exact or shared-motion path costs nothing over calling [`Judge::orient3d`] directly.
+    /// identity or the name-integer road costs nothing over calling [`Judge::orient3d`] directly.
     pub fn orient3d(&self, j: usize) -> i8 {
         let (p, q, r) = (self.p, self.q, self.r);
         match self.jd.orient3d_cheap(p, q, r, j) {
@@ -929,8 +864,8 @@ pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
 ///
 /// Yes when every input carries **one and the same** motion (`chain_id`, nonzero): then the motion
 /// cancels out of the determinant, and the exact predicate answers on the pre-motion data — if
-/// each plane has it in a form the predicate takes (an exact row, a name), which every caller asks
-/// next. A mismatch is a
+/// each plane has it in a form the predicate takes (its name), which every caller asks next. A
+/// mismatch is a
 /// conservative miss — the toleranced path still answers, just more slowly.
 fn shared_motion<W: PlaneWitness>(planes: &[W], idx: &[usize]) -> bool {
     let Some(&first) = idx.first() else {
@@ -996,6 +931,26 @@ fn borrow_triple(d: [&[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, 
     [borrow3(d[0]), borrow3(d[1]), borrow3(d[2])]
 }
 
+/// **The sign of `a[axis] − b[axis]` for two implicit points given by their planes' names** — the
+/// name-integer road's comparison, one spelling for the world question ([`Judge::cmp_coord`]) and
+/// the pre-motion one ([`cancel_cmp_coord`]): the filter on the integers' nearest `f64`s, then the
+/// integer twin where it cannot answer. Orientation-invariant (negating a row negates a point's
+/// `D` and its numerator together), so the σ fold the names carry is harmless here. Each triple
+/// must meet in a point.
+fn name_cmp(a: [&NameInts; 3], b: [&NameInts; 3], axis: usize) -> i8 {
+    let three = |t: [&NameInts; 3]| Some(ThreePlane([t[0].near?, t[1].near?, t[2].near?]));
+    if let (Some(ta), Some(tb)) = (three(a), three(b)) {
+        if let Some(s) = indirect_cmp_coord_filter(&ta, &tb, axis) {
+            return s;
+        }
+    }
+    nacre_exact::int_cmp_coord(
+        [&a[0].ints, &a[1].ints, &a[2].ints],
+        [&b[0].ints, &b[1].ints, &b[2].ints],
+        axis,
+    )
+}
+
 /// `cmp_coord` answered exactly in the pre-rotation frame, when it can be.
 ///
 /// **Cancelling a rotation out of a one-coordinate comparison is not the same move as cancelling it
@@ -1020,11 +975,11 @@ fn borrow_triple(d: [&[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, 
 ///   interval separates it. At a multiple of 45° `tan Θ ∈ {0, ±1}`, and the test is exact
 ///   rational arithmetic again.
 ///
-/// Each `d[m] = 0` question is `indirect_cmp_coord(base_a, base_b, m) == 0` on the pre-rotation
-/// coefficients — the exact predicate, unchanged.
+/// Each `d[m]` question is [`name_cmp`] on the planes' pre-motion names — the world question's
+/// exact comparison, unchanged, in the frame the names speak.
 ///
 /// Returns `None` when the shortcut does not apply (mixed axes, no shared motion, a plane with no
-/// exact base row, or a provably-nonzero in-plane case), and the toleranced path answers.
+/// name, or a provably-nonzero in-plane case), and the toleranced path answers.
 fn cancel_cmp_coord<W: PlaneWitness>(
     planes: &[W],
     a: [usize; 3],
@@ -1036,16 +991,16 @@ fn cancel_cmp_coord<W: PlaneWitness>(
         return None;
     }
     let (k, theta) = single_axis_motion(plane_def(planes, all[0]))?;
-    let base = |t: [usize; 3]| -> Option<ThreePlane> {
-        Some(ThreePlane([
-            planes[t[0]].base_coeffs()?,
-            planes[t[1]].base_coeffs()?,
-            planes[t[2]].base_coeffs()?,
-        ]))
+    let names = |t: [usize; 3]| -> Option<[&NameInts; 3]> {
+        Some([
+            planes[t[0]].name_ints()?,
+            planes[t[1]].name_ints()?,
+            planes[t[2]].name_ints()?,
+        ])
     };
-    let (ba, bb) = (base(a)?, base(b)?);
+    let (na, nb) = (names(a)?, names(b)?);
     // The pre-rotation comparison along `m`, whose sign is the sign of `d[m]`.
-    let cmp = |m: usize| indirect_cmp_coord(&ba, &bb, m);
+    let cmp = |m: usize| name_cmp(na, nb, m);
 
     let (i, j) = k.plane();
     if axis != i && axis != j {
@@ -1063,7 +1018,7 @@ fn cancel_cmp_coord<W: PlaneWitness>(
     // - off the 45° family it is *provably nonzero*, so escalation is guaranteed to separate it —
     //   and it must never be reported as a coincidence;
     // - on the 45° family `(Rd)[i] = (√2/2)·(±d[i] ∓ d[j])`, whose sign needs the two differences
-    //   **compared in magnitude**, not just their signs. `indirect_cmp_coord` returns a sign, so
+    //   **compared in magnitude**, not just their signs. `name_cmp` returns a sign, so
     //   deciding it exactly would need a predicate for `sign(d[i] − d[j])` that does not exist
     //   yet. Escalation answers it correctly; only the *proof* is missing.
     None

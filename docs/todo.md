@@ -341,19 +341,6 @@ it names."*
 평면 법선을 읽는다. 잘못 재철자하면 캐시의 향이 조용히 뒤집힌다(census 잠금 `audit_plane_senses` 가 그 부류를
 잰다; 판정은 향을 캐시에서 읽지 않으므로 뒤집힌 캐시는 좌표 측정과 출력에만 닿는다).
 
-### 정확 지름길 갈래를 이름 정수 도로 하나로
-
-세 술어의 정확 갈래는 같은 데이터를 거듭 읽는다: 무이동 정확 행(`exact_coeffs`), `orient3d`·방향의 공유 모션 정확 행
-(`base_coeffs` — 둘 다 `NameInts::row`), 그리고 이름 정수 도로(`name_rows`). 앞의 둘은 도로 게이트의 부분집합이고
-꼬리만 다르다 — 정확 행은 `Expansion`(방향은 `det3_sign` 의 적응형), 도로는 BigInt 쌍둥이(방향은 `det3_sign_filter`
-뒤). `cmp_coord` 의 공유 모션 갈래(`cancel_cmp_coord`)는 축 추론이라 사본이 아니다.
-꼬리만 재면 BigInt 가 빠르다(release, 필터를 못 넘는 52비트 입력: `Expansion` 2,880/1,361 ns 대 BigInt 891/548 ns,
-cmp/side). 같은 좌표의 두 점(정확한 0)은 그 앞에서 조합 항등식이 답하므로(design 「판정 = 필터 + 계산된 상승 + 실현
-캐시」) 꼬리에 오는 수는 항등식 뒤에서 잰다. 하나로 하려면 이름 없는 시험 증인(`nacre-judge` 시험의 `W`·`RW`)이 이름을
-들어야 한다 — 그것들은
-`exact_coeffs`/`base_coeffs` 포트로 f64 를 준다. 그 뒤 `base_coeffs` 를 읽는 곳은 `cancel_cmp_coord` 하나다. 먼저 잴
-것: 정확 행 갈래에서 필터를 못 넘는 호출 수와 명령어 A/B.
-
 ### 관통점 이름을 «그 점을 지나는» 옆면으로 묻기
 
 결과 정점의 이름 규칙(`assembly::naming`, design 「결과 정점은 닿는 면들의 평면으로 이름 짓는다」)은 관통점

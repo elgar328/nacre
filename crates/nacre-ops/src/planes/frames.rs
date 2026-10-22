@@ -59,18 +59,17 @@ pub(crate) struct WorkingPlane {
     /// id share a pre-motion frame, which their names (`name_ints`) speak.
     pub(crate) chain_id: u64,
     /// The class root's name integers, folded to the stored orientation
-    /// ([`nacre_judge::predicate::name_stored_ints`]), with their `f64` spellings — nearest, and
-    /// exact where every integer is an `f64`. `None` when the root's surface has no name.
+    /// ([`nacre_judge::predicate::name_stored_ints`]), with their nearest `f64` spellings. `None`
+    /// when the root's surface has no name.
     ///
-    /// **The exact shortcuts read this and nothing else** (the `PlaneWitness` impl in
-    /// `tolerant`) — an unmoved plane's row for the world, a moved plane's for its pre-motion
-    /// frame. The name is derived from the plane's defining points without
-    /// rounding, so a predicate over its row answers for the truth. The plane cache's
-    /// coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
+    /// **The judge's exact answers read this and nothing else** — the name-integer road (the
+    /// filters over the nearest spellings, then the integers): an unmoved plane's name for the
+    /// world, a moved plane's for its pre-motion frame. The name is derived from the plane's
+    /// defining points without rounding, so a predicate over it answers for the truth. The plane
+    /// cache's coefficients (`plane`) and the face corners' caches are rounded images: a shortcut
     /// that read them and checked them only against each other answered for the rounded model —
     /// measured, a box whose corner lies on a wall exactly (`3·0.1 = 0.3`) was judged off it and
-    /// the common refused. A name no exact `f64` row spells takes the judge's name-integer road (the
-    /// filters over its nearest spellings, then its integers).
+    /// the common refused.
     pub(crate) name_ints: Option<nacre_judge::predicate::NameInts>,
 }
 

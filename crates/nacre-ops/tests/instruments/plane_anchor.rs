@@ -263,8 +263,8 @@ fn an_axis_aligned_plane_is_anchor_blind() {
 // 2. Does the judge read the part that disagrees?
 // ─────────────────────────────────────────────────────────────────────────────
 
-// **No, by construction.** An unmoved plane's exact judging shortcuts read the plane's name — its
-// canonical integers, derived from the defining points without rounding (`NameInts::row`) — and
+// **No, by construction.** An unmoved plane's exact judging road reads the plane's name — its
+// canonical integers, derived from the defining points without rounding (`NameInts::ints`) — and
 // never the plane cache, so no anchor can reach a judgement. (Nothing is left here to measure.)
 
 // ─────────────────────────────────────────────────────────────────────────────

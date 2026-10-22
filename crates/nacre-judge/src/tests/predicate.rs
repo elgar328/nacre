@@ -66,13 +66,15 @@ fn fixture() -> ProofStandard {
 }
 
 /// A synthetic axis-aligned plane witness: three points on the plane, its exact
-/// coefficients, and the exact `WitnessPoint` definition of those points. `is_rotated` is `false`,
-/// so predicates take the exact path — the definition is there but unused, which is
-/// precisely the arrangement the production tables now have.
+/// coefficients, the exact `WitnessPoint` definition of those points, and the name those points
+/// span, folded as `collect_planes` folds it. `is_rotated` is `false`, so the predicates answer by
+/// the name — the definition is there but unused, which is precisely the arrangement the
+/// production tables have.
 struct W {
     tri: [Point3; 3],
     coeffs: [f64; 4],
     def: [WitnessPoint; 3],
+    ints: Option<NameInts>,
 }
 impl W {
     fn new(tri: [Point3; 3], coeffs: [f64; 4]) -> W {
@@ -82,7 +84,18 @@ impl W {
                     .map(|x| nacre_exact::Rat::try_from_f64(x).expect("test coordinate")),
             )
         });
-        W { tri, coeffs, def }
+        let mut w = W {
+            tri,
+            coeffs,
+            def,
+            ints: None,
+        };
+        let b = w.def.each_ref().map(|p| p.base);
+        let name =
+            nacre_exact::plane_name_exact(b[0], b[1], b[2]).expect("three points span a plane");
+        w.ints = name_stored_ints(Some(&name), &w.def, w.frame_sign());
+        assert!(w.ints.is_some(), "the points lie on their own name");
+        w
     }
 }
 impl W {
@@ -135,6 +148,9 @@ impl PlaneWitness for W {
     // These witnesses carry no motion, so there is nothing to cancel.
     fn chain_id(&self) -> u64 {
         0
+    }
+    fn name_ints(&self) -> Option<&NameInts> {
+        self.ints.as_ref()
     }
     fn frame_sign(&self) -> i8 {
         let t = self.tri;
@@ -189,9 +205,10 @@ fn cube_corner_planes() -> Vec<W> {
     ]
 }
 
-/// A plane witness carrying one shared rotation — what [`cancel_cmp_coord`] needs. The motion
-/// identity, the names and the world statement default to "one shared motion, no names"; the
-/// builders below change them for fixtures that need a chain of their own or a name.
+/// A plane witness carrying one shared rotation — with its pre-motion name ([`RW::named`]), what
+/// [`cancel_cmp_coord`] needs. The motion identity, the names and the world statement default to
+/// "one shared motion, no names"; the builders below change them for fixtures that need a chain of
+/// their own or a name.
 struct RW {
     tri: [Point3; 3],
     coeffs: [f64; 4],
@@ -345,11 +362,12 @@ use nacre_exact::{Angle, Axis};
 
 /// **The pre-rotation shortcut must give the answer the escalation gives.**
 ///
-/// [`cancel_cmp_coord`] answers in the pre-rotation frame with exact rational arithmetic;
+/// [`cancel_cmp_coord`] answers in the pre-rotation frame on the planes' pre-motion names;
 /// [`indirect_cmp_coord_judge`] answers by realizing the rotation in astro-float and reading
 /// an interval. They share no bound and no code, so agreement is a real cross-check — and it
 /// is the only one available, because the shortcut's whole point is to *not* do what the
-/// judge does.
+/// judge does. This asks through the front door, where the shared-plane identity answers the
+/// zeros along the rotation axis first; the shortcut itself is the next test's.
 ///
 /// The fixtures turn about a **non-origin pivot**: a rotation about `c` is `x ↦ R(x−c)+c`, and the
 /// `+c` cancels in a difference. If it did not, every answer here would be wrong.
@@ -361,11 +379,11 @@ fn the_pre_rotation_shortcut_agrees_with_the_escalation() {
             // along z, so an in-plane comparison is exactly 0 and a z comparison is definite.
             // Then a pair differing along x, which the shortcut must decline rather than
             // guess (`tan Θ` is irrational, so it is provably nonzero but not signed here).
-            let px = RW::rotated([[1, 0, 0], [1, 1, 0], [1, 0, 1]], axis, deg);
-            let py = RW::rotated([[0, 2, 0], [1, 2, 0], [0, 2, 1]], axis, deg);
-            let z3 = RW::rotated([[0, 0, 3], [1, 0, 3], [0, 1, 3]], axis, deg);
-            let z7 = RW::rotated([[0, 0, 7], [1, 0, 7], [0, 1, 7]], axis, deg);
-            let x5 = RW::rotated([[5, 0, 0], [5, 1, 0], [5, 0, 1]], axis, deg);
+            let px = RW::rotated([[1, 0, 0], [1, 1, 0], [1, 0, 1]], axis, deg).named();
+            let py = RW::rotated([[0, 2, 0], [1, 2, 0], [0, 2, 1]], axis, deg).named();
+            let z3 = RW::rotated([[0, 0, 3], [1, 0, 3], [0, 1, 3]], axis, deg).named();
+            let z7 = RW::rotated([[0, 0, 7], [1, 0, 7], [0, 1, 7]], axis, deg).named();
+            let x5 = RW::rotated([[5, 0, 0], [5, 1, 0], [5, 0, 1]], axis, deg).named();
             let ps = vec![px, py, z3, z7, x5];
             for (a, b, what) in [
                 ([0usize, 1, 2], [0usize, 1, 3], "differ along z"),
@@ -394,15 +412,16 @@ fn the_pre_rotation_shortcut_agrees_with_the_escalation() {
 }
 
 /// …and the shortcut must actually fire, or the test above only proves the escalation agrees
-/// with itself. The rotation axis is answered exactly, and so is a difference lying along it.
+/// with itself. The rotation axis is answered exactly, and so is a difference lying along it —
+/// asked of the shortcut directly, so the identity in front of it cannot answer for it.
 #[test]
 fn the_shortcut_fires_where_it_should_and_declines_where_it_cannot() {
     let (axis, deg) = (Axis::Z, 30i128);
-    let px = RW::rotated([[1, 0, 0], [1, 1, 0], [1, 0, 1]], axis, deg);
-    let py = RW::rotated([[0, 2, 0], [1, 2, 0], [0, 2, 1]], axis, deg);
-    let z3 = RW::rotated([[0, 0, 3], [1, 0, 3], [0, 1, 3]], axis, deg);
-    let z7 = RW::rotated([[0, 0, 7], [1, 0, 7], [0, 1, 7]], axis, deg);
-    let x5 = RW::rotated([[5, 0, 0], [5, 1, 0], [5, 0, 1]], axis, deg);
+    let px = RW::rotated([[1, 0, 0], [1, 1, 0], [1, 0, 1]], axis, deg).named();
+    let py = RW::rotated([[0, 2, 0], [1, 2, 0], [0, 2, 1]], axis, deg).named();
+    let z3 = RW::rotated([[0, 0, 3], [1, 0, 3], [0, 1, 3]], axis, deg).named();
+    let z7 = RW::rotated([[0, 0, 7], [1, 0, 7], [0, 1, 7]], axis, deg).named();
+    let x5 = RW::rotated([[5, 0, 0], [5, 1, 0], [5, 0, 1]], axis, deg).named();
     let ps = vec![px, py, z3, z7, x5];
     let (a, b) = ([0usize, 1, 2], [0usize, 1, 3]); // differ along z only
     // Z is the rotation axis: preserved, so the sign comes back exactly.
@@ -426,11 +445,12 @@ fn the_shortcut_fires_where_it_should_and_declines_where_it_cannot() {
 /// rotation with a single angle. Compose an X turn with a Z turn and none of that holds:
 /// there is no preserved coordinate, and the in-plane formula is about the wrong plane. The
 /// guard is the only thing standing between that and a confidently wrong sign, and without a
-/// mixed-axis fixture nothing else in the suite notices if it is removed.
+/// mixed-axis fixture nothing else in the suite notices if it is removed. The planes are named,
+/// so the decline is the axes' doing and not a missing name's.
 #[test]
 fn a_chain_about_two_axes_is_declined() {
     let nodes: &[(Axis, i128)] = &[(Axis::X, 30), (Axis::Z, 40)];
-    let t = |pts| RW::turned(pts, nodes);
+    let t = |pts| RW::turned(pts, nodes).named();
     let ps = vec![
         t([[1, 0, 0], [1, 1, 0], [1, 0, 1]]),
         t([[0, 2, 0], [1, 2, 0], [0, 2, 1]]),

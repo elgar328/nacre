@@ -497,8 +497,8 @@ fn sliced_by_a_datum(want_wide: bool) -> Option<(Model, Handle<Solid>)> {
 /// `FrameWide` walls' frame is irrational, so no integer description of those questions exists
 /// to be found). The population the name-integer road serves is the **second generation**: a solid whose
 /// faces are all world-named with the datum's slice among them, cut again by a world tool. Every
-/// question there is all-world and all-named, so the exact shortcut or the name-integer road answers it
-/// and nothing climbs — for the wide slice, and for the narrow one, whose name is wider than an
+/// question there is all-world and all-named, so the name-integer road answers it and nothing
+/// climbs — for the wide slice, and for the narrow one, whose name is wider than an
 /// `f64` row (the toleranced route climbed 553 times on it in debug).
 ///
 /// The first cut — inside [`sliced_by_a_datum`], mixed-frame — is the positive control: it must

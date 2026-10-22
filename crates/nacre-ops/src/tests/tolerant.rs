@@ -611,11 +611,11 @@ fn t_dir_sign_unrotated_agrees_with_the_input() {
 /// own mirror image. A reflection in `x = 1` sends an integer to an integer, so the second
 /// spelling reproduces the first **bit for bit** — same triangles, same planes,
 /// same everything a predicate reads directly. What differs is only the *provenance*: one
-/// table carries no motion (`chain_id = 0`, so the shared-motion shortcuts decline and the world
-/// names answer), the other carries a reflection (`chain_id ≠ 0`, so the shared-motion shortcuts
-/// fire and answer in the pre-motion frame, from the base names).
+/// table carries no motion (`chain_id = 0`, so the names answer as world descriptions), the other
+/// carries a reflection (`chain_id ≠ 0`, so the names answer as one shared pre-motion
+/// description, from the base names).
 ///
-/// **That is the whole point.** A reflection is improper, and the shortcuts' licence is that
+/// **That is the whole point.** A reflection is improper, and the shared-motion licence is that
 /// a motion preserves the determinant they take — which an improper one does not. The base
 /// frame is canonicalised for that (`name_stored_ints` on the names), and this test is what says the canonicalisation is right: it puts the pre-motion path
 /// (base names under a reflection) and the world path (world names) side by side on identical
@@ -700,17 +700,16 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     let pa = dense_planes(&plain, &ca).0;
     let pb = dense_planes(&mirrored, &cb).0;
     assert!(
-        pb.iter()
-            .all(|g| g.chain_id != 0 && g.name_ints.as_ref().is_some_and(|n| n.row.is_some())),
+        pb.iter().all(|g| g.chain_id != 0 && g.name_ints.is_some()),
         "the reflected spelling really does offer a base frame — else this proves nothing"
     );
     assert!(
         pa.iter().all(|g| g.chain_id == 0),
         "the plain spelling really does decline"
     );
-    let row = |g: &WorkingPlane| g.name_ints.as_ref().and_then(|n| n.row);
+    let ints = |g: &WorkingPlane| g.name_ints.as_ref().map(|n| n.ints.clone());
     assert!(
-        pa.iter().zip(&pb).any(|(a, b)| row(a) != row(b)),
+        pa.iter().zip(&pb).any(|(a, b)| ints(a) != ints(b)),
         "the base frame differs from the world — else the comparison is free"
     );
     (pa, pb)
@@ -718,9 +717,10 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 
 /// The three tests above compare a table that *offers* a base frame against one that does
 /// not — and agreement proves nothing unless the base frame is what answered. So corrupt it
-/// and require the answers to **change**: negating a base plane (the name's row the base frame
-/// is read by) reverses both the side `indirect_plane_side` reports and the determinant
-/// `plane_pair_dir_sign` takes. If either
+/// and require the answers to **change**: negating a base plane (the name integers the base frame
+/// is read by, with their `f64` spellings, so the filter and the integer twin read one plane)
+/// reverses both the side `orient3d` reports and the determinant `plane_pair_dir_sign` takes. If
+/// either
 /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
 /// gone vacuous.
 #[test]
@@ -731,7 +731,11 @@ fn the_base_frame_is_actually_consulted() {
     let negate = |t: &mut Vec<WorkingPlane>| {
         for g in t {
             if let Some(n) = g.name_ints.as_mut() {
-                n.row = n.row.map(|c| c.map(|v| -v));
+                for c in &mut n.ints {
+                    *c = -&*c;
+                }
+                n.near = n.near.map(|c| c.map(|v| -v));
+                n.near_normal = n.near_normal.map(|c| c.map(|v| -v));
             }
         }
     };
@@ -784,7 +788,7 @@ fn the_base_frame_is_actually_consulted() {
     );
 }
 
-/// `orient3d` — the shortcut (`Judge::orient3d`'s shared-motion arm, on the base names) is
+/// `orient3d` — the name-integer road under a shared motion (on the base names) is
 /// answering the same question as the coordinates. See [`two_spellings`].
 #[test]
 fn a_reflected_spelling_orients_as_the_plain_one() {
@@ -2021,23 +2025,25 @@ mod name_integer_road {
     }
 
     /// **The name-integer road itself, proved from both sides** — over questions separated
-    /// by `2⁻¹⁰⁰`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
+    /// by `ε`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
     /// a starved judge with names answers the hand-derived signs (nothing but the
     /// name-integer route can), and the same starved judge without names answers `0` for
     /// every nonzero question (without the name, this judge *cannot* know). The full-budget
     /// climb on the stripped table is the independent oracle, and the expected signs are
     /// stated by hand, so no route is compared only to itself.
     ///
-    /// Two families of names: **wide** (each scaled by a ~201-bit odd factor) and **narrow but
-    /// wider than an `f64`** (unscaled — `2¹⁰⁰ + 1` is no `f64`), so the road is proved for both
-    /// widths it serves.
+    /// Three families of names, so the road is proved for every width it serves: **wide** (each
+    /// scaled by a ~201-bit odd factor) and **narrow but wider than an `f64`** (unscaled —
+    /// `2¹⁰⁰ + 1` is no `f64`), both at `ε = 2⁻¹⁰⁰`; and **every integer an `f64`** at
+    /// `ε = 2⁻⁵²` (`2⁵² + 1` is one), the unmoved questions a name with an exact `f64` row
+    /// asks — still too close for the filter, so the integers answer them too.
     ///
     /// Also under test: the world gate (`!any_rotated`), the σ fold (plane 3's canonical
     /// name opposes its stored orientation, `frame_sign = −1`), and σ's negative control —
     /// negating every name (and then only some) changes no answer.
     #[test]
     fn a_starved_judge_answers_only_through_the_name() {
-        for family in ["wide", "narrow"] {
+        for family in ["wide", "narrow", "row"] {
             starved_family(family);
         }
     }
@@ -2045,14 +2051,14 @@ mod name_integer_road {
     fn starved_family(family: &str) {
         let (m, s) = cuboid();
         let donor = plane_table(&m, s)[0].surf;
-        let e_den: i128 = 1 << 100;
-        let one_plus = Rat::new(e_den + 1, e_den).unwrap(); // 1 + 2⁻¹⁰⁰
+        let e_den: i128 = if family == "row" { 1 << 52 } else { 1 << 100 }; // ε = 1 / e_den
+        let one_plus = Rat::new(e_den + 1, e_den).unwrap(); // 1 + ε
         let one_minus = Rat::new(e_den - 1, e_den).unwrap();
         let r = Rat::from_int;
 
         // Integer spellings of the five planes' canonical names. The wide family scales them by
         // a ~201-bit odd factor (the predicates are row-linear, so the scale is invisible to
-        // every answer); the narrow family keeps them as they are, `2¹⁰⁰`-sized.
+        // every answer); the other two keep them as they are, `e_den`-sized.
         let s_factor: BigInt = (BigInt::from(1) << 201) + 3;
         let wide_name = |c: [i128; 4]| -> PlaneName {
             if family == "wide" {
@@ -2072,7 +2078,7 @@ mod name_integer_road {
                 1,
                 wide_name([1, 0, 0, -1]),
             ),
-            // 1: x = 1 + 2⁻¹⁰⁰
+            // 1: x = 1 + ε
             (
                 [
                     [one_plus, r(0), r(0)],
@@ -2097,7 +2103,7 @@ mod name_integer_road {
                 -1,
                 wide_name([0, 0, 1, -1]),
             ),
-            // 4: x + 2⁻¹⁰⁰·y = 1 — nearly parallel to plane 0.
+            // 4: x + ε·y = 1 — nearly parallel to plane 0.
             (
                 [
                     [r(1), r(0), r(0)],
@@ -2130,9 +2136,6 @@ mod name_integer_road {
                     WorkingPlane {
                         base_rat: None,
                         world: None,
-                        // The exact shortcuts read the name's exact `f64` row, and these names
-                        // have none (wide, or narrow past an `f64`): every question here goes to
-                        // the name-integer road or the climb.
                         name_ints: keep_names
                             .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
                             .flatten(),
@@ -2158,11 +2161,19 @@ mod name_integer_road {
                 .is_some_and(|n| is_wide(n) == (family == "wide"))),
             "{family}: every fixture name folds, at its family's width"
         );
-        assert!(
-            named
-                .iter()
-                .any(|p| p.name_ints.as_ref().is_some_and(|n| n.row.is_none())),
-            "{family}: some plane has no exact row, or the name-integer road is never asked"
+        // Whether every integer of a name is an `f64` — the population the family stands for.
+        let spelled = |p: &WorkingPlane| {
+            let one = BigInt::from(1);
+            p.name_ints.as_ref().is_some_and(|n| {
+                n.ints
+                    .iter()
+                    .all(|x| nacre_exact::nearest_f64_big(x, &one).is_some_and(|(_, e)| e))
+            })
+        };
+        assert_eq!(
+            named.iter().all(spelled),
+            family == "row",
+            "{family}: the names are spelled in `f64` exactly in the row family only"
         );
         let stripped = build([1; 5], false);
         let negated = build([-1; 5], true);
@@ -2178,11 +2189,11 @@ mod name_integer_road {
         let oracle = crate::planes::test_judge(&stripped);
 
         // (question, expected) — hand-derived, so no route is its own oracle.
-        // q1: ∩(1,2,3) = (1+2⁻¹⁰⁰, 1, 1) vs ∩(0,2,3) = (1, 1, 1) on axis 0 → +1.
+        // q1: ∩(1,2,3) = (1+ε, 1, 1) vs ∩(0,2,3) = (1, 1, 1) on axis 0 → +1.
         // q2: (1,1,1) against plane 1 (outward +x, a hair above) → −1.
-        // q3: (1+2⁻¹⁰⁰,1,1) against plane 0 → +1.
-        // q4: det of stored normals [(1,0,0), (1,2⁻¹⁰⁰,0), (0,0,−1)] = −2⁻¹⁰⁰ → −1.
-        // q5: det of stored normals [(1,0,0), (1,2⁻¹⁰⁰,0), (0,1,0)] = 0 — the exact-zero
+        // q3: (1+ε,1,1) against plane 0 → +1.
+        // q4: det of stored normals [(1,0,0), (1,ε,0), (0,0,−1)] = −ε → −1.
+        // q5: det of stored normals [(1,0,0), (1,ε,0), (0,1,0)] = 0 — the exact-zero
         //     case, where every route must say 0.
         type Q = (
             &'static str,
@@ -2208,7 +2219,12 @@ mod name_integer_road {
                 *expected,
                 "{family} {label}: full climb oracle"
             );
-            // The other side of the proof: starved and nameless, the judge cannot know.
+            // The other side of the proof: starved and nameless, the judge cannot know — save a
+            // direction in the row family, which reads only the normals, and at `ε = 2⁻⁵²` the
+            // witness points carry those exactly in `f64`, so the climb's own filter sees `ε` too.
+            if family == "row" && label.starts_with("dir") {
+                continue;
+            }
             let js = Judge::new(&stripped, starved, &notes);
             assert_eq!(
                 ask(&js),
@@ -2223,20 +2239,26 @@ mod name_integer_road {
 ///
 /// A plane's name is derived from its defining points exactly, so the BigInt twins
 /// (`int_plane_side`·`int_cmp_coord`·`int_dir_sign`) answer for the truth. The judge is asked
-/// through its front door, whichever road it then takes — the exact shortcut or the climb — so a
-/// shortcut that answers for the rounded model (the face corners' `f64` caches, the cache's
+/// through its front door, whichever road it then takes — the name-integer road or the climb — so
+/// a road that answers for the rounded model (the face corners' `f64` caches, the cache's
 /// coefficients) is caught where rounding breaks a rational coincidence: `3·0.1 = 0.3` puts the
 /// box's corner on the wall `y = 3x`, and `3·fl(0.1) ≠ fl(0.3)`. The last case's caps are
-/// 17-digit decimals whose names no `f64` row spells (`x = 0.17334649809321423` is
-/// `[10¹⁷, 0, 0, −17334649809321423]`, an odd 54-bit `d`), so the name-integer road answers there too.
+/// 17-digit decimals whose names no `f64` spells (`x = 0.17334649809321423` is
+/// `[10¹⁷, 0, 0, −17334649809321423]`, an odd 54-bit `d`), so both populations of names are asked.
+///
+/// The counters say which populations were asked, not which road answered — with the road gone
+/// the full climb gives the same answers and this stays green. The road itself is locked by
+/// `a_starved_judge_answers_only_through_the_name`.
 #[test]
 fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
     use nacre_judge::predicate::PlaneWitness;
     use num_bigint::BigInt;
-    // Questions the exact shortcut took (orient, cmp, dir), and questions with a plane whose name
-    // has no exact row — the name-integer road's.
+    // Questions (orient, cmp, dir) whose names are all spelled in `f64` exactly, and questions with
+    // a name that is not.
     let mut eligible = [0usize; 3];
     let mut name_road = 0usize;
+    let one = BigInt::from(1);
+    let is_f64 = |x: &BigInt| nacre_exact::nearest_f64_big(x, &one).is_some_and(|(_, e)| e);
     for (xs, ys, k) in [
         (0.1, 0.3, 3.0),
         (0.7, 2.1, 3.0),
@@ -2270,8 +2292,10 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
             .copied()
             .filter(|&t| nacre_exact::int_dir_sign(normals(t)) != 0)
             .collect();
-        let coeffs = |ks: &[usize]| ks.iter().all(|&k| planes[k].exact_coeffs().is_some());
-        let unspelled = |ks: &[usize]| ks.iter().any(|&k| planes[k].exact_coeffs().is_none());
+        let spelled = |k: usize| ints[k].iter().all(is_f64);
+        let normal_spelled = |k: usize| ints[k][..3].iter().all(is_f64);
+        let coeffs = |ks: &[usize]| ks.iter().all(|&k| spelled(k));
+        let unspelled = |ks: &[usize]| ks.iter().any(|&k| !spelled(k));
         let mut wrong = Vec::new();
         for &t in &triples {
             let [p, a, b] = t;
@@ -2279,7 +2303,7 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
                 jd.plane_pair_dir_sign(p, a, b),
                 nacre_exact::int_dir_sign(normals(t)),
             );
-            if t.iter().all(|&k| planes[k].exact_normal().is_some()) {
+            if t.iter().all(|&k| normal_spelled(k)) {
                 eligible[2] += 1;
             }
             if got != want {
@@ -2322,10 +2346,10 @@ fn every_answer_on_unmoved_named_planes_is_the_names_answer() {
             &wrong[..wrong.len().min(6)]
         );
     }
-    // The oracle compares every answer; this says the shortcut was among them for all three kinds.
+    // The oracle compares every answer; this says both populations were among them.
     assert!(
         eligible.iter().all(|&e| e > 0),
-        "the exact shortcut answered none of some kind (orient, cmp, dir): {eligible:?}"
+        "no question of some kind (orient, cmp, dir) had every name spelled in f64: {eligible:?}"
     );
-    assert!(name_road > 0, "no question reached the name-integer road");
+    assert!(name_road > 0, "no question had a name no f64 spells");
 }
