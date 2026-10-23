@@ -29,6 +29,17 @@ impl Model {
         )
     }
 
+    /// **Set a surface's stored name outright** — test-only: the door a fixture uses to plant a
+    /// name its truth does not derive (a different plane's, or one on a cylinder), so that the check
+    /// which re-derives the name is the proposition. `None` removes the name.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn plant_surface_name(&mut self, h: Handle<Surface>, name: Option<nacre_exact::PlaneName>) {
+        match name {
+            Some(n) => self.surface_name.insert(h, n),
+            None => self.surface_name.remove(&h),
+        };
+    }
+
     /// Push a cylinder whose cache is **not** derived from its statement, and not interned —
     /// test-only: the door a fixture uses to plant a cache its truth contradicts (the check that
     /// catches the lie is the proposition), which the public door would overwrite with the

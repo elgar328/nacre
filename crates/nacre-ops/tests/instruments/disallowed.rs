@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Every path `clippy.toml` disallows.
-const DISALLOWED: [&str; 19] = [
+const DISALLOWED: [&str; 20] = [
     "nacre_topo::Model::push_vertex",
     "nacre_topo::Model::refine_vertex_cache",
     "nacre_topo::Model::push_plane",
@@ -41,6 +41,7 @@ const DISALLOWED: [&str; 19] = [
     "nacre_topo::Model::rebuild_edge_cache",
     "nacre_topo::Model::push_plane_unregistered",
     "nacre_topo::Model::push_cylinder_unregistered",
+    "nacre_topo::Model::plant_surface_name",
     "nacre_ops::realize::push_vertex_prerealized",
     "rayon::iter::IntoParallelIterator::into_par_iter",
     "rayon::iter::IntoParallelRefIterator::par_iter",

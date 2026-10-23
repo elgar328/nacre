@@ -20,6 +20,7 @@ disallowed-methods = [
     { path = "nacre_topo::Model::rebuild_edge_cache", reason = "a cache write door: re-derive through nacre-ops' realization funnel (`realize.rs`)" },
     { path = "nacre_topo::Model::push_plane_unregistered", reason = "a cache write door for test fixtures only", allow-invalid = true },
     { path = "nacre_topo::Model::push_cylinder_unregistered", reason = "a cache write door for test fixtures only", allow-invalid = true },
+    { path = "nacre_topo::Model::plant_surface_name", reason = "a cache write door for test fixtures only", allow-invalid = true },
     # The funnel's door for a cache it already chose: it writes what it is handed, so only a cache
     # `realize::point_cache` answered for this very definition may come through it.
     { path = "nacre_ops::realize::push_vertex_prerealized", reason = "pushes the cache it is handed: use `push_vertex_realized`, or a cache `realize::point_cache` gave for this very definition" },

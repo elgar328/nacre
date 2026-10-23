@@ -123,8 +123,10 @@ fn dangling_reference_vertex_definition() {
 
 /// **A surface that reached the arena past the table is two handles of one surface.** The seeded
 /// world plane stated again through the door that skips interning (test-only) — the one road a
-/// duplicate has — is reported against the seed. It is planted with no name, so a check that read
-/// the stored names instead of re-deriving the key from the points would not see it.
+/// duplicate has — is reported against the seed. That door stores no name, so the twin is also a
+/// plane whose points derive a name it does not hold — the missing-name shape of
+/// [`Violation::SurfaceNameMismatch`]; and a duplicate check that read the stored names instead of
+/// re-deriving the key from the points would not see the twin at all.
 #[test]
 fn a_plane_pushed_past_the_table_is_a_duplicate_surface() {
     let mut m = Model::new();
@@ -145,7 +147,66 @@ fn a_plane_pushed_past_the_table_is_a_duplicate_surface() {
     let twin = m.push_plane_unregistered(cache, points, sense);
     assert_eq!(
         validate(&m),
-        vec![Violation::DuplicateSurface { kept: seed, twin }]
+        vec![
+            Violation::SurfaceNameMismatch {
+                surface: twin,
+                stored: None,
+                derived: m.surface_name.get(&seed).cloned().map(Box::new),
+            },
+            Violation::DuplicateSurface { kept: seed, twin },
+        ]
+    );
+}
+
+/// **A plane holding another plane's name is reported.** The plane is a seed no vertex cites (the
+/// box stands clear of the world planes), so the name check is the only one that sees it — a wrong
+/// name on a plane a corner cites also moves what that corner's definition says (`VertexNoPoint`).
+#[test]
+fn a_plane_holding_another_planes_name_is_reported() {
+    let mut m = cuboid([5.0, 5.0, 5.0], [6.0, 7.0, 8.0]);
+    assert!(validate(&m).is_empty(), "the control is clean");
+    let (xy, yz) = (
+        m.surface_handle_at(0).expect("the XY seed"),
+        m.surface_handle_at(1).expect("the YZ seed"),
+    );
+    let (own, other) = (
+        m.surface_name.get(&xy).cloned(),
+        m.surface_name.get(&yz).cloned(),
+    );
+    assert!(own.is_some() && own != other, "two different named planes");
+    m.plant_surface_name(xy, other.clone());
+    assert_eq!(
+        validate(&m),
+        vec![Violation::SurfaceNameMismatch {
+            surface: xy,
+            stored: other.map(Box::new),
+            derived: own.map(Box::new),
+        }]
+    );
+}
+
+/// **A name where the truth derives none is reported** — a cylinder's key is its whole statement,
+/// never a name, so a name planted on one is the extra-name shape.
+#[test]
+fn a_name_on_a_cylinder_is_reported() {
+    let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+    assert!(validate(&m).is_empty(), "the control is clean");
+    let lateral = (0..m.surface_count() as u32)
+        .filter_map(|i| m.surface_handle_at(i))
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
+        .expect("the lateral cylinder");
+    let seed = m
+        .surface_name
+        .get(&m.surface_handle_at(0).expect("a seed"))
+        .cloned();
+    m.plant_surface_name(lateral, seed.clone());
+    assert_eq!(
+        validate(&m),
+        vec![Violation::SurfaceNameMismatch {
+            surface: lateral,
+            stored: seed.map(Box::new),
+            derived: None,
+        }]
     );
 }
 

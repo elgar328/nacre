@@ -449,6 +449,12 @@ fn record(
     inputs: &str,
     out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>,
 ) {
+    // The model's invariants, the stored plane names among them — every row, refused ones too.
+    let violations = nacre_validate::validate(m);
+    assert!(
+        violations.is_empty(),
+        "{tag}: the model breaks its invariants: {violations:?}"
+    );
     // The rim lock: every circle edge's frame is its cylinder cache's, and every stated rim's
     // centre is the truth's nearest `f64` — the edge cache's twin of the vertex lock below.
     // The line lock: every line edge that the truth gives a direction carries that direction.
@@ -595,7 +601,7 @@ const KINDS: [(&str, BoolKind); 3] = [
 ];
 
 #[test]
-#[ignore = "census dump with plane-sense and mesh locks; the gates run it (--ignored --nocapture)"]
+#[ignore = "census dump with validate, plane-sense and mesh locks; the gates run it (--ignored --nocapture)"]
 fn measure_census() {
     // ── Axis-aligned, no motion at all: the untouched baseline.
     let boxes: [([f64; 3], [f64; 3]); 6] = [

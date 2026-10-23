@@ -16,13 +16,14 @@ nacre-math = { workspace = true }
 # face's normal to sign its signed volume; the other checks reach geom's
 # distance/normal transitively, this makes that dependency explicit.
 nacre-geom = { workspace = true }
+# The name check reports the stored and the derived plane name (`exact::PlaneName`).
+nacre-exact = { workspace = true }
 
 [dev-dependencies]
 # Test cylinders are built the way an application builds one — a datum, a circle, an extrude
 # (`nacre_ops::fixtures`). Dev-only, and nacre-ops depends on this crate only as a dev-dependency
 # too, so the library graph stays acyclic (the nacre-props shape).
 nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
-nacre-exact = { path = "../nacre-exact" }
 # Enables topo's planting doors — the self-tests plant the defective models validate must catch.
 nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
 proptest.workspace = true

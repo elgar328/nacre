@@ -4,7 +4,8 @@
 //! finds (an empty `Vec` means the model is valid): reference integrity, loop closure,
 //! half-edge manifold pairing, face orientation against loop winding, geometric
 //! incidence (vertices on their curves and surfaces, and on their own definitions),
-//! three-plane definitions that name a point, one handle per surface, and Euler-Poincaré.
+//! three-plane definitions that name a point, one handle per surface, each plane's stored name,
+//! and Euler-Poincaré.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted
@@ -223,11 +224,26 @@ pub enum Violation {
     /// `kept` ([`Model::surface_key`]: a plane's canonical name, a nameless `Through` statement, a
     /// cylinder's whole statement — each with its motion). Every door interns, so a push-built
     /// model never holds one; what this nets is a road to the arena that skipped the table, which
-    /// compiles and leaves every other check green. A later handle sharing the key reports
-    /// against the first.
+    /// compiles and leaves every other check green but [`Violation::SurfaceNameMismatch`] (that road
+    /// stores no name). A later handle sharing the key reports against the first.
     DuplicateSurface {
         kept: Handle<Surface>,
         twin: Handle<Surface>,
+    },
+    /// **A plane's stored name is not the one its truth derives** ([`Model::surface_name`] against
+    /// the name in [`Model::surface_key`]'s answer, `None` where the key is not a name — a
+    /// cylinder, a nameless `Through` statement, collinear points). Three shapes: a name missing
+    /// where the points derive one, a name where they derive none, a different name.
+    ///
+    /// A plane's name is what its exact questions read, so a missing one costs speed and a wrong
+    /// one moves answers, while the geometry the other checks measure can stay as it was. A model
+    /// built through the kernel's doors never holds one.
+    SurfaceNameMismatch {
+        // Boxed: the variant is rare and a name is large — unboxed, every violation would be sized
+        // for two of them.
+        surface: Handle<Surface>,
+        stored: Option<Box<nacre_exact::PlaneName>>,
+        derived: Option<Box<nacre_exact::PlaneName>>,
     },
 }
 
@@ -263,7 +279,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_vertex_def_carriers(model, &mut out);
     check_vertex_names_a_point(model, &mut out);
-    check_duplicate_surfaces(model, &mut out);
+    check_surface_keys(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
@@ -436,10 +452,19 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
     }
 }
 
-/// **«One surface, one handle»** — no two handles of the arena derive one interning key
-/// ([`Violation::DuplicateSurface`]). The key is re-derived from each surface's truth, never read
-/// from the table it would be checking, so a surface that reached the arena past the table is
-/// seen. Runs after reference integrity (it dereferences surface handles).
+/// **«One surface, one handle», and each plane's stored name** — no two handles of the arena
+/// derive one interning key ([`Violation::DuplicateSurface`]), and every surface's stored name is
+/// the one in its key ([`Violation::SurfaceNameMismatch`]). The key is re-derived from each
+/// surface's truth, never read from the tables it would be checking, so a surface that reached
+/// the arena past the table is seen. Runs after reference integrity (it dereferences surface
+/// handles). One key per surface serves both: deriving it is most of this function's cost.
+///
+/// **The name check is the discard-and-regenerate lock.** A `Through` statement's key reads its
+/// carriers' *stored* names, so this compares each name against its truth and the names stored
+/// below it — and a carrier is always a lower handle (its vertex existed before the statement).
+/// Every name agreeing here is therefore the same as every name rebuilt from the truth in handle
+/// order coming out equal; and where some disagree, the lowest of them is wrong in itself, every
+/// name below it agreeing.
 ///
 /// **Full-arena, like [`check_reference_integrity`]** — surfaces are shared definitions that
 /// nothing supersedes, so a duplicate is one whether or not a live face still cites it.
@@ -448,13 +473,26 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 /// quarter turns (12,022 surfaces, a dozen live faces): 16 ms of `validate`'s 19 ms; on an 80-fin
 /// rotated fold (325 surfaces) 4%. The suite's wall clock did not move, and no application calls
 /// `validate`.
-fn check_duplicate_surfaces(m: &Model, out: &mut Vec<Violation>) {
+fn check_surface_keys(m: &Model, out: &mut Vec<Violation>) {
     let mut first: std::collections::HashMap<SurfaceKey, Handle<Surface>> =
         std::collections::HashMap::new();
     let mut i = 0u32;
     while let Some(h) = m.surface_handle_at(i) {
         i += 1;
-        let Some(key) = m.surface_key(m.surface(h)) else {
+        let key = m.surface_key(m.surface(h));
+        let derived = match &key {
+            Some(SurfaceKey::Name(n, _)) => Some(n),
+            _ => None,
+        };
+        let stored = m.surface_name.get(&h);
+        if stored != derived {
+            out.push(Violation::SurfaceNameMismatch {
+                surface: h,
+                stored: stored.cloned().map(Box::new),
+                derived: derived.cloned().map(Box::new),
+            });
+        }
+        let Some(key) = key else {
             continue; // collinear points: no name, nothing to collide with
         };
         match first.entry(key) {
