@@ -518,7 +518,7 @@ impl Orientation {
 }
 
 /// **A surface's exact truth** — what the surface *is*, as opposed to the f64
-/// [`Surface`](nacre_geom::Surface) beside it, which is its realization.
+/// [`SurfaceCache`] beside it, which is its realization.
 ///
 /// The `motion` field says where the data is stated: `None` is the world, `Some` names the motion
 /// history the data is stated *before*. Holding it inside the variant

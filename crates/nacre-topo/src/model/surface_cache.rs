@@ -183,15 +183,13 @@ impl Model {
             let derived = self.derive_surface_cache(h).map(|(s, _)| s);
             #[cfg(any(test, feature = "test-util"))]
             self.count_derivation(h, derived.as_ref());
-            if let Some(nacre_geom::Surface::Cylinder(d)) = derived {
+            if let Some(surface) = derived {
                 debug_assert!(
-                    cylinders_agree(&figure, &d),
-                    "the producer's cylinder figure strays from its statement: {figure:?} vs {d:?}"
+                    matches!(&surface, nacre_geom::Surface::Cylinder(d) if cylinders_agree(&figure, d)),
+                    "the producer's cylinder figure strays from its statement: {figure:?} vs \
+                     {surface:?}"
                 );
-                self.surface_cache[h.index() as usize] = SurfaceCache::Cylinder {
-                    cylinder: d,
-                    standing: CacheStanding::Realized,
-                };
+                self.surface_cache[h.index() as usize].refigure(surface, CacheStanding::Realized);
             }
         }
         h

@@ -1130,10 +1130,10 @@ pub enum SurfaceCache {
     Cylinder { cylinder: nacre_geom::Cylinder, standing: CacheStanding },
 }   // .plane() · .cylinder() · .name() · .standing() · .to_geom() -> nacre_geom::Surface
 pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 값에 대해 아는 것 — 순서가 앎이고, 오르기만 한다
-//   기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에 남는다 — 다형 질의는
-//   `to_geom()` 이 짓는 geom 의 값에 묻는다(geom 의 `Surface` 는 힙을 쓰는 변종의 자리를 두려고 `Copy` 가
-//   아니어서, 캐시는 그것을 통째로 들지 않고 팔마다 `Copy` 조각을 든다). 표지는 `PointCache` 의 세 변종과
-//   같은 말이다(경계를 들 것이 없어 표지만):
+//   팔마다 제 종류의 조각을 든다 — geom 의 `Surface` 를 통째로 들면 평면 팔에 원통이 들어갈 수 있다. 기하의
+//   메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에 남고, 다형 질의는 `to_geom()` 이
+//   그 조각에서 새로 짓는 값에 묻는다(문이 geom 의 값을 돌려주지 않는 것은 그것이 힙을 쓰는 변종의 자리를
+//   두려고 `Copy` 가 아니어서다). 표지는 `PointCache` 의 세 변종과 같은 말이다(경계를 들 것이 없어 표지만):
 //   `Unrealized` 는 아무도 실현하지 않았다(안 물었거나 도로가 없다 — 읽을 수 없는 사슬), `Ceiling` 은 싼 도로가 멈췄다(비용 한계를 넘는 사슬·두 단에서 미결정 — 값을 치르는 문이 올린다),
 //   `Realized` 는 모든 부분이 진실의 최근접 f64 다. 둘째 쓰기 문 `refine_surface_cache` 는 표지를 내리지 못한다.
 //   평면의 f64 실현은 문이 진실에서 유도한다(`derive_surface_cache`) — 세계 이름이 있으면 단위 법선은 이름 ×

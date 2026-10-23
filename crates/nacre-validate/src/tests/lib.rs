@@ -823,7 +823,7 @@ fn a_contradictory_vertex_def_is_flagged() {
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .map(|(_, f)| f.surface)
-        .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("the lateral cylinder");
     let (z0, x0) = (
         m.seeded_plane(nacre_exact::Axis::Z),
@@ -929,8 +929,7 @@ fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
         .iter()
         .find(|&&fh| {
             let f = m.face(fh);
-            matches!(m.surface(f.surface), nacre_topo::Surface::Plane { .. })
-                && f.outer.half_edges.len() == 1
+            matches!(m.surface(f.surface), Surface::Plane { .. }) && f.outer.half_edges.len() == 1
         })
         .expect("a cylinder has two disk caps");
     let twin = {
@@ -1023,12 +1022,7 @@ fn a_lying_cylinder_def_is_caught() {
     let faces = m.shell(shell).faces.clone();
     let victim = *faces
         .iter()
-        .find(|&&fh| {
-            matches!(
-                m.surface(m.face(fh).surface),
-                nacre_topo::Surface::Cylinder { .. }
-            )
-        })
+        .find(|&&fh| matches!(m.surface(m.face(fh).surface), Surface::Cylinder { .. }))
         .expect("the lateral face");
     let cache = match m.surface_cache(m.face(victim).surface) {
         nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => *c,
@@ -1084,7 +1078,7 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .map(|(_, f)| f.surface)
-        .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("lateral");
     let bottom = m.seeded_plane(nacre_exact::Axis::Z);
     let x0 = m.seeded_plane(nacre_exact::Axis::X);
@@ -1170,7 +1164,7 @@ fn a_contradictory_pierce_def_is_flagged() {
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .map(|(_, f)| f.surface)
-        .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("lateral");
     let bottom = m.seeded_plane(nacre_exact::Axis::Z);
     let x0 = m.seeded_plane(nacre_exact::Axis::X);
@@ -1247,13 +1241,13 @@ fn vertex_off_its_rim_circle() {
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .map(|(_, f)| f.surface)
-        .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("the cylinder's lateral surface");
     let cap = (0..m.face_count() as u32)
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .map(|(_, f)| f.surface)
-        .find(|&h| h != lateral && !matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
+        .find(|&h| h != lateral && !matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("a cap plane");
     // A seam vertex at radius 2 + 1e-3 — off the derived radius-2 rim circle. Its
     // definition is `OnSeam` (the lateral cylinder and its cap), which is what a rim's

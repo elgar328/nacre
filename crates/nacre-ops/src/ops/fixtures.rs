@@ -572,12 +572,8 @@ impl Feature {
     /// statement on a tilted face), the cap survives on that one. Two caps on one plane (two
     /// bosses of one height) are told apart by where they stand. Panics when nothing qualifies.
     pub fn cap_face(&self, m: &Model) -> Handle<Face> {
-        let planar = |f: Handle<Face>| {
-            matches!(
-                m.surface(m.face(f).surface),
-                nacre_topo::Surface::Plane { .. }
-            )
-        };
+        let planar =
+            |f: Handle<Face>| matches!(m.surface(m.face(f).surface), Surface::Plane { .. });
         let near = |f: Handle<Face>| -> Option<f64> {
             let (n, at) = facing_and_mean(m, f);
             let off = (self.cap_at - at).dot(self.cap_normal).abs();

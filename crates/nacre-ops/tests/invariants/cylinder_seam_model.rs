@@ -87,7 +87,7 @@ fn a_seam_vertex_states_its_rim_carriers() {
             panic!("a seam vertex carries OnSeam, got {:?}", m.vertex(vh))
         };
         assert!(
-            matches!(m.surface(a), nacre_topo::Surface::Cylinder { .. }),
+            matches!(m.surface(a), Surface::Cylinder { .. }),
             "first carrier is the lateral cylinder"
         );
         let Some(p) = m.surface_cache(b).plane() else {
