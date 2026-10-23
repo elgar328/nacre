@@ -86,7 +86,8 @@ impl Model {
     /// **A plane's canonical name** — primitive integer coefficients with a fixed sign, the same
     /// for every statement of one plane ([`nacre_exact::PlaneName`]). Stated in the frame the
     /// plane's truth is written in: the world for an unmoved plane, the frame before its motion for
-    /// a moved one ([`Model::surface_motion`]); [`Model::world_plane_name`] carries it to the world.
+    /// a moved one ([`Model::surface_motion`]); [`Model::world_plane_name`] carries it to the world
+    /// where the motion keeps it rational.
     ///
     /// `None` for a cylinder, and for a plane through three vertices that no one frame places —
     /// vertices on parts moved differently.

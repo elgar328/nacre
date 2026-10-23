@@ -235,9 +235,10 @@ pub enum Violation {
     /// cylinder, a nameless `Through` statement, collinear points). Three shapes: a name missing
     /// where the points derive one, a name where they derive none, a different name.
     ///
-    /// A plane's name is what its exact questions read, so a missing one costs speed and a wrong
-    /// one moves answers, while the geometry the other checks measure can stay as it was. A model
-    /// built through the kernel's doors never holds one.
+    /// A plane's name is what its exact questions and the realization of its cache read, so a
+    /// missing or wrong one changes how the plane is judged and realized while the geometry the
+    /// other checks measure can stay as it was. A model built through the kernel's doors never
+    /// holds one.
     SurfaceNameMismatch {
         // Boxed: the variant is rare and a name is large — unboxed, every violation would be sized
         // for two of them.

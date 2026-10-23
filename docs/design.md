@@ -31,7 +31,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model   ← store · geom · math · exact
 ├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates · props(OBJ 의 면 법선)
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
-├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom
+├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom · exact
 ├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)   ← topo · geom · math · store
 ├── nacre-ops        # 연산: datum 평면/sketch/extrude/boolean/transform/mirror/copy
 │                    #   불리언은 한 방향이다: boolean(앞문) → arrangement(엔진) → assembly(조립),
@@ -1268,7 +1268,7 @@ m.rebuild_edge_cache(solids, given) · m.rebuild_adjacency() // 통째 재생 �
 **캐시에 쓰는 문은 깔때기만 부른다.** (같은 `clippy.toml` 이 rayon 의 병렬 입구를 `par.rs` 에, 링 술어 둘 — `point_in_ring` 은
 `nesting::cell_inside` 의 재시도 아래, `side_of` 는 `ring_against_plane` 의 걷기 아래 — 을 제 자리에 묶는다. 허용 장치는 아래 하나다.)
 위 쓰기 문 가운데 f64 캐시에 쓰는 여덟(`push_vertex`·`refine_vertex_cache`·`push_plane`·
-`push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 `*_unregistered` 둘, 그리고
+`push_plane_through`·`push_cylinder`·`refine_surface_cache`·`push_edge`·`rebuild_edge_cache`)과 픽스처용 셋(`*_unregistered` 둘·이름을 심는 `plant_surface_name`), 그리고
 깔때기가 다 지은 캐시를 받는 `push_vertex_prerealized` 를 워크스페이스 루트의 `clippy.toml`(`disallowed-methods`)이 막는다 —
 크레이트 경계 때문에 `pub` 인 문을 ops 의 깔때기(`realize.rs`) 밖에서 부르면 clippy 가 거절한다. 그래서 «STEP 이 읽는 `f64` 는
 실현 길을 지났거나, 지나지 않았다고 표시돼 있다»가 약속이 아니라 잠금이다. 제품에서 부르는 자리는 셋이고 셋 다 `#[expect]` 에
