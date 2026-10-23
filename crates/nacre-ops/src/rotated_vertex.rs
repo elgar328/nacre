@@ -130,7 +130,7 @@ pub(crate) fn plane_witness(model: &Model, h: Handle<Surface>) -> Option<Witness
         nacre_topo::PlanePoints::Through(vs) => match model.through_points_rat(*vs) {
             Some(base) => stated(carried(base.map(WitnessPoint::at))?, motion.is_none()),
             // A named statement whose meets are wider than any witness base: its name's frame.
-            None if model.surface_name.contains_key(&h) => probes(),
+            None if model.surface_name(h).is_some() => probes(),
             // **The nameless statement (the heterogeneous half).** Vertices each solved to a
             // narrow point in their own frame give a triangle whose chains simply differ — the
             // judging layer never required them to agree (`plane_iv`/`plane_hp` realize each point
@@ -350,7 +350,7 @@ pub(crate) fn frame_chain(
     flip: bool,
 ) -> Option<Vec<MoveNode>> {
     use nacre_topo::FramePlacement;
-    let Some(name) = model.surface_name.get(&plane) else {
+    let Some(name) = model.surface_name(plane) else {
         // **The judged road**: a plane with no name at all — a
         // mixed-frame `Through` statement, whose three vertices no one frame solves rationally. Its
         // frame is derived from the defining points as intervals ([`nacre_judge::FrameThrough`]),
@@ -493,7 +493,7 @@ pub(crate) fn frame_normal_sense(model: &Model, plane: Handle<Surface>) -> Optio
     let Surface::Plane { sense, .. } = model.surface(plane) else {
         return None;
     };
-    if model.surface_name.contains_key(&plane) {
+    if model.surface_name(plane).is_some() {
         Some(model.plane_name_sense(plane)?.sign())
     } else {
         Some(sense.sign())
@@ -606,7 +606,7 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                     // `motion` carries that frame (`Model::through_meets`), so the plane's own chain
                     // places them; a wide meet has no `Rat` to replay, and with nothing moved since,
                     // the vertices' own realizations are those points.
-                    PlanePoints::Through(vs) if model.surface_name.contains_key(&h) => {
+                    PlanePoints::Through(vs) if model.surface_name(h).is_some() => {
                         let meet = |v| match model.vertex_meet(v) {
                             Some((nacre_exact::MeetPoint::Narrow(p), _)) => carry(p),
                             _ => None,

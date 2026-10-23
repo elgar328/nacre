@@ -775,8 +775,8 @@ pub struct Model {
     /// turned fins, on about a dozen new carrier pairs a step. Realizing each anew took the fold
     /// from 1.33 s to 1.94 s.
     given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>,
-    /// Each surface's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points —
-    /// present for every surface whose producer had a rational description to record.
+    /// Each plane's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points — the
+    /// key it interns under. Read through [`Model::surface_name`]; written once, by the raw push.
     ///
     /// **The point is that two statements of one plane get the same value.** `nacre_geom::Plane`
     /// keeps an un-normalized normal whose length follows the *face's size*, so the same plane
@@ -795,10 +795,16 @@ pub struct Model {
     /// down at all. A moved surface therefore inherits its source's name unchanged: the motion
     /// is recorded beside it, not folded into it.
     ///
-    /// Absent is ordinary — an f64 construction path (no points to derive from).
-    /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
-    /// exact transports) read [`nacre_exact::PlaneName::narrow`]; `Wide` carries identity only.
-    pub surface_name: HashMap<Handle<Surface>, nacre_exact::PlaneName>,
+    /// Absent where the key is not a name: a cylinder, a plane through three vertices no one frame
+    /// solves (mixed-frame `Through`), and a test door's plane. Arithmetic consumers (frames,
+    /// `base_rat`, exact transports) read [`nacre_exact::PlaneName::narrow`]; `Wide` carries
+    /// identity only. `validate` re-derives every name from the truth (its
+    /// `SurfaceNameMismatch`).
+    ///
+    /// **A side table, not a piece of [`SurfaceCache`]**, though it is the same kind of thing: the
+    /// cache is a struct over both kinds of surface, and a name slot there would sit on every
+    /// cylinder too.
+    surface_name: HashMap<Handle<Surface>, nacre_exact::PlaneName>,
     /// **The interning table** — the handle already issued for each [`SurfaceKey`]. The twin of
     /// [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result). Its
     /// one writer is the private funnel every surface door calls (`intern`), and the key is

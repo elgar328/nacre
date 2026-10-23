@@ -217,7 +217,7 @@ fn measure(m: &Model) -> Tally {
             continue;
         };
 
-        let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
+        let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name(*h)).collect();
         if names.len() != 3 {
             t.unnamed_carrier += 1;
             continue;
@@ -397,7 +397,7 @@ fn datum_reach(m: &Model) -> Reach {
             let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                 return VertexReach::Undefined;
             };
-            let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
+            let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name(*h)).collect();
             if names.len() != 3 {
                 return VertexReach::Undefined;
             }
@@ -604,8 +604,7 @@ fn tilted_frame(passes: usize) -> Model {
             .find(|&&f| {
                 let s = m.face(f).surface;
                 !done.contains(&s)
-                    && m.surface_name
-                        .get(&s)
+                    && m.surface_name(s)
                         .and_then(|n| n.narrow())
                         .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })
@@ -649,7 +648,7 @@ fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
         let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             continue;
         };
-        let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
+        let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name(*h)).collect();
         if names.len() != 3 {
             continue;
         }
@@ -754,7 +753,12 @@ fn name_census(m: &Model) -> (u64, usize, usize, usize) {
     let mut widest = 0;
     let mut moved = 0;
     let mut distinct = std::collections::HashSet::new();
-    for (h, n) in m.surface_name.iter() {
+    let mut named = 0;
+    for (h, n) in (0..m.surface_count() as u32)
+        .filter_map(|i| m.surface_handle_at(i))
+        .filter_map(|h| Some((h, m.surface_name(h)?)))
+    {
+        named += 1;
         let w = match n {
             PlaneName::Narrow(c) => c
                 .iter()
@@ -768,12 +772,12 @@ fn name_census(m: &Model) -> (u64, usize, usize, usize) {
         distinct.insert(format!("{n:?}"));
         if let Surface::Plane {
             motion: Some(_), ..
-        } = m.surface(*h)
+        } = m.surface(h)
         {
             moved += 1;
         }
     }
-    (widest, m.surface_name.len(), distinct.len(), moved)
+    (widest, named, distinct.len(), moved)
 }
 
 fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {

@@ -402,8 +402,7 @@ fn the_chart_stands_on_a_tilted_axis() {
         let axis = [0.64, -0.48, 0.6].map(|x| Rat::from_decimal(x).expect("a short decimal"));
         for &f in &faces {
             let n = m
-                .surface_name
-                .get(&m.face(f).surface)
+                .surface_name(m.face(f).surface)
                 .and_then(|nm| nm.narrow())
                 .copied()
                 .expect("a tilted prism's face states itself");

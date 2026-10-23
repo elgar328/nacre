@@ -96,8 +96,7 @@ fn tilted_frame(passes: usize) -> Model {
             .find(|&&f| {
                 let s = m.face(f).surface;
                 !done.contains(&s)
-                    && m.surface_name
-                        .get(&s)
+                    && m.surface_name(s)
                         .and_then(|n| n.narrow())
                         .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })
@@ -1498,7 +1497,7 @@ fn a_nameless_datum_on_a_deep_history_waits_for_the_paid_door() {
         unreachable!()
     };
     assert!(
-        !m.surface_name.contains_key(&plane),
+        m.surface_name(plane).is_none(),
         "the datum is nameless — its vertices share no frame"
     );
     assert_eq!(
@@ -1600,10 +1599,7 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
     .expect("a datum through three frames") else {
         unreachable!()
     };
-    assert!(
-        !m.surface_name.contains_key(&plane),
-        "the datum is nameless"
-    );
+    assert!(m.surface_name(plane).is_none(), "the datum is nameless");
     assert_eq!(
         m.surface_cache_standing(plane),
         nacre_topo::CacheStanding::Ceiling,

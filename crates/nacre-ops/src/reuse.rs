@@ -105,7 +105,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     // the planes are stated in. A wide or missing name declines.
                     let mut coeffs = [[nacre_exact::Rat::from_int(0); 4]; 3];
                     for (o, h) in coeffs.iter_mut().zip(tri) {
-                        *o = *model.surface_name.get(&h)?.narrow()?;
+                        *o = *model.surface_name(h)?.narrow()?;
                     }
                     let motions = tri.map(|h| model.surface_motion(h));
                     // One shared leaf among the moved carriers, or a decline.

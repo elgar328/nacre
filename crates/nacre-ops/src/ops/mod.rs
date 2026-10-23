@@ -526,8 +526,7 @@ impl SketchFrame {
         };
         let (origin, ref_dir) = (lift(origin.as_array())?, lift(ref_dir.as_array())?);
         let name = model
-            .surface_name
-            .get(&plane)
+            .surface_name(plane)
             .ok_or(OpError::PlaneWithoutExactForm)?;
         if nacre_exact::plane_residual_sign(name, origin) != 0 {
             return Err(OpError::OriginNotOnPlane);

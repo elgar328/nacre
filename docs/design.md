@@ -63,7 +63,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 **편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이다. 스크립트 문법은 `nacre-playground` 가 구현하고, 의미론과 그 이유는 `nacre-kit` 의 코드와 주석에 있다(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다).
 
 **공개 표면 — 밖에서 무엇이 되는가.**
-- **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·interning 표가 전부 비공개이며, 공개 필드는 `surface_name` 하나다(「문의 이름」 절이 캐시 조각으로 접을 몫). 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
+- **`Model` 의 저장소는 비공개이고 문(accessor)으로 읽는다.** 곡면·모션·위상 아레나·캐시·평면 이름·interning 표가 전부 비공개이고 공개 필드는 없다. 전량 순회 문은 의도적으로 없다 — 아레나는 supersede 된 항목도 들고 있으므로 소비자는 live 면을 걷는다.
 - **위상 순회는 밖에서 된다.** 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개다(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)`).
 - **내부 정보도 읽힌다.** 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 정점의 정의 `Vertex{ThreePlane|OnSeam|Pierce}`·실현 캐시 `Model::vertex_cache`·`Model::motion(h)`(필드가 아니라 **좁은 문**). 디버그 뷰어가 읽어야 할 것은 다 읽힌다. `tessellate`·`tessellate_solids`·`Tessellation::to_obj`·`to_step`·`to_step_solids`·`validate`·`mass_props`도 공개.
 - **파생 값과 에러 표면.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 계획.
@@ -899,7 +899,7 @@ pub struct SketchFrame {                      // 필드는 사설, 생성자가 
 
 ## 이름과 interning
 
-이름은 **하나만 저장**하고(`Model::surface_name` 곁표), 좁은 형태는 저장이 아니라 **투영**이다:
+이름은 **하나만 저장**하고(`Model` 의 비공개 곁표, 문은 `Model::surface_name`), 좁은 형태는 저장이 아니라 **투영**이다:
 
 ```
 Surface (진실 — 평면이면 점 셋, 원통이면 def, + 모션)
@@ -1062,9 +1062,9 @@ pub struct Model {
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
     chain_affines: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
 
-    // 평면의 정준 이름 — 유도되는 값(캐시)인데 `SurfaceCache` 안이 아니라 곁표로 산다.
-    // `Model` 의 유일한 공개 필드다.
-    pub surface_name: HashMap<Handle<Surface>, PlaneName>,
+    // 평면의 정준 이름 — 유도되는 값(캐시)인데 `SurfaceCache` 안이 아니라 곁표로 산다. 문은 `surface_name(h)`,
+    // `validate` 가 진실에서 다시 유도해 잰다(`SurfaceNameMismatch`).
+    surface_name: HashMap<Handle<Surface>, PlaneName>,
 
     // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다). 곡면의 표는 하나, 열쇠는 셋
     // (`SurfaceKey::{Name, Through, Cylinder}` — 이름 있는 평면 · 이름 없는 `Through` · 일부러 보수적인 원통).
@@ -1165,8 +1165,9 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   순서에서 뽑기» 와 어긋나지 않는다 — 그 행이 버린 것은 점 순서 **단독**이고, 여기서는 `sense` 가 그 관계를
 //   진술한다.)
 //   평면의 이름(`PlaneName`)은 `plane_name_exact(세 점)` / `plane_name_through(세 정점)` 로 언제든 다시
-//   나오므로 캐시다 — 그런데 곁표 `surface_name` 에 따로 살아, 한 곡면의 캐시가 두 벌이고
-//   그릇(`Vec`↔`HashMap`)·이름 규칙(`_cache`↔`_name`)·가시성(비공개↔`pub`)이 셋 다 어긋나 있다.
+//   나오므로 캐시다 — 그런데 곁표 `surface_name` 에 따로 살아 한 곡면의 캐시가 두 그릇(`Vec`↔`HashMap`)이다.
+//   구조체 칸에 이름 자리를 두면 원통도 그 자리를 들므로, 이름은 칸이 종류별로 갈릴 때 평면 쪽으로 간다
+//   (todo 「`SurfaceCache` 를 enum 으로」).
 
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
 //   담체와 끝점이 곡선을 정한다(`derive_edge_curve`). `rebuild_edge_cache` 가 통째로 버리고 재생한다.
@@ -1249,7 +1250,7 @@ m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Realized 만 — �
 m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
 m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
 m.line_direction_cache([p, q]) -> Option<[f64; 3]>        // 두 평면이 만나는 방향 — 이름에서, 아니면 push 하는 쪽이 실현해 남긴 것
-m.surface_name                                             // pub 곁표 — 평면의 이름(캐시)
+m.surface_name(h) -> Option<&PlaneName>                   // 평면의 정준 이름(캐시의 조각) — 원통·이름 없는 평면은 None
 
 // ── 세계 진술 — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히 ────────
 m.world_plane_name(h) -> Option<PlaneName>                 // 평면의 세계 이름(사슬이 안 접히면 None)
@@ -1285,7 +1286,7 @@ kit·playground 는 이 잠금 밖이다(저장소가 다르다). `.to_f64()` �
 
 **진실과 캐시를 이름으로 가르는 이유.** `Plane` 은 `Surface::Plane`, 즉 실체 이름이라 `Model` 에
 `plane(h)` 같은 문을 달면 진실을 줄 것처럼 읽힌다. 캐시를 주는 문은 `_cache`(또는 캐시의 조각
-이름 `_point`·`_curve`)로 끝나 **「캐시의」라고 말하고 들어온다**. 조각을 돌려받은 타입의 메서드로
+이름 `_point`·`_curve`·`_name`)로 끝나 **「캐시의」라고 말하고 들어온다**. 조각을 돌려받은 타입의 메서드로
 꺼내는 것(`vertex_cache(v).bound()`)은 `nacre_geom::Surface` 가 `distance()`·`normal_at()` 을 자기
 메서드로 갖고 안에서 가르는 것과 같은 관용구다 — 구·원뿔이 와도 `Model` 의 문은 늘지 않는다.
 

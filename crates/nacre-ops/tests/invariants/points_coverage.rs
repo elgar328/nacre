@@ -101,8 +101,7 @@ fn every_live_planar_face_records_its_points() {
         .iter()
         .find(|&&fh| {
             let s = m.face(fh).surface;
-            m.surface_name
-                .get(&s)
+            m.surface_name(s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -1.0])
         })

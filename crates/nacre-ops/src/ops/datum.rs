@@ -27,8 +27,7 @@ pub(super) fn pierce_def(
     };
     let name = |h: Handle<Surface>| -> Result<[nacre_exact::Rat; 4], OpError> {
         model
-            .surface_name
-            .get(&h)
+            .surface_name(h)
             .and_then(|n| n.narrow().copied())
             .ok_or(OpError::PlaneWithoutExactForm)
     };
@@ -179,7 +178,7 @@ pub(super) fn datum_plane(
                     return Err(OpError::VertexNotThreePlane);
                 }
             };
-            if tri.iter().any(|h| !model.surface_name.contains_key(h)) {
+            if tri.iter().any(|h| model.surface_name(*h).is_none()) {
                 // The one population still refused here: a carrier that is itself a nameless
                 // datum (a datum on a nameless datum — depth). Its triangle needs the judged
                 // machinery recursively, which is the depth question. This is

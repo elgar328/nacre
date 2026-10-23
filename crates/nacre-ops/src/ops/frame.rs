@@ -262,7 +262,7 @@ fn world_placement(
             model.chain_dir_rat_inverse(leaf, ref_dir)?,
         ),
     };
-    let own = *model.surface_name.get(&plane)?.narrow()?;
+    let own = *model.surface_name(plane)?.narrow()?;
     let flip = flip_toward(model, plane, outward)?;
     let named = nacre_topo::FramePlacement::Named { origin, ref_dir };
     let canonical = crate::rotated_vertex::narrow_frame(own, &named, flip)?

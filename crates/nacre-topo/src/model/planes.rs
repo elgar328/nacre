@@ -494,7 +494,7 @@ impl Model {
                 Some(_) => return world_road(),
             }
         }
-        let names = tri.map(|h| self.surface_name.get(&h));
+        let names = tri.map(|h| self.surface_name(h));
         let [Some(a), Some(b), Some(c)] = names else {
             return None;
         };

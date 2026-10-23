@@ -158,7 +158,7 @@ fn a_named_frame_states_what_the_extrude_road_builds() {
         unreachable!()
     };
     assert!(
-        m.surface_name.get(plane_h).unwrap().narrow().is_none(),
+        m.surface_name(*plane_h).unwrap().narrow().is_none(),
         "the fixture must actually be wide, or the arbitrary-precision arm went untested"
     );
 

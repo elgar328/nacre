@@ -412,7 +412,7 @@ fn two_by_two_grid_fuses(recorded: bool) {
         panic!("a datum through three world-answered corners")
     };
     assert!(
-        m.surface_name.contains_key(&plane),
+        m.surface_name(plane).is_some(),
         "the datum is named, not judged"
     );
 }
@@ -1329,7 +1329,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
             // Every rotation in this chain is about Z, so the z-caps are fixed by all
             // of them and stay restated — the only faces allowed to carry nothing.
             nacre_topo::Surface::Plane { motion: None, .. } => {
-                let n = m.surface_name.get(&s).unwrap().narrow().unwrap();
+                let n = m.surface_name(s).unwrap().narrow().unwrap();
                 assert!(
                     n[0] == nacre_exact::Rat::from_int(0) && n[1] == nacre_exact::Rat::from_int(0),
                     "only a Z-fixed cap may go without a history here"

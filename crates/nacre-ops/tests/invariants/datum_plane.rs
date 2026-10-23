@@ -260,7 +260,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
     // The points span `+z`, the cache faces `−z`.
     let nameless = m.push_plane_unregistered(cache, pts, nacre_topo::Orientation::Reversed);
     assert!(
-        !m.surface_name.contains_key(&nameless),
+        m.surface_name(nameless).is_none(),
         "the instrument did not produce a nameless plane"
     );
 
@@ -293,7 +293,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         nacre_topo::Orientation::Reversed,
     );
     assert!(
-        named.surface_name.contains_key(&h),
+        named.surface_name(h).is_some(),
         "push_plane derives the name from the points"
     );
     apply(&mut named, &sketch(SketchFrame::canonical(h)))
@@ -1007,8 +1007,7 @@ fn tilted_prism_with_pocket() -> Model {
         .iter()
         .find(|&&f| {
             let s = m.face(f).surface;
-            m.surface_name
-                .get(&s)
+            m.surface_name(s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
         })
@@ -1061,7 +1060,7 @@ fn three_solvable(m: &Model) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
                 let mut already = false;
                 while let Some(h) = m.surface_handle_at(n) {
                     n += 1;
-                    already |= m.surface_name.get(&h) == Some(&name);
+                    already |= m.surface_name(h) == Some(&name);
                 }
                 if !already {
                     return t;
@@ -1097,7 +1096,7 @@ fn a_datum_through_vertices_is_the_plane_the_coordinates_miss() {
         unreachable!()
     };
     assert_eq!(
-        m.surface_name.get(&plane),
+        m.surface_name(plane),
         Some(&exact),
         "the datum must be the exact plane through those vertices"
     );
@@ -1280,7 +1279,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
     };
     dp.rebuild_adjacency();
     let carriers_named = |m: &Model, v| match m.vertex(v) {
-        nacre_topo::Vertex::ThreePlane(t) => t.iter().all(|h| m.surface_name.contains_key(h)),
+        nacre_topo::Vertex::ThreePlane(t) => t.iter().all(|h| m.surface_name(*h).is_some()),
         _ => false,
     };
     let straddler = dp
@@ -1309,7 +1308,7 @@ fn a_datum_through_vertices_refuses_by_cause() {
     .expect("a datum through a straddler is nameless, not refused") else {
         unreachable!()
     };
-    assert!(!dp.surface_name.contains_key(&plane));
+    assert!(dp.surface_name(plane).is_none());
     let OpOutput::Extrude { solid: prism, .. } = apply(
         &mut dp,
         &Operation::Extrude {
@@ -1417,7 +1416,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
         unreachable!()
     };
     assert!(
-        !mx.surface_name.contains_key(&plane),
+        mx.surface_name(plane).is_none(),
         "its exact world coefficients are irrational — a name here would be an invention"
     );
     assert!(
@@ -1596,7 +1595,7 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     .expect("the pure-mixed datum") else {
         unreachable!()
     };
-    assert!(!m.surface_name.contains_key(&plane), "nameless, still");
+    assert!(m.surface_name(plane).is_none(), "nameless, still");
     let OpOutput::Extrude { solid: prism, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -1777,7 +1776,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         unreachable!()
     };
     assert!(
-        !m.surface_name.contains_key(&plane),
+        m.surface_name(plane).is_none(),
         "its exact world coefficients are irrational — nameless, by statement"
     );
     // Restating is the same handle — statement interning holds for meets too.
@@ -2080,7 +2079,7 @@ fn every_plane_has_a_name_or_a_statement() {
         if let Surface::Plane { points, .. } = m.surface(h) {
             planes += 1;
             assert!(
-                m.surface_name.contains_key(&h) || matches!(points, PlanePoints::Through(_)),
+                m.surface_name(h).is_some() || matches!(points, PlanePoints::Through(_)),
                 "a plane with no name that is not a Through statement — \
                  a record-less plane exists"
             );
@@ -2160,8 +2159,7 @@ fn frame_local_far_cap() -> (
         .iter()
         .map(|&f| m.face(f).surface)
         .find(|s| {
-            m.surface_name
-                .get(s)
+            m.surface_name(*s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -dist])
         })
@@ -2183,8 +2181,7 @@ fn frame_local_far_cap() -> (
                     ..
                 }
             ) && m
-                .surface_name
-                .get(s)
+                .surface_name(*s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -dist])
         })
@@ -2405,7 +2402,7 @@ fn a_datum_on_a_moved_frame_keeps_its_name_when_moved_again() {
     );
     let h = through[0];
     assert!(
-        m.surface_name.contains_key(&h),
+        m.surface_name(h).is_some(),
         "the moved datum keeps its name"
     );
     let y = m.surface_motion(h);
@@ -2573,7 +2570,7 @@ fn a_datum_through_wide_meets_keeps_its_name() {
     ) else {
         panic!("a datum through wide meets is accepted");
     };
-    assert_eq!(m.surface_name.get(&plane), Some(&expected));
+    assert_eq!(m.surface_name(plane), Some(&expected));
     let Ok(OpOutput::DatumPlane { plane: again, .. }) = apply(
         &mut m,
         &Operation::DatumPlane {
@@ -2703,7 +2700,7 @@ fn a_moved_wide_meet_datum_frames_and_replays() {
         Rat::from_int(-13),
         Rat::from_int(1),
     ]);
-    assert_eq!(m.surface_name.get(&plane), Some(&expected));
+    assert_eq!(m.surface_name(plane), Some(&expected));
     let _ = Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
@@ -2834,7 +2831,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
 
     // ① The named road, which is the whole proposition.
     assert!(
-        m.surface_name.contains_key(&plane),
+        m.surface_name(plane).is_some(),
         "a datum through a turned solid's corners must take the named road — a nameless plane \
          here means the door read the fixed cap as a straddle again"
     );

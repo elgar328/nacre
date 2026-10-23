@@ -473,8 +473,7 @@ fn a_slanted_walls_name_is_rational_and_its_reported_sketch_plane_is_not() {
     let (m, wall) = prism_with_a_slanted_wall();
     let sp = crate::ops::face_plane(&m, wall).expect("planar");
     let c = m
-        .surface_name
-        .get(&m.face(wall).surface)
+        .surface_name(m.face(wall).surface)
         .expect("a world-frame wall has a name")
         .narrow()
         .expect("a world-frame wall's name is narrow");
@@ -675,8 +674,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
         s = solid;
         let su = m.face(top_face).surface;
         assert_eq!(
-            m.surface_name
-                .get(&su)
+            m.surface_name(su)
                 .and_then(|n| n.narrow())
                 .map(|c| c.map(|r| r.to_f64())),
             Some([0.0, 0.0, 10.0, -77.0]),
@@ -690,7 +688,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     let (mut with, mut without) = (0, 0);
     for &f in &m.shell(sh).faces {
         let su = m.face(f).surface;
-        if m.surface_name.contains_key(&su) {
+        if m.surface_name(su).is_some() {
             with += 1
         } else {
             without += 1
@@ -868,8 +866,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
         unreachable!()
     };
     let coeffs = |f: Handle<Face>, m: &Model| {
-        m.surface_name
-            .get(&m.face(f).surface)
+        m.surface_name(m.face(f).surface)
             .and_then(|n| n.narrow())
             .map(|c| c.map(|r| r.to_f64()))
     };
@@ -972,8 +969,7 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
         .iter()
         .find(|&&f| {
             let s = m.face(f).surface;
-            m.surface_name
-                .get(&s)
+            m.surface_name(s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
         })

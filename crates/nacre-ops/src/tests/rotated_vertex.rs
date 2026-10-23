@@ -172,7 +172,7 @@ fn a_moved_corner_is_its_realization_and_replays_near_it() {
                     }
                     let mut coeffs = [[R::from_int(0); 4]; 3];
                     for (o, h) in coeffs.iter_mut().zip(tri) {
-                        *o = *m.surface_name.get(&h).unwrap().narrow().unwrap();
+                        *o = *m.surface_name(h).unwrap().narrow().unwrap();
                     }
                     for (c, h) in coeffs.iter().zip(tri) {
                         if motion_of(h).is_none() {
@@ -502,7 +502,7 @@ fn every_road_frames_a_flipped_plane_alike() {
     for (what, pts, ref_dir, off_plane) in planes {
         let mut m = Model::new();
         let h = push_consistent(&mut m, pts);
-        let name = m.surface_name.get(&h).expect("a named plane").clone();
+        let name = m.surface_name(h).expect("a named plane").clone();
         assert!(
             name.narrow().is_some(),
             "{what}: the narrow road must take it"

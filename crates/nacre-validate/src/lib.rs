@@ -484,7 +484,7 @@ fn check_surface_keys(m: &Model, out: &mut Vec<Violation>) {
             Some(SurfaceKey::Name(n, _)) => Some(n),
             _ => None,
         };
-        let stored = m.surface_name.get(&h);
+        let stored = m.surface_name(h);
         if stored != derived {
             out.push(Violation::SurfaceNameMismatch {
                 surface: h,

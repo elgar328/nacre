@@ -286,7 +286,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
         "the caller's triple was not the one recorded (or gained a motion)"
     );
     assert_eq!(
-        m.surface_name.get(&surf),
+        m.surface_name(surf),
         Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(-3)])),
         "the name was not derived from the triple that was recorded"
     );
@@ -301,7 +301,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
         "the ring's triple is recorded"
     );
     assert_eq!(
-        m.surface_name.get(&surf),
+        m.surface_name(surf),
         Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
         "the name is derived from the ring's own plane"
     );

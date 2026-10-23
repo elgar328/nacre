@@ -189,7 +189,7 @@ pub(crate) fn collect_planes(
                 face.inner.len(),
                 face.orientation
             );
-            let name = model.surface_name.get(&face.surface).cloned();
+            let name = model.surface_name(face.surface).cloned();
             // **The witness must span a plane** — three collinear points lie on every plane
             // through their line, and `Judge::planes_coplanar` would read them as "on" whatever it
             // asked. A name is the proof: it is derived from exactly these points (a motion keeps

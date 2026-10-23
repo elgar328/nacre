@@ -369,7 +369,7 @@ impl Model {
     fn decline_reason(&self, h: Handle<Surface>) -> &'static std::sync::atomic::AtomicU64 {
         match self.surface(h) {
             Surface::Cylinder { .. } => &SURFACE_DECLINED_CYLINDER,
-            Surface::Plane { .. } => match self.surface_name.get(&h) {
+            Surface::Plane { .. } => match self.surface_name(h) {
                 None => &SURFACE_DECLINED_UNNAMED,
                 Some(n) => match (self.surface_motion(h), n.narrow()) {
                     (_, None) => &SURFACE_DECLINED_WIDE,

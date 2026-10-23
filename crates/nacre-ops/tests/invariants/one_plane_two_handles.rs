@@ -148,8 +148,7 @@ fn s1(nameless: bool, flush: bool) -> Scene {
         .iter()
         .map(|&f| m.face(f).surface)
         .find(|h| {
-            m.surface_name
-                .get(h)
+            m.surface_name(*h)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, 0.0])
         })
@@ -383,16 +382,12 @@ fn a_plane_stated_twice_booleans_as_it_does_once() {
 
                 // Premises: two handles of one plane on one side, one named handle on the other.
                 assert!(
-                    two.planes
-                        .iter()
-                        .any(|h| !two.m.surface_name.contains_key(h)),
+                    two.planes.iter().any(|h| two.m.surface_name(*h).is_none()),
                     "{at}: the datum is nameless"
                 );
                 assert_ne!(two.planes[0], two.planes[1], "{at}: two handles");
                 assert!(
-                    one.planes
-                        .iter()
-                        .all(|h| one.m.surface_name.contains_key(h)),
+                    one.planes.iter().all(|h| one.m.surface_name(*h).is_some()),
                     "{at}: the control's plane is named"
                 );
                 for (p2, p1) in two.prisms.iter().zip(&one.prisms) {

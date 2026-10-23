@@ -95,7 +95,7 @@ impl Model {
         else {
             return own;
         };
-        if own > n || self.surface_name.contains_key(&plane) {
+        if own > n || self.surface_name(plane).is_some() {
             return own;
         }
         let mut depth = own;
@@ -154,10 +154,10 @@ impl Model {
     /// to take), or an overflow — and the caller declines rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
     /// and refusing it would switch off a capability that is locked elsewhere.
     ///
-    /// **Planes only.** A cylinder surface has no entry in `surface_name`, so it answers `None`;
+    /// **Planes only.** A cylinder has no name ([`Model::surface_name`]), so it answers `None`;
     /// its own world statement is `nacre-ops`' `world_cylinder_def`.
     pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_exact::PlaneName> {
-        let name = self.surface_name.get(&surf)?;
+        let name = self.surface_name(surf)?;
         match self.surface_motion(surf) {
             None => Some(name.clone()),
             Some(leaf) => Some(nacre_exact::PlaneName::Narrow(
@@ -180,7 +180,7 @@ impl Model {
         let Surface::Plane { points, sense, .. } = self.surface(surf) else {
             return None;
         };
-        let name = self.surface_name.get(&surf)?;
+        let name = self.surface_name(surf)?;
         let m = self.statement_points(points)?;
         let along = nacre_exact::name_along_points(name, [&m[0], &m[1], &m[2]])?;
         Some(if along { *sense } else { sense.flipped() })
@@ -203,7 +203,7 @@ impl Model {
             return Some(own);
         };
         let fold = self.chain_affine(leaf)?;
-        let n = self.surface_name.get(&surf)?.narrow()?;
+        let n = self.surface_name(surf)?.narrow()?;
         let carried = fold.dir_rat([n[0], n[1], n[2]])?;
         let world = self.world_plane_name(surf)?;
         let world = world.narrow()?;
@@ -426,7 +426,7 @@ impl Model {
 
     /// A plane's name normal, in the frame its truth is written in.
     fn name_normal(&self, plane: Handle<Surface>) -> Option<LineDir> {
-        Some(LineDir::normal_of(self.surface_name.get(&plane)?))
+        Some(LineDir::normal_of(self.surface_name(plane)?))
     }
 
     /// `leaf`'s chain as [`LineStep`]s, root first.

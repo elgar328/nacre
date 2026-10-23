@@ -310,31 +310,13 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### `surface_name` 곁표 접기
-
-**무엇이 문제인가.** `pub surface_name: HashMap<Handle<Surface>, PlaneName>` 은 `Model` 의 마지막 공개
-필드다. 도착점은 `SurfaceCache` 의 평면 팔이 이름을 드는 것. 인구: 제품 17 · 테스트 53. 쓰는 자리는
-`push_plane_raw` 한 곳이고, 이름은 유도된다 — *"The name is derived, so it cannot disagree with the thing
-it names."*
-
-**무엇이 위험한가.** 이 필드는 **유일하게 조용한 실패 모드**를 가진다: 이름이 있어야 할 자리에 없거나
-없어야 할 자리에 생겨도 **census 가 못 본다**(그 인구를 안 든다).
-
-**재생 잠금의 모양.** 세계 이름이 있고 진실이 첫 점을 유리수로 놓는 평면은 캐시 전체(앵커·단위 법선)가
-진실의 함수라 버리고 재생해도 비트 동일이 선다 — 출발점이다. 나머지(세계 이름이 없는 평면, 앵커가 넘치거나
-옮긴 `Through`)는 `derive_surface_cache` 가 생산자 값을 `surface_cache(h)` 에서 읽으므로 재생이 «지우려는
-값»을 먼저 읽는다. 계획: 이름만 재생하는
-`rebuild_surface_names()` + `surface_name_discard_and_regenerate_bit_identical`, 제약 둘 —
-
-1. **제품 도로 전용**: `push_plane_unregistered` 는 이름을 건너뛰므로 rebuild 가 이름을 **추가**한다.
-2. **오름차순 핸들 순서**: `Through` 이름이 담체 이름에 의존하는 자기참조이고, append-only 라 의존이 항상
-   낮은 인덱스다.
-
 ### `SurfaceCache` 를 enum 으로
 
 **무엇이 문제인가.** `SurfaceCache` 는 `surface: nacre_geom::Surface` 와 그 표지(`standing`)를 든 struct 다. 도착점은
-`enum SurfaceCache` 와 `.plane()`/`.cylinder()` 체이닝. 근거는 «확정한 구조의 이행»이지 «재발 방지»가
-아니다(막을 인구는 0 이다). 인구: 값 21 + 테스트 44, 메서드 이전 8, 통째 출구는 `transform.rs` 한 곳.
+`enum SurfaceCache` 와 `.plane()`/`.cylinder()` 체이닝이고, 평면 팔이 이름을 든다 — 지금은 비공개 곁표
+(`Model::surface_name` 문 뒤)라 한 곡면의 캐시가 두 그릇이다. 칸을 통째로 다시 쓰는 자리(`refine_surface_cache`·
+`align_cache_sense`·`apply_derivation`·원통 push)가 이름을 들고 가야 하고, 빠뜨리면 `validate` 의
+`SurfaceNameMismatch` 가 문다. 근거는 «확정한 구조의 이행»이지 «재발 방지»가 아니다(막을 인구는 0 이다). 인구: 값 21 + 테스트 44, 메서드 이전 8, 통째 출구는 `transform.rs` 한 곳.
 테스트 30곳의 종류 판별도 함께 지나간다.
 
 **캐시의 향을 읽는 자리가 가장 위험하다** — `align_cache_sense`(캐시를 진실의 향으로 돌린다)가 곡면 캐시의

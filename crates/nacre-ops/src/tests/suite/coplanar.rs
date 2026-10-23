@@ -238,7 +238,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     .expect("the straddle datum") else {
         unreachable!()
     };
-    assert!(!m.surface_name.contains_key(&plane), "nameless");
+    assert!(m.surface_name(plane).is_none(), "nameless");
     let square = Profile2d::polygon(vec![
         Point2::from_array([0.0, 0.0]),
         Point2::from_array([1.0, 0.0]),

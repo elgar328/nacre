@@ -968,7 +968,7 @@ fn plane_realization(model: &Model, h: Handle<Surface>, budget: Budget) -> Optio
             None => return Some(nameless_halves(model, h, vs[0], motion, budget)),
         },
     };
-    let name = model.surface_name.get(&h);
+    let name = model.surface_name(h);
     let narrow_meets = meets.each_ref().map(|m| m.narrow().copied());
     // Which halves have a road is read off the statement before any cost is weighed, so a cache
     // that stops on cost is one a paid realization can answer (`CacheStanding::Ceiling`'s word):

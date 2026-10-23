@@ -151,7 +151,7 @@ fn a_plane_pushed_past_the_table_is_a_duplicate_surface() {
             Violation::SurfaceNameMismatch {
                 surface: twin,
                 stored: None,
-                derived: m.surface_name.get(&seed).cloned().map(Box::new),
+                derived: m.surface_name(seed).cloned().map(Box::new),
             },
             Violation::DuplicateSurface { kept: seed, twin },
         ]
@@ -169,10 +169,7 @@ fn a_plane_holding_another_planes_name_is_reported() {
         m.surface_handle_at(0).expect("the XY seed"),
         m.surface_handle_at(1).expect("the YZ seed"),
     );
-    let (own, other) = (
-        m.surface_name.get(&xy).cloned(),
-        m.surface_name.get(&yz).cloned(),
-    );
+    let (own, other) = (m.surface_name(xy).cloned(), m.surface_name(yz).cloned());
     assert!(own.is_some() && own != other, "two different named planes");
     m.plant_surface_name(xy, other.clone());
     assert_eq!(
@@ -196,8 +193,7 @@ fn a_name_on_a_cylinder_is_reported() {
         .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
         .expect("the lateral cylinder");
     let seed = m
-        .surface_name
-        .get(&m.surface_handle_at(0).expect("a seed"))
+        .surface_name(m.surface_handle_at(0).expect("a seed"))
         .cloned();
     m.plant_surface_name(lateral, seed.clone());
     assert_eq!(

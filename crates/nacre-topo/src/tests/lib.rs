@@ -18,7 +18,7 @@ fn two_faces_of_one_plane_are_one_surface_and_one_name() {
 
     // **They are one handle** — that is what the rational coefficients buy.
     assert_eq!(sa, sb, "one plane, one surface");
-    assert!(m.surface_name.contains_key(&sa), "and it is recorded");
+    assert!(m.surface_name(sa).is_some(), "and it is recorded");
 
     let rat = |dy: f64| {
         let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
@@ -333,7 +333,7 @@ fn a_plane_is_named_by_its_points() {
         Orientation::Forward,
     );
     assert_eq!(
-        m.surface_name.get(&ok),
+        m.surface_name(ok),
         Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
         "the plane z = 0 was not named, or was named as something else"
     );
@@ -367,8 +367,7 @@ fn a_plane_is_named_by_its_points() {
     // (Comparing the global counter before and after would race against other tests pushing wide
     // planes in parallel; the value cannot.)
     let name = *m
-        .surface_name
-        .get(&wide)
+        .surface_name(wide)
         .expect("a plane the narrow route cannot reach went unnamed")
         .narrow()
         .expect("this fixture's canonical answer is small — it must be stored Narrow");
@@ -444,8 +443,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
         "an answer past i128 must be counted as wide"
     );
     let name = m
-        .surface_name
-        .get(&first)
+        .surface_name(first)
         .expect("a plane too wide for i128 must still be named");
     assert!(
         name.narrow().is_none(),
@@ -503,7 +501,7 @@ fn a_new_model_carries_the_three_world_planes() {
             let h = m.seeded_plane(axis);
             assert_eq!(h.index() as usize, i, "deterministic seed handles");
             assert_eq!(
-                m.surface_name.get(&h),
+                m.surface_name(h),
                 Some(&nacre_exact::PlaneName::Narrow(name))
             );
             assert!(matches!(m.surface(h), Surface::Plane { motion: None, .. }));
@@ -723,10 +721,7 @@ fn a_plane_stated_through_vertices_is_named_like_any_other() {
         None,
         Orientation::Forward,
     );
-    let name = m
-        .surface_name
-        .get(&h)
-        .expect("a Through plane must be named");
+    let name = m.surface_name(h).expect("a Through plane must be named");
     assert_eq!(
         name.narrow().map(|c| c.map(|r| r.to_f64())),
         Some([1.0, 1.0, 1.0, -1.0]),
@@ -921,9 +916,7 @@ fn a_through_plane_is_counted_by_both_bridges() {
         Orientation::Forward,
     );
     assert!(
-        m2.surface_name
-            .get(&h2)
-            .is_some_and(|n| n.narrow().is_none()),
+        m2.surface_name(h2).is_some_and(|n| n.narrow().is_none()),
         "this fixture must actually produce a wide name, or ② measures nothing"
     );
     assert!(
@@ -1150,7 +1143,7 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
 fn a_planes_name_sense_is_read_from_its_truth() {
     use nacre_exact::Rat;
     let expected = |m: &Model, h: Handle<Surface>, handed: Vector3| {
-        let c = m.surface_name.get(&h).expect("a named plane").coeff_ints();
+        let c = m.surface_name(h).expect("a named plane").coeff_ints();
         let dot: f64 = (0..3)
             .map(|k| handed.as_array()[k] * c[k].to_string().parse::<f64>().expect("finite"))
             .sum();
@@ -1241,7 +1234,7 @@ fn a_planes_name_sense_is_read_from_its_truth() {
         None,
         Orientation::Forward,
     );
-    assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
+    assert!(m.surface_name(h).is_some_and(|n| n.narrow().is_none()));
     assert_eq!(
         m.plane_name_sense(h),
         Some(expected(&m, h, wide_cache.normal())),
@@ -1738,7 +1731,7 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
         None,
         Orientation::Forward,
     );
-    assert!(m.surface_name.get(&h).is_some_and(|n| n.narrow().is_none()));
+    assert!(m.surface_name(h).is_some_and(|n| n.narrow().is_none()));
     check(&m, h, &handed, "wide");
 
     let (mut m, vs) = box_corner_vertices();

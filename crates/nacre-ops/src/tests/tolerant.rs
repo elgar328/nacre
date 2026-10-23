@@ -1214,8 +1214,7 @@ fn two_caps_described_exactly_are_one_plane() {
     let define = |i: usize, nudge: Option<Rat>| -> [WitnessPoint; 3] {
         let surf = faces[i].surf();
         let c = *m
-            .surface_name
-            .get(&surf)
+            .surface_name(surf)
             .expect("a frame cap records its name")
             .narrow()
             .expect("a frame cap's name is narrow");
@@ -1381,7 +1380,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
             // The points must satisfy the coefficients they are filed beside — both are
             // stated in the same frame, so this is an exact rational identity with no
             // tolerance anywhere.
-            if let Some(c) = m.surface_name.get(&fi.surf()).and_then(|n| n.narrow()) {
+            if let Some(c) = m.surface_name(fi.surf()).and_then(|n| n.narrow()) {
                 for p in pts {
                     let mut acc = c[3];
                     for k in 0..3 {
@@ -1598,7 +1597,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
                 println!(
                     "  {name}: {:?} named={} truth={:?}",
                     fi.surf(),
-                    m.surface_name.contains_key(&fi.surf()),
+                    m.surface_name(fi.surf()).is_some(),
                     m.surface(fi.surf())
                 );
             }
@@ -1659,7 +1658,7 @@ fn two_walls_of_one_plane_become_one_surface() {
     let mut surfaces: Vec<_> = faces.iter().map(|&f| m.face(f).surface).collect();
     let named = faces
         .iter()
-        .filter(|&&f| m.surface_name.contains_key(&m.face(f).surface))
+        .filter(|&&f| m.surface_name(m.face(f).surface).is_some())
         .count();
     let total = surfaces.len();
     surfaces.sort_unstable();
@@ -1739,8 +1738,7 @@ mod name_integer_road {
             .iter()
             .find(|&&f| {
                 let s = m.face(f).surface;
-                m.surface_name
-                    .get(&s)
+                m.surface_name(s)
                     .and_then(|n| n.narrow())
                     .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })

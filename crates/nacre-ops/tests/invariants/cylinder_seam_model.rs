@@ -447,7 +447,7 @@ fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
             matches!(m.surface(*s), Surface::Plane { .. }),
             "a cap without truth"
         );
-        assert!(m.surface_name.contains_key(s), "a cap without a name");
+        assert!(m.surface_name(*s).is_some(), "a cap without a name");
     }
     // The top cap lies on `z = 2`, the same plane as the box's top face.
     let box_top = m
@@ -456,8 +456,7 @@ fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
         .iter()
         .map(|&fh| m.face(fh).surface)
         .find(|s| {
-            m.surface_name
-                .get(s)
+            m.surface_name(*s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -2.0])
         })
@@ -522,7 +521,7 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     );
     assert!(!flipped);
     assert!(
-        !m.surface_name.contains_key(&h),
+        m.surface_name(h).is_none(),
         "a nameless statement must not invent a name"
     );
     assert_eq!(m.surface_count(), before + 1, "stored once");

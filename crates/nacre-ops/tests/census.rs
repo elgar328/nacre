@@ -948,8 +948,7 @@ fn measure_census() {
                 .iter()
                 .find(|&&f| {
                     let s = m.face(f).surface;
-                    m.surface_name
-                        .get(&s)
+                    m.surface_name(s)
                         .and_then(|n| n.narrow())
                         .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
                 })

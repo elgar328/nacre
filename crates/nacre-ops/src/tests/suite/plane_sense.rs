@@ -285,7 +285,7 @@ fn every_plane_faces_the_way_its_truth_says() {
             .into_iter()
             .filter(|&v| {
                 matches!(m.vertex(v), nacre_topo::Vertex::ThreePlane(t)
-                    if t.iter().all(|h| m.surface_name.contains_key(h)))
+                    if t.iter().all(|h| m.surface_name(*h).is_some()))
                     && m.vertex_meet(v).is_none()
             })
             .min_by_key(|v| v.index())
@@ -348,7 +348,7 @@ fn every_plane_faces_the_way_its_truth_says() {
                         motion,
                         ..
                     } if motion.is_some() == moved_case && straddles(vs) == straddle_case
-                ) && !m.surface_name.contains_key(&h)
+                ) && m.surface_name(h).is_none()
             })
         });
         assert!(
@@ -366,7 +366,7 @@ fn every_plane_faces_the_way_its_truth_says() {
                         points: nacre_topo::PlanePoints::Through(_),
                         ..
                     }
-                ) && !m.surface_name.contains_key(&h);
+                ) && m.surface_name(h).is_none();
                 if !nameless {
                     continue;
                 }

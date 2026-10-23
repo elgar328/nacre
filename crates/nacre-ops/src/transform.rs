@@ -616,8 +616,7 @@ fn transform_solid(
             }
         ) && motion.rigid().is_some_and(|iso| {
             model
-                .surface_name
-                .get(&s)
+                .surface_name(s)
                 .and_then(|n| n.narrow())
                 .is_some_and(|c| iso.fixes_plane(c))
         });

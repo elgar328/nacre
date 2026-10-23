@@ -83,6 +83,20 @@ impl Model {
         &self.surface_cache[h.index() as usize].surface
     }
 
+    /// **A plane's canonical name** — primitive integer coefficients with a fixed sign, the same
+    /// for every statement of one plane ([`nacre_exact::PlaneName`]). Stated in the frame the
+    /// plane's truth is written in: the world for an unmoved plane, the frame before its motion for
+    /// a moved one ([`Model::surface_motion`]); [`Model::world_plane_name`] carries it to the world.
+    ///
+    /// `None` for a cylinder, and for a plane through three vertices that no one frame places —
+    /// vertices on parts moved differently.
+    #[inline]
+    pub fn surface_name(&self, h: Handle<Surface>) -> Option<&nacre_exact::PlaneName> {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.surfaces, h);
+        self.surface_name.get(&h)
+    }
+
     /// What a surface's cache knows about its value ([`CacheStanding`]) — the cache's other piece.
     #[inline]
     pub fn surface_cache_standing(&self, h: Handle<Surface>) -> CacheStanding {
