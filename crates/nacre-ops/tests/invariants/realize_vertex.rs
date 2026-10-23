@@ -196,8 +196,8 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
             continue;
         };
         match m.surface_cache(h) {
-            nacre_geom::Surface::Cylinder(_) => cyl = Some(h),
-            nacre_geom::Surface::Plane(_) => planes.push(h),
+            nacre_topo::SurfaceCache::Cylinder { .. } => cyl = Some(h),
+            nacre_topo::SurfaceCache::Plane { .. } => planes.push(h),
         }
     }
     let cylinder = cyl.expect("the fixture has a cylinder");
@@ -1108,7 +1108,7 @@ fn a_plane_turned_off_the_quarters_has_its_normal_realized() {
     let mut seen = 0;
     for &fh in &m.shell(shell).faces {
         let h = m.face(fh).surface;
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+        let Some(p) = m.surface_cache(h).plane() else {
             continue;
         };
         if m.surface_motion(h).is_none() {
@@ -1178,7 +1178,7 @@ fn a_plane_turned_off_the_quarters_has_its_anchor_realized() {
         };
         let first = p[0].map(|r| r.to_f64());
         let [x, y] = turned(first[0], first[1]);
-        let nacre_geom::Surface::Plane(cache) = m.surface_cache(h) else {
+        let Some(cache) = m.surface_cache(h).plane() else {
             unreachable!("a plane truth carries a plane cache");
         };
         assert_eq!(
@@ -1251,7 +1251,7 @@ fn a_plane_with_a_wide_pre_motion_name_is_realized_from_its_points() {
         m.surface_motion(wall).is_some(),
         "the turn is recorded, not folded"
     );
-    let nacre_geom::Surface::Plane(cache) = m.surface_cache(wall) else {
+    let Some(cache) = m.surface_cache(wall).plane() else {
         unreachable!("a plane truth carries a plane cache");
     };
     assert_eq!(
@@ -1828,7 +1828,7 @@ fn the_refine_door_raises_every_surface_ceiling_onto_its_corners() {
         let mut worst = f64::NEG_INFINITY;
         for f in m.reachable().faces {
             let face = m.face(f);
-            let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+            let Some(pl) = m.surface_cache(face.surface).plane() else {
                 continue;
             };
             let (o, n) = (pl.origin(), pl.normal());
@@ -1950,7 +1950,7 @@ fn the_refine_door_raises_a_deep_cylinder() {
         })
         .collect();
     let worst_excess = |m: &Model| -> f64 {
-        let nacre_geom::Surface::Cylinder(cyl) = m.surface_cache(lateral) else {
+        let Some(cyl) = m.surface_cache(lateral).cylinder() else {
             unreachable!("a cylinder truth has a cylinder cache")
         };
         let (o, a, r) = (cyl.axis().origin(), cyl.axis().direction(), cyl.radius());
@@ -2261,7 +2261,7 @@ fn a_deep_folding_chain_is_realized_and_the_lock_agrees() {
         );
         assert_eq!(
             format!("{cache:?}"),
-            format!("{:?}", m.surface_cache(h)),
+            format!("{:?}", m.surface_cache(h).to_geom()),
             "surface {}",
             h.index()
         );

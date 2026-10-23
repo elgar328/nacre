@@ -141,7 +141,7 @@ fn a_plane_pushed_past_the_table_is_a_duplicate_surface() {
     else {
         panic!("the first seed is a plane stated by its points");
     };
-    let nacre_geom::Surface::Plane(cache) = *m.surface_cache(seed) else {
+    let Some(&cache) = m.surface_cache(seed).plane() else {
         panic!("a plane's cache is a plane");
     };
     let twin = m.push_plane_unregistered(cache, points, sense);
@@ -182,25 +182,27 @@ fn a_plane_holding_another_planes_name_is_reported() {
     );
 }
 
-/// **A name where the truth derives none is reported** — a cylinder's key is its whole statement,
-/// never a name, so a name planted on one is the extra-name shape.
+/// **A name where the truth derives none is reported.** Three collinear points name no plane, so
+/// the key the truth derives is not a name (a cylinder's is not either, but a cylinder's cache has
+/// no name to hold); a name planted on such a plane is the extra-name shape. The plane bounds no
+/// face, so the name check is the only one that sees it.
 #[test]
-fn a_name_on_a_cylinder_is_reported() {
-    let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+fn a_name_where_none_derives_is_reported() {
+    let mut m = Model::new();
+    let seed = m.surface_handle_at(0).expect("a seed");
+    let Some(&figure) = m.surface_cache(seed).plane() else {
+        panic!("a seed's cache is a plane");
+    };
+    let collinear = [[0, 0, 0], [1, 0, 0], [2, 0, 0]].map(|p| p.map(nacre_exact::Rat::from_int));
+    let h = m.push_plane_unregistered(figure, collinear, Orientation::Forward);
     assert!(validate(&m).is_empty(), "the control is clean");
-    let lateral = (0..m.surface_count() as u32)
-        .filter_map(|i| m.surface_handle_at(i))
-        .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
-        .expect("the lateral cylinder");
-    let seed = m
-        .surface_name(m.surface_handle_at(0).expect("a seed"))
-        .cloned();
-    m.plant_surface_name(lateral, seed.clone());
+    let name = m.surface_name(seed).cloned();
+    m.plant_surface_name(h, name.clone());
     assert_eq!(
         validate(&m),
         vec![Violation::SurfaceNameMismatch {
-            surface: lateral,
-            stored: seed.map(Box::new),
+            surface: h,
+            stored: name.map(Box::new),
             derived: None,
         }]
     );
@@ -1029,7 +1031,7 @@ fn a_lying_cylinder_def_is_caught() {
         })
         .expect("the lateral face");
     let cache = match m.surface_cache(m.face(victim).surface) {
-        nacre_geom::Surface::Cylinder(c) => *c,
+        nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => *c,
         _ => unreachable!(),
     };
     let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");

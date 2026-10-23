@@ -430,8 +430,8 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
             };
             counts[kind].0 += 1;
             let coeffs = planes.map(|s| match m.surface_cache(s) {
-                nacre_geom::Surface::Plane(p) => implicit(p),
-                nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
+                nacre_topo::SurfaceCache::Plane { plane: p, .. } => implicit(p),
+                nacre_topo::SurfaceCache::Cylinder { .. } => panic!("ThreePlane named a cylinder"),
             });
             let solved = solve_three_planes(coeffs).expect("three planes meeting at a point");
             let d = solved
@@ -503,8 +503,8 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         panic!("a constructed corner has a definition")
     };
     let good = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
-        nacre_geom::Surface::Plane(p) => implicit(p),
-        nacre_geom::Surface::Cylinder(_) => unreachable!(),
+        nacre_topo::SurfaceCache::Plane { plane: p, .. } => implicit(p),
+        nacre_topo::SurfaceCache::Cylinder { .. } => unreachable!(),
     }))
     .expect("meets at a point");
     // Any face not already in the triple. Every one of them moves the point (or leaves the
@@ -515,8 +515,8 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         .expect("a fourth face");
     planes[0] = other;
     let bad = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
-        nacre_geom::Surface::Plane(p) => implicit(p),
-        nacre_geom::Surface::Cylinder(_) => unreachable!(),
+        nacre_topo::SurfaceCache::Plane { plane: p, .. } => implicit(p),
+        nacre_topo::SurfaceCache::Cylinder { .. } => unreachable!(),
     }));
     let moved = bad.is_none_or(|bad| {
         good.iter()

@@ -409,7 +409,7 @@ fn a_bores_lateral_with_a_hole_takes_a_second_cylinder() {
             .iter()
             .map(|&f| m.face(f))
             .find(|f| match m.surface_cache(f.surface) {
-                nacre_geom::Surface::Plane(p) => {
+                nacre_topo::SurfaceCache::Plane { plane: p, .. } => {
                     (p.normal() * f64::from(f.orientation.sign())).as_array() == [0.0, 0.0, 1.0]
                 }
                 _ => false,
@@ -646,7 +646,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         .iter()
         .map(|&surf| {
             let def = m.world_cylinder_def(surf).expect("a world cylinder");
-            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
+            let Some(cache) = m.surface_cache(surf).cylinder() else {
                 unreachable!("a cylinder class names a cylinder")
             };
             crate::planes::WorkingCyl {

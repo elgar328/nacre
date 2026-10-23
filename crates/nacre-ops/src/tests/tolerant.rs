@@ -274,8 +274,8 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
         let shell = m.shell(m.solid(s).outer).clone();
         let first = m.face(shell.faces[0]).clone();
         let cache = match m.surface_cache(first.surface) {
-            nacre_geom::Surface::Plane(p) => *p,
-            nacre_geom::Surface::Cylinder(_) => unreachable!("a cuboid is all planes"),
+            nacre_topo::SurfaceCache::Plane { plane: p, .. } => *p,
+            nacre_topo::SurfaceCache::Cylinder { .. } => unreachable!("a cuboid is all planes"),
         };
         let line = m.push_plane_unregistered(
             cache,
@@ -1160,7 +1160,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
             let Some(n_out) = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize() else {
                 return false;
             };
-            let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+            let Some(pl) = m.surface_cache(face.surface).plane() else {
                 return false;
             };
             pl.normal().dot(n_out).abs() <= 0.5

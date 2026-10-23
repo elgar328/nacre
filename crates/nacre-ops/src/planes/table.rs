@@ -10,12 +10,12 @@ pub(crate) fn collect_planes(
         for &fh in &model.shell(sh).faces {
             let face = model.face(fh);
             let plane = match model.surface_cache(face.surface) {
-                nacre_geom::Surface::Plane(p) => *p,
+                nacre_topo::SurfaceCache::Plane { plane: p, .. } => *p,
                 // A cylinder face sits in the table — its row keeps the shared facts
                 // (surface, face, stated outward sign, motion leaf) and none of the plane
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `arrangement::plane_index_setup`, not a door slam here.
-                nacre_geom::Surface::Cylinder(_) => {
+                nacre_topo::SurfaceCache::Cylinder { .. } => {
                     let nacre_topo::Surface::Cylinder { motion, .. } = model.surface(face.surface)
                     else {
                         unreachable!(

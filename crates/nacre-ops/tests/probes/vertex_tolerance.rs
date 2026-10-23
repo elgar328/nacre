@@ -81,7 +81,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
         };
         measured += 1;
         for sh in v.carriers() {
-            let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
+            let residual = m.surface_cache(sh).to_geom().distance(m.vertex_point(vh));
             assert!(
                 residual <= tol,
                 "vertex {} at {:?} is {residual:e} from surface {} but is held to {tol:e}",

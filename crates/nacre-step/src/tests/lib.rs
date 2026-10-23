@@ -297,12 +297,13 @@ fn a_stated_rims_centre_reaches_the_file_as_the_truths_nearest() {
                 };
                 let [s0, s1] = m.edge(eh).surfaces;
                 let (cyl, cap) = match m.surface_cache(s0) {
-                    nacre_geom::Surface::Cylinder(_) => (s0, s1),
-                    nacre_geom::Surface::Plane(_) => (s1, s0),
+                    nacre_topo::SurfaceCache::Cylinder { .. } => (s0, s1),
+                    nacre_topo::SurfaceCache::Plane { .. } => (s1, s0),
                 };
-                let (nacre_geom::Surface::Cylinder(cc), nacre_geom::Surface::Plane(pc)) =
-                    (m.surface_cache(cyl), m.surface_cache(cap))
-                else {
+                let (Some(cc), Some(pc)) = (
+                    m.surface_cache(cyl).cylinder(),
+                    m.surface_cache(cap).plane(),
+                ) else {
                     unreachable!("a rim is a cylinder against a plane")
                 };
                 let meet = nacre_geom::intersect::line_plane(&cc.axis(), pc)

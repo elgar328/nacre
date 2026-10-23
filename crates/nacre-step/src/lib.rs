@@ -19,10 +19,10 @@ use brep_to_step::{
     Orientation as StepOrientation, StepWriter, Surface as StepSurface, Units,
     Vertex as StepVertex, VoidShellNormals,
 };
-use nacre_geom::{Curve, Surface};
+use nacre_geom::Curve;
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Model, Orientation, Shell, Solid, Vertex};
+use nacre_topo::{Edge, Model, Orientation, Shell, Solid, SurfaceCache, Vertex};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
@@ -177,14 +177,14 @@ fn build_shell_faces<W: Write>(
         // (sphere, NURBS) must be handled here (else compile error).
         let surface = match model.surface_cache(face.surface) {
             // ref_dir is cosmetic for a bounded planar face — any perpendicular.
-            Surface::Plane(p) => StepSurface::Plane(frame(
+            SurfaceCache::Plane { plane: p, .. } => StepSurface::Plane(frame(
                 p.origin(),
                 p.normal(),
                 p.normal()
                     .any_perpendicular()
                     .expect("unit normal has a perpendicular"),
             )),
-            Surface::Cylinder(c) => StepSurface::Cylinder {
+            SurfaceCache::Cylinder { cylinder: c, .. } => StepSurface::Cylinder {
                 frame: frame(c.axis().origin(), c.axis().direction(), c.ref_dir()),
                 radius: c.radius(),
             },

@@ -64,7 +64,7 @@ fn stating_a_world_plane_returns_the_seed_it_already_is() {
         );
         // The convention check, stated where it can fail: the seed's cache and the datum's face
         // the same way, so nothing downstream has to compensate.
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+        let Some(p) = m.surface_cache(h).plane() else {
             unreachable!()
         };
         let axis_v = match axis {
@@ -237,9 +237,9 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// `every_plane_has_a_name_or_a_statement` observes — but that is *we do not*, not *it cannot*.
 ///
 /// **The control is half the test.** An unregistered plane's name is *derivable* and merely
-/// absent from the side table; a mixed-frame `Through` plane's name **does not exist**. Different
+/// absent from its cache; a mixed-frame `Through` plane's name **does not exist**. Different
 /// facts — but indistinguishable *to a frame*, because `frame_chain`'s first line and
-/// `SketchFrame::named` both read that one table and there is no other route. Pushing the same
+/// `SketchFrame::named` both read that one stored name and there is no other route. Pushing the same
 /// points through `push_plane`, where the only thing that changes is that the name gets recorded,
 /// is what says so. A seed plane would not: it would answer "it extruded because it is world XY".
 #[test]
@@ -563,10 +563,10 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
     );
 
     // The realized geometry is d away from the base plane, measured against the base's own cache.
-    let nacre_geom::Surface::Plane(base_pl) = m.surface_cache(frame.plane()) else {
+    let Some(base_pl) = m.surface_cache(frame.plane()).plane() else {
         unreachable!()
     };
-    let nacre_geom::Surface::Plane(off_pl) = m.surface_cache(plane) else {
+    let Some(off_pl) = m.surface_cache(plane).plane() else {
         unreachable!()
     };
     let gap = base_pl.distance(off_pl.origin());
@@ -733,7 +733,7 @@ fn the_flip_fold_decides_which_side_and_it_bites() {
 
     // And the geometry says which is which: +d from the +z face is above, from the −z face below.
     let z_of = |h| {
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+        let Some(p) = m.surface_cache(h).plane() else {
             unreachable!()
         };
         p.origin().as_array()[2]
@@ -766,10 +766,10 @@ fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 
         unreachable!()
     };
     let _ = before;
-    let nacre_geom::Surface::Plane(base) = m.surface_cache(frame.plane()) else {
+    let Some(base) = m.surface_cache(frame.plane()).plane() else {
         unreachable!()
     };
-    let nacre_geom::Surface::Plane(off) = m.surface_cache(up) else {
+    let Some(off) = m.surface_cache(up).plane() else {
         unreachable!()
     };
     let (a, b) = (base.origin().as_array(), off.origin().as_array());
@@ -2741,8 +2741,8 @@ fn a_frame_says_where_it_is() {
     let sp = nacre_ops::frame_plane(&m, &frame).expect("a stated plane realizes");
     // Every point of the frame lies on the plane the frame names.
     let normal = match m.surface_cache(plane) {
-        nacre_geom::Surface::Plane(p) => p.normal(),
-        nacre_geom::Surface::Cylinder(_) => panic!("a datum is planar"),
+        nacre_topo::SurfaceCache::Plane { plane: p, .. } => p.normal(),
+        nacre_topo::SurfaceCache::Cylinder { .. } => panic!("a datum is planar"),
     };
     let anchor = sp.origin();
     for (u, v) in [(0.0, 0.0), (3.0, 0.0), (0.0, -2.5), (7.25, 4.5)] {
@@ -2945,7 +2945,7 @@ fn offset_of_the_top_lands_outward(
         .copied()
         .find(|&f| {
             let face = m.face(f);
-            let nacre_geom::Surface::Plane(p) = m.surface_cache(face.surface) else {
+            let Some(p) = m.surface_cache(face.surface).plane() else {
                 return false;
             };
             let n = p.normal().as_array();
@@ -2960,7 +2960,7 @@ fn offset_of_the_top_lands_outward(
     let OpOutput::DatumPlane { plane, .. } = apply(m, &offset(frame, 1.0)).expect("offset") else {
         unreachable!()
     };
-    let nacre_geom::Surface::Plane(p) = m.surface_cache(plane) else {
+    let Some(p) = m.surface_cache(plane).plane() else {
         unreachable!()
     };
     let z = p.origin().as_array()[2];

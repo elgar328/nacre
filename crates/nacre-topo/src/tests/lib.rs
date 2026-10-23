@@ -243,15 +243,21 @@ fn one_vertex_and_three_vertices_solve_the_same_meet() {
 /// place and reads it back through [`Model::surface_cache`], while the truth the same handle names
 /// is untouched.
 ///
-/// It writes through the private field on purpose — that is the door a surface refinement
-/// pass inside this crate would take. Outside, there is no door at all,
-/// which is the other half of the warrant and what [`Model::surface_cache`]'s `compile_fail` pins.
+/// It writes through `SurfaceCache::refigure` on purpose — the in-place rewrite every refinement
+/// inside this crate takes, which keeps the plane's name because the name is not a parameter.
+/// Outside, there is no door at all, which is the other half of the warrant and what
+/// [`Model::surface_cache`]'s `compile_fail` pins.
 #[test]
 fn the_surface_cache_is_writable_and_the_truth_is_not() {
     let mut m = Model::new();
     let h = m.seeded_plane(nacre_exact::Axis::Z);
     let truth_before = m.surface(h).clone();
-    let cache_before = m.surface_cache(h).clone();
+    let plane_before = *m.surface_cache(h).plane().expect("a seeded plane");
+    let name_before = m.surface_name(h).cloned();
+    assert!(
+        name_before.is_some(),
+        "the premise: a seeded plane is named"
+    );
 
     // A different plane in the same slot — what a refinement at a higher precision does in
     // kind, if not in size.
@@ -262,20 +268,22 @@ fn the_surface_cache_is_writable_and_the_truth_is_not() {
         )
         .expect("a unit normal names a plane"),
     );
-    m.surface_cache[h.index() as usize] = SurfaceCache {
-        surface: refined.clone(),
-        standing: crate::CacheStanding::Realized,
-    };
+    m.surface_cache[h.index() as usize].refigure(refined.clone(), crate::CacheStanding::Realized);
 
     assert_eq!(
-        *m.surface_cache(h),
+        m.surface_cache(h).to_geom(),
         refined,
         "the cache took the new realization"
     );
     assert_ne!(
-        *m.surface_cache(h),
-        cache_before,
+        *m.surface_cache(h).plane().expect("still a plane"),
+        plane_before,
         "and it is not the old one"
+    );
+    assert_eq!(
+        m.surface_name(h).cloned(),
+        name_before,
+        "the rewrite kept the plane's name"
     );
     assert_eq!(
         *m.surface(h),
@@ -505,7 +513,7 @@ fn a_new_model_carries_the_three_world_planes() {
                 Some(&nacre_exact::PlaneName::Narrow(name))
             );
             assert!(matches!(m.surface(h), Surface::Plane { motion: None, .. }));
-            let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
+            let Some(pl) = m.surface_cache(h).plane() else {
                 panic!("a seed is a plane")
             };
             assert_eq!(
@@ -560,7 +568,7 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
             Orientation::Forward,
         );
         stated.push(cache);
-        held.push(m.surface_cache(h).clone());
+        held.push(m.surface_cache(h).to_geom());
     }
     // **Compared as whole caches, not by the implicit form `[n, −n·origin]`.** On this plane
     // both anchors give `d = −6` *exactly*, so the two forms are identical while the producers
@@ -606,7 +614,7 @@ fn a_seed_plane_cache_is_its_truths_realization() {
         (nacre_exact::Axis::Y, 1),
     ] {
         let h = m.seeded_plane(axis);
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+        let Some(p) = m.surface_cache(h).plane() else {
             panic!("a seed is a plane")
         };
         let mut want = [0.0f64; 3];
@@ -663,7 +671,7 @@ fn a_derived_cylinder_restates_its_own_axis_and_radius() {
             .expect("an unmoved cylinder derives");
         assert_eq!(
             surface_bits(&derived),
-            surface_bits(m.surface_cache(sh)),
+            surface_bits(&m.surface_cache(sh).to_geom()),
             "an axis-aligned cylinder's statement realizes to the cache it was pushed with"
         );
     }
@@ -1114,7 +1122,7 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
     let mut m = Model::new();
     // Agreeing: `Forward` against a `+z` cache — nothing moves.
     let h = m.push_plane_unregistered(up, pts, Orientation::Forward);
-    let nacre_geom::Surface::Plane(kept) = *m.surface_cache(h) else {
+    let Some(&kept) = m.surface_cache(h).plane() else {
         unreachable!()
     };
     assert_eq!(
@@ -1125,7 +1133,7 @@ fn a_plane_cache_follows_the_sense_its_truth_states() {
 
     // Disagreeing: `Reversed` against the same `+z` cache — the cache turns to `−z`.
     let h = m.push_plane_unregistered(up, pts, Orientation::Reversed);
-    let nacre_geom::Surface::Plane(turned) = *m.surface_cache(h) else {
+    let Some(&turned) = m.surface_cache(h).plane() else {
         unreachable!()
     };
     assert_eq!(turned, up.reversed(), "the cache follows the truth's sense");
@@ -1620,7 +1628,7 @@ fn a_named_through_planes_cache_follows_the_truth_not_the_vertex_caches() {
         None,
         Orientation::Forward,
     );
-    let nacre_geom::Surface::Plane(cache) = m.surface_cache(h) else {
+    let Some(cache) = m.surface_cache(h).plane() else {
         panic!("a plane")
     };
     assert!(
@@ -1666,7 +1674,7 @@ fn a_named_plane_normal_is_its_world_name_correctly_rounded() {
             let v = nacre_exact::bounded::HpBounded::of_bigint(k, P).mul(&inv, P);
             nacre_exact::round_to_f64(&v.value, v.error).expect("decided at 512 bits")
         });
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
+        let Some(p) = m.surface_cache(h).plane() else {
             unreachable!()
         };
         assert_eq!(

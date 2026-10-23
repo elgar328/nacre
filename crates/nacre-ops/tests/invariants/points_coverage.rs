@@ -46,10 +46,13 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
             for &fh in &m.shell(sh).faces {
                 let surf = m.face(fh).surface;
                 match (m.surface_cache(surf), m.surface(surf)) {
-                    (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Plane { .. }) => {
+                    (nacre_topo::SurfaceCache::Plane { .. }, nacre_topo::Surface::Plane { .. }) => {
                         seen += 1;
                     }
-                    (nacre_geom::Surface::Cylinder(_), nacre_topo::Surface::Cylinder { .. }) => {
+                    (
+                        nacre_topo::SurfaceCache::Cylinder { .. },
+                        nacre_topo::Surface::Cylinder { .. },
+                    ) => {
                         // a lateral: its truth is a `CylinderDef`, not three points
                     }
                     (cache, truth) => panic!(

@@ -222,7 +222,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
     // Shared handle.
     assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
     // The stated orientation: materialized outward normal is −sweep (−z).
-    let nacre_geom::Surface::Plane(p) = m.surface_cache(cap.surface) else {
+    let Some(p) = m.surface_cache(cap.surface).plane() else {
         unreachable!()
     };
     let sign = f64::from(cap.orientation.sign());

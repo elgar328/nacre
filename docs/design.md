@@ -48,7 +48,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 제품 경로에서 `nacre-ops` 는 `nacre-tess`·`nacre-validate`·`nacre-props`·`nacre-step` 에 의존하지 않는다(테스트 전용 dev-dependency 로만 쓴다 — 발행되는 라이브러리의 의존 표면이 깨끗하게 남는다). `nacre-exact` 도 `nacre-predicates` 를 dev-dependency 로만 쓴다(정수 부호 술어를 f64 쌍둥이와 차등 시험) — 제품 경로의 방향은 predicates 무의존이다.
 
-`nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache`·`EdgeCache` 가 geom 의 `Surface`·`Curve` 를 감싼다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
+`nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache` 의 팔이 geom 의 `Plane`·`Cylinder` 를, `EdgeCache` 가 `Curve` 를 든다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
 
 **어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 exact 에 사는 이유). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
@@ -899,7 +899,7 @@ pub struct SketchFrame {                      // 필드는 사설, 생성자가 
 
 ## 이름과 interning
 
-이름은 **하나만 저장**하고(`Model` 의 비공개 곁표, 문은 `Model::surface_name`), 좁은 형태는 저장이 아니라 **투영**이다:
+이름은 **하나만 저장**하고(곡면 캐시의 평면 팔 `SurfaceCache::Plane` 의 `name`, 문은 `Model::surface_name`), 좁은 형태는 저장이 아니라 **투영**이다:
 
 ```
 Surface (진실 — 평면이면 점 셋, 원통이면 def, + 모션)
@@ -980,7 +980,7 @@ pub enum SurfaceKey {
 열쇠는 **진술된 진실의 함수** 하나가 고른다(`Model::surface_key`): `Known` 점은 정준 이름(공선이면 열쇠 없음),
 `Through` 는 세 정점이 한 프레임에서 이름을 주면 이름 아니면 진술 자체, 원통은 진술 자체 — 어느 문으로
 들어왔는지가 아니다. 세 문(`push_plane`·`push_plane_through`·`push_cylinder`)은 진실을 진술하고 깔때기
-하나(`intern`: 열쇠·이미 발급된 핸들과 `flipped` 회신·종류별 아레나 push·곁표·계측)를 부른다. 열쇠가 읽는
+하나(`intern`: 열쇠·이미 발급된 핸들과 `flipped` 회신·종류별 아레나 push(캐시와 이름이 함께 선다)·interning 표·계측)를 부른다. 열쇠가 읽는
 것(점·정점 정의와 그 담체의 이름·모션 접힘)은 모두 한 번 쓰이고 열쇠보다 먼저 있으므로, 나중에 다시 물어도
 push 때의 답과 같다. `push_plane` 의 `bool` 은 돌려준 곡면이 건넨 진술(점·향)과 **반대**를 향함을 말한다 — 정준형에는
 방향이 없으므로(`[0,0,1,−3]` 과 `[0,0,−1,3]` 은 한 평면) 같은 평면이 핸들을 공유하면 방향을 어딘가에서
@@ -1062,10 +1062,6 @@ pub struct Model {
     prefix_hp: HashMap<PrefixKey, PrefixValue>, // 모션 사슬 접두의 고정밀 실현 메모(실현 가속기)
     chain_affines: Vec<Option<AxisAffine>>,      // 모션 핸들 인덱스 평행 — 노드가 태어날 때 사슬 전체를 접은 유리수 사상
 
-    // 평면의 정준 이름 — 유도되는 값(캐시)인데 `SurfaceCache` 안이 아니라 곁표로 산다. 문은 `surface_name(h)`,
-    // `validate` 가 진실에서 다시 유도해 잰다(`SurfaceNameMismatch`).
-    surface_name: HashMap<Handle<Surface>, PlaneName>,
-
     // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다). 곡면의 표는 하나, 열쇠는 셋
     // (`SurfaceKey::{Name, Through, Cylinder}` — 이름 있는 평면 · 이름 없는 `Through` · 일부러 보수적인 원통).
     interned:            HashMap<SurfaceKey,  Handle<Surface>>,
@@ -1128,12 +1124,16 @@ pub enum PointCache {
 //   입력이라 캐시(`PointCache`)와 «같은 것»이 아니다 — 이 차이가 진실/캐시 경계 그 자체다.
 //   그래서 이것은 캐시로 접지 않는다(접으면 경계가 지워진다). 정의는 「판정」 절.
 
-// ── 곡면의 캐시 — geom 의 실현을 감싼 구조체. `EdgeCache` 의 거울이다. ──
-pub struct SurfaceCache { surface: nacre_geom::Surface, standing: CacheStanding } // Plane(..) | Cylinder(..) 는 geom 의 enum
+// ── 곡면의 캐시 — 종류마다 팔 하나, 그 종류의 캐시가 아는 것만 든다. `PointCache` 와 같은 모양이다. ──
+pub enum SurfaceCache {
+    Plane    { plane: nacre_geom::Plane, name: Option<PlaneName>, standing: CacheStanding },
+    Cylinder { cylinder: nacre_geom::Cylinder, standing: CacheStanding },
+}   // .plane() · .cylinder() · .name() · .standing() · .to_geom() -> nacre_geom::Surface
 pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 값에 대해 아는 것 — 순서가 앎이고, 오르기만 한다
-//   topo 는 감싸기만 하고 기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에
-//   남는다 — 다형 질의는 geom 의 enum 이 안에서 가른다. 감싸는 이유는 캐시가 자랄 자리가 있는 이름 붙은
-//   것이 되게 하려는 것이었고, 거기서 `PointCache` 의 세 변종과 같은 말이 자랐다(경계를 들 것이 없어 표지만):
+//   기하의 메서드(`distance`·`normal_at`·`translated` …)는 `nacre_geom::Surface` 에 남는다 — 다형 질의는
+//   `to_geom()` 이 짓는 geom 의 값에 묻는다(geom 의 `Surface` 는 힙을 쓰는 변종의 자리를 두려고 `Copy` 가
+//   아니어서, 캐시는 그것을 통째로 들지 않고 팔마다 `Copy` 조각을 든다). 표지는 `PointCache` 의 세 변종과
+//   같은 말이다(경계를 들 것이 없어 표지만):
 //   `Unrealized` 는 아무도 실현하지 않았다(안 물었거나 도로가 없다 — 읽을 수 없는 사슬), `Ceiling` 은 싼 도로가 멈췄다(비용 한계를 넘는 사슬·두 단에서 미결정 — 값을 치르는 문이 올린다),
 //   `Realized` 는 모든 부분이 진실의 최근접 f64 다. 둘째 쓰기 문 `refine_surface_cache` 는 표지를 내리지 못한다.
 //   평면의 f64 실현은 문이 진실에서 유도한다(`derive_surface_cache`) — 세계 이름이 있으면 단위 법선은 이름 ×
@@ -1165,9 +1165,10 @@ pub enum CacheStanding { Unrealized, Ceiling, Realized }          // 캐시가 �
 //   순서에서 뽑기» 와 어긋나지 않는다 — 그 행이 버린 것은 점 순서 **단독**이고, 여기서는 `sense` 가 그 관계를
 //   진술한다.)
 //   평면의 이름(`PlaneName`)은 `plane_name_exact(세 점)` / `plane_name_through(세 정점)` 로 언제든 다시
-//   나오므로 캐시다 — 그런데 곁표 `surface_name` 에 따로 살아 한 곡면의 캐시가 두 그릇(`Vec`↔`HashMap`)이다.
-//   구조체 칸에 이름 자리를 두면 원통도 그 자리를 들므로, 이름은 칸이 종류별로 갈릴 때 평면 쪽으로 간다
-//   (todo 「`SurfaceCache` 를 enum 으로」).
+//   나오므로 캐시이고, 평면 팔이 든다 — 원통 팔에는 그 자리가 없다. `None` 은 세 정점을 한 프레임이 못 놓는
+//   `Through`(와 시험 문)뿐이고, `validate` 가 진실에서 다시 유도해 잰다(`SurfaceNameMismatch`). 칸을 짓는 것은
+//   raw push 둘뿐이고 다시 쓰는 자리는 제자리에서 고친다(`SurfaceCache::refigure` — 이름이 인자가 아니므로
+//   기하를 고쳐 쓰다 이름을 떨어뜨릴 수 없다).
 
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
 //   담체와 끝점이 곡선을 정한다(`derive_edge_curve`). `rebuild_edge_cache` 가 통째로 버리고 재생한다.
@@ -1242,15 +1243,16 @@ m.surface_count() · m.vertex_count() · m.edge_count() · m.face_count() · m.s
 m.surface_handle_at(i) · m.vertex_handle_at(i) · m.edge_handle_at(i) · m.face_handle_at(i) · …
 
 // ── 캐시 ─────────────────────────────────────────────────────────────
-m.surface_cache(h) -> &nacre_geom::Surface                 // 포장을 벗긴 실현 — `match` 로 바로 가른다
-m.surface_cache_standing(h) -> CacheStanding               // 그 캐시가 값에 대해 아는 것
+m.surface_cache(h) -> &SurfaceCache                        // 종류마다 팔 — `match` 로 바로 가른다
+m.surface_cache(h).plane() -> Option<&nacre_geom::Plane>   // 조각은 체이닝 — `.cylinder()`·`.name()`·`.standing()`·`.to_geom()`
+m.surface_cache_standing(h) -> CacheStanding               // = surface_cache(h).standing()
 m.vertex_cache(v)  -> &PointCache                          // 변종(Realized | Ceiling | Unrealized)
 m.vertex_cache(v).coord() -> Point3                        // 세 변종이 모두 드는 좌표
 m.vertex_cache(v).bound() -> Option<&[Mag; 3]>             // Realized 만 — 실현의 축별 경계
 m.vertex_point(v)  -> Point3                               // = vertex_cache(v).coord() — 어디서나 답한다
 m.edge_curve(e)    -> &Curve                               // 간선 캐시의 조각(곡선)
 m.line_direction_cache([p, q]) -> Option<[f64; 3]>        // 두 평면이 만나는 방향 — 이름에서, 아니면 push 하는 쪽이 실현해 남긴 것
-m.surface_name(h) -> Option<&PlaneName>                   // 평면의 정준 이름(캐시의 조각) — 원통·이름 없는 평면은 None
+m.surface_name(h) -> Option<&PlaneName>                   // = surface_cache(h).name() — 원통·이름 없는 평면은 None
 
 // ── 세계 진술 — 진술된 프레임에서 세계로, 모션 사슬을 접어 정확히 ────────
 m.world_plane_name(h) -> Option<PlaneName>                 // 평면의 세계 이름(사슬이 안 접히면 None)

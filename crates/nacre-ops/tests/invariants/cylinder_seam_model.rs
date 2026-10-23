@@ -61,7 +61,7 @@ fn cylinder_caps_face_outward() {
     let (m, c) = z_cylinder(2.0, 5.0);
     for (cap, want) in [(c.base, -1.0), (c.top, 1.0)] {
         let f = m.face(cap);
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
+        let Some(p) = m.surface_cache(f.surface).plane() else {
             panic!("a cap is planar")
         };
         let n = p
@@ -90,7 +90,7 @@ fn a_seam_vertex_states_its_rim_carriers() {
             matches!(m.surface(a), nacre_topo::Surface::Cylinder { .. }),
             "first carrier is the lateral cylinder"
         );
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(b) else {
+        let Some(p) = m.surface_cache(b).plane() else {
             panic!("second carrier is the cap plane")
         };
         assert_eq!(
@@ -296,7 +296,7 @@ fn a_rims_frame_is_its_cylinders_cache() {
                     .into_iter()
                     .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }))
                     .expect("a rim has a cylinder carrier");
-                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+                let Some(cc) = m.surface_cache(cyl).cylinder() else {
                     unreachable!("a cylinder truth has a cylinder cache")
                 };
                 assert_eq!(
@@ -401,9 +401,10 @@ fn a_stated_rims_centre_is_the_truths_nearest() {
                         m.world_cylinder_def(cyl).is_some(),
                         "axis {axis:?}: the premise — this cylinder is stated in the world"
                     );
-                    let (nacre_geom::Surface::Cylinder(cc), nacre_geom::Surface::Plane(pc)) =
-                        (m.surface_cache(cyl), m.surface_cache(cap))
-                    else {
+                    let (Some(cc), Some(pc)) = (
+                        m.surface_cache(cyl).cylinder(),
+                        m.surface_cache(cap).plane(),
+                    ) else {
                         unreachable!("a rim is a cylinder against a plane")
                     };
                     let meet = nacre_geom::intersect::line_plane(&cc.axis(), pc)

@@ -97,7 +97,7 @@ pub(crate) fn cylinder_gate(
                     .expect("a cylinder statement fails for its frame or its width"),
             )
         })?;
-        let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
+        let Some(cache) = model.surface_cache(surf).cylinder() else {
             unreachable!("push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache")
         };
         // **One surface, two solids.** Cylinders intern by their exact statement, so two operands

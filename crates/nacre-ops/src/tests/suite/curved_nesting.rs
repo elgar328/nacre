@@ -21,7 +21,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 3] {
         .iter()
         .map(|&surf| {
             let def = m.world_cylinder_def(surf).expect("a world cylinder");
-            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
+            let Some(cache) = m.surface_cache(surf).cylinder() else {
                 unreachable!()
             };
             crate::planes::WorkingCyl {

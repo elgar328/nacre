@@ -310,19 +310,6 @@ kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 �
 그 값의 셀이 살아 있어야 한다), fuse 접기의 보호 복사, playground 기록기의 참조 형식. 이득의 크기는 위의 +23~25%
 와 살아 있는 솔리드 수다.
 
-### `SurfaceCache` 를 enum 으로
-
-**무엇이 문제인가.** `SurfaceCache` 는 `surface: nacre_geom::Surface` 와 그 표지(`standing`)를 든 struct 다. 도착점은
-`enum SurfaceCache` 와 `.plane()`/`.cylinder()` 체이닝이고, 평면 팔이 이름을 든다 — 지금은 비공개 곁표
-(`Model::surface_name` 문 뒤)라 한 곡면의 캐시가 두 그릇이다. 칸을 통째로 다시 쓰는 자리(`refine_surface_cache`·
-`align_cache_sense`·`apply_derivation`·원통 push)가 이름을 들고 가야 하고, 빠뜨리면 `validate` 의
-`SurfaceNameMismatch` 가 문다. 근거는 «확정한 구조의 이행»이지 «재발 방지»가 아니다(막을 인구는 0 이다). 인구: 값 21 + 테스트 44, 메서드 이전 8, 통째 출구는 `transform.rs` 한 곳.
-테스트 30곳의 종류 판별도 함께 지나간다.
-
-**캐시의 향을 읽는 자리가 가장 위험하다** — `align_cache_sense`(캐시를 진실의 향으로 돌린다)가 곡면 캐시의
-평면 법선을 읽는다. 잘못 재철자하면 캐시의 향이 조용히 뒤집힌다(census 잠금 `audit_plane_senses` 가 그 부류를
-잰다; 판정은 향을 캐시에서 읽지 않으므로 뒤집힌 캐시는 좌표 측정과 출력에만 닿는다).
-
 ### 관통점 이름을 «그 점을 지나는» 옆면으로 묻기
 
 결과 정점의 이름 규칙(`assembly::naming`, design 「결과 정점은 닿는 면들의 평면으로 이름 짓는다」)은 관통점

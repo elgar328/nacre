@@ -133,7 +133,7 @@ fn armed_through_boss_z(
         let nacre_topo::Surface::Cylinder { def, .. } = m.surface(surf) else {
             unreachable!("a cylinder row carries a cylinder truth")
         };
-        let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
+        let Some(cache) = m.surface_cache(surf).cylinder() else {
             unreachable!("push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache")
         };
         setup.cyls.push(crate::planes::WorkingCyl {
@@ -466,7 +466,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
     );
     let surf = m.face(boss.lateral).surface;
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
-    let nacre_geom::Surface::Cylinder(realized) = m.surface_cache(surf) else {
+    let Some(realized) = m.surface_cache(surf).cylinder() else {
         panic!("a cylinder")
     };
     let cyls = vec![crate::planes::WorkingCyl {

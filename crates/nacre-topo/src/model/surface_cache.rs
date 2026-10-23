@@ -28,11 +28,22 @@ impl Model {
     /// ([`Model::push_plane`], [`Model::push_cylinder`]) take narrow types, and so does this
     /// crate-internal one. Recorded rather than locked.
     ///
-    /// **The name enters here too**, for the same reason the cache does: this is
-    /// the one place a plane reaches the arena, so it is the one place that can derive a cache
-    /// from the truth — and the derivation reads the name. Inserting it one line later
-    /// (at interning) would leave a window in which a surface exists without the name that
+    /// **The name enters here too**, in the plane's cache, for the same reason the rest of the cache
+    /// does: this is the one place a plane reaches the arena, so it is the one place that can
+    /// derive a cache from the truth — and the derivation reads the name. Inserting it one line
+    /// later (at interning) would leave a window in which a surface exists without the name that
     /// describes it.
+    ///
+    /// **Why a canonical name, not the plane's `f64` coefficients**: two statements of one plane
+    /// must get the same value. Coefficients computed from a face's points follow the face's size
+    /// and round — one plane reached `[2.2, 0, 0, −6.6000000000000005]` from one face and
+    /// `[13.2, 0, 0, −39.599999999999994]` from another, not exactly proportional because `d` is a
+    /// rounded product — and lifting them to rationals keeps the rounding
+    /// (`nacre_exact::canonical_plane_coeffs`). The name is built from the dimensions the user
+    /// wrote, has no scale to disagree about, and its vessel is arbitrary-precision
+    /// (`Narrow | Wide`), so width cannot lose it either. A moved plane keeps its source's name:
+    /// the motion is recorded beside it, not folded into it. `validate` re-derives every name from
+    /// the truth (its `SurfaceNameMismatch`).
     pub(super) fn push_plane_raw(
         &mut self,
         points: PlanePoints,
@@ -47,13 +58,11 @@ impl Model {
             motion,
             sense,
         });
-        self.surface_cache.push(SurfaceCache {
-            surface: nacre_geom::Surface::Plane(figure),
+        self.surface_cache.push(SurfaceCache::Plane {
+            plane: figure,
+            name,
             standing,
         });
-        if let Some(n) = name {
-            self.surface_name.insert(h, n);
-        }
         debug_assert_eq!(
             self.surface_cache.len(),
             self.surfaces.len(),
@@ -92,20 +101,18 @@ impl Model {
             return false;
         };
         let (points, motion, sense) = (points.clone(), *motion, *sense);
-        let nacre_geom::Surface::Plane(cache) = *self.surface_cache(h) else {
+        let Some(&cache) = self.surface_cache(h).plane() else {
             return false;
         };
-        let standing = self.surface_cache_standing(h);
         let n = cache.normal().as_array();
         let Some(w) = self.points_world_direction_approx(&points, motion) else {
             return false;
         };
         let turn = (0..3).map(|k| w[k] * n[k]).sum::<f64>() * f64::from(sense.sign()) < 0.0;
         if turn {
-            self.surface_cache[h.index() as usize] = SurfaceCache {
-                surface: nacre_geom::Surface::Plane(cache.reversed()),
-                standing,
-            };
+            if let SurfaceCache::Plane { plane, .. } = &mut self.surface_cache[h.index() as usize] {
+                *plane = cache.reversed();
+            }
         }
         turn
     }
@@ -133,7 +140,7 @@ impl Model {
                     true => CacheStanding::Realized,
                     false => self.surface_cache_standing(h),
                 };
-                self.surface_cache[h.index() as usize] = SurfaceCache { surface, standing };
+                self.surface_cache[h.index() as usize].refigure(surface, standing);
                 true
             }
             None => false,
@@ -163,8 +170,8 @@ impl Model {
         derive: bool,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Cylinder { def, motion });
-        self.surface_cache.push(SurfaceCache {
-            surface: nacre_geom::Surface::Cylinder(figure),
+        self.surface_cache.push(SurfaceCache::Cylinder {
+            cylinder: figure,
             standing,
         });
         debug_assert_eq!(
@@ -176,17 +183,13 @@ impl Model {
             let derived = self.derive_surface_cache(h).map(|(s, _)| s);
             #[cfg(any(test, feature = "test-util"))]
             self.count_derivation(h, derived.as_ref());
-            if let Some(surface) = derived {
+            if let Some(nacre_geom::Surface::Cylinder(d)) = derived {
                 debug_assert!(
-                    match &surface {
-                        nacre_geom::Surface::Cylinder(d) => cylinders_agree(&figure, d),
-                        nacre_geom::Surface::Plane(_) => false,
-                    },
-                    "the producer's cylinder figure strays from its statement: {figure:?} vs \
-                     {surface:?}"
+                    cylinders_agree(&figure, &d),
+                    "the producer's cylinder figure strays from its statement: {figure:?} vs {d:?}"
                 );
-                self.surface_cache[h.index() as usize] = SurfaceCache {
-                    surface,
+                self.surface_cache[h.index() as usize] = SurfaceCache::Cylinder {
+                    cylinder: d,
                     standing: CacheStanding::Realized,
                 };
             }
@@ -250,10 +253,7 @@ impl Model {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
             Surface::Plane { points, motion, .. } => {
-                let stated = match self.surface_cache(h) {
-                    nacre_geom::Surface::Plane(p) => *p,
-                    nacre_geom::Surface::Cylinder(_) => return None,
-                };
+                let stated = *self.surface_cache(h).plane()?;
                 let normal = self.world_unit_normal_f64(h)?;
                 let anchor = self.world_anchor_f64(points, *motion);
                 let whole = anchor.is_some();
@@ -354,7 +354,7 @@ impl Model {
                 self.decline_reason(h).fetch_add(1, Relaxed);
             }
             Some(d) => {
-                if surface_bits(d) != surface_bits(self.surface_cache(h)) {
+                if surface_bits(d) != surface_bits(&self.surface_cache(h).to_geom()) {
                     SURFACE_DIFFERS.fetch_add(1, Relaxed);
                 }
                 SURFACE_DERIVED.fetch_add(1, Relaxed);

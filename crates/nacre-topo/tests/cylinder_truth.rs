@@ -198,7 +198,7 @@ fn the_door_realizes_a_cylinder_cache_from_its_statement() {
     )
     .unwrap();
     let h = m.push_cylinder(figure, nacre_topo::CacheStanding::Unrealized, def, None);
-    let nacre_geom::Surface::Cylinder(c) = m.surface_cache(h) else {
+    let Some(c) = m.surface_cache(h).cylinder() else {
         panic!("a cylinder")
     };
     let (axis, across) = nacre_exact::cyl_unit_frame_f64(&dir, &ref_dir).unwrap();

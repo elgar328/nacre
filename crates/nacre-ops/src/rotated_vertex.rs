@@ -634,7 +634,7 @@ pub fn audit_plane_senses(model: &Model) -> SenseAudit {
                         (|| Some([placed(vs[0])?, placed(vs[1])?, placed(vs[2])?]))()
                     }
                 };
-                let nacre_geom::Surface::Plane(cache) = model.surface_cache(h) else {
+                let Some(cache) = model.surface_cache(h).plane() else {
                     continue;
                 };
                 let Some(q) = world else {

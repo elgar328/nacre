@@ -25,8 +25,8 @@ struct BrepDigest {
 fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     let bits3 = |p: Point3| p.as_array().map(f64::to_bits);
     let kind = |h: Handle<Surface>| match m.surface_cache(h) {
-        nacre_geom::Surface::Plane(_) => "plane",
-        nacre_geom::Surface::Cylinder(_) => "cylinder",
+        nacre_topo::SurfaceCache::Plane { .. } => "plane",
+        nacre_topo::SurfaceCache::Cylinder { .. } => "cylinder",
     };
     let sol = m.solid(s).clone();
     let (mut vertex_bits, mut vertex_defs, mut plane_bits, mut cylinder_defs) =
@@ -38,11 +38,11 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
         for fh in m.shell(sh).faces.clone() {
             let face = m.face(fh);
             match m.surface_cache(face.surface) {
-                nacre_geom::Surface::Plane(pl) => {
+                nacre_topo::SurfaceCache::Plane { plane: pl, .. } => {
                     let (o, n) = (pl.origin().as_array(), pl.normal().as_array());
                     plane_bits.push([o[0], o[1], o[2], n[0], n[1], n[2]].map(f64::to_bits))
                 }
-                nacre_geom::Surface::Cylinder(_) => {
+                nacre_topo::SurfaceCache::Cylinder { .. } => {
                     if let nacre_topo::Surface::Cylinder { def, .. } = m.surface(face.surface) {
                         cylinder_defs.push(format!("{def:?}"));
                     }

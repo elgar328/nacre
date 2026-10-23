@@ -22,7 +22,7 @@ fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
         nacre_topo::PointCache::Ceiling { coord }
         | nacre_topo::PointCache::Unrealized { coord } => {
             for sh in m.vertex(h).carriers() {
-                let d = m.surface_cache(sh).distance(*coord);
+                let d = m.surface_cache(sh).to_geom().distance(*coord);
                 assert!(
                     d < 1e-12,
                     "unrealized, but {d:e} from surface {}",
@@ -1429,7 +1429,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
             while let Some(h) = m.face_handle_at(i) {
                 i += 1;
                 let f = m.face(h);
-                let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
+                let Some(p) = m.surface_cache(f.surface).plane() else {
                     continue;
                 };
                 if (p.normal().as_array()[2] - 1.0).abs() > 1e-9 {

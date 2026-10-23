@@ -304,7 +304,7 @@ fn assert_frame_shape(
     assert!(dot(u, v).abs() < 1e-12, "{what}: u ⊥ v fails");
     assert!(dot(u, w).abs() < 1e-12, "{what}: u ⊥ w fails");
     assert!(dot(v, w).abs() < 1e-12, "{what}: v ⊥ w fails");
-    let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
+    let Some(pl) = m.surface_cache(h).plane() else {
         unreachable!()
     };
     assert!(

@@ -714,11 +714,11 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     for &fh in faces {
         let face = m.face(fh);
         let plane = match m.surface_cache(face.surface) {
-            nacre_geom::Surface::Plane(plane) => plane,
+            nacre_topo::SurfaceCache::Plane { plane, .. } => plane,
             // Only a planar cavity is checked; a curved void is not. An arm rather than an
             // `else`, so a third surface kind is a compile error here and its author decides
             // whether its flux can be summed.
-            nacre_geom::Surface::Cylinder(_) => return None,
+            nacre_topo::SurfaceCache::Cylinder { .. } => return None,
         };
         let sign = f64::from(face.orientation.sign());
         let normal = plane.normal() * sign;
@@ -827,11 +827,11 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
             continue;
         }
         let plane = match m.surface_cache(face.surface) {
-            nacre_geom::Surface::Plane(plane) => plane,
+            nacre_topo::SurfaceCache::Plane { plane, .. } => plane,
             // A cylinder's lateral normal changes from point to point, so "the face's normal" is
             // not a question. An arm rather than an `else`, so a third surface kind is a compile
             // error here and its author decides whether it can be asked.
-            nacre_geom::Surface::Cylinder(_) => continue,
+            nacre_topo::SurfaceCache::Cylinder { .. } => continue,
         };
         let stated = plane.normal() * f64::from(face.orientation.sign());
         // Two aligned unit vectors sit at ±1; 0.5 is the same "a full unit from
@@ -916,12 +916,12 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
             continue;
         }
         let cy = match m.surface_cache(face.surface) {
-            nacre_geom::Surface::Cylinder(cy) => cy,
+            nacre_topo::SurfaceCache::Cylinder { cylinder: cy, .. } => cy,
             // A plane has no truth-versus-cache residual to check here: its truth is exact
             // points, and its orientation is `check_face_orientation`'s question. An arm
             // rather than an `else`, so a third surface kind is a compile error here and its
             // author decides what its truth check is.
-            nacre_geom::Surface::Plane(_) => continue,
+            nacre_topo::SurfaceCache::Plane { .. } => continue,
         };
         let (def, motion) = match m.surface(face.surface) {
             nacre_topo::Surface::Cylinder { def, motion } => (def, motion),
@@ -1010,7 +1010,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         // vertex coordinate sits from its cached carrier — one rounded description against
         // another. The truth-side question (does the definition match its carriers' kinds) is
         // `check_vertex_def_carriers`, and it asks the truth.
-        let surface = m.surface_cache(face.surface);
+        let surface = m.surface_cache(face.surface).to_geom();
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
                 {
@@ -1060,7 +1060,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             // so its residual has to be measured against the cached carrier for the two to be
             // the same description. Against the truth this would report the realization error
             // of both, which is a different quantity and has no threshold here.
-            let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
+            let residual = m.surface_cache(sh).to_geom().distance(m.vertex_point(vh));
             if residual > tol {
                 out.push(Violation::VertexOffDefinition {
                     vertex: vh,

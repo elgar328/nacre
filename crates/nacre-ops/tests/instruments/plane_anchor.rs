@@ -68,7 +68,7 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
         (0..m.surface_count() as u32)
             .filter_map(|i| m.surface_handle_at(i))
             .map(|h| match m.surface_cache(h) {
-                nacre_geom::Surface::Plane(p) => {
+                nacre_topo::SurfaceCache::Plane { plane: p, .. } => {
                     let o = p.origin().as_array();
                     let n = p.normal().as_array();
                     [
@@ -84,7 +84,7 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
                         0,
                     ]
                 }
-                nacre_geom::Surface::Cylinder(cy) => {
+                nacre_topo::SurfaceCache::Cylinder { cylinder: cy, .. } => {
                     let o = cy.axis().origin().as_array();
                     let d = cy.axis().direction().as_array();
                     let r = cy.ref_dir().as_array();
@@ -516,7 +516,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
 fn plain_base_anchor(m: &Model) -> Point3 {
     let f = m.shell(m.solid(m.live_solids()[0]).outer).faces[0];
     match m.surface_cache(m.face(f).surface) {
-        nacre_geom::Surface::Plane(p) => p.origin(),
-        nacre_geom::Surface::Cylinder(_) => unreachable!("the wf base cap is planar"),
+        nacre_topo::SurfaceCache::Plane { plane: p, .. } => p.origin(),
+        nacre_topo::SurfaceCache::Cylinder { .. } => unreachable!("the wf base cap is planar"),
     }
 }

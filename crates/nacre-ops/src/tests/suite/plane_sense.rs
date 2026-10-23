@@ -94,7 +94,7 @@ fn top_plane(m: &Model, solid: Handle<Solid>, z: f64) -> Handle<nacre_topo::Surf
         .iter()
         .map(|&f| m.face(f).surface)
         .find(|&s| {
-            matches!(m.surface_cache(s), nacre_geom::Surface::Plane(p)
+            matches!(m.surface_cache(s).plane(), Some(p)
                 if (p.normal().as_array()[2].abs() - 1.0).abs() < 1e-12
                     && (p.origin().as_array()[2] - z).abs() < 1e-12)
         })
@@ -377,7 +377,7 @@ fn every_plane_faces_the_way_its_truth_says() {
                 );
                 assert_eq!(
                     crate::realize_surface_cache(m, h).map(|(c, _)| c).as_ref(),
-                    Some(m.surface_cache(h)),
+                    Some(&m.surface_cache(h).to_geom()),
                     "{name}: and the funnel's answer, asked again"
                 );
             }

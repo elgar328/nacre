@@ -101,7 +101,7 @@ fn a_free_cylinders_wall_faces_away_from_its_axis() {
         "a curved face has no single normal — that is why the point door exists"
     );
     let cyl = match m.surface_cache(m.face(wall).surface) {
-        Surface::Cylinder(c) => *c,
+        nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => *c,
         _ => unreachable!(),
     };
     for k in 0..8 {

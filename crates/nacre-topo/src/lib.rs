@@ -775,36 +775,6 @@ pub struct Model {
     /// turned fins, on about a dozen new carrier pairs a step. Realizing each anew took the fold
     /// from 1.33 s to 1.94 s.
     given_by_pair: HashMap<[Handle<Surface>; 2], EdgeGiven>,
-    /// Each plane's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points — the
-    /// key it interns under. Read through [`Model::surface_name`]; written once, by the raw push.
-    ///
-    /// **The point is that two statements of one plane get the same value.** `nacre_geom::Plane`
-    /// keeps an un-normalized normal whose length follows the *face's size*, so the same plane
-    /// reaches `coefficients()` as `[2.2, 0, 0, −6.6000000000000005]` from one face and
-    /// `[13.2, 0, 0, −39.599999999999994]` from another — not exactly proportional, because `d`
-    /// is a rounded product. Canonical names have no scale to disagree about, and the
-    /// vessel is arbitrary-precision (`Narrow | Wide`) so **width cannot lose a name either**.
-    ///
-    /// **Built from the dimensions the user wrote, never lifted from the f64 coefficients
-    /// above.** Lifting is lossless and useless here: it preserves the rounding, so the two
-    /// vectors stay different (`nacre_exact::canonical_plane_coeffs`).
-    ///
-    /// **The name is stated in the frame this surface's truth names** — the world for
-    /// `motion: None`, and the **pre-motion** frame for a moved surface, whose world
-    /// coefficients are irrational and so cannot be written
-    /// down at all. A moved surface therefore inherits its source's name unchanged: the motion
-    /// is recorded beside it, not folded into it.
-    ///
-    /// Absent where the key is not a name: a cylinder, a plane through three vertices no one frame
-    /// solves (mixed-frame `Through`), and a test door's plane. Arithmetic consumers (frames,
-    /// `base_rat`, exact transports) read [`nacre_exact::PlaneName::narrow`]; `Wide` carries
-    /// identity only. `validate` re-derives every name from the truth (its
-    /// `SurfaceNameMismatch`).
-    ///
-    /// **A side table, not a piece of [`SurfaceCache`]**, though it is the same kind of thing: the
-    /// cache is a struct over both kinds of surface, and a name slot there would sit on every
-    /// cylinder too.
-    surface_name: HashMap<Handle<Surface>, nacre_exact::PlaneName>,
     /// **The interning table** — the handle already issued for each [`SurfaceKey`]. The twin of
     /// [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result). Its
     /// one writer is the private funnel every surface door calls (`intern`), and the key is
@@ -970,18 +940,120 @@ impl EdgeGiven {
     };
 }
 
-/// One surface's realized geometry — a **cache** beside the surface store (index-parallel),
-/// the f64 answer to what [`Model::surface`] states exactly.
+/// One surface's cache — the f64 answer to what [`Model::surface`] states exactly, read through
+/// [`Model::surface_cache`]. One arm per kind of surface, each holding what that kind's cache
+/// knows: its realized geometry, the [`CacheStanding`] of that geometry, and for a plane its
+/// canonical name.
 ///
-/// **[`EdgeCache`]'s mirror**: topo wraps, and the geometry's own methods stay in
-/// `nacre-geom` — `distance`, `normal_at`, `translated` and the rest dispatch on
-/// [`nacre_geom::Surface`], which is geom's vocabulary and stays there. The wrapper exists so
-/// the cache is a named thing with room to grow, and it grew a [`CacheStanding`] — what the
-/// cache knows about its value, as [`PointCache`]'s variants say it of a point.
+/// The geometry's own questions (`distance`, `normal_at`, …) are [`nacre_geom::Surface`]'s; ask
+/// them of [`SurfaceCache::to_geom`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct SurfaceCache {
-    surface: nacre_geom::Surface,
-    standing: CacheStanding,
+pub enum SurfaceCache {
+    /// A plane's cache.
+    Plane {
+        /// The plane realized: an anchor and a unit normal facing the way the truth's sense says.
+        plane: nacre_geom::Plane,
+        /// The plane's canonical name — primitive integer coefficients with a fixed sign, the same
+        /// for every statement of one plane ([`nacre_exact::PlaneName`]), stated in the frame the
+        /// plane's truth is written in (the world for an unmoved plane, the frame before its motion
+        /// for a moved one). `None` for a plane through three vertices that no one frame places —
+        /// vertices on parts moved differently.
+        name: Option<nacre_exact::PlaneName>,
+        /// What `plane` knows about its value.
+        standing: CacheStanding,
+    },
+    /// A cylinder's cache.
+    Cylinder {
+        /// The cylinder realized: a point and unit direction of its axis, a unit `ref_dir` across
+        /// it, and its radius.
+        cylinder: nacre_geom::Cylinder,
+        /// What `cylinder` knows about its value.
+        standing: CacheStanding,
+    },
+}
+
+impl SurfaceCache {
+    /// The realized plane, or `None` for a cylinder.
+    #[inline]
+    pub fn plane(&self) -> Option<&nacre_geom::Plane> {
+        match self {
+            SurfaceCache::Plane { plane, .. } => Some(plane),
+            SurfaceCache::Cylinder { .. } => None,
+        }
+    }
+
+    /// The realized cylinder, or `None` for a plane.
+    #[inline]
+    pub fn cylinder(&self) -> Option<&nacre_geom::Cylinder> {
+        match self {
+            SurfaceCache::Cylinder { cylinder, .. } => Some(cylinder),
+            SurfaceCache::Plane { .. } => None,
+        }
+    }
+
+    /// A plane's canonical name; `None` for a cylinder and for a plane that has none.
+    #[inline]
+    pub fn name(&self) -> Option<&nacre_exact::PlaneName> {
+        match self {
+            SurfaceCache::Plane { name, .. } => name.as_ref(),
+            SurfaceCache::Cylinder { .. } => None,
+        }
+    }
+
+    /// What the cache knows about its geometry ([`CacheStanding`]).
+    #[inline]
+    pub fn standing(&self) -> CacheStanding {
+        match self {
+            SurfaceCache::Plane { standing, .. } | SurfaceCache::Cylinder { standing, .. } => {
+                *standing
+            }
+        }
+    }
+
+    /// The realized geometry as a [`nacre_geom::Surface`] — for its own questions (`distance`,
+    /// `normal_at`, …) and for a consumer that takes any surface.
+    #[inline]
+    pub fn to_geom(&self) -> nacre_geom::Surface {
+        match self {
+            SurfaceCache::Plane { plane, .. } => nacre_geom::Surface::Plane(*plane),
+            SurfaceCache::Cylinder { cylinder, .. } => nacre_geom::Surface::Cylinder(*cylinder),
+        }
+    }
+
+    /// **Replace the geometry and its standing in place** — the writers that hold a
+    /// `nacre_geom::Surface` (a realization, a derivation) come through here, so a rewrite of the
+    /// geometry cannot drop the plane's name: the name is not a parameter.
+    ///
+    /// # Panics
+    ///
+    /// If `figure` is not the kind of surface this cache is — a surface's cache keeps its kind,
+    /// as its truth does.
+    pub(crate) fn refigure(&mut self, figure: nacre_geom::Surface, standing: CacheStanding) {
+        match (self, figure) {
+            (
+                SurfaceCache::Plane {
+                    plane,
+                    standing: was,
+                    ..
+                },
+                nacre_geom::Surface::Plane(p),
+            ) => {
+                *plane = p;
+                *was = standing;
+            }
+            (
+                SurfaceCache::Cylinder {
+                    cylinder,
+                    standing: was,
+                },
+                nacre_geom::Surface::Cylinder(c),
+            ) => {
+                *cylinder = c;
+                *was = standing;
+            }
+            (cache, figure) => panic!("a surface's cache keeps its kind: {cache:?} <- {figure:?}"),
+        }
+    }
 }
 
 /// **What a surface's cache knows about its value** — [`PointCache`]'s three variants, for a cache

@@ -270,7 +270,7 @@ fn a_pinched_caps_outer_triangle_faces_out() {
         .collect();
     assert_eq!(pinched.len(), 1, "the top cap, pinched at the groove's tip");
     let face = m.face(pinched[0]);
-    let nacre_geom::Surface::Plane(plane) = m.surface_cache(face.surface) else {
+    let Some(plane) = m.surface_cache(face.surface).plane() else {
         panic!("a cap is planar");
     };
     let out = plane.normal() * f64::from(face.orientation.sign());

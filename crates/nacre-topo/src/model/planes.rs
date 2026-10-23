@@ -96,9 +96,9 @@ impl Model {
     /// **Interning, once — the funnel every surface door calls.**
     ///
     /// A door differs only in *what it states*. Everything after that — the key, the already-issued
-    /// reply and its `flipped`, the arena push, the side tables, the two counters — is here, so a
-    /// door cannot reach the arena without the table, and a new road cannot lose the counters (a
-    /// duplicated tail can drop `WIDE_PLANES` and `SEEDED_HITS`). The counters live here and not in
+    /// reply and its `flipped`, the arena push with its cache and name, the interning table, the two
+    /// counters — is here, so a door cannot reach the arena without the table, and a new road
+    /// cannot lose the counters (a duplicated tail can drop `WIDE_PLANES` and `SEEDED_HITS`). The counters live here and not in
     /// [`Model::surface_key`], which `validate` also calls.
     fn intern(&mut self, stated: Stated) -> (Handle<Surface>, bool) {
         let key = match &stated {

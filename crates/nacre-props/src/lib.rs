@@ -18,10 +18,10 @@
 //! truth/cache split, so f64 arithmetic here is appropriate.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-use nacre_geom::{Curve, Surface};
+use nacre_geom::Curve;
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Face, Loop, Model, Solid};
+use nacre_topo::{Face, Loop, Model, Solid, SurfaceCache};
 
 use std::f64::consts::PI;
 
@@ -45,7 +45,7 @@ pub struct MassProps {
 /// would be a name that lies.
 ///
 /// There is deliberately **no** `UnsupportedSurface`: the surface `match` is
-/// exhaustive over [`Surface`], so a new variant (NURBS, sphere…) is a compile
+/// exhaustive over [`SurfaceCache`], so a new variant (NURBS, sphere…) is a compile
 /// error here until it is handled — the same "new variant forces handling"
 /// idiom `Surface::distance` and `to_step` use.
 #[derive(Debug)]
@@ -137,7 +137,7 @@ pub struct FaceProps {
 pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Vector3> {
     let f = model.face(face);
     let sign = f64::from(f.orientation.sign());
-    Some(model.surface_cache(f.surface).normal_at(p)? * sign)
+    Some(model.surface_cache(f.surface).to_geom().normal_at(p)? * sign)
 }
 
 /// [`FaceProps`] of one face.
@@ -148,7 +148,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
     // evaluated numerically, and an exact normal would be rounded into the same product a line
     // later. Kind questions go to the truth; this one's answer is a number.
     match model.surface_cache(face.surface) {
-        Surface::Plane(plane) => {
+        SurfaceCache::Plane { plane, .. } => {
             let (area, centroid) = planar_region(model, face)?;
             Ok(FaceProps {
                 area,
@@ -156,7 +156,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
                 normal: Some(plane.normal() * sign),
             })
         }
-        Surface::Cylinder(cyl) => {
+        SurfaceCache::Cylinder { cylinder: cyl, .. } => {
             let m = lateral_moments(model, face, cyl)?;
             // The mean of `p = a₀ + z·axis + r·n̂(θ)` over the region: the axis point at the
             // mean axial station, plus `r·∬n̂ / ∬1` radially (exactly zero for a full band, whose
@@ -265,7 +265,7 @@ fn face_contribution(
     // The cache, for the same reason as `face_props`: the divergence theorem is being
     // evaluated in `f64`, so the realization is the right description to read.
     match model.surface_cache(face.surface) {
-        Surface::Plane(plane) => {
+        SurfaceCache::Plane { plane, .. } => {
             // Outer boundary, minus each inner loop (a hole): area and first
             // moment are additive, so both the area and the flux subtract the
             // hole's contribution (divergence theorem, n̂ constant on a plane).
@@ -273,7 +273,7 @@ fn face_contribution(
             let (area, centroid) = planar_region(model, face)?;
             Ok((area, normal.dot(centroid - reference) * area))
         }
-        Surface::Cylinder(cyl) => {
+        SurfaceCache::Cylinder { cylinder: cyl, .. } => {
             // With `p = a₀ + z·axis + r·n̂(θ)` and outward `sign·n̂`, `(p−R)·n̂ = r + (a₀−R)·n̂`
             // (the axial term drops: `axis·n̂ = 0`), so over the region
             //   ∮(p−R)·n̂_out dA = sign·r·( r·∬1 + (a₀−R)·∬n̂ ).

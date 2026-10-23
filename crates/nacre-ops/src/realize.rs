@@ -34,7 +34,8 @@ use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{
-    CacheStanding, Edge, EdgeGiven, Model, NamedMeet, PointCache, PrefixKey, Solid, Surface, Vertex,
+    CacheStanding, Edge, EdgeGiven, Model, NamedMeet, PointCache, PrefixKey, Solid, Surface,
+    SurfaceCache, Vertex,
 };
 use num_bigint::BigInt;
 
@@ -678,7 +679,7 @@ pub(crate) fn raise_surface_cache(
         return Some(now);
     }
     let (cache, standing) = surface_realization(model, h, budget)?;
-    if standing > now || surface_bits(&cache) != surface_bits(model.surface_cache(h)) {
+    if standing > now || surface_bits(&cache) != surface_bits(&model.surface_cache(h).to_geom()) {
         model.refine_surface_cache(h, cache, standing.max(now));
     }
     Some(standing)
@@ -736,7 +737,7 @@ pub(crate) fn surface_realization(
     budget: Budget,
 ) -> Option<(nacre_geom::Surface, CacheStanding)> {
     match (model.surface(h), model.surface_cache(h)) {
-        (Surface::Plane { .. }, nacre_geom::Surface::Plane(now)) => {
+        (Surface::Plane { .. }, SurfaceCache::Plane { plane: now, .. }) => {
             let (anchor, normal) = plane_realization(model, h, budget)?;
             let no_road = matches!(anchor, Half::NoRoad) || matches!(normal, Half::NoRoad);
             let got = [
@@ -758,7 +759,7 @@ pub(crate) fn surface_realization(
                 standing_of(&got, no_road),
             ))
         }
-        (Surface::Cylinder { def, motion }, nacre_geom::Surface::Cylinder(now)) => {
+        (Surface::Cylinder { def, motion }, SurfaceCache::Cylinder { cylinder: now, .. }) => {
             match cylinder_realization(model, def, *motion, budget) {
                 Half::Got(c) => Some((nacre_geom::Surface::Cylinder(c), CacheStanding::Realized)),
                 Half::Stopped => {
@@ -2265,7 +2266,7 @@ mod tests {
             );
             let hp = world_cylinder_hp(&m, &def, motion, 512).expect("the chain");
             let read = |v: [HpBounded; 3]| Realization(Arm::Approached(v)).to_f64().unwrap().0;
-            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(lateral) else {
+            let Some(cache) = m.surface_cache(lateral).cylinder() else {
                 unreachable!()
             };
             assert_eq!(
@@ -2552,7 +2553,7 @@ mod tests {
         )
         .unwrap();
         let h = push_cylinder_realized(&mut m, figure, wider, motion);
-        assert_eq!(m.surface_cache(h), &nacre_geom::Surface::Cylinder(figure));
+        assert_eq!(m.surface_cache(h).cylinder(), Some(&figure));
         for &v in &seams {
             assert!(
                 matches!(m.vertex_cache(v), PointCache::Ceiling { .. }),

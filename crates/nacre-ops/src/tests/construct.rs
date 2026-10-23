@@ -79,7 +79,7 @@ fn turned_cube_face(
         .iter()
         .find(|&&fh| {
             let f = m.face(fh);
-            let nacre_geom::Surface::Plane(pl) = m.surface_cache(f.surface) else {
+            let Some(pl) = m.surface_cache(f.surface).plane() else {
                 return false;
             };
             let out = pl.normal() * f64::from(f.orientation.sign());

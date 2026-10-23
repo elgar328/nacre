@@ -284,7 +284,7 @@ fn no_triangle_leaves_the_cylinder() {
         let budget = r * (1.0 - (step / 2.0).cos());
         for (_, tri) in t.triangles.iter() {
             let f = m.face(tri.face);
-            let Surface::Cylinder(cy) = m.surface_cache(f.surface) else {
+            let Some(cy) = m.surface_cache(f.surface).cylinder() else {
                 continue;
             };
             let (o, w) = (cy.axis().origin(), cy.axis().direction());
@@ -316,8 +316,8 @@ fn no_triangle_leaves_the_cylinder() {
 fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> Chart {
     let face = m.face(fh);
     match m.surface_cache(face.surface) {
-        Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
-        Surface::Cylinder(c) => {
+        nacre_topo::SurfaceCache::Plane { plane: p, .. } => planar_chart(t, face, p).unwrap(),
+        nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => {
             cylinder_chart(t, m, cfg, face, c, whole_rims_cut(t, m, face, c).map(Some)).unwrap()
         }
     }
@@ -349,7 +349,7 @@ fn every_planar_face_meshes_about_its_own_normal() {
         if !reach.faces.contains(&fh) {
             continue;
         }
-        let Surface::Plane(plane) = m.surface_cache(face.surface) else {
+        let Some(plane) = m.surface_cache(face.surface).plane() else {
             continue;
         };
         let tris = &t.by_face[&fh];
@@ -418,7 +418,7 @@ fn a_chart_maps_back_to_the_point_it_flattened() {
                     chart.uv[i]
                 );
                 // And the parameters name the same point through the surface's own evaluator.
-                if let Surface::Cylinder(c) = m.surface_cache(m.face(fh).surface) {
+                if let Some(c) = m.surface_cache(m.face(fh).surface).cylinder() {
                     assert!((c.point_at(params[0], params[1]) - want).norm() <= 1e-9);
                 }
             }
@@ -768,7 +768,7 @@ fn whole_rims_are_cut_at_their_vertices_only_on_one_generator() {
         panic!("one lateral");
     };
     let face = m.face(fh);
-    let Surface::Cylinder(c) = m.surface_cache(face.surface) else {
+    let Some(c) = m.surface_cache(face.surface).cylinder() else {
         panic!("a cylinder");
     };
     let mut pre = Tessellation::default();
@@ -1143,7 +1143,7 @@ fn a_band_cut_on_a_closed_rims_closing_step_appends_to_its_polyline() {
     let reach = m.reachable();
     sample_live_edges(&mut t, &m, &cfg, &reach);
     let face = m.face(fh).clone();
-    let Surface::Cylinder(cyl) = m.surface_cache(face.surface) else {
+    let Some(cyl) = m.surface_cache(face.surface).cylinder() else {
         panic!("a lateral");
     };
     let traced: Vec<_> = std::iter::once(&face.outer)
@@ -1502,7 +1502,7 @@ fn drawn_right(m: &Model, name: &str) -> Tessellation {
     for (&fh, tris) in &t.by_face {
         let props = nacre_props::face_props(m, fh).expect("a face's props");
         match (m.surface_cache(m.face(fh).surface), props.normal) {
-            (Surface::Plane(_), Some(n)) => {
+            (nacre_topo::SurfaceCache::Plane { .. }, Some(n)) => {
                 for &h in tris {
                     let p = t.triangles.get(h).vertices.map(|v| t.vertices.get(v).pos);
                     let facing = (p[1] - p[0]).cross(p[2] - p[0]).dot(n);
@@ -1512,11 +1512,13 @@ fn drawn_right(m: &Model, name: &str) -> Tessellation {
                     );
                 }
             }
-            (Surface::Cylinder(cyl), _) => {
+            (nacre_topo::SurfaceCache::Cylinder { cylinder: cyl, .. }, _) => {
                 let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
                 slack += props.area.abs() * cfg.tol.min(cyl.radius() * (1.0 - turn));
             }
-            (Surface::Plane(_), None) => panic!("{name}: a planar face without a normal"),
+            (nacre_topo::SurfaceCache::Plane { .. }, None) => {
+                panic!("{name}: a planar face without a normal")
+            }
         }
     }
     let solids: f64 = m

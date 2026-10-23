@@ -537,7 +537,7 @@ fn feature(
 /// way of pointing at a face, not a judgment.
 fn facing_and_mean(m: &Model, f: Handle<Face>) -> (Vector3, Point3) {
     let face = m.face(f);
-    let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+    let Some(pl) = m.surface_cache(face.surface).plane() else {
         panic!("a feature's cap is planar")
     };
     let pts: Vec<[f64; 3]> = face

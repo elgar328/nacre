@@ -127,11 +127,11 @@ fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &m.shell(sh).faces {
             match m.surface_cache(m.face(fh).surface) {
-                nacre_geom::Surface::Plane(pl) => {
+                nacre_topo::SurfaceCache::Plane { plane: pl, .. } => {
                     let (o, n) = (pl.origin().as_array(), pl.normal().as_array());
                     bits.push([o[0], o[1], o[2], n[0], n[1], n[2]].map(f64::to_bits));
                 }
-                nacre_geom::Surface::Cylinder(_) => {}
+                nacre_topo::SurfaceCache::Cylinder { .. } => {}
             }
         }
     }
@@ -225,7 +225,9 @@ fn surface_audit(m: &Model) -> Vec<String> {
         };
         SURFACES[slot].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let agrees = match nacre_ops::realize_surface_cache(m, h) {
-            Some((cache, want)) => want == standing && bits(&cache) == bits(m.surface_cache(h)),
+            Some((cache, want)) => {
+                want == standing && bits(&cache) == bits(&m.surface_cache(h).to_geom())
+            }
             None => standing == nacre_topo::CacheStanding::Unrealized,
         };
         if !agrees {
@@ -358,7 +360,7 @@ fn line_audit(m: &Model) -> Vec<String> {
                 } else {
                     s1
                 };
-                let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+                let Some(cc) = m.surface_cache(cyl).cylinder() else {
                     unreachable!("a cylinder truth has a cylinder cache")
                 };
                 bump(1);
@@ -395,7 +397,7 @@ fn circle_audit(m: &Model) -> (Vec<String>, Vec<String>) {
             nacre_topo::Surface::Cylinder { .. } => (s0, s1),
             nacre_topo::Surface::Plane { .. } => (s1, s0),
         };
-        let nacre_geom::Surface::Cylinder(cc) = m.surface_cache(cyl) else {
+        let Some(cc) = m.surface_cache(cyl).cylinder() else {
             unreachable!("a circle edge has a cylinder carrier")
         };
         let bits = |v: nacre_math::Vector3| v.as_array().map(f64::to_bits);

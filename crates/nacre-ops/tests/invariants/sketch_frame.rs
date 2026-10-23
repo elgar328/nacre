@@ -259,7 +259,7 @@ fn face_sketch_frame_is_the_frame_its_extrude_leaves_behind() {
             let z = |fh| {
                 let f = m.face(fh);
                 let p = match m.surface_cache(f.surface) {
-                    nacre_geom::Surface::Plane(p) => *p,
+                    nacre_topo::SurfaceCache::Plane { plane: p, .. } => *p,
                     _ => unreachable!(),
                 };
                 let sgn = f64::from(f.orientation.sign());

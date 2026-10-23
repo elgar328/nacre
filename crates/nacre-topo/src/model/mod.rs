@@ -38,7 +38,6 @@ impl Model {
             motion_ids: HashMap::new(),
             chain_affines: Vec::new(),
             given_by_pair: HashMap::new(),
-            surface_name: HashMap::new(),
             interned: HashMap::new(),
             vertices: Store::default(),
             edges: Store::default(),

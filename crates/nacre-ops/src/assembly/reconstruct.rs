@@ -152,7 +152,7 @@ pub(crate) fn reconstruct(
                 let centre = nacre_geom::intersect::line_plane(
                     &realized.axis(),
                     match model.surface_cache(plane) {
-                        nacre_geom::Surface::Plane(p) => p,
+                        nacre_topo::SurfaceCache::Plane { plane: p, .. } => p,
                         // **Spelled out rather than `_`, so a third surface kind is a compile
                         // error here.**
                         //
@@ -167,7 +167,7 @@ pub(crate) fn reconstruct(
                         // The reason's wording ("three planes that should meet do not") does
                         // not describe a non-planar cap; it is harmless only because nothing
                         // reaches it. An author who makes it reachable owes it a real name.
-                        nacre_geom::Surface::Cylinder(_) => {
+                        nacre_topo::SurfaceCache::Cylinder { .. } => {
                             return Err(reject(RejectReason::ThreePlanes));
                         }
                     },

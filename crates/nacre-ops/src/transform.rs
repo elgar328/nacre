@@ -590,7 +590,7 @@ fn transform_solid(
             continue;
         }
         let moved = motion
-            .surface(model.surface_cache(s), offset)
+            .surface(&model.surface_cache(s).to_geom(), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let src_truth = model.surface(s).clone();
         // **A motion that fixes this plane restates nothing — the source statement already

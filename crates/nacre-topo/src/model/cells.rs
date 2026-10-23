@@ -335,15 +335,15 @@ impl Model {
             self.surface_cache(surfaces[0]),
             self.surface_cache(surfaces[1]),
         ) {
-            (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => line(
+            (SurfaceCache::Plane { .. }, SurfaceCache::Plane { .. }) => line(
                 self.line_direction_cache(surfaces)
                     .or_else(|| given(self).direction),
             ),
-            (nacre_geom::Surface::Plane(p), nacre_geom::Surface::Cylinder(c))
-            | (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Plane(p)) => {
+            (SurfaceCache::Plane { plane: p, .. }, SurfaceCache::Cylinder { cylinder: c, .. })
+            | (SurfaceCache::Cylinder { cylinder: c, .. }, SurfaceCache::Plane { plane: p, .. }) => {
                 let (plane, cyl) = match self.surface_cache(surfaces[0]) {
-                    nacre_geom::Surface::Plane(_) => (surfaces[0], surfaces[1]),
-                    nacre_geom::Surface::Cylinder(_) => (surfaces[1], surfaces[0]),
+                    SurfaceCache::Plane { .. } => (surfaces[0], surfaces[1]),
+                    SurfaceCache::Cylinder { .. } => (surfaces[1], surfaces[0]),
                 };
                 match self.plane_cylinder_relation(plane, cyl) {
                     None => Err(EdgeDecline::Unstated),
@@ -384,7 +384,7 @@ impl Model {
                     }
                 }
             }
-            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_)) => {
+            (SurfaceCache::Cylinder { .. }, SurfaceCache::Cylinder { .. }) => {
                 Err(EdgeDecline::TwoCylinders)
             }
         }

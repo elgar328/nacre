@@ -17,7 +17,7 @@ mod polygon;
 use nacre_geom::{Circle, Curve, Cylinder, Surface};
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
+use nacre_topo::{Edge, Face, Loop, Model, Solid, SurfaceCache, Vertex};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -598,10 +598,10 @@ fn bridge_shared_edges(
     let mut cands: Vec<Cand> = Vec::new();
     for &(fh, face) in live {
         let plane = match model.surface_cache(face.surface) {
-            Surface::Plane(plane) => plane,
+            nacre_topo::SurfaceCache::Plane { plane, .. } => plane,
             // Bridges are defined on planar charts only. An arm rather than an `else`, so a third
             // surface kind is a compile error here and its author decides whether it bridges.
-            Surface::Cylinder(_) => continue,
+            nacre_topo::SurfaceCache::Cylinder { .. } => continue,
         };
         // The boundary as it stands once its crossing chords are cut apart — the touches are read
         // off that, and the face's own triangulation will name a chart it refuses.
@@ -757,7 +757,7 @@ pub struct Leaning {
 pub fn leaning_laterals(model: &Model, t: &Tessellation, limit_deg: f64) -> Vec<Leaning> {
     let mut out = Vec::new();
     for (triangle, tri) in t.triangles.iter() {
-        let surface = model.surface_cache(model.face(tri.face).surface);
+        let surface = model.surface_cache(model.face(tri.face).surface).to_geom();
         if !matches!(surface, Surface::Cylinder(_)) {
             continue;
         }
@@ -1313,7 +1313,7 @@ fn cut_seamless_bands(
     use std::f64::consts::PI;
     let mut cuts = HashMap::new();
     for &(fh, face) in live {
-        let Surface::Cylinder(cyl) = model.surface_cache(face.surface) else {
+        let Some(cyl) = model.surface_cache(face.surface).cylinder() else {
             continue;
         };
         let loops: Vec<&Loop> = std::iter::once(&face.outer).chain(&face.inner).collect();
@@ -1791,19 +1791,21 @@ fn triangulate_face(
         map,
         interior,
     } = match surface {
-        Surface::Plane(plane) => planar_chart(t, face, plane)?,
-        Surface::Cylinder(cyl) => cylinder_chart(t, model, cfg, face, cyl, cut)?,
+        SurfaceCache::Plane { plane, .. } => planar_chart(t, face, plane)?,
+        SurfaceCache::Cylinder { cylinder, .. } => {
+            cylinder_chart(t, model, cfg, face, cylinder, cut)?
+        }
     };
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let boundary = handles.len();
     // A vertex shared by two rings is the bridge pre-pass's doing (a curved ring's sample put
     // into the straight edge it touches); one ring passing a vertex twice is a pinched face.
     let revisits = match surface {
-        Surface::Plane(_) => shared_vertices(&handles, &rings),
+        SurfaceCache::Plane { .. } => shared_vertices(&handles, &rings),
         // Only on a plane is a shared handle one point in the chart — a band's cut point is the
         // same handle at two `θ`s. An arm rather than a boolean, so a third surface kind is a
         // compile error here rather than a silent "no bridges".
-        Surface::Cylinder(_) => Vec::new(),
+        SurfaceCache::Cylinder { .. } => Vec::new(),
     };
     let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &revisits)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
@@ -1818,7 +1820,7 @@ fn triangulate_face(
             },
         }));
     }
-    within_budget(t, cfg, surface, &handles, &rings_used, &tris)?;
+    within_budget(t, cfg, &surface.to_geom(), &handles, &rings_used, &tris)?;
     for tri in tris {
         push_tri(t, fh, tri.map(|i| handles[i]));
     }

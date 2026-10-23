@@ -306,7 +306,7 @@ fn a_negative_extrude_sweeps_below_its_plane() {
     );
     let outward = |f| {
         let face = m.face(f);
-        let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
+        let Some(pl) = m.surface_cache(face.surface).plane() else {
             unreachable!("a cap is planar")
         };
         (pl.normal() * f64::from(face.orientation.sign())).as_array()
@@ -734,7 +734,7 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
         .filter_map(|i| m.face_handle_at(i))
         .map(|h| (h, m.face(h)))
         .filter_map(|(_, f)| match m.surface_cache(f.surface) {
-            nacre_geom::Surface::Cylinder(c) => Some(c.radius()),
+            nacre_topo::SurfaceCache::Cylinder { cylinder: c, .. } => Some(c.radius()),
             _ => None,
         })
         .collect();

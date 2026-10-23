@@ -240,7 +240,7 @@ impl Model {
         let out = self.world_cylinder_def_unchecked(surf)?;
         debug_assert!(
             {
-                let nacre_geom::Surface::Cylinder(cache) = self.surface_cache(surf) else {
+                let Some(cache) = self.surface_cache(surf).cylinder() else {
                     unreachable!("a cylinder truth is pushed beside a cylinder cache")
                 };
                 let o = Point3::from_array(out.origin().map(|r| r.to_f64()));

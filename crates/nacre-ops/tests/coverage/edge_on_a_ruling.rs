@@ -244,7 +244,7 @@ fn drawn(c: &Case<'_, '_>, m: &Model, solids: &[Handle<Solid>], volume: f64) {
         let solid = m.solid(s);
         for &shell in std::iter::once(&solid.outer).chain(&solid.cavities) {
             for &f in &m.shell(shell).faces {
-                if let nacre_geom::Surface::Cylinder(cyl) = m.surface_cache(m.face(f).surface) {
+                if let Some(cyl) = m.surface_cache(m.face(f).surface).cylinder() {
                     let turn = (cfg.max_angle_deg.to_radians() / 2.0).cos();
                     let sagitta = cfg.tol.min(cyl.radius() * (1.0 - turn));
                     let area = nacre_props::face_props(m, f)

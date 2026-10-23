@@ -71,7 +71,7 @@ impl Model {
     /// let _ = m.surfaces.len(); // private field — read through `surface_cache`/`surface_count`
     /// ```
     #[inline]
-    pub fn surface_cache(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
+    pub fn surface_cache(&self, h: Handle<Surface>) -> &SurfaceCache {
         #[cfg(debug_assertions)]
         Self::debug_guard(&self.surfaces, h);
         debug_assert_eq!(
@@ -80,7 +80,7 @@ impl Model {
             "surface cache out of step with the surface store — push surfaces through \
              Model::push_plane / push_cylinder"
         );
-        &self.surface_cache[h.index() as usize].surface
+        &self.surface_cache[h.index() as usize]
     }
 
     /// **A plane's canonical name** — primitive integer coefficients with a fixed sign, the same
@@ -95,7 +95,7 @@ impl Model {
     pub fn surface_name(&self, h: Handle<Surface>) -> Option<&nacre_exact::PlaneName> {
         #[cfg(debug_assertions)]
         Self::debug_guard(&self.surfaces, h);
-        self.surface_name.get(&h)
+        self.surface_cache[h.index() as usize].name()
     }
 
     /// What a surface's cache knows about its value ([`CacheStanding`]) — the cache's other piece.
@@ -103,16 +103,20 @@ impl Model {
     pub fn surface_cache_standing(&self, h: Handle<Surface>) -> CacheStanding {
         #[cfg(debug_assertions)]
         Self::debug_guard(&self.surfaces, h);
-        self.surface_cache[h.index() as usize].standing
+        self.surface_cache[h.index() as usize].standing()
     }
 
     /// **Raise a surface's cache** — the second writer of the surface cache, the twin of
     /// [`Model::refine_vertex_cache`]: the cache can only come to know more ([`CacheStanding`]'s
     /// order), and a `Realized` cache is never written — it is already the truth's realization.
-    /// The new value must be the same kind of surface.
+    /// A plane keeps its name.
     ///
     /// **Anything derived from this surface's cache is now stale** — a rim's frame is its
     /// cylinder cache's — so the caller re-derives the edges ([`Model::rebuild_edge_cache`]).
+    ///
+    /// # Panics
+    ///
+    /// If `surface` is not the kind of surface `h` is.
     pub fn refine_surface_cache(
         &mut self,
         h: Handle<Surface>,
@@ -123,16 +127,11 @@ impl Model {
         Self::debug_guard(&self.surfaces, h);
         let slot = &mut self.surface_cache[h.index() as usize];
         debug_assert!(
-            slot.standing < CacheStanding::Realized && standing >= slot.standing,
+            slot.standing() < CacheStanding::Realized && standing >= slot.standing(),
             "a surface cache only comes to know more: {:?} -> {standing:?}",
-            slot.standing
+            slot.standing()
         );
-        debug_assert_eq!(
-            std::mem::discriminant(&slot.surface),
-            std::mem::discriminant(&surface),
-            "a surface's cache keeps its kind"
-        );
-        *slot = SurfaceCache { surface, standing };
+        slot.refigure(surface, standing);
     }
 
     /// How many surfaces the arena holds — live and superseded alike. Handle-validity checks

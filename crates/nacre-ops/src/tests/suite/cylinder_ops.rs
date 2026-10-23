@@ -403,7 +403,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
 fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     let outward = |m: &Model, fh: Handle<Face>| -> [f64; 3] {
         let f = m.face(fh);
-        let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
+        let Some(p) = m.surface_cache(f.surface).plane() else {
             panic!("a cap is planar")
         };
         let s = f.orientation.sign() as f64;
