@@ -443,7 +443,10 @@ fn an_ordinary_band_is_offered_no_interior_points() {
         while let Some(fh) = m.face_handle_at(i) {
             i += 1;
             let face = m.face(fh);
-            if !matches!(m.surface_cache(face.surface), Surface::Cylinder(_)) {
+            if !matches!(
+                m.surface(face.surface),
+                nacre_topo::Surface::Cylinder { .. }
+            ) {
                 continue;
             }
             let chart = chart_of(&t, &m, &cfg, fh);
@@ -569,7 +572,12 @@ fn a_band_cut_at_both_rims_meshes_as_its_surface() {
                 .faces
                 .iter()
                 .copied()
-                .find(|&f| matches!(m.surface_cache(m.face(f).surface), Surface::Cylinder(_)))
+                .find(|&f| {
+                    matches!(
+                        m.surface(m.face(f).surface),
+                        nacre_topo::Surface::Cylinder { .. }
+                    )
+                })
                 .expect("one lateral face");
             let face = m.face(lateral);
             // The premise: the shape this lock is about — two wrapping rims (and the hole) as
@@ -661,7 +669,12 @@ fn laterals(m: &Model, solid: Handle<nacre_topo::Solid>) -> Vec<Handle<Face>> {
     std::iter::once(s.outer)
         .chain(s.cavities.iter().copied())
         .flat_map(|sh| m.shell(sh).faces.clone())
-        .filter(|&f| matches!(m.surface_cache(m.face(f).surface), Surface::Cylinder(_)))
+        .filter(|&f| {
+            matches!(
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Cylinder { .. }
+            )
+        })
         .collect()
 }
 
@@ -1410,8 +1423,8 @@ fn a_lattice_point_on_the_boundary_never_enters_the_mesh() {
             .iter()
             .filter(|(_, tri)| {
                 matches!(
-                    m.surface_cache(m.face(tri.face).surface),
-                    Surface::Cylinder(_)
+                    m.surface(m.face(tri.face).surface),
+                    nacre_topo::Surface::Cylinder { .. }
                 )
             })
             .count()

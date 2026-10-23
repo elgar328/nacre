@@ -673,7 +673,7 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
             for fh in m.shell(sh).faces.clone() {
                 total += 1;
                 let f = m.face(fh);
-                if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)) {
+                if matches!(m.surface(f.surface), nacre_topo::Surface::Cylinder { .. }) {
                     lateral += 1;
                     // Holes only: an inner loop that is one closed edge is the upper rim.
                     let rim = |l: &nacre_topo::Loop| {

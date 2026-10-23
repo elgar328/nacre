@@ -611,7 +611,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .faces
             .iter()
             .map(|&fh| m.face(fh).surface)
-            .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
             .expect("the boss has a lateral");
         m.world_cylinder_def(surf).expect("a world cylinder")
     };
@@ -705,7 +705,7 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
         .faces
         .iter()
         .map(|&fh| m.face(fh).surface)
-        .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
+        .find(|&h| matches!(m.surface(h), nacre_topo::Surface::Cylinder { .. }))
         .expect("the boss has a lateral");
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);

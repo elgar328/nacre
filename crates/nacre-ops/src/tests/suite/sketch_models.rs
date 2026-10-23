@@ -212,8 +212,8 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .copied()
         .find(|&f| {
             matches!(
-                m.surface_cache(m.face(f).surface),
-                nacre_geom::Surface::Cylinder(_)
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Cylinder { .. }
             )
         })
         .expect("a bore face");
@@ -228,8 +228,8 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .filter(|&&f| {
             m.face(f).inner.len() == 1
                 && matches!(
-                    m.surface_cache(m.face(f).surface),
-                    nacre_geom::Surface::Plane(_)
+                    m.surface(m.face(f).surface),
+                    nacre_topo::Surface::Plane { .. }
                 )
         })
         .count();
@@ -269,8 +269,8 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface_cache(m.face(f).surface),
-                nacre_geom::Surface::Cylinder(_)
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Cylinder { .. }
             )
         })
         .map(|&f| m.face(f).orientation == Orientation::Forward)
@@ -459,8 +459,8 @@ fn a_slot_extrudes_with_tangent_pierce_corners() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface_cache(m.face(f).surface),
-                nacre_geom::Surface::Cylinder(_)
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Cylinder { .. }
             )
         })
         .count();

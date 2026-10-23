@@ -444,7 +444,7 @@ fn a_rotated_cylinder_records_its_motion() {
         .faces
         .iter()
         .map(|&f| m.face(f).surface)
-        .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
+        .find(|&su| matches!(m.surface(su), nacre_topo::Surface::Cylinder { .. }))
         .expect("a cylinder keeps its lateral face");
     // An inexact turn records a node, and the def is carried **verbatim** — the recorded
     // node states its cylinder before the motion (the plane rule).
@@ -499,7 +499,7 @@ fn a_pierce_definition_swap_toggles_its_root() {
     let lateral = faces
         .iter()
         .map(|&f| m.face(f).surface)
-        .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
+        .find(|&su| matches!(m.surface(su), nacre_topo::Surface::Cylinder { .. }))
         .expect("lateral");
     let bottom = m.seeded_plane(Axis::Z); // the z = 0 cap interned onto the world seed
     let x0 = m.seeded_plane(Axis::X);
@@ -631,7 +631,7 @@ fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
         .faces
         .iter()
         .map(|&f| m.face(f).surface)
-        .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
+        .find(|&su| matches!(m.surface(su), nacre_topo::Surface::Cylinder { .. }))
         .expect("a cylinder keeps its lateral face");
     // A 90°-family turn is exact: nothing is recorded, and the def rides the very
     // transport the probe checked — origin through `point_rat`, directions through

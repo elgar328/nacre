@@ -75,7 +75,12 @@ fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
     *m.shell(shell)
         .faces
         .iter()
-        .find(|&&fh| matches!(m.surface_cache(m.face(fh).surface), Surface::Cylinder(_)))
+        .find(|&&fh| {
+            matches!(
+                m.surface(m.face(fh).surface),
+                nacre_topo::Surface::Cylinder { .. }
+            )
+        })
         .unwrap()
 }
 

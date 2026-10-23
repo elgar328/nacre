@@ -89,7 +89,12 @@ fn a_free_cylinders_wall_faces_away_from_its_axis() {
         .shell(shell)
         .faces
         .iter()
-        .find(|&&fh| matches!(m.surface_cache(m.face(fh).surface), Surface::Cylinder(_)))
+        .find(|&&fh| {
+            matches!(
+                m.surface(m.face(fh).surface),
+                nacre_topo::Surface::Cylinder { .. }
+            )
+        })
         .expect("a lateral face");
     assert!(
         face_props(&m, wall).unwrap().normal.is_none(),

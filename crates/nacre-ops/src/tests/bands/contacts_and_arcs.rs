@@ -1058,7 +1058,7 @@ fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
             .filter_map(|i| m.edge_handle_at(i))
             .map(|h| (h, m.edge(h)))
             .collect();
-        let is_cyl = |sh| matches!(m.surface_cache(sh), nacre_geom::Surface::Cylinder(_));
+        let is_cyl = |sh| matches!(m.surface(sh), nacre_topo::Surface::Cylinder { .. });
         // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral).
         let on_circle = |e: &nacre_topo::Edge| is_cyl(e.surfaces[0]) != is_cyl(e.surfaces[1]);
 
@@ -1215,7 +1215,7 @@ fn the_bands_loop_is_one_continuous_cycle() {
         // number of half-edges, no edge walked twice.
         let bands: Vec<_> = garbage
             .iter()
-            .filter(|(_, f)| matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)))
+            .filter(|(_, f)| matches!(m.surface(f.surface), nacre_topo::Surface::Cylinder { .. }))
             .collect();
         assert_eq!(bands.len(), 1, "one band face");
         let band = bands[0].1;

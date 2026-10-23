@@ -706,8 +706,8 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
             .iter()
             .find(|&&fh| {
                 matches!(
-                    m.surface_cache(m.face(fh).surface),
-                    nacre_geom::Surface::Cylinder(_)
+                    m.surface(m.face(fh).surface),
+                    nacre_topo::Surface::Cylinder { .. }
                 )
             })
             .expect("a cylindrical wall");

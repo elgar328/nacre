@@ -574,8 +574,8 @@ impl Feature {
     pub fn cap_face(&self, m: &Model) -> Handle<Face> {
         let planar = |f: Handle<Face>| {
             matches!(
-                m.surface_cache(m.face(f).surface),
-                nacre_geom::Surface::Plane(_)
+                m.surface(m.face(f).surface),
+                nacre_topo::Surface::Plane { .. }
             )
         };
         let near = |f: Handle<Face>| -> Option<f64> {

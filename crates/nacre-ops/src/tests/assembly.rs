@@ -35,8 +35,8 @@ mod region_tests {
             .copied()
             .filter(|&f| {
                 matches!(
-                    m.surface_cache(m.face(f).surface),
-                    nacre_geom::Surface::Cylinder(_)
+                    m.surface(m.face(f).surface),
+                    nacre_topo::Surface::Cylinder { .. }
                 )
             })
             .collect();
