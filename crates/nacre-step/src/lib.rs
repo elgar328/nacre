@@ -3,15 +3,13 @@
 //! [`write_step`] is a thin **adapter**: it translates a kernel [`Model`] into
 //! AP242 entities and delegates serialization to `brep-to-step`, a shape-only
 //! STEP writer that streams the file to any [`std::io::Write`]; [`to_step`] and
-//! [`to_step_solids`] return the file as text. The rest of the kernel is
-//! backend-agnostic — the writer is confined to this crate, the same isolation
-//! used for the OCCT helper protocol.
+//! [`to_step_solids`] return the file as text. The writer is confined to this
+//! crate; the rest of the kernel knows no STEP.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
 //! `Curve::{Line, Circle}` (a whole cylinder: two seam vertices, two full-circle rims, and a
-//! lateral bounded by those two rims — one its outer bound, the other an inner one). The
-//! surface/curve `match`es stay exhaustive, so future variants (sphere, NURBS)
-//! force a compile error here. AP242 Ed2 is stamped by the writer.
+//! lateral bounded by those two rims — one its outer bound, the other an inner one). AP242 Ed2 is
+//! stamped by the writer.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use brep_to_step::{
@@ -236,7 +234,8 @@ fn build_edge<W: Write>(
     let [v0, v1] = edge.vertices;
     // A line carries its cached direction — the truth's where the truth names one
     // (`Model::derive_edge_curve`) — written bit for bit; a circle carries its own frame.
-    // A whole rim has v0 == v1, giving a closed STEP circle.
+    // A whole rim has v0 == v1, giving a closed STEP circle. Exhaustive like the surface match:
+    // a new curve variant is a compile error here.
     let curve = match model.edge_curve(eh) {
         Curve::Line(l) => StepCurve::LineAlong(l.direction().as_array()),
         Curve::Circle(c) => StepCurve::Circle {

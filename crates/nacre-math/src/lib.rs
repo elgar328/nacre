@@ -8,8 +8,8 @@
 //! Scope boundaries:
 //! - **Scalar is concrete `f64`, not generic.** Extended precision does not live here:
 //!   exact values are `nacre-exact`'s `Rat`, and a coordinate that needs more than
-//!   `f64` is realized from its definition at a chosen precision (`nacre-ops::realize`,
-//!   climbing with `astro-float`).
+//!   `f64` is realized from its definition at a chosen precision
+//!   (`nacre_ops::realize_vertex`).
 //! - **No transforms.** Rigid motions are exact and live in `nacre-exact` (`Isometry`).
 //! - **Inputs are assumed finite.** There is no NaN/inf guarding.
 //!

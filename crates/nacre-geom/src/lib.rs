@@ -10,13 +10,6 @@
 //! The types are [`Plane`], [`Line`], [`Circle`] (the full-circle carrier), [`Cylinder`], and
 //! the standalone rational B-spline evaluators [`NurbsCurve`]/[`NurbsSurface`]. A `Curve` or
 //! `Surface` variant is added with the producer that makes it.
-//!
-//! **This crate has no `Handle` and will not grow one.** A curve-intersection variant could
-//! not hold a `Handle<Surface>`: a handle names an arena entry, and the arena holds the surface's
-//! **truth** (`nacre_topo::Surface`, which carries a motion handle) — a type below topo cannot
-//! name it. What such a variant would want splits along the truth/cache line instead: *which two
-//! surfaces* is already an edge's truth, and the approximating
-//! spline with its error is the edge's cache.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod circle;

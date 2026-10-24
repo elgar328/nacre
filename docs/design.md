@@ -19,7 +19,7 @@
 ```
 nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre` 크레이트는 파사드(재수출 전용)
 ├── nacre-store      # typed-index 저장소: Store<T>/Handle<T> (기하·위상 무지, nacre-* 의존 없음)
-├── nacre-math       # 자체 선형대수: Point<D>·Vector<D>·변환 (nacre-* 의존 없음)
+├── nacre-math       # 자체 선형대수: Point<D>·Vector<D> (nacre-* 의존 없음)
 ├── nacre-exact      # 유리수·정수로 정확히 답할 수 있는 모든 것: Rat·Angle·Isometry·PlaneName·QuadVal·정확 술어 (nacre-* 의존 없음)
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
 ├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
