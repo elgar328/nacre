@@ -292,6 +292,16 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
 
 잠금 공백·API·성능·구조. 순서는 없다.
 
+### 공개 오류 타입이 `std::error::Error` 가 아니다
+
+파사드가 내보내는 오류 타입 일곱 — `ops::BoolError`·`OpError`·`SketchError`·`RealizeError`, `step::StepError`,
+`tess::TessError`, `props::PropsError` — 은 `Debug` 만 있고 `Display`·`std::error::Error` 가 없다(`Display` 는
+거절 이름인 `ops::RejectReason`·`ops::DeclineKind` 만 갖는다). 그래서 호출자는 `?` 로 `Box<dyn Error>`·`anyhow` 에
+넘기지 못하고, 파사드 예제(`examples/plate_with_bore.rs`)도 `expect` 로 쓴다. 정할 것: `Display` 가 무엇을 말하나 —
+사람용 문장은 kit 의 몫이고(design 「크레이트 구조」의 편의 레이어 문단 «에러의 사람용 매핑», kit `reason_sentence`),
+커널 쪽은 거절 이름과 위치(`RejectWhere`) 정도다 — 그리고 `source()` 사슬을 둘지(`StepError::Io` 처럼 다른 오류를
+싸는 변종).
+
 ### kit 은 소비마다 복사한다 — 모든 중간값이 산다
 
 kit(`nacre-kit` `build.rs`)은 값을 소비하기 전에 늘 복사하고 그 복사를 값의 새 묶음으로 둔다. 그래서 스크립트의
