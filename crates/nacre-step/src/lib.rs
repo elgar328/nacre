@@ -35,6 +35,25 @@ pub enum StepError {
     Io(io::Error),
 }
 
+impl std::fmt::Display for StepError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Backend(msg) => write!(f, "the STEP writer refused an input: {msg}"),
+            // The cause travels as `source`, so the line names only what failed.
+            Self::Io(_) => f.write_str("writing the STEP output failed"),
+        }
+    }
+}
+
+impl std::error::Error for StepError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Backend(_) => None,
+            Self::Io(e) => Some(e),
+        }
+    }
+}
+
 impl From<brep_to_step::Error> for StepError {
     fn from(e: brep_to_step::Error) -> Self {
         match e {

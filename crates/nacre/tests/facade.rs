@@ -280,3 +280,305 @@ fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
         "the datum a caller named must be sketchable: {out:?}"
     );
 }
+
+/// Every public error type of the facade is an `Error` a `Box<dyn Error>` — or an
+/// `anyhow::Error` — takes: `Send + Sync + 'static`. A listed type that loses a bound stops this
+/// file compiling; a new error type joins the list by hand.
+#[test]
+fn every_error_type_is_a_std_error() {
+    fn is_error<T: std::error::Error + Send + Sync + 'static>() {}
+    is_error::<nacre::ops::BoolError>();
+    is_error::<nacre::ops::OpError>();
+    is_error::<nacre::ops::SketchError>();
+    is_error::<nacre::ops::RealizeError>();
+    is_error::<nacre::ops::CacheDecline>();
+    is_error::<nacre::step::StepError>();
+    is_error::<nacre::tess::TessError>();
+    is_error::<nacre::props::PropsError>();
+    is_error::<nacre::topo::EdgeDecline>();
+    is_error::<nacre::geom::mixed::Undecidable>();
+}
+
+fn disk(m: &mut Model) -> Handle<Solid> {
+    let circle = Ring2d::circle(Point2::from_array([0.0, 0.0]), 1.0).unwrap();
+    extrude(m, from_paths(vec![circle]).unwrap().remove(0), 1.0)
+}
+
+/// What the doors actually return, read as text: a refused boolean says its class and reason,
+/// `OpError::Boolean` says the same line and adds no source, and a failed write hands its
+/// `io::Error` on as the source rather than repeating it.
+#[test]
+fn errors_from_the_doors_say_one_line_and_chain_their_cause() {
+    use std::error::Error;
+
+    // Two identical cylinders share one lateral surface — a boolean the kernel refuses by name.
+    let mut m = Model::new();
+    let (a, b) = (disk(&mut m), disk(&mut m));
+    let refused = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
+    let BoolError::Rejected { reason, .. } = refused else {
+        panic!("{refused:?}")
+    };
+    assert_eq!(reason, RejectReason::CylinderPairContact);
+    let line = refused.to_string();
+    assert!(
+        line.starts_with(&format!(
+            "boolean rejected, not supported: {}",
+            reason.as_str()
+        )),
+        "{line}"
+    );
+
+    let (c, d) = (disk(&mut m), disk(&mut m));
+    let wrapped = apply(
+        &mut m,
+        &Operation::Boolean {
+            kind: BoolKind::Fuse,
+            a: c,
+            b: d,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(wrapped, OpError::Boolean(_)), "{wrapped:?}");
+    assert_eq!(wrapped.to_string(), line);
+    assert!(wrapped.source().is_none());
+
+    struct Refuses;
+    impl std::io::Write for Refuses {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("disk full"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let solids: Vec<_> = m.live_solids().to_vec();
+    let Err(failed) = nacre::step::write_step(Refuses, &m, &solids, "") else {
+        panic!("a writer that refuses every byte cannot take a file")
+    };
+    assert!(
+        matches!(failed, nacre::step::StepError::Io(_)),
+        "{failed:?}"
+    );
+    assert_eq!(failed.to_string(), "writing the STEP output failed");
+    let cause = failed.source().expect("the io::Error is the source");
+    assert_eq!(
+        cause
+            .downcast_ref::<std::io::Error>()
+            .map(|e| e.to_string()),
+        Some("disk full".to_string())
+    );
+
+    let no_radius = Ring2d::circle(Point2::from_array([0.0, 0.0]), 0.0).unwrap_err();
+    assert_eq!(
+        no_radius.to_string(),
+        "the radius 0 at (0, 0) is not positive"
+    );
+    let curved = centroid(&m, solids[0]).unwrap_err();
+    assert_eq!(
+        curved.to_string(),
+        "the centroid is refused for a solid with a curved face"
+    );
+}
+
+/// `?` carries every door's error into one `Box<dyn Error>`, and the caller can still take it
+/// back out by type.
+#[test]
+fn question_mark_carries_kernel_errors_into_a_box() {
+    fn bored(m: &mut Model) -> Result<f64, Box<dyn std::error::Error>> {
+        let circle = Ring2d::circle(Point2::from_array([2.0, 2.0]), 1.0)?;
+        let plate = extrude(m, square(0.0, 4.0), 1.0);
+        let bore = extrude(m, from_paths(vec![circle])?.remove(0), 1.0);
+        let result = boolean(m, BoolKind::Cut, plate, bore)?;
+        Ok(mass_props(m, result[0])?.volume)
+    }
+    let volume = bored(&mut Model::new()).unwrap();
+    assert!(
+        (volume - (16.0 - std::f64::consts::PI)).abs() < 1e-9,
+        "{volume}"
+    );
+
+    fn fused(m: &mut Model) -> Result<(), Box<dyn std::error::Error>> {
+        let (a, b) = (disk(m), disk(m));
+        boolean(m, BoolKind::Fuse, a, b)?;
+        Ok(())
+    }
+    let boxed = fused(&mut Model::new()).unwrap_err();
+    assert!(
+        matches!(
+            boxed.downcast_ref::<BoolError>(),
+            Some(BoolError::Rejected { .. })
+        ),
+        "{boxed}"
+    );
+}
+
+/// The std convention for every variant's line: something to say, on one line, starting
+/// lowercase, with no closing full stop. The `match` in each `Display` is what makes a new
+/// variant choose its words; this list only reads how they are written.
+#[test]
+fn every_error_line_follows_the_std_convention() {
+    use nacre::ops::{CacheDecline, LogCell, ProfileRing, RealizeError, RejectWhere};
+    use nacre::props::PropsError;
+    use nacre::step::StepError;
+    use nacre::tess::TessError;
+    use nacre::topo::EdgeDecline;
+
+    let p = Point3::from_array([1.0, 2.0, 3.0]);
+    let rejected = |at| BoolError::Rejected {
+        reason: RejectReason::CylinderPairContact,
+        at,
+    };
+    let (outer, hole) = (ProfileRing::Outer, ProfileRing::Hole(0));
+    let xy = [1.0, 2.0];
+    let lines: Vec<String> = [
+        rejected(None).to_string(),
+        rejected(Some(RejectWhere::Point(p))).to_string(),
+        rejected(Some(RejectWhere::Segment([p, p]))).to_string(),
+        BoolError::InputNotLive.to_string(),
+    ]
+    .into_iter()
+    .chain(
+        [
+            OpError::DegenerateProfile,
+            OpError::ProfileOutsideDecimalWindow {
+                ring: hole,
+                point: 2,
+            },
+            OpError::SelfIntersectingProfile {
+                ring: outer,
+                edges: (0, 2),
+            },
+            OpError::ZeroLengthProfileEdge {
+                ring: outer,
+                edge: 1,
+            },
+            OpError::ProfileRingsMeet { a: outer, b: hole },
+            OpError::HoleNotInsideOuter { hole: 0 },
+            OpError::NestedHole { outer: 0, inner: 1 },
+            OpError::ProfileUndecidable,
+            OpError::ArcSweepNotQuarterTurn,
+            OpError::ArcsMeetAtVertex,
+            OpError::ZeroDistance,
+            OpError::DistOutsideDecimalWindow,
+            OpError::PlaneWithoutExactForm,
+            OpError::FrameOutsideDecimalWindow,
+            OpError::OriginNotOnPlane,
+            OpError::RefDirParallelToNormal,
+            OpError::DegenerateGeometry,
+            OpError::NonPlanarFace,
+            OpError::FaceNotInLiveSolid,
+            OpError::Boolean(BoolError::InputNotLive),
+            OpError::SolidNotLive,
+            OpError::OriginNotOnSolid,
+            OpError::MirrorNotPlanar,
+            OpError::ZeroOffset,
+            OpError::DuplicateVertex,
+            OpError::CollinearVertices,
+            OpError::VertexNotThreePlane,
+            OpError::VerticesInMixedFrames,
+            OpError::ThroughFrameUndecided,
+            OpError::LogHandleOutOfRange {
+                cell: LogCell::Surface,
+                index: 7,
+            },
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain(
+        [
+            SketchError::DegenerateRing { ring: 0 },
+            SketchError::RingsMeet { a: 0, b: 1 },
+            SketchError::UnevenRing {
+                vertices: 3,
+                edges: 2,
+            },
+            SketchError::ZeroLengthEdge { edge: 1 },
+            SketchError::RingSelfIntersects {
+                ring: 0,
+                at: [xy, xy],
+            },
+            SketchError::OutsideDecimalWindow { at: xy },
+            SketchError::ArcEndOffCircle {
+                center: xy,
+                start: xy,
+                end: xy,
+            },
+            SketchError::ArcRadiusMismatch {
+                center: xy,
+                start: xy,
+                stated: 1.5,
+            },
+            SketchError::ZeroLengthArc { at: xy },
+            SketchError::ArcTurnsOutOfRange { turns: 4 },
+            SketchError::NonPositiveRadius {
+                center: xy,
+                radius: -1.0,
+            },
+            SketchError::Undecidable,
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain(
+        [
+            RealizeError::NoMeet,
+            RealizeError::NoPoint,
+            RealizeError::NoMotionChain,
+            RealizeError::NoCurvedPoint,
+            RealizeError::Undecided,
+            RealizeError::Unrepresentable,
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain([
+        CacheDecline::CostCap.to_string(),
+        CacheDecline::Cannot(RealizeError::NoPoint).to_string(),
+        StepError::Backend("a header string is too long".to_string()).to_string(),
+        StepError::Io(std::io::Error::other("disk full")).to_string(),
+    ])
+    .chain(
+        [
+            TessError::DegenerateRing,
+            TessError::SelfTouchingBoundary,
+            TessError::HoleWinding,
+            TessError::OverBudget,
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain(
+        [
+            PropsError::UnsupportedBoundary,
+            PropsError::UnsupportedInnerLoop,
+            PropsError::CentroidOfCurvedFace,
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain(
+        [
+            EdgeDecline::Coincident,
+            EdgeDecline::Oblique,
+            EdgeDecline::Unstated,
+            EdgeDecline::TwoCylinders,
+            EdgeDecline::Degenerate,
+        ]
+        .iter()
+        .map(ToString::to_string),
+    )
+    .chain([nacre::geom::mixed::Undecidable.to_string()])
+    .collect();
+
+    let broken: Vec<&String> = lines
+        .iter()
+        .filter(|l| {
+            l.is_empty()
+                || l.contains('\n')
+                || l.ends_with('.')
+                || l.starts_with(|c: char| c.is_uppercase())
+        })
+        .collect();
+    assert!(broken.is_empty(), "{broken:#?}");
+}

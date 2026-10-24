@@ -79,6 +79,71 @@ pub enum SketchError {
     Undecidable,
 }
 
+impl std::fmt::Display for SketchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DegenerateRing { ring } => write!(f, "ring {ring} has fewer than three points"),
+            Self::RingsMeet { a, b } => write!(f, "rings {a} and {b} touch or cross"),
+            Self::UnevenRing { vertices, edges } => write!(
+                f,
+                "a ring has {vertices} vertices and {edges} edges, not one edge per vertex"
+            ),
+            Self::ZeroLengthEdge { edge } => write!(f, "straight step {edge} has zero length"),
+            Self::RingSelfIntersects { ring, at: [p, q] } => write!(
+                f,
+                "ring {ring} meets itself (chord midpoints {} and {})",
+                Xy(*p),
+                Xy(*q)
+            ),
+            Self::OutsideDecimalWindow { at } => {
+                write!(f, "{} holds a number outside the decimal window", Xy(*at))
+            }
+            Self::ArcEndOffCircle { center, start, end } => write!(
+                f,
+                "the arc's end {} is not on the circle around {} through {}",
+                Xy(*end),
+                Xy(*center),
+                Xy(*start)
+            ),
+            Self::ArcRadiusMismatch {
+                center,
+                start,
+                stated,
+            } => write!(
+                f,
+                "the arc's radius {stated} is not the distance from its centre {} to its start {}",
+                Xy(*center),
+                Xy(*start)
+            ),
+            Self::ZeroLengthArc { at } => {
+                write!(
+                    f,
+                    "an arc from {} back to itself is a whole circle",
+                    Xy(*at)
+                )
+            }
+            Self::ArcTurnsOutOfRange { turns } => {
+                write!(f, "{turns} quarter turns is outside ±1 to ±3")
+            }
+            Self::NonPositiveRadius { center, radius } => {
+                write!(f, "the radius {radius} at {} is not positive", Xy(*center))
+            }
+            Self::Undecidable => f.write_str("checked rational arithmetic overflowed"),
+        }
+    }
+}
+
+impl std::error::Error for SketchError {}
+
+/// A sketch point as `(x, y)`, for an error's one line.
+struct Xy([f64; 2]);
+
+impl std::fmt::Display for Xy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0[0], self.0[1])
+    }
+}
+
 fn lift(p: Point2) -> Result<[Rat; 2], SketchError> {
     match (Rat::from_decimal(p[0]), Rat::from_decimal(p[1])) {
         (Some(x), Some(y)) => Ok([x, y]),

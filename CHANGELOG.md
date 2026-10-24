@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- Every public error type of the facade — `ops::BoolError`, `ops::OpError`, `ops::SketchError`, `ops::RealizeError`, `ops::CacheDecline`, `step::StepError`, `tess::TessError`, `props::PropsError`, `topo::EdgeDecline` and `geom::mixed::Undecidable` — implements `Display` and `std::error::Error`, so `?` carries it into a `Box<dyn std::error::Error>`. The message is one lowercase line; a refused boolean reads `boolean rejected, <class>: <reason>`, followed by where it was looking when the kernel says. `StepError::Io` gives its `io::Error` as `source()`, and `OpError::Boolean` reads exactly as the `BoolError` it holds.
 - `cargo run -p nacre --example plate_with_bore` builds a plate with a bore through it from the prelude alone, checks it, and writes it as STEP and OBJ.
 - `exact::normal_zeros` and `exact::PlaneName::normal_zeros` say which components of a plane's normal are exactly zero — the world axes the plane runs parallel to.
 - `exact::Bounded::round_off` is the rounding that brings a value to its nearest `f64`: half an ulp, floored at the smallest normal `f64`.

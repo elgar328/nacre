@@ -99,6 +99,19 @@ pub enum TessError {
     OverBudget,
 }
 
+impl std::fmt::Display for TessError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::DegenerateRing => "a face's rings are not a polygon with sibling holes",
+            Self::SelfTouchingBoundary => "a face's boundary touches itself",
+            Self::HoleWinding => "a hole winds the same way as its outer ring",
+            Self::OverBudget => "a face's interior triangulation left an edge outside the budget",
+        })
+    }
+}
+
+impl std::error::Error for TessError {}
+
 // ---------------------------------------------------------------------------
 // Provenance-tagged tessellation
 // ---------------------------------------------------------------------------

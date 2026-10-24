@@ -309,6 +309,105 @@ pub enum OpError {
     },
 }
 
+impl std::fmt::Display for OpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ring = |r: &ProfileRing| match r {
+            ProfileRing::Outer => "the outer ring".to_string(),
+            ProfileRing::Hole(i) => format!("hole {i}"),
+        };
+        match self {
+            Self::DegenerateProfile => f.write_str("a profile ring encloses no area"),
+            Self::ProfileOutsideDecimalWindow { ring: r, point } => {
+                write!(
+                    f,
+                    "point {point} of {} is outside the decimal window",
+                    ring(r)
+                )
+            }
+            Self::SelfIntersectingProfile {
+                ring: r,
+                edges: (a, b),
+            } => write!(f, "{} meets itself at edges {a} and {b}", ring(r)),
+            Self::ZeroLengthProfileEdge { ring: r, edge } => {
+                write!(f, "edge {edge} of {} has zero length", ring(r))
+            }
+            Self::ProfileRingsMeet { a, b } => {
+                write!(f, "{} and {} touch or cross", ring(a), ring(b))
+            }
+            Self::HoleNotInsideOuter { hole } => {
+                write!(f, "hole {hole} lies outside the outer ring")
+            }
+            Self::NestedHole { outer, inner } => write!(f, "hole {inner} lies inside hole {outer}"),
+            Self::ProfileUndecidable => {
+                f.write_str("checked arithmetic overflowed while classifying the profile")
+            }
+            Self::ArcSweepNotQuarterTurn => {
+                f.write_str("an arc is not a whole number of quarter turns")
+            }
+            Self::ArcsMeetAtVertex => {
+                f.write_str("two arcs of different circles meet at a profile vertex")
+            }
+            Self::ZeroDistance => f.write_str("the extrusion distance is zero"),
+            Self::DistOutsideDecimalWindow => {
+                f.write_str("the extrusion distance is outside the decimal window")
+            }
+            Self::PlaneWithoutExactForm => {
+                f.write_str("a plane or a point on it has no exact form to build in")
+            }
+            Self::FrameOutsideDecimalWindow => {
+                f.write_str("a sketch frame coordinate is outside the decimal window")
+            }
+            Self::OriginNotOnPlane => f.write_str("the sketch frame's origin is not on its plane"),
+            Self::RefDirParallelToNormal => {
+                f.write_str("the sketch frame's reference direction has no component in its plane")
+            }
+            Self::DegenerateGeometry => f.write_str("a curve or surface could not be constructed"),
+            Self::NonPlanarFace => f.write_str("the sketch face or surface is not planar"),
+            Self::FaceNotInLiveSolid => {
+                f.write_str("the face belongs to no live solid's outer shell")
+            }
+            // A wrapper has nothing to add to the boolean's own line, so it says that line and
+            // passes on its source: saying it and also returning it would print it twice.
+            Self::Boolean(e) => std::fmt::Display::fmt(e, f),
+            Self::SolidNotLive => f.write_str("the input solid is not live"),
+            Self::OriginNotOnSolid => f.write_str(
+                "a vertex or edge of the input names a surface none of the solid's faces lies on",
+            ),
+            Self::MirrorNotPlanar => f.write_str("the mirrored solid carries curved geometry"),
+            Self::ZeroOffset => f.write_str("the datum offset is zero"),
+            Self::DuplicateVertex => f.write_str("the datum names one vertex twice"),
+            Self::CollinearVertices => f.write_str("the datum's three vertices lie on one line"),
+            Self::VertexNotThreePlane => {
+                f.write_str("the datum names a vertex that is not a three-plane point")
+            }
+            Self::VerticesInMixedFrames => {
+                f.write_str("the datum's vertices' carriers do not share one motion")
+            }
+            Self::ThroughFrameUndecided => f.write_str("the datum's frame could not be decided"),
+            Self::LogHandleOutOfRange { cell, index } => {
+                let cell = match cell {
+                    LogCell::Solid => "solid",
+                    LogCell::Surface => "surface",
+                    LogCell::Vertex => "vertex",
+                };
+                write!(
+                    f,
+                    "the log names {cell} {index}, which this model does not have"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for OpError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Boolean(e) => e.source(),
+            _ => None,
+        }
+    }
+}
+
 /// Which store an operation-log handle indexes. (`Surface` is what datum ops name.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogCell {

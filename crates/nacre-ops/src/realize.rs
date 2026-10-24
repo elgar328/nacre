@@ -115,6 +115,21 @@ pub enum RealizeError {
     Unrepresentable,
 }
 
+impl std::fmt::Display for RealizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NoMeet => "no exact road reaches the vertex",
+            Self::NoPoint => "the vertex's three planes meet in no point",
+            Self::NoMotionChain => "the vertex's motion chain could not be rebuilt exactly",
+            Self::NoCurvedPoint => "the curved vertex definition did not resolve into a point",
+            Self::Undecided => "the realization was not decided at the precision it reached",
+            Self::Unrepresentable => "the exact value overflows every f64",
+        })
+    }
+}
+
+impl std::error::Error for RealizeError {}
+
 /// Why the **cheap road** did not answer — two reasons, and only one of them is a failure.
 ///
 /// Deliberately not a `RealizeError` variant. That enum's own doc says it answers *"why a vertex
@@ -128,6 +143,25 @@ pub enum CacheDecline {
     CostCap,
     /// The realization itself declined, by name.
     Cannot(RealizeError),
+}
+
+impl std::fmt::Display for CacheDecline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CostCap => f.write_str("the motion history is deeper than the cheap road walks"),
+            // The realization's own line, not a second one around it (`OpError::Boolean`'s rule).
+            Self::Cannot(e) => std::fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl std::error::Error for CacheDecline {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CostCap => None,
+            Self::Cannot(e) => e.source(),
+        }
+    }
 }
 
 /// The ladder. Doubling, so a value needing `n` bits pays at most `2n`; capped, because an

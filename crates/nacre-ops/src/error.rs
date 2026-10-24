@@ -1205,6 +1205,40 @@ impl std::fmt::Display for RejectReason {
     }
 }
 
+impl std::fmt::Display for BoolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected { reason, at } => {
+                let class = match reason.class() {
+                    RejectClass::NotSupported => "not supported",
+                    RejectClass::Impossible => "impossible",
+                    RejectClass::SuspectedDefect => "suspected defect",
+                };
+                write!(f, "boolean rejected, {class}: {reason}")?;
+                match at {
+                    None => Ok(()),
+                    Some(RejectWhere::Point(p)) => write!(f, " at {}", Xyz(*p)),
+                    Some(RejectWhere::Segment([a, b])) => {
+                        write!(f, " along {} to {}", Xyz(*a), Xyz(*b))
+                    }
+                }
+            }
+            Self::InputNotLive => f.write_str("an input solid is not live"),
+        }
+    }
+}
+
+impl std::error::Error for BoolError {}
+
+/// A world point as `(x, y, z)`, for an error's one line.
+struct Xyz(Point3);
+
+impl std::fmt::Display for Xyz {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.0[0], self.0[1], self.0[2])
+    }
+}
+
 /// Build an `Rejected` carrying *which* guard raised it.
 ///
 /// Every `Rejected` in this crate is built here or in [`reject_at`] (this, with a location).

@@ -61,6 +61,14 @@ pub struct MixedRing<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Undecidable;
 
+impl std::fmt::Display for Undecidable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("checked rational arithmetic overflowed")
+    }
+}
+
+impl std::error::Error for Undecidable {}
+
 type QPt = [QuadVal; 2];
 
 /// One step with its two vertices in hand.

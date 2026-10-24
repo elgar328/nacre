@@ -57,6 +57,20 @@ pub enum PropsError {
     CentroidOfCurvedFace,
 }
 
+impl std::fmt::Display for PropsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::UnsupportedBoundary => {
+                "a boundary is empty, encloses nothing, or is not a loop these properties read"
+            }
+            Self::UnsupportedInnerLoop => "a curved face's inner loop is not supported",
+            Self::CentroidOfCurvedFace => "the centroid is refused for a solid with a curved face",
+        })
+    }
+}
+
+impl std::error::Error for PropsError {}
+
 /// Exact mass properties of one solid via the divergence theorem.
 ///
 /// `V = (1/3) ∮ (r − R)·n̂ dA`, area `= Σ face area`, summed face by face. The

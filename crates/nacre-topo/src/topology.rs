@@ -59,6 +59,20 @@ pub enum EdgeDecline {
     Degenerate,
 }
 
+impl std::fmt::Display for EdgeDecline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Coincident => "the straight edge's endpoints are one point",
+            Self::Oblique => "the plane is oblique to the cylinder's axis",
+            Self::Unstated => "the plane and the cylinder cannot be placed in one frame",
+            Self::TwoCylinders => "an edge between two cylinders has no curve",
+            Self::Degenerate => "the circle's cache could not be built",
+        })
+    }
+}
+
+impl std::error::Error for EdgeDecline {}
+
 impl Edge {
     /// The carrier pair in its stored (canonical, ascending handle-index) order — the pair is
     /// a set, and one spelling keeps `==` on edges meaningful.
