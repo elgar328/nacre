@@ -1,10 +1,20 @@
-//! Operations for the nacre kernel, plus a replayable operation log.
+//! Operations for the nacre kernel, and the replayable log they form.
 //!
-//! [`Operation::Extrude`] sweeps a planar profile into a solid, on a frame that may name a prior
-//! op's face plane ([`face_sketch_frame`]) and either way off it; [`Operation::Boolean`] and the
-//! motions supersede solids (live-solid semantics). A feature on a face — a pad, a pocket — is
-//! those two composed, the convenience layer's to spell. Ops are applied by [`apply`] and folded
-//! by [`replay`]; every result is a **closed** solid, so `nacre-validate` applies fully.
+//! An [`Operation`] states a datum plane ([`Operation::DatumPlane`]), sweeps a planar profile
+//! into a solid ([`Operation::Extrude`]), combines two solids ([`Operation::Boolean`]), moves or
+//! mirrors one ([`Operation::Transform`], [`Operation::Mirror`]) or copies it
+//! ([`Operation::Copy`]). [`apply`] runs one on a model and [`replay`] folds a log into a fresh
+//! one; every solid an operation makes is closed. An operation consumes the solids it edits —
+//! the live solids are the model's answer — except a copy, which keeps its original.
+//!
+//! A profile is sketched on a frame: the world's ([`SketchFrame::world`]), a datum plane's, or a
+//! face's ([`face_sketch_frame`]). A feature on a face — a pad, a pocket — is an extrude and a
+//! boolean composed. [`boolean`](fn@boolean) is the boolean as a function, and
+//! [`boolean_with_report`] says what it proved along the way. What the kernel cannot compute
+//! correctly it refuses by name ([`RejectReason`]) rather than answer wrongly.
+//!
+//! A vertex's coordinates are realized from its exact definition: [`realize_vertex`] at a chosen
+//! [`Precision`], and [`refine_caches`] raises a model's caches before an export.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted
