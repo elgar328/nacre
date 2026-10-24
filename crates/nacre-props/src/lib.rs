@@ -42,8 +42,9 @@ pub struct MassProps {
 /// idiom `Surface::distance` and `to_step` use.
 #[derive(Debug)]
 pub enum PropsError {
-    /// A planar face bounded by something other than a straight polygon or a
-    /// single full circle (e.g. a future line+arc mix). None occur today.
+    /// A boundary these properties have no value for: a solid with no vertex to bound, a face
+    /// whose loop is empty or encloses no area, a solid of zero volume asked for its centroid, or
+    /// a one-edge loop that is not a full circle.
     UnsupportedBoundary,
     /// Not returned: a curved face's inner loops — holes, and a lateral's second rim — are
     /// integrated like every other boundary (`lateral_moments`).

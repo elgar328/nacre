@@ -99,7 +99,9 @@ pub enum RealizeError {
     /// own name; none of them is [`Self::NoMeet`], which is a *different* function declining —
     /// `Model::vertex_meet` is never called on this road.
     NoCurvedPoint,
-    /// The realization ladder reached its ceiling without deciding what was asked.
+    /// The realization did not decide what was asked at the precision it reached: the ladder's
+    /// last rung, or the one precision a caller named ([`Precision::Bits`]) or the cheap road
+    /// ([`CacheDecline`]) pays.
     Undecided,
     /// The value is an exact rational, and **no `f64` names it**: it overflows. More bits cannot
     /// help — this is the one refusal a taller ladder does not answer.

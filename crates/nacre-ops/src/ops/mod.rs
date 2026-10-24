@@ -115,7 +115,8 @@ pub enum Operation {
 /// A failure while applying an operation.
 #[derive(Debug, PartialEq)]
 pub enum OpError {
-    /// A profile ring with fewer than 3 points.
+    /// A profile ring that encloses no area: an empty ring, a straight polygon of fewer than three
+    /// points, or a ring whose exact winding is zero.
     DegenerateProfile,
     /// A profile coordinate outside the decimal window (`Rat::from_decimal` — `~1e38` above,
     /// `~1e-22` below for a full-width value), so it has no rational truth for the kernel to keep.
@@ -128,10 +129,10 @@ pub enum OpError {
         /// The offending point's index within that ring, as given.
         point: usize,
     },
-    /// A profile ring meets itself — it crosses, touches, doubles back over one of its own edges,
-    /// or doubles back over one of its own edges. Such a ring has no unambiguous inside, so the
-    /// region it is supposed to bound is undefined. `edges` are the two offending edge indices
-    /// within that ring. The input is wrong; this is not a missing capability.
+    /// A profile ring meets itself — it crosses, touches, or doubles back over one of its own
+    /// edges. Such a ring has no unambiguous inside, so the region it is supposed to bound is
+    /// undefined. `edges` are the two offending edge indices within that ring. The input is wrong;
+    /// this is not a missing capability.
     SelfIntersectingProfile {
         /// Which ring of the profile.
         ring: ProfileRing,
@@ -194,10 +195,12 @@ pub enum OpError {
     /// computed in. The sibling of [`OpError::ProfileOutsideDecimalWindow`], named at the
     /// operation's door rather than falling silently to a point-less f64 prism.
     DistOutsideDecimalWindow,
-    /// The sketch plane (or the frame chain carrying it) has no exact form to build in: its
-    /// axes fell outside the decimal window or were degenerate, or the placement arithmetic
-    /// overflowed `i128`. A prism built silently in f64 instead would record no exact points and
-    /// could not survive a motion — a named reject is the honest answer.
+    /// A plane the operation builds on or through has no exact form to build in: the sketch plane
+    /// or the frame chain carrying it (its axes fell outside the decimal window or were
+    /// degenerate, or the placement arithmetic overflowed `i128`), a datum's plane or a vertex it
+    /// is built through, or a corner a prism names where a straight wall meets an arc wall. A
+    /// prism built silently in f64 instead would record no exact points and could not survive a
+    /// motion — a named reject is the honest answer.
     PlaneWithoutExactForm,
     /// A [`SketchFrame::named`] coordinate (origin or `ref_dir`) outside the decimal window
     /// (`Rat::from_decimal`), so the frame claim has no exact statement to check. The frame
@@ -233,18 +236,6 @@ pub enum OpError {
     /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
     MirrorNotPlanar,
-    /// The log names a cell this model does not have. A log's handles are an **index
-    /// vocabulary** (see `docs/design.md`): [`replay`] re-anchors each one onto the model it is
-    /// building, and an index past the end of the store means the log is not the one that built
-    /// this arena — a hand-written handle, a truncated log, a log spliced from another session,
-    /// or a session that kept recording after a *late* reject left arena cells the log does not
-    /// account for (see [`replay`]'s note on self-containment).
-    ///
-    /// **Existence, not legality.** Whether the cell is a *legal target* is still the
-    /// operation's own question — [`OpError::SolidNotLive`] / [`OpError::FaceNotInLiveSolid`].
-    /// And an index that is merely *wrong* rather than out of range cannot be caught here at
-    /// all: it names a real cell, just not the intended one. That is why re-anchoring requires
-    /// the self-containment premise rather than replacing it.
     /// A datum offset of zero. **It is a reject, not a no-op**: the plane it names is one the
     /// model already holds, but stated in a different coordinate system — and `push_plane` keys on
     /// `(name, motion)`, so accepting it would hand that plane a *second* handle. Planes are the
@@ -298,6 +289,18 @@ pub enum OpError {
     /// collinear or merely too close to call. Failing to prove health is its own cause, and a
     /// refusal is named by its cause.
     ThroughFrameUndecided,
+    /// The log names a cell this model does not have. A log's handles are an **index
+    /// vocabulary** (see `docs/design.md`): [`replay`] re-anchors each one onto the model it is
+    /// building, and an index past the end of the store means the log is not the one that built
+    /// this arena — a hand-written handle, a truncated log, a log spliced from another session,
+    /// or a session that kept recording after a *late* reject left arena cells the log does not
+    /// account for (see [`replay`]'s note on self-containment).
+    ///
+    /// **Existence, not legality.** Whether the cell is a *legal target* is still the
+    /// operation's own question — [`OpError::SolidNotLive`] / [`OpError::FaceNotInLiveSolid`].
+    /// And an index that is merely *wrong* rather than out of range cannot be caught here at
+    /// all: it names a real cell, just not the intended one. That is why re-anchoring requires
+    /// the self-containment premise rather than replacing it.
     LogHandleOutOfRange {
         /// Which store the index was meant for.
         cell: LogCell,

@@ -47,9 +47,10 @@ pub enum SketchError {
     /// Reported as the two offending edges' **chord midpoints** — points are what the rest of
     /// this enum reports too, and a point is what an editor can put a marker on.
     RingSelfIntersects { ring: usize, at: [[f64; 2]; 2] },
-    /// A coordinate outside the decimal window (`~1e38` above, `~1e-22` below for a full-width
-    /// value) has no rational truth for the kernel to keep — the sketch-layer twin of
-    /// `OpError::ProfileOutsideDecimalWindow`. `at` is the offending point.
+    /// A coordinate or a radius outside the decimal window (`~1e38` above, `~1e-22` below for a
+    /// full-width value) has no rational truth for the kernel to keep — the sketch-layer twin of
+    /// `OpError::ProfileOutsideDecimalWindow`. `at` is the offending point; a radius
+    /// [`Ring2d::circle`] refuses comes as `[radius, 0.0]`.
     OutsideDecimalWindow { at: [f64; 2] },
     /// An arc's end is not on the circle its centre and start define.
     ArcEndOffCircle {
@@ -73,8 +74,8 @@ pub enum SketchError {
     ArcTurnsOutOfRange { turns: i32 },
     /// A circle or arc with a radius that is not positive.
     NonPositiveRadius { center: [f64; 2], radius: f64 },
-    /// Checked `Rat` arithmetic overflowed while classifying: the question has an answer the
-    /// kernel cannot state here. Refused by name; nothing guesses.
+    /// Checked `Rat` arithmetic overflowed while building an arc or a circle or while classifying:
+    /// the question has an answer the kernel cannot state here. Refused by name; nothing guesses.
     Undecidable,
 }
 
