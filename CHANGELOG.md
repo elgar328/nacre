@@ -10,6 +10,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `cargo run -p nacre --example plate_with_bore` builds a plate with a bore through it from the prelude alone, checks it, and writes it as STEP and OBJ.
 - `exact::normal_zeros` and `exact::PlaneName::normal_zeros` say which components of a plane's normal are exactly zero — the world axes the plane runs parallel to.
 - `exact::Bounded::round_off` is the rounding that brings a value to its nearest `f64`: half an ulp, floored at the smallest normal `f64`.
 - `exact::Rat::as_f64` gives the value as an `f64` when it is one — a power-of-two denominator and a numerator whose odd part fits 53 bits — and `None` when `to_f64` would round.

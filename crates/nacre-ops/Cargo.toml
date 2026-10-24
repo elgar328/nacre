@@ -73,9 +73,8 @@ nacre-judge = { path = "../nacre-judge", features = ["test-util"] }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.
 nacre-validate = { path = "../nacre-validate" }
-# The end-to-end example/integration test exports models through these; they are
-# dev-only so the published lib's dependency surface stays clean (no cycle: neither
-# depends on nacre-ops).
+# Tests export models through these; they are dev-only so the published lib's dependency
+# surface stays clean (no cycle: neither depends on nacre-ops).
 nacre-step = { path = "../nacre-step" }
 nacre-tess = { path = "../nacre-tess", features = ["test-util"] }
 # Boolean tests diff result volumes against the analytic mass properties.
