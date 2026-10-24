@@ -878,12 +878,12 @@ fn one_point_one_times_seven_is_exact() {
 }
 
 /// Measurement: with fixed-width i128, chained coprime-denominator
-/// accumulation *does* overflow (the finite-precision cliff handled by
-/// downgrading). Summing `1/p` over successive primes forces the denominator
+/// accumulation *does* overflow (the finite-precision cliff the checked arithmetic
+/// reports as `None`). Summing `1/p` over successive primes forces the denominator
 /// toward the primorial, which exceeds i128. This test pins two facts:
 ///   (a) a modest sum (first 8 primes) stays exact — normal use is fine;
 ///   (b) accumulation eventually overflows within the prime list — proving
-///       the downgrade trigger fires, and reporting *where* (onset index).
+///       the overflow is reported, and *where* (onset index).
 #[test]
 fn coprime_accumulation_overflows_and_reports_onset() {
     const PRIMES: [i128; 30] = [

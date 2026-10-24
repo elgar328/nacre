@@ -667,7 +667,7 @@ fn pushing_by_zero_and_pushing_back_are_identities() {
 }
 
 /// **An irrational normal has no exact offset** — `|n|` is what must be rational, and `[1,1,1]`
-/// is the smallest thing that is not. The caller keeps its f64 path; nothing is approximated.
+/// is the smallest thing that is not. The answer is `None`; nothing is approximated.
 #[test]
 fn a_plane_whose_normal_has_no_rational_length_declines() {
     assert_eq!(plane_offset(ints([1, 1, 1, -7]), Rat::from_int(1)), None);
@@ -749,7 +749,7 @@ fn the_projected_origin_is_the_nearest_point_of_its_plane() {
 }
 
 /// Coefficients that are not a plane have no projection, and neither does an `i128` overflow —
-/// both are the kernel's ordinary demotion, not a failure.
+/// both answer `None`, not a panic.
 #[test]
 fn a_non_plane_and_an_overflow_both_decline() {
     assert_eq!(plane_origin_projection(ints([0, 0, 0, 5])), None);
@@ -908,7 +908,7 @@ fn an_inexact_rotation_declines() {
 }
 
 #[test]
-fn overflow_demotes_instead_of_panicking() {
+fn overflow_answers_none_instead_of_panicking() {
     // Four coprime denominators near 10^10: their lcm is their product, ~10^40, past i128.
     let r = |den| Rat::new(1, den).unwrap();
     let coeffs = [

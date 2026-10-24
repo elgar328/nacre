@@ -398,9 +398,8 @@ fn dot_sign(a: &[num_bigint::BigInt; 3], b: &[num_bigint::BigInt; 3]) -> Orient 
 /// Rationals here come from the dimensions the user *wrote* ([`Rat::from_decimal`]) carried through
 /// exact arithmetic — the same rule the construction path already follows.
 ///
-/// `None` on `i128` overflow (the denominators' lcm, or a numerator scaled by it), which is the
-/// kernel's ordinary demotion signal: the caller keeps the plain rational and the geometric tests
-/// answer instead. Nothing is wrong, one shortcut is unavailable.
+/// `None` on `i128` overflow (the denominators' lcm, or a numerator scaled by it): the caller
+/// keeps the plain rational and the geometric tests answer instead. Nothing is wrong, one shortcut is unavailable.
 ///
 /// All-zero coefficients are not a plane; they canonicalize to themselves.
 pub fn canonical_plane_coeffs(coeffs: [Rat; 4]) -> Option<[Rat; 4]> {

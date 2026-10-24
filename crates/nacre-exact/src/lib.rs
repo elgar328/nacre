@@ -1,34 +1,20 @@
-//! Exact rational scalars — the exact rational value engine (`Rat`/`Angle`) and the
-//! axis/rotation/isometry value types the kernel builds on.
+//! Exact arithmetic for the nacre kernel — rational values, the exact questions asked of
+//! planes and points, and the realization of an exact value as an `f64` or at a chosen
+//! precision.
 //!
-//! The truth layer for user-input dimensions and angles: a value the user typed
-//! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
-//! (the "thin film" problem's root fix). This is the exact-*value* counterpart to
-//! `nacre-predicates`, which decides exact *signs* of geometric determinants —
-//! complementary, not redundant.
-//!
-//! - [`Rat`] — a rational scalar (tol 0). Fixed-width `Ratio<i128>` with
-//!   **checked** arithmetic: overflow is a *signal* (the downgrade trigger),
-//!   not a panic or silent wrap. The caller downgrades that value's cache to
-//!   f64 and records its tol; the definition is never lost, so a
-//!   judgement can still realize it at whatever precision it needs.
-//! - [`Angle`] — rational degrees, normalized mod-360, with exact accumulation so
-//!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
-//!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
-//!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
-//!   so those rotations of a rational point stay tol 0; and `cos_sin_hp`
-//!   realizes them in arbitrary precision (astro-float) for the judgment path.
-//!
-//! Scope: the exact value engine (the toleranced-sign frame judgment lives in `nacre-judge`).
-//! [`Rat::from_decimal`] carries this into *construction*: a prism's
-//! placement and sweep are done in the rationals the dimensions were **written** as, so
-//! `1.1` then `6.6` reaches the same plane as `7.7` (`nacre_ops::exact`). That holds where
-//! the sketch frame is exactly orthonormal — a rotated frame's axes are irrational, and
-//! there this crate has nothing to offer; `nacre-judge` is what keeps *judgments* sound
-//! there.
-//! An unprovable sign leaves as a proved coincidence carrying its evidence, or as a reject named
-//! for its cause (`nacre-judge`) — not as a declared zero awaiting user confirmation, which
-//! measurement refuted.
+//! - **Values.** [`Rat`] is a rational scalar: a fixed-width `Ratio<i128>` whose arithmetic is
+//!   checked, so an overflow is an answer (`None`) the caller sees, never a panic or a silent
+//!   wrap. A value the user typed stays what they typed — `1.1` is `11/10`, and `1.1 × 7` is
+//!   exactly `7.7` ([`Rat::from_decimal`]). [`Angle`] is rational degrees, normalized mod 360
+//!   with exact accumulation, so a full turn lands back on exactly `0`; the quarter turns have
+//!   exact cosines and sines ([`Angle::cos_sin_rat`]), and every angle realizes as `f64`
+//!   ([`Angle::cos_sin_f64`]) or at a chosen precision ([`Angle::cos_sin_hp`]).
+//! - **Exact questions.** A plane's canonical name ([`PlaneName`]), where planes meet
+//!   ([`three_planes_rat`]), numbers of the form `a + b√c` ([`QuadVal`]), and the exact rigid
+//!   motions ([`Isometry`]).
+//! - **Realization.** A value with a proved error bound, at `f64` and at arbitrary precision
+//!   ([`Bounded`], [`HpBounded`]), and the `f64` a proved enclosure rounds to — `None` while the
+//!   enclosure still straddles a rounding boundary ([`round_to_f64`]).
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 pub mod bounded;

@@ -19,8 +19,8 @@ pub struct SketchPlane {
     pub(crate) origin: Point3,
     pub(crate) x_axis: Vector3,
     pub(crate) y_axis: Vector3,
-    /// What the caller stated, exactly — `None` when they stated only axes (a frame the kernel
-    /// cannot reconstruct, which then takes the f64 path it always took).
+    /// What the caller stated, exactly — `None` when they stated only axes the decimals cannot
+    /// hold (a datum stated on it is refused, `OpError::PlaneWithoutExactForm`).
     pub(crate) def: Option<PlaneDef>,
 }
 
@@ -231,8 +231,9 @@ impl SketchPlane {
     /// would strand exactly the callers this lift exists for. A skewed (non-orthogonal) pair is
     /// outside [`SketchPlane`]'s contract; the frame realization drops the skew.
     ///
-    /// `def` stays `None` only for axes outside the decimal window or a degenerate pair
-    /// (`x × y = 0` in the decimals) — those take the f64 path.
+    /// Axes outside the decimal window, or a pair degenerate in the decimals (`x × y = 0`), have
+    /// no exact form: a datum stated on such a plane is refused
+    /// ([`OpError::PlaneWithoutExactForm`]).
     pub fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
         let def = (|| {
             let lift = |p: [f64; 3]| {

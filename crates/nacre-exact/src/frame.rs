@@ -25,8 +25,8 @@ use super::*;
 /// kernel cannot ask the real question; `a == 0 && b == 0` is the real question.
 ///
 /// `None` when the plane is degenerate, when the origin projection is not rational, or when the
-/// squared lengths the realization needs do not fit `i128` — all three are honest declines that
-/// leave a caller on the f64 path it was already on, never a reject.
+/// squared lengths the realization needs do not fit `i128` — all three are honest declines the
+/// caller sees and decides on.
 pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
     let (origin, ref_dir) = plane_frame_default(coeffs)?;
     plane_frame_named(coeffs, origin, ref_dir)

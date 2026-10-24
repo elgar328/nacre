@@ -28,7 +28,7 @@ impl Rat {
         Rat(Ratio::from_integer(n))
     }
 
-    /// Exact addition; `None` on overflow (downgrade trigger).
+    /// Exact addition; `None` on overflow.
     pub fn checked_add(self, rhs: Self) -> Option<Self> {
         self.0.checked_add(&rhs.0).map(Rat)
     }
@@ -44,7 +44,7 @@ impl Rat {
     }
 
     /// The **nearest** f64 to this rational, ties to even — the same answer IEEE-754
-    /// would give if it could divide exactly (for the downgrade path, and for export).
+    /// would give if it could divide exactly (an `f64` cache, an export).
     ///
     /// `numer as f64 / denom as f64` is *not* that answer: past 2⁵³ each conversion
     /// rounds before the division sees it, and two roundings do not compose into one.
@@ -93,8 +93,8 @@ impl Rat {
     /// The decimal is the **shortest that reads back as `x`** — a deterministic normal
     /// form, not a guess at intent: distinct f64 map to distinct rationals and equal
     /// f64 always to the same one. Decimal is the choice only because people type
-    /// decimal. `None` for non-finite input, or when the power of ten overflows i128,
-    /// in which case the caller keeps its f64 path.
+    /// decimal. `None` for non-finite input, or when the power of ten overflows i128 — the
+    /// caller sees it and decides.
     ///
     /// Measured, that limit sits at `1e38` above and — for a value carrying all 17
     /// significant digits — `1e-22` below; a short decimal reaches down to `1e-38`.
@@ -180,8 +180,8 @@ impl Rat {
         *self.0.denom()
     }
 
-    /// Bit-width of the larger of |numer|, |denom| — the "size" the kernel watches for bit
-    /// growth under chained rational arithmetic (the downgrade threshold).
+    /// Bit-width of the larger of |numer|, |denom| — the rational's size (what a square root's
+    /// separation bound reads).
     pub fn bit_width(self) -> u32 {
         let n = self.numer().unsigned_abs();
         let d = self.denom().unsigned_abs();

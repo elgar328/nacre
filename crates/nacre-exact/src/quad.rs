@@ -13,8 +13,7 @@
 //! overflow: denominators are cleared and the recursion runs in `BigInt` ("integers, not
 //! rationals" — the `three_planes_big` precedent; the lcm itself is a `BigInt`, so there is no
 //! failure point). The *value* arithmetic (`checked_add`/`checked_mul`…) stays in checked
-//! `Rat` and answers `None` on overflow — the caller sees the downgrade trigger, exactly like
-//! `Rat` itself.
+//! `Rat` and answers `None` on overflow — the caller sees it, exactly as with `Rat` itself.
 //!
 //! **No `PartialEq`.** `1 + 2√2` and `1 + 1√8` are one value in two spellings, and collapsing
 //! the spelling needs the square-free part of `c` — a factorization, whose cost is unbounded.

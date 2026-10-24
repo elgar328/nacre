@@ -20,8 +20,8 @@ use super::*;
 /// canonicalize together), and because two faces of one plane may hold it either way round.
 /// Canonicalizing first is therefore not needed for correctness, only for overflow headroom.
 ///
-/// `None` when `n·n = 0` — the coefficients are not a plane — or on `i128` overflow, which is the
-/// kernel's ordinary demotion signal: the caller keeps its f64 path.
+/// `None` when `n·n = 0` — the coefficients are not a plane — or on `i128` overflow, which the
+/// caller sees and decides on.
 pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
     let zero = Rat::from_int(0);
     let n = [coeffs[0], coeffs[1], coeffs[2]];
