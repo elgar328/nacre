@@ -195,8 +195,9 @@ type RegionRings = (Bound, Vec<Bound>);
 /// boolean. What makes abstention safe is narrower: emitting the group as-is leaves the pipeline
 /// exactly where it would stand *without this pass*, so nothing can come out of it that would not
 /// have come out without the pass at all. The whole-result judgements ([`self_touch_reject`],
-/// the closed-shell guard, the every-vertex-re-solves check) then name the shape with their own
-/// sentences — and with a witness, which a capability name raised from here has none of.
+/// the closed-shell guard, the every-vertex-named-by-its-faces check) then name the shape with
+/// their own sentences — and with a witness, which a capability name raised from here has none
+/// of.
 fn merge_component(
     group: &[&LocalFace],
     jd: &Judge<'_, WorkingPlane>,

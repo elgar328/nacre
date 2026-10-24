@@ -624,8 +624,10 @@ pub(crate) fn reconstruct(
     // check, not a debug_assert: a vertex whose definition names a surface no face at it lies on
     // is a wrong name with the right volume, which a release build would otherwise ship silently
     // (no input in the suite or the census reaches it — the coplanar merge dissolves such
-    // corners, and the naming restates the rest). The garbage-solid residue is the same class
-    // every late reject leaves (see the raise above).
+    // corners, the straight-angle cleaning reads one line's two spellings as one, and the naming
+    // restates the rest; a planted vertex reaches it). ops cannot lean on `validate`, so the check
+    // is here. The garbage-solid residue is the same class every late reject leaves (see the
+    // raise above).
     if let Ok(solids) = &out {
         for &s in solids {
             if let Some(vh) = vertex_named_off_its_faces(model, s) {

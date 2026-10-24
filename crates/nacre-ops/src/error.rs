@@ -383,9 +383,8 @@ pub enum RejectReason {
     /// lies on — `validate`'s `VertexNamesAbsentSurface`. A vertex is where its faces meet, and
     /// its definition is how the kernel solves the point again (after a transform, on replay), so
     /// it is spelled by those faces' surfaces; a corner that merely lies on another face's
-    /// unbounded surface is not named by it. A shipped check, because ops cannot lean on
-    /// `validate` and a release build would otherwise return that solid — right volume, wrong
-    /// names. No boolean in the suite or the census fires it; a planted vertex does.
+    /// unbounded surface is not named by it. The solid's volume would be right and its names
+    /// wrong, so the boolean refuses rather than return it.
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
     /// could not be shown to miss the plane — where they meet, the intersection is an ellipse

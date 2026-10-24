@@ -187,8 +187,8 @@ pub(crate) fn name_result_vertices(
     // the planes through it — and where four planes concur that choice can land on a plane the
     // result keeps **no face on**: a rotated copy's wall, say, buried inside the union it was
     // fused into. The definition *is* the vertex's identity, so such a result cannot describe
-    // itself, and `transform`'s remap (which walks this solid's own face surfaces) refuses it two
-    // operations later — a reject whose cause is here.
+    // itself: `transform`'s remap (which walks this solid's own face surfaces) would refuse it two
+    // operations later, and the assembly's closing fence refuses it here.
     //
     // **A result vertex is defined by the canonical triple of its incident faces'
     // planes.** Every face whose ring visits the node passes through the point, so the planes of
@@ -207,16 +207,17 @@ pub(crate) fn name_result_vertices(
     // meets there. The cylinder can be that surface too: a corner of a solid lies on the class's
     // unbounded surface wherever the arrangement put it, and the lateral need not reach it — a
     // block standing on another solid's rim, its corner a straight run of that rim and the two
-    // solids separate; a box taller than the cylinder it fuses with, its top corners on the
-    // cylinder's surface above the cap. So a pierce vertex keeps its name when a lateral of its
-    // cylinder and both its planes meet it here, or when fewer than two planes do (nothing to
-    // restate it on); otherwise it takes the canonical triple of the planes that do, else the
-    // pierce name of the first pair of them that restates it
-    // ([`combinatorics::restate_pierce`]). Where no pair does — the pair meets the cylinder
-    // elsewhere, or the arithmetic cannot say, which `restate_pierce`'s `None` does not tell
-    // apart — the name stands. A restatement stays on the same cylinder, so with no lateral of it
-    // here and fewer than three independent planes there is no name the vertex's own faces give:
-    // the fence refuses the vertex by that symptom, not the cause.
+    // solids separate; a box whose edge runs along a ruling of the cylinder and on past its cap,
+    // the edge's top corner on the cylinder's surface above the cap. So a pierce vertex keeps its
+    // name when a lateral of its cylinder and both its planes meet it here; otherwise it takes the
+    // canonical triple of the planes that do (exactly three are taken as they are — the operand
+    // rings' premise, `canonical_triple`; all 959 the suite and the ignored sweep rename this way
+    // are independent, measured), else the pierce name of the first pair of them that
+    // restates it ([`combinatorics::restate_pierce`]). Where no pair does — fewer than two
+    // planes, the pair meets the cylinder elsewhere, or the arithmetic cannot say, which
+    // `restate_pierce`'s `None` does not tell apart — the name stands. A restatement stays on the
+    // same cylinder, so with no lateral of it here and fewer than three planes there is no name
+    // the vertex's own faces give: the fence refuses the vertex by that symptom, not the cause.
     let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
     // `(group, node, cylinder class)` for every node a lateral's ring visits — the cylinders that
@@ -252,9 +253,7 @@ pub(crate) fn name_result_vertices(
             }
             continue;
         };
-        let def = if (cyls_at.contains(&(key.0, key.1, cyl)) && own.iter().all(|p| at.contains(p)))
-            || at.len() < 2
-        {
+        let def = if cyls_at.contains(&(key.0, key.1, cyl)) && own.iter().all(|p| at.contains(p)) {
             Def::of_pierce_name(key.1)
         } else if let Some(t) = combinatorics::canonical_triple(jd, &at) {
             Some(Def::Three(t))
