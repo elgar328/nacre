@@ -195,43 +195,48 @@ pub(crate) fn name_result_vertices(
     // those faces are the result planes through it, and `canonical_triple` picks the name — the
     // one rule the operand road and the alias table use. Over *incident* planes only, on purpose:
     // the arrangement's alias representative ranges over every class, buried faces included, and
-    // a definition naming a surface the result has no face on is a defect
-    // (`defs_are_remappable` still stands guard, true by construction). A node fewer than
-    // three faces name is a straight corner and keeps `StraightAngle` below.
+    // a definition naming a surface no face at the vertex lies on is a defect (the assembly's
+    // closing fence, `VertexNamesAbsentSurface`, stands guard). A node fewer than three faces
+    // name is a straight corner and keeps `StraightAngle` below.
     //
-    // **A pierce vertex is named by them too.** Its name carries two plane classes and the
-    // cylinder, and while those are the planes the result's faces meet it on, the name is its
-    // definition as it stands. Where a line two classes share lies on the cylinder, one point
-    // has a pierce name per pair (`Aliases::record_shared_ruling`), and the representative can
-    // name a plane the result keeps no face on — the vertex then says where it is by a surface
-    // the solid does not have. The cylinder can be that surface too: a solid with no face on the
-    // cylinder can still have a corner on it — a block standing on another solid's rim, its
-    // corner a straight run of that rim and the two solids separate, and the same block's far
-    // corners where they happen to lie on the class's unbounded surface. So a pierce vertex
-    // keeps its name when the solid has a face on its cylinder and both its planes meet it here,
-    // or when fewer than two planes do (nothing to restate it on); otherwise it takes the
-    // canonical triple of the planes that do, else the pierce name of the first pair of them that
-    // restates it ([`combinatorics::restate_pierce`]). Where no pair does — the pair meets the
-    // cylinder elsewhere, or the arithmetic cannot say, which `restate_pierce`'s `None` does not
-    // tell apart — the name stands; where it names a surface the solid has no face on, the shipped
-    // fence refuses the vertex by that symptom (`VertexNamesAbsentSurface`), not the cause.
-    // Lateral faces carry no plane and are skipped here — they say only which cylinders the
-    // solid has.
+    // **A pierce vertex is named by them too — its cylinder included.** Its name carries two
+    // plane classes and the cylinder, and while those are surfaces of faces the vertex's rings
+    // put there — both planes, and a lateral of that cylinder — the name is its definition as it
+    // stands. Where a line two classes share lies on the cylinder, one point has a pierce name
+    // per pair (`Aliases::record_shared_ruling`), and the representative can name a plane no face
+    // meets there. The cylinder can be that surface too: a corner of a solid lies on the class's
+    // unbounded surface wherever the arrangement put it, and the lateral need not reach it — a
+    // block standing on another solid's rim, its corner a straight run of that rim and the two
+    // solids separate; a box taller than the cylinder it fuses with, its top corners on the
+    // cylinder's surface above the cap. So a pierce vertex keeps its name when a lateral of its
+    // cylinder and both its planes meet it here, or when fewer than two planes do (nothing to
+    // restate it on); otherwise it takes the canonical triple of the planes that do, else the
+    // pierce name of the first pair of them that restates it
+    // ([`combinatorics::restate_pierce`]). Where no pair does — the pair meets the cylinder
+    // elsewhere, or the arithmetic cannot say, which `restate_pierce`'s `None` does not tell
+    // apart — the name stands. A restatement stays on the same cylinder, so with no lateral of it
+    // here and fewer than three independent planes there is no name the vertex's own faces give:
+    // the fence refuses the vertex by that symptom, not the cause.
     let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
-    let mut has_cyl: HashSet<(usize, usize)> = HashSet::new();
+    // `(group, node, cylinder class)` for every node a lateral's ring visits — the cylinders that
+    // meet the vertex, as `planes_at` holds the planes.
+    let mut cyls_at: HashSet<(usize, NodeId, usize)> = HashSet::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        if let ClassIx::Cyl(k) = lf.surf {
-            has_cyl.insert((g, k));
-        }
         for ring in lf.poly_rings() {
             for &node in &ring.nodes {
-                let at = planes_at.entry((g, node)).or_default();
-                if let ClassIx::Plane(c) = lf.surf
-                    && !at.contains(&c)
-                {
-                    at.push(c);
+                match lf.surf {
+                    ClassIx::Plane(c) => {
+                        let at = planes_at.entry((g, node)).or_default();
+                        if !at.contains(&c) {
+                            at.push(c);
+                        }
+                    }
+                    ClassIx::Cyl(k) => {
+                        planes_at.entry((g, node)).or_default();
+                        cyls_at.insert((g, node, k));
+                    }
                 }
             }
         }
@@ -247,7 +252,7 @@ pub(crate) fn name_result_vertices(
             }
             continue;
         };
-        let def = if (has_cyl.contains(&(key.0, cyl)) && own.iter().all(|p| at.contains(p)))
+        let def = if (cyls_at.contains(&(key.0, key.1, cyl)) && own.iter().all(|p| at.contains(p)))
             || at.len() < 2
         {
             Def::of_pierce_name(key.1)

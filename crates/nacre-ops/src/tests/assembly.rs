@@ -143,6 +143,104 @@ fn an_edge_stated_on_a_pair_its_faces_do_not_keep_is_refused() {
     );
 }
 
+/// **The closing fence asks the faces at each vertex, not the solid's**
+/// (`vertex_named_off_its_faces`, `VertexNamesAbsentSurface`): a closed cube whose origin corner is
+/// restated as Bottom · Front · Right — three surfaces the cube keeps, Right on no face at that
+/// corner. The solid-wide question (`transform::foreign_named_vertex`) passes it; the fence names
+/// the corner. Handle-level, like the edge plant above: where the restated planes meet is not read.
+#[test]
+fn a_vertex_named_by_a_face_away_from_it_is_refused() {
+    use nacre_math::Point3;
+    use nacre_store::Handle;
+    use nacre_topo::{Edge, HalfEdge, Model, PointCache, Shell, Solid, Vertex};
+    use std::collections::HashMap;
+    let mut m = Model::new();
+    let cube = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0; 3]),
+    );
+    assert_eq!(
+        super::vertex_named_off_its_faces(&m, cube),
+        None,
+        "the cube itself"
+    );
+    let faces = m.shell(m.solid(cube).outer).faces.clone();
+    // The extrude's face order: the floor, the top, then the walls from the rectangle's first
+    // edge — `y = 0`, `x = 1`, `y = 1`, `x = 0`.
+    let (bottom, front, right) = (faces[0], faces[2], faces[3]);
+    let edges: Vec<Handle<Edge>> = faces
+        .iter()
+        .flat_map(|&f| m.face(f).outer.half_edges.iter().map(|he| he.edge))
+        .collect();
+    let origin = edges
+        .iter()
+        .flat_map(|&e| m.edge(e).vertices)
+        .find(|&v| m.vertex_point(v) == Point3::origin())
+        .expect("the origin corner");
+    let restated = m.push_vertex(
+        Vertex::ThreePlane([
+            m.face(bottom).surface,
+            m.face(front).surface,
+            m.face(right).surface,
+        ]),
+        PointCache::Unrealized {
+            coord: Point3::origin(),
+        },
+    );
+    let mut swapped: HashMap<Handle<Edge>, Handle<Edge>> = HashMap::new();
+    for &e in &edges {
+        let (surfaces, vertices) = (m.edge(e).surfaces, m.edge(e).vertices);
+        if swapped.contains_key(&e) || !vertices.contains(&origin) {
+            continue;
+        }
+        let ends = vertices.map(|v| if v == origin { restated } else { v });
+        let new = m
+            .push_edge(surfaces, ends, |_| nacre_topo::EdgeGiven::NONE)
+            .expect("a line of two planes");
+        swapped.insert(e, new);
+    }
+    assert_eq!(swapped.len(), 3, "a cube corner has three edges");
+    let new_faces: Vec<_> = faces
+        .iter()
+        .map(|&f| {
+            let mut face = m.face(f).clone();
+            if !face
+                .outer
+                .half_edges
+                .iter()
+                .any(|he| swapped.contains_key(&he.edge))
+            {
+                return f;
+            }
+            for he in &mut face.outer.half_edges {
+                if let Some(&edge) = swapped.get(&he.edge) {
+                    *he = HalfEdge {
+                        edge,
+                        forward: he.forward,
+                    };
+                }
+            }
+            m.push_face(face)
+        })
+        .collect();
+    let shell = m.push_shell(Shell { faces: new_faces });
+    let solid = m.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    assert_eq!(
+        crate::transform::foreign_named_vertex(&m, solid),
+        None,
+        "every surface the corner names is one the solid keeps"
+    );
+    assert_eq!(
+        super::vertex_named_off_its_faces(&m, solid),
+        Some(restated),
+        "Right is on no face at the corner"
+    );
+}
+
 /// The two pierce nodes where plane classes 4 and 5 meet plane class 3 on cylinder class 0's
 /// lateral — a rim `(0, 3)` cut at two points, and a face of either kind walking it as two arcs.
 fn two_arc_rim() -> (
@@ -542,7 +640,7 @@ fn a_rim_held_at_one_node_is_cut_there_alone() {
 /// pierce name would name a surface the arch lacks and the shipped fence would refuse the vertex
 /// (`VertexNamesAbsentSurface`).
 ///
-/// Two solids, `validate`-clean, every vertex named by its own solid's faces, volumes `1040` and
+/// Two solids, `validate`-clean, every vertex named by the faces that meet it, volumes `1040` and
 /// `250π`.
 #[test]
 fn an_arch_on_a_cylinders_rim_fuses_to_two_solids() {
@@ -599,9 +697,9 @@ fn an_arch_on_a_cylinders_rim_fuses_to_two_solids() {
         .iter()
         .map(|&s| {
             assert_eq!(
-                crate::transform::foreign_named_vertex(&m, s),
+                super::vertex_named_off_its_faces(&m, s),
                 None,
-                "every vertex named by its own solid's faces"
+                "every vertex named by the faces that meet it"
             );
             nacre_props::mass_props(&m, s).expect("mass props").volume
         })

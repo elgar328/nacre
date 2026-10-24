@@ -81,11 +81,11 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
 /// actually bites.
 ///
-/// **That expectation is enforced where definitions are made.** The assembly names a result
-/// vertex by the canonical triple of its incident faces' planes — not the arrangement's, which
-/// can include a plane the result keeps no face on — and refuses, in release builds too, a result
-/// whose definitions still name an absent surface (`VertexNamesAbsentSurface`). A solid that could
-/// not move is refused by the boolean that made it, not by this gate two operations later.
+/// **That expectation is enforced where definitions are made**: a boolean refuses, in release
+/// builds too, a result vertex not named by the faces that meet it
+/// ([`RejectReason::VertexNamesAbsentSurface`](crate::RejectReason::VertexNamesAbsentSurface)),
+/// which implies this. A solid that could not move is refused by the boolean that made it, not by
+/// this gate two operations later.
 pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
     foreign_named_vertex(model, solid).is_none()
 }

@@ -618,15 +618,17 @@ pub(crate) fn reconstruct(
     if let Some(d) = deferred {
         return Err(d);
     }
-    // **Every result vertex must re-solve from the result's own faces** — the property
-    // transform and replay stand on. It is a shipped check, not a debug_assert: a vertex whose
-    // definition names a surface with no face in the result is a wrong name with the right
-    // volume, which a release build would otherwise ship silently (no input in the reject-trace
-    // sweeps reaches it — the coplanar merge dissolves such corners). The garbage-solid residue
-    // is the same class every late reject leaves (see the raise above).
+    // **Every result vertex is named by the faces that meet it** — the naming's own rule, asked
+    // of what was minted. It implies the solid-wide
+    // property transform and replay stand on (`transform::foreign_named_vertex`). It is a shipped
+    // check, not a debug_assert: a vertex whose definition names a surface no face at it lies on
+    // is a wrong name with the right volume, which a release build would otherwise ship silently
+    // (no input in the suite or the census reaches it — the coplanar merge dissolves such
+    // corners, and the naming restates the rest). The garbage-solid residue is the same class
+    // every late reject leaves (see the raise above).
     if let Ok(solids) = &out {
         for &s in solids {
-            if let Some(vh) = crate::transform::foreign_named_vertex(model, s) {
+            if let Some(vh) = vertex_named_off_its_faces(model, s) {
                 return Err(crate::reject_at(
                     RejectReason::VertexNamesAbsentSurface,
                     crate::RejectWhere::Point(model.vertex_point(vh)),
@@ -635,6 +637,42 @@ pub(crate) fn reconstruct(
         }
     }
     out
+}
+
+/// The lowest-handle vertex of `solid` whose definition names a surface none of the faces using
+/// it lies on, `None` when every vertex is named by its own faces.
+///
+/// **Stricter than the edge rule, on purpose.** An arc between two coplanar faces states its
+/// cylinder and ships ([`check_result_topology`]), but a vertex at its end whose cylinder has no
+/// lateral there is refused here: the merge that should have erased that boundary is a
+/// correctness matter (`unify_coplanar_faces`), and widening the question to the edges' carriers
+/// would lose the implication this check gives transform — an edge's carrier need not be a face
+/// surface of the solid.
+pub(crate) fn vertex_named_off_its_faces(
+    model: &Model,
+    solid: Handle<Solid>,
+) -> Option<Handle<Vertex>> {
+    let src = model.solid(solid);
+    let mut at: HashMap<Handle<Vertex>, Vec<Handle<Surface>>> = HashMap::new();
+    for sh in std::iter::once(src.outer).chain(src.cavities.iter().copied()) {
+        for &fh in &model.shell(sh).faces {
+            let face = model.face(fh);
+            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                for he in &lp.half_edges {
+                    for &vh in &model.edge(he.edge).vertices {
+                        let surfs = at.entry(vh).or_default();
+                        if !surfs.contains(&face.surface) {
+                            surfs.push(face.surface);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    at.iter()
+        .filter(|(vh, surfs)| !model.vertex(**vh).carriers().all(|c| surfs.contains(&c)))
+        .map(|(&vh, _)| vh)
+        .min_by_key(|vh| vh.index())
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.

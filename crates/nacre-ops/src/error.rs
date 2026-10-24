@@ -379,16 +379,13 @@ pub enum RejectReason {
     /// (`Said::Declines`): a witness further down answers, and this name never surfaces from
     /// there.
     PierceVertexUnnamed,
-    /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
-    /// the point could not be re-solved from the solid's own geometry — the property transform
-    /// and replay stand on (`defs_are_remappable`). The coplanar merge dissolves the corners that
-    /// sat on a surface the result drops (two bodies meeting on a full wall, a contact-cut whose
-    /// boss only touches the plate), and the straight-angle cleaning reads one line's two
-    /// spellings as one (a prism's edge along a cylinder's lateral and on past its cap), so the
-    /// names the result keeps are its own: no input in the workspace suite or the census raises
-    /// it. A shipped check rather than a debug_assert all the same: a definition naming a surface
-    /// the result has **no face on at all** is a model that cannot describe itself, and in a
-    /// release build it would ship silently — right volume, wrong names.
+    /// A **result** vertex's definition names a surface none of the faces meeting at that vertex
+    /// lies on. A vertex is where its faces meet, and
+    /// its definition is how the kernel solves the point again (after a transform, on replay), so
+    /// it is spelled by those faces' surfaces; a corner that merely lies on another face's
+    /// unbounded surface is not named by it. A shipped check, because ops cannot lean on
+    /// `validate` and a release build would otherwise return that solid — right volume, wrong
+    /// names. No boolean in the suite or the census fires it; a planted vertex does.
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
     /// could not be shown to miss the plane — where they meet, the intersection is an ellipse
