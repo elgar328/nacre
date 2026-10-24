@@ -1,12 +1,11 @@
 //! b-rep invariant checker for the nacre kernel.
 //!
 //! [`validate`] runs every check over a [`Model`] and returns all [`Violation`]s it
-//! finds (an empty `Vec` means the model is valid): reference integrity, loop closure,
-//! half-edge manifold pairing, face orientation against loop winding, geometric
-//! incidence (vertices on their curves and surfaces, and on their own definitions),
-//! vertex definitions that name only the surfaces of the faces meeting there, three-plane
-//! definitions that name a point, one handle per surface, each plane's stored name, and
-//! Euler-Poincaré.
+//! finds (an empty `Vec` means the model is valid). The checks are the [`Violation`]
+//! variants, one invariant each: the model's references, its topology (closure,
+//! manifoldness, orientation, Euler–Poincaré), and its geometry (every vertex on its curves,
+//! surfaces and definition; a cylinder's cache and a plane's stored name against its exact
+//! statement).
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted

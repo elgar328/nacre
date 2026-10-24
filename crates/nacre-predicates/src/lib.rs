@@ -16,7 +16,7 @@
 //! takes plane coefficients and coordinates as plain `[f64; N]` arrays — never a
 //! kernel `Handle`/`Surface`. This keeps the crate free of `nacre-geom`/`-topo`
 //! (no `geom → predicates → geom` cycle) and extractable as a standalone crate.
-//! Callers (`nacre-geom`) convert their types to arrays at the boundary.
+//! Callers convert their types to arrays at the boundary.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 /// The exact sign of `orient3d` — the signed volume of the tetrahedron
