@@ -5,13 +5,8 @@
 //! and identity is an integer comparison (`h1 == h2`), never a floating-point
 //! coordinate comparison.
 //!
-//! `Store`/`Handle` live in this lowest crate on purpose: a typed-index arena knows
-//! nothing of geometry or topology, and everything above it — `nacre-topo`'s arenas,
-//! `nacre-ops`, `nacre-validate`, `nacre-step` — names handles freely.
-//!
-//! `nacre-geom` stays `Handle`-free even so: a curve-intersection variant cannot hold one, because
-//! a handle names an arena entry and the surface arena holds the **truth**, a `nacre-topo` type,
-//! which a crate below topo cannot name.
+//! The crate knows nothing of what it stores: a [`Store<T>`] holds any `T`, and a
+//! [`Handle<T>`] names one slot of one store.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use core::cmp::Ordering;
@@ -21,12 +16,11 @@ use core::marker::PhantomData;
 
 /// A permanent reference to an item in a [`Store<T>`].
 ///
-/// This is just a `u32` index plus a type tag — it never holds a `T`. We do
-/// **not** `#[derive]` the trait impls: derive would add a spurious `T: Trait`
-/// bound (rust-lang/rust#26925), so e.g. `#[derive(Hash)]` would demand
-/// `T: Hash`. That breaks `HashMap<Handle<Edge>, _>` (topo `Adjacency`), because
-/// `Edge` carries an `f64` tolerance and thus implements neither `Hash` nor `Eq`.
-/// The hand-written impls below compare/hash only `index`, so `Handle<T>` is
+/// This is just a `u32` index plus a type tag — it never holds a `T`. The trait
+/// impls are written by hand, not derived: a derive adds a `T: Trait` bound
+/// (rust-lang/rust#26925), so `#[derive(Hash)]` would make `HashMap<Handle<T>, _>`
+/// demand `T: Hash` — a bound on the stored type that a key of integers does not
+/// need. The impls below compare and hash only `index`, so `Handle<T>` is
 /// `Copy + Eq + Hash + Ord` for *any* `T`.
 ///
 /// `PhantomData<fn() -> T>` (rather than `PhantomData<T>`) keeps `Handle<T>`
@@ -147,20 +141,19 @@ impl<T> Store<T> {
 
     /// **This store's handle for a slot named by index** — `None` past the end.
     ///
-    /// An operation log names cells by *index*, not by handle: a `Handle`'s identity is its
-    /// index (the `Eq`/`Hash` impls below use nothing else), and a log outlives the model it
-    /// was recorded against. So `replay`, which builds a fresh model from scratch, re-anchors
-    /// each of the log's indices onto the model it is building — this is that re-anchoring.
+    /// A record that outlives its store — an operation log — names cells by *index*, not by
+    /// handle: a `Handle`'s identity is its index (the `Eq`/`Hash` impls use nothing else).
+    /// Rebuilding from such a record re-anchors each of its indices onto the store being
+    /// built — this is that re-anchoring.
     ///
     /// **It does not weaken [`Store::get`]'s guard.** The handle returned is this store's by
     /// construction, so nothing crosses models here; and the ability itself is `iter().nth(i)`'s —
     /// it mints exactly this handle. What this adds is a name, `O(1)`, an `Option` where `nth`
     /// gives one for a different reason, and somewhere to write the contract down.
     ///
-    /// **The one legitimate shape is "re-anchor a log's index onto the model I am building".**
-    /// Reaching for this because a cross-store panic fired is hiding the bug it caught. (The
-    /// throwaway-`Store` trick in `nacre-validate`'s fixtures is a *different* job — it needs
-    /// handles that point **past** the end, which this cannot make by construction.)
+    /// **The one legitimate shape is "re-anchor a record's index onto the store I am building".**
+    /// Reaching for this because a cross-store panic fired is hiding the bug it caught. It
+    /// cannot make a handle past the end.
     #[inline]
     #[must_use]
     pub fn handle_at(&self, index: u32) -> Option<Handle<T>> {
