@@ -1,15 +1,10 @@
 //! Mesh export for the nacre kernel.
 //!
 //! **One path**: [`tessellate`] (every live solid) or [`tessellate_solids`] (the solids given) →
-//! [`Tessellation`]. Edges are sampled once into shared
-//! polylines and every face is triangulated in a chart of its own surface — a plane drops an axis,
-//! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
-//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
-//!
-//! **One, and only one.** A second writer that fan-triangulates planar faces **from
-//! half-edge start vertices** silently turns an arc into a chord. The projection rule
-//! (Newell → drop axis → repair handedness) lives once, in `planar_chart`; the sweep below it
-//! is shared.
+//! [`Tessellation`]. Edges are sampled once into shared polylines and every face is triangulated
+//! in a chart of its own surface — a plane drops an axis, a cylinder unrolls to `(z, r·θ)` — so
+//! adjacent faces meet crack-free and every mesh vertex carries its origin ([`TessOrigin`]). OBJ
+//! text comes from [`Tessellation::to_obj`].
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
@@ -920,7 +915,9 @@ fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
 }
 
 /// A loop's boundary as an ordered ring of shared mesh vertices — [`traced_ring`]'s walk, so a
-/// chart position and the polyline place it came from are one numbering.
+/// chart position and the polyline place it came from are one numbering. The ring is the edges'
+/// sampled polylines, not the half-edges' start vertices: a face triangulated from those start
+/// vertices turns each arc into its chord.
 fn boundary_ring(t: &Tessellation, lp: &Loop) -> Vec<Handle<TessVertex>> {
     traced_ring(t, lp).0.into_iter().map(|p| p.handle).collect()
 }
@@ -1018,7 +1015,9 @@ fn face_rings(t: &Tessellation, face: &Face) -> (Vec<Handle<TessVertex>>, Vec<Ve
     (handles, rings)
 }
 
-/// A planar face's chart: drop the axis the face's own Newell normal is largest along.
+/// A planar face's chart: drop the axis the face's own Newell normal is largest along. The
+/// projection rule (Newell → drop an axis → repair handedness) lives here alone, and every
+/// planar face's sweep goes through it.
 ///
 /// The handedness repair is a **swap** of `u` and `v`: a plane's two axes are interchangeable, so
 /// mirroring the frame costs nothing (a curved chart cannot do this — see [`cylinder_chart`]).
