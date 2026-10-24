@@ -6,9 +6,9 @@
 //! never to what a caller constructed.
 //!
 //! This is the **facade**. The kernel is built as one crate per layer so the layers
-//! cannot reach into each other (geometry knows nothing of topology; topology refers to
-//! geometry only by handle), and this crate re-exports them so a consumer depends on
-//! one name instead of ten.
+//! cannot reach into each other (geometry knows nothing of topology; topology holds the
+//! exact truth and the geometry realized from it), and this crate re-exports them so a
+//! consumer depends on one name instead of ten.
 //!
 //! ## The layers
 //!
@@ -18,7 +18,7 @@
 //! | [`math`] | `Point<D>` / `Vector<D>` — plain f64 linear algebra |
 //! | [`exact`] | `Rat` / `Angle` / `Isometry` / `PlaneName` — what is answered exactly in rationals |
 //! | [`geom`] | `Plane` / `Line` / `Circle` / `Cylinder`, and the isolated `intersect` predicates |
-//! | [`topo`] | `Model` and the b-rep cells — the truth aggregate |
+//! | [`topo`] | `Model` and the b-rep cells — the truth and its realization |
 //! | [`ops`] | `Operation` / `apply` / `replay`, sketch profiles, extrude, boolean |
 //! | [`props`] | volume, area, centroid, bounding box, per-face facts |
 //! | [`validate`] | b-rep invariant checking |

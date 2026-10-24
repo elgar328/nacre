@@ -260,7 +260,7 @@ rim 이 `[v, v]` 라는 것과 담체를 유도할 수 없다는 것은 **필드
 (`motions: Store<MotionNode>`) 규칙의 주어가 아니라 이름만 짓고 넘긴다 — 아래 「서피스는 자기
 leaf 에서 이어진다」가 그 노드 위에 선다.
 
-**`Model` 은 진실만 든 집합체다**: 정확 기하의 진실(`surfaces`·`motions`), 위상 store 다섯
+**`Model` 은 진실과 진실에서 유도되는 것을 든다**: 정확 기하의 진실(`surfaces`·`motions`), 위상 store 다섯
 (`vertices`·`edges`·`faces`·`shells`·`solids`)과 `live_solids`, 그리고 진실에서 유도되는 곁표들
 — 인덱스 병렬 캐시 셋(`surface_cache`·`edge_cache`·`vertex_cache`), 역방향 인덱스 `adj`, interning 표,
 가속기 `prefix_hp`. tess 와 ops 는 들지 않는다.

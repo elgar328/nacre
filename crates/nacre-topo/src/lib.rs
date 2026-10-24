@@ -1,14 +1,11 @@
-//! b-rep topology and the truth-only `Model` aggregate.
+//! b-rep topology and the [`Model`] that holds it.
 //!
-//! The topology (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`)
-//! references exact geometry only by `Handle` — geometry never knows about
-//! topology, topology never inspects coordinates.
-//!
-//! [`Model`] is the **truth**: exact geometry stores + topology stores + the
-//! derived [`Adjacency`] cache. It holds no tessellation and no operation log —
-//! a mesh cache and the op log are companions owned at higher layers ("the
-//! model is the replay result"; putting them here would make topo depend on
-//! tess/ops and break the truth/cache split).
+//! The cells (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`) refer to each other
+//! and to their surfaces by `Handle`. A [`Model`] holds the **truth** — each surface's exact
+//! statement, each vertex's definition, the motion history, the topology — and what derives
+//! from it: each surface's, edge's and vertex's `f64` realization, the [`Adjacency`] index and
+//! the interning tables. It holds no mesh and no operation log; the model is what replaying a
+//! log builds.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted
@@ -696,8 +693,8 @@ impl CylinderDef {
     }
 }
 
-/// The truth-only aggregate: exact geometry + topology stores + the derived
-/// adjacency cache. No `tess`, no `ops` (see the crate docs).
+/// The truth and what derives from it: exact geometry and topology stores, each surface's, edge's
+/// and vertex's realization, the adjacency and the interning tables. No mesh, no operation log.
 #[derive(Debug)]
 pub struct Model {
     // exact geometry (truth)

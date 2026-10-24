@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Exact mass properties for the nacre CAD kernel — volume, area and centroid computed on the exact geometry, not on a mesh"
+description = "Mass properties for the nacre CAD kernel — volume, area and centroid computed analytically from the surfaces, not from a mesh"
 readme = "../LAYER-README.md"
 
 [dependencies]

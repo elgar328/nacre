@@ -1,21 +1,13 @@
-//! Exact derived properties of a nacre solid — volume, surface area, centroid,
-//! bounding box, and the per-face facts ([`FaceProps`]) a caller needs to *name*
-//! a face from its geometry rather than by an index that shifts under it.
+//! Derived properties of a nacre solid — volume, surface area, centroid, bounding box, and the
+//! per-face facts ([`FaceProps`]) a caller needs to *name* a face from its geometry rather than
+//! by an index that shifts under it.
 //!
-//! Computed **analytically on the exact geometry** via the divergence theorem —
-//! not from a tessellation, so the numbers match an analytic oracle (OCCT) to
-//! near machine precision rather than to mesh resolution. This crate is a
-//! read-only analysis over the topology [`Model`]; it lives above `nacre-topo`
-//! (not inside it) so the topology crate stays a truth-only aggregate, mirroring
-//! `nacre-validate` / `nacre-tess` / `nacre-step`.
+//! Computed **analytically** from the solid's surfaces (the divergence theorem), not from a
+//! mesh, so the numbers carry the geometry's own precision rather than a mesh resolution's. The
+//! arithmetic is `f64`, on the realized coordinates.
 //!
-//! Consumers: user "part volume / surface area" queries, the boolean
-//! volume-conservation invariants (proptest), and the OCCT oracle diff
-//! (`nacre-oracle`).
-//!
-//! Precondition: the solid is a valid closed, outward-oriented b-rep (what the
-//! producers emit and `validate` accepts). Coordinates are the cache side of the
-//! truth/cache split, so f64 arithmetic here is appropriate.
+//! Precondition: the solid is a valid closed, outward-oriented b-rep — what the operations
+//! produce and `validate` accepts.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_geom::Curve;
