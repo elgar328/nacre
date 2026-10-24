@@ -4,8 +4,9 @@
 //! finds (an empty `Vec` means the model is valid): reference integrity, loop closure,
 //! half-edge manifold pairing, face orientation against loop winding, geometric
 //! incidence (vertices on their curves and surfaces, and on their own definitions),
-//! three-plane definitions that name a point, one handle per surface, each plane's stored name,
-//! and Euler-Poincaré.
+//! vertex definitions that name only the surfaces of the faces meeting there, three-plane
+//! definitions that name a point, one handle per surface, each plane's stored name, and
+//! Euler-Poincaré.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 // Test fixtures build models through the cache write doors directly; product code is linted
@@ -94,8 +95,9 @@ pub enum Violation {
     /// naming a cylinder (three *planes* is the claim), or an `OnSeam` naming two planes
     /// (two planes meet in a line — a line's point IS a three-plane intersection, so the
     /// seam spelling would be hiding an expressible truth). The variants' invariants are
-    /// per-variant, and this is the checker that keeps them so — the vertex sibling of
-    /// [`Self::EdgeCarrierMismatch`].
+    /// per-variant, and this is the checker that keeps them so. It asks the carriers' **kinds**;
+    /// whether they are the surfaces of the faces at the vertex is
+    /// [`Self::VertexNamesAbsentSurface`].
     VertexCarrierMismatch { vertex: Handle<Vertex> },
 
     /// A `ThreePlane` vertex whose three planes meet in **no point** — parallel, or sharing a line
@@ -113,6 +115,20 @@ pub enum Violation {
         edge: Handle<Edge>,
         stated: [u32; 2],
         observed: [u32; 2],
+    },
+
+    /// A vertex's definition names a `surface` none of the faces using the vertex lies on — the
+    /// vertex sibling of [`Self::EdgeCarrierMismatch`]. A vertex is where its faces meet, and its
+    /// definition is how the point is solved again (after a transform, on replay), so it is
+    /// spelled by those faces' surfaces: a corner that merely lies on another surface — the
+    /// unbounded cylinder of a lateral that ends below it — is not named by it. The first such
+    /// surface of each vertex is reported.
+    ///
+    /// Stricter than the edge rule: an edge between two faces on one plane may state the
+    /// cylinder its arc lies on, but a vertex is held to the faces that meet it.
+    VertexNamesAbsentSurface {
+        vertex: Handle<Vertex>,
+        surface: Handle<Surface>,
     },
 
     /// A bound vertex does not lie on its edge's curve within tolerance.
@@ -279,6 +295,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let reach = model.reachable();
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_vertex_def_carriers(model, &mut out);
+    check_vertex_carriers_at_its_faces(model, &adj, &reach, &mut out);
     check_vertex_names_a_point(model, &mut out);
     check_surface_keys(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
@@ -541,6 +558,38 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
         };
         if bad {
             out.push(Violation::VertexCarrierMismatch { vertex: vh });
+        }
+    }
+}
+
+/// Each live vertex's definition names only surfaces of the faces that use it
+/// ([`Violation::VertexNamesAbsentSurface`]). Live cells only, like every check but the arena
+/// walks beside it: a cell nothing reaches has no faces to be named by.
+fn check_vertex_carriers_at_its_faces(
+    m: &Model,
+    adj: &Adjacency,
+    reach: &Reachable,
+    out: &mut Vec<Violation>,
+) {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        if !reach.vertices.contains(&vh) {
+            continue;
+        }
+        let at: Vec<Handle<Surface>> = adj
+            .vertex_edges
+            .get(&vh)
+            .into_iter()
+            .flatten()
+            .flat_map(|e| adj.edge_uses.get(e).into_iter().flatten())
+            .map(|&(fh, _)| m.face(fh).surface)
+            .collect();
+        if let Some(surface) = m.vertex(vh).carriers().find(|c| !at.contains(c)) {
+            out.push(Violation::VertexNamesAbsentSurface {
+                vertex: vh,
+                surface,
+            });
         }
     }
 }

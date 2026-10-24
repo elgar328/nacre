@@ -307,6 +307,10 @@ struct TetraOpts {
     drop_face: Option<usize>,
     flip_he: Option<(usize, usize)>, // (face, half-edge position)
     swap_he: Option<(usize, usize, usize)>, // (face, position a, position b)
+    /// A vertex whose definition swaps its third incident plane for one through the same corner
+    /// that no face lies on — normal `(1, 1, 1)`; with the two kept planes it still names the
+    /// corner, so only the adjacency of the definition is wrong.
+    foreign_plane: Option<usize>,
 }
 
 /// Push a standard tetra translated by `t` (with `opts` defects) into `m`;
@@ -354,12 +358,30 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
             }
             // Every vertex names the three tetra faces incident to it (the
             // definition is the vertex).
-            let incident: Vec<Handle<Surface>> = TETRA_FACES
+            let mut incident: Vec<Handle<Surface>> = TETRA_FACES
                 .iter()
                 .enumerate()
                 .filter(|(_, (tri, _))| tri.contains(&i))
                 .map(|(fi, _)| sh[fi])
                 .collect();
+            if opts.foreign_plane == Some(i) {
+                let c = corner(i).as_array();
+                let pts = [
+                    c,
+                    [c[0] + 1.0, c[1] - 1.0, c[2]],
+                    [c[0], c[1] + 1.0, c[2] - 1.0],
+                ]
+                .map(|p| p.map(|x| nacre_exact::Rat::from_decimal(x).expect("tetra corners")));
+                let (foreign, _) = m.push_plane(
+                    Plane::from_point_normal(corner(i), Vector3::from_array([1.0, 1.0, 1.0]))
+                        .unwrap(),
+                    nacre_topo::CacheStanding::Unrealized,
+                    pts,
+                    None,
+                    nacre_topo::Orientation::Forward,
+                );
+                incident[2] = foreign;
+            }
             let coord = Point3::from_array(p);
             m.push_vertex(
                 Vertex::ThreePlane(incident.try_into().expect("a tetra vertex is on 3 faces")),
@@ -433,6 +455,31 @@ fn tetra_with(opts: TetraOpts) -> Model {
 
 fn tetra() -> Model {
     tetra_with(TetraOpts::default())
+}
+
+/// **A vertex is named by the faces that meet it** — the tetra's origin corner defined by two of
+/// its faces' planes and a third plane through the corner that no face lies on: exactly one
+/// [`Violation::VertexNamesAbsentSurface`], naming that plane.
+#[test]
+fn a_vertex_named_by_a_plane_no_face_at_it_lies_on_is_reported() {
+    let m = tetra_with(TetraOpts {
+        foreign_plane: Some(0),
+        ..Default::default()
+    });
+    let vs = validate(&m);
+    let [Violation::VertexNamesAbsentSurface { vertex, surface }] = vs[..] else {
+        panic!("one absent surface: {vs:?}")
+    };
+    assert_eq!(
+        m.vertex_point(vertex),
+        Point3::origin(),
+        "the origin corner"
+    );
+    let used: Vec<Handle<Surface>> = (0..)
+        .map_while(|i| m.face_handle_at(i))
+        .map(|f| m.face(f).surface)
+        .collect();
+    assert!(!used.contains(&surface), "a plane no face lies on");
 }
 
 #[test]

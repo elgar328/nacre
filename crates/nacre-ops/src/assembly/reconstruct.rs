@@ -619,7 +619,7 @@ pub(crate) fn reconstruct(
         return Err(d);
     }
     // **Every result vertex is named by the faces that meet it** — the naming's own rule, asked
-    // of what was minted. It implies the solid-wide
+    // of what was minted, and `validate`'s `VertexNamesAbsentSurface`. It implies the solid-wide
     // property transform and replay stand on (`transform::foreign_named_vertex`). It is a shipped
     // check, not a debug_assert: a vertex whose definition names a surface no face at it lies on
     // is a wrong name with the right volume, which a release build would otherwise ship silently

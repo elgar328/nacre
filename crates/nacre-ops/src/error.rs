@@ -380,7 +380,7 @@ pub enum RejectReason {
     /// there.
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface none of the faces meeting at that vertex
-    /// lies on. A vertex is where its faces meet, and
+    /// lies on — `validate`'s `VertexNamesAbsentSurface`. A vertex is where its faces meet, and
     /// its definition is how the kernel solves the point again (after a transform, on replay), so
     /// it is spelled by those faces' surfaces; a corner that merely lies on another face's
     /// unbounded surface is not named by it. A shipped check, because ops cannot lean on
