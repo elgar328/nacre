@@ -288,7 +288,8 @@ kit 의 `rotateX`·`rotateY`·`rotateZ(…, { pivot: "center" })` 는 몸마다 
 진술되면 문이(`push_plane_raw`·`push_cylinder_raw`), 사슬이 안 접히면 ops 깔때기가(`push_plane_realized`·
 `push_cylinder_realized`); 원 간선의 프레임은 원통 캐시를 비트 그대로 싣고, 원 중심은 진실의 만남이다 — 진술된
 원통이면 `derive_edge_curve` 가, 아니면 ops 깔때기가 사슬을 재생해(`EdgeGiven`). 남는 생산자 값은 비용 한계를
-넘는 사슬뿐이고(아래 표의 깊은 이력 행), 그 자리에서 내보내는 수가 «진실의 최근접 f64»가 아니다.
+넘는 사슬뿐이다(아래 표의 깊은 이력 행). 그 캐시는 `nacre_ops::refine_caches` 가 올리기 전에는 «진실의 최근접 f64»가
+아니고, 그 문이 남겼다고 보고하지 않은 것은 그 뒤 최근접이다(누가 그 문을 부르는지는 그 행).
 정점 쪽 문 `nacre_ops::realize_vertex{,_decimal}` 과 `Precision { NearestF64, Bits(usize) }`·`Realization` 은
 서 있고, 자릿수는 `Realization::to_decimal` 만 든다.
 
@@ -307,9 +308,9 @@ kit 의 `rotateX`·`rotateY`·`rotateZ(…, { pivot: "center" })` 는 몸마다 
 | 인구 | 최근접 아님 | 최대 |
 |---|---|---|
 | 원 간선 중심 — 진술된 원통 | 0 / 883 — 원통 진술 × 캡 세계 이름의 정확한 만남(`nacre_exact::axis_plane_meet`)을 성분마다 반올림; census 가 원마다 단언 | — |
-| 원 간선 중심 — 진술 없는 원통(프레임 노드·사분각 밖 회전) | 0 — ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현해 넘긴다(`EdgeGiven::centre`). census 가 원마다 단언한다(14 — 512비트 실현과 비트 동일, 캐시된 중심이 반 ulp 안에서 캡 위·축 위; 정해지지 않은 것 0). 남는 것은 사슬이 비용 한계를 넘는 원통의 원(캐시끼리의 f64 만남) — `nacre_ops::refine_caches` 가 올린다 | 깊은 사슬의 원(안 잼) |
+| 원 간선 중심 — 진술 없는 원통(프레임 노드·사분각 밖 회전) | 0 — ops 깔때기가 사슬로 재생한 축과 캡 평면의 만남을 실현해 넘긴다(`EdgeGiven::centre`). census 가 원마다 단언한다(14 — 512비트 실현과 비트 동일, 캐시된 중심이 반 ulp 안에서 캡 위·축 위; 정해지지 않은 것 0). 사슬이 비용 한계를 넘는 원통의 원은 push 때 캐시끼리의 f64 만남이고, `nacre_ops::refine_caches` 가 같은 만남을 사다리 끝까지 실현해 올린다 — 그 뒤 최근접이다(회전·이동 노드와 프레임 노드 위의 원 12: 512비트 재실현·같은 진실의 얕은 사슬과 비트 동일, `the_refine_door_leaves_every_deep_line_and_circle_nearest`) | 캡만 깊은 원 — 이름 없는 캡의 재생이 한계를 넘고 원통의 사슬은 넘지 않는 원(안 잼) |
 | 원 간선 반지름·법선·`ref_dir` | 0 — 원통 캐시의 프레임을 비트 그대로(`Circle::from_unit_frame`); 위 모음의 진술 없는 원 756 에서도 0 | — |
-| 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(brep-to-step — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `Curve::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), 룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,623 · 축을 따르는 420 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 남는 것은 사슬이 비용 한계를 넘는 직선(끝점의 차) — `nacre_ops::refine_caches` 가 올린다. 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | 깊은 사슬의 직선(안 잼) |
+| 직선 간선의 STEP `LINE` 방향·`VECTOR` 크기 | 크기는 1(brep-to-step — 매개변수 눈금일 뿐이라 정확). 방향은 간선 캐시의 것을 `Curve::LineAlong` 으로 비트 그대로 쓰고, 캐시는 진실이 방향을 정하는 곳에서 그 방향이다 — 세계 이름 있는 두 평면은 이름 법선의 정확한 외적의 최근접 단위(`nacre_exact::meet_direction_f64`), 룰링은 원통 캐시의 축(`derive_edge_curve`); 세계 이름 없는 평면이 낀 직선은 ops 깔때기가 두 평면 계수의 외적을 실현해 넘긴다(`EdgeGiven`, `push_edge_realized`). census 가 직선마다 단언한다(이름 있는 5,623 · 축을 따르는 420 · 이름 없는 879 — 끝점 둘을 정의에서 512비트로 실현한 방향 대비, 그중 472 는 끝점이 같은 증인 평면을 읽는 혼합 도로; 끝점의 차와 비트가 다른 직선 544). 사슬이 비용 한계를 넘는 직선은 push 때 끝점의 차이고, `nacre_ops::refine_caches` 가 올린다 — 그 뒤 최근접이다(직선 58, 그중 끝점이 혼합 도로인 것 38·룰링 2: 끝점 정의의 512비트 실현·같은 진실의 얕은 사슬과 비트 동일, 같은 잠금). 평면 면의 `ref_dir`(`any_perpendicular`)은 임의 선택이라 이 칸이 아니다 | — |
 | 원통의 원점·축·`ref_dir`·반지름 | 0 — 문이 진술에서, 진술이 없으면 깔때기가 사슬에서 정확 반올림한다(스위트에서 생산자 값과 다르던 진술된 원통 81: 기울어진 축 31·옮긴 원통 원점 50; 사슬로 실현한 회전 원통 1,319, census 7) | — |
 | 깊은 이력의 정점·평면·원통 캐시(사슬 > 192 노드, 두 단에서 미결정) | census 0. 스위트 push: 정점 `Ceiling` 35,280(`CostCap` 35,168 · `Undecided` 112) · 평면 생산자 값 17,556(깊은 사슬) + 256 에서 미결정인 법선 392 — 캐시가 그것을 말하고(`PointCache::Ceiling` · `CacheStanding::Ceiling`) 내보내기 직전의 문 `nacre_ops::refine_caches` 가 사다리 끝까지 올린다(7° 회전 + 300 이동 픽스처: 정점 8 · 곡면 4 · 간선 12, 남김 0, release 17 ms). 길이 없는 것은 `Unrealized` 로 남고 문이 수로 보고한다 — 스위트에서 깔때기가 그렇게 답한 것은 일부러 점을 이름하지 않게 짠 정의 둘(`NoPoint`)뿐이다(사분각 밖으로 돌린 관통점은 제 룰링 위에서 실현된다 — design 「원통의 진실」 7). 정점 `NoMeet` 과 이름 없는 평면은 0 이다 — 이름 없는(혼합 프레임) datum 은 증인 삼각형에서 실현되고 그 위의 정점도 그렇다. 제품에서 그 문을 부르는 것은 kit 의 `BuildOutput::export_step` 이다(playground 의 내보내기 단추) | — |
 

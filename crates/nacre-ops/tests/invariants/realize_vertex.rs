@@ -1682,19 +1682,48 @@ fn a_nameless_datum_costs_the_sum_of_its_vertices_chains() {
 /// z-caps, which a turn about `z` and a slide along `x` both fix, stay world-stated.
 fn translated_chain(n: usize) -> Model {
     let mut m = Model::new();
-    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    let s = chain_box(&mut m);
     m.rebuild_adjacency();
-    s = moved(&mut m, s, turn(Axis::Z, 7));
-    for _ in 0..n {
+    let s = moved(&mut m, s, turn(Axis::Z, 7));
+    moved_along_x(&mut m, s, n, 1);
+    m.rebuild_adjacency();
+    m
+}
+
+/// The box [`translated_chain`] moves.
+fn chain_box(m: &mut Model) -> Handle<Solid> {
+    cuboid(m, [0.0; 3], [2.0, 3.0, 4.0])
+}
+
+/// The upright cylinder the deep-cylinder locks move.
+fn chain_cylinder(m: &mut Model) -> Handle<Solid> {
+    nacre_ops::fixtures::cylinder(
+        m,
+        Point3::from_array([1.0, 0.5, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.75,
+        2.0,
+    )
+    .solid
+}
+
+/// `s` moved `times` times by `sevenths / 7` along `x` — each move a recorded node once the body
+/// has a history, so `times = 300` is past the cheap road's cost cap.
+fn moved_along_x(
+    m: &mut Model,
+    mut s: Handle<Solid>,
+    times: usize,
+    sevenths: i128,
+) -> Handle<Solid> {
+    for _ in 0..times {
         let iso = Isometry::translation([
-            Rat::new(1, 7).expect("1/7"),
+            Rat::new(sevenths, 7).expect("a seventh"),
             Rat::from_int(0),
             Rat::from_int(0),
         ]);
-        s = moved(&mut m, s, iso);
+        s = moved(m, s, iso);
     }
-    m.rebuild_adjacency();
-    m
+    s
 }
 
 /// **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
@@ -1945,23 +1974,10 @@ fn a_refined_model_exports_the_same_bytes_twice() {
 #[test]
 fn the_refine_door_raises_a_deep_cylinder() {
     let mut m = Model::new();
-    let c = nacre_ops::fixtures::cylinder(
-        &mut m,
-        Point3::from_array([1.0, 0.5, 0.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        0.75,
-        2.0,
-    );
+    let c = chain_cylinder(&mut m);
     m.rebuild_adjacency();
-    let mut s = moved(&mut m, c.solid, turn(Axis::Z, 7));
-    for _ in 0..300 {
-        let iso = Isometry::translation([
-            Rat::new(1, 7).expect("1/7"),
-            Rat::from_int(0),
-            Rat::from_int(0),
-        ]);
-        s = moved(&mut m, s, iso);
-    }
+    let s = moved(&mut m, c, turn(Axis::Z, 7));
+    let s = moved_along_x(&mut m, s, 300, 1);
     m.rebuild_adjacency();
     let lateral = m
         .shell(m.solid(s).outer)
@@ -2054,6 +2070,280 @@ fn the_refine_door_carries_the_edges_with_it() {
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     assert_eq!(after, again, "the door already re-derived every live curve");
+}
+
+/// One population for [`the_refine_door_leaves_every_deep_line_and_circle_nearest`]: a body, the
+/// turn that gives it a history, and what is built on the moved body (the body itself, or the
+/// solids standing on it) — the solids the door is handed and the lock reads.
+type DeepEdges = (
+    &'static str,
+    fn(&mut Model) -> Handle<Solid>,
+    Isometry,
+    fn(&mut Model, Handle<Solid>) -> Vec<Handle<Solid>>,
+);
+
+/// The deep build of `fixture` — 300 moves of `1/7` after its turn — or its shallow twin, one move
+/// of `300/7`: the same truth on a chain of two.
+fn deep_edges_build(m: &mut Model, fixture: &DeepEdges, deep: bool) -> Vec<Handle<Solid>> {
+    let (_, body, first, on) = fixture;
+    let s = body(m);
+    m.rebuild_adjacency();
+    let s = moved(m, s, *first);
+    let s = if deep {
+        moved_along_x(m, s, 300, 1)
+    } else {
+        moved_along_x(m, s, 1, 300)
+    };
+    m.rebuild_adjacency();
+    let out = on(m, s);
+    m.rebuild_adjacency();
+    out
+}
+
+/// A square prism on `frame`.
+fn square_on(m: &mut Model, frame: SketchFrame) -> Handle<Solid> {
+    let profile = Profile2d::polygon(vec![
+        p2(0.25, 0.25),
+        p2(0.75, 0.25),
+        p2(0.75, 0.75),
+        p2(0.25, 0.75),
+    ])
+    .expect("a square");
+    extruded(m, frame, profile)
+}
+
+fn extruded(m: &mut Model, frame: SketchFrame, profile: Profile2d) -> Handle<Solid> {
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 0.5,
+        },
+    )
+    .expect("a prism") else {
+        unreachable!()
+    };
+    solid
+}
+
+/// **After the refine door, every line and circle on a deep chain is the nearest `f64` of its
+/// truth.** Past the cheap road's cost cap an edge's direction or centre is left to a meet of
+/// caches; the door re-derives every edge on the paid budget. Seven populations: boxes, cylinders,
+/// a windowed boss and a bored plate turned off the quarters and moved 300 times — rotation and
+/// translation nodes — and a disk and a square sketched on a wall of the deep box — frame nodes.
+/// A box turned about `x` keeps its `x` walls stated in the world, which the moves along `x` then
+/// carry, so its corners are met by the mixed road; turned about `z` they share one frame.
+///
+/// **Not reached:** a circle the cheap road gives up on for its cap alone — a cap with no world
+/// name whose replay is past the cost cap, on a cylinder whose chain is not. Every circle here has
+/// a deep cylinder.
+///
+/// Each edge is held to three things, collected and asserted once:
+/// * **Before the door** some line and some circle of each population is off — else the fixture
+///   measures nothing. A square or a disk on a nameless datum through a deep corner is not such
+///   a population: its edges are the nearest before the door.
+/// * **After it**, the instrument at 512 bits gives the same bits. A line is held to its two
+///   endpoints' own realizations (`nacre_ops::line_direction_from_endpoints`): where both are met
+///   in a shared frame that road shares nothing with the edge's plane coefficients, and an endpoint
+///   met by the mixed road reads the same witness planes the edge road does, so the two are counted
+///   apart. A circle is held to `nacre_ops::audit_rim_centre` — the same replay of the axis and the
+///   same plane coefficients met again at 512 bits, plus the cached centre within its half ulps of
+///   the cap and the axis — which sees a rung that stopped short but not a fault in the replay or
+///   the witness plane.
+/// * **Against the shallow twin** — the same truth on a chain of two, realized by the cheap road
+///   at push — every curve has the same bits: the depth changes nothing, which is what the circle
+///   instrument cannot say alone.
+#[test]
+fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
+    let fixtures: [DeepEdges; 7] = [
+        ("box Z7", chain_box, turn(Axis::Z, 7), |_, s| vec![s]),
+        ("box X7", chain_box, turn(Axis::X, 7), |_, s| vec![s]),
+        ("cylinder Z7", chain_cylinder, turn(Axis::Z, 7), |_, s| {
+            vec![s]
+        }),
+        ("cylinder X7", chain_cylinder, turn(Axis::X, 7), |_, s| {
+            vec![s]
+        }),
+        (
+            "windowed boss Y37",
+            |m| nacre_ops::fixtures::windowed_boss(m, 0.6, -1.0),
+            turn(Axis::Y, 37),
+            |_, s| vec![s],
+        ),
+        (
+            "bored plate X7",
+            |m| {
+                let plate = cuboid(m, [-3.0, -3.0, 0.0], [3.0, 3.0, 2.0]);
+                let bore = nacre_ops::fixtures::cylinder(
+                    m,
+                    Point3::from_array([0.3, 0.2, -1.0]),
+                    Vector3::from_array([0.0, 0.0, 1.0]),
+                    1.25,
+                    4.0,
+                )
+                .solid;
+                boolean(m, BoolKind::Cut, plate, bore).expect("a bore")[0]
+            },
+            turn(Axis::X, 7),
+            |_, s| vec![s],
+        ),
+        ("on a deep wall", chain_box, turn(Axis::Z, 7), |m, s| {
+            let wall = m
+                .shell(m.solid(s).outer)
+                .faces
+                .iter()
+                .copied()
+                .find(|&f| m.surface_motion(m.face(f).surface).is_some())
+                .expect("a wall rides the chain");
+            let frame = nacre_ops::face_sketch_frame(m, wall).expect("a planar live face");
+            let circle = nacre_ops::from_paths(vec![
+                nacre_ops::Ring2d::circle(p2(1.5, 0.5), 0.25).expect("a circle"),
+            ])
+            .expect("a disk")
+            .remove(0);
+            let disk = extruded(m, frame, circle);
+            vec![disk, square_on(m, frame)]
+        }),
+    ];
+    // The cheap road's cost cap (`CHEAP_REPLAY_COST_CAP`).
+    const CAP: usize = 192;
+    #[derive(Default, Debug)]
+    struct Count {
+        lines: usize,
+        unshared: usize,
+        rulings: usize,
+        circles: usize,
+        cap_only: usize,
+        lines_off: usize,
+        circles_off: usize,
+    }
+    let count = |m: &Model, solids: &[Handle<Solid>], bad: &mut Vec<String>, tag: &str| {
+        let mut c = Count::default();
+        let mut edges: Vec<_> = m.reachable_from(solids).edges.into_iter().collect();
+        edges.sort_by_key(|e| e.index());
+        for eh in edges {
+            let [s0, s1] = m.edge(eh).surfaces;
+            let cylinder = [s0, s1]
+                .into_iter()
+                .find(|&h| matches!(m.surface(h), Surface::Cylinder { .. }));
+            match m.edge_curve(eh) {
+                nacre_geom::Curve::Line(l) => {
+                    c.lines += 1;
+                    c.rulings += usize::from(cylinder.is_some());
+                    let e = m.edge(eh);
+                    let d = m.vertex_point(e.vertices[1]) - m.vertex_point(e.vertices[0]);
+                    let Some((u, shared)) = nacre_ops::line_direction_from_endpoints(m, eh, 512)
+                    else {
+                        bad.push(format!("{tag}: e{} undecided at 512 bits", eh.index()));
+                        continue;
+                    };
+                    c.unshared += usize::from(!shared);
+                    let u = if Vector3::from_array(u).dot(d) < 0.0 {
+                        u.map(|x| 0.0 - x)
+                    } else {
+                        u
+                    };
+                    if u.map(f64::to_bits) != l.direction().as_array().map(f64::to_bits) {
+                        c.lines_off += 1;
+                    }
+                }
+                nacre_geom::Curve::Circle(circle) => {
+                    c.circles += 1;
+                    let cyl = cylinder.expect("a circle has a cylinder carrier");
+                    let cap = if cyl == s0 { s1 } else { s0 };
+                    let cyl_deep = m
+                        .surface_motion(cyl)
+                        .is_some_and(|leaf| m.chain_deeper_than(leaf, CAP));
+                    let cap_deep =
+                        m.world_plane_name(cap).is_none() && m.plane_replay_depth(cap, CAP) > CAP;
+                    c.cap_only += usize::from(cap_deep && !cyl_deep);
+                    let a = nacre_ops::audit_rim_centre(m, eh, 512).expect("a readable rim");
+                    match (a.centre, a.on_cap, a.on_axis) {
+                        (Some(t), Some(on_cap), Some(on_axis)) => {
+                            if t.map(f64::to_bits) != circle.center().as_array().map(f64::to_bits)
+                                || !on_cap
+                                || !on_axis
+                            {
+                                c.circles_off += 1;
+                            }
+                        }
+                        _ => bad.push(format!("{tag}: e{} undecided at 512 bits", eh.index())),
+                    }
+                }
+            }
+        }
+        c
+    };
+    let curves = |m: &Model, solids: &[Handle<Solid>]| -> Vec<String> {
+        let mut edges: Vec<_> = m.reachable_from(solids).edges.into_iter().collect();
+        edges.sort_by_key(|e| e.index());
+        edges
+            .into_iter()
+            .map(|e| format!("{:?}", m.edge_curve(e)))
+            .collect()
+    };
+    let mut bad = Vec::new();
+    let mut total = Count::default();
+    for fixture in &fixtures {
+        let tag = fixture.0;
+        let mut m = Model::new();
+        let solids = deep_edges_build(&mut m, fixture, true);
+        let before = count(&m, &solids, &mut bad, tag);
+        if before.lines > 0 && before.lines_off == 0 {
+            bad.push(format!(
+                "{tag}: no line is off before the door — it shows nothing"
+            ));
+        }
+        if before.circles > 0 && before.circles_off == 0 {
+            bad.push(format!(
+                "{tag}: no circle is off before the door — it shows nothing"
+            ));
+        }
+        let report = nacre_ops::refine_caches_of(&mut m, &solids);
+        if report.edges.left_unrealized != 0
+            || report.vertices.left_undecided != 0
+            || report.vertices.left_unrealized != 0
+            || report.surfaces.left_undecided != 0
+            || report.surfaces.left_unrealized != 0
+        {
+            bad.push(format!("{tag}: the door left {report:?}"));
+        }
+        let after = count(&m, &solids, &mut bad, tag);
+        if after.lines_off + after.circles_off != 0 {
+            bad.push(format!("{tag}: after the door {after:?}"));
+        }
+        if tag == "box Z7" && after.unshared != 0 {
+            bad.push(format!("{tag}: a corner took the mixed road"));
+        }
+        let mut twin = Model::new();
+        let twin_solids = deep_edges_build(&mut twin, fixture, false);
+        let (deep, shallow) = (curves(&m, &solids), curves(&twin, &twin_solids));
+        if deep != shallow {
+            let first = deep.iter().zip(&shallow).position(|(a, b)| a != b);
+            bad.push(format!(
+                "{tag}: the shallow twin differs ({} vs {} curves, first at {first:?})",
+                deep.len(),
+                shallow.len()
+            ));
+        }
+        total.lines += after.lines;
+        total.unshared += after.unshared;
+        total.rulings += after.rulings;
+        total.circles += after.circles;
+        total.cap_only += after.cap_only;
+    }
+    let measured = (
+        total.lines,
+        total.unshared,
+        total.rulings,
+        total.circles,
+        total.cap_only,
+    );
+    if measured != (58, 38, 2, 12, 0) {
+        bad.push(format!("the populations moved: {total:?}"));
+    }
+    assert!(bad.is_empty(), "{bad:#?}");
 }
 
 /// The write door raises a `Ceiling` and refuses anything else — the type keeping "only ever more
