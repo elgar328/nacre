@@ -184,6 +184,17 @@ impl HpBounded {
         HpBounded::new(value, error)
     }
 
+    /// An `f64` as an **exact** interval: every finite `f64` is a binary fraction, held whole at
+    /// `prec` bits (at least 64), so the radius is zero. `None` for an infinite or NaN value.
+    ///
+    /// It reads the `f64` exactly and nothing more: the `f64` is not the truth it may stand for
+    /// (a cache, a figure), so this is a way to measure the very number a cache or a file holds,
+    /// never a door from an `f64` to a truth.
+    pub fn of_f64(v: f64, prec: usize) -> Option<Self> {
+        v.is_finite()
+            .then(|| HpBounded::exact(BigFloat::from_f64(v, prec.max(64))))
+    }
+
     /// An arbitrary-precision integer as an **exact** interval — the wide-frame entry point.
     ///
     /// [`crate::bigint_to_bigfloat`] converts at the integer's own bit length, so the value enters
@@ -242,6 +253,51 @@ impl HpBounded {
             .times(Mag::pow2(1 - e))
             .plus(Self::round_off(&value, prec));
         Some(HpBounded::new(value, error))
+    }
+
+    /// **An `f64` at or above every `|x|` the interval holds** — the far end (the radius read as
+    /// the power of two at or above it) rounded to its nearest `f64`, one step up: an exact value
+    /// comes back one ulp above itself. A far end below the normal range reads as
+    /// `f64::MIN_POSITIVE`; `None` past the largest `f64`.
+    pub fn abs_upper_f64(&self) -> Option<f64> {
+        let (lo, hi) = crate::realize::interval_ends(&self.value, self.error)?;
+        let far = if lo.abs().cmp(&hi.abs())? >= 0 {
+            lo.abs()
+        } else {
+            hi.abs()
+        };
+        match crate::realize::bigfloat_to_f64(&far) {
+            Some(0.0) => Some(0.0),
+            // A positive finite `f64`'s next one up is its bit pattern plus one.
+            Some(f) => Some(f64::from_bits(f.to_bits() + 1)),
+            None => far
+                .exponent()
+                .is_some_and(|e| e < 0)
+                .then_some(f64::MIN_POSITIVE),
+        }
+    }
+
+    /// **An `f64` at or below every `|x|` the interval holds, and above zero** — the near end (the
+    /// radius read as for [`Self::abs_upper_f64`]) rounded to its nearest `f64`, one step down.
+    /// `None` where the interval may reach zero, or its near end lies below the normal range.
+    pub fn abs_lower_f64(&self) -> Option<f64> {
+        let (lo, hi) = crate::realize::interval_ends(&self.value, self.error)?;
+        if lo.is_zero() || hi.is_zero() || lo.is_positive() != hi.is_positive() {
+            return None;
+        }
+        let near = if lo.abs().cmp(&hi.abs())? <= 0 {
+            lo.abs()
+        } else {
+            hi.abs()
+        };
+        match crate::realize::bigfloat_to_f64(&near) {
+            Some(f) => {
+                // …and its next one down, the pattern minus one (`f > 0` here).
+                let down = f64::from_bits(f.to_bits() - 1);
+                (down >= f64::MIN_POSITIVE).then_some(down)
+            }
+            None => near.exponent().is_some_and(|e| e > 0).then_some(f64::MAX),
+        }
     }
 
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative, `None` if the

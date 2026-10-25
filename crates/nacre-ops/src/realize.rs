@@ -1667,26 +1667,8 @@ pub fn audit_rim_centre(model: &Model, e: Handle<Edge>, bits: usize) -> Option<R
     let centre = line_meets_plane_hp(&o, &a, &n, bits)
         .and_then(|c| Realization(Arm::Approached(c)).to_f64())
         .map(|(v, _)| v);
-    // The cached `f64`s, exactly, read off their bits: `±mantissa · 2^exponent`.
-    let exact = |v: f64| -> Option<HpBounded> {
-        let b = v.to_bits();
-        let raw_exp = ((b >> 52) & 0x7ff) as i64;
-        let frac = b & ((1u64 << 52) - 1);
-        let (mantissa, exp) = match raw_exp {
-            0 => (frac, -1074),
-            _ => (frac | (1u64 << 52), raw_exp - 1075),
-        };
-        let mut m = num_bigint::BigInt::from(mantissa);
-        if v.is_sign_negative() {
-            m = -m;
-        }
-        if exp >= 0 {
-            Some(HpBounded::of_bigint(&(m << exp as usize), bits))
-        } else {
-            let den = num_bigint::BigInt::from(1) << (-exp) as usize;
-            HpBounded::of_bigint(&m, bits).div(&HpBounded::of_bigint(&den, bits), bits)
-        }
-    };
+    // The cached `f64`s, exactly.
+    let exact = |v: f64| HpBounded::of_f64(v, bits);
     let c = circle.center().as_array();
     let ch: [HpBounded; 3] = [exact(c[0])?, exact(c[1])?, exact(c[2])?];
     // Half an ulp per coordinate; a coordinate read as `+0.0` stands within the coincidence limit

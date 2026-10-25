@@ -52,7 +52,7 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag) -> Option<f64> {
 }
 
 /// `mid ± rad`, formed at `mid`'s own precision plus 64 bits — see [`round_to_f64`] for why.
-fn interval_ends(mid: &BigFloat, rad: Mag) -> Option<(BigFloat, BigFloat)> {
+pub(crate) fn interval_ends(mid: &BigFloat, rad: Mag) -> Option<(BigFloat, BigFloat)> {
     let p = bits_of(mid) + 64;
     let r = rad_upper_bigfloat(rad, p)?;
     Some((mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM)))

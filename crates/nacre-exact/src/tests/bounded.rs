@@ -326,3 +326,69 @@ fn an_exact_zero_is_charged_no_rounding() {
     );
     assert_eq!(HpBounded::round_off(&big(0.0, prec), prec), Mag::ZERO);
 }
+
+/// **An `f64` enters whole, and its bounds come back around it.** Every finite `f64` — normal,
+/// subnormal, signed, zero — is held with a zero radius, so its bounds are the `f64` itself one
+/// step out: never inside it, never further than that step. An infinity or a NaN has no value.
+#[test]
+fn an_f64_enters_exactly_and_its_bounds_bracket_it() {
+    let values = [
+        1.0,
+        -0.1,
+        123.456_789,
+        -1.0e300,
+        f64::MIN_POSITIVE,
+        5.0e-324,
+        -3.0e-310,
+        0.0,
+    ];
+    for v in values {
+        let h = HpBounded::of_f64(v, 128).expect("a finite f64");
+        assert!(h.error.is_zero(), "{v}: an exact interval");
+        let up = h.abs_upper_f64().expect("an upper bound");
+        assert!(up >= v.abs(), "{v}: the upper bound {up} is below it");
+        if v.abs() >= f64::MIN_POSITIVE {
+            assert_eq!(
+                up,
+                f64::from_bits(v.abs().to_bits() + 1),
+                "{v}: one step up"
+            );
+        }
+        match h.abs_lower_f64() {
+            Some(lo) => {
+                assert!(lo <= v.abs() && lo > 0.0, "{v}: the lower bound {lo}");
+                assert_eq!(
+                    lo,
+                    f64::from_bits(v.abs().to_bits() - 1),
+                    "{v}: one step down"
+                );
+            }
+            None => assert!(
+                v.abs() <= f64::MIN_POSITIVE,
+                "{v}: only zero and the bottom of the range have no positive lower bound"
+            ),
+        }
+    }
+    for v in [f64::INFINITY, f64::NAN] {
+        assert!(HpBounded::of_f64(v, 128).is_none(), "{v}");
+    }
+}
+
+/// **The bounds read the radius, not only the value.** `1 ± 2⁻¹⁰` holds values up to
+/// `1 + 2⁻¹⁰` and down to `1 − 2⁻¹⁰`; the radius is read to the power of two at or above it, so the
+/// bounds sit within `2⁻⁹` and an ulp. `±2⁻¹⁰` around zero reaches zero, so it has no positive
+/// lower bound.
+#[test]
+fn the_abs_bounds_cover_the_radius() {
+    let r = Mag::pow2(-10);
+    let one = HpBounded::new(BigFloat::from_f64(1.0, 128), r);
+    let up = one.abs_upper_f64().expect("an upper bound");
+    assert!(up >= 1.0 + 2f64.powi(-10), "{up}");
+    assert!(up <= 1.0 + 2f64.powi(-9) + f64::EPSILON, "{up}");
+    let lo = one.abs_lower_f64().expect("a lower bound");
+    assert!(lo <= 1.0 - 2f64.powi(-10), "{lo}");
+    assert!(lo >= 1.0 - 2f64.powi(-9) - f64::EPSILON, "{lo}");
+    let zero = HpBounded::new(BigFloat::from_f64(0.0, 128), r);
+    assert!(zero.abs_lower_f64().is_none());
+    assert!(zero.abs_upper_f64().expect("an upper bound") >= 2f64.powi(-10));
+}
