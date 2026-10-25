@@ -740,6 +740,77 @@ pub fn plane_plane_cylinder(
     Some(CylinderMeet::Pair { line, s: [lo, hi] })
 }
 
+/// What two cylinders' equations share when one is subtracted from the other.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RadicalPlane {
+    /// The axes are parallel and apart: every point on both cylinders lies on this plane
+    /// `[a, b, c, d]` (`a·x + b·y + c·z + d = 0`), so the cylinders' common points are the
+    /// plane's meet with either one.
+    Plane([Rat; 4]),
+    /// The axes are not parallel; the difference keeps its quadratic terms.
+    NotParallel,
+    /// The axes lie on one line: the cylinders are concentric — two different radii share no
+    /// point, and one radius is one surface.
+    Coaxial,
+}
+
+/// **The radical plane of two cylinders with parallel axes.**
+///
+/// Each cylinder is given as [`plane_plane_cylinder`] takes it — a point on the axis, the raw
+/// rational axis direction and the **squared** radius. The returned plane holds every point the
+/// two lateral surfaces share, so a plane crossing both axes meets them in the points
+/// `plane_plane_cylinder(that plane, the radical plane, either cylinder)` gives.
+///
+/// `None` means checked-`Rat` overflow, or a squared radius too wide for `Rat`.
+pub fn radical_plane(
+    o1: &V3,
+    m1: &V3,
+    r2_1: &BigRat,
+    o2: &V3,
+    m2: &V3,
+    r2_2: &BigRat,
+) -> Option<RadicalPlane> {
+    debug_assert!(
+        !is_zero3(m1) && !is_zero3(m2),
+        "cylinder axes must be nonzero"
+    );
+    if !is_zero3(&cross3(m1, m2)?) {
+        return Some(RadicalPlane::NotParallel);
+    }
+    // With one direction `m` for both (parallel axes have one projector), a cylinder is
+    // `F(p) = |p − o|²(m·m) − ((p − o)·m)² − r²(m·m) = 0`, and
+    // `F₁ − F₂ = −2·(n·p) + K` with `d = o₁ − o₂`, `n = (m·m)·d − (d·m)·m` (the part of `d`
+    // across the axis) and `K = (m·m)(|o₁|² − |o₂|²) − (d·m)·((o₁ + o₂)·m) − (m·m)(r₁² − r₂²)`.
+    // So the plane is `n·p − K/2 = 0`; `n = 0` exactly when `d` runs along the axis.
+    let m = m1;
+    let d = sub3(o1, o2)?;
+    let mm = dot3(m, m)?;
+    let dm = dot3(&d, m)?;
+    let mut n = [Rat::from_int(0); 3];
+    for (k, out) in n.iter_mut().enumerate() {
+        *out = mm.checked_mul(d[k])?.checked_sub(dm.checked_mul(m[k])?)?;
+    }
+    if is_zero3(&n) {
+        return Some(RadicalPlane::Coaxial);
+    }
+    let sum = [
+        o1[0].checked_add(o2[0])?,
+        o1[1].checked_add(o2[1])?,
+        o1[2].checked_add(o2[2])?,
+    ];
+    let k = mm
+        .checked_mul(dot3(o1, o1)?.checked_sub(dot3(o2, o2)?)?)?
+        .checked_sub(dm.checked_mul(dot3(&sum, m)?)?)?
+        .checked_sub(mm.checked_mul(r2_1.narrow()?.checked_sub(r2_2.narrow()?)?)?)?;
+    let half_k = k.checked_mul(Rat::new(1, 2)?)?;
+    Some(RadicalPlane::Plane([
+        n[0],
+        n[1],
+        n[2],
+        Rat::from_int(0).checked_sub(half_k)?,
+    ]))
+}
+
 /// **[`plane_plane_cylinder`] with interval planes** — the line `p₁ ∩ p₂` and its quadratic against
 /// the cylinder, for a plane whose coefficients are known only to an interval (one with no world
 /// statement, met through its witness triangle).

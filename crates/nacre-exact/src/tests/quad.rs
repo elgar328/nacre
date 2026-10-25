@@ -1335,3 +1335,117 @@ proptest::proptest! {
         proptest::prop_assert_eq!(exceeds_root_sum(g, p, q), Some(want));
     }
 }
+
+/// `F(p) = |p − o|²(m·m) − ((p − o)·m)² − r²(m·m)`: zero exactly on the cylinder.
+fn cylinder_form(p: &V3, o: &V3, m: &V3, r2: Rat) -> Rat {
+    let w = sub3(p, o).unwrap();
+    let mm = dot3(m, m).unwrap();
+    let wm = dot3(&w, m).unwrap();
+    dot3(&w, &w)
+        .unwrap()
+        .checked_mul(mm)
+        .unwrap()
+        .checked_sub(wm.checked_mul(wm).unwrap())
+        .unwrap()
+        .checked_sub(r2.checked_mul(mm).unwrap())
+        .unwrap()
+}
+
+/// **The leaf's two circles.** Centres `(5, 0)` and `(0, 5)`, radius 5, axes along `z`: the
+/// radical plane is `x = y`, and the cap `z = 0` meets it on the first cylinder at the two
+/// corners `(0, 0)` and `(5, 5)`.
+#[test]
+fn the_radical_plane_of_two_circles_holds_their_two_points() {
+    let z = [ri(0), ri(0), ri(1)];
+    let RadicalPlane::Plane(p) = radical_plane(
+        &[ri(5), ri(0), ri(0)],
+        &z,
+        &big(25),
+        &[ri(0), ri(5), ri(0)],
+        &z,
+        &big(25),
+    )
+    .unwrap() else {
+        panic!("parallel axes apart have a radical plane")
+    };
+    assert_eq!(p, [ri(5), ri(-5), ri(0), ri(0)]);
+    let cap = [ri(0), ri(0), ri(1), ri(0)];
+    let Some(CylinderMeet::Pair { line, s }) =
+        plane_plane_cylinder(&cap, &p, &[ri(5), ri(0), ri(0)], &z, &big(25))
+    else {
+        panic!("two points")
+    };
+    let at = |q: &QuadVal| -> V3 {
+        let t = q.as_rat().expect("both corners are rational");
+        core::array::from_fn(|k| {
+            line.base()[k]
+                .checked_add(t.checked_mul(line.dir()[k]).unwrap())
+                .unwrap()
+        })
+    };
+    let mut got = [at(&s[0]), at(&s[1])];
+    got.sort();
+    assert_eq!(got, [[ri(0); 3], [ri(5), ri(5), ri(0)]]);
+}
+
+/// **Every outcome by its own name.** Crossing axes keep the quadratic; axes on one line —
+/// whatever the radii and however the second direction is scaled — have no plane.
+#[test]
+fn a_radical_plane_needs_parallel_axes_apart() {
+    let z = [ri(0), ri(0), ri(1)];
+    let x = [ri(1), ri(0), ri(0)];
+    let o = [ri(1), ri(2), ri(3)];
+    assert_eq!(
+        radical_plane(&o, &z, &big(4), &[ri(0); 3], &x, &big(4)),
+        Some(RadicalPlane::NotParallel)
+    );
+    assert_eq!(
+        radical_plane(
+            &o,
+            &z,
+            &big(4),
+            &[ri(1), ri(2), ri(-7)],
+            &[ri(0), ri(0), ri(-3)],
+            &big(9)
+        ),
+        Some(RadicalPlane::Coaxial)
+    );
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
+    /// **The plane is the difference of the two cylinders' forms**, as an identity at any point:
+    /// `F₁(p) − F₂(p) = −2·(plane at p)`, so a point on both cylinders is on the plane. The second
+    /// axis is the first scaled by `k` (either sign), which names the same cylinder.
+    #[test]
+    fn the_radical_plane_is_the_difference_of_the_forms(
+        o1 in proptest::array::uniform3(-20i128..20),
+        o2 in proptest::array::uniform3(-20i128..20),
+        m in proptest::array::uniform3(-4i128..5),
+        k in proptest::sample::select(vec![-3i128, -1, 1, 2]),
+        r1 in 1i128..60, r2 in 1i128..60,
+        p in proptest::array::uniform3(-30i128..30),
+        den in 1i128..7,
+    ) {
+        proptest::prop_assume!(m != [0, 0, 0]);
+        let v = |a: [i128; 3]| a.map(|c| r(c, den));
+        let (o1, o2, mv, p) = (v(o1), v(o2), m.map(ri), v(p));
+        let m2 = m.map(|c| ri(c * k));
+        match radical_plane(&o1, &mv, &big(r1), &o2, &m2, &big(r2)).unwrap() {
+            RadicalPlane::Plane(pl) => {
+                let at = dot3(&[pl[0], pl[1], pl[2]], &p).unwrap().checked_add(pl[3]).unwrap();
+                let diff = cylinder_form(&p, &o1, &mv, ri(r1))
+                    .checked_sub(cylinder_form(&p, &o2, &mv, ri(r2)))
+                    .unwrap();
+                proptest::prop_assert_eq!(diff, ri(-2).checked_mul(at).unwrap());
+            }
+            RadicalPlane::Coaxial => {
+                let d = sub3(&o1, &o2).unwrap();
+                proptest::prop_assert!(is_zero3(&cross3(&d, &mv).unwrap()));
+            }
+            RadicalPlane::NotParallel => proptest::prop_assert!(false, "the axes are parallel"),
+        }
+    }
+}
