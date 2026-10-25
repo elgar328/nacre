@@ -12,6 +12,7 @@ While the version is `0.0.z`, every release may break anything.
 
 - `exact::quad::radical_plane` is the plane two cylinders on parallel axes share their points on (`exact::quad::RadicalPlane` names the other outcomes).
 - `exact::quad::MeetLine::point_at` is the line's point at a rational parameter.
+- `exact::quad::seam_ranked` lists the points a plane·plane·cylinder meet puts on the cylinder, in seam-first order about its axis.
 - `topo::Model::cylinder_pair_relation` says whether two cylinders' axes are parallel, as the truth states them.
 - Every public error type of the facade — `ops::BoolError`, `ops::OpError`, `ops::SketchError`, `ops::RealizeError`, `ops::CacheDecline`, `step::StepError`, `tess::TessError`, `props::PropsError`, `topo::EdgeDecline` and `geom::mixed::Undecidable` — implements `Display` and `std::error::Error`, so `?` carries it into a `Box<dyn std::error::Error>`. The message is one lowercase line; a refused boolean reads `boolean rejected, <class>: <reason>`, followed by where it was looking when the kernel says. `StepError::Io` gives its `io::Error` as `source()`, and `OpError::Boolean` reads exactly as the `BoolError` it holds.
 - `cargo run -p nacre --example plate_with_bore` builds a plate with a bore through it from the prelude alone, checks it, and writes it as STEP and OBJ.

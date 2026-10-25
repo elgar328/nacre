@@ -1430,6 +1430,40 @@ pub fn circular_order_about_seam(
     }))
 }
 
+/// **The points `meet` puts on the cylinder, in seam-first order about it** — the order
+/// [`circular_order_about_seam`] reads, the seam point first ([`SeamOrder::seam_first`]).
+///
+/// `origin`/`dir`/`ref_dir` are the cylinder `meet` was solved against, raw rational. A `Pair`
+/// gives its two points ranked, a `Tangent` its one point, and every other meet none. `None` on
+/// checked-`Rat` overflow.
+pub fn seam_ranked(
+    meet: CylinderMeet,
+    origin: &V3,
+    dir: &V3,
+    ref_dir: &V3,
+) -> Option<Vec<(MeetLine, QuadVal)>> {
+    Some(match meet {
+        CylinderMeet::Tangent { line, s } => vec![(line, QuadVal::from_rat(s))],
+        CylinderMeet::Pair { line, s } => {
+            let order =
+                circular_order_about_seam(origin, dir, ref_dir, (&line, &s[0]), (&line, &s[1]))?;
+            // Two crossings at one angle would share a ruling, and a line holding two points of
+            // one ruling is that ruling — `OnRuling`, not a `Pair`.
+            debug_assert_ne!(
+                order.seam_first(),
+                core::cmp::Ordering::Equal,
+                "two crossings of one line share an angle about the axis"
+            );
+            let [lo, hi] = s;
+            match order.seam_first() {
+                core::cmp::Ordering::Greater => vec![(line.clone(), hi), (line, lo)],
+                _ => vec![(line.clone(), lo), (line, hi)],
+            }
+        }
+        _ => Vec::new(),
+    })
+}
+
 #[cfg(test)]
 #[path = "tests/quad.rs"]
 mod tests;

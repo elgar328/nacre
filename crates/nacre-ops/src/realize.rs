@@ -1928,13 +1928,13 @@ fn pierce_point(
 ///
 /// The cylinders' radical plane ([`nacre_exact::quad::radical_plane`]) crosses that plane in a
 /// line, the line crosses `c0`, and the crossings are ordered seam-first about `c0`
-/// ([`nacre_exact::quad::SeamOrder::seam_first`]). Empty where the two share no ruling (axes not
+/// ([`nacre_exact::quad::seam_ranked`]). Empty where the two share no ruling (axes not
 /// parallel, concentric, apart); `None` on overflow.
 pub(crate) fn pair_rulings(
     c0: &nacre_topo::CylinderDef,
     c1: &nacre_topo::CylinderDef,
 ) -> Option<Vec<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>> {
-    use nacre_exact::quad::{CylinderMeet, QuadVal, RadicalPlane};
+    use nacre_exact::quad::RadicalPlane;
     let (o, m) = (c0.origin(), c0.dir());
     let RadicalPlane::Plane(radical) =
         nacre_exact::quad::radical_plane(&o, &m, c0.r2(), &c1.origin(), &c1.dir(), c1.r2())?
@@ -1942,25 +1942,11 @@ pub(crate) fn pair_rulings(
         return Some(Vec::new());
     };
     let across = pair_feet_plane(c0)?;
-    Some(
-        match nacre_exact::quad::plane_plane_cylinder(&across, &radical, &o, &m, c0.r2())? {
-            CylinderMeet::Tangent { line, s } => vec![(line, QuadVal::from_rat(s))],
-            CylinderMeet::Pair { line, s } => {
-                let order = nacre_exact::quad::circular_order_about_seam(
-                    &o,
-                    &m,
-                    &c0.ref_dir(),
-                    (&line, &s[0]),
-                    (&line, &s[1]),
-                )?;
-                let [lo, hi] = s;
-                match order.seam_first() {
-                    core::cmp::Ordering::Greater => vec![(line.clone(), hi), (line, lo)],
-                    _ => vec![(line.clone(), lo), (line, hi)],
-                }
-            }
-            _ => Vec::new(),
-        },
+    nacre_exact::quad::seam_ranked(
+        nacre_exact::quad::plane_plane_cylinder(&across, &radical, &o, &m, c0.r2())?,
+        &o,
+        &m,
+        &c0.ref_dir(),
     )
 }
 

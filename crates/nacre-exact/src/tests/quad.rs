@@ -592,6 +592,34 @@ fn the_seam_point_ranks_first_in_the_cyclic_order() {
     );
 }
 
+/// **`seam_ranked` lists a pair seam-first, a tangency once, a miss not at all** — and the rank
+/// follows `ref_dir`: the diameter `y = 0, z = 0` crosses the unit z-cylinder at `(±1, 0, 0)`,
+/// and which comes first is the one the seam ray reaches first turning counter-clockwise.
+#[test]
+fn seam_ranked_lists_a_pair_seam_first_and_a_tangency_once() {
+    let (o, m, radius) = zcyl();
+    let meet =
+        |p: [Rat; 4]| plane_plane_cylinder(&p, &plane(0, 0, 1, 0), &o, &m, &radius).expect("fits");
+    let first_x = |ref_dir: [Rat; 3]| {
+        let ranked = seam_ranked(meet(plane(0, 1, 0, 0)), &o, &m, &ref_dir).expect("no overflow");
+        assert_eq!(ranked.len(), 2);
+        ranked
+            .iter()
+            .map(|(line, s)| line.point_approx(s)[0].round() as i32)
+            .collect::<Vec<_>>()
+    };
+    // From +x the seam point (+1, 0, 0) is first; from −x it is θ = π; from +y, (−1, 0, 0) sits
+    // at θ = π/2 and (+1, 0, 0) at 3π/2.
+    assert_eq!(first_x([ri(1), ri(0), ri(0)]), [1, -1]);
+    assert_eq!(first_x([ri(-1), ri(0), ri(0)]), [-1, 1]);
+    assert_eq!(first_x([ri(0), ri(1), ri(0)]), [-1, 1]);
+    let x = [ri(1), ri(0), ri(0)];
+    let tangent = seam_ranked(meet(plane(0, 1, 0, -1)), &o, &m, &x).expect("no overflow");
+    assert_eq!(tangent.len(), 1, "the line y = 1 touches the cylinder once");
+    let miss = seam_ranked(meet(plane(0, 1, 0, -2)), &o, &m, &x).expect("no overflow");
+    assert!(miss.is_empty(), "the line y = 2 misses it");
+}
+
 /// Two cuts 1e−18 apart: their upper roots realize to the **same** f64 angle (the instrument
 /// f64 is blind), and the exact comparator still gives the strict order — the reason this
 /// tower exists.
