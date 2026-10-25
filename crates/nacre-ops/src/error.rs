@@ -388,9 +388,11 @@ pub enum RejectReason {
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
     /// could not be shown to miss the plane — where they meet, the intersection is an ellipse
-    /// (vocabulary the kernel does not have yet). The gate asks the faces first: a slanted
-    /// plane that
-    /// runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
+    /// (vocabulary the kernel does not have yet). A slanted plane that runs past every lateral
+    /// face of the cylinder (a gusset beside a plate's holes) passes. The plane is what is asked,
+    /// not the faces on it: a slanted face standing clear of the cylinder is refused too when its
+    /// plane, extended, cuts a lateral face, since the boolean sections both solids by that whole
+    /// plane.
     ObliqueCylinderCut,
     /// **A cell called a circle sits on a class that is not perpendicular to its axis** — so its
     /// boundary is an ellipse and every rule that reads a *radius* as that boundary's width is

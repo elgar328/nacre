@@ -244,6 +244,13 @@ pub(crate) fn cylinder_gate(
                     // infinite plane, no face of that plane's class can meet the lateral, and the
                     // caps are the plane–plane arrangement's business. A pair not shown to miss is
                     // recorded; the refusal reads the record once, after this loop.
+                    //
+                    // The class's faces standing apart from the lateral (the parallel arm's second
+                    // question) do not suffice here: the class's arrangement sections the
+                    // cylinder's own solid by the whole plane, and that section runs along the
+                    // ellipse. Measured with such a pair passed — a rib whose slanted face stands
+                    // two units from a plate's fillet while its plane, extended, cuts it — the
+                    // boolean is refused one step later as `DeclineKind::CurvedRingWall`.
                     let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
                     if !oblique_plane_clears(&cyl.def, fps, &coeffs) {
                         oblique.insert((c, ci));
