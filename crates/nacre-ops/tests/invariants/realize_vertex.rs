@@ -800,9 +800,11 @@ fn a_corner_of_a_turned_and_an_unturned_wall_is_realized() {
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
 /// everything would pass it.
 ///
-/// The refusing population is a pierce corner on a cylinder turned off the quarters — a meet no
-/// road solves off the world statement (`NoCurvedPoint`). The same cylinder's seam vertices are
-/// met in the world and stand on the success side, as the tilted frame's mixed-frame corners do.
+/// The refusing population is stated by hand ([`pierce_vertices`]): pierce definitions whose
+/// planes' line misses the cylinder, or that ask for a third crossing, name no point
+/// (`NoCurvedPoint`) — no producer makes one. On the success side stand the tilted frame's
+/// mixed-frame corners and a cylinder turned off the quarters, its pierce corners and seam
+/// vertices met in the world.
 #[test]
 fn a_refusal_is_named_and_a_success_stands_beside_it() {
     let turned_cylinder = {
@@ -812,10 +814,19 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
         m.rebuild_adjacency();
         m
     };
+    let mut stated = cylinder();
+    let _ = nacre_ops::fixtures::cuboid(
+        &mut stated,
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let hand = pierce_vertices(&mut stated);
+    let models = [tilted_frame(1), turned_cylinder];
     let (mut ok, mut refused) = (0usize, 0usize);
-    for (m, vh) in [tilted_frame(1), turned_cylinder]
+    for (m, vh) in models
         .iter()
         .flat_map(|m| live_vertices(m).into_iter().map(move |vh| (m, vh)))
+        .chain(hand.into_iter().map(|vh| (&stated, vh)))
     {
         match realize_vertex(m, vh, Precision::NearestF64) {
             Ok(_) => ok += 1,
@@ -844,7 +855,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
     );
     assert!(
         refused > 0,
-        "nothing refused on the turned cylinder — this lock is measuring nothing"
+        "nothing refused among the stated pierce corners — this lock is measuring nothing"
     );
 }
 

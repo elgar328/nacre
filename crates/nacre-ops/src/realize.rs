@@ -91,11 +91,12 @@ pub enum RealizeError {
     NoMotionChain,
     /// A curved definition (`OnSeam`, `Pierce`, `CylinderPair`) did not resolve into a point.
     ///
-    /// **This is a bag, and saying so is the point.** It covers: a pierce corner whose carriers
-    /// cannot be stated in the world exactly (a seam corner is met in the world instead), a chain
-    /// a seam corner's carriers cannot replay, a cap plane parallel to the axis (so it bounds no
-    /// rim), a `rank` past the crossings the carriers actually make, and rational overflow on the
-    /// way. Each deserves its
+    /// **This is a bag, and saying so is the point.** It covers: a pierce corner whose wall
+    /// cannot be read exactly where its cylinder is stated (a turn off the quarters that moves the
+    /// wall, a node the wall recorded and the cylinder did not), a pierce definition whose planes
+    /// are not one wall along the axis and one other plane, a cap plane parallel to the axis (so it
+    /// bounds no rim), a `rank` past the crossings the carriers actually make, and rational
+    /// overflow on the way. Each deserves its
     /// own name; none of them is [`Self::NoMeet`], which is a *different* function declining —
     /// `Model::vertex_meet` is never called on this road.
     NoCurvedPoint,
@@ -469,7 +470,10 @@ pub(crate) fn realize_vertex_cache_accel(
     // counts their sum. (The plane funnel guards the chain's depth instead — `push_plane_realized`
     // — and so does a seam met in the world, [`seam_point_met`]: three points through the
     // cylinder's chain and, for a cap without a world name, three through the cap's; the
-    // per-carrier depth test above is its guard, `deep` sending it to `CostCap`.)
+    // per-carrier depth test above is its guard, `deep` sending it to `CostCap`. A pierce or
+    // cylinder-pair point on its ruling, [`ruling_point`], replays the ruling's foot and the
+    // axis through the cylinder's chain and the plane as a seam's cap is: the same per-carrier
+    // test, and `meet_road_over_cap` on their sum.)
     if !deep && meet_road_over_cap(model, def) {
         return Err(CacheDecline::CostCap);
     }
@@ -1800,7 +1804,7 @@ fn climb(
 
 /// One realization at `bits`, from the definition.
 /// `out` is the accelerator's channel and only the three-plane road fills it — a curved definition
-/// realizes from its own geometry, or (a seam under a motion that does not fold) by replaying its
+/// realizes from its own geometry, or (under a motion that does not fold) by replaying its
 /// carriers' chains from their statements, never from a shared prefix, so it has none to hand on.
 fn build(
     model: &Model,
@@ -1817,19 +1821,13 @@ fn build(
             planes,
             cylinder,
             rank,
-        } => curved(pierce_point(model, planes, cylinder, rank, bits)),
+        } => pierce_point(model, planes, cylinder, rank, bits),
         nacre_topo::Vertex::CylinderPair {
             plane,
             cylinders,
             rank,
         } => pair_point(model, plane, cylinders, rank, bits),
     }
-}
-
-fn curved(p: Option<[HpBounded; 3]>) -> Result<Realization, RealizeError> {
-    Ok(Realization(Arm::Approached(
-        p.ok_or(RealizeError::NoCurvedPoint)?,
-    )))
 }
 
 /// **The seam vertex is the rim's `+ref_dir` point** — `centre + r·ê`, `ê` the reference
@@ -1895,32 +1893,6 @@ fn seam_point_met(
     line_meets_plane_hp(&on_rim, &hp.axis, &plane, bits).ok_or(RealizeError::Undecided)
 }
 
-/// **A pierce vertex is the meet line's point at its rank** — the two cutting planes give the
-/// line, the cylinder gives the quadratic, and `rank` names which crossing.
-fn pierce_point(
-    model: &Model,
-    planes: [Handle<Surface>; 2],
-    cylinder: Handle<Surface>,
-    rank: u8,
-    bits: usize,
-) -> Option<[HpBounded; 3]> {
-    let def = model.world_cylinder_def(cylinder)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
-    let c1 = crate::planes::world_plane_coeffs(model, planes[1])?;
-    let (line, sv) = ranked_crossing(
-        nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
-        &def,
-        rank,
-    )?;
-    // `point = base + s·dir`, with `s` the quadratic root realized at `bits` — the only step that
-    // is not exact rational arithmetic.
-    let sb = nacre_exact::quad_hp(&sv, bits)?;
-    let (b, d) = (line.base(), line.dir());
-    let coord = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, bits);
-    Some([coord(0)?, coord(1)?, coord(2)?])
-}
-
 /// **The rulings two cylinders on parallel axes share, in rank order** — the one order
 /// `Vertex::CylinderPair`'s `rank` is read in, by the prism that names a corner and by both roads
 /// of the realization. Each ruling is given by its foot on the plane across `c0`'s axis through
@@ -1959,29 +1931,172 @@ pub(crate) fn pair_feet_plane(c: &nacre_topo::CylinderDef) -> Option<[nacre_exac
     Some([m[0], m[1], m[2], k])
 }
 
-/// The rational foot of the shared ruling `rank` names ([`pair_rulings`]).
-fn pair_foot(
-    c0: &nacre_topo::CylinderDef,
-    c1: &nacre_topo::CylinderDef,
-    rank: usize,
-) -> Result<[nacre_exact::Rat; 3], RealizeError> {
-    let rulings = pair_rulings(c0, c1).ok_or(RealizeError::NoCurvedPoint)?;
-    let (line, s) = rulings.get(rank).ok_or(RealizeError::NoCurvedPoint)?;
-    // A ruling through no rational point has no rational foot to state or replay; the prism's
-    // corners are rational, so its rulings are not of that kind.
-    s.as_rat()
-        .and_then(|t| line.point_at(t))
-        .ok_or(RealizeError::NoCurvedPoint)
+/// **Which of `rulings` passes through `foot`** — its place in the list, or `None` where none
+/// does. Exact: the ruling's foot `base + s·dir` (one radical) against the rational `foot`, every
+/// coordinate by the sign of the difference.
+pub(crate) fn ruling_rank(
+    rulings: &[(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)],
+    foot: &[nacre_exact::Rat; 3],
+) -> Option<usize> {
+    use nacre_exact::quad::QuadVal;
+    let on = |line: &nacre_exact::quad::MeetLine, s: &QuadVal, k: usize| -> Option<bool> {
+        Some(
+            QuadVal::from_rat(line.base()[k])
+                .checked_add(&s.checked_mul_rat(line.dir()[k])?)?
+                .checked_sub(&QuadVal::from_rat(foot[k]))?
+                .sign()
+                == nacre_exact::Orient::Zero,
+        )
+    };
+    rulings
+        .iter()
+        .position(|(line, s)| (0..3).all(|k| on(line, s, k) == Some(true)))
+}
+
+/// **The rulings a wall shares with a cylinder, in rank order** — `Vertex::Pierce`'s `rank` as
+/// the realization reads it. `wall` is a plane parallel to the axis, stated in the cylinder's own
+/// frame; it cuts the lateral in up to two rulings (one where it touches), each given by its foot
+/// on [`pair_feet_plane`] and ordered about the axis ([`nacre_exact::quad::seam_ranked`]). Every
+/// crossing of a line on the wall with the cylinder lies on one of them, so a pierce point's place
+/// about the axis is its ruling's. `None` on overflow.
+pub(crate) fn wall_rulings(
+    def: &nacre_topo::CylinderDef,
+    wall: &[nacre_exact::Rat; 4],
+) -> Option<Vec<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>> {
+    let (o, m) = (def.origin(), def.dir());
+    nacre_exact::quad::seam_ranked(
+        nacre_exact::quad::plane_plane_cylinder(&pair_feet_plane(def)?, wall, &o, &m, def.r2())?,
+        &o,
+        &m,
+        &def.ref_dir(),
+    )
+}
+
+/// **A plane's stored name, read in a cylinder's statement frame** — pulled back along the
+/// cylinder's chain, leaf first, one node at a time. A node the plane recorded too (the same
+/// motion at the end of the plane's own chain) leaves both statements in one frame; a node the
+/// plane did not record is one its statement was carried through (an exact motion restates it) or
+/// one that left it in place (the transform keeps a plane's statement through a motion only where
+/// the motion fixes it). So an exact node is undone exactly ([`nacre_exact::AxisAffine`]), and any
+/// other must fix the plane as it stands there. `None` for any other shape — a node the plane
+/// recorded that the cylinder did not, or a turn off the quarters that moves the plane — since the
+/// rank is never read from an approximation.
+fn plane_in_cylinder_frame(
+    model: &Model,
+    plane: Handle<Surface>,
+    cylinder_motion: Option<Handle<nacre_topo::MotionNode>>,
+) -> Option<[nacre_exact::Rat; 4]> {
+    use nacre_topo::Motion;
+    let mut name = *model.surface_name(plane)?.narrow()?;
+    let nodes = |leaf: Option<Handle<nacre_topo::MotionNode>>| {
+        let mut out = Vec::new();
+        let mut at = leaf;
+        while let Some(h) = at {
+            out.push(model.motion(h).motion);
+            at = model.motion(h).parent;
+        }
+        out
+    };
+    let (cyl, mut own) = (nodes(cylinder_motion), nodes(model.surface_motion(plane)));
+    own.reverse();
+    for motion in cyl {
+        if own.last() == Some(&motion) {
+            own.pop();
+            continue;
+        }
+        if !own.is_empty() {
+            return None;
+        }
+        let exact = match motion {
+            Motion::Translate { offset } => Some(nacre_exact::AxisAffine::translation(offset)),
+            Motion::Rotate { axis, pivot, angle } => {
+                nacre_exact::AxisAffine::rotation(nacre_exact::Rotation { axis, pivot, angle })
+            }
+            Motion::Mirror { axis, offset } => Some(nacre_exact::AxisAffine::mirror(axis, offset)),
+            Motion::Frame { .. } => None,
+        };
+        name = match (exact, motion) {
+            (Some(a), _) => a.inverse().plane_coeffs(name)?,
+            (None, Motion::Rotate { axis, .. })
+                if nacre_exact::axis_rotation_fixes_plane(axis, &name) =>
+            {
+                name
+            }
+            _ => return None,
+        };
+    }
+    own.is_empty().then_some(name)
+}
+
+/// **A point on a cylinder's ruling, met with a plane** — the ruling's foot `(line, s)` stated in
+/// the frame of `def` (the cylinder's world statement where `chain` is `None`, its own statement
+/// before the motion `chain` ends at otherwise), carried into the world and met with `plane` along
+/// the axis. The plane answers for itself ([`plane_coeffs_hp`] — the point does not read which way
+/// its normal points), so it may sit on any chain: a cap turned about its own normal keeps its
+/// statement while the walls take the node.
+///
+/// Two roads, as for a seam vertex ([`seam_point`]): where the chain folds, the plane has a world
+/// name and the foot is rational, the foot carried exactly along the axis to the plane is the exact
+/// point; otherwise the foot is replayed (its base and `base + dir` as points, the radical at
+/// `bits`) and met in the world, which answers for itself.
+fn ruling_point(
+    model: &Model,
+    def: &nacre_topo::CylinderDef,
+    chain: Option<Handle<nacre_topo::MotionNode>>,
+    plane: Handle<Surface>,
+    (line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    bits: usize,
+) -> Result<Realization, RealizeError> {
+    let folded = |p: [nacre_exact::Rat; 3], d: [nacre_exact::Rat; 3]| match chain {
+        None => Some((p, d)),
+        Some(leaf) => Some((
+            model.chain_point_rat(leaf, p)?,
+            model.chain_dir_rat(leaf, d)?,
+        )),
+    };
+    if let (Some(cap), Some((foot, dir))) = (
+        crate::planes::world_plane_coeffs(model, plane),
+        s.as_rat()
+            .and_then(|t| line.point_at(t))
+            .and_then(|f| folded(f, def.dir())),
+    ) {
+        // A plane along the axis meets the ruling nowhere, at any precision: said here, where it
+        // is decided, rather than left to the replay to report as undecided.
+        let p =
+            nacre_exact::axis_plane_meet(&cap, &foot, &dir).ok_or(RealizeError::NoCurvedPoint)?;
+        let (n, d) = MeetPoint::Narrow(p).lift();
+        return Ok(Realization(Arm::Exact(n, d)));
+    }
+    let chain = cylinder_chain(model, chain).ok_or(RealizeError::NoMotionChain)?;
+    let (base, dir) = (line.base(), line.dir());
+    let tip = [
+        base[0].checked_add(dir[0]),
+        base[1].checked_add(dir[1]),
+        base[2].checked_add(dir[2]),
+    ];
+    let [Some(t0), Some(t1), Some(t2)] = tip else {
+        return Err(RealizeError::NoCurvedPoint);
+    };
+    let carried = |p: [nacre_exact::Rat; 3]| {
+        replay(WitnessPoint::at(p), &chain)
+            .map(|w| w.coord_hp(bits))
+            .ok_or(RealizeError::NoMotionChain)
+    };
+    let (b, t) = (carried(base)?, carried([t0, t1, t2])?);
+    let s = nacre_exact::quad_hp(s, bits).ok_or(RealizeError::NoCurvedPoint)?;
+    let on_ruling: [HpBounded; 3] =
+        core::array::from_fn(|k| b[k].add(&t[k].sub(&b[k], bits).mul(&s, bits), bits));
+    let (_, axis) = axis_hp(def, &chain, bits).ok_or(RealizeError::NoCurvedPoint)?;
+    let cap = plane_coeffs_hp(model, plane, bits, &mut PlaneMemo::default())
+        .map_err(|_| RealizeError::NoCurvedPoint)?;
+    line_meets_plane_hp(&on_ruling, &axis, &cap, bits)
+        .map(|p| Realization(Arm::Approached(p)))
+        .ok_or(RealizeError::Undecided)
 }
 
 /// **A cylinder-pair vertex is its ruling's point on its plane.** The ruling is the two
-/// cylinders' alone ([`pair_rulings`]); the plane picks the point on it. Two roads, as for a seam
-/// vertex ([`seam_point`]): where the three carriers are stated in the world, the ruling's foot
-/// carried along the axis to the plane is the exact point; otherwise the ruling is found where the
-/// two cylinders are stated — they share one motion, as the walls of one prism do — replayed along
-/// their chain, and met with the plane in the world, which answers for itself
-/// ([`plane_coeffs_hp`]): a cap turned about its own normal keeps its statement while the walls
-/// take the node, so the plane and the walls need not share a chain.
+/// cylinders' alone ([`pair_rulings`], read where the two are stated — they share one motion, as
+/// the walls of one prism do); the plane picks the point on it ([`ruling_point`]).
 fn pair_point(
     model: &Model,
     plane: Handle<Surface>,
@@ -1989,18 +2104,6 @@ fn pair_point(
     rank: u8,
     bits: usize,
 ) -> Result<Realization, RealizeError> {
-    let rank = usize::from(rank);
-    if let (Some(w0), Some(w1), Some(cap)) = (
-        model.world_cylinder_def(cylinders[0]),
-        model.world_cylinder_def(cylinders[1]),
-        crate::planes::world_plane_coeffs(model, plane),
-    ) {
-        let foot = pair_foot(&w0, &w1, rank)?;
-        let p = nacre_exact::axis_plane_meet(&cap, &foot, &w0.dir())
-            .ok_or(RealizeError::NoCurvedPoint)?;
-        let (n, d) = MeetPoint::Narrow(p).lift();
-        return Ok(Realization(Arm::Exact(n, d)));
-    }
     let (
         Surface::Cylinder {
             def: c0,
@@ -2017,22 +2120,62 @@ fn pair_point(
     if m0 != m1 {
         return Err(RealizeError::NoCurvedPoint);
     }
-    let foot = pair_foot(c0, c1, rank)?;
-    let on_ruling = match *m0 {
-        None => foot.map(|c| HpBounded::of_rat(c, bits)),
-        Some(node) => {
-            let chain = motion_chain(model, node).ok_or(RealizeError::NoMotionChain)?;
-            replay(WitnessPoint::at(foot), &chain)
-                .ok_or(RealizeError::NoMotionChain)?
-                .coord_hp(bits)
+    let rulings = pair_rulings(c0, c1).ok_or(RealizeError::NoCurvedPoint)?;
+    let ruling = rulings
+        .get(usize::from(rank))
+        .ok_or(RealizeError::NoCurvedPoint)?;
+    ruling_point(model, c0, *m0, plane, ruling, bits)
+}
+
+/// **A pierce vertex is its ruling's point on its other plane.** A pierce corner's two planes are
+/// a wall parallel to the cylinder's axis and a plane across it (the cylinder gate refuses a
+/// slanted one, and a prism's corner is a wall on its cap), so every crossing of their meet line
+/// lies on one of the wall's rulings, and the rank — the point's place about the axis — is its
+/// ruling's ([`wall_rulings`]). The other plane only picks the point on the ruling
+/// ([`ruling_point`]), so its frame is not asked.
+///
+/// The rulings are ranked exactly, in one frame with the wall: the world, where the cylinder and
+/// the wall both have world statements, else the cylinder's own statement frame
+/// ([`plane_in_cylinder_frame`]). A rigid motion carries the cylinder with its `ref_dir`, so both
+/// frames give one order. A definition whose planes are not one such wall and one other plane, or
+/// whose wall neither frame reads, names no point here (`NoCurvedPoint`).
+fn pierce_point(
+    model: &Model,
+    planes: [Handle<Surface>; 2],
+    cylinder: Handle<Surface>,
+    rank: u8,
+    bits: usize,
+) -> Result<Realization, RealizeError> {
+    let Surface::Cylinder { def, motion } = model.surface(cylinder) else {
+        return Err(RealizeError::NoCurvedPoint);
+    };
+    let one_wall = |read: [Option<[nacre_exact::Rat; 4]>; 2], m: [nacre_exact::Rat; 3]| {
+        let along = |c: &[nacre_exact::Rat; 4]| {
+            nacre_exact::dot3_rat(&[c[0], c[1], c[2]], &m).is_some_and(|d| d.numer() == 0)
+        };
+        match read.map(|c| c.filter(along)) {
+            [Some(w), None] => Some((w, planes[1])),
+            [None, Some(w)] => Some((w, planes[0])),
+            _ => None,
         }
     };
-    let hp = world_cylinder_hp(model, c0, *m0, bits).ok_or(RealizeError::NoCurvedPoint)?;
-    let cap = plane_coeffs_hp(model, plane, bits, &mut PlaneMemo::default())
-        .map_err(|_| RealizeError::NoCurvedPoint)?;
-    line_meets_plane_hp(&on_ruling, &hp.axis, &cap, bits)
-        .map(|p| Realization(Arm::Approached(p)))
-        .ok_or(RealizeError::Undecided)
+    let world = model.world_cylinder_def(cylinder).and_then(|w| {
+        let read = planes.map(|h| crate::planes::world_plane_coeffs(model, h));
+        Some((one_wall(read, w.dir())?, w))
+    });
+    let ((wall, other), frame, chain) = match world {
+        Some((found, w)) => (found, w, None),
+        None => {
+            let read = planes.map(|h| plane_in_cylinder_frame(model, h, *motion));
+            let found = one_wall(read, def.dir()).ok_or(RealizeError::NoCurvedPoint)?;
+            (found, def.clone(), *motion)
+        }
+    };
+    let rulings = wall_rulings(&frame, &wall).ok_or(RealizeError::NoCurvedPoint)?;
+    let ruling = rulings
+        .get(usize::from(rank))
+        .ok_or(RealizeError::NoCurvedPoint)?;
+    ruling_point(model, &frame, chain, other, ruling, bits)
 }
 
 fn build_three_plane(
@@ -2258,22 +2401,6 @@ fn perp_component(
         out[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
     }
     Some(out)
-}
-
-/// **The crossing `rank` names** — its place in the order about the cylinder `meet` was solved
-/// against ([`nacre_exact::quad::seam_ranked`], `Vertex::Pierce`'s convention).
-///
-/// Split out because the integration oracle ("the point is on the cylinder") is satisfied by
-/// **both** crossings: swapping them left the whole corpus green when planted. This is the piece
-/// a test can ask the distinguishing question of.
-fn ranked_crossing(
-    meet: nacre_exact::quad::CylinderMeet,
-    def: &nacre_topo::CylinderDef,
-    rank: u8,
-) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
-    nacre_exact::quad::seam_ranked(meet, &def.origin(), &def.dir(), &def.ref_dir())?
-        .into_iter()
-        .nth(usize::from(rank))
 }
 
 #[cfg(test)]
@@ -2741,24 +2868,14 @@ mod tests {
     /// **The rank is the order about the cylinder's axis from its `ref_dir`.**
     ///
     /// The oracle the integration test uses — "the point is on the cylinder" — is satisfied by
-    /// *both* crossings, so swapping them leaves it green (planted and measured). This asks the
-    /// question that actually distinguishes them. The cylinder about `(2, 2)` of radius 3 is
-    /// crossed by `x = 0, z = 0` at `y = 2 ± √5`: from `+x` the upper point sits near 132° and the
-    /// lower near 228°, so the upper is rank 0; from `(−1, −1, 0)` (225°) the lower sits near 3°
-    /// and comes first.
+    /// *both* rulings, so swapping them leaves it green (planted and measured). This asks the
+    /// question that actually distinguishes them. The wall `x = 0` cuts the cylinder about
+    /// `(2, 2)` of radius 3 in the rulings `y = 2 ± √5`: from `+x` the upper one sits near 132°
+    /// and the lower near 228°, so the upper is rank 0; from `(−1, −1, 0)` (225°) the lower sits
+    /// near 3° and comes first.
     #[test]
     fn the_rank_runs_about_the_axis_from_the_seam() {
-        let meet = || {
-            nacre_exact::quad::plane_plane_cylinder(
-                &[r(1), r(0), r(0), r(0)],
-                &[r(0), r(0), r(1), r(0)],
-                &[r(2), r(2), r(0)],
-                &[r(0), r(0), r(1)],
-                &nacre_exact::BigRat::from(r(9)),
-            )
-            .expect("a crossing")
-        };
-        let y_of = |seam: [Rat; 3], rank: u8| {
+        let ys = |seam: [Rat; 3]| {
             let def = nacre_topo::CylinderDef::new(
                 [r(2), r(2), r(0)],
                 [r(0), r(0), r(1)],
@@ -2766,26 +2883,18 @@ mod tests {
                 nacre_exact::BigRat::from(r(9)),
             )
             .expect("a cylinder");
-            let (line, s) = ranked_crossing(meet(), &def, rank).expect("two crossings");
-            nacre_exact::quad::branch_point_approx(&line, &s)[1]
+            wall_rulings(&def, &[r(1), r(0), r(0), r(0)])
+                .expect("no overflow")
+                .iter()
+                .map(|(line, s)| nacre_exact::quad::branch_point_approx(line, s)[1])
+                .collect::<Vec<_>>()
         };
         let (up, down) = (2.0 + 5f64.sqrt(), 2.0 - 5f64.sqrt());
-        let near = |a: f64, b: f64| (a - b).abs() < 1e-12;
-        assert!(near(y_of([r(1), r(0), r(0)], 0), up));
-        assert!(near(y_of([r(1), r(0), r(0)], 1), down));
-        assert!(near(y_of([r(-1), r(-1), r(0)], 0), down));
-        assert!(near(y_of([r(-1), r(-1), r(0)], 1), up));
-        let def = nacre_topo::CylinderDef::new(
-            [r(2), r(2), r(0)],
-            [r(0), r(0), r(1)],
-            [r(1), r(0), r(0)],
-            nacre_exact::BigRat::from(r(9)),
-        )
-        .expect("a cylinder");
-        assert!(
-            ranked_crossing(meet(), &def, 2).is_none(),
-            "a line crosses twice at most"
-        );
+        let near = |got: Vec<f64>, want: [f64; 2]| {
+            got.len() == 2 && (0..2).all(|k| (got[k] - want[k]).abs() < 1e-12)
+        };
+        assert!(near(ys([r(1), r(0), r(0)]), [up, down]));
+        assert!(near(ys([r(-1), r(-1), r(0)]), [down, up]));
     }
 
     /// **A read-out coordinate's error covers its rounding, at any size.** An exact arm whose

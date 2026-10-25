@@ -408,9 +408,9 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
 /// **The push funnel realizes; the fallback stands only where the realization declines**. Pushing a
 /// realizable definition again with a fallback that is wrong by three ulp gives a
 /// `Realized` cache holding the realization, not the fallback; a definition the road declines by
-/// name — a pierce corner on a cylinder under an irrational turn, whose meet no road solves off
-/// the world statement — keeps the fallback it was handed. The same turned cylinder's seam
-/// vertices stand beside them, realized (met in the world).
+/// name — a pierce corner asked for a third crossing, which no line makes with a cylinder — keeps
+/// the fallback it was handed. Beside it a cylinder under an irrational turn has its pierce
+/// corners and its seam vertices realized (on their rulings and rims, met in the world).
 #[test]
 fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let (mut m, l) = l_prism();
@@ -441,7 +441,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let turned =
         transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
     m.rebuild_adjacency();
-    let (mut pierces, mut seams) = (0, 0);
+    let (mut pierces, mut seams) = (Vec::new(), 0);
     let vertices: std::collections::BTreeSet<_> = m
         .shell(m.solid(turned).outer)
         .faces
@@ -457,33 +457,44 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
         .collect();
     for vh in vertices {
         match *m.vertex(vh) {
-            Vertex::Pierce { .. } => {
-                pierces += 1;
-                assert!(
-                    matches!(
-                        m.vertex_cache(vh),
-                        nacre_topo::PointCache::Unrealized { coord: _ }
-                    ),
-                    "{:?}",
-                    m.vertex_cache(vh)
-                );
-                assert_eq!(
-                    crate::realize_vertex(&m, vh, crate::Precision::NearestF64).err(),
-                    Some(crate::RealizeError::NoCurvedPoint)
-                );
-            }
-            Vertex::OnSeam(_) => {
-                seams += 1;
-                assert!(
-                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. }),
-                    "{:?}",
-                    m.vertex_cache(vh)
-                );
-            }
-            Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => {}
+            Vertex::Pierce {
+                planes, cylinder, ..
+            } => pierces.push((planes, cylinder)),
+            Vertex::OnSeam(_) => seams += 1,
+            Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => continue,
         }
+        assert!(
+            matches!(m.vertex_cache(vh), nacre_topo::PointCache::Realized { .. }),
+            "{:?}: {:?}",
+            m.vertex(vh),
+            m.vertex_cache(vh)
+        );
     }
-    assert!(pierces > 0 && seams > 0, "{pierces} pierces, {seams} seams");
+    assert!(
+        !pierces.is_empty() && seams > 0,
+        "{pierces:?}, {seams} seams"
+    );
+    let (planes, cylinder) = pierces[0];
+    let fallback = Point3::from_array([1.0, 2.0, 3.0]);
+    let third = crate::realize::push_vertex_realized(
+        &mut m,
+        Vertex::Pierce {
+            planes,
+            cylinder,
+            rank: 2,
+        },
+        nacre_topo::PointCache::Unrealized { coord: fallback },
+        crate::realize::ChainLink::Fresh,
+    );
+    assert_eq!(
+        *m.vertex_cache(third),
+        nacre_topo::PointCache::Unrealized { coord: fallback },
+        "the declined definition keeps the fallback it was handed"
+    );
+    assert_eq!(
+        crate::realize_vertex(&m, third, crate::Precision::NearestF64).err(),
+        Some(crate::RealizeError::NoCurvedPoint)
+    );
 }
 
 /// The slanted wall `z = 2 + x/6` over `x ∈ [−3, 3]`, `y ∈ [0, 4]`, everything above it to `z = 6`:

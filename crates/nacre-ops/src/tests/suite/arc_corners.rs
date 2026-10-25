@@ -392,3 +392,50 @@ fn a_boolean_refuses_a_two_cylinder_edge_at_the_entry() {
         }
     }
 }
+
+/// **A plane along the axis names no point on the ruling, and says so.** A cylinder-pair definition
+/// handed a box's side wall instead of a cap: every carrier is stated in the world, so the exact
+/// road sees the plane run along the axis — no precision would place the point, so the answer is
+/// `NoCurvedPoint`, not `Undecided` (which a cache reads as «ask with more bits»).
+#[test]
+fn a_cylinder_pair_on_a_plane_along_the_axis_names_no_point() {
+    let mut m = Model::new();
+    let s = leaf(&mut m, 2.0, false);
+    let Vertex::CylinderPair { cylinders, .. } = *m.vertex(vertices_of(&m, s)[0]) else {
+        panic!("a cylinder pair")
+    };
+    let block = crate::fixtures::cuboid(
+        &mut m,
+        Point3::from_array([10.0, 0.0, 0.0]),
+        Point3::from_array([11.0, 1.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let wall = m
+        .shell(m.solid(block).outer)
+        .faces
+        .iter()
+        .map(|&fh| m.face(fh).surface)
+        .find(|&h| {
+            m.surface_name(h)
+                .and_then(|n| n.narrow().copied())
+                .is_some_and(|c| c[2] == Rat::from_int(0))
+        })
+        .expect("a side wall");
+    let vh = crate::realize::push_vertex_realized(
+        &mut m,
+        Vertex::CylinderPair {
+            plane: wall,
+            cylinders,
+            rank: 0,
+        },
+        PointCache::Unrealized {
+            coord: Point3::from_array([0.0; 3]),
+        },
+        crate::realize::ChainLink::Fresh,
+    );
+    assert_eq!(
+        crate::realize_vertex(&m, vh, crate::Precision::NearestF64).err(),
+        Some(crate::RealizeError::NoCurvedPoint)
+    );
+    assert!(matches!(m.vertex_cache(vh), PointCache::Unrealized { .. }));
+}

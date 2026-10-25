@@ -3,12 +3,12 @@ use super::*;
 /// plane and the cap's plane meet in a line, and that line crosses the arc's cylinder at this
 /// point — [`Vertex::Pierce`], the same definition the boolean mints for its pierce corners.
 ///
-/// The rank is this point's place among the line's crossings in the order about the cylinder
-/// ([`nacre_exact::quad::seam_ranked`]), solved on the planes' stored names with the cylinder's
-/// own statement. A wall tangent to the cylinder — a fillet's, a slot's straight side — crosses
-/// once, rank 0. Every statement has to live in one frame for the meet to mean anything: a cap
-/// borrowed from another body in another frame (a pad on a turned face) declines by name rather
-/// than reading a frame line against a world cylinder.
+/// The rank is this corner's ruling's place about the cylinder ([`crate::realize::wall_rulings`],
+/// the order the realization reads): the wall and the cylinder are stated in one frame (they share
+/// one motion — the prism's walls), and the corner, carried along the axis to the plane the rulings'
+/// feet are on ([`crate::realize::pair_feet_plane`]), is one ruling's foot. The cap only picks the
+/// point on the ruling, so its frame is not asked. A wall tangent to the cylinder — a fillet's, a
+/// slot's straight side — touches it along one ruling, rank 0.
 pub(super) fn pierce_def(
     model: &Model,
     plane: Handle<Surface>,
@@ -16,57 +16,33 @@ pub(super) fn pierce_def(
     cylinder: Handle<Surface>,
     at: &[nacre_exact::Rat; 3],
 ) -> Result<Vertex, OpError> {
-    let (a, b) = if plane.index() < cap.index() {
-        (plane, cap)
-    } else {
-        (cap, plane)
-    };
-    let name = |h: Handle<Surface>| -> Result<[nacre_exact::Rat; 4], OpError> {
-        model
-            .surface_name(h)
-            .and_then(|n| n.narrow().copied())
-            .ok_or(OpError::PlaneWithoutExactForm)
-    };
-    let (pa, pb) = (name(a)?, name(b)?);
     let nacre_topo::Surface::Cylinder { def, motion } = model.surface(cylinder) else {
         return Err(OpError::DegenerateGeometry);
     };
-    if model.surface_motion(a) != *motion || model.surface_motion(b) != *motion {
+    if model.surface_motion(plane) != *motion {
         return Err(OpError::PlaneWithoutExactForm);
     }
-    let (o, m) = (def.origin(), def.dir());
-    let meet = nacre_exact::quad::plane_plane_cylinder(&pa, &pb, &o, &m, def.r2())
+    let wall = model
+        .surface_name(plane)
+        .and_then(|n| n.narrow().copied())
         .ok_or(OpError::PlaneWithoutExactForm)?;
-    let ranked = nacre_exact::quad::seam_ranked(meet, &o, &m, &def.ref_dir())
+    // An overflow is a point with no exact form here, the name the other door gives too.
+    let rulings = crate::realize::wall_rulings(def, &wall).ok_or(OpError::PlaneWithoutExactForm)?;
+    let across = crate::realize::pair_feet_plane(def).ok_or(OpError::PlaneWithoutExactForm)?;
+    let foot = nacre_exact::axis_plane_meet(&across, at, &def.dir())
         .ok_or(OpError::PlaneWithoutExactForm)?;
-    // This point's parameter along the meet line, `(at − base)·dir / dir·dir` — every crossing
-    // `seam_ranked` lists rides the one line.
-    let param = |line: &nacre_exact::quad::MeetLine| -> Option<nacre_exact::Rat> {
-        let (bse, d) = (line.base(), line.dir());
-        let mut num = nacre_exact::Rat::from_int(0);
-        let mut den = nacre_exact::Rat::from_int(0);
-        for k in 0..3 {
-            num = num.checked_add(at[k].checked_sub(bse[k])?.checked_mul(d[k])?)?;
-            den = den.checked_add(d[k].checked_mul(d[k])?)?;
-        }
-        num.checked_mul(nacre_exact::Rat::new(den.denom(), den.numer())?)
+    // No ruling is this corner's only if the sketch put the corner off the wall or the circle,
+    // which the sketch's own checks refuse before a prism is asked.
+    let rank = crate::realize::ruling_rank(&rulings, &foot).ok_or(OpError::DegenerateGeometry)?;
+    let [a, b] = if plane.index() < cap.index() {
+        [plane, cap]
+    } else {
+        [cap, plane]
     };
-    // Compared as values: a rational crossing still arrives as `mid ± k·√disc` when the
-    // discriminant is a perfect square, so `b == 0` is not the test — the difference's sign is.
-    let is_here = |(line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)| {
-        param(line).is_some_and(|t| {
-            s.checked_sub(&nacre_exact::quad::QuadVal::from_rat(t))
-                .is_some_and(|d| d.sign() == nacre_exact::Orient::Zero)
-        })
-    };
-    let rank = ranked
-        .iter()
-        .position(is_here)
-        .ok_or(OpError::PlaneWithoutExactForm)?;
     Ok(Vertex::Pierce {
         planes: [a, b],
         cylinder,
-        rank: u8::try_from(rank).expect("a line crosses a cylinder twice at most"),
+        rank: u8::try_from(rank).expect("a wall shares two rulings with a cylinder at most"),
     })
 }
 
@@ -106,15 +82,9 @@ pub(super) fn pair_def(
     let across = crate::realize::pair_feet_plane(c0).ok_or(OpError::PlaneWithoutExactForm)?;
     let foot = nacre_exact::axis_plane_meet(&across, at, &c0.dir())
         .ok_or(OpError::PlaneWithoutExactForm)?;
-    let is_here = |(line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)| {
-        s.as_rat().and_then(|t| line.point_at(t)) == Some(foot)
-    };
     // No candidate is this point only if the sketch put the corner off one of the circles, which
     // `ArcEndOffCircle` refuses before a prism is asked.
-    let rank = rulings
-        .iter()
-        .position(is_here)
-        .ok_or(OpError::DegenerateGeometry)?;
+    let rank = crate::realize::ruling_rank(&rulings, &foot).ok_or(OpError::DegenerateGeometry)?;
     Ok(Vertex::CylinderPair {
         plane: cap,
         cylinders,

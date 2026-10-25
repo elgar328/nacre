@@ -1083,6 +1083,7 @@ mod loop_nesting;
 mod motion;
 mod naming;
 mod parallel;
+mod pierce_corners;
 mod plane_sense;
 mod rotation;
 mod sketch_models;
