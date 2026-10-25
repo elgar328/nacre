@@ -238,6 +238,14 @@ design 「가지 말 것」의 «`rotated` 플래그를 풀어 회전 클래스�
   그렇게 옮겨 fuse 하면 3-4-5 벽과 이진 이동량의 계수가 넘친다. 같은 이동을 십진(`Rat::from_decimal` — kit 이 읽는
   철자)으로 주면 빌드된다.
 
+### 곡면이 있는 몸의 회전 중심 — `CentroidOfCurvedFace`
+
+kit 의 `rotateX`·`rotateY`·`rotateZ(…, { pivot: "center" })` 는 몸마다 `nacre::props::centroid` 를 읽는데,
+`centroid` 는 곡면이 하나라도 있는 몸을 `CentroidOfCurvedFace` 로 거절한다 — 평면 면 위 원뿔로 나누는 분해가 곡면에서는
+성립하지 않는다. 그래서 원통·필렛·호가 있는 몸은 «중심 둘레로 돌리기»가 안 된다(잰 것: 플레이그라운드에서 `cylinder`
+하나와 호–호 잎). 부피(`mass_props`)는 곡면 몸에서도 되고 `face_props` 는 원통 면의 넓이와 중심을 이미 준다 — 몸의
+중심에 더 필요한 것은 부피의 1차 모멘트다. kit 은 이 거절을 문장 없이 식별자(`{e:?}`)로만 전한다.
+
 ### 불리언이 이름 붙여 거절하는 인구
 
 위의 항목이 든 것 밖의 이름 붙인 거절:
