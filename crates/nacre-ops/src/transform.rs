@@ -392,27 +392,6 @@ pub(crate) enum Xform<'a> {
 }
 
 impl Xform<'_> {
-    /// A direction carried through the motion's linear part, exactly — `None` where the motion
-    /// has no exact statement (an irrational turn).
-    fn dir_rat(&self, v: [Rat; 3]) -> Option<[Rat; 3]> {
-        match self {
-            Xform::Rigid(iso) => {
-                let moved = iso.point_rat(v)?;
-                let origin = iso.point_rat([Rat::from_int(0); 3])?;
-                Some([
-                    moved[0].checked_sub(origin[0])?,
-                    moved[1].checked_sub(origin[1])?,
-                    moved[2].checked_sub(origin[2])?,
-                ])
-            }
-            Xform::Mirror { axis, .. } => {
-                let mut out = v;
-                out[axis.index()] = Rat::from_int(0).checked_sub(v[axis.index()])?;
-                Some(out)
-            }
-        }
-    }
-
     /// The reflection in `axis = offset`, with its `f64` map **derived** from the exact plane
     /// rather than handed in beside it.
     fn mirror(axis: Axis, offset: Rat) -> Xform<'static> {
@@ -502,44 +481,6 @@ fn transform_surface(
 /// what the `Orientation` flag records.
 ///
 /// `Err` only when the motion has no image for some cell's geometry (a mirrored cylinder).
-/// **Does the moved pierce pair's meet line run the other way?** `ℓ = n₁ × n₂` of the new pair
-/// (in its stored, ascending order) against the old pair's `ℓ` carried through the motion as a
-/// direction — exact, in the world names. `None` when a name is not narrow or the motion has no
-/// exact statement; the caller then keeps the order-only restatement.
-fn pierce_line_reversed(
-    model: &Model,
-    old: [Handle<Surface>; 2],
-    new: [Handle<Surface>; 2],
-    motion: &Xform<'_>,
-) -> Option<bool> {
-    let normal = |h: Handle<Surface>| -> Option<[Rat; 3]> {
-        let c = *model.world_plane_name(h)?.narrow()?;
-        Some([c[0], c[1], c[2]])
-    };
-    let cross = |a: [Rat; 3], b: [Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            a[1].checked_mul(b[2])?
-                .checked_sub(a[2].checked_mul(b[1])?)?,
-            a[2].checked_mul(b[0])?
-                .checked_sub(a[0].checked_mul(b[2])?)?,
-            a[0].checked_mul(b[1])?
-                .checked_sub(a[1].checked_mul(b[0])?)?,
-        ])
-    };
-    let l_old = cross(normal(old[0])?, normal(old[1])?)?;
-    let l_new = cross(normal(new[0])?, normal(new[1])?)?;
-    let carried = motion.dir_rat(l_old)?;
-    let dot = l_new[0]
-        .checked_mul(carried[0])?
-        .checked_add(l_new[1].checked_mul(carried[1])?)?
-        .checked_add(l_new[2].checked_mul(carried[2])?)?;
-    // The same line either way, so a zero here is a contradiction, not an answer.
-    if dot.numer() == 0 {
-        return None;
-    }
-    Some(dot.numer() < 0)
-}
-
 fn transform_solid(
     model: &mut Model,
     solid: Handle<Solid>,
@@ -715,8 +656,8 @@ fn transform_solid(
                 // The same fork as the `Known` plane above, minus the invariant road (an
                 // invariant-cylinder restatement — a turn about its own axis — is deliberately
                 // deferred; the condition is narrower than a plane's because `ref_dir` turns, and
-                // a `Vertex::CylinderPair`'s rank is read from `ref_dir`, so keeping the old
-                // statement would rename its points).
+                // a `Vertex::Pierce`'s or `Vertex::CylinderPair`'s rank is read from `ref_dir`, so
+                // keeping the old statement would rename its points).
                 // The same sentence as the plane's: verbatim behind a history or when the
                 // motion is recorded; otherwise the whole motion moves the def (the very
                 // transport `carry_of` asked).
@@ -782,41 +723,21 @@ fn transform_solid(
         let def = match *model.vertex(vh) {
             Vertex::ThreePlane(planes) => Vertex::ThreePlane(planes.map(remap)),
             Vertex::OnSeam(pair) => Vertex::OnSeam(pair.map(remap)),
-            // `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
-            // face-traversal order, so the two planes' handle order can invert, and the root is
-            // defined against the meet line of the *stored* order. `QuadRoot::canonical` owns
-            // that restatement — including the tangency, whose single point a swap fixes — and
-            // this site reads it rather than spelling it again.
+            // The rank is read about the cylinder from its own statement, which the motion
+            // carries whole (origin, axis and `ref_dir` together), so it travels unchanged; the
+            // two planes are put back in ascending order, which the name does not read. A
+            // reflection would reverse the order about the axis, but a solid with a cylinder is
+            // refused a mirror in pass 1 (`MirrorNotPlanar`).
             Vertex::Pierce {
-                planes: [p0, p1],
+                planes,
                 cylinder,
-                root,
+                rank,
             } => {
-                // **The sign half.** `canonical` counts
-                // the swap; but a restatement may spell a moved plane with the *opposite* normal
-                // (its world name is canonical over four coefficients), and a reflection reverses
-                // every cross product — each reverses `ℓ = n₁ × n₂`, and `Lo`/`Hi` trade names
-                // once per reversal (`QuadRoot::canonical`'s doc: *"flip once per reversal"*).
-                // Decided exactly from the world names: the new pair's `ℓ` against the old pair's
-                // `ℓ` carried through the motion, which folds the swap in as well. Measured, by the
-                // commutation oracle: counting the swap alone, a boss turned 90° names the *other*
-                // crossing on 18 quadrantal cells, and a stored `f64` hides the wrong label.
-                //
-                // Unavailable (a chain the world cannot state exactly) means nothing was restated
-                // — the spellings travelled whole — so the order-only answer stands.
-                let new_pair = {
-                    let [a, b] = [remap(p0), remap(p1)];
-                    if b < a { [b, a] } else { [a, b] }
-                };
-                let root = match pierce_line_reversed(model, [p0, p1], new_pair, motion) {
-                    Some(true) => root.flipped(),
-                    Some(false) => root,
-                    None => nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root).1,
-                };
+                let [a, b] = planes.map(remap);
                 Vertex::Pierce {
-                    planes: new_pair,
+                    planes: if b < a { [b, a] } else { [a, b] },
                     cylinder: remap(cylinder),
-                    root,
+                    rank,
                 }
             }
             // The rank is read about `cylinders[0]` from its own statement, which the motion

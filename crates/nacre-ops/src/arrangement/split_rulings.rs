@@ -17,8 +17,8 @@ fn lateral_crossings(
     sg: &MergedSeg,
     on_a_shared_line: bool,
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
+    use crate::combinatorics::QuadRoot;
     use nacre_exact::quad::CylinderMeet;
-    use nacre_topo::QuadRoot;
     let Some(v) = combinatorics::class_coeffs_rat(jd, sg.wall) else {
         return Ok(None);
     };

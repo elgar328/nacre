@@ -233,8 +233,8 @@ impl Aliases {
         cyl: usize,
         sr: &crate::planes::SharedRuling,
     ) {
+        use crate::combinatorics::QuadRoot;
         use nacre_exact::quad::{CylinderMeet, QuadVal};
-        use nacre_topo::QuadRoot;
         let Some(wcy) = cyls.get(cyl) else { return };
         let def = &wcy.def;
         let (o, m, r2) = (def.origin(), def.dir(), def.r2());

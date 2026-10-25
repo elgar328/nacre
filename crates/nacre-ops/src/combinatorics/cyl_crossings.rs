@@ -202,7 +202,7 @@ pub(crate) fn arc_crossings(
     }
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
     let mut inside: Vec<NodeId> = Vec::with_capacity(2);
-    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+    for root in [QuadRoot::Lo, QuadRoot::Hi] {
         let node = NodeId::pierce(wc, fc, cyl, root);
         if let Some(e) = on_end {
             if node == e {
@@ -308,7 +308,7 @@ pub(crate) fn crossing_on_ruling(
             return Err(NoCrossing);
         }
         let mut found = None;
-        for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+        for root in [QuadRoot::Lo, QuadRoot::Hi] {
             let node = NodeId::pierce(wc, fc, cyl, root);
             let meet = pierce_meet(jd, cyl, def, node).ok_or(Undecided)?;
             if meet.ruling_side(jd, fc, def).ok_or(Undecided)? == side {
@@ -330,9 +330,7 @@ pub(crate) fn crossing_on_ruling(
     let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2).ok_or(Width)?;
     if side == 0 {
         return match meet {
-            CylinderMeet::Tangent { .. } => {
-                Ok(NodeId::pierce(wc, fc, cyl, nacre_topo::QuadRoot::Double))
-            }
+            CylinderMeet::Tangent { .. } => Ok(NodeId::pierce(wc, fc, cyl, QuadRoot::Double)),
             _ => Err(NoCrossing),
         };
     }
@@ -342,10 +340,7 @@ pub(crate) fn crossing_on_ruling(
     // A root whose side overflowed is not on `side` as far as this can tell; the other root may
     // still be, so the overflow is the answer only when no root is.
     let (mut found, mut overflow) = (None, false);
-    for (root, sv) in [
-        (nacre_topo::QuadRoot::Lo, &s[0]),
-        (nacre_topo::QuadRoot::Hi, &s[1]),
-    ] {
+    for (root, sv) in [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])] {
         match ruling_side_signed(&v, def, (&line, sv)) {
             None => overflow = true,
             Some(sd) if sd == side => {

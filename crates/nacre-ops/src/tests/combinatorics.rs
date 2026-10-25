@@ -58,11 +58,12 @@ fn a_name_orders_like_the_triple_it_is() {
 /// proposition for the second variant, where the canonicalization is bigger than a sort.
 ///
 /// The expected values are written from the rule's sentence, not by calling the constructor a
-/// second time. The rule itself is [`nacre_topo::QuadRoot::canonical`]'s, and its own locks
-/// (in `nacre-topo`) are what say the *geometry* agrees; this only says the name reads it.
+/// second time. The rule itself is [`crate::combinatorics::QuadRoot::canonical`]'s, and its own
+/// locks (`swapping_the_planes_trades_the_two_roots_names` below) are what say the *geometry*
+/// agrees; this only says the name reads it.
 #[test]
 fn a_pierce_is_one_name_however_the_pair_is_handed_in() {
-    use nacre_topo::QuadRoot::{Double, Hi, Lo};
+    use crate::combinatorics::QuadRoot::{Double, Hi, Lo};
     for (root, other) in [(Lo, Hi), (Hi, Lo), (Double, Double)] {
         assert_eq!(
             NodeId::pierce(9, 2, 7, root),
@@ -85,7 +86,7 @@ fn a_pierce_is_one_name_however_the_pair_is_handed_in() {
 #[test]
 fn the_two_variants_are_told_apart_and_ordered() {
     let three = NodeId::three_planes(Canon3::three([9, 2, 5]));
-    let pierce = NodeId::pierce(2, 9, 7, nacre_topo::QuadRoot::Lo);
+    let pierce = NodeId::pierce(2, 9, 7, crate::combinatorics::QuadRoot::Lo);
     assert_eq!(three_plane_name(three), Some([2, 5, 9]));
     assert_eq!(
         three_plane_name(pierce),
@@ -547,7 +548,10 @@ fn a_pierce_point_on_a_nameless_plane_is_a_box_the_questions_read() {
     };
     let mut seen = [false; 2];
     let mut names = Vec::new();
-    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+    for root in [
+        crate::combinatorics::QuadRoot::Lo,
+        crate::combinatorics::QuadRoot::Hi,
+    ] {
         let name = NodeId::pierce(wall, top, k, root);
         let meet = pierce_meet(&jd, k, def, name).expect("a bounded meet");
         assert!(meet.exact().is_none(), "no exact meet without a world name");
@@ -567,7 +571,7 @@ fn a_pierce_point_on_a_nameless_plane_is_a_box_the_questions_read() {
     // A third point of the top circle — the opposite wall's root — sits in exactly one of the two
     // arcs the first two cut the circle into.
     let opposite = wall_at(&setup, -2.5);
-    let third = NodeId::pierce(opposite, top, k, nacre_topo::QuadRoot::Lo);
+    let third = NodeId::pierce(opposite, top, k, crate::combinatorics::QuadRoot::Lo);
     let one = between_on_circle_hp(&jd, k, def, names[0], names[1], third).expect("decided");
     let other = between_on_circle_hp(&jd, k, def, names[1], names[0], third).expect("decided");
     assert_ne!(
@@ -601,8 +605,8 @@ fn an_arc_crossed_twice_by_a_nameless_plane_counts_two() {
     let (k, top) = (0, top_at(&setup));
     let (near, far) = (wall_at(&setup, 2.5), wall_at(&setup, -2.5));
     let ends = [
-        NodeId::pierce(far, top, k, nacre_topo::QuadRoot::Lo),
-        NodeId::pierce(far, top, k, nacre_topo::QuadRoot::Hi),
+        NodeId::pierce(far, top, k, crate::combinatorics::QuadRoot::Lo),
+        NodeId::pierce(far, top, k, crate::combinatorics::QuadRoot::Hi),
     ];
     let counts: Vec<usize> = [true, false]
         .into_iter()
@@ -717,5 +721,97 @@ fn a_comparison_failing_mid_merge_keeps_every_element() {
     assert_eq!(
         a, b,
         "a merge that stops must leave the slice holding its input"
+    );
+}
+/// **A swap renames the root, because it renames the line.**
+///
+/// The expected values are written out from the rule's own sentence rather than produced by
+/// calling the constructor a second time — an oracle built from the function under test
+/// measures the function against itself.
+#[test]
+fn a_swapped_pair_renames_the_same_root() {
+    let (a, b) = (2usize, 9usize);
+    assert_eq!(
+        QuadRoot::canonical([b, a], QuadRoot::Lo),
+        ([a, b], QuadRoot::Hi)
+    );
+    assert_eq!(
+        QuadRoot::canonical([b, a], QuadRoot::Hi),
+        ([a, b], QuadRoot::Lo)
+    );
+}
+
+/// **A pair already in order keeps its root** — the half its sibling above cannot see.
+///
+/// A constructor that toggled *unconditionally* satisfies
+/// [`a_swapped_pair_renames_the_same_root`] on its own: both spellings flip and the equality
+/// survives the double negation. Only this test separates "toggle on swap" from "toggle".
+#[test]
+fn an_ordered_pair_keeps_its_root() {
+    let (a, b) = (2usize, 9usize);
+    assert_eq!(
+        QuadRoot::canonical([a, b], QuadRoot::Lo),
+        ([a, b], QuadRoot::Lo)
+    );
+    assert_eq!(
+        QuadRoot::canonical([a, b], QuadRoot::Hi),
+        ([a, b], QuadRoot::Hi)
+    );
+}
+
+/// **A tangency keeps its name through a swap** — its two roots coincide, so the swap sends
+/// the one point to itself.
+///
+/// This is the case `Double` exists for: with a tangency stored as `Lo`, a remap that
+/// toggles unconditionally brings the same point back named `Hi` — one point, two
+/// names, which is exactly what canonicalization exists to prevent.
+#[test]
+fn a_tangency_keeps_its_name_through_a_swap() {
+    let (a, b) = (2usize, 9usize);
+    assert_eq!(
+        QuadRoot::canonical([b, a], QuadRoot::Double),
+        ([a, b], QuadRoot::Double)
+    );
+    assert_eq!(
+        QuadRoot::canonical([a, b], QuadRoot::Double),
+        ([a, b], QuadRoot::Double)
+    );
+}
+
+/// **The geometry the three locks above are about.** Without it they are statements about
+/// a convention someone chose; with it they are statements about where the points are.
+///
+/// `z = 0` and `x = 0` meet on the y-axis, and the cylinder about the x-axis with `r = 2` is
+/// crossed there at `(0, ∓2, 0)`. Canonical normals give `ℓ = (0,0,1) × (1,0,0) = +y`, so
+/// solved in that order the smaller parameter is `y = −2`. Solved the other way `ℓ` is `−y`,
+/// and the algebra `lo′ = −hi`, `hi′ = −lo` says `s′[1]` names the *same point* as `s[0]`.
+#[test]
+fn swapping_the_planes_trades_the_two_roots_names() {
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, branch_point_approx, plane_plane_cylinder};
+    let r = Rat::from_int;
+    let z0 = [r(0), r(0), r(1), r(0)];
+    let x0 = [r(1), r(0), r(0), r(0)];
+    let (origin, dir) = ([r(0), r(0), r(0)], [r(1), r(0), r(0)]);
+    let solve = |p1: &[Rat; 4], p2: &[Rat; 4]| {
+        let meet = plane_plane_cylinder(p1, p2, &origin, &dir, &nacre_exact::BigRat::from(r(4))); // radius 2, as r²
+        match meet {
+            Some(CylinderMeet::Pair { line, s }) => (line, s),
+            other => panic!("the y-axis crosses this cylinder twice: {other:?}"),
+        }
+    };
+    let (l_ab, s_ab) = solve(&z0, &x0);
+    let (l_ba, s_ba) = solve(&x0, &z0);
+    let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-12);
+    let at = |l: &nacre_exact::quad::MeetLine, s| branch_point_approx(l, s);
+    assert!(near(at(&l_ab, &s_ab[0]), [0.0, -2.0, 0.0]), "lo is y = −2");
+    assert!(near(at(&l_ab, &s_ab[1]), [0.0, 2.0, 0.0]), "hi is y = +2");
+    assert!(
+        near(at(&l_ba, &s_ba[1]), [0.0, -2.0, 0.0]),
+        "hi′ is the old lo"
+    );
+    assert!(
+        near(at(&l_ba, &s_ba[0]), [0.0, 2.0, 0.0]),
+        "lo′ is the old hi"
     );
 }

@@ -18,7 +18,7 @@ pub(super) enum Split {
         /// here — which is why [`Split::name`] hands the door a *sorted* pair, where
         /// `QuadRoot::canonical` has nothing to do. Passing `(p, q)` in caller order instead
         /// would flip a root that is already right.
-        root: nacre_topo::QuadRoot,
+        root: crate::combinatorics::QuadRoot,
     },
 }
 

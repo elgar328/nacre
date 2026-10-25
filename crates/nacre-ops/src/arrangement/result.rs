@@ -255,8 +255,12 @@ pub(crate) fn seam_table(
                     }
                     .ok_or_else(|| reject(RejectReason::ThreePlanes))
                 };
-                let cache =
-                    crate::realize::point_cache(model, &def.vertex(geom, cyls), planes, figure)?;
+                let cache = crate::realize::point_cache(
+                    model,
+                    &def.vertex(jd, geom, cyls)?,
+                    planes,
+                    figure,
+                )?;
                 seam.push(SeamVertex {
                     cache,
                     triple: node,

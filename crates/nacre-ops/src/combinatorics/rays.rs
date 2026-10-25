@@ -262,7 +262,7 @@ pub(crate) fn segment_meets_face(
         use nacre_exact::quad::CylinderMeet;
         match class_line_meets_cylinder(jd, p, w, def) {
             Some(CylinderMeet::Pair { .. }) => {
-                for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+                for root in [QuadRoot::Lo, QuadRoot::Hi] {
                     let at = PointOn::Pierce(NodeId::pierce(p, w, cyl, root));
                     events.push(([at; 2], true));
                 }

@@ -18,6 +18,98 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NodeId(pub(super) NodeKind);
 
+/// **Which crossing of a class pair's meet line a [`NodeKind::Pierce`] means** — ascending
+/// parameter along `ℓ = n₁ × n₂`, the two classes' world-name normals in the name's stored
+/// (ascending) order (`nacre_exact::quad`'s pair order). Class-space vocabulary only: a result
+/// vertex names its point by its place about the cylinder ([`nacre_topo::Vertex::Pierce`]'s
+/// `rank`), and `Def::vertex` is where one is read as the other.
+///
+/// **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
+/// ascending-parameter convention, and comparison keys downstream read it (the arrangement's
+/// reject witness is chosen as the smallest name). Reordering these two variants would silently
+/// reverse those choices, so the order is a decision, not a listing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum QuadRoot {
+    /// The smaller parameter along the meet-line direction.
+    Lo,
+    /// The larger parameter.
+    Hi,
+    /// **A tangency: the two roots coincide, so there is one point.**
+    ///
+    /// A stored variant, not just a solver's report: spelling a tangency `Lo` would leave `Lo`
+    /// meaning either "the smaller of two" or "the only one", and then nothing holding a name
+    /// could tell whether a re-sort should toggle it.
+    Double,
+}
+
+impl QuadRoot {
+    /// **The name the same point takes once the two planes are swapped.**
+    ///
+    /// Not "the other root" — the *other name for this point*, which is what a swap needs. For a
+    /// genuine pair the swap sends `lo ↦ −hi` and `hi ↦ −lo` (see [`Self::canonical`]), so the
+    /// two names trade places. For a tangency `s = mid` and the swap sends `mid ↦ −mid` along
+    /// `ℓ ↦ −ℓ`: **the point goes to itself**, so its name does too.
+    #[inline]
+    pub(crate) fn flipped(self) -> QuadRoot {
+        match self {
+            QuadRoot::Lo => QuadRoot::Hi,
+            QuadRoot::Hi => QuadRoot::Lo,
+            QuadRoot::Double => QuadRoot::Double,
+        }
+    }
+
+    /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
+    ///
+    /// A [`NodeKind::Pierce`] stores its two plane classes ascending, and its root is defined
+    /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
+    /// `(pair, root)` in some other order has to restate the root — and the restatement is a
+    /// **derivation, not a convention**. Swapping the two planes in
+    /// `nacre_exact::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
+    /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
+    /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
+    /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
+    /// original `Hi` are **the same point**.
+    ///
+    /// **A tangency is the exception, and it is not written here.** With `disc = 0` there is
+    /// one point and the swap fixes it, so its name must not change — which is exactly what
+    /// [`Self::flipped`] already says about [`QuadRoot::Double`]. The exception lives in the
+    /// primitive, so this function has no special case to get wrong.
+    ///
+    /// **The rule this states is not about swapping — it is about `ℓ`.** `Lo`/`Hi` are the
+    /// order along `ℓ`, so *anything* that reverses `ℓ` trades the two names, and the swap is
+    /// only the case this function can see. Negating either normal is another: the plane is the
+    /// same set, and `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}`
+    /// — a condition `−ℓ` satisfies identically — so the base does not move and `ℓ` alone
+    /// reverses. ⇒ **flip once per reversal; an even number is no flip at all.**
+    #[inline]
+    pub(crate) fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
+        let [first, second] = pair;
+        if second < first {
+            ([second, first], root.flipped())
+        } else {
+            ([first, second], root)
+        }
+    }
+
+    /// **The crossing this name means**, in the meet its two classes' statements solve to (in
+    /// the name's order) — `None` where the meet does not hold it: a `Double` of a pair, a `Lo`
+    /// or `Hi` of a tangency, or a meet with no crossing.
+    pub(crate) fn crossing(
+        self,
+        meet: &nacre_exact::quad::CylinderMeet,
+    ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+        use nacre_exact::quad::{CylinderMeet, QuadVal};
+        match (meet, self) {
+            (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => Some((line.clone(), s[0])),
+            (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => Some((line.clone(), s[1])),
+            (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => {
+                Some((line.clone(), QuadVal::from_rat(*s)))
+            }
+            _ => None,
+        }
+    }
+}
+
 /// **Which of the two things a [`NodeId`] names**, and what it carries.
 ///
 /// **Read it with `match`, never a `_` arm and never `let`-`else`**: a third variant lights up
@@ -27,13 +119,13 @@ pub(crate) struct NodeId(pub(super) NodeKind);
 /// carries a full `match` so the new variant still stops the build (`winding`'s `coord_key`).
 ///
 /// **The variant order is a decision, not a listing** — `Ord` runs over it and "smallest name
-/// wins" reads it, exactly as [`nacre_topo::QuadRoot`]'s doc says of its own two.
+/// wins" reads it, exactly as [`QuadRoot`]'s doc says of its own two.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) enum NodeKind {
     ThreePlane([usize; 3]), // sorted triple (key into the seam map)
-    /// Where two plane classes' meet line crosses a cylinder's lateral surface — the point
-    /// [`nacre_topo::Vertex::Pierce`] names, and the point the next rung splits a circle
-    /// into arcs at.
+    /// Where two plane classes' meet line crosses a cylinder's lateral surface — the point a
+    /// result's [`nacre_topo::Vertex::Pierce`] names (by its place about the cylinder), and the
+    /// point the next rung splits a circle into arcs at.
     ///
     /// **Two index spaces in one name.** `planes` are plane-class indices and `cyl` is a
     /// **cylinder**-class index (`crate::planes::ClassIx::Cyl`'s payload); they are separate
@@ -46,7 +138,7 @@ pub(crate) enum NodeKind {
         /// The cylinder class whose lateral surface the meet line crosses.
         cyl: usize,
         /// Which crossing, along the meet line of `planes` in stored order.
-        root: nacre_topo::QuadRoot,
+        root: QuadRoot,
     },
 }
 
@@ -85,18 +177,13 @@ impl NodeId {
     ///
     /// **It is not a sort.** Ordering the two classes can reverse the meet line, and the root
     /// is defined against that line, so the pair and the root move **together**. That rule is
-    /// [`nacre_topo::QuadRoot::canonical`]'s and this reads it; spelling it again here is how the
+    /// [`QuadRoot::canonical`]'s and this reads it; spelling it again here is how the
     /// same point ends up with two names, one of them pointing at the other root.
     ///
     /// `first`/`second` are the two plane classes **in whatever order the caller solved them**;
     /// `root` is that solve's answer (`Double` for a tangency).
-    pub(crate) fn pierce(
-        first: usize,
-        second: usize,
-        cyl: usize,
-        root: nacre_topo::QuadRoot,
-    ) -> NodeId {
-        let (planes, root) = nacre_topo::QuadRoot::canonical([first, second], root);
+    pub(crate) fn pierce(first: usize, second: usize, cyl: usize, root: QuadRoot) -> NodeId {
+        let (planes, root) = QuadRoot::canonical([first, second], root);
         NodeId(NodeKind::Pierce { planes, cyl, root })
     }
 }
@@ -141,7 +228,7 @@ pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
 /// meet line. Spelling the variant at those sites instead is what the gate above forbids — the
 /// door is total over the enum, so a third variant becomes a compile error here rather than a
 /// silent fall-through at four call sites.
-pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::QuadRoot)> {
+pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, QuadRoot)> {
     match n.kind() {
         NodeKind::ThreePlane(_) => None,
         NodeKind::Pierce { planes, cyl, root } => Some((planes, cyl, root)),
@@ -163,7 +250,6 @@ pub(crate) fn restate_pierce(
     b: usize,
 ) -> Option<NodeId> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
-    use nacre_topo::QuadRoot;
     let (own, cyl, _) = pierce_name(node)?;
     let def = &cyls.get(cyl)?.def;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());

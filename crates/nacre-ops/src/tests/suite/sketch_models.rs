@@ -74,7 +74,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                             vertex_defs.push(match *m.vertex(vh) {
                                 Vertex::ThreePlane(_) => "three-plane".to_string(),
                                 Vertex::OnSeam(_) => "on-seam".to_string(),
-                                Vertex::Pierce { root, .. } => format!("pierce {root:?}"),
+                                Vertex::Pierce { rank, .. } => format!("pierce {rank}"),
                                 Vertex::CylinderPair { rank, .. } => {
                                     format!("cylinder pair {rank}")
                                 }
@@ -432,13 +432,52 @@ fn extrude_world_z(
 }
 
 /// The definitions of a solid's vertices, as the digest spells them, sorted.
-fn vertex_def_names(m: &Model, s: Handle<Solid>) -> Vec<String> {
-    brep_digest(m, s).vertex_defs
+/// Every pierce corner of `s`, as the kind of crossing its carriers make — re-solved on their
+/// world statements, `tangent` or `pair` — with its rank. A rank alone cannot tell a tangency's
+/// one point from the first of two.
+fn pierce_meets(m: &Model, s: Handle<Solid>) -> Vec<String> {
+    use nacre_exact::quad::CylinderMeet;
+    let mut out = Vec::new();
+    let mut seen = Vec::new();
+    for &f in &m.shell(m.solid(s).outer).faces {
+        for he in &m.face(f).outer.half_edges {
+            let v = m.he_start(*he);
+            if seen.contains(&v) {
+                continue;
+            }
+            seen.push(v);
+            let Vertex::Pierce {
+                planes,
+                cylinder,
+                rank,
+            } = *m.vertex(v)
+            else {
+                continue;
+            };
+            let def = m.world_cylinder_def(cylinder).expect("a stated cylinder");
+            let meet = nacre_exact::quad::plane_plane_cylinder(
+                &crate::planes::world_plane_coeffs(m, planes[0]).expect("a stated plane"),
+                &crate::planes::world_plane_coeffs(m, planes[1]).expect("a stated plane"),
+                &def.origin(),
+                &def.dir(),
+                def.r2(),
+            )
+            .expect("no overflow");
+            let kind = match meet {
+                CylinderMeet::Tangent { .. } => "tangent",
+                CylinderMeet::Pair { .. } => "pair",
+                other => panic!("a pierce corner's carriers cross: {other:?}"),
+            };
+            out.push(format!("{kind} {rank}"));
+        }
+    }
+    out.sort();
+    out
 }
 
 /// **A slot stands.** Two straight walls tangent to two half cylinders: every corner is a
-/// `Pierce` whose root is the **double** one — the wall's plane touches the cylinder along the
-/// ruling through that corner, which is what "tangent" says. Volume `(2rL + πr²)·h`, six faces,
+/// `Pierce` on a tangency, its one crossing rank 0 — the wall's plane touches the cylinder along
+/// the ruling through that corner, which is what "tangent" says. Volume `(2rL + πr²)·h`, six faces,
 /// valid, and the mesh covers it.
 #[test]
 fn a_slot_extrudes_with_tangent_pierce_corners() {
@@ -457,7 +496,7 @@ fn a_slot_extrudes_with_tangent_pierce_corners() {
         6,
         "two caps, two straight walls, two half cylinders"
     );
-    assert_eq!(vertex_def_names(&m, solid), vec!["pierce Double"; 8]);
+    assert_eq!(pierce_meets(&m, solid), vec!["tangent 0"; 8]);
     let cylinders = faces
         .iter()
         .filter(|&&f| {
@@ -499,12 +538,12 @@ fn a_rounded_rectangle_extrudes() {
     let v = nacre_props::mass_props(&m, solid).unwrap().volume;
     assert!((v - (800.0 - (4.0 - pi) * 25.0)).abs() < 1e-9, "{v}");
     assert_eq!(faces.len(), 10);
-    assert_eq!(vertex_def_names(&m, solid), vec!["pierce Double"; 16]);
+    assert_eq!(pierce_meets(&m, solid), vec!["tangent 0"; 16]);
     mesh_covers_faces("a rounded rectangle", &m, &[solid]);
 }
 
 /// **A D**: a half disk closed by its diameter. The chord's wall plane runs *through* the axis, so
-/// it crosses the cylinder in two rulings — the corners are the pair's `Lo` and `Hi`, not a
+/// it crosses the cylinder in two rulings — the corners are a pair's ranks 0 and 1, not a
 /// tangency. Volume `πr²h/2`, four faces.
 #[test]
 fn a_half_disk_has_the_pair_roots_at_its_corners() {
@@ -528,11 +567,9 @@ fn a_half_disk_has_the_pair_roots_at_its_corners() {
         4,
         "two caps, the chord wall, the half cylinder"
     );
-    let defs = vertex_def_names(&m, solid);
-    assert_eq!(defs.len(), 4);
-    assert!(
-        defs.contains(&"pierce Lo".to_string()) && defs.contains(&"pierce Hi".to_string()),
-        "{defs:?}"
+    assert_eq!(
+        pierce_meets(&m, solid),
+        ["pair 0", "pair 0", "pair 1", "pair 1"]
     );
     mesh_covers_faces("a half disk", &m, &[solid]);
 }
@@ -1947,7 +1984,7 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
         assert!(
             matches!(
                 crate::combinatorics::pierce_name(c.corner),
-                Some((_, _, nacre_topo::QuadRoot::Double))
+                Some((_, _, crate::combinatorics::QuadRoot::Double))
             ),
             "a tangent corner: {:?}",
             c.corner

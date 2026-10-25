@@ -25,38 +25,39 @@ pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) 
 
 /// **An operand vertex's own pierce name, restated in this arrangement's class space.**
 ///
-/// **The second half of a correspondence the forward direction gets for free.** When a
-/// boolean *mints* a [`nacre_topo::Vertex::Pierce`] it writes the two planes as **its own
-/// classes' representative surfaces**, so restating class order as handle order is the only
-/// correction it needs ([`nacre_topo::QuadRoot::canonical`], which the assembly calls). Coming back
-/// the other way the handles are **given**, and they may be a surface that merged into a class
-/// under a different representative — and, because a class holds faces whose normals oppose, under
-/// the **opposite sign**. `Vertex::Pierce`'s own doc says this correspondence "has to be
-/// established a second time"; this is that time.
+/// The vertex names its point by its place about its cylinder (`Vertex::Pierce`'s `rank`); a
+/// class name says which crossing along its classes' meet line (`QuadRoot`). So the restatement
+/// solves that meet on the class statements, ranks its crossings about the cylinder
+/// ([`nacre_exact::quad::seam_ranked`]) and names the one at the vertex's rank by its place on the
+/// line. The given handles may be surfaces that merged into a class under a different
+/// representative, and with the opposite sign — which only the correspondence has to see: the
+/// rank reads neither the planes' order nor their signs.
 ///
-/// **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
-/// `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition
-/// `−ℓ` satisfies identically. So negating **either** normal leaves the two planes, and the base,
-/// exactly where they were and only reverses `ℓ`: the two roots trade places, which is what
-/// `flipped` says. Swapping the pair reverses `ℓ` too (the derivation `canonical` already carries).
-/// ⇒ **flip once per reversal, and an even number of reversals is no flip at all.** The swap is
-/// [`NodeId::pierce`]'s to count; the two signs are this function's.
-/// The cylinder needs no correction: negating its axis direction does not move the surface, so
-/// the two roots are the same two points in the same order.
+/// `None` where a handle answers to no candidate (or to both), where the vertex's cylinder is not
+/// this class's surface — the rank reads that surface's `ref_dir`, and one cylinder can be stated
+/// twice with two seams — or where the class meet has no crossing at the rank.
 pub(crate) fn pierce_name_from_def(
     model: &Model,
     jd: &Judge<'_, WorkingPlane>,
     v: Handle<Vertex>,
     cyl: usize,
+    class: &crate::planes::WorkingCyl,
     candidates: &[usize],
 ) -> Option<NodeId> {
-    let nacre_topo::Vertex::Pierce { planes, root, .. } = *model.vertex(v) else {
+    let nacre_topo::Vertex::Pierce {
+        planes,
+        cylinder,
+        rank,
+    } = *model.vertex(v)
+    else {
         return None;
     };
-    // Which candidate class each stored handle *is*, and with which sense. The match decides the
-    // correspondence and the sign in one comparison — asking them separately would be two chances
-    // to disagree.
-    let mut seen: [Option<(usize, i8)>; 2] = [None, None];
+    if cylinder != class.surf {
+        return None;
+    }
+    // Which candidate class each stored handle *is*. A proportional statement is the match;
+    // its sign no longer matters.
+    let mut seen: [Option<usize>; 2] = [None, None];
     for (i, &h) in planes.iter().enumerate() {
         let name = model.world_plane_name(h)?;
         let c = name.narrow()?;
@@ -67,20 +68,46 @@ pub(crate) fn pierce_name_from_def(
             let Some(kc) = class_coeffs_rat(jd, k) else {
                 continue;
             };
-            let Some(sense) = plane_sense(c, &kc) else {
+            if plane_sense(c, &kc).is_none() {
                 continue;
-            };
+            }
             if seen[i].is_some() {
                 return None; // one handle answering to both classes is not a correspondence
             }
-            seen[i] = Some((k, sense));
+            seen[i] = Some(k);
         }
     }
-    let ((k0, s0), (k1, s1)) = (seen[0]?, seen[1]?);
+    let (k0, k1) = (seen[0]?, seen[1]?);
     if k0 == k1 {
         return None;
     }
-    let root = if s0 == s1 { root } else { root.flipped() };
+    let def = &class.def;
+    let (o, m) = (def.origin(), def.dir());
+    let meet = nacre_exact::quad::plane_plane_cylinder(
+        &class_coeffs_rat(jd, k0)?,
+        &class_coeffs_rat(jd, k1)?,
+        &o,
+        &m,
+        def.r2(),
+    )?;
+    let root = match &meet {
+        nacre_exact::quad::CylinderMeet::Tangent { .. } => QuadRoot::Double,
+        nacre_exact::quad::CylinderMeet::Pair { s, .. } => {
+            let lo = s[0];
+            let (_, at) = nacre_exact::quad::seam_ranked(meet.clone(), &o, &m, &def.ref_dir())?
+                .into_iter()
+                .nth(usize::from(rank))?;
+            if at.checked_sub(&lo)?.sign() == nacre_exact::Orient::Zero {
+                QuadRoot::Lo
+            } else {
+                QuadRoot::Hi
+            }
+        }
+        _ => return None,
+    };
+    if rank != 0 && root == QuadRoot::Double {
+        return None;
+    }
     Some(NodeId::pierce(k0, k1, cyl, root))
 }
 
@@ -586,7 +613,7 @@ pub(crate) fn conjugate_midpoint(
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    use nacre_topo::QuadRoot::{Hi, Lo};
+    use QuadRoot::{Hi, Lo};
     let (pa, ca, ra) = pierce_name(e.node)?;
     let (pb, cb, rb) = pierce_name(e.to)?;
     if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
@@ -714,8 +741,6 @@ pub(crate) fn pierce_meet(
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<PierceMeet> {
-    use nacre_exact::quad::{CylinderMeet, QuadVal};
-    use nacre_topo::QuadRoot;
     let (planes, root) = match n.kind() {
         NodeKind::Pierce {
             planes,
@@ -760,15 +785,9 @@ pub(crate) fn pierce_meet(
         class_coeffs_rat(jd, planes[0])?,
         class_coeffs_rat(jd, planes[1])?,
     );
-    let (line, s) = match (
-        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
-        root,
-    ) {
-        (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
-        (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => (line, s[1]),
-        (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
-        _ => return None,
-    };
+    let (line, s) = root.crossing(&nacre_exact::quad::plane_plane_cylinder(
+        &p1, &p2, &o, &m, r2,
+    )?)?;
     #[cfg(debug_assertions)]
     debug_assert_bounded_holds_exact(jd, planes, &o, &m, r2, root, &line, &s);
     Some(PierceMeet::Exact(line, s))
@@ -787,15 +806,15 @@ fn debug_assert_bounded_holds_exact(
     o: &[nacre_exact::Rat; 3],
     m: &[nacre_exact::Rat; 3],
     r2: &nacre_exact::BigRat,
-    root: nacre_topo::QuadRoot,
+    root: QuadRoot,
     line: &nacre_exact::quad::MeetLine,
     s: &nacre_exact::quad::QuadVal,
 ) {
     let prec = jd.standard.prec;
     let hi = match root {
-        nacre_topo::QuadRoot::Lo => false,
-        nacre_topo::QuadRoot::Hi => true,
-        nacre_topo::QuadRoot::Double => return,
+        QuadRoot::Lo => false,
+        QuadRoot::Hi => true,
+        QuadRoot::Double => return,
     };
     let Some(at) = nacre_exact::quad::plane_plane_cylinder_hp(
         &jd.planes[planes[0]].canon_hp(prec),
@@ -1088,7 +1107,7 @@ pub(crate) fn arc_crossings_hp(
     }
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
     let mut inside: Vec<NodeId> = Vec::with_capacity(2);
-    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+    for root in [QuadRoot::Lo, QuadRoot::Hi] {
         let node = NodeId::pierce(p, q, cyl, root);
         if let Some(e) = on_end {
             if node == e {

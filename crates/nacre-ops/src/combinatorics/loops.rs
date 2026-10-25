@@ -330,6 +330,7 @@ fn loop_triples(
                 jd,
                 corner,
                 k,
+                &cyls[k],
                 &incident_plane_classes(corner, inc, plane_ix),
             )
             .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))

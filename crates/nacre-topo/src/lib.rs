@@ -60,31 +60,25 @@ pub enum Vertex {
     /// lateral surface — the structure says the carrier kinds, deliberately not an
     /// array of three lookalike handles (validate's carrier check becomes structural).
     ///
-    /// **`root` picks the point; its meaning is a convention.** The meet line's direction
-    /// is `ℓ = n₁ × n₂` where `n₁`/`n₂` are the **canonical-name normals** of `planes[0]`/
-    /// `planes[1]` **in stored (ascending-handle) order** — canonicalization fixes each
-    /// normal's sign ("first nonzero component positive"), so ℓ is deterministic; `Lo`/`Hi`
-    /// is ascending parameter along ℓ (`nacre_exact::quad`'s pair order). A tangency
-    /// (double root) is one point and spells it [`QuadRoot::Double`] — **not `Lo`**, which
-    /// would leave `Lo` unable to say which of the two it means. Anything
-    /// that re-sorts the two plane handles (a transform remapping them, a mint site working in
-    /// class indices) must restate `root` with it, and **[`QuadRoot::canonical`] is the one
-    /// place that rule lives** — do not spell it again at the site.
+    /// **`rank` picks the point**: its place in the order of angle about `cylinder`'s axis — the
+    /// order [`Vertex::CylinderPair`]'s `rank` is read in. Two crossings of one line never share
+    /// an angle (a line through two points of one ruling is that ruling), and a tangent line
+    /// crosses once, `rank: 0`. The rank reads only the cylinder's statement, so neither the
+    /// order of the planes nor the way their normals point enters it, and moving the solid keeps
+    /// it.
     ///
-    /// Minted in production by `nacre-ops`' arrangement (15 sites):
-    /// the engine names the point as `NodeId::Pierce` in class-index space and the
-    /// assembler restates it here in handle space — two canonical orders, one correspondence,
-    /// established at the mint site through [`QuadRoot::canonical`].
+    /// Minted by the prism (a straight wall meeting an arc wall on a cap) and by the boolean (a
+    /// wall or a cap crossing a lateral face); a transform carries it with its handles.
     ///
-    /// The name says what the point *is* — a line piercing a cylinder — not which root was
-    /// picked (that is `root`); a name like "branch" would say only the latter.
+    /// The name says what the point *is* — a line piercing a cylinder — not which crossing was
+    /// picked (that is `rank`); a name like "branch" would say only the latter.
     Pierce {
         /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
         planes: [Handle<Surface>; 2],
         /// The cylinder whose lateral surface the meet line crosses.
         cylinder: Handle<Surface>,
-        /// Which of the two crossings, along the canonical line direction.
-        root: QuadRoot,
+        /// The point's place in the order of angle about `cylinder`.
+        rank: u8,
     },
     /// One of the points where a plane meets two cylinders — the corner where two arcs of
     /// different circles meet on a prism's cap, whose cylinders' axes are parallel.
@@ -124,93 +118,6 @@ pub enum NamedMeet {
     /// The three planes are parallel or share a line: the determinant is zero, so the definition
     /// names no point.
     NoPoint,
-}
-
-/// Which root of the two-point plane·plane·cylinder crossing a [`Vertex::Pierce`] means — ascending
-/// parameter along the canonical meet-line direction (see `Pierce`'s doc for the full convention).
-/// Definition vocabulary, so it lives here beside [`Vertex`], not in `nacre-exact` (whose pair is
-/// positional).
-///
-/// **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
-/// ascending-parameter convention, and comparison keys downstream read it (the arrangement's
-/// reject witness is chosen as the smallest name). Reordering these two variants would silently
-/// reverse those choices, so the order is a decision, not a listing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum QuadRoot {
-    /// The smaller parameter along the canonical meet-line direction.
-    Lo,
-    /// The larger parameter.
-    Hi,
-    /// **A tangency: the two roots coincide, so there is one point.**
-    ///
-    /// It is a stored variant, not just a solver's report, because otherwise the stored value
-    /// cannot say which it is: spelling a tangency `Lo` leaves
-    /// `Lo` meaning either "the smaller of two" or "the only one", and then nothing holding a
-    /// definition can tell whether a re-sort should toggle it. That ambiguity would make the
-    /// remap rule below wrong for a tangency.
-    Double,
-}
-
-impl QuadRoot {
-    /// **The name the same point takes once the two planes are swapped.**
-    ///
-    /// Not "the other root" — the *other name for this point*, which is what a swap needs. For a
-    /// genuine pair the swap sends `lo ↦ −hi` and `hi ↦ −lo` (see [`Self::canonical`]), so the
-    /// two names trade places. For a tangency `s = mid` and the swap sends `mid ↦ −mid` along
-    /// `ℓ ↦ −ℓ`: **the point goes to itself**, so its name does too.
-    #[inline]
-    pub fn flipped(self) -> QuadRoot {
-        match self {
-            QuadRoot::Lo => QuadRoot::Hi,
-            QuadRoot::Hi => QuadRoot::Lo,
-            QuadRoot::Double => QuadRoot::Double,
-        }
-    }
-
-    /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
-    ///
-    /// A [`Vertex::Pierce`] stores its two plane carriers ascending, and its root is defined
-    /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
-    /// `(pair, root)` in some other order has to restate the root — and the restatement is a
-    /// **derivation, not a convention**. Swapping the two planes in
-    /// `nacre_exact::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
-    /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
-    /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
-    /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
-    /// original `Hi` are **the same point**.
-    ///
-    /// **A tangency is the exception, and it is not written here.** With `disc = 0` there is
-    /// one point and the swap fixes it, so its name must not change — which is exactly what
-    /// [`Self::flipped`] already says about [`QuadRoot::Double`]. The exception lives in the
-    /// primitive, so this function has no special case to get wrong.
-    ///
-    /// **Generic over the index space on purpose.** `Handle<Surface>` orders by its `index` and
-    /// the arrangement names planes by bare `usize` **class** indices; both must answer the same
-    /// way, and one function answering both is what keeps a second copy from being written.
-    ///
-    /// **The rule this states is not about swapping — it is about `ℓ`.** `Lo`/`Hi` are the
-    /// order along `ℓ = n₁ × n₂`, so *anything* that reverses `ℓ` trades the two names, and the
-    /// swap is only the case this function can see. **Negating either normal is another**: the
-    /// plane is the same set, and `plane_plane_cylinder` fixes the base by
-    /// `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition `−ℓ` satisfies identically — so the base
-    /// does not move and `ℓ` alone reverses. ⇒ **flip once per reversal; an even number is no flip
-    /// at all.** A caller restating a name across two *spellings* of the same planes (rather than
-    /// two orders of them) owes the sign half — `nacre-ops`' `pierce_name_from_def` is the one that
-    /// does, coming back from handle space into class space.
-    ///
-    /// **The swap half is measured.** Where `assemble_fuse_cut` calls it, the population that
-    /// exercises it is a boss whose classes arrive in the other order — a boolean's **result used
-    /// as the next operand** (a second boolean builds its classes afresh) — and dropping the
-    /// call there turns `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red.
-    #[inline]
-    pub fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
-        let [first, second] = pair;
-        if second < first {
-            ([second, first], root.flipped())
-        } else {
-            ([first, second], root)
-        }
-    }
 }
 
 impl Vertex {

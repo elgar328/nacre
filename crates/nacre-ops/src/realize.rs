@@ -89,13 +89,13 @@ pub enum RealizeError {
     NoPoint,
     /// The vertex's motion chain could not be rebuilt exactly.
     NoMotionChain,
-    /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
+    /// A curved definition (`OnSeam`, `Pierce`, `CylinderPair`) did not resolve into a point.
     ///
     /// **This is a bag, and saying so is the point.** It covers: a pierce corner whose carriers
     /// cannot be stated in the world exactly (a seam corner is met in the world instead), a chain
     /// a seam corner's carriers cannot replay, a cap plane parallel to the axis (so it bounds no
-    /// rim), a `root` that does not match the kind of crossing the carriers actually
-    /// make (a `Double` asked of a `Pair`), and rational overflow on the way. Each deserves its
+    /// rim), a `rank` past the crossings the carriers actually make, and rational overflow on the
+    /// way. Each deserves its
     /// own name; none of them is [`Self::NoMeet`], which is a *different* function declining —
     /// `Model::vertex_meet` is never called on this road.
     NoCurvedPoint,
@@ -1816,8 +1816,8 @@ fn build(
         nacre_topo::Vertex::Pierce {
             planes,
             cylinder,
-            root,
-        } => curved(pierce_point(model, planes, cylinder, root, bits)),
+            rank,
+        } => curved(pierce_point(model, planes, cylinder, rank, bits)),
         nacre_topo::Vertex::CylinderPair {
             plane,
             cylinders,
@@ -1895,22 +1895,23 @@ fn seam_point_met(
     line_meets_plane_hp(&on_rim, &hp.axis, &plane, bits).ok_or(RealizeError::Undecided)
 }
 
-/// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the
-/// line, the cylinder gives the quadratic, and `root` names which crossing.
+/// **A pierce vertex is the meet line's point at its rank** — the two cutting planes give the
+/// line, the cylinder gives the quadratic, and `rank` names which crossing.
 fn pierce_point(
     model: &Model,
     planes: [Handle<Surface>; 2],
     cylinder: Handle<Surface>,
-    root: nacre_topo::QuadRoot,
+    rank: u8,
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
     let def = model.world_cylinder_def(cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
     let c1 = crate::planes::world_plane_coeffs(model, planes[1])?;
-    let (line, sv) = pick_root(
-        &nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
-        root,
+    let (line, sv) = ranked_crossing(
+        nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
+        &def,
+        rank,
     )?;
     // `point = base + s·dir`, with `s` the quadratic root realized at `bits` — the only step that
     // is not exact rational arithmetic.
@@ -2259,31 +2260,20 @@ fn perp_component(
     Some(out)
 }
 
-/// **Which of the crossings `root` names.** `Lo`/`Hi` are ascending parameter along the meet
-/// line's direction — `nacre_exact::quad`'s pair order, which is `Vertex::Pierce`'s stated
-/// convention — and a tangency is one point spelled `Double`, never `Lo`.
+/// **The crossing `rank` names** — its place in the order about the cylinder `meet` was solved
+/// against ([`nacre_exact::quad::seam_ranked`], `Vertex::Pierce`'s convention).
 ///
 /// Split out because the integration oracle ("the point is on the cylinder") is satisfied by
-/// **both** roots: swapping them left the whole corpus green when planted. This is the piece a
-/// test can ask the distinguishing question of.
-fn pick_root(
-    meet: &nacre_exact::quad::CylinderMeet,
-    root: nacre_topo::QuadRoot,
+/// **both** crossings: swapping them left the whole corpus green when planted. This is the piece
+/// a test can ask the distinguishing question of.
+fn ranked_crossing(
+    meet: nacre_exact::quad::CylinderMeet,
+    def: &nacre_topo::CylinderDef,
+    rank: u8,
 ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
-    use nacre_exact::quad::{CylinderMeet, QuadVal};
-    use nacre_topo::QuadRoot;
-    match meet {
-        CylinderMeet::Pair { line, s } => match root {
-            QuadRoot::Lo => Some((line.clone(), s[0])),
-            QuadRoot::Hi => Some((line.clone(), s[1])),
-            QuadRoot::Double => None,
-        },
-        CylinderMeet::Tangent { line, s } => match root {
-            QuadRoot::Double => Some((line.clone(), QuadVal::from_rat(*s))),
-            _ => None,
-        },
-        _ => None,
-    }
+    nacre_exact::quad::seam_ranked(meet, &def.origin(), &def.dir(), &def.ref_dir())?
+        .into_iter()
+        .nth(usize::from(rank))
 }
 
 #[cfg(test)]
@@ -2748,62 +2738,54 @@ mod tests {
         );
     }
 
-    /// **`Lo` is the lower parameter along the meet line, and `Hi` the higher.**
+    /// **The rank is the order about the cylinder's axis from its `ref_dir`.**
     ///
     /// The oracle the integration test uses — "the point is on the cylinder" — is satisfied by
-    /// *both* roots, so swapping them leaves it green (planted and measured). This asks the
-    /// question that actually distinguishes them, in the vocabulary `Vertex::Pierce`'s doc
-    /// defines: ascending parameter along `n₀ × n₁`.
+    /// *both* crossings, so swapping them leaves it green (planted and measured). This asks the
+    /// question that actually distinguishes them. The cylinder about `(2, 2)` of radius 3 is
+    /// crossed by `x = 0, z = 0` at `y = 2 ± √5`: from `+x` the upper point sits near 132° and the
+    /// lower near 228°, so the upper is rank 0; from `(−1, −1, 0)` (225°) the lower sits near 3°
+    /// and comes first.
     #[test]
-    fn lo_and_hi_run_along_the_line() {
-        use nacre_exact::quad::CylinderMeet;
-        use nacre_topo::QuadRoot;
-        let (o, m, rad) = ([r(2), r(2), r(0)], [r(0), r(0), r(1)], r(9)); // radius 3, as r²
-        // x = 0 and z = 0: the meet line runs along +y and crosses the cylinder twice.
-        let c0 = [r(1), r(0), r(0), r(0)];
-        let c1 = [r(0), r(0), r(1), r(0)];
-        let meet = nacre_exact::quad::plane_plane_cylinder(
-            &c0,
-            &c1,
-            &o,
-            &m,
-            &nacre_exact::BigRat::from(rad),
-        )
-        .expect("a crossing");
-        assert!(
-            matches!(meet, CylinderMeet::Pair { .. }),
-            "expected two roots"
-        );
-        let (line, lo_s) = pick_root(&meet, QuadRoot::Lo).expect("Lo");
-        let (_, hi_s) = pick_root(&meet, QuadRoot::Hi).expect("Hi");
-        assert!(
-            pick_root(&meet, QuadRoot::Double).is_none(),
-            "a pair is not a Double"
-        );
-        let at = |q: &nacre_exact::quad::QuadVal| {
-            let sb = nacre_exact::quad_hp(q, 256).expect("realized");
-            let (b, d) = (line.base(), line.dir());
-            let c = |k: usize| {
-                let s = nacre_exact::affine_hp(b[k], d[k], &sb, 256).expect("affine");
-                nacre_exact::round_to_digits(&s.value, s.error, 20)
-                    .expect("decided")
-                    .parse::<f64>()
-                    .expect("a decimal")
-            };
-            [c(0), c(1), c(2)]
+    fn the_rank_runs_about_the_axis_from_the_seam() {
+        let meet = || {
+            nacre_exact::quad::plane_plane_cylinder(
+                &[r(1), r(0), r(0), r(0)],
+                &[r(0), r(0), r(1), r(0)],
+                &[r(2), r(2), r(0)],
+                &[r(0), r(0), r(1)],
+                &nacre_exact::BigRat::from(r(9)),
+            )
+            .expect("a crossing")
         };
-        let (lo, hi) = (at(&lo_s), at(&hi_s));
-        let dir = line.dir().map(|c| c.to_f64());
-        let proj = |p: [f64; 3]| p[0] * dir[0] + p[1] * dir[1] + p[2] * dir[2];
+        let y_of = |seam: [Rat; 3], rank: u8| {
+            let def = nacre_topo::CylinderDef::new(
+                [r(2), r(2), r(0)],
+                [r(0), r(0), r(1)],
+                seam,
+                nacre_exact::BigRat::from(r(9)),
+            )
+            .expect("a cylinder");
+            let (line, s) = ranked_crossing(meet(), &def, rank).expect("two crossings");
+            nacre_exact::quad::branch_point_approx(&line, &s)[1]
+        };
+        let (up, down) = (2.0 + 5f64.sqrt(), 2.0 - 5f64.sqrt());
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-12;
+        assert!(near(y_of([r(1), r(0), r(0)], 0), up));
+        assert!(near(y_of([r(1), r(0), r(0)], 1), down));
+        assert!(near(y_of([r(-1), r(-1), r(0)], 0), down));
+        assert!(near(y_of([r(-1), r(-1), r(0)], 1), up));
+        let def = nacre_topo::CylinderDef::new(
+            [r(2), r(2), r(0)],
+            [r(0), r(0), r(1)],
+            [r(1), r(0), r(0)],
+            nacre_exact::BigRat::from(r(9)),
+        )
+        .expect("a cylinder");
         assert!(
-            proj(lo) < proj(hi),
-            "Lo must precede Hi along the line: {lo:?} then {hi:?}"
+            ranked_crossing(meet(), &def, 2).is_none(),
+            "a line crosses twice at most"
         );
-        // And both must sit on the cylinder — the property the swap cannot break.
-        for p in [lo, hi] {
-            let rr = ((p[0] - 2.0).powi(2) + (p[1] - 2.0).powi(2)).sqrt();
-            assert!((rr - 3.0).abs() < 1e-9, "{p:?} is {rr} from the axis");
-        }
     }
 
     /// **A read-out coordinate's error covers its rounding, at any size.** An exact arm whose

@@ -31,6 +31,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- **Breaking:** `topo::Vertex::Pierce` names its point by `rank: u8`, its place in the order about its cylinder's axis from `ref_dir` — the order `topo::Vertex::CylinderPair`'s `rank` is read in — in place of `root`, the order along the two planes' meet line. The name no longer depends on which way the planes' normals point or which plane comes first, so a transform carries it unchanged. A tangent wall's single point is `rank: 0`.
 - **Breaking:** a profile whose ring joins two arcs of different circles extrudes: each such corner is a new `topo::Vertex::CylinderPair` — the cap's plane and the two arcs' cylinders, the point named by its place (`rank`) in the seam-first order about the first cylinder — and the riser between the two arc walls is the ruling they share, a line. The solid moves, turns and exports like any other; a boolean on it is refused as `ops::RejectReason::CylinderPairEdge`, so a pad or pocket with such a profile is still refused. An exhaustive `match` on `topo::Vertex` needs the new arm.
 - `topo::EdgeDecline::TwoCylinders` is now only two cylinders that do not meet on a line (axes not parallel, or one cylinder twice), and `topo::EdgeDecline::Unstated` covers any pair with a cylinder whose truths share no frame.
 - A boolean names a result corner that lies on a cylinder's unbounded surface where none of that cylinder's lateral faces reaches it — the top corner of a box edge that runs along a ruling of the cylinder and on past its cap — by its three planes (`topo::Vertex::ThreePlane`); before, it was `topo::Vertex::Pierce` on that cylinder whenever the solid had a lateral face on it anywhere. The point is the same. `ops::RejectReason::VertexNamesAbsentSurface` now asks the faces that meet at the vertex rather than every face of the solid.
@@ -69,6 +70,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- **Breaking:** `topo::QuadRoot`: no vertex names a point by it any more.
 - **Breaking:** `ops::OpError::ArcsMeetAtVertex`: the corner it refused now builds.
 - **Breaking:** `judge::WitnessPoint::at_nearest` and `judge::WitnessPoint::at_with_tol`. `at` gives what the first did, axis by axis: a coordinate that is an `f64` has tol `0` whatever the other two are. Nothing in the kernel called the second.
 - **Breaking:** `exact::Angle::cos_sin_at` and `exact::quad::MeetLine::point_f64`, which nothing in the kernel called. `exact::Angle::cos_sin_hp` gives the `(cos, sin)` intervals whose values the first returned.

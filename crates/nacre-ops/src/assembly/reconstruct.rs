@@ -74,7 +74,7 @@ pub(crate) fn reconstruct(
                 // (fold 40, rotated: 211 → 237 ms). Where four planes concur the naming may
                 // pick another triple through the same point, and that definition is realized
                 // afresh, with the seam's coordinate as its figure.
-                let v = def.vertex(planes, cyls);
+                let v = def.vertex(jd, planes, cyls)?;
                 if Def::of_name(node) == Some(*def) {
                     #[expect(
                         clippy::disallowed_methods,

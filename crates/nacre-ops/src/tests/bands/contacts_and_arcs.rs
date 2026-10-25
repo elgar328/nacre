@@ -922,13 +922,12 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
 /// **The pierce vertices are minted — canonical, measured, on the derived crossings.**
 ///
 /// Before the boolean no `Vertex::Pierce` exists anywhere in the model, so a whole-store
-/// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
-/// point itself, which is what this toggle-lock watches.
+/// filter is position-independent; a wrong rank — the class name read as the other place about
+/// the cylinder (`Def::vertex`) — moves the minted point itself, which is what this lock watches.
 ///
 /// The coordinates are the fixtures' own crossing derivations (the same numbers the ring
 /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
-/// ascending handle order is `Vertex::Pierce`'s own contract, minted through
-/// `QuadRoot::canonical`'s second answer.
+/// ascending handle order is `Vertex::Pierce`'s own contract.
 #[test]
 fn a_pierce_vertex_is_minted_and_measured() {
     let s = 2.0 - 3.0f64.sqrt() / 4.0;

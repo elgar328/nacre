@@ -35,7 +35,7 @@ pub(crate) enum Def {
     Pierce {
         planes: [usize; 2],
         cyl: usize,
-        root: nacre_topo::QuadRoot,
+        root: crate::combinatorics::QuadRoot,
     },
 }
 
@@ -56,26 +56,27 @@ impl Def {
         })
     }
 
-    /// The model's vertex for this definition — the class → handle mapping and nothing else.
+    /// The model's vertex for this definition — the class → handle mapping, and for a pierce
+    /// point the class name read as the result's.
     ///
-    /// **That mapping is where `QuadRoot::canonical` answers a second time**: `NodeId::Pierce`
-    /// is canonical in *class* order, `Vertex::Pierce` in *handle* order, and the class → handle
-    /// map is not monotone in general — a re-sort must carry the root through (`transform`'s
-    /// remap already locks the same rule on the way back out).
-    /// The flip is unexercised **at the minting**: dropping it leaves every fence green, because
-    /// both fixtures' class order happens to match their handle order. **The rule is not
-    /// unexercised, though — its inverse is red.** The population that exercises it is a
-    /// boolean's *result used as the next operand*, where a second boolean builds its classes
-    /// afresh and their order is not the handles': dropping the same restatement in
-    /// `combinatorics::pierce_name_from_def` turns
-    /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red. What is still owed is only a
-    /// fixture that reaches the minting, not the rule.
+    /// **A pierce name says which crossing along its classes' meet line; the vertex says which
+    /// place about the cylinder** (`Vertex::Pierce`'s `rank`). So the meet is solved on the class
+    /// statements, its crossings ranked about the cylinder ([`nacre_exact::quad::seam_ranked`]),
+    /// and the name's crossing found among them. The planes' handles are then stored ascending,
+    /// which the rank does not read.
+    ///
+    /// Refused by name where the class statements give no exact meet: a class with no world
+    /// statement (`CylinderGateUndecided` — one the gate let through silent, whose pierce points
+    /// are interval boxes) or one `Rat` cannot hold (`WitnessNotRational`, as for an overflow); a
+    /// name whose crossing the meet does not hold is an earlier stage's record broken
+    /// (`CylinderStagesDisagree`).
     pub(crate) fn vertex(
         &self,
+        jd: &Judge<'_, WorkingPlane>,
         planes: &[WorkingPlane],
         cyls: &[crate::planes::WorkingCyl],
-    ) -> Vertex {
-        match *self {
+    ) -> Result<Vertex, BoolError> {
+        Ok(match *self {
             Def::Three(t) => {
                 let t = t.planes();
                 Vertex::ThreePlane([planes[t[0]].surf, planes[t[1]].surf, planes[t[2]].surf])
@@ -85,15 +86,49 @@ impl Def {
                 cyl,
                 root,
             } => {
-                let (pair, root) =
-                    nacre_topo::QuadRoot::canonical([planes[p2[0]].surf, planes[p2[1]].surf], root);
+                let width = || reject(RejectReason::WitnessNotRational);
+                let coeffs = |k: usize| {
+                    combinatorics::class_coeffs_rat(jd, k).ok_or_else(|| {
+                        reject(if planes[k].world.is_some() {
+                            RejectReason::WitnessNotRational
+                        } else {
+                            RejectReason::CylinderGateUndecided
+                        })
+                    })
+                };
+                let def = &cyls[cyl].def;
+                let (o, m) = (def.origin(), def.dir());
+                let meet = nacre_exact::quad::plane_plane_cylinder(
+                    &coeffs(p2[0])?,
+                    &coeffs(p2[1])?,
+                    &o,
+                    &m,
+                    def.r2(),
+                )
+                .ok_or_else(width)?;
+                // The name was minted from this same meet on these same statements, so a meet
+                // without its crossing is an earlier stage's record broken.
+                let (_, named) = root
+                    .crossing(&meet)
+                    .ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))?;
+                let ranked = nacre_exact::quad::seam_ranked(meet, &o, &m, &def.ref_dir())
+                    .ok_or_else(width)?;
+                let mut rank = None;
+                for (k, (_, s)) in ranked.iter().enumerate() {
+                    if s.checked_sub(&named).ok_or_else(width)?.sign() == nacre_exact::Orient::Zero
+                    {
+                        rank = Some(k);
+                    }
+                }
+                let rank = rank.ok_or_else(|| reject(RejectReason::CylinderStagesDisagree))?;
+                let [a, b] = [planes[p2[0]].surf, planes[p2[1]].surf];
                 Vertex::Pierce {
-                    planes: pair,
+                    planes: if b < a { [b, a] } else { [a, b] },
                     cylinder: cyls[cyl].surf,
-                    root,
+                    rank: u8::try_from(rank).expect("a line crosses a cylinder twice at most"),
                 }
             }
-        }
+        })
     }
 }
 

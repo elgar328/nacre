@@ -469,20 +469,17 @@ fn a_rotated_cylinder_records_its_motion() {
     );
 }
 
-/// The remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
-/// surface handles in face-traversal order, so the two planes' handle order can invert,
-/// and re-sorting flips the canonical line direction ℓ = n₁×n₂, so the root must toggle
-/// with the swap or `Lo` silently names the other point.
+/// **A `Pierce` definition keeps its rank when its planes swap.** Pass 1 issues new surface
+/// handles in face-traversal order, so the two planes' handle order can invert; the rank is read
+/// about the cylinder, not along the planes' meet line, so the swap does not touch it.
 ///
 /// The fixture makes the swap *actually happen*: the pierce planes are the cylinder's
 /// bottom cap (a fresh handle after a z-translation) and the world x = 0 seed (invariant
 /// under that translation — it keeps handle 1), so `[cap(0), x0(1)]` remaps to
-/// `[N, 1] → sorted [1, N]` — swapped. Geometry agrees with the toggle: with planes
-/// `[cap, x0]` the canonical ℓ is +y and the y = −2 point is `Lo`; with `[x0, cap′]` ℓ
-/// is −y and that same point is `Hi`.
+/// `[N, 1] → sorted [1, N]` — swapped. The cylinder's seam runs along −y, so the y = −2 point
+/// is on the seam ray (rank 0) and y = +2 is at π (rank 1), before the move and after it.
 #[test]
-fn a_pierce_definition_swap_toggles_its_root() {
-    use nacre_topo::QuadRoot;
+fn a_pierce_definition_keeps_its_rank_when_its_planes_swap() {
     let mut m = Model::new();
     let s = crate::fixtures::cylinder_with_seam(
         &mut m,
@@ -505,12 +502,11 @@ fn a_pierce_definition_swap_toggles_its_root() {
     let x0 = m.seeded_plane(Axis::X);
     assert!(bottom.index() < x0.index(), "the fixture's premise");
     // The two pierce points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
-    // Canonical normals (0,0,1) × (1,0,0) = +y, so y = −2 is the smaller parameter: Lo.
     let v_lo = m.push_vertex(
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: lateral,
-            root: QuadRoot::Lo,
+            rank: 0,
         },
         PointCache::Unrealized {
             coord: Point3::from_array([0.0, -2.0, 0.0]),
@@ -520,7 +516,7 @@ fn a_pierce_definition_swap_toggles_its_root() {
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: lateral,
-            root: QuadRoot::Hi,
+            rank: 1,
         },
         PointCache::Unrealized {
             coord: Point3::from_array([0.0, 2.0, 0.0]),
@@ -573,8 +569,13 @@ fn a_pierce_definition_swap_toggles_its_root() {
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     for &vh in m.edge(he.edge).vertices.iter() {
-                        if let Vertex::Pierce { planes, root, .. } = *m.vertex(vh) {
-                            seen.push((m.vertex_point(vh).as_array(), planes, root));
+                        if let Vertex::Pierce { planes, rank, .. } = *m.vertex(vh) {
+                            let again = crate::realize_vertex(&m, vh, crate::Precision::NearestF64)
+                                .expect("a stated pierce point")
+                                .to_f64()
+                                .map(|(x, _)| x)
+                                .expect("a finite point");
+                            seen.push((m.vertex_point(vh).as_array(), planes, rank, again));
                         }
                     }
                 }
@@ -584,25 +585,16 @@ fn a_pierce_definition_swap_toggles_its_root() {
     seen.sort_by(|a, b| a.0[1].partial_cmp(&b.0[1]).unwrap());
     seen.dedup_by_key(|e| e.0[1] as i64);
     assert_eq!(seen.len(), 2, "both pierce vertices survive the move");
-    for (p, planes, root) in &seen {
+    for (p, planes, rank, again) in &seen {
         assert!(
             planes[0].index() < planes[1].index(),
             "stored order stays ascending"
         );
         // x = 0 kept its seed handle (invariant restatement); the cap moved to a fresh
-        // one — so the pair swapped, and the root must have toggled with it.
+        // one — so the pair swapped, and the rank stayed.
         assert_eq!(planes[0], x0, "the surviving seed now sorts first");
-        let want = if p[1] < 0.0 {
-            QuadRoot::Hi
-        } else {
-            QuadRoot::Lo
-        };
-        assert_eq!(
-            *root, want,
-            "at y = {}: ℓ flipped to −y, so the root names the same point only if it \
-                 toggled",
-            p[1]
-        );
+        assert_eq!(*rank, u8::from(p[1] > 0.0), "at y = {}", p[1]);
+        assert_eq!(again, p, "the moved name realizes at the moved point");
     }
 }
 

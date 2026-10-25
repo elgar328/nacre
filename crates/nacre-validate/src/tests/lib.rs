@@ -1119,7 +1119,6 @@ fn a_lying_cylinder_def_is_caught() {
 /// per-proposition).
 #[test]
 fn a_pierce_vertex_is_held_to_its_cylinder() {
-    use nacre_topo::QuadRoot;
     let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
     let lateral = (0..m.face_count() as u32)
         .filter_map(|i| m.face_handle_at(i))
@@ -1135,7 +1134,7 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: lateral,
-            root: QuadRoot::Lo,
+            rank: 0,
         },
         PointCache::Unrealized {
             coord: Point3::from_array([0.0, -2.0, 0.0]),
@@ -1148,7 +1147,7 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: lateral,
-            root: QuadRoot::Hi,
+            rank: 1,
         },
         PointCache::Unrealized {
             coord: Point3::from_array([0.0, 2.001, 0.0]),
@@ -1158,7 +1157,7 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: lateral,
-            root: QuadRoot::Lo,
+            rank: 0,
         },
         PointCache::Unrealized {
             coord: Point3::from_array([0.0, -2.0, 0.0]),
@@ -1205,7 +1204,6 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
 /// flagged — a cylinder in a plane slot, and a plane in the cylinder slot.
 #[test]
 fn a_contradictory_pierce_def_is_flagged() {
-    use nacre_topo::QuadRoot;
     let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
     let lateral = (0..m.face_count() as u32)
         .filter_map(|i| m.face_handle_at(i))
@@ -1219,7 +1217,7 @@ fn a_contradictory_pierce_def_is_flagged() {
         Vertex::Pierce {
             planes: [bottom, lateral],
             cylinder: x0,
-            root: QuadRoot::Lo,
+            rank: 0,
         },
         PointCache::Unrealized {
             coord: Point3::origin(),
@@ -1229,7 +1227,7 @@ fn a_contradictory_pierce_def_is_flagged() {
         Vertex::Pierce {
             planes: [bottom, x0],
             cylinder: m.seeded_plane(nacre_exact::Axis::Y),
-            root: QuadRoot::Lo,
+            rank: 0,
         },
         PointCache::Unrealized {
             coord: Point3::origin(),

@@ -112,7 +112,7 @@ pub(super) fn lateral_t_range(
 /// loop is a wrapping rim, and that rim's arcs alone close the circle.
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the
-/// meet line's point at its root ([`nacre_exact::quad::QuadVal::as_rat`] —
+/// meet line's point at its rank ([`nacre_exact::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 pub(super) fn lateral_theta_extent(
@@ -241,7 +241,7 @@ impl QuadVec {
 }
 
 /// **A rim corner's radial vector** — the corner minus the axis point on its cap `cap`: a pierce
-/// corner is the meet line's point at its root, held with its radical. One rule for both readers:
+/// corner is the meet line's point at its rank, held with its radical. One rule for both readers:
 /// [`lateral_theta_extent`] folds it to a rational vector, [`lateral_cover_on_ruling`] reads it as
 /// it is.
 pub(super) fn rim_radial(
@@ -252,8 +252,7 @@ pub(super) fn rim_radial(
     cap: &[nacre_exact::Rat; 4],
 ) -> Option<QuadVec> {
     use nacre_exact::Rat;
-    use nacre_exact::quad::CylinderMeet;
-    use nacre_topo::{QuadRoot, Vertex};
+    use nacre_topo::Vertex;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let zero = Rat::from_int(0);
     let centre = nacre_exact::axis_plane_meet(cap, &o, &m)?;
@@ -264,30 +263,25 @@ pub(super) fn rim_radial(
         Vertex::Pierce {
             planes,
             cylinder,
-            root,
+            rank,
         } => {
             if cylinder != face.surface {
                 return None;
             }
-            // `planes` are stored in ascending-handle order and the roots run along `n₀ × n₁`
-            // (`Vertex::Pierce`'s convention); the world statement translates only the constants,
-            // so the normals — and the order — are the stored ones.
+            // The rank reads only the cylinder's statement (`Vertex::Pierce`'s convention), so the
+            // planes' world names answer it in any order.
             let (c0, c1) = (
                 world_plane_coeffs(model, planes[0])?,
                 world_plane_coeffs(model, planes[1])?,
             );
-            let (line, s) = match nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
-                CylinderMeet::Pair { line, s } => match root {
-                    QuadRoot::Lo => (line, s[0]),
-                    QuadRoot::Hi => (line, s[1]),
-                    QuadRoot::Double => return None,
-                },
-                CylinderMeet::Tangent { line, s } => match root {
-                    QuadRoot::Double => (line, nacre_exact::QuadVal::from_rat(s)),
-                    _ => return None,
-                },
-                _ => return None,
-            };
+            let (line, s) = nacre_exact::quad::seam_ranked(
+                nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
+                &o,
+                &m,
+                &def.ref_dir(),
+            )?
+            .into_iter()
+            .nth(usize::from(rank))?;
             let (b, d) = (line.base(), line.dir());
             let (mut r0, mut r1) = ([zero; 3], [zero; 3]);
             for k in 0..3 {

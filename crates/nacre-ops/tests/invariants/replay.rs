@@ -121,9 +121,9 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                 Vertex::Pierce {
                     planes,
                     cylinder,
-                    root,
+                    rank,
                 } => format!(
-                    "pierce[{},{};{};{root:?}]",
+                    "pierce[{},{};{};{rank}]",
                     planes[0].index(),
                     planes[1].index(),
                     cylinder.index()

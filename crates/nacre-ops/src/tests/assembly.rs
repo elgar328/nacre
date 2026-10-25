@@ -249,8 +249,8 @@ fn two_arc_rim() -> (
     impl Fn(crate::planes::ClassIx, crate::combinatorics::Wall) -> crate::draft::LocalFace,
 ) {
     use crate::combinatorics::NodeId;
+    use crate::combinatorics::QuadRoot;
     use crate::draft::{Bound, LocalFace, Ring};
-    use nacre_topo::QuadRoot;
     let n1 = NodeId::pierce(3, 4, 0, QuadRoot::Lo);
     let n2 = NodeId::pierce(3, 5, 0, QuadRoot::Lo);
     let face = move |surf, wall| LocalFace {
@@ -372,10 +372,10 @@ fn three_arc_rim() -> (
     impl Fn(crate::planes::ClassIx, crate::combinatorics::Wall) -> crate::draft::LocalFace,
     crate::draft::LocalFace,
 ) {
+    use crate::combinatorics::QuadRoot;
     use crate::combinatorics::{Canon3, NodeId, Wall};
     use crate::draft::{Bound, LocalFace, Ring};
     use crate::planes::ClassIx;
-    use nacre_topo::QuadRoot;
     let [n1, n2, n3] = [4, 5, 6].map(|w| NodeId::pierce(3, w, 0, QuadRoot::Lo));
     let face = move |surf, wall| LocalFace {
         surf,

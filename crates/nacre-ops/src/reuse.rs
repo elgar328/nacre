@@ -298,7 +298,7 @@ pub(crate) enum CanonNode {
     Pierce {
         planes: [usize; 2],
         cyl: usize,
-        root: nacre_topo::QuadRoot,
+        root: crate::combinatorics::QuadRoot,
     },
     /// A whole circle, by its cylinder class.
     Circle(usize),

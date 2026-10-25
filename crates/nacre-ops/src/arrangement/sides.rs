@@ -64,8 +64,8 @@ pub(super) fn chord_stations(
         )
     };
     Ok(Some([
-        node(nacre_topo::QuadRoot::Lo),
-        node(nacre_topo::QuadRoot::Hi),
+        node(crate::combinatorics::QuadRoot::Lo),
+        node(crate::combinatorics::QuadRoot::Hi),
     ]))
 }
 

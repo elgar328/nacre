@@ -181,38 +181,32 @@ impl Corner {
 
 /// **A pierce vertex's exact point, solved from its own definition.**
 ///
-/// **No restatement is owed here.** `QuadRoot` is written about the canonical direction of the
-/// meet line of *the two planes the definition names, in the order it names them* — and this reads
-/// exactly those, in that order, so the root applies directly. (The `ℓ` correction
-/// `combinatorics::pierce_name_from_def` carries is the price of crossing from handle space into a
-/// class table's order; this side has no class table for the operand at all.)
+/// The rank is the point's place about the cylinder ([`nacre_exact::quad::seam_ranked`]), which
+/// reads only the cylinder's statement — so the planes' order and the way their names point
+/// do not enter, and the world statements answer it directly.
 ///
 /// **A failure is never a shape this road cannot spell** — the caller has already established
 /// that the vertex is a `Pierce`, and a seam vertex never reaches here at all. It is a missing
-/// description, or a meet that does not offer the name's root — the name was minted from this
+/// description, or a meet with no crossing at the name's rank — the name was minted from this
 /// same meet, so the stored definition and the re-solved meet disagreeing is a naming defect
 /// ([`CornerFail::Inconsistent`]).
 fn pierce_corner(
     model: &Model,
     planes: [Handle<Surface>; 2],
     cylinder: Handle<Surface>,
-    root: nacre_topo::QuadRoot,
+    rank: u8,
 ) -> Result<Corner, CornerFail> {
-    use nacre_exact::quad::{CylinderMeet, QuadVal};
-    use nacre_topo::QuadRoot;
     let p1 = world_narrow(model, planes[0])?;
     let p2 = world_narrow(model, planes[1])?;
     let def = world_cylinder(model, cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (line, s) = match (
-        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2).ok_or(CornerFail::Width)?,
-        root,
-    ) {
-        (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
-        (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => (line, s[1]),
-        (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
-        _ => return Err(CornerFail::Inconsistent),
-    };
+    let meet =
+        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2).ok_or(CornerFail::Width)?;
+    let (line, s) = nacre_exact::quad::seam_ranked(meet, &o, &m, &def.ref_dir())
+        .ok_or(CornerFail::Width)?
+        .into_iter()
+        .nth(usize::from(rank))
+        .ok_or(CornerFail::Inconsistent)?;
     Ok(Corner::Pierce(line, s))
 }
 
@@ -344,12 +338,12 @@ pub(super) fn corner_of(
             let nacre_topo::Vertex::Pierce {
                 planes,
                 cylinder,
-                root,
+                rank,
             } = *model.vertex(vh)
             else {
                 return Err(CornerFail::Shape);
             };
-            pierce_corner(model, planes, cylinder, root)
+            pierce_corner(model, planes, cylinder, rank)
         }
     }
 }
@@ -392,9 +386,9 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corne
 /// needs a **vector** from this point rather than a point to judge.
 ///
 /// [`corner_of`] deliberately does not narrow: a `Wide` meet still judges exactly, and a `Pierce`
-/// corner answers through its own line-and-root spelling. An arc's radial vector is arithmetic on
-/// coordinates, so it needs them — a `Wide` meet declines for its width, and a pierce whose root is
-/// irrational for its shape: no rational vector reaches it.
+/// corner answers through its own line-and-crossing spelling. An arc's radial vector is arithmetic
+/// on coordinates, so it needs them — a `Wide` meet declines for its width, and a pierce whose
+/// crossing is irrational for its shape: no rational vector reaches it.
 fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Result<[nacre_exact::Rat; 3], CornerFail> {
     match model.vertex_meet(vh) {
         Some((p, None)) => p.narrow().copied().ok_or(CornerFail::Width),
@@ -408,12 +402,12 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Result<[nacre_exact::Rat; 
             let nacre_topo::Vertex::Pierce {
                 planes,
                 cylinder,
-                root,
+                rank,
             } = *model.vertex(vh)
             else {
                 return Err(CornerFail::Shape);
             };
-            let Corner::Pierce(line, s) = pierce_corner(model, planes, cylinder, root)? else {
+            let Corner::Pierce(line, s) = pierce_corner(model, planes, cylinder, rank)? else {
                 unreachable!("pierce_corner builds a pierce piece")
             };
             let sr = s.as_rat().ok_or(CornerFail::Shape)?;

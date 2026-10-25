@@ -177,7 +177,7 @@ fn bored_plate() -> Model {
     m
 }
 
-/// **Hand-built `Pierce` vertices, every plane pair and every root** — including the definitions no
+/// **Hand-built `Pierce` vertices, every plane pair and every rank** — including the definitions no
 /// producer makes: the prism and the boolean name only points that are there, so the refusal of a
 /// meet line that misses the cylinder is reached only by stating one.
 ///
@@ -186,7 +186,7 @@ fn bored_plate() -> Model {
 /// crosses the lateral surface answer, the rest refuse. Both outcomes are asserted, so this cannot
 /// pass by refusing everything.
 fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
-    use nacre_topo::{QuadRoot, Vertex};
+    use nacre_topo::Vertex;
     let mut cyl = None;
     let mut planes = Vec::new();
     for i in 0..m.surface_count() as u32 {
@@ -202,14 +202,15 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
     let mut out = Vec::new();
     for a in 0..planes.len() {
         for b in (a + 1)..planes.len() {
-            // Ascending handle order is `Pierce`'s stored convention.
+            // Ascending handle order is `Pierce`'s stored convention. Rank 2 is one past the most
+            // crossings a line makes, so it is refused wherever it is asked.
             let (p0, p1) = (planes[a], planes[b]);
-            for root in [QuadRoot::Lo, QuadRoot::Hi, QuadRoot::Double] {
+            for rank in 0..3 {
                 out.push(m.push_vertex(
                     Vertex::Pierce {
                         planes: [p0, p1],
                         cylinder,
-                        root,
+                        rank,
                     },
                     PointCache::Unrealized {
                         coord: Point3::from_array([0.0; 3]),

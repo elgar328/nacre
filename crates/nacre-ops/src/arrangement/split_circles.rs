@@ -121,7 +121,7 @@ pub(super) fn split_circles(
                 // third plane on the tangent line and are refused earlier, by `CoincidentNodes`).
                 if matches!(
                     combinatorics::pierce_name(n),
-                    Some((_, _, nacre_topo::QuadRoot::Double))
+                    Some((_, _, crate::combinatorics::QuadRoot::Double))
                 ) {
                     continue;
                 }
@@ -572,8 +572,8 @@ fn circle_crossings(
     circ: &MergedCircle,
     sg: &MergedSeg,
 ) -> Option<Vec<combinatorics::NodeId>> {
+    use crate::combinatorics::QuadRoot;
     use nacre_exact::quad::{CylinderMeet, QuadVal};
-    use nacre_topo::QuadRoot;
     let w = combinatorics::class_coeffs_rat(jd, wc)?;
     let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
     let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());

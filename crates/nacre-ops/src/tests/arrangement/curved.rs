@@ -178,7 +178,10 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
         })
         .expect("the plate's top class z = 20");
     let at = |root| combinatorics::NodeId::pierce(wc, top, 0, root);
-    let (lo, hi) = (at(nacre_topo::QuadRoot::Lo), at(nacre_topo::QuadRoot::Hi));
+    let (lo, hi) = (
+        at(crate::combinatorics::QuadRoot::Lo),
+        at(crate::combinatorics::QuadRoot::Hi),
+    );
     for (node, other) in [(lo, hi), (hi, lo)] {
         let between = |n| combinatorics::theta_between(&jd, 0, def, node, node, n);
         assert_eq!(between(other), Some(true), "{node:?} holds {other:?}");
@@ -210,7 +213,10 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
         .expect("the plate's top class z = 20");
     let coeffs = combinatorics::class_coeffs_rat(&jd, top).expect("a named class");
     let ri = nacre_exact::Rat::from_int;
-    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+    for root in [
+        crate::combinatorics::QuadRoot::Lo,
+        crate::combinatorics::QuadRoot::Hi,
+    ] {
         let node = combinatorics::NodeId::pierce(wc, top, 0, root);
         for ccw in [true, false] {
             let ring = [combinatorics::RingEdge {
@@ -500,8 +506,8 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
         class([0, 0, 1], 1),
         class([0, 0, 1], 3),
     );
-    let n1 = NodeId::pierce(z1, t, 0, nacre_topo::QuadRoot::Double);
-    let n3 = NodeId::pierce(z3, t, 0, nacre_topo::QuadRoot::Double);
+    let n1 = NodeId::pierce(z1, t, 0, crate::combinatorics::QuadRoot::Double);
+    let n3 = NodeId::pierce(z3, t, 0, crate::combinatorics::QuadRoot::Double);
     // `side` against `P`, from coordinates: the sign of `(x − o) · (m × n̂)` at `(1, 0, 2)`.
     let wp = combinatorics::class_coeffs_rat(&jd, p).unwrap();
     let n_hat = Vector3::from_array([wp[0].to_f64(), wp[1].to_f64(), wp[2].to_f64()]);
