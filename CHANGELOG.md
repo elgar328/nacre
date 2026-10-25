@@ -10,6 +10,9 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Added
 
+- `exact::quad::radical_plane` is the plane two cylinders on parallel axes share their points on (`exact::quad::RadicalPlane` names the other outcomes).
+- `exact::quad::MeetLine::point_at` is the line's point at a rational parameter.
+- `topo::Model::cylinder_pair_relation` says whether two cylinders' axes are parallel, as the truth states them.
 - Every public error type of the facade — `ops::BoolError`, `ops::OpError`, `ops::SketchError`, `ops::RealizeError`, `ops::CacheDecline`, `step::StepError`, `tess::TessError`, `props::PropsError`, `topo::EdgeDecline` and `geom::mixed::Undecidable` — implements `Display` and `std::error::Error`, so `?` carries it into a `Box<dyn std::error::Error>`. The message is one lowercase line; a refused boolean reads `boolean rejected, <class>: <reason>`, followed by where it was looking when the kernel says. `StepError::Io` gives its `io::Error` as `source()`, and `OpError::Boolean` reads exactly as the `BoolError` it holds.
 - `cargo run -p nacre --example plate_with_bore` builds a plate with a bore through it from the prelude alone, checks it, and writes it as STEP and OBJ.
 - `exact::normal_zeros` and `exact::PlaneName::normal_zeros` say which components of a plane's normal are exactly zero — the world axes the plane runs parallel to.
@@ -27,6 +30,8 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- **Breaking:** a profile whose ring joins two arcs of different circles extrudes: each such corner is a new `topo::Vertex::CylinderPair` — the cap's plane and the two arcs' cylinders, the point named by its place (`rank`) in the seam-first order about the first cylinder — and the riser between the two arc walls is the ruling they share, a line. The solid moves, turns and exports like any other; a boolean on it is refused as `ops::RejectReason::CylinderPairEdge`, so a pad or pocket with such a profile is still refused. An exhaustive `match` on `topo::Vertex` needs the new arm.
+- `topo::EdgeDecline::TwoCylinders` is now only two cylinders that do not meet on a line (axes not parallel, or one cylinder twice), and `topo::EdgeDecline::Unstated` covers any pair with a cylinder whose truths share no frame.
 - A boolean names a result corner that lies on a cylinder's unbounded surface where none of that cylinder's lateral faces reaches it — the top corner of a box edge that runs along a ruling of the cylinder and on past its cap — by its three planes (`topo::Vertex::ThreePlane`); before, it was `topo::Vertex::Pierce` on that cylinder whenever the solid had a lateral face on it anywhere. The point is the same. `ops::RejectReason::VertexNamesAbsentSurface` now asks the faces that meet at the vertex rather than every face of the solid.
 - `ops::BoolReport` no longer counts as coincidences the judgements the judges answer outright: two points sharing planes that hold a coordinate constant have that coordinate equal, and a direction determinant that names one plane twice, or whose three normals' zeros leave them dependent, is zero — the judges prove both without climbing, so `coincidences` falls and `loosest` may quote a different judgement.
 - `judge::WitnessPoint`'s motion steps — rotation, reflection, translation and the three frame nodes — carry their coordinates through `exact::Bounded`'s arithmetic, so each tol is a bound proved operation by operation; an operation that cannot round (adding an exact zero, multiplying by an exact `0` or power of two) passes the tol through, so an axis-aligned model stays at tol `0`. The tol values change: before, each step added terms derived by hand, each with a uniform factor of two, and summed them without rounding up.
@@ -63,6 +68,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Removed
 
+- **Breaking:** `ops::OpError::ArcsMeetAtVertex`: the corner it refused now builds.
 - **Breaking:** `judge::WitnessPoint::at_nearest` and `judge::WitnessPoint::at_with_tol`. `at` gives what the first did, axis by axis: a coordinate that is an `f64` has tol `0` whatever the other two are. Nothing in the kernel called the second.
 - **Breaking:** `exact::Angle::cos_sin_at` and `exact::quad::MeetLine::point_f64`, which nothing in the kernel called. `exact::Angle::cos_sin_hp` gives the `(cos, sin)` intervals whose values the first returned.
 - **Breaking:** `ops::RejectReason::CurvedStraightRun`, which nothing raises now that a ring's winding is read by that one rule.

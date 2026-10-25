@@ -128,6 +128,16 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                     planes[1].index(),
                     cylinder.index()
                 ),
+                Vertex::CylinderPair {
+                    plane,
+                    cylinders,
+                    rank,
+                } => format!(
+                    "pair[{};{},{};{rank}]",
+                    plane.index(),
+                    cylinders[0].index(),
+                    cylinders[1].index()
+                ),
             },
         );
     }
@@ -1137,6 +1147,64 @@ fn a_log_using_every_variant_replays() {
     let (log, m) = every_variant_log();
     let replayed = replay(&log).expect("a log of every variant replays");
     assert_same_arena(&replayed, &m, "every variant");
+}
+
+/// **A leaf replays, moved twice.** Its corners are `CylinderPair` vertices; a turn about the caps'
+/// normal leaves the caps their statement and gives the walls a node, and a move after it puts the
+/// two on different chains — the shape whose corners are met with the plane in the world. The
+/// replayed arena is the built one, definitions and caches item for item.
+#[test]
+fn a_leaf_moved_twice_replays() {
+    let r = |n: i128| Rat::from_int(n);
+    let arc = |c: [i128; 2]| nacre_ops::Edge2d::Arc {
+        center: c.map(r),
+        r2: r(25),
+        ccw: false,
+    };
+    let ring = nacre_ops::Ring2d::new(
+        vec![[r(0), r(0)], [r(5), r(5)]],
+        vec![arc([5, 0]), arc([0, 5])],
+    )
+    .expect("a leaf");
+    let profile = nacre_ops::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let mut m = Model::new();
+    let mut log = Vec::new();
+    let leaf = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { solid, .. } = apply(&mut m, &leaf).expect("the leaf extrudes") else {
+        unreachable!()
+    };
+    log.push(leaf);
+    let mut solid = solid;
+    for isometry in [
+        Isometry::rotation(nacre_exact::Rotation {
+            axis: Axis::Z,
+            pivot: [r(1), r(-3), r(0)],
+            angle: nacre_exact::Angle::from_deg(r(30)).expect("an angle"),
+        }),
+        Isometry::translation([r(0), r(0), r(3)]),
+    ] {
+        let op = Operation::Transform { solid, isometry };
+        let OpOutput::Transform { solid: moved } = apply(&mut m, &op).expect("the move applies")
+        else {
+            unreachable!()
+        };
+        log.push(op);
+        solid = moved;
+    }
+    m.rebuild_adjacency();
+    let corners = (0..m.vertex_count() as u32)
+        .filter_map(|i| m.vertex_handle_at(i))
+        .filter(|&v| matches!(m.vertex(v), Vertex::CylinderPair { .. }))
+        .count();
+    assert!(corners > 0, "the leaf's corners are cylinder pairs");
+    let replayed = replay(&log).expect("the leaf's log replays");
+    assert_same_arena(&replayed, &m, "a leaf moved twice");
 }
 
 /// The log [`a_log_using_every_variant_replays`] replays, and the model it built — every variant of

@@ -692,9 +692,9 @@ fn sweep_ring(
             }
             // A whole circle: one wall, one vertex — the rim's point at `+ref_dir`, the seam.
             (true, true) if n == 1 => Ok(Vertex::OnSeam([here, cap])),
-            // Two arcs of one circle merged in the profile's normal form; two of different
-            // circles are a corner the kernel does not define.
-            (true, true) => Err(OpError::ArcsMeetAtVertex),
+            // Two arcs of different circles (arcs of one circle are merged in the profile's normal
+            // form): the cap meets the two cylinders there.
+            (true, true) => pair_def(model, cap, prev, here, at),
             // A straight wall meets an arc wall on the cap: the wall's plane and the cap's plane
             // meet in a line that crosses the arc's cylinder there.
             (true, false) => pierce_def(model, here, cap, prev, at),

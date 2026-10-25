@@ -213,6 +213,7 @@ fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])
                                 Vertex::ThreePlane(_) => 0u8,
                                 Vertex::OnSeam(_) => 1,
                                 Vertex::Pierce { .. } => 2,
+                                Vertex::CylinderPair { .. } => 3,
                             };
                             let p = m.vertex_point(vh).as_array();
                             out.push((kind, [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]));

@@ -413,8 +413,10 @@ pub enum RejectReason {
     /// ([`nacre_topo::EdgeDecline::Unstated`]) — the gate admits neither to the arrangement.
     ObliqueCircleClass,
     /// **An edge the result assembly asked for whose curve does not derive for a reason no gate
-    /// names** — two distinct cylinders ([`nacre_topo::EdgeDecline::TwoCylinders`]; the assembly
-    /// never pairs them) or a circle the truth states and the cache cannot build
+    /// names** — two cylinders that do not meet on a line
+    /// ([`nacre_topo::EdgeDecline::TwoCylinders`]; the assembly never pairs two cylinders, and an
+    /// operand with such an edge is refused at the entry as [`Self::CylinderPairEdge`]) or a circle
+    /// the truth states and the cache cannot build
     /// ([`nacre_topo::EdgeDecline::Degenerate`]). A backstop: nothing raises it.
     EdgeCurveUnderived,
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
@@ -437,6 +439,11 @@ pub enum RejectReason {
     /// laid across it are apart along the rulings' cross product and nothing else
     /// (the rational candidate set is closed).
     CylinderPairContact,
+    /// **An operand has an edge where two of its own cylinders meet** — the ruling between two arc
+    /// walls of a prism whose profile joins two arcs of different circles. Booleans on such a solid
+    /// are not built yet; the operand is refused before anything reads it, whatever the other
+    /// operand is.
+    CylinderPairEdge,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** because a
     /// description cannot be put in the world in one frame — a class with no world name (a
     /// rotated one) the gate could not prove clear of the cylinder, a cylinder on a chain that
@@ -1086,6 +1093,7 @@ impl RejectReason {
             Self::ObliqueCircleClass => "oblique_circle_class",
             Self::EdgeCurveUnderived => "edge_curve_underived",
             Self::CylinderPairContact => "cylinder_pair_contact",
+            Self::CylinderPairEdge => "cylinder_pair_edge",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
             Self::TangentLineInAnotherPlane => "tangent_line_in_another_plane",
             Self::CylinderFaceUndecided => "cylinder_face_undecided",
@@ -1133,6 +1141,7 @@ impl RejectReason {
             | Self::VertexNamesAbsentSurface
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
+            | Self::CylinderPairEdge
             | Self::CylinderGateUndecided
             | Self::TangentLineInAnotherPlane
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not

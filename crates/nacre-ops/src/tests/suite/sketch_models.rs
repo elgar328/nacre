@@ -75,6 +75,9 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                                 Vertex::ThreePlane(_) => "three-plane".to_string(),
                                 Vertex::OnSeam(_) => "on-seam".to_string(),
                                 Vertex::Pierce { root, .. } => format!("pierce {root:?}"),
+                                Vertex::CylinderPair { rank, .. } => {
+                                    format!("cylinder pair {rank}")
+                                }
                             });
                         }
                     }

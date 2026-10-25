@@ -450,10 +450,13 @@ impl Model {
         let tri = match *def {
             Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce *is* a point but its coordinates
-            // are quadratic-irrational — neither has the rational meet a datum statement
-            // needs, so both decline here (honest, and spelled per variant so the next
-            // variant is a compile error, not a silent fall-through).
-            Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
+            // are quadratic-irrational; a CylinderPair's point is met on two cylinders, not
+            // solved from three planes — none has the rational three-plane meet a datum
+            // statement needs, so all decline here (honest, and spelled per variant so the
+            // next variant is a compile error, not a silent fall-through).
+            Vertex::OnSeam(_) | Vertex::Pierce { .. } | Vertex::CylinderPair { .. } => {
+                return None;
+            }
         };
         // `three_planes_big` answers `None` for a zero determinant only.
         let named = |p: Option<nacre_exact::MeetPoint>, frame| match p {

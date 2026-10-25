@@ -9,7 +9,7 @@ use crate::assembly::check_result_topology;
 #[cfg(test)]
 use crate::assembly::tess_census;
 use crate::draft::BoolKind;
-use crate::{BoolError, reject};
+use crate::{BoolError, RejectReason, reject};
 use nacre_judge::Decision;
 use nacre_judge::predicate::{Evidence, Notes, Site};
 use nacre_store::Handle;
@@ -49,6 +49,9 @@ pub fn boolean_with_report(
     if !model.live_solids().contains(&a) || !model.live_solids().contains(&b) {
         return Err(BoolError::InputNotLive);
     }
+    if [a, b].into_iter().any(|s| has_cylinder_pair_edge(model, s)) {
+        return Err(surfacing(reject(RejectReason::CylinderPairEdge)));
+    }
     // The arrangement engine (`arrangement`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
@@ -81,13 +84,32 @@ pub fn boolean_with_report(
     Ok((result, BoolReport::of(&notes)))
 }
 
+/// Does `solid` have an edge whose two carriers are different cylinders
+/// ([`RejectReason::CylinderPairEdge`])? Every face of every shell, every loop.
+fn has_cylinder_pair_edge(model: &Model, solid: Handle<Solid>) -> bool {
+    let cylinder = |h| matches!(model.surface(h), nacre_topo::Surface::Cylinder { .. });
+    let sol = model.solid(solid);
+    std::iter::once(&sol.outer)
+        .chain(sol.cavities.iter())
+        .flat_map(|&sh| model.shell(sh).faces.iter())
+        .flat_map(|&fh| {
+            let f = model.face(fh);
+            std::iter::once(&f.outer).chain(f.inner.iter())
+        })
+        .flat_map(|lp| lp.half_edges.iter())
+        .any(|he| {
+            let [p, q] = model.edge(he.edge).surfaces;
+            p != q && cylinder(p) && cylinder(q)
+        })
+}
+
 /// Record that `e` is leaving the kernel — the *surfaced* column of a test build's
 /// `crate::reject_census`; a product build passes `e` through untouched.
 ///
 /// Sits at the public entry points rather than at [`reject`] because those are two different
 /// populations: guards are raised and swallowed (a retry tries the ring's next node), and only what
 /// comes back here is something a caller ever sees. `InputNotLive` is not a
-/// [`RejectReason`](crate::RejectReason) — it is a caller mistake, not a guard — so it stays out of
+/// [`RejectReason`] — it is a caller mistake, not a guard — so it stays out of
 /// the census.
 fn surfacing(e: BoolError) -> BoolError {
     #[cfg(any(test, feature = "test-util"))]

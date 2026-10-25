@@ -86,6 +86,24 @@ pub enum Vertex {
         /// Which of the two crossings, along the canonical line direction.
         root: QuadRoot,
     },
+    /// One of the points where a plane meets two cylinders — the corner where two arcs of
+    /// different circles meet on a prism's cap, whose cylinders' axes are parallel.
+    ///
+    /// **`rank` picks the point**: its place in the order of angle about `cylinders[0]`'s axis,
+    /// measured counter-clockwise about that cylinder's stated axis direction from its `ref_dir`
+    /// ray (a point on the ray first). On parallel axes
+    /// the two cylinders meet on at most two rulings and the plane crosses each once, so the rank
+    /// names a ruling and the plane its point; two tangent circles share one ruling, `rank: 0`.
+    /// There the rank reads only the two cylinders' statements, so moving the solid keeps it.
+    /// `cylinders` is in the order the rank is read in, not sorted.
+    CylinderPair {
+        /// The plane crossing both cylinders.
+        plane: Handle<Surface>,
+        /// The two cylinders; the rank is read about `cylinders[0]`.
+        cylinders: [Handle<Surface>; 2],
+        /// The point's place in the order of angle about `cylinders[0]`.
+        rank: u8,
+    },
 }
 
 /// **What a [`Vertex::ThreePlane`] definition's plane names say about its point** — the answer of
@@ -209,6 +227,11 @@ impl Vertex {
                 cylinder,
                 ..
             } => ([a, b, cylinder], 3),
+            Vertex::CylinderPair {
+                plane,
+                cylinders: [a, b],
+                ..
+            } => ([plane, a, b], 3),
         };
         arr.into_iter().take(n)
     }

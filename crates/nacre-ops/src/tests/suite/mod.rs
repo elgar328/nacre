@@ -1069,6 +1069,7 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
     .expect("the cylinder moves")
 }
 
+mod arc_corners;
 mod common_kind;
 mod commuting_oracle;
 mod coplanar;

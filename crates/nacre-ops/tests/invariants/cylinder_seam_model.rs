@@ -137,7 +137,7 @@ fn a_cylinders_lateral_is_bounded_by_its_two_rims() {
 
 /// **No edge separates a cylinder from itself.** The door that pushes edges refuses a carrier
 /// pair that is one cylinder twice — the seam edge a lateral bounded by its two rims has no use
-/// for — as it refuses two distinct cylinders.
+/// for — by the name it gives two cylinders that do not meet on a line.
 #[test]
 fn an_edge_on_one_cylinder_twice_is_refused() {
     let (mut m, c) = z_cylinder(2.0, 5.0);

@@ -298,7 +298,9 @@ pub(super) fn rim_radial(
             }
             Some(QuadVec { r0, r1, c: s.c() })
         }
-        Vertex::ThreePlane(_) => None,
+        // A boolean refuses an operand with a two-cylinder edge before the gate reads its rims
+        // (`CylinderPairEdge`); unread, the corner answers as one the rule cannot state.
+        Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => None,
     }
 }
 

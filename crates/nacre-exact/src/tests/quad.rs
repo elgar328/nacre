@@ -1377,11 +1377,7 @@ fn the_radical_plane_of_two_circles_holds_their_two_points() {
     };
     let at = |q: &QuadVal| -> V3 {
         let t = q.as_rat().expect("both corners are rational");
-        core::array::from_fn(|k| {
-            line.base()[k]
-                .checked_add(t.checked_mul(line.dir()[k]).unwrap())
-                .unwrap()
-        })
+        line.point_at(t).expect("no overflow")
     };
     let mut got = [at(&s[0]), at(&s[1])];
     got.sort();

@@ -554,6 +554,16 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
                     .any(|&s| !matches!(m.surface(s), Surface::Plane { .. }))
                     || !matches!(m.surface(*cylinder), Surface::Cylinder { .. })
             }
+            // One plane and two cylinders, positionally. Which of the points `rank` names is not
+            // checked: every one of them lies on all three carriers.
+            Vertex::CylinderPair {
+                plane, cylinders, ..
+            } => {
+                !matches!(m.surface(*plane), Surface::Plane { .. })
+                    || cylinders
+                        .iter()
+                        .any(|&s| !matches!(m.surface(s), Surface::Cylinder { .. }))
+            }
         };
         if bad {
             out.push(Violation::VertexCarrierMismatch { vertex: vh });

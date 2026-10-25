@@ -457,7 +457,6 @@ fn every_error_line_follows_the_std_convention() {
             OpError::NestedHole { outer: 0, inner: 1 },
             OpError::ProfileUndecidable,
             OpError::ArcSweepNotQuarterTurn,
-            OpError::ArcsMeetAtVertex,
             OpError::ZeroDistance,
             OpError::DistOutsideDecimalWindow,
             OpError::PlaneWithoutExactForm,

@@ -424,6 +424,33 @@ impl Model {
         None
     }
 
+    /// **Are two cylinders' axes parallel, as the truth states them** — `Some(true)`: where the two
+    /// laterals meet, they meet on rulings.
+    ///
+    /// Asked in the frame the two statements share — one motion, or both carried whole to the
+    /// world (a rigid motion keeps the relation). `None` when neither holds: a relation the truth
+    /// does not state.
+    pub fn cylinder_pair_relation(&self, a: Handle<Surface>, b: Handle<Surface>) -> Option<bool> {
+        let (
+            Surface::Cylinder {
+                def: da,
+                motion: ma,
+            },
+            Surface::Cylinder {
+                def: db,
+                motion: mb,
+            },
+        ) = (self.surface(a), self.surface(b))
+        else {
+            return None;
+        };
+        if ma == mb {
+            return Some(nacre_exact::parallel_rat(&da.dir(), &db.dir()));
+        }
+        let (wa, wb) = (self.world_cylinder_def(a)?, self.world_cylinder_def(b)?);
+        Some(nacre_exact::parallel_rat(&wa.dir(), &wb.dir()))
+    }
+
     /// A plane's name normal, in the frame its truth is written in.
     fn name_normal(&self, plane: Handle<Surface>) -> Option<LineDir> {
         Some(LineDir::normal_of(self.surface_name(plane)?))

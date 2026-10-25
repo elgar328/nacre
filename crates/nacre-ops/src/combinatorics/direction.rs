@@ -407,8 +407,8 @@ pub(crate) fn turn(
         }
         // Two arcs of one circle at one node are tangent: no turn to read. (Two *different*
         // circles cannot meet at a node: faces of different operands are proved apart by the
-        // gate, per face pair, and one valid operand's own faces do not cross —
-        // the sketch refuses an arc–arc join, `ArcsMeetAtVertex`.)
+        // gate, per face pair, and an operand whose own arcs meet at a corner — two cylinders on
+        // one edge — is refused before the arrangement, `CylinderPairEdge`.)
         (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
         // **A segment against a ruling collapses the same way the arc arm did.** The ruling's
         // direction is `±m` and it lies *in* the class (`m · n_P = 0`), so BAC-CAB leaves

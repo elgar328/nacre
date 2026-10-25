@@ -58,6 +58,14 @@ impl Model {
                 a.index() < b.index() && cylinder != a && cylinder != b,
                 "a pierce definition needs two sorted distinct planes and a distinct cylinder"
             ),
+            Vertex::CylinderPair {
+                plane,
+                cylinders: [a, b],
+                ..
+            } => debug_assert!(
+                a != b && plane != a && plane != b,
+                "a cylinder-pair definition needs two distinct cylinders and a distinct plane"
+            ),
         }
         let h = self.vertices.push(def);
         self.vertex_cache.push(cache);
@@ -300,8 +308,11 @@ impl Model {
     ///   runs is its half-edge's `forward` — its ends, being one vertex, say neither. Every one of
     ///   those readers branches on `v0 == v1` for it (a groove's tip touching a cap's rim puts such
     ///   an edge in a loop of several).
-    /// * **Cylinder × Cylinder**: [`EdgeDecline::TwoCylinders`] — a quartic, or one cylinder twice
-    ///   (no edge separates a surface from itself); no edge carries either.
+    /// * **Cylinder × Cylinder**: axes parallel ([`Model::cylinder_pair_relation`], exact) — a ruling
+    ///   both share, a line along the first cylinder cache's axis. Axes not parallel (a quartic) or
+    ///   one cylinder twice (no edge separates a surface from itself) is
+    ///   [`EdgeDecline::TwoCylinders`]; a pair whose truths cannot be placed in one frame is
+    ///   [`EdgeDecline::Unstated`].
     pub fn derive_edge_curve(
         &self,
         surfaces: [Handle<Surface>; 2],
@@ -384,8 +395,18 @@ impl Model {
                     }
                 }
             }
-            (SurfaceCache::Cylinder { .. }, SurfaceCache::Cylinder { .. }) => {
-                Err(EdgeDecline::TwoCylinders)
+            // Two cylinders whose axes are parallel meet on rulings — straight lines along the
+            // axis, like the `Along` arm above: the exact relation decides the kind, the cache gives
+            // the direction.
+            (SurfaceCache::Cylinder { cylinder: c, .. }, SurfaceCache::Cylinder { .. }) => {
+                if surfaces[0] == surfaces[1] {
+                    return Err(EdgeDecline::TwoCylinders);
+                }
+                match self.cylinder_pair_relation(surfaces[0], surfaces[1]) {
+                    None => Err(EdgeDecline::Unstated),
+                    Some(false) => Err(EdgeDecline::TwoCylinders),
+                    Some(true) => line(Some(c.axis().direction().as_array())),
+                }
             }
         }
     }

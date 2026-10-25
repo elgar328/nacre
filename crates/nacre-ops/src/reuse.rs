@@ -97,9 +97,12 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     }
                     let tri = match *model.vertex(vh) {
                         Vertex::ThreePlane(tri) => tri,
-                        // No rational base point: OnSeam and Pierce coordinates are not
-                        // rational, so reuse declines and the boolean takes the slower road.
-                        Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
+                        // No three-plane base point: OnSeam and Pierce coordinates are not
+                        // rational and a CylinderPair point is met on cylinders, so reuse declines
+                        // and the boolean takes the slower road.
+                        Vertex::OnSeam(_) | Vertex::Pierce { .. } | Vertex::CylinderPair { .. } => {
+                            return None;
+                        }
                     };
                     // The base is the definition's: the three narrow names, solved in the frame
                     // the planes are stated in. A wide or missing name declines.

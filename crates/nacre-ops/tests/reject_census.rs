@@ -15,7 +15,7 @@
 //! a copy from drifting silently is that **every fixture asserts its own reject reason** — a
 //! drifted fixture then fails loudly instead of quietly re-baselining the table.
 //!
-//! **What this gate does *not* see.** Its population is these thirteen shapes. A guard no fixture
+//! **What this gate does *not* see.** Its population is these fourteen shapes. A guard no fixture
 //! here reaches is not exercised and this stays green — the whole-suite sweep
 //! (`--features reject-trace`, see the module doc) is what covers that, by hand. It also cannot see
 //! a site moving *within* a file, and it does not contain `precision_budget` (a 4200-turn chain) or
@@ -351,6 +351,52 @@ fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Fuse, a, b)
 }
 
+/// A leaf — two quarter arcs of radius 5 between `(0, 0)` and `(5, 5)`, about `(5, 0)` and
+/// `(0, 5)` — fused with a box over one corner: the leaf's risers are edges between two of its own
+/// cylinders, refused at the entry before anything reads them.
+fn cylinder_pair_edge(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let r = Rat::from_int;
+    let ring = nacre_ops::Ring2d::new(
+        vec![[r(0), r(0)], [r(5), r(5)]],
+        vec![
+            nacre_ops::Edge2d::Arc {
+                center: [r(5), r(0)],
+                r2: r(25),
+                ccw: false,
+            },
+            nacre_ops::Edge2d::Arc {
+                center: [r(0), r(5)],
+                r2: r(25),
+                ccw: false,
+            },
+        ],
+    )
+    .expect("a leaf");
+    let profile = nacre_ops::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid: leaf, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    )
+    .expect("the leaf extrudes") else {
+        unreachable!()
+    };
+    let block = prism_z(
+        m,
+        &[[2.0, 2.0], [8.0, 2.0], [8.0, 8.0], [2.0, 8.0]],
+        -1.0,
+        2.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Fuse, leaf, block)
+}
+
 /// ⑥ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
 /// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
 /// `SelfTouchingResult` (`Impossible`, the touching edge as the witness): the whole-result
@@ -395,7 +441,7 @@ const ENTRY: &str = "crates/nacre-ops/src/boolean.rs";
 const RECONSTRUCT: &str = "crates/nacre-ops/src/assembly/reconstruct.rs";
 const SELF_TOUCH: &str = "crates/nacre-ops/src/assembly/self_touch.rs";
 
-const CORPUS: [Fixture; 13] = [
+const CORPUS: [Fixture; 14] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -527,6 +573,17 @@ const CORPUS: [Fixture; 13] = [
             "crates/nacre-ops/src/planes/cyl_gate.rs",
         )],
         surfaced: &[("cylinder_pair_contact", None)],
+    },
+    Fixture {
+        name: "cylinder-pair-edge",
+        expect: Some(RejectReason::CylinderPairEdge),
+        run: cylinder_pair_edge,
+        raised: &[(
+            "cylinder_pair_edge",
+            None,
+            "crates/nacre-ops/src/boolean.rs",
+        )],
+        surfaced: &[("cylinder_pair_edge", None)],
     },
     Fixture {
         name: "fold-45",

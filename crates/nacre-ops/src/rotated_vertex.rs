@@ -211,10 +211,12 @@ pub(crate) fn through_judged_points(
         let tri = match *model.vertex(vh) {
             nacre_topo::Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce point's coordinates are
-            // quadratic-irrational, and this table's witnesses are rational by type —
-            // both decline, per variant (the judging of pierce points is its own machinery,
-            // not this road).
-            nacre_topo::Vertex::OnSeam(_) | nacre_topo::Vertex::Pierce { .. } => {
+            // quadratic-irrational, and this table's witnesses are rational by type; a
+            // CylinderPair point has no three planes to judge — all decline, per variant (the
+            // judging of pierce points is its own machinery, not this road).
+            nacre_topo::Vertex::OnSeam(_)
+            | nacre_topo::Vertex::Pierce { .. }
+            | nacre_topo::Vertex::CylinderPair { .. } => {
                 return None;
             }
         };

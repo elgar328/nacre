@@ -594,12 +594,12 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
     );
 }
 
-/// **Circles and arcs both build; what the builder cannot stand is refused by name.** The
-/// vocabulary accepts a `3-4-5` lens as a region, but its arcs are no quarter turns, so the
-/// exact winding cannot read it; a leaf of two quarter arcs winds fine and fails on its corners
-/// instead — a point on two cylinders is a definition the kernel does not have.
+/// **Circles, arcs and arc–arc corners build; what the builder cannot stand is refused by name.**
+/// The vocabulary accepts a `3-4-5` lens as a region, but its arcs are no quarter turns, so the
+/// exact winding cannot read it; a leaf of two quarter arcs winds fine, and its corners are points
+/// on two cylinders.
 #[test]
-fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
+fn a_circle_a_slot_and_a_leaf_extrude_and_a_lens_is_refused_by_name() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let r = |n: i128| nacre_exact::Rat::from_int(n);
     let circle = stated(vec![circle(p2(0.0, 0.0), 1.0)]).unwrap();
@@ -649,17 +649,15 @@ fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
     .unwrap();
     let mut m = Model::new();
     let frame = SketchFrame::world(&m, Axis::Z);
-    assert_eq!(
-        apply(
-            &mut m,
-            &Operation::Extrude {
-                frame,
-                profile: leaf[0].clone(),
-                dist: 1.0
-            }
-        ),
-        Err(nacre_ops::OpError::ArcsMeetAtVertex)
+    let out = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: leaf[0].clone(),
+            dist: 1.0,
+        },
     );
+    assert!(matches!(out, Ok(OpOutput::Extrude { .. })), "{out:?}");
 }
 
 /// **A slot prism exports**: its cylinder walls and arc edges reach STEP as the surfaces and

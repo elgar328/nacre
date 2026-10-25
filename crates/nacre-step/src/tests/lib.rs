@@ -492,6 +492,67 @@ fn cylinder_round_trips_through_step_io_reader() {
     assert_eq!(bounds, vec![1, 1]);
 }
 
+/// **A leaf round-trips**: two quarter arcs of radius 5 between `(0, 0)` and `(5, 5)`, extruded.
+/// Its two risers are edges between two cylindrical faces — lines, the ruling the two arcs' walls
+/// share — and the reader takes the file whole: one solid, two caps, two cylindrical walls, every
+/// edge a line or a circle.
+#[test]
+fn a_leaf_with_two_cylinders_on_one_edge_round_trips() {
+    let r = nacre_exact::Rat::from_int;
+    let arc = |c: [i128; 2]| nacre_ops::Edge2d::Arc {
+        center: c.map(r),
+        r2: r(25),
+        ccw: false,
+    };
+    let ring = nacre_ops::Ring2d::new(
+        vec![[r(0), r(0)], [r(5), r(5)]],
+        vec![arc([5, 0]), arc([0, 5])],
+    )
+    .expect("a leaf");
+    let profile = nacre_ops::from_paths(vec![ring])
+        .expect("one profile")
+        .remove(0);
+    let mut m = Model::new();
+    let frame = nacre_ops::SketchFrame::world(&m, nacre_exact::Axis::Z);
+    nacre_ops::apply(
+        &mut m,
+        &nacre_ops::Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    )
+    .expect("the leaf extrudes");
+    let text = to_step(&m, STAMP).expect("export the leaf");
+
+    let (model, report) = read(text.as_bytes()).expect("re-read");
+    assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+    let scene = model.scene();
+    let solids: Vec<_> = scene.all_solids().collect();
+    assert_eq!(solids.len(), 1);
+    let faces: Vec<_> = solids[0].faces().collect();
+    let (mut cylindrical, mut planes, mut lines) = (0, 0, 0);
+    for face in &faces {
+        match face.surface().kind() {
+            SurfaceKind::Cylindrical(_) => cylindrical += 1,
+            SurfaceKind::Plane(_) => planes += 1,
+            other => panic!("unexpected surface kind: {other:?}"),
+        }
+        for bound in face.bounds() {
+            for (edge, _forward) in bound.oriented_edges() {
+                match edge.curve().kind() {
+                    CurveKind::Line(_) => lines += 1,
+                    CurveKind::Circle(_) => {}
+                    other => panic!("unexpected curve kind: {other:?}"),
+                }
+            }
+        }
+    }
+    assert_eq!((cylindrical, planes), (2, 2));
+    // Each riser bounds both walls.
+    assert_eq!(lines, 4, "two risers, each used by two faces");
+}
+
 /// An output that records the length of every write it receives.
 struct Recording {
     bytes: Vec<u8>,

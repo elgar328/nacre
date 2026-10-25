@@ -355,9 +355,10 @@ impl<'a> ClassEdges<'a> {
         // arrangement runs. That covers pairs from **different** solids; the pair loop skips
         // same-solid pairs on purpose. But a same-solid pair cannot be built either: two cylinder
         // faces whose axes are *not* parallel need two extrude directions, hence a boolean, and
-        // at that boolean they are on opposite sides and meet the very gate above. (Two overlapping
-        // circles in one sketch do make one body with intersecting cylinders — with **parallel**
-        // axes, which never put a circle and a ruling on one class.)
+        // at that boolean they are on opposite sides and meet the very gate above. (Two arcs of one
+        // sketch do make one body whose cylinders meet — with **parallel** axes, which never put a
+        // circle and a ruling on one class, and such an operand is refused at the boolean's entry
+        // anyway, `CylinderPairEdge`.)
         //
         // **So the check below is a net over an argument, not a filter over a population**,
         // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair

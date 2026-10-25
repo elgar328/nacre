@@ -49,11 +49,12 @@ pub enum EdgeDecline {
     Coincident,
     /// A plane oblique to a cylinder's axis — the section is an ellipse, which no edge carries.
     Oblique,
-    /// A plane and a cylinder whose truths cannot be placed in one frame, so their relation is
-    /// not stated.
+    /// Two carriers with a cylinder among them whose truths cannot be placed in one frame, so how
+    /// they stand to each other is not stated.
     Unstated,
-    /// Two cylinders — two distinct ones meet in a quartic, and one stated twice is a surface
-    /// separated from itself; no edge carries either.
+    /// Two cylinders whose axes are not parallel — they meet in a quartic — or one cylinder
+    /// stated twice, a surface separated from itself; no edge carries either. Two cylinders on
+    /// parallel axes meet on a ruling, which is a line.
     TwoCylinders,
     /// The truth states a circle, but the cache could not build it (no centre, no radius).
     Degenerate,
@@ -64,8 +65,10 @@ impl std::fmt::Display for EdgeDecline {
         f.write_str(match self {
             Self::Coincident => "the straight edge's endpoints are one point",
             Self::Oblique => "the plane is oblique to the cylinder's axis",
-            Self::Unstated => "the plane and the cylinder cannot be placed in one frame",
-            Self::TwoCylinders => "an edge between two cylinders has no curve",
+            Self::Unstated => "the edge's carriers cannot be placed in one frame",
+            Self::TwoCylinders => {
+                "the edge's carriers are one cylinder twice, or two that do not meet on a line"
+            }
             Self::Degenerate => "the circle's cache could not be built",
         })
     }

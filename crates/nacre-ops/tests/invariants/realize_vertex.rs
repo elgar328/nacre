@@ -177,11 +177,9 @@ fn bored_plate() -> Model {
     m
 }
 
-/// **A hand-built `Pierce` vertex** — the kernel does not mint these yet.
-///
-/// Hand-built fixtures and validate are the consumers: the assembler declines to mint a
-/// pierce node because class order and handle order are canonical in different index spaces. So a
-/// fixture that waited for a boolean to produce one would measure nothing, forever.
+/// **Hand-built `Pierce` vertices, every plane pair and every root** — including the definitions no
+/// producer makes: the prism and the boolean name only points that are there, so the refusal of a
+/// meet line that misses the cylinder is reached only by stating one.
 ///
 /// The shape: a radius-3 cylinder on the world Z axis at `(2, 2)`, and a cuboid whose faces supply
 /// plane carriers. Every plane pair is offered to the door; the ones whose meet line actually
@@ -365,16 +363,31 @@ fn the_door_returns_the_places_it_was_asked_for() {
     }
 }
 
+/// Two quarter arcs of radius 5 between `(0, 0)` and `(5, 5)`, extruded: four arc–arc corners.
+fn leaf() -> Model {
+    let mut m = Model::new();
+    let profile = stated(vec![
+        arc_turns(p2(5.0, 0.0), p2(0.0, 0.0), -1),
+        arc_turns(p2(0.0, 5.0), p2(5.0, 5.0), -1),
+    ])
+    .expect("a leaf")
+    .remove(0);
+    let op = extrude_op(&m, profile, 2.0);
+    apply(&mut m, &op).expect("a leaf extrudes");
+    m
+}
+
 /// **Lock 2 — every variant answers, and it is raised for real rather than tabulated.**
 ///
 /// A table of variants proves nothing about a dispatch; these fixtures actually mint an `OnSeam`
-/// rim corner and a `Pierce` wall crossing, and the test fails if a population goes empty — which
+/// rim corner, a `Pierce` wall crossing and a `CylinderPair` arc–arc corner, and the test fails if
+/// a population goes empty — which
 /// is how deleting one arm shows up as something other than a smaller number nobody reads.
 #[test]
 fn every_vertex_variant_answers() {
     use nacre_topo::Vertex;
-    let (mut seam, mut pierce, mut three) = (0usize, 0usize, 0usize);
-    for m in [cylinder(), bored_plate(), boolean_corner()] {
+    let (mut seam, mut pierce, mut three, mut pair) = (0usize, 0usize, 0usize, 0usize);
+    for m in [cylinder(), bored_plate(), boolean_corner(), leaf()] {
         for vh in live_vertices(&m) {
             let kind = *m.vertex(vh);
             let Ok(d) = realize_vertex_decimal(&m, vh, 25) else {
@@ -387,10 +400,11 @@ fn every_vertex_variant_answers() {
                 Vertex::OnSeam(_) => seam += 1,
                 Vertex::Pierce { .. } => pierce += 1,
                 Vertex::ThreePlane(_) => three += 1,
+                Vertex::CylinderPair { .. } => pair += 1,
             }
         }
     }
-    // `Pierce` has no producer in the kernel yet, so its population is built here.
+    // The refusing half of `Pierce` has no producer, so that population is stated here.
     let mut m = cylinder();
     let _ = nacre_ops::fixtures::cuboid(
         &mut m,
@@ -432,8 +446,15 @@ fn every_vertex_variant_answers() {
             }
         }
     }
-    println!("answered: three_plane={three} on_seam={seam} pierce={pierce} (refused {refused})");
+    println!(
+        "answered: three_plane={three} on_seam={seam} pierce={pierce} cylinder_pair={pair} \
+         (refused {refused})"
+    );
     assert!(three > 0, "no three-plane vertex answered");
+    assert!(
+        pair > 0,
+        "no CylinderPair vertex answered — that arm is not being exercised"
+    );
     assert!(
         seam > 0,
         "no OnSeam vertex answered — that arm is not being exercised"

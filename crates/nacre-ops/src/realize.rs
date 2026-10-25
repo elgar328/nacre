@@ -1818,6 +1818,11 @@ fn build(
             cylinder,
             root,
         } => curved(pierce_point(model, planes, cylinder, root, bits)),
+        nacre_topo::Vertex::CylinderPair {
+            plane,
+            cylinders,
+            rank,
+        } => pair_point(model, plane, cylinders, rank, bits),
     }
 }
 
@@ -1913,6 +1918,134 @@ fn pierce_point(
     let (b, d) = (line.base(), line.dir());
     let coord = |k: usize| nacre_exact::affine_hp(b[k], d[k], &sb, bits);
     Some([coord(0)?, coord(1)?, coord(2)?])
+}
+
+/// **The rulings two cylinders on parallel axes share, in rank order** — the one order
+/// `Vertex::CylinderPair`'s `rank` is read in, by the prism that names a corner and by both roads
+/// of the realization. Each ruling is given by its foot on the plane across `c0`'s axis through
+/// `c0`'s origin, as a parameter on a rational line (the foot is rational where the ruling holds a
+/// rational point).
+///
+/// The cylinders' radical plane ([`nacre_exact::quad::radical_plane`]) crosses that plane in a
+/// line, the line crosses `c0`, and the crossings are ordered seam-first about `c0`
+/// ([`nacre_exact::quad::SeamOrder::seam_first`]). Empty where the two share no ruling (axes not
+/// parallel, concentric, apart); `None` on overflow.
+pub(crate) fn pair_rulings(
+    c0: &nacre_topo::CylinderDef,
+    c1: &nacre_topo::CylinderDef,
+) -> Option<Vec<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>> {
+    use nacre_exact::quad::{CylinderMeet, QuadVal, RadicalPlane};
+    let (o, m) = (c0.origin(), c0.dir());
+    let RadicalPlane::Plane(radical) =
+        nacre_exact::quad::radical_plane(&o, &m, c0.r2(), &c1.origin(), &c1.dir(), c1.r2())?
+    else {
+        return Some(Vec::new());
+    };
+    let across = pair_feet_plane(c0)?;
+    Some(
+        match nacre_exact::quad::plane_plane_cylinder(&across, &radical, &o, &m, c0.r2())? {
+            CylinderMeet::Tangent { line, s } => vec![(line, QuadVal::from_rat(s))],
+            CylinderMeet::Pair { line, s } => {
+                let order = nacre_exact::quad::circular_order_about_seam(
+                    &o,
+                    &m,
+                    &c0.ref_dir(),
+                    (&line, &s[0]),
+                    (&line, &s[1]),
+                )?;
+                let [lo, hi] = s;
+                match order.seam_first() {
+                    core::cmp::Ordering::Greater => vec![(line.clone(), hi), (line, lo)],
+                    _ => vec![(line.clone(), lo), (line, hi)],
+                }
+            }
+            _ => Vec::new(),
+        },
+    )
+}
+
+/// The plane [`pair_rulings`] gives each ruling's foot on: across `c`'s axis, through its origin.
+/// `None` on overflow.
+pub(crate) fn pair_feet_plane(c: &nacre_topo::CylinderDef) -> Option<[nacre_exact::Rat; 4]> {
+    let (o, m) = (c.origin(), c.dir());
+    let k = nacre_exact::Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&m, &o)?)?;
+    Some([m[0], m[1], m[2], k])
+}
+
+/// The rational foot of the shared ruling `rank` names ([`pair_rulings`]).
+fn pair_foot(
+    c0: &nacre_topo::CylinderDef,
+    c1: &nacre_topo::CylinderDef,
+    rank: usize,
+) -> Result<[nacre_exact::Rat; 3], RealizeError> {
+    let rulings = pair_rulings(c0, c1).ok_or(RealizeError::NoCurvedPoint)?;
+    let (line, s) = rulings.get(rank).ok_or(RealizeError::NoCurvedPoint)?;
+    // A ruling through no rational point has no rational foot to state or replay; the prism's
+    // corners are rational, so its rulings are not of that kind.
+    s.as_rat()
+        .and_then(|t| line.point_at(t))
+        .ok_or(RealizeError::NoCurvedPoint)
+}
+
+/// **A cylinder-pair vertex is its ruling's point on its plane.** The ruling is the two
+/// cylinders' alone ([`pair_rulings`]); the plane picks the point on it. Two roads, as for a seam
+/// vertex ([`seam_point`]): where the three carriers are stated in the world, the ruling's foot
+/// carried along the axis to the plane is the exact point; otherwise the ruling is found where the
+/// two cylinders are stated — they share one motion, as the walls of one prism do — replayed along
+/// their chain, and met with the plane in the world, which answers for itself
+/// ([`plane_coeffs_hp`]): a cap turned about its own normal keeps its statement while the walls
+/// take the node, so the plane and the walls need not share a chain.
+fn pair_point(
+    model: &Model,
+    plane: Handle<Surface>,
+    cylinders: [Handle<Surface>; 2],
+    rank: u8,
+    bits: usize,
+) -> Result<Realization, RealizeError> {
+    let rank = usize::from(rank);
+    if let (Some(w0), Some(w1), Some(cap)) = (
+        model.world_cylinder_def(cylinders[0]),
+        model.world_cylinder_def(cylinders[1]),
+        crate::planes::world_plane_coeffs(model, plane),
+    ) {
+        let foot = pair_foot(&w0, &w1, rank)?;
+        let p = nacre_exact::axis_plane_meet(&cap, &foot, &w0.dir())
+            .ok_or(RealizeError::NoCurvedPoint)?;
+        let (n, d) = MeetPoint::Narrow(p).lift();
+        return Ok(Realization(Arm::Exact(n, d)));
+    }
+    let (
+        Surface::Cylinder {
+            def: c0,
+            motion: m0,
+        },
+        Surface::Cylinder {
+            def: c1,
+            motion: m1,
+        },
+    ) = (model.surface(cylinders[0]), model.surface(cylinders[1]))
+    else {
+        return Err(RealizeError::NoCurvedPoint);
+    };
+    if m0 != m1 {
+        return Err(RealizeError::NoCurvedPoint);
+    }
+    let foot = pair_foot(c0, c1, rank)?;
+    let on_ruling = match *m0 {
+        None => foot.map(|c| HpBounded::of_rat(c, bits)),
+        Some(node) => {
+            let chain = motion_chain(model, node).ok_or(RealizeError::NoMotionChain)?;
+            replay(WitnessPoint::at(foot), &chain)
+                .ok_or(RealizeError::NoMotionChain)?
+                .coord_hp(bits)
+        }
+    };
+    let hp = world_cylinder_hp(model, c0, *m0, bits).ok_or(RealizeError::NoCurvedPoint)?;
+    let cap = plane_coeffs_hp(model, plane, bits, &mut PlaneMemo::default())
+        .map_err(|_| RealizeError::NoCurvedPoint)?;
+    line_meets_plane_hp(&on_ruling, &hp.axis, &cap, bits)
+        .map(|p| Realization(Arm::Approached(p)))
+        .ok_or(RealizeError::Undecided)
 }
 
 fn build_three_plane(

@@ -181,12 +181,6 @@ pub enum OpError {
     /// vocabulary states such an arc exactly (a `3-4-5` lens is a valid region), the builder does
     /// not stand it yet — that family opens with named points.
     ArcSweepNotQuarterTurn,
-    /// Two arcs of different circles meet at a profile vertex. That corner is a point on two
-    /// cylinders and a plane, which no [`nacre_topo::Vertex`] states yet, and the ruling between
-    /// the two cylinder walls has no curve the kernel derives (`derive_edge_curve` declines two
-    /// distinct cylinders) — the same frontier as the cylinder–cylinder boolean (M6b). A lens, a
-    /// cam lobe; a straight step between the arcs is what builds today.
-    ArcsMeetAtVertex,
     /// An extrusion distance of zero: a prism of no thickness. Either sign is a side
     /// ([`Operation::Extrude`]); zero is neither.
     ZeroDistance,
@@ -249,9 +243,9 @@ pub enum OpError {
     DuplicateVertex,
     /// A datum named three vertices that lie on one line — no unique plane through them.
     CollinearVertices,
-    /// A datum named a vertex that is not a three-plane point (today: a cylinder seam vertex,
-    /// whose pair pins a curve rather than a point). Its exact coordinate is not derivable from
-    /// its definition, so the plane through it would not be exact either.
+    /// A datum named a vertex that is not a three-plane point — a cylinder's seam vertex, a point
+    /// where a straight wall meets an arc wall, or a corner where two arcs meet. A datum through
+    /// vertices is built from the planes that meet at each one, and these have none to give.
     VertexNotThreePlane,
     /// **The named vertices' carriers do not all share one motion**, so no single frame holds a
     /// rational coordinate for them: reaching the world means realizing a rotation, and cos/sin
@@ -343,9 +337,6 @@ impl std::fmt::Display for OpError {
             }
             Self::ArcSweepNotQuarterTurn => {
                 f.write_str("an arc is not a whole number of quarter turns")
-            }
-            Self::ArcsMeetAtVertex => {
-                f.write_str("two arcs of different circles meet at a profile vertex")
             }
             Self::ZeroDistance => f.write_str("the extrusion distance is zero"),
             Self::DistOutsideDecimalWindow => {

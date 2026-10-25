@@ -714,7 +714,9 @@ fn transform_solid(
             (nacre_geom::Surface::Cylinder(cy), nacre_topo::Surface::Cylinder { def, .. }) => {
                 // The same fork as the `Known` plane above, minus the invariant road (an
                 // invariant-cylinder restatement — a turn about its own axis — is deliberately
-                // deferred; the condition is narrower than a plane's because `ref_dir` turns).
+                // deferred; the condition is narrower than a plane's because `ref_dir` turns, and
+                // a `Vertex::CylinderPair`'s rank is read from `ref_dir`, so keeping the old
+                // statement would rename its points).
                 // The same sentence as the plane's: verbatim behind a history or when the
                 // motion is recorded; otherwise the whole motion moves the def (the very
                 // transport `carry_of` asked).
@@ -817,6 +819,18 @@ fn transform_solid(
                     root,
                 }
             }
+            // The rank is read about `cylinders[0]` from its own statement, which the motion
+            // carries whole (origin, axis and `ref_dir` together), so it travels unchanged — and
+            // the handles stay in place rather than being re-sorted (`Vertex::CylinderPair`'s doc).
+            Vertex::CylinderPair {
+                plane,
+                cylinders,
+                rank,
+            } => Vertex::CylinderPair {
+                plane: remap(plane),
+                cylinders: cylinders.map(remap),
+                rank,
+            },
         };
         let coord = motion.point(model.vertex_point(vh));
         // **The moved figure is a fallback, and only a fallback.** A *measured residual* would

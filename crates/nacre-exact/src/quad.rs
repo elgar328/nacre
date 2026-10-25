@@ -617,6 +617,15 @@ impl MeetLine {
     pub fn dir(&self) -> V3 {
         self.dir
     }
+
+    /// The line's point at parameter `t`, `base + t·dir`, exact; `None` on overflow.
+    pub fn point_at(&self, t: Rat) -> Option<V3> {
+        let mut p = [Rat::from_int(0); 3];
+        for (k, out) in p.iter_mut().enumerate() {
+            *out = self.base[k].checked_add(t.checked_mul(self.dir[k])?)?;
+        }
+        Some(p)
+    }
 }
 
 /// What two planes and a cylinder share — every outcome has its own name, no silent

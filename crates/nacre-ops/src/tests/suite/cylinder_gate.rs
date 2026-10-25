@@ -480,7 +480,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
                     m.vertex_cache(vh)
                 );
             }
-            Vertex::ThreePlane(_) => {}
+            Vertex::ThreePlane(_) | Vertex::CylinderPair { .. } => {}
         }
     }
     assert!(pierces > 0 && seams > 0, "{pierces} pierces, {seams} seams");

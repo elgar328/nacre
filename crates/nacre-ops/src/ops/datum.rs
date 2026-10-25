@@ -83,6 +83,58 @@ pub(super) fn pierce_def(
     })
 }
 
+/// **The definition of a corner where two arcs of different circles meet on a cap**: the cap's
+/// plane and the two arcs' cylinders — [`Vertex::CylinderPair`], ranked about the lower handle.
+///
+/// The rank names the shared ruling through this corner, read where the two cylinders are stated
+/// (they share one motion: the prism's walls) by [`crate::realize::pair_rulings`], the order the
+/// realization reads too — the ruling whose foot is this corner's, carried along the axis to the
+/// plane the feet are on ([`crate::realize::pair_feet_plane`]). The cap only picks the point on the
+/// ruling, so its frame is not asked. One circle on both sides would be a line of points, not a corner.
+pub(super) fn pair_def(
+    model: &Model,
+    cap: Handle<Surface>,
+    a: Handle<Surface>,
+    b: Handle<Surface>,
+    at: &[nacre_exact::Rat; 3],
+) -> Result<Vertex, OpError> {
+    if a == b {
+        return Err(OpError::DegenerateGeometry);
+    }
+    let cylinders = if a.index() < b.index() {
+        [a, b]
+    } else {
+        [b, a]
+    };
+    let def = |h: Handle<Surface>| match model.surface(h) {
+        nacre_topo::Surface::Cylinder { def, motion } => Ok((def, *motion)),
+        _ => Err(OpError::DegenerateGeometry),
+    };
+    let ((c0, m0), (c1, m1)) = (def(cylinders[0])?, def(cylinders[1])?);
+    if m0 != m1 {
+        return Err(OpError::DegenerateGeometry);
+    }
+    // An overflow is a point with no exact form here, the name `pierce_def` gives the same decline.
+    let rulings = crate::realize::pair_rulings(c0, c1).ok_or(OpError::PlaneWithoutExactForm)?;
+    let across = crate::realize::pair_feet_plane(c0).ok_or(OpError::PlaneWithoutExactForm)?;
+    let foot = nacre_exact::axis_plane_meet(&across, at, &c0.dir())
+        .ok_or(OpError::PlaneWithoutExactForm)?;
+    let is_here = |(line, s): &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)| {
+        s.as_rat().and_then(|t| line.point_at(t)) == Some(foot)
+    };
+    // No candidate is this point only if the sketch put the corner off one of the circles, which
+    // `ArcEndOffCircle` refuses before a prism is asked.
+    let rank = rulings
+        .iter()
+        .position(is_here)
+        .ok_or(OpError::DegenerateGeometry)?;
+    Ok(Vertex::CylinderPair {
+        plane: cap,
+        cylinders,
+        rank: u8::try_from(rank).expect("two parallel cylinders share two rulings at most"),
+    })
+}
+
 pub(super) fn push_line_edge(
     model: &mut Model,
     a: Handle<Vertex>,
@@ -172,9 +224,11 @@ pub(super) fn datum_plane(
             let tri = match *model.vertex(*vh) {
                 nacre_topo::Vertex::ThreePlane(tri) => tri,
                 // A through-vertices datum needs three-plane meets; a seam vertex has no
-                // point-meet at all and a pierce point has no rational one — the same honest
-                // reject, spelled per variant.
-                nacre_topo::Vertex::OnSeam(_) | nacre_topo::Vertex::Pierce { .. } => {
+                // point-meet at all, a pierce point has no rational one, and a cylinder-pair point
+                // is met on cylinders, not planes — the same honest reject, spelled per variant.
+                nacre_topo::Vertex::OnSeam(_)
+                | nacre_topo::Vertex::Pierce { .. }
+                | nacre_topo::Vertex::CylinderPair { .. } => {
                     return Err(OpError::VertexNotThreePlane);
                 }
             };
