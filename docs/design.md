@@ -39,7 +39,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 │                    #   ← topo · geom · math · store · exact · judge (+ 선택적 rayon)
 │                    #   부울 = 면당 평면 arrangement 엔진
 │                    #   reuse: 상대가 닿을 수 없다고 증명된 평면 클래스는 배열하지 않는다 (「연산 층」 절)
-├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← topo · geom · math · store (+ brep-to-step)
+├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← exact · topo · geom · math · store (+ brep-to-step)
 ├── nacre-oracle     # [dev] OCCT 비교 하네스   ← topo · step · math · store
 ├── nacre            # 파사드   ← exact · geom · math · ops · props · step · store · tess · topo · validate
 └── tools/occt-helper/  # 워크스페이스 밖 헬퍼: brew OCCT(1순위) 또는 uv+OCP(폴백) — 「검증·오라클 인프라」 절
@@ -2875,7 +2875,7 @@ nacre 가 쓴 STEP 을 step-io **리더로 되읽어** 구조를 비교한다. �
 
 **M1 — 뼈대.** `nacre-math`, Store/Handle, 평면·직선만으로 정육면체를 손으로 조립하고 `validate` 를 세운다. 시각 확인은 **기존 뷰어에 위임**한다(전용 뷰어 크레이트를 만들지 않는다): 정상 결과는 STEP 출력 → step-loupe(구조+검증), 중간·깨진 상태는 Tessellation 을 OBJ/STL 로 덤프 → 맥 미리보기(또는 MeshLab·f3d). 커널 내부까지 보는 인터랙티브 디버그 뷰어(면 클릭 → Handle·정의, 법선 화살표, 엣지 polyline·tolerance 공, validate 위반 하이라이트, 로그 스텝별 재생)는 워크스페이스 밖 별도 앱이다 — **발견된 점**과 tolerance 처럼 STEP 에 담기지 않는 내부 정보가 생기는 불리언 단계의 디버깅 생명줄이다.
 
-**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 형상 전용 작성기 brep-to-step 에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 머리말의 시각은 호출자가 준다 — 커널은 시계를 읽지 않는다(같은 모델과 같은 시각이면 같은 바이트이고, wasm 에는 시계가 없어 시스템 시각을 물으면 패닉한다). 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정한다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 리더 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 OCCT 기반 뷰어**(step-loupe 와 리더를 공유하지 않는 교차검증). 두 뷰어 모두 작성기와 코드를 나누지 않는다. STEP 출력은 오라클의 수송 계층이기도 하다. 작성기의 출력이 step-io 작성기의 것과 구조가 같다는 것은 brep-to-step 의 차등 테스트가 든다.
+**M2 — 스케치와 돌출, STEP 내보내기.** 2D 프로파일 → extrude, 연산 로그와 replay, 오일러 연산. STEP 은 어댑터다: 커널 Model → AP242 엔티티 번역만 자체 구현하고 직렬화는 형상 전용 작성기 brep-to-step 에 위임한다(커널은 백엔드 무지 — 헬퍼 프로토콜과 같은 격리). 머리말의 시각은 호출자가 준다 — 커널은 시계를 읽지 않는다(같은 모델과 같은 시각이면 같은 바이트이고, wasm 에는 시계가 없어 시스템 시각을 물으면 패닉한다). 파일의 불확도(`UNCERTAINTY_MEASURE_WITH_UNIT`, «이보다 가까운 두 점은 한 점»)는 내보내는 수 위에서 증명한 맞물림의 위 한계다(`nacre_step::uncertainty` — 꼭짓점과 그 곡선·곡면, 간선 곡선과 그 면들의 곡면 사이 틈을 위로만 반올림한 구간으로 재고, 적힌 좌표의 f64 간격의 반 밑으로는 적지 않는다). 참값과의 거리는 그 값이 아니라 `refine_caches` 의 보고가 말하고, 계산이 끝나지 않으면(내보낼 솔리드가 없거나 거리가 정해지지 않으면) 작성기의 관례 값 1e-7 mm 를 적는다. 어댑터가 내보내는 엔티티를 AP242 커널 형상 집합(cartesian_point·direction·line·circle·b_spline_curve/surface·plane·cylindrical_surface·advanced_face·closed_shell·manifold_solid_brep·surface_curve 등)으로 명시 타입 고정한다. 커버리지는 마일스톤을 따라 넓힌다(평면 → 곡선·곡면 → 트리밍). 목적은 기능만이 아니라 검증이다: 작은 형상에서 좌표계·방향·면 orientation 함정을 먼저 밟는다. 검증 뷰어는 두 겹이고 상보적이다 — **step-loupe**(step-io 리더 기반 웹 뷰어: report 가 드롭·고아·비표준 엔티티를 표시해 어댑터 버그를 구조적으로 잡는다; 자기 출력 되읽기의 GUI 판) + **FreeCAD 등 OCCT 기반 뷰어**(step-loupe 와 리더를 공유하지 않는 교차검증). 두 뷰어 모두 작성기와 코드를 나누지 않는다. STEP 출력은 오라클의 수송 계층이기도 하다. 작성기의 출력이 step-io 작성기의 것과 구조가 같다는 것은 brep-to-step 의 차등 테스트가 든다.
 
 **M3 — 곡선 기하.** Arc, Cylinder, NurbsCurve/Surface 평가(The NURBS Book 기준 구현 + 수치 미분 대조 테스트). tess 출처 태그, tolerance 재계산(같은 모델, tol 3단). proptest.
 

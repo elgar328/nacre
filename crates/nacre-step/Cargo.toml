@@ -13,6 +13,8 @@ nacre-topo = { workspace = true }
 nacre-geom = { workspace = true }
 nacre-math = { workspace = true }
 nacre-store = { workspace = true }
+# The uncertainty a file states is bounded on the numbers it writes, in exact intervals.
+nacre-exact = { workspace = true }
 # Serialization backend (kernel is backend-agnostic; the writer is confined to
 # this crate): a shape-only STEP writer with no dependencies of its own.
 brep-to-step = "0.2"
@@ -27,7 +29,7 @@ step-io = "0.2.5"
 nacre-ops = { path = "../nacre-ops", features = ["test-util"] }
 # Enables topo's test-only `reversed_shell` (a cavity's shell, for the void export test).
 nacre-topo = { path = "../nacre-topo", features = ["test-util"] }
-# The rim-centre test states its oracle in exact rationals, from the fixture's own decimals.
-nacre-exact = { workspace = true }
+# The uncertainty test checks its bound in exact integers, the written `f64`s decoded whole.
+num-bigint = "0.4"
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

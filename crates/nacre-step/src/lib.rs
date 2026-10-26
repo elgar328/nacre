@@ -24,6 +24,9 @@ use nacre_topo::{Edge, Model, Orientation, Shell, Solid, SurfaceCache, Vertex};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+mod uncertainty;
+pub use uncertainty::{NotProven, Uncertainty, uncertainty};
+
 /// A failure while translating a [`Model`] to STEP.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -79,6 +82,11 @@ impl From<brep_to_step::Error> for StepError {
 /// rungs do not decide), where the construction's own figure stands. `nacre_ops::refine_caches`
 /// (`nacre::ops::refine_caches`) pays for those and reports what it could not settle; call it
 /// before exporting such a model. It takes `&mut Model`, which an export does not.
+///
+/// The file's uncertainty (`UNCERTAINTY_MEASURE_WITH_UNIT`, the distance below which two points
+/// are one) is [`uncertainty`](fn@uncertainty)'s: proven on the numbers written, so it says how
+/// well the file holds together, and comes to about the spacing of `f64`s at the largest
+/// coordinate written. The writer's convention, `1e-7` mm, stands only where nothing was proven.
 ///
 /// **`timestamp` is the header's `FILE_NAME` time stamp, written verbatim** (an ISO 8601 string
 /// such as `2026-10-05T12:00:00Z`; `""` leaves the field blank). The caller gives it because the
@@ -140,7 +148,14 @@ fn build_step<W: Write>(
         originating_system: concat!("nacre ", env!("CARGO_PKG_VERSION")).to_owned(),
         ..Header::default()
     };
-    let mut b = StepWriter::new(out, &header, Units::default())?;
+    let units = match uncertainty(model, solids) {
+        Uncertainty::Proven(u) => Units {
+            uncertainty: u,
+            ..Units::default()
+        },
+        Uncertainty::NotProven(_) => Units::default(),
+    };
+    let mut b = StepWriter::new(out, &header, units)?;
 
     // Only the solids given, never the whole append-only store: the arena keeps
     // every superseded solid (`to_step` passes the live set).

@@ -12,6 +12,7 @@ While the version is `0.0.z`, every release may break anything.
 
 - `exact::quad::radical_plane` is the plane two cylinders on parallel axes share their points on (`exact::quad::RadicalPlane` names the other outcomes).
 - `exact::quad::MeetLine::point_at` is the line's point at a rational parameter.
+- `step::uncertainty` gives the uncertainty a STEP file of some solids states (`step::Uncertainty`, `step::NotProven`).
 - `exact::HpBounded::of_f64` holds an `f64` as an exact interval, and `exact::HpBounded::abs_upper_f64` and `exact::HpBounded::abs_lower_f64` give the `f64`s at or above and at or below every magnitude an interval holds.
 - `exact::quad::seam_ranked` lists the points a plane·plane·cylinder meet puts on the cylinder, in seam-first order about its axis.
 - `topo::Model::cylinder_pair_relation` says whether two cylinders' axes are parallel, as the truth states them.
@@ -32,6 +33,7 @@ While the version is `0.0.z`, every release may break anything.
 
 ### Changed
 
+- A STEP file states the uncertainty its own numbers hold together within — a proven upper bound on the gap between each vertex and the curves and surfaces it lies on, and between each edge's curve and its faces' surfaces, never below half the `f64` spacing at its largest coordinate — where it always stated `1e-7` mm; `step::uncertainty` gives the value, and `1e-7` mm stands only where nothing was proven (no solid to write, or a gap that could not be bounded). How close the numbers stand to the exact geometry is what `ops::refine_caches` reports.
 - **Breaking:** `topo::Vertex::Pierce` names its point by `rank: u8`, its place in the order about its cylinder's axis from `ref_dir` — the order `topo::Vertex::CylinderPair`'s `rank` is read in — in place of `root`, the order along the two planes' meet line. The name no longer depends on which way the planes' normals point or which plane comes first, so a transform carries it unchanged. A tangent wall's single point is `rank: 0`.
 - **Breaking:** a profile whose ring joins two arcs of different circles extrudes: each such corner is a new `topo::Vertex::CylinderPair` — the cap's plane and the two arcs' cylinders, the point named by its place (`rank`) in the seam-first order about the first cylinder — and the riser between the two arc walls is the ruling they share, a line. The solid moves, turns and exports like any other; a boolean on it is refused as `ops::RejectReason::CylinderPairEdge`, so a pad or pocket with such a profile is still refused. An exhaustive `match` on `topo::Vertex` needs the new arm.
 - `topo::EdgeDecline::TwoCylinders` is now only two cylinders that do not meet on a line (axes not parallel, or one cylinder twice), and `topo::EdgeDecline::Unstated` covers any pair with a cylinder whose truths share no frame.
