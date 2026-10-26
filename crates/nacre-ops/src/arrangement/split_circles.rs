@@ -159,7 +159,7 @@ pub(super) fn split_circles(
     let mut arcs = Vec::new();
     let mut cut_rims: Vec<(usize, CutRim)> = Vec::new();
 
-    // **The circle's θ order runs first, because it decides which crossings are cut points
+    // **The circle side runs first, because it decides which crossings are cut points
     // at all**. `circle_crossings` names where the segment's *line* meets the whole
     // circle; but the class's circle is only where its arcs are (`MergedCircle::merged` — a
     // fillet's quarter, a slot's half), and a crossing on the circle's **continuation** lies on
@@ -168,24 +168,20 @@ pub(super) fn split_circles(
     // `rrect-box`, 0 on the other 353 census rows), and where that point *is* a vertex of the
     // segment already (a face through the top of a fillet's circle: the user's gusset foot,
     // `y = 0 = −2 + r`) the segment split refuses it as two names for one point.
-    // **The rule: a crossing is a cut point iff it lies on an arc the class carries.** An arc's
-    // own ends are cut points by construction (fed in above); a crossing is on an arc iff the
-    // piece of circle before or after it is covered — being on an arc's boundary is being its
-    // end, and ends are kept by name.
+    // **The rule: a crossing shown off every arc the class carries is no cut point.** An arc's own
+    // ends are cut points by construction (fed in above); every other crossing is asked against
+    // each arc's two ends, and one shown off all of them leaves before the order is formed. One
+    // that cannot be shown off stays a cut point: off an arc it is a vertex where nothing crosses
+    // the segment, which costs a vertex, where dropping a crossing on an arc would lose one.
     //
     // Segments first ("the sharper question before the vaguer one") would be an unmeasured order,
     // and the order changes no refusal: both halves refuse a point wearing two names with the same
     // reject, and identity on both halves is the alias table's (`canon`), so what reaches either
     // refusal is a coincidence no discovery event recorded — the honest floor.
-    struct Ordered {
-        nodes: Vec<NodeId>,
-        order: Vec<usize>,
-    }
-    let mut ordered: Vec<Option<Ordered>> = Vec::with_capacity(circles.len());
     for (ci, circ) in circles.iter().enumerate() {
         let raw = std::mem::take(&mut on_circle[ci]);
         if raw.is_empty() {
-            ordered.push(None);
+            out_circles.push(circ.clone());
             continue;
         }
         let is_end = |n: NodeId| {
@@ -207,77 +203,40 @@ pub(super) fn split_circles(
             }
         }
         nodes.sort_unstable();
+        // **A crossing shown off every arc leaves before the order is formed** — asked against
+        // each arc's two ends alone ([`combinatorics::theta_between`]), so the points of the
+        // circle's continuation are never ordered against each other: two names there for one
+        // point would refuse a point no edge of this class has. What this cannot show stays, and
+        // the order below refuses it if it is another name of a point already there. Three
+        // circles drop nothing here: one with a contribution that is the whole circle (every
+        // crossing is on it), one with no contribution (where «off every arc» would be an empty
+        // truth), and one with a closed arc (`p == q`), which `theta_between` reads as the whole
+        // turn less its end and so answers `false` for another name of the end itself.
+        let extents: Option<Vec<[NodeId; 2]>> =
+            circ.merged.iter().map(|&(_, _, arc)| arc).collect();
+        let mut off_arcs: Vec<NodeId> = Vec::new();
+        if let Some(extents) = extents
+            && !extents.is_empty()
+            && extents.iter().all(|&[p, q]| canon(p) != canon(q))
+        {
+            nodes.retain(|&x| {
+                let off = !is_end(x)
+                    && extents.iter().all(|&[p, q]| {
+                        combinatorics::theta_between(jd, circ.cyl, &circ.def, p, q, x)
+                            == Some(false)
+                    });
+                if off {
+                    off_arcs.push(x);
+                }
+                !off
+            });
+            for v in on_seg.iter_mut() {
+                v.retain(|&n| !off_arcs.iter().any(|&d| canon(d) == canon(n)));
+            }
+        }
+        // ---- the circle → arcs, in θ order about the seam ----
         let order = combinatorics::circular_order(jd, circ.cyl, &circ.def, &nodes)
             .map_err(|e| reject(e.reason()))?;
-        let len = order.len();
-        let mut at = vec![0usize; len];
-        for (k, &i) in order.iter().enumerate() {
-            at[i] = k;
-        }
-        let place = |x: NodeId| {
-            nodes
-                .iter()
-                .position(|&m| canon(m) == canon(x))
-                .map(|i| at[i])
-                .expect("an extent's ends were fed into this very split")
-        };
-        let covers = |k: usize| {
-            circ.merged.iter().any(|&(_, _, arc)| match arc {
-                None => true,
-                Some([p, q]) => {
-                    let (a, b) = (place(p), place(q));
-                    if a <= b {
-                        a <= k && k < b
-                    } else {
-                        a <= k || k < b
-                    }
-                }
-            })
-        };
-        let keep: Vec<bool> = (0..len)
-            .map(|k| is_end(nodes[order[k]]) || covers(k) || covers((k + len - 1) % len))
-            .collect();
-        if keep.iter().all(|&b| b) {
-            ordered.push(Some(Ordered { nodes, order }));
-            continue;
-        }
-        // The crossings on no arc leave — the circle and every segment they were put on.
-        let dropped: Vec<NodeId> = (0..len)
-            .filter(|&k| !keep[k])
-            .map(|k| nodes[order[k]])
-            .collect();
-        for v in on_seg.iter_mut() {
-            v.retain(|&n| !dropped.iter().any(|&d| canon(d) == canon(n)));
-        }
-        let kept: Vec<NodeId> = nodes
-            .iter()
-            .copied()
-            .filter(|n| !dropped.contains(n))
-            .collect();
-        // Nothing left to cut at: the circle is whole, and saying so here is what keeps it in
-        // the class at all — an `Ordered` with no nodes would emit no arc *and* drop the circle,
-        // losing an edge in silence. (No corpus row reaches it: every measured drop leaves at
-        // least one arc end. It is spelled because the alternative fails quietly.)
-        if kept.is_empty() {
-            ordered.push(None);
-            continue;
-        }
-        // The reduced order is the full one filtered: the relative θ order is unchanged.
-        let order: Vec<usize> = order
-            .iter()
-            .filter(|&&i| keep[at[i]])
-            .map(|&i| kept.iter().position(|&m| m == nodes[i]).expect("kept"))
-            .collect();
-        ordered.push(Some(Ordered { nodes: kept, order }));
-    }
-    // ---- segments → sub-segments, in line order ----
-    let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg, aliases)?;
-    // ---- circles → arcs, in θ order about the seam ----
-    for (ci, circ) in circles.iter().cloned().enumerate() {
-        let Some(Ordered { nodes, order }) = ordered[ci].take() else {
-            out_circles.push(circ);
-            continue;
-        };
         // θ position of each node, so an extent can be tested against an arc by rank alone.
         let mut at = vec![0usize; order.len()];
         for (k, &i) in order.iter().enumerate() {
@@ -336,6 +295,8 @@ pub(super) fn split_circles(
             },
         ));
     }
+    // ---- segments → sub-segments, in line order ----
+    let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg, aliases)?;
 
     Ok(Some((out_segs, out_circles, arcs, cut_rims)))
 }

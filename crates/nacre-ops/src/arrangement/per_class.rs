@@ -429,8 +429,9 @@ impl<'a> ClassEdges<'a> {
             match split_circles(jd, cyls, wc, segs, circles, aliases)? {
                 Some((s, c, a, r)) => {
                     // The names below rest on this: `split_circles` answers `Some` only when some
-                    // circle collected a crossing, and a crossing yields at least one arc (a tangency
-                    // is skipped before it is collected). So "was split" and "has arcs" are one fact.
+                    // circle collected a node — an arc's end or a crossing — and either yields at
+                    // least one arc (a tangency is skipped before it is collected). So "was split"
+                    // and "has arcs" are one fact.
                     debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
                     (Cow::Owned(s), Cow::Owned(a), Cow::Owned(c), r)
                 }

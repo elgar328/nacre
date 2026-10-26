@@ -55,7 +55,6 @@
 |---|---|---|
 | `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통(z축)에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 y 로 2 이상 떨어져 있음(홈·L자·원통 쪽 피연산자·돌린 뒤, 네 짓기 모두; x=0.5 면 선다) |
 | `cyl_gate::line_off_lateral` | 담체 대 담체(이름 없는 두 클래스면 기하 전에 `false`) | `CylinderGateUndecided` — 필렛 판(축 (40,−20), r=5) 곁의 37° 돌린 5×5 상자의 평행한 두 벽이 둘 다 필렛을 `Sectioned` 로 가름(슬롯 끝·8° 상자 포함 네 짓기; 판과 그 상자를 먼저 합치는 짓기는 그 합치기가 같은 이름으로 거절된다) |
-| `split_circles` 의 원 교차 순서 | 원의 **연장선** 위 교점까지 정렬 | `CoincidentNodes` — 같은 판 대 상자 `[43,50]×[−16,−10]×[2,10]`, 캡 위 한 점 (43,−16) 에 이름 셋 |
 | `corners::face_clears_footprint` | 옆면 발자국의 각을 **원 전체**로 | 혼자서는 기록 과잉뿐(세 짓기 모두 선다); 그 기록이 `line_off_lateral` 에 들어가면 `CylinderGateUndecided` — 판 − 포켓 `[41,50]×[−17,−10]×[6,13]` 대 8° 상자 |
 | `in_faces::ray_misses_face`(`ring_box_points_hp`) | 호를 그 **원 전체의 상자**로 | Fuse 만 `CylinderGateUndecided` — 모서리에 반원 홈(중심 (40,20), r=3)을 낸 판 위 37° 상자, 그 아래 r=1 원통 중심 (41.5,20) (원 상자 안, 호 상자 밖; 네 짓기) |
 | `cyl_gate::shared_rulings` | 두 무한 평면 + 각만(축 구간·구멍 무시) | 없음 — 기록 과잉은 세 짓기에서 났고 읽는 쪽 어디서도 거절하지 않았다 |

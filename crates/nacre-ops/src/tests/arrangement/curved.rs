@@ -111,6 +111,24 @@ fn armed_through_boss_z(
     usize,
     std::collections::HashSet<(usize, usize)>,
 ) {
+    armed_boss_at(20.0, z_lo, h)
+}
+
+/// [`armed_through_boss_z`] with the axis at `(40, y)`: still on the `x = 40` wall, at any height
+/// along it.
+#[allow(clippy::type_complexity)]
+fn armed_boss_at(
+    y: f64,
+    z_lo: f64,
+    h: f64,
+) -> (
+    Model,
+    Handle<Solid>,
+    Handle<Solid>,
+    crate::arrangement::PlaneSetup,
+    usize,
+    std::collections::HashSet<(usize, usize)>,
+) {
     let mut m = Model::new();
     let plate = crate::fixtures::cuboid(
         &mut m,
@@ -119,7 +137,7 @@ fn armed_through_boss_z(
     );
     let boss = crate::fixtures::cylinder_with_seam(
         &mut m,
-        Point3::from_array([40.0, 20.0, z_lo]),
+        Point3::from_array([40.0, y, z_lo]),
         Vector3::from_array([0.0, 0.0, 1.0]),
         Vector3::from_array([0.0, -1.0, 0.0]),
         5.0,
@@ -187,6 +205,118 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
         assert_eq!(between(other), Some(true), "{node:?} holds {other:?}");
         assert_eq!(between(node), Some(false), "{node:?} does not hold itself");
     }
+}
+
+/// **A crossing the three-point question cannot place stays for the order, which refuses it by
+/// name.** The boss's axis is at `(40, 5)`, so its circle in the plate's top class passes the
+/// plate's corner `(40, 0, 20)`: the wall `y = 0` touches it there (the tangency, skipped as a
+/// crossing) and the wall `x = 40` crosses it there and at `(40, 10, 20)`. An arc from the touch
+/// point, named on `y = 0` as a fillet's arc end is named on its tangent wall, to the far crossing
+/// has the near crossing as another name of its end, which no alias states — so the three-point
+/// order of the arc's ends and that crossing is `Coincident` (both lie on the seam, `(40, 0)`), and
+/// `theta_between` is `None`. Dropped as if it were off the arc, the point would stay under two
+/// names nothing refuses — the arc ending at the touch point, the segment `x = 40` at the
+/// plate's corner. Kept, the circle's order refuses the two names. Control: the same names folded
+/// as the table's corner seeding folds them ([`Aliases::record_on_cylinder`]) are one point, and
+/// the class's edges are built.
+#[test]
+fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
+    let (m, plate, boss, setup, x40, crossings) = armed_boss_at(5.0, -10.0, 50.0);
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let def = setup.cyls[0].def.clone();
+    let top = setup
+        .geom
+        .iter()
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
+        })
+        .expect("the plate's top class z = 20");
+    let tr = trace_on_class_of(
+        &m,
+        plate,
+        boss,
+        top,
+        &jd,
+        &setup.cyls,
+        &setup.planes,
+        &setup.surf_ix,
+        &setup.inc_a,
+        &setup.inc_b,
+        &setup.plane_ix,
+        crossings,
+    );
+    let merged = merge_coincident(&jd, &tr.segs, top, &Aliases::default());
+    let split =
+        split_at_crossings(&jd, &setup.cyls, top, &merged, &mut Aliases::default()).unwrap();
+    let split = drop_newsless(split).unwrap();
+    let y0 = setup
+        .geom
+        .iter()
+        .position(|p| {
+            p.witness_coords()
+                .iter()
+                .all(|q| q.as_array()[1].abs() < 1e-12)
+        })
+        .expect("the plate's wall class y = 0");
+    let touch = combinatorics::NodeId::pierce(top, y0, 0, crate::combinatorics::QuadRoot::Double);
+    let at = |root| combinatorics::NodeId::pierce(top, x40, 0, root);
+    let (lo, hi) = (
+        at(crate::combinatorics::QuadRoot::Lo),
+        at(crate::combinatorics::QuadRoot::Hi),
+    );
+    let (near, far) = match combinatorics::circular_order(&jd, 0, &def, &[touch, lo]) {
+        Err(_) => (lo, hi),
+        Ok(_) => (hi, lo),
+    };
+    assert!(
+        combinatorics::circular_order(&jd, 0, &def, &[touch, near]).is_err()
+            && combinatorics::circular_order(&jd, 0, &def, &[touch, far]).is_ok(),
+        "one crossing of x = 40 is the touch point and the other is not"
+    );
+    let edges = |aliases: &Aliases| {
+        let circle = MergedCircle {
+            cyl: 0,
+            def: def.clone(),
+            merged: vec![(
+                SolidSide::B,
+                SegKind::Seated { body_above: true },
+                Some([touch, far].map(|n| aliases.canon_point(n))),
+            )],
+        };
+        ClassEdges::of(
+            &jd,
+            &setup.cyls,
+            &setup.planes,
+            top,
+            &split,
+            std::slice::from_ref(&circle),
+            &[],
+            aliases,
+        )
+        .map(|_| ())
+    };
+    let coincident = |r: &Result<(), BoolError>| {
+        matches!(
+            r,
+            Err(BoolError::Rejected {
+                reason: RejectReason::CoincidentNodes,
+                ..
+            })
+        )
+    };
+    let named = edges(&Aliases::default());
+    assert!(coincident(&named), "the end's two names: {named:?}");
+    let mut aliases = Aliases::default();
+    aliases.record_on_cylinder(&jd, &setup.cyls, touch, x40);
+    assert_eq!(
+        aliases.canon_point(near),
+        aliases.canon_point(touch),
+        "the corner seeding folds the two"
+    );
+    let folded = edges(&aliases);
+    assert!(folded.is_ok(), "one point under one name: {folded:?}");
 }
 
 /// **A ray through a closed arc's node crosses it there once** (`point_in_mixed_ring`,

@@ -192,17 +192,17 @@ fn an_edge_off_the_fillet_cylinder_builds() {
 // ---- crossings of a circle off its arcs ----
 
 /// **A box corner on the fillet's circle, beyond the quarter** — the box `[43, 50] × [−16, −10]`
-/// puts its corner `(43, −16)` on the fillet's cap circles, off the quarter arc. Three names meet
-/// there on each cap; the circle split orders every crossing of the whole circle before it drops
-/// the ones off the arc, and refuses the three as one point.
+/// puts its corner `(43, −16)` on the fillet's cap circles, off the quarter arc, where three names
+/// meet on each cap. The circle split asks each crossing against the arcs' ends before it orders
+/// any, so the three never meet in an order, and builds.
 #[test]
-fn a_corner_on_the_fillet_circle_beyond_its_quarter_is_refused() {
+fn a_corner_on_the_fillet_circle_beyond_its_quarter_builds() {
     every_kind(
         |m| {
             let p = plate(m);
             (p, bx(m, [43.0, -16.0, 2.0], [50.0, -10.0, 10.0]))
         },
-        refused(RejectReason::CoincidentNodes),
+        one_body(PLATE, 336.0, 96.0),
     );
 }
 
