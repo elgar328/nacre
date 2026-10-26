@@ -154,9 +154,11 @@ pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact
 /// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
 /// serves both.
 ///
-/// It lives here, beside [`class_coeffs_rat`] which it reads, because it has **two** consumers
-/// and belongs to neither: `nesting`'s witness supply asks it for a circle's own point, and the
-/// arrangement's mixed-class net asks it for the circle to measure against a ruling.
+/// It lives here, beside [`class_coeffs_rat`] which it reads, because its consumers are in other
+/// modules and it belongs to none: `nesting`'s witness supply asks it for a circle's own point, the
+/// arrangement's mixed-class net for the circle to measure against a ruling, and the ring box
+/// ([`ring_box_points_hp`]) for an arc's radial ends. The meet is
+/// [`nacre_exact::axis_plane_meet`], the one spelling of «where a plane meets an axis».
 /// Keeping it inside `nesting` would have meant either a second spelling or opening that module's
 /// witness atoms, and both are the shape those atoms were made private to prevent.
 pub(crate) fn circle_centre_rat(
@@ -164,20 +166,7 @@ pub(crate) fn circle_centre_rat(
     wc: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    use nacre_exact::Rat;
-    let coeffs = class_coeffs_rat(jd, wc)?;
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let (o, m) = (def.origin(), def.dir());
-    let nm = nacre_exact::dot3_rat(&n, &m)?;
-    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(coeffs[3])?;
-    let t = Rat::from_int(0)
-        .checked_sub(no_d)?
-        .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
-    let mut p = o;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
-    }
-    Some(p)
+    nacre_exact::axis_plane_meet(&class_coeffs_rat(jd, wc)?, &def.origin(), &def.dir())
 }
 
 pub(crate) fn class_coeffs_rat(
@@ -244,36 +233,70 @@ pub(crate) fn names_a_silent_class(cyls: &[crate::planes::WorkingCyl], rb: &[Rin
         .any(|e| three_plane_name(e.node).is_some_and(|t| crate::planes::silent_among(cyls, &t)))
 }
 
-/// **The box a circle on class `wc` lies in** — its centre (where the cylinder's axis meets that
-/// plane) ± `r` on every axis, `r` rounded up to a rational by [`crate::planes::sqrt_at_least`].
-/// `None` for a class or circle with no exact description.
-pub(crate) fn circle_box_rat(
+/// **The box an arc on class `wc` lies in** — the box of its piece ([`crate::planes::lateral_box`]
+/// of the circle's axis parameter × the arc's angle): the arc's own reach on each axis, rounded
+/// outward to a rational, so never narrower than the arc. [`crate::planes::Theta::Whole`] is the
+/// whole circle, whose box is `r·|e_k⊥|` about its centre on axis `k` — no wider than `± r`. `None`
+/// for a class or circle with no exact description.
+pub(crate) fn arc_box_rat(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     def: &nacre_topo::CylinderDef,
+    theta: crate::planes::Theta,
 ) -> Option<[[nacre_exact::Rat; 3]; 2]> {
-    let c = circle_centre_rat(jd, wc, def)?;
-    let r = crate::planes::sqrt_at_least(def.r2().narrow()?)?;
-    Some([
-        [
-            c[0].checked_sub(r)?,
-            c[1].checked_sub(r)?,
-            c[2].checked_sub(r)?,
-        ],
-        [
-            c[0].checked_add(r)?,
-            c[1].checked_add(r)?,
-            c[2].checked_add(r)?,
-        ],
-    ])
+    let t = crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, wc)?, def)?;
+    crate::planes::lateral_box(
+        def,
+        &crate::planes::Footprint {
+            span: Some([t, t]),
+            theta,
+        },
+    )
+}
+
+/// **A contribution's angular extent as the two radial vectors [`crate::planes::RimArc`] speaks**
+/// — its ends realized and taken from the circle's centre.
+///
+/// `ends` run counter-clockwise about the cylinder's axis — the convention `RimArc` carries, so
+/// no reordering: a contribution's own order (`arrangement::CircleTrace::arc` states it), or a
+/// ring edge's travel when it is counter-clockwise ([`ArcCarrier::ccw`]) and reversed when not. A node with
+/// no rational coordinate (a `Wide` meet, a pierce whose root is irrational) gives
+/// [`crate::planes::Theta::Whole`] rather than a guess, and so do two ends that are one node — a
+/// closed edge runs the whole turn.
+pub(crate) fn rim_arc_of(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    centre: &[nacre_exact::Rat; 3],
+    ends: [NodeId; 2],
+) -> crate::planes::Theta {
+    if ends[0] == ends[1] {
+        return crate::planes::Theta::Whole;
+    }
+    let radial = |node: NodeId| -> Option<[nacre_exact::Rat; 3]> {
+        let p = node_coords_rat(jd, node).or_else(|| pierce_coords_rat(jd, cyls, node))?;
+        let mut v = p;
+        for k in 0..3 {
+            v[k] = v[k].checked_sub(centre[k])?;
+        }
+        Some(v)
+    };
+    (|| {
+        Some(crate::planes::Theta::Arc(crate::planes::RimArc {
+            from: radial(ends[0])?,
+            to: radial(ends[1])?,
+        }))
+    })()
+    .unwrap_or(crate::planes::Theta::Whole)
 }
 
 /// **Points whose box holds a ring**, in the judge's interval arithmetic — every corner, whatever
-/// names it ([`node_point_hp`]), and for every arc the corners of its circle's box (an arc lies in
-/// its circle, and the circle in its centre ± `r` on every axis, `r` rounded up to a rational by
-/// [`crate::planes::sqrt_at_least`]). A straight edge lies in its two corners' hull and an arc in
-/// its circle's box, so the ring lies in the hull of these points, and a point outside their box
-/// on some axis is outside the ring. `wc` is the ring's class — an arc's circle centre is where its
+/// names it ([`node_point_hp`]), and for every arc the corners of its own box ([`arc_box_rat`] —
+/// its two ends as the arc's angle, or the whole circle where they have no rational spelling). A
+/// straight edge lies in its two corners' hull and an arc in its box, so the ring lies in the hull
+/// of these points, and a point outside their box on some axis is outside the ring. **The arc's
+/// ends are read about the axis**: a ring edge runs `node → to`, counter-clockwise about the axis
+/// when [`ArcCarrier::ccw`] says so; read the other way they would name the complementary arc,
+/// whose box is not a bound on this one. `wc` is the ring's class — an arc's circle centre is where its
 /// axis meets that plane. `None` for a point the precision could not separate, or a class or
 /// circle with no exact description.
 pub(crate) fn ring_box_points_hp(
@@ -287,7 +310,18 @@ pub(crate) fn ring_box_points_hp(
     for e in rb {
         out.push(node_point_hp(jd, cyls, e.node)?);
         if let Carrier::Arc(ac) = &e.carrier {
-            let [lo, hi] = circle_box_rat(jd, wc, &ac.def)?;
+            let ends = if ac.ccw {
+                [e.node, e.to]
+            } else {
+                [e.to, e.node]
+            };
+            let theta = circle_centre_rat(jd, wc, &ac.def)
+                .map_or(crate::planes::Theta::Whole, |c| {
+                    rim_arc_of(jd, cyls, &c, ends)
+                });
+            // An arc whose own box cannot be formed takes its circle's, which holds it too.
+            let [lo, hi] = arc_box_rat(jd, wc, &ac.def, theta)
+                .or_else(|| arc_box_rat(jd, wc, &ac.def, crate::planes::Theta::Whole))?;
             for bits in 0..8usize {
                 out.push(std::array::from_fn(|k| {
                     let v = if bits >> k & 1 == 0 { lo[k] } else { hi[k] };

@@ -336,7 +336,12 @@ pub(super) fn self_touch_reject(
                     if let Wall::Arc { cyl, .. } = r.walls[i] {
                         arc_edges.insert(key);
                         match cyls.get(cyl).and_then(|c| {
-                            combinatorics::circle_box_rat(jd, lf.surf.plane(), &c.def)
+                            combinatorics::arc_box_rat(
+                                jd,
+                                lf.surf.plane(),
+                                &c.def,
+                                crate::planes::Theta::Whole,
+                            )
                         }) {
                             Some([cl, ch]) => grow(
                                 cl.map(|x| outward(x.to_f64(), -1.0)),

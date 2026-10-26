@@ -595,8 +595,8 @@ fn ask(
 }
 
 /// **Is `p` outside the box that holds the ring?** — then it is outside the ring. The box is
-/// [`combinatorics::ring_box_points_hp`]'s — every corner whatever names it, and every arc's circle
-/// — in the judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly,
+/// [`combinatorics::ring_box_points_hp`]'s — every corner whatever names it, and every arc's own
+/// box — in the judge's interval arithmetic, and `p` is an interval too (a coordinate witness exactly,
 /// a corner on a class with no world statement as its witness triangles' meet). A comparison whose
 /// interval straddles zero proves nothing, and the answer is then `false`.
 fn outside_ring_box(

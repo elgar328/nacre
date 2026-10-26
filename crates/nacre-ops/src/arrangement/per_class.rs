@@ -277,7 +277,7 @@ fn circle_crosses_ruling(
     }
     for (_, _, extent) in &circle.merged {
         let theta = extent.map_or(crate::planes::Theta::Whole, |ends| {
-            rim_arc_of(jd, cyls, &centre, ends)
+            combinatorics::rim_arc_of(jd, cyls, &centre, ends)
         });
         if apart(theta) {
             continue;
@@ -287,41 +287,6 @@ fn circle_crosses_ruling(
         }
     }
     Some(false)
-}
-
-/// **A contribution's angular extent as the two radial vectors [`crate::planes::RimArc`] speaks**
-/// — its ends realized and taken from the circle's centre.
-///
-/// The order is the contribution's own, which [`CircleTrace::arc`] states is counter-clockwise
-/// about the cylinder's axis — the same convention `RimArc` carries, so no reordering. A node with
-/// no rational coordinate (a `Wide` meet, a pierce whose root is irrational) gives
-/// [`crate::planes::Theta::Whole`] rather than a guess, and so do two ends that are one node — a
-/// closed edge runs the whole turn, and a `RimArc` never has `from == to`.
-fn rim_arc_of(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    centre: &[nacre_exact::Rat; 3],
-    ends: [NodeId; 2],
-) -> crate::planes::Theta {
-    if ends[0] == ends[1] {
-        return crate::planes::Theta::Whole;
-    }
-    let radial = |node: NodeId| -> Option<[nacre_exact::Rat; 3]> {
-        let p = combinatorics::node_coords_rat(jd, node)
-            .or_else(|| combinatorics::pierce_coords_rat(jd, cyls, node))?;
-        let mut v = p;
-        for k in 0..3 {
-            v[k] = v[k].checked_sub(centre[k])?;
-        }
-        Some(v)
-    };
-    (|| {
-        Some(crate::planes::Theta::Arc(crate::planes::RimArc {
-            from: radial(ends[0])?,
-            to: radial(ends[1])?,
-        }))
-    })()
-    .unwrap_or(crate::planes::Theta::Whole)
 }
 
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not

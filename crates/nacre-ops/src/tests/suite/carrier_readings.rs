@@ -255,24 +255,15 @@ fn apart(plate: f64) -> [[Want; 3]; 2] {
     ]
 }
 
-/// The Fuse refused, the rest built: the pin's ray to the notched plate's top face passes inside
-/// the notch circle's box but outside the half arc's.
-fn fuse_refused(plate: f64) -> [[Want; 3]; 2] {
-    let mut w = apart(plate);
-    w[0][0] = Want::Refused(RejectReason::CylinderGateUndecided);
-    w[1][0] = Want::Refused(RejectReason::CylinderGateUndecided);
-    w
-}
-
 /// **A pin under the notch, inside the notch circle's box** — the pin's centre `(41.5, 20)` lies
 /// inside the notch circle's box `[37, 43] × [17, 23]` and outside the half arc that bounds the
 /// plate, which lies in `x ≤ 40`. The Fuse's ray from the pin asks whether it misses the plate's
-/// top face, whose class is nameless; the face's box takes the arc's whole circle and cannot show
-/// the miss. Four constructions: the pin below, the pin along `−z` above, the box fused before the
-/// notch, the box cut instead.
+/// top face, whose class is nameless; the face's box takes the arc's own box (`arc_box_rat`), which
+/// the ray misses, and builds. Four constructions: the pin below, the pin along `−z` above, the box
+/// fused before the notch, the box cut instead.
 #[test]
-fn a_pin_under_the_notch_inside_its_circle_box_is_refused_in_the_fuse() {
-    every_kind(|m| pin_below(m, 41.5), fuse_refused(NOTCHED + 125.0));
+fn a_pin_under_the_notch_inside_its_circle_box_builds() {
+    every_kind(|m| pin_below(m, 41.5), apart(NOTCHED + 125.0));
     every_kind(
         |m| {
             let p = notched(m);
@@ -289,7 +280,7 @@ fn a_pin_under_the_notch_inside_its_circle_box_is_refused_in_the_fuse() {
             m.rebuild_adjacency();
             (a, c)
         },
-        fuse_refused(NOTCHED + 125.0),
+        apart(NOTCHED + 125.0),
     );
     every_kind(
         |m| {
@@ -300,7 +291,7 @@ fn a_pin_under_the_notch_inside_its_circle_box_is_refused_in_the_fuse() {
             let a = op1(m, BoolKind::Cut, p, c);
             (a, zcyl(m, [41.5, 20.0, -4.0], 1.0, 2.0, [0.0, -1.0, 0.0]))
         },
-        fuse_refused(NOTCHED + 125.0),
+        apart(NOTCHED + 125.0),
     );
     every_kind(
         |m| {
@@ -309,7 +300,63 @@ fn a_pin_under_the_notch_inside_its_circle_box_is_refused_in_the_fuse() {
             let a = op1(m, BoolKind::Cut, p, t);
             (a, zcyl(m, [41.5, 20.0, -4.0], 1.0, 2.0, [0.0, -1.0, 0.0]))
         },
-        fuse_refused(NOTCHED - 125.0),
+        apart(NOTCHED - 125.0),
+    );
+}
+
+/// [`apart`] with the Fuse refused as `CylinderGateUndecided`: the ray's road cannot show it misses
+/// the nameless top face.
+fn fuse_refused(plate: f64) -> [[Want; 3]; 2] {
+    let mut w = apart(plate);
+    w[0][0] = Want::Refused(RejectReason::CylinderGateUndecided);
+    w[1][0] = Want::Refused(RejectReason::CylinderGateUndecided);
+    w
+}
+
+/// `40 × 40 × 10` whose edge `x = 40` bulges out in a half round (`r = 3` about `(40, 20)`),
+/// carrying a `37°` box on top.
+fn bulged_with_box(m: &mut Model) -> Handle<Solid> {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let edges = vec![
+        line(p2(0.0, 0.0), p2(40.0, 0.0)),
+        line(p2(40.0, 0.0), p2(40.0, 17.0)),
+        arc_turns(p2(40.0, 20.0), p2(40.0, 17.0), 2),
+        line(p2(40.0, 23.0), p2(40.0, 40.0)),
+        line(p2(40.0, 40.0), p2(0.0, 40.0)),
+        line(p2(0.0, 40.0), p2(0.0, 0.0)),
+    ];
+    let profile = stated(edges).unwrap().remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 10.0,
+        },
+    )
+    .expect("the bulged plate extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let t = turned_box(m, 37, [10.0, 10.0], 5.0, 10.0);
+    op1(m, BoolKind::Fuse, solid, t)
+}
+
+/// **A pin under the bulge — the arc's own box holds it.** The half round bulges past the plate's
+/// straight corners, so the pin below it at `(41.5, 20)` is inside the arc's box and the Fuse's ray
+/// to the nameless top face cannot be shown to miss it: refused, rightly — the ray does cross the
+/// face. This is the lock on the arc's direction: read the other way round, the box is the
+/// complementary half's, which lies inside the corners' hull, and the ray would be shown to miss a
+/// face it crosses.
+#[test]
+fn a_pin_under_a_bulging_arc_is_inside_its_box_and_the_fuse_refuses() {
+    every_kind(
+        |m| {
+            let a = bulged_with_box(m);
+            (a, zcyl(m, [41.5, 20.0, -4.0], 1.0, 2.0, [0.0, -1.0, 0.0]))
+        },
+        fuse_refused(16_000.0 + 45.0 * PI + 125.0),
     );
 }
 
