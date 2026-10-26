@@ -53,6 +53,86 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
     assert_eq!(separating_dirs(&a, &parallel).len(), 2);
 }
 
+/// **Each of [`pieces_clear`]'s three witnesses is the only one that answers for some pair**, and a
+/// pair that touches has none. Hand geometry, `[separated along some direction, one piece inside the
+/// other's cylinder, parallel cross-section]` per pair:
+/// - apart along `x`: a short crosswise cylinder beside a tall one;
+/// - inside: a crosswise `r = 5` over `x ∈ [−5, 5]` within an `r = 20` about `z` — no direction
+///   parts them;
+/// - cross-section: two parallel unit cylinders `3/2` apart, each the half towards `+x`, whose
+///   circles cross and whose halves do not;
+/// - none: the crosswise `r = 3` over `x ∈ [−4, 4]` within `r = 5`, its rim on the outer lateral —
+///   the box's corners land exactly on it, and strictly inside is what the witness asks.
+#[test]
+fn each_witness_of_pieces_clear_is_the_only_one_for_some_pair() {
+    let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let z = |v: i128| Rat::from_int(v);
+    let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3], r2: Rat| {
+        nacre_topo::CylinderDef::new(o, m, e, nacre_exact::BigRat::from(r2)).unwrap()
+    };
+    let (zx, xz) = (
+        ([z(0), z(0), z(1)], [z(1), z(0), z(0)]),
+        ([z(1), z(0), z(0)], [z(0), z(0), z(1)]),
+    );
+    let whole = |lo: i128, hi: i128| Footprint {
+        span: Some([z(lo), z(hi)]),
+        theta: None,
+    };
+    let right_half = Footprint {
+        span: Some([z(0), z(1)]),
+        theta: Some(crate::planes::RimArc {
+            from: [z(0), z(-1), z(0)],
+            to: [z(0), z(1), z(0)],
+        }),
+    };
+    let witnesses =
+        |a: &nacre_topo::CylinderDef, x: &Footprint, b: &nacre_topo::CylinderDef, y: &Footprint| {
+            [
+                separating_dirs(a, b)
+                    .iter()
+                    .any(|d| separated(a, x, b, y, d) == Some(true)),
+                piece_inside(a, x, b) || piece_inside(b, y, a),
+                nacre_exact::parallel_rat(&a.dir(), &b.dir())
+                    && cross_sections_clear(a, x, b, y) == Some(true),
+            ]
+        };
+    let cases = [
+        (
+            cyl([z(0); 3], zx.0, zx.1, z(1)),
+            whole(0, 3),
+            cyl([z(2), z(0), q(1, 2)], xz.0, xz.1, q(1, 25)),
+            whole(0, 1),
+            [true, false, false],
+        ),
+        (
+            cyl([z(0); 3], zx.0, zx.1, z(400)),
+            whole(-20, 20),
+            cyl([z(-5), z(0), z(0)], xz.0, xz.1, z(25)),
+            whole(0, 10),
+            [false, true, false],
+        ),
+        (
+            cyl([z(0); 3], zx.0, zx.1, z(1)),
+            right_half,
+            cyl([q(3, 2), z(0), z(0)], zx.0, zx.1, z(1)),
+            right_half,
+            [false, false, true],
+        ),
+        (
+            cyl([z(0); 3], zx.0, zx.1, z(25)),
+            whole(-5, 5),
+            cyl([z(-4), z(0), z(0)], xz.0, xz.1, z(9)),
+            whole(0, 8),
+            [false, false, false],
+        ),
+    ];
+    for (a, x, b, y, want) in cases {
+        let got = witnesses(&a, &x, &b, &y);
+        assert_eq!(got, want, "a at {:?}, b at {:?}", a.origin(), b.origin());
+        assert_eq!(pieces_clear(&a, &x, &b, &y), want.contains(&true));
+    }
+}
+
 /// **The third direction is the face-level twin of the surface rung.** With a whole circle
 /// and no span, `separated` along the common perpendicular says exactly what
 /// [`nacre_exact::cylinders_clear`] says about the infinite surfaces — so the face test does

@@ -42,12 +42,13 @@ use super::*;
 /// Per cylinder pair **of different owners** (two classes of one valid solid keep their faces
 /// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
 /// their orientation) pass outright; one surface stated under two handles ([`same_surface`]) is
-/// refused as the coincident pair it is; otherwise the pair passes when the **faces** of one class
-/// provably miss the other's — every lateral face's axis span against the other faces' reach
-/// along that axis ([`lateral_faces_clear`], either direction; for parallel axes one cylinder
-/// strictly inside the other clears outright, [`nacre_exact::cylinders_nested`], and otherwise
-/// the spans alone decide) — and a pair whose faces cannot be shown to miss is recorded and refused as
-/// [`RejectReason::CylinderPairContact`] (M6b, where the quartic intersection curve lives).
+/// refused as the coincident pair it is; for parallel axes one cylinder strictly inside the other
+/// clears outright ([`nacre_exact::cylinders_nested`]); otherwise the pair passes when every
+/// **face** of one class provably misses every face of the other ([`lateral_faces_clear`] — each
+/// face pair apart along a direction, or one face inside the other cylinder, or for parallel axes
+/// apart in the cross-section: [`pieces_clear`]) — and a pair whose faces cannot be shown to miss
+/// is recorded and refused as [`RejectReason::CylinderPairContact`] (M6b, where the quartic
+/// intersection curve lives).
 #[allow(clippy::type_complexity)]
 pub(crate) fn cylinder_gate(
     model: &Model,
@@ -467,10 +468,13 @@ pub(crate) fn cylinder_gate(
     // (`face_clears_footprint`), spelled for a lateral face's reach against the other's along every
     // direction the pair can state ([`lateral_faces_clear`] over [`separating_dirs`] — each axis,
     // and for skew axes the common perpendicular, which is where a fillet beside a crosswise drill
-    // is seen apart). Parallel axes take the same door, after one more surface fact — one infinite
+    // is seen apart), or one face lying inside the other's cylinder, which is where a pin nested
+    // crosswise in a larger cylinder is seen apart ([`pieces_clear`]). Parallel axes take the same
+    // door, after one more surface fact — one infinite
     // cylinder strictly **inside** the other never meets it ([`nacre_exact::cylinders_nested`]: a
     // pin in a bore, a smaller pin stacked on a boss) — and the reach along a parallel axis has no
-    // radial term, so what is left is the axis spans. Except **one surface under two handles** —
+    // radial term, so what is left is the axis spans, the common cross-section and containment
+    // ([`pieces_clear`]). Except **one surface under two handles** —
     // parallel axes on one line, one radius ([`same_surface`]): a `translate`d twin or a
     // restatement with another `ref_dir`. The arrangement has no name for two classes on one
     // surface (their circles coincide on every ⊥ class), so that pair is refused as the coincident
@@ -1987,20 +1991,13 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 }
 
 /// **The face-level clearance for a cylinder pair**: every lateral face of `a` against every
-/// lateral face of `b`, each pair asked along [`separating_dirs`]. A pair clears when **some**
-/// direction separates them; the classes clear when **every** pair does. Then no point of `b`'s
-/// faces lies on `a`'s, so the two classes share no face — the proposition the arrangement needs,
-/// which the surface distance ([`nacre_exact::cylinders_clear`]) is only one sufficient
-/// condition for.
-///
-/// The two axes are not two questions of different shapes — one class's **span** against the
-/// other's **reach**, asked both ways round. They are the one question [`separated`] asks at
-/// `d = m_a` and `d = m_b`: along its own axis a face's reach *is* that span (`d ∥ m` leaves no
-/// radial term), so the span is what [`lateral_reach`] returns. One rule, a list of directions.
+/// lateral face of `b`, each pair asked by [`pieces_clear`]; the classes clear when **every** pair
+/// does. Then no point of `b`'s faces lies on `a`'s, so the two classes share no face — the
+/// proposition the arrangement needs, which the surface distance
+/// ([`nacre_exact::cylinders_clear`]) is only one sufficient condition for.
 ///
 /// Empty [`lateral_spans`] is "unusable" (its doc), never clear: it becomes one footprint of
 /// unknown span, which the reach reads as unbounded along anything not perpendicular to the axis.
-/// `None` from any direction is not clear.
 fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> bool {
     // A class whose spans cannot be stated still has faces to ask about, with an unbounded
     // reach along anything not perpendicular to its axis: one footprint that says so.
@@ -2016,14 +2013,62 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
         }
     };
     let (fa, fb) = (listed(a.surf), listed(b.surf));
-    let parallel = nacre_exact::parallel_rat(&a.def.dir(), &b.def.dir());
-    let dirs = separating_dirs(&a.def, &b.def);
-    fa.iter().all(|x| {
-        fb.iter().all(|y| {
-            let apart = dirs
-                .iter()
-                .any(|d| separated(&a.def, x, &b.def, y, d) == Some(true));
-            apart || (parallel && cross_sections_clear(a, x, b, y) == Some(true))
+    fa.iter()
+        .all(|x| fb.iter().all(|y| pieces_clear(&a.def, x, &b.def, y)))
+}
+
+/// **Do piece `x` of cylinder `a`'s lateral and piece `y` of cylinder `b`'s share no point?** —
+/// the one question both the pair rule ([`lateral_faces_clear`], a piece is a face) and the
+/// arrangement's class-edge net (`arrangement::per_class`, a piece is an edge: an arc is
+/// `[t, t]` × its arc, a ruling its axis span × the whole circle) ask. A piece is a [`Footprint`]:
+/// its own extent, or — where the extent cannot be stated — `span: None`, which reads as unbounded
+/// and proves nothing. No caller can hand it a carrier in place of a piece it has.
+///
+/// `true` is a proof, by a set `S` with `x ⊂ S` and `y ∩ S = ∅`; three kinds of `S` answer, and
+/// any one suffices:
+/// 1. **A half-space** — the two reaches part along one of [`separating_dirs`] ([`separated`]). The
+///    two axes are not two questions of different shapes — one piece's **span** against the
+///    other's **reach**, asked both ways round. They are the one question [`separated`] asks at
+///    `d = m_a` and `d = m_b`: along its own axis a piece's reach *is* that span (`d ∥ m` leaves
+///    no radial term), so the span is what [`lateral_reach`] returns.
+/// 2. **The other cylinder's open solid** — every corner of one piece's box ([`lateral_box`])
+///    strictly inside the other's infinite cylinder. The box is convex and so is the open solid,
+///    so the whole box — and the piece in it — is off the other's surface, and so off every piece
+///    of it. This is what a piece lying across the inside of another needs: a pin nested crosswise
+///    in a larger cylinder lies inside the larger lateral's convex hull, so no plane at all
+///    separates the two. The face-level twin of [`nacre_exact::cylinders_nested`], the parallel
+///    surfaces' containment. Strictly: a corner on the surface may be a piece point on it
+///    — a rim touching the other's lateral from inside.
+/// 3. **For parallel axes, the common cross-section** — the arcs miss ([`cross_sections_clear`]).
+///
+/// Sound for any piece inside the footprint: every reach and box is an enclosure of the footprint,
+/// wider than the piece, never narrower. `None` along a direction, a box that cannot be stated, a
+/// corner on the surface — each is "not shown", never clear.
+pub(crate) fn pieces_clear(
+    a: &nacre_topo::CylinderDef,
+    x: &Footprint,
+    b: &nacre_topo::CylinderDef,
+    y: &Footprint,
+) -> bool {
+    separating_dirs(a, b)
+        .iter()
+        .any(|d| separated(a, x, b, y, d) == Some(true))
+        || piece_inside(a, x, b)
+        || piece_inside(b, y, a)
+        || (nacre_exact::parallel_rat(&a.dir(), &b.dir())
+            && cross_sections_clear(a, x, b, y) == Some(true))
+}
+
+/// **Is piece `fp` of cylinder `p`'s lateral strictly inside cylinder `q`'s open solid?** —
+/// [`pieces_clear`]'s second witness: every corner of the piece's box ([`lateral_box`]) strictly
+/// within `q`'s radius. `false` when the box cannot be stated.
+fn piece_inside(p: &nacre_topo::CylinderDef, fp: &Footprint, q: &nacre_topo::CylinderDef) -> bool {
+    lateral_box(p, fp).is_some_and(|[lo, hi]| {
+        (0..8usize).all(|bits| {
+            let c: [nacre_exact::Rat; 3] =
+                std::array::from_fn(|k| if bits >> k & 1 == 0 { lo[k] } else { hi[k] });
+            nacre_exact::cylinder_radial_side(&c, &q.origin(), &q.dir(), q.r2())
+                == nacre_exact::Orient::Negative
         })
     })
 }
@@ -2037,8 +2082,10 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 /// each axis and — for skew axes — the two rulings' cross product, the common perpendicular. What
 /// is left out is the arcs' radial continuum, which no rational direction names; the tool for that
 /// is [`cross_sections_clear`], and it needs the common cross-section chart that only **parallel**
-/// axes have. So a pair the three cannot separate is refused as "not shown to clear", which is
-/// true, and completing the test further means the same test on a richer candidate set.
+/// axes have. A piece inside the other's convex hull has no separating plane at all, rational or
+/// not; that is [`piece_inside`]'s, the other witness of [`pieces_clear`]. So a pair none of these
+/// clears is refused as "not shown to clear", which is true, and completing the test further means
+/// the same test on a richer candidate set.
 ///
 /// **The third direction is the face-level twin of a rung above it.** With a whole circle and
 /// no span, `d ⊥ m_a` and `d ⊥ m_b` make both reaches `d·o ± r|d|`, so "apart" reads
@@ -2084,15 +2131,15 @@ fn separated(
 /// touch is not clear. Sound for any face of the class because the extent is the footprint's
 /// bounding arc: wider than a notched face, never narrower.
 fn cross_sections_clear(
-    a: &WorkingCyl,
+    a: &nacre_topo::CylinderDef,
     x: &Footprint,
-    b: &WorkingCyl,
+    b: &nacre_topo::CylinderDef,
     y: &Footprint,
 ) -> Option<bool> {
     use nacre_exact::Rat;
     use nacre_geom::mixed::ArcSpec;
     let zero = Rat::from_int(0);
-    let (o, m, e) = (a.def.origin(), a.def.dir(), a.def.ref_dir());
+    let (o, m, e) = (a.origin(), a.dir(), a.ref_dir());
     let (mm, em) = (
         nacre_exact::dot3_rat(&m, &m)?,
         nacre_exact::dot3_rat(&e, &m)?,
@@ -2128,10 +2175,10 @@ fn cross_sections_clear(
     let add2 = |p: [Rat; 2], q: [Rat; 2]| -> Option<[Rat; 2]> {
         Some([p[0].checked_add(q[0])?, p[1].checked_add(q[1])?])
     };
-    let spec = |c: &WorkingCyl, fp: &Footprint| -> Option<ArcSpec> {
-        let centre = chart(&c.def.origin())?;
+    let spec = |c: &nacre_topo::CylinderDef, fp: &Footprint| -> Option<ArcSpec> {
+        let centre = chart(&c.origin())?;
         // The 2-D arc court works in `Rat`; a wide square is not judged here (`None`).
-        let r2 = c.def.r2().narrow()?;
+        let r2 = c.r2().narrow()?;
         let (start, end) = match &fp.theta {
             Some(arc) => (
                 add2(
@@ -2153,7 +2200,7 @@ fn cross_sections_clear(
                 // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a
                 // rational radius; without one this pair is not judged here (`None`, the
                 // caller's honest road).
-                let p = add2(centre, [c.def.radius_rat()?, zero])?;
+                let p = add2(centre, [c.radius_rat()?, zero])?;
                 (p, p)
             }
         };

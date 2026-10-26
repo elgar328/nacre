@@ -2837,11 +2837,11 @@ fn measure_census() {
                     (plate(m, 4, 0), shift(m, turned, [-45.0, -15.0, 6.0]))
                 }),
             ),
-            // **Why the class-edge net's population is empty, held as a row.** Two
-            // cylinders on crossing axes, one per operand, whose surfaces meet. A class could
-            // otherwise carry one's circle and the other's rulings *touching*, which no split
-            // cuts; the pair gate refuses the pair (`CylinderPairContact`) before any arrangement
-            // runs, and this row is what would notice that stopping.
+            // **Why the class-edge net never fires here, held as a row.** Two cylinders on
+            // crossing axes, one per operand, whose faces meet. A class could otherwise carry
+            // one's circle and the other's rulings *touching*, which no split cuts; the pair gate
+            // refuses the pair (`CylinderPairContact`) before any arrangement runs, and this row is
+            // what would notice that stopping.
             (
                 "crossing cylinders",
                 Box::new(|m| {

@@ -228,8 +228,7 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
 /// The volume is the oracle: the fuse's `100695.2213` less the two rib bores `2·π·10²·11`.
 ///
 /// **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing
-/// unless the instrument looked: this asserts it measured pairs, failed to measure none, and found
-/// no circle sitting inside a ruling strip — the shape the walk has never been handed.
+/// unless the instrument looked: this asserts it measured pairs and failed to measure none.
 #[test]
 fn the_users_script_builds() {
     let mut m = Model::new();
@@ -250,19 +249,14 @@ fn the_users_script_builds() {
     {
         use std::sync::atomic::Ordering;
         let audit = &crate::arrangement::MIXED_CLASS_AUDIT;
-        let (pairs, unmeasured, inside) = (
+        let (pairs, unmeasured) = (
             audit.pairs.load(Ordering::Relaxed),
             audit.unmeasured.load(Ordering::Relaxed),
-            audit.inside.load(Ordering::Relaxed),
         );
         assert!(pairs > 0, "the mixed-class audit looked at nothing");
         assert_eq!(
             unmeasured, 0,
             "the audit could not measure {unmeasured} pairs"
-        );
-        assert_eq!(
-            inside, 0,
-            "a circle sits inside a ruling strip — a shape the walk has never been handed"
         );
     }
 }

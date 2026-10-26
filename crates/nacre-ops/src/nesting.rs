@@ -46,8 +46,9 @@ use crate::tolerant::Judge;
 /// circle either way, and this is what says so.
 ///
 /// **Why the chain is the whole circle.** The gate proves every pair of cylinders clear — their
-/// surfaces by more than the radius sum, or their faces along an axis
-/// ([`crate::planes::cylinder_gate`], else `CylinderPairContact`) — so two
+/// surfaces by more than the radius sum, parallel surfaces one inside the other, or their faces
+/// ([`crate::planes::pieces_clear`]; the gate is [`crate::planes::cylinder_gate`], else
+/// `CylinderPairContact`) — so two
 /// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
 /// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
 /// it exactly once. Measured: **every** ring with an empty probe list is either such a chain — and

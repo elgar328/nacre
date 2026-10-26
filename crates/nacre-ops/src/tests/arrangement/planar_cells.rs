@@ -947,9 +947,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         "a circle across a ruling must be refused by name"
     );
     // And a circle that stays clear of both rulings is not refused — without this the check
-    // could be a constant and still be green. It sits **outside** the strip rather than inside
-    // it, so it adds nothing to `MIXED_CLASS_AUDIT.inside`, which another test reads from the
-    // same process-wide counters.
+    // could be a constant and still be green.
     let clear = MergedCircle {
         def: def(
             [q(3, 2), z(10), z(0)],

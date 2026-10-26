@@ -1139,10 +1139,10 @@ fn root_sum_side(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> Orient {
 /// be declined as "touching".
 ///
 /// This is a statement about two **infinite surfaces**, and a sufficient condition only: the
-/// gate asks it first, and a non-parallel pair it cannot clear is then asked about its faces —
-/// each lateral face's reach against the other's, along each axis and along this same common
-/// perpendicular (`nacre-ops`, `planes::lateral_faces_clear`). Two studs crossing through a cube
-/// clear along an axis while their axes meet at a point.
+/// gate asks it first, and a pair it cannot clear is then asked about its faces — each lateral
+/// face's reach against the other's, along each axis and along this same common perpendicular, or
+/// one face lying inside the other cylinder (`nacre-ops`, `planes::pieces_clear`). Two studs
+/// crossing through a cube clear along an axis while their axes meet at a point.
 ///
 /// **The face test's third direction is this branch with extents.** Give it a whole circle and
 /// no span and `planes::separated` along `C` reduces to `|W·C| > (r_a + r_b)|C|`, which is the

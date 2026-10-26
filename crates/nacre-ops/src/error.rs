@@ -423,23 +423,18 @@ pub enum RejectReason {
     EdgeCurveUnderived,
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
     /// both (one handle with rows of both solids, or one surface under two handles — a
-    /// `translate`d twin), or axes within the radius sum whose lateral faces could not be shown
-    /// to miss each other along **any** direction the pair can state (`planes::separating_dirs`:
-    /// each axis, and for skew axes the common perpendicular). Where the faces do meet, their
-    /// intersection is a quartic curve, which is M6b's.
+    /// `translate`d twin), or two cylinders whose side faces could not be proved apart — neither
+    /// apart along a direction the pair states nor one lying inside the other cylinder. Where the
+    /// faces do meet, their intersection is a quartic curve, which is M6b's.
     ///
-    /// What the check must deliver for the name to be true, four ways. The distance is
-    /// measured for skew axes as well as *parallel* ones ([`nacre_exact::cylinders_clear`]), so
-    /// a drill crossing a bore with room to spare passes. The distance is not the whole rule —
-    /// it is a fact about two infinite
-    /// surfaces: a stud fused through a cube and a second stud across it have crossing
-    /// axes, though no *face* of one reaches the other, so non-parallel pairs ask the faces.
-    /// Pairs **within one solid** (a plate's two fillets, a slot's two half cylinders) are not
-    /// asked, parallel pairs read their
-    /// spans, and the coincident surface under two handles is the one parallel refusal left.
-    /// And the face test asks more than the two **axes**: a filleted plate and a drill
-    /// laid across it are apart along the rulings' cross product and nothing else
-    /// (the rational candidate set is closed).
+    /// What clears a pair, so that the name stays true: axes further apart than the two radii
+    /// (skew or parallel — a drill crossing a bore with room to spare passes); for parallel axes,
+    /// one cylinder strictly inside the other; otherwise the **faces**, not the infinite
+    /// surfaces — a stud fused through a cube and a second stud across it have crossing axes,
+    /// though no face of one reaches the other; a filleted plate and a drill laid across it are
+    /// apart along the rulings' cross product; a pin nested crosswise inside a larger cylinder is
+    /// apart along no direction at all, its face lying inside the other cylinder. Pairs within one
+    /// solid (a plate's two fillets, a slot's two half cylinders) are not asked.
     CylinderPairContact,
     /// **An operand has an edge where two of its own cylinders meet** — the ruling between two arc
     /// walls of a prism whose profile joins two arcs of different circles. Booleans on such a solid
@@ -761,25 +756,10 @@ pub enum RejectReason {
     /// node and needs none. The name says so because reading it the other way refuses
     /// valid parts.
     ///
-    /// A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's) at once, and
-    /// that alone is fine: neither split cuts
-    /// the other's kind, so the two populations never interfere — **while they do not meet**. A
-    /// crossing they both walk past is a node no road mints, and the point itself is
-    /// `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
-    ///
-    /// **The argument that this population cannot arrive**: a crossing means two lateral
-    /// *faces* share a point, which `planes::lateral_faces_clear` denies. It holds because the
-    /// question is asked of the **arc**: a circle does not become an edge **whole** while the
-    /// face on that cylinder uses
-    /// only a quarter of it — what a contribution states is the extent its face covers, and
-    /// *that* arc is the edge.
-    ///
-    /// **So this is a backstop, and deliberately so.** A ruling sits nearer its cylinder's
-    /// axis than that cylinder's own radius (`√(r² − h²) < r`), so an arc reaching one is inside
-    /// the drill's reach and the pair rule refuses first — measured on a plate whose corner
-    /// fillets grow until their arcs do reach (`f = 6, 7, 8`: all `CylinderPairContact`). It
-    /// ships rather than living under `debug_assertions` because a node no road mints is a
-    /// **silently wrong solid**, not a crash, and the argument above is easy to read wrong.
+    /// **A backstop.** Two cylinders whose side faces may meet are refused before this, as
+    /// [`RejectReason::CylinderPairContact`]; this name is raised only if an edge the boolean drew
+    /// reaches past the face it bounds. No input is known to raise it — one that does is a kernel
+    /// defect worth reporting. It is a refusal rather than a silently wrong solid on purpose.
     ///
     /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
     /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).

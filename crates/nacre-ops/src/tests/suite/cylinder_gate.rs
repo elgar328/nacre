@@ -280,53 +280,215 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
     }
 }
 
-/// **The one shape the walk has never seen, and why no fixture stands for it.**
+/// **Every kind, both orders, against the analytic volume** — the cylinder pairs whose faces do
+/// not meet. `build` makes the two operands in a fresh model (a boolean consumes its inputs);
+/// `want` is `(bodies, volume)` for `[Fuse, Cut, Common]` with the operands as built, then
+/// swapped. Each result validates clean and meshes.
+fn builds_every_kind(
+    build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+    want: [[(usize, f64); 3]; 2],
+) {
+    for (swap, row) in [false, true].into_iter().zip(want) {
+        for (kind, (bodies, volume)) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(row)
+        {
+            let mut m = Model::new();
+            let (a, b) = build(&mut m);
+            m.rebuild_adjacency();
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let out = boolean(&mut m, kind, x, y)
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), bodies, "{kind:?} swap={swap}: bodies");
+            let got: f64 = out
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                .sum();
+            assert!(
+                (got - volume).abs() <= 1e-9 * volume.max(1.0),
+                "{kind:?} swap={swap}: {got} vs {volume}"
+            );
+            let violations = nacre_validate::validate(&m);
+            assert!(
+                violations.is_empty(),
+                "{kind:?} swap={swap}: {violations:?}"
+            );
+            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: mesh {e:?}"));
+        }
+    }
+}
+
+fn axis_cylinder(m: &mut Model, base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
+    crate::fixtures::cylinder(m, Point3::from_array(base), Vector3::from_array(axis), r, h).solid
+}
+
+/// **A cylinder nested crosswise inside another clears the pair rule** — by containment, the
+/// witness no separating direction can stand in for.
 ///
-/// A class carrying a circle **inside** a ruling cylinder's strip would put a disk afloat in a
-/// ruling-bounded region: the arrangement's four edge kinds allow it, and nothing downstream has
-/// ever been handed it. The audit counts that population and reports **zero** — so this asks
-/// whether one could be *built*: the small cylinder crosses the big one's axis while lying wholly
-/// **inside** it, which is exactly the placement whose cap plane would carry its own circle and
-/// the big cylinder's rulings, the circle well within them.
-///
-/// Measured: it does not reach the arrangement at all — the operand gate speaks first, for both
-/// kinds. So «zero inside» is not an instrument that failed to look; it is a shape the gate does
-/// not admit yet. One placement is not a population claim, which is why this freezes the placement
-/// by name rather than asserting anything wider.
-///
-/// With the caps readable the plane-level questions
-/// are answered instead of declined, and the pair rule gets to speak: these two cylinders really
-/// do share points, so `CylinderPairContact` is the true name and `CylinderGateUndecided` would be
-/// the road running out before reaching it.
+/// The small cylinder (`r = 5`, along `x` over `[−5, 5]`) lies wholly inside the big one (`r = 20`,
+/// along `z`): its lateral stays within `√50` of the big axis. Its axes cross the big one's, and
+/// along every rational direction the two reaches overlap, so the separation witness has nothing
+/// to say; the corners of the small lateral's box all lie strictly inside the big cylinder, and that
+/// proves the two laterals apart. Downstream, the small cylinder's caps `x = ±5` carry its circle
+/// and the big cylinder's rulings at once, the circle inside the strip between them — a class the
+/// arrangement draws like any other.
 #[test]
-fn a_cylinder_nested_across_another_waits_at_the_gate() {
-    let mut m = Model::new();
-    let big = {
-        let profile = circle_profile([0.0, 0.0], 20.0);
-        let frame = SketchFrame::world(&m, Axis::Z);
-        let OpOutput::Extrude { solid, .. } = apply(
-            &mut m,
-            &Operation::Extrude {
-                frame,
-                profile,
-                dist: 40.0,
-            },
-        )
-        .expect("the big one extrudes") else {
-            unreachable!()
-        };
-        let z = |v: i128| nacre_exact::Rat::from_int(v);
-        transform(
-            &mut m,
-            solid,
-            &nacre_exact::Isometry::translation([z(0), z(0), z(-20)]),
-        )
-        .expect("centred on the origin")
-    };
-    let small = turned_cylinder(&mut m, 5.0, 10.0, [-5.0, 0.0, 0.0]);
-    m.rebuild_adjacency();
-    for kind in [BoolKind::Fuse, BoolKind::Cut] {
-        let out = boolean(&mut m, kind, big, small);
+fn a_cylinder_nested_across_another_clears_the_pair_rule() {
+    use std::f64::consts::PI;
+    builds_every_kind(
+        |m| {
+            // Built as a prism and moved, so the small one's lateral rides a motion chain.
+            let profile = circle_profile([0.0, 0.0], 20.0);
+            let frame = SketchFrame::world(m, Axis::Z);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist: 40.0,
+                },
+            )
+            .expect("the big one extrudes") else {
+                unreachable!()
+            };
+            let z = |v: i128| nacre_exact::Rat::from_int(v);
+            let big = transform(
+                m,
+                solid,
+                &nacre_exact::Isometry::translation([z(0), z(0), z(-20)]),
+            )
+            .expect("centred on the origin");
+            (big, turned_cylinder(m, 5.0, 10.0, [-5.0, 0.0, 0.0]))
+        },
+        [
+            [(1, 16000.0 * PI), (1, 15750.0 * PI), (1, 250.0 * PI)],
+            [(1, 16000.0 * PI), (0, 0.0), (1, 250.0 * PI)],
+        ],
+    );
+}
+
+/// **A short crosswise cylinder beside another builds, though its ruling's line runs through the
+/// other's cap circle.** The tall one (`r = 1`, cap on `z = 1/2`) and the short one (`r = 1/5`,
+/// along `x` over `[2, 3]`, its axis at `z = 0.6`) are apart along `x`. The cap plane `z = 1/2`
+/// cuts the short cylinder in two rulings at `y = ±√0.03` — irrational, so their ends are pierce
+/// corners in a radical — and each ruling's **line** crosses the tall cylinder's cap circle near
+/// `x = ±1`; its **segment**, `x ∈ [2, 3]`, never comes near it. The class-edge net asks the
+/// segment.
+#[test]
+fn a_short_cylinder_beside_another_builds_past_its_cap_circle() {
+    use std::f64::consts::PI;
+    let (tall, short) = (2.5 * PI, 0.04 * PI);
+    builds_every_kind(
+        |m| {
+            (
+                axis_cylinder(m, [0.0, 0.0, 0.5], [0.0, 0.0, 1.0], 1.0, 2.5),
+                axis_cylinder(m, [2.0, 0.0, 0.6], [1.0, 0.0, 0.0], 0.2, 1.0),
+            )
+        },
+        [
+            [(2, tall + short), (1, tall), (0, 0.0)],
+            [(2, tall + short), (1, short), (0, 0.0)],
+        ],
+    );
+}
+
+/// **A crosswise stud standing proud of a big cylinder's cap.** The stud (`r = 5`, along `x` over
+/// `[−5, 5]`, axis at `z = 18`) lies inside the big cylinder's surface (`r = 20`) and pokes out
+/// through its cap `z = 20`. The cap's class carries the big circle and the stud's rulings
+/// (`y = ±√21`): the rulings' lines cross the circle near `x = ±19.5`, their segments lie inside
+/// its disk. Common is the stud less the segment above the cap, `10·(25π − (25·acos(2/5) − 2√21))`.
+#[test]
+fn a_crosswise_stud_through_a_cylinders_cap_builds() {
+    use std::f64::consts::PI;
+    let (big, stud) = (16000.0 * PI, 250.0 * PI);
+    let common = 10.0 * (25.0 * PI - (25.0 * 0.4f64.acos() - 2.0 * 21f64.sqrt()));
+    builds_every_kind(
+        |m| {
+            (
+                axis_cylinder(m, [0.0, 0.0, -20.0], [0.0, 0.0, 1.0], 20.0, 40.0),
+                axis_cylinder(m, [-5.0, 0.0, 18.0], [1.0, 0.0, 0.0], 5.0, 10.0),
+            )
+        },
+        [
+            [(1, big + stud - common), (1, big - common), (1, common)],
+            [(1, big + stud - common), (1, stud - common), (1, common)],
+        ],
+    );
+}
+
+/// **A pin floating crosswise inside a bore** — the containing lateral is a hole's (material
+/// outside it): a `40 × 40 × 8` plate bored `r = 10` about `z`, a pin `r = 2` along `x` over
+/// `[−3, 3]`. Apart, so the Fuse is two bodies.
+#[test]
+fn a_pin_floating_across_a_bore_builds() {
+    use std::f64::consts::PI;
+    let (bored, pin) = (12800.0 - 800.0 * PI, 24.0 * PI);
+    builds_every_kind(
+        |m| {
+            let plate = crate::fixtures::cuboid(
+                m,
+                Point3::from_array([-20.0, -20.0, -4.0]),
+                Point3::from_array([20.0, 20.0, 4.0]),
+            );
+            let bore = axis_cylinder(m, [0.0, 0.0, -10.0], [0.0, 0.0, 1.0], 10.0, 20.0);
+            m.rebuild_adjacency();
+            let bored = boolean(m, BoolKind::Cut, plate, bore).expect("the bore")[0];
+            (
+                bored,
+                axis_cylinder(m, [-3.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2.0, 6.0),
+            )
+        },
+        [
+            [(2, bored + pin), (1, bored), (0, 0.0)],
+            [(2, bored + pin), (1, pin), (0, 0.0)],
+        ],
+    );
+}
+
+/// **One class carrying two cylinders' rulings.** A half cylinder (`r = 20` about `z`, `y ≤ 0`)
+/// and a crosswise one (`r = 5` along `x`) inside its surface and through its flat wall `y = 0`:
+/// that wall holds the half cylinder's rulings at `x = ±20` and the crosswise one's at `z = ±5`,
+/// whose lines cross and whose segments do not.
+#[test]
+fn a_cylinder_across_a_half_cylinders_flat_wall_builds() {
+    use std::f64::consts::PI;
+    let (half, inside) = (8000.0 * PI, 125.0 * PI);
+    builds_every_kind(
+        |m| {
+            let big = axis_cylinder(m, [0.0, 0.0, -20.0], [0.0, 0.0, 1.0], 20.0, 40.0);
+            let cut = crate::fixtures::cuboid(
+                m,
+                Point3::from_array([-30.0, 0.0, -30.0]),
+                Point3::from_array([30.0, 30.0, 30.0]),
+            );
+            m.rebuild_adjacency();
+            let half = boolean(m, BoolKind::Cut, big, cut).expect("the half")[0];
+            (
+                half,
+                axis_cylinder(m, [-5.0, 0.0, 0.0], [1.0, 0.0, 0.0], 5.0, 10.0),
+            )
+        },
+        [
+            [(1, half + inside), (1, half - inside), (1, inside)],
+            [(1, half + inside), (1, inside), (1, inside)],
+        ],
+    );
+}
+
+/// **Containment is strict — a rim touching the other lateral from inside is still a contact.**
+/// A crosswise cylinder `r = 3` over `x ∈ [−4, 4]` inside one of `r = 5` about `z`: its rim points
+/// `(±4, ±3, 0)` lie on the outer lateral (`16 + 9 = 25`), and so do its box's corners. Read closed,
+/// the containment witness would wave the touching pair through.
+#[test]
+fn a_rim_touching_the_other_lateral_from_inside_is_refused() {
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        let mut m = Model::new();
+        let outer = axis_cylinder(&mut m, [0.0, 0.0, -5.0], [0.0, 0.0, 1.0], 5.0, 10.0);
+        let inner = axis_cylinder(&mut m, [-4.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3.0, 8.0);
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, kind, outer, inner);
         assert!(
             matches!(
                 out,
@@ -350,10 +512,10 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// cylinder-pair rule speaks first and the operation stops.
 ///
 /// **The two cannot be separated today.** For the row to be written at all the disk must overlap
-/// the boss's axis span; overlapping it puts the bar's own lateral inside the boss's reach, which
-/// is exactly what `lateral_faces_clear` denies. So the spanning fold is exercised but no
-/// *outcome* depends on it — the same shape as the «circle inside a strip». This freezes the
-/// geometry so the work that opens `CylinderPairContact` finds it waiting.
+/// the boss's axis span; overlapping it puts the bar's rim on the tangent line — the point
+/// `(0, 10, 12)` is on both laterals — so the two faces really touch, and `lateral_faces_clear`
+/// rightly clears nothing. So the spanning fold is exercised but no *outcome* depends on it. This
+/// freezes the geometry so the work that opens `CylinderPairContact` finds it waiting.
 ///
 /// The pair rule can clear by a third separating direction and a reader stands in front of it,
 /// so «cannot be separated today» is a statement about *this* geometry

@@ -175,10 +175,22 @@ pub(super) fn per_class(
 ///
 /// This is the check `RejectReason::CircleCrossesRuling` is raised from, so it ships.
 ///
-/// The comparison is exactly
-/// [`nacre_exact::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
-/// against the one named ruling — so the net asks the predicate the gate asks, and there is
-/// one derivation rather than two. `None` stays "could not be measured", never "no".
+/// **First, the pair rule's own question, of the two edges as pieces**
+/// ([`crate::planes::pieces_clear`]): an arc is the piece `[t, t]` × its arc on its cylinder, a
+/// ruling its axis span × the whole circle on its own (one ruling's angle is seldom rational, and
+/// the whole circle is wider, never narrower). So the net and the gate ask one predicate, and
+/// what it is asked about is the bounded piece — the ruling's segment, not the line it lies on.
+/// Of its three witnesses only two can speak here: a circle and a ruling stand on one class only
+/// when the two axes are perpendicular, so the parallel cross-section never runs, and the common
+/// perpendicular is the strip direction below, where the ruling's whole-circle reach says less
+/// than the strip does. What this guards, then, is that the edges the arrangement drew lie in the
+/// faces the gate proved apart (a whole circle drawn where a face used a quarter of it is wider
+/// than the face).
+///
+/// Then the strip: [`nacre_exact::cylinder_ruling_reached_extent`] — the arc's reach across the
+/// strip, against the one named ruling's line — which reads a tangency as no crossing, as this net
+/// must (a disjointness proof is about closed sets and cannot). `None` stays "could not be
+/// measured", never "no"; a piece that cannot be stated only skips the first question.
 fn circle_crosses_ruling(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -195,6 +207,31 @@ fn circle_crosses_ruling(
     if nacre_exact::dot_sign_rat(&n, &m) != nacre_exact::Orient::Zero {
         return None;
     }
+    // The ruling as a piece: its two ends' axis parameters (rational — each end's other plane is
+    // ⊥ the axis), the whole circle round. The arc's axis parameter is the class's own.
+    let ruling_piece = (|| {
+        let t0 = node_axis_param(jd, &ruling.def, ruling.end[0])?;
+        let t1 = node_axis_param(jd, &ruling.def, ruling.end[1])?;
+        Some(crate::planes::Footprint {
+            span: Some([t0.min(t1), t0.max(t1)]),
+            theta: None,
+        })
+    })();
+    let circle_t = crate::planes::axis_param_of_plane(&coeffs, &circle.def);
+    let apart = |arc: Option<crate::planes::RimArc>| -> bool {
+        match (&ruling_piece, circle_t) {
+            (Some(rp), Some(t)) => crate::planes::pieces_clear(
+                &circle.def,
+                &crate::planes::Footprint {
+                    span: Some([t, t]),
+                    theta: arc,
+                },
+                &ruling.def,
+                rp,
+            ),
+            _ => false,
+        }
+    };
     // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
     let e = nacre_exact::cross3_rat(&n, &m)?;
     let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
@@ -231,17 +268,14 @@ fn circle_crosses_ruling(
     // the whole circle: a superset of every arc on it, so the answer stays sound and is the one
     // this predicate always gave.
     if circle.merged.is_empty() {
-        return ask(None);
+        return if apart(None) { Some(false) } else { ask(None) };
     }
     for (_, _, extent) in &circle.merged {
-        let hit = match extent {
-            None => ask(None)?,
-            Some(ends) => match rim_arc_of(jd, cyls, &centre, *ends) {
-                Some(arc) => ask(Some(&arc))?,
-                None => ask(None)?,
-            },
-        };
-        if hit {
+        let arc = extent.and_then(|ends| rim_arc_of(jd, cyls, &centre, ends));
+        if apart(arc) {
+            continue;
+        }
+        if ask(arc.as_ref())? {
             return Some(true);
         }
     }
@@ -276,37 +310,6 @@ fn rim_arc_of(
     })
 }
 
-/// **Does the circle lie wholly between the two rulings?** — the sibling population, counted
-/// because it is the one shape the walk sees nowhere else (a disk afloat in a
-/// ruling-bounded region). Same door, read for its third answer.
-#[cfg(debug_assertions)]
-fn circle_inside_strip(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    circle: &MergedCircle,
-    ruling: &MergedRuling,
-) -> Option<bool> {
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
-    if nacre_exact::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
-        != nacre_exact::Orient::Zero
-    {
-        return None;
-    }
-    Some(matches!(
-        nacre_exact::cylinder_strip_side_margin(
-            &coeffs,
-            &nacre_exact::MeetPoint::Narrow(centre),
-            circle.def.r2(),
-            &o,
-            &m,
-            r2,
-        ),
-        nacre_exact::StripSide::Inside
-    ))
-}
-
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not
 /// measure** — the denominator of "zero crossings", without which the zero could mean
 /// "the instrument saw nothing".
@@ -314,16 +317,12 @@ fn circle_inside_strip(
 pub(crate) struct MixedClassAudit {
     pub(crate) pairs: std::sync::atomic::AtomicUsize,
     pub(crate) unmeasured: std::sync::atomic::AtomicUsize,
-    /// Circles that lie wholly inside a ruling cylinder's strip — the walk's other first-time
-    /// shape, counted so "never exercised" is a number rather than a guess.
-    pub(crate) inside: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(debug_assertions)]
 pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
     pairs: std::sync::atomic::AtomicUsize::new(0),
     unmeasured: std::sync::atomic::AtomicUsize::new(0),
-    inside: std::sync::atomic::AtomicUsize::new(0),
 };
 
 impl<'a> ClassEdges<'a> {
@@ -358,19 +357,23 @@ impl<'a> ClassEdges<'a> {
         // at that boolean they are on opposite sides and meet the very gate above. (Two arcs of one
         // sketch do make one body whose cylinders meet — with **parallel** axes, which never put a
         // circle and a ruling on one class, and such an operand is refused at the boolean's entry
-        // anyway, `CylinderPairEdge`.)
+        // anyway, `CylinderPairEdge`.) A circle and rulings that do not meet make an ordinary
+        // class: the cap of a pin nested crosswise in a larger cylinder holds the pin's circle
+        // between the larger one's rulings, and the cap a crosswise stud stands proud of holds the
+        // stud's rulings inside its circle.
         //
         // **So the check below is a net over an argument, not a filter over a population**,
         // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair
         // refusal opens, this population becomes real, and the obligation to carry a shipped check
         // then is written at that refusal, where it would be read.
         //
-        // **The question is asked of the arc a contribution states**, not of the whole circle —
-        // which is not an edge of any face when the face uses a quarter of it, and reading it that
-        // way refuses a plate whose corner fillets never come near a crosswise drill. With the
-        // arc's reading the argument holds: an arc reaching a ruling is inside the other
-        // cylinder's own reach (a ruling sits at `√(r² − h²) < r` from its axis), so the pair rule
-        // speaks first.
+        // **The question is asked of the two edges as pieces** — the arc a contribution states,
+        // not the whole circle (which is not an edge of any face when the face uses a quarter of
+        // it, and reading it that way refuses a plate whose corner fillets never come near a
+        // crosswise drill), and the ruling's segment, not its line (whose line runs past the end
+        // of a short crosswise cylinder and through a cap circle its segment never reaches). Asked
+        // so, it is the pair rule's own question ([`crate::planes::pieces_clear`]), and the
+        // argument holds edge for edge: a pair the gate proved apart has its edges apart.
         //
         // **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
         // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
@@ -385,18 +388,16 @@ impl<'a> ClassEdges<'a> {
         if !rulings.is_empty() && !circles.is_empty() {
             for c in circles {
                 for ru in rulings {
+                    let crosses = circle_crosses_ruling(jd, cyls, wc, c, ru);
                     #[cfg(debug_assertions)]
                     {
                         use std::sync::atomic::Ordering;
                         MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                        if circle_crosses_ruling(jd, cyls, wc, c, ru).is_none() {
+                        if crosses.is_none() {
                             MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
                         }
-                        if circle_inside_strip(jd, wc, c, ru) == Some(true) {
-                            MIXED_CLASS_AUDIT.inside.fetch_add(1, Ordering::Relaxed);
-                        }
                     }
-                    if circle_crosses_ruling(jd, cyls, wc, c, ru) != Some(false) {
+                    if crosses != Some(false) {
                         return Err(reject(RejectReason::CircleCrossesRuling));
                     }
                 }
