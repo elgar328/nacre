@@ -342,9 +342,11 @@ pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
 impl<'a> ClassEdges<'a> {
     /// Run the arc split — and, when the class carries them, the chord injection and the ruling
     /// split — and hold the result: **the one place a class's edges are assembled.**
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn of(
         jd: &Judge<'_, WorkingPlane>,
         cyls: &[crate::planes::WorkingCyl],
+        faces: &[FaceRow],
         wc: usize,
         segs: &'a [MergedSeg],
         circles: &'a [MergedCircle],
@@ -440,7 +442,8 @@ impl<'a> ClassEdges<'a> {
                 ),
             };
 
-        let (segs3, rulings2) = match split_rulings(jd, cyls, wc, &segs2, rulings, aliases)? {
+        let (segs3, rulings2) = match split_rulings(jd, cyls, faces, wc, &segs2, rulings, aliases)?
+        {
             Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
             None => (segs2, Cow::Borrowed(rulings)),
         };

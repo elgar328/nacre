@@ -846,7 +846,9 @@ pub(crate) fn frame_audit(
                 // in `bands.rs` locks the two together as «both
                 // succeed» (a stopper plugged into the socket would raise here per class while
                 // the boolean defers it to the assembly's end; same classes, same name).
-                let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &rulings, &local)?;
+                let edges = ClassEdges::of(
+                    &jd, &cyls, &faces_tab, wc, &split, &circles, &rulings, &local,
+                )?;
                 let staged = per_class(&jd, &cyls, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s

@@ -462,7 +462,7 @@ pub(super) fn trace_result_faces(
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = timed!(
                 C_SPLIT,
-                ClassEdges::of(jd, cyls, wc, split, circles, rulings, &aliases)
+                ClassEdges::of(jd, cyls, faces, wc, split, circles, rulings, &aliases)
             )?;
             // **A stopper is *made* here — and only made.** A stopper lives in
             // this socket: built where the class-level fact lives, raised inside `reconstruct`

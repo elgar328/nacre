@@ -152,23 +152,23 @@ fn notched_corner_box(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Solid>) 
 }
 
 /// **A box edge on the fillet's cylinder, beyond the quarter** — the L's edge at `(43, −16)`
-/// runs along `z` on the fillet cylinder's surface, and the plate's wall `x = 43` class carries the
-/// segment. The fillet face is the quarter facing `(+x, −y)`; the edge is at `(3, 4)` from the
-/// axis, off it, so the segment crosses no edge of the face. The ruling split reads the segment's
-/// line, finds it on the cylinder and refuses.
+/// runs along `z` on the fillet cylinder's surface, and the class `x = 43` (the arm's wall, or the
+/// notch's) carries the segment. The fillet face is the quarter facing `(+x, −y)`; the edge is at `(3, 4)` from the
+/// axis, off it, so the segment crosses no edge of the face. The ruling split asks the segment's
+/// angle of the cylinder's lateral faces (`pieces_clear`), not its line of the cylinder, and builds.
 #[test]
-fn an_edge_on_the_fillet_cylinder_beyond_its_quarter_is_refused() {
+fn an_edge_on_the_fillet_cylinder_beyond_its_quarter_builds() {
     every_kind(
         |m| ell(m, -16.0, [2.0, 10.0]),
-        refused(RejectReason::RulingBoundNotYet),
+        one_body(PLATE, 736.0, 256.0),
     );
     every_kind(
         |m| ell(m, -16.0, [-2.0, 14.0]),
-        refused(RejectReason::RulingBoundNotYet),
+        one_body(PLATE, 1472.0, 384.0),
     );
     every_kind(
         |m| notched_corner_box(m, -16.0),
-        refused(RejectReason::RulingBoundNotYet),
+        one_body(PLATE, 736.0, 256.0),
     );
 }
 

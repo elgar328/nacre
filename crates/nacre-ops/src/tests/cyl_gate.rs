@@ -653,3 +653,41 @@ fn a_reach_holds_the_proven_interval_and_nothing_else_is_finite() {
         );
     }
 }
+
+/// **A class whose faces cannot be listed still has a piece to ask about** — [`lateral_pieces`]
+/// answers an unusable list (here none at all) with one piece of no span and the whole circle, so
+/// «every piece is apart» is not an empty truth: a line at any angle is not shown apart from it.
+#[test]
+fn an_unusable_face_list_is_one_unbounded_piece() {
+    let z = Rat::from_int;
+    let mut m = Model::new();
+    crate::fixtures::cylinder(
+        &mut m,
+        nacre_math::Point3::from_array([0.0, 0.0, 0.0]),
+        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    );
+    let surf = (0u32..)
+        .map_while(|i| m.face_handle_at(i))
+        .map(|f| m.face(f).surface)
+        .find(|&s| matches!(m.surface(s), Surface::Cylinder { .. }))
+        .expect("a lateral");
+    let pieces = lateral_pieces(&[], surf);
+    assert_eq!(
+        pieces,
+        vec![Footprint {
+            span: None,
+            theta: Theta::Whole
+        }]
+    );
+    let (o, axis) = ([z(0); 3], [z(0), z(0), z(1)]);
+    let def =
+        nacre_topo::CylinderDef::new(o, axis, [z(1), z(0), z(0)], nacre_exact::BigRat::from(z(1)))
+            .unwrap();
+    let line = Footprint {
+        span: None,
+        theta: Theta::at_line(&[z(0), z(-1), z(0)], &o, &axis).unwrap(),
+    };
+    assert!(!pieces.iter().all(|fp| pieces_clear(&def, &line, &def, fp)));
+}

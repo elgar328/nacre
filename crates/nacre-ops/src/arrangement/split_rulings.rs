@@ -3,8 +3,9 @@ use super::*;
 /// `split_circles::circle_crossings`, same machinery ([`nacre_exact::quad::plane_plane_cylinder`],
 /// the same fences, the same names), different reachable arms: on a class **parallel** to the axis
 /// the meet can be tangent to the lateral — **skipped**, because a touch divides nothing and
-/// cutting there would make a zero-length piece — or lie on it, which the ruling split refuses by
-/// name rather than reasoning it unreachable.
+/// cutting there would make a zero-length piece — or lie on it: a segment at an angle no lateral
+/// face holds crosses nothing, and one a face holds the ruling split refuses by name rather than
+/// reasoning it unreachable.
 ///
 /// Returns each crossing with the meet it was solved as ([`combinatorics::PierceMeet`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it
@@ -16,6 +17,7 @@ fn lateral_crossings(
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
     on_a_shared_line: bool,
+    pieces: impl FnOnce() -> Vec<crate::planes::Footprint>,
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
     use crate::combinatorics::QuadRoot;
     use nacre_exact::quad::CylinderMeet;
@@ -80,14 +82,31 @@ fn lateral_crossings(
         Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
             return Ok(Some(Vec::new()));
         }
-        // The segment's line lies on the lateral: a line the gate recorded
+        // The segment's line lies on the cylinder: a line the gate recorded
         // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
-        // [`split_rulings`] states it there. Anywhere else, and where the planes degenerate, the
-        // ruling split does not arrange the shape yet.
+        // [`split_rulings`] states it there.
         Some(CylinderMeet::OnRuling(_)) if on_a_shared_line => return Ok(Some(Vec::new())),
-        Some(CylinderMeet::OnRuling(_))
-        | Some(CylinderMeet::CoincidentPlanes)
-        | Some(CylinderMeet::ParallelPlanes) => {
+        // **The segment is asked, not its line.** A face's rulings and arcs stand at angles its
+        // arc holds, and two lines along the axis on one cylinder at different angles never
+        // meet — so a segment at an angle no lateral face holds crosses none of their edges. Its
+        // span is not read: the angle alone is what the population needs, and the ends' axis
+        // parameters have no reader for a three-plane end.
+        Some(CylinderMeet::OnRuling(line)) => {
+            let Some(theta) = crate::planes::Theta::at_line(&line.base(), &o, &m) else {
+                return Ok(None);
+            };
+            let seg = crate::planes::Footprint { span: None, theta };
+            if pieces()
+                .iter()
+                .all(|fp| crate::planes::pieces_clear(def, &seg, def, fp))
+            {
+                return Ok(Some(Vec::new()));
+            }
+            // On a face: the ruling split does not arrange the shape yet — nor where the planes
+            // degenerate.
+            return Err(reject(RejectReason::RulingBoundNotYet));
+        }
+        Some(CylinderMeet::CoincidentPlanes) | Some(CylinderMeet::ParallelPlanes) => {
             return Err(reject(RejectReason::RulingBoundNotYet));
         }
         None => return Ok(None),
@@ -215,6 +234,7 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 pub(super) fn split_rulings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
+    faces: &[FaceRow],
     wc: usize,
     segs: &[MergedSeg],
     rulings: &[MergedRuling],
@@ -297,7 +317,8 @@ pub(super) fn split_rulings(
             let shared = shared_here
                 .iter()
                 .any(|&(t, c, _)| t == sg.wall && c == cyl);
-            let Some(xs) = lateral_crossings(jd, wc, cyl, def, sg, shared)? else {
+            let pieces = || crate::planes::lateral_pieces(faces, cyls[cyl].surf);
+            let Some(xs) = lateral_crossings(jd, wc, cyl, def, sg, shared, pieces)? else {
                 return Err(undecided());
             };
             for (n, meet) in xs {

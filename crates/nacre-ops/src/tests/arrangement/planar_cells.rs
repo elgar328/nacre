@@ -930,6 +930,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
     let out = ClassEdges::of(
         &jd,
         NO_CYLS,
+        &[],
         wc,
         &split,
         std::slice::from_ref(&circle),
@@ -966,6 +967,7 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
             ClassEdges::of(
                 &jd,
                 NO_CYLS,
+                &[],
                 wc,
                 &split,
                 std::slice::from_ref(&clear),
@@ -1027,7 +1029,8 @@ fn the_cross_arrangement_has_six_cells() {
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
-    let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges =
+        ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
 
     // **An independent reading of every winding: the shoelace sign.**
@@ -1168,7 +1171,8 @@ fn cell_labels_propagate_and_match_footprints() {
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges =
+        ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
     let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
@@ -1256,7 +1260,8 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges =
+        ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
     let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
@@ -1323,7 +1328,8 @@ fn boolean_keep_and_result_faces_on_the_cross() {
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], &Aliases::default()).unwrap();
+    let edges =
+        ClassEdges::of(&jd, NO_CYLS, &[], wc, &split, &[], &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
     let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
     let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();

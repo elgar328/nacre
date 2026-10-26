@@ -649,7 +649,7 @@ fn shared_rulings(
             .collect();
         secants.sort_unstable();
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
-        let fps = lateral_footprints(faces, cyl.surf);
+        let fps = lateral_pieces(faces, cyl.surf);
         // Whether the line through `p` along the axis lies on a lateral face of this cylinder
         // ([`line_apart`]); `None` is arithmetic that could not say.
         let on_a_face = |p: &[nacre_exact::Rat; 3]| -> Option<bool> {
@@ -2005,26 +2005,30 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 /// does. Then no point of `b`'s faces lies on `a`'s, so the two classes share no face — the
 /// proposition the arrangement needs, which the surface distance
 /// ([`nacre_exact::cylinders_clear`]) is only one sufficient condition for.
-///
-/// Empty [`lateral_spans`] is "unusable" (its doc), never clear: it becomes one footprint of
-/// unknown span, which the reach reads as unbounded along anything not perpendicular to the axis.
 fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> bool {
-    // A class whose spans cannot be stated still has faces to ask about, with an unbounded
-    // reach along anything not perpendicular to its axis: one footprint that says so.
-    let listed = |surf: Handle<Surface>| -> Vec<Footprint> {
-        let v = lateral_footprints(faces, surf);
-        if v.is_empty() {
-            vec![Footprint {
-                span: None,
-                theta: Theta::Whole,
-            }]
-        } else {
-            v
-        }
-    };
-    let (fa, fb) = (listed(a.surf), listed(b.surf));
+    let (fa, fb) = (lateral_pieces(faces, a.surf), lateral_pieces(faces, b.surf));
     fa.iter()
         .all(|x| fb.iter().all(|y| pieces_clear(&a.def, x, &b.def, y)))
+}
+
+/// **A cylinder class's lateral faces as the pieces a clearance asks about** — one footprint per
+/// face, or, where [`lateral_footprints`] is empty («unusable», [`lateral_spans`]' doc), one
+/// footprint of no span and the whole circle: the class still has faces, and that piece reads as
+/// unbounded along anything not perpendicular to the axis. So «every piece is apart» is never an
+/// empty truth. The door is for the readers that ask «apart» of the class's faces; the readers that
+/// decline on an unusable list (the oblique arm, `faces_apart`, the crossing record) read
+/// [`lateral_footprints`] and keep that. Built where it is asked, not with the class — the gate's
+/// own footprints are lazy for the reason [`wall_faces_clear`] gives.
+pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
+    let v = lateral_footprints(faces, surf);
+    if v.is_empty() {
+        vec![Footprint {
+            span: None,
+            theta: Theta::Whole,
+        }]
+    } else {
+        v
+    }
 }
 
 /// **Do piece `x` of cylinder `a`'s lateral and piece `y` of cylinder `b`'s share no point?** —

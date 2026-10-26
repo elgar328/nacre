@@ -46,15 +46,15 @@
 «두 기하가 만나나»를 정하는 제품 자리가 약 30 이고, 조각(면·호·선분)을 적는 어휘가 여섯이다 — 발자국
 (`Footprint`/`Reach`), 코너(`Corner`/`StripReach`), 늘어선 구간(접선 행), `cache_reach`·원 상자, 분할의
 `AxisCoord`, combinatorics 의 `theta_between`·`loop_parity`. 같은 명제를 자리마다 따로 계산하므로, 조각이 손에
-있는데 무한한 담체(평면·곡면·직선·원 전체)를 읽는 자리가 남는다. 원통 조각 대 원통 조각은 한 함수다
-(`planes::pieces_clear` — 쌍 규칙과 배열의 간선 그물이 함께 부른다). 남은 자리에서 **조각은 떨어져 있고 담체만
-닿는** 몸을 지어 거짓 거절을 쟀다(대조군 — 그 한 요소만 다른 배치 — 은 세 연산 × 두 순서가 다 해석값·validate 0):
+있는데 무한한 담체(평면·곡면·직선·원 전체)를 읽는 자리가 남는다. 원통 위의 조각 둘은 한 함수다
+(`planes::pieces_clear` — 누가 묻는지는 design 「인구 게이트」; 조각의 각은 `Theta` 하나다). 남은 자리에서 **조각은 떨어져 있고 담체만 닿는** 몸을 지어 거짓 거절을
+쟀다(대조군 — 그 한 요소만 다른 배치 — 은 세 연산 × 두 순서가 다 해석값·validate 0; 고정물은
+`suite/carrier_readings.rs`):
 
 | 자리 | 담체로 읽는 것 | 지은 거짓 거절 |
 |---|---|---|
 | `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통(z축)에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 y 로 2 이상 떨어져 있음(홈·L자·원통 쪽 피연산자·돌린 뒤, 네 짓기 모두; x=0.5 면 선다) |
-| `cyl_gate::line_off_lateral` | 담체 대 담체(이름 없는 두 클래스면 기하 전에 `false`) | `CylinderGateUndecided` — 필렛 판(축 (40,−20), r=5) 곁의 37° 돌린 5×5 상자의 평행한 두 벽이 둘 다 필렛을 `Sectioned` 로 가름(먼저 합치기·슬롯 끝·8° 상자 포함 다섯 짓기) |
-| `split_rulings::lateral_crossings` 의 `OnRuling` | 선분의 **직선** | `RulingBoundNotYet` — 같은 필렛 판 대 L자 상자, 그 모서리 선 (43,−16) 이 필렛 원통 위이되 사분원 밖(θ≈53°) (합치기·빼기·높인 판, 세 짓기) |
+| `cyl_gate::line_off_lateral` | 담체 대 담체(이름 없는 두 클래스면 기하 전에 `false`) | `CylinderGateUndecided` — 필렛 판(축 (40,−20), r=5) 곁의 37° 돌린 5×5 상자의 평행한 두 벽이 둘 다 필렛을 `Sectioned` 로 가름(슬롯 끝·8° 상자 포함 네 짓기; 판과 그 상자를 먼저 합치는 짓기는 그 합치기가 같은 이름으로 거절된다) |
 | `split_circles` 의 원 교차 순서 | 원의 **연장선** 위 교점까지 정렬 | `CoincidentNodes` — 같은 판 대 상자 `[43,50]×[−16,−10]×[2,10]`, 캡 위 한 점 (43,−16) 에 이름 셋 |
 | `corners::face_clears_footprint` | 옆면 발자국의 각을 **원 전체**로 | 혼자서는 기록 과잉뿐(세 짓기 모두 선다); 그 기록이 `line_off_lateral` 에 들어가면 `CylinderGateUndecided` — 판 − 포켓 `[41,50]×[−17,−10]×[6,13]` 대 8° 상자 |
 | `in_faces::ray_misses_face`(`ring_box_points_hp`) | 호를 그 **원 전체의 상자**로 | Fuse 만 `CylinderGateUndecided` — 모서리에 반원 홈(중심 (40,20), r=3)을 낸 판 위 37° 상자, 그 아래 r=1 원통 중심 (41.5,20) (원 상자 안, 호 상자 밖; 네 짓기) |

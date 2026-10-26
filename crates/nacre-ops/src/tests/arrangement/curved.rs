@@ -369,6 +369,7 @@ fn the_armed_wall_class_walks_to_closed_cells() {
     let edges = ClassEdges::of(
         &jd,
         &setup.cyls,
+        &setup.planes,
         wc,
         &split,
         &circles,
@@ -425,6 +426,7 @@ fn armed_class_edges<'a>(
     let e = ClassEdges::of(
         jd,
         &setup.cyls,
+        &setup.planes,
         wc,
         &split,
         &circles,
@@ -1452,8 +1454,16 @@ fn with_cut_rings(
         let Ok(circles) = merge_circles(&tr.circles, &cyls, &Aliases::default()) else {
             continue;
         };
-        let Ok(edges) = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[], &Aliases::default())
-        else {
+        let Ok(edges) = ClassEdges::of(
+            &jd,
+            &cyls,
+            &[],
+            wc,
+            &split,
+            &circles,
+            &[],
+            &Aliases::default(),
+        ) else {
             continue;
         };
         if edges.arcs.is_empty() {
@@ -1718,8 +1728,16 @@ fn the_two_roads_agree_on_every_rational_ring() {
         let Ok(circles) = merge_circles(&tr.circles, &cyls, &Aliases::default()) else {
             continue;
         };
-        let Ok(edges) = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[], &Aliases::default())
-        else {
+        let Ok(edges) = ClassEdges::of(
+            &jd,
+            &cyls,
+            &[],
+            wc,
+            &split,
+            &circles,
+            &[],
+            &Aliases::default(),
+        ) else {
             continue;
         };
         let Ok((cells, _)) = walk_cells(&jd, &cyls, wc, &edges) else {
@@ -1899,7 +1917,8 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     );
 
     let circles = merge_circles(&tr.circles, &cyls, &Aliases::default()).unwrap();
-    let edges = ClassEdges::of(&jd, &cyls, wc, &[], &circles, &[], &Aliases::default()).unwrap();
+    let edges =
+        ClassEdges::of(&jd, &cyls, &[], wc, &[], &circles, &[], &Aliases::default()).unwrap();
     let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
     // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
     assert_eq!(cells.len(), 2, "{cells:?}");
@@ -2008,7 +2027,17 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         "the cap ring alone — the circle owes the splitter nothing"
     );
 
-    let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[], &Aliases::default()).unwrap();
+    let edges = ClassEdges::of(
+        &jd,
+        &cyls,
+        &[],
+        wc,
+        &split,
+        &circles,
+        &[],
+        &Aliases::default(),
+    )
+    .unwrap();
     let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
     assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
     let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
