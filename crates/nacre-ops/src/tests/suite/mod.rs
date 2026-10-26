@@ -1033,6 +1033,67 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     solid
 }
 
+/// What one kind answers.
+#[derive(Clone, Copy, Debug)]
+enum Want {
+    /// This many solids of this total volume, `validate` clean.
+    Built(usize, f64),
+    /// Refused by this name.
+    Refused(RejectReason),
+}
+
+/// **Every kind, both orders** — `want` is one cell for each of `[Fuse, Cut, Common]` with the
+/// operands as built, then swapped. `build` makes the two operands in a fresh model (a boolean
+/// consumes its inputs). A cell that builds is held to its body count and its analytic volume
+/// (relative `1e-9`), validates clean and meshes; a cell that refuses is held to its name.
+fn every_kind(build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>), want: [[Want; 3]; 2]) {
+    for (swap, row) in [false, true].into_iter().zip(want) {
+        for (kind, cell) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(row)
+        {
+            let mut m = Model::new();
+            let (a, b) = build(&mut m);
+            m.rebuild_adjacency();
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let out = boolean(&mut m, kind, x, y);
+            let (got, volume) = match (cell, out) {
+                (Want::Refused(name), Err(BoolError::Rejected { reason, .. })) => {
+                    assert_eq!(
+                        reason, name,
+                        "{kind:?} swap={swap}: refused by another name"
+                    );
+                    continue;
+                }
+                (Want::Refused(name), out) => {
+                    panic!("{kind:?} swap={swap}: want {name:?}, got {out:?}")
+                }
+                (Want::Built(n, v), Ok(out)) => {
+                    m.rebuild_adjacency();
+                    assert_eq!(out.len(), n, "{kind:?} swap={swap}: bodies");
+                    let got: f64 = out
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                        .sum();
+                    (got, v)
+                }
+                (Want::Built(..), Err(e)) => panic!("{kind:?} swap={swap}: {e:?}"),
+            };
+            assert!(
+                (got - volume).abs() <= 1e-9 * volume.max(1.0),
+                "{kind:?} swap={swap}: {got} vs {volume}"
+            );
+            let violations = nacre_validate::validate(&m);
+            assert!(
+                violations.is_empty(),
+                "{kind:?} swap={swap}: {violations:?}"
+            );
+            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: mesh {e:?}"));
+        }
+    }
+}
+
 /// A cylinder of radius `r` and length `h` about the world Z axis, its base at the origin, then
 /// turned a quarter about Y and translated — the shape a script's `cylinder()` states.
 fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Solid> {
@@ -1070,6 +1131,7 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
 }
 
 mod arc_corners;
+mod carrier_readings;
 mod common_kind;
 mod commuting_oracle;
 mod coplanar;

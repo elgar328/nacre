@@ -281,43 +281,13 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
 }
 
 /// **Every kind, both orders, against the analytic volume** — the cylinder pairs whose faces do
-/// not meet. `build` makes the two operands in a fresh model (a boolean consumes its inputs);
-/// `want` is `(bodies, volume)` for `[Fuse, Cut, Common]` with the operands as built, then
-/// swapped. Each result validates clean and meshes.
+/// not meet. `want` is `(bodies, volume)` for `[Fuse, Cut, Common]` with the operands as built,
+/// then swapped ([`every_kind`] reads the rest).
 fn builds_every_kind(
     build: impl Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
     want: [[(usize, f64); 3]; 2],
 ) {
-    for (swap, row) in [false, true].into_iter().zip(want) {
-        for (kind, (bodies, volume)) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
-            .into_iter()
-            .zip(row)
-        {
-            let mut m = Model::new();
-            let (a, b) = build(&mut m);
-            m.rebuild_adjacency();
-            let (x, y) = if swap { (b, a) } else { (a, b) };
-            let out = boolean(&mut m, kind, x, y)
-                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: {e:?}"));
-            m.rebuild_adjacency();
-            assert_eq!(out.len(), bodies, "{kind:?} swap={swap}: bodies");
-            let got: f64 = out
-                .iter()
-                .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
-                .sum();
-            assert!(
-                (got - volume).abs() <= 1e-9 * volume.max(1.0),
-                "{kind:?} swap={swap}: {got} vs {volume}"
-            );
-            let violations = nacre_validate::validate(&m);
-            assert!(
-                violations.is_empty(),
-                "{kind:?} swap={swap}: {violations:?}"
-            );
-            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
-                .unwrap_or_else(|e| panic!("{kind:?} swap={swap}: mesh {e:?}"));
-        }
-    }
+    every_kind(build, want.map(|row| row.map(|(n, v)| Want::Built(n, v))));
 }
 
 fn axis_cylinder(m: &mut Model, base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Handle<Solid> {

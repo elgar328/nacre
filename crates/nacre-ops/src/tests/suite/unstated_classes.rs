@@ -126,14 +126,6 @@ fn rounded_area(fillets: usize, bores: usize) -> f64 {
     90.0 * 50.0 - fillets as f64 * (25.0 - 25.0 * pi / 4.0) - bores as f64 * pi * 3.5 * 3.5
 }
 
-/// What one kind answers.
-#[derive(Clone, Copy, Debug)]
-enum Want {
-    /// This many solids of this total volume, `validate` clean.
-    Built(usize, f64),
-    /// Refused by this name.
-    Refused(RejectReason),
-}
 use Want::{Built, Refused};
 
 struct Family {
