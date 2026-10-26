@@ -5,7 +5,49 @@
 
 ## 지금
 
-지금 진행 중인 항목은 없다 — 아래 「다음」에서 고른다.
+### 원통 도로를 한 엔진으로 — 수 엔진 · 곡선 traits · 교선 생성기
+
+평면 도로는 한 엔진이다: 점은 정의로 들고 부호는 판정층 하나가 답한다(유리수면 정확 술어, 회전이 끼면 필터 → 상승 →
+증명된 일치 또는 이름 붙인 거절 — design 「CIP」). 원통 도로는 그 엔진 밖에 있다. 같은 명제를 **곡선 종류 셋(선분·원/호·룰링)
+× 수 체계 셋(세계 진술 위의 checked `Rat`·`QuadVal` / 이름 없는 클래스의 고정 정밀도 구간 / 게이트의 기록)**의 칸마다 따로
+계산한다. 잰 것(nacre-ops, 비시험 코드):
+
+- «평면의 어느 쪽인가» 철자 8(`Judge::orient3d`·`PierceMeet::side` 의 두 팔·`plane_side_of_rat`·`plane_sign_hp`·
+  `plane_cuts_lateral`·`WorkingPlane::misses`·`WorkingCyl::beside`), 선·축 위 순서는 공용 길(`order_along` 계열) 밖에 독립
+  재구현 둘(`split_rulings::AxisCoord`·`winding` 의 `CoordKey`), 원 위 순서는 정확(`circular_order`)과 구간(`theta_between` 의
+  구간 팔) 둘. 선과 원통의 교차는 `world.is_none()` 갈래가 넷(`pierce_meet`·`arc_crossings`·`crossing_on_ruling`·
+  `lateral_crossings`)이고, 두 철자가 어긋나지 않게 묶는 `debug_assert` 가 다섯이다.
+- 게이트가 배열보다 먼저 경우를 가르고 기록 여섯(`crossings`·`tangencies`·`tangent_walls`·`shared`·`silent`·`boxes`)에 담는다 —
+  `silent` 하나를 읽는 자리가 약 20, 접근자가 일곱이다.
+- «클래스 위의 곡선»을 묶는 타입이 없다 — 세 변형 enum 넷(`Wall`·`Carrier`·`LineCarrier`·`EdgeDir`)과 서로 무관한
+  `MergedSeg`·`MergedCircle`·`MergedArc`·`MergedRuling`. 원통 전용 파일이 약 8,000줄(planes·arrangement·combinatorics 의 35%)이다.
+
+그래서 한 자리를 «조각을 읽게» 고치면 같은 명제의 다른 칸이 다음 거절을 낸다. `suite/carrier_readings.rs` 의 포켓 배치(판 −
+포켓 `[41,50]×[−17,−10]×[6,13]` 대 8° 상자)가 그 사슬이다: 평면 수준에서 옆면 면을 묻게 하면 게이트를 지나고, 룰링 분할이
+«선분 위인가»를 «룰링 조각 위인가»보다 먼저 묻는 자리에서 거절되며, 그 순서를 바꾸면 `lateral_crossings` 의 이름 없는
+갈래(선이 원통 위인데 구간판 호 포함이 없다)에서 거절된다 — 셋 다 `CylinderGateUndecided`.
+
+방향(조사 — CGAL *Arrangements on Parametric Surfaces* I·II, 이차곡면 교선의 정확 배열 SoCG 2005, 간접 술어):
+엔진은 곡선·곡면 종류를 모르고, 곡선 종류마다 술어 묶음(비교·위아래·분할·교점과 중복도 — 약 열둘)과 곡면 위상(원통에는 무한
+면이 없다, seam 은 식별선)만 댄다. 경우 분석은 «곡면 쌍 → 교선 목록» 한 함수 안에 있고, 퇴화는 경우 코드가 아니라 0 의 판정이
+받는다. 셀 기계는 평면 배열과 원통 차트 둘로 남는다(design 「가지 말 것」 «평면 DCEL 을 원통 차트에 이식» — 그 차이가 위상 몫이다).
+하나가 되는 것은 그 아래(정의로 든 점 하나, 평면 판정층과 같은 규약의 수 엔진 하나 — 데이터가 유리수면 정확 길, 아니면 상승과
+증명된 일치; 사분각 밖 회전의 좌표는 정확히 표현되지 않으므로 «이름 없음»은 수학적 사실로 남고 코드의 갈래만 사라진다)와 그
+위(교선 생성기 하나 — 게이트는 «수 엔진이 이 점을 표현하나·traits 가 이 곡선을 아나»를 묻는 능력 검사로 준다)다. 계단은 셋이고
+각각 따로 조사·계획한다: (1) 원통 술어를 판정층 하나로, (2) 클래스 위의 곡선 타입 + 종류별 술어(분할 모듈 셋 → 하나),
+(3) 교선 생성기가 게이트의 갈래와 기록을 대신한다.
+
+첫 잠금은 `suite/carrier_readings.rs` 의 거절 행들이다 — 조각은 떨어져 있고 담체만 닿는 배치, 대조군과 함께:
+
+| 오늘 거절하는 자리 | 담체로 읽는 것 | 고정물 |
+|---|---|---|
+| `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 떨어져 있음(네 짓기) |
+| `cyl_gate::line_off_lateral` | 담체 대 담체(이름 없는 두 클래스면 기하 전에 `false`) | `CylinderGateUndecided` — 필렛 판 곁의 37° 돌린 상자(네 짓기) |
+| `corners::face_clears_footprint` → 위의 사슬 | 옆면 발자국의 각을 **원 전체**로 | `CylinderGateUndecided` — 포켓 배치 |
+| `cyl_gate::shared_rulings` | 두 무한 평면 + 각만 | 없음 — 기록 과잉, 거절하는 독자 없음 |
+
+인구는 전부 우리가 지은 것이다(census·kit 0). 표 밖의 자리 하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의
+광선을 면의 각과 무관하게 «이 광선으로 못 셈»(`Graze`)으로 읽는다 — 다음 증인으로 넘어가므로 거절로 이어지는 인구는 재지 않았다.
 
 ## 다음 — 사용자가 만나는 한계
 
@@ -40,38 +82,6 @@
 2,850줄)로 배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
 붙는다 — 차트는 곡선 종류마다 술어(교점·순서·접선 방향)만 대고 셀 기계는 한 벌인 모양으로 넓히고, 교선이 배열에
 들어오는 길도 같은 모양으로 정한다. 평면 DCEL 을 차트로 옮기는 길은 아니다(design 「가지 말 것」).
-
-### 조각 어휘 하나 — 담체를 읽는 «만나나» 자리
-
-«두 기하가 만나나»를 정하는 제품 자리가 약 30 이고, 조각(면·호·선분)을 적는 어휘가 여섯이다 — 발자국
-(`Footprint`/`Reach` — 호의 상자도 그 조각의 상자다), 코너(`Corner`/`StripReach`), 늘어선 구간(접선 행), `cache_reach`, 분할의
-`AxisCoord`, combinatorics 의 `theta_between`·`loop_parity`. 같은 명제를 자리마다 따로 계산하므로, 조각이 손에
-있는데 무한한 담체(평면·곡면·직선·원 전체)를 읽는 자리가 남는다. 원통 위의 조각 둘은 한 함수다
-(`planes::pieces_clear` — 누가 묻는지는 design 「인구 게이트」; 조각의 각은 `Theta` 하나다). 남은 자리에서 **조각은 떨어져 있고 담체만 닿는** 몸을 지어 거짓 거절을
-쟀다(대조군 — 그 한 요소만 다른 배치 — 은 세 연산 × 두 순서가 다 해석값·validate 0; 고정물은
-`suite/carrier_readings.rs`):
-
-| 자리 | 담체로 읽는 것 | 지은 거짓 거절 |
-|---|---|---|
-| `cyl_gate::classes_holding_the_line` | 접선을 품는 셋째 클래스의 **무한 평면** | `TangentLineInAnotherPlane` — r=1 원통(z축)에 y=1 면이 접하는 상자, 셋째 면 x=0 이 접선에서 y 로 2 이상 떨어져 있음(홈·L자·원통 쪽 피연산자·돌린 뒤, 네 짓기 모두; x=0.5 면 선다) |
-| `cyl_gate::line_off_lateral` | 담체 대 담체(이름 없는 두 클래스면 기하 전에 `false`) | `CylinderGateUndecided` — 필렛 판(축 (40,−20), r=5) 곁의 37° 돌린 5×5 상자의 평행한 두 벽이 둘 다 필렛을 `Sectioned` 로 가름(슬롯 끝·8° 상자 포함 네 짓기; 판과 그 상자를 먼저 합치는 짓기는 그 합치기가 같은 이름으로 거절된다) |
-| `corners::face_clears_footprint` | 옆면 발자국의 각을 **원 전체**로 | 혼자서는 기록 과잉뿐(세 짓기 모두 선다); 그 기록이 `line_off_lateral` 에 들어가면 `CylinderGateUndecided` — 판 − 포켓 `[41,50]×[−17,−10]×[6,13]` 대 8° 상자 |
-| `cyl_gate::shared_rulings` | 두 무한 평면 + 각만(축 구간·구멍 무시) | 없음 — 기록 과잉은 세 짓기에서 났고 읽는 쪽 어디서도 거절하지 않았다 |
-
-인구는 전부 우리가 지은 것이다(census·kit 0 — 거의 축정렬이라 이 배치를 안 만난다). census 의 `RulingBoundNotYet`
-3(`tangentline slab wall 1.5`)도 `lateral_crossings` 에서 나지만 그 선분은 끝이 필렛 옆면의 모서리점에 **닿아**
-이 인구가 아니다 — 조각이 실제로 만나는, 룰링 분할이 아직 짓지 않은 배치다.
-
-남은 것: **평면 면(호가 섞인 다각형)을 조각으로.** 평면 조각의 도달 구간은 바깥 루프의 경계 조각(`Corner`)의
-최대·최소이고, `pieces_clear` 가 그 조각을 받으면 표의 `classes_holding_the_line`(접선의 구간 × 셋째 클래스의 면 —
-`line_runs_through_face` 의 «띠 안 = 선 위» 읽기는 접평면에서만 참이라 그 함수가 아니다)·`face_clears_footprint`
-(평면 면 × 각이 있는 옆면 조각)·`shared_rulings` 의 면 쪽이 그 읽기가 된다. OCCT 의 덮개도 같은 합성으로 짓지만(면은
-간선에서, 호는 극각이 호 안일 때만 극점에서, 원통 패치는 두 테두리 호에서) 담체를 교차한 뒤 중점 하나를 허용오차로
-걸러 서로소를 증명하지 않는다 — 곡면 조각 종류 하나와 서로소 함수 하나로 묶은 공개 커널은 찾지 못했다.
-`line_off_lateral` 은 선이 이름 없는 클래스의 구간 상자라 구간 산술의 호 포함이 따로 있어야 한다. 표 밖의 자리
-하나: 광선 도로의 `in_faces::lateral_face_crossings` 는 원통 위의 광선을 면의 각과 무관하게 «이 광선으로 못 셈»
-(`Graze`)으로 읽는다 — 다음 증인으로 넘어가므로 거절로 이어지는 인구는 재지 않았다. 한 자리씩
-«직선 → 선분»으로 고치지 않는다 — 고칠 때마다 조각의 철자가 하나 더 늘고, 다음 자리는 여전히 제 철자로 담체를 읽는다.
 
 ### 한 원통면을 두 솔리드가 공유한다 — `CylinderPairContact`
 
