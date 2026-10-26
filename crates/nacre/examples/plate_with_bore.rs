@@ -1,4 +1,4 @@
-//! A plate with a hole bored through it, checked and written out two ways.
+//! A plate with a hole bored through it, checked, refined and written out two ways.
 //!
 //! Run from the workspace root: `cargo run -p nacre --example plate_with_bore [prefix]` writes
 //! `<prefix>.step` and `<prefix>.obj` (default prefix `target/plate_with_bore`, relative to the
@@ -55,16 +55,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     let want = 40.0 * 30.0 * 5.0 - std::f64::consts::PI * 6.0 * 6.0 * 5.0;
     assert!((volume - want).abs() < 1e-9 * want, "{volume} vs {want}");
 
+    // Before an export, pay for every value the build left at its construction's figure (a long
+    // motion history leaves some), and check that none is left: the file is written from the
+    // caches as they stand. This plate needs nothing; a part turned and moved many times would.
+    let refined = nacre::ops::refine_caches_of(&mut model, &[bored]);
+    for left in [refined.vertices, refined.surfaces, refined.edges] {
+        assert_eq!(left.left_undecided + left.left_unrealized, 0, "{refined:?}");
+    }
+
     let prefix = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/plate_with_bore".to_string());
-    // The header's time stamp is the caller's to give: the kernel reads no clock.
-    let step = nacre::step::to_step(&model, "2026-10-24T00:00:00Z")?;
+    // Both files hold the solids refined, and only those. The header's time stamp is the caller's
+    // to give: the kernel reads no clock.
+    let step = nacre::step::to_step_solids(&model, &[bored], "2026-10-24T00:00:00Z")?;
+    // The distance below which the file's points are one, proven on the numbers it writes.
+    let uncertainty = match nacre::step::uncertainty(&model, &[bored]) {
+        nacre::step::Uncertainty::Proven(u) => format!("uncertainty {u:e} mm"),
+        other => format!("{other:?}"),
+    };
     let step_path = format!("{prefix}.step");
     std::fs::write(&step_path, step)?;
-    let obj = tessellate(&model, &TessConfig::default())?.to_obj(&model);
+    let obj =
+        nacre::tess::tessellate_solids(&model, &[bored], &TessConfig::default())?.to_obj(&model);
     let obj_path = format!("{prefix}.obj");
     std::fs::write(&obj_path, obj)?;
-    println!("volume {volume:.3}; wrote {step_path} and {obj_path}");
+    println!("volume {volume:.3}; wrote {step_path} ({uncertainty}) and {obj_path}");
     Ok(())
 }
