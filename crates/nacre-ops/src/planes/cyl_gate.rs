@@ -592,7 +592,8 @@ pub(crate) fn cylinder_gate(
 /// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, without this condition
 /// the pair would be recorded). The line is asked of each lateral face's angular extent
 /// ([`Footprint::theta_holds_line`], ends included — a line on a face's end ruling is the face's
-/// edge, the half-cylinder family) — the one predicate [`Tangency`]'s rows ask too.
+/// edge, the half-cylinder family) — which a [`Tangency`] row asks too, where the face's own
+/// stretches of the line cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.

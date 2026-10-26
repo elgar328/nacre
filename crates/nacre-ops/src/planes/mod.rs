@@ -122,8 +122,9 @@ pub(crate) struct CylFaceInfo {
 /// **A lateral face's footprint on its own chart `(t, θ)`** — the bounding rectangle of
 /// the region the face occupies there (a lateral *is* a region of its chart). Conservative for
 /// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
-/// for the face. Every clearance the gate asks of a lateral is a two-axis question against this
-/// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces. Whether a line
+/// for the face. The cylinder pair asks both axes of it (`cyl_gate::pieces_clear`); a parallel
+/// wall's faces read its span and take the angle as the whole circle ([`face_clears_footprint`]),
+/// which is wider and so still sound. Whether a line
 /// along the axis lies on the face is not a clearance: a tangency row asks the face's own stretches
 /// of the line (`cyl_geom::lateral_cover_on_ruling`), a shared ruling θ alone
 /// ([`Footprint::theta_holds_line`]).
@@ -592,10 +593,11 @@ pub(crate) fn silent_among(cyls: &[WorkingCyl], classes: &[usize]) -> bool {
 /// A point of the face is `p = o + s·m + r·u` with `u ⊥ m` a unit vector and `s` over the face's
 /// own span, so `d·p = d·o + s·(d·m) + r·(d·u)` with `(d·u)² ≤ |d⊥|² = d·d − (d·m)²/(m·m)`: the
 /// face's projected span widened by a radial reach `ρ = r·|d⊥|`, carried as its square so no root
-/// is ever formed. It is the one clearance question a lateral face answers for any other surface: a
-/// cylinder pair asks two of these against each other, once per direction its shape can state
-/// (`cyl_gate::separating_dirs`, `cyl_gate::reaches_apart`); an oblique plane reads `d = n` against
-/// its single station.
+/// is ever formed. Two clearances read it: a cylinder pair asks two of these against each other,
+/// once per direction its shape can state (`cyl_gate::separating_dirs`, `cyl_gate::reaches_apart`
+/// — one witness of `cyl_gate::pieces_clear`); an oblique plane reads `d = n` against its single
+/// station. A wall parallel to the axis does not: its faces are asked against the footprint's span
+/// and the strip ([`face_clears_footprint`]).
 ///
 /// `span = None` is a face whose span could not be stated (`cyl_gate::lateral_spans` empty). The
 /// reach is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and
