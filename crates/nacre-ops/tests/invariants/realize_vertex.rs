@@ -2127,17 +2127,83 @@ fn extruded(m: &mut Model, frame: SketchFrame, profile: Profile2d) -> Handle<Sol
     solid
 }
 
+/// A square pad on the datum `3x + 4y = 12`, through three corners of a world box. No face of the
+/// model lies on that plane, so the datum keeps its `Through` statement — a face by reference,
+/// which makes every later move of the pad a recorded node — and its normal `(3, 4, 0) / 5` is a
+/// rational unit, so the frame stands in the world and the pad's planes keep their names.
+fn pad_on_a_fresh_datum(m: &mut Model) -> Handle<Solid> {
+    let base = cuboid(m, [0.0; 3], [4.0, 3.0, 1.0]);
+    m.rebuild_adjacency();
+    let corner = |m: &Model, want: [f64; 3]| {
+        m.reachable_from(&[base])
+            .vertices
+            .into_iter()
+            .find(|&v| m.vertex_point(v).as_array() == want)
+            .expect("a corner of the box")
+    };
+    let through = [[4.0, 0.0, 0.0], [0.0, 3.0, 0.0], [4.0, 0.0, 1.0]].map(|p| corner(m, p));
+    let OpOutput::DatumPlane { frame, .. } = apply(
+        m,
+        &Operation::DatumPlane {
+            def: nacre_ops::DatumDef::ThroughVertices(through),
+        },
+    )
+    .expect("a datum") else {
+        unreachable!()
+    };
+    square_on(m, frame)
+}
+
+/// `s` bored along its datum's normal by a cylinder stated in the world, then turned 7° about `x`:
+/// the boolean takes the bore's rims onto the pad's named caps, which carry the pad's chain, and
+/// the turn adds one node to the cylinder's empty chain and one to the caps' 300.
+fn bored_and_turned(m: &mut Model, s: Handle<Solid>) -> Vec<Handle<Solid>> {
+    let corners: Vec<_> = m
+        .reachable_from(&[s])
+        .vertices
+        .into_iter()
+        .map(|v| m.vertex_point(v))
+        .collect();
+    // The corners' sum moves by ulps with the set's order and with the deep chain's unrefined
+    // caches; on a grid of 1/1024 the middle is one number on both models — each coordinate lies a
+    // fifth of a step or more from a rounding edge.
+    let mid = corners
+        .iter()
+        .fold(Vector3::from_array([0.0; 3]), |acc, p| {
+            acc + Vector3::from_array(p.as_array())
+        })
+        .as_array()
+        .map(|x| (x / corners.len() as f64 * 1024.0).round() / 1024.0);
+    let axis = Vector3::from_array([0.6, 0.8, 0.0]);
+    let bore = nacre_ops::fixtures::cylinder_with_seam(
+        m,
+        Point3::from_array(mid) - axis,
+        axis,
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.1,
+        2.0,
+    )
+    .solid;
+    let bored = boolean(m, BoolKind::Cut, s, bore).expect("a bore")[0];
+    m.rebuild_adjacency();
+    let turned = moved(m, bored, turn(Axis::X, 7));
+    m.rebuild_adjacency();
+    vec![turned]
+}
+
 /// **After the refine door, every line and circle on a deep chain is the nearest `f64` of its
 /// truth.** Past the cheap road's cost cap an edge's direction or centre is left to a meet of
-/// caches; the door re-derives every edge on the paid budget. Seven populations: boxes, cylinders,
+/// caches; the door re-derives every edge on the paid budget. Eight populations: boxes, cylinders,
 /// a windowed boss and a bored plate turned off the quarters and moved 300 times — rotation and
-/// translation nodes — and a disk and a square sketched on a wall of the deep box — frame nodes.
-/// A box turned about `x` keeps its `x` walls stated in the world, which the moves along `x` then
-/// carry, so its corners are met by the mixed road; turned about `z` they share one frame.
+/// translation nodes — a disk and a square sketched on a wall of the deep box — frame nodes — and
+/// a bored pad whose rims the cheap road gives up on for their cap alone. A box turned about `x`
+/// keeps its `x` walls stated in the world, which the moves along `x` then carry, so its corners
+/// are met by the mixed road; turned about `z` they share one frame.
 ///
-/// **Not reached:** a circle the cheap road gives up on for its cap alone — a cap with no world
-/// name whose replay is past the cost cap, on a cylinder whose chain is not. Every circle here has
-/// a deep cylinder.
+/// **A cap alone past the cost cap.** The pad stands on a `Through` datum, so its 300 moves are
+/// recorded nodes under names that still fold; the bore is a cylinder stated in the world, which
+/// the boolean takes onto those named caps; the closing 7° turn then adds one node to the
+/// cylinder's empty chain and one to the caps' 300, and leaves the caps without a name.
 ///
 /// Each edge is held to three things, collected and asserted once:
 /// * **Before the door** some line and some circle of each population is off — else the fixture
@@ -2156,7 +2222,7 @@ fn extruded(m: &mut Model, frame: SketchFrame, profile: Profile2d) -> Handle<Sol
 ///   instrument cannot say alone.
 #[test]
 fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
-    let fixtures: [DeepEdges; 7] = [
+    let fixtures: [DeepEdges; 8] = [
         ("box Z7", chain_box, turn(Axis::Z, 7), |_, s| vec![s]),
         ("box X7", chain_box, turn(Axis::X, 7), |_, s| vec![s]),
         ("cylinder Z7", chain_cylinder, turn(Axis::Z, 7), |_, s| {
@@ -2205,6 +2271,12 @@ fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
             let disk = extruded(m, frame, circle);
             vec![disk, square_on(m, frame)]
         }),
+        (
+            "bored pad on a fresh datum",
+            pad_on_a_fresh_datum,
+            Isometry::translation([Rat::from_int(0); 3]),
+            bored_and_turned,
+        ),
     ];
     // The cheap road's cost cap (`CHEAP_REPLAY_COST_CAP`).
     const CAP: usize = 192;
@@ -2340,7 +2412,7 @@ fn the_refine_door_leaves_every_deep_line_and_circle_nearest() {
         total.circles,
         total.cap_only,
     );
-    if measured != (58, 38, 2, 12, 0) {
+    if measured != (70, 50, 2, 14, 2) {
         bad.push(format!("the populations moved: {total:?}"));
     }
     assert!(bad.is_empty(), "{bad:#?}");
