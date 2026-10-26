@@ -57,13 +57,13 @@ pub(super) enum Corner {
     Rational(nacre_exact::MeetPoint),
     Pierce(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
     /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
-    /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`).
+    /// (`theta: Whole`), or one **arc** of a loop that mixes lines and arcs (`theta: Arc`).
     ///
     /// The name «corner» is narrower than the type: what it carries is a **boundary piece's
     /// reach**, and a vertex is the piece with no width. Written this way the loops below do not
     /// learn a new shape; they ask the same three questions and one of the answers has extent.
     ///
-    /// `axis` is the **carrier cylinder's** axis, and `arc`'s `from → to` is counter-clockwise
+    /// `axis` is the **carrier cylinder's** axis, and the arc's `from → to` is counter-clockwise
     /// about it ([`lateral_theta_extent`] states that convention). The face's own normal may run
     /// the other way; using it would name the **complementary** arc, which is not a bound on this
     /// piece but a different set.
@@ -72,7 +72,7 @@ pub(super) enum Corner {
         /// The carrier's squared radius.
         rho2: nacre_exact::BigRat,
         axis: [nacre_exact::Rat; 3],
-        arc: Option<RimArc>,
+        theta: Theta,
     },
 }
 
@@ -147,7 +147,7 @@ impl Corner {
                 centre,
                 rho2,
                 axis,
-                arc,
+                theta,
             } => {
                 let zero = nacre_exact::Rat::from_int(0);
                 let end = (|| {
@@ -157,8 +157,7 @@ impl Corner {
                     }
                     let mm = nacre_exact::dot3_rat(m, m)?;
                     let q = nacre_exact::dot3_rat(&rel, m)?.checked_sub(t.checked_mul(mm)?)?;
-                    let (lo_off, rho2_lo, hi_off, rho2_hi) =
-                        arc_extent(arc.as_ref(), rho2, axis, m)?;
+                    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(theta, rho2, axis, m)?;
                     Some(match want {
                         nacre_exact::Orient::Positive => (q.checked_add(hi_off)?, rho2_hi),
                         _ => (q.checked_add(lo_off)?, rho2_lo),
@@ -375,7 +374,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corne
         centre,
         rho2,
         axis,
-        arc: Some(RimArc {
+        theta: Theta::Arc(RimArc {
             from: radial(a)?,
             to: radial(b)?,
         }),
@@ -444,13 +443,12 @@ fn round_strip_side(
         centre,
         rho2,
         axis,
-        arc,
+        theta,
     } = piece
     else {
         return None;
     };
-    let arc = arc.as_ref();
-    if arc.is_none() {
+    if *theta == Theta::Whole {
         // A whole circle reaches alike both ways: the symmetric door, complete answer and all.
         return Some(nacre_exact::cylinder_strip_side_margin(
             coeffs,
@@ -463,7 +461,7 @@ fn round_strip_side(
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let e = nacre_exact::cross3_rat(&n, m)?;
-    let (lo, hi) = arc_ends_along(centre, rho2, axis, arc, &e)?;
+    let (lo, hi) = arc_ends_along(centre, rho2, axis, theta, &e)?;
     Some(nacre_exact::cylinder_strip_side_extent(
         coeffs,
         &nacre_exact::StripReach {
@@ -491,19 +489,19 @@ pub(crate) type ArcEnd = ([nacre_exact::Rat; 3], nacre_exact::BigRat);
 ///   carrier's axis as its normal, `d⊥ = d` there and `rho2 = ρ²|d|²`), and a side an arc end
 ///   stopped has margin `0` with the offset carrying it.
 ///
-/// `arc = None` is the whole circle: both ends are the centre with margin `ρ`, which is what the
-/// symmetric doors have always been handed.
+/// [`Theta::Whole`] is the whole circle: both ends are the centre with margin `ρ`, which is what
+/// the symmetric doors have always been handed.
 pub(crate) fn arc_ends_along(
     centre: &[nacre_exact::Rat; 3],
     rho2: &nacre_exact::BigRat,
     axis: &[nacre_exact::Rat; 3],
-    arc: Option<&RimArc>,
+    theta: &Theta,
     d: &[nacre_exact::Rat; 3],
 ) -> Option<(ArcEnd, ArcEnd)> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let dd = nacre_exact::dot3_rat(d, d)?;
-    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho2, axis, d)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(theta, rho2, axis, d)?;
     let shifted = |off: Rat| -> Option<[Rat; 3]> {
         if off == zero {
             return Some(*centre);
@@ -581,7 +579,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corn
         centre,
         rho2: def.r2().clone(),
         axis: m,
-        arc: None,
+        theta: Theta::Whole,
     })
 }
 

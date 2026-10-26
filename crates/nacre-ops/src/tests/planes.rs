@@ -48,8 +48,8 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
     let e = [z(0), z(1), z(0)]; // `n × m`
     let centre = [z(0); 3];
     let rho2 = nacre_exact::BigRat::from(q(36, 25)); // ρ = 6/5, stated as its square
-    let holds = |arc: Option<&RimArc>, side: i8| {
-        let (lo, hi) = arc_ends_along(&centre, &rho2, &axis, arc, &e).expect("an extent");
+    let holds = |theta: Theta, side: i8| {
+        let (lo, hi) = arc_ends_along(&centre, &rho2, &axis, &theta, &e).expect("an extent");
         cylinder_ruling_reached_extent(
             &coeffs,
             &nacre_exact::StripReach {
@@ -67,7 +67,7 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
     };
     // The whole circle spans `±6/5` and holds both.
     for side in [-1i8, 1] {
-        assert!(holds(None, side), "the whole circle, side {side}");
+        assert!(holds(Theta::Whole, side), "the whole circle, side {side}");
     }
     // The left arc spans `±18/25` and holds neither — the arc's own reach, not its circle's.
     let left = RimArc {
@@ -75,15 +75,18 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
         to: [q(-24, 25), q(-18, 25), z(0)],
     };
     for side in [-1i8, 1] {
-        assert!(!holds(Some(&left), side), "the left arc, side {side}");
+        assert!(!holds(Theta::Arc(left), side), "the left arc, side {side}");
     }
     // A top arc holds `+ŷ`, so it reaches `+6/5` — and still never the other ruling.
     let top = RimArc {
         from: [q(24, 25), q(18, 25), z(0)],
         to: [q(-24, 25), q(18, 25), z(0)],
     };
-    assert!(holds(Some(&top), 1), "the top arc reaches the `+1` ruling");
-    assert!(!holds(Some(&top), -1), "and never the `−1` one");
+    assert!(
+        holds(Theta::Arc(top), 1),
+        "the top arc reaches the `+1` ruling"
+    );
+    assert!(!holds(Theta::Arc(top), -1), "and never the `−1` one");
 }
 
 /// **An arc's reach, by hand, and which arc it is.**
@@ -109,21 +112,21 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
     // Along `+x̂`: the peak is on the arc (it is `from`), so that end carries the radical and
     // the other stops at an end of the arc — `[0, 1]`, the quadrant's own span in `x`.
     assert_eq!(
-        arc_extent(Some(&quadrant), &one, &axis, &[z(1), z(0), z(0)]),
+        arc_extent(&Theta::Arc(quadrant), &one, &axis, &[z(1), z(0), z(0)]),
         Some((z(0), z(0), z(0), z(1)))
     );
     // Along the diagonal: `[1, √2]`. `ρ² = r²|d⊥|² = 2`, and the low end is the rational `1`.
     assert_eq!(
-        arc_extent(Some(&quadrant), &one, &axis, &[z(1), z(1), z(0)]),
+        arc_extent(&Theta::Arc(quadrant), &one, &axis, &[z(1), z(1), z(0)]),
         Some((z(1), z(0), z(0), z(2)))
     );
     // A whole circle reaches alike both ways, and `d ∥ axis` has no radial term at all.
     assert_eq!(
-        arc_extent(None, &one, &axis, &[z(1), z(0), z(0)]),
+        arc_extent(&Theta::Whole, &one, &axis, &[z(1), z(0), z(0)]),
         Some((z(0), z(1), z(0), z(1)))
     );
     assert_eq!(
-        arc_extent(Some(&quadrant), &one, &axis, &axis),
+        arc_extent(&Theta::Arc(quadrant), &one, &axis, &axis),
         Some((z(0), z(0), z(0), z(0)))
     );
     // The complement is a different set: `[−1, 1]`, not `[0, 1]`.
@@ -132,8 +135,19 @@ fn an_arcs_reach_is_its_own_and_not_its_complements() {
         to: quadrant.from,
     };
     assert_eq!(
-        arc_extent(Some(&rest), &one, &axis, &[z(1), z(0), z(0)]),
+        arc_extent(&Theta::Arc(rest), &one, &axis, &[z(1), z(0), z(0)]),
         Some((z(0), z(1), z(0), z(1)))
+    );
+    // One direction reaches only itself: `(0, 1)` is `0` along `x̂` and `1` along the diagonal,
+    // both ways, with no radical.
+    let up = Theta::At([z(0), z(1), z(0)]);
+    assert_eq!(
+        arc_extent(&up, &one, &axis, &[z(1), z(0), z(0)]),
+        Some((z(0), z(0), z(0), z(0)))
+    );
+    assert_eq!(
+        arc_extent(&up, &one, &axis, &[z(1), z(1), z(0)]),
+        Some((z(1), z(0), z(1), z(0)))
     );
 }
 

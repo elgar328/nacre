@@ -590,10 +590,10 @@ pub(crate) fn cylinder_gate(
 /// the cylinder at the quarter turn the fillet does not have, puts its corner line on the infinite
 /// cylinder and nowhere near the lateral face
 /// (`a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: measured, without this condition
-/// the pair would be recorded). The line is asked of each lateral face's angular extent
-/// ([`Footprint::theta_holds_line`], ends included — a line on a face's end ruling is the face's
-/// edge, the half-cylinder family) — which a [`Tangency`] row asks too, where the face's own
-/// stretches of the line cannot be read.
+/// the pair would be recorded). The line is asked of each lateral face ([`line_apart`] — on the arc
+/// or on an end is on the face: a line on a face's end ruling is the face's edge, the
+/// half-cylinder family) — which a [`Tangency`] row asks too, where the face's own stretches of the
+/// line cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
@@ -650,10 +650,15 @@ fn shared_rulings(
         secants.sort_unstable();
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         let fps = lateral_footprints(faces, cyl.surf);
-        // Whether the line through `p` along the axis lies on a lateral face of this cylinder.
+        // Whether the line through `p` along the axis lies on a lateral face of this cylinder
+        // ([`line_apart`]); `None` is arithmetic that could not say.
         let on_a_face = |p: &[nacre_exact::Rat; 3]| -> Option<bool> {
+            let line = Footprint {
+                span: None,
+                theta: Theta::at_line(p, &o, &m)?,
+            };
             for fp in &fps {
-                if fp.theta_holds_line(p, &o, &m)? {
+                if !line_apart(&cyl.def, &line, fp)? {
                     return Some(true);
                 }
             }
@@ -775,8 +780,8 @@ fn wall_faces_clear(
 /// a lateral face that lies on the line, and only for a wall face that meets the line **within
 /// that lateral face's own stretches of it** ([`line_runs_through_face`] over each stretch
 /// `lateral_cover_on_ruling` reads off the face's loops; where the face cannot be read there, its
-/// angular extent ([`Footprint::theta_holds_line`], the predicate [`SharedRuling`] asks) and its
-/// axial span stand in, the wider answer). A wall face that reaches the line only through a notch
+/// angular extent stands in ([`line_apart`], the question [`SharedRuling`] asks), the wider
+/// answer). A wall face that reaches the line only through a notch
 /// or a hole of its own, or only where a window in the lateral leaves the line bare, or only above
 /// or below this lateral, touches nothing here and writes no row, as a face that clears the
 /// footprint writes none: the line is still recorded, class by class, for the shared rulings. So on a surface with two lateral faces — the lower holding a
@@ -1065,9 +1070,13 @@ fn tangency_rows(
             // extent. `None` (arithmetic) keeps the row, undecided.
             let on_face = match cover {
                 Some(c) => Some(!c.is_empty()),
-                None => base
-                    .as_ref()
-                    .and_then(|b| cf.footprint.theta_holds_line(b, &o, &m)),
+                None => base.as_ref().and_then(|b| {
+                    let line = Footprint {
+                        span: None,
+                        theta: Theta::at_line(b, &o, &m)?,
+                    };
+                    Some(!line_apart(def, &line, &cf.footprint)?)
+                }),
             };
             if on_face == Some(false) {
                 #[cfg(feature = "tangency-trace")]
@@ -1336,7 +1345,7 @@ fn line_runs_through_face(
             Corner::Round {
                 centre,
                 rho2,
-                arc: None,
+                theta: Theta::Whole,
                 ..
             },
         ] = pieces.as_slice()
@@ -1561,7 +1570,7 @@ fn lateral_reach(
         let (a, b) = (s0.checked_mul(dm)?, s1.checked_mul(dm)?);
         (base.checked_add(a.min(b))?, base.checked_add(a.max(b))?)
     };
-    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(fp.theta.as_ref(), r2, &m, d)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(&fp.theta, r2, &m, d)?;
     Some(Reach {
         lo: lo.checked_add(lo_off)?,
         hi: hi.checked_add(hi_off)?,
@@ -2007,7 +2016,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
         if v.is_empty() {
             vec![Footprint {
                 span: None,
-                theta: None,
+                theta: Theta::Whole,
             }]
         } else {
             v
@@ -2019,11 +2028,12 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 }
 
 /// **Do piece `x` of cylinder `a`'s lateral and piece `y` of cylinder `b`'s share no point?** —
-/// the one question both the pair rule ([`lateral_faces_clear`], a piece is a face) and the
-/// arrangement's class-edge net (`arrangement::per_class`, a piece is an edge: an arc is
-/// `[t, t]` × its arc, a ruling its axis span × the whole circle) ask. A piece is a [`Footprint`]:
-/// its own extent, or — where the extent cannot be stated — `span: None`, which reads as unbounded
-/// and proves nothing. No caller can hand it a carrier in place of a piece it has.
+/// the one question asked of two pieces of cylinder laterals: a face, an edge (an arc is `[t, t]` ×
+/// its arc, a ruling its axis span × the whole circle), a line on a cylinder (`span: None` × its
+/// angle). Who asks is design 「인구 게이트」's to list. A piece is a [`Footprint`]: its own extent, or — where the extent cannot be
+/// stated — `span: None` (unbounded along the axis) or [`Theta::Whole`] (the whole circle), which
+/// are the carrier's own extent on that axis and prove only what the carrier would. No caller can
+/// hand it a carrier in place of a piece it has.
 ///
 /// `true` is a proof, by a set `S` with `x ⊂ S` and `y ∩ S = ∅`; three kinds of `S` answer, and
 /// any one suffices:
@@ -2051,13 +2061,28 @@ pub(crate) fn pieces_clear(
     b: &nacre_topo::CylinderDef,
     y: &Footprint,
 ) -> bool {
-    separating_dirs(a, b)
+    separating_dirs(a, x, b, y)
         .iter()
         .any(|d| separated(a, x, b, y, d) == Some(true))
         || piece_inside(a, x, b)
         || piece_inside(b, y, a)
         || (nacre_exact::parallel_rat(&a.dir(), &b.dir())
             && cross_sections_clear(a, x, b, y) == Some(true))
+}
+
+/// **Is a line on cylinder `def` apart from a face of it?** — the half-space along the line's own
+/// direction (its [`Theta::At`], [`separating_dirs`]' candidate), read three ways: `Some(true)` the
+/// line is off the face's arc, `Some(false)` on it or on an end, `None` arithmetic. Against a face of
+/// its own statement this witness is the whole of [`pieces_clear`]'s answer — the axis directions
+/// read a span the line has not, and no face's box lies inside its own cylinder — so the readers
+/// that must tell «on the face» from «could not say» (the [`SharedRuling`] record, the tangency
+/// rows) ask it here, where [`pieces_clear`] keeps only its `Some(true)`. `None` too for a line
+/// with no single direction.
+fn line_apart(def: &nacre_topo::CylinderDef, line: &Footprint, face: &Footprint) -> Option<bool> {
+    let Theta::At(v) = line.theta else {
+        return None;
+    };
+    separated(def, line, def, face, &v)
 }
 
 /// **Is piece `fp` of cylinder `p`'s lateral strictly inside cylinder `q`'s open solid?** —
@@ -2074,8 +2099,8 @@ fn piece_inside(p: &nacre_topo::CylinderDef, fp: &Footprint, q: &nacre_topo::Cyl
     })
 }
 
-/// **The separating directions a cylinder pair can state rationally** — and why these are all of
-/// them.
+/// **The separating directions a cylinder pair can state rationally** — and why, for two pieces of
+/// faces, these are all of them.
 ///
 /// What a footprint describes is a box in `(axis parameter × angle)`, and the boundary of such a
 /// face is made of **cap planes** (normal = the axis), **rulings** (direction = the axis) and
@@ -2095,15 +2120,30 @@ fn piece_inside(p: &nacre_topo::CylinderDef, fp: &Footprint, q: &nacre_topo::Cyl
 ///
 /// Parallel axes have no third direction (the cross product is zero, and the surface rung is the
 /// distance rule with its own parallel branch); overflow forming it simply leaves the list short.
+///
+/// **A piece of one direction names one more: its own radial vector `v`** ([`Theta::At`], a line
+/// along the axis on the cylinder). Along `d = v` — perpendicular to the axis, so no span is read —
+/// the line reaches the single value `d·o + |v|²`, and a face of the same cylinder whose arc does
+/// not hold `v` reaches only `d·o + max(v·from, v·to)` there, which is less: the arc's peak along
+/// `v` is at an end, and both ends are other directions of the same radius. So the half-space
+/// shows a line off a face's arc apart from the face, and a line on an end ruling (`v = from`)
+/// touching it — each reach read about its own statement's axis, whichever way that runs.
 fn separating_dirs(
     a: &nacre_topo::CylinderDef,
+    x: &Footprint,
     b: &nacre_topo::CylinderDef,
+    y: &Footprint,
 ) -> Vec<[nacre_exact::Rat; 3]> {
     let (ma, mb) = (a.dir(), b.dir());
     let mut out = vec![ma, mb];
     if !nacre_exact::parallel_rat(&ma, &mb) {
         if let Some(perp) = nacre_exact::cross3_rat(&ma, &mb) {
             out.push(perp);
+        }
+    }
+    for fp in [x, y] {
+        if let Theta::At(v) = fp.theta {
+            out.push(v);
         }
     }
     out
@@ -2181,7 +2221,10 @@ fn cross_sections_clear(
         // The 2-D arc court works in `Rat`; a wide square is not judged here (`None`).
         let r2 = c.r2().narrow()?;
         let (start, end) = match &fp.theta {
-            Some(arc) => (
+            // One direction is no arc of this court ([`ArcSpec`]'s `start == end` is the whole
+            // circle); it names its own separating direction ([`separating_dirs`]).
+            Theta::At(_) => return None,
+            Theta::Arc(arc) => (
                 add2(
                     centre,
                     [
@@ -2197,7 +2240,7 @@ fn cross_sections_clear(
                     ],
                 )?,
             ),
-            None => {
+            Theta::Whole => {
                 // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a
                 // rational radius; without one this pair is not judged here (`None`, the
                 // caller's honest road).

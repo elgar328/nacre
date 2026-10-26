@@ -108,6 +108,20 @@ pub fn axis_plane_meet(coeffs: &[Rat; 4], o: &[Rat; 3], m: &[Rat; 3]) -> Option<
     Some(p)
 }
 
+/// **The part of `v` perpendicular to the direction `m`** — `v − (v·m / m·m)·m`, exact: a point's
+/// radial vector about a cylinder's axis is this of the point less the axis origin, and a reach's
+/// radial term peaks along this of the direction asked. `None` for `m = 0` or where a value leaves
+/// `i128`.
+pub fn off_axis_rat(v: &[Rat; 3], m: &[Rat; 3]) -> Option<[Rat; 3]> {
+    let mm = dot3_rat(m, m)?;
+    let k = dot3_rat(v, m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    let mut out = *v;
+    for i in 0..3 {
+        out[i] = v[i].checked_sub(k.checked_mul(m[i])?)?;
+    }
+    Some(out)
+}
+
 /// **How a point's distance from a plane compares with `r`**, the radius stated as its square
 /// `r2` — [`Orient::Negative`] inside the slab of half-width `r` about the plane, [`Orient::Zero`]
 /// exactly at distance `r`, [`Orient::Positive`] clear of it. Exact and total.

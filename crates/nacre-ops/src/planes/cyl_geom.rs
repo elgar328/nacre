@@ -104,18 +104,35 @@ pub(super) fn lateral_t_range(
 
 /// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
 /// edges trace on the cross-section, as one counter-clockwise arc of radial vectors
-/// ([`RimArc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two
+/// ([`Theta::Arc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two
 /// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
 /// B counter-clockwise about the axis). A whole rim (`[v, v]`), an irrational corner, a carrier
-/// this road cannot translate into the world, or rims that do not chain into one arc give `None`
-/// — the whole circle. The outer loop is enough: a band's outer
+/// this road cannot translate into the world, or rims that do not chain into one arc give
+/// [`Theta::Whole`]. The outer loop is enough: a band's outer
 /// loop is a wrapping rim, and that rim's arcs alone close the circle.
+///
+/// **The extent is never narrower than the face.** A lateral face on this road is bounded on its
+/// chart by arcs and rulings alone — the gate refuses an oblique plane that reaches a lateral
+/// (`ObliqueCylinderCut`) and two cylinders whose faces meet (`CylinderPairContact`) — so at every
+/// angle it covers, its upper and lower boundaries are arcs: the face's angular projection is the
+/// union of its arcs'. What the extent does not see is a **hole** in the face, the conservative
+/// side. Every reader of a face's angle leans on this — the reaches ([`arc_extent`]), the box, the
+/// common cross-section, a line off the arc.
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a pierce corner is the
 /// meet line's point at its rank ([`nacre_exact::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 pub(super) fn lateral_theta_extent(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Theta {
+    rim_arc_union(model, face, def).map_or(Theta::Whole, Theta::Arc)
+}
+
+/// [`lateral_theta_extent`]'s union, `None` where it reads the whole circle.
+fn rim_arc_union(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
@@ -356,17 +373,12 @@ pub(super) fn lateral_cover_on_ruling(
     use nacre_exact::Rat;
     let (o, m) = (def.origin(), def.dir());
     let zero = Rat::from_int(0);
-    // The ruling's radial direction: `foot − o` less its component along the axis.
+    // The ruling's radial direction: `foot − o` off the axis.
     let mut w = [zero; 3];
     for k in 0..3 {
         w[k] = foot[k].checked_sub(o[k])?;
     }
-    let mm = nacre_exact::dot3_rat(&m, &m)?;
-    let q = nacre_exact::dot3_rat(&w, &m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
-    let mut x = [zero; 3];
-    for k in 0..3 {
-        x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
-    }
+    let x = nacre_exact::off_axis_rat(&w, &m)?;
     let mut stations: Vec<Rat> = Vec::new();
     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
         for he in &lp.half_edges {
@@ -420,9 +432,10 @@ pub(super) fn lateral_cover_on_ruling(
 /// name the **complementary** arc — not a bound on this one but a different set, which would prove
 /// clearances that are not there.
 ///
-/// `arc = None` is the whole circle, and `d ∥ axis` leaves no radial term at all.
+/// [`Theta::Whole`] is the whole circle, [`Theta::At`] one point of it (`d·x` both ways, no
+/// radical), and `d ∥ axis` leaves no radial term at all.
 pub(super) fn arc_extent(
-    arc: Option<&RimArc>,
+    theta: &Theta,
     r2: &nacre_exact::BigRat,
     axis: &[nacre_exact::Rat; 3],
     d: &[nacre_exact::Rat; 3],
@@ -434,29 +447,29 @@ pub(super) fn arc_extent(
 )> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
-    let (dm, mm) = (
-        nacre_exact::dot3_rat(d, axis)?,
-        nacre_exact::dot3_rat(axis, axis)?,
-    );
-    // `d⊥ = d − (d·m / m·m) m`, the direction of the radial term's peak; `|d⊥|² = d·d − (d·m)²/m·m`.
-    let k = dm.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
-    let mut dperp = *d;
-    for i in 0..3 {
-        dperp[i] = dperp[i].checked_sub(k.checked_mul(axis[i])?)?;
-    }
+    // `d⊥`, `d` off the axis: the direction of the radial term's peak.
+    let dperp = nacre_exact::off_axis_rat(d, axis)?;
     let dperp2 = nacre_exact::dot3_rat(&dperp, &dperp)?;
-    // A wide square (`r2` past `Rat`) declines here.
-    let rho2 = r2.narrow()?.checked_mul(dperp2)?;
-    match arc {
+    // The radial peak `ρ² = r²|d⊥|²`, formed only by a side that reaches it: a wide square (`r2`
+    // past `Rat`) declines there, and an end an arc stops at — or one direction — needs no radius.
+    let rho2 = || r2.narrow()?.checked_mul(dperp2);
+    match theta {
         _ if dperp2 == zero => Some((zero, zero, zero, zero)), // `d ∥ axis`
-        None => Some((zero, rho2, zero, rho2)),
-        Some(arc) => {
+        Theta::Whole => {
+            let rho2 = rho2()?;
+            Some((zero, rho2, zero, rho2))
+        }
+        Theta::At(x) => {
+            let dx = nacre_exact::dot3_rat(d, x)?;
+            Some((dx, zero, dx, zero))
+        }
+        Theta::Arc(arc) => {
             let (f, t) = (
                 nacre_exact::dot3_rat(d, &arc.from)?,
                 nacre_exact::dot3_rat(d, &arc.to)?,
             );
             let (hi_off, hi_rad) = if arc_contains(arc, &dperp, axis)? {
-                (zero, rho2)
+                (zero, rho2()?)
             } else {
                 (f.max(t), zero)
             };
@@ -465,7 +478,7 @@ pub(super) fn arc_extent(
                 *x = zero.checked_sub(*x)?;
             }
             let (lo_off, lo_rad) = if arc_contains(arc, &neg, axis)? {
-                (zero, rho2)
+                (zero, rho2()?)
             } else {
                 (f.min(t), zero)
             };

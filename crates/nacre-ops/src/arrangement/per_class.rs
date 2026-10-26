@@ -214,17 +214,17 @@ fn circle_crosses_ruling(
         let t1 = node_axis_param(jd, &ruling.def, ruling.end[1])?;
         Some(crate::planes::Footprint {
             span: Some([t0.min(t1), t0.max(t1)]),
-            theta: None,
+            theta: crate::planes::Theta::Whole,
         })
     })();
     let circle_t = crate::planes::axis_param_of_plane(&coeffs, &circle.def);
-    let apart = |arc: Option<crate::planes::RimArc>| -> bool {
+    let apart = |theta: crate::planes::Theta| -> bool {
         match (&ruling_piece, circle_t) {
             (Some(rp), Some(t)) => crate::planes::pieces_clear(
                 &circle.def,
                 &crate::planes::Footprint {
                     span: Some([t, t]),
-                    theta: arc,
+                    theta,
                 },
                 &ruling.def,
                 rp,
@@ -234,9 +234,9 @@ fn circle_crosses_ruling(
     };
     // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
     let e = nacre_exact::cross3_rat(&n, &m)?;
-    let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
+    let ask = |theta: &crate::planes::Theta| -> Option<bool> {
         let (lo, hi) =
-            crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), arc, &e)?;
+            crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), theta, &e)?;
         Some(nacre_exact::cylinder_ruling_reached_extent(
             &coeffs,
             &nacre_exact::StripReach {
@@ -268,14 +268,21 @@ fn circle_crosses_ruling(
     // the whole circle: a superset of every arc on it, so the answer stays sound and is the one
     // this predicate always gave.
     if circle.merged.is_empty() {
-        return if apart(None) { Some(false) } else { ask(None) };
+        let whole = crate::planes::Theta::Whole;
+        return if apart(whole) {
+            Some(false)
+        } else {
+            ask(&whole)
+        };
     }
     for (_, _, extent) in &circle.merged {
-        let arc = extent.and_then(|ends| rim_arc_of(jd, cyls, &centre, ends));
-        if apart(arc) {
+        let theta = extent.map_or(crate::planes::Theta::Whole, |ends| {
+            rim_arc_of(jd, cyls, &centre, ends)
+        });
+        if apart(theta) {
             continue;
         }
-        if ask(arc.as_ref())? {
+        if ask(&theta)? {
             return Some(true);
         }
     }
@@ -287,14 +294,18 @@ fn circle_crosses_ruling(
 ///
 /// The order is the contribution's own, which [`CircleTrace::arc`] states is counter-clockwise
 /// about the cylinder's axis — the same convention `RimArc` carries, so no reordering. A node with
-/// no rational coordinate (a `Wide` meet, a pierce whose root is irrational) gives `None`, and the
-/// caller then reads the whole circle rather than guess.
+/// no rational coordinate (a `Wide` meet, a pierce whose root is irrational) gives
+/// [`crate::planes::Theta::Whole`] rather than a guess, and so do two ends that are one node — a
+/// closed edge runs the whole turn, and a `RimArc` never has `from == to`.
 fn rim_arc_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     centre: &[nacre_exact::Rat; 3],
     ends: [NodeId; 2],
-) -> Option<crate::planes::RimArc> {
+) -> crate::planes::Theta {
+    if ends[0] == ends[1] {
+        return crate::planes::Theta::Whole;
+    }
     let radial = |node: NodeId| -> Option<[nacre_exact::Rat; 3]> {
         let p = combinatorics::node_coords_rat(jd, node)
             .or_else(|| combinatorics::pierce_coords_rat(jd, cyls, node))?;
@@ -304,10 +315,13 @@ fn rim_arc_of(
         }
         Some(v)
     };
-    Some(crate::planes::RimArc {
-        from: radial(ends[0])?,
-        to: radial(ends[1])?,
-    })
+    (|| {
+        Some(crate::planes::Theta::Arc(crate::planes::RimArc {
+            from: radial(ends[0])?,
+            to: radial(ends[1])?,
+        }))
+    })()
+    .unwrap_or(crate::planes::Theta::Whole)
 }
 
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not

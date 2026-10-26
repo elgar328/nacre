@@ -21,10 +21,10 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
     let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
     let fp = |span: [i128; 2]| Footprint {
         span: Some([z(span[0]), z(span[1])]),
-        theta: None,
+        theta: Theta::Whole,
     };
     let (x, dirs_of) = (fp([0, 2]), |b: &nacre_topo::CylinderDef| {
-        separating_dirs(&a, b)
+        separating_dirs(&a, &fp([0, 2]), b, &fp([0, 2]))
     });
     // `B` along `x`: its origin's `y`/`z` and its own span place it.
     let along_x =
@@ -50,7 +50,16 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
     }
     // Parallel axes have no third direction to offer.
     let parallel = cyl([z(1), z(0), z(0)], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
-    assert_eq!(separating_dirs(&a, &parallel).len(), 2);
+    assert_eq!(separating_dirs(&a, &x, &parallel, &x).len(), 2);
+    // A line on a cylinder names one more: its own radial direction.
+    let line = Footprint {
+        span: None,
+        theta: Theta::At([z(1), z(0), z(0)]),
+    };
+    assert_eq!(
+        separating_dirs(&a, &line, &parallel, &x),
+        vec![a.dir(), parallel.dir(), [z(1), z(0), z(0)]]
+    );
 }
 
 /// **Each of [`pieces_clear`]'s three witnesses is the only one that answers for some pair**, and a
@@ -76,11 +85,11 @@ fn each_witness_of_pieces_clear_is_the_only_one_for_some_pair() {
     );
     let whole = |lo: i128, hi: i128| Footprint {
         span: Some([z(lo), z(hi)]),
-        theta: None,
+        theta: Theta::Whole,
     };
     let right_half = Footprint {
         span: Some([z(0), z(1)]),
-        theta: Some(crate::planes::RimArc {
+        theta: Theta::Arc(crate::planes::RimArc {
             from: [z(0), z(-1), z(0)],
             to: [z(0), z(1), z(0)],
         }),
@@ -88,7 +97,7 @@ fn each_witness_of_pieces_clear_is_the_only_one_for_some_pair() {
     let witnesses =
         |a: &nacre_topo::CylinderDef, x: &Footprint, b: &nacre_topo::CylinderDef, y: &Footprint| {
             [
-                separating_dirs(a, b)
+                separating_dirs(a, x, b, y)
                     .iter()
                     .any(|d| separated(a, x, b, y, d) == Some(true)),
                 piece_inside(a, x, b) || piece_inside(b, y, a),
@@ -147,7 +156,7 @@ fn the_common_perpendicular_degenerates_to_the_surface_rule() {
     let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
     let unbounded = Footprint {
         span: None,
-        theta: None,
+        theta: Theta::Whole,
     };
     // Offsets either side of the radius sum `2/5`, and exactly on it.
     for (n, d) in [(1i128, 2i128), (2, 5), (1, 3), (9, 10)] {
@@ -156,7 +165,7 @@ fn the_common_perpendicular_degenerates_to_the_surface_rule() {
             [z(1), z(0), z(0)],
             [z(0), z(0), z(1)],
         );
-        let perp = separating_dirs(&a, &b)[2];
+        let perp = separating_dirs(&a, &unbounded, &b, &unbounded)[2];
         let face = separated(&a, &unbounded, &b, &unbounded, &perp);
         let surface = nacre_exact::cylinders_clear(
             &a.origin(),
@@ -188,7 +197,10 @@ fn a_lateral_faces_reach_and_what_clears_it() {
         nacre_exact::BigRat::from(q(1, 25)), // radius 1/5, as r²
     )
     .unwrap();
-    let fp = |span: Option<[Rat; 2]>| Footprint { span, theta: None };
+    let fp = |span: Option<[Rat; 2]>| Footprint {
+        span,
+        theta: Theta::Whole,
+    };
     let span = Some([z(0), z(2)]);
     // A whole-circle reach is `lo − √ρ² .. hi + √ρ²` with one `ρ²` on both ends.
     let whole = |r: &Reach| {
@@ -250,7 +262,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
     assert_eq!(arc_contains(&half, &[z(0), z(-1), z(0)], &m), Some(false));
     let fq = |span: Option<[Rat; 2]>| Footprint {
         span,
-        theta: Some(arc),
+        theta: Theta::Arc(arc),
     };
     // `d = +y`: the peak direction `+y` (90°) is off the arc, so the far end is the larger of
     // the ends' `d·v` — `0` at `(−r, 0)` — with no radical; `−y` (270°) is the arc's own end,
@@ -364,37 +376,84 @@ fn the_tangent_wall_states_itself_exactly() {
     );
 }
 
-/// **Whether a line along the axis lies within a lateral face's angular extent** — the half turn
-/// `(1, 0) → (−1, 0)` counter-clockwise about `+z`, the upper half: a line through `(0, 1)` is on
-/// it, through `(0, −1)` is not, and both ends are (a line on a face's end ruling is its edge).
-/// The height the point is given at does not matter, and a whole circle holds every line.
+/// **A line along the axis, against a lateral face's angular extent** — the half turn
+/// `(1, 0) → (−1, 0)` counter-clockwise about `+z`, the upper half: a line through `(0, −1)` is shown
+/// apart from the face, through `(0, 1)` is not, and neither is a line on an end (a line on a
+/// face's end ruling is its edge). The witness is the line's own radial direction
+/// ([`separating_dirs`]). The height the point is given at does not matter, a whole circle is never
+/// apart from a line, and a second statement running its axis the other way reads the same arc as
+/// the lower half — which holds `(0, −1)`.
 #[test]
-fn a_faces_angular_extent_holds_the_lines_on_it_ends_included() {
+fn a_line_off_a_faces_angular_extent_is_apart_from_it_ends_excluded() {
     let z = Rat::from_int;
+    let (o, m) = ([z(0); 3], [z(0), z(0), z(1)]);
+    let def =
+        nacre_topo::CylinderDef::new(o, m, [z(1), z(0), z(0)], nacre_exact::BigRat::from(z(1)))
+            .unwrap();
     let upper = Footprint {
         span: None,
-        theta: Some(RimArc {
+        theta: Theta::Arc(RimArc {
             from: [z(1), z(0), z(0)],
             to: [z(-1), z(0), z(0)],
         }),
     };
-    let (o, m) = ([z(0); 3], [z(0), z(0), z(1)]);
-    for (p, want) in [
-        ([z(0), z(1), z(5)], true),
-        ([z(0), z(-1), z(0)], false),
-        ([z(1), z(0), z(3)], true),
-        ([z(-1), z(0), z(-2)], true),
-        ([z(1), z(-1), z(0)], false),
+    let line = |p: [Rat; 3]| Footprint {
+        span: None,
+        theta: Theta::at_line(&p, &o, &m).unwrap(),
+    };
+    for (p, apart) in [
+        ([z(0), z(1), z(5)], false),
+        ([z(0), z(-1), z(0)], true),
+        ([z(1), z(0), z(3)], false),
+        ([z(-1), z(0), z(-2)], false),
     ] {
-        assert_eq!(upper.theta_holds_line(&p, &o, &m), Some(want), "{p:?}");
+        assert_eq!(pieces_clear(&def, &line(p), &def, &upper), apart, "{p:?}");
+        assert_eq!(
+            pieces_clear(&def, &upper, &def, &line(p)),
+            apart,
+            "{p:?} swapped"
+        );
+        // The witness that decides a line, read three ways.
+        assert_eq!(line_apart(&def, &line(p), &upper), Some(apart), "{p:?}");
     }
     let whole = Footprint {
         span: None,
-        theta: None,
+        theta: Theta::Whole,
     };
+    assert!(!pieces_clear(
+        &def,
+        &line([z(0), z(-1), z(0)]),
+        &def,
+        &whole
+    ));
+    let flipped = nacre_topo::CylinderDef::new(
+        o,
+        [z(0), z(0), z(-1)],
+        [z(1), z(0), z(0)],
+        nacre_exact::BigRat::from(z(1)),
+    )
+    .unwrap();
+    assert!(!pieces_clear(
+        &def,
+        &line([z(0), z(-1), z(0)]),
+        &flipped,
+        &upper
+    ));
+}
+
+/// **A line's angle is its point off the axis**, wherever the axis stands and whichever way it
+/// runs: on the axis `(1, 2, 3) + s·(1, 1, 0)`, the point `(3, 2, 3)` is `(1, −1, 0)` off it (its
+/// component along the axis, `(1, 1, 0)`, removed).
+#[test]
+fn a_lines_angle_is_its_point_off_the_axis() {
+    let z = Rat::from_int;
     assert_eq!(
-        whole.theta_holds_line(&[z(0), z(-1), z(0)], &o, &m),
-        Some(true)
+        Theta::at_line(
+            &[z(3), z(2), z(3)],
+            &[z(1), z(2), z(3)],
+            &[z(1), z(1), z(0)]
+        ),
+        Some(Theta::At([z(1), z(-1), z(0)]))
     );
 }
 

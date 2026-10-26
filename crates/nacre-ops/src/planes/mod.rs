@@ -122,69 +122,60 @@ pub(crate) struct CylFaceInfo {
 /// **A lateral face's footprint on its own chart `(t, θ)`** — the bounding rectangle of
 /// the region the face occupies there (a lateral *is* a region of its chart). Conservative for
 /// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
-/// for the face. The cylinder pair asks both axes of it (`cyl_gate::pieces_clear`); a parallel
-/// wall's faces read its span and take the angle as the whole circle ([`face_clears_footprint`]),
-/// which is wider and so still sound. Whether a line
-/// along the axis lies on the face is not a clearance: a tangency row asks the face's own stretches
-/// of the line (`cyl_geom::lateral_cover_on_ruling`), a shared ruling θ alone
-/// ([`Footprint::theta_holds_line`]).
+/// for the face. It is also how an **edge** or a **line** on the cylinder is a piece
+/// ([`pieces_clear`] says how). The one question asked of two of them is [`pieces_clear`]; a parallel
+/// wall's faces
+/// read only its span and take the angle as the whole circle ([`face_clears_footprint`]), which is
+/// wider and so still sound. Where a tangency row can read the face's own stretches of the line
+/// (`cyl_geom::lateral_cover_on_ruling`), it prefers them to the angle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Footprint {
     /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
     pub(crate) span: Option<[nacre_exact::Rat; 2]>,
-    /// The angular extent — the arc the face's rims trace, as two radial vectors of the
-    /// cylinder's radius from the axis, `from → to` counter-clockwise about the axis direction
-    /// ([`lateral_theta_extent`]). `None` is a whole circle, or an extent this road could not
-    /// state (an irrational corner, rims that do not chain into one arc) — read as the whole
-    /// circle, which is conservative.
-    pub(crate) theta: Option<RimArc>,
+    /// The angular extent ([`Theta`]).
+    pub(crate) theta: Theta,
 }
 
-impl Footprint {
-    /// **Does the line along the axis through `p` lie within this face's angular extent?** — the
-    /// face half of «this line lies on a lateral *face*, not only on its surface», which a
-    /// `SharedRuling` asks, and a `Tangency` where the face's stretches of the line could not be
-    /// read. Ends included: a line on the face's
-    /// end ruling is the face's edge. `theta: None` holds every line (the whole circle, or an
-    /// extent this road could not state). `None` is arithmetic that could not answer. The axis
-    /// span is not asked here — only θ.
-    ///
-    /// **A `false` here is true of the face.** `theta` is the union of the outer loop's rim arcs
-    /// ([`lateral_theta_extent`]), and a lateral face on this road is bounded on its chart by arcs
-    /// and rulings alone, so at every θ it covers, its upper and lower boundaries are arcs: the
-    /// face's θ-projection is the union of its arcs', and the extent is never narrower than the
-    /// face. What it does not see is a **hole** in the face — a line through a lateral's hole reads
-    /// `true`, the conservative side.
-    pub(super) fn theta_holds_line(
-        &self,
+/// **A piece's angular extent about its cylinder's axis.** Every variant is a set of radial
+/// directions — the whole turn, an arc, one direction — so a reach or a clearance asked of a piece
+/// reads one value whatever the piece is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Theta {
+    /// The whole circle, or an extent this road could not state (an irrational corner, rims that
+    /// do not chain into one arc) — read as the whole circle, which is conservative.
+    Whole,
+    /// The arc the face's rims trace ([`lateral_theta_extent`]), or one arc of a loop.
+    Arc(RimArc),
+    /// **One direction**: the radial vector, of the cylinder's radius, of a line along the axis
+    /// that lies on the cylinder — a ruling. An arc with one end.
+    At([nacre_exact::Rat; 3]),
+}
+
+impl Theta {
+    /// **The angle of the line along the axis through `p`**, a point on the cylinder `(o, m)` —
+    /// `p − o` off the axis ([`nacre_exact::off_axis_rat`]). A «not apart» answer leans on its
+    /// length being the radius, so `p` is on the cylinder; an «apart» proof holds for any `p`, the
+    /// line's own reach along it being exact. `None` is `Rat` overflow.
+    pub(crate) fn at_line(
         p: &[nacre_exact::Rat; 3],
         o: &[nacre_exact::Rat; 3],
         m: &[nacre_exact::Rat; 3],
-    ) -> Option<bool> {
-        let Some(arc) = &self.theta else {
-            return Some(true);
-        };
-        // The radial direction: `p − o` less its component along the axis.
-        let mut w = [nacre_exact::Rat::from_int(0); 3];
+    ) -> Option<Self> {
+        let mut w = *p;
         for k in 0..3 {
             w[k] = p[k].checked_sub(o[k])?;
         }
-        let along = nacre_exact::dot3_rat(&w, m)?;
-        let mm = nacre_exact::dot3_rat(m, m)?;
-        let q = along.checked_mul(nacre_exact::Rat::new(mm.denom(), mm.numer())?)?;
-        let mut x = [nacre_exact::Rat::from_int(0); 3];
-        for k in 0..3 {
-            x[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
-        }
-        arc_contains(arc, &x, m)
+        Some(Self::At(nacre_exact::off_axis_rat(&w, m)?))
     }
 }
 
 /// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
 /// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
-/// direction, `from == to` never (a whole circle is [`Footprint::theta`]'s `None`). Rational, as
-/// every corner a prism's rim has is: a seam point when the reference direction's norm is
-/// (`inv_sqrt_rat`), a pierce corner when its root is ([`nacre_exact::quad::QuadVal::as_rat`]).
+/// direction. A whole circle is [`Theta::Whole`] and one direction [`Theta::At`]; a `from` and a
+/// `to` pointing one way (two names of one corner) read as the whole circle ([`arc_contains`]),
+/// which is that arc. Rational, as every corner a prism's rim has is: a seam point when the reference
+/// direction's norm is (`inv_sqrt_rat`), a pierce corner when its root is
+/// ([`nacre_exact::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RimArc {
     pub(crate) from: [nacre_exact::Rat; 3],

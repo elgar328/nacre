@@ -42,7 +42,7 @@ pub(crate) fn collect_planes(
                             span: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
                             theta: def
                                 .as_ref()
-                                .and_then(|d| lateral_theta_extent(model, face, d)),
+                                .map_or(Theta::Whole, |d| lateral_theta_extent(model, face, d)),
                         },
                         def,
                     }));

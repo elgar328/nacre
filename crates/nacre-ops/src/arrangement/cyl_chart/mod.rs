@@ -541,12 +541,7 @@ fn second_chord_first(
     for k in 0..3 {
         w[k] = base[k].checked_sub(o[k])?;
     }
-    let mm = dot3_rat(&m, &m)?;
-    let q = dot3_rat(&w, &m)?.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
-    let mut r = [Rat::from_int(0); 3];
-    for k in 0..3 {
-        r[k] = w[k].checked_sub(q.checked_mul(m[k])?)?;
-    }
+    let r = nacre_exact::off_axis_rat(&w, &m)?;
     // Each chord's direction, turned to point into the cylinder (against `r`).
     let inward = |wt: &[Rat; 4]| -> Option<[Rat; 3]> {
         let d = cross3_rat(&m, &[wt[0], wt[1], wt[2]])?;
