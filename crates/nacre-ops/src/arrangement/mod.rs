@@ -63,6 +63,7 @@ mod cells;
 #[cfg(test)]
 #[path = "../tests/probes/crossing_probe.rs"]
 pub(crate) mod crossing_probe;
+mod crossings;
 pub(crate) mod cyl_chart;
 mod cyl_trace;
 #[cfg(test)]
@@ -79,8 +80,6 @@ mod rulings;
 mod setup;
 mod sides;
 mod split;
-mod split_circles;
-mod split_rulings;
 mod trace_class;
 mod trace_plane;
 mod traces;
@@ -98,6 +97,7 @@ use line_sweep::sweep_line;
 // only runs where `debug_assert!` does -- so it is re-exported under both conditions. A
 // `pub(crate)` glob claimed both at the wider visibility, which made it claim nothing at all
 // in a release build and say so.
+use crossings::*;
 #[cfg(all(test, debug_assertions))]
 pub(crate) use per_class::MIXED_CLASS_AUDIT;
 use per_class::per_class;
@@ -106,8 +106,6 @@ pub(crate) use rulings::*;
 pub(crate) use setup::*;
 use sides::*;
 pub(crate) use split::*;
-use split_circles::*;
-use split_rulings::*;
 pub(crate) use trace_class::*;
 use trace_plane::*;
 pub(crate) use traces::*;

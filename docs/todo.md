@@ -16,7 +16,7 @@
 
 - «평면의 어느 쪽인가»의 철자: `Judge::orient3d`(세 평면 점)·`PiercePoint::side`(관통점, 두 도로를 한 몸통에)·`plane_side_of_rat`
   (게이트의 유리수 점)·`plane_sign_hp`(링 상자 탐침)·`Judge::plane_cuts`(게이트의 축 거리)·`WorkingPlane::misses`(필터만 —
-  충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `split_rulings::AxisCoord`
+  충분조건 증명)·`WorkingCyl::beside`(게이트의 기록). 축 위 순서는 공용 길(`order_along` 계열) 밖에 `crossings::AxisCoord`
   하나, 세계 축 순서는 `winding` 의 `KeyCmp` 가 따로 쓴다.
 - 게이트가 배열보다 먼저 경우를 가르고 기록 여섯(`crossings`·`tangencies`·`tangent_walls`·`shared`·`silent`·`boxes`)에 담는다 —
   `silent` 하나를 읽는 자리가 약 20, 접근자가 일곱이다.
@@ -78,9 +78,9 @@
 옆면 차트(`cyl_chart`)도 먼저다. 차트는 축에 평행한 선분만 받는다 — 모서리가 «z선 × 정거장»이고 한 모서리에 길이
 넷이다(게이트의 다섯 갈래에서 유도한 전제). 4차 교선은 차트 위의 곡선이라 그 전제를 깬다. 그리고 교선은 지금
 게이트의 기록(`crossings`·`tangencies`·`SharedRuling` — 게이트 밖에서 그 필드를 직접 읽는 파일 7: `trace_class`·`aliases`·
-`split_rulings`·`cyl_chart`·`naming`·`names`·`self_touch`)과 곡선 종류마다의 분할
-모듈(선분 `split.rs` · 원 `split_circles.rs` · 룰링 `split_rulings.rs`·`rulings.rs`·`cyl_trace.rs`, 합 약
-2,850줄)로 배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
+`crossings`·`cyl_chart`·`naming`·`names`·`self_touch`)과 분할(선분끼리 `split.rs` · 선분 대 원과 룰링
+`crossings.rs` — 교점 수집은 한 걸음, 자르기는 곡선 종류마다 · 생산자 `rulings.rs`·`cyl_trace.rs`, 합 2,566줄)로
+배열에 들어온다. 직교 같은 특수 배치부터 하나씩 열면 배치마다 기록 하나·읽기 사슬 하나·분할 갈래가
 붙는다 — 차트는 곡선 종류마다 술어(교점·순서·접선 방향)만 대고 셀 기계는 한 벌인 모양으로 넓히고, 교선이 배열에
 들어오는 길도 같은 모양으로 정한다. 평면 DCEL 을 차트로 옮기는 길은 아니다(design 「가지 말 것」).
 
