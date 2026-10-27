@@ -568,7 +568,9 @@ fn lateral_crossings(
     };
     // A point of the segment the interval road can box: a three-plane end.
     let end_point = sg.end.iter().find_map(|&e| match e.kind() {
-        NodeKind::ThreePlane(t) => Some(nacre_judge::cylinder::CylPoint::Three(t)),
+        NodeKind::ThreePlane(t) => Some(nacre_judge::cylinder::AxisLine::Through(
+            nacre_judge::cylinder::CylPoint::Three(t),
+        )),
         NodeKind::Pierce { .. } => None,
     });
     match jd.line_meet(wc, sg.wall, def, along_axis) {
@@ -593,7 +595,7 @@ fn lateral_crossings(
         // [`split_rulings`] states it there.
         LineMeet::OnRuling(_) if on_a_shared_line => Ok(Some(Vec::new())),
         LineMeet::OnRuling(line) => {
-            match line_off_faces(jd, def, Some(&line), end_point, &pieces()) {
+            match crate::planes::line_off_faces(jd, def, Some(&line), end_point, &pieces()) {
                 Some(true) => Ok(Some(Vec::new())),
                 // On a face: the ruling split does not arrange the shape yet — nor where the planes
                 // degenerate.
@@ -606,71 +608,17 @@ fn lateral_crossings(
         }
         // Along the axis, the interval road cannot tell a line on the surface from one beside it;
         // either way it crosses no ruling, and it touches a face only if it lies at an angle one
-        // holds — the question [`line_off_faces`] answers from a point of the segment.
+        // holds — the question [`crate::planes::line_off_faces`] answers from a point of the segment.
         LineMeet::Undecided
-            if along_axis && line_off_faces(jd, def, None, end_point, &pieces()) == Some(true) =>
+            if along_axis
+                && crate::planes::line_off_faces(jd, def, None, end_point, &pieces())
+                    == Some(true) =>
         {
             Ok(Some(Vec::new()))
         }
         LineMeet::Undecided => Err(undecided()),
         LineMeet::Wide | LineMeet::Overflow => Ok(None),
     }
-}
-
-/// **Does a segment's line along cylinder `def`'s axis miss every lateral face of it?** — one
-/// predicate, asked on both roads of a line that lies on the surface or that the intervals cannot
-/// tell from one there: such a line crosses no ruling (they are parallel) and no circle (its class
-/// is ∥ the axis), so it touches the lateral only where a face holds its angle.
-///
-/// **The segment is asked, not its line**, and only its angle: a face's rulings and arcs stand at
-/// angles its arc holds, and two lines along the axis on one cylinder at different angles never
-/// meet. The span is not read — the angle alone is what the population needs.
-///
-/// Two bodies. Holding the exact line, the half-space along its own direction ([`Theta::at_line`]
-/// as a piece `span: None` × its angle, against each face — [`crate::planes::pieces_clear`]):
-/// `Some(true)` off every face, `Some(false)` on one, `None` where the angle has no rational
-/// spelling. Holding only a point of the segment, its direction off the axis against each face's
-/// arc ([`Judge::axis_line_off_arcs`] — a direction is the same along the whole line, so any point
-/// of it will do): `Some(true)` where that proves the line off, `None` otherwise — a face whose
-/// angle is not an arc (`Theta::Whole`, or one direction) is not shown clear. Where both bodies can
-/// answer, a debug build checks the interval one never proves clear what the exact one does not.
-///
-/// [`Theta::at_line`]: crate::planes::Theta::at_line
-fn line_off_faces(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    line: Option<&nacre_exact::quad::MeetLine>,
-    point: Option<nacre_judge::cylinder::CylPoint<'_>>,
-    pieces: &[crate::planes::Footprint],
-) -> Option<bool> {
-    let interval = || -> bool {
-        let Some(point) = point else {
-            return false;
-        };
-        let arcs: Option<Vec<[[Rat; 3]; 2]>> = pieces
-            .iter()
-            .map(|fp| match fp.theta {
-                crate::planes::Theta::Arc(a) => Some([a.from, a.to]),
-                crate::planes::Theta::Whole | crate::planes::Theta::At(_) => None,
-            })
-            .collect();
-        arcs.is_some_and(|arcs| {
-            jd.axis_line_off_arcs(def, nacre_judge::cylinder::AxisLine::Through(point), &arcs)
-        })
-    };
-    let Some(line) = line else {
-        return interval().then_some(true);
-    };
-    let theta = crate::planes::Theta::at_line(&line.base(), &def.origin(), &def.dir())?;
-    let seg = crate::planes::Footprint { span: None, theta };
-    let clear = pieces
-        .iter()
-        .all(|fp| crate::planes::pieces_clear(def, &seg, def, fp));
-    debug_assert!(
-        clear || !interval(),
-        "the interval body proves a line off the faces the exact one puts it on"
-    );
-    Some(clear)
 }
 
 /// One crossing [`lateral_crossings`] found: its Pierce name, and the meet it was solved as (the

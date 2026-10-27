@@ -456,7 +456,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// **Is the line `p ∩ q`, exactly parallel to the axis, off cylinder `def`'s surface?** — its
     /// constant term `C ≠ 0` proved (inside the solid or outside it, never on the surface). `false`
     /// where it is not proved; the caller states the parallelism.
-    pub fn parallel_line_off(&self, p: usize, q: usize, def: &CylinderDef) -> bool {
+    pub(crate) fn parallel_line_off(&self, p: usize, q: usize, def: &CylinderDef) -> bool {
         self.meet_line_hp(p, q, def, self.standard.prec)
             .is_some_and(|line| line.c.sign().is_some())
     }

@@ -222,11 +222,14 @@ pub(crate) fn cylinder_gate(
         }
         silent[ci].push((c, Silence::Apart));
     }
-    // **A sectioned class shares no line of the lateral with another record of that cylinder.**
+    // **A sectioned class shares no line of a lateral face with another record of that cylinder.**
     // `shared_rulings` reads only the recorded pairs, so a line this class meets another recorded
-    // class in, lying on the lateral, would be a ruling no record states. Every such pair is shown
-    // off the surface ([`line_off_lateral`]) or refused.
+    // class in, lying on a lateral face, would be a ruling no record states. Every such pair is
+    // shown off the faces ([`line_off_lateral`]) or refused.
+    let mut pieces: Vec<Option<Vec<Footprint>>> = (0..cyls.len()).map(|_| None).collect();
     for &(c, ci) in &sectioned {
+        let fps: &[Footprint] =
+            pieces[ci].get_or_insert_with(|| lateral_pieces(faces, cyls[ci].surf));
         let others = cuts_of(ci)
             .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
             .chain(tangent_walls_of(ci))
@@ -237,7 +240,7 @@ pub(crate) fn cylinder_gate(
                     .map(|&(x, _)| x),
             );
         for x in others {
-            if !line_off_lateral(jd, c, x, &cyls[ci].def) {
+            if !line_off_lateral(jd, c, x, &cyls[ci].def, fps) {
                 return Err(undecided());
             }
         }
@@ -1882,26 +1885,33 @@ fn nameless_stance(
     }
 }
 
-/// **Is the line `p ∩ x` off the lateral surface of `def`?** — `p` a sectioned class (along the
-/// axis), `x` another class recorded on the same cylinder. A named `x` not along the axis meets `p`
-/// in a line that crosses the axis direction, which no ruling does. A named `x` along it meets `p`
-/// in a line exactly parallel to the axis (both normals are perpendicular to it), and the line is
-/// off the surface when its constant term `C ≠ 0` is proved
-/// ([`nacre_exact::quad::plane_plane_cylinder_hp`]). Two classes with no world statement are not
-/// asked: `false`.
+/// **Is the line `p ∩ x` off every lateral face of `def`?** — `p` a sectioned class (along the
+/// axis), `x` another class recorded on the same cylinder, `pieces` the cylinder's lateral faces
+/// ([`lateral_pieces`]). A named `x` not along the axis meets `p` in a line that crosses the axis
+/// direction, which no ruling does. Otherwise both run along the axis — a named `x` by its
+/// coefficients, a nameless one because it sections the cylinder too — and the line is off when
+/// there is none, the two planes parallel ([`Judge::planes_parallel`]: two classes of one table are
+/// proved not coplanar, so parallel ones share no line), or when [`line_off_faces`] shows it off
+/// the faces from the two planes alone — off the surface, or at a direction no face's arc holds.
+/// `false` where neither is shown, and for a `Wide` name, which nothing here reads.
 fn line_off_lateral(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
     x: usize,
     def: &nacre_topo::CylinderDef,
+    pieces: &[Footprint],
 ) -> bool {
-    let Some(w) = jd.world_rat(x) else {
-        return false;
-    };
-    if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) != nacre_exact::Orient::Zero {
-        return true;
+    if jd.planes[x].world.is_some() {
+        let Some(w) = jd.world_rat(x) else {
+            return false;
+        };
+        if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) != nacre_exact::Orient::Zero {
+            return true;
+        }
     }
-    jd.parallel_line_off(p, x, def)
+    let meet = nacre_judge::cylinder::AxisLine::Meet(p, x);
+    jd.planes_parallel(p, x) == Some(true)
+        || line_off_faces(jd, def, None, Some(meet), pieces) == Some(true)
 }
 
 /// **Do the faces on class `c` stand apart from every lateral box?** — every face's edges are
@@ -2145,6 +2155,61 @@ pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Fo
     } else {
         v
     }
+}
+
+/// **Does a line along cylinder `def`'s axis miss every lateral face of it?** — one predicate,
+/// asked by the split of a segment's line that lies on the surface or that the intervals cannot
+/// tell from one there, and by the gate of the line two recorded classes meet in
+/// ([`line_off_lateral`]): such a line crosses no ruling (they are parallel) and no circle (its
+/// class is ∥ the axis), so it touches the lateral only where a face holds its angle.
+///
+/// **The faces are asked, not the surface**, and only the line's angle: a face's rulings and arcs
+/// stand at angles its arc holds, and two lines along the axis on one cylinder at different angles
+/// never meet. The span is not read — the angle alone is what the population needs.
+///
+/// Two bodies. Holding the exact line, the half-space along its own direction ([`Theta::at_line`]
+/// as a piece `span: None` × its angle, against each face — [`pieces_clear`]): `Some(true)` off
+/// every face, `Some(false)` on one, `None` where the angle has no rational spelling. Holding only a
+/// point of the line, or the two planes it is the meet of ([`AxisLine`]), its direction off the
+/// axis against each face's arc ([`Judge::axis_line_off_arcs`] — a direction is the same along the
+/// whole line, so any point of it will do; the meet of two planes is off as well when it is off the
+/// surface): `Some(true)` where that proves the line off, `None` otherwise — a face whose angle is
+/// not an arc (`Theta::Whole`, or one direction) is not shown clear. Where both bodies can answer, a
+/// debug build checks the interval one never proves clear what the exact one does not.
+///
+/// [`AxisLine`]: nacre_judge::cylinder::AxisLine
+pub(crate) fn line_off_faces(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    line: Option<&nacre_exact::quad::MeetLine>,
+    interval_line: Option<nacre_judge::cylinder::AxisLine<'_>>,
+    pieces: &[Footprint],
+) -> Option<bool> {
+    use nacre_exact::Rat;
+    let interval = || -> bool {
+        let Some(at) = interval_line else {
+            return false;
+        };
+        let arcs: Option<Vec<[[Rat; 3]; 2]>> = pieces
+            .iter()
+            .map(|fp| match fp.theta {
+                Theta::Arc(a) => Some([a.from, a.to]),
+                Theta::Whole | Theta::At(_) => None,
+            })
+            .collect();
+        arcs.is_some_and(|arcs| jd.axis_line_off_arcs(def, at, &arcs))
+    };
+    let Some(line) = line else {
+        return interval().then_some(true);
+    };
+    let theta = Theta::at_line(&line.base(), &def.origin(), &def.dir())?;
+    let seg = Footprint { span: None, theta };
+    let clear = pieces.iter().all(|fp| pieces_clear(def, &seg, def, fp));
+    debug_assert!(
+        clear || !interval(),
+        "the interval body proves a line off the faces the exact one puts it on"
+    );
+    Some(clear)
 }
 
 /// **Do piece `x` of cylinder `a`'s lateral and piece `y` of cylinder `b`'s share no point?** —

@@ -367,23 +367,23 @@ fn a_pin_outside_the_notch_circle_box_builds() {
     every_kind(|m| pin_below(m, 43.5), apart(NOTCHED + 125.0));
 }
 
-// ---- a nameless class's line off the lateral, read on the carriers ----
+// ---- a nameless class's line off the lateral, read on the faces ----
 
 /// **A turned box beside the fillet** — the box's walls have no world statement and their planes
 /// section the fillet cylinder while their faces stay apart from it. The gate asks whether the line
-/// such a class meets another recorded class in lies off the lateral (`line_off_lateral`), and it
-/// asks the two carriers: the line is an interval box, and the angular test has no interval
-/// spelling. Four constructions: two parallel walls, a second box on a fused plate, the slotted
-/// plate, a pocketed plate with an `8°` box.
+/// such a class meets another recorded class in lies on a lateral face (`line_off_lateral`), and
+/// asks it of the faces. Four constructions: two parallel walls of one box, which share no line;
+/// three parallel walls of two boxes on a fused plate; two parallel walls beside the slotted
+/// plate's slot end; and a pocketed plate with an `8°` box, whose wall meets the pocket's wall
+/// `x = 43` in a line on the fillet's cylinder at `(3, 4)` from the axis, off its quarter.
 #[test]
-fn a_turned_box_beside_the_fillet_is_refused_by_the_gate() {
-    let undecided = || refused(RejectReason::CylinderGateUndecided);
+fn a_turned_box_beside_the_fillet_builds() {
     every_kind(
         |m| {
             let p = plate(m);
             (p, turned_box(m, 37, [31.0, -8.0], 6.0, 10.0))
         },
-        undecided(),
+        one_body(PLATE, 250.0, 150.0),
     );
     every_kind(
         |m| {
@@ -392,7 +392,7 @@ fn a_turned_box_beside_the_fillet_is_refused_by_the_gate() {
             let a = op1(m, BoolKind::Fuse, p, t);
             (a, turned_box(m, 37, [5.0, 19.0], 5.0, 10.0))
         },
-        undecided(),
+        one_body(PLATE + 75.0, 250.0, 175.0),
     );
     every_kind(
         |m| {
@@ -401,7 +401,7 @@ fn a_turned_box_beside_the_fillet_is_refused_by_the_gate() {
             let b = turn(m, b, 37, [0.0; 3]);
             (p, shift(m, b, [18.0, 30.0, 0.0]))
         },
-        undecided(),
+        one_body(SLOTTED, 150.0, 75.0),
     );
     every_kind(
         |m| {
@@ -411,7 +411,55 @@ fn a_turned_box_beside_the_fillet_is_refused_by_the_gate() {
             let t = bx(m, [38.0, -6.0, 5.0], [43.0, -1.0, 15.0]);
             (a, turn(m, t, 8, [43.0, -16.0, 0.0]))
         },
-        undecided(),
+        one_body(PLATE - 120.0, 250.0, 175.0),
+    );
+}
+
+/// The plate and two boxes fused and turned `8°` about `(43, y0)`: `[23, 43] × [y0, y0 + 20]` over
+/// `z ∈ [13, 20]`, above the plate, its corner at the pivot; and `[28, 33] × [y0 + 10, y0 + 15]`
+/// over `z ∈ [5, 14]`, reaching into the plate far from the fillet.
+fn corner_above_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<Solid>) {
+    let p = plate(m);
+    let pivot = [43.0, y0, 0.0];
+    let t = bx(m, [23.0, y0, 13.0], [43.0, y0 + 20.0, 20.0]);
+    let t = turn(m, t, 8, pivot);
+    let k = bx(m, [28.0, y0 + 10.0, 5.0], [33.0, y0 + 15.0, 14.0]);
+    let k = turn(m, k, 8, pivot);
+    let b = op1(m, BoolKind::Fuse, t, k);
+    (p, b)
+}
+
+/// **Two nameless walls meeting on the fillet's quarter** — the upper box's corner `(43, −24)` is on
+/// the quarter (`(3, −4)` from the axis), so its two walls through it, both sectioning the fillet
+/// cylinder, meet in a line on the lateral face, though their faces stand above it. No record states
+/// that line, and the gate refuses the pair. It is held at the gate: past it, the split refuses the
+/// same shape by the same name.
+#[test]
+fn two_nameless_walls_meeting_on_the_quarter_are_refused_at_the_gate() {
+    every_kind(
+        |m| corner_above_the_fillet(m, -24.0),
+        refused(RejectReason::CylinderGateUndecided),
+    );
+    let mut m = Model::new();
+    let (a, b) = corner_above_the_fillet(&mut m, -24.0);
+    m.rebuild_adjacency();
+    match crate::arrangement::plane_index_setup(&m, a, b) {
+        Err(BoolError::Rejected { reason, .. }) => {
+            assert_eq!(reason, RejectReason::CylinderGateUndecided);
+        }
+        other => panic!("the gate refuses: {:?}", other.map(|_| ())),
+    }
+}
+
+/// The control: the same bodies `8` along `y`, the corner at `(43, −16)` — on the fillet's cylinder
+/// at `(3, 4)` from the axis, off its quarter. One wall through that corner stands beside the
+/// quarter's box, so no line of two sectioning walls is asked here: what this holds is that the
+/// refusal above is the corner's place on the quarter.
+#[test]
+fn two_nameless_walls_meeting_off_the_quarter_build() {
+    every_kind(
+        |m| corner_above_the_fillet(m, -16.0),
+        one_body(PLATE, 3000.0, 175.0),
     );
 }
 
@@ -574,8 +622,8 @@ fn pocket_beside_the_fillet(m: &mut Model, y0: f64) -> (Handle<Solid>, Handle<So
 /// **A pocket wall beside the fillet's quarter** — the pocket's wall `y = −17` crosses the fillet
 /// cylinder off its quarter: the plane misses the lateral face though it cuts the infinite cylinder
 /// (`laterals_clear_plane`, asked before the faces), so the pair writes nothing. A record there
-/// would meet the turned box's walls, which have no world statement, at a line on the cylinder's
-/// surface, and the gate's line test asks the carriers (`line_off_lateral`).
+/// would meet the turned box's walls, which have no world statement, in a line on the cylinder's
+/// surface, which the gate would ask of the faces (`line_off_lateral`).
 #[test]
 fn a_pocket_wall_beside_the_fillet_quarter_builds() {
     every_kind(
