@@ -13,7 +13,7 @@ use super::*;
 /// anything reads the answers. The gate is then what can and cannot be drawn: it settles the
 /// nameless candidates against the cylinder's other records, refuses an ellipse
 /// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
-/// crossings, the [`Tangency`] rows, the silences ([`WorkingCyl::records`]) and the lines two
+/// cuts and silences ([`WorkingCyl::records`]), the [`Tangency`] rows and the lines two
 /// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
 /// judge ([`RejectReason::TangentLineInAnotherPlane`]).
 ///
@@ -145,12 +145,31 @@ pub(crate) fn cylinder_gate(
         }
         meets.push(row);
     }
-    // The records the code below and the arrangement read, each a view of the answers.
-    let mut crossings = std::collections::HashSet::new();
-    // The tangent half of [`SharedRuling`]'s population: `(class, cylinder, classes holding the
-    // tangent line)` for every tangent class carrying a face of the cylinder's other operand —
-    // whether or not its faces wrote rows.
-    let mut tangent_walls: Vec<(usize, usize, Vec<usize>)> = Vec::new();
+    // The classes cutting cylinder `ci`, and the tangent ones carrying a face of its other operand
+    // — the half of [`SharedRuling`]'s population a tangent class gives, whether or not its faces
+    // wrote rows. With the tangency rows, these are the records the nameless settlements weigh.
+    let cuts_of = |ci: usize| {
+        meets[ci]
+            .iter()
+            .enumerate()
+            .filter(|(_, meet)| **meet == ClassMeet::Cuts)
+            .map(|(c, _)| c)
+    };
+    let tangent_walls_of = |ci: usize| {
+        meets[ci]
+            .iter()
+            .enumerate()
+            .filter(|(_, meet)| {
+                matches!(
+                    meet,
+                    ClassMeet::Tangent {
+                        other_owner: true,
+                        ..
+                    }
+                )
+            })
+            .map(|(c, _)| c)
+    };
     let mut silent: Vec<Vec<(usize, Silence)>> = vec![Vec::new(); cyls.len()];
     // Classes whose faces stand apart from a cylinder their plane may cut — silent once the
     // cylinder is shown to leave no record either, which only the end of the loop knows.
@@ -162,20 +181,16 @@ pub(crate) fn cylinder_gate(
     for (ci, row) in meets.iter().enumerate() {
         for (c, meet) in row.iter().enumerate() {
             match meet {
-                ClassMeet::Cuts => {
-                    crossings.insert((c, ci));
-                }
-                ClassMeet::Tangent {
-                    holders,
-                    other_owner: true,
-                } => tangent_walls.push((c, ci, holders.clone())),
                 ClassMeet::Silent(Silence::Beside(side)) => {
                     silent[ci].push((c, Silence::Beside(*side)))
                 }
                 ClassMeet::Silent(Silence::Apart) => apart.push((c, ci)),
                 ClassMeet::Silent(Silence::Sectioned) => sectioned.push((c, ci)),
                 ClassMeet::Ellipse => oblique = true,
-                ClassMeet::Across | ClassMeet::Clear | ClassMeet::Tangent { .. } => {}
+                ClassMeet::Across
+                | ClassMeet::Clear
+                | ClassMeet::Cuts
+                | ClassMeet::Tangent { .. } => {}
             }
         }
     }
@@ -199,9 +214,9 @@ pub(crate) fn cylinder_gate(
             !sectioned.iter().any(|&(_, k)| k == ci),
             "a cylinder with only whole rims is sectioned by another class"
         );
-        let recorded = crossings.iter().any(|&(_, k)| k == ci)
+        let recorded = cuts_of(ci).next().is_some()
             || tangencies.iter().any(|t| t.cyl == ci)
-            || tangent_walls.iter().any(|&(_, k, _)| k == ci);
+            || tangent_walls_of(ci).next().is_some();
         if recorded {
             return Err(undecided());
         }
@@ -212,17 +227,9 @@ pub(crate) fn cylinder_gate(
     // class in, lying on the lateral, would be a ruling no record states. Every such pair is shown
     // off the surface ([`line_off_lateral`]) or refused.
     for &(c, ci) in &sectioned {
-        let others = crossings
-            .iter()
-            .filter(|&&(_, k)| k == ci)
-            .map(|&(x, _)| x)
+        let others = cuts_of(ci)
             .chain(tangencies.iter().filter(|t| t.cyl == ci).map(|t| t.wall))
-            .chain(
-                tangent_walls
-                    .iter()
-                    .filter(|&&(_, k, _)| k == ci)
-                    .map(|&(x, _, _)| x),
-            )
+            .chain(tangent_walls_of(ci))
             .chain(
                 sectioned
                     .iter()
@@ -243,13 +250,8 @@ pub(crate) fn cylinder_gate(
             .into_iter()
             .map(|(c, s)| (c, CylRecord::Silent(s)))
             .collect();
-        cyl.records.extend(
-            meets[ci]
-                .iter()
-                .enumerate()
-                .filter(|(_, meet)| **meet == ClassMeet::Cuts)
-                .map(|(c, _)| (c, CylRecord::Cuts)),
-        );
+        cyl.records
+            .extend(cuts_of(ci).map(|c| (c, CylRecord::Cuts)));
     }
     debug_assert!(
         cyls.iter().all(|cyl| (0..geom.len())
@@ -342,7 +344,7 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
-    for (ci, sr) in shared_rulings(faces, jd, &cyls, &crossings, &tangent_walls)
+    for (ci, sr) in shared_rulings(faces, jd, &cyls, &meets)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
     {
         cyls[ci].shared.push(sr);
@@ -379,7 +381,7 @@ pub(crate) fn cylinder_gate(
 /// **What a plane class receives from a cylinder** — [`class_meet`]'s answer: the curve the
 /// class's arrangement meets on the cylinder, or what proves it meets none. Read only by the gate:
 /// its refusals (an ellipse, the nameless settlements) and the records it hands on.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum ClassMeet {
     /// The plane is perpendicular to the axis: it meets the lateral in circles, which the faces'
     /// rims carry.
@@ -715,9 +717,10 @@ fn class_meet(
 /// line), the straight-angle cleaning (a ruling piece and a plane segment, one line) and the
 /// self-touch verdict (an edge along the line inside the solid's own lateral).
 ///
-/// The population is the pairs this gate already recorded against the cylinder: a class in
-/// `crossings` (it cuts the lateral in two rulings) with another in `crossings`, or with a
-/// **tangent** class that carries a face of the cylinder's other operand. A tangent class of the
+/// The population is the pairs [`class_meet`] already answered against the cylinder: a class that
+/// cuts it ([`ClassMeet::Cuts`] — two rulings) with another that cuts it, or with a **tangent**
+/// class that carries a face of the cylinder's other operand ([`ClassMeet::Tangent`]'s
+/// `other_owner`). A tangent class of the
 /// cylinder's own solid is its smooth edge — a fillet — and stays out, by the sentence
 /// `tangency_rows` already stands on: a valid solid's faces do not meet.
 ///
@@ -735,8 +738,8 @@ fn class_meet(
 pub(crate) struct SharedRuling {
     /// The two plane classes, ascending.
     pub(crate) line: (usize, usize),
-    /// Which of the two state the ruling as a station of the cylinder's chart — the ones in
-    /// `crossings`, so one (a tangent partner) or both.
+    /// Which of the two state the ruling as a station of the cylinder's chart — the ones that cut
+    /// the cylinder, so one (a tangent partner) or both.
     pub(crate) stated_by: Vec<usize>,
 }
 
@@ -774,17 +777,17 @@ fn shared_rulings(
     faces: &[FaceRow],
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
-    crossings: &std::collections::HashSet<(usize, usize)>,
-    tangent_walls: &[(usize, usize, Vec<usize>)],
+    meets: &[Vec<ClassMeet>],
 ) -> Option<Vec<(usize, SharedRuling)>> {
     let mut out = Vec::new();
     for (ci, cyl) in cyls.iter().enumerate() {
-        let mut secants: Vec<usize> = crossings
+        // In class order, so sorted.
+        let secants: Vec<usize> = meets[ci]
             .iter()
-            .filter(|&&(_, k)| k == ci)
-            .map(|&(c, _)| c)
+            .enumerate()
+            .filter(|(_, meet)| **meet == ClassMeet::Cuts)
+            .map(|(c, _)| c)
             .collect();
-        secants.sort_unstable();
         let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         let fps = lateral_pieces(faces, cyl.surf);
         // Whether the line through `p` along the axis lies on a lateral face of this cylinder
@@ -819,11 +822,15 @@ fn shared_rulings(
                 }
             }
         }
-        for (t, k, holders) in tangent_walls {
-            if *k != ci {
+        for (t, meet) in meets[ci].iter().enumerate() {
+            let ClassMeet::Tangent {
+                holders,
+                other_owner: true,
+            } = meet
+            else {
                 continue;
-            }
-            let foot = tangency_foot(&jd.world_rat(*t)?, &o)?;
+            };
+            let foot = tangency_foot(&jd.world_rat(t)?, &o)?;
             if !on_a_face(&foot)? {
                 continue;
             }
@@ -832,7 +839,7 @@ fn shared_rulings(
                     out.push((
                         ci,
                         SharedRuling {
-                            line: (s.min(*t), s.max(*t)),
+                            line: (s.min(t), s.max(t)),
                             stated_by: vec![s],
                         },
                     ));
