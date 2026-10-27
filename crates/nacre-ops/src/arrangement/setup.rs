@@ -33,16 +33,12 @@ pub(crate) struct PlaneSetup {
     /// boolean. Filled by the population gate, which is also what refuses the interactions the
     /// kernel does not build.
     pub(crate) cyls: Vec<WorkingCyl>,
-    /// The gate's carried answer for the rulings road: `(plane class, cylinder class)`
-    /// pairs allowed through **without** a clearance proof — see
-    /// [`crate::combinatorics::TraceInput::crossings`]. The gate fills it for a wall whose plane
-    /// runs within the radius — through the axis or offset from it.
-    pub(crate) crossings: std::collections::HashSet<(usize, usize)>,
-    /// **The tangent `(wall face, lateral face)` pairs** — the graze twin of `crossings`, and the
-    /// reason they are two sets rather than one: a recorded *crossing* says "this plane runs within
-    /// the radius, so it cuts the lateral in two rulings", and a tangency says the opposite ("it
-    /// touches along one line and cuts nothing"). Merging them would make the record's own
-    /// proposition false and break the four `debug_assert`s that lean on it. See [`Tangency`].
+    /// **The tangent `(wall face, lateral face)` pairs** — the graze twin of a cut
+    /// ([`crate::planes::CylRecord::Cuts`]), and the reason a tangency is not one: a cut says "this
+    /// plane runs within the radius, so it cuts the lateral in two rulings", and a tangency says the
+    /// opposite ("it touches along one line and cuts nothing"). Recording it as a cut would make
+    /// the record's own proposition false and break the `debug_assert`s that lean on it. See
+    /// [`Tangency`].
     pub(crate) tangencies: Vec<Tangency>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
@@ -61,7 +57,7 @@ pub(crate) fn plane_index_setup(
     // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes
     // goes on to be arranged.
     if !cyl_surfs.is_empty() {
-        let (cyls, crossings, tangencies) = cylinder_gate(
+        let (cyls, tangencies) = cylinder_gate(
             model,
             &cyl_surfs,
             &setup.planes,
@@ -70,7 +66,6 @@ pub(crate) fn plane_index_setup(
             &Judge::new(&setup.geom, setup.standard, &setup.notes),
         )?;
         setup.cyls = cyls;
-        setup.crossings = crossings;
         setup.tangencies = tangencies;
     }
     Ok(setup)
@@ -139,7 +134,6 @@ pub(crate) fn plane_index_setup_inner(
             plane_ix,
             class_owner,
             cyls: Vec::new(),
-            crossings: std::collections::HashSet::new(),
             tangencies: Vec::new(),
             standard,
             notes,

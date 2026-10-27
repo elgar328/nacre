@@ -24,7 +24,6 @@ pub(super) fn rulings_on_class(
     k: usize,
     which: SolidSide,
     cyls: &[crate::planes::WorkingCyl],
-    crossings: &std::collections::HashSet<(usize, usize)>,
     aliases: &Aliases,
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
     // **The gate's answer, first** ([`WorkingCyl::draws_rulings`](crate::planes::WorkingCyl::draws_rulings)
@@ -34,23 +33,17 @@ pub(super) fn rulings_on_class(
     // the boss's own wall class is a d=0 pair, and its coplanar bottom cap's chord lands on a line
     // the plate already traces. The gate records exactly the pairs that need the rectangle.
     let sections = cyls.get(k).is_some_and(|cy| cy.sections(wc));
-    let draws = cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc));
-    debug_assert_eq!(
-        draws,
-        crossings.contains(&(wc, k)) || sections,
-        "the record and the crossing set agree"
-    );
-    if !draws {
+    if !cyls.get(k).is_some_and(|cy| cy.draws_rulings(wc)) {
         return Ok((Vec::new(), Vec::new()));
     }
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
-    // The record is the crossing statement: a listed pair's plane runs within the
+    // The record is the crossing statement: a cut pair's plane runs within the
     // radius, so the wall meets the lateral in two rulings; the sweep reads the face's cycles
     // and says where. The premise is the gate's, asserted rather than re-derived — and it survived
     // the tangent wall opening precisely because a tangency is written to `tangencies`
-    // and **not** to `crossings`: "within" still means within. A recorded pair's class has world
+    // and **not** as a cut: "within" still means within. A recorded pair's class has world
     // coefficients (the gate records a crossing only from them); a sectioned class's premise is
     // the gate's interval reading of the same inequality.
     debug_assert!(

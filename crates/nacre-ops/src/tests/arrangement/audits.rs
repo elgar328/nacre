@@ -37,7 +37,6 @@ pub(crate) fn trace_every_class(
         inc_b,
         geom,
         plane_ix,
-        crossings,
         cyls,
         standard,
         notes,
@@ -52,7 +51,6 @@ pub(crate) fn trace_every_class(
         &jd,
         &plane_ix,
         &cyls,
-        crossings,
     );
     // The table production starts from the operands' own concurrencies and corners.
     let mut aliases = Aliases::default();
@@ -81,7 +79,6 @@ pub(crate) fn concurrency_audit(
         inc_b,
         geom,
         plane_ix,
-        crossings,
         cyls,
         standard,
         notes,
@@ -96,7 +93,6 @@ pub(crate) fn concurrency_audit(
         &jd,
         &plane_ix,
         &cyls,
-        crossings.clone(),
     );
     let mut out = Vec::new();
     // The table production starts from the operands' own concurrencies and corners.
@@ -271,7 +267,6 @@ pub(crate) fn trace_declines(
         inc_b,
         geom,
         plane_ix,
-        crossings,
         cyls,
         standard,
         notes,
@@ -286,7 +281,6 @@ pub(crate) fn trace_declines(
         &jd,
         &plane_ix,
         &cyls,
-        crossings.clone(),
     );
     let mut out = Vec::new();
     // The table production starts from the operands' own concurrencies and corners.
@@ -315,7 +309,6 @@ pub(crate) fn pierce_corner_audit(
         inc_b,
         geom,
         plane_ix,
-        crossings,
         cyls,
         standard,
         notes,
@@ -330,7 +323,6 @@ pub(crate) fn pierce_corner_audit(
         &jd,
         &plane_ix,
         &cyls,
-        crossings.clone(),
     );
     let mut aliases = Aliases::default();
     seed_from_operands(&mut aliases, &jd, &cyls, &trace_in);
@@ -439,7 +431,6 @@ pub(crate) fn operand_vertex_audit(
         inc_b,
         geom,
         plane_ix,
-        crossings,
         cyls,
         standard,
         notes,
@@ -454,7 +445,6 @@ pub(crate) fn operand_vertex_audit(
         &jd,
         &plane_ix,
         &cyls,
-        crossings.clone(),
     );
     // The alias fold production would reach: every class traced, merged and split, discoveries
     // accumulated across classes.
@@ -759,7 +749,6 @@ pub(crate) fn frame_audit(
         geom,
         plane_ix,
         cyls,
-        crossings,
         standard,
         notes,
         ..
@@ -773,7 +762,6 @@ pub(crate) fn frame_audit(
         &jd,
         &plane_ix,
         &cyls,
-        crossings.clone(),
     );
     // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names for
     // one another's features, so auditing each class against an empty table is auditing a

@@ -42,10 +42,10 @@ pub(super) fn chord_stations(
             _ => None,
         })
         .ok_or(ChordUnstatable)?;
-    // The record is the crossing statement: a listed pair's plane runs within the
+    // The record is the crossing statement: a recorded pair's plane runs within the
     // radius, so `L` enters the circle at one root and leaves at the other. The premise is the
-    // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
-    // listed; see `planes::Tangency`.)
+    // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never a
+    // cut; see `planes::Tangency`.)
     debug_assert_eq!(
         nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
         nacre_exact::Orient::Negative,

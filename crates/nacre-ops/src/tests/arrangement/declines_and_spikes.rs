@@ -44,7 +44,6 @@ fn axis_aligned_cubes_decline_nothing() {
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
     }
@@ -136,7 +135,6 @@ fn direction_families_partition_the_walls() {
                 &jd,
                 &setup.plane_ix,
                 &setup.cyls,
-                Default::default(),
             );
             for wc in 0..setup.geom.len() {
                 let tr = trace_on_class(

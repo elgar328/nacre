@@ -70,7 +70,6 @@ fn trace_transversal_face(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-    crossings: &std::collections::HashSet<(usize, usize)>,
     out: &mut Trace,
 ) {
     // `fp` names a *face* (`n_out`, `orient`, the declined log); `fc` names the *plane class* it
@@ -121,11 +120,6 @@ fn trace_transversal_face(
                 let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
                     unreachable!("the guard just matched a circle outer");
                 };
-                debug_assert_eq!(
-                    cyls.get(cyl).is_some_and(|cy| cy.cuts(wc)),
-                    crossings.contains(&(wc, cyl)),
-                    "the record and the crossing set agree"
-                );
                 match chord_stations(jd, faces, plane_ix, wc, fc, cyl, cyls) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => return,
@@ -172,14 +166,9 @@ fn trace_transversal_face(
             // on this class, and the rulings road is silent for it — so planting stations
             // would break the line against rulings that are (rightly) absent: measured, the
             // d = 0 boss-and-bore fixture walked its spur out and back and refused
-            // `StraightAngle`. Listed pairs get the stations; unlisted pairs are skipped, and the
+            // `StraightAngle`. A cut pair gets the stations; any other pair is skipped, and the
             // two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
-                debug_assert_eq!(
-                    cyls.get(*cyl).is_some_and(|cy| cy.cuts(wc)),
-                    crossings.contains(&(wc, *cyl)),
-                    "the record and the crossing set agree"
-                );
                 match chord_stations(jd, faces, plane_ix, wc, fc, *cyl, cyls) {
                     Ok(Some(pair)) => stations.extend(pair),
                     Ok(None) => {}
@@ -339,16 +328,7 @@ fn trace_transversal_face(
                     // clear has no root inside any arc — a crossing named here on an unrecorded pair
                     // would meet no ruling on the lateral's side.
                     if let crate::combinatorics::Wall::Arc { cyl, .. } = walls[edge]
-                        && !{
-                            let draws = cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc));
-                            debug_assert_eq!(
-                                draws,
-                                crossings.contains(&(wc, cyl))
-                                    || cyls.get(cyl).is_some_and(|cy| cy.sections(wc)),
-                                "the record and the crossing set agree"
-                            );
-                            draws
-                        }
+                        && !cyls.get(cyl).is_some_and(|cy| cy.draws_rulings(wc))
                     {
                         declined = Some(DeclineKind::CurvedRingWall);
                         break 'rings;
@@ -547,7 +527,6 @@ pub(super) fn trace_one(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-    crossings: &std::collections::HashSet<(usize, usize)>,
     aliases: &Aliases,
     out: &mut Trace,
 ) {
@@ -584,8 +563,7 @@ pub(super) fn trace_one(
                 // No circle: a wall class **within the radius** leaves two rulings instead (the
                 // rulings road, through the axis or offset from it); any other non-⊥ class still
                 // leaves nothing, silently — the population gate names those interactions.
-                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, crossings, aliases)
-                {
+                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, cyls, aliases) {
                     Ok((v, grazes)) => {
                         out.rulings.extend(v);
                         // The lateral's side of a plane-pair line it touches.
@@ -598,7 +576,7 @@ pub(super) fn trace_one(
             continue;
         }
         if plane_ix[fp].plane() != wc {
-            trace_transversal_face(fp, fl, which, wc, jd, cyls, faces, plane_ix, crossings, out);
+            trace_transversal_face(fp, fl, which, wc, jd, cyls, faces, plane_ix, out);
             continue;
         }
         // Seated: the face lies in W, so its whole boundary is trace. The body lies on one

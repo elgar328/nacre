@@ -196,7 +196,6 @@ fn rotated_tunnel_area_and_faces() {
         &jd,
         &plane_ix,
         &cyls,
-        Default::default(),
     );
     let (faces, _, _) = trace_result_faces(
         &m,
@@ -306,7 +305,6 @@ fn rotated_tunnel_declines_nothing() {
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         assert!(
             tr.declined.is_empty(),

@@ -35,14 +35,7 @@ pub(crate) fn cylinder_gate(
     plane_ix: &[ClassIx],
     n_a: usize,
     jd: &Judge<'_, WorkingPlane>,
-) -> Result<
-    (
-        Vec<WorkingCyl>,
-        std::collections::HashSet<(usize, usize)>,
-        Vec<Tangency>,
-    ),
-    BoolError,
-> {
+) -> Result<(Vec<WorkingCyl>, Vec<Tangency>), BoolError> {
     let geom = jd.planes;
     // Every question below is a **sign**, and the `nacre-exact` layer answers signs totally: local
     // checked-`Rat` closures would decline on overflow, putting a width limit inside
@@ -380,10 +373,7 @@ pub(crate) fn cylinder_gate(
             ));
         }
     }
-    // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
-    // pairs [`class_meet`]'s record-and-pass arm admitted without a clearance proof. Empty for every
-    // population outside the rulings road.
-    Ok((cyls, crossings, tangencies))
+    Ok((cyls, tangencies))
 }
 
 /// **What a plane class receives from a cylinder** — [`class_meet`]'s answer: the curve the
@@ -650,7 +640,7 @@ fn class_meet(
                 // judge.
                 //
                 // **A tangency is a graze, not a crossing** — so it passes, and it
-                // is **not** recorded. `crossings`' proposition is "the plane runs *within*
+                // is **not** a cut. A cut's proposition is "the plane runs *within*
                 // the radius", which a tangent plane does not; the three roads gated on
                 // that record assert it in a `debug_assert` (`arrangement`' circular-
                 // hole arm, `chord_stations`, `rulings_on_class`), and all three stay true
@@ -903,11 +893,11 @@ fn wall_faces_clear(
 /// **A wall plane exactly `r` from a cylinder's axis, and everything a verdict needs about it.**
 ///
 /// **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
-/// *divides nothing*, so it earns no [`crate::arrangement::PlaneSetup::crossings`] record — that set's proposition is
+/// *divides nothing*, so it earns no cut ([`CylRecord::Cuts`]) — that record's proposition is
 /// "the plane runs **within** the radius", and the three roads gated on it assert exactly that
-/// (`crossings.contains` has three readers, each with the matching `debug_assert`; the ruling road
-/// and the arc arm also take a class that sections the cylinder, `Silence::Sectioned`, whose
-/// premise is the gate's interval reading of the same inequality). The
+/// ([`WorkingCyl::cuts`] has one reader and [`WorkingCyl::draws_rulings`] two, each with the
+/// matching `debug_assert`; the latter also take a class that sections the cylinder,
+/// `Silence::Sectioned`, whose premise is the gate's interval reading of the same inequality). The
 /// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement
 /// change at all (measured: of 21 cells, the 15 outside the third-plane population assemble with
 /// `validate` clean and exact volumes).
@@ -2135,7 +2125,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 /// footprint of no span and the whole circle: the class still has faces, and that piece reads as
 /// unbounded along anything not perpendicular to the axis. So «every piece is apart» is never an
 /// empty truth. The door is for the readers that ask «apart» of the class's faces; the readers that
-/// decline on an unusable list (the oblique arm, `faces_apart`, the crossing record) read
+/// decline on an unusable list (the oblique arm, `faces_apart`, the cut record) read
 /// [`lateral_footprints`] and keep that. Built where it is asked, not with the class — the gate's
 /// own footprints are lazy for the reason [`wall_faces_clear`] gives.
 pub(crate) fn lateral_pieces(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {

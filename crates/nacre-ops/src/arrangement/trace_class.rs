@@ -20,7 +20,6 @@ pub(super) fn trace_on_class(
             cyls,
             faces,
             plane_ix,
-            &input.crossings,
             aliases,
             &mut out,
         );
@@ -45,7 +44,6 @@ pub(super) fn trace_on_class_of(
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[ClassIx],
-    crossings: std::collections::HashSet<(usize, usize)>,
 ) -> Trace {
     let input = combinatorics::trace_input(
         model,
@@ -55,7 +53,6 @@ pub(super) fn trace_on_class_of(
         jd,
         plane_ix,
         &[],
-        crossings,
     );
     trace_on_class(&input, wc, jd, cyls, faces, plane_ix, &Aliases::default())
 }
@@ -78,7 +75,6 @@ pub(super) fn trace_one_of(
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
     plane_ix: &[ClassIx],
-    crossings: std::collections::HashSet<(usize, usize)>,
     out: &mut Trace,
 ) {
     let input = combinatorics::trace_input(
@@ -89,7 +85,6 @@ pub(super) fn trace_one_of(
         jd,
         plane_ix,
         cyls,
-        crossings,
     );
     trace_one(
         &input.faces[0],
@@ -99,7 +94,6 @@ pub(super) fn trace_one_of(
         cyls,
         faces,
         plane_ix,
-        &input.crossings,
         &Aliases::default(),
         out,
     );

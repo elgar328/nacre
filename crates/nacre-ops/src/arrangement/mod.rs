@@ -462,7 +462,6 @@ pub(crate) fn boolean(
         plane_ix,
         class_owner,
         cyls,
-        crossings,
         tangencies,
         standard,
         notes,
@@ -491,7 +490,6 @@ pub(crate) fn boolean(
                 &jd,
                 &plane_ix,
                 &cyls,
-                crossings.clone(),
             )
         );
         // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
@@ -534,7 +532,6 @@ pub(crate) fn boolean(
                 &plain_jd,
                 &plane_ix,
                 &cyls,
-                crossings.clone(),
             );
             let plain = trace_result_faces(
                 model,

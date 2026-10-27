@@ -42,7 +42,6 @@ fn bands(
         &jd,
         plane_ix,
         cyls,
-        Default::default(),
     );
     let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
         m,

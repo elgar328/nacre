@@ -40,7 +40,6 @@ fn the_production_road_survives_a_cylinder_past_the_stopper() {
         &jd,
         &plane_ix,
         &cyls,
-        Default::default(),
     );
     let (faces, _, _) = trace_result_faces(
         &m,
@@ -89,7 +88,6 @@ fn armed_through_boss() -> (
     Handle<Solid>,
     crate::arrangement::PlaneSetup,
     usize,
-    std::collections::HashSet<(usize, usize)>,
 ) {
     armed_through_boss_z(-10.0, 50.0)
 }
@@ -109,7 +107,6 @@ fn armed_through_boss_z(
     Handle<Solid>,
     crate::arrangement::PlaneSetup,
     usize,
-    std::collections::HashSet<(usize, usize)>,
 ) {
     armed_boss_at(20.0, z_lo, h)
 }
@@ -127,7 +124,6 @@ fn armed_boss_at(
     Handle<Solid>,
     crate::arrangement::PlaneSetup,
     usize,
-    std::collections::HashSet<(usize, usize)>,
 ) {
     let mut m = Model::new();
     let plate = crate::fixtures::cuboid(
@@ -176,8 +172,7 @@ fn armed_boss_at(
     setup.cyls[0]
         .records
         .push((wc, crate::planes::CylRecord::Cuts));
-    let crossings: std::collections::HashSet<(usize, usize)> = [(wc, 0)].into_iter().collect();
-    (m, plate, boss, setup, wc, crossings)
+    (m, plate, boss, setup, wc)
 }
 
 /// **A closed arc holds every point of its circle but its node** (`theta_between` with
@@ -186,7 +181,7 @@ fn armed_boss_at(
 /// the three-point order alone would refuse as two names for two points.
 #[test]
 fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
-    let (_m, _plate, _boss, setup, wc, _) = armed_through_boss();
+    let (_m, _plate, _boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = &setup.cyls[0].def;
     let top = setup
@@ -224,7 +219,7 @@ fn a_closed_arc_holds_every_point_of_its_circle_but_its_node() {
 /// the class's edges are built.
 #[test]
 fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
-    let (m, plate, boss, setup, x40, crossings) = armed_boss_at(5.0, -10.0, 50.0);
+    let (m, plate, boss, setup, x40) = armed_boss_at(5.0, -10.0, 50.0);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = setup.cyls[0].def.clone();
     let top = setup
@@ -248,7 +243,6 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
         &setup.inc_a,
         &setup.inc_b,
         &setup.plane_ix,
-        crossings,
     );
     let merged = merge_coincident(&jd, &tr.segs, top, &Aliases::default());
     let split =
@@ -331,7 +325,7 @@ fn an_arc_ends_unaliased_second_name_is_refused_not_dropped() {
 /// whichever of the two points is the node.
 #[test]
 fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
-    let (_m, _plate, _boss, setup, wc, _) = armed_through_boss();
+    let (_m, _plate, _boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let def = setup.cyls[0].def.clone();
     let top = setup
@@ -388,10 +382,11 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
 /// Pierce-named ends, no plain segments) and two cap chords (`Lo`/`Hi` roots on the cap classes).
 /// With the pair's record removed the same trace is empty: the negative control that pins "an
 /// empty record changes nothing", which is the population an unconditionally-firing arm would
-/// break (14 arc-family tests red, measured).
+/// break (14 arc-family tests red, measured). With a sectioning record instead, the rulings and
+/// no chord.
 #[test]
 fn the_gates_record_arms_the_ruling_trace() {
-    let (m, _plate, boss, mut setup, wc, crossings) = armed_through_boss();
+    let (m, _plate, boss, mut setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let mut tr = Trace::default();
     trace_one_of(
@@ -405,7 +400,6 @@ fn the_gates_record_arms_the_ruling_trace() {
         &setup.surf_ix,
         &setup.inc_b,
         &setup.plane_ix,
-        crossings.clone(),
         &mut tr,
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
@@ -455,13 +449,40 @@ fn the_gates_record_arms_the_ruling_trace() {
         &setup.surf_ix,
         &setup.inc_b,
         &setup.plane_ix,
-        Default::default(),
         &mut tr0,
     );
     assert!(
         tr0.rulings.is_empty() && tr0.segs.is_empty(),
         "empty record, empty road"
     );
+    // A sectioning record draws the rulings and no chord: the chord asks for a cut
+    // (`WorkingCyl::cuts`), the rulings for either (`WorkingCyl::draws_rulings`). The gate
+    // sections only a cylinder with no whole rim (`class_meet`'s `Sectioned` arm), so no boolean
+    // asks a sectioned pair for a chord, and the record is set by hand on the armed pair.
+    setup.cyls[0].records.push((
+        wc,
+        crate::planes::CylRecord::Silent(crate::planes::Silence::Sectioned),
+    ));
+    let mut tr1 = Trace::default();
+    trace_one_of(
+        &m,
+        boss,
+        SolidSide::B,
+        wc,
+        &jd,
+        &setup.cyls,
+        &setup.planes,
+        &setup.surf_ix,
+        &setup.inc_b,
+        &setup.plane_ix,
+        &mut tr1,
+    );
+    assert_eq!(
+        tr1.rulings.len(),
+        2,
+        "a sectioning record draws the rulings"
+    );
+    assert!(tr1.segs.is_empty(), "and no chord: {:?}", tr1.segs.len());
 }
 
 /// **The armed arrangement digests the rectangle** — production bricks end to end on the
@@ -472,7 +493,7 @@ fn the_gates_record_arms_the_ruling_trace() {
 /// overhangs.
 #[test]
 fn the_armed_wall_class_walks_to_closed_cells() {
-    let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
+    let (m, plate, boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let tr = trace_on_class_of(
         &m,
@@ -486,7 +507,6 @@ fn the_armed_wall_class_walks_to_closed_cells() {
         &setup.inc_a,
         &setup.inc_b,
         &setup.plane_ix,
-        crossings,
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
@@ -550,7 +570,6 @@ fn armed_class_edges<'a>(
     setup: &'a crate::arrangement::PlaneSetup,
     jd: &Judge<'a, WorkingPlane>,
     wc: usize,
-    crossings: &std::collections::HashSet<(usize, usize)>,
 ) -> ClassEdges<'a> {
     let tr = trace_on_class_of(
         m,
@@ -564,7 +583,6 @@ fn armed_class_edges<'a>(
         &setup.inc_a,
         &setup.inc_b,
         &setup.plane_ix,
-        crossings.clone(),
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     let merged = merge_coincident(jd, &tr.segs, wc, &Aliases::default());
@@ -747,10 +765,9 @@ fn lateral_lattice(staircase: bool) {
     } else {
         [-10.0, 40.0]
     };
-    let (m, plate, boss, setup, wc, crossings) = armed_through_boss_z(caps[0], caps[1] - caps[0]);
+    let (m, plate, boss, setup, wc) = armed_through_boss_z(caps[0], caps[1] - caps[0]);
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
-    let (curved, plane_faces, rows, _) =
-        armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, caps);
+    let (curved, plane_faces, rows, _) = armed_curved(&m, plate, boss, &setup, &jd, wc, caps);
     let fuse = crate::arrangement::cyl_chart::emit_lateral(
         BoolKind::Fuse,
         &jd,
@@ -903,7 +920,6 @@ fn armed_curved(
     setup: &crate::arrangement::PlaneSetup,
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
-    crossings: &std::collections::HashSet<(usize, usize)>,
     caps: [f64; 2],
 ) -> (
     Curved,
@@ -937,7 +953,7 @@ fn armed_curved(
     // both-cut middle is one whole-circle cell the emitter cannot read per sector.
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in [z0, z20, cap_lo, cap_hi, wc] {
-        let edges = armed_class_edges(m, plate, boss, setup, jd, c, crossings);
+        let edges = armed_class_edges(m, plate, boss, setup, jd, c);
         let staged = per_class(jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), *label);
@@ -977,10 +993,10 @@ fn armed_curved(
 /// (`CylinderStagesDisagree`) — and labels that disagree (`LabelConflict`).
 #[test]
 fn a_cut_circle_bounds_the_bands() {
-    let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
+    let (m, plate, boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi]) =
-        armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, [-10.0, 40.0]);
+        armed_curved(&m, plate, boss, &setup, &jd, wc, [-10.0, 40.0]);
     let (disk_labels, arc_labels, cut_rims) =
         (&curved.disk_labels, &curved.arc_labels, &curved.split_rims);
     assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
@@ -1163,7 +1179,7 @@ fn a_cut_circle_bounds_the_bands() {
 /// class's arrangement, the coplanar unify, the band/panel pass, the seam table, `reconstruct`.
 /// Returns the model with the one welded solid live, plus the setup and the wall class.
 fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usize) {
-    let (mut m, plate, boss, setup, wc, crossings) = armed_through_boss();
+    let (mut m, plate, boss, setup, wc) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let mut faces: Vec<LocalFace> = Vec::new();
     let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
@@ -1171,7 +1187,7 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     let mut cut_rims: CutRims = HashMap::new();
     let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
     for c in 0..setup.geom.len() {
-        let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
+        let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c);
         let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
         for (cyl, label) in &staged.disk_labels {
             disk_labels.insert((*cyl, c), *label);
@@ -1593,7 +1609,6 @@ fn with_cut_rings(
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
         let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
@@ -1871,7 +1886,6 @@ fn the_two_roads_agree_on_every_rational_ring() {
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
         let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()) else {
@@ -2037,7 +2051,6 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
         &surf_ix,
         &inc_b,
         &plane_ix,
-        Default::default(),
         &mut tr,
     );
     assert!(
@@ -2152,7 +2165,6 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
     assert!(
@@ -2276,7 +2288,6 @@ fn a_circular_hole_ring_traces_as_a_seated_circle() {
         &jd,
         &plane_ix,
         &[],
-        Default::default(),
     );
     let (fp, fl) = input.faces[0]
         .iter()
@@ -2297,7 +2308,6 @@ fn a_circular_hole_ring_traces_as_a_seated_circle() {
         &faces_tab,
         &plane_ix,
         &Default::default(),
-        &Aliases::default(),
         &mut tr,
     );
     assert!(tr.declined.is_empty(), "{:?}", tr.declined);
@@ -2356,7 +2366,6 @@ fn no_ghost_circle_outside_the_rim_span() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     assert!(top.circles.is_empty(), "{:?}", top.circles);
     assert!(top.declined.is_empty(), "{:?}", top.declined);
@@ -2374,7 +2383,6 @@ fn no_ghost_circle_outside_the_rim_span() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     assert_eq!(
         bottom
@@ -2405,7 +2413,6 @@ fn no_ghost_circle_outside_the_rim_span() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     assert!(cap.declined.is_empty(), "{:?}", cap.declined);
     let sides: Vec<(bool, bool)> = cap
@@ -2487,7 +2494,6 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let seated: Vec<bool> = tr
         .circles
@@ -2563,7 +2569,6 @@ fn partial_overlap_is_not_merged() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
     // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
@@ -2663,7 +2668,6 @@ fn an_arc_crossing_once_into_its_end_on_the_line_leaves_the_chord() {
         &surf_ix,
         &inc_a,
         &plane_ix,
-        [(wc, 0)].into_iter().collect(),
         &mut tr,
     );
     // The lateral's ruling road declines this class (the booleans' `RulingBoundNotYet`); the

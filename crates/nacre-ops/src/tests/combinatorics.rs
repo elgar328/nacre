@@ -388,7 +388,6 @@ fn a_nodes_interval_holds_it_for_either_kind_of_name() {
         &jd,
         plane_ix,
         cyls,
-        setup.crossings.clone(),
     );
     let (faces, _, _) = crate::arrangement::trace_result_faces_full_for_test(
         &m,

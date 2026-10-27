@@ -121,8 +121,19 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     // The pair is checked by **what it means**, not by its indices: the arm records exactly the
     // classes whose plane the cylinder's axis lies *on*, so that is the assertion — renumbering
     // the classes cannot make it pass or fail for the wrong reason.
-    assert_eq!(setup.crossings.len(), 1, "one seated pair, not more");
-    for &(c, ci) in &setup.crossings {
+    let cuts: Vec<(usize, usize)> = setup
+        .cyls
+        .iter()
+        .enumerate()
+        .flat_map(|(ci, cy)| {
+            cy.records
+                .iter()
+                .filter(|&&(_, r)| r == crate::planes::CylRecord::Cuts)
+                .map(move |&(c, _)| (c, ci))
+        })
+        .collect();
+    assert_eq!(cuts.len(), 1, "one seated pair, not more");
+    for &(c, ci) in &cuts {
         let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
             .world_rat(c)
             .expect("a named wall class");

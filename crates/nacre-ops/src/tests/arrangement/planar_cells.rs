@@ -109,7 +109,6 @@ fn a_seated_cap_emits_its_boundary_with_the_right_body_side() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
     // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
@@ -235,7 +234,6 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
         &surf_ix,
         &inc_a,
         &plane_ix,
-        Default::default(),
         &mut out,
     );
 
@@ -353,7 +351,6 @@ fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
         &surf_ix,
         &inc_a,
         &plane_ix,
-        Default::default(),
         &mut out,
     );
 
@@ -560,7 +557,6 @@ fn coincident_cap_edges_merge_by_footprint() {
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
         assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
@@ -613,7 +609,6 @@ fn coincident_cap_edges_merge_by_footprint() {
             &inc_a,
             &inc_b,
             &plane_ix,
-            Default::default(),
         );
         let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
         assert_eq!(
@@ -674,7 +669,6 @@ fn split_cuts_the_cross_into_the_right_pieces() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     assert_eq!(merged.len(), 8, "8 merged edges before split");
@@ -787,7 +781,6 @@ fn partial_overlap_is_resolved() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -876,7 +869,6 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -1054,7 +1046,6 @@ fn the_cross_arrangement_has_six_cells() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -1197,7 +1188,6 @@ fn cell_labels_propagate_and_match_footprints() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -1286,7 +1276,6 @@ fn a_straddle_drives_the_above_bit_and_seated_wins() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -1354,7 +1343,6 @@ fn boolean_keep_and_result_faces_on_the_cross() {
         &inc_a,
         &inc_b,
         &plane_ix,
-        Default::default(),
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
@@ -1533,7 +1521,6 @@ fn stacked_fuse_emits_ten_closed_faces() {
         &jd,
         &plane_ix,
         &cyls,
-        Default::default(),
     );
     let (faces, _, _) = trace_result_faces(
         &m,
@@ -1752,7 +1739,6 @@ fn tunnel_cut_emits_ten_faces_two_annular() {
         &jd,
         &plane_ix,
         &cyls,
-        Default::default(),
     );
     let (faces, _, _) = trace_result_faces(
         &m,
@@ -1863,7 +1849,6 @@ fn u_slab_fuse_emits_a_two_hole_face() {
         &jd,
         &plane_ix,
         &cyls,
-        Default::default(),
     );
     let (faces, _, _) = trace_result_faces(
         &m,

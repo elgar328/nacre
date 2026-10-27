@@ -133,16 +133,6 @@ pub(crate) struct TraceInput {
     /// per table slot whether or not its face is in the input — which is what lets a caller hand
     /// the tracer a *subset* without the table's size leaking into the cost.
     pub faces: [Vec<(usize, FaceLoops)>; 2],
-    /// **The population gate's own answer, carried — never re-derived**:
-    /// the `(plane class, cylinder class)` pairs the gate let through **without** proving the
-    /// class's faces clear of the lateral. The tracer's ruling and chord arms fire only on pairs
-    /// listed here.
-    ///
-    /// **It is not always empty in production**: the record-and-pass arm fills it for a
-    /// wall whose plane holds the axis exactly
-    /// (`planes`, `crossings.insert`). Measured: listed for the wall/boss pair 2 times in
-    /// a plate-and-wall-boss fuse and 16 in the operation after it.
-    pub crossings: std::collections::HashSet<(usize, usize)>,
 }
 
 /// Derive [`TraceInput`] for one boolean, once.
@@ -159,7 +149,6 @@ pub(crate) fn trace_input(
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
     cyls: &[crate::planes::WorkingCyl],
-    crossings: std::collections::HashSet<(usize, usize)>,
 ) -> TraceInput {
     let _ = n_faces;
     let mut faces = [Vec::new(), Vec::new()];
@@ -197,7 +186,7 @@ pub(crate) fn trace_input(
             }
         }
     }
-    TraceInput { faces, crossings }
+    TraceInput { faces }
 }
 
 /// Each hole ring of face `f`, as three-plane triples.

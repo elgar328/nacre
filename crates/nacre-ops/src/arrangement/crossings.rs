@@ -98,7 +98,7 @@ pub(super) fn split_circles(
                 // would invent structure that is not there; the `UnorderedEdges` that lifting this
                 // skip would reach is the **rulings** vocabulary (`side` ±1), which the tangent
                 // wall never enters because the gate records no crossing for it; and this arm is
-                // not gated on `crossings`, so a ⊥ class takes the same road whatever the gate
+                // not gated on the gate's cut record, so a ⊥ class takes the same road whatever the gate
                 // recorded. 15 of 21 measured cells assemble with it in place (the other 6 hold a
                 // third plane on the tangent line and are refused earlier, by `CoincidentNodes`).
                 .filter(|&n| {
