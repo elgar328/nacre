@@ -189,18 +189,18 @@ fn a_direction_sign_does_not_read_the_plane_cache() {
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
     let (mut planes, _, _) = crate::planes::dense_planes(&faces, &canon);
     let zero = nacre_exact::Rat::from_int(0);
-    let c = planes
-        .iter()
-        .position(|p| p.world_rat().is_some_and(|w| w[0] != zero && w[1] != zero))
+    let world = |k: usize| crate::planes::test_judge(&planes).world_rat(k);
+    let c = (0..planes.len())
+        .find(|&k| world(k).is_some_and(|w| w[0] != zero && w[1] != zero))
         .expect("the slanted wall");
-    let w = planes[c].world_rat().expect("a world name");
+    let w = world(c).expect("a world name");
     assert!(
         w[0].to_f64().abs() < 1e-15 * w[1].to_f64().abs(),
         "the name's first nonzero component is tiny: {w:?}"
     );
     let answers = |planes: &[WorkingPlane]| {
         let jd = crate::planes::test_judge(planes);
-        (stored_coeffs_rat(&jd, c), jd.outward_fix(c))
+        (jd.stored_world_rat(c), jd.outward_fix(c))
     };
     let truth = answers(&planes);
     assert!(truth.0.is_some() && truth.1.is_some(), "both answer");
@@ -611,7 +611,7 @@ fn an_arc_crossed_twice_by_a_nameless_plane_counts_two() {
     let counts: Vec<usize> = [true, false]
         .into_iter()
         .map(|ccw| {
-            arc_crossings_hp(&jd, &def, top, near, k, ccw, ends, None)
+            arc_crossings(&jd, &def, top, near, k, ccw, ends, None)
                 .expect("decided")
                 .len()
         })

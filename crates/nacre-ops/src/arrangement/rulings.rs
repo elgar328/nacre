@@ -50,7 +50,7 @@ pub(super) fn rulings_on_class(
     // the gate's interval reading of the same inequality.
     debug_assert!(
         sections
-            || combinatorics::class_coeffs_rat(jd, wc).is_some_and(|w| {
+            || jd.world_rat(wc).is_some_and(|w| {
                 nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2())
                     == nacre_exact::Orient::Negative
             }),
@@ -372,7 +372,7 @@ pub(super) fn node_axis_param(
     n: NodeId,
 ) -> Option<nacre_exact::Rat> {
     let (planes, _, _) = combinatorics::pierce_name(n)?;
-    planes.iter().find_map(|&c| {
-        crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, c)?, def)
-    })
+    planes
+        .iter()
+        .find_map(|&c| crate::planes::axis_param_of_plane(&jd.world_rat(c)?, def))
 }

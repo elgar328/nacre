@@ -159,13 +159,16 @@ pub(crate) fn theta_between(
 ///   crossing beyond it;
 /// - a secant line meets the circle in two roots, and each crosses the arc iff the arc strictly
 ///   contains it ([`theta_between`], the ruling sweep's containment);
-/// - overflow, or a meet this shape cannot produce, is `None`.
+/// - overflow, a `Wide` name, a meet this shape cannot produce, or — with a plane of no world
+///   statement — a shape the intervals cannot say ([`Judge::line_meet`] answers both roads), is
+///   `None`.
 ///
 /// **A root at the arc's end on `L` is that end, not a crossing.** With `on_end` — the end
 /// the walk found on `L` — one root *is* that end, under the same name or another (a fillet's
 /// tangent corner is named by its own two planes, the root by `{wc, fc}`). That is asked of the two
-/// points alone: equal names, or the circle's order answering "one point" ([`circular_order`]'s
-/// `Coincident`). The containment is then asked of three **distinct** points, so its `None` is a
+/// points alone: equal names, or the closed arc from the end not holding the root
+/// ([`theta_between`] — the circle's order answering "one point" on the exact road, the boxes not
+/// proved apart on the interval road, which is `None`). The containment is then asked of three **distinct** points, so its `None` is a
 /// real failure — never a coincidence mistaken for one.
 ///
 /// The same canonical name the lateral's ruling sweep gives this point as a station
@@ -182,23 +185,18 @@ pub(crate) fn arc_crossings(
     [a, b]: [NodeId; 2],
     on_end: Option<NodeId>,
 ) -> Option<Vec<NodeId>> {
-    use nacre_exact::quad::CylinderMeet;
-    // A plane with no world statement has no exact meet to read; its crossings are read off
-    // interval boxes by the same contract ([`arc_crossings_hp`]).
-    if jd.planes[wc].world.is_none() || jd.planes[fc].world.is_none() {
-        return arc_crossings_hp(jd, def, wc, fc, cyl, ccw, [a, b], on_end);
-    }
-    let w = class_coeffs_rat(jd, wc)?;
-    let v = class_coeffs_rat(jd, fc)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
-        CylinderMeet::ParallelPlanes | CylinderMeet::Miss(_) | CylinderMeet::Tangent { .. } => {
+    use nacre_judge::cylinder::LineMeet;
+    match jd.line_meet(wc, fc, def, false) {
+        LineMeet::ParallelPlanes | LineMeet::Miss | LineMeet::Tangent(..) => {
             return Some(Vec::new());
         }
-        CylinderMeet::Pair { .. } => {}
-        CylinderMeet::CoincidentPlanes
-        | CylinderMeet::OnRuling(_)
-        | CylinderMeet::AxisParallelMiss(_) => return None,
+        LineMeet::Pair(_) => {}
+        LineMeet::CoincidentPlanes
+        | LineMeet::OnRuling(_)
+        | LineMeet::AxisParallelMiss
+        | LineMeet::Undecided
+        | LineMeet::Wide
+        | LineMeet::Overflow => return None,
     }
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
     let mut inside: Vec<NodeId> = Vec::with_capacity(2);
@@ -208,10 +206,10 @@ pub(crate) fn arc_crossings(
             if node == e {
                 continue;
             }
-            match circular_order(jd, cyl, def, &[e, node]) {
-                Err(CircleOrderFail::Coincident) => continue,
-                Err(CircleOrderFail::Undecided) => return None,
-                Ok(_) => {}
+            // The end under another name: the closed arc from `e` holds every point of the circle
+            // but `e` itself ([`theta_between`]).
+            if !theta_between(jd, cyl, def, e, e, node)? {
+                continue;
             }
         }
         if theta_between(jd, cyl, def, lo, hi, node)? {
@@ -230,12 +228,6 @@ pub(crate) fn arc_crossings(
             inside.swap(0, 1);
         }
     }
-    // The interval road's contract (which roots, in what travel order), checked against the
-    // exact one wherever both answer — the road a class with no world statement takes.
-    debug_assert!(
-        arc_crossings_hp(jd, def, wc, fc, cyl, ccw, [a, b], on_end).is_none_or(|hp| hp == inside),
-        "the interval arc crossings disagree with the exact ones"
-    );
     Some(inside)
 }
 
@@ -297,51 +289,36 @@ pub(crate) fn crossing_on_ruling(
     side: i8,
 ) -> Result<NodeId, RulingNameFail> {
     use RulingNameFail::{NoCrossing, Undecided, Width};
-    use nacre_exact::quad::CylinderMeet;
-    // **A wall with no world statement picks its root by the same predicate, read off boxes.**
-    // The class `wc` crossing the ruling is ⊥ the axis and named; the wall sections the cylinder,
-    // so its two rulings are two distinct lines and each root is on one of them
-    // ([`PiercePoint::ruling_side`]).
-    if jd.planes[fc].world.is_none() {
-        let w = class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
-        if side == 0 || !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &def.dir()) {
-            return Err(NoCrossing);
-        }
-        let mut found = None;
-        for root in [QuadRoot::Lo, QuadRoot::Hi] {
-            let node = NodeId::pierce(wc, fc, cyl, root);
-            let meet = pierce_meet(jd, cyl, def, node).ok_or(Undecided)?;
-            if meet.ruling_side(jd, fc, def).ok_or(Undecided)? == side {
-                if found.is_some() {
-                    return Err(NoCrossing);
-                }
-                found = Some(node);
-            }
-        }
-        return found.ok_or(NoCrossing);
-    }
-    let w = class_coeffs_rat(jd, wc).ok_or(NoCrossing)?;
-    let v = class_coeffs_rat(jd, fc).ok_or(NoCrossing)?;
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m) {
+    use nacre_judge::cylinder::LineMeet;
+    let w = jd.world_rat(wc).ok_or(NoCrossing)?;
+    if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &def.dir()) {
         return Err(NoCrossing);
     }
-    // A **tangent** wall (`side == 0`) has one ruling and one root — `Double`.
-    let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2).ok_or(Width)?;
+    let meet = jd.line_meet(wc, fc, def, false);
+    // A **tangent** wall (`side == 0`) has one ruling and one root — `Double`, which only the exact
+    // road states.
     if side == 0 {
         return match meet {
-            CylinderMeet::Tangent { .. } => Ok(NodeId::pierce(wc, fc, cyl, QuadRoot::Double)),
+            LineMeet::Tangent(..) => Ok(NodeId::pierce(wc, fc, cyl, QuadRoot::Double)),
+            LineMeet::Overflow => Err(Width),
             _ => Err(NoCrossing),
         };
     }
-    let CylinderMeet::Pair { line, s } = meet else {
-        return Err(NoCrossing);
+    let roots = match meet {
+        LineMeet::Pair(roots) => roots,
+        LineMeet::Undecided => return Err(Undecided),
+        LineMeet::Overflow => return Err(Width),
+        _ => return Err(NoCrossing),
     };
     // A root whose side overflowed is not on `side` as far as this can tell; the other root may
-    // still be, so the overflow is the answer only when no root is.
+    // still be, so the overflow is the answer only when no root is. A box that cannot say which
+    // ruling it is on is the answer at once: the wall sections the cylinder, so its two rulings are
+    // two distinct lines and each root is on one of them.
     let (mut found, mut overflow) = (None, false);
-    for (root, sv) in [(QuadRoot::Lo, &s[0]), (QuadRoot::Hi, &s[1])] {
-        match ruling_side_signed(&v, def, (&line, sv)) {
+    for root in [QuadRoot::Lo, QuadRoot::Hi] {
+        let at = roots.point(jd, cyl, def, root).ok_or(Undecided)?;
+        match at.ruling_side(jd, fc, def) {
+            None if at.exact().is_none() => return Err(Undecided),
             None => overflow = true,
             Some(sd) if sd == side => {
                 if found.is_some() {

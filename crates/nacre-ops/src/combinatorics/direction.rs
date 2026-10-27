@@ -148,7 +148,7 @@ fn arc_at(
     let at = pierce_meet(jd, a.cyl, &a.def, node)
         .and_then(PiercePoint::into_exact)
         .ok_or_else(undecided)?;
-    let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
+    let coeffs = jd.world_rat(p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. The canonical sign the coefficients
     // carry cancels in the parameter (numerator and denominator both flip), so this one does not
     // need the stored-frame turn that `arc_side` does.
@@ -175,25 +175,8 @@ fn arc_at(
     })))
 }
 
-/// A class's exact description **turned to face the way the plane does** — the frame every
-/// direction sign in this file is written in ([`turn`]'s `frame_sign` bridge, the cell labels'
-/// «above»).
-///
-/// [`class_coeffs_rat`] hands back the class's *canonical* name — first nonzero component
-/// positive — which points the **other way** from the plane on half the classes, so a rule spelled
-/// against it reads backwards on exactly those classes. The turn is the truth's
-/// ([`WorkingPlane::stored_world_rat`] — the world name's sense, read off the plane's `sense` and
-/// points), never a comparison with the plane cache: that cache is a rounded image, and the name
-/// needs no second description to say which way it faces.
-pub(crate) fn stored_coeffs_rat(
-    jd: &Judge<'_, WorkingPlane>,
-    c: usize,
-) -> Option<[nacre_exact::Rat; 4]> {
-    jd.planes[c].stored_world_rat()
-}
-
 /// **The direction of the line `L = P ∩ Q`, exactly** — `n_p × n_q` over the two classes' stored
-/// normals ([`stored_coeffs_rat`]), which is the direction [`order_along`] orders the line by. One
+/// normals ([`Judge::stored_world_rat`]), which is the direction [`order_along`] orders the line by. One
 /// spelling for every reader that needs the line's direction as a vector rather than as a sign
 /// against a third plane: the quadratic order's axis, an arc's tangency, an arc's side.
 ///
@@ -207,7 +190,7 @@ pub(crate) fn stored_line_dir(
     p: usize,
     q: usize,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    let (np, nq) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, q)?);
+    let (np, nq) = (jd.stored_world_rat(p)?, jd.stored_world_rat(q)?);
     nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nq[0], nq[1], nq[2]])
 }
 
@@ -421,7 +404,7 @@ pub(crate) fn turn(
         // normal; their sign relation is `frame_sign`, entering **once** because `n_P` appears
         // once). `n_ca` appears once *and* once inside the sense's own definition
         // (`d = sense · (n_P × n_ca)`), so those two flips cancel — the arm needs only that
-        // `sense` and the coefficients read the **same** `n_ca` ([`class_coeffs_rat`], the
+        // `sense` and the coefficients read the **same** `n_ca` ([`Judge::world_rat`], the
         // canonical spelling `dir_sign` speaks).
         (EdgeDir::Line { carrier, sense }, EdgeDir::Ruling(r)) => {
             sense * ruling_line_turn(jd, p, *carrier, r)? * frame
@@ -455,7 +438,7 @@ fn ruling_line_turn(
     r: &RulingDir,
 ) -> Result<i8, BoolError> {
     debug_assert!(
-        class_coeffs_rat(jd, p)
+        jd.world_rat(p)
             .map(|n| {
                 nacre_exact::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis) == nacre_exact::Orient::Zero
             })
@@ -466,7 +449,7 @@ fn ruling_line_turn(
     // canonical→stored turn is measured-locked): `sense` is made against the stored frame, so
     // the carrier coefficients here must be too — the canonical name opposes it on half the
     // classes.
-    let Some(n) = stored_coeffs_rat(jd, carrier) else {
+    let Some(n) = jd.stored_world_rat(carrier) else {
         return Err(reject(RejectReason::WitnessNotRational));
     };
     let dot = nacre_exact::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis);
@@ -495,7 +478,7 @@ fn ruling_line_turn(
 /// |---|---|---|
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
-/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus
+/// | the canonical→stored turn | use [`Judge::world_rat`] | **locked** — one class in the corpus
 /// disagrees, and that class's walk merges four cells into one 8-half-edge orbit. The contour
 /// count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
 /// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
@@ -718,8 +701,8 @@ fn arc_side(
         ..
     } = arc;
     // **Stored-frame normals, not the canonical ones.** `d` is compared against `frame_sign`
-    // below, which speaks the stored frame; `class_coeffs_rat` speaks the canonical one and points
-    // the other way on half the classes. See [`stored_coeffs_rat`].
+    // below, which speaks the stored frame; `Judge::world_rat` speaks the canonical one and points
+    // the other way on half the classes. See [`Judge::stored_world_rat`].
     let d = stored_line_dir(jd, p, carrier).ok_or_else(wide)?;
     let plane = (|| -> Option<[Rat; 4]> {
         Some([

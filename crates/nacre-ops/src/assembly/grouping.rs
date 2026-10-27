@@ -166,12 +166,10 @@ pub(super) fn group_faces(
         let mut out = Vec::new();
         for f in comp_faces[c].iter() {
             let normal = match &f.surf {
-                combinatorics::CompSurf::Plane(q) => {
-                    match combinatorics::class_coeffs_rat(jd, *q) {
-                        Some(k) => [k[0], k[1], k[2]],
-                        None => continue,
-                    }
-                }
+                combinatorics::CompSurf::Plane(q) => match jd.world_rat(*q) {
+                    Some(k) => [k[0], k[1], k[2]],
+                    None => continue,
+                },
                 // A curved face's own edges are still edges; its class has no plane to point along,
                 // so the ray directions come from the cylinder the `Carrier` names — which is what
                 // `corner_probes` already does for that population. Nothing here yet.

@@ -42,7 +42,6 @@
 
 #[cfg(test)]
 use crate::BoolKind;
-use crate::combinatorics;
 #[cfg(test)]
 use crate::draft::{Bound, LocalFace};
 use crate::planes::SolidSide;
@@ -151,7 +150,7 @@ pub(crate) fn param_opt(
     c: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<Rat> {
-    let coeffs = combinatorics::class_coeffs_rat(jd, c)?;
+    let coeffs = jd.world_rat(c)?;
     axis_param_of_plane(&coeffs, def)
 }
 

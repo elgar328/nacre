@@ -198,7 +198,7 @@ fn circle_crosses_ruling(
     circle: &MergedCircle,
     ruling: &MergedRuling,
 ) -> Option<bool> {
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
+    let coeffs = jd.world_rat(wc)?;
     let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
     let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
     let n = [coeffs[0], coeffs[1], coeffs[2]];

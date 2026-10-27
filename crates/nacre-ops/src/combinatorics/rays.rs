@@ -378,7 +378,7 @@ fn end_on_line(jd: &Judge<'_, WorkingPlane>, a: usize, b: usize, name: NodeId) -
 /// and such an arc crosses `q` nowhere ([`arc_crossings_of`]). A class that **sections** a cylinder
 /// (its plane cuts the lateral, its faces stand apart — `Silence::Sectioned`) has no recorded side
 /// for that cylinder's arcs: how often one crosses the line `p ∩ q` is read off interval boxes
-/// ([`arc_crossings_hp`]), the count the arrangement's own arc road gives the same arc. A class
+/// ([`arc_crossings`] on the judge's interval road), the count the arrangement's own arc road gives the same arc. A class
 /// silent by `Silence::Apart` meets no arc of the cylinder at all.
 fn silent_table(cyls: &[crate::planes::WorkingCyl], q: usize) -> &[crate::planes::WorkingCyl] {
     if crate::planes::silent_among(cyls, &[q]) {

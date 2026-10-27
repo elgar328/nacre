@@ -32,7 +32,7 @@ pub(super) fn chord_stations(
     if !crossings.contains(&(wc, cyl)) {
         return Ok(None);
     }
-    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(ChordUnstatable)?;
+    let w = jd.world_rat(wc).ok_or(ChordUnstatable)?;
     let def = faces
         .iter()
         .zip(plane_ix)

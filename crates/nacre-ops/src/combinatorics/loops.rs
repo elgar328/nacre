@@ -478,7 +478,7 @@ pub(crate) fn arc_departure_side(
     ccw: bool,
 ) -> Option<i8> {
     let def = &cyls.get(cyl)?.def;
-    let w = class_coeffs_rat(jd, q)?;
+    let w = jd.world_rat(q)?;
     let (line, sv) = pierce_meet(jd, cyl, def, node)?.into_exact()?;
     let rs = ruling_side(&w, def, (&line, &sv))?;
     Some(jd.outward_fix(q)? * if ccw { -rs } else { rs })
@@ -539,7 +539,7 @@ fn curved_wall(
             let at = pierce_meet(jd, cyl, &def, end)
                 .and_then(PiercePoint::into_exact)
                 .ok_or_else(curved)?;
-            let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
+            let w = jd.world_rat(near).ok_or_else(curved)?;
             // **A tangent wall has one ruling, and its side is `0`.** A fillet's
             // or a slot's own walls are tangent to their cylinder, so without this every such
             // operand falls here as `CurvedOperandBoundary`.

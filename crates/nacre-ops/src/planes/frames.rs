@@ -28,10 +28,11 @@ pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
     pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
-    /// The class root's statement **in the world** — see [`FaceInfo::world`]. Its narrow
-    /// projection ([`WorkingPlane::world_rat`]) is the one description the cylinder roads may
-    /// compare against a world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands
-    /// out; [`WorkingPlane::stored_world_rat`] is the same turned to face the way the plane does.
+    /// The class root's statement **in the world** — see [`FaceInfo::world`]. The judge reads its
+    /// narrow projection ([`Judge::world_rat`](crate::tolerant::Judge::world_rat)) — the one
+    /// description the cylinder roads compare against a world axis — and the same turned to face
+    /// the way the plane does
+    /// ([`Judge::stored_world_rat`](crate::tolerant::Judge::stored_world_rat)).
     pub(crate) world: Option<WorldName>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
@@ -74,43 +75,6 @@ pub(crate) struct WorkingPlane {
 }
 
 impl WorkingPlane {
-    /// The world name's narrow projection — exact rational coefficients in the world, what the
-    /// cylinder roads compare against a world axis. A projection, not a second record: it cannot
-    /// disagree with [`WorkingPlane::world`].
-    pub(crate) fn world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
-        self.world.as_ref()?.name.narrow().copied()
-    }
-
-    /// The same coefficients **turned to face the way the plane does** — the frame every cell
-    /// label is written in («above» is this normal's side). Read off the truth
-    /// ([`WorldName::oriented_rat`]), never off the plane cache: the name alone carries no
-    /// direction, and the cache is a rounded image of the plane.
-    pub(crate) fn stored_world_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
-        self.world.as_ref()?.oriented_rat()
-    }
-
-    /// Whether the witness triangle and the world statement agree in sign on every component the
-    /// interval decides — the premise the judge's stored interval plane (`Judge::stored_hp`) stands
-    /// on for a class with no world statement: the triangle turned by `frame_sign` faces the way
-    /// the stored normal does. Checked where both exist; `true` when there is no world statement.
-    #[cfg(debug_assertions)]
-    pub(crate) fn witness_agrees_with_world(&self, prec: usize) -> bool {
-        let Some(w) = self.stored_world_rat() else {
-            return true;
-        };
-        let tri = &self.tri_pt3;
-        let t = nacre_judge::plane_hp(&tri[0], &tri[1], &tri[2], prec);
-        let zero = nacre_exact::Rat::from_int(0);
-        (0..3).all(|k| {
-            let stored = if self.frame_sign < 0 {
-                negate(&t[k], prec)
-            } else {
-                t[k].clone()
-            };
-            w[k] == zero || stored.sign().is_none_or(|pos| pos == (w[k] > zero))
-        })
-    }
-
     /// **The side of this class every point of `q` provably lies on**, strictly — `None` when a
     /// point is on the plane or not proved off it, when the points straddle it, and for an empty
     /// `q`. A signed distance to a plane is affine, so all of `q` on one side puts its whole convex
@@ -196,10 +160,4 @@ pub(crate) fn face_facing_noted(
             })
         })
         .ok()
-}
-
-/// `−x` as an interval.
-#[cfg(debug_assertions)]
-fn negate(x: &nacre_exact::HpBounded, prec: usize) -> nacre_exact::HpBounded {
-    nacre_exact::HpBounded::of_rat(nacre_exact::Rat::from_int(0), prec).sub(x, prec)
 }

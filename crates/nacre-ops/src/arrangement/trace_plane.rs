@@ -688,7 +688,7 @@ pub(super) fn trace_one(
                     // The axis side, in the label frame (`W`'s stored normal): the one bit a
                     // tangent edge flips ([`SegKind::Tangent`]).
                     let axis_above = (|| -> Option<bool> {
-                        let w = combinatorics::stored_coeffs_rat(jd, wc)?;
+                        let w = jd.stored_world_rat(wc)?;
                         let o = cyls.get(cyl)?.def.origin();
                         let mut acc = w[3];
                         for k in 0..3 {

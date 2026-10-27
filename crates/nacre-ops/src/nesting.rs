@@ -99,7 +99,7 @@ fn rational_point_in_ring(
     ring: &[combinatorics::RingEdge],
 ) -> Result<Option<bool>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let coeffs = jd.world_rat(wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let center = *p;
     // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
@@ -166,7 +166,7 @@ pub(crate) fn disk_in_disk(
     // semi-minor is exactly `r`, so `ra < rb` is necessary for nesting), so putting the guard
     // after it would leave half the population unguarded. And asked **after** the two centres, so
     // the class is known to have coefficients — no unreachable "what if it has none" arm.
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let coeffs = jd.world_rat(wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     if !combinatorics::class_carries_circle(&n, &a.dir())
         || !combinatorics::class_carries_circle(&n, &b.dir())
@@ -353,7 +353,8 @@ fn rim_and_centre<'a>(
     // every cylinder (`WorkingCyl::silent`), and a silent class carries no circle. If it ever stops
     // being empty the cell falls to `RingHasNoWitness` rather than to a wrong answer, which is the
     // direction this kernel takes.
-    let carries = combinatorics::class_coeffs_rat(jd, wc)
+    let carries = jd
+        .world_rat(wc)
         .is_some_and(|c| combinatorics::class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
     // Rim witnesses at `centre + r·u` need the radius itself; a cell whose squared radius has no
     // rational root is simply not offered them — it keeps its centre, exactly as when a witness's
@@ -392,7 +393,7 @@ fn rim_and_centre<'a>(
             // is not ⊥ never gets here. It stays because it also catches a broken frame or a
             // centre that is not the axis' meet, which no guard above asks about.
             debug_assert!(
-                combinatorics::class_coeffs_rat(jd, wc).is_none_or(|c| {
+                jd.world_rat(wc).is_none_or(|c| {
                     let n = [c[0], c[1], c[2]];
                     nacre_exact::dot3_rat(&n, &p)
                         .and_then(|d| d.checked_add(c[3]))
@@ -535,7 +536,7 @@ fn ask(
                     // The one question its interval answers is whether it stands outside the
                     // ring's box — the coordinate arm's own question below, asked of the same box.
                     Said::Declines | Said::Abstain if crate::planes::silent_among(cyls, t) => {
-                        match combinatorics::three_point_hp(jd, *t) {
+                        match jd.three_hp(*t, jd.standard.prec) {
                             Some(x) if outside_ring_box(jd, cyls, wc, &x, rb) => Said::Out,
                             _ => Said::Silent,
                         }

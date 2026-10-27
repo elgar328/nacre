@@ -498,11 +498,9 @@ fn a_proved_side_is_the_judges_side() {
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     // The cube's planes by their world names: `x = k`, `y = k`, `z = k` for k ∈ {0, 1}.
     let class_at = |axis: usize, k: i128| {
-        setup
-            .geom
-            .iter()
-            .position(|w| {
-                w.world_rat().is_some_and(|c| {
+        (0..setup.geom.len())
+            .find(|&w| {
+                jd.world_rat(w).is_some_and(|c| {
                     let lead = c[axis];
                     (0..3).all(|j| j == axis || c[j] == Rat::from_int(0))
                         && lead != Rat::from_int(0)

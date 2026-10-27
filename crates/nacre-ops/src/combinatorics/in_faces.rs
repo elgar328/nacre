@@ -95,7 +95,7 @@ pub(crate) fn point_in_faces_rat(
             }
             return Err(reject(RejectReason::CylinderGateUndecided));
         }
-        let coeffs = class_coeffs_rat(jd, q).ok_or_else(not_rational)?;
+        let coeffs = jd.world_rat(q).ok_or_else(not_rational)?;
         let n = [coeffs[0], coeffs[1], coeffs[2]];
         let nd = nacre_exact::dot3_rat(&n, dir).ok_or_else(not_rational)?;
         let residual = nacre_exact::dot3_rat(&n, p)
@@ -304,10 +304,7 @@ fn curved_count(
     }
     // A class with no rational description and no such proof: this ray cannot be counted, and the
     // caller casts the next one.
-    let Some(((ca, cb), cc)) = class_coeffs_rat(jd, a)
-        .zip(class_coeffs_rat(jd, b))
-        .zip(class_coeffs_rat(jd, c))
-    else {
+    let Some(((ca, cb), cc)) = jd.world_rat(a).zip(jd.world_rat(b)).zip(jd.world_rat(c)) else {
         return Ok(None);
     };
     // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
@@ -354,7 +351,7 @@ fn corner_axis_param(
     let (planes, _, _) = pierce_name(n)?;
     planes
         .iter()
-        .find_map(|&c| crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, c)?, def))
+        .find_map(|&c| crate::planes::axis_param_of_plane(&jd.world_rat(c)?, def))
 }
 
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
@@ -389,7 +386,7 @@ pub(crate) fn loop_parity(
     for lp in loops {
         match lp {
             LateralLoop::Rim(c) => {
-                let t = crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, *c)?, def)?;
+                let t = crate::planes::axis_param_of_plane(&jd.world_rat(*c)?, def)?;
                 match above(t)? {
                     // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.
                     Orient::Negative => crossings += 1,
@@ -453,7 +450,7 @@ pub(crate) fn loop_parity(
                             // the corner name's ∥ class, which can be another plane through the
                             // same line — and the signed side, which answers `0` for a tangent
                             // one; arithmetic out abstains like everywhere here.
-                            let w = class_coeffs_rat(jd, rl.plane)?;
+                            let w = jd.world_rat(rl.plane)?;
                             if plane_side(&w, meet, s) == Orient::Zero
                                 && ruling_side_signed(&w, def, (meet, s))? == rl.side
                             {
@@ -566,7 +563,7 @@ pub(crate) fn ruling_meets_lateral(
     use nacre_exact::quad::{CylinderMeet, plane_side};
     use nacre_exact::{Orient, Rat, dot3_rat};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let walls = [class_coeffs_rat(jd, w[0])?, class_coeffs_rat(jd, w[1])?];
+    let walls = [jd.world_rat(w[0])?, jd.world_rat(w[1])?];
     let CylinderMeet::OnRuling(ruling) =
         nacre_exact::quad::plane_plane_cylinder(&walls[0], &walls[1], &o, &m, r2)?
     else {
@@ -588,7 +585,7 @@ pub(crate) fn ruling_meets_lateral(
             (None, None) => return None,
         };
         planes.into_iter().find_map(|c| {
-            let t = nacre_exact::axis_param_of_plane(&class_coeffs_rat(jd, c)?, &base, &m)?;
+            let t = nacre_exact::axis_param_of_plane(&jd.world_rat(c)?, &base, &m)?;
             at_base.checked_add(t)
         })
     };
@@ -597,10 +594,9 @@ pub(crate) fn ruling_meets_lateral(
     let mut ts = vec![lo, hi];
     for lp in loops {
         match lp {
-            LateralLoop::Rim(c) => ts.push(crate::planes::axis_param_of_plane(
-                &class_coeffs_rat(jd, *c)?,
-                def,
-            )?),
+            LateralLoop::Rim(c) => {
+                ts.push(crate::planes::axis_param_of_plane(&jd.world_rat(*c)?, def)?)
+            }
             LateralLoop::Ring(edges) => {
                 for e in edges {
                     if matches!(e.carrier, Carrier::Arc(_)) {
@@ -664,7 +660,7 @@ pub(crate) fn named_point_in_face(
         match b {
             BoundEdges::Ring(r) => {
                 if ring_is_mixed(r) {
-                    let (Some(coeffs), Some(px)) = (class_coeffs_rat(jd, q), at()) else {
+                    let (Some(coeffs), Some(px)) = (jd.world_rat(q), at()) else {
                         return Ok(None); // no exact class statement or coordinate: abstain
                     };
                     return Ok(mixed_side(point_in_mixed_ring(jd, cyls, &coeffs, &px, r)));

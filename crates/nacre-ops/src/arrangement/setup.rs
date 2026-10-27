@@ -64,7 +64,6 @@ pub(crate) fn plane_index_setup(
         let (cyls, crossings, tangencies) = cylinder_gate(
             model,
             &cyl_surfs,
-            &setup.geom,
             &setup.planes,
             &setup.plane_ix,
             setup.n_a,
@@ -118,11 +117,14 @@ pub(crate) fn plane_index_setup_inner(
     // witness triangle turned by `frame_sign` faces the way the stored normal does. Checked on
     // every class that can be checked — the ones whose world statement says it independently.
     #[cfg(debug_assertions)]
-    for wp in &geom {
-        debug_assert!(
-            wp.witness_agrees_with_world(standard.prec),
-            "a class's witness triangle, turned by frame_sign, opposes its stored world normal"
-        );
+    {
+        let jd = Judge::new(&geom, standard, &notes);
+        for k in 0..geom.len() {
+            debug_assert!(
+                jd.witness_agrees_with_world(k),
+                "a class's witness triangle, turned by frame_sign, opposes its stored world normal"
+            );
+        }
     }
     let class_owner = class_owners(&plane_ix, n_a, geom.len());
     t.charge(Sub::Dense);

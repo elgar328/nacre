@@ -326,17 +326,18 @@ fn the_tangent_wall_states_itself_exactly() {
     let def = m.world_cylinder_def(surf).expect("a world cylinder");
     let (o, r2) = (def.origin(), def.r2());
     // The tangent class, found the gate's own way: one clearance call per class.
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let c = (0..setup.geom.len())
         .find(|&k| {
-            setup.geom[k].world_rat().is_some_and(|w| {
+            jd.world_rat(k).is_some_and(|w| {
                 nacre_exact::point_plane_clearance_rat(&w, &o, r2) == nacre_exact::Orient::Zero
             })
         })
         .expect("the wall x = 0 is exactly r from the axis");
-    let coeffs = setup.geom[c].world_rat().expect("checked above");
+    let coeffs = jd.world_rat(c).expect("checked above");
     // No other plane of either operand holds the line `x = 0, y = 1` (a plane that did would
     // have to contain `+Z` and pass through `(0, 1)`).
-    let holders = classes_holding_the_line(&setup.geom, c, &coeffs, &def).expect("exact");
+    let holders = classes_holding_the_line(&jd, c, &coeffs, &def).expect("exact");
     assert!(holders.is_empty(), "{holders:?}");
     let rows = tangency_rows(
         &m,

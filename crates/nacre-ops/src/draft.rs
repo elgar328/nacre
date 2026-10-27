@@ -88,7 +88,7 @@ impl Def {
             } => {
                 let width = || reject(RejectReason::WitnessNotRational);
                 let coeffs = |k: usize| {
-                    combinatorics::class_coeffs_rat(jd, k).ok_or_else(|| {
+                    jd.world_rat(k).ok_or_else(|| {
                         reject(if planes[k].world.is_some() {
                             RejectReason::WitnessNotRational
                         } else {

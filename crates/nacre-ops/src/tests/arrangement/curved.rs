@@ -341,7 +341,7 @@ fn a_ray_through_a_closed_arcs_node_crosses_it_once() {
                 .all(|q| (q.as_array()[2] - 20.0).abs() < 1e-12)
         })
         .expect("the plate's top class z = 20");
-    let coeffs = combinatorics::class_coeffs_rat(&jd, top).expect("a named class");
+    let coeffs = jd.world_rat(top).expect("a named class");
     let ri = nacre_exact::Rat::from_int;
     for root in [
         crate::combinatorics::QuadRoot::Lo,
@@ -625,7 +625,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
     let class = |n: [i128; 3], d: i128| -> usize {
         (0..planes.len())
             .find(|&c| {
-                let w = combinatorics::class_coeffs_rat(&jd, c).expect("a named class");
+                let w = jd.world_rat(c).expect("a named class");
                 let k = (0..3).find(|&i| n[i] != 0).expect("a normal");
                 (0..3).all(|i| w[i].checked_mul(ri(n[k])) == w[k].checked_mul(ri(n[i])))
                     && w[3].checked_mul(ri(n[k])) == w[k].checked_mul(ri(-d))
@@ -641,7 +641,7 @@ fn a_lateral_ruling_is_asked_against_its_own_plane() {
     let n1 = NodeId::pierce(z1, t, 0, crate::combinatorics::QuadRoot::Double);
     let n3 = NodeId::pierce(z3, t, 0, crate::combinatorics::QuadRoot::Double);
     // `side` against `P`, from coordinates: the sign of `(x − o) · (m × n̂)` at `(1, 0, 2)`.
-    let wp = combinatorics::class_coeffs_rat(&jd, p).unwrap();
+    let wp = jd.world_rat(p).unwrap();
     let n_hat = Vector3::from_array([wp[0].to_f64(), wp[1].to_f64(), wp[2].to_f64()]);
     let s =
         Vector3::from_array([1.0, 0.0, 0.0]).dot(Vector3::from_array([0.0, 0.0, 1.0]).cross(n_hat));
@@ -1340,7 +1340,7 @@ fn the_armed_solid_tessellates_watertight() {
 #[test]
 fn the_mixed_parity_reads_a_bitten_ring() {
     with_bitten_rings(|jd, cyls, wc, big, overhang, bite| {
-        let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+        let coeffs = jd.world_rat(wc).unwrap();
         let rat = |x: i128, y: i128| {
             [
                 nacre_exact::Rat::from_int(x),
@@ -1399,7 +1399,7 @@ fn the_mixed_parity_reads_a_bitten_ring() {
 fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
     use nacre_exact::{Orient, Rat};
     with_bitten_rings(|jd, cyls, wc, _big, overhang, bite| {
-        let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+        let coeffs = jd.world_rat(wc).unwrap();
         let def = cyls
             .iter()
             .map(|c| &c.def)
@@ -1560,7 +1560,7 @@ fn with_cut_rings(
         if !matches!(plane_ix.get(wc), Some(ClassIx::Plane(_)) | None) && wc < plane_ix.len() {
             continue;
         }
-        if combinatorics::class_coeffs_rat(&jd, wc).is_none() {
+        if jd.world_rat(wc).is_none() {
             continue;
         }
         let tr = trace_on_class_of(
@@ -1674,7 +1674,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
             [40.0, 24.0, 20.0],
             seam_off,
             |jd, cyls, wc, _big, overhang, bite| {
-                let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+                let coeffs = jd.world_rat(wc).unwrap();
                 let def = cyls
                     .iter()
                     .map(|c| &c.def)
@@ -1834,7 +1834,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
     let (mut rings_swept, mut points, mut inside, mut boundary, mut reflex) =
         (0usize, 0usize, 0usize, 0usize, 0usize);
     for wc in 0..planes.len() {
-        let Some(coeffs) = combinatorics::class_coeffs_rat(&jd, wc) else {
+        let Some(coeffs) = jd.world_rat(wc) else {
             continue;
         };
         let tr = trace_on_class_of(

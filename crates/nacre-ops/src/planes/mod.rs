@@ -237,24 +237,6 @@ impl WorldName {
             .expect("a plane with a world name faces some way in the world");
         Some(WorldName { name, sense })
     }
-
-    /// The name's exact coefficients **turned to face the way the plane does** — the name times
-    /// its sense; `None` for a wide name or on overflow.
-    pub(crate) fn oriented_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
-        let c = *self.name.narrow()?;
-        match self.sense {
-            nacre_topo::Orientation::Forward => Some(c),
-            nacre_topo::Orientation::Reversed => {
-                let zero = nacre_exact::Rat::from_int(0);
-                Some([
-                    zero.checked_sub(c[0])?,
-                    zero.checked_sub(c[1])?,
-                    zero.checked_sub(c[2])?,
-                    zero.checked_sub(c[3])?,
-                ])
-            }
-        }
-    }
 }
 
 /// A face's supporting plane plus the exact in/out data the boolean needs.
@@ -305,7 +287,7 @@ pub(crate) struct FaceInfo {
     /// The same plane **in the world** — its canonical name there and which way that name faces,
     /// whatever frame the truth is written in ([`WorldName`]). `None` when no exact world
     /// statement exists (a turn off the quarters, a frame, a moved wide name, an overflow). The
-    /// class table reads its narrow projection ([`WorkingPlane::world_rat`]); `base_rat` above
+    /// class table reads its narrow projection ([`Judge::world_rat`](crate::tolerant::Judge::world_rat)); `base_rat` above
     /// answers the *other* question (the description in the frame the provenance names, which is
     /// what the shared-motion shortcuts cancel).
     pub(crate) world: Option<WorldName>,

@@ -196,7 +196,7 @@ fn ruling_side_of(
     if cyl != k {
         return Err(stages);
     }
-    combinatorics::class_coeffs_rat(jd, wall).ok_or(stages)?;
+    jd.world_rat(wall).ok_or(stages)?;
     crate::arrangement::node_ruling_side(jd, def, wall, n).ok_or(RejectReason::WitnessNotRational)
 }
 
@@ -418,7 +418,7 @@ pub(crate) fn chart_of(
     // (iii) every ⊥ class, full stop — not only those landing on a face's rim, which would answer
     // about a face; a chart covers the whole axis.
     for c in 0..jd.planes.len() {
-        let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
+        let Some(coeffs) = jd.world_rat(c) else {
             continue;
         };
         if nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
@@ -525,10 +525,7 @@ fn second_chord_first(
     t2: usize,
 ) -> Option<bool> {
     use nacre_exact::{Rat, cross3_rat, dot3_rat};
-    let (w1, w2) = (
-        combinatorics::class_coeffs_rat(jd, t1)?,
-        combinatorics::class_coeffs_rat(jd, t2)?,
-    );
+    let (w1, w2) = (jd.world_rat(t1)?, jd.world_rat(t2)?);
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let nacre_exact::quad::CylinderMeet::OnRuling(line) =
         nacre_exact::quad::plane_plane_cylinder(&w1, &w2, &o, &m, r2)?

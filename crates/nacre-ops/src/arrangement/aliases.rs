@@ -200,7 +200,7 @@ impl Aliases {
         }
         let Some(wcy) = cyls.get(cyl) else { return };
         let def = &wcy.def;
-        let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
+        let Some(w) = jd.world_rat(wc) else {
             return;
         };
         let Some((line, s)) =
@@ -239,14 +239,11 @@ impl Aliases {
         let def = &wcy.def;
         let (o, m, r2) = (def.origin(), def.dir(), def.r2());
         let (t1, t2) = sr.line;
-        let (Some(w1), Some(w2)) = (
-            combinatorics::class_coeffs_rat(jd, t1),
-            combinatorics::class_coeffs_rat(jd, t2),
-        ) else {
+        let (Some(w1), Some(w2)) = (jd.world_rat(t1), jd.world_rat(t2)) else {
             return;
         };
         for c in 0..jd.planes.len() {
-            let Some(wc) = combinatorics::class_coeffs_rat(jd, c) else {
+            let Some(wc) = jd.world_rat(c) else {
                 continue;
             };
             if !nacre_exact::parallel_rat(&[wc[0], wc[1], wc[2]], &m) {

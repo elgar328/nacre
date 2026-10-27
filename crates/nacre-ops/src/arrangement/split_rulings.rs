@@ -9,7 +9,8 @@ use super::*;
 ///
 /// Returns each crossing with the meet it was solved as ([`combinatorics::PiercePoint`] — exact, or
 /// an interval box where a class has no world statement; the side and extent tests below read it
-/// without re-solving). `None` is overflow.
+/// without re-solving). `None` where the exact road cannot say: the wall has no narrow world
+/// statement, a `Wide` name, an overflow, or a ruling whose angle has no rational spelling.
 fn lateral_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -20,66 +21,56 @@ fn lateral_crossings(
     pieces: impl FnOnce() -> Vec<crate::planes::Footprint>,
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
     use crate::combinatorics::QuadRoot;
-    use nacre_exact::quad::CylinderMeet;
-    let Some(v) = combinatorics::class_coeffs_rat(jd, sg.wall) else {
+    use nacre_judge::cylinder::LineMeet;
+    let Some(v) = jd.world_rat(sg.wall) else {
         return Ok(None);
     };
-    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    // **A class with no world statement here sections the cylinder** — it carries rulings, so the
-    // gate found it along the axis (`Silence::Sectioned`). Against a wall along the axis too, the
-    // line between them is exactly parallel to it (both normals are perpendicular to it) and
-    // crosses no ruling: it misses the surface, which `C ≠ 0` shows, or lies on it, which no record
-    // states here. Against any other wall the meet's shape is read off the boxes.
-    if jd.planes[wc].world.is_none() {
-        let undecided = || reject(RejectReason::CylinderGateUndecided);
-        if nacre_exact::dot_sign_rat(&[v[0], v[1], v[2]], &m) == nacre_exact::Orient::Zero {
-            return if jd.parallel_line_off(wc, sg.wall, def) {
-                Ok(Some(Vec::new()))
-            } else {
-                Err(undecided())
-            };
+    let (o, m) = (def.origin(), def.dir());
+    // **The line runs along the axis when both normals are perpendicular to it.** The wall's is
+    // stated exactly; so is `wc`'s where it has a narrow world name. A class with no world statement
+    // here sections the cylinder — it carries rulings, so the gate found it along the axis
+    // (`Silence::Sectioned`). A `Wide` name says neither, and the exact road refuses it for its
+    // width. Along the axis the line crosses no ruling: it misses the surface, or lies on it, which
+    // no record states here. The interval road cannot see that parallelism from the planes.
+    let perpendicular = |w: &[Rat; 4]| {
+        nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &m) == nacre_exact::Orient::Zero
+    };
+    let along_axis = perpendicular(&v)
+        && match jd.planes[wc].world {
+            None => true,
+            Some(_) => jd.world_rat(wc).is_some_and(|w| perpendicular(&w)),
+        };
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let crossing = |root: QuadRoot, at: combinatorics::PiercePoint| {
+        (combinatorics::NodeId::pierce(wc, sg.wall, cyl, root), at)
+    };
+    match jd.line_meet(wc, sg.wall, def, along_axis) {
+        LineMeet::Pair(roots) => {
+            let mut out = Vec::with_capacity(2);
+            for root in [QuadRoot::Lo, QuadRoot::Hi] {
+                let at = roots.point(jd, cyl, def, root).ok_or_else(undecided)?;
+                out.push(crossing(root, at));
+            }
+            Ok(Some(out))
         }
-        if !jd.line_crosses(wc, sg.wall, def).ok_or_else(undecided)? {
-            return Ok(Some(Vec::new())); // the discriminant is negative: a miss
-        }
-        let mut out = Vec::with_capacity(2);
-        for root in [QuadRoot::Lo, QuadRoot::Hi] {
-            let n = combinatorics::NodeId::pierce(wc, sg.wall, cyl, root);
-            out.push((
-                n,
-                combinatorics::pierce_meet(jd, cyl, def, n).ok_or_else(undecided)?,
-            ));
-        }
-        return Ok(Some(out));
-    }
-    let w = combinatorics::class_coeffs_rat(jd, wc)
-        .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-    let (line, roots) = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2) {
-        Some(CylinderMeet::Pair { line, s }) => {
-            (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])])
-        }
-        // A tangent line touches without separating; cutting there would make a zero-length
-        // piece — the same skip the circle side's `Double` arm makes.
-        // A **tangent** class touches the cylinder along one ruling: the
-        // segment's line meets it in one point, root `Double` — the crossing the seated face's own
-        // tangent piece (`side == 0`) is cut at, named as the scan names it.
-        Some(CylinderMeet::Tangent { line, s }) => (
-            line,
-            vec![(QuadRoot::Double, nacre_exact::quad::QuadVal::from_rat(s))],
-        ),
-        Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
-            return Ok(Some(Vec::new()));
-        }
+        // A **tangent** class touches the cylinder along one ruling: the segment's line meets it in
+        // one point, root `Double` — the crossing the seated face's own tangent piece (`side == 0`)
+        // is cut at, named as the scan names it.
+        LineMeet::Tangent(line, s) => Ok(Some(vec![crossing(
+            QuadRoot::Double,
+            combinatorics::PiercePoint::Exact(line, nacre_exact::quad::QuadVal::from_rat(s)),
+        )])),
+        LineMeet::Miss | LineMeet::AxisParallelMiss => Ok(Some(Vec::new())),
         // The segment's line lies on the cylinder: a line the gate recorded
         // ([`crate::planes::SharedRuling`]) crosses no ruling — it *is* one, and the fold in
         // [`split_rulings`] states it there.
-        Some(CylinderMeet::OnRuling(_)) if on_a_shared_line => return Ok(Some(Vec::new())),
+        LineMeet::OnRuling(_) if on_a_shared_line => Ok(Some(Vec::new())),
         // **The segment is asked, not its line.** A face's rulings and arcs stand at angles its
         // arc holds, and two lines along the axis on one cylinder at different angles never
         // meet — so a segment at an angle no lateral face holds crosses none of their edges. Its
         // span is not read: the angle alone is what the population needs, and the ends' axis
         // parameters have no reader for a three-plane end.
-        Some(CylinderMeet::OnRuling(line)) => {
+        LineMeet::OnRuling(line) => {
             let Some(theta) = crate::planes::Theta::at_line(&line.base(), &o, &m) else {
                 return Ok(None);
             };
@@ -92,26 +83,14 @@ fn lateral_crossings(
             }
             // On a face: the ruling split does not arrange the shape yet — nor where the planes
             // degenerate.
-            return Err(reject(RejectReason::RulingBoundNotYet));
+            Err(reject(RejectReason::RulingBoundNotYet))
         }
-        Some(CylinderMeet::CoincidentPlanes) | Some(CylinderMeet::ParallelPlanes) => {
-            return Err(reject(RejectReason::RulingBoundNotYet));
+        LineMeet::CoincidentPlanes | LineMeet::ParallelPlanes => {
+            Err(reject(RejectReason::RulingBoundNotYet))
         }
-        None => return Ok(None),
-    };
-    // Whether a crossing is **on this segment** is the caller's question, asked in the one
-    // vocabulary that answers it for both kinds of end — the same move the circle side makes.
-    Ok(Some(
-        roots
-            .into_iter()
-            .map(|(root, s)| {
-                (
-                    combinatorics::NodeId::pierce(wc, sg.wall, cyl, root),
-                    combinatorics::PiercePoint::Exact(line.clone(), s),
-                )
-            })
-            .collect(),
-    ))
+        LineMeet::Undecided => Err(undecided()),
+        LineMeet::Wide | LineMeet::Overflow => Ok(None),
+    }
 }
 
 /// One crossing [`lateral_crossings`] found: its Pierce name, and the meet it was solved as (the
@@ -151,18 +130,15 @@ impl AxisCoord {
                 .checked_add(x[1].checked_mul(y[1])?)?
                 .checked_add(x[2].checked_mul(y[2])?)
         };
-        if let Some((line, s)) = meet.exact() {
-            let (b, d) = (line.base(), line.dir());
-            return Some(Self::Exact(
-                QuadVal::from_rat(dot(&b, &m)?).checked_add(&s.checked_mul_rat(dot(&d, &m)?)?)?,
-            ));
+        if meet.exact().is_some() {
+            return Some(Self::Exact(meet.stated_axis(def)?));
         }
         // A plane of the name across the axis holds every point of it at one axis coordinate,
         // `m·o + t·|m|²` with `t` where the axis meets it — stated exactly, so two points on one
         // cap compare as equal.
         let (planes, _, _) = combinatorics::pierce_name(n)?;
         for c in planes {
-            if let Some(w) = combinatorics::class_coeffs_rat(jd, c)
+            if let Some(w) = jd.world_rat(c)
                 && nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m)
             {
                 let t = crate::planes::axis_param_of_plane(&w, def)?;

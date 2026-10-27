@@ -123,7 +123,9 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     // the classes cannot make it pass or fail for the wrong reason.
     assert_eq!(setup.crossings.len(), 1, "one seated pair, not more");
     for &(c, ci) in &setup.crossings {
-        let coeffs = setup.geom[c].world_rat().expect("a named wall class");
+        let coeffs = Judge::new(&setup.geom, setup.standard, &setup.notes)
+            .world_rat(c)
+            .expect("a named wall class");
         assert_eq!(
             nacre_exact::point_plane_clearance_rat(
                 &coeffs,
@@ -756,7 +758,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     // exactly as long as every road spells `n̂` the one way. Sharing that input
                     // leaves the two roads independent where it counts — the code decides in exact
                     // `quad::plane_side` on the pierce meet, this in `f64` on the realized vertex.
-                    let wr = combinatorics::class_coeffs_rat(&jd, near).expect("a named class");
+                    let wr = jd.world_rat(near).expect("a named class");
                     let n_hat =
                         Vector3::from_array([wr[0].to_f64(), wr[1].to_f64(), wr[2].to_f64()]);
                     let cross = axis.direction().cross(n_hat);
@@ -867,8 +869,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                             "lateral {:?} edge {i}: `up` disagrees with the walk",
                             fh.index()
                         );
-                        let wr =
-                            combinatorics::class_coeffs_rat(&jd, plane).expect("a named class");
+                        let wr = jd.world_rat(plane).expect("a named class");
                         let n_hat =
                             Vector3::from_array([wr[0].to_f64(), wr[1].to_f64(), wr[2].to_f64()]);
                         let s = (m.vertex_point(corner(i)) - axis.origin())

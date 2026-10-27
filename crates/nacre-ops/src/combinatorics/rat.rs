@@ -65,7 +65,7 @@ pub(crate) fn pierce_name_from_def(
             // A candidate with no narrow description cannot be this handle's class and is passed
             // over — the corner's other planes still decide; a handle none answers to leaves
             // `seen` empty and the corner unnamed below.
-            let Some(kc) = class_coeffs_rat(jd, k) else {
+            let Some(kc) = jd.world_rat(k) else {
                 continue;
             };
             if plane_sense(c, &kc).is_none() {
@@ -84,8 +84,8 @@ pub(crate) fn pierce_name_from_def(
     let def = &class.def;
     let (o, m) = (def.origin(), def.dir());
     let meet = nacre_exact::quad::plane_plane_cylinder(
-        &class_coeffs_rat(jd, k0)?,
-        &class_coeffs_rat(jd, k1)?,
+        &jd.world_rat(k0)?,
+        &jd.world_rat(k1)?,
         &o,
         &m,
         def.r2(),
@@ -154,7 +154,7 @@ pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact
 /// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
 /// serves both.
 ///
-/// It lives here, beside [`class_coeffs_rat`] which it reads, because its consumers are in other
+/// It lives here, among the class readings, because its consumers are in other
 /// modules and it belongs to none: `nesting`'s witness supply asks it for a circle's own point, the
 /// arrangement's mixed-class net for the circle to measure against a ruling, and the ring box
 /// ([`ring_box_points_hp`]) for an arc's radial ends. The meet is
@@ -166,14 +166,7 @@ pub(crate) fn circle_centre_rat(
     wc: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    nacre_exact::axis_plane_meet(&class_coeffs_rat(jd, wc)?, &def.origin(), &def.dir())
-}
-
-pub(crate) fn class_coeffs_rat(
-    jd: &Judge<'_, WorkingPlane>,
-    c: usize,
-) -> Option<[nacre_exact::Rat; 4]> {
-    jd.planes[c].world_rat()
+    nacre_exact::axis_plane_meet(&jd.world_rat(wc)?, &def.origin(), &def.dir())
 }
 
 /// **How the line `a ∩ b` of two plane classes meets a cylinder** — the meet
@@ -190,7 +183,7 @@ pub(crate) fn class_line_meets_cylinder(
     b: usize,
     def: &nacre_topo::CylinderDef,
 ) -> Option<nacre_exact::quad::CylinderMeet> {
-    let (ca, cb) = (class_coeffs_rat(jd, a)?, class_coeffs_rat(jd, b)?);
+    let (ca, cb) = (jd.world_rat(a)?, jd.world_rat(b)?);
     nacre_exact::quad::plane_plane_cylinder(&ca, &cb, &def.origin(), &def.dir(), def.r2())
 }
 
@@ -218,9 +211,9 @@ pub(crate) fn node_coords_rat(
     match n.kind() {
         NodeKind::Pierce { .. } => None,
         NodeKind::ThreePlane(t) => nacre_exact::three_planes_rat([
-            class_coeffs_rat(jd, t[0])?,
-            class_coeffs_rat(jd, t[1])?,
-            class_coeffs_rat(jd, t[2])?,
+            jd.world_rat(t[0])?,
+            jd.world_rat(t[1])?,
+            jd.world_rat(t[2])?,
         ]),
     }
 }
@@ -244,7 +237,7 @@ pub(crate) fn arc_box_rat(
     def: &nacre_topo::CylinderDef,
     theta: crate::planes::Theta,
 ) -> Option<[[nacre_exact::Rat; 3]; 2]> {
-    let t = crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, wc)?, def)?;
+    let t = crate::planes::axis_param_of_plane(&jd.world_rat(wc)?, def)?;
     crate::planes::lateral_box(
         def,
         &crate::planes::Footprint {
@@ -333,7 +326,7 @@ pub(crate) fn ring_box_points_hp(
     Some(out)
 }
 
-/// **A node as an interval, whichever kind of name it is** — [`three_point_hp`] for three planes,
+/// **A node as an interval, whichever kind of name it is** — [`Judge::three_hp`] for three planes,
 /// [`PiercePoint::point_hp`] for a pierce point — exact or, with a plane of no world statement
 /// among its two, an interval box ([`PiercePoint::Bounded`]). `None` for a meet the precision could
 /// not separate, a pierce point no box states (a tangency on the interval road, a named meet that
@@ -344,20 +337,9 @@ pub(crate) fn node_point_hp(
     n: NodeId,
 ) -> Option<[nacre_exact::HpBounded; 3]> {
     match n.kind() {
-        NodeKind::ThreePlane(t) => three_point_hp(jd, t),
+        NodeKind::ThreePlane(t) => jd.three_hp(t, jd.standard.prec),
         NodeKind::Pierce { cyl, .. } => pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?.point_hp(jd),
     }
-}
-
-/// **A three-plane point as an interval** — its three classes' witness triangles
-/// ([`nacre_judge::plane_hp`]) met at the model's precision ([`nacre_judge::meet_hp`]): a box that
-/// holds the true point whether or not the classes have a world statement. `None` for a meet the
-/// precision could not separate.
-pub(crate) fn three_point_hp(
-    jd: &Judge<'_, WorkingPlane>,
-    t: [usize; 3],
-) -> Option<[nacre_exact::HpBounded; 3]> {
-    jd.three_hp(t, jd.standard.prec)
 }
 
 /// **What a question that could not be stated exactly is refused as**, given the classes it read:
@@ -677,7 +659,7 @@ pub(crate) fn conjugate_midpoint(
     // otherwise surface as a wrong containment answer two layers up.
     debug_assert!(
         [pa[0], pa[1]].iter().all(|&k| {
-            class_coeffs_rat(jd, k).is_none_or(|c| {
+            jd.world_rat(k).is_none_or(|c| {
                 let n = [c[0], c[1], c[2]];
                 nacre_exact::dot3_rat(&n, &p)
                     .and_then(|v| v.checked_add(c[3]))
@@ -724,7 +706,7 @@ fn rational_ends_midpoint(
                 .map(|(x, y)| x.into_iter().filter(|k| y.contains(k)).collect::<Vec<_>>());
             shared.is_none_or(|ks| {
                 ks.iter().all(|&k| {
-                    class_coeffs_rat(jd, k).is_none_or(|c| {
+                    jd.world_rat(k).is_none_or(|c| {
                         let n = [c[0], c[1], c[2]];
                         nacre_exact::dot3_rat(&n, &p)
                             .and_then(|v| v.checked_add(c[3]))
@@ -741,21 +723,12 @@ fn rational_ends_midpoint(
 /// **A pierce node's meet, re-solved from its name** ([`PiercePoint`]) — the two classes' world
 /// coefficients and the cylinder, never a producer's coordinate.
 ///
-/// `None` folds four causes, and only one of them reaches here on the product road:
-/// * **a three-plane node** — a point on a cylinder is represented on the cylinder (`Aliases`'
-///   `rep_rank`: a pierce name outranks a three-plane one), so a ruling's or an arc's end is a
-///   pierce name; only a hand-built fixture hands one in. `arc_at` and `coord_key` ask the kind
-///   first regardless;
-/// * **a named class with no narrow world coefficients** — a `Wide` name. The cylinder gate asks
-///   every class of a model with a cylinder for them and refuses before any arrangement. A class
-///   with **no** world name is not this cause: its pierce points are solved as interval boxes
-///   ([`PiercePoint::Bounded`]), and `None` there is a box the precision cannot form or a root an
-///   interval cannot state (a tangency);
-/// * **an overflow** in `plane_plane_cylinder` — reachable (long decimals at a small scale), and
-///   the one cause `WitnessNotRational`, the name most callers give this `None`, is true of;
-/// * **a meet without the name's root** — the name was minted from this same meet, of the same
-///   coefficients by the same function, with the pair and the root carried together
-///   (`QuadRoot::canonical`); only a naming defect produces it.
+/// `None` is a three-plane node — a point on a cylinder is represented on the cylinder (`Aliases`'
+/// `rep_rank`: a pierce name outranks a three-plane one), so a ruling's or an arc's end is a pierce
+/// name; only a hand-built fixture hands one in, and `arc_at` and `coord_key` ask the kind first
+/// regardless — or one of [`Judge::pierce`]'s causes. Of those, the cylinder gate refuses a `Wide`
+/// name before any arrangement; an overflow is reachable (long decimals at a small scale) and is the
+/// one cause `WitnessNotRational`, the name most callers give this `None`, is true of.
 ///
 /// Measured over the suite, the census and the ignored sweep: no cause fires on the product road —
 /// the only hits are the first cause, from `a_circle_meeting_a_ruling_is_refused_by_name`'s
@@ -787,27 +760,39 @@ pub(crate) fn pierce_meet(
     jd.pierce(planes, cyl, def, root)
 }
 
-/// **A node as a point of a question about cylinder `cyl`** — a three-plane corner or a pierce
-/// point of that cylinder ([`pierce_meet`]); `None` for a pierce point of another cylinder or one no
-/// meet states.
-// Built and read within one question; boxing the wide arm would allocate per question for nothing.
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum NodeOn {
+/// **A node as the point a cylinder question reads** — a three-plane corner or a pierce point.
+/// The key [`loop_winding`]'s lexicographic scan orders by, and the points a circle's order reads
+/// off interval boxes. An arc's own minimum is ordered in the same currency: it is the pierce point
+/// of the cap plane, a plane through the axis, and the cylinder (`winding`'s `arc_extremum_winding`), though
+/// no ring node stands there.
+///
+/// **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node is
+/// the rational meet of three planes; a pierce node's coordinate is `a + b√c` and no rational
+/// vessel holds it. That is why this is an enum and not a `[Rat; 3]` with a decline: the second
+/// arm is not a precision failure to be lifted, it is a different number.
+pub(crate) enum NodePoint {
+    /// The three classes, handed to `Judge::cmp_coord` — which keeps its toleranced ladder and its
+    /// escalation.
     Three([usize; 3]),
-    Pierce(PiercePoint),
+    /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
+    /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
+    /// common case.
+    Pierce(Box<PiercePoint>),
 }
 
-impl NodeOn {
-    pub(crate) fn of(
+impl NodePoint {
+    /// Node `n` as a point of a question about cylinder `cyl` — `None` for a pierce point of
+    /// another cylinder or one no meet states ([`pierce_meet`]).
+    pub(crate) fn on(
         jd: &Judge<'_, WorkingPlane>,
         cyl: usize,
         def: &nacre_topo::CylinderDef,
         n: NodeId,
-    ) -> Option<NodeOn> {
+    ) -> Option<NodePoint> {
         match n.kind() {
-            NodeKind::ThreePlane(t) => Some(NodeOn::Three(t)),
+            NodeKind::ThreePlane(t) => Some(NodePoint::Three(t)),
             NodeKind::Pierce { cyl: c, .. } if c == cyl => {
-                pierce_meet(jd, cyl, def, n).map(NodeOn::Pierce)
+                pierce_meet(jd, cyl, def, n).map(|p| NodePoint::Pierce(Box::new(p)))
             }
             NodeKind::Pierce { .. } => None,
         }
@@ -817,8 +802,8 @@ impl NodeOn {
     pub(crate) fn point(&self) -> nacre_judge::cylinder::CylPoint<'_> {
         use nacre_judge::cylinder::CylPoint;
         match self {
-            NodeOn::Three(t) => CylPoint::Three(*t),
-            NodeOn::Pierce(p) => CylPoint::Pierce(p),
+            NodePoint::Three(t) => CylPoint::Three(*t),
+            NodePoint::Pierce(p) => CylPoint::Pierce(p),
         }
     }
 }
@@ -848,70 +833,18 @@ pub(crate) fn between_on_circle_hp(
     hi: NodeId,
     n: NodeId,
 ) -> Option<bool> {
-    let (a, b) = (NodeOn::of(jd, cyl, def, lo)?, NodeOn::of(jd, cyl, def, n)?);
+    let (a, b) = (
+        NodePoint::on(jd, cyl, def, lo)?,
+        NodePoint::on(jd, cyl, def, n)?,
+    );
     if lo == hi {
         if n == lo {
             return Some(false);
         }
-        return jd.points_apart(a.point(), b.point())?.then_some(true);
+        return jd.points_apart(a.point(), b.point()).then_some(true);
     }
-    let c = NodeOn::of(jd, cyl, def, hi)?;
+    let c = NodePoint::on(jd, cyl, def, hi)?;
     jd.circle_turn(def, a.point(), b.point(), c.point())
-}
-
-/// **Where the line `p ∩ q` crosses the arc `a → b` strictly inside it**, for a pair one of whose
-/// planes has no world statement — the interval twin of the exact [`arc_crossings`],
-/// with its contract: the roots `{p, q, cyl}` the travelled arc contains, in the order its travel
-/// meets them, and a root that *is* the arc's end on the line (`on_end`) not counted. The meet's
-/// shape is read off the discriminant's sign; a tangency or an axis-parallel line is a statement an
-/// interval cannot make, so those are `None`, as is a root the boxes cannot place against the arc.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn arc_crossings_hp(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    p: usize,
-    q: usize,
-    cyl: usize,
-    ccw: bool,
-    [a, b]: [NodeId; 2],
-    on_end: Option<NodeId>,
-) -> Option<Vec<NodeId>> {
-    if !jd.line_crosses(p, q, def)? {
-        return Some(Vec::new()); // the line misses the circle
-    }
-    let (lo, hi) = if ccw { (a, b) } else { (b, a) };
-    let mut inside: Vec<NodeId> = Vec::with_capacity(2);
-    for root in [QuadRoot::Lo, QuadRoot::Hi] {
-        let node = NodeId::pierce(p, q, cyl, root);
-        if let Some(e) = on_end {
-            if node == e {
-                continue;
-            }
-            // Two names, one point: an interval cannot say so, and the exact road's `Coincident`
-            // answer has no twin here — the boxes must prove the two apart.
-            let (x, y) = (
-                NodeOn::of(jd, cyl, def, e)?,
-                NodeOn::of(jd, cyl, def, node)?,
-            );
-            if !jd.points_apart(x.point(), y.point())? {
-                return None;
-            }
-        }
-        if between_on_circle_hp(jd, cyl, def, lo, hi, node)? {
-            inside.push(node);
-        }
-    }
-    if let [r, other] = inside[..] {
-        let r_first = if ccw {
-            between_on_circle_hp(jd, cyl, def, a, other, r)?
-        } else {
-            between_on_circle_hp(jd, cyl, def, other, a, r)?
-        };
-        if !r_first {
-            inside.swap(0, 1);
-        }
-    }
-    Some(inside)
 }
 
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.
@@ -928,8 +861,8 @@ pub(crate) fn arc_crossings_hp(
 /// unchanged and only the width moves: over the distinct class normals sampled from this corpus,
 /// the widest component fell from a median of 51 bits to **1**.
 ///
-/// **Total.** Class coefficients arrive as a canonical *integer* 4-vector (`class_coeffs_rat` is a
-/// read of `world_rat`, which is `PlaneName::narrow()`), so the gcd is an integer one and the
+/// **Total.** Class coefficients arrive as a canonical *integer* 4-vector ([`Judge::world_rat`] is
+/// `PlaneName::narrow()`), so the gcd is an integer one and the
 /// division is exact. A component that is somehow not an integer is returned untouched rather than
 /// guessed at — the structural argument can rot without this quietly changing an answer.
 fn primitive_normal(n: &[nacre_exact::Rat; 3]) -> [nacre_exact::Rat; 3] {

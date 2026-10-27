@@ -1,34 +1,5 @@
 use super::*;
 use nacre_judge::cylinder::CylPoint;
-/// **A ring node's coordinate, in whichever world names it** — the key
-/// [`loop_winding`]'s lexicographic scan orders by. An arc's own minimum is ordered in the same
-/// currency: it is the pierce point of the cap plane, a plane through the axis, and the cylinder
-/// ([`arc_extremum_winding`]), though no ring node stands there.
-///
-/// **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node
-/// is the rational meet of three planes; a pierce node's coordinate is `a + b√c` and no rational
-/// vessel holds it. That is why this is an enum and not a `[Rat; 3]` with a decline: the second
-/// arm is not a precision failure to be lifted, it is a different number.
-enum CoordKey {
-    /// The three classes, handed to `Judge::cmp_coord` — which keeps its toleranced ladder and its
-    /// escalation.
-    Three([usize; 3]),
-    /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
-    /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
-    /// common case.
-    Pierce(Box<PiercePoint>),
-}
-
-impl CoordKey {
-    /// The point the judge orders.
-    fn point(&self) -> CylPoint<'_> {
-        match self {
-            CoordKey::Three(t) => CylPoint::Three(*t),
-            CoordKey::Pierce(m) => CylPoint::Pierce(m),
-        }
-    }
-}
-
 /// Build one ring node's key.
 ///
 /// **The cylinder comes from the class table.** The name says which cylinder
@@ -42,13 +13,13 @@ fn coord_key(
     cyls: &[crate::planes::WorkingCyl],
     ring: &[RingEdge],
     i: usize,
-) -> Result<CoordKey, BoolError> {
+) -> Result<NodePoint, BoolError> {
     let node = ring[i].node;
     let NodeKind::Pierce { planes, cyl, .. } = node.kind() else {
         // A `match` and not a fallback: a third variant must light this up rather than fall into
         // this `else` unnamed.
         return match node.kind() {
-            NodeKind::ThreePlane(t) => Ok(CoordKey::Three(t)),
+            NodeKind::ThreePlane(t) => Ok(NodePoint::Three(t)),
             NodeKind::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
         };
     };
@@ -61,7 +32,7 @@ fn coord_key(
     // gate's ([`undecided_reason`]).
     let meet =
         pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(undecided_reason(cyls, &planes)))?;
-    Ok(CoordKey::Pierce(Box::new(meet)))
+    Ok(NodePoint::Pierce(Box::new(meet)))
 }
 
 /// **What ordering two ring nodes on one world axis needs besides the two keys** — the judge, and
@@ -99,10 +70,10 @@ impl KeyCmp<'_> {
     /// no door has to be opened in `nacre-exact` for it. A three-plane node with no rational meet
     /// (a class with no world statement among its three) is ordered by intervals instead
     /// ([`Self::unstated`]).
-    fn cmp(&self, a: &CoordKey, b: &CoordKey, axis: usize) -> Result<i8, BoolError> {
+    fn cmp(&self, a: &NodePoint, b: &NodePoint, axis: usize) -> Result<i8, BoolError> {
         use nacre_exact::{Orient, quad};
         let jd = self.jd;
-        let bounded = |k: &CoordKey| matches!(k, CoordKey::Pierce(m) if m.exact().is_none());
+        let bounded = |k: &NodePoint| matches!(k, NodePoint::Pierce(m) if m.exact().is_none());
         if bounded(a) || bounded(b) {
             return self.bounded(a, b, axis);
         }
@@ -119,22 +90,22 @@ impl KeyCmp<'_> {
                 .map(nacre_exact::MeetPoint::Narrow)
         };
         let order = match (a, b) {
-            (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
-            (CoordKey::Three(x), CoordKey::Pierce(m)) => match meet(*x) {
+            (NodePoint::Three(x), NodePoint::Three(y)) => jd.cmp_coord(*x, *y, axis),
+            (NodePoint::Three(x), NodePoint::Pierce(m)) => match meet(*x) {
                 Some(p) => {
                     let (line, s) = exact(m)?;
                     sign(quad::cmp_coord_meet_branch(&p, line, s, axis))
                 }
                 None => self.unstated(*x, m, axis)?,
             },
-            (CoordKey::Pierce(m), CoordKey::Three(y)) => match meet(*y) {
+            (NodePoint::Pierce(m), NodePoint::Three(y)) => match meet(*y) {
                 Some(p) => {
                     let (line, s) = exact(m)?;
                     -sign(quad::cmp_coord_meet_branch(&p, line, s, axis))
                 }
                 None => -self.unstated(*y, m, axis)?,
             },
-            (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
+            (NodePoint::Pierce(a), NodePoint::Pierce(b)) => {
                 sign(quad::cmp_coord_branch(exact(a)?, exact(b)?, axis))
             }
         };
@@ -154,21 +125,21 @@ impl KeyCmp<'_> {
     ///   two points of one half are two points;
     /// * otherwise their interval boxes, and a pair the boxes cannot separate is refused, never
     ///   read as a tie ([`undecided_reason`] names it).
-    fn bounded(&self, a: &CoordKey, b: &CoordKey, axis: usize) -> Result<i8, BoolError> {
+    fn bounded(&self, a: &NodePoint, b: &NodePoint, axis: usize) -> Result<i8, BoolError> {
         let jd = self.jd;
         let zero = nacre_exact::Rat::from_int(0);
         let flat_value = |c: usize| -> Option<nacre_exact::Rat> {
             if flat_axis(jd, c) != Some(axis) {
                 return None;
             }
-            let w = class_coeffs_rat(jd, c)?;
+            let w = jd.world_rat(c)?;
             zero.checked_sub(w[3])?
                 .checked_mul(nacre_exact::Rat::new(w[axis].denom(), w[axis].numer())?)
         };
-        let stated = |k: &CoordKey| -> Option<nacre_exact::Rat> {
+        let stated = |k: &NodePoint| -> Option<nacre_exact::Rat> {
             match k {
-                CoordKey::Three(t) => t.iter().find_map(|&c| flat_value(c)),
-                CoordKey::Pierce(m) => match m.exact() {
+                NodePoint::Three(t) => t.iter().find_map(|&c| flat_value(c)),
+                NodePoint::Pierce(m) => match m.exact() {
                     Some((line, _)) => (line.dir()[axis] == zero).then(|| line.base()[axis]),
                     None => m.name_planes()?.iter().find_map(|&c| flat_value(c)),
                 },
@@ -177,7 +148,7 @@ impl KeyCmp<'_> {
         if let (Some(x), Some(y)) = (stated(a), stated(b)) {
             return Ok(i8::from(x > y) - i8::from(x < y));
         }
-        if let (CoordKey::Pierce(x), CoordKey::Pierce(y)) = (a, b)
+        if let (NodePoint::Pierce(x), NodePoint::Pierce(y)) = (a, b)
             && let (Some((px, cx)), Some((py, cy))) =
                 (x.name_planes_and_cyl(), y.name_planes_and_cyl())
             && cx == cy
@@ -195,8 +166,8 @@ impl KeyCmp<'_> {
         let classes: Vec<usize> = [a, b]
             .iter()
             .flat_map(|k| match k {
-                CoordKey::Three(t) => t.to_vec(),
-                CoordKey::Pierce(m) => m.name_planes().map_or(Vec::new(), |p| p.to_vec()),
+                NodePoint::Three(t) => t.to_vec(),
+                NodePoint::Pierce(m) => m.name_planes().map_or(Vec::new(), |p| p.to_vec()),
             })
             .collect();
         let refuse = || reject(undecided_reason(self.cyls, &classes));
@@ -240,7 +211,7 @@ impl KeyCmp<'_> {
         }
         let w = t.iter().find_map(|&c| {
             (flat_axis(self.jd, c) == Some(axis))
-                .then(|| class_coeffs_rat(self.jd, c))
+                .then(|| self.jd.world_rat(c))
                 .flatten()
         })?;
         // `−d/n − base` has the sign of `−(n·base + d)·n`.
@@ -272,10 +243,10 @@ pub(crate) fn pierce_between(
     b: NodeId,
     candidates: &[NodeId],
 ) -> Option<Vec<NodeId>> {
-    let key = |n: NodeId| -> Option<CoordKey> {
+    let key = |n: NodeId| -> Option<NodePoint> {
         match n.kind() {
-            NodeKind::ThreePlane(t) => Some(CoordKey::Three(t)),
-            NodeKind::Pierce { cyl, .. } => Some(CoordKey::Pierce(Box::new(pierce_meet(
+            NodeKind::ThreePlane(t) => Some(NodePoint::Three(t)),
+            NodeKind::Pierce { cyl, .. } => Some(NodePoint::Pierce(Box::new(pierce_meet(
                 jd,
                 cyl,
                 &cyls.get(cyl)?.def,
@@ -289,7 +260,7 @@ pub(crate) fn pierce_between(
     // `+1` = "the first is larger" (`KeyCmp::cmp`), so `dir` is the a→b slope's sign on this axis and
     // "strictly between" is both hops running the same way.
     let dir = kc.cmp(&ka, &kb, axis).ok()?;
-    let mut mid: Vec<(NodeId, CoordKey)> = Vec::new();
+    let mut mid: Vec<(NodeId, NodePoint)> = Vec::new();
     for &c in candidates {
         if c == a || c == b {
             continue;
@@ -347,7 +318,7 @@ pub(crate) fn pierce_between(
 /// `n_h = m × ê_a` (it is `c − s·p` for `p = ê_a − (m_a/|m|²)·m`, which lies in the span of `m` and
 /// `ê_a`), so it is one of the two points the cap plane, `H` and the cylinder share — the
 /// [`plane_plane_cylinder`](nacre_exact::quad::plane_plane_cylinder) meet every pierce node is
-/// solved by, and a [`CoordKey::Pierce`] that [`KeyCmp::cmp`] orders against the ring's nodes and
+/// solved by, and a [`NodePoint::Pierce`] that [`KeyCmp::cmp`] orders against the ring's nodes and
 /// against another arc's minimum. The point is irrational whenever the axis tilts toward `ê_a` or
 /// the radius is a surd (`c_x − 3√41/25` on a Pythagorean frame; `−√2` for a sector of `r² = 2` on
 /// the world frame); a road that answers only for a rational `c − r·ê_a` leaves both to the node's
@@ -365,7 +336,7 @@ fn arc_extremum_winding(
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
     ring: &[RingEdge],
-    keys: &[CoordKey],
+    keys: &[NodePoint],
     lo: usize,
 ) -> Result<Option<i8>, BoolError> {
     use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder};
@@ -375,7 +346,7 @@ fn arc_extremum_winding(
     let key = |i: usize| &keys[i];
     // `x` against `y`, axis by axis — `-1` when `x` is lexicographically the smaller, `0` when
     // they are the same point.
-    let lex = |x: &CoordKey, y: &CoordKey| -> Result<i8, BoolError> {
+    let lex = |x: &NodePoint, y: &NodePoint| -> Result<i8, BoolError> {
         for ax in 0..3 {
             let o = kc.cmp(x, y, ax)?;
             if o != 0 {
@@ -386,7 +357,7 @@ fn arc_extremum_winding(
     };
     let n = ring.len();
     let zero = Rat::from_int(0);
-    let mut best: Option<(CoordKey, i8)> = None;
+    let mut best: Option<(NodePoint, i8)> = None;
     for (i, e) in ring.iter().enumerate() {
         let Carrier::Arc(ac) = &e.carrier else {
             continue;
@@ -407,13 +378,13 @@ fn arc_extremum_winding(
             .and_then(|d| zero.checked_sub(d))
             .map(|d| [n_h[0], n_h[1], n_h[2], d])
             .ok_or_else(width)?;
-        let cap = class_coeffs_rat(jd, p).ok_or_else(width)?;
+        let cap = jd.world_rat(p).ok_or_else(width)?;
         let ext = match plane_plane_cylinder(&cap, &h_plane, &o, &m, r2).ok_or_else(width)? {
             // `s` ascends along `line.dir()`, whose `a` component is `−k(|m|² − m_a²) ≠ 0`, so the
             // two roots differ in `a` and the smaller one is read off that one sign.
             CylinderMeet::Pair { line, s: [s0, s1] } => {
                 let s = if line.dir()[a] > zero { s0 } else { s1 };
-                CoordKey::Pierce(Box::new(PiercePoint::Exact(line, s)))
+                NodePoint::Pierce(Box::new(PiercePoint::Exact(line, s)))
             }
             // `H` holds the axis, which the cap plane crosses at the centre — inside the cylinder,
             // so the line through it meets the surface twice; and the cap plane is ⊥ `m` while `H`
@@ -449,9 +420,9 @@ fn arc_extremum_winding(
         // needed whichever way the axis points. An end *on* `H` is θ = 0° — θ = 180° is the
         // minimum itself, taken out above — and it belongs to the half the walk is in beside it:
         // a start leaves θ = 0° into the upper half, an end arrives at it from the lower.
-        let half = |k: &CoordKey, is_start: bool| -> Result<bool, BoolError> {
+        let half = |k: &NodePoint, is_start: bool| -> Result<bool, BoolError> {
             let o = match k {
-                CoordKey::Three(t) => {
+                NodePoint::Three(t) => {
                     let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))
                         .ok_or_else(width)?;
                     let v = nacre_exact::dot3_rat(&n_h, &q)
@@ -463,7 +434,7 @@ fn arc_extremum_winding(
                         std::cmp::Ordering::Equal => Orient::Zero,
                     }
                 }
-                CoordKey::Pierce(b) => {
+                NodePoint::Pierce(b) => {
                     let (line, s) = b.exact().ok_or_else(width)?;
                     nacre_exact::quad::plane_side(&h_plane, line, s)
                 }
@@ -563,7 +534,7 @@ pub(crate) fn ring_floor(any_arc: bool, self_loop_arc: bool) -> usize {
 /// A hull *vertex* always exists.
 ///
 /// **Where arcs touch this**: the departures are read at **one** point, so a curved edge needs
-/// no angle sum — only its tangent there. The lexicographic minimum runs on [`CoordKey`], which
+/// no angle sum — only its tangent there. The lexicographic minimum runs on [`NodePoint`], which
 /// holds a pierce node's `a + b√c` coordinate beside a name and compares across the two through
 /// the quad tower.
 pub(crate) fn loop_winding(
@@ -590,7 +561,7 @@ pub(crate) fn loop_winding(
     // pierce key is a *solve* ([`pierce_meet`] re-derives the point from the name), and the scan
     // below asks for each node's key on the order of six times, so re-solving per read would
     // multiply the exact work by that. One pass, one `Vec`.
-    let keys: Vec<CoordKey> = (0..ring.len())
+    let keys: Vec<NodePoint> = (0..ring.len())
         .map(|i| coord_key(jd, cyls, ring, i))
         .collect::<Result<_, BoolError>>()?;
     let key = |i: usize| &keys[i];

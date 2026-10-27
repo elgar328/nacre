@@ -246,6 +246,24 @@ impl RW {
         self
     }
 
+    /// …with its stored coefficients turned against its triangle: `frame_sign = −1`, and for a
+    /// stated plane its name faces against it too (`κ = −1`).
+    pub(crate) fn flipped(mut self) -> RW {
+        self.coeffs = self.coeffs.map(|c| -c);
+        self
+    }
+
+    /// The stored coefficients — the way the plane faces.
+    pub(crate) fn coeffs(&self) -> [f64; 4] {
+        self.coeffs
+    }
+
+    /// The witness triangle's turn — the outward normal's direction.
+    pub(crate) fn tri_normal(&self) -> [f64; 3] {
+        let t = self.tri;
+        (t[1] - t[0]).cross(t[2] - t[0]).as_array()
+    }
+
     /// …stated in the world, which an unmoved plane's name is.
     pub(crate) fn stated(mut self) -> RW {
         assert!(

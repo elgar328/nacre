@@ -535,8 +535,8 @@ fn circle_crossings(
 ) -> Option<Vec<combinatorics::NodeId>> {
     use crate::combinatorics::QuadRoot;
     use nacre_exact::quad::{CylinderMeet, QuadVal};
-    let w = combinatorics::class_coeffs_rat(jd, wc)?;
-    let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
+    let w = jd.world_rat(wc)?;
+    let v = jd.world_rat(sg.wall)?;
     let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
     let roots = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],

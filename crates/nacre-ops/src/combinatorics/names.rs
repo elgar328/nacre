@@ -161,11 +161,11 @@ pub(crate) fn restate_pierce(
     let (own, cyl, _) = pierce_name(node)?;
     let def = &cyls.get(cyl)?.def;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (wa, wb) = (class_coeffs_rat(jd, a)?, class_coeffs_rat(jd, b)?);
+    let (wa, wb) = (jd.world_rat(a)?, jd.world_rat(b)?);
     let others: Vec<[nacre_exact::Rat; 4]> = own
         .iter()
         .filter(|&&p| p != a && p != b)
-        .map(|&p| class_coeffs_rat(jd, p))
+        .map(|&p| jd.world_rat(p))
         .collect::<Option<_>>()?;
     let on = |line: &nacre_exact::quad::MeetLine, s: &QuadVal| {
         others
@@ -346,8 +346,8 @@ pub(crate) fn shared_line(
         return None;
     };
     let def = &cyls.get(cyl)?.def;
-    let w = class_coeffs_rat(jd, own)?;
-    let v = class_coeffs_rat(jd, other)?;
+    let w = jd.world_rat(own)?;
+    let v = jd.world_rat(other)?;
     let CylinderMeet::OnRuling(line) =
         nacre_exact::quad::plane_plane_cylinder(&w, &v, &def.origin(), &def.dir(), def.r2())?
     else {

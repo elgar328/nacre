@@ -1192,7 +1192,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     // A class the z axis actually meets — a cap, not a wall.
     let wc = (0..planes.len())
         .find(|&c| {
-            combinatorics::class_coeffs_rat(&jd, c)
+            jd.world_rat(c)
                 .is_some_and(|k| k[0] == zero && k[1] == zero && k[2] != zero)
         })
         .expect("a cap class");
@@ -1263,7 +1263,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     let jd = crate::planes::test_judge(&planes);
     let class = |pick: &dyn Fn(&[nacre_exact::Rat; 4]) -> bool| {
         (0..planes.len())
-            .find(|&c| combinatorics::class_coeffs_rat(&jd, c).is_some_and(|k| pick(&k)))
+            .find(|&c| jd.world_rat(c).is_some_and(|k| pick(&k)))
             .expect("the cuboid has all three")
     };
     let wall = class(&|k: &[nacre_exact::Rat; 4]| k[1] == zero && k[2] == zero && k[0] != zero);
@@ -1322,7 +1322,7 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     let jd = crate::planes::test_judge(&planes);
     let wall = (0..planes.len())
         .find(|&c| {
-            combinatorics::class_coeffs_rat(&jd, c)
+            jd.world_rat(c)
                 .is_some_and(|k| k[1] == q(0) && k[2] == q(0) && k[0] != q(0))
         })
         .expect("an x-normal wall class");

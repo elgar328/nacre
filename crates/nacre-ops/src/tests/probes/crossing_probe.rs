@@ -46,9 +46,7 @@ pub(crate) fn record(
     let Some(p) = combinatorics::pierce_point(jd, cyl, def, id) else {
         return;
     };
-    let coeffs = |c: usize| -> Option<[f64; 4]> {
-        combinatorics::class_coeffs_rat(jd, c).map(|w| w.map(|x| x.to_f64()))
-    };
+    let coeffs = |c: usize| -> Option<[f64; 4]> { jd.world_rat(c).map(|w| w.map(|x| x.to_f64())) };
     let (Some(w), Some(v)) = (coeffs(wc), coeffs(fc)) else {
         return;
     };

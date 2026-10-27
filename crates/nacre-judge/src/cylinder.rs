@@ -59,7 +59,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// * **a meet without the name's root** — the name was minted from this same meet, so only a
     ///   naming defect produces it;
     /// * on the interval road, **a root the box cannot form**: a tangency (an interval proves two
-    ///   roots apart, never one double root) or a discriminant it cannot separate from zero.
+    ///   roots apart, never one double root), a line not proved off the axis direction (`|ℓ × m|²`
+    ///   on zero), or a discriminant not proved positive — on zero, or negative (the line misses).
     pub fn pierce(
         &self,
         planes: [usize; 2],
@@ -155,8 +156,15 @@ impl<W: PlaneWitness> Judge<'_, W> {
     }
 
     /// The same coefficients **turned to face the way the plane does** — the name's normal times
-    /// its sense ([`PlaneWitness::world_sense`]).
-    fn stored_world_rat(&self, k: usize) -> Option<[Rat; 4]> {
+    /// its sense ([`PlaneWitness::world_sense`]): the frame every direction sign and cell label
+    /// («above») is written in.
+    ///
+    /// The name is canonical — first nonzero component positive — and points the **other way**
+    /// from the plane on half the planes, so a rule spelled against it reads backwards on exactly
+    /// those. The turn is the truth's (the world name's sense), never a comparison with a plane
+    /// cache: that cache is a rounded image, and the name needs no second description to say
+    /// which way it faces.
+    pub fn stored_world_rat(&self, k: usize) -> Option<[Rat; 4]> {
         let c = self.world_rat(k)?;
         if self.planes[k].world_sense()? > 0 {
             return Some(c);
@@ -191,7 +199,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// For a plane with no world statement this **is** its canonical direction too: such a plane
     /// has no name whose sign could disagree, so the one direction it has — the stored one — is the
     /// one a pierce name's roots are ordered along (`n₁ × n₂`).
-    pub fn stored_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
+    pub(crate) fn stored_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
         if let Some(w) = self.stored_world_rat(k) {
             return w.map(|x| HpBounded::of_rat(x, prec));
         }
@@ -207,7 +215,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// Plane `k` facing **outward** (`n_out = frame_sign · n_P`, the frame `orient3d` answers in)
     /// as an interval — exactly from the world statement where there is one, else the witness
     /// triangle, which runs outward by construction.
-    pub fn outward_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
+    pub(crate) fn outward_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
         if self.planes[k].world_name().is_some() {
             return self.stored_hp(k, prec).map(|x| {
                 if self.planes[k].frame_sign() < 0 {
@@ -220,13 +228,51 @@ impl<W: PlaneWitness> Judge<'_, W> {
         self.witness_hp(k, prec)
     }
 
-    /// The coefficients a pierce name's roots are ordered by — the world name exactly where there
-    /// is one (what the exact solve reads), else the stored facing ([`Self::stored_hp`]).
-    pub fn canon_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
-        match self.world_rat(k) {
-            Some(w) => w.map(|x| HpBounded::of_rat(x, prec)),
-            None => self.stored_hp(k, prec),
+    /// **Which way plane `k`'s canonical direction faces against its stored one** — the world
+    /// name's sense where there is one ([`PlaneWitness::world_sense`]), else `+1`: a plane with no
+    /// world name has no name whose sign could disagree, so its canonical direction **is** the
+    /// stored one. The one statement of that rule; every reader of a canonical direction reads it
+    /// here.
+    pub fn canon_sense(&self, k: usize) -> i8 {
+        self.planes[k].world_sense().unwrap_or(1)
+    }
+
+    /// The coefficients a pierce name's roots are ordered by — the world name exactly where it
+    /// has a narrow one (what the exact solve reads), else the stored facing ([`Self::stored_hp`])
+    /// turned to the canonical direction ([`Self::canon_sense`]).
+    pub(crate) fn canon_hp(&self, k: usize, prec: usize) -> [HpBounded; 4] {
+        if let Some(w) = self.world_rat(k) {
+            return w.map(|x| HpBounded::of_rat(x, prec));
         }
+        let stored = self.stored_hp(k, prec);
+        if self.canon_sense(k) < 0 {
+            stored.map(|x| negate(&x, prec))
+        } else {
+            stored
+        }
+    }
+
+    /// Whether the witness triangle and the world statement agree in sign on every component the
+    /// interval decides — the premise [`Self::stored_hp`] stands on for a plane with no world
+    /// statement: the triangle turned by `frame_sign` faces the way the stored normal does. Checked
+    /// where both exist (the two arms of [`Self::stored_hp`] side by side); `true` when there is no
+    /// world statement to check.
+    #[cfg(debug_assertions)]
+    pub fn witness_agrees_with_world(&self, k: usize) -> bool {
+        let Some(w) = self.stored_world_rat(k) else {
+            return true;
+        };
+        let prec = self.standard.prec;
+        let t = self.witness_hp(k, prec);
+        let zero = Rat::from_int(0);
+        (0..3).all(|i| {
+            let stored = if self.planes[k].frame_sign() < 0 {
+                negate(&t[i], prec)
+            } else {
+                t[i].clone()
+            };
+            w[i] == zero || stored.sign().is_none_or(|pos| pos == (w[i] > zero))
+        })
     }
 
     /// The witness triangle's plane ([`plane_hp`]) — outward.
@@ -387,7 +433,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// `Some(false)` a miss, both read off the discriminant's sign once the line is proved not
     /// parallel to the axis (`A > 0`). `None` where the intervals cannot say: a tangency or an
     /// axis-parallel line is a statement an interval cannot make.
-    pub fn line_crosses(&self, p: usize, q: usize, def: &CylinderDef) -> Option<bool> {
+    pub(crate) fn line_crosses(&self, p: usize, q: usize, def: &CylinderDef) -> Option<bool> {
         let line = self.meet_line_hp(p, q, def, self.standard.prec)?;
         if line.a.sign() != Some(true) {
             return None;
@@ -430,11 +476,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
     }
 
     /// **Are two points proved apart?** — some coordinate of their interval boxes separated.
-    /// `None` where a box cannot be formed; `Some(false)` is «not shown», never «one point».
-    pub fn points_apart(&self, a: CylPoint<'_>, b: CylPoint<'_>) -> Option<bool> {
+    /// `false` is «not shown» (a box that cannot be formed included), never «one point».
+    pub fn points_apart(&self, a: CylPoint<'_>, b: CylPoint<'_>) -> bool {
         let prec = self.standard.prec;
-        let (x, y) = (self.point_box(a, prec)?, self.point_box(b, prec)?);
-        Some((0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some()))
+        let (Some(x), Some(y)) = (self.point_box(a, prec), self.point_box(b, prec)) else {
+            return false;
+        };
+        (0..3).any(|k| y[k].sub(&x[k], prec).sign().is_some())
     }
 
     /// **Is `n` strictly inside the counter-clockwise arc `lo → hi`**, three points of one circle of
@@ -490,6 +538,163 @@ impl<W: PlaneWitness> Judge<'_, W> {
     }
 }
 
+/// **How the line of two planes meets a cylinder** — [`Judge::line_meet`]'s answer, one vocabulary
+/// for both roads. The exact road names every shape [`nacre_exact::quad::CylinderMeet`] does; the
+/// interval road can say only that the line crosses, misses or (where the caller knows it runs along
+/// the axis) lies off the surface — the rest it cannot say ([`LineMeet::Undecided`]).
+#[derive(Clone, Debug)]
+pub enum LineMeet {
+    /// The planes are one plane — exact road only.
+    CoincidentPlanes,
+    /// Parallel and distinct, no line — exact road only.
+    ParallelPlanes,
+    /// The line lies on the cylinder: a ruling — exact road only.
+    OnRuling(MeetLine),
+    /// The line runs along the axis, off the surface (inside or outside).
+    AxisParallelMiss,
+    /// The line crosses the cylinder's quadric nowhere.
+    Miss,
+    /// Tangent: one double root, rational — exact road only.
+    Tangent(MeetLine, Rat),
+    /// Two crossings, `Lo` then `Hi` ([`Roots::point`]).
+    Pair(Roots),
+    /// The intervals cannot say: a tangency, an axis-parallel line, a discriminant on zero.
+    Undecided,
+    /// A stated plane with no narrow rational description (a `Wide` name). The interval road does
+    /// not answer for it.
+    Wide,
+    /// The exact solve left `Rat`.
+    Overflow,
+}
+
+/// The two crossings of a [`LineMeet::Pair`], realized when a caller wants them.
+// Returned by one answer and read once; boxing the exact arm would
+// allocate per meet for nothing.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub enum Roots {
+    /// The exact meet line and the two roots along it, in the order of the planes the meet was
+    /// asked for.
+    Exact(MeetLine, [QuadVal; 2]),
+    /// The interval road's: each solved from its name when asked ([`Judge::pierce`]), the planes in
+    /// the order the meet was asked for.
+    Boxes { planes: [usize; 2] },
+}
+
+impl Roots {
+    /// **Crossing `root` (`Lo` or `Hi`) of the meet's line** — `root` read along `ℓ = n_p × n_q` for
+    /// the planes in the order the meet was asked for — as a point: the exact pair, or the interval
+    /// box of the pierce name the pair and root canonicalize to ([`QuadRoot::canonical`], the order
+    /// every pierce name is solved in).
+    pub fn point<W: PlaneWitness>(
+        &self,
+        jd: &Judge<'_, W>,
+        cyl: usize,
+        def: &CylinderDef,
+        root: QuadRoot,
+    ) -> Option<PiercePoint> {
+        match self {
+            Roots::Exact(line, s) => {
+                let i = match root {
+                    QuadRoot::Lo => 0,
+                    QuadRoot::Hi => 1,
+                    QuadRoot::Double => return None,
+                };
+                Some(PiercePoint::Exact(line.clone(), s[i]))
+            }
+            Roots::Boxes { planes } => {
+                let (pair, r) = QuadRoot::canonical(*planes, root);
+                jd.pierce(pair, cyl, def, r)
+            }
+        }
+    }
+}
+
+impl<W: PlaneWitness> Judge<'_, W> {
+    /// **How the line `p ∩ q` meets cylinder `def`.** Both planes stated in the world: the exact meet
+    /// ([`nacre_exact::quad::plane_plane_cylinder`] on their narrow coefficients — [`LineMeet::Wide`]
+    /// where they have none, [`LineMeet::Overflow`] where it overflows), which reads every shape itself and ignores
+    /// `along_axis`. A plane with no world statement: the interval road, which cannot see from the
+    /// planes alone that their line runs along the axis — `along_axis` is the caller stating that
+    /// it does (both normals perpendicular to the axis: stated exactly, or for a plane with no world
+    /// statement proved by the gate's section), and then the line is off the surface or not said;
+    /// otherwise the discriminant's sign once the line is proved off the axis direction. Both roads
+    /// check the statement in debug builds.
+    pub fn line_meet(&self, p: usize, q: usize, def: &CylinderDef, along_axis: bool) -> LineMeet {
+        use nacre_exact::quad::CylinderMeet;
+        if self.planes[p].world_name().is_none() || self.planes[q].world_name().is_none() {
+            // A false `along_axis` would read a line crossing the cylinder as a miss: the line runs
+            // along the axis exactly when `A = |ℓ × m|²` is zero, which an interval never proves
+            // positive for a true statement.
+            debug_assert!(
+                !along_axis
+                    || self
+                        .meet_line_hp(p, q, def, self.standard.prec)
+                        .is_none_or(|line| line.a.sign() != Some(true)),
+                "a line stated along the axis is proved off it"
+            );
+            if along_axis {
+                return if self.parallel_line_off(p, q, def) {
+                    LineMeet::AxisParallelMiss
+                } else {
+                    LineMeet::Undecided
+                };
+            }
+            return match self.line_crosses(p, q, def) {
+                Some(true) => LineMeet::Pair(Roots::Boxes { planes: [p, q] }),
+                Some(false) => LineMeet::Miss,
+                None => LineMeet::Undecided,
+            };
+        }
+        let (Some(w), Some(v)) = (self.world_rat(p), self.world_rat(q)) else {
+            return LineMeet::Wide;
+        };
+        let Some(meet) =
+            nacre_exact::quad::plane_plane_cylinder(&w, &v, &def.origin(), &def.dir(), def.r2())
+        else {
+            return LineMeet::Overflow;
+        };
+        // **The interval road reads the shape the exact road does**, checked wherever both answer:
+        // a convention that differed (a line direction, a root order) would show here on the first
+        // named crossing.
+        #[cfg(debug_assertions)]
+        {
+            let hp = self.line_crosses(p, q, def);
+            match &meet {
+                CylinderMeet::Pair { .. } => debug_assert!(
+                    hp != Some(false),
+                    "the interval road misses a line the exact road crosses"
+                ),
+                CylinderMeet::Miss(_) => debug_assert!(
+                    hp != Some(true),
+                    "the interval road crosses a line the exact road misses"
+                ),
+                _ => {}
+            }
+            debug_assert!(
+                !along_axis
+                    || matches!(
+                        meet,
+                        CylinderMeet::OnRuling(_)
+                            | CylinderMeet::AxisParallelMiss(_)
+                            | CylinderMeet::ParallelPlanes
+                            | CylinderMeet::CoincidentPlanes
+                    ),
+                "a line stated along the axis does not run along it"
+            );
+        }
+        match meet {
+            CylinderMeet::CoincidentPlanes => LineMeet::CoincidentPlanes,
+            CylinderMeet::ParallelPlanes => LineMeet::ParallelPlanes,
+            CylinderMeet::OnRuling(line) => LineMeet::OnRuling(line),
+            CylinderMeet::AxisParallelMiss(_) => LineMeet::AxisParallelMiss,
+            CylinderMeet::Miss(_) => LineMeet::Miss,
+            CylinderMeet::Tangent { line, s } => LineMeet::Tangent(line, s),
+            CylinderMeet::Pair { line, s } => LineMeet::Pair(Roots::Exact(line, s)),
+        }
+    }
+}
+
 /// An interval's sign as `±1`, `None` where it straddles zero.
 fn sign_i8(v: &HpBounded) -> Option<i8> {
     v.sign().map(|pos| if pos { 1 } else { -1 })
@@ -506,6 +711,19 @@ impl PiercePoint {
             Self::Exact(line, s) => Some((line, s)),
             Self::Bounded { .. } => None,
         }
+    }
+
+    /// **The coordinate along cylinder `def`'s axis** (`m · x`) of a point with an exact meet,
+    /// exactly — `m·base + s·(m·dir)`. `None` for a point with no exact meet, or on overflow.
+    pub fn stated_axis(&self, def: &CylinderDef) -> Option<QuadVal> {
+        let (line, s) = self.exact()?;
+        let m = def.dir();
+        let dot = |x: &[Rat; 3]| -> Option<Rat> {
+            x[0].checked_mul(m[0])?
+                .checked_add(x[1].checked_mul(m[1])?)?
+                .checked_add(x[2].checked_mul(m[2])?)
+        };
+        QuadVal::from_rat(dot(&line.base())?).checked_add(&s.checked_mul_rat(dot(&line.dir())?)?)
     }
 
     /// The exact pair, moved out.
@@ -535,13 +753,23 @@ impl PiercePoint {
             Self::Exact(line, s) => {
                 let co = jd.world_rat(q)?;
                 let fix = jd.outward_fix(q)?;
-                Some(
-                    fix * match nacre_exact::quad::plane_side(&co, line, s) {
+                let side = fix
+                    * match nacre_exact::quad::plane_side(&co, line, s) {
                         Orient::Positive => 1,
                         Orient::Negative => -1,
                         Orient::Zero => 0,
-                    },
-                )
+                    };
+                // **The interval body reads the sign the exact one does**, checked wherever it
+                // decides: both read `q`'s name turned by `κ · frame_sign`, so a convention that
+                // differed (a facing, a sign) would show on the first named point.
+                #[cfg(debug_assertions)]
+                if let Some(iv) = self
+                    .side_value(jd, q, jd.standard.prec)
+                    .and_then(|v| sign_i8(&v))
+                {
+                    debug_assert_eq!(iv, side, "the interval side disagrees with the exact one");
+                }
+                Some(side)
             }
         }
     }
@@ -621,7 +849,17 @@ impl PiercePoint {
         if let Some((line, s)) = self.exact()
             && jd.planes[wall].world_name().is_some()
         {
-            return nacre_exact::quad::ruling_side_signed(&jd.world_rat(wall)?, def, (line, s));
+            let side = nacre_exact::quad::ruling_side_signed(&jd.world_rat(wall)?, def, (line, s))?;
+            // The interval body reads the same name ([`Judge::canon_hp`]) — checked wherever it
+            // decides, as [`Self::side`] checks its own.
+            #[cfg(debug_assertions)]
+            if let Some(iv) = self
+                .ruling_value(jd, wall, def, jd.standard.prec)
+                .and_then(|v| sign_i8(&v))
+            {
+                debug_assert_eq!(iv, side, "the interval ruling disagrees with the exact one");
+            }
+            return Some(side);
         }
         sign_i8(&self.ruling_value(jd, wall, def, jd.standard.prec)?)
     }

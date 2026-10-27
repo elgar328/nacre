@@ -53,7 +53,6 @@ use super::*;
 pub(crate) fn cylinder_gate(
     model: &Model,
     cyl_surfs: &[Handle<Surface>],
-    geom: &[WorkingPlane],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     n_a: usize,
@@ -66,6 +65,7 @@ pub(crate) fn cylinder_gate(
     ),
     BoolError,
 > {
+    let geom = jd.planes;
     // Every question below is a **sign**, and the `nacre-exact` layer answers signs totally: local
     // checked-`Rat` closures would decline on overflow, putting a width limit inside
     // `CylinderGateUndecided` and making that name say less than it claims.
@@ -184,7 +184,7 @@ pub(crate) fn cylinder_gate(
             // and that is the population the rulings road serves. A class with no world name
             // passes only as silent ([`Silence`] — beside, apart or sectioned), else it is
             // geometry; a `Wide` one is width — the world holds it, `Rat` does not.
-            let Some(coeffs) = wp.world_rat() else {
+            let Some(coeffs) = jd.world_rat(c) else {
                 if wp.world.is_some() {
                     return Err(reject(RejectReason::WitnessNotRational));
                 }
@@ -278,7 +278,7 @@ pub(crate) fn cylinder_gate(
                 // standing on a cap, or one the line passes through a hole of, writes none — yet
                 // its line is the same line.
                 let holders = if clearance == Orient::Zero {
-                    let Some(h) = classes_holding_the_line(geom, c, &coeffs, &cyl.def) else {
+                    let Some(h) = classes_holding_the_line(jd, c, &coeffs, &cyl.def) else {
                         return Err(reject(RejectReason::WitnessNotRational));
                     };
                     let other_owner = faces.iter().enumerate().any(|(i, row)| {
@@ -533,7 +533,7 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
-    for (ci, sr) in shared_rulings(faces, geom, &cyls, &crossings, &tangent_walls)
+    for (ci, sr) in shared_rulings(faces, jd, &cyls, &crossings, &tangent_walls)
         .ok_or_else(|| reject(RejectReason::WitnessNotRational))?
     {
         cyls[ci].shared.push(sr);
@@ -608,18 +608,18 @@ pub(crate) struct SharedRuling {
 /// spelling of «this line lies on the cylinder» the record below uses for every pair. `None` is
 /// arithmetic that could not answer.
 fn classes_holding_the_line(
-    geom: &[WorkingPlane],
+    jd: &Judge<'_, WorkingPlane>,
     wall: usize,
     coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
 ) -> Option<Vec<usize>> {
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let mut out = Vec::new();
-    for (k, wp) in geom.iter().enumerate() {
+    for k in 0..jd.planes.len() {
         if k == wall {
             continue;
         }
-        let Some(w) = wp.world_rat() else { continue };
+        let Some(w) = jd.world_rat(k) else { continue };
         if matches!(
             nacre_exact::quad::plane_plane_cylinder(coeffs, &w, &o, &m, r2)?,
             nacre_exact::quad::CylinderMeet::OnRuling(_)
@@ -635,7 +635,7 @@ fn classes_holding_the_line(
 /// population. `None` is arithmetic that could not answer.
 fn shared_rulings(
     faces: &[FaceRow],
-    geom: &[WorkingPlane],
+    jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
     crossings: &std::collections::HashSet<(usize, usize)>,
     tangent_walls: &[(usize, usize, Vec<usize>)],
@@ -665,9 +665,9 @@ fn shared_rulings(
             Some(false)
         };
         for (i, &s) in secants.iter().enumerate() {
-            let ws = geom[s].world_rat()?;
+            let ws = jd.world_rat(s)?;
             for &t in &secants[i + 1..] {
-                let wt = geom[t].world_rat()?;
+                let wt = jd.world_rat(t)?;
                 if let nacre_exact::quad::CylinderMeet::OnRuling(line) =
                     nacre_exact::quad::plane_plane_cylinder(&ws, &wt, &o, &m, r2)?
                     && on_a_face(&line.base())?
@@ -686,7 +686,7 @@ fn shared_rulings(
             if *k != ci {
                 continue;
             }
-            let foot = tangency_foot(&geom[*t].world_rat()?, &o)?;
+            let foot = tangency_foot(&jd.world_rat(*t)?, &o)?;
             if !on_a_face(&foot)? {
                 continue;
             }
@@ -1751,7 +1751,7 @@ fn line_off_lateral(
     x: usize,
     def: &nacre_topo::CylinderDef,
 ) -> bool {
-    let Some(w) = jd.planes[x].world_rat() else {
+    let Some(w) = jd.world_rat(x) else {
         return false;
     };
     if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], &def.dir()) != nacre_exact::Orient::Zero {

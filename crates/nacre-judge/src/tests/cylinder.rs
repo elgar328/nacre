@@ -14,7 +14,8 @@ fn cylinder() -> CylinderDef {
 }
 
 /// The wall `x = 1`, the cap `z = 3`, the plane `y = 0`, the cap `z = 5`, the wall `x = 5` (beyond
-/// the radius) and the wall `x = 2` (tangent), each stated in the world or not.
+/// the radius), the wall `x = 2` (tangent) and the wall `x = 1` again through other points, each
+/// stated in the world or not.
 fn planes(stated: bool) -> Vec<RW> {
     let rows = [
         [[1, 0, 0], [1, 1, 0], [1, 0, 1]],
@@ -23,6 +24,7 @@ fn planes(stated: bool) -> Vec<RW> {
         [[0, 0, 5], [1, 0, 5], [0, 1, 5]],
         [[5, 0, 0], [5, 1, 0], [5, 0, 1]],
         [[2, 0, 0], [2, 1, 0], [2, 0, 1]],
+        [[1, 0, 0], [1, 2, 0], [1, 0, 2]],
     ]
     .map(|pts| RW::moved(pts, |p| p));
     rows.into_iter()
@@ -136,21 +138,7 @@ fn the_orders_read_the_points_where_they_are() {
         assert_eq!(along.map(i8::abs), Some(1), "stated: {stated}");
         assert_eq!(j.line_order(0, 1, &hi, &lo), along.map(|s| -s));
         let up = at([0, 3], QuadRoot::Lo);
-        // A stated point's axis coordinate, `m · (base + s·dir)`, as the caller states it.
-        let m = def.dir();
-        let dot = |x: &[Rat; 3]| {
-            (0..3).fold(Rat::from_int(0), |a, k| {
-                a.checked_add(x[k].checked_mul(m[k]).unwrap()).unwrap()
-            })
-        };
-        let stated_value = |p: &PiercePoint| {
-            p.exact().map(|(line, s)| {
-                QuadVal::from_rat(dot(&line.base()))
-                    .checked_add(&s.checked_mul_rat(dot(&line.dir())).unwrap())
-                    .unwrap()
-            })
-        };
-        let (vl, vu) = (stated_value(&lo), stated_value(&up));
+        let (vl, vu) = (lo.stated_axis(&def), up.stated_axis(&def));
         assert_eq!(
             j.axis_order(&def, value(&lo, &vl), value(&up, &vu)),
             Some(core::cmp::Ordering::Less),
@@ -200,8 +188,8 @@ fn three_points_of_a_circle_turn_one_way_on_either_road() {
         let turn = j.circle_turn(&def, pa, pc, pb);
         assert!(turn.is_some(), "stated: {stated}");
         assert_eq!(j.circle_turn(&def, pb, pc, pa), turn.map(|t| !t));
-        assert_eq!(j.points_apart(pa, pb), Some(true));
-        assert_eq!(j.points_apart(pa, pa), Some(false));
+        assert!(j.points_apart(pa, pb));
+        assert!(!j.points_apart(pa, pa));
     }
 }
 
@@ -230,5 +218,184 @@ fn a_bounded_point_realizes_deeper_from_its_definition() {
             !here[k].error.lt(deep[k].error) || deep[k].error.is_zero(),
             "the deeper box is no wider"
         );
+    }
+}
+
+/// **The line of two planes meets the cylinder in one vocabulary on both roads.** Stated, every
+/// shape is named: two crossings, a miss, parallel caps, one plane twice, a line along the axis
+/// inside the cylinder (off the surface) and one on it (a ruling), a tangency. Unstated, the interval
+/// road names what it can — two crossings (realized in the order the name solves them), a miss, a
+/// line along the axis the caller states, off the surface — and says it cannot say the rest.
+#[test]
+fn the_line_meets_the_cylinder_in_one_vocabulary() {
+    let def = cylinder();
+    let ps = planes(true);
+    let j = jd(&ps);
+    let shape = |p, q, along| j.line_meet(p, q, &def, along);
+    assert!(matches!(
+        shape(0, 1, false),
+        LineMeet::Pair(Roots::Exact(..))
+    ));
+    assert!(matches!(shape(4, 1, false), LineMeet::Miss));
+    assert!(matches!(shape(1, 3, false), LineMeet::ParallelPlanes));
+    assert!(matches!(shape(0, 6, false), LineMeet::CoincidentPlanes));
+    assert!(matches!(shape(0, 2, false), LineMeet::AxisParallelMiss));
+    assert!(matches!(shape(5, 2, false), LineMeet::OnRuling(_)));
+    assert!(matches!(shape(5, 1, false), LineMeet::Tangent(..)));
+    let qs = planes(false);
+    let k = jd(&qs);
+    let shape = |p, q, along| k.line_meet(p, q, &def, along);
+    assert!(matches!(
+        shape(0, 1, false),
+        LineMeet::Pair(Roots::Boxes { .. })
+    ));
+    assert!(matches!(shape(4, 1, false), LineMeet::Miss));
+    assert!(matches!(shape(0, 2, true), LineMeet::AxisParallelMiss));
+    assert!(matches!(shape(5, 2, true), LineMeet::Undecided));
+    assert!(matches!(shape(5, 1, false), LineMeet::Undecided));
+}
+
+/// The wall `x = 1`, the cap `z = 3` and the plane `y = 0`, stated or not, each **facing either
+/// way**: bit 0 turns the wall's stored coefficients against its triangle (`frame_sign = −1`, and a
+/// stated name faces against them), bit 1 the cap's, bit 2 winds the plane `y = 0`'s triangle the
+/// other way round (its outward flips with it).
+fn faced(stated: bool, mask: u8) -> Vec<RW> {
+    let wall = RW::moved([[1, 0, 0], [1, 1, 0], [1, 0, 1]], |p| p);
+    let cap = RW::moved([[0, 0, 3], [1, 0, 3], [0, 1, 3]], |p| p);
+    let plane = if mask & 4 == 0 {
+        RW::moved([[0, 0, 0], [0, 0, 1], [1, 0, 0]], |p| p)
+    } else {
+        RW::moved([[0, 0, 0], [1, 0, 0], [0, 0, 1]], |p| p)
+    };
+    let wall = if mask & 1 == 0 { wall } else { wall.flipped() };
+    let cap = if mask & 2 == 0 { cap } else { cap.flipped() };
+    [wall, cap, plane]
+        .into_iter()
+        .map(|w| if stated { w.stated() } else { w })
+        .collect()
+}
+
+fn sgn(x: f64) -> i8 {
+    if x > 0.0 { 1 } else { -1 }
+}
+
+/// **Every sign answers the true geometry, whichever way the planes face.** On the wall `x = 1` the
+/// cap `z = 3` crosses at `y = ±√3`; the crossing with `y > 0` (read off its box) lies on the
+/// outward side of `y = 0` its triangle names, on the ruling of the wall the canonical normal
+/// names, ahead of the other along the stored line direction, and `Lo` is the lower of the two
+/// along the canonical one — on stated and unstated tables, with each plane's stored facing and
+/// winding turned every way. Expectations come from the fixture's own facing (`coeffs`,
+/// `tri_normal`, the names' canonical normals), never from the code under test.
+#[test]
+fn the_signs_read_the_true_geometry_whatever_the_facing() {
+    let def = cylinder();
+    for stated in [true, false] {
+        for mask in 0..8u8 {
+            let ps = faced(stated, mask);
+            let j = jd(&ps);
+            let at = |root| j.pierce([0, 1], 0, &def, root).expect("the line crosses");
+            let (lo, hi) = (at(QuadRoot::Lo), at(QuadRoot::Hi));
+            let y = |p: &PiercePoint| p.point_hp(&j).expect("a box")[1].sign().expect("off y = 0");
+            let (up, down) = if y(&lo) { (&lo, &hi) } else { (&hi, &lo) };
+            assert!(
+                y(up) && !y(down),
+                "one crossing on each side ({stated}, {mask})"
+            );
+            // The canonical normals: a stated plane's name (first nonzero component positive), an
+            // unstated one's stored facing.
+            let canon = |k: usize| {
+                if stated {
+                    [1.0, 1.0, 1.0][k]
+                } else {
+                    sgn(ps[k].coeffs()[[0, 2, 1][k]]) as f64
+                }
+            };
+            let case = format!("stated {stated}, mask {mask}");
+            assert_eq!(
+                up.side(&j, 2),
+                Some(sgn(ps[2].tri_normal()[1])),
+                "outward side of y = 0 ({case})"
+            );
+            assert_eq!(up.side(&j, 0), Some(0), "on its own plane ({case})");
+            assert_eq!(
+                up.ruling_side(&j, 0, &def),
+                Some(sgn(canon(0))),
+                "the wall's ruling the canonical normal names ({case})"
+            );
+            let (c0, c1) = (ps[0].coeffs(), ps[1].coeffs());
+            assert_eq!(
+                j.line_order(0, 1, up, down),
+                Some(sgn(-c0[0] * c1[2])),
+                "ahead along the stored line direction ({case})"
+            );
+            assert_eq!(
+                y(&hi),
+                -canon(0) * canon(1) > 0.0,
+                "`Hi` is the higher along the canonical line direction ({case})"
+            );
+            assert_eq!(
+                j.world_order(CylPoint::Pierce(up), CylPoint::Pierce(down), 1),
+                Some(1),
+                "({case})"
+            );
+            // The meet's two roots name the same points in either plane order, `Lo` the lower
+            // along that order's canonical direction.
+            for pair in [[0, 1], [1, 0]] {
+                let LineMeet::Pair(roots) = j.line_meet(pair[0], pair[1], &def, false) else {
+                    panic!("two crossings ({case})");
+                };
+                let hi_up =
+                    -canon(pair[0]) * canon(pair[1]) * if pair == [0, 1] { 1.0 } else { -1.0 };
+                let p_hi = roots.point(&j, 0, &def, QuadRoot::Hi).expect("a point");
+                assert_eq!(
+                    y(&p_hi),
+                    hi_up > 0.0,
+                    "the meet's `Hi`, pair {pair:?} ({case})"
+                );
+            }
+        }
+    }
+}
+
+/// **Three points of one circle turn the way they stand**: about `+z`, from the crossing at
+/// `y = −√3` through the plane `y = 0`'s crossing at `x = +2` to the one at `y = +√3` is
+/// counter-clockwise, whichever way the planes face.
+#[test]
+fn a_circles_turn_reads_the_true_order_whatever_the_facing() {
+    let def = cylinder();
+    for stated in [true, false] {
+        for mask in 0..8u8 {
+            let ps = faced(stated, mask);
+            let j = jd(&ps);
+            let pick = |pair: [usize; 2], k: usize| {
+                [QuadRoot::Lo, QuadRoot::Hi]
+                    .into_iter()
+                    .map(|r| j.pierce(pair, 0, &def, r).expect("the line crosses"))
+                    .find(|p| p.point_hp(&j).expect("a box")[k].sign() == Some(true))
+                    .expect("one crossing on the positive side")
+            };
+            let up = pick([0, 1], 1);
+            let east = pick([1, 2], 0);
+            let down = [QuadRoot::Lo, QuadRoot::Hi]
+                .into_iter()
+                .map(|r| j.pierce([0, 1], 0, &def, r).expect("the line crosses"))
+                .find(|p| p.point_hp(&j).expect("a box")[1].sign() == Some(false))
+                .expect("one crossing below");
+            let (d, e, u) = (
+                CylPoint::Pierce(&down),
+                CylPoint::Pierce(&east),
+                CylPoint::Pierce(&up),
+            );
+            assert_eq!(
+                j.circle_turn(&def, d, e, u),
+                Some(true),
+                "stated {stated}, mask {mask}"
+            );
+            assert_eq!(
+                j.circle_turn(&def, u, e, d),
+                Some(false),
+                "stated {stated}, mask {mask}"
+            );
+        }
     }
 }

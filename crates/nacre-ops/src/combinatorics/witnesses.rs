@@ -39,7 +39,7 @@ fn face_circle<'a>(
         return None;
     }
     // The face's plane must be perpendicular to the axis: its normal is parallel to `m`.
-    let coeffs = class_coeffs_rat(jd, plane)?;
+    let coeffs = jd.world_rat(plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let c = nacre_exact::cross3_rat(&n, &first.def.dir())?;
     let zero = nacre_exact::Rat::from_int(0);
@@ -78,7 +78,7 @@ fn ring_interior_candidates(
     ring: &[RingEdge],
 ) -> Option<Vec<[nacre_exact::Rat; 3]>> {
     use nacre_exact::Rat;
-    let coeffs = class_coeffs_rat(jd, plane)?;
+    let coeffs = jd.world_rat(plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let chart = Chart2dRat::of_normal(&n)?;
     let (e1, e2) = chart.axes();
@@ -144,7 +144,7 @@ fn ring_interior_candidates(
     let zero = Rat::from_int(0);
     let recip = |v: Rat| Rat::new(v.denom(), v.numer());
     for wall in walls {
-        let Some(w) = class_coeffs_rat(jd, wall) else {
+        let Some(w) = jd.world_rat(wall) else {
             continue;
         };
         let wn = [w[0], w[1], w[2]];
@@ -227,7 +227,8 @@ pub(crate) fn coord_probes(
             },
             _ => continue,
         };
-        let Some(centre) = class_coeffs_rat(jd, *q)
+        let Some(centre) = jd
+            .world_rat(*q)
             .and_then(|coeffs| crate::planes::axis_param_of_plane(&coeffs, def))
             .and_then(|t| {
                 let (o, m) = (def.origin(), def.dir());
@@ -273,7 +274,7 @@ pub(crate) fn coord_probes(
                     let Some(cand) = ring_interior_candidates(jd, *q, def, &centre, r) else {
                         continue;
                     };
-                    let Some(coeffs) = class_coeffs_rat(jd, *q) else {
+                    let Some(coeffs) = jd.world_rat(*q) else {
                         continue;
                     };
                     match cand
@@ -418,7 +419,7 @@ fn holed_cap_witness(
             radii.push(big_r.checked_add(h.radius_rat()?)?.checked_mul(half)?);
         }
     }
-    let coeffs = class_coeffs_rat(jd, plane);
+    let coeffs = jd.world_rat(plane);
     // On the face: inside the outer, outside every hole — each an exact question of the bound.
     let on_face = |p: &[Rat; 3]| -> Option<bool> {
         let inside_outer = match &f.outer {
