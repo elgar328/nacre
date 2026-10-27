@@ -8,38 +8,14 @@ use super::*;
 /// an overflow) is width, [`RejectReason::WitnessNotRational`]. Conservative honest refusals,
 /// never a guess.
 ///
-/// Per (plane class, cylinder) pair, with `n` the class's rational normal and `m`/`o`/`r` the
-/// cylinder's raw axis/origin/radius:
-/// - `n × m = 0` — a perpendicular cut. Passes, a cap seated flush on the other body included.
-/// - `n · m = 0` — a wall parallel to the axis. It must provably miss the **rectangle** the
-///   cylinder occupies in that plane. The infinite plane clearing the axis by more than `r`
-///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; so does the plane
-///   missing every lateral **face**, read on the faces' arcs ([`laterals_clear_plane`] — a plane
-///   that cuts the infinite cylinder only off a fillet's quarter). Otherwise each face on the
-///   class answers for itself, across the strip or along a lateral face's span
-///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
-///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it), the
-///   pair **recorded and passed** — or, the plane exactly `r` from the axis, **passes and is
-///   recorded as a [`Tangency`] instead**: a tangency divides nothing, so it earns no crossing.
-///
-///   **One clearance call, three records.** Past the lateral faces' question, `Positive` clears
-///   and writes nothing; `Negative` writes a crossing (two rulings); `Zero` writes a tangency (one
-///   grazing line). The third arm does not refuse on the spot, and it does not `crossings.insert`
-///   either: that would put the
-///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
-///   keeps every one of those sentences true and the arrangement unchanged: of 21 measured
-///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
-///   population [`Tangency::line_in_another_plane`] names — a line two classes share on the
-///   cylinder, recorded as a [`SharedRuling`] and arranged as one. A row the tangency's verdict
-///   cannot judge — that line not being an edge both faces end on, or the row not stated — is
-///   refused at the gate's end ([`RejectReason::TangentLineInAnotherPlane`], or the row's own
-///   name), before anything is arranged.
-/// - anything else — an oblique plane. It passes when every lateral face of the cylinder
-///   provably misses the plane — the face's reach along `n` against the plane's station
-///   ([`lateral_reach`], [`laterals_clear_plane`]) — and is otherwise recorded and refused as
-///   [`RejectReason::ObliqueCylinderCut`] (an ellipse). Every one of the
-///   gate's four sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
-///   is not refused here for the plane alone.
+/// Per (plane class, cylinder) pair, [`class_meet`] answers what the class receives — a circle,
+/// nothing, two rulings, a grazing line, silence, an ellipse — and every pair is answered before
+/// anything reads the answers. The gate is then what can and cannot be drawn: it settles the
+/// nameless candidates against the cylinder's other records, refuses an ellipse
+/// ([`RejectReason::ObliqueCylinderCut`]), and hands the arrangement the records it reads — the
+/// crossings, the [`Tangency`] rows, the silences ([`WorkingCyl::silent`]) and the lines two
+/// classes share on a lateral face ([`SharedRuling`]) — refusing a tangency row its verdict cannot
+/// judge ([`RejectReason::TangentLineInAnotherPlane`]).
 ///
 /// Per cylinder pair **of different owners** (two classes of one valid solid keep their faces
 /// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
@@ -74,18 +50,7 @@ pub(crate) fn cylinder_gate(
     use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
-    let mut crossings = std::collections::HashSet::new();
     let mut tangencies: Vec<Tangency> = Vec::new();
-    // The tangent half of [`SharedRuling`]'s population: `(class, cylinder, classes holding the
-    // tangent line)` for every tangent class carrying a face of the cylinder's other operand —
-    // collected where the clearance is asked, not where rows are written (see the record below).
-    let mut tangent_walls: Vec<(usize, usize, Vec<usize>)> = Vec::new();
-    // **Two more records, read once each**: the (plane, cylinder) pairs the oblique arm could not
-    // show apart, and the cylinder pairs the pair rule could not. Their one reader is the refusal
-    // below each loop; when the ellipse road and the cylinder–cylinder road (M6b) arrive, that
-    // reader becomes a hand-over, as `crossings` and `tangencies` are. They stay local: nothing
-    // downstream reads them, and a field no one reads is not built.
-    let mut oblique: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // **The world statement or nothing.** A moved cylinder's def is written before its
@@ -143,7 +108,7 @@ pub(crate) fn cylinder_gate(
     );
 
     // **A class with no world statement is asked first whether the whole cylinder stands on one
-    // side of it** ([`nameless_stance`]) — the question every other arm below asks needs the
+    // side of it** ([`nameless_stance`]) — the question every other arm of [`class_meet`] asks needs the
     // class's rational coefficients, and this one needs none. Then the cylinder has nothing to say
     // on that class, and the class nothing to say about the cylinder; the roads that would ask read
     // the record ([`WorkingCyl::silent`]). Failing that, the class may still pass with its faces
@@ -163,6 +128,36 @@ pub(crate) fn cylinder_gate(
             *whole = only_whole_rims(model, faces, cyl.surf);
         }
     }
+    let cx = PairCx {
+        model,
+        faces,
+        plane_ix,
+        n_a,
+        jd,
+        whole_rims: &whole_rims,
+    };
+    let mut meets: Vec<Vec<ClassMeet>> = Vec::with_capacity(cyls.len());
+    for (ci, cyl) in cyls.iter().enumerate() {
+        // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
+        // not depend on the plane class the loop below walks, but almost no boolean ever asks for
+        // it — the plane-level test decides first. Measured with it eager: one cut
+        // over a plate with 16 bores built the table 16 times and read it 0, which is the shape
+        // [`wall_faces_clear`]'s doc warns about.
+        let mut footprints: Option<Vec<Footprint>> = None;
+        let mut row = Vec::with_capacity(geom.len());
+        for c in 0..geom.len() {
+            let (meet, rows) = class_meet(&cx, c, ci, cyl, &mut footprints)?;
+            tangencies.extend(rows);
+            row.push(meet);
+        }
+        meets.push(row);
+    }
+    // The records the code below and the arrangement read, each a view of the answers.
+    let mut crossings = std::collections::HashSet::new();
+    // The tangent half of [`SharedRuling`]'s population: `(class, cylinder, classes holding the
+    // tangent line)` for every tangent class carrying a face of the cylinder's other operand —
+    // whether or not its faces wrote rows.
+    let mut tangent_walls: Vec<(usize, usize, Vec<usize>)> = Vec::new();
     let mut silent: Vec<Vec<(usize, Silence)>> = vec![Vec::new(); cyls.len()];
     // Classes whose faces stand apart from a cylinder their plane may cut — silent once the
     // cylinder is shown to leave no record either, which only the end of the loop knows.
@@ -170,236 +165,24 @@ pub(crate) fn cylinder_gate(
     // Classes that cut a cylinder along its rulings with every face apart — sectioned once no other
     // record of that cylinder shares a line with them, which only the end of the loop knows.
     let mut sectioned: Vec<(usize, usize)> = Vec::new();
-    for (ci, cyl) in cyls.iter().enumerate() {
-        let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
-        // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
-        // not depend on the plane class the loop below walks, but almost no boolean ever asks for
-        // it — the plane-level test decides first. Measured with it eager: one cut
-        // over a plate with 16 bores built the table 16 times and read it 0, which is the shape
-        // [`wall_faces_clear`]'s doc warns about.
-        let mut footprints: Option<Vec<Footprint>> = None;
-        for (c, wp) in geom.iter().enumerate() {
-            // **A world description, or the proof that none is needed** — the question this loop
-            // asks is geometric (does this class's plane clear that cylinder), and both sides have
-            // to speak about the world. `rotated` is not that question: a plane whose truth carries
-            // a translation is *judged* through its chain and still has exact world coefficients,
-            // and that is the population the rulings road serves. A class with no world name
-            // passes only as silent ([`Silence`] — beside, apart or sectioned), else it is
-            // geometry; a `Wide` one is width — the world holds it, `Rat` does not.
-            let Some(coeffs) = jd.world_rat(c) else {
-                if wp.world.is_some() {
-                    return Err(reject(RejectReason::WitnessNotRational));
+    let mut oblique = false;
+    for (ci, row) in meets.iter().enumerate() {
+        for (c, meet) in row.iter().enumerate() {
+            match meet {
+                ClassMeet::Cuts => {
+                    crossings.insert((c, ci));
                 }
-                let stance = nameless_stance(model, jd, c, cyl);
-                if let Stance::Beside(side) = stance {
-                    silent[ci].push((c, Silence::Beside(side)));
-                    continue;
+                ClassMeet::Tangent {
+                    holders,
+                    other_owner: true,
+                } => tangent_walls.push((c, ci, holders.clone())),
+                ClassMeet::Silent(Silence::Beside(side)) => {
+                    silent[ci].push((c, Silence::Beside(*side)))
                 }
-                if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
-                    apart.push((c, ci));
-                    continue;
-                }
-                // With every face of the class apart from the lateral boxes, a plane cutting the
-                // lateral in rulings draws them on its own arrangement only ([`Silence::Sectioned`]).
-                // A cylinder with a whole rim is not sectioned: a planar face carries that rim as a
-                // circle loop, and the chord such a plane cuts from it is read only on a recorded
-                // pair.
-                if stance == Stance::Rulings
-                    && !any_whole_rim(model, faces, cyl.surf)
-                    && faces_apart(model, faces, plane_ix, c, &cyl.boxes)
-                {
-                    sectioned.push((c, ci));
-                    continue;
-                }
-                return Err(undecided());
-            };
-            let n = [coeffs[0], coeffs[1], coeffs[2]];
-            // A perpendicular cut is the circle population, and it passes — **including a cap
-            // seated flush on the other body's face**. Refusing that seating would be wider than
-            // anything the refusal could name: what makes a seated circle hard is
-            // its boundary meeting the counterpart's boundary, and a boundary is either an edge
-            // on a plane (that plane is parallel to the axis → the wall rule below, or oblique →
-            // the oblique rule; both are already conservative because the wall rule judges the
-            // *infinite* plane, not the face) or another cylinder's rim (two circles can only
-            // overlap when the axes stand closer than r₁+r₂ → the pair rule below). So what a
-            // seated rule would turn away is exactly the population whose circle lies wholly inside
-            // the counterpart's face — measured across the family (through hole, blind hole, boss
-            // fuse, common, drilling a pocket floor): every one exact and validating clean.
-            //
-            // **Nothing downstream has to catch a degenerate seating, because this gate still
-            // does** — by the two rules below rather than by a rule about seating. A seated circle
-            // can only reach the counterpart's boundary through a plane parallel to the axis (which
-            // must clear the radius, cross it, or touch it) or an oblique one (refused outright) or
-            // another cylinder's rim (the pair rule), so a tangency or a crossing is **named**
-            // before the arrangement ever sees it. Named, not refused: a touch passes with a
-            // [`Tangency`] row and the *verdict* is `assembly::tangency_reject`'s — refused here
-            // only where that verdict could not judge the row. What the sentence guarantees holds —
-            // no degenerate seating reaches the arrangement unnamed.
-            // The one relation rule ([`nacre_exact::axis_relation`]) — the same one that decides an
-            // edge's curve (`Model::derive_edge_curve`), so the gate and the edges cannot part.
-            let relation = nacre_exact::axis_relation(&n, &m);
-            if relation != nacre_exact::AxisRelation::Across {
-                if relation == nacre_exact::AxisRelation::Oblique {
-                    // **The oblique arm asks the faces** — the fourth of the gate's
-                    // four sites to speak about faces rather than surfaces. The plane's station
-                    // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
-                    // the question its doc was written for): if every face provably misses the
-                    // infinite plane, no face of that plane's class can meet the lateral, and the
-                    // caps are the plane–plane arrangement's business. A pair not shown to miss is
-                    // recorded; the refusal reads the record once, after this loop.
-                    //
-                    // The class's faces standing apart from the lateral (the parallel arm's second
-                    // question) do not suffice here: the class's arrangement sections the
-                    // cylinder's own solid by the whole plane, and that section runs along the
-                    // ellipse. Measured with such a pair passed — a rib whose slanted face stands
-                    // two units from a plate's fillet while its plane, extended, cuts it — the
-                    // boolean is refused one step later as `DeclineKind::CurvedRingWall`.
-                    let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
-                    if !laterals_clear_plane(&cyl.def, fps, &coeffs) {
-                        oblique.insert((c, ci));
-                    }
-                    continue;
-                }
-                // A parallel wall must provably miss the lateral surface. **The question is
-                // about the wall's *faces*, not its plane** — the uniform-slab theorem this feeds
-                // says so in its own words ("the other operand's **boundary** does not meet the
-                // open cylinder slab"). Two cheaper *sufficient* conditions come first, the
-                // surface's and then the lateral faces': the infinite plane clearing the axis by
-                // more than the radius, and the plane missing every lateral **face** — each face's
-                // reach along `n`, which reads the face's arc ([`laterals_clear_plane`], the
-                // question the oblique arm asks, and the one the cylinder pair rule asks of two
-                // laterals after the surface distance). A plane that cuts the infinite cylinder
-                // only off a fillet's quarter is the second. Either passes the pair with nothing
-                // recorded: the class's arrangement gets nothing from this cylinder, whose rim arcs
-                // bound its faces and so miss the plane too. When both fail, the faces on this
-                // class get to answer for themselves. Refusing on the plane alone turned away a
-                // whole family the engine serves — a boss standing far away whose wall plane,
-                // extended, happens to pass through a hole.
-                //
-                // What a face is asked is whether it misses the **rectangle** this cylinder
-                // occupies in that plane: the strip across, the lateral face's span along. See
-                // [`face_clears_footprint`]. Its strip is the whole circle's, and past the second
-                // question that decides no record wrongly: a plane that cuts a lateral face is
-                // recorded below whatever its faces answer, a tangent plane that reaches a face's
-                // arc has that tangent line for its strip, and a cylinder with no usable footprint
-                // has no arc to read.
-                let clearance = nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2);
-                if clearance != Orient::Positive
-                    && laterals_clear_plane(
-                        &cyl.def,
-                        footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf)),
-                        &coeffs,
-                    )
-                {
-                    continue;
-                }
-                // **The classes holding a tangent line, asked once for the pair** — the rows
-                // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
-                // asked here, before any face is: the rows are written only for faces that fail
-                // to clear the footprint and touch the line within a lateral's span, so a face
-                // standing on a cap, or one the line passes through a hole of, writes none — yet
-                // its line is the same line.
-                let holders = if clearance == Orient::Zero {
-                    let Some(h) = classes_holding_the_line(jd, c, &coeffs, &cyl.def) else {
-                        return Err(reject(RejectReason::WitnessNotRational));
-                    };
-                    let other_owner = faces.iter().enumerate().any(|(i, row)| {
-                        matches!(row, FaceRow::Plane(_))
-                            && plane_ix[i] == ClassIx::Plane(c)
-                            && (i < n_a) != (cyl.owner == SolidSide::A)
-                    });
-                    if other_owner {
-                        tangent_walls.push((c, ci, h.clone()));
-                    }
-                    Some(h)
-                } else {
-                    None
-                };
-                if clearance != Orient::Positive {
-                    // The face-level test reads each face's own vertices, which are realized
-                    // world coordinates — so it needs no frame guard of its own; `coeffs` above is
-                    // already the world description (a class without one never reaches here). A
-                    // frame guard here would refuse every moved class outright and keep a
-                    // translated body out of the cylinder roads.
-                    let spans: Vec<[nacre_exact::Rat; 2]> = footprints
-                        .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
-                        .iter()
-                        .map(|f| f.span.expect("a listed footprint has a span"))
-                        .collect();
-                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r2, &spans)? {
-                        // **The record-and-pass arm**: a wall whose plane runs **within**
-                        // the radius — any
-                        // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
-                        // clear the strip is recorded and passed; the tracer's ruling/chord arms
-                        // fire only on recorded pairs and read the *faces* (a ruling piece comes
-                        // from a face's own cycles, a cap's chord is the true meet of that class's
-                        // plane with the disk), so a recorded face that misses the lateral
-                        // contributes nothing. The record is «may meet; the tracer decides».
-                        //
-                        // **No offset keeps a refusal** (`0 < d < r`): with the region emitter,
-                        // bosses and bores, rational and irrational rulings, axis inside or
-                        // outside the plate, a split bore — every one assembles, validates clean
-                        // and answers the exact volume oracle. The arithmetic
-                        // (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's circular
-                        // order) never assumed the diameter; only the vocabulary did. And a
-                        // contact is a question a fence cannot answer: `validate` cannot see it
-                        // (`Cut` returns `Ok`, no net sees the line), which is why the answer is a
-                        // judge.
-                        //
-                        // **A tangency is a graze, not a crossing** — so it passes, and it
-                        // is **not** recorded. `crossings`' proposition is "the plane runs *within*
-                        // the radius", which a tangent plane does not; the three roads gated on
-                        // that record assert it in a `debug_assert` (`arrangement`' circular-
-                        // hole arm, `chord_stations`, `rulings_on_class`), and all three stay true
-                        // because this pair never reaches them — a tangency is a double root where
-                        // those roads spell two distinct ones, so recording it would put the pair
-                        // on the ruling road and assemble nothing. The arrangement then sees
-                        // nothing here, which is right: the line divides no cell of this plane and
-                        // stations no sector of the chart.
-                        //
-                        // What the pair can still do is pinch the *result*, and that is a question
-                        // about the operation — so the geometry is stated in a row and
-                        // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`,
-                        // where the grouping can also say whether the pieces share a solid. A row
-                        // that verdict cannot judge is refused at this gate's end.
-                        if clearance == Orient::Zero {
-                            tangencies.extend(tangency_rows(
-                                model,
-                                faces,
-                                plane_ix,
-                                n_a,
-                                c,
-                                ci,
-                                &coeffs,
-                                &cyl.def,
-                                cyl.surf,
-                                cyl.owner,
-                                holders.as_deref().is_some_and(|h| !h.is_empty()),
-                            ));
-                        } else {
-                            crossings.insert((c, ci));
-                        }
-                    } else if clearance == Orient::Negative
-                        // Only a footprint that can be **stated** proves a cut — the plane did not
-                        // clear the faces above, so a stated one is cut; an unstatable one (a
-                        // rotated class, no span) proves nothing either way and records nothing —
-                        // recording on it draws rulings no face has (measured, the rigid-motion
-                        // oracle).
-                        && !footprints
-                            .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
-                            .is_empty()
-                    {
-                        // **The class cuts this lateral face though no face of the other solid touches
-                        // it**: the refusal question is face against face and it is clear, but
-                        // the arrangement on this class still needs the ruling — every face of *this* solid
-                        // that crosses the class ends on it (a cap's section ends where its rim arc meets
-                        // the plane), and without the ruling that end dangles and the walk doubles back
-                        // (measured: a gusset beside a filleted plate, its side plane within the fillet's
-                        // radius). So the record is «the plane cuts the face», not «the faces touch»; the
-                        // tangent plane (clearance `Zero`) is the tangency's own record.
-                        crossings.insert((c, ci));
-                    }
-                }
+                ClassMeet::Silent(Silence::Apart) => apart.push((c, ci)),
+                ClassMeet::Silent(Silence::Sectioned) => sectioned.push((c, ci)),
+                ClassMeet::Ellipse => oblique = true,
+                ClassMeet::Across | ClassMeet::Clear | ClassMeet::Tangent { .. } => {}
             }
         }
     }
@@ -472,8 +255,8 @@ pub(crate) fn cylinder_gate(
         "every nameless class is silent about every cylinder, or the gate refused"
     );
 
-    // The oblique record's one reader today (see the arm above).
-    if !oblique.is_empty() {
+    // An ellipse is drawn by no road ([`class_meet`]'s oblique arm).
+    if oblique {
         return Err(reject(RejectReason::ObliqueCylinderCut));
     }
 
@@ -588,9 +371,340 @@ pub(crate) fn cylinder_gate(
         }
     }
     // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
-    // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
+    // pairs [`class_meet`]'s record-and-pass arm admitted without a clearance proof. Empty for every
     // population outside the rulings road.
     Ok((cyls, crossings, tangencies))
+}
+
+/// **What a plane class receives from a cylinder** — [`class_meet`]'s answer: the curve the
+/// class's arrangement meets on the cylinder, or what proves it meets none. Read only by the gate:
+/// its refusals (an ellipse, the nameless settlements) and the records it hands on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ClassMeet {
+    /// The plane is perpendicular to the axis: it meets the lateral in circles, which the faces'
+    /// rims carry.
+    Across,
+    /// No face of the class reaches a lateral face: the plane clears the radius or misses every
+    /// lateral face, or the class's faces clear the strip with no stated footprint to prove a cut,
+    /// or (oblique) every lateral face misses the plane.
+    Clear,
+    /// The plane runs within the radius and cuts a lateral face: two rulings, drawn on the class.
+    Cuts,
+    /// The plane stands exactly `r` from the axis: one grazing line, which divides nothing.
+    /// `holders` are the classes holding that line ([`classes_holding_the_line`]); `other_owner`
+    /// says the class carries a face of the cylinder's other operand — such a tangent class is half
+    /// of [`SharedRuling`]'s population, and a record the nameless settlements weigh.
+    Tangent {
+        holders: Vec<usize>,
+        other_owner: bool,
+    },
+    /// A class with no world statement, silent about the cylinder. `Apart` and `Sectioned` are
+    /// candidates until [`cylinder_gate`] settles them.
+    Silent(Silence),
+    /// An oblique plane not shown to miss the lateral faces: an ellipse, which no road draws.
+    Ellipse,
+}
+
+/// What [`class_meet`] reads besides the pair: the operands' face table and the judge, and which
+/// cylinders leave only whole rims.
+#[derive(Clone, Copy)]
+struct PairCx<'a, 'j> {
+    model: &'a Model,
+    faces: &'a [FaceRow],
+    plane_ix: &'a [ClassIx],
+    n_a: usize,
+    jd: &'a Judge<'j, WorkingPlane>,
+    whole_rims: &'a [bool],
+}
+
+/// **What plane class `c` receives from cylinder `cyl`** — the gate's one answer per pair, asked
+/// for every pair before any refusal that reads the answers.
+///
+/// With `n` the class's rational normal and `m`/`o`/`r` the cylinder's raw axis/origin/radius:
+/// - a class with no world statement is silent about the cylinder or refused here
+///   ([`Silence`]; `Apart` and `Sectioned` are candidates [`cylinder_gate`] settles once every
+///   pair is asked); a `Wide` name is refused for its width;
+/// - `n × m = 0` — a perpendicular cut, [`ClassMeet::Across`], a cap seated flush on the other
+///   body included;
+/// - `n · m = 0` — a wall parallel to the axis. It must provably miss the **rectangle** the
+///   cylinder occupies in that plane. The infinite plane clearing the axis by more than `r`
+///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; so does the plane
+///   missing every lateral **face**, read on the faces' arcs ([`laterals_clear_plane`] — a plane
+///   that cuts the infinite cylinder only off a fillet's quarter). Otherwise each face on the
+///   class answers for itself, across the strip or along a lateral face's span
+///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
+///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it),
+///   [`ClassMeet::Cuts`] — or, the plane exactly `r` from the axis, is [`ClassMeet::Tangent`]
+///   with its [`Tangency`] rows: a tangency divides nothing, so it earns no crossing.
+///
+///   **One clearance call, three answers.** Past the lateral faces' question, `Positive` clears;
+///   `Negative` cuts (two rulings); `Zero` is tangent (one grazing line). The third is not `Cuts`:
+///   that would put the pair on the ruling road, and three roads there spell "two distinct
+///   roots". Keeping it apart keeps every one of those sentences true and the arrangement
+///   unchanged: of 21 measured cells **15 assemble**, `validate` clean and volumes exact; the
+///   other 6 are the third-plane population [`Tangency::line_in_another_plane`] names — a line two
+///   classes share on the cylinder, recorded as a [`SharedRuling`] and arranged as one. A row the
+///   tangency's verdict cannot judge — that line not being an edge both faces end on, or the row
+///   not stated — is refused at the gate's end ([`RejectReason::TangentLineInAnotherPlane`], or
+///   the row's own name), before anything is arranged.
+/// - anything else — an oblique plane, [`ClassMeet::Clear`] when every lateral face of the
+///   cylinder provably misses the plane — the face's reach along `n` against the plane's station
+///   ([`lateral_reach`], [`laterals_clear_plane`]) — and otherwise [`ClassMeet::Ellipse`]. Every
+///   one of these sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
+///   is not refused for the plane alone.
+///
+/// The order of the questions is the order of the refusals they can raise, and so part of what
+/// this function answers: a `Zero` pair asks the lateral faces before the classes holding its
+/// line, and those before its faces.
+fn class_meet(
+    cx: &PairCx<'_, '_>,
+    c: usize,
+    ci: usize,
+    cyl: &WorkingCyl,
+    footprints: &mut Option<Vec<Footprint>>,
+) -> Result<(ClassMeet, Vec<Tangency>), BoolError> {
+    let PairCx {
+        model,
+        faces,
+        plane_ix,
+        n_a,
+        jd,
+        whole_rims,
+    } = *cx;
+    use nacre_exact::Orient;
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
+    let wp = &jd.planes[c];
+    // **A world description, or the proof that none is needed** — the question this function
+    // asks is geometric (does this class's plane clear that cylinder), and both sides have
+    // to speak about the world. `rotated` is not that question: a plane whose truth carries
+    // a translation is *judged* through its chain and still has exact world coefficients,
+    // and that is the population the rulings road serves. A class with no world name
+    // passes only as silent ([`Silence`] — beside, apart or sectioned), else it is
+    // geometry; a `Wide` one is width — the world holds it, `Rat` does not.
+    let Some(coeffs) = jd.world_rat(c) else {
+        if wp.world.is_some() {
+            return Err(reject(RejectReason::WitnessNotRational));
+        }
+        let stance = nameless_stance(model, jd, c, cyl);
+        if let Stance::Beside(side) = stance {
+            return Ok((ClassMeet::Silent(Silence::Beside(side)), Vec::new()));
+        }
+        if whole_rims[ci] && faces_apart(model, faces, plane_ix, c, &cyl.boxes) {
+            return Ok((ClassMeet::Silent(Silence::Apart), Vec::new()));
+        }
+        // With every face of the class apart from the lateral boxes, a plane cutting the
+        // lateral in rulings draws them on its own arrangement only ([`Silence::Sectioned`]).
+        // A cylinder with a whole rim is not sectioned: a planar face carries that rim as a
+        // circle loop, and the chord such a plane cuts from it is read only on a recorded
+        // pair.
+        if stance == Stance::Rulings
+            && !any_whole_rim(model, faces, cyl.surf)
+            && faces_apart(model, faces, plane_ix, c, &cyl.boxes)
+        {
+            return Ok((ClassMeet::Silent(Silence::Sectioned), Vec::new()));
+        }
+        return Err(undecided());
+    };
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    // A perpendicular cut is the circle population, and it passes — **including a cap
+    // seated flush on the other body's face**. Refusing that seating would be wider than
+    // anything the refusal could name: what makes a seated circle hard is
+    // its boundary meeting the counterpart's boundary, and a boundary is either an edge
+    // on a plane (that plane is parallel to the axis → the wall rule below, or oblique →
+    // the oblique rule; both are already conservative because the wall rule judges the
+    // *infinite* plane, not the face) or another cylinder's rim (two circles can only
+    // overlap when the axes stand closer than r₁+r₂ → the pair rule below). So what a
+    // seated rule would turn away is exactly the population whose circle lies wholly inside
+    // the counterpart's face — measured across the family (through hole, blind hole, boss
+    // fuse, common, drilling a pocket floor): every one exact and validating clean.
+    //
+    // **Nothing downstream has to catch a degenerate seating, because this gate still
+    // does** — by the two rules below rather than by a rule about seating. A seated circle
+    // can only reach the counterpart's boundary through a plane parallel to the axis (which
+    // must clear the radius, cross it, or touch it) or an oblique one (refused outright) or
+    // another cylinder's rim (the pair rule), so a tangency or a crossing is **named**
+    // before the arrangement ever sees it. Named, not refused: a touch passes with a
+    // [`Tangency`] row and the *verdict* is `assembly::tangency_reject`'s — refused here
+    // only where that verdict could not judge the row. What the sentence guarantees holds —
+    // no degenerate seating reaches the arrangement unnamed.
+    // The one relation rule ([`nacre_exact::axis_relation`]) — the same one that decides an
+    // edge's curve (`Model::derive_edge_curve`), so the gate and the edges cannot part.
+    let relation = nacre_exact::axis_relation(&n, &m);
+    if relation != nacre_exact::AxisRelation::Across {
+        if relation == nacre_exact::AxisRelation::Oblique {
+            // **The oblique arm asks the faces** — the fourth of the gate's
+            // four sites to speak about faces rather than surfaces. The plane's station
+            // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
+            // the question its doc was written for): if every face provably misses the
+            // infinite plane, no face of that plane's class can meet the lateral, and the
+            // caps are the plane–plane arrangement's business. A pair not shown to miss is an
+            // ellipse; the gate refuses it once every pair is asked.
+            //
+            // The class's faces standing apart from the lateral (the parallel arm's second
+            // question) do not suffice here: the class's arrangement sections the
+            // cylinder's own solid by the whole plane, and that section runs along the
+            // ellipse. Measured with such a pair passed — a rib whose slanted face stands
+            // two units from a plate's fillet while its plane, extended, cuts it — the
+            // boolean is refused one step later as `DeclineKind::CurvedRingWall`.
+            let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
+            let meet = if laterals_clear_plane(&cyl.def, fps, &coeffs) {
+                ClassMeet::Clear
+            } else {
+                ClassMeet::Ellipse
+            };
+            return Ok((meet, Vec::new()));
+        }
+        // A parallel wall must provably miss the lateral surface. **The question is
+        // about the wall's *faces*, not its plane** — the uniform-slab theorem this feeds
+        // says so in its own words ("the other operand's **boundary** does not meet the
+        // open cylinder slab"). Two cheaper *sufficient* conditions come first, the
+        // surface's and then the lateral faces': the infinite plane clearing the axis by
+        // more than the radius, and the plane missing every lateral **face** — each face's
+        // reach along `n`, which reads the face's arc ([`laterals_clear_plane`], the
+        // question the oblique arm asks, and the one the cylinder pair rule asks of two
+        // laterals after the surface distance). A plane that cuts the infinite cylinder
+        // only off a fillet's quarter is the second. Either passes the pair with nothing
+        // recorded: the class's arrangement gets nothing from this cylinder, whose rim arcs
+        // bound its faces and so miss the plane too. When both fail, the faces on this
+        // class get to answer for themselves. Refusing on the plane alone turned away a
+        // whole family the engine serves — a boss standing far away whose wall plane,
+        // extended, happens to pass through a hole.
+        //
+        // What a face is asked is whether it misses the **rectangle** this cylinder
+        // occupies in that plane: the strip across, the lateral face's span along. See
+        // [`face_clears_footprint`]. Its strip is the whole circle's, and past the second
+        // question that decides no record wrongly: a plane that cuts a lateral face is
+        // recorded below whatever its faces answer, a tangent plane that reaches a face's
+        // arc has that tangent line for its strip, and a cylinder with no usable footprint
+        // has no arc to read.
+        let clearance = nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2);
+        if clearance != Orient::Positive
+            && laterals_clear_plane(
+                &cyl.def,
+                footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf)),
+                &coeffs,
+            )
+        {
+            return Ok((ClassMeet::Clear, Vec::new()));
+        }
+        // **The classes holding a tangent line, asked once for the pair** — the rows
+        // below read it (`line_in_another_plane`) and so does [`SharedRuling`]. It is
+        // asked here, before any face is: the rows are written only for faces that fail
+        // to clear the footprint and touch the line within a lateral's span, so a face
+        // standing on a cap, or one the line passes through a hole of, writes none — yet
+        // its line is the same line.
+        let mut rows = Vec::new();
+        let holders = if clearance == Orient::Zero {
+            let Some(h) = classes_holding_the_line(jd, c, &coeffs, &cyl.def) else {
+                return Err(reject(RejectReason::WitnessNotRational));
+            };
+            let other_owner = faces.iter().enumerate().any(|(i, row)| {
+                matches!(row, FaceRow::Plane(_))
+                    && plane_ix[i] == ClassIx::Plane(c)
+                    && (i < n_a) != (cyl.owner == SolidSide::A)
+            });
+            Some((h, other_owner))
+        } else {
+            None
+        };
+        if clearance != Orient::Positive {
+            // The face-level test reads each face's own vertices, which are realized
+            // world coordinates — so it needs no frame guard of its own; `coeffs` above is
+            // already the world description (a class without one never reaches here). A
+            // frame guard here would refuse every moved class outright and keep a
+            // translated body out of the cylinder roads.
+            let spans: Vec<[nacre_exact::Rat; 2]> = footprints
+                .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                .iter()
+                .map(|f| f.span.expect("a listed footprint has a span"))
+                .collect();
+            if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r2, &spans)? {
+                // **The record-and-pass arm**: a wall whose plane runs **within**
+                // the radius — any
+                // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
+                // clear the strip is recorded and passed; the tracer's ruling/chord arms
+                // fire only on recorded pairs and read the *faces* (a ruling piece comes
+                // from a face's own cycles, a cap's chord is the true meet of that class's
+                // plane with the disk), so a recorded face that misses the lateral
+                // contributes nothing. The record is «may meet; the tracer decides».
+                //
+                // **No offset keeps a refusal** (`0 < d < r`): with the region emitter,
+                // bosses and bores, rational and irrational rulings, axis inside or
+                // outside the plate, a split bore — every one assembles, validates clean
+                // and answers the exact volume oracle. The arithmetic
+                // (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's circular
+                // order) never assumed the diameter; only the vocabulary did. And a
+                // contact is a question a fence cannot answer: `validate` cannot see it
+                // (`Cut` returns `Ok`, no net sees the line), which is why the answer is a
+                // judge.
+                //
+                // **A tangency is a graze, not a crossing** — so it passes, and it
+                // is **not** recorded. `crossings`' proposition is "the plane runs *within*
+                // the radius", which a tangent plane does not; the three roads gated on
+                // that record assert it in a `debug_assert` (`arrangement`' circular-
+                // hole arm, `chord_stations`, `rulings_on_class`), and all three stay true
+                // because this pair never reaches them — a tangency is a double root where
+                // those roads spell two distinct ones, so recording it would put the pair
+                // on the ruling road and assemble nothing. The arrangement then sees
+                // nothing here, which is right: the line divides no cell of this plane and
+                // stations no sector of the chart.
+                //
+                // What the pair can still do is pinch the *result*, and that is a question
+                // about the operation — so the geometry is stated in a row and
+                // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`,
+                // where the grouping can also say whether the pieces share a solid. A row
+                // that verdict cannot judge is refused at this gate's end.
+                if clearance == Orient::Zero {
+                    rows = tangency_rows(
+                        model,
+                        faces,
+                        plane_ix,
+                        n_a,
+                        c,
+                        ci,
+                        &coeffs,
+                        &cyl.def,
+                        cyl.surf,
+                        cyl.owner,
+                        holders.as_ref().is_some_and(|(h, _)| !h.is_empty()),
+                    );
+                } else {
+                    return Ok((ClassMeet::Cuts, Vec::new()));
+                }
+            } else if clearance == Orient::Negative
+                // Only a footprint that can be **stated** proves a cut — the plane did not
+                // clear the faces above, so a stated one is cut; an unstatable one (a
+                // rotated class, no span) proves nothing either way and records nothing —
+                // recording on it draws rulings no face has (measured, the rigid-motion
+                // oracle).
+                && !footprints
+                    .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                    .is_empty()
+            {
+                // **The class cuts this lateral face though no face of the other solid touches
+                // it**: the refusal question is face against face and it is clear, but
+                // the arrangement on this class still needs the ruling — every face of *this* solid
+                // that crosses the class ends on it (a cap's section ends where its rim arc meets
+                // the plane), and without the ruling that end dangles and the walk doubles back
+                // (measured: a gusset beside a filleted plate, its side plane within the fillet's
+                // radius). So the record is «the plane cuts the face», not «the faces touch»; the
+                // tangent plane (clearance `Zero`) is the tangency's own record.
+                return Ok((ClassMeet::Cuts, Vec::new()));
+            }
+        }
+        return Ok(match holders {
+            Some((holders, other_owner)) => (
+                ClassMeet::Tangent {
+                    holders,
+                    other_owner,
+                },
+                rows,
+            ),
+            None => (ClassMeet::Clear, Vec::new()),
+        });
+    }
+    Ok((ClassMeet::Across, Vec::new()))
 }
 
 /// **Two plane classes along a cylinder's axis whose meet line lies on the cylinder** — a ruling
